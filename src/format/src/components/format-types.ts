@@ -14,51 +14,33 @@ export type GmlPrintFunction = NonNullable<GmlPrinter["print"]>;
 export type GmlPrintCommentFunction = NonNullable<GmlPrinter["printComment"]>;
 export type GmlHandleComments = NonNullable<GmlPrinter["handleComments"]>;
 
-/**
- * Loose, dependency-inverted alias for the comment-printer helpers that
- * the printer workspace consumes. The signatures are intentionally
- * permissive because the GML comment helpers operate over loose `path`
- * and `options` shapes; the boundary module in `printer/comment-print-boundary.ts`
- * re-types the injection point so the contract is the single source of
- * truth for what the printer may call.
- */
-export type GmlPrintDanglingCommentsFunction = (path: unknown, options: unknown, filter?: unknown) => unknown;
-export type GmlPrintDanglingCommentsAsGroupFunction = (path: unknown, options: unknown, filter?: unknown) => unknown;
-
 export type LogicalOperatorsStyleMap = Readonly<{
     KEYWORDS: string;
     SYMBOLS: string;
 }>;
 
 /**
- * Minimal dependency-injection contract for the formatter's comment-printer
- * boundary. Only the comment helpers that the printer actively resolves
- * from `options.gml` (see `printer/comment-print-boundary.ts`) belong here.
- * Helpers that the printer imports directly — `buildPrintableDocCommentLines`,
- * `countTrailingBlankLines`, `getNextNonWhitespaceCharacter` — are not
- * listed: they were previously exposed on the contract but no consumer ever
- * resolved them through the injection path, so listing them implied
- * configurable behavior that did not exist.
+ * Minimal dependency-injection contract for the formatter's high-level
+ * Prettier plugin wiring. The contract now only surfaces the helpers
+ * that the Prettier plugin entry point (`createGmlFormat`) and the
+ * `printers` bundle require: the parser adapter, the printer entry
+ * point, the `printComment`/`handleComments` Prettier callbacks, and
+ * the `LogicalOperatorsStyle` map.
+ *
+ * Helpers that the printer workspace consumes internally — the dangling
+ * comment printers — are imported directly from
+ * `../comments/comment-printer.js` by the high-level printer modules.
+ * The previous indirection through `options.gml` (resolved by
+ * `printer/comment-print-boundary.ts`) was a backward-compatibility
+ * shim with no remaining callers and has been removed; the contract no
+ * longer lists those helpers.
+ * (target-state.md §2.3, §3.2)
  */
 export type GmlFormatComponentContract = Readonly<{
     gmlParserAdapter: GmlParserAdapter;
     print: GmlPrintFunction;
     handleComments: GmlHandleComments;
     printComment: GmlPrintCommentFunction;
-    /**
-     * Print a flat list of dangling comments attached to the current node.
-     * Wired through the contract so the printer can resolve the helper from
-     * `options.gml` instead of importing the concrete comments adapter.
-     * (target-state.md §2.3)
-     */
-    printDanglingComments: GmlPrintDanglingCommentsFunction;
-    /**
-     * Print a group of dangling comments with preserved leading whitespace
-     * and separators. Wired through the contract so the printer can resolve
-     * the helper from `options.gml` instead of importing the concrete
-     * comments adapter. (target-state.md §2.3)
-     */
-    printDanglingCommentsAsGroup: GmlPrintDanglingCommentsAsGroupFunction;
     LogicalOperatorsStyle: LogicalOperatorsStyleMap;
 }>;
 

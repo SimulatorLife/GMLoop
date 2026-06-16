@@ -13,24 +13,20 @@ void test("dependency bundle is frozen and exposes expected contract keys", () =
 
     assert.ok(Object.isFrozen(dependencyBundle), "dependency bundle should be frozen");
 
-    // The contract only lists fields the printer boundary actually consumes
-    // through `options.gml`. Direct-import helpers (buildPrintableDocCommentLines,
-    // countTrailingBlankLines, getNextNonWhitespaceCharacter) used to be
-    // re-exposed here, but no consumer ever resolved them through the
-    // injection path — they were dead weight that implied configurable
-    // behavior that did not exist. Keeping them out of the contract keeps
-    // the dependency-injection surface honest.
+    // The contract only lists fields the high-level Prettier plugin wiring
+    // actually needs. Direct-import helpers used to be re-exposed here, but
+    // no consumer ever resolved them through the injection path — they
+    // were dead weight that implied configurable behavior that did not
+    // exist. The companion
+    // `printer-comment-print-boundary-removed.test.ts` removed the
+    // `printer/comment-print-boundary.ts` shim itself, so the
+    // dangling-comment printers (`printDanglingComments`,
+    // `printDanglingCommentsAsGroup`) are no longer wired through the
+    // contract at all. Keeping the contract slim keeps the
+    // dependency-injection surface honest. (target-state.md §2.3, §3.2)
     assert.deepStrictEqual(
         Object.keys(dependencyBundle).toSorted(),
-        [
-            "LogicalOperatorsStyle",
-            "gmlParserAdapter",
-            "handleComments",
-            "print",
-            "printComment",
-            "printDanglingComments",
-            "printDanglingCommentsAsGroup"
-        ].toSorted()
+        ["LogicalOperatorsStyle", "gmlParserAdapter", "handleComments", "print", "printComment"].toSorted()
     );
 });
 

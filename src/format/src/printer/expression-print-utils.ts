@@ -19,7 +19,7 @@
  */
 import { Core } from "@gmloop/core";
 
-import { printComment, printDanglingComments, printDanglingCommentsAsGroup } from "./comment-print-boundary.js";
+import { printComment, printDanglingComments, printDanglingCommentsAsGroup } from "../comments/comment-printer.js";
 import { MULTIPLICATIVE_BINARY_OPERATORS, STRING_TYPE } from "./constants.js";
 import { safeGetParentNode, safeGetPathName, safeGetPathValue } from "./path-utils.js";
 import { concat, group, hardline, ifBreak, indent, line, lineSuffixBoundary } from "./prettier-doc-builders.js";
