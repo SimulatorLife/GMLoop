@@ -19,7 +19,8 @@ export type {
     WebSocketLogger
 } from "./logger.js";
 export { createChangeEventLogger, createLogger, LogLevels, parseLogLevel } from "./logger.js";
-export { testPatchInShadow } from "./patch-utils.js";
+export type { PatchLike } from "./patch-utils.js";
+export { isPatchLike, testPatchInShadow } from "./patch-utils.js";
 export { createRuntimeWrapper } from "./runtime-wrapper.js";
 export { installScriptCallAdapter } from "./script-call-adapter.js";
 export type {
