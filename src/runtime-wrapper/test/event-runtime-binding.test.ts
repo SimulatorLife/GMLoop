@@ -66,10 +66,6 @@ const runtimeBindingPropertyNames = [
 function setupSpiderRuntimeForCreate(createImpl: (this: Record<string, unknown>) => void): {
     instanceEntry: Record<string, unknown>;
 } {
-    function gml_Object_oSpider_Create_0(this: Record<string, unknown>) {
-        createImpl.call(this);
-    }
-
     function gml_Object_oSpider_Step_0() {
         return "original";
     }
@@ -77,7 +73,7 @@ function setupSpiderRuntimeForCreate(createImpl: (this: Record<string, unknown>)
     const objectEntry = {
         Event: [] as Array<boolean>,
         pName: "oSpider",
-        CreateEvent: gml_Object_oSpider_Create_0,
+        CreateEvent: createImpl,
         StepNormalEvent: gml_Object_oSpider_Step_0
     };
     const instanceEntry: Record<string, unknown> = {
