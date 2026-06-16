@@ -543,6 +543,10 @@ export function createGm2061Rule(entry: FeatherManifestEntry): Rule.RuleModule {
                 `${indentation}${target} = ${expression} ?? ${fallback};`
         );
 
+        if (rewritten !== sourceText && !rewritten.endsWith("\n")) {
+            return `${rewritten}\n`;
+        }
+
         return rewritten;
     });
 }

@@ -93,7 +93,21 @@ Use a two-tier workflow: format only when parse succeeds, and run lint in two ph
 - **Unsafe to fix reporting**: Shared helper required for rules that might be unsafe: `messageId: "unsafeFix"` with stable prefix `[unsafe-fix:<reasonCode>]`.
 - **Fixer edit boundary**: Fixers are single-file only and must not perform cross-file writes. Project-aware functionality and cross-file edits belong in the `refactor` workspace.
 
-### 3.5 Implementation Status & Audit Findings (Snapshot 2026-02-17)
+### 3.5 Lint Namespace And Fixer Ownership
+
+1. Feather rules must be metadata-faithful. A `feather/gm####` rule may only diagnose and fix behavior covered by the matching official Feather diagnostic. It must not carry fixture-specific rewrites, formatting cleanup, or neighboring GM diagnostic behavior.
+2. Exact or near-exact duplicate `gml/*` rules must be migrated into the owning Feather rule, preserving the safest implementation details, then removed completely from rule maps, presets, docs, examples, catalogs, and tests. Removed rule IDs must not be kept as aliases or compatibility shims.
+3. Partial overlaps must use an explicit conflict registry. Both rules may continue reporting when useful, but the non-owner must expose no `meta.fixable`, must produce no suggestions, and must have fixes stripped centrally.
+4. When a remaining `gml/*` rule conflicts with a Feather rule, the Feather rule should own the autofix, as long as it is safe, single-file scoped, and corresponds to the official Feather diagnostic. The overlapping `gml/*` rule must remain diagnostic-only for that exact overlap, while keeping fixes for behavior outside the Feather diagnostic.
+5. Ownership cleanup must preserve all existing safe fixing behavior. If making a Feather rule metadata-pure would remove a safe local fix that does not belong to that Feather diagnostic, split that behavior into a smaller canonical rule instead of dropping it.
+6. Before adding a new lint rule or fixer, consult the Feather metadata/catalog for an unimplemented `GM####` diagnostic that already owns the behavior or could own a safe local fixer. Prefer implementing the metadata-correct Feather ID before creating a new `gml/*` rule.
+7. Feather manifest fixability must match runtime behavior and generated catalogs. Use explicit `none`, `safe-only`, or `always` metadata instead of blanket declarations.
+8. Project-context-dependent Feather diagnostics are report-only in lint. If proving the fix requires project metadata, asset/resource graphs, or cross-file semantic knowledge, the write behavior belongs in refactor rather than a lint autofix.
+9. Orphan local behavior with no corresponding Feather diagnostic may become a focused `gml/*` rule only when it is safe and single-file scoped. The z-write and z-test reset rules are examples: `gml/require-zwrite-enabled-reset` and `gml/require-ztest-enabled-reset`.
+10. Fixture goldens may compose multiple canonical rules in `gmloop.json` to preserve output. Do not assign a fixer to the wrong Feather rule, exclude a fixture, or modify a `.gml` golden merely to hide an ownership mismatch. If no domain-correct composition can reproduce the golden, stop for clarification unless the user has explicitly authorized a report-only/unchanged expectation update.
+11. Recommended, all, and Feather presets must stay deduplicated and use canonical owning IDs. When ownership migrates, presets and docs must move to the new IDs in the same change.
+
+### 3.6 Implementation Status & Audit Findings (Snapshot 2026-02-17)
 
 - Formatter and linter split migration is largely complete at runtime.
 - Remaining work includes isolating dormant migrated semantic transform modules from formatter workspace exports and continuing to push any project-aware edit planning into `/refactor` rather than `/lint`.

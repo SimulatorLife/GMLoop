@@ -1,2 +1,2 @@
-draw_set_color(c_black);
+draw_set_color();
 scr_draw_set_color();

@@ -140,7 +140,6 @@ const REPORT_ONLY_FEATHER_IDS: ReadonlySet<FeatherParityId> = new Set([
     "GM1038",
     "GM1054",
     "GM1059",
-    "GM1062",
     "GM1063",
     "GM1064",
     "GM1100",
@@ -151,7 +150,6 @@ const REPORT_ONLY_FEATHER_IDS: ReadonlySet<FeatherParityId> = new Set([
     "GM2029",
     "GM2033",
     "GM2040",
-    "GM2061",
     "GM2064"
 ]);
 const PROJECT_CONTEXT_FEATHER_IDS: ReadonlySet<FeatherParityId> = new Set([

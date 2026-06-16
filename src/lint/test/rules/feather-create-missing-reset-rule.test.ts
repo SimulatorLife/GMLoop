@@ -29,8 +29,8 @@ void test("createMissingResetRule is a no-op when the detection pattern does not
 });
 
 void test("createMissingResetRule handles file input that lacks a trailing newline", () => {
-    const input = "draw_set_alpha(0.25);\ndraw_text(0, 0, 'x');";
-    const result = lintWithFeatherRule(LintWorkspace.Lint.featherPlugin, "gm2023", input);
+    const input = "gpu_set_blendmode(bm_add);\ndraw_self();";
+    const result = lintWithFeatherRule(LintWorkspace.Lint.featherPlugin, "gm2000", input);
 
-    assertEquals(result.output, `${input}\ndraw_set_alpha(1);\n`);
+    assertEquals(result.output, `${input}\ngpu_set_blendmode(bm_normal);\n`);
 });

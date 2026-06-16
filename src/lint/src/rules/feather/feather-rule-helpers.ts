@@ -53,12 +53,11 @@ export function appendLineIfMissing(sourceText: string, lineToAppend: string): s
  * a program when a detection pattern is matched anywhere in the source.
  *
  * This consolidates the "if pattern → append reset" body that used to be
- * copy-pasted across the `gm2xxx` reset-state rules (`gm2000`, `gm2003`,
- * `gm2023`, `gm2025`, `gm2026`, `gm2035`, `gm2040`, `gm2048`, `gm2050`,
- * `gm2051`, `gm2052`, `gm2053`, `gm2054`, `gm2056`, `gm2064`, and friends).
- * Each of those rules pairs a single detector regex with a single reset
- * statement and previously spelled out the same `if (pattern.test(...)) {
- * return sourceText; } return appendLineIfMissing(...)` shape inline.
+ * copy-pasted across Feather reset-state rules that own a local reset
+ * diagnostic (`gm2000`, `gm2003`, `gm2026`, `gm2035`, `gm2048`, `gm2050`,
+ * `gm2051`, `gm2052`, and `gm2056`). Feather diagnostics that need project
+ * context, or reset behavior now owned by focused `gml/*` rules, deliberately
+ * do not use this helper.
  *
  * The helper refuses an empty `resetLine` because `appendLineIfMissing`
  * would treat an empty string as already-present and silently produce a

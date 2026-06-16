@@ -159,7 +159,7 @@ Logical operator style normalization (`&&`/`||`/`^^` vs `and`/`or`/`xor`) belong
 `optimize-math-expressions` only performs reciprocal-term cancellation on side-effect-free operands (identifiers/member accesses/literals). Call-expression operands are intentionally excluded from that cancellation path.
 `simplify-real-calls` detects calls to GML's built-in `real()` function that take a single string literal argument whose content is a valid numeric literal, and replaces the entire call expression with just the numeric literal. E.g. `real("0.5")` → `0.5`. This rewrite is safe because `real()` with a string literal argument is deterministic and has no observable side effects.
 
-Feather rules are exposed as `feather/gm####` and sourced from `Lint.services.featherManifest`. All feather-namespace lint rules follow the naming pattern `feather/gm####`, where the lint rule diagnoses/fixes specificy/only the issue for the associated Feather rule/diagnostic. For example, lint rule `feather/gm1000` identifies and fixes the specific issue described in Feather rule `gm1000`: "No enclosing loop from which to break" This creates a clear, traceable link between each Feather rule and its corresponding lint rule(s), and allows us to easily add new lint rules for new Feather rules as they are added to the manifest.
+Feather rules are exposed as `feather/gm####` and sourced from `Lint.services.featherManifest`. All feather-namespace lint rules follow the naming pattern `feather/gm####`, where the lint rule diagnoses and fixes only the issue for the associated Feather rule/diagnostic. For example, lint rule `feather/gm1000` identifies and fixes the specific issue described in Feather rule `gm1000`: "No enclosing loop from which to break." This creates a clear, traceable link between each Feather rule and its corresponding lint rule, and allows new lint rules for new Feather rules to be added through the manifest.
 
 `feather/gm1010` uses a conservative numeric-casting strategy: it only wraps `num*` identifiers with `real(...)` when they are directly added to a numeric literal (for example, `5 + numFive`), and leaves mixed string-concatenation chains untouched.
 
@@ -171,11 +171,33 @@ parameter defaults, and `feather/gm2004` safe unused-index `for` to `repeat`
 conversion. These rules retain scoped AST checks and only expose local fixes
 that can be proven safe.
 
-`gml/normalize-doc-comments` remains the canonical documentation normalizer,
-so overlapping `feather/gm1062` diagnostics are report-only.
-`gml/optimize-logical-flow` owns logical-flow rewrites, including nullish
-fallback condensation, so overlapping `feather/gm2061` diagnostics are also
-report-only.
+When a safe, single-file `gml/*` fix overlaps an official Feather diagnostic,
+the Feather rule owns that exact autofix. The overlapping `gml/*` rule may keep
+fixes for behavior outside the Feather diagnostic, but must not also fix the
+same diagnostic-owned span.
+
+Ownership cleanup must preserve existing safe fixes. If purifying a Feather
+rule would otherwise remove safe local behavior, split that behavior into a
+smaller canonical rule, usually a focused `gml/*` rule when there is no matching
+Feather diagnostic.
+
+Before adding a new rule or fixer, check `Lint.services.featherManifest` and
+the Feather metadata catalog for an unimplemented `GM####` diagnostic that
+already owns the behavior or could own a safe local fixer. Implement that
+metadata-correct Feather ID before introducing a new `gml/*` rule.
+
+Reset-state ownership follows the same diagnostic boundary. `feather/gm2049`
+owns `gpu_set_zfunc(cmpfunc_lessequal)`, `feather/gm2062` owns
+`draw_set_colour(c_white)`, and `feather/gm2063` owns `draw_set_alpha(1)`.
+The z-write and z-test resets have no metadata-correct Feather diagnostic, so
+they are implemented as focused GML rules:
+`gml/require-zwrite-enabled-reset` and `gml/require-ztest-enabled-reset`.
+
+Fixture suites may compose multiple lint rules in their local `gmloop.json`
+when a golden output represents more than one domain-correct fix. A Feather
+fixture should not keep a fixer assigned to the wrong GM diagnostic solely to
+preserve historical output; compose the canonical rule instead, or make the
+Feather expectation report-only when no domain-correct fixer exists.
 
 ## Development
 
@@ -191,4 +213,3 @@ Performance-sensitive autofix rules also have dedicated regression coverage unde
 - **BUG**: When lint-fixing is run through the GMLoop CLI, if no eslint configuration file is detected in the target GameMaker project, the CLI should fall back to a default, "recommended" ruleset.
 - Add an ESLint auto-fix rule that detects simple numeric accumulation loops like `alpha += index` over a fixed range and replaces them with the equivalent arithmetic-series expression. Example: `for index = 0..9` can become `alpha += count * (count - 1) * 0.5`, avoiding unnecessary runtime iteration.
 - **BUG**: Split the large, multi-purpose `optimize-logical-flow` rule into multiple focused rules that each target a specific logical optimization pattern
-- **BUG**: Audit the lint auto-fix rules for conflicts. If a `gml/` rule conflicts with a `feather/` rule, the `gml/` auto-fix should take precedence and the `feather/` rule should be made **strictly report-only**.
