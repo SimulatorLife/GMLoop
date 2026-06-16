@@ -46,6 +46,48 @@ export function appendLineIfMissing(sourceText: string, lineToAppend: string): s
     return `${sourceText}${hasTerminalNewline ? "" : "\n"}${lineToAppend}\n`;
 }
 
+/**
+ * Builds a feather rule that appends a deterministic reset line to the end of
+ * a program when a detection pattern is matched anywhere in the source.
+ *
+ * This consolidates the "if pattern → append reset" body that used to be
+ * copy-pasted across the `gm2xxx` reset-state rules (`gm2000`, `gm2003`,
+ * `gm2023`, `gm2025`, `gm2026`, `gm2035`, `gm2040`, `gm2048`, `gm2050`,
+ * `gm2051`, `gm2052`, `gm2053`, `gm2054`, `gm2056`, `gm2064`, and friends).
+ * Each of those rules pairs a single detector regex with a single reset
+ * statement and previously spelled out the same `if (pattern.test(...)) {
+ * return sourceText; } return appendLineIfMissing(...)` shape inline.
+ *
+ * The helper refuses an empty `resetLine` because `appendLineIfMissing`
+ * would treat an empty string as already-present and silently produce a
+ * no-op rule, masking the authoring mistake.
+ *
+ * @param entry The manifest entry describing the rule.
+ * @param detectionPattern Regex used to detect the call site the rule cares
+ *   about. When the pattern does not match, the source is returned unchanged.
+ * @param resetLine The statement appended to the end of the file when the
+ *   pattern matches and the line is not already present.
+ * @returns A `Rule.RuleModule` that emits a single full-text fix when the
+ *   pattern matches and the reset line is not yet present.
+ */
+export function createMissingResetRule(
+    entry: FeatherManifestEntry,
+    detectionPattern: RegExp,
+    resetLine: string
+): Rule.RuleModule {
+    if (resetLine.length === 0) {
+        throw new Error("createMissingResetRule requires a non-empty reset line.");
+    }
+
+    return createFullTextRewriteRule(entry, (sourceText) => {
+        if (!detectionPattern.test(sourceText)) {
+            return sourceText;
+        }
+
+        return appendLineIfMissing(sourceText, resetLine);
+    });
+}
+
 export function extractFunctionParameterNames(parameterListText: string): Array<string> {
     return parameterListText
         .split(",")
