@@ -1,6 +1,6 @@
 import type { Rule } from "eslint";
 
-import { appendLineIfMissing, createFullTextRewriteRule } from "../feather-rule-helpers.js";
+import { appendLineIfMissing, createFullTextRewriteRule, createMissingResetRule } from "../feather-rule-helpers.js";
 import {
     DUPLICATE_GPU_POP_STATE_PATTERN,
     DUPLICATE_GPU_PUSH_STATE_PATTERN,
@@ -10,23 +10,11 @@ import {
 import type { FeatherManifestEntry } from "../manifest.js";
 
 export function createGm2000Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createFullTextRewriteRule(entry, (sourceText) => {
-        if (!/\bgpu_set_blendmode\s*\(/.test(sourceText)) {
-            return sourceText;
-        }
-
-        return appendLineIfMissing(sourceText, "gpu_set_blendmode(bm_normal);");
-    });
+    return createMissingResetRule(entry, /\bgpu_set_blendmode\s*\(/, "gpu_set_blendmode(bm_normal);");
 }
 
 export function createGm2003Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createFullTextRewriteRule(entry, (sourceText) => {
-        if (!/\bshader_set\s*\(/.test(sourceText)) {
-            return sourceText;
-        }
-
-        return appendLineIfMissing(sourceText, "shader_reset();");
-    });
+    return createMissingResetRule(entry, /\bshader_set\s*\(/, "shader_reset();");
 }
 
 export function createGm2005Rule(entry: FeatherManifestEntry): Rule.RuleModule {
@@ -174,33 +162,15 @@ export function createGm2020Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 }
 
 export function createGm2023Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createFullTextRewriteRule(entry, (sourceText) => {
-        if (!/\bdraw_set_alpha\s*\(/.test(sourceText)) {
-            return sourceText;
-        }
-
-        return appendLineIfMissing(sourceText, "draw_set_alpha(1);");
-    });
+    return createMissingResetRule(entry, /\bdraw_set_alpha\s*\(/, "draw_set_alpha(1);");
 }
 
 export function createGm2025Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createFullTextRewriteRule(entry, (sourceText) => {
-        if (!/\bdraw_set_color\s*\(/.test(sourceText)) {
-            return sourceText;
-        }
-
-        return appendLineIfMissing(sourceText, "draw_set_color(c_white);");
-    });
+    return createMissingResetRule(entry, /\bdraw_set_color\s*\(/, "draw_set_color(c_white);");
 }
 
 export function createGm2026Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createFullTextRewriteRule(entry, (sourceText) => {
-        if (!/\bdraw_set_halign\s*\(/.test(sourceText)) {
-            return sourceText;
-        }
-
-        return appendLineIfMissing(sourceText, "draw_set_halign(fa_left);");
-    });
+    return createMissingResetRule(entry, /\bdraw_set_halign\s*\(/, "draw_set_halign(fa_left);");
 }
 
 export function createGm2028Rule(entry: FeatherManifestEntry): Rule.RuleModule {
@@ -324,23 +294,11 @@ export function createGm2033Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 }
 
 export function createGm2035Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createFullTextRewriteRule(entry, (sourceText) => {
-        if (!/\bgpu_push_state\s*\(\s*\)\s*;/.test(sourceText)) {
-            return sourceText;
-        }
-
-        return appendLineIfMissing(sourceText, "gpu_pop_state();");
-    });
+    return createMissingResetRule(entry, /\bgpu_push_state\s*\(\s*\)\s*;/, "gpu_pop_state();");
 }
 
 export function createGm2040Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createFullTextRewriteRule(entry, (sourceText) => {
-        if (!/\bgpu_set_zwriteenable\s*\(/.test(sourceText)) {
-            return sourceText;
-        }
-
-        return appendLineIfMissing(sourceText, "gpu_set_zwriteenable(true);");
-    });
+    return createMissingResetRule(entry, /\bgpu_set_zwriteenable\s*\(/, "gpu_set_zwriteenable(true);");
 }
 
 export function createGm2042Rule(entry: FeatherManifestEntry): Rule.RuleModule {
@@ -425,43 +383,23 @@ export function createGm2046Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 }
 
 export function createGm2048Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createFullTextRewriteRule(entry, (sourceText) => {
-        if (!/\bgpu_set_blendenable\s*\(/.test(sourceText)) {
-            return sourceText;
-        }
-
-        return appendLineIfMissing(sourceText, "gpu_set_blendenable(true);");
-    });
+    return createMissingResetRule(entry, /\bgpu_set_blendenable\s*\(/, "gpu_set_blendenable(true);");
 }
 
 export function createGm2050Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createFullTextRewriteRule(entry, (sourceText) => {
-        if (!/\bgpu_set_fog\s*\(/.test(sourceText)) {
-            return sourceText;
-        }
-
-        return appendLineIfMissing(sourceText, "gpu_set_fog(false, c_black, 0, 1);");
-    });
+    return createMissingResetRule(entry, /\bgpu_set_fog\s*\(/, "gpu_set_fog(false, c_black, 0, 1);");
 }
 
 export function createGm2051Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createFullTextRewriteRule(entry, (sourceText) => {
-        if (!/\bgpu_set_cullmode\s*\(/.test(sourceText)) {
-            return sourceText;
-        }
-
-        return appendLineIfMissing(sourceText, "gpu_set_cullmode(cull_noculling);");
-    });
+    return createMissingResetRule(entry, /\bgpu_set_cullmode\s*\(/, "gpu_set_cullmode(cull_noculling);");
 }
 
 export function createGm2052Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createFullTextRewriteRule(entry, (sourceText) => {
-        if (!/\bgpu_set_colourwriteenable\s*\(/.test(sourceText)) {
-            return sourceText;
-        }
-
-        return appendLineIfMissing(sourceText, "gpu_set_colourwriteenable(true, true, true, true);");
-    });
+    return createMissingResetRule(
+        entry,
+        /\bgpu_set_colourwriteenable\s*\(/,
+        "gpu_set_colourwriteenable(true, true, true, true);"
+    );
 }
 
 export function createGm2053Rule(entry: FeatherManifestEntry): Rule.RuleModule {
@@ -518,13 +456,7 @@ export function createGm2054Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 }
 
 export function createGm2056Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createFullTextRewriteRule(entry, (sourceText) => {
-        if (!/\bgpu_set_texrepeat\s*\(/.test(sourceText)) {
-            return sourceText;
-        }
-
-        return appendLineIfMissing(sourceText, "gpu_set_texrepeat(false);");
-    });
+    return createMissingResetRule(entry, /\bgpu_set_texrepeat\s*\(/, "gpu_set_texrepeat(false);");
 }
 
 export function createGm2061Rule(entry: FeatherManifestEntry): Rule.RuleModule {
@@ -546,11 +478,5 @@ export function createGm2061Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 }
 
 export function createGm2064Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createFullTextRewriteRule(entry, (sourceText) => {
-        if (!/\bgpu_set_ztestenable\s*\(/.test(sourceText)) {
-            return sourceText;
-        }
-
-        return appendLineIfMissing(sourceText, "gpu_set_ztestenable(true);");
-    });
+    return createMissingResetRule(entry, /\bgpu_set_ztestenable\s*\(/, "gpu_set_ztestenable(true);");
 }
