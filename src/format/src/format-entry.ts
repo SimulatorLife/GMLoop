@@ -8,7 +8,6 @@
 import prettier, { type SupportLanguage, type SupportOptions } from "prettier";
 
 import {
-    defaultGmlFormatComponentImplementations,
     defaultGmlFormatProvider,
     type GmlFormat,
     type GmlFormatDefaultOptions,
@@ -57,26 +56,9 @@ function createDefaultOptions(provider: GmlFormatProvider): GmlFormatDefaultOpti
  * a provider to verify the high-level plugin only depends on the abstraction.
  */
 export function createGmlFormat(provider: GmlFormatProvider = defaultGmlFormatProvider): GmlFormat {
-    // Inject comment-subsystem helpers into the plugin options so the
-    // `printer/comment-print-boundary.ts` boundary can retrieve them via
-    // `options.gml.<helper>` without directly importing the comments
-    // adapter. (target-state.md §2.3)
-    const { printDanglingComments, printDanglingCommentsAsGroup, printComment } =
-        defaultGmlFormatComponentImplementations;
-
     const rawDefaultOptions = createDefaultOptions(provider);
     const defaultOptions: GmlFormatDefaultOptions = Object.freeze({
-        ...rawDefaultOptions,
-        // Canonical injectables for the printer's comment subsystems. These
-        // are part of the GmlFormatComponentContract and are retrieved by
-        // `src/format/src/printer/comment-print-boundary.ts` from
-        // `options.gml`, keeping that module free of direct
-        // cross-subsystem imports.
-        gml: Object.freeze({
-            printDanglingComments,
-            printDanglingCommentsAsGroup,
-            printComment
-        })
+        ...rawDefaultOptions
     });
 
     const plugin: GmlFormat = {

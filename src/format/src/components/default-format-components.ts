@@ -1,11 +1,6 @@
 import type { GameMakerAstNode } from "@gmloop/core";
 
-import {
-    handleComments,
-    printComment,
-    printDanglingComments,
-    printDanglingCommentsAsGroup
-} from "../comments/index.js";
+import { handleComments, printComment } from "../comments/index.js";
 import { LogicalOperatorsStyle } from "../options/logical-operators-style.js";
 import { gmlParserAdapter } from "../parsers/index.js";
 import { DEFAULT_PRINT_WIDTH, DEFAULT_TAB_WIDTH } from "../printer/constants.js";
@@ -20,21 +15,23 @@ import type { GmlFormatComponentBundle, GmlFormatComponentContract } from "./for
  * comment handlers. This is the single point where concrete adapters are
  * assembled into the component contract.
  *
- * Only helpers that the printer workspace actively resolves through the
- * dependency-injection boundary (see `printer/comment-print-boundary.ts`)
- * are wired here. Helpers that the printer imports directly from the
- * canonical modules — `buildPrintableDocCommentLines`,
- * `countTrailingBlankLines`, `getNextNonWhitespaceCharacter` — are not
- * exposed on the contract, so the contract reflects only what the boundary
- * actually consumes.
+ * The contract now only exposes the helpers that the high-level Prettier
+ * plugin wiring needs: the parser adapter, the printer entry point, the
+ * `printComment`/`handleComments` Prettier callbacks, and the
+ * `LogicalOperatorsStyle` map. The printer workspace imports the
+ * remaining comment helpers (`printDanglingComments`,
+ * `printDanglingCommentsAsGroup`) directly from
+ * `../comments/comment-printer.js`; the previous
+ * `printer/comment-print-boundary.ts` read-side indirection through
+ * `options.gml` was a backward-compatibility shim with no remaining
+ * callers and has been removed.
+ * (target-state.md §2.3, §3.2)
  */
 export const defaultGmlFormatComponentImplementations: GmlFormatComponentContract = Object.freeze({
     gmlParserAdapter,
     print,
     handleComments,
     printComment,
-    printDanglingComments,
-    printDanglingCommentsAsGroup,
     LogicalOperatorsStyle
 });
 
