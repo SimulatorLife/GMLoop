@@ -619,18 +619,11 @@ export class ScopeTracker implements ScipExportView {
     public exportOccurrences(
         includeReferences: boolean | { includeReferences?: boolean } = true
     ): ScopeOccurrencesSummary[] {
-        const includeRefs =
-            typeof includeReferences === "boolean" ? includeReferences : Boolean(includeReferences?.includeReferences);
-        const results: ScopeOccurrencesSummary[] = [];
-
-        for (const scope of this.scopesById.values()) {
-            const summary = this.buildScopeOccurrencesSummary(scope, includeRefs);
-            if (summary) {
-                results.push(summary);
-            }
-        }
-
-        return results;
+        // Delegate to the timestamp-filtered variant with the initial `-1` sentinel
+        // (Scope.lastModifiedTimestamp starts at -1 and is only set by markModified),
+        // so we include every scope that has occurrences regardless of when it was
+        // last touched.
+        return this.exportModifiedOccurrences(-1, includeReferences);
     }
 
     /**
