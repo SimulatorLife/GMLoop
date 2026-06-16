@@ -124,8 +124,7 @@ function toFeatherParityId(ruleId: FeatherRuleId): FeatherParityId {
 const FEATHER_MESSAGE_IDS = Object.freeze(["diagnostic", "unsafeFix", "missingProjectContext"] as const);
 const FEATHER_GML_AUTOFIX_CONFLICTS: Readonly<Partial<Record<FeatherParityId, ReadonlyArray<`gml/${string}`>>>> =
     Object.freeze({
-        GM1062: Object.freeze(["gml/normalize-doc-comments"] as const),
-        GM2061: Object.freeze(["gml/optimize-logical-flow"] as const)
+        GM1062: Object.freeze(["gml/normalize-doc-comments"] as const)
     });
 const ALWAYS_FIXABLE_FEATHER_IDS: ReadonlySet<FeatherParityId> = new Set(["GM1033", "GM1051", "GM2007"]);
 const REPORT_ONLY_FEATHER_IDS: ReadonlySet<FeatherParityId> = new Set([

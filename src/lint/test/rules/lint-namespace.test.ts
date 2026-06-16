@@ -103,7 +103,8 @@ void test("config arrays are readonly FlatConfig[] values and share the pinned f
     assertEquals(recommendedFeather.rules["feather/gm2004"], "warn");
     assertEquals(recommendedFeather.rules["feather/gm2007"], "warn");
     assertEquals(recommendedFeather.rules["feather/gm2020"], "warn");
-    assertEquals(Object.keys(recommendedFeather.rules).length, 13);
+    assertEquals(recommendedFeather.rules["feather/gm2061"], "warn");
+    assertEquals(Object.keys(recommendedFeather.rules).length, 14);
 
     const [featherOverlay] = Lint.configs.feather;
     assertEquals(featherOverlay.plugins?.feather, Lint.featherPlugin);

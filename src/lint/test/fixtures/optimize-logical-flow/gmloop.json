@@ -1,6 +1,7 @@
 {
   "lintRules": {
-    "gml/optimize-logical-flow": "error"
+    "gml/optimize-logical-flow": "error",
+    "feather/gm2061": "error"
   },
   "fixture": {
     "kind": "lint",

@@ -531,6 +531,17 @@ export function createGm2056Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 
 export function createGm2061Rule(entry: FeatherManifestEntry): Rule.RuleModule {
     return createFullTextRewriteRule(entry, (sourceText) => {
+        const assignmentTargetPattern = String.raw`[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*|\[[^\]\n]+\])*`;
+        const undefinedCheckPattern = String.raw`(?:is_undefined\s*\(\s*(${assignmentTargetPattern})\s*\)|(${assignmentTargetPattern})\s*==\s*undefined|undefined\s*==\s*(${assignmentTargetPattern}))`;
+        const inlineUndefinedGuardPattern = new RegExp(
+            String.raw`^([ \t]*)if\s*\(\s*${undefinedCheckPattern}\s*\)\s*(${assignmentTargetPattern})\s*=\s*(.+?)\s*;\s*$`,
+            "gm"
+        );
+        const blockUndefinedGuardPattern = new RegExp(
+            String.raw`^([ \t]*)if\s*\(\s*${undefinedCheckPattern}\s*\)\s*\{\s*\n\1[ \t]+(${assignmentTargetPattern})\s*=\s*(.+?)\s*;\s*\n\1\}\s*$`,
+            "gm"
+        );
+
         let rewritten = sourceText.replaceAll(
             /^([ \t]*)([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+?)\s*;\s*\n\1if\s*\(\s*\2\s*==\s*undefined\s*\)\s*\2\s*=\s*(.+?)\s*;\s*$/gm,
             (_fullMatch, indentation: string, target: string, expression: string, fallback: string) =>
@@ -541,6 +552,42 @@ export function createGm2061Rule(entry: FeatherManifestEntry): Rule.RuleModule {
             /^([ \t]*)([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+?)\s*;\s*\n\1if\s*\(\s*(?:\2\s*==\s*undefined|is_undefined\s*\(\s*\2\s*\))\s*\)\s*\{\s*\n\1[ \t]+\2\s*=\s*(.+?)\s*;\s*\n\1\}\s*$/gm,
             (_fullMatch, indentation: string, target: string, expression: string, fallback: string) =>
                 `${indentation}${target} = ${expression} ?? ${fallback};`
+        );
+
+        rewritten = rewritten.replaceAll(
+            inlineUndefinedGuardPattern,
+            (
+                fullMatch: string,
+                indentation: string,
+                callTarget: string | undefined,
+                leftComparisonTarget: string | undefined,
+                rightComparisonTarget: string | undefined,
+                assignmentTarget: string,
+                fallback: string
+            ) => {
+                const checkedTarget = callTarget ?? leftComparisonTarget ?? rightComparisonTarget;
+                return checkedTarget === assignmentTarget
+                    ? `${indentation}${assignmentTarget} ??= ${fallback};`
+                    : fullMatch;
+            }
+        );
+
+        rewritten = rewritten.replaceAll(
+            blockUndefinedGuardPattern,
+            (
+                fullMatch: string,
+                indentation: string,
+                callTarget: string | undefined,
+                leftComparisonTarget: string | undefined,
+                rightComparisonTarget: string | undefined,
+                assignmentTarget: string,
+                fallback: string
+            ) => {
+                const checkedTarget = callTarget ?? leftComparisonTarget ?? rightComparisonTarget;
+                return checkedTarget === assignmentTarget
+                    ? `${indentation}${assignmentTarget} ??= ${fallback};`
+                    : fullMatch;
+            }
         );
 
         if (rewritten !== sourceText && !rewritten.endsWith("\n")) {

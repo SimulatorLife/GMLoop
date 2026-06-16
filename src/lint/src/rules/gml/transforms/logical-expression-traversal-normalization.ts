@@ -329,35 +329,6 @@ function simplifyIfStatement(node: any): boolean {
         return false;
     }
 
-    // Rules 4 & 5 (no else branch):
-    // 4. if (is_undefined(x)) x = y; -> x ??= y;
-    // 5. if (x == undefined) x = y; -> x ??= y;
-    const assignment = getAssignmentExpressionFromStatementLikeNode(consequent);
-    if (!assignment || assignment.operator !== "=") {
-        return false;
-    }
-
-    const target = assignment.left;
-    const value = assignment.right;
-
-    if (isUndefinedCheck(node.test, target)) {
-        // x ??= value;
-        const coalesceAssign = {
-            type: "AssignmentExpression",
-            operator: "??=",
-            left: target,
-            right: value
-        };
-        const statement = {
-            type: "ExpressionStatement",
-            expression: coalesceAssign,
-            start: node.start,
-            end: node.end
-        };
-        replaceNode(node, statement);
-        return true;
-    }
-
     return false;
 }
 
@@ -442,51 +413,6 @@ function unwrapBlock(node: any): any {
         return node.body[0];
     }
     return node;
-}
-
-function isUndefinedCheck(condition: any, target: any): boolean {
-    while (condition && condition.type === "ParenthesizedExpression") {
-        condition = condition.expression;
-    }
-
-    if (!condition || typeof condition !== "object") {
-        return false;
-    }
-
-    const callee = condition?.callee ?? condition?.object;
-
-    // is_undefined(target)
-    if (
-        condition.type === "CallExpression" &&
-        callee &&
-        callee.type === "Identifier" &&
-        callee.name === "is_undefined" &&
-        condition.arguments.length === 1
-    ) {
-        return nodesRecursiveEqual(condition.arguments[0], target);
-    }
-
-    // target == undefined
-    if (condition.type === "BinaryExpression" && condition.operator === "==") {
-        const leftUndefined =
-            condition.left &&
-            ((condition.left.type === "Identifier" && condition.left.name === "undefined") ||
-                (condition.left.type === "Literal" &&
-                    (condition.left.value === undefined || condition.left.value === "undefined")));
-        const rightUndefined =
-            condition.right &&
-            ((condition.right.type === "Identifier" && condition.right.name === "undefined") ||
-                (condition.right.type === "Literal" &&
-                    (condition.right.value === undefined || condition.right.value === "undefined")));
-
-        if (nodesRecursiveEqual(condition.left, target) && rightUndefined) {
-            return true;
-        }
-        if (nodesRecursiveEqual(condition.right, target) && leftUndefined) {
-            return true;
-        }
-    }
-    return false;
 }
 
 function nodesRecursiveEqual(a: any, b: any): boolean {

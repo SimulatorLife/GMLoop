@@ -1780,7 +1780,7 @@ void test("optimize-logical-flow collapses boolean passthrough if/return pattern
     );
 });
 
-void test("optimize-logical-flow rewrites both undefined guard forms to ??=", () => {
+void test("feather/gm2061 rewrites both undefined guard forms to ??=", () => {
     const input = [
         "function ensure_cache(cache_entry) {",
         "    if (is_undefined(cache_entry)) {",
@@ -1803,9 +1803,28 @@ void test("optimize-logical-flow rewrites both undefined guard forms to ??=", ()
         ""
     ].join("\n");
 
-    const result = lintWithRule("optimize-logical-flow", input, {});
-    assert.ok(result.messages.length > 0, "optimize-logical-flow should report diagnostics");
+    const result = lintWithRule("gm2061", input, {}, Lint.featherPlugin.rules);
+    assert.ok(result.messages.length > 0, "feather/gm2061 should report diagnostics");
     assertEquals(result.output, expected);
+});
+
+void test("optimize-logical-flow does not own Feather GM2061 nullish guard fixes", () => {
+    const input = [
+        "function ensure_cache(cache_entry) {",
+        "    if (is_undefined(cache_entry)) {",
+        "        cache_entry = ds_map_create();",
+        "    }",
+        "",
+        "    if (cache_entry == undefined) {",
+        "        cache_entry = ds_map_create();",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("optimize-logical-flow", input, {});
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
 });
 
 void test("optimize-logical-flow simplifies boolean literal comparisons in if conditions", () => {

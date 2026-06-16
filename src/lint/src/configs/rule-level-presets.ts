@@ -58,7 +58,8 @@ const RECOMMENDED_SAFE_FEATHER_RULES: Readonly<Record<`feather/${string}`, LintR
     "feather/gm1056": "warn",
     "feather/gm2004": "warn",
     "feather/gm2007": "warn",
-    "feather/gm2020": "warn"
+    "feather/gm2020": "warn",
+    "feather/gm2061": "warn"
 });
 
 const FEATHER_RULES: Readonly<Record<`feather/${string}`, LintRuleLevel>> = Object.freeze(

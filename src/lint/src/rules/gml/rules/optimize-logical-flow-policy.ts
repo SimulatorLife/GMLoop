@@ -212,8 +212,6 @@ export function evaluateIsIfNodeInElseIfChain(node: unknown): boolean {
  * - `if (cond) return true; else return false;` → `return cond;`
  * - `if (cond) return false; else return true;` → `return !cond;`
  * - `if (cond) x = A; else x = B;` → `x = cond ? A : B;`
- * - `if (is_undefined(x)) x = y;` → `x ??= y;`
- * - `if (x == undefined) x = y;` → `x ??= y;`
  *
  * The evaluator only inspects shape; it does not mutate the AST.
  */
@@ -265,11 +263,6 @@ export function evaluateCanIfStatementBenefitFromNormalization(node: unknown): b
             if (consequentExpr && alternateExpr && consequentExpr.operator === "=" && alternateExpr.operator === "=") {
                 return evaluateAreComparableAssignmentTargetsEquivalent(consequentExpr.left, alternateExpr.left);
             }
-        }
-    } else if (consequentBody.length === 1) {
-        const assignmentExpr = readAssignmentExpr(consequentBody[0]);
-        if (assignmentExpr && assignmentExpr.operator === "=") {
-            return evaluateIsUndefinedCheckAgainstTarget((ifNode as { test?: unknown }).test, assignmentExpr.left);
         }
     }
 

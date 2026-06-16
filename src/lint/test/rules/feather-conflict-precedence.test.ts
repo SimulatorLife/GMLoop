@@ -38,7 +38,7 @@ void test("conflict registry records Feather-owned overlaps without stripping Fe
     );
 
     assert.deepEqual(conflictsByRuleId.get("feather/gm1062"), ["gml/normalize-doc-comments"]);
-    assert.deepEqual(conflictsByRuleId.get("feather/gm2061"), ["gml/optimize-logical-flow"]);
+    assert.deepEqual(conflictsByRuleId.get("feather/gm2061"), []);
     assert.equal(LintWorkspace.Lint.featherPlugin.rules.gm1062.meta?.fixable, "code");
     assert.equal(LintWorkspace.Lint.featherPlugin.rules.gm2061.meta?.fixable, "code");
 });
@@ -73,7 +73,7 @@ void test("documentation conflict reports in both namespaces and Feather owns th
     assert.notEqual(gmlResult.output, sourceText);
 });
 
-void test("logical-flow conflict converges with Feather owning the official diagnostic fix", async () => {
+void test("migrated logical-flow nullish fix is owned only by Feather GM2061", async () => {
     const sourceText = ["array = modify_array(array);", "if (array == undefined) array = [];", ""].join("\n");
     const bothRules = {
         "gml/optimize-logical-flow": "warn",
@@ -83,7 +83,7 @@ void test("logical-flow conflict converges with Feather owning the official diag
     const diagnosticResult = await lintSource(sourceText, bothRules, false);
     assert.deepEqual(
         new Set(diagnosticResult.messages.map((message) => message.ruleId)),
-        new Set(["gml/optimize-logical-flow", "feather/gm2061"])
+        new Set(["feather/gm2061"])
     );
 
     const featherResult = await lintSource(sourceText, { "feather/gm2061": "warn" }, true);
