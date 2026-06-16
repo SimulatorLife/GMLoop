@@ -62,7 +62,11 @@ export function createGm1000Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 
 export function createGm1002Rule(entry: FeatherManifestEntry): Rule.RuleModule {
     return createFullTextRewriteRule(entry, (sourceText) =>
-        sourceText.replaceAll(/global\.(\w+)\s*=/g, (_fullMatch, identifier: string) => `${identifier} =`)
+        sourceText.replaceAll(
+            /^([ \t]*)globalvar\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^;\r\n]+);/gmu,
+            (_fullMatch, indentation: string, identifier: string, initializer: string) =>
+                `${indentation}globalvar ${identifier};\n${indentation}${identifier} = ${initializer};`
+        )
     );
 }
 
@@ -320,15 +324,24 @@ export function createGm1015Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 }
 
 export function createGm1021Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createFullTextRewriteRule(entry, (sourceText) =>
-        sourceText.replaceAll(
-            /function\s+([A-Za-z_][A-Za-z0-9_]*)\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*\{([\s\S]*?)\n\}/g,
-            (_fullMatch, functionName: string, parameterName: string, body: string) => {
-                const rewrittenBody = body.replaceAll(/\bargument\s*\[\s*0\s*\]/g, parameterName);
-                return `function ${functionName}(${parameterName}) {${rewrittenBody}\n}`;
-            }
-        )
-    );
+    return Object.freeze({
+        meta: createFeatherRuleMeta(entry),
+        create(context) {
+            return Object.freeze({
+                Program() {
+                    const sourceText = context.sourceCode.text;
+                    const callMatch = /\b[A-Za-z_][A-Za-z0-9_]*\s*\(/u.exec(sourceText);
+                    if (!callMatch) {
+                        return;
+                    }
+                    context.report({
+                        loc: resolveLocFromIndex(context, sourceText, callMatch.index),
+                        messageId: "missingProjectContext"
+                    });
+                }
+            });
+        }
+    });
 }
 
 export function createGm1026Rule(entry: FeatherManifestEntry): Rule.RuleModule {
@@ -472,6 +485,18 @@ export function createGm1054Rule(entry: FeatherManifestEntry): Rule.RuleModule {
     });
 }
 
+export function createGm1055Rule(entry: FeatherManifestEntry): Rule.RuleModule {
+    return createFullTextRewriteRule(entry, (sourceText) =>
+        sourceText.replaceAll(
+            /function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*\{([\s\S]*?)\n\}/g,
+            (_fullMatch, functionName: string, parameterName: string, body: string) => {
+                const rewrittenBody = body.replaceAll(/\bargument(?:0|\[\s*0\s*\])/gu, parameterName);
+                return `function ${functionName}(${parameterName}) {${rewrittenBody}\n}`;
+            }
+        )
+    );
+}
+
 export function createGm1058Rule(entry: FeatherManifestEntry): Rule.RuleModule {
     return createFullTextRewriteRule(entry, (sourceText) => {
         const constructorCalls = new Set<string>();
@@ -518,55 +543,23 @@ export function createGm1063Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 }
 
 export function createGm1064Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createFullTextRewriteRule(entry, (sourceText) => {
-        const seenFunctionNames = new Set<string>();
-        const functionPattern = /function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^)]*\)\s*\{/g;
-        const removals: Array<[number, number]> = [];
-
-        for (const match of sourceText.matchAll(functionPattern)) {
-            const functionName = match[1];
-            const start = match.index ?? 0;
-            const openBraceIndex = sourceText.indexOf("{", start);
-            if (openBraceIndex === -1) {
-                continue;
-            }
-
-            let depth = 1;
-            let end = openBraceIndex + 1;
-            while (end < sourceText.length && depth > 0) {
-                const character = sourceText[end];
-                if (character === "{") {
-                    depth += 1;
-                } else if (character === "}") {
-                    depth -= 1;
+    return Object.freeze({
+        meta: createFeatherRuleMeta(entry),
+        create(context) {
+            return Object.freeze({
+                Program() {
+                    const sourceText = context.sourceCode.text;
+                    const functionMatch = /\bfunction\s+[A-Za-z_][A-Za-z0-9_]*\s*\(/u.exec(sourceText);
+                    if (!functionMatch) {
+                        return;
+                    }
+                    context.report({
+                        loc: resolveLocFromIndex(context, sourceText, functionMatch.index),
+                        messageId: "missingProjectContext"
+                    });
                 }
-                end += 1;
-            }
-
-            if (!seenFunctionNames.has(functionName)) {
-                seenFunctionNames.add(functionName);
-                continue;
-            }
-
-            let removalEnd = end;
-            while (removalEnd < sourceText.length && /\s/.test(sourceText[removalEnd])) {
-                removalEnd += 1;
-            }
-            removals.push([start, removalEnd]);
+            });
         }
-
-        if (removals.length === 0) {
-            return sourceText;
-        }
-
-        let rewritten = "";
-        let cursor = 0;
-        for (const [start, end] of removals) {
-            rewritten += sourceText.slice(cursor, start);
-            cursor = end;
-        }
-        rewritten += sourceText.slice(cursor);
-        return rewritten;
     });
 }
 

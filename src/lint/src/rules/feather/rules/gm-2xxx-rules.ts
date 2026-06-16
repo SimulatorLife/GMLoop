@@ -1,6 +1,12 @@
 import type { Rule } from "eslint";
 
-import { appendLineIfMissing, createFullTextRewriteRule, createMissingResetRule } from "../feather-rule-helpers.js";
+import { gmlRuleBaseHelpersServices } from "../../gml/gml-rule-services.js";
+import {
+    appendLineIfMissing,
+    createFeatherRuleMeta,
+    createFullTextRewriteRule,
+    createMissingResetRule
+} from "../feather-rule-helpers.js";
 import {
     DUPLICATE_GPU_POP_STATE_PATTERN,
     DUPLICATE_GPU_PUSH_STATE_PATTERN,
@@ -8,6 +14,8 @@ import {
     VERTEX_BEGIN_WITHOUT_END_PATTERN
 } from "../feather-rule-patterns.js";
 import type { FeatherManifestEntry } from "../manifest.js";
+
+const { resolveLocFromIndex } = gmlRuleBaseHelpersServices;
 
 export function createGm2000Rule(entry: FeatherManifestEntry): Rule.RuleModule {
     return createMissingResetRule(entry, /\bgpu_set_blendmode\s*\(/, "gpu_set_blendmode(bm_normal);");
@@ -162,11 +170,47 @@ export function createGm2020Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 }
 
 export function createGm2023Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createMissingResetRule(entry, /\bdraw_set_alpha\s*\(/, "draw_set_alpha(1);");
+    return Object.freeze({
+        meta: createFeatherRuleMeta(entry),
+        create(context) {
+            return Object.freeze({
+                Program() {
+                    const sourceText = context.sourceCode.text;
+                    for (const match of sourceText.matchAll(/\b[A-Za-z_][A-Za-z0-9_]*\s*\(([^;\n]*)\)/gu)) {
+                        const argumentText = match[1] ?? "";
+                        if ([...argumentText.matchAll(/\b[A-Za-z_][A-Za-z0-9_]*\s*\(/gu)].length < 2) {
+                            continue;
+                        }
+                        context.report({
+                            loc: resolveLocFromIndex(context, sourceText, match.index ?? 0),
+                            messageId: "diagnostic"
+                        });
+                    }
+                }
+            });
+        }
+    });
 }
 
 export function createGm2025Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createMissingResetRule(entry, /\bdraw_set_color\s*\(/, "draw_set_color(c_white);");
+    return Object.freeze({
+        meta: createFeatherRuleMeta(entry),
+        create(context) {
+            return Object.freeze({
+                Program() {
+                    const sourceText = context.sourceCode.text;
+                    const eventMatch = /\bevent_user\s*\(/u.exec(sourceText);
+                    if (!eventMatch) {
+                        return;
+                    }
+                    context.report({
+                        loc: resolveLocFromIndex(context, sourceText, eventMatch.index),
+                        messageId: "missingProjectContext"
+                    });
+                }
+            });
+        }
+    });
 }
 
 export function createGm2026Rule(entry: FeatherManifestEntry): Rule.RuleModule {
@@ -298,7 +342,24 @@ export function createGm2035Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 }
 
 export function createGm2040Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createMissingResetRule(entry, /\bgpu_set_zwriteenable\s*\(/, "gpu_set_zwriteenable(true);");
+    return Object.freeze({
+        meta: createFeatherRuleMeta(entry),
+        create(context) {
+            return Object.freeze({
+                Program() {
+                    const sourceText = context.sourceCode.text;
+                    const inheritedMatch = /\bevent_inherited\s*\(\s*\)/u.exec(sourceText);
+                    if (!inheritedMatch) {
+                        return;
+                    }
+                    context.report({
+                        loc: resolveLocFromIndex(context, sourceText, inheritedMatch.index),
+                        messageId: "missingProjectContext"
+                    });
+                }
+            });
+        }
+    });
 }
 
 export function createGm2042Rule(entry: FeatherManifestEntry): Rule.RuleModule {
@@ -384,6 +445,15 @@ export function createGm2046Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 
 export function createGm2048Rule(entry: FeatherManifestEntry): Rule.RuleModule {
     return createMissingResetRule(entry, /\bgpu_set_blendenable\s*\(/, "gpu_set_blendenable(true);");
+}
+
+export function createGm2049Rule(entry: FeatherManifestEntry): Rule.RuleModule {
+    return createFullTextRewriteRule(entry, (sourceText) => {
+        if (!/\bgpu_set_zfunc\s*\(\s*(?!cmpfunc_lessequal\b)[^)]+\)/u.test(sourceText)) {
+            return sourceText;
+        }
+        return appendLineIfMissing(sourceText, "gpu_set_zfunc(cmpfunc_lessequal);");
+    });
 }
 
 export function createGm2050Rule(entry: FeatherManifestEntry): Rule.RuleModule {
@@ -477,6 +547,42 @@ export function createGm2061Rule(entry: FeatherManifestEntry): Rule.RuleModule {
     });
 }
 
+export function createGm2062Rule(entry: FeatherManifestEntry): Rule.RuleModule {
+    return createFullTextRewriteRule(entry, (sourceText) => {
+        const setterMatch = /\bdraw_set_(colour|color)\s*\(\s*(?!c_white\b)[^)]+\)/u.exec(sourceText);
+        if (!setterMatch) {
+            return sourceText;
+        }
+        return appendLineIfMissing(sourceText, `draw_set_${setterMatch[1]}(c_white);`);
+    });
+}
+
+export function createGm2063Rule(entry: FeatherManifestEntry): Rule.RuleModule {
+    return createFullTextRewriteRule(entry, (sourceText) => {
+        if (!/\bdraw_set_alpha\s*\(\s*(?!1(?:\.0*)?\s*\))[^)]+\)/u.test(sourceText)) {
+            return sourceText;
+        }
+        return appendLineIfMissing(sourceText, "draw_set_alpha(1);");
+    });
+}
+
 export function createGm2064Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return createMissingResetRule(entry, /\bgpu_set_ztestenable\s*\(/, "gpu_set_ztestenable(true);");
+    return Object.freeze({
+        meta: createFeatherRuleMeta(entry),
+        create(context) {
+            return Object.freeze({
+                Program() {
+                    const sourceText = context.sourceCode.text;
+                    const instanceCreateMatch = /\binstance_create_(?:depth|layer)\s*\([^;]*\{/u.exec(sourceText);
+                    if (!instanceCreateMatch) {
+                        return;
+                    }
+                    context.report({
+                        loc: resolveLocFromIndex(context, sourceText, instanceCreateMatch.index),
+                        messageId: "missingProjectContext"
+                    });
+                }
+            });
+        }
+    });
 }

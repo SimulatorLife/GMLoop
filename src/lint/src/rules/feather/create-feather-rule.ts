@@ -34,6 +34,7 @@ import {
     createGm1051Rule,
     createGm1052Rule,
     createGm1054Rule,
+    createGm1055Rule,
     createGm1056Rule,
     createGm1058Rule,
     createGm1059Rule,
@@ -68,6 +69,7 @@ import {
     createGm2044Rule,
     createGm2046Rule,
     createGm2048Rule,
+    createGm2049Rule,
     createGm2050Rule,
     createGm2051Rule,
     createGm2052Rule,
@@ -75,6 +77,8 @@ import {
     createGm2054Rule,
     createGm2056Rule,
     createGm2061Rule,
+    createGm2062Rule,
+    createGm2063Rule,
     createGm2064Rule
 } from "./rules/index.js";
 
@@ -106,6 +110,7 @@ const featherRuleFactoriesById: ReadonlyMap<string, FeatherRuleFactory> = new Ma
     ["GM1051", createGm1051Rule],
     ["GM1052", createGm1052Rule],
     ["GM1054", createGm1054Rule],
+    ["GM1055", createGm1055Rule],
     ["GM1058", createGm1058Rule],
     ["GM1063", createGm1063Rule],
     ["GM1064", createGm1064Rule],
@@ -144,6 +149,7 @@ const featherRuleFactoriesById: ReadonlyMap<string, FeatherRuleFactory> = new Ma
     ["GM2044", createGm2044Rule],
     ["GM2046", createGm2046Rule],
     ["GM2048", createGm2048Rule],
+    ["GM2049", createGm2049Rule],
     ["GM2050", createGm2050Rule],
     ["GM2051", createGm2051Rule],
     ["GM2052", createGm2052Rule],
@@ -151,6 +157,8 @@ const featherRuleFactoriesById: ReadonlyMap<string, FeatherRuleFactory> = new Ma
     ["GM2054", createGm2054Rule],
     ["GM2056", createGm2056Rule],
     ["GM2061", createGm2061Rule],
+    ["GM2062", createGm2062Rule],
+    ["GM2063", createGm2063Rule],
     ["GM2064", createGm2064Rule]
 ]);
 

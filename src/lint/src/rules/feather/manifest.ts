@@ -54,6 +54,7 @@ const FEATHER_PARITY_IDS: ReadonlyArray<FeatherParityId> = Object.freeze([
     "GM1051",
     "GM1052",
     "GM1054",
+    "GM1055",
     "GM1056",
     "GM1058",
     "GM1059",
@@ -88,6 +89,7 @@ const FEATHER_PARITY_IDS: ReadonlyArray<FeatherParityId> = Object.freeze([
     "GM2044",
     "GM2046",
     "GM2048",
+    "GM2049",
     "GM2050",
     "GM2051",
     "GM2052",
@@ -95,6 +97,8 @@ const FEATHER_PARITY_IDS: ReadonlyArray<FeatherParityId> = Object.freeze([
     "GM2054",
     "GM2056",
     "GM2061",
+    "GM2062",
+    "GM2063",
     "GM2064"
 ]);
 
@@ -123,7 +127,52 @@ const FEATHER_GML_AUTOFIX_CONFLICTS: Readonly<Partial<Record<FeatherParityId, Re
         GM1062: Object.freeze(["gml/normalize-doc-comments"] as const),
         GM2061: Object.freeze(["gml/optimize-logical-flow"] as const)
     });
-const REPORT_ONLY_FEATHER_IDS: ReadonlySet<FeatherParityId> = new Set(["GM1054", "GM1062", "GM2061"]);
+const ALWAYS_FIXABLE_FEATHER_IDS: ReadonlySet<FeatherParityId> = new Set(["GM1033", "GM1051", "GM2007"]);
+const REPORT_ONLY_FEATHER_IDS: ReadonlySet<FeatherParityId> = new Set([
+    "GM1004",
+    "GM1005",
+    "GM1007",
+    "GM1014",
+    "GM1015",
+    "GM1021",
+    "GM1026",
+    "GM1034",
+    "GM1038",
+    "GM1054",
+    "GM1059",
+    "GM1062",
+    "GM1063",
+    "GM1064",
+    "GM1100",
+    "GM2012",
+    "GM2015",
+    "GM2023",
+    "GM2025",
+    "GM2029",
+    "GM2033",
+    "GM2040",
+    "GM2061",
+    "GM2064"
+]);
+const PROJECT_CONTEXT_FEATHER_IDS: ReadonlySet<FeatherParityId> = new Set([
+    "GM1021",
+    "GM1038",
+    "GM1054",
+    "GM1064",
+    "GM2025",
+    "GM2040",
+    "GM2064"
+]);
+
+function resolveFixability(id: FeatherParityId): FeatherFixability {
+    if (REPORT_ONLY_FEATHER_IDS.has(id)) {
+        return "none";
+    }
+    if (ALWAYS_FIXABLE_FEATHER_IDS.has(id)) {
+        return "always";
+    }
+    return "safe-only";
+}
 
 const entries: ReadonlyArray<FeatherManifestEntry> = Object.freeze(
     FEATHER_PARITY_IDS.map((id) => {
@@ -138,8 +187,8 @@ const entries: ReadonlyArray<FeatherManifestEntry> = Object.freeze(
                 return ruleId;
             })(),
             defaultSeverity: "warn",
-            fixability: REPORT_ONLY_FEATHER_IDS.has(id) ? "none" : "always",
-            requiresProjectContext: false,
+            fixability: resolveFixability(id),
+            requiresProjectContext: PROJECT_CONTEXT_FEATHER_IDS.has(id),
             fixScope: "local-only",
             conflictingGmlRuleIds,
             messageIds: FEATHER_MESSAGE_IDS

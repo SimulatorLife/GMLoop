@@ -10,11 +10,11 @@ function createRuleEntriesCacheKey(ruleEntries: Record<string, unknown>): string
     return JSON.stringify(serializedEntries);
 }
 
-function createSingleRuleFixtureConfig(config: Record<string, unknown>) {
+function createFixtureRuleConfig(config: Record<string, unknown>) {
     const ruleEntries = createLintRuleEntriesFromProjectConfig(config);
     const enabledRuleIds = Object.keys(ruleEntries);
-    if (enabledRuleIds.length !== 1) {
-        throw new Error(`Lint fixture config must enable exactly one rule, received ${enabledRuleIds.length}.`);
+    if (enabledRuleIds.length === 0) {
+        throw new Error("Lint fixture config must enable at least one rule.");
     }
 
     return ruleEntries;
@@ -36,7 +36,7 @@ export function createLintFixtureAdapter(): FixtureAdapter {
             return kind === "lint";
         },
         async run({ fixtureCase, config, inputText, runProfiledStage }) {
-            const ruleEntries = createSingleRuleFixtureConfig(config);
+            const ruleEntries = createFixtureRuleConfig(config);
             const cacheKey = createRuleEntriesCacheKey(ruleEntries);
             const cachedEslint = eslintByRuleConfigKey.get(cacheKey);
             const eslint =

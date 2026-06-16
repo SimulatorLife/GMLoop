@@ -1,6 +1,7 @@
 {
   "lintRules": {
-    "feather/gm2023": "error"
+    "feather/gm2023": "error",
+    "feather/gm2063": "error"
   },
   "fixture": {
     "kind": "lint",

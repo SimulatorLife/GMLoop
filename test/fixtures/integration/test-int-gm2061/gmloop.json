@@ -1,7 +1,7 @@
 {
   "printWidth": 120,
   "lintRules": {
-    "feather/gm2061": "error"
+    "gml/optimize-logical-flow": "error"
   },
   "fixture": {
     "kind": "integration",

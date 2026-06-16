@@ -29,6 +29,8 @@ import { createRemoveDefaultCommentsRule } from "./rules/remove-default-comments
 import { createRequireArgumentSeparatorsRule } from "./rules/require-argument-separators-rule.js";
 import { createRequireControlFlowBracesRule } from "./rules/require-control-flow-braces-rule.js";
 import { createRequireRegionPairsRule } from "./rules/require-region-pairs-rule.js";
+import { createRequireZtestEnabledResetRule } from "./rules/require-ztest-enabled-reset-rule.js";
+import { createRequireZwriteEnabledResetRule } from "./rules/require-zwrite-enabled-reset-rule.js";
 import { createSimplifyRealCallsRule } from "./rules/simplify-real-calls-rule.js";
 
 type GmlRuleFactory = (definition: GmlRuleDefinition) => Rule.RuleModule;
@@ -54,6 +56,8 @@ const gmlRuleFactoriesByShortName = Object.freeze(
         ["normalize-directives", createNormalizeDirectivesRule],
         ["require-control-flow-braces", createRequireControlFlowBracesRule],
         ["require-region-pairs", createRequireRegionPairsRule],
+        ["require-zwrite-enabled-reset", createRequireZwriteEnabledResetRule],
+        ["require-ztest-enabled-reset", createRequireZtestEnabledResetRule],
         ["no-assignment-in-condition", createNoAssignmentInConditionRule],
         ["prefer-is-undefined-check", createPreferIsUndefinedCheckRule],
         ["prefer-epsilon-comparisons", createPreferEpsilonComparisonsRule],

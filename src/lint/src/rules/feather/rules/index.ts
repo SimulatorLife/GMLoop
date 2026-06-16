@@ -32,6 +32,7 @@ export {
     createGm1051Rule,
     createGm1052Rule,
     createGm1054Rule,
+    createGm1055Rule,
     createGm1058Rule,
     createGm1063Rule,
     createGm1064Rule,
@@ -64,6 +65,7 @@ export {
     createGm2044Rule,
     createGm2046Rule,
     createGm2048Rule,
+    createGm2049Rule,
     createGm2050Rule,
     createGm2051Rule,
     createGm2052Rule,
@@ -71,6 +73,8 @@ export {
     createGm2054Rule,
     createGm2056Rule,
     createGm2061Rule,
+    createGm2062Rule,
+    createGm2063Rule,
     createGm2064Rule
 } from "./gm-2xxx-rules.js";
 export { createGm1028Rule } from "./gm1028-rule.js";

@@ -165,6 +165,18 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         messageId: "requireRegionPairs"
     },
     {
+        mapKey: "GmlRequireZwriteEnabledReset",
+        shortName: "require-zwrite-enabled-reset",
+        fullId: "gml/require-zwrite-enabled-reset",
+        messageId: "requireZwriteEnabledReset"
+    },
+    {
+        mapKey: "GmlRequireZtestEnabledReset",
+        shortName: "require-ztest-enabled-reset",
+        fullId: "gml/require-ztest-enabled-reset",
+        messageId: "requireZtestEnabledReset"
+    },
+    {
         mapKey: "GmlNoAssignmentInCondition",
         shortName: "no-assignment-in-condition",
         fullId: "gml/no-assignment-in-condition",

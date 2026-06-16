@@ -28,7 +28,9 @@ export function createFeatherRuleMeta(entry: FeatherManifestEntry): Rule.RuleMet
         }),
         schema: Object.freeze([]),
         messages: Object.freeze({
-            diagnostic: `${entry.ruleId} diagnostic.`
+            diagnostic: `${entry.ruleId} diagnostic.`,
+            unsafeFix: "[unsafe-fix:SEMANTIC_AMBIGUITY] Unsafe fix omitted.",
+            missingProjectContext: `${entry.ruleId} requires project context for a definitive diagnostic.`
         })
     };
     if (entry.fixability !== "none") {
