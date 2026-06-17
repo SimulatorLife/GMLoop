@@ -24,6 +24,7 @@ class TestableGmGraphPanel extends GmGraphPanel {
 
 function createGraphModel(): GraphVisualizationUiModel {
     return {
+        autoGamePipeline: null,
         data: {
             edges: [
                 {

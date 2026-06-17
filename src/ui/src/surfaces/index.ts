@@ -1,7 +1,16 @@
 /**
  * Supported top-level UI surface identifiers.
  */
-export type UISurfaceId = "ast" | "config" | "docs" | "fix" | "graph" | "live-reload" | "mcp" | "rules" | "playground";
+export type UISurfaceId =
+    | "ast"
+    | "config"
+    | "docs"
+    | "fix"
+    | "graph"
+    | "live-reload"
+    | "auto-game"
+    | "rules"
+    | "playground";
 
 /**
  * Delivery status for a top-level UI surface.
@@ -62,8 +71,8 @@ export const UI_SURFACE_DEFINITIONS: ReadonlyArray<UISurfaceDefinition> = Object
         status: "implemented"
     },
     {
-        description: "MCP server status and tool-access surface for connected automation workflows.",
-        id: "mcp",
+        description: "Auto-game creation pipeline surface with AI skill, history, LLM output, and MCP visibility.",
+        id: "auto-game",
         owningWorkspace: UI_OWNING_WORKSPACE,
         status: "implemented"
     },

@@ -54,7 +54,7 @@ const PAGE_MAIN_SECTION_ID: Readonly<Record<GraphVisualizationUiPage, string>> =
     fix: "fix-page",
     graph: "graph-page",
     "live-reload": "live-reload-page",
-    mcp: "mcp-page",
+    "auto-game": "auto-game-page",
     playground: "playground-page"
 });
 
@@ -376,7 +376,7 @@ export class GmAppShell extends LightDomLitElement {
                     <gm-docs-panel .model=${this.model} .state=${this.#state}></gm-docs-panel>
                     <gm-config-panel .model=${this.model} .state=${this.#state}></gm-config-panel>
                     <gm-fix-panel .model=${this.model} .state=${this.#state}></gm-fix-panel>
-                    <gm-mcp-panel .model=${this.model} .state=${this.#state}></gm-mcp-panel>
+                    <gm-auto-game-panel .model=${this.model} .state=${this.#state}></gm-auto-game-panel>
                     <gm-live-reload-panel .model=${this.model} .state=${this.#state}></gm-live-reload-panel>
                 </main>
             </div>

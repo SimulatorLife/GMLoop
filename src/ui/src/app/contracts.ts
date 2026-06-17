@@ -1,4 +1,5 @@
 import type {
+    GraphVisualizationAutoGamePipelineModel,
     GraphVisualizationData,
     GraphVisualizationDocumentationCatalogs,
     GraphVisualizationLastFixRun,
@@ -33,6 +34,7 @@ export type GraphVisualizationHostMutationResult = Readonly<{
  * Normalized model consumed by the Lit graph visualization UI shell.
  */
 export type GraphVisualizationUiModel = Readonly<{
+    autoGamePipeline: GraphVisualizationAutoGamePipelineModel | null;
     data: GraphVisualizationData;
     documentationCatalogs: GraphVisualizationDocumentationCatalogs | null;
     isServerMode: boolean;
@@ -74,6 +76,7 @@ export function createGraphVisualizationUiModel(
     options: GraphVisualizationRenderOptions
 ): GraphVisualizationUiModel {
     return {
+        autoGamePipeline: options.autoGamePipeline ?? null,
         data,
         documentationCatalogs: options.documentationCatalogs ?? null,
         isServerMode: options.isServerMode ?? false,

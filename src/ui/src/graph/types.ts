@@ -135,9 +135,70 @@ export type GraphVisualizationLastFixRun = Readonly<{
 }>;
 
 /**
+ * Lifecycle state for the host-reported autonomous game creation pipeline.
+ */
+export type GraphVisualizationAutoGamePipelineStatus = "idle" | "running" | "blocked" | "success" | "error";
+
+/**
+ * Presentational action rendered by the Auto-Game pipeline page.
+ */
+export type GraphVisualizationAutoGamePipelineAction = Readonly<{
+    description: string;
+    disabled: boolean;
+    id: string;
+    label: string;
+}>;
+
+/**
+ * Timeline event rendered by the Auto-Game pipeline feed.
+ */
+export type GraphVisualizationAutoGamePipelineEvent = Readonly<{
+    detail: string | null;
+    id: string;
+    status: GraphVisualizationAutoGamePipelineStatus;
+    timestamp: string;
+    title: string;
+}>;
+
+/**
+ * AI skill readiness entry rendered by the Auto-Game pipeline page.
+ */
+export type GraphVisualizationAutoGamePipelineSkill = Readonly<{
+    description: string;
+    id: string;
+    name: string;
+    sourcePath: string | null;
+    status: "ready" | "missing" | "running" | "blocked";
+}>;
+
+/**
+ * Host-provided LLM or thought-process output snippet for the Auto-Game page.
+ */
+export type GraphVisualizationAutoGamePipelineLlmOutput = Readonly<{
+    content: string;
+    id: string;
+    role: "system" | "user" | "assistant" | "tool" | "thought";
+    timestamp: string;
+    title: string;
+}>;
+
+/**
+ * Optional host-provided presentation model for autonomous game creation.
+ */
+export type GraphVisualizationAutoGamePipelineModel = Readonly<{
+    actions: ReadonlyArray<GraphVisualizationAutoGamePipelineAction>;
+    events: ReadonlyArray<GraphVisualizationAutoGamePipelineEvent>;
+    llmOutputs: ReadonlyArray<GraphVisualizationAutoGamePipelineLlmOutput>;
+    skills: ReadonlyArray<GraphVisualizationAutoGamePipelineSkill>;
+    status: GraphVisualizationAutoGamePipelineStatus;
+    statusText: string | null;
+}>;
+
+/**
  * Options that control how the graph-index visualization HTML document is rendered.
  */
 export type GraphVisualizationRenderOptions = Readonly<{
+    autoGamePipeline?: GraphVisualizationAutoGamePipelineModel;
     documentationCatalogs?: GraphVisualizationDocumentationCatalogs;
     isServerMode?: boolean;
     lastFixRun?: GraphVisualizationLastFixRun;

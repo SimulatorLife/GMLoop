@@ -7,7 +7,7 @@ The workspace exists to keep UI code separate from domain logic. The long-term s
 - graph-index visualizations
 - AST preview surfaces
 - CLI documentation views
-- MCP tool browsers
+- Auto-Game creation pipeline observability with MCP bridge visibility
 - formatter, lint, and refactor rule explorers
 - project fix, format, refactor/codemod, and lint workflow launchers
 - live-reload observability
@@ -88,8 +88,9 @@ The current graph UI uses a typed bundle-render boundary and a Lit component she
 - the Fix tab delegates configured refactor, lint, and format mutation to the CLI host, renders status/log output, and shows elapsed-time progress updates while runs are pending
 - the Live Reload surface renders watcher, WebSocket, patch, latency, error, and optional runtime-wrapper health snapshots from UI-owned DTOs
 - the Docs surface includes `CLI`, `MCP`, `Linting`, `Formatting`, and `Codemods` subviews for command, tool, and workspace rule catalogs
+- the Auto-Game surface renders optional host-provided pipeline controls, automation history, AI skill readiness, LLM output snippets, and MCP bridge information without owning pipeline execution
 - loaded project state is shown in one canonical header location and reflects the active graph/config context
-- graph/docs/config/fix/playground/MCP/live-reload page state, docs subview state, graph view mode, label mode, and search query are shareable through URL query params
+- graph/docs/config/fix/playground/auto-game/live-reload page state, docs subview state, graph view mode, label mode, and search query are shareable through URL query params
 
 ## Design Rules
 
@@ -98,7 +99,7 @@ The current graph UI uses a typed bundle-render boundary and a Lit component she
 - UI modules should avoid hidden side effects and should be render-oriented.
 - When a UI needs new data, add a narrow API to the owning workspace rather than copying the logic into `@gmloop/ui`.
 - When a UI needs a new action, the action should be implemented by the owning workspace or orchestration layer and surfaced into the UI as a callback, endpoint, or serialized contract.
-- Keep UI feature code organized by surface or domain, for example `graph/`, `ast/`, `cli-docs/`, `mcp/`, `rules/`.
+- Keep UI feature code organized by surface or domain, for example `graph/`, `ast/`, `cli-docs/`, `auto-game/`, `rules/`.
 - Maintain a canonical top-level surface catalog in code so future UI tabs are discoverable and consistently named.
 
 ## Template Whitespace Rules
@@ -174,7 +175,11 @@ That separation is intentional and should be preserved as more UI surfaces are a
 
 `gm-status-chip` is the shared status badge for feature-page health and lifecycle state. Feature pages must select one of the component's supported statuses instead of passing arbitrary label text, so copy and styling remain consistent across surfaces.
 
-Each tab has one top-level page toolbar. That toolbar owns the page title, subtitle, page-level status badge, and any main controls for the current tab. Do not add a second hero/header toolbar inside a page body for the same title or controls. MCP and Live Reload status badges belong in the shared page toolbar title row, Live Reload start/open/stop controls belong in that same toolbar, and Docs subview/search controls belong in the shared toolbar instead of the Docs panel body. Docs subview tabs use the shared `gm-view-selector` tab control so CLI, MCP, Linting, Formatting, Codemods, Playground, and Config selectors keep one visual treatment.
+Each tab has one top-level page toolbar. That toolbar owns the page title, subtitle, page-level status badge, and any main controls for the current tab. Auto-Game and Live Reload status badges belong in the shared page toolbar title row, Live Reload start/open/stop controls belong in that same toolbar, and Docs subview/search controls belong in the shared toolbar instead of the Docs panel body. Docs subview tabs use the shared `gm-view-selector` tab control so CLI, MCP, Linting, Formatting, Codemods, Playground, and Config selectors keep one visual treatment.
+
+## Auto-Game Surface
+
+The Auto-Game surface is presentation-only until CLI/host pipeline endpoints are implemented. Hosts may provide `GraphVisualizationRenderOptions.autoGamePipeline` to render pipeline controls, feed events, AI skill readiness, and LLM output snippets; when that model is absent, the page renders disabled or empty states. MCP bridge information remains visible inside this page, but MCP discovery and execution still belong to the CLI-derived MCP workspace contracts.
 
 ## Live Reload Surface
 
@@ -190,7 +195,7 @@ Hosts provide live-reload startup data through `GraphVisualizationRenderOptions.
 
 `@gmloop/ui` does not invoke native dialogs or perform local filesystem selection itself. The host workspace provides that behavior and passes loaded-target metadata into the renderer.
 
-The shipped `graph visualize` bundle and development web entry both mount the same Lit shell. That single path owns graph/docs/config/fix/playground/MCP/live-reload rendering and must preserve the same user-facing navigation contract in export and serve modes.
+The shipped `graph visualize` bundle and development web entry both mount the same Lit shell. That single path owns graph/docs/config/fix/playground/auto-game/live-reload rendering and must preserve the same user-facing navigation contract in export and serve modes.
 
 Current graph serve-mode host actions are:
 
@@ -212,7 +217,7 @@ The canonical current and planned top-level UI surfaces are tracked in code thro
 - `docs`: implemented
 - `fix`: implemented
 - `live-reload`: implemented
-- `mcp`: implemented
+- `auto-game`: implemented
 - `playground`: implemented
 - `rules`: planned
 

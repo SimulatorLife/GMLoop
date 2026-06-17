@@ -18,7 +18,7 @@ const VALID_PAGES = new Set<GraphVisualizationUiPage>([
     "config",
     "fix",
     "playground",
-    "mcp",
+    "auto-game",
     "live-reload"
 ]);
 

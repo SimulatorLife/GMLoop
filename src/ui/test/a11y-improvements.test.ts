@@ -63,6 +63,7 @@ function renderShellSkipLinkForPage(page: GraphVisualizationUiState["activePage"
 
 function createMockModel(): GraphVisualizationUiModel {
     return {
+        autoGamePipeline: null,
         data: {
             edges: [],
             generatedAt: "2026-01-01T00:00:00.000Z",
@@ -164,7 +165,7 @@ void test("GmDocsPanel uses a dedicated id for MCP docs subview to avoid id coll
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.equal(Array.from(rendered.matchAll(/id="docs-mcp-page"/gu)).length, 1);
-    assert.equal(Array.from(rendered.matchAll(/id="mcp-page"/gu)).length, 0);
+    assert.equal(Array.from(rendered.matchAll(/id="auto-game-page"/gu)).length, 0);
 });
 
 void test("GmAppHeader exposes aria-current for the active top-level page only", () => {

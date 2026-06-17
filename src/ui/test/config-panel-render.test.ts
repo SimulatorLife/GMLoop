@@ -31,6 +31,7 @@ class TestableGmGraphToolbar extends GmGraphToolbar {
 
 function createMockModel(): GraphVisualizationUiModel {
     return {
+        autoGamePipeline: null,
         data: {
             edges: [],
             generatedAt: "2026-01-01T00:00:00.000Z",

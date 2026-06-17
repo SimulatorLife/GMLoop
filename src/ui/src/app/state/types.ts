@@ -3,7 +3,7 @@ import type { GraphVisualizationProjectWorkflow } from "../../graph/types.js";
 /**
  * Top-level page surfaces in the graph visualization UI.
  */
-export type GraphVisualizationUiPage = "graph" | "docs" | "config" | "fix" | "playground" | "mcp" | "live-reload";
+export type GraphVisualizationUiPage = "graph" | "docs" | "config" | "fix" | "playground" | "auto-game" | "live-reload";
 
 /**
  * Graph presentation modes in the graph surface.
@@ -57,7 +57,7 @@ export type GraphVisualizationUiState = Readonly<{
     docsErrorMessage: string | null;
     configErrorMessage: string | null;
     playgroundErrorMessage: string | null;
-    mcpErrorMessage: string | null;
+    autoGameErrorMessage: string | null;
 }>;
 
 /**

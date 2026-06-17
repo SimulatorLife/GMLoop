@@ -50,24 +50,28 @@ function formatLiveReloadUptime(uptimeMs: number): string {
     return `${String(minutes)}m ${String(seconds).padStart(2, "0")}s`;
 }
 
-function resolveMcpStatusChipStatus(status: GraphVisualizationUiModel["mcpServerStatus"]): GmStatusChipStatus {
+function resolveAutoGameStatusChipStatus(model: GraphVisualizationUiModel): GmStatusChipStatus {
+    const status = model.autoGamePipeline?.status ?? "idle";
     if (status === "running") {
         return "running";
     }
-    if (status === "stopped") {
+    if (status === "success") {
+        return "success";
+    }
+    if (status === "error") {
+        return "error";
+    }
+    if (status === "blocked") {
         return "stopped";
     }
     return "not-running";
 }
 
-function resolveMcpStatusSummary(status: GraphVisualizationUiModel["mcpServerStatus"]): string {
-    if (status === "running") {
-        return "The MCP bridge is available for connected clients.";
+function resolveAutoGameStatusSummary(model: GraphVisualizationUiModel): string {
+    if (model.autoGamePipeline?.statusText) {
+        return model.autoGamePipeline.statusText;
     }
-    if (status === "stopped") {
-        return "The MCP bridge stopped. Restart it to continue.";
-    }
-    return "The MCP bridge has not started in this session yet.";
+    return "Auto-game creation pipeline, AI skill readiness, MCP bridge status, and automation activity.";
 }
 
 function resolveLiveReloadStatusChipStatus(model: GraphVisualizationUiModel): GmStatusChipStatus {
@@ -428,10 +432,8 @@ export class GmGraphToolbar extends LightDomLitElement {
             return null;
         }
 
-        if (this.state.activePage === "mcp") {
-            return html`<gm-status-chip
-                .status=${resolveMcpStatusChipStatus(this.model.mcpServerStatus)}
-            ></gm-status-chip>`;
+        if (this.state.activePage === "auto-game") {
+            return html`<gm-status-chip .status=${resolveAutoGameStatusChipStatus(this.model)}></gm-status-chip>`;
         }
 
         if (this.state.activePage === LIVE_RELOAD_PAGE) {
@@ -736,8 +738,8 @@ export class GmGraphToolbar extends LightDomLitElement {
                       ? "Fix"
                       : this.state.activePage === "playground"
                         ? "Playground"
-                        : this.state.activePage === "mcp"
-                          ? "MCP"
+                        : this.state.activePage === "auto-game"
+                          ? "Auto-Game"
                           : "Live Reload";
         const subheading =
             this.state.activePage === "graph"
@@ -750,8 +752,8 @@ export class GmGraphToolbar extends LightDomLitElement {
                       ? resolveFixStatusSummary(this.state)
                       : this.state.activePage === "playground"
                         ? "Interactive GML playground for parsing, formatting, and rule experiments."
-                        : this.state.activePage === "mcp"
-                          ? resolveMcpStatusSummary(this.model.mcpServerStatus)
+                        : this.state.activePage === "auto-game"
+                          ? resolveAutoGameStatusSummary(this.model)
                           : resolveLiveReloadStatusSummary(this.model);
         const hasLoadedIndex = hasLoadedGraphIndex(this.model);
         const hasLoadedProject = hasLoadedGraphProject(this.model);
