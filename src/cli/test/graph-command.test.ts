@@ -885,3 +885,313 @@ void test("streamProcessOutputByLine removes all listeners on error", async () =
     assert.equal(mockStream.listenerCount("error"), 0, "Expected zero 'error' listeners after error.");
     assert.equal(mockStream.listenerCount("end"), 0, "Expected zero 'end' listeners after error.");
 });
+
+type FakeTimerHandle = number;
+
+function createFakeStartupTimers() {
+    let nextHandle = 1;
+    const pending = new Map<FakeTimerHandle, { callback: () => void; delayMs: number; type: "poll" | "timeout" }>();
+    const fireOrder: Array<{ handle: FakeTimerHandle; type: "poll" | "timeout" }> = [];
+
+    const schedule =
+        (type: "poll" | "timeout") =>
+        (callback: () => void, delayMs: number): FakeTimerHandle => {
+            const handle = nextHandle++;
+            pending.set(handle, { callback, delayMs, type });
+            return handle;
+        };
+
+    const cancel =
+        (_type: "poll" | "timeout") =>
+        (handle: FakeTimerHandle): void => {
+            pending.delete(handle);
+        };
+
+    const advanceTime = async (elapsedMs: number): Promise<void> => {
+        let remainingMs = elapsedMs;
+        while (remainingMs > 0 && pending.size > 0) {
+            const dueHandle = [...pending.entries()]
+                .filter(([, entry]) => entry.delayMs <= remainingMs)
+                .sort(([, left], [, right]) => left.delayMs - right.delayMs)[0]?.[0];
+
+            if (dueHandle === undefined) {
+                return;
+            }
+            const entry = pending.get(dueHandle);
+            if (entry === undefined) {
+                return;
+            }
+            remainingMs -= entry.delayMs;
+            pending.delete(dueHandle);
+            fireOrder.push({ handle: dueHandle, type: entry.type });
+            entry.callback();
+            // Yield to the microtask queue so async continuations from the fired
+            // callback (e.g., the polling loop scheduling its next tick) complete
+            // before the next timer is selected. This mirrors real Node behavior
+            // where microtasks drain between timer callbacks.
+            await Promise.resolve();
+        }
+    };
+
+    const snapshotPendingCounts = (): { polls: number; timeouts: number } => {
+        let polls = 0;
+        let timeouts = 0;
+        for (const entry of pending.values()) {
+            if (entry.type === "poll") {
+                polls += 1;
+            } else {
+                timeouts += 1;
+            }
+        }
+        return { polls, timeouts };
+    };
+
+    return {
+        advanceTime,
+        fireOrder,
+        pending,
+        snapshotPendingCounts,
+        timers: Object.freeze({
+            cancelPoll: cancel("poll"),
+            cancelTimeout: cancel("timeout"),
+            schedulePoll: schedule("poll"),
+            scheduleTimeout: schedule("timeout")
+        })
+    };
+}
+
+function createStartupProbeSnapshot(): ReturnType<typeof __graphCommandTest__.createGraphVisualizationLiveReloadModel> {
+    return __graphCommandTest__.createGraphVisualizationLiveReloadModel("http://127.0.0.1:51264/", null);
+}
+
+void test("awaitGraphVisualizationLiveReloadStartup resolves when probe reports a ready model on first poll", async () => {
+    let pollAttempts = 0;
+    const readyModel = createStartupProbeSnapshot();
+    const fakeTimers = createFakeStartupTimers();
+
+    const result = await __graphCommandTest__.awaitGraphVisualizationLiveReloadStartup(
+        {
+            buildReadyModel: async () => {
+                pollAttempts += 1;
+                return readyModel;
+            },
+            childStderrBuffer: [],
+            createTimeoutError: (stderrBuffer) => new Error(`timeout: ${stderrBuffer.join("|") || "no stderr"}`),
+            isChildProcessActive: () => true,
+            tryFetchStatus: async () => ({
+                avgHotReloadLatencyMs: null,
+                errorCount: 0,
+                maxPatchHistory: 50,
+                patchCount: 0,
+                patchHistorySize: 0,
+                p95HotReloadLatencyMs: null,
+                recentErrors: [],
+                recentPatches: [],
+                runtimeUrl: "http://127.0.0.1:51264/",
+                scanComplete: true,
+                totalPatchCount: 0,
+                uptimeMs: 10,
+                watcherStatus: "running" as const,
+                websocketClients: 0
+            })
+        },
+        { pollIntervalMs: 50, startupTimeoutMs: 1000 },
+        null,
+        fakeTimers.timers
+    );
+
+    assert.equal(result, readyModel);
+    assert.equal(pollAttempts, 1, "Expected exactly one poll before resolving.");
+    assert.equal(fakeTimers.fireOrder.length, 0, "Expected no timer to fire when the first probe call resolves.");
+    assert.deepEqual(
+        fakeTimers.snapshotPendingCounts(),
+        { polls: 0, timeouts: 0 },
+        "Expected both startup and poll timers to be cancelled on resolve."
+    );
+});
+
+void test("awaitGraphVisualizationLiveReloadStartup cancels pending poll timer when startup timeout fires", async () => {
+    const fakeTimers = createFakeStartupTimers();
+
+    let snapshotCalls = 0;
+    const startupPromise = __graphCommandTest__.awaitGraphVisualizationLiveReloadStartup(
+        {
+            buildReadyModel: async () => null,
+            childStderrBuffer: ["warn: build started"],
+            createTimeoutError: (stderrBuffer) => new Error(`timeout: ${stderrBuffer.join("|") || "no stderr"}`),
+            isChildProcessActive: () => true,
+            tryFetchStatus: async () => {
+                snapshotCalls += 1;
+                return null;
+            }
+        },
+        { pollIntervalMs: 25, startupTimeoutMs: 100 },
+        null,
+        fakeTimers.timers
+    );
+
+    await fakeTimers.advanceTime(200);
+
+    let caughtError: unknown;
+    try {
+        await startupPromise;
+    } catch (error) {
+        caughtError = error;
+    }
+
+    assert.ok(caughtError instanceof Error);
+    assert.match(caughtError.message, /timeout: warn: build started/u);
+    assert.ok(snapshotCalls > 0, "Expected the probe to be invoked at least once before timing out.");
+
+    const initialFireCount = fakeTimers.fireOrder.length;
+    await fakeTimers.advanceTime(500);
+    assert.equal(
+        fakeTimers.fireOrder.length,
+        initialFireCount,
+        "Expected no further timer fires after timeout (poll timer leak — clearTimeout not called)."
+    );
+    assert.deepEqual(
+        fakeTimers.snapshotPendingCounts(),
+        { polls: 0, timeouts: 0 },
+        "Expected every scheduled timer to be cleared after the timeout fired."
+    );
+    assert.equal(
+        snapshotCalls,
+        1,
+        "Expected exactly one probe invocation; the leak fix must prevent extra polls scheduled right before timeout."
+    );
+});
+
+void test("awaitGraphVisualizationLiveReloadStartup routes probe throw through rejection without leaking timers", async () => {
+    const fakeTimers = createFakeStartupTimers();
+
+    const startupPromise = __graphCommandTest__.awaitGraphVisualizationLiveReloadStartup(
+        {
+            buildReadyModel: async () => null,
+            childStderrBuffer: [],
+            createTimeoutError: () => new Error("should not be reached"),
+            isChildProcessActive: () => true,
+            tryFetchStatus: async () => {
+                throw new Error("synthetic probe failure");
+            }
+        },
+        { pollIntervalMs: 25, startupTimeoutMs: 1000 },
+        null,
+        fakeTimers.timers
+    );
+
+    let unhandledRejection: unknown = null;
+    const rejectionListener = (reason: unknown): void => {
+        unhandledRejection = reason;
+    };
+    process.on("unhandledRejection", rejectionListener);
+
+    try {
+        let caughtError: unknown;
+        try {
+            await startupPromise;
+        } catch (error) {
+            caughtError = error;
+        }
+
+        assert.ok(caughtError instanceof Error);
+        assert.equal(caughtError.message, "synthetic probe failure");
+        assert.equal(unhandledRejection, null, "Expected no unhandledRejection to escape (probe throw leak).");
+
+        await fakeTimers.advanceTime(1000);
+        assert.deepEqual(
+            fakeTimers.snapshotPendingCounts(),
+            { polls: 0, timeouts: 0 },
+            "Expected both pending timers to be cancelled after the probe threw."
+        );
+    } finally {
+        process.off("unhandledRejection", rejectionListener);
+    }
+});
+
+void test("awaitGraphVisualizationLiveReloadStartup rejects with the abort reason when the AbortSignal fires", async () => {
+    const fakeTimers = createFakeStartupTimers();
+    const abortController = new AbortController();
+
+    let snapshotCalls = 0;
+    const startupPromise = __graphCommandTest__.awaitGraphVisualizationLiveReloadStartup(
+        {
+            buildReadyModel: async () => null,
+            childStderrBuffer: [],
+            createTimeoutError: () => new Error("should not be reached"),
+            isChildProcessActive: () => true,
+            tryFetchStatus: async () => {
+                snapshotCalls += 1;
+                return null;
+            }
+        },
+        { pollIntervalMs: 25, startupTimeoutMs: 5000 },
+        abortController.signal,
+        fakeTimers.timers
+    );
+
+    await fakeTimers.advanceTime(50);
+    assert.ok(snapshotCalls >= 1, "Expected the first poll to have run before aborting.");
+
+    const abortError = new Error("Live reload exited before it became ready (exit code 1).");
+    abortController.abort(abortError);
+
+    let caughtError: unknown;
+    try {
+        await startupPromise;
+    } catch (error) {
+        caughtError = error;
+    }
+
+    assert.equal(caughtError, abortError);
+    assert.deepEqual(
+        fakeTimers.snapshotPendingCounts(),
+        { polls: 0, timeouts: 0 },
+        "Expected abort to clear both the pending poll and startup timeout timers."
+    );
+
+    const initialFireCount = fakeTimers.fireOrder.length;
+    await fakeTimers.advanceTime(200);
+    assert.equal(
+        fakeTimers.fireOrder.length,
+        initialFireCount,
+        "Expected no further timer fires after abort (poll leak — clearTimeout not called on abort path)."
+    );
+});
+
+void test("awaitGraphVisualizationLiveReloadStartup rejects when child process stops before status becomes available", async () => {
+    const fakeTimers = createFakeStartupTimers();
+    let childActive = true;
+
+    const startupPromise = __graphCommandTest__.awaitGraphVisualizationLiveReloadStartup(
+        {
+            buildReadyModel: async () => null,
+            childStderrBuffer: [],
+            createTimeoutError: () => new Error("should not be reached"),
+            isChildProcessActive: () => childActive,
+            tryFetchStatus: async () => null
+        },
+        { pollIntervalMs: 25, startupTimeoutMs: 1000 },
+        null,
+        fakeTimers.timers
+    );
+
+    await fakeTimers.advanceTime(25);
+    childActive = false;
+    await fakeTimers.advanceTime(25);
+
+    let caughtError: unknown;
+    try {
+        await startupPromise;
+    } catch (error) {
+        caughtError = error;
+    }
+
+    assert.ok(caughtError instanceof Error);
+    assert.match(caughtError.message, /Live reload stopped before the status server became available/iu);
+    assert.deepEqual(
+        fakeTimers.snapshotPendingCounts(),
+        { polls: 0, timeouts: 0 },
+        "Expected both the pending poll timer and the startup timeout to be cleared on the child-stopped exit path."
+    );
+});
