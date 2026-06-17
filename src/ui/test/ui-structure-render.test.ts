@@ -30,6 +30,7 @@ class TestableGmPlaygroundPanel extends GmPlaygroundPanel {
 
 function createMockModel(): GraphVisualizationUiModel {
     return {
+        autoGamePipeline: null,
         data: {
             edges: [],
             generatedAt: "2026-01-01T00:00:00.000Z",
@@ -72,6 +73,7 @@ function createMockModel(): GraphVisualizationUiModel {
 
 function createEmptyGraphModel(): GraphVisualizationUiModel {
     return {
+        autoGamePipeline: null,
         data: {
             edges: [],
             generatedAt: "2026-01-01T00:00:00.000Z",
@@ -125,19 +127,19 @@ void test("app header renders grouped identity, actions, and loaded target secti
     assert.doesNotMatch(rendered, /mcp-status-badge/u);
     assert.doesNotMatch(rendered, /id="loaded-source"/u);
     assert.doesNotMatch(rendered, /id="loaded-selected"/u);
-    assert.match(rendered, /id="tab-mcp"/u);
+    assert.match(rendered, /id="tab-auto-game"/u);
 });
 
-void test("MCP toolbar renders page status in the single shared page toolbar", () => {
+void test("Auto-Game toolbar renders page status in the single shared page toolbar", () => {
     const toolbar = new TestableGmGraphToolbar();
     toolbar.model = createMockModel();
-    toolbar.state = createMockState("mcp");
+    toolbar.state = createMockState("auto-game");
 
     const rendered = renderTemplateValue(toolbar.renderForTest());
 
     assert.match(rendered, /class="toolbar-heading-row"/u);
-    assert.match(rendered, /id="toolbar-heading"[\s\S]*MCP/u);
-    assert.match(rendered, /id="toolbar-subheading"[\s\S]*The MCP bridge has not started in this session yet\./u);
+    assert.match(rendered, /id="toolbar-heading"[\s\S]*Auto-Game/u);
+    assert.match(rendered, /id="toolbar-subheading"[\s\S]*Auto-game creation pipeline/u);
     assert.match(rendered, /<gm-status-chip[\s\S]*\.status=not-running[\s\S]*><\/gm-status-chip>/u);
     assert.doesNotMatch(rendered, /mcp-runtime-status-chip/u);
 });
@@ -350,7 +352,7 @@ void test("page styles keep every top-level page on the shared lighter content b
         "../../src/app/components/gm-fix-panel.ts",
         "../../src/app/components/gm-graph-panel.ts",
         "../../src/app/components/gm-live-reload-panel.ts",
-        "../../src/app/components/gm-mcp-panel.ts",
+        "../../src/app/components/gm-auto-game-panel.ts",
         "../../src/app/components/gm-playground-panel.ts"
     ].map((sourcePath) => readFileSync(new URL(sourcePath, import.meta.url), "utf8"));
 

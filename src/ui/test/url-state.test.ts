@@ -53,10 +53,17 @@ void test("serializeGraphVisualizationUiStateToUrlSearch round-trips supported n
     assert.equal(parsed.searchQuery, "enemy ship");
 });
 
-void test("parseGraphVisualizationUiStateFromUrlSearch accepts the mcp top-level page", () => {
+void test("parseGraphVisualizationUiStateFromUrlSearch accepts the auto-game top-level page", () => {
+    const state = parseGraphVisualizationUiStateFromUrlSearch("?page=auto-game&docs=mcp");
+
+    assert.equal(state.activePage, "auto-game");
+    assert.equal(state.activeDocsView, "mcp");
+});
+
+void test("parseGraphVisualizationUiStateFromUrlSearch rejects the old mcp top-level page", () => {
     const state = parseGraphVisualizationUiStateFromUrlSearch("?page=mcp&docs=mcp");
 
-    assert.equal(state.activePage, "mcp");
+    assert.equal(state.activePage, "graph");
     assert.equal(state.activeDocsView, "mcp");
 });
 

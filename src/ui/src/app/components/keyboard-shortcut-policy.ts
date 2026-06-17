@@ -119,7 +119,7 @@ export function evaluateToolbarKeyboardShortcut(
             return navigateToPageAction("playground");
         }
         case "6": {
-            return navigateToPageAction("mcp");
+            return navigateToPageAction("auto-game");
         }
         case "7": {
             return navigateToPageAction("live-reload");

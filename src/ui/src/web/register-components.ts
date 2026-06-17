@@ -1,6 +1,7 @@
 import {
     GmAppHeader,
     GmAppShell,
+    GmAutoGamePanel,
     GmBadge,
     GmButton,
     GmCard,
@@ -12,7 +13,6 @@ import {
     GmGraphPanel,
     GmGraphToolbar,
     GmLiveReloadPanel,
-    GmMcpPanel,
     GmPlaygroundPanel,
     GmStatusChip
 } from "../app/components/index.js";
@@ -41,6 +41,6 @@ export function registerGraphVisualizationCustomElements(): void {
     defineCustomElementOnce("gm-docs-panel", GmDocsPanel);
     defineCustomElementOnce("gm-fix-panel", GmFixPanel);
     defineCustomElementOnce("gm-config-panel", GmConfigPanel);
-    defineCustomElementOnce("gm-mcp-panel", GmMcpPanel);
+    defineCustomElementOnce("gm-auto-game-panel", GmAutoGamePanel);
     defineCustomElementOnce("gm-app-shell", GmAppShell);
 }

@@ -61,7 +61,7 @@ void test("evaluateToolbarKeyboardShortcut maps number keys 2-7 to the matching 
     });
     assert.deepEqual(evaluateToolbarKeyboardShortcut(buildContext({ key: "6" })), {
         kind: "navigate-page",
-        page: "mcp"
+        page: "auto-game"
     });
     assert.deepEqual(evaluateToolbarKeyboardShortcut(buildContext({ key: "7" })), {
         kind: "navigate-page",
@@ -135,7 +135,7 @@ void test("evaluateToolbarKeyboardShortcut keeps page navigation available even 
         ["3", "config"],
         ["4", "fix"],
         ["5", "playground"],
-        ["6", "mcp"],
+        ["6", "auto-game"],
         ["7", "live-reload"]
     ] as const) {
         assert.deepEqual(

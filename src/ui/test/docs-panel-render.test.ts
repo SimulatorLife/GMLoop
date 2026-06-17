@@ -138,6 +138,7 @@ function createDocsPanelState(
 void test("GmDocsPanel renders the Linting subview and project-facing rule content", () => {
     const panel = new TestableGmDocsPanel();
     panel.model = {
+        autoGamePipeline: null,
         data: {
             edges: [],
             generatedAt: "2026-01-01T00:00:00.000Z",
@@ -174,6 +175,7 @@ void test("GmDocsPanel renders the Linting subview and project-facing rule conte
 void test("GmDocsPanel renders the Formatting subview and option entries", () => {
     const panel = new TestableGmDocsPanel();
     panel.model = {
+        autoGamePipeline: null,
         data: {
             edges: [],
             generatedAt: "2026-01-01T00:00:00.000Z",
@@ -205,6 +207,7 @@ void test("GmDocsPanel renders the Formatting subview and option entries", () =>
 void test("GmDocsPanel renders the Codemods subview and refactor entries", () => {
     const panel = new TestableGmDocsPanel();
     panel.model = {
+        autoGamePipeline: null,
         data: {
             edges: [],
             generatedAt: "2026-01-01T00:00:00.000Z",
@@ -236,6 +239,7 @@ void test("GmDocsPanel renders the Codemods subview and refactor entries", () =>
 void test("GmDocsPanel renders per-subview empty states when rule data is unavailable", () => {
     const panel = new TestableGmDocsPanel();
     panel.model = {
+        autoGamePipeline: null,
         data: {
             edges: [],
             generatedAt: "2026-01-01T00:00:00.000Z",
@@ -263,6 +267,7 @@ void test("GmDocsPanel renders per-subview empty states when rule data is unavai
 void test("GmDocsPanel leaves docs controls to the shared page toolbar", () => {
     const panel = new TestableGmDocsPanel();
     panel.model = {
+        autoGamePipeline: null,
         data: {
             edges: [],
             generatedAt: "2026-01-01T00:00:00.000Z",
@@ -292,6 +297,7 @@ void test("GmDocsPanel leaves docs controls to the shared page toolbar", () => {
 void test("GmDocsPanel filters the Linting subview by the current search query", () => {
     const panel = new TestableGmDocsPanel();
     panel.model = {
+        autoGamePipeline: null,
         data: {
             edges: [],
             generatedAt: "2026-01-01T00:00:00.000Z",
@@ -320,6 +326,7 @@ void test("GmDocsPanel filters the Linting subview by the current search query",
 void test("GmDocsPanel shows a per-subview empty state when search has no matches", () => {
     const panel = new TestableGmDocsPanel();
     panel.model = {
+        autoGamePipeline: null,
         data: {
             edges: [],
             generatedAt: "2026-01-01T00:00:00.000Z",
@@ -348,6 +355,7 @@ void test("GmDocsPanel shows a per-subview empty state when search has no matche
 void test("GmDocsPanel shows a per-subview empty state when linting search has no matches", () => {
     const panel = new TestableGmDocsPanel();
     panel.model = {
+        autoGamePipeline: null,
         data: {
             edges: [],
             generatedAt: "2026-01-01T00:00:00.000Z",
@@ -376,6 +384,7 @@ void test("GmDocsPanel shows a per-subview empty state when linting search has n
 void test("GmDocsPanel renders the MCP tools subview and tool metadata when selected", () => {
     const panel = new TestableGmDocsPanel();
     panel.model = {
+        autoGamePipeline: null,
         data: {
             edges: [],
             generatedAt: "2026-01-01T00:00:00.000Z",

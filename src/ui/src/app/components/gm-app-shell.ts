@@ -31,6 +31,8 @@ import {
     GRAPH_UI_EVENT_SET_DOCS_VIEW,
     GRAPH_UI_EVENT_SET_SEARCH_QUERY,
     GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW,
+    GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_PIPELINE,
+    GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_TASK,
     GRAPH_UI_EVENT_TRIGGER_CREATE_CONFIG,
     GRAPH_UI_EVENT_TRIGGER_FIX,
     GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT,
@@ -40,6 +42,8 @@ import {
     type GraphUiClearPageErrorDetail,
     type GraphUiSaveConfigDetail,
     type GraphUiSetConfigViewDetail,
+    type GraphUiTriggerAutoGamePipelineDetail,
+    type GraphUiTriggerAutoGameTaskDetail,
     type GraphUiTriggerFixDetail
 } from "./events.js";
 import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
@@ -47,6 +51,8 @@ import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 const LIVE_RELOAD_ERROR_ACTION_TYPE = "set-live-reload-error";
 const FIX_LOG_LINES_ACTION_TYPE = "set-fix-log-lines";
+const PAGE_ERROR_ACTION_TYPE = "set-page-error";
+const AUTO_GAME_PAGE: GraphVisualizationUiPage = "auto-game";
 
 const PAGE_MAIN_SECTION_ID: Readonly<Record<GraphVisualizationUiPage, string>> = Object.freeze({
     config: "config-page",
@@ -54,7 +60,7 @@ const PAGE_MAIN_SECTION_ID: Readonly<Record<GraphVisualizationUiPage, string>> =
     fix: "fix-page",
     graph: "graph-page",
     "live-reload": "live-reload-page",
-    mcp: "mcp-page",
+    [AUTO_GAME_PAGE]: "auto-game-page",
     playground: "playground-page"
 });
 
@@ -205,6 +211,16 @@ export class GmAppShell extends LightDomLitElement {
         void this.#stopLiveReload();
     };
 
+    #onTriggerAutoGamePipeline = (eventValue: Event): void => {
+        const action = (eventValue as CustomEvent<GraphUiTriggerAutoGamePipelineDetail>).detail.action;
+        void this.#runAutoGamePipelineAction(action);
+    };
+
+    #onTriggerAutoGameTask = (eventValue: Event): void => {
+        const prompt = (eventValue as CustomEvent<GraphUiTriggerAutoGameTaskDetail>).detail.prompt;
+        void this.#runAutoGameTask(prompt);
+    };
+
     #onDismissErrorBanner = (): void => {
         this.#store.dispatch({ type: "clear-error" });
     };
@@ -234,6 +250,8 @@ export class GmAppShell extends LightDomLitElement {
             { event: GRAPH_UI_EVENT_TRIGGER_FIX, handler: this.#onTriggerFix },
             { event: GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD, handler: this.#onTriggerStartLiveReload },
             { event: GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD, handler: this.#onTriggerStopLiveReload },
+            { event: GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_PIPELINE, handler: this.#onTriggerAutoGamePipeline },
+            { event: GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_TASK, handler: this.#onTriggerAutoGameTask },
             { event: GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, handler: this.#onClearPageError },
             { event: "dismiss", handler: this.#onDismissErrorBanner }
         ]);
@@ -261,11 +279,11 @@ export class GmAppShell extends LightDomLitElement {
     ): Promise<void> {
         try {
             this.#store.dispatch({ pending: true, type: pendingType });
-            this.#store.dispatch({ errorMessage: null, page, type: "set-page-error" });
+            this.#store.dispatch({ errorMessage: null, page, type: PAGE_ERROR_ACTION_TYPE });
             await hostAction();
         } catch (error) {
             const message = getUiErrorMessage(error, "Unknown error");
-            this.#store.dispatch({ errorMessage: message, page, type: "set-page-error" });
+            this.#store.dispatch({ errorMessage: message, page, type: PAGE_ERROR_ACTION_TYPE });
         } finally {
             this.#store.dispatch({ pending: false, type: pendingType });
         }
@@ -312,6 +330,61 @@ export class GmAppShell extends LightDomLitElement {
         } catch (error) {
             const message = getUiErrorMessage(error, "Unknown live-reload stop error");
             this.#store.dispatch({ errorMessage: message, type: LIVE_RELOAD_ERROR_ACTION_TYPE });
+        }
+    }
+
+    async #runAutoGamePipelineAction(action: GraphUiTriggerAutoGamePipelineDetail["action"]): Promise<void> {
+        if (!this.model || !this.model.isServerMode) {
+            return;
+        }
+
+        const hostAction =
+            action === "start"
+                ? this.callbacks.onStartAutoGamePipeline
+                : action === "pause"
+                  ? this.callbacks.onPauseAutoGamePipeline
+                  : this.callbacks.onStopAutoGamePipeline;
+        if (!hostAction) {
+            return;
+        }
+
+        try {
+            this.#store.dispatch({ errorMessage: null, page: AUTO_GAME_PAGE, type: PAGE_ERROR_ACTION_TYPE });
+            const autoGamePipeline = await hostAction();
+            if (autoGamePipeline !== undefined) {
+                this.model = {
+                    ...this.model,
+                    autoGamePipeline
+                };
+            }
+        } catch (error) {
+            const message = getUiErrorMessage(error, "Unknown auto-game pipeline error");
+            this.#store.dispatch({ errorMessage: message, page: AUTO_GAME_PAGE, type: PAGE_ERROR_ACTION_TYPE });
+        }
+    }
+
+    async #runAutoGameTask(prompt: string): Promise<void> {
+        if (
+            !this.model ||
+            !this.model.isServerMode ||
+            !this.callbacks.onRunAutoGameTask ||
+            prompt.trim().length === 0
+        ) {
+            return;
+        }
+
+        try {
+            this.#store.dispatch({ errorMessage: null, page: AUTO_GAME_PAGE, type: PAGE_ERROR_ACTION_TYPE });
+            const autoGamePipeline = await this.callbacks.onRunAutoGameTask(prompt.trim());
+            if (autoGamePipeline !== undefined) {
+                this.model = {
+                    ...this.model,
+                    autoGamePipeline
+                };
+            }
+        } catch (error) {
+            const message = getUiErrorMessage(error, "Unknown auto-game task error");
+            this.#store.dispatch({ errorMessage: message, page: AUTO_GAME_PAGE, type: PAGE_ERROR_ACTION_TYPE });
         }
     }
 
@@ -376,7 +449,7 @@ export class GmAppShell extends LightDomLitElement {
                     <gm-docs-panel .model=${this.model} .state=${this.#state}></gm-docs-panel>
                     <gm-config-panel .model=${this.model} .state=${this.#state}></gm-config-panel>
                     <gm-fix-panel .model=${this.model} .state=${this.#state}></gm-fix-panel>
-                    <gm-mcp-panel .model=${this.model} .state=${this.#state}></gm-mcp-panel>
+                    <gm-auto-game-panel .model=${this.model} .state=${this.#state}></gm-auto-game-panel>
                     <gm-live-reload-panel .model=${this.model} .state=${this.#state}></gm-live-reload-panel>
                 </main>
             </div>

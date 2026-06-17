@@ -28,7 +28,7 @@ export function createInitialGraphVisualizationUiState(): GraphVisualizationUiSt
         docsErrorMessage: null,
         configErrorMessage: null,
         playgroundErrorMessage: null,
-        mcpErrorMessage: null
+        autoGameErrorMessage: null
     };
 }
 
@@ -188,8 +188,8 @@ export function reduceGraphVisualizationUiState(
                 case "playground": {
                     return { ...state, playgroundErrorMessage: action.errorMessage };
                 }
-                case "mcp": {
-                    return { ...state, mcpErrorMessage: action.errorMessage };
+                case "auto-game": {
+                    return { ...state, autoGameErrorMessage: action.errorMessage };
                 }
                 case "fix": {
                     return { ...state, fixErrorMessage: action.errorMessage };
@@ -216,8 +216,8 @@ export function reduceGraphVisualizationUiState(
                 case "playground": {
                     return { ...state, playgroundErrorMessage: null };
                 }
-                case "mcp": {
-                    return { ...state, mcpErrorMessage: null };
+                case "auto-game": {
+                    return { ...state, autoGameErrorMessage: null };
                 }
                 case "fix": {
                     return { ...state, fixErrorMessage: null };
@@ -250,7 +250,7 @@ export function reduceGraphVisualizationUiState(
                 docsErrorMessage: null,
                 configErrorMessage: null,
                 playgroundErrorMessage: null,
-                mcpErrorMessage: null
+                autoGameErrorMessage: null
             };
         }
 
