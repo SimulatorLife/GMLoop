@@ -6,10 +6,10 @@ import { Core } from "@gmloop/core";
 
 const {
     describeValueWithArticle,
-    getErrorMessageOrFallback,
     getNonEmptyTrimmedString,
     isPlainObject,
-    parseJsonObjectWithContext
+    parseJsonObjectWithContext,
+    toContextualError
 } = Core;
 
 const isPackageJsonRecord = (value: unknown): value is Record<string, unknown> => isPlainObject(value);
@@ -128,7 +128,8 @@ export function resolvePackageJsonPath(packageName: string, context: string): st
         const packageJsonUrl = import.meta.resolve(`${packageName}/package.json`);
         return fileURLToPath(packageJsonUrl);
     } catch (error) {
-        const message = getErrorMessageOrFallback(error);
-        throw new Error(`Unable to resolve ${context} package '${packageName}'. (${message})`, { cause: error });
+        throw toContextualError(`Unable to resolve ${context} package '${packageName}'`, error, {
+            wrap: "parentheses"
+        });
     }
 }

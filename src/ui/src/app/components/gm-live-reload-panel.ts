@@ -4,7 +4,8 @@ import type {
     GraphVisualizationLiveReloadRecentError,
     GraphVisualizationLiveReloadRecentPatch,
     GraphVisualizationLiveReloadRuntimeHealth,
-    GraphVisualizationLiveReloadStatusSnapshot
+    GraphVisualizationLiveReloadStatusSnapshot,
+    GraphVisualizationLiveReloadWatcherStatus
 } from "../../graph/types.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
@@ -28,6 +29,49 @@ function formatDurationMs(value: number | null): string {
 
 function formatInteger(value: number | null): string {
     return value === null ? "-" : new Intl.NumberFormat().format(value);
+}
+
+function formatUptimeMs(value: number | null): string {
+    if (value === null) {
+        return "Waiting for status";
+    }
+
+    const totalSeconds = Math.max(0, Math.floor(value / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes)}m ${String(seconds).padStart(2, "0")}s`;
+}
+
+function formatWatcherStatus(value: GraphVisualizationLiveReloadWatcherStatus | null): string {
+    if (value === null) {
+        return "Waiting";
+    }
+
+    if (value === "inactive") {
+        return "Inactive";
+    }
+
+    if (value === "offline") {
+        return "Offline";
+    }
+
+    if (value === "scanning") {
+        return "Scanning";
+    }
+
+    if (value === "running") {
+        return "Running";
+    }
+
+    return "Error";
+}
+
+function formatScanState(value: boolean | null): string {
+    if (value === null) {
+        return "Waiting for first scan";
+    }
+
+    return value ? "Scan complete" : "Scan in progress";
 }
 
 function formatTimestamp(timestamp: number): string {
@@ -187,6 +231,31 @@ export class GmLiveReloadPanel extends LightDomLitElement {
         `;
     }
 
+    #renderSessionStatus(status: GraphVisualizationLiveReloadStatusSnapshot | null) {
+        return html`
+            <gm-card class="live-reload-panel-card" .heading=${"Session Status"}>
+                <dl class="live-reload-session-list" aria-label="Live reload session status">
+                    <div>
+                        <dt>Watcher</dt>
+                        <dd>${formatWatcherStatus(status?.watcherStatus ?? null)}</dd>
+                    </div>
+                    <div>
+                        <dt>Scan</dt>
+                        <dd>${formatScanState(status?.scanComplete ?? null)}</dd>
+                    </div>
+                    <div>
+                        <dt>Uptime</dt>
+                        <dd>${formatUptimeMs(status?.uptimeMs ?? null)}</dd>
+                    </div>
+                    <div>
+                        <dt>Errors</dt>
+                        <dd>${formatInteger(status?.errorCount ?? null)}</dd>
+                    </div>
+                </dl>
+            </gm-card>
+        `;
+    }
+
     #renderConnectionDetails() {
         const endpoints = this.model?.liveReload?.endpoints;
 
@@ -329,7 +398,10 @@ export class GmLiveReloadPanel extends LightDomLitElement {
                     ${liveReload === null
                         ? this.#renderSetupState()
                         : html`
-                              ${this.#renderOverview(status)} ${this.#renderPipeline()}
+                              ${this.#renderOverview(status)}
+                              <div class="live-reload-status-grid">
+                                  ${this.#renderSessionStatus(status)} ${this.#renderPipeline()}
+                              </div>
                               <div class="live-reload-activity-grid">
                                   ${this.#renderRecentPatches(status?.recentPatches ?? [])}
                                   ${this.#renderRecentErrors(status?.recentErrors ?? [])}
