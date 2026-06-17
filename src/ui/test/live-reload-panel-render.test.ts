@@ -138,6 +138,12 @@ void test("GmLiveReloadPanel renders configured live-reload dashboard sections",
     assert.match(rendered, /Clients/u);
     assert.match(rendered, /Patches/u);
     assert.match(rendered, /Average/u);
+    assert.match(rendered, /Session Status/u);
+    assert.match(rendered, /Live reload session status/u);
+    assert.match(rendered, /Watcher/u);
+    assert.match(rendered, /Running/u);
+    assert.match(rendered, /Scan complete/u);
+    assert.match(rendered, /1m 05s/u);
     assert.match(rendered, /Pipeline Overview/u);
     assert.match(rendered, /File Watcher/u);
     assert.match(rendered, /Runtime Wrapper/u);
@@ -165,6 +171,7 @@ void test("GmLiveReloadPanel renders single inactive setup state when host does 
     assert.match(rendered, /Start live reload to watch project files/u);
     assert.doesNotMatch(rendered, /Connection Details/u);
     assert.doesNotMatch(rendered, /Not configured/u);
+    assert.doesNotMatch(rendered, /Session Status/u);
     assert.doesNotMatch(rendered, /No patches yet\./u);
     assert.doesNotMatch(rendered, /Runtime details unavailable\./u);
 });
