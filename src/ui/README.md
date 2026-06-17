@@ -179,7 +179,16 @@ Each tab has one top-level page toolbar. That toolbar owns the page title, subti
 
 ## Auto-Game Surface
 
-The Auto-Game surface is presentation-only until CLI/host pipeline endpoints are implemented. Hosts may provide `GraphVisualizationRenderOptions.autoGamePipeline` to render pipeline controls, feed events, AI skill readiness, and LLM output snippets; when that model is absent, the page renders disabled or empty states. MCP bridge information remains visible inside this page, but MCP discovery and execution still belong to the CLI-derived MCP workspace contracts.
+The Auto-Game surface is presentation-only until CLI/host pipeline endpoints are implemented. Hosts may provide `GraphVisualizationRenderOptions.autoGamePipeline` to render pipeline status, feed events, AI skill readiness, LLM output snippets, and additional host-provided action metadata; when that model is absent, the page renders disabled or empty states. MCP bridge information remains visible inside this page, but MCP discovery and execution still belong to the CLI-derived MCP workspace contracts.
+
+The page includes lifecycle controls for `Start`, `Pause`, and `Stop`, plus a one-time task form. These controls dispatch typed UI events that `GmAppShell` routes to optional host callbacks:
+
+- `onStartAutoGamePipeline`
+- `onPauseAutoGamePipeline`
+- `onStopAutoGamePipeline`
+- `onRunAutoGameTask`
+
+Those callbacks may return an updated `GraphVisualizationAutoGamePipelineModel` to refresh the page immediately. They may also return `null` or no value when the host owns refresh/polling separately.
 
 ## Live Reload Surface
 

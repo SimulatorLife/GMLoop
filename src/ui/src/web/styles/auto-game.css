@@ -18,6 +18,93 @@
     list-style: none;
 }
 
+.auto-game-control-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gm-space-md);
+}
+
+.auto-game-lifecycle-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gm-space-sm);
+}
+
+.auto-game-control {
+    min-width: 88px;
+    min-height: var(--gm-height-xl);
+    padding: var(--gm-space-sm) var(--gm-space-md);
+    border: 1px solid var(--gm-border);
+    border-radius: var(--gm-radius-sm);
+    background: var(--gm-bg-muted);
+    color: var(--gm-text);
+    font: inherit;
+    font-size: var(--gm-text-sm);
+    font-weight: 800;
+    touch-action: manipulation;
+    transition: var(--gm-transition);
+}
+
+.auto-game-control:hover:not(:disabled),
+.auto-game-control:focus-visible {
+    border-color: var(--gm-border-interactive);
+    background: var(--gm-bg-hover);
+}
+
+.auto-game-control:disabled {
+    color: var(--gm-text-subdued);
+    cursor: not-allowed;
+    opacity: 0.72;
+}
+
+.auto-game-control--primary:not(:disabled) {
+    border-color: var(--gm-success-border);
+    background: var(--gm-success-surface);
+    color: var(--gm-success-text);
+}
+
+.auto-game-control--danger:not(:disabled) {
+    border-color: var(--gm-error-border);
+    background: var(--gm-error-surface);
+    color: var(--gm-error-text);
+}
+
+.auto-game-task-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gm-space-sm);
+}
+
+.auto-game-task-form label {
+    color: var(--gm-text);
+    font-size: var(--gm-text-sm);
+    font-weight: 800;
+}
+
+.auto-game-task-form textarea {
+    min-height: 84px;
+    resize: vertical;
+    padding: var(--gm-space-md);
+    border: 1px solid var(--gm-border-subtle);
+    border-radius: var(--gm-radius-sm);
+    background: var(--gm-bg-inset);
+    color: var(--gm-text);
+    font: inherit;
+    font-size: var(--gm-text-sm);
+    line-height: var(--gm-leading-normal);
+}
+
+.auto-game-task-form textarea:focus-visible {
+    border-color: var(--gm-border-interactive);
+    outline: none;
+    box-shadow: var(--gm-shadow-focus);
+}
+
+.auto-game-task-form textarea:disabled {
+    color: var(--gm-text-subdued);
+    cursor: not-allowed;
+}
+
 .auto-game-action {
     display: flex;
     flex-direction: column;
@@ -123,4 +210,8 @@
     border-radius: var(--gm-radius-sm);
     color: var(--gm-text-subdued);
     font-size: var(--gm-text-sm);
+}
+
+.auto-game-empty--compact {
+    padding: var(--gm-space-md);
 }

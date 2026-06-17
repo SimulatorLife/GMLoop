@@ -31,6 +31,11 @@ export type GraphVisualizationHostMutationResult = Readonly<{
 }>;
 
 /**
+ * Optional updated Auto-Game pipeline model returned by a host command callback.
+ */
+export type GraphVisualizationAutoGamePipelineActionResult = GraphVisualizationAutoGamePipelineModel | null | undefined;
+
+/**
  * Normalized model consumed by the Lit graph visualization UI shell.
  */
 export type GraphVisualizationUiModel = Readonly<{
@@ -66,6 +71,18 @@ export type GraphVisualizationUiCallbacks = Readonly<{
         | null
         | Promise<GraphVisualizationLiveReloadModel | null>;
     onStopLiveReload: () => void | Promise<void>;
+    onStartAutoGamePipeline?: () =>
+        | GraphVisualizationAutoGamePipelineActionResult
+        | Promise<GraphVisualizationAutoGamePipelineActionResult>;
+    onPauseAutoGamePipeline?: () =>
+        | GraphVisualizationAutoGamePipelineActionResult
+        | Promise<GraphVisualizationAutoGamePipelineActionResult>;
+    onStopAutoGamePipeline?: () =>
+        | GraphVisualizationAutoGamePipelineActionResult
+        | Promise<GraphVisualizationAutoGamePipelineActionResult>;
+    onRunAutoGameTask?: (
+        prompt: string
+    ) => GraphVisualizationAutoGamePipelineActionResult | Promise<GraphVisualizationAutoGamePipelineActionResult>;
 }>;
 
 /**
@@ -101,7 +118,11 @@ export function createNoopGraphVisualizationUiCallbacks(): GraphVisualizationUiC
         onSaveConfig: () => {},
         onRunFix: () => ({ logLines: ["Fix workflow is unavailable in this host."], status: "success" }),
         onStartLiveReload: () => null,
-        onStopLiveReload: () => {}
+        onStopLiveReload: () => {},
+        onStartAutoGamePipeline: () => null,
+        onPauseAutoGamePipeline: () => null,
+        onStopAutoGamePipeline: () => null,
+        onRunAutoGameTask: () => null
     };
 }
 

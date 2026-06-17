@@ -8,7 +8,13 @@ import type {
 } from "../../graph/types.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
-import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "./events.js";
+import {
+    GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
+    GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_PIPELINE,
+    GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_TASK,
+    type GraphUiTriggerAutoGamePipelineDetail,
+    type GraphUiTriggerAutoGameTaskDetail
+} from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 /**
@@ -17,12 +23,15 @@ import { LightDomLitElement } from "./light-dom-lit-element.js";
 export class GmAutoGamePanel extends LightDomLitElement {
     public static properties = {
         model: { attribute: false },
-        state: { attribute: false }
+        state: { attribute: false },
+        taskPrompt: { state: true }
     };
 
     public accessor model: GraphVisualizationUiModel | null = null;
 
     public accessor state: GraphVisualizationUiState | null = null;
+
+    private accessor taskPrompt = "";
 
     #onDismissErrorBanner = (): void => {
         this.dispatchEvent(
@@ -44,6 +53,69 @@ export class GmAutoGamePanel extends LightDomLitElement {
         super.disconnectedCallback();
     }
 
+    #dispatchPipelineAction(action: GraphUiTriggerAutoGamePipelineDetail["action"]): void {
+        this.dispatchEvent(
+            new CustomEvent<GraphUiTriggerAutoGamePipelineDetail>(GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_PIPELINE, {
+                bubbles: true,
+                composed: true,
+                detail: { action }
+            })
+        );
+    }
+
+    #onTaskInput = (event: Event): void => {
+        this.taskPrompt = (event.target as HTMLTextAreaElement).value;
+    };
+
+    #onTaskKeyDown = (event: KeyboardEvent): void => {
+        if (event.key !== "Enter" || (!event.metaKey && !event.ctrlKey)) {
+            return;
+        }
+
+        event.preventDefault();
+        this.#submitOneTimeTask();
+    };
+
+    #submitOneTimeTask(): void {
+        const prompt = this.taskPrompt.trim();
+        if (!this.#canRunOneTimeTask() || prompt.length === 0) {
+            return;
+        }
+
+        this.dispatchEvent(
+            new CustomEvent<GraphUiTriggerAutoGameTaskDetail>(GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_TASK, {
+                bubbles: true,
+                composed: true,
+                detail: { prompt }
+            })
+        );
+        this.taskPrompt = "";
+    }
+
+    #hasPipelineController(): boolean {
+        return this.model?.isServerMode === true;
+    }
+
+    #getPipelineStatus() {
+        return this.model?.autoGamePipeline?.status ?? "idle";
+    }
+
+    #canStartPipeline(): boolean {
+        return this.#hasPipelineController() && this.#getPipelineStatus() !== "running";
+    }
+
+    #canPausePipeline(): boolean {
+        return this.#hasPipelineController() && this.#getPipelineStatus() === "running";
+    }
+
+    #canStopPipeline(): boolean {
+        return this.#hasPipelineController() && this.#getPipelineStatus() !== "idle";
+    }
+
+    #canRunOneTimeTask(): boolean {
+        return this.#hasPipelineController();
+    }
+
     #renderPipelineAction(action: GraphVisualizationAutoGamePipelineAction) {
         return html`
             <button class="auto-game-action" type="button" ?disabled=${action.disabled} title=${action.description}>
@@ -55,18 +127,81 @@ export class GmAutoGamePanel extends LightDomLitElement {
 
     #renderPipelineControls() {
         const actions = this.model?.autoGamePipeline?.actions ?? [];
+        const canRunTask = this.#canRunOneTimeTask();
+        const trimmedTaskPrompt = this.taskPrompt.trim();
 
         return html`
             <gm-card class="catalog-card" .heading=${"Pipeline Controls"}>
-                ${actions.length === 0
-                    ? html`
-                          <p class="auto-game-empty">
-                              No auto-game pipeline controller is connected for this host yet.
-                          </p>
-                      `
-                    : html`<div class="auto-game-action-list">
-                          ${actions.map((action) => this.#renderPipelineAction(action))}
-                      </div>`}
+                <div class="auto-game-control-stack">
+                    <div class="auto-game-lifecycle-controls" aria-label="Auto-game pipeline lifecycle controls">
+                        <button
+                            id="start-auto-game-pipeline"
+                            class="auto-game-control auto-game-control--primary"
+                            type="button"
+                            ?disabled=${!this.#canStartPipeline()}
+                            @click=${() => this.#dispatchPipelineAction("start")}
+                        >
+                            Start
+                        </button>
+                        <button
+                            id="pause-auto-game-pipeline"
+                            class="auto-game-control"
+                            type="button"
+                            ?disabled=${!this.#canPausePipeline()}
+                            @click=${() => this.#dispatchPipelineAction("pause")}
+                        >
+                            Pause
+                        </button>
+                        <button
+                            id="stop-auto-game-pipeline"
+                            class="auto-game-control auto-game-control--danger"
+                            type="button"
+                            ?disabled=${!this.#canStopPipeline()}
+                            @click=${() => this.#dispatchPipelineAction("stop")}
+                        >
+                            Stop
+                        </button>
+                    </div>
+                    ${this.#hasPipelineController()
+                        ? null
+                        : html`
+                              <p class="auto-game-empty auto-game-empty--compact">
+                                  No auto-game pipeline controller is connected for this host yet.
+                              </p>
+                          `}
+                    <form
+                        class="auto-game-task-form"
+                        @submit=${(event: SubmitEvent) => {
+                            event.preventDefault();
+                            this.#submitOneTimeTask();
+                        }}
+                    >
+                        <label for="auto-game-task-prompt">One-time task</label>
+                        <textarea
+                            id="auto-game-task-prompt"
+                            name="auto-game-task-prompt"
+                            rows="3"
+                            placeholder="Add a player movement task..."
+                            .value=${this.taskPrompt}
+                            ?disabled=${!canRunTask}
+                            @input=${this.#onTaskInput}
+                            @keydown=${this.#onTaskKeyDown}
+                        ></textarea>
+                        <button
+                            id="run-auto-game-task"
+                            class="auto-game-control auto-game-control--primary"
+                            type="submit"
+                            ?disabled=${!canRunTask || trimmedTaskPrompt.length === 0}
+                        >
+                            Run Task
+                        </button>
+                    </form>
+                    ${actions.length === 0
+                        ? null
+                        : html`<div class="auto-game-action-list" aria-label="Host-provided pipeline actions">
+                              ${actions.map((action) => this.#renderPipelineAction(action))}
+                          </div>`}
+                </div>
             </gm-card>
         `;
     }
