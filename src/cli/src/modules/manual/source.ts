@@ -14,10 +14,10 @@ import {
 
 const {
     assertNonEmptyString,
-    getErrorMessageOrFallback,
     isErrorWithCode,
     parseJsonWithContext,
     resolveContainedRelativePath,
+    toContextualError,
     toPosixPath
 } = Core;
 
@@ -48,8 +48,7 @@ async function ensureDirectoryExists(root, { required, label }) {
             return false;
         }
 
-        const message = getErrorMessageOrFallback(error);
-        throw new Error(`${label} '${root}' is unavailable. (${message})`, { cause: error });
+        throw toContextualError(`${label} '${root}' is unavailable`, error, { wrap: "parentheses" });
     }
 }
 
@@ -101,8 +100,9 @@ export async function readManualText(root, relativePath) {
     try {
         return await fs.readFile(absolutePath, "utf8");
     } catch (error) {
-        const message = getErrorMessageOrFallback(error);
-        throw new Error(`Failed to read manual asset '${relativePath}' from '${root}'. (${message})`, { cause: error });
+        throw toContextualError(`Failed to read manual asset '${relativePath}' from '${root}'`, error, {
+            wrap: "parentheses"
+        });
     }
 }
 
@@ -115,8 +115,9 @@ export async function readManualJson(root, relativePath) {
             description: "manual asset"
         });
     } catch (error) {
-        const message = getErrorMessageOrFallback(error);
-        throw new Error(`Manual asset '${relativePath}' did not contain valid JSON. (${message})`, { cause: error });
+        throw toContextualError(`Manual asset '${relativePath}' did not contain valid JSON`, error, {
+            wrap: "parentheses"
+        });
     }
 }
 

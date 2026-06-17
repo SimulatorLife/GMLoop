@@ -315,7 +315,7 @@ function closeAvailablePortServer(server: Server): Promise<void> {
     return new Promise((resolve, reject) => {
         server.close((error) => {
             if (error) {
-                reject(new Error(`Failed to close temporary port server: ${error.message}`, { cause: error }));
+                reject(Core.toContextualError("Failed to close temporary port server", error));
                 return;
             }
 
