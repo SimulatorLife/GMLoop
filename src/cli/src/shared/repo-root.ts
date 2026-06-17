@@ -1,41 +1,10 @@
-import fs from "node:fs";
-import fsPromises from "node:fs/promises";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
+import { pathExists, pathExistsSync } from "./path-exists.js";
+
 const { walkAncestorDirectories } = Core;
-
-/**
- * Check if a path exists and optionally satisfies a predicate.
- * Returns true only if the path exists and the predicate passes; returns false
- * for any error including non-existent paths or permission issues.
- */
-async function pathExists(
-    filePath: string,
-    predicate?: (stat: Awaited<ReturnType<typeof fsPromises.stat>>) => boolean
-): Promise<boolean> {
-    try {
-        const stat = await fsPromises.stat(filePath);
-        return predicate ? predicate(stat) : true;
-    } catch {
-        return false;
-    }
-}
-
-/**
- * Check if a path exists and optionally satisfies a predicate.
- * Returns true only if the path exists and the predicate passes; returns false
- * for any error including non-existent paths or permission issues.
- */
-function pathExistsSync(filePath: string, predicate?: (stat: ReturnType<typeof fs.statSync>) => boolean): boolean {
-    try {
-        const stat = fs.statSync(filePath);
-        return predicate ? predicate(stat) : true;
-    } catch {
-        return false;
-    }
-}
 
 /**
  * Walk upward from startDir until a repo sentinel or top-most package.json is found.

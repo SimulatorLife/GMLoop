@@ -4,6 +4,8 @@ import path from "node:path";
 import { Core } from "@gmloop/core";
 import { Parser } from "@gmloop/parser";
 
+import { pathExistsSync } from "../../shared/path-exists.js";
+
 type ParsedLocalNamingCategory = "staticVariable" | "loopIndexVariable";
 
 type ParsedLocalDeclarationMetadata = {
@@ -189,7 +191,7 @@ export class ParsedLocalNamingCategoryResolver {
             let resolvedSourceText = sourceText;
             if (resolvedSourceText === null) {
                 const absoluteFilePath = path.resolve(this.projectRoot, filePath);
-                if (fs.existsSync(absoluteFilePath)) {
+                if (pathExistsSync(absoluteFilePath)) {
                     resolvedSourceText = fs.readFileSync(absoluteFilePath, "utf8");
                 }
             }
