@@ -11,6 +11,31 @@ type GetErrorMessageOrFallbackOptions = {
     fallback?: unknown;
 };
 
+/**
+ * Style for joining a context prefix with the original error's message when
+ * constructing a new wrapped error. Call sites historically used two styles:
+ *   - `colon`: `<context>: <message>` (e.g. "Transpilation failed: ENOENT")
+ *   - `parentheses`: `<context>. (<message>)` (e.g. "Manual root '/x' is unavailable. (ENOENT)")
+ */
+type ContextualErrorWrap = "colon" | "parentheses";
+
+interface ToContextualErrorOptions {
+    /**
+     * Name assigned to the returned error so consumers can distinguish
+     * semantic categories (e.g. `"SyntaxError"`, `"AbortError"`). Defaults to
+     * the standard `Error` name.
+     */
+    name?: string;
+
+    /**
+     * Separator style used between `context` and the original error message.
+     * Defaults to `"colon"` because it is the most common style across the
+     * codebase; callers that historically wrapped the message in parentheses
+     * can opt into `"parentheses"`.
+     */
+    wrap?: ContextualErrorWrap;
+}
+
 const UNKNOWN_ERROR_FALLBACK = "Unknown error";
 
 /**
@@ -172,4 +197,62 @@ export function formatTypeValidationError(
 ): string {
     const receivedType = typeof receivedValue;
     return `${label} must be provided as ${expectedType} (received type '${receivedType}').`;
+}
+
+/**
+ * Wrap an unknown thrown value with a contextual message while preserving it
+ * as the new error's `cause`.
+ *
+ * Several call sites across the project repeat the same five-line idiom:
+ *
+ * ```ts
+ * try {
+ *     // ...
+ * } catch (error) {
+ *     const message = getErrorMessageOrFallback(error);
+ *     throw new Error(`Failed to X: ${message}`, { cause: error });
+ * }
+ * ```
+ *
+ * This helper centralises that idiom so the wrapper construction, the
+ * fallback message extraction, and the cause preservation are all handled in
+ * one place. The returned `Error` always:
+ *   - carries a non-empty message (`context` joined with the cause's message
+ *     via the chosen {@link ToContextualErrorOptions.wrap} style)
+ *   - preserves the original value as `cause` for downstream diagnostics and
+ *     structured logging
+ *   - uses `Error` as the constructor so the returned value is always a real
+ *     `Error` instance regardless of what was originally thrown
+ *
+ * Callers that previously mutated the resulting error further (for example to
+ * attach extra metadata) can do so on the returned value before throwing it.
+ *
+ * @param {string} context Short human-readable prefix describing where the
+ *   error originated. Should not include a trailing separator.
+ * @param {unknown} cause Value that was caught; preserved as `cause` on the
+ *   returned error.
+ * @param {ToContextualErrorOptions} [options] Optional wrapper configuration.
+ * @param {string} [options.name="Error"] Name assigned to the returned error.
+ * @param {"colon" | "parentheses"} [options.wrap="colon"] Separator style.
+ * @returns {Error} Newly constructed error ready to throw.
+ *
+ * @example
+ * try {
+ *     await fs.readFile(path, "utf8");
+ * } catch (error) {
+ *     throw toContextualError(`Failed to read ${path}`, error);
+ * }
+ */
+export function toContextualError(
+    context: string,
+    cause: unknown,
+    { name = "Error", wrap = "colon" }: ToContextualErrorOptions = {}
+): Error {
+    const causeMessage = getErrorMessageOrFallback(cause);
+    const message = wrap === "parentheses" ? `${context}. (${causeMessage})` : `${context}: ${causeMessage}`;
+
+    const error = new Error(message);
+    error.name = name;
+    error.cause = cause;
+    return error;
 }

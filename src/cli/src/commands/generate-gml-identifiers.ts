@@ -28,8 +28,8 @@ import { resolveFromRepoRoot } from "../shared/workspace-paths.js";
 
 const {
     describeValueWithArticle,
-    getErrorMessageOrFallback,
     normalizeIdentifierMetadataEntries,
+    toContextualError,
     toMutableArray,
     toNormalizedLowerCaseSet,
     toPosixPath,
@@ -299,8 +299,7 @@ function parseArrayLiteral(source: string, identifier: string, { timeoutMs }: Pa
     try {
         return vm.runInNewContext(literal, {}, vmOptions);
     } catch (error) {
-        const message = getErrorMessageOrFallback(error);
-        throw new Error(`Failed to evaluate array literal for ${identifier}: ${message}`, { cause: error });
+        throw toContextualError(`Failed to evaluate array literal for ${identifier}`, error);
     }
 }
 
