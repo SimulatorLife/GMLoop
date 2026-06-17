@@ -21,6 +21,7 @@ import {
     validatePatch,
     validatePatchDependencies
 } from "./patch-utils.js";
+import { DEFAULT_MAX_ERROR_HISTORY_SIZE, DEFAULT_MAX_UNDO_STACK_SIZE } from "./runtime-defaults.js";
 import type {
     ApplyPatchResult,
     BatchApplyResult,
@@ -35,9 +36,6 @@ import type {
     TrySafeApplyResult
 } from "./types.js";
 import { trimArrayToMaxSize } from "./undo-stack-policy.js";
-
-const DEFAULT_MAX_UNDO_STACK_SIZE = 50;
-const DEFAULT_MAX_ERROR_HISTORY_SIZE = 100;
 
 export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): RuntimeWrapper {
     const baseRegistry = createRegistry(options.registry);
