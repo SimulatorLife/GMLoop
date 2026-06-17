@@ -4,7 +4,8 @@ import type {
     GraphVisualizationAutoGamePipelineAction,
     GraphVisualizationAutoGamePipelineEvent,
     GraphVisualizationAutoGamePipelineLlmOutput,
-    GraphVisualizationAutoGamePipelineSkill
+    GraphVisualizationAutoGamePipelineSkill,
+    GraphVisualizationAutoGamePipelineStatus
 } from "../../graph/types.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
@@ -16,6 +17,28 @@ import {
     type GraphUiTriggerAutoGameTaskDetail
 } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
+
+/**
+ * Pipeline statuses in which the Start action is enabled (anything that is
+ * not already running). Keeping the set frozen at module scope avoids
+ * allocating a new Set on every render and lets the lifecycle buttons share
+ * a single helper without per-action duplication.
+ */
+const AUTO_GAME_LIFECYCLE_START_STATUSES: ReadonlySet<GraphVisualizationAutoGamePipelineStatus> =
+    new Set<GraphVisualizationAutoGamePipelineStatus>(["idle", "blocked", "success", "error"]);
+
+/**
+ * Pipeline statuses in which the Pause action is enabled (only running).
+ */
+const AUTO_GAME_LIFECYCLE_PAUSE_STATUSES: ReadonlySet<GraphVisualizationAutoGamePipelineStatus> =
+    new Set<GraphVisualizationAutoGamePipelineStatus>(["running"]);
+
+/**
+ * Pipeline statuses in which the Stop action is enabled (anything that is
+ * not idle).
+ */
+const AUTO_GAME_LIFECYCLE_STOP_STATUSES: ReadonlySet<GraphVisualizationAutoGamePipelineStatus> =
+    new Set<GraphVisualizationAutoGamePipelineStatus>(["running", "blocked", "success", "error"]);
 
 /**
  * Auto-game creation surface that displays pipeline, AI skill, LLM, and MCP activity.
@@ -78,7 +101,7 @@ export class GmAutoGamePanel extends LightDomLitElement {
 
     #submitOneTimeTask(): void {
         const prompt = this.taskPrompt.trim();
-        if (!this.#canRunOneTimeTask() || prompt.length === 0) {
+        if (!this.#hasPipelineController() || prompt.length === 0) {
             return;
         }
 
@@ -96,24 +119,19 @@ export class GmAutoGamePanel extends LightDomLitElement {
         return this.model?.isServerMode === true;
     }
 
-    #getPipelineStatus() {
+    #getPipelineStatus(): GraphVisualizationAutoGamePipelineStatus {
         return this.model?.autoGamePipeline?.status ?? "idle";
     }
 
-    #canStartPipeline(): boolean {
-        return this.#hasPipelineController() && this.#getPipelineStatus() !== "running";
-    }
-
-    #canPausePipeline(): boolean {
-        return this.#hasPipelineController() && this.#getPipelineStatus() === "running";
-    }
-
-    #canStopPipeline(): boolean {
-        return this.#hasPipelineController() && this.#getPipelineStatus() !== "idle";
-    }
-
-    #canRunOneTimeTask(): boolean {
-        return this.#hasPipelineController();
+    /**
+     * Decide whether a pipeline lifecycle button can fire its action in the
+     * current state. Each lifecycle action is allowed only from a specific set
+     * of pipeline statuses, but every action also requires a connected server
+     * mode. Centralizing the predicate keeps the per-action call sites to a
+     * single read.
+     */
+    #canRunLifecycleAction(allowedStatuses: ReadonlySet<GraphVisualizationAutoGamePipelineStatus>): boolean {
+        return this.#hasPipelineController() && allowedStatuses.has(this.#getPipelineStatus());
     }
 
     #renderPipelineAction(action: GraphVisualizationAutoGamePipelineAction) {
@@ -127,7 +145,7 @@ export class GmAutoGamePanel extends LightDomLitElement {
 
     #renderPipelineControls() {
         const actions = this.model?.autoGamePipeline?.actions ?? [];
-        const canRunTask = this.#canRunOneTimeTask();
+        const canRunTask = this.#hasPipelineController();
         const trimmedTaskPrompt = this.taskPrompt.trim();
 
         return html`
@@ -138,7 +156,7 @@ export class GmAutoGamePanel extends LightDomLitElement {
                             id="start-auto-game-pipeline"
                             class="auto-game-control auto-game-control--primary"
                             type="button"
-                            ?disabled=${!this.#canStartPipeline()}
+                            ?disabled=${!this.#canRunLifecycleAction(AUTO_GAME_LIFECYCLE_START_STATUSES)}
                             @click=${() => this.#dispatchPipelineAction("start")}
                         >
                             Start
@@ -147,7 +165,7 @@ export class GmAutoGamePanel extends LightDomLitElement {
                             id="pause-auto-game-pipeline"
                             class="auto-game-control"
                             type="button"
-                            ?disabled=${!this.#canPausePipeline()}
+                            ?disabled=${!this.#canRunLifecycleAction(AUTO_GAME_LIFECYCLE_PAUSE_STATUSES)}
                             @click=${() => this.#dispatchPipelineAction("pause")}
                         >
                             Pause
@@ -156,7 +174,7 @@ export class GmAutoGamePanel extends LightDomLitElement {
                             id="stop-auto-game-pipeline"
                             class="auto-game-control auto-game-control--danger"
                             type="button"
-                            ?disabled=${!this.#canStopPipeline()}
+                            ?disabled=${!this.#canRunLifecycleAction(AUTO_GAME_LIFECYCLE_STOP_STATUSES)}
                             @click=${() => this.#dispatchPipelineAction("stop")}
                         >
                             Stop
