@@ -368,49 +368,6 @@ export function evaluateCanLogicalExpressionBenefitFromNormalization(node: unkno
 }
 
 /**
- * Pure evaluator: returns `true` when the supplied test is one of the
- * "is this undefined?" patterns the normalizer can collapse into
- * `x ??= y;`.
- */
-export function evaluateIsUndefinedCheckAgainstTarget(test: unknown, target: unknown): boolean {
-    const testNode = Core.unwrapParenthesizedExpression(test);
-    if (!testNode || !Core.isObjectLike(target)) {
-        return false;
-    }
-
-    const callee =
-        (testNode as { callee?: unknown; object?: unknown }).callee ?? (testNode as { object?: unknown }).object;
-    const argumentsList = (testNode as { arguments?: unknown[] }).arguments ?? [];
-    if (
-        (testNode as { type?: string }).type === "CallExpression" &&
-        callee &&
-        (callee as { type?: string }).type === "Identifier" &&
-        (callee as { name?: string }).name === "is_undefined" &&
-        argumentsList.length === 1
-    ) {
-        return evaluateAreComparableAssignmentTargetsEquivalent(argumentsList[0], target);
-    }
-
-    if (
-        (testNode as { type?: string }).type !== "BinaryExpression" ||
-        (testNode as { operator?: string }).operator !== "=="
-    ) {
-        return false;
-    }
-
-    const left = (testNode as { left?: unknown }).left;
-    const right = (testNode as { right?: unknown }).right;
-
-    const leftUndefined = isUndefinedLhsOrRhs(left);
-    const rightUndefined = isUndefinedLhsOrRhs(right);
-
-    return (
-        (Boolean(leftUndefined) && evaluateAreComparableAssignmentTargetsEquivalent(right, target)) ||
-        (Boolean(rightUndefined) && evaluateAreComparableAssignmentTargetsEquivalent(left, target))
-    );
-}
-
-/**
  * Pure structural-equality predicate over the assignment-target shapes
  * the rule cares about: identifiers and member access (dot and index).
  *
@@ -478,23 +435,6 @@ function readAssignmentExpr(statement: unknown): { left: unknown; right: unknown
     return null;
 }
 
-function isUndefinedLhsOrRhs(node: unknown): boolean {
-    if (!node || typeof node !== "object") {
-        return false;
-    }
-
-    const record = node as { type?: string; name?: string; value?: unknown };
-    if (record.type === "Identifier" && record.name === "undefined") {
-        return true;
-    }
-
-    if (record.type === "Literal" && (record.value === undefined || record.value === "undefined")) {
-        return true;
-    }
-
-    return false;
-}
-
 /**
  * Namespace bundling the policy layer of the `gml/optimize-logical-flow`
  * rule.  Importers should reach for these predicates instead of
@@ -511,7 +451,6 @@ export const optimizeLogicalFlowPolicy = Object.freeze({
     evaluateCanBooleanLiteralComparisonBenefitFromNormalization,
     evaluateCanUnaryExpressionBenefitFromNormalization,
     evaluateCanLogicalExpressionBenefitFromNormalization,
-    evaluateIsUndefinedCheckAgainstTarget,
     evaluateAreComparableAssignmentTargetsEquivalent,
     DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS
 });

@@ -26,7 +26,6 @@ import {
     evaluateHasLogicalNormalizationSignal,
     evaluateIsElsePrefixedIfAtIndex,
     evaluateIsIfNodeInElseIfChain,
-    evaluateIsUndefinedCheckAgainstTarget,
     evaluateLogicalFlowCandidate,
     evaluateUnsafeCommentSyntax,
     optimizeLogicalFlowPolicy
@@ -392,63 +391,6 @@ void test("evaluateAreComparableAssignmentTargetsEquivalent rejects non-record i
 });
 
 // ---------------------------------------------------------------------------
-// evaluateIsUndefinedCheckAgainstTarget
-// ---------------------------------------------------------------------------
-
-void test("evaluateIsUndefinedCheckAgainstTarget detects is_undefined(x) matching the target", () => {
-    const condition = {
-        type: "CallExpression",
-        callee: { type: "Identifier", name: "is_undefined" },
-        arguments: [{ type: "Identifier", name: "x" }]
-    };
-    const target = { type: "Identifier", name: "x" };
-    assert.strictEqual(evaluateIsUndefinedCheckAgainstTarget(condition, target), true);
-});
-
-void test("evaluateIsUndefinedCheckAgainstTarget rejects is_undefined on a different target", () => {
-    const condition = {
-        type: "CallExpression",
-        callee: { type: "Identifier", name: "is_undefined" },
-        arguments: [{ type: "Identifier", name: "y" }]
-    };
-    const target = { type: "Identifier", name: "x" };
-    assert.strictEqual(evaluateIsUndefinedCheckAgainstTarget(condition, target), false);
-});
-
-void test("evaluateIsUndefinedCheckAgainstTarget detects x == undefined", () => {
-    const condition = {
-        type: "BinaryExpression",
-        operator: "==",
-        left: { type: "Identifier", name: "x" },
-        right: { type: "Identifier", name: "undefined" }
-    };
-    const target = { type: "Identifier", name: "x" };
-    assert.strictEqual(evaluateIsUndefinedCheckAgainstTarget(condition, target), true);
-});
-
-void test("evaluateIsUndefinedCheckAgainstTarget detects undefined == x", () => {
-    const condition = {
-        type: "BinaryExpression",
-        operator: "==",
-        left: { type: "Identifier", name: "undefined" },
-        right: { type: "Identifier", name: "x" }
-    };
-    const target = { type: "Identifier", name: "x" };
-    assert.strictEqual(evaluateIsUndefinedCheckAgainstTarget(condition, target), true);
-});
-
-void test("evaluateIsUndefinedCheckAgainstTarget rejects non-equality operators", () => {
-    const condition = {
-        type: "BinaryExpression",
-        operator: "!=",
-        left: { type: "Identifier", name: "x" },
-        right: { type: "Identifier", name: "undefined" }
-    };
-    const target = { type: "Identifier", name: "x" };
-    assert.strictEqual(evaluateIsUndefinedCheckAgainstTarget(condition, target), false);
-});
-
-// ---------------------------------------------------------------------------
 // evaluateCanIfStatementBenefitFromNormalization
 // ---------------------------------------------------------------------------
 
@@ -488,7 +430,7 @@ void test("evaluateCanIfStatementBenefitFromNormalization detects if/else x = A;
     assert.strictEqual(evaluateCanIfStatementBenefitFromNormalization(node), true);
 });
 
-void test("evaluateCanIfStatementBenefitFromNormalization detects if (is_undefined(x)) x = y", () => {
+void test("evaluateCanIfStatementBenefitFromNormalization leaves GM2061 undefined guards to Feather", () => {
     const node = {
         type: "IfStatement",
         test: {
@@ -506,7 +448,7 @@ void test("evaluateCanIfStatementBenefitFromNormalization detects if (is_undefin
             }
         }
     };
-    assert.strictEqual(evaluateCanIfStatementBenefitFromNormalization(node), true);
+    assert.strictEqual(evaluateCanIfStatementBenefitFromNormalization(node), false);
 });
 
 void test("evaluateCanIfStatementBenefitFromNormalization rejects a no-shape if", () => {
@@ -584,7 +526,6 @@ void test("optimizeLogicalFlowPolicy namespace exposes the expected evaluators",
         "evaluateCanBooleanLiteralComparisonBenefitFromNormalization",
         "evaluateCanUnaryExpressionBenefitFromNormalization",
         "evaluateCanLogicalExpressionBenefitFromNormalization",
-        "evaluateIsUndefinedCheckAgainstTarget",
         "evaluateAreComparableAssignmentTargetsEquivalent",
         "DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS"
     ] as const;

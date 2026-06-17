@@ -1596,6 +1596,24 @@ void test("normalize-operator-aliases normalizes uppercase binary aliases and NO
     assertEquals(result.output, expected);
 });
 
+void test("normalize-operator-aliases preserves macro-defined operator alias identifiers", () => {
+    const input = [
+        "#macro AND &&",
+        "#macro OR ||",
+        "#macro NOT !",
+        "#macro XOR ^^",
+        "",
+        "if (ready AND NOT done OR extra XOR flag) {",
+        "    finish();",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("normalize-operator-aliases", input, {});
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
 void test("normalize-operator-aliases does not rewrite identifier usage of 'not'", () => {
     const input = ["var not = 1;", "value = not + 2;", ""].join("\n");
     const result = lintWithRule("normalize-operator-aliases", input, {});

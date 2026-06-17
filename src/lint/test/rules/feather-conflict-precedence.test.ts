@@ -81,10 +81,7 @@ void test("migrated logical-flow nullish fix is owned only by Feather GM2061", a
     } as const;
 
     const diagnosticResult = await lintSource(sourceText, bothRules, false);
-    assert.deepEqual(
-        new Set(diagnosticResult.messages.map((message) => message.ruleId)),
-        new Set(["feather/gm2061"])
-    );
+    assert.deepEqual(new Set(diagnosticResult.messages.map((message) => message.ruleId)), new Set(["feather/gm2061"]));
 
     const featherResult = await lintSource(sourceText, { "feather/gm2061": "warn" }, true);
     assert.equal(featherResult.output, "array = modify_array(array) ?? [];\n");

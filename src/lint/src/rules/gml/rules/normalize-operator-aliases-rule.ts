@@ -20,6 +20,7 @@ const WORD_OPERATOR_ALIASES = Object.freeze(
         .sort((left, right) => right.length - left.length)
 );
 const OPERATOR_ALIASES_BY_CANONICAL = createOperatorAliasesByCanonical();
+const MACRO_DECLARATION_PATTERN = /^\s*#macro\s+([A-Za-z_][A-Za-z0-9_]*)\b/gmu;
 
 function createOperatorAliasesByCanonical(): ReadonlyMap<string, ReadonlyArray<string>> {
     const aliasesByCanonical = new Map<string, string[]>();
@@ -132,7 +133,23 @@ function findNextLineStart(sourceText: string, index: number): number {
     return nextLineBreak === -1 ? sourceText.length : nextLineBreak + 1;
 }
 
-function rewriteLogicalNotAliasesOutsideTrivia(sourceText: string): string {
+function collectDeclaredMacroNames(sourceText: string): ReadonlySet<string> {
+    const declaredMacroNames = new Set<string>();
+    for (const match of sourceText.matchAll(MACRO_DECLARATION_PATTERN)) {
+        const macroName = match[1];
+        if (macroName) {
+            declaredMacroNames.add(macroName.toLowerCase());
+        }
+    }
+
+    return declaredMacroNames;
+}
+
+function isProtectedMacroIdentifier(identifier: string, declaredMacroNames: ReadonlySet<string>): boolean {
+    return declaredMacroNames.has(identifier.toLowerCase());
+}
+
+function rewriteLogicalNotAliasesOutsideTrivia(sourceText: string, declaredMacroNames: ReadonlySet<string>): string {
     const edits: SourceTextEdit[] = [];
     const scanState = Core.createStringCommentScanState();
     const sourceLength = sourceText.length;
@@ -150,14 +167,17 @@ function rewriteLogicalNotAliasesOutsideTrivia(sourceText: string): string {
             continue;
         }
 
-        const wordOperatorEdit = readWordOperatorAliasEditAt(sourceText, index);
+        const wordOperatorEdit = readWordOperatorAliasEditAt(sourceText, index, declaredMacroNames);
         if (wordOperatorEdit) {
             edits.push(wordOperatorEdit);
             index = wordOperatorEdit.end;
             continue;
         }
 
-        if (!hasLogicalNotAliasAt(sourceText, index)) {
+        if (
+            isProtectedMacroIdentifier(sourceText.slice(index, index + LOGICAL_NOT_ALIAS.length), declaredMacroNames) ||
+            !hasLogicalNotAliasAt(sourceText, index)
+        ) {
             index += 1;
             continue;
         }
@@ -173,7 +193,11 @@ function rewriteLogicalNotAliasesOutsideTrivia(sourceText: string): string {
     return applySourceTextEdits(sourceText, edits);
 }
 
-function readWordOperatorAliasEditAt(sourceText: string, startIndex: number): SourceTextEdit | null {
+function readWordOperatorAliasEditAt(
+    sourceText: string,
+    startIndex: number,
+    declaredMacroNames: ReadonlySet<string>
+): SourceTextEdit | null {
     for (const operatorAlias of WORD_OPERATOR_ALIASES) {
         const endIndex = startIndex + operatorAlias.length;
         if (endIndex > sourceText.length) {
@@ -182,6 +206,9 @@ function readWordOperatorAliasEditAt(sourceText: string, startIndex: number): So
 
         const sourceOperator = sourceText.slice(startIndex, endIndex);
         if (sourceOperator.toLowerCase() !== operatorAlias) {
+            continue;
+        }
+        if (isProtectedMacroIdentifier(sourceOperator, declaredMacroNames)) {
             continue;
         }
 
@@ -214,6 +241,7 @@ function locateBinaryOperatorSourceRange(parameters: {
     normalizedOperator: string;
     expressionStart: number;
     expressionEnd: number;
+    declaredMacroNames: ReadonlySet<string>;
 }): [number, number] | null {
     const leftNode = (parameters.node as { left?: Rule.Node }).left;
     const rightNode = (parameters.node as { right?: Rule.Node }).right;
@@ -260,6 +288,9 @@ function locateBinaryOperatorSourceRange(parameters: {
             if (candidateEnd > searchEnd || sliced.toLowerCase() !== candidate.toLowerCase()) {
                 continue;
             }
+            if (isProtectedMacroIdentifier(sliced, parameters.declaredMacroNames)) {
+                continue;
+            }
 
             if (
                 WORD_OPERATOR_PATTERN.test(candidate) &&
@@ -278,7 +309,12 @@ function locateBinaryOperatorSourceRange(parameters: {
     return null;
 }
 
-function reportOperatorAliasIfNeeded(context: Rule.RuleContext, definition: GmlRuleDefinition, node: Rule.Node): void {
+function reportOperatorAliasIfNeeded(
+    context: Rule.RuleContext,
+    definition: GmlRuleDefinition,
+    node: Rule.Node,
+    declaredMacroNames: ReadonlySet<string>
+): void {
     const operatorValue = (node as { operator?: unknown }).operator;
     const operator = typeof operatorValue === "string" ? operatorValue : "";
     const canonical = Core.OPERATOR_ALIAS_MAP.get(operator.toLowerCase()) ?? operator.toLowerCase();
@@ -294,7 +330,8 @@ function reportOperatorAliasIfNeeded(context: Rule.RuleContext, definition: GmlR
         operator,
         normalizedOperator: canonical,
         expressionStart: start,
-        expressionEnd: end
+        expressionEnd: end,
+        declaredMacroNames
     });
     if (operatorRange === null) {
         return;
@@ -317,15 +354,18 @@ export function createNormalizeOperatorAliasesRule(definition: GmlRuleDefinition
     return Object.freeze({
         meta: createMeta(definition),
         create(context) {
+            const declaredMacroNames = collectDeclaredMacroNames(context.sourceCode.text);
             return Object.freeze({
                 Program() {
-                    reportProgramTextRewrite(context, definition, rewriteLogicalNotAliasesOutsideTrivia);
+                    reportProgramTextRewrite(context, definition, (sourceText) =>
+                        rewriteLogicalNotAliasesOutsideTrivia(sourceText, declaredMacroNames)
+                    );
                 },
                 BinaryExpression(node) {
-                    reportOperatorAliasIfNeeded(context, definition, node);
+                    reportOperatorAliasIfNeeded(context, definition, node, declaredMacroNames);
                 },
                 LogicalExpression(node) {
-                    reportOperatorAliasIfNeeded(context, definition, node);
+                    reportOperatorAliasIfNeeded(context, definition, node, declaredMacroNames);
                 },
                 UnaryExpression() {
                     // Parse-failure and legacy alias normalization is handled by Program text rewrite.
