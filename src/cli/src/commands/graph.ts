@@ -651,6 +651,150 @@ function createGraphVisualizationLiveReloadStartupTimeoutError(stderrMessages: R
     );
 }
 
+type GraphVisualizationLiveReloadStartupProbe = Readonly<{
+    createTimeoutError: (liveReloadChildStderrBuffer: ReadonlyArray<string>) => Error;
+    isChildProcessActive: () => boolean;
+    tryFetchStatus: () => Promise<GraphVisualizationLiveReloadStatusSnapshot | null>;
+    buildReadyModel: (
+        snapshot: GraphVisualizationLiveReloadStatusSnapshot
+    ) => Promise<GraphVisualizationLiveReloadModel | null>;
+    childStderrBuffer: ReadonlyArray<string>;
+}>;
+
+type GraphVisualizationLiveReloadStartupTimers<TTimerHandle> = Readonly<{
+    cancelPoll: (handle: TTimerHandle) => void;
+    cancelTimeout: (handle: TTimerHandle) => void;
+    schedulePoll: (callback: () => void, delayMs: number) => TTimerHandle;
+    scheduleTimeout: (callback: () => void, delayMs: number) => TTimerHandle;
+}>;
+
+const DEFAULT_GRAPH_VISUALIZATION_LIVE_RELOAD_STARTUP_TIMERS: GraphVisualizationLiveReloadStartupTimers<
+    ReturnType<typeof setTimeout>
+> = Object.freeze({
+    cancelPoll: (handle) => {
+        globalThis.clearTimeout(handle);
+    },
+    cancelTimeout: (handle) => {
+        globalThis.clearTimeout(handle);
+    },
+    schedulePoll: (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
+    scheduleTimeout: (callback, delayMs) => globalThis.setTimeout(callback, delayMs)
+});
+
+const GRAPH_VISUALIZATION_LIVE_RELOAD_START_POLL_INTERVAL_MS = 200;
+
+/**
+ * Poll the live-reload status server until it reports readiness, an external
+ * `AbortSignal` fires, or the startup timeout elapses.
+ *
+ * The function guarantees that no `setTimeout` scheduled by the polling loop
+ * survives settlement: every exit path — readiness, external abort, startup
+ * timeout, or a synchronous throw from the probe — clears the pending poll
+ * timer and the startup timeout before resolving or rejecting the returned
+ * promise. This prevents the dangling-poll chain that would otherwise keep
+ * the Node event loop alive past shutdown and surface as an unhandled
+ * rejection if the probe ever throws.
+ */
+async function awaitGraphVisualizationLiveReloadStartup<TTimerHandle = ReturnType<typeof setTimeout>>(
+    probe: GraphVisualizationLiveReloadStartupProbe,
+    timings: Readonly<{ pollIntervalMs: number; startupTimeoutMs: number }>,
+    externalSignal: AbortSignal | null = null,
+    timers: GraphVisualizationLiveReloadStartupTimers<TTimerHandle> = DEFAULT_GRAPH_VISUALIZATION_LIVE_RELOAD_STARTUP_TIMERS as GraphVisualizationLiveReloadStartupTimers<TTimerHandle>
+): Promise<GraphVisualizationLiveReloadModel> {
+    return await new Promise<GraphVisualizationLiveReloadModel>((resolve, reject) => {
+        let settled = false;
+        let pollTimerHandle: TTimerHandle | null = null;
+        const startupTimerHandle = timers.scheduleTimeout(() => {
+            settle(() => {
+                reject(probe.createTimeoutError(probe.childStderrBuffer));
+            });
+        }, timings.startupTimeoutMs);
+
+        const handleExternalAbort = (): void => {
+            // `handleExternalAbort` is only registered when `externalSignal`
+            // is non-null, so `Core.createAbortError` always returns a value
+            // here (the null branch is unreachable).
+            const abortError = Core.createAbortError(externalSignal, "Live reload startup aborted.");
+            if (abortError === null) {
+                return;
+            }
+            // Reject with a real Error instance. `Core.createAbortError`
+            // returns the original reason when it is already an Error, so
+            // this typically preserves the caller's stack trace; otherwise
+            // the abort metadata is folded into a fresh Error.
+            const reasonError = abortError instanceof Error ? abortError : new Error("Live reload startup aborted.");
+            settle(() => {
+                reject(reasonError);
+            });
+        };
+
+        if (externalSignal !== null) {
+            if (externalSignal.aborted) {
+                handleExternalAbort();
+                return;
+            }
+            externalSignal.addEventListener("abort", handleExternalAbort, { once: true });
+        }
+
+        const settle = (action: () => void): void => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            timers.cancelTimeout(startupTimerHandle);
+            if (pollTimerHandle !== null) {
+                timers.cancelPoll(pollTimerHandle);
+                pollTimerHandle = null;
+            }
+            if (externalSignal !== null) {
+                externalSignal.removeEventListener("abort", handleExternalAbort);
+            }
+            action();
+        };
+
+        const scheduleNextPoll = (): void => {
+            pollTimerHandle = timers.schedulePoll(() => {
+                pollTimerHandle = null;
+                void pollStatus();
+            }, timings.pollIntervalMs);
+        };
+
+        const pollStatus = async (): Promise<void> => {
+            try {
+                const snapshot = await probe.tryFetchStatus();
+                if (settled) {
+                    return;
+                }
+                const readyModel = snapshot === null ? null : await probe.buildReadyModel(snapshot);
+                if (settled) {
+                    return;
+                }
+                if (readyModel !== null) {
+                    settle(() => {
+                        resolve(readyModel);
+                    });
+                    return;
+                }
+
+                if (!probe.isChildProcessActive()) {
+                    settle(() => {
+                        reject(new Error("Live reload stopped before the status server became available."));
+                    });
+                    return;
+                }
+
+                scheduleNextPoll();
+            } catch (error) {
+                settle(() => {
+                    reject(error instanceof Error ? error : new Error(String(error)));
+                });
+            }
+        };
+
+        void pollStatus();
+    });
+}
+
 function startGraphVisualizationUiSourceWatcher({
     watchRoot,
     onReloadCandidate,
@@ -1443,65 +1587,56 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 }
             });
 
-            return await new Promise<GraphVisualizationLiveReloadModel>((resolve, reject) => {
-                const timeoutHandle = globalThis.setTimeout(() => {
-                    cleanup();
-                    void stopGraphVisualizationLiveReloadChildProcess(activeLiveReloadSession);
-                    reject(
-                        createGraphVisualizationLiveReloadStartupTimeoutError(activeLiveReloadSession.childStderrBuffer)
-                    );
-                }, GRAPH_VISUALIZATION_LIVE_RELOAD_START_TIMEOUT_MS);
+            const startupAbortController = new AbortController();
+            const handleStartupExit = (code: number | null): void => {
+                if (startupAbortController.signal.aborted) {
+                    return;
+                }
+                const stderrMessage = activeLiveReloadSession.childStderrBuffer.join("\n").trim();
+                const exitError = new Error(
+                    stderrMessage.length > 0
+                        ? stderrMessage
+                        : `Live reload exited before it became ready (exit code ${String(code ?? "unknown")}).`
+                );
+                startupAbortController.abort(exitError);
+            };
+            childProcess.once("exit", handleStartupExit);
 
-                const cleanup = (): void => {
-                    globalThis.clearTimeout(timeoutHandle);
-                    childProcess.off("exit", handleExit);
-                };
-
-                const handleExit = (code: number | null): void => {
-                    cleanup();
-                    const stderrMessage = activeLiveReloadSession.childStderrBuffer.join("\n").trim();
-                    reject(
-                        new Error(
-                            stderrMessage.length > 0
-                                ? stderrMessage
-                                : `Live reload exited before it became ready (exit code ${String(code ?? "unknown")}).`
-                        )
-                    );
-                };
-
-                childProcess.once("exit", handleExit);
-
-                const pollStatus = async (): Promise<void> => {
-                    const snapshot = await tryFetchGraphVisualizationLiveReloadStatusSnapshot(
-                        activeLiveReloadSession.model?.endpoints.statusUrl ?? undefined
-                    );
-                    const readyModel =
-                        snapshot === null
-                            ? null
-                            : await createReachableGraphVisualizationLiveReloadModel(
-                                  activeLiveReloadSession,
-                                  snapshot,
-                                  endpointOptions
-                              );
-                    if (readyModel !== null) {
-                        cleanup();
-                        resolve(setActiveGraphVisualizationLiveReloadModel(activeLiveReloadSession, readyModel));
-                        return;
-                    }
-
-                    if (activeLiveReloadSession.childProcess === null) {
-                        cleanup();
-                        reject(new Error("Live reload stopped before the status server became available."));
-                        return;
-                    }
-
-                    globalThis.setTimeout(() => {
-                        void pollStatus();
-                    }, 200);
-                };
-
-                void pollStatus();
-            });
+            try {
+                return setActiveGraphVisualizationLiveReloadModel(
+                    activeLiveReloadSession,
+                    await awaitGraphVisualizationLiveReloadStartup(
+                        {
+                            buildReadyModel: (snapshot) =>
+                                createReachableGraphVisualizationLiveReloadModel(
+                                    activeLiveReloadSession,
+                                    snapshot,
+                                    endpointOptions
+                                ),
+                            childStderrBuffer: activeLiveReloadSession.childStderrBuffer,
+                            createTimeoutError: (stderrBuffer) =>
+                                createGraphVisualizationLiveReloadStartupTimeoutError(stderrBuffer),
+                            isChildProcessActive: () => activeLiveReloadSession.childProcess !== null,
+                            tryFetchStatus: () =>
+                                tryFetchGraphVisualizationLiveReloadStatusSnapshot(
+                                    activeLiveReloadSession.model?.endpoints.statusUrl ?? undefined
+                                )
+                        },
+                        {
+                            pollIntervalMs: GRAPH_VISUALIZATION_LIVE_RELOAD_START_POLL_INTERVAL_MS,
+                            startupTimeoutMs: GRAPH_VISUALIZATION_LIVE_RELOAD_START_TIMEOUT_MS
+                        },
+                        startupAbortController.signal
+                    )
+                );
+            } catch (error) {
+                if (error instanceof Error && /timed out waiting/i.test(error.message)) {
+                    await stopGraphVisualizationLiveReloadChildProcess(activeLiveReloadSession);
+                }
+                throw error;
+            } finally {
+                childProcess.off("exit", handleStartupExit);
+            }
         })();
 
         const activeStartupPromise = setActiveGraphVisualizationLiveReloadStartupPromise(
@@ -2149,6 +2284,7 @@ export function createGraphCommand(): Command {
 
 export const __graphCommandTest__ = Object.freeze({
     GRAPH_VISUALIZATION_LIVE_RELOAD_START_TIMEOUT_MS,
+    awaitGraphVisualizationLiveReloadStartup,
     createGraphVisualizationWorkflowArguments,
     createGraphVisualizationLiveReloadDevCommandArgs,
     createGraphVisualizationLiveReloadModel,
