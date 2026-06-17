@@ -3,6 +3,7 @@ import { describe, it, mock } from "node:test";
 
 import {
     CliUsageError,
+    createCliCommandErrorHandler,
     createCliErrorDetails,
     formatCliError,
     handleCliError,
@@ -117,3 +118,53 @@ function captureConsoleAndExit(run) {
 
     return { logged, exitCodes };
 }
+
+void describe("createCliCommandErrorHandler", () => {
+    void it("delegates non-usage errors to handleCliError with the configured prefix", () => {
+        const { logged, exitCodes } = captureConsoleAndExit(() => {
+            const handler = createCliCommandErrorHandler({ prefix: "Lint command failed.", exitCode: 2 });
+            handler(new Error("kaboom"));
+        });
+
+        assert.equal(logged.length, 1);
+        assert.ok(logged[0].startsWith("Lint command failed.\nError: kaboom"));
+        assert.deepEqual(exitCodes, [2]);
+    });
+
+    void it("defaults the exit code to 1 when no options are provided", () => {
+        const { logged, exitCodes } = captureConsoleAndExit(() => {
+            const handler = createCliCommandErrorHandler();
+            handler(new Error("kaboom"));
+        });
+
+        assert.equal(logged.length, 1);
+        assert.ok(logged[0].startsWith("Error: kaboom"));
+        assert.deepEqual(exitCodes, [1]);
+    });
+
+    void it("omits the prefix for branded usage errors", () => {
+        const usageError = new CliUsageError("Missing path");
+        const { logged, exitCodes } = captureConsoleAndExit(() => {
+            const handler = createCliCommandErrorHandler({ prefix: "Should not appear." });
+            handler(usageError);
+        });
+
+        assert.deepEqual(logged, ["Missing path"]);
+        assert.deepEqual(exitCodes, [1]);
+    });
+
+    void it("ignores the command context passed by the registry", () => {
+        const { logged, exitCodes } = captureConsoleAndExit(() => {
+            // The registry invokes handlers with an extra context object; the
+            // helper must accept (and ignore) it without throwing at runtime.
+            const handler: (error: unknown, context?: unknown) => never = createCliCommandErrorHandler({
+                prefix: "Test command failed."
+            });
+            handler(new Error("oops"), { command: { name: () => "test" } });
+        });
+
+        assert.equal(logged.length, 1);
+        assert.ok(logged[0].startsWith("Test command failed."));
+        assert.deepEqual(exitCodes, [1]);
+    });
+});
