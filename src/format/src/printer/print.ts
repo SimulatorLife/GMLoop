@@ -1237,9 +1237,19 @@ function maybePrintInlineDefaultParameterFunctionBody(path, print) {
 // formatter's brace guarantees or the doc comment synthesis covered by the
 // synthetic doc comment integration tests
 // (`src/format/test/synthetic-doc-comments.test.js`).
-function printInBlock(path, options, print, expressionKey) {
+export function printInBlock(path, options, print, expressionKey) {
     const parentNode = path.getValue();
-    const node = parentNode[expressionKey];
+    const node = parentNode ? parentNode[expressionKey] : null;
+
+    // Defensive guard: synthetic nodes, malformed ASTs, and partial test
+    // fixtures can leave either the path value or the requested sub-node as
+    // null/undefined. Falling back to an empty block keeps the surrounding
+    // control-flow statement printable rather than letting the missing
+    // value propagate as a `Cannot read properties of null` TypeError into
+    // the wider format pipeline.
+    if (!node || typeof node.type !== STRING_TYPE) {
+        return "{}";
+    }
 
     if (node.type === Core.BLOCK_STATEMENT) {
         return [print(expressionKey), optionalSemicolon(node.type)];
