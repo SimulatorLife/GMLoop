@@ -13,6 +13,7 @@ import { CliUsageError, handleCliError } from "../cli-core/errors.js";
 import { ParseResultStatus, ScanStatus, TestCaseStatus } from "../modules/quality-report/index.js";
 import { scanProjectHealth } from "../modules/quality-report/project-health.js";
 import { traverseDirectoryEntries } from "../shared/directory-traversal.js";
+import { pathExistsSync } from "../shared/path-exists.js";
 
 const {
     assertArray,
@@ -614,7 +615,7 @@ function readProjectHealth(files) {
 }
 
 function isExistingDirectory(resolvedPath) {
-    return fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isDirectory();
+    return pathExistsSync(resolvedPath, (stat) => stat.isDirectory());
 }
 
 /**
@@ -1007,7 +1008,7 @@ function resolveDuplicatesWithFallback(scan: { duplicates: unknown }, directory:
     }
 
     const parentFile = path.join(directory.resolved, "..", "jscpd-report.json");
-    if (fs.existsSync(parentFile)) {
+    if (pathExistsSync(parentFile)) {
         return readDuplicates([parentFile]);
     }
 

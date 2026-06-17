@@ -479,11 +479,12 @@ export function writeProjectMetadataDocumentToFile(sourcePath: string, document:
     const contents = stringifyProjectMetadataDocument(normalizedDocument, sourcePath);
 
     try {
-        if (fs.existsSync(sourcePath)) {
-            const existing = fs.readFileSync(sourcePath, "utf8");
-            if (existing === contents) {
-                return false;
-            }
+        // Read the existing payload first so we can short-circuit when it
+        // already matches. A missing file is not an error here: it just
+        // means we need to write a fresh document.
+        const existing = readExistingMetadata(sourcePath);
+        if (existing !== null && existing === contents) {
+            return false;
         }
 
         fs.mkdirSync(path.dirname(sourcePath), { recursive: true });
@@ -497,6 +498,20 @@ export function writeProjectMetadataDocumentToFile(sourcePath: string, document:
         } catch {
             throw error;
         }
+    }
+}
+
+/**
+ * Read the existing metadata document at `sourcePath` without relying on the
+ * deprecated `fs.existsSync` API. Returns `null` when the file is missing or
+ * cannot be read, signalling to callers that a fresh document should be
+ * written.
+ */
+function readExistingMetadata(sourcePath: string): string | null {
+    try {
+        return fs.readFileSync(sourcePath, "utf8");
+    } catch {
+        return null;
     }
 }
 

@@ -9,6 +9,7 @@ import {
 } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 
+import { pathExistsSync } from "../../shared/path-exists.js";
 import {
     createSyntheticResourceEntry as makeSyntheticResourceEntry,
     generateIdentifierEntryScipId,
@@ -721,7 +722,7 @@ export class GmlSemanticBridge {
 
     private doesWorkspaceFilePathExist(candidatePath: string): boolean {
         const absoluteCandidatePath = path.resolve(this.projectRoot, candidatePath);
-        if (fs.existsSync(absoluteCandidatePath)) {
+        if (pathExistsSync(absoluteCandidatePath)) {
             return true;
         }
 
@@ -731,7 +732,7 @@ export class GmlSemanticBridge {
         }
 
         const absoluteSourcePath = path.resolve(this.projectRoot, sourcePath);
-        return fs.existsSync(absoluteSourcePath);
+        return pathExistsSync(absoluteSourcePath);
     }
 
     /**
@@ -741,7 +742,7 @@ export class GmlSemanticBridge {
      */
     private doesWorkspaceDirectoryPathExist(candidatePath: string): boolean {
         const absoluteCandidatePath = path.resolve(this.projectRoot, candidatePath);
-        if (fs.existsSync(absoluteCandidatePath) && fs.lstatSync(absoluteCandidatePath).isDirectory()) {
+        if (pathExistsSync(absoluteCandidatePath, (stat) => stat.isDirectory())) {
             return true;
         }
 
@@ -751,12 +752,12 @@ export class GmlSemanticBridge {
         }
 
         const absoluteSourcePath = path.resolve(this.projectRoot, sourcePath);
-        return fs.existsSync(absoluteSourcePath) && fs.lstatSync(absoluteSourcePath).isDirectory();
+        return pathExistsSync(absoluteSourcePath, (stat) => stat.isDirectory());
     }
 
     private listWorkspaceDirectoryEntries(candidatePath: string): Array<string> {
         const absoluteCandidatePath = path.resolve(this.projectRoot, candidatePath);
-        if (fs.existsSync(absoluteCandidatePath) && fs.lstatSync(absoluteCandidatePath).isDirectory()) {
+        if (pathExistsSync(absoluteCandidatePath, (stat) => stat.isDirectory())) {
             return fs.readdirSync(absoluteCandidatePath);
         }
 
@@ -766,7 +767,7 @@ export class GmlSemanticBridge {
         }
 
         const absoluteSourcePath = path.resolve(this.projectRoot, sourcePath);
-        if (!fs.existsSync(absoluteSourcePath) || !fs.lstatSync(absoluteSourcePath).isDirectory()) {
+        if (!pathExistsSync(absoluteSourcePath, (stat) => stat.isDirectory())) {
             return [];
         }
 
@@ -1414,7 +1415,7 @@ export class GmlSemanticBridge {
         }
 
         const absolutePath = path.resolve(this.projectRoot, resourcePath);
-        if (!fs.existsSync(absolutePath)) {
+        if (!pathExistsSync(absolutePath)) {
             return {};
         }
 
@@ -1532,7 +1533,7 @@ export class GmlSemanticBridge {
         }
 
         const absolutePath = path.resolve(this.projectRoot, metadataPath);
-        if (!fs.existsSync(absolutePath)) {
+        if (!pathExistsSync(absolutePath)) {
             mutableDocumentsByPath.set(metadataPath, null);
             this.mutableProjectMetadataDocumentsByEdit.set(edit, mutableDocumentsByPath);
             return null;
@@ -1985,7 +1986,7 @@ export class GmlSemanticBridge {
 
         try {
             const absolutePath = path.resolve(this.projectRoot, filePath);
-            if (!fs.existsSync(absolutePath)) {
+            if (!pathExistsSync(absolutePath)) {
                 this.diskIdentifierOccurrenceIndexesByFilePath.set(filePath, null);
                 return null;
             }
@@ -3164,7 +3165,7 @@ export class GmlSemanticBridge {
         const enumMemberReferenceText = `${entry.enumName}.${entry.name}`;
         for (const metadataPath of this.listEnumMemberMetadataCandidatePaths()) {
             const absoluteMetadataPath = path.resolve(this.projectRoot, metadataPath);
-            if (!fs.existsSync(absoluteMetadataPath)) {
+            if (!pathExistsSync(absoluteMetadataPath)) {
                 continue;
             }
 
@@ -3374,7 +3375,7 @@ export class GmlSemanticBridge {
         }
 
         const absolutePath = path.resolve(this.projectRoot, filePath);
-        if (!fs.existsSync(absolutePath)) {
+        if (!pathExistsSync(absolutePath)) {
             this.sourceTextByPath.set(filePath, null);
             return null;
         }

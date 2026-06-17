@@ -5,6 +5,7 @@ import { Core } from "@gmloop/core";
 
 import { formatByteSizeDisplay } from "../../shared/byte-format.js";
 import { traverseDirectoryEntries } from "../../shared/directory-traversal.js";
+import { pathExistsSync } from "../../shared/path-exists.js";
 
 const { readTextFileSync } = Core;
 
@@ -42,7 +43,7 @@ function collectSourceFiles(sourceRootPath: string): string[] {
 }
 
 function calculateBuildDirectorySize(distributionRootPath: string): number {
-    if (!fs.existsSync(distributionRootPath)) {
+    if (!pathExistsSync(distributionRootPath)) {
         return 0;
     }
 
@@ -61,7 +62,7 @@ function calculateBuildDirectorySize(distributionRootPath: string): number {
 }
 
 function calculateWorkspaceBuildSize(sourceRootPath: string): number {
-    if (!fs.existsSync(sourceRootPath)) {
+    if (!pathExistsSync(sourceRootPath)) {
         return 0;
     }
 

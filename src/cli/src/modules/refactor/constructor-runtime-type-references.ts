@@ -4,6 +4,8 @@ import path from "node:path";
 import { Core } from "@gmloop/core";
 import { Parser } from "@gmloop/parser";
 
+import { pathExistsSync } from "../../shared/path-exists.js";
+
 type SemanticFileRecord = {
     declarations?: Array<Record<string, unknown>>;
     references?: Array<Record<string, unknown>>;
@@ -221,7 +223,7 @@ export function listConstructorRuntimeTypeReferenceRecords(
         }
 
         const absolutePath = path.resolve(context.projectRoot, filePath);
-        if (!fs.existsSync(absolutePath)) {
+        if (!pathExistsSync(absolutePath)) {
             continue;
         }
 
