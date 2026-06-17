@@ -291,6 +291,30 @@ function collectDirectoryCarryoverRenames(parameters: {
     return renames;
 }
 
+function dispatchResourceSidecarRenamesByType(
+    resourceType: string | null | undefined,
+    parameters: SidecarRenamePlanningParameters
+): Array<ResourceSidecarRename> {
+    switch (resourceType) {
+        case "GMSound": {
+            return collectSoundSidecarRenames(parameters);
+        }
+        case "GMSprite": {
+            return collectSpriteSidecarRenames(parameters);
+        }
+        case "GMFont": {
+            return collectFontSidecarRenames(parameters);
+        }
+        case "GMNote":
+        case "GMNotes": {
+            return collectNoteSidecarRenames(parameters);
+        }
+        default: {
+            return [];
+        }
+    }
+}
+
 /**
  * Collect sprite/sound/font payload renames that must accompany a resource metadata
  * rename when the refactor engine cannot rely on a single enclosing directory
@@ -307,27 +331,7 @@ export function collectResourceSidecarRenames(
         return [];
     }
 
-    const renames =
-        (() => {
-            switch (resourceType) {
-                case "GMSound": {
-                    return collectSoundSidecarRenames(parameters);
-                }
-                case "GMSprite": {
-                    return collectSpriteSidecarRenames(parameters);
-                }
-                case "GMFont": {
-                    return collectFontSidecarRenames(parameters);
-                }
-                case "GMNote":
-                case "GMNotes": {
-                    return collectNoteSidecarRenames(parameters);
-                }
-                default: {
-                    return [];
-                }
-            }
-        })() ?? [];
+    const renames = dispatchResourceSidecarRenamesByType(resourceType, parameters);
 
     const resourceDir = path.posix.dirname(parameters.currentResourcePath);
     if (parameters.fileRenameDestinationDir === resourceDir) {
