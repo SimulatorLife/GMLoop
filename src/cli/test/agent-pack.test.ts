@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 
 import * as AgentPack from "../src/modules/auto-game-agent-pack/index.js";
+import { __agentPackTest__ } from "../src/modules/auto-game-agent-pack/project-agent-pack.js";
 
 type AgentPackReceiptFixture = Readonly<{
     conflicts: ReadonlyArray<string>;
@@ -149,4 +150,107 @@ void test("agent pack rejects projects without a yyp and unsafe receipt paths", 
     } finally {
         await rm(directory, { force: true, recursive: true });
     }
+});
+
+// ---------------------------------------------------------------------------
+// Receipt comparison helpers (exposed via __agentPackTest__)
+// ---------------------------------------------------------------------------
+
+const { agentPackReceiptsMatch, areStringArraysEqual, areStringRecordsEqual } = __agentPackTest__;
+
+function createReceiptFixture(
+    overrides: Partial<{ conflicts: ReadonlyArray<string>; files: Record<string, string>; version: string }> = {}
+): AgentPackReceiptFixture {
+    return Object.freeze({
+        conflicts: Object.freeze([...(overrides.conflicts ?? [])]),
+        files: Object.freeze({ ...overrides.files }),
+        package: "@gmloop/agent-pack",
+        version: overrides.version ?? "1.0.0"
+    });
+}
+
+void test("areStringArraysEqual returns true for two references to the same array", () => {
+    const shared: ReadonlyArray<string> = Object.freeze(["alpha", "beta", "gamma"]);
+    assert.equal(areStringArraysEqual(shared, shared), true);
+});
+
+void test("areStringArraysEqual returns true for arrays with the same length and ordered entries", () => {
+    assert.equal(areStringArraysEqual(["a", "b"], ["a", "b"]), true);
+    assert.equal(areStringArraysEqual([], []), true);
+});
+
+void test("areStringArraysEqual returns false when lengths differ", () => {
+    assert.equal(areStringArraysEqual(["a"], ["a", "b"]), false);
+});
+
+void test("areStringArraysEqual returns false when entries differ at any position", () => {
+    assert.equal(areStringArraysEqual(["a", "b"], ["a", "c"]), false);
+    assert.equal(areStringArraysEqual(["a", "b"], ["b", "a"]), false);
+});
+
+void test("areStringRecordsEqual returns true for two references to the same record", () => {
+    const shared: Readonly<Record<string, string>> = Object.freeze({ alpha: "1", beta: "2" });
+    assert.equal(areStringRecordsEqual(shared, shared), true);
+});
+
+void test("areStringRecordsEqual returns true for records with identical keys and values", () => {
+    assert.equal(areStringRecordsEqual({ alpha: "1", beta: "2" }, { alpha: "1", beta: "2" }), true);
+    assert.equal(areStringRecordsEqual({}, {}), true);
+});
+
+void test("areStringRecordsEqual returns false when key counts differ", () => {
+    assert.equal(areStringRecordsEqual({ alpha: "1" }, { alpha: "1", beta: "2" }), false);
+});
+
+void test("areStringRecordsEqual returns false when any value differs", () => {
+    assert.equal(areStringRecordsEqual({ alpha: "1", beta: "2" }, { alpha: "1", beta: "3" }), false);
+});
+
+void test("areStringRecordsEqual ignores insertion-order differences for matching keys", () => {
+    // The matcher only checks key set + per-key values, mirroring what the
+    // previous JSON.stringify comparison produced while avoiding the
+    // serialisation round-trip entirely.
+    assert.equal(areStringRecordsEqual({ alpha: "1", beta: "2" }, { beta: "2", alpha: "1" }), true);
+});
+
+void test("agentPackReceiptsMatch returns false when the left receipt is null", () => {
+    assert.equal(agentPackReceiptsMatch(null, createReceiptFixture()), false);
+});
+
+void test("agentPackReceiptsMatch returns true for structurally identical receipts", () => {
+    const left = createReceiptFixture({
+        conflicts: ["AGENTS.md"],
+        files: { ".agents/skills/foo/SKILL.md": "abc123" },
+        version: "1.2.3"
+    });
+    const right = createReceiptFixture({
+        conflicts: ["AGENTS.md"],
+        files: { ".agents/skills/foo/SKILL.md": "abc123" },
+        version: "1.2.3"
+    });
+    assert.equal(agentPackReceiptsMatch(left, right), true);
+});
+
+void test("agentPackReceiptsMatch returns false when the version differs", () => {
+    const left = createReceiptFixture({ version: "1.0.0" });
+    const right = createReceiptFixture({ version: "1.0.1" });
+    assert.equal(agentPackReceiptsMatch(left, right), false);
+});
+
+void test("agentPackReceiptsMatch returns false when conflicts differ", () => {
+    const left = createReceiptFixture({ conflicts: ["AGENTS.md"] });
+    const right = createReceiptFixture({ conflicts: ["scripts/player.gml"] });
+    assert.equal(agentPackReceiptsMatch(left, right), false);
+});
+
+void test("agentPackReceiptsMatch returns false when a file hash differs", () => {
+    const left = createReceiptFixture({ files: { "AGENTS.md": "hash-a" } });
+    const right = createReceiptFixture({ files: { "AGENTS.md": "hash-b" } });
+    assert.equal(agentPackReceiptsMatch(left, right), false);
+});
+
+void test("agentPackReceiptsMatch returns false when the file key sets differ", () => {
+    const left = createReceiptFixture({ files: { "AGENTS.md": "hash" } });
+    const right = createReceiptFixture({ files: { ".agents/skills/foo/SKILL.md": "hash" } });
+    assert.equal(agentPackReceiptsMatch(left, right), false);
 });
