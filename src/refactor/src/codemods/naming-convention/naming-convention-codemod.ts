@@ -1028,11 +1028,7 @@ export async function executeNamingConventionCodemod(
         };
     }
 
-    if (
-        plan.workspace.edits.length === 0 &&
-        plan.workspace.metadataEdits.length === 0 &&
-        plan.workspace.fileRenames.length === 0
-    ) {
+    if (!plan.workspace.hasChanges()) {
         return {
             plan,
             applied: new Map()

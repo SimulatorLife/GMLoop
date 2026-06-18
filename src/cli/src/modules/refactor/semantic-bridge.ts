@@ -184,6 +184,8 @@ type WorkspaceEdit = {
     metadataEdits: Array<{ content: string; path: string }>;
     metadataObjects?: Array<{ document: Record<string, unknown>; path: string }>;
     groupByFile: () => BridgeGroupedTextEdits;
+    hasChanges: () => boolean;
+    collectChangedFilePaths: () => ReadonlySet<string>;
     [WORKSPACE_EDIT_REVISION_TOKEN]: () => number;
 };
 
@@ -405,6 +407,23 @@ function createWorkspaceEdit(): WorkspaceEdit {
             }
 
             return grouped;
+        },
+        hasChanges() {
+            return workspace.edits.length > 0 || workspace.metadataEdits.length > 0 || workspace.fileRenames.length > 0;
+        },
+        collectChangedFilePaths() {
+            const paths = new Set<string>();
+            for (const edit of workspace.edits) {
+                paths.add(edit.path);
+            }
+            for (const metadataEdit of workspace.metadataEdits) {
+                paths.add(metadataEdit.path);
+            }
+            for (const fileRename of workspace.fileRenames) {
+                paths.add(fileRename.oldPath);
+                paths.add(fileRename.newPath);
+            }
+            return paths;
         },
         [WORKSPACE_EDIT_REVISION_TOKEN]() {
             return revision;

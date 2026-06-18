@@ -115,6 +115,38 @@ export interface WorkspaceLike {
      * descending order by start position with duplicates removed.
      */
     groupByFile(): GroupedTextEdits;
+
+    /**
+     * Return whether any pending text edits, metadata edits, or file renames
+     * are queued on this workspace.
+     *
+     * Exists to break the Law-of-Demeter violation where callers previously
+     * walked `workspace.edits.length`, `workspace.metadataEdits.length`, and
+     * `workspace.fileRenames.length` separately to answer the same question.
+     * Returning a single boolean lets collaborators talk to one immediate
+     * neighbour instead of three sub-collections.
+     *
+     * @returns `true` when any of the three sub-collections are non-empty.
+     */
+    hasChanges(): boolean;
+
+    /**
+     * Return the set of distinct file paths touched by pending text edits,
+     * metadata edits, or file renames.
+     *
+     * For file renames both the old and new paths are included so callers
+     * building a "changed files" inventory do not have to walk the rename
+     * array manually and reach into `rename.oldPath`/`rename.newPath` chains.
+     *
+     * Exists to break the Law-of-Demeter violation where callers previously
+     * walked `workspace.fileRenames` and read `.oldPath` / `.newPath` to
+     * collect the same set, often chained four segments deep through
+     * `result.plan.workspace.fileRenames`. Callers now talk to a single
+     * method on the workspace instead.
+     *
+     * @returns Read-only set of distinct paths touched by any pending operation.
+     */
+    collectChangedFilePaths(): ReadonlySet<string>;
 }
 
 export interface TextEdit {
@@ -372,6 +404,14 @@ export class WorkspaceEdit implements WorkspaceLike {
         return grouped;
     }
 
+    hasChanges(): boolean {
+        return this.edits.length > 0 || this.metadataEdits.length > 0 || this.fileRenames.length > 0;
+    }
+
+    collectChangedFilePaths(): ReadonlySet<string> {
+        return new Set<string>(getMutableState(this).touchedFilePaths);
+    }
+
     /**
      * Implement the {@link WorkspaceRevisionProvider} contract so that
      * {@link getWorkspaceEditRevision} can retrieve the revision via a
@@ -450,7 +490,9 @@ export function isWorkspaceEditLike(value?: unknown): boolean {
         typeof candidate.addEdit === "function" &&
         typeof candidate.addMetadataEdit === "function" &&
         typeof candidate.addFileRename === "function" &&
-        typeof candidate.groupByFile === "function"
+        typeof candidate.groupByFile === "function" &&
+        typeof candidate.hasChanges === "function" &&
+        typeof candidate.collectChangedFilePaths === "function"
     );
 }
 

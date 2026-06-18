@@ -125,6 +125,12 @@ void test("isWorkspaceEditLike identifies valid workspace-edit-like objects", ()
         addFileRename() {},
         groupByFile() {
             return new Map();
+        },
+        hasChanges() {
+            return false;
+        },
+        collectChangedFilePaths() {
+            return new Set<string>();
         }
     };
 
@@ -162,7 +168,9 @@ void test("isWorkspaceEditLike rejects non-conforming objects", () => {
             addEdit() {},
             addMetadataEdit() {},
             addFileRename() {},
-            groupByFile() {}
+            groupByFile() {},
+            hasChanges() {},
+            collectChangedFilePaths() {}
         }),
         false
     );
@@ -174,7 +182,9 @@ void test("isWorkspaceEditLike rejects non-conforming objects", () => {
             addEdit() {},
             addMetadataEdit() {},
             addFileRename() {},
-            groupByFile() {}
+            groupByFile() {},
+            hasChanges() {},
+            collectChangedFilePaths() {}
         }),
         false
     );
@@ -186,7 +196,9 @@ void test("isWorkspaceEditLike rejects non-conforming objects", () => {
             addEdit() {},
             addMetadataEdit() {},
             addFileRename() {},
-            groupByFile() {}
+            groupByFile() {},
+            hasChanges() {},
+            collectChangedFilePaths() {}
         }),
         false
     );
@@ -357,6 +369,23 @@ void test("getWorkspaceEditRevision reads revision from any object implementing 
         groupByFile() {
             return new Map<string, Array<{ start: number; end: number; newText: string }>>();
         },
+        hasChanges() {
+            return this.edits.length > 0 || this.metadataEdits.length > 0 || this.fileRenames.length > 0;
+        },
+        collectChangedFilePaths() {
+            const paths = new Set<string>();
+            for (const edit of this.edits) {
+                paths.add(edit.path);
+            }
+            for (const metadataEdit of this.metadataEdits) {
+                paths.add(metadataEdit.path);
+            }
+            for (const fileRename of this.fileRenames) {
+                paths.add(fileRename.oldPath);
+                paths.add(fileRename.newPath);
+            }
+            return paths;
+        },
         [WORKSPACE_EDIT_REVISION_TOKEN]() {
             return internalRevision;
         }
@@ -474,4 +503,69 @@ void test("mergeWorkspaceEditInto respects the exact-duplicate guard on target",
 
     // The duplicate guard on WorkspaceEdit should suppress the second insertion.
     assert.equal(target.edits.length, 1);
+});
+
+void test("WorkspaceEdit.hasChanges returns false for a freshly constructed workspace", () => {
+    const workspace = new WorkspaceEdit();
+    assert.equal(workspace.hasChanges(), false);
+});
+
+void test("WorkspaceEdit.hasChanges returns true when only text edits are queued", () => {
+    const workspace = new WorkspaceEdit();
+    workspace.addEdit("scripts/a.gml", 0, 4, "demo");
+    assert.equal(workspace.hasChanges(), true);
+});
+
+void test("WorkspaceEdit.hasChanges returns true when only metadata edits are queued", () => {
+    const workspace = new WorkspaceEdit();
+    workspace.addMetadataEdit("objects/o.yy", '{"name":"o"}');
+    assert.equal(workspace.hasChanges(), true);
+});
+
+void test("WorkspaceEdit.hasChanges returns true when only file renames are queued", () => {
+    const workspace = new WorkspaceEdit();
+    workspace.addFileRename("scripts/a.gml", "scripts/b.gml");
+    assert.equal(workspace.hasChanges(), true);
+});
+
+void test("WorkspaceEdit.collectChangedFilePaths returns an empty set for a fresh workspace", () => {
+    const workspace = new WorkspaceEdit();
+    assert.equal(workspace.collectChangedFilePaths().size, 0);
+});
+
+void test("WorkspaceEdit.collectChangedFilePaths includes paths from text, metadata, and rename operations", () => {
+    const workspace = new WorkspaceEdit();
+    workspace.addEdit("scripts/player.gml", 0, 4, "hero");
+    workspace.addMetadataEdit("objects/player.yy", '{"name":"hero"}');
+    workspace.addFileRename("scripts/old.gml", "scripts/new.gml");
+
+    const paths = workspace.collectChangedFilePaths();
+
+    assert.equal(paths.size, 4);
+    assert.ok(paths.has("scripts/player.gml"));
+    assert.ok(paths.has("objects/player.yy"));
+    assert.ok(paths.has("scripts/old.gml"));
+    assert.ok(paths.has("scripts/new.gml"));
+});
+
+void test("WorkspaceEdit.collectChangedFilePaths deduplicates paths touched by multiple edits", () => {
+    const workspace = new WorkspaceEdit();
+    workspace.addEdit("scripts/a.gml", 0, 4, "first");
+    workspace.addEdit("scripts/a.gml", 12, 16, "second");
+    workspace.addMetadataEdit("scripts/a.gml", '{"name":"a"}');
+
+    const paths = workspace.collectChangedFilePaths();
+    assert.equal(paths.size, 1);
+    assert.ok(paths.has("scripts/a.gml"));
+});
+
+void test("WorkspaceEdit.collectChangedFilePaths returns a read-only view that reflects later mutations", () => {
+    const workspace = new WorkspaceEdit();
+    workspace.addEdit("scripts/initial.gml", 0, 4, "demo");
+    const paths = workspace.collectChangedFilePaths();
+    assert.ok(paths.has("scripts/initial.gml"));
+
+    workspace.addEdit("scripts/added-later.gml", 0, 4, "demo");
+    const updatedPaths = workspace.collectChangedFilePaths();
+    assert.ok(updatedPaths.has("scripts/added-later.gml"));
 });
