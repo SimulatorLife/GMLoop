@@ -554,6 +554,7 @@ void test("startLiveReloadDevSession builds before preparing live reload when bu
                         outputRoot,
                         ".gml-hot-reload",
                         "runtime-wrapper",
+                        "src",
                         "browser",
                         "index.js"
                     ),
@@ -616,7 +617,7 @@ void test("startLiveReloadDevSession uses configured temp-root fallback when no 
             prepareCalls.push(options.gmTempRoot);
             return Object.freeze({
                 assets: {
-                    bootstrapEntryPath: "/tmp/project/output/.gml-hot-reload/runtime-wrapper/browser/index.js",
+                    bootstrapEntryPath: "/tmp/project/output/.gml-hot-reload/runtime-wrapper/src/browser/index.js",
                     copiedAssets: true,
                     manifestPath: "/tmp/project/output/.gml-hot-reload/runtime-wrapper-assets.manifest.json",
                     targetRoot: "/tmp/project/output/.gml-hot-reload"
@@ -699,6 +700,7 @@ void test("startLiveReloadDevSession auto-builds HTML5 output when autodetection
                             options.html5OutputRoot ?? projectRoot,
                             ".gml-hot-reload",
                             "runtime-wrapper",
+                            "src",
                             "browser",
                             "index.js"
                         ),

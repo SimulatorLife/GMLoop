@@ -101,7 +101,7 @@ void describe("Watch command auto-inject flag", () => {
             assert.ok(indexContent.includes("gml-hot-reload:start"), "Should contain hot-reload marker start");
             assert.ok(indexContent.includes("gml-hot-reload:end"), "Should contain hot-reload marker end");
             assert.ok(
-                indexContent.includes("runtime-wrapper/browser/index.js"),
+                indexContent.includes("runtime-wrapper/src/browser/index.js"),
                 "Should reference the browser bootstrap entry"
             );
             assert.ok(

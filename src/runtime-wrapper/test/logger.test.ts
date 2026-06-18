@@ -8,8 +8,8 @@ import {
     type LogLevel,
     LogLevels,
     parseLogLevel
-} from "../browser/runtime/logger.js";
-import type { Patch, RegistryChangeEvent } from "../browser/runtime/types.js";
+} from "../src/browser/runtime/logger.js";
+import type { Patch, RegistryChangeEvent } from "../src/browser/runtime/types.js";
 
 /**
  * Captured log entry produced by a {@link MockConsoleOutput}.

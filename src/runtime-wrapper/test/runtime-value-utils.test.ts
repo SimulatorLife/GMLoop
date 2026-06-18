@@ -17,7 +17,7 @@ import {
     readCxcDxStore,
     readRuntimeObjectPool,
     toArray
-} from "../browser/support/runtime-value-utils.js";
+} from "../src/browser/support/runtime-value-utils.js";
 
 /**
  * These tests pin the polymorphism contract for the runtime wrapper's value

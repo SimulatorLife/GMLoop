@@ -11,8 +11,8 @@ import {
     getRegistryCollectionForPatchKind,
     getRegistryEntry,
     hasRegistryEntry
-} from "../browser/runtime/diagnostics.js";
-import type { PatchErrorOccurrence, PatchHistoryEntry, RuntimeRegistry } from "../browser/runtime/types.js";
+} from "../src/browser/runtime/diagnostics.js";
+import type { PatchErrorOccurrence, PatchHistoryEntry, RuntimeRegistry } from "../src/browser/runtime/types.js";
 
 function createMockRegistry(overrides: Partial<RuntimeRegistry> = {}): RuntimeRegistry {
     return {
