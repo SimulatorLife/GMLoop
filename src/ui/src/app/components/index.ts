@@ -1,3 +1,5 @@
+export * from "./copy-clipboard.js";
+export * from "./copy-feedback-controller.js";
 export * from "./event-bus-mixin.js";
 export * from "./events.js";
 export * from "./gm-app-header.js";
