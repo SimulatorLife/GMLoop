@@ -1,9 +1,11 @@
+import { realpathSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { Command } from "commander";
 
+import { isCliRunSkipped } from "../shared/skip-cli-run.js";
 import { createCliCommandManager } from "./command-manager.js";
 import type { CommanderCommandLike } from "./commander-types.js";
 import { handleCliError } from "./errors.js";
@@ -43,6 +45,90 @@ export interface RunAsMainModuleOptions {
      * Defaults to true when env is provided, false otherwise.
      */
     passOptionsToCreateCommand?: boolean;
+}
+
+function safeRealpath(filePath: string): string | null {
+    try {
+        return realpathSync(filePath);
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Determine whether Node is currently running in test mode.
+ *
+ * @param execArguments - Process exec arguments to inspect.
+ * @returns `true` when the arguments include Node's test-runner flags.
+ */
+export function isNodeTestRunnerProcess(execArguments: ReadonlyArray<string> = process.execArgv): boolean {
+    return execArguments.some(
+        (argument) => argument === "--test" || argument.startsWith("--test=") || argument.startsWith("--test-")
+    );
+}
+
+/**
+ * Determine whether the package-level CLI entrypoint is targeting the active CLI module.
+ *
+ * The compiled package exposes `dist/index.js` as its executable, while source-level
+ * tests may exercise `index.ts`. Both package entrypoints re-export `src/cli.js`,
+ * so the guard accepts either package entrypoint in addition to the module file itself.
+ *
+ * @param entrypointPath - The process entrypoint path, usually `process.argv[1]`.
+ * @param moduleUrl - The CLI module URL, usually `import.meta.url`.
+ * @returns `true` when the entrypoint should trigger the full CLI autorun path.
+ */
+export function isCliEntrypointModule(
+    entrypointPath: string | undefined = process.argv[1],
+    moduleUrl = import.meta.url
+): boolean {
+    if (!entrypointPath) {
+        return false;
+    }
+
+    const resolvedEntrypoint = safeRealpath(entrypointPath) ?? path.resolve(entrypointPath);
+    const resolvedModule = safeRealpath(fileURLToPath(moduleUrl)) ?? fileURLToPath(moduleUrl);
+
+    if (resolvedEntrypoint === resolvedModule) {
+        return true;
+    }
+
+    const resolvedIndexJs =
+        safeRealpath(path.resolve(path.dirname(resolvedModule), "../index.js")) ??
+        path.resolve(path.dirname(resolvedModule), "../index.js");
+    if (resolvedEntrypoint === resolvedIndexJs) {
+        return true;
+    }
+
+    const resolvedIndexTs =
+        safeRealpath(path.resolve(path.dirname(resolvedModule), "../index.ts")) ??
+        path.resolve(path.dirname(resolvedModule), "../index.ts");
+    return resolvedEntrypoint === resolvedIndexTs;
+}
+
+/**
+ * Determine whether the full GMLoop CLI should run during module evaluation.
+ *
+ * This keeps package imports side-effect free for tests and MCP consumers while
+ * still allowing the package executable to dispatch commands normally.
+ *
+ * @param env - Environment map used for the explicit skip flag.
+ * @param execArguments - Process exec arguments used to detect test-runner mode.
+ * @param entrypointPath - Process entrypoint path to compare with the CLI module.
+ * @param moduleUrl - CLI module URL to compare with the entrypoint.
+ * @returns `true` when the current process should dispatch CLI commands.
+ */
+export function shouldAutoRunCliProcess(
+    env: NodeJS.ProcessEnv = process.env,
+    execArguments: ReadonlyArray<string> = process.execArgv,
+    entrypointPath: string | undefined = process.argv[1],
+    moduleUrl = import.meta.url
+): boolean {
+    return (
+        isCliEntrypointModule(entrypointPath, moduleUrl) &&
+        !isCliRunSkipped(env) &&
+        !isNodeTestRunnerProcess(execArguments)
+    );
 }
 
 /**
