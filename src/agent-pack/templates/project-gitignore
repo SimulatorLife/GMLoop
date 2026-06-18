@@ -1,0 +1,5 @@
+.gmloop/
+.gmcache/
+node_modules/
+.playwright-mcp/
+.agents/skills/**/gmloop-*

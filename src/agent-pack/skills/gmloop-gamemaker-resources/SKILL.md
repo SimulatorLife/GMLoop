@@ -1,5 +1,5 @@
 ---
-name: gamemaker-resources
+name: gmloop-gamemaker-resources
 description: Create and modify GameMaker resources through structured project tooling. Use when working with objects, events, rooms, scripts, instances, project metadata, or resource relationships.
 ---
 

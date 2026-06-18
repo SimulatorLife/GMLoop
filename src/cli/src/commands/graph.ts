@@ -102,7 +102,7 @@ function createAutoGamePipelineModel(
         statusText:
             skills.length === 0
                 ? "No project-scoped Auto-Game skills are installed."
-                : `${String(skills.filter((skill) => skill.enabled).length)} of ${String(skills.length)} Auto-Game skills enabled.`
+                : `${String(skills.filter((skill) => skill.enabled).length)} of ${String(skills.length)} project skills included in Auto-Game.`
     });
 }
 
@@ -1932,11 +1932,11 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             saveConfig: ({ config }) => {
                 return writeActiveProjectConfig(config);
             },
-            initializeAutoGameAgentPack: async () => {
+            initializeAutoGameAgentPack: async ({ includeGitIgnore }) => {
                 if (!activeContext) {
                     throw new Error("Open a GameMaker project before initializing the Auto-Game agent pack.");
                 }
-                const result = await AgentPack.initializeAgentPack(activeContext.projectRoot);
+                const result = await AgentPack.initializeAgentPack(activeContext.projectRoot, { includeGitIgnore });
                 await refreshActiveVisualizationArtifacts(activeContext);
                 markServeRevisionChanged();
                 return Object.freeze({ changed: result.changed });

@@ -34,4 +34,5 @@ export type GraphUiClearPageErrorDetail = Readonly<{ page: GraphVisualizationUiP
 export type GraphUiTriggerFixDetail = Readonly<{ workflow: GraphVisualizationProjectWorkflow }>;
 export type GraphUiTriggerAutoGamePipelineDetail = Readonly<{ action: "start" | "pause" | "stop" }>;
 export type GraphUiTriggerAutoGameTaskDetail = Readonly<{ prompt: string }>;
+export type GraphUiInitializeAutoGameAgentPackDetail = Readonly<{ includeGitIgnore: boolean }>;
 export type GraphUiSetAutoGameSkillEnabledDetail = Readonly<{ enabled: boolean; name: string }>;

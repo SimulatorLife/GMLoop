@@ -39,6 +39,10 @@ void test("agent pack exposes a deterministic raw skill collection", async () =>
     assert.ok(names.length > 0);
     assert.deepEqual(names, [...names].sort());
     assert.equal(new Set(names).size, names.length);
+    assert.equal(
+        names.every((name) => name.startsWith("gmloop-")),
+        true
+    );
 });
 
 void test("agent pack initialization installs skills, project guidance, and a version receipt", async () => {
@@ -50,11 +54,27 @@ void test("agent pack initialization installs skills, project guidance, and a ve
             result.added.filter((relativePath) => relativePath.endsWith("/SKILL.md")),
             names.map((name) => `.agents/skills/${name}/SKILL.md`)
         );
-        assert.ok(result.added.includes("AGENTS.md"));
-        assert.match(
-            await readFile(path.join(fixture.projectRoot, "AGENTS.md"), "utf8"),
-            /project-scoped Agent Skills/u
+        const installedSkillSources = await Promise.all(
+            names.map((name) => readFile(path.join(fixture.projectRoot, ".agents", "skills", name, "SKILL.md"), "utf8"))
         );
+        for (const [index, source] of installedSkillSources.entries()) {
+            assert.match(source, new RegExp(String.raw`^---\nname: ${names[index] ?? ""}\n`, "u"));
+        }
+        assert.ok(result.added.includes("AGENTS.md"));
+        assert.ok(result.added.includes(".gitignore"));
+        assert.equal(
+            await readFile(path.join(fixture.projectRoot, ".gitignore"), "utf8"),
+            "# GMLoop generated files\n.gmloop/\n.gmcache/\nnode_modules/\n.playwright-mcp/\n.agents/skills/**/gmloop-*\n"
+        );
+        const projectGuidance = await readFile(path.join(fixture.projectRoot, "AGENTS.md"), "utf8");
+        assert.match(projectGuidance, /# Autonomous Game Development Guidance/u);
+        assert.match(projectGuidance, /## Autonomous Iteration Loop/u);
+        assert.match(projectGuidance, /smallest player-visible improvement/u);
+        assert.match(projectGuidance, /## Validation And Completion/u);
+        assert.match(projectGuidance, /## Failure And Escalation/u);
+        assert.doesNotMatch(projectGuidance, /\.agents\/skills/u);
+        assert.doesNotMatch(projectGuidance, /agent pack/iu);
+        assert.doesNotMatch(projectGuidance, /permission layer/iu);
 
         const receipt = await readReceipt(fixture.projectRoot);
         assert.equal(receipt.package, "@gmloop/agent-pack");
@@ -62,6 +82,45 @@ void test("agent pack initialization installs skills, project guidance, and a ve
         assert.deepEqual(receipt.conflicts, []);
         const status = await AgentPack.readAgentPackProjectStatus(fixture.projectRoot);
         assert.equal(status.status, "current");
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("agent pack initialization merges missing gitignore entries without replacing project rules", async () => {
+    const fixture = await createGameProjectFixture();
+    try {
+        const existingGitIgnore = "# Project rules\n/exports/\n**/.gmloop\nnode_modules\n";
+        await writeFile(path.join(fixture.projectRoot, ".gitignore"), existingGitIgnore, "utf8");
+
+        const result = await AgentPack.initializeAgentPack(fixture.projectRoot);
+        const mergedGitIgnore = await readFile(path.join(fixture.projectRoot, ".gitignore"), "utf8");
+
+        assert.ok(result.updated.includes(".gitignore"));
+        assert.ok(mergedGitIgnore.startsWith(existingGitIgnore));
+        assert.match(
+            mergedGitIgnore,
+            /# GMLoop generated files\n\.gmcache\/\n\.playwright-mcp\/\n\.agents\/skills\/\*\*\/gmloop-\*/u
+        );
+        assert.equal(Array.from(mergedGitIgnore.matchAll(/\.gmloop/gu)).length, 1);
+        assert.equal(Array.from(mergedGitIgnore.matchAll(/node_modules/gu)).length, 1);
+
+        const second = await AgentPack.initializeAgentPack(fixture.projectRoot);
+        assert.ok(second.unchanged.includes(".gitignore"));
+        assert.equal(await readFile(path.join(fixture.projectRoot, ".gitignore"), "utf8"), mergedGitIgnore);
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("agent pack initialization leaves gitignore untouched when disabled", async () => {
+    const fixture = await createGameProjectFixture();
+    try {
+        const result = await AgentPack.initializeAgentPack(fixture.projectRoot, { includeGitIgnore: false });
+        await assert.rejects(() => readFile(path.join(fixture.projectRoot, ".gitignore"), "utf8"), /ENOENT/u);
+        assert.equal(result.added.includes(".gitignore"), false);
+        assert.equal(result.updated.includes(".gitignore"), false);
+        assert.equal(result.unchanged.includes(".gitignore"), false);
     } finally {
         await fixture.cleanup();
     }
@@ -130,6 +189,31 @@ void test("agent pack update replaces only content matching the previously insta
         );
         const afterUpdate = await AgentPack.readAgentPackProjectStatus(fixture.projectRoot);
         assert.equal(afterUpdate.status, "current");
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("agent pack update migrates receipt-owned unprefixed skills to gmloop-prefixed names", async () => {
+    const fixture = await createGameProjectFixture();
+    try {
+        const oldRelativePath = ".agents/skills/game-design/SKILL.md";
+        const oldSource = "---\nname: game-design\ndescription: Previous packaged skill.\n---\n";
+        const oldTargetPath = path.join(fixture.projectRoot, ...oldRelativePath.split("/"));
+        await mkdir(path.dirname(oldTargetPath), { recursive: true });
+        await writeFile(oldTargetPath, oldSource, "utf8");
+        await mkdir(path.join(fixture.projectRoot, ".gmloop"), { recursive: true });
+        await writeFile(
+            path.join(fixture.projectRoot, ".gmloop", "agent-pack.json"),
+            `${JSON.stringify(createReceiptFixture({ files: { [oldRelativePath]: hashText(oldSource) }, version: "0.0.0" }), null, 2)}\n`,
+            "utf8"
+        );
+
+        const result = await AgentPack.initializeAgentPack(fixture.projectRoot);
+
+        assert.ok(result.removed.includes(oldRelativePath));
+        assert.ok(result.added.includes(".agents/skills/gmloop-game-design/SKILL.md"));
+        await assert.rejects(() => readFile(oldTargetPath, "utf8"), /ENOENT/u);
     } finally {
         await fixture.cleanup();
     }

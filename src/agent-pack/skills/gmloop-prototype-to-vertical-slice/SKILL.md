@@ -1,5 +1,5 @@
 ---
-name: prototype-to-vertical-slice
+name: gmloop-prototype-to-vertical-slice
 description: Turn a GameMaker prototype into a coherent, playable vertical slice with bounded content, integrated systems, tests, and polish. Use when advancing from isolated mechanics to a complete representative experience.
 ---
 

@@ -16,6 +16,7 @@ import {
     GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED,
     GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_PIPELINE,
     GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_TASK,
+    type GraphUiInitializeAutoGameAgentPackDetail,
     type GraphUiTriggerAutoGamePipelineDetail,
     type GraphUiTriggerAutoGameTaskDetail
 } from "./events.js";
@@ -68,7 +69,8 @@ export class GmAutoGamePanel extends LightDomLitElement {
     public static properties = {
         model: { attribute: false },
         state: { attribute: false },
-        taskPrompt: { state: true }
+        taskPrompt: { state: true },
+        includeGitIgnore: { state: true }
     };
 
     public accessor model: GraphVisualizationUiModel | null = null;
@@ -76,6 +78,8 @@ export class GmAutoGamePanel extends LightDomLitElement {
     public accessor state: GraphVisualizationUiState | null = null;
 
     private accessor taskPrompt = "";
+
+    private accessor includeGitIgnore = true;
 
     #onDismissErrorBanner = (): void => {
         this.dispatchEvent(
@@ -311,18 +315,20 @@ export class GmAutoGamePanel extends LightDomLitElement {
                     <div class="auto-game-skill-item__identity">
                         <strong>${skill.name}</strong>
                         <gm-badge
-                            .label=${skill.status === "available" ? "Available" : "Unreadable"}
+                            .label=${skill.status === "available" ? "Detected" : "Unreadable"}
                             .tone=${skill.status === "available" ? "success" : "error"}
                         ></gm-badge>
                     </div>
                     <label class="auto-game-skill-toggle">
-                        <span>${skill.enabled ? "Enabled" : "Disabled"}</span>
+                        <span>${skill.enabled ? "Included" : "Excluded"}</span>
                         <input
                             type="checkbox"
                             role="switch"
                             .checked=${skill.enabled}
                             ?disabled=${!this.#hasPipelineController()}
-                            aria-label=${`${skill.enabled ? "Disable" : "Enable"} ${skill.name}`}
+                            aria-label=${`${skill.enabled ? "Exclude" : "Include"} ${skill.name} ${
+                                skill.enabled ? "from" : "in"
+                            } Auto-Game`}
                             @change=${(event: Event) => {
                                 this.dispatchEvent(
                                     new CustomEvent(GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED, {
@@ -354,25 +360,57 @@ export class GmAutoGamePanel extends LightDomLitElement {
         const skills = this.model?.autoGamePipeline?.skills ?? [];
         const agentPack = this.model?.autoGamePipeline?.agentPack;
         const shouldOfferAgentPackAction = agentPack !== undefined && agentPack.status !== "current";
-        const agentPackActionLabel = agentPack?.status === "update-available" ? "Update" : "Initialize";
+        const hasUntrackedProjectSkills = agentPack?.status === "not-installed" && skills.length > 0;
+        const agentPackActionLabel =
+            agentPack?.status === "update-available"
+                ? "Update Auto-Game Agent Pack"
+                : hasUntrackedProjectSkills
+                  ? "Complete Auto-Game Setup"
+                  : "Initialize Auto-Game Agent Pack";
+        const agentPackNoticeLabel =
+            agentPack?.status === "update-available"
+                ? "Update Available"
+                : hasUntrackedProjectSkills
+                  ? "Setup Incomplete"
+                  : "Not Initialized";
 
         return html`
             <article class="gm-card auto-game-card auto-game-skills-card">
                 <div class="auto-game-card__heading">
                     <div>
                         <h3 class="gm-card__heading">AI Skills</h3>
-                        <p>Review the project guidance available to Auto-Game.</p>
+                        <p>Choose which skills discovered in this project are included in Auto-Game.</p>
                     </div>
-                    ${skills.length > 0 ? html`<gm-badge .label=${`${skills.length} Skills`}></gm-badge>` : nothing}
+                    ${skills.length > 0
+                        ? html`<gm-badge .label=${`${skills.length} Project Skills`}></gm-badge>`
+                        : nothing}
                 </div>
                 ${shouldOfferAgentPackAction
                     ? html`
                           <div class="gm-empty auto-game-skill-empty">
+                              <gm-badge .label=${agentPackNoticeLabel} .tone=${"warning"}></gm-badge>
                               <p>
                                   ${agentPack.status === "update-available"
                                       ? `Auto-Game Agent Pack ${agentPack.availableVersion} is available; this project has ${agentPack.installedVersion ?? "an unknown version"}.`
-                                      : "Initialize GMLoop's Auto-Game Agent Pack to add project skills and guidance."}
+                                      : hasUntrackedProjectSkills
+                                        ? `${String(skills.length)} project skill${skills.length === 1 ? " was" : "s were"} detected, but this project has no agent-pack installation record. Complete setup to synchronize GMLoop's packaged resources and record their version without overwriting project changes.`
+                                        : "Initialize GMLoop's Auto-Game Agent Pack to add project skills and guidance."}
                               </p>
+                              <label class="auto-game-initialize-option">
+                                  <input
+                                      type="checkbox"
+                                      .checked=${this.includeGitIgnore}
+                                      @change=${(event: Event) => {
+                                          this.includeGitIgnore = (event.target as HTMLInputElement).checked;
+                                      }}
+                                  />
+                                  <span>
+                                      <strong>Update Project .gitignore</strong>
+                                      <small>
+                                          Ignore GMLoop caches, local dependencies, and browser automation artifacts.
+                                      </small>
+                                  </span>
+                              </label>
                               <button
                                   id="initialize-auto-game-agent-pack"
                                   class="gm-btn gm-btn--primary"
@@ -380,14 +418,18 @@ export class GmAutoGamePanel extends LightDomLitElement {
                                   ?disabled=${!this.#hasPipelineController() || this.model?.loadedTarget === null}
                                   @click=${() => {
                                       this.dispatchEvent(
-                                          new CustomEvent(GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK, {
-                                              bubbles: true,
-                                              composed: true
-                                          })
+                                          new CustomEvent<GraphUiInitializeAutoGameAgentPackDetail>(
+                                              GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK,
+                                              {
+                                                  bubbles: true,
+                                                  composed: true,
+                                                  detail: { includeGitIgnore: this.includeGitIgnore }
+                                              }
+                                          )
                                       );
                                   }}
                               >
-                                  ${agentPackActionLabel} Auto-Game Agent Pack
+                                  ${agentPackActionLabel}
                               </button>
                           </div>
                       `

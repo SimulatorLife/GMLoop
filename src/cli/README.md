@@ -22,14 +22,21 @@ project. The applicable resources include standard skills under
 needed. Repeat and upgrade runs preserve project-authored or project-modified
 content and report conflicts rather than silently overwriting it.
 
+Initialization also creates or extends the project-root `.gitignore` by default
+with `.gmloop/`, `.gmcache/`, `node_modules/`, `.playwright-mcp/`, and
+`.agents/skills/**/gmloop-*`. Existing rules remain byte-for-byte intact and
+equivalent patterns are not duplicated. Pass `--no-gitignore` to leave
+`.gitignore` untouched.
+
 The CLI consumes the standalone package and does not own a duplicate skill
 collection. For GMLoop maintainers, the agent-pack's `skills/` directory is the
-sole packaged-collection source. Drop a standard `<name>/SKILL.md` directory
+sole packaged-collection source. Drop a standard `gmloop-<name>/SKILL.md` directory
 there and it is published and included by initialization automatically; no
 registry, manifest, name list, or skill-specific loading code is required.
 
 ```bash
 gmloop agent-pack init --path path/to/Game.yyp
+gmloop agent-pack init --path path/to/Game.yyp --no-gitignore
 ```
 
 The target must resolve to a GameMaker project root containing a `.yyp` file.
@@ -46,7 +53,7 @@ actions when the opened project's recorded pack version is missing or older than
 the version available to GMLoop.
 
 The shipped content is a standard Agent Skills collection, not a custom bundle:
-each `skills/<name>/SKILL.md` uses YAML frontmatter and Markdown and may include
+each `skills/gmloop-<name>/SKILL.md` uses the same `gmloop-`-prefixed frontmatter name, YAML frontmatter, and Markdown and may include
 the specification's standard supporting directories. GMLoop uses `gray-matter`
 to extract UI metadata and delegates conformance checks to the official
 `skills-ref` tool or another established standards-compatible validator. It

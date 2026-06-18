@@ -1,6 +1,6 @@
 {
   "name": "@gmloop/agent-pack",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Portable Agent Skills and project guidance for building GameMaker games",
   "type": "module",
   "exports": {

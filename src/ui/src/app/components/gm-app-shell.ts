@@ -42,6 +42,7 @@ import {
     GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD,
     GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD,
     type GraphUiClearPageErrorDetail,
+    type GraphUiInitializeAutoGameAgentPackDetail,
     type GraphUiSaveConfigDetail,
     type GraphUiSetAutoGameSkillEnabledDetail,
     type GraphUiSetConfigViewDetail,
@@ -224,9 +225,10 @@ export class GmAppShell extends LightDomLitElement {
         void this.#runAutoGameTask(prompt);
     };
 
-    #onInitializeAutoGameAgentPack = (): void => {
+    #onInitializeAutoGameAgentPack = (eventValue: Event): void => {
         if (this.callbacks.onInitializeAutoGameAgentPack) {
-            void this.#runAutoGameSkillMutation(this.callbacks.onInitializeAutoGameAgentPack);
+            const options = (eventValue as CustomEvent<GraphUiInitializeAutoGameAgentPackDetail>).detail;
+            void this.#runAutoGameSkillMutation(() => this.callbacks.onInitializeAutoGameAgentPack?.(options));
         }
     };
 

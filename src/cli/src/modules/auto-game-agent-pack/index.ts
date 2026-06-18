@@ -1,4 +1,5 @@
 export {
+    type AgentPackInitializationOptions,
     type AgentPackInitializationResult,
     type AgentPackProjectStatus,
     type AgentPackProjectStatusKind,

@@ -1,5 +1,5 @@
 ---
-name: game-design
+name: gmloop-game-design
 description: Define and maintain a focused game design, core loop, player verbs, goals, progression, feedback, accessibility, and minimum playable scope. Use when planning or changing the direction of a GameMaker game.
 ---
 

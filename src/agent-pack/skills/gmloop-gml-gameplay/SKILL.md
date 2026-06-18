@@ -1,5 +1,5 @@
 ---
-name: gml-gameplay
+name: gmloop-gml-gameplay
 description: Implement gameplay systems in idiomatic GameMaker Language using clear object events, scripts, state machines, input, collisions, rooms, persistence, and performance practices. Use for gameplay code and runtime behavior.
 ---
 

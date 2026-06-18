@@ -57,7 +57,9 @@ type GraphVisualizationServerCreateConfig = () => Promise<GraphVisualizationServ
 type GraphVisualizationServerSaveConfig = (
     input: Readonly<{ config: Readonly<Record<string, unknown>> }>
 ) => Promise<GraphVisualizationServerRegenerationResult>;
-type GraphVisualizationServerInitializeAutoGameAgentPack = () => Promise<GraphVisualizationServerRegenerationResult>;
+type GraphVisualizationServerInitializeAutoGameAgentPack = (
+    input: Readonly<{ includeGitIgnore: boolean }>
+) => Promise<GraphVisualizationServerRegenerationResult>;
 type GraphVisualizationServerSetAutoGameSkillEnabled = (
     input: Readonly<{ enabled: boolean; name: string }>
 ) => Promise<GraphVisualizationServerRegenerationResult>;
@@ -223,7 +225,7 @@ async function routeGraphVisualizationServerRequest(
         request.url === "/api/auto-game/agent-pack/init" &&
         options.initializeAutoGameAgentPack
     ) {
-        await handleInitializeAutoGameAgentPackRequest(options.initializeAutoGameAgentPack, response);
+        await handleInitializeAutoGameAgentPackRequest(options.initializeAutoGameAgentPack, request, response);
         return;
     }
 
@@ -427,10 +429,20 @@ async function handleSaveConfigRequest(
 
 async function handleInitializeAutoGameAgentPackRequest(
     initializeAutoGameAgentPack: GraphVisualizationServerInitializeAutoGameAgentPack,
+    request: http.IncomingMessage,
     response: http.ServerResponse<http.IncomingMessage>
 ): Promise<void> {
     try {
-        const result = await initializeAutoGameAgentPack();
+        const parsedBody = await readOptionalJsonObjectRequestBody(request);
+        let includeGitIgnore = true;
+        if (parsedBody !== null && parsedBody.includeGitIgnore !== undefined) {
+            if (typeof parsedBody.includeGitIgnore !== "boolean") {
+                writeInvalidJsonPayloadResponse(response);
+                return;
+            }
+            includeGitIgnore = parsedBody.includeGitIgnore;
+        }
+        const result = await initializeAutoGameAgentPack({ includeGitIgnore });
         writeJsonResponse(response, 200, { changed: result.changed, ok: true });
     } catch (error: unknown) {
         writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });

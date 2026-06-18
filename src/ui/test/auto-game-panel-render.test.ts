@@ -202,10 +202,10 @@ void test("GmAutoGamePanel renders host-provided pipeline details", () => {
     assert.match(rendered, /<gm-badge[\s\S]*\.label=Success[\s\S]*\.tone=success/u);
     assert.match(rendered, /<time[\s\S]*datetime=2026-01-01T00:00:00.000Z/u);
     assert.match(rendered, /game-design/u);
-    assert.match(rendered, /Disable game-design/u);
+    assert.match(rendered, /Exclude game-design from Auto-Game/u);
     assert.match(rendered, /class="auto-game-skill-toggle__track"/u);
-    assert.match(rendered, /\.label=Available[\s\S]*\.tone=success/u);
-    assert.match(rendered, /Disable project-notes/u);
+    assert.match(rendered, /\.label=Detected[\s\S]*\.tone=success/u);
+    assert.match(rendered, /Exclude project-notes from Auto-Game/u);
     assert.match(rendered, /\.label=Unreadable[\s\S]*\.tone=error/u);
     assert.match(rendered, /Could not parse SKILL\.md frontmatter\./u);
     assert.match(rendered, /auto-game-skill-item--unreadable/u);
@@ -250,7 +250,60 @@ void test("GmAutoGamePanel offers initialization for an empty loaded GameMaker p
 
     assert.match(rendered, /This project has no Auto-Game skills in \.agents\/skills/u);
     assert.match(rendered, /Initialize GMLoop's Auto-Game Agent Pack/u);
+    assert.match(rendered, /\.label=Not Initialized[\s\S]*\.tone=warning/u);
+    assert.match(rendered, /Update Project \.gitignore/u);
+    assert.match(rendered, /type="checkbox"[\s\S]*\.checked=true/u);
     assert.match(rendered, /id="initialize-auto-game-agent-pack"[\s\S]*\?disabled=false/u);
+});
+
+void test("GmAutoGamePanel presents detected skills without a receipt as incomplete setup", () => {
+    const panel = new TestableGmAutoGamePanel();
+    panel.model = createMockModel({
+        autoGamePipeline: {
+            actions: [],
+            agentPack: {
+                availableVersion: "0.0.1",
+                conflicts: [],
+                installedVersion: null,
+                status: "not-installed"
+            },
+            events: [],
+            llmOutputs: [],
+            skills: [
+                {
+                    description: "Design the game.",
+                    diagnostic: null,
+                    enabled: true,
+                    id: "game-design",
+                    name: "game-design",
+                    sourcePath: ".agents/skills/game-design/SKILL.md",
+                    status: "available"
+                }
+            ],
+            status: "idle",
+            statusText: "1 of 1 Auto-Game skills enabled."
+        },
+        loadedTarget: {
+            activePath: "/tmp/test/Test.yyp",
+            projectRoot: "/tmp/test",
+            selectedPaths: ["/tmp/test/Test.yyp"],
+            source: "cli-path"
+        }
+    });
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /\.label=Setup Incomplete[\s\S]*\.tone=warning/u);
+    assert.match(rendered, /1 project skill was detected, but this project has no agent-pack installation record/u);
+    assert.match(rendered, /Complete setup to synchronize GMLoop's packaged resources and record their version/u);
+    assert.match(rendered, /Complete Auto-Game Setup/u);
+    assert.match(rendered, /\.label=Detected[\s\S]*\.tone=success/u);
+    assert.match(rendered, />Included</u);
+    assert.match(rendered, /Exclude game-design from Auto-Game/u);
+    assert.doesNotMatch(rendered, /\.label=Available/u);
+    assert.doesNotMatch(rendered, />Enabled</u);
+    assert.doesNotMatch(rendered, /\.label=Not Initialized/u);
 });
 
 void test("GmAutoGamePanel offers an agent-pack update while retaining discovered skills", () => {
@@ -428,6 +481,7 @@ void test("GmAppShell routes auto-game one-time tasks through the host callback"
 void test("GmAppShell routes agent-pack initialization and skill toggles through host callbacks", async () => {
     const shell = new TestableGmAppShell();
     let initialized = 0;
+    let initializationOptions: Readonly<{ includeGitIgnore: boolean }> | null = null;
     let toggled: Readonly<{ enabled: boolean; name: string }> | null = null;
     shell.model = createMockModel({
         loadedTarget: {
@@ -438,8 +492,9 @@ void test("GmAppShell routes agent-pack initialization and skill toggles through
         }
     });
     shell.callbacks = {
-        onInitializeAutoGameAgentPack: () => {
+        onInitializeAutoGameAgentPack: (options) => {
             initialized += 1;
+            initializationOptions = options;
         },
         onOpenProject: () => {},
         onRegenerate: () => {},
@@ -453,7 +508,12 @@ void test("GmAppShell routes agent-pack initialization and skill toggles through
     };
 
     shell.connectedCallback();
-    shell.dispatchEvent(new CustomEvent(GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK, { bubbles: true }));
+    shell.dispatchEvent(
+        new CustomEvent(GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK, {
+            bubbles: true,
+            detail: { includeGitIgnore: false }
+        })
+    );
     shell.dispatchEvent(
         new CustomEvent(GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED, {
             bubbles: true,
@@ -464,5 +524,6 @@ void test("GmAppShell routes agent-pack initialization and skill toggles through
     shell.disconnectedCallback();
 
     assert.equal(initialized, 1);
+    assert.deepEqual(initializationOptions, { includeGitIgnore: false });
     assert.deepEqual(toggled, { enabled: false, name: "game-design" });
 });

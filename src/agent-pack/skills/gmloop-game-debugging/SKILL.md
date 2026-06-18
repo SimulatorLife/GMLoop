@@ -1,5 +1,5 @@
 ---
-name: game-debugging
+name: gmloop-game-debugging
 description: Diagnose GameMaker gameplay, resource, build, and runtime failures from reproducible evidence. Use when the game behaves incorrectly, fails validation, or cannot build or run.
 ---
 

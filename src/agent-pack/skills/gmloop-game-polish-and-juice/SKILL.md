@@ -1,5 +1,5 @@
 ---
-name: game-polish-and-juice
+name: gmloop-game-polish-and-juice
 description: Improve game feel through readable feedback, animation, audio, timing, camera, particles, transitions, and accessibility without obscuring the core loop. Use after gameplay behavior is stable.
 ---
 

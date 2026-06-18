@@ -138,6 +138,10 @@ void test("agent-pack init exposes the standard project path option", () => {
         init.options.some((option) => option.long === "--path"),
         true
     );
+    assert.equal(
+        init.options.some((option) => option.long === "--no-gitignore"),
+        true
+    );
 });
 
 void test("agent-pack is recognized as an explicit universal CLI command", () => {
@@ -165,6 +169,18 @@ void test("agent-pack init accepts an explicit yyp path and reports deterministi
         );
         assert.deepEqual(payload.payload.conflicts, []);
         assert.equal(payload.payload.version, await AgentPack.readAgentPackVersion());
+        assert.equal(payload.payload.added.includes(".gitignore"), true);
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("agent-pack init supports opting out of gitignore changes", async (context) => {
+    const fixture = await createGameProjectFixture();
+    context.mock.method(console, "log", () => {});
+    try {
+        await runAgentPackInit({ gitignore: false, path: path.join(fixture.projectRoot, "Fixture.yyp") });
+        await assert.rejects(() => readFile(path.join(fixture.projectRoot, ".gitignore"), "utf8"), /ENOENT/u);
     } finally {
         await fixture.cleanup();
     }

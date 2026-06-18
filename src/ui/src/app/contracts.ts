@@ -83,8 +83,13 @@ export type GraphVisualizationUiCallbacks = Readonly<{
     onRunAutoGameTask?: (
         prompt: string
     ) => GraphVisualizationAutoGamePipelineActionResult | Promise<GraphVisualizationAutoGamePipelineActionResult>;
-    onInitializeAutoGameAgentPack?: () => void | Promise<void>;
+    onInitializeAutoGameAgentPack?: (options: GraphVisualizationAgentPackInitializationOptions) => void | Promise<void>;
     onSetAutoGameSkillEnabled?: (name: string, enabled: boolean) => void | Promise<void>;
+}>;
+
+/** Options selected when initializing or updating project-scoped Auto-Game resources. */
+export type GraphVisualizationAgentPackInitializationOptions = Readonly<{
+    includeGitIgnore: boolean;
 }>;
 
 /**

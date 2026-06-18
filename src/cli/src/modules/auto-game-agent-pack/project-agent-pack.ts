@@ -8,8 +8,12 @@ const AGENT_PACK_NAME = "@gmloop/agent-pack";
 const AGENT_PACK_ROOT = path.dirname(fileURLToPath(import.meta.resolve(`${AGENT_PACK_NAME}/package.json`)));
 const AGENT_PACK_SKILLS_ROOT = path.join(AGENT_PACK_ROOT, "skills");
 const PROJECT_GUIDANCE_TEMPLATE_PATH = path.join(AGENT_PACK_ROOT, "templates", "project-agents.md");
+const PROJECT_GITIGNORE_TEMPLATE_PATH = path.join(AGENT_PACK_ROOT, "templates", "project-gitignore");
 const PROJECT_RECEIPT_RELATIVE_PATH = ".gmloop/agent-pack.json";
 const PROJECT_SKILLS_RELATIVE_PATH = ".agents/skills";
+const PROJECT_GITIGNORE_RELATIVE_PATH = ".gitignore";
+const PROJECT_GITIGNORE_SECTION_HEADING = "# GMLoop generated files";
+const GMLOOP_SKILL_NAME_PREFIX = "gmloop-";
 
 /** Installation state for the agent pack in one GameMaker project. */
 export type AgentPackProjectStatusKind = "current" | "not-installed" | "update-available";
@@ -33,6 +37,15 @@ export type AgentPackInitializationResult = Readonly<{
     unchanged: ReadonlyArray<string>;
     updated: ReadonlyArray<string>;
 }>;
+
+/** Options controlling optional project hygiene during agent-pack initialization. */
+export type AgentPackInitializationOptions = Readonly<{
+    includeGitIgnore: boolean;
+}>;
+
+const DEFAULT_AGENT_PACK_INITIALIZATION_OPTIONS: AgentPackInitializationOptions = Object.freeze({
+    includeGitIgnore: true
+});
 
 type AgentPackReceipt = Readonly<{
     conflicts: ReadonlyArray<string>;
@@ -245,6 +258,53 @@ async function writeProjectFile(projectRoot: string, packagedFile: PackagedProje
     await writeFile(targetPath, packagedFile.contents);
 }
 
+function normalizeGitIgnoreDirectoryPattern(line: string): string | null {
+    const trimmedLine = line.trim();
+    if (trimmedLine.length === 0 || trimmedLine.startsWith("#") || trimmedLine.startsWith("!")) {
+        return null;
+    }
+    return trimmedLine
+        .replace(/^\//u, "")
+        .replace(/^\*\*\//u, "")
+        .replace(/\/\*\*$/u, "")
+        .replace(/\/$/u, "");
+}
+
+async function synchronizeProjectGitIgnore(projectRoot: string): Promise<ProjectFileDisposition> {
+    const targetPath = path.join(projectRoot, PROJECT_GITIGNORE_RELATIVE_PATH);
+    const targetExists = await pathExists(targetPath);
+    const existingSource = targetExists ? await readFile(targetPath, "utf8") : "";
+    const packagedSource = await readFile(PROJECT_GITIGNORE_TEMPLATE_PATH, "utf8");
+    const packagedEntries = packagedSource
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+    const existingPatterns = new Set(
+        existingSource
+            .split(/\r?\n/u)
+            .map((line) => normalizeGitIgnoreDirectoryPattern(line))
+            .filter((pattern): pattern is string => pattern !== null)
+    );
+    const missingEntries = packagedEntries.filter((entry) => {
+        const normalizedEntry = normalizeGitIgnoreDirectoryPattern(entry);
+        return normalizedEntry !== null && !existingPatterns.has(normalizedEntry);
+    });
+    if (missingEntries.length === 0) {
+        return Object.freeze({ kind: "unchanged", targetRelativePath: PROJECT_GITIGNORE_RELATIVE_PATH });
+    }
+
+    const hasSectionHeading = existingSource
+        .split(/\r?\n/u)
+        .some((line) => line.trim() === PROJECT_GITIGNORE_SECTION_HEADING);
+    const appendedLines = [...(hasSectionHeading ? [] : [PROJECT_GITIGNORE_SECTION_HEADING]), ...missingEntries];
+    const separator = existingSource.length === 0 ? "" : existingSource.endsWith("\n") ? "\n" : "\n\n";
+    await writeFile(targetPath, `${existingSource}${separator}${appendedLines.join("\n")}\n`, "utf8");
+    return Object.freeze({
+        kind: targetExists ? "updated" : "added",
+        targetRelativePath: PROJECT_GITIGNORE_RELATIVE_PATH
+    });
+}
+
 async function readRegularProjectFileHash(targetPath: string): Promise<string | null> {
     const targetStats = await lstat(targetPath);
     if (!targetStats.isFile()) {
@@ -306,12 +366,17 @@ export async function readAgentPackVersion(): Promise<string> {
 /** Discover packaged skill directory names in deterministic order. */
 export async function discoverPackagedSkillNames(): Promise<ReadonlyArray<string>> {
     const entries = await readdir(AGENT_PACK_SKILLS_ROOT, { withFileTypes: true });
-    return Object.freeze(
-        entries
-            .filter((entry) => entry.isDirectory())
-            .map((entry) => entry.name)
-            .sort()
-    );
+    const skillNames = entries
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort();
+    const invalidSkillNames = skillNames.filter((skillName) => !skillName.startsWith(GMLOOP_SKILL_NAME_PREFIX));
+    if (invalidSkillNames.length > 0) {
+        throw new Error(
+            `GMLoop-provided Agent Skill names must start with '${GMLOOP_SKILL_NAME_PREFIX}': ${invalidSkillNames.join(", ")}`
+        );
+    }
+    return Object.freeze(skillNames);
 }
 
 /** Assert that a path is the root of a GameMaker project. */
@@ -348,7 +413,10 @@ export async function readAgentPackProjectStatus(projectRoot: string): Promise<A
 }
 
 /** Materialize or update the packaged resources without overwriting project modifications. */
-export async function initializeAgentPack(projectRoot: string): Promise<AgentPackInitializationResult> {
+export async function initializeAgentPack(
+    projectRoot: string,
+    options: AgentPackInitializationOptions = DEFAULT_AGENT_PACK_INITIALIZATION_OPTIONS
+): Promise<AgentPackInitializationResult> {
     const resolvedProjectRoot = await assertGameMakerProjectRoot(projectRoot);
     const availableVersion = await readAgentPackVersion();
     const previousReceipt = await readAgentPackReceipt(resolvedProjectRoot);
@@ -367,7 +435,14 @@ export async function initializeAgentPack(projectRoot: string): Promise<AgentPac
                 removeObsoletePackagedProjectFile(resolvedProjectRoot, previousRelativePath, previousSourceHash)
             )
     );
-    const dispositions = [...synchronizedFiles, ...obsoleteFiles.filter((result) => result !== null)];
+    const gitIgnoreDisposition = options.includeGitIgnore
+        ? await synchronizeProjectGitIgnore(resolvedProjectRoot)
+        : null;
+    const dispositions = [
+        ...synchronizedFiles,
+        ...obsoleteFiles.filter((result) => result !== null),
+        ...(gitIgnoreDisposition === null ? [] : [gitIgnoreDisposition])
+    ];
     const pathsForDisposition = (kind: ProjectFileDisposition["kind"]): ReadonlyArray<string> =>
         dispositions.filter((result) => result.kind === kind).map((result) => result.targetRelativePath);
     const added = pathsForDisposition("added");

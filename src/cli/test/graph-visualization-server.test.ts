@@ -767,12 +767,14 @@ void test("graph visualization server rejects malformed config save payloads", a
 
 void test("graph visualization server initializes and toggles project Auto-Game skills", async (testContext) => {
     let initialized = 0;
+    let initializationInput: Readonly<{ includeGitIgnore: boolean }> | null = null;
     let toggleInput: Readonly<{ enabled: boolean; name: string }> | null = null;
     await withGraphVisualizationServer(
         testContext,
         {
-            initializeAutoGameAgentPack: async () => {
+            initializeAutoGameAgentPack: async (input) => {
                 initialized += 1;
+                initializationInput = input;
                 return { changed: true };
             },
             regenerate: async () => ({ changed: true }),
@@ -787,9 +789,29 @@ void test("graph visualization server initializes and toggles project Auto-Game 
             }
         },
         async (handle) => {
-            const initResponse = await fetch(`${handle.url}/api/auto-game/agent-pack/init`, { method: "POST" });
+            const initResponse = await fetch(`${handle.url}/api/auto-game/agent-pack/init`, {
+                body: JSON.stringify({ includeGitIgnore: false }),
+                headers: { "Content-Type": "application/json" },
+                method: "POST"
+            });
             assert.equal(initResponse.status, 200);
             assert.equal(initialized, 1);
+            assert.deepEqual(initializationInput, { includeGitIgnore: false });
+
+            const defaultInitResponse = await fetch(`${handle.url}/api/auto-game/agent-pack/init`, {
+                method: "POST"
+            });
+            assert.equal(defaultInitResponse.status, 200);
+            assert.equal(initialized, 2);
+            assert.deepEqual(initializationInput, { includeGitIgnore: true });
+
+            const invalidInitResponse = await fetch(`${handle.url}/api/auto-game/agent-pack/init`, {
+                body: JSON.stringify({ includeGitIgnore: "yes" }),
+                headers: { "Content-Type": "application/json" },
+                method: "POST"
+            });
+            assert.equal(invalidInitResponse.status, 400);
+            assert.equal(initialized, 2);
 
             const toggleResponse = await fetch(`${handle.url}/api/auto-game/skills/toggle`, {
                 body: JSON.stringify({ enabled: false, name: "game-design" }),

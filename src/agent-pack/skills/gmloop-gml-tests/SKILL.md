@@ -1,5 +1,5 @@
 ---
-name: gml-tests
+name: gmloop-gml-tests
 description: Design deterministic tests for GML gameplay, scripts, resources, and runtime behavior. Use when adding features, fixing regressions, or validating an Auto-Game build.
 ---
 

@@ -310,6 +310,53 @@
   margin: 0;
 }
 
+.auto-game-initialize-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--gm-space-md);
+  align-items: start;
+  width: 100%;
+  padding: var(--gm-space-md);
+  border: 1px solid var(--gm-border-subtle);
+  border-radius: var(--gm-radius-md);
+  background: var(--gm-bg-subtle);
+  color: var(--gm-text);
+  cursor: pointer;
+}
+
+.auto-game-initialize-option:hover {
+  border-color: var(--gm-border);
+  background: var(--gm-bg-muted);
+}
+
+.auto-game-initialize-option:focus-within {
+  border-color: var(--gm-border-interactive);
+  box-shadow: var(--gm-shadow-focus);
+}
+
+.auto-game-initialize-option input {
+  width: var(--gm-icon-lg);
+  height: var(--gm-icon-lg);
+  margin: 0;
+  accent-color: var(--gm-success-dot);
+}
+
+.auto-game-initialize-option span {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-xs);
+}
+
+.auto-game-initialize-option strong {
+  font-size: var(--gm-text-sm);
+}
+
+.auto-game-initialize-option small {
+  color: var(--gm-text-subdued);
+  font-size: var(--gm-text-xs);
+  line-height: var(--gm-leading-normal);
+}
+
 .auto-game-skill-empty--skills:last-child {
   margin-bottom: 0;
 }
