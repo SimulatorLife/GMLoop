@@ -6,8 +6,8 @@ import test from "node:test";
 
 import { createSkillsCommand, runSkillsInit } from "../src/commands/skills.js";
 import {
-    AUTO_GAME_STARTER_SKILL_NAMES,
     discoverAutoGameProjectSkills,
+    discoverPackagedAutoGameSkillNames,
     initializeAutoGameProjectSkills,
     setAutoGameProjectSkillEnabled
 } from "../src/modules/auto-game-skills/index.js";
@@ -27,26 +27,36 @@ async function writeSkill(projectRoot: string, directoryName: string, contents: 
     await writeFile(path.join(skillDirectory, "SKILL.md"), contents, "utf8");
 }
 
-void test("Auto-Game starter initialization is deterministic, idempotent, and preserves project skills", async () => {
+void test("packaged Auto-Game skills are discovered from the collection directory in deterministic order", async () => {
+    const packagedSkillNames = await discoverPackagedAutoGameSkillNames();
+    assert.ok(packagedSkillNames.length > 0);
+    assert.deepEqual(packagedSkillNames, [...packagedSkillNames].sort());
+    assert.equal(new Set(packagedSkillNames).size, packagedSkillNames.length);
+});
+
+void test("Auto-Game initialization is inventory-independent, idempotent, and preserves project skills", async () => {
     const fixture = await createGameProjectFixture();
     try {
-        const customContents = "---\nname: game-design\ndescription: Project-specific design.\n---\n\n# Custom\n";
-        await writeSkill(fixture.projectRoot, "game-design", customContents);
+        const packagedSkillNames = await discoverPackagedAutoGameSkillNames();
+        const preservedSkillName = packagedSkillNames.at(0);
+        assert.ok(preservedSkillName);
+        const customContents = `---\nname: ${preservedSkillName}\ndescription: Project-specific guidance.\n---\n\n# Custom\n`;
+        await writeSkill(fixture.projectRoot, preservedSkillName, customContents);
 
         const first = await initializeAutoGameProjectSkills(fixture.projectRoot);
         assert.deepEqual(
             first.copied,
-            AUTO_GAME_STARTER_SKILL_NAMES.filter((name) => name !== "game-design")
+            packagedSkillNames.filter((name) => name !== preservedSkillName)
         );
-        assert.deepEqual(first.skipped, ["game-design"]);
+        assert.deepEqual(first.skipped, [preservedSkillName]);
         assert.equal(
-            await readFile(path.join(fixture.projectRoot, ".agents", "skills", "game-design", "SKILL.md"), "utf8"),
+            await readFile(path.join(fixture.projectRoot, ".agents", "skills", preservedSkillName, "SKILL.md"), "utf8"),
             customContents
         );
 
         const second = await initializeAutoGameProjectSkills(fixture.projectRoot);
         assert.deepEqual(second.copied, []);
-        assert.deepEqual(second.skipped, AUTO_GAME_STARTER_SKILL_NAMES);
+        assert.deepEqual(second.skipped, packagedSkillNames);
     } finally {
         await fixture.cleanup();
     }
@@ -170,6 +180,7 @@ void test("skills init accepts an explicit yyp path and reports deterministic re
     const output = new Array<string>();
     context.mock.method(console, "log", (value: string) => output.push(value));
     try {
+        const packagedSkillNames = await discoverPackagedAutoGameSkillNames();
         await runSkillsInit({ path: path.join(fixture.projectRoot, "Fixture.yyp") });
         assert.equal(output.length, 1);
         const payload = JSON.parse(output[0] ?? "") as {
@@ -179,7 +190,7 @@ void test("skills init accepts an explicit yyp path and reports deterministic re
         };
         assert.equal(payload.command, "skills init");
         assert.equal(payload.projectRoot, fixture.projectRoot);
-        assert.deepEqual(payload.payload.copied, AUTO_GAME_STARTER_SKILL_NAMES);
+        assert.deepEqual(payload.payload.copied, packagedSkillNames);
         assert.deepEqual(payload.payload.skipped, []);
     } finally {
         await fixture.cleanup();

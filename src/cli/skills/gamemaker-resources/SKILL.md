@@ -1,11 +1,11 @@
 ---
 name: gamemaker-resources
-description: Create and modify GameMaker resources through GMLoop's structured CLI and MCP tools. Use when working with objects, events, rooms, scripts, instances, project metadata, or resource relationships.
+description: Create and modify GameMaker resources through structured project tooling. Use when working with objects, events, rooms, scripts, instances, project metadata, or resource relationships.
 ---
 
 # GameMaker Resources
 
-Use GMLoop's structured project, resource, object, room, script, refactor, and validation commands instead of editing GameMaker metadata as unstructured text. Inspect `gmloop --help` and the relevant subcommand help before assuming an option or payload shape.
+Use the available structured project, resource, object, room, script, refactor, and validation capabilities instead of editing GameMaker metadata as unstructured text. Inspect the active tool's capabilities before assuming an operation or payload shape.
 
 ## Inspect Before Mutation
 
@@ -14,11 +14,11 @@ Use GMLoop's structured project, resource, object, room, script, refactor, and v
 3. Reuse established naming, folder, parent-object, room-layer, and event conventions.
 4. Search for an existing resource that already owns the desired behavior.
 
-Do not infer resource identities from filenames alone when GMLoop can return structured project metadata.
+Do not infer resource identities from filenames alone when structured project metadata is available.
 
 ## Mutate Through Structured Tools
 
-Prefer the narrowest GMLoop CLI or MCP command that owns the change. Keep resource creation, object-event edits, room-instance placement, script edits, and project metadata changes inside their structured command families.
+Prefer the narrowest structured operation that owns the change. Keep resource creation, object-event edits, room-instance placement, script edits, and project metadata changes inside the available project-tooling boundaries.
 
 Preserve stable resource names and identifiers unless the task explicitly requires a rename. When renaming, use the project-wide refactor transaction so references and metadata change together.
 
@@ -28,7 +28,7 @@ Do not hand-edit `.yyp`, `.yy`, or resource ordering as generic JSON. Do not cop
 
 After mutation:
 
-- Reinspect the changed resource through GMLoop.
+- Reinspect the changed resource through the available structured tooling.
 - Confirm referenced sprites, objects, scripts, rooms, parents, and instances resolve.
 - Check that object events exist in the intended event category and number.
 - Confirm room instances are placed on the intended instance layer.
@@ -36,4 +36,4 @@ After mutation:
 
 ## Report
 
-List every created, updated, renamed, or removed resource; the structured command or MCP tool used; the important relationships verified; and any build/runtime validation that could not be completed.
+List every created, updated, renamed, or removed resource; the capability used; the important relationships verified; and any build/runtime validation that could not be completed.

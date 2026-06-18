@@ -641,11 +641,15 @@ The hot-reload system bypasses the static nature of the GameMaker HTML5 runner b
 ### 7.6 Auto-Game Agent Skills
 
 - Auto-Game skills use the open Agent Skills specification: one conventional `skills/<name>/` directory per skill, with YAML frontmatter and Markdown instructions in `SKILL.md` plus optional standard `scripts/`, `references/`, and `assets/` content. GMLoop does not define a custom bundle or skill format.
-- The shipped collection lives under `src/cli/skills/<name>/SKILL.md` and is packaged as an ordinary Agent Skills collection.
+- The shipped collection lives under `src/cli/skills/`. This directory is the single source of truth for packaged Auto-Game skills: adding or removing a standard `<name>/SKILL.md` directory changes what initialization offers without editing a manifest, name list, loader, validator, or skill-specific code.
+- Documentation, tests, and UI code must not duplicate the collection inventory or size. The filesystem collection is the inventory, and each `SKILL.md` is the authoritative description of that skill.
+- The collection is packaged as ordinary Agent Skills directories, not a custom archive, registry, manifest, provider overlay, or generated bundle.
 - `gmloop skills init --path <game-project>` copies only missing collection entries into `<game-project>/.agents/skills` and never overwrites project-authored skills.
 - Auto-Game discovery is rooted exclusively at the loaded GameMaker project containing the active `.yyp`. It never falls back to the GMLoop repository or process working directory.
 - The Auto-Game UI lists every discovered project skill with its name, description, source path, file-availability status, and an enable/disable toggle. Every skill can be toggled.
 - Every discovered Auto-Game skill is enabled by default. `gmloop.json` persists only disabled-name exceptions under `autoGame.disabledSkills`; there is no second activation, installation, trust, approval, or permission layer.
 - The active AI tool or CLI reads enabled project skills through its existing Agent Skills discovery and retains sole ownership of activation, permissions, trust, and execution behavior. GMLoop does not interpret or execute skill instructions.
 - GMLoop uses the established `gray-matter` package only to read display metadata. It does not implement an Agent Skills grammar, schema, parser, or conformance validator. The shipped collection and any explicit validation workflow use the official `skills-ref` reference tool (or another established standards-compatible validator).
+- Auto-Game skills are vendor- and client-neutral. They must not require a specific LLM vendor, agent product, MCP server, command name, or provider-specific metadata to be useful.
+- Skills are self-contained and independently triggerable. They should describe required capabilities and outcomes instead of referring to other skills or assuming another skill has already run. Tool-specific examples belong only where the workflow cannot be expressed portably.
 - The GMLoop source repository's `.agents/skills` directory is exclusively for LLMs and agents developing GMLoop itself. It is never an Auto-Game skill source and is never read or modified by Auto-Game initialization or discovery.

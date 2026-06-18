@@ -21,6 +21,11 @@ GameMaker project's `.agents/skills` directory. Existing skill directories are
 preserved, so the command is safe to repeat and never overwrites project-owned
 instructions.
 
+For GMLoop maintainers, `src/cli/skills/` is the sole packaged-collection source.
+Drop a standard `<name>/SKILL.md` directory there and it is discovered, packaged,
+and included by `skills init` automatically; no registry, manifest, name list, or
+skill-specific loading code is required.
+
 ```bash
 gmloop skills init --path path/to/Game.yyp
 ```
@@ -35,6 +40,10 @@ the specification's standard supporting directories. GMLoop uses `gray-matter`
 to extract UI metadata and delegates conformance checks to the official
 `skills-ref` tool or another established standards-compatible validator. It
 does not maintain a custom skill parser or validator.
+
+Packaged skills should remain self-contained and AI-client neutral. Describe
+capabilities and expected outcomes rather than depending on another skill, a
+specific LLM vendor, MCP server, provider adapter, or tool command name.
 
 ### `format` - Format GML Files
 

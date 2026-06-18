@@ -580,21 +580,28 @@ Give agents durable, repo-local guidance for designing and building complete gam
 ### Packaged Skills
 
 ```text
-src/cli/skills/game-design/SKILL.md
-src/cli/skills/gml-gameplay/SKILL.md
-src/cli/skills/gamemaker-resources/SKILL.md
-src/cli/skills/gml-tests/SKILL.md
-src/cli/skills/game-debugging/SKILL.md
-src/cli/skills/game-polish-and-juice/SKILL.md
-src/cli/skills/prototype-to-vertical-slice/SKILL.md
+src/cli/skills/
+  <skill-name>/
+    SKILL.md
+    scripts/       # optional
+    references/    # optional
+    assets/        # optional
 ```
 
 This is a conventional Agent Skills collection: every `skills/<name>/SKILL.md`
-entry follows the open Agent Skills frontmatter and Markdown format. It is
-separate from GMLoop's repository-development skills under `.agents/skills`.
+entry follows the open Agent Skills frontmatter and Markdown format. The design
+document deliberately does not duplicate the collection's current names or
+size; the directory contents are the inventory. The collection is separate
+from GMLoop's repository-development skills under `.agents/skills`.
 `gmloop skills init --path <game-project>` copies missing collection entries to
 `<game-project>/.agents/skills`, where the game-building agent can discover,
 inspect, modify, and version them with the game project.
+
+`src/cli/skills/` is the only packaged-collection source of truth. Initialization
+enumerates its skill directories at runtime; there is no parallel manifest,
+hard-coded skill-name catalog, registration step, or skill-specific loader. A
+maintainer adds a packaged Auto-Game skill by dropping a standard skill directory
+there. Package publication preserves that directory structure.
 
 The collection is packaged as ordinary skill directories, not a GMLoop-specific
 archive, manifest, registry, or runtime overlay. A skill may use the standard
@@ -610,72 +617,41 @@ in `gmloop.json`. GMLoop adds no separate activation, trust, approval,
 permission, installation, or execution layer; the active AI tool or CLI retains
 those responsibilities through its normal Agent Skills behavior.
 
-### `game-design` Skill Topics
+### Portability Contract
 
-The game-design skill should force agents to define or preserve:
+- Skills target the open Agent Skills format, not a particular LLM vendor or AI client.
+- Each skill is independently useful and must not require another skill to run first.
+- Instructions describe capabilities, project state, evidence, and outcomes rather than naming a specific MCP server, provider adapter, or client command.
+- Provider- or tool-specific examples are omitted unless a portable capability description would be technically insufficient.
+- Skills do not own permission, trust, activation, installation, or tool-discovery policy.
+- Changes to available commands or MCP tools should not require rewriting stable game-design or GameMaker workflow guidance.
 
-```text
-core fantasy
-core loop
-player verbs
-moment-to-moment decisions
-win condition
-loss condition
-progression
-feedback and juice
-risk/reward
-resource economy
-content scope
-testability
-minimum playable slice
-accessibility
-balancing assumptions
-simplicity of controls
-bloat reduction
-simplifying the core loop
-juice and feedback opportunities
-```
+### Skill Content Contract
 
-### `gml-gameplay` Skill Topics
+Each packaged skill owns its own trigger description, workflow, domain guidance,
+guardrails, verification expectations, and completion/reporting contract in its
+`SKILL.md`. Collection-level documentation must not enumerate skill names,
+duplicate skill-specific instructions, or state a collection size. This keeps a
+skill addition, removal, rename, or rewrite local to its standard directory.
 
-```text
-GameMaker object/event patterns
-Create/Step/Draw responsibilities
-script organization
-input handling
-state machines
-collision conventions
-room setup
-save/load patterns
-performance constraints
-GML style conventions
-```
-
-### `gml-tests` Skill Topics
-
-```text
-how to structure unit tests
-how to isolate pure scripts
-when to use runtime smoke tests
-how to write deterministic tests
-how to avoid brittle log wording assertions
-how to report test results
-```
+Skills should remain concise, independently useful, and focused on durable
+GameMaker or game-development capabilities. They should favor observable
+outcomes, evidence, deterministic verification, accessibility, bounded scope,
+and structured project mutation without assuming a particular client or tool.
 
 ### Current Implementation
 
-The seven skills above ship as the initial collection. Initialization is
-idempotent and never overwrites an existing project skill. Auto-Game discovers
-skills only from the loaded GameMaker project's `.agents/skills` directory;
+Every standard skill directory under `src/cli/skills/` is packaged and
+initialized automatically. Initialization is idempotent and never overwrites an
+existing project skill. Auto-Game discovers skills only from the loaded
+GameMaker project's `.agents/skills` directory;
 GMLoop's source-level `.agents/skills` directory is exclusively for agents
 developing GMLoop itself. Auto-Game never reads or modifies it, and those
 internal skills never enter the game-building catalog.
 
-Each starter skill includes an actionable workflow, ownership guardrails,
-verification expectations, and a concrete reporting or completion contract.
-Together they cover design scope, structured GameMaker resource mutation,
-idiomatic gameplay implementation, deterministic testing, evidence-driven
-debugging, accessible polish, and vertical-slice completion.
+The current collection conforms to the content and portability contracts above.
+Its actual inventory is always obtained from the directory rather than repeated
+in documentation or source code.
 
 ## 12. Milestone 6: Task Graph and Agent Work Queue
 

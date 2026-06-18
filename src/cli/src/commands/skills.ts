@@ -30,7 +30,7 @@ export function createSkillsCommand(): Command {
         "Manage project-scoped Agent Skills used by Auto-Game."
     );
     const init = applyStandardCommandOptions(new Command("init"))
-        .description("Copy missing Auto-Game starter skills into a GameMaker project.")
+        .description("Copy missing packaged Auto-Game skills into a GameMaker project.")
         .addOption(createPathOption());
     init.action(async function skillsInitAction() {
         await runSkillsInit(this.opts<SkillsInitOptions>());

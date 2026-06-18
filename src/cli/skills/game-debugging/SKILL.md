@@ -10,7 +10,7 @@ Start from evidence. Record the expected behavior, observed behavior, shortest r
 ## Isolate The Failing Layer
 
 1. Reproduce the issue without unrelated edits.
-2. Run the narrow GMLoop inspection or validation command for the involved file or resource.
+2. Use the narrowest available inspection or validation capability for the involved file or resource.
 3. Identify whether ownership belongs to GML syntax, gameplay state, object lifecycle, resource relationships, room setup, runtime behavior, or the build provider.
 4. Reduce the reproduction while preserving the failure.
 5. Form one falsifiable hypothesis and test it before changing multiple systems.

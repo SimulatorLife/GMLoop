@@ -177,9 +177,11 @@ Each tab has one top-level page toolbar. That toolbar owns the page title, subti
 
 ## Auto-Game Surface
 
-The Auto-Game surface remains presentation-only for pipeline execution, while the CLI host provides project-scoped Agent Skill discovery and mutations. It scans only `<loaded-game-project>/.agents/skills`, renders every discovered skill with its name, description, source path, file-availability status, and enable/disable toggle, initializes missing starter skills from the standard packaged `skills/<name>/SKILL.md` collection, and persists only disabled-name exceptions in `gmloop.json`.
+The Auto-Game surface remains presentation-only for pipeline execution, while the CLI host provides project-scoped Agent Skill discovery and mutations. It scans only `<loaded-game-project>/.agents/skills`, renders every discovered skill with its name, description, source path, file-availability status, and enable/disable toggle, initializes missing packaged skills from the standard `skills/<name>/SKILL.md` collection, and persists only disabled-name exceptions in `gmloop.json`.
 
 All discovered skills are enabled by default and every skill can be toggled. GMLoop adds no activation, trust, approval, permission, installation, or execution layer; the active AI tool or CLI retains those responsibilities. UI metadata is extracted with the established `gray-matter` package, while Agent Skills conformance validation is delegated to the official `skills-ref` tool or another established standards-compatible validator rather than custom GMLoop parsing or validation logic.
+
+The UI is AI-vendor neutral: its catalog contract contains standard skill metadata and project-relative paths, not provider identifiers or client-specific activation state. Packaged skills are driven entirely by the standard directories present under `src/cli/skills/`; adding a skill does not require a UI registration entry or skill-specific rendering logic.
 
 The GMLoop source repository's `.agents/skills` directory is exclusively for agents developing GMLoop. The Auto-Game UI and CLI host never read or modify it.
 
