@@ -115,9 +115,7 @@ The rule: for inline elements where content is provided via interpolation, keep 
 return html`<div class="output">${content}</div>`;
 
 // ❌ Incorrect — indentation becomes a text node, visible in the rendered output
-return html`<div class="output">
-    ${content}
-</div>`;
+return html`<div class="output">${content}</div>`;
 ```
 
 When a template must be broken across multiple lines (e.g., for readability), extract the element into a private class method or module-level helper that returns the complete `TemplateResult` on a single line. See `GmPlaygroundPanel.#renderOutput` and its test "playground panel output does not have leading whitespace nodes" for a reference implementation.
@@ -179,7 +177,11 @@ Each tab has one top-level page toolbar. That toolbar owns the page title, subti
 
 ## Auto-Game Surface
 
-The Auto-Game surface is presentation-only until CLI/host pipeline endpoints are implemented. Hosts may provide `GraphVisualizationRenderOptions.autoGamePipeline` to render pipeline status, feed events, AI skill readiness, LLM output snippets, and additional host-provided action metadata; when that model is absent, the page renders disabled or empty states. MCP bridge information remains visible inside this page, but MCP discovery and execution still belong to the CLI-derived MCP workspace contracts.
+The Auto-Game surface remains presentation-only for pipeline execution, while the CLI host provides project-scoped Agent Skill discovery and mutations. It scans only `<loaded-game-project>/.agents/skills`, renders every discovered skill with its name, description, source path, file-availability status, and enable/disable toggle, initializes missing starter skills from the standard packaged `skills/<name>/SKILL.md` collection, and persists only disabled-name exceptions in `gmloop.json`.
+
+All discovered skills are enabled by default and every skill can be toggled. GMLoop adds no activation, trust, approval, permission, installation, or execution layer; the active AI tool or CLI retains those responsibilities. UI metadata is extracted with the established `gray-matter` package, while Agent Skills conformance validation is delegated to the official `skills-ref` tool or another established standards-compatible validator rather than custom GMLoop parsing or validation logic.
+
+The GMLoop source repository's `.agents/skills` directory is exclusively for agents developing GMLoop. The Auto-Game UI and CLI host never read or modify it.
 
 The page includes lifecycle controls for `Start`, `Pause`, and `Stop`, plus a one-time task form. These controls dispatch typed UI events that `GmAppShell` routes to optional host callbacks:
 
@@ -187,6 +189,8 @@ The page includes lifecycle controls for `Start`, `Pause`, and `Stop`, plus a on
 - `onPauseAutoGamePipeline`
 - `onStopAutoGamePipeline`
 - `onRunAutoGameTask`
+- `onInitializeAutoGameSkills`
+- `onSetAutoGameSkillEnabled`
 
 Those callbacks may return an updated `GraphVisualizationAutoGamePipelineModel` to refresh the page immediately. They may also return `null` or no value when the host owns refresh/polling separately.
 
@@ -237,7 +241,7 @@ New top-level UI additions should:
 3. Consume data only from the owning functional workspace or orchestration layer.
 4. Avoid recreating parser, semantic, lint, refactor, CLI, or MCP logic inside `@gmloop/ui`.
 
-----
+---
 
 ## References
 
@@ -249,11 +253,12 @@ New top-level UI additions should:
 - [MDN: Safe area env()](https://developer.mozilla.org/en-US/docs/Web/CSS/env)
 - [APCA Contrast](https://apcacontrast.com/)
 
-----
+---
 
 ## TODO
-- **BUG**: Selecting *any* format option in the `Playground` tab/page for the format settings seems to enable the whole/default format settings too, not *just* that one control. Also not sure if the select-options are actually hooked up to live-update the playground's output view?
-- **FEAT**: For the playground tab/page, user should be able to select *any* of the 'golden' fixture .gml files to preview/test. Or, maybe this is only true if np project is opened in the UI. If a GameMaker project *is* opened in the UI, then the user could be able to select on of the .gml files from that project and test applying rules to those instead.
+
+- **BUG**: Selecting _any_ format option in the `Playground` tab/page for the format settings seems to enable the whole/default format settings too, not _just_ that one control. Also not sure if the select-options are actually hooked up to live-update the playground's output view?
+- **FEAT**: For the playground tab/page, user should be able to select _any_ of the 'golden' fixture .gml files to preview/test. Or, maybe this is only true if np project is opened in the UI. If a GameMaker project _is_ opened in the UI, then the user could be able to select on of the .gml files from that project and test applying rules to those instead.
 - **FEAT**: For all raw-JSON displayed in the UI, add a "copy to clipboard" button (single, reusable component) that copies the raw JSON string to the clipboard for easy external use.
 - **FEAT**: For all raw-JSON displayed in the UI, allow for collapsing/expanding nested objects and arrays for easier readability.
 - **BUG**: On the "Docs" page/tab, the search bar and its subtitle "Search current docs view" are misaligned from the toolbar's subtabs-component (CLI, MCP, etc.). The search bar should be visually aligned vertically with that subtab component.

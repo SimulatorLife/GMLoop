@@ -72,10 +72,10 @@ Use a two-tier workflow: format only when parse succeeds, and run lint in two ph
 ### 3.2 Formatter Boundary & Allowlist
 
 1. Formatter may only perform layout and canonical rendering transforms such as indentation, wrapping, spacing, parenthesis rendering, trailing delimiters, final newline insertion, and `logicalOperatorsStyle` alias canonicalization.
-   - _Parentheses_: Formatter may remove redundant syntactic constructs when they are provably unnecessary, but must not synthesize new syntax for readability or restructuring.
-   - _Nested ternaries_: When a ternary expression appears inside the true branch of another ternary, parentheses are required and must be preserved (`cond ? (inner ? a : b) : c`). Formatters and autofixers must never emit `cond ? inner ? a : b : c`.
-   - _Numeric literals_: Canonical numeric literal normalization such as `.5` to `0.5` and `5.` to `5` is formatter-owned zero-normalization.
-   - _Numeric literal ownership clarification_: Rewriting existing decimal literals that only differ by missing leading or trailing zeros remains formatter-owned behavior. Lint rules such as `optimize-math-expressions` must not rewrite those literals in place. Exception: when a lint math optimization folds an expression and synthesizes a new literal result, the synthesized literal should already be emitted in formatter-normalized form to avoid follow-up churn.
+    - _Parentheses_: Formatter may remove redundant syntactic constructs when they are provably unnecessary, but must not synthesize new syntax for readability or restructuring.
+    - _Nested ternaries_: When a ternary expression appears inside the true branch of another ternary, parentheses are required and must be preserved (`cond ? (inner ? a : b) : c`). Formatters and autofixers must never emit `cond ? inner ? a : b : c`.
+    - _Numeric literals_: Canonical numeric literal normalization such as `.5` to `0.5` and `5.` to `5` is formatter-owned zero-normalization.
+    - _Numeric literal ownership clarification_: Rewriting existing decimal literals that only differ by missing leading or trailing zeros remains formatter-owned behavior. Lint rules such as `optimize-math-expressions` must not rewrite those literals in place. Exception: when a lint math optimization folds an expression and synthesizes a new literal result, the synthesized literal should already be emitted in formatter-normalized form to avoid follow-up churn.
 2. Formatter must not perform semantic or content rewrites or syntax repair.
 3. Invalid code handling remains strict: on parse failure the formatter fails and does not mutate source.
 
@@ -505,10 +505,10 @@ Current codemod overlay spill controls:
 
 ```ts
 await engine.executeConfiguredCodemods({
-	// ...existing request fields,
-	dryRun: true,
-	dryRunOverlaySpillThresholdBytes: 4 * 1024 * 1024,
-	dryRunOverlayReadCacheMaxEntries: 32
+    // ...existing request fields,
+    dryRun: true,
+    dryRunOverlaySpillThresholdBytes: 4 * 1024 * 1024,
+    dryRunOverlayReadCacheMaxEntries: 32
 });
 ```
 
@@ -516,12 +516,12 @@ Current semantic-index spill entry point:
 
 ```ts
 await buildProjectIndex(projectRoot, undefined, {
-	identifierSink: {
-		enabled: true,
-		flushThreshold: 256,
-		retainedEntriesPerKey: 32,
-		readCacheMaxEntries: 32
-	}
+    identifierSink: {
+        enabled: true,
+        flushThreshold: 256,
+        retainedEntriesPerKey: 32,
+        readCacheMaxEntries: 32
+    }
 });
 ```
 
@@ -537,27 +537,27 @@ Use this runbook for Option C acceptance checks and regression tracking.
 Pre-flight:
 
 1. Ensure the workspace is type-clean and lint-clean.
-   - `pnpm run build:ts`
-   - `pnpm run lint:quiet`
+    - `pnpm run build:ts`
+    - `pnpm run lint:quiet`
 2. Ensure semantic and refactor correctness is green.
-   - `pnpm run test:semantic`
-   - `pnpm run test:refactor`
+    - `pnpm run test:semantic`
+    - `pnpm run test:refactor`
 
 Profiling suites:
 
 1. Standard fixture profile.
-   - `pnpm run test:performance`
+    - `pnpm run test:performance`
 2. Deep CPU fixture profile.
-   - `pnpm run test:fixtures:profile:deep-cpu`
+    - `pnpm run test:fixtures:profile:deep-cpu`
 
 Real-project workload:
 
 1. Run the fix workflow against the target project.
-   - `pnpm run cli -- fix --path GameMakerStudio2/InterplanetaryFootball`
+    - `pnpm run cli -- fix --path GameMakerStudio2/InterplanetaryFootball`
 2. Capture telemetry emitted by:
-   - `src/cli/src/commands/fix.ts` stage telemetry (duration plus RSS and heap high-water)
-   - semantic project-index metrics metadata (`maxRss`, `maxHeapUsed`)
-   - refactor codemod overlay telemetry (queue, overlay, spill, and cache counters)
+    - `src/cli/src/commands/fix.ts` stage telemetry (duration plus RSS and heap high-water)
+    - semantic project-index metrics metadata (`maxRss`, `maxHeapUsed`)
+    - refactor codemod overlay telemetry (queue, overlay, spill, and cache counters)
 
 ## 6. Transpiler & Hot Reload Pipeline
 
@@ -611,9 +611,9 @@ The hot-reload system bypasses the static nature of the GameMaker HTML5 runner b
 ### 7.2 Asset and Delivery Contract
 
 - UI delivery is bundle-based, not single-inline-document based:
-  - entry document (`index.html`)
-  - bundled scripts and styles under `assets/`
-  - deterministic renderer artifact metadata for CLI/server consumers.
+    - entry document (`index.html`)
+    - bundled scripts and styles under `assets/`
+    - deterministic renderer artifact metadata for CLI/server consumers.
 - Production assets must be optimized by the build pipeline (bundled/minified/sourcemapped according to environment mode).
 - CDN-hosted runtime dependencies are prohibited for shipped UI artifacts.
 - Runtime JS/CSS dependencies (including visualization/runtime libraries) must be served from local bundle files only.
@@ -637,3 +637,15 @@ The hot-reload system bypasses the static nature of the GameMaker HTML5 runner b
 - Component inputs/outputs are typed (properties, custom events, callback contracts) with no untyped `any` escape hatches.
 - Shared primitives (buttons/cards/badges/layout shells) are reused across surfaces to prevent duplication and drift.
 - New UI surfaces must extend existing primitives/contracts before introducing new visual or state abstractions.
+
+### 7.6 Auto-Game Agent Skills
+
+- Auto-Game skills use the open Agent Skills specification: one conventional `skills/<name>/` directory per skill, with YAML frontmatter and Markdown instructions in `SKILL.md` plus optional standard `scripts/`, `references/`, and `assets/` content. GMLoop does not define a custom bundle or skill format.
+- The shipped collection lives under `src/cli/skills/<name>/SKILL.md` and is packaged as an ordinary Agent Skills collection.
+- `gmloop skills init --path <game-project>` copies only missing collection entries into `<game-project>/.agents/skills` and never overwrites project-authored skills.
+- Auto-Game discovery is rooted exclusively at the loaded GameMaker project containing the active `.yyp`. It never falls back to the GMLoop repository or process working directory.
+- The Auto-Game UI lists every discovered project skill with its name, description, source path, file-availability status, and an enable/disable toggle. Every skill can be toggled.
+- Every discovered Auto-Game skill is enabled by default. `gmloop.json` persists only disabled-name exceptions under `autoGame.disabledSkills`; there is no second activation, installation, trust, approval, or permission layer.
+- The active AI tool or CLI reads enabled project skills through its existing Agent Skills discovery and retains sole ownership of activation, permissions, trust, and execution behavior. GMLoop does not interpret or execute skill instructions.
+- GMLoop uses the established `gray-matter` package only to read display metadata. It does not implement an Agent Skills grammar, schema, parser, or conformance validator. The shipped collection and any explicit validation workflow use the official `skills-ref` reference tool (or another established standards-compatible validator).
+- The GMLoop source repository's `.agents/skills` directory is exclusively for LLMs and agents developing GMLoop itself. It is never an Auto-Game skill source and is never read or modified by Auto-Game initialization or discovery.

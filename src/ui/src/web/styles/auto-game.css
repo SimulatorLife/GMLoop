@@ -172,13 +172,55 @@
     text-transform: uppercase;
 }
 
+.auto-game-skill-item__header,
+.auto-game-skill-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gm-space-sm);
+}
+
+.auto-game-skill-toggle {
+    min-height: var(--gm-height-xl);
+    color: var(--gm-text-secondary);
+    font-size: var(--gm-text-xs);
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.auto-game-skill-toggle input {
+    width: var(--gm-height-md);
+    height: var(--gm-height-md);
+    accent-color: var(--gm-success-text);
+}
+
+.auto-game-skill-toggle:has(input:disabled) {
+    cursor: not-allowed;
+    opacity: 0.72;
+}
+
+.auto-game-skill-item__diagnostic {
+    color: var(--gm-error-text);
+}
+
+.auto-game-skill-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--gm-space-md);
+}
+
+.auto-game-skill-empty p {
+    margin: 0;
+}
+
 .auto-game-feed-item--success,
-.auto-game-skill-item--ready {
+.auto-game-skill-item--available {
     border-color: var(--gm-success-border);
 }
 
 .auto-game-feed-item--error,
-.auto-game-skill-item--missing {
+.auto-game-skill-item--unreadable {
     border-color: var(--gm-error-border);
 }
 

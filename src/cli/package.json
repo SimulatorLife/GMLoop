@@ -12,7 +12,8 @@
     "gmloop": "./dist/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "skills"
   ],
   "config": {
     "root_path": "."
@@ -35,6 +36,7 @@
     "ws": "catalog:",
     "commander": "^14.0.3",
     "fast-xml-parser": "^5.8.0",
+    "gray-matter": "^4.0.3",
     "linkedom": "^0.18.12"
   },
   "devDependencies": {

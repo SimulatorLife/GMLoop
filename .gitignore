@@ -23,6 +23,7 @@ tools/
 !docs/*.md
 !docs/**/*.md
 !**/*/README.md
+!src/cli/skills/*/SKILL.md
 !.github/copilot-instructions.md
 
 **/.gmloop

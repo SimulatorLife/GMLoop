@@ -57,6 +57,10 @@ type GraphVisualizationServerCreateConfig = () => Promise<GraphVisualizationServ
 type GraphVisualizationServerSaveConfig = (
     input: Readonly<{ config: Readonly<Record<string, unknown>> }>
 ) => Promise<GraphVisualizationServerRegenerationResult>;
+type GraphVisualizationServerInitializeAutoGameSkills = () => Promise<GraphVisualizationServerRegenerationResult>;
+type GraphVisualizationServerSetAutoGameSkillEnabled = (
+    input: Readonly<{ enabled: boolean; name: string }>
+) => Promise<GraphVisualizationServerRegenerationResult>;
 
 export type GraphVisualizationServerOptions = Readonly<{
     host?: string;
@@ -73,6 +77,8 @@ export type GraphVisualizationServerOptions = Readonly<{
     stopLiveReload?: GraphVisualizationServerStopLiveReload;
     createConfig?: GraphVisualizationServerCreateConfig;
     saveConfig?: GraphVisualizationServerSaveConfig;
+    initializeAutoGameSkills?: GraphVisualizationServerInitializeAutoGameSkills;
+    setAutoGameSkillEnabled?: GraphVisualizationServerSetAutoGameSkillEnabled;
 }>;
 
 export type GraphVisualizationServerHandle = ServerEndpoint &
@@ -209,6 +215,20 @@ async function routeGraphVisualizationServerRequest(
 
     if (request.method === "POST" && request.url === "/api/config/save" && options.saveConfig) {
         await handleSaveConfigRequest(options.saveConfig, request, response);
+        return;
+    }
+
+    if (request.method === "POST" && request.url === "/api/auto-game/skills/init" && options.initializeAutoGameSkills) {
+        await handleInitializeAutoGameSkillsRequest(options.initializeAutoGameSkills, response);
+        return;
+    }
+
+    if (
+        request.method === "POST" &&
+        request.url === "/api/auto-game/skills/toggle" &&
+        options.setAutoGameSkillEnabled
+    ) {
+        await handleSetAutoGameSkillEnabledRequest(options.setAutoGameSkillEnabled, request, response);
         return;
     }
 
@@ -394,6 +414,44 @@ async function handleSaveConfigRequest(
 
         const result = await saveConfig({
             config: Object.freeze({ ...(parsedBody.config as Record<string, unknown>) })
+        });
+        writeJsonResponse(response, 200, { changed: result.changed, ok: true });
+    } catch (error: unknown) {
+        writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });
+    }
+}
+
+async function handleInitializeAutoGameSkillsRequest(
+    initializeAutoGameSkills: GraphVisualizationServerInitializeAutoGameSkills,
+    response: http.ServerResponse<http.IncomingMessage>
+): Promise<void> {
+    try {
+        const result = await initializeAutoGameSkills();
+        writeJsonResponse(response, 200, { changed: result.changed, ok: true });
+    } catch (error: unknown) {
+        writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });
+    }
+}
+
+async function handleSetAutoGameSkillEnabledRequest(
+    setAutoGameSkillEnabled: GraphVisualizationServerSetAutoGameSkillEnabled,
+    request: http.IncomingMessage,
+    response: http.ServerResponse<http.IncomingMessage>
+): Promise<void> {
+    try {
+        const parsedBody = await readOptionalJsonObjectRequestBody(request);
+        if (
+            parsedBody === null ||
+            typeof parsedBody.name !== "string" ||
+            parsedBody.name.trim().length === 0 ||
+            typeof parsedBody.enabled !== "boolean"
+        ) {
+            writeInvalidJsonPayloadResponse(response);
+            return;
+        }
+        const result = await setAutoGameSkillEnabled({
+            enabled: parsedBody.enabled,
+            name: parsedBody.name.trim()
         });
         writeJsonResponse(response, 200, { changed: result.changed, ok: true });
     } catch (error: unknown) {

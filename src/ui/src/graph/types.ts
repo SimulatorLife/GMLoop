@@ -165,10 +165,12 @@ export type GraphVisualizationAutoGamePipelineEvent = Readonly<{
  */
 export type GraphVisualizationAutoGamePipelineSkill = Readonly<{
     description: string;
+    diagnostic: string | null;
+    enabled: boolean;
     id: string;
     name: string;
-    sourcePath: string | null;
-    status: "ready" | "missing" | "running" | "blocked";
+    sourcePath: string;
+    status: "available" | "unreadable";
 }>;
 
 /**

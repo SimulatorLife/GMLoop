@@ -18,6 +18,7 @@ export * from "./room.js";
 export * from "./runner.js";
 export * from "./runtime.js";
 export * from "./script.js";
+export * from "./skills.js";
 export * from "./symbol.js";
 export * from "./test.js";
 export * from "./transpile.js";

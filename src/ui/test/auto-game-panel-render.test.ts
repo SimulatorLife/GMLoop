@@ -4,6 +4,8 @@ import test from "node:test";
 import type { PropertyValues } from "lit";
 
 import {
+    GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_SKILLS,
+    GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED,
     GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_PIPELINE,
     GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_TASK
 } from "../src/app/components/events.js";
@@ -114,6 +116,8 @@ void test("GmAutoGamePanel renders empty pipeline slots and MCP bridge metadata"
     assert.match(rendered, /Pipeline Feed/u);
     assert.match(rendered, /\.gmloop\/agent-log\.jsonl/u);
     assert.match(rendered, /AI Skills/u);
+    assert.match(rendered, /Open a GameMaker project to discover its Auto-Game skills/u);
+    assert.match(rendered, /id="initialize-auto-game-skills"[\s\S]*\?disabled=true/u);
     assert.match(rendered, /LLM Output/u);
     assert.match(rendered, /MCP Bridge/u);
     assert.match(rendered, /gmloop-mcp/u);
@@ -154,10 +158,21 @@ void test("GmAutoGamePanel renders host-provided pipeline details", () => {
             skills: [
                 {
                     description: "Defines core loop and playable-slice constraints.",
+                    diagnostic: null,
+                    enabled: true,
                     id: "game-design",
                     name: "game-design",
                     sourcePath: ".agents/skills/game-design/SKILL.md",
-                    status: "ready"
+                    status: "available"
+                },
+                {
+                    description: "GMLoop could not read this skill's display metadata.",
+                    diagnostic: "Could not parse SKILL.md frontmatter.",
+                    enabled: true,
+                    id: "project-notes",
+                    name: "project-notes",
+                    sourcePath: ".agents/skills/project-notes/SKILL.md",
+                    status: "unreadable"
                 }
             ],
             status: "running",
@@ -171,12 +186,35 @@ void test("GmAutoGamePanel renders host-provided pipeline details", () => {
     assert.match(rendered, /Start Pipeline/u);
     assert.match(rendered, /Design pass complete/u);
     assert.match(rendered, /game-design/u);
+    assert.match(rendered, /Disable game-design/u);
+    assert.match(rendered, /Disable project-notes/u);
+    assert.match(rendered, /Could not parse SKILL\.md frontmatter\./u);
+    assert.match(rendered, /auto-game-skill-item--unreadable/u);
+    assert.match(rendered, /\.agents\/skills\/game-design\/SKILL\.md/u);
     assert.match(rendered, /Scope note/u);
     assert.match(rendered, /Keep the first playable slice small\./u);
     assert.match(rendered, /id="start-auto-game-pipeline"[\s\S]*\?disabled=true/u);
     assert.match(rendered, /id="pause-auto-game-pipeline"[\s\S]*\?disabled=false/u);
     assert.match(rendered, /id="stop-auto-game-pipeline"[\s\S]*\?disabled=false/u);
     assert.match(rendered, /id="auto-game-task-prompt"[\s\S]*\?disabled=false/u);
+});
+
+void test("GmAutoGamePanel offers initialization for an empty loaded GameMaker project", () => {
+    const panel = new TestableGmAutoGamePanel();
+    panel.model = createMockModel({
+        loadedTarget: {
+            activePath: "/tmp/test/Test.yyp",
+            projectRoot: "/tmp/test",
+            selectedPaths: ["/tmp/test/Test.yyp"],
+            source: "cli-path"
+        }
+    });
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /This project has no Auto-Game skills in \.agents\/skills/u);
+    assert.match(rendered, /id="initialize-auto-game-skills"[\s\S]*\?disabled=false/u);
 });
 
 void test("GmAutoGamePanel renders without server metadata when documentationCatalogs is null", () => {
@@ -268,4 +306,46 @@ void test("GmAppShell routes auto-game one-time tasks through the host callback"
     shell.disconnectedCallback();
 
     assert.equal(receivedPrompt, "add player movement");
+});
+
+void test("GmAppShell routes project skill initialization and toggles through host callbacks", async () => {
+    const shell = new TestableGmAppShell();
+    let initialized = 0;
+    let toggled: Readonly<{ enabled: boolean; name: string }> | null = null;
+    shell.model = createMockModel({
+        loadedTarget: {
+            activePath: "/tmp/test/Test.yyp",
+            projectRoot: "/tmp/test",
+            selectedPaths: ["/tmp/test/Test.yyp"],
+            source: "cli-path"
+        }
+    });
+    shell.callbacks = {
+        onInitializeAutoGameSkills: () => {
+            initialized += 1;
+        },
+        onOpenProject: () => {},
+        onRegenerate: () => {},
+        onRunFix: () => ({ logLines: [], status: "success" }),
+        onSaveConfig: () => {},
+        onSetAutoGameSkillEnabled: (name, enabled) => {
+            toggled = { enabled, name };
+        },
+        onStartLiveReload: () => null,
+        onStopLiveReload: () => {}
+    };
+
+    shell.connectedCallback();
+    shell.dispatchEvent(new CustomEvent(GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_SKILLS, { bubbles: true }));
+    shell.dispatchEvent(
+        new CustomEvent(GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED, {
+            bubbles: true,
+            detail: { enabled: false, name: "game-design" }
+        })
+    );
+    await Promise.resolve();
+    shell.disconnectedCallback();
+
+    assert.equal(initialized, 1);
+    assert.deepEqual(toggled, { enabled: false, name: "game-design" });
 });

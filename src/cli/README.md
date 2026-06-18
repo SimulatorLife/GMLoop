@@ -14,6 +14,28 @@ If you are just getting started, begin with the [repository quick start](../../R
 
 ## Commands
 
+### `skills init` - Initialize Auto-Game Agent Skills
+
+Copies the standard Agent Skills collection shipped under `skills/` into a
+GameMaker project's `.agents/skills` directory. Existing skill directories are
+preserved, so the command is safe to repeat and never overwrites project-owned
+instructions.
+
+```bash
+gmloop skills init --path path/to/Game.yyp
+```
+
+The target must resolve to a GameMaker project root containing a `.yyp` file.
+GMLoop's own repository-development `.agents/skills` are not a source for this
+command or for Auto-Game discovery.
+
+The shipped content is a standard Agent Skills collection, not a custom bundle:
+each `skills/<name>/SKILL.md` uses YAML frontmatter and Markdown and may include
+the specification's standard supporting directories. GMLoop uses `gray-matter`
+to extract UI metadata and delegates conformance checks to the official
+`skills-ref` tool or another established standards-compatible validator. It
+does not maintain a custom skill parser or validator.
+
 ### `format` - Format GML Files
 
 Wraps the Prettier plugin to format GameMaker Language files with enhanced diagnostics and error handling (targets `.gml` files only).
@@ -275,16 +297,16 @@ When using `graph visualize --serve`, the `Start Live Reload` button now reads `
 
 ```json
 {
-  "runtime": {
-    "liveReload": {
-      "build": {
-        "backend": "auto",
-        "configuration": "Default"
-      },
-      "html5Output": "build/html5",
-      "gmTempRoot": ".gm-temp/html5"
+    "runtime": {
+        "liveReload": {
+            "build": {
+                "backend": "auto",
+                "configuration": "Default"
+            },
+            "html5Output": "build/html5",
+            "gmTempRoot": ".gm-temp/html5"
+        }
     }
-  }
 }
 ```
 

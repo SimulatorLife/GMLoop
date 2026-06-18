@@ -764,3 +764,63 @@ void test("graph visualization server rejects malformed config save payloads", a
         }
     );
 });
+
+void test("graph visualization server initializes and toggles project Auto-Game skills", async (testContext) => {
+    let initialized = 0;
+    let toggleInput: Readonly<{ enabled: boolean; name: string }> | null = null;
+    await withGraphVisualizationServer(
+        testContext,
+        {
+            initializeAutoGameSkills: async () => {
+                initialized += 1;
+                return { changed: true };
+            },
+            regenerate: async () => ({ changed: true }),
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                }),
+            setAutoGameSkillEnabled: async (input) => {
+                toggleInput = input;
+                return { changed: true };
+            }
+        },
+        async (handle) => {
+            const initResponse = await fetch(`${handle.url}/api/auto-game/skills/init`, { method: "POST" });
+            assert.equal(initResponse.status, 200);
+            assert.equal(initialized, 1);
+
+            const toggleResponse = await fetch(`${handle.url}/api/auto-game/skills/toggle`, {
+                body: JSON.stringify({ enabled: false, name: "game-design" }),
+                headers: { "Content-Type": "application/json" },
+                method: "POST"
+            });
+            assert.equal(toggleResponse.status, 200);
+            assert.deepEqual(toggleInput, { enabled: false, name: "game-design" });
+        }
+    );
+});
+
+void test("graph visualization server rejects malformed Auto-Game skill toggles", async (testContext) => {
+    await withGraphVisualizationServer(
+        testContext,
+        {
+            regenerate: async () => ({ changed: true }),
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                }),
+            setAutoGameSkillEnabled: async () => ({ changed: true })
+        },
+        async (handle) => {
+            const response = await fetch(`${handle.url}/api/auto-game/skills/toggle`, {
+                body: JSON.stringify({ enabled: "yes", name: "game-design" }),
+                headers: { "Content-Type": "application/json" },
+                method: "POST"
+            });
+            assert.equal(response.status, 400);
+        }
+    );
+});

@@ -1,4 +1,5 @@
-import { html } from "lit";
+import { html, nothing } from "lit";
+import { repeat } from "lit/directives/repeat.js";
 
 import type {
     GraphVisualizationAutoGamePipelineAction,
@@ -11,6 +12,8 @@ import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import {
     GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
+    GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_SKILLS,
+    GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED,
     GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_PIPELINE,
     GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_TASK,
     type GraphUiTriggerAutoGamePipelineDetail,
@@ -256,11 +259,35 @@ export class GmAutoGamePanel extends LightDomLitElement {
     #renderSkill(skill: GraphVisualizationAutoGamePipelineSkill) {
         return html`
             <li class=${`auto-game-skill-item auto-game-skill-item--${skill.status}`}>
-                <strong>${skill.name}</strong>
+                <div class="auto-game-skill-item__header">
+                    <strong>${skill.name}</strong>
+                    <label class="auto-game-skill-toggle">
+                        <span>${skill.enabled ? "Enabled" : "Disabled"}</span>
+                        <input
+                            type="checkbox"
+                            .checked=${skill.enabled}
+                            ?disabled=${!this.#hasPipelineController()}
+                            aria-label=${`${skill.enabled ? "Disable" : "Enable"} ${skill.name}`}
+                            @change=${(event: Event) => {
+                                this.dispatchEvent(
+                                    new CustomEvent(GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED, {
+                                        bubbles: true,
+                                        composed: true,
+                                        detail: {
+                                            enabled: (event.target as HTMLInputElement).checked,
+                                            name: skill.name
+                                        }
+                                    })
+                                );
+                            }}
+                        />
+                    </label>
+                </div>
                 <span>${skill.description}</span>
-                <span class="auto-game-skill-item__meta"
-                    >${skill.status}${skill.sourcePath === null ? "" : ` - ${skill.sourcePath}`}</span
-                >
+                ${skill.diagnostic === null
+                    ? nothing
+                    : html`<span class="auto-game-skill-item__diagnostic">${skill.diagnostic}</span>`}
+                <span class="auto-game-skill-item__meta">${skill.status} - ${skill.sourcePath}</span>
             </li>
         `;
     }
@@ -272,13 +299,36 @@ export class GmAutoGamePanel extends LightDomLitElement {
             <gm-card class="catalog-card" .heading=${"AI Skills"}>
                 ${skills.length === 0
                     ? html`
-                          <p class="auto-game-empty">
-                              Game-design and GameMaker resource skill readiness will appear here once provided by the
-                              host.
-                          </p>
+                          <div class="auto-game-empty auto-game-skill-empty">
+                              <p>
+                                  ${this.model?.loadedTarget === null
+                                      ? "Open a GameMaker project to discover its Auto-Game skills."
+                                      : "This project has no Auto-Game skills in .agents/skills."}
+                              </p>
+                              <button
+                                  id="initialize-auto-game-skills"
+                                  class="auto-game-control auto-game-control--primary"
+                                  type="button"
+                                  ?disabled=${!this.#hasPipelineController() || this.model?.loadedTarget === null}
+                                  @click=${() => {
+                                      this.dispatchEvent(
+                                          new CustomEvent(GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_SKILLS, {
+                                              bubbles: true,
+                                              composed: true
+                                          })
+                                      );
+                                  }}
+                              >
+                                  Initialize Auto-Game Skills
+                              </button>
+                          </div>
                       `
                     : html`<ul class="auto-game-skill-list">
-                          ${skills.map((skill) => this.#renderSkill(skill))}
+                          ${repeat(
+                              skills,
+                              (skill) => skill.id,
+                              (skill) => this.#renderSkill(skill)
+                          )}
                       </ul>`}
             </gm-card>
         `;

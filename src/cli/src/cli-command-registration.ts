@@ -22,6 +22,7 @@ import { createRoomCommand } from "./commands/room.js";
 import { createRunnerCommand } from "./commands/runner.js";
 import { createRuntimeCommand } from "./commands/runtime.js";
 import { createScriptCommand } from "./commands/script.js";
+import { createSkillsCommand } from "./commands/skills.js";
 import { createSymbolCommand } from "./commands/symbol.js";
 import { createTestCommand } from "./commands/test.js";
 import { createTranspileCommand, runTranspileCommand } from "./commands/transpile.js";
@@ -166,6 +167,11 @@ function registerProjectWorkflowCommands({ registry }: CliCommandRegistryContext
     registry.registerCommand({
         command: createProjectCommand(),
         onError: createCliCommandErrorHandler({ prefix: "Project command failed." })
+    });
+
+    registry.registerCommand({
+        command: createSkillsCommand(),
+        onError: createCliCommandErrorHandler({ prefix: "Skills command failed." })
     });
 }
 

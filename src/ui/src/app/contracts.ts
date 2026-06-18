@@ -83,6 +83,8 @@ export type GraphVisualizationUiCallbacks = Readonly<{
     onRunAutoGameTask?: (
         prompt: string
     ) => GraphVisualizationAutoGamePipelineActionResult | Promise<GraphVisualizationAutoGamePipelineActionResult>;
+    onInitializeAutoGameSkills?: () => void | Promise<void>;
+    onSetAutoGameSkillEnabled?: (name: string, enabled: boolean) => void | Promise<void>;
 }>;
 
 /**
@@ -122,7 +124,9 @@ export function createNoopGraphVisualizationUiCallbacks(): GraphVisualizationUiC
         onStartAutoGamePipeline: () => null,
         onPauseAutoGamePipeline: () => null,
         onStopAutoGamePipeline: () => null,
-        onRunAutoGameTask: () => null
+        onRunAutoGameTask: () => null,
+        onInitializeAutoGameSkills: () => {},
+        onSetAutoGameSkillEnabled: () => {}
     };
 }
 

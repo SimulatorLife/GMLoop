@@ -319,7 +319,27 @@ export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
                 }
             },
             onStartLiveReload: () => startLiveReloadFromServer(),
-            onStopLiveReload: () => stopLiveReloadFromServer()
+            onStopLiveReload: () => stopLiveReloadFromServer(),
+            onInitializeAutoGameSkills: async () => {
+                const response = await fetch("/api/auto-game/skills/init", { method: "POST" });
+                const result = await readJsonResponse<MutationApiResponse>(response);
+                if (!response.ok || result.ok !== true) {
+                    throw new Error(result.error ?? "Auto-Game skill initialization failed.");
+                }
+                reloadWhenChanged(result);
+            },
+            onSetAutoGameSkillEnabled: async (name, enabled) => {
+                const response = await fetch("/api/auto-game/skills/toggle", {
+                    body: JSON.stringify({ enabled, name }),
+                    headers: { "Content-Type": "application/json" },
+                    method: "POST"
+                });
+                const result = await readJsonResponse<MutationApiResponse>(response);
+                if (!response.ok || result.ok !== true) {
+                    throw new Error(result.error ?? "Auto-Game skill update failed.");
+                }
+                reloadWhenChanged(result);
+            }
         },
         data: payload.data,
         options: payload.options,

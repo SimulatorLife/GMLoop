@@ -24,9 +24,11 @@ import { EventBusManager } from "./event-bus-mixin.js";
 import {
     GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
     GRAPH_UI_EVENT_CYCLE_LABEL_MODE,
+    GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_SKILLS,
     GRAPH_UI_EVENT_NAVIGATE_PAGE,
     GRAPH_UI_EVENT_RESET_DEFAULTS,
     GRAPH_UI_EVENT_SAVE_CONFIG,
+    GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED,
     GRAPH_UI_EVENT_SET_CONFIG_VIEW,
     GRAPH_UI_EVENT_SET_DOCS_VIEW,
     GRAPH_UI_EVENT_SET_SEARCH_QUERY,
@@ -41,6 +43,7 @@ import {
     GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD,
     type GraphUiClearPageErrorDetail,
     type GraphUiSaveConfigDetail,
+    type GraphUiSetAutoGameSkillEnabledDetail,
     type GraphUiSetConfigViewDetail,
     type GraphUiTriggerAutoGamePipelineDetail,
     type GraphUiTriggerAutoGameTaskDetail,
@@ -221,6 +224,20 @@ export class GmAppShell extends LightDomLitElement {
         void this.#runAutoGameTask(prompt);
     };
 
+    #onInitializeAutoGameSkills = (): void => {
+        if (this.callbacks.onInitializeAutoGameSkills) {
+            void this.#runAutoGameSkillMutation(this.callbacks.onInitializeAutoGameSkills);
+        }
+    };
+
+    #onSetAutoGameSkillEnabled = (eventValue: Event): void => {
+        if (!this.callbacks.onSetAutoGameSkillEnabled) {
+            return;
+        }
+        const { enabled, name } = (eventValue as CustomEvent<GraphUiSetAutoGameSkillEnabledDetail>).detail;
+        void this.#runAutoGameSkillMutation(() => this.callbacks.onSetAutoGameSkillEnabled?.(name, enabled));
+    };
+
     #onDismissErrorBanner = (): void => {
         this.#store.dispatch({ type: "clear-error" });
     };
@@ -252,6 +269,8 @@ export class GmAppShell extends LightDomLitElement {
             { event: GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD, handler: this.#onTriggerStopLiveReload },
             { event: GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_PIPELINE, handler: this.#onTriggerAutoGamePipeline },
             { event: GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_TASK, handler: this.#onTriggerAutoGameTask },
+            { event: GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_SKILLS, handler: this.#onInitializeAutoGameSkills },
+            { event: GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED, handler: this.#onSetAutoGameSkillEnabled },
             { event: GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, handler: this.#onClearPageError },
             { event: "dismiss", handler: this.#onDismissErrorBanner }
         ]);
@@ -384,6 +403,19 @@ export class GmAppShell extends LightDomLitElement {
             }
         } catch (error) {
             const message = getUiErrorMessage(error, "Unknown auto-game task error");
+            this.#store.dispatch({ errorMessage: message, page: AUTO_GAME_PAGE, type: PAGE_ERROR_ACTION_TYPE });
+        }
+    }
+
+    async #runAutoGameSkillMutation(hostAction: () => void | Promise<void>): Promise<void> {
+        if (!this.model || !this.model.isServerMode || !hasLoadedGraphProject(this.model)) {
+            return;
+        }
+        try {
+            this.#store.dispatch({ errorMessage: null, page: AUTO_GAME_PAGE, type: PAGE_ERROR_ACTION_TYPE });
+            await hostAction();
+        } catch (error) {
+            const message = getUiErrorMessage(error, "Unknown Auto-Game skill error");
             this.#store.dispatch({ errorMessage: message, page: AUTO_GAME_PAGE, type: PAGE_ERROR_ACTION_TYPE });
         }
     }

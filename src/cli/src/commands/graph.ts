@@ -20,6 +20,12 @@ import { applyStandardCommandOptions } from "../cli-core/command-standard-option
 import { handleCliError } from "../cli-core/errors.js";
 import { createConfigOption, createPathOption, createVerboseOption } from "../cli-core/shared-command-options.js";
 import {
+    type AutoGameProjectSkill,
+    discoverAutoGameProjectSkills,
+    initializeAutoGameProjectSkills,
+    setAutoGameProjectSkillEnabled
+} from "../modules/auto-game-skills/index.js";
+import {
     createStatusUrl,
     createWebSocketUrl,
     DEFAULT_GM_TEMP_ROOT,
@@ -81,6 +87,22 @@ type GraphVisualizationExportResult = Readonly<{
 }>;
 
 type GraphVisualizationProjectWorkflow = (typeof UI.PROJECT_WORKFLOWS)[number];
+
+function createAutoGamePipelineModel(skills: ReadonlyArray<AutoGameProjectSkill>) {
+    return Object.freeze({
+        actions: Object.freeze([]),
+        events: Object.freeze([]),
+        llmOutputs: Object.freeze([]),
+        skills: Object.freeze(skills.map((skill) => Object.freeze({ ...skill, id: skill.name }))),
+        status: "idle",
+        statusText:
+            skills.length === 0
+                ? "No project-scoped Auto-Game skills are installed."
+                : `${String(skills.filter((skill) => skill.enabled).length)} of ${String(skills.length)} Auto-Game skills enabled.`
+    });
+}
+
+type AutoGamePipelineModel = ReturnType<typeof createAutoGamePipelineModel>;
 
 async function runGraphVisualizationProjectWorkflow(
     context: GraphResolutionContext,
@@ -1354,6 +1376,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
     let activeProjectConfigurationCatalog: Awaited<
         ReturnType<typeof createGraphVisualizationProjectConfigurationCatalog>
     > | null = null;
+    let activeAutoGamePipeline: AutoGamePipelineModel | null = null;
     let activeStartupState: GraphVisualizationServeBackgroundState | null =
         options.serve === true ? createGraphVisualizationServeLoadingState("Loading project data…", null) : null;
     let activeServeStartupGeneration = 0;
@@ -1384,6 +1407,9 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         activeProjectConfigurationCatalog = await createGraphVisualizationProjectConfigurationCatalog(activeContext, {
             config: options.config
         });
+        activeAutoGamePipeline = createAutoGamePipelineModel(
+            await discoverAutoGameProjectSkills(activeContext.projectRoot, activeContext.projectConfig)
+        );
     }
 
     function resolveActiveConfig() {
@@ -1436,6 +1462,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             activeProjectConfigurationCatalog = await createGraphVisualizationProjectConfigurationCatalog(null, {
                 config: options.config
             });
+            activeAutoGamePipeline = null;
             return;
         }
 
@@ -1443,6 +1470,9 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         activeProjectConfigurationCatalog = await createGraphVisualizationProjectConfigurationCatalog(context, {
             config: options.config
         });
+        activeAutoGamePipeline = createAutoGamePipelineModel(
+            await discoverAutoGameProjectSkills(context.projectRoot, context.projectConfig)
+        );
     }
 
     function createLoadedTarget(): GraphVisualizedLoadedTarget {
@@ -1894,6 +1924,25 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             saveConfig: ({ config }) => {
                 return writeActiveProjectConfig(config);
             },
+            initializeAutoGameSkills: async () => {
+                if (!activeContext) {
+                    throw new Error("Open a GameMaker project before initializing Auto-Game skills.");
+                }
+                const result = await initializeAutoGameProjectSkills(activeContext.projectRoot);
+                await refreshActiveVisualizationArtifacts(activeContext);
+                markServeRevisionChanged();
+                return Object.freeze({ changed: result.copied.length > 0 });
+            },
+            setAutoGameSkillEnabled: async ({ enabled, name }) => {
+                if (!activeContext) {
+                    throw new Error("Open a GameMaker project before changing Auto-Game skills.");
+                }
+                const projectConfig = await setAutoGameProjectSkillEnabled(activeContext.projectRoot, name, enabled);
+                activeContext = Object.freeze({ ...activeContext, projectConfig });
+                await refreshActiveVisualizationArtifacts(activeContext);
+                markServeRevisionChanged();
+                return Object.freeze({ changed: true });
+            },
             openProjectTargets: async ({ path: selectedPath }) => {
                 const nextPathFromPicker =
                     selectedPath === null ? await pickProjectPathUsingNativeDialog() : selectedPath;
@@ -2033,6 +2082,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 const freshDocumentationCatalogs = createDocumentationCatalogs();
 
                 const bundle = await UI.renderGraphVisualizationBundle(exportVisualizationPayload(), {
+                    autoGamePipeline: activeAutoGamePipeline ?? undefined,
                     documentationCatalogs: freshDocumentationCatalogs,
                     isServerMode,
                     lastFixRun: activeLastFixRun ?? undefined,
@@ -2140,6 +2190,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         const dbPath = activeConfig.databasePath;
         const payload = exportVisualizationPayload();
         const bundleArtifact = await UI.renderGraphVisualizationBundle(payload, {
+            autoGamePipeline: activeAutoGamePipeline ?? undefined,
             documentationCatalogs,
             loadedTarget: createLoadedTarget(),
             mcpServerStatus: "not-started",

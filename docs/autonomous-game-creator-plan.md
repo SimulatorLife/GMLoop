@@ -127,105 +127,105 @@ The CLI/MCP command surface is part of the autonomous creation target state. It 
 
 ### Decisions
 
-| Decision | Target |
-| --- | --- |
-| CLI naming | Use domain-noun top-level commands with short verb subcommands: `resource add`, `room list`, `runner logs`, `symbol inspect`. |
-| MCP naming | Derive tool names from CLI leaf paths with a `gmloop_` prefix and underscores, such as `gmloop_resource_add`, `gmloop_graph_search`, and `gmloop_runner_logs`. |
-| CLI source of truth | The `@gmloop/cli` command catalog defines the canonical public agent-control surface. |
-| MCP architecture | `@gmloop/mcp` remains a thin wrapper over the CLI catalog. It should not define standalone command tools or duplicate command business logic. |
-| Runtime target | Design the agent surface for GameMaker HTML5, GMLoop hot reload, and official GameMaker toolchain integration rather than generic desktop IDE automation. |
+| Decision                    | Target                                                                                                                                                                                             |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CLI naming                  | Use domain-noun top-level commands with short verb subcommands: `resource add`, `room list`, `runner logs`, `symbol inspect`.                                                                      |
+| MCP naming                  | Derive tool names from CLI leaf paths with a `gmloop_` prefix and underscores, such as `gmloop_resource_add`, `gmloop_graph_search`, and `gmloop_runner_logs`.                                     |
+| CLI source of truth         | The `@gmloop/cli` command catalog defines the canonical public agent-control surface.                                                                                                              |
+| MCP architecture            | `@gmloop/mcp` remains a thin wrapper over the CLI catalog. It should not define standalone command tools or duplicate command business logic.                                                      |
+| Runtime target              | Design the agent surface for GameMaker HTML5, GMLoop hot reload, and official GameMaker toolchain integration rather than generic desktop IDE automation.                                          |
 | Browser automation boundary | Do not recreate browser automation already handled by Playwright/browser MCP servers, such as screenshots, keyboard input, mouse input, browser navigation, DOM inspection, or viewport emulation. |
-| Standalone vs options | Prefer one command per domain action and move getter/setter expansion into `inspect`, `update`, `validate`, `query`, `state`, `logs`, `capture`, and `report` subcommands with explicit options. |
-| Graph commands | Keep graph-wide commands under `graph`; place symbol-centric queries under a separate `symbol` suite for AI ergonomics. |
-| Symbol inspection | Use `symbol inspect` as the unified symbol entrypoint instead of builtin-only special-case commands. |
-| Legacy prefixes | Do not use `gml_` prefixes. Keep CLI command names unprefixed and reserve `gmloop_` for MCP tool names. |
+| Standalone vs options       | Prefer one command per domain action and move getter/setter expansion into `inspect`, `update`, `validate`, `query`, `state`, `logs`, `capture`, and `report` subcommands with explicit options.   |
+| Graph commands              | Keep graph-wide commands under `graph`; place symbol-centric queries under a separate `symbol` suite for AI ergonomics.                                                                            |
+| Symbol inspection           | Use `symbol inspect` as the unified symbol entrypoint instead of builtin-only special-case commands.                                                                                               |
+| Legacy prefixes             | Do not use `gml_` prefixes. Keep CLI command names unprefixed and reserve `gmloop_` for MCP tool names.                                                                                            |
 
 ### Contract Rules
 
-| Rule | Requirement |
-| --- | --- |
-| Source of truth | If a capability should be exposed to AI agents, it must first exist as a real CLI command/subcommand. |
-| MCP derivation | Every MCP command tool must be generated from the CLI command catalog and mirror the CLI leaf command name, description, arguments, and options. |
-| No standalone MCP tools | Do not add handwritten, static, predefined, or MCP-only command tools. |
-| No parallel command surfaces | Do not create capabilities that exist only in MCP and not in the CLI. |
-| DRY schema ownership | Argument parsing, option names, defaults, validation, and help text should be owned once by the CLI and reused by MCP generation. |
-| Change workflow | To add, remove, or rename an MCP command tool, change the CLI command definition. |
-| Resources exception | MCP resources may still exist for read-only graph/context/project views, but command-like behavior must come from CLI-derived tools. |
-| Browser-tool exception | Browser automation primitives should be delegated to Playwright/browser MCP tooling rather than reimplemented in `@gmloop/mcp`. |
-| External tool strategy | When `gm-cli`, Stitch, or another proven package owns a GameMaker project, launcher, ResourceTool, or build concern well, wrap it cleanly behind GMLoop CLI/provider contracts rather than reimplementing it. |
+| Rule                         | Requirement                                                                                                                                                                                                   |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Source of truth              | If a capability should be exposed to AI agents, it must first exist as a real CLI command/subcommand.                                                                                                         |
+| MCP derivation               | Every MCP command tool must be generated from the CLI command catalog and mirror the CLI leaf command name, description, arguments, and options.                                                              |
+| No standalone MCP tools      | Do not add handwritten, static, predefined, or MCP-only command tools.                                                                                                                                        |
+| No parallel command surfaces | Do not create capabilities that exist only in MCP and not in the CLI.                                                                                                                                         |
+| DRY schema ownership         | Argument parsing, option names, defaults, validation, and help text should be owned once by the CLI and reused by MCP generation.                                                                             |
+| Change workflow              | To add, remove, or rename an MCP command tool, change the CLI command definition.                                                                                                                             |
+| Resources exception          | MCP resources may still exist for read-only graph/context/project views, but command-like behavior must come from CLI-derived tools.                                                                          |
+| Browser-tool exception       | Browser automation primitives should be delegated to Playwright/browser MCP tooling rather than reimplemented in `@gmloop/mcp`.                                                                               |
+| External tool strategy       | When `gm-cli`, Stitch, or another proven package owns a GameMaker project, launcher, ResourceTool, or build concern well, wrap it cleanly behind GMLoop CLI/provider contracts rather than reimplementing it. |
 
 ### External Tooling Strategy
 
-| Source | Target use |
-| --- | --- |
-| [YoYoGames/gm-cli](https://github.com/YoYoGames/gm-cli) | Preferred official integration point for project creation, ResourceTool edits, compile/run/package, runtime/toolchain handling, manual lookup, MCP ResourceTool interoperability, and publishing. |
-| [bscotch/stitch](https://github.com/bscotch/stitch) | Reference for GameMaker project automation patterns and possible reusable implementation ideas where they fit GMLoop boundaries. |
-| [bscotch/stitch `packages/yy`](https://github.com/bscotch/stitch/tree/develop/packages/yy) | Reference or dependency candidate for `.yy`/`.yyp` schema handling when it avoids duplicating GameMaker metadata logic. |
-| [bscotch/stitch `packages/launcher`](https://github.com/bscotch/stitch/tree/develop/packages/launcher) | Reference or dependency candidate for launch/runtime/build orchestration where it fits the HTML5/hot-reload workflow. |
-| GameMaker manual command-line build docs | Official reference for GameMaker build invocation behavior and supported flags. |
-| YoYo Games build automation guidance | Reference for supported GameMaker build automation and CI patterns. |
-| Adjacent GameMaker MCP servers | Comparison points for scope decisions, not the source of truth for GMLoop's MCP design. |
+| Source                                                                                                 | Target use                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [YoYoGames/gm-cli](https://github.com/YoYoGames/gm-cli)                                                | Preferred official integration point for project creation, ResourceTool edits, compile/run/package, runtime/toolchain handling, manual lookup, MCP ResourceTool interoperability, and publishing. |
+| [bscotch/stitch](https://github.com/bscotch/stitch)                                                    | Reference for GameMaker project automation patterns and possible reusable implementation ideas where they fit GMLoop boundaries.                                                                  |
+| [bscotch/stitch `packages/yy`](https://github.com/bscotch/stitch/tree/develop/packages/yy)             | Reference or dependency candidate for `.yy`/`.yyp` schema handling when it avoids duplicating GameMaker metadata logic.                                                                           |
+| [bscotch/stitch `packages/launcher`](https://github.com/bscotch/stitch/tree/develop/packages/launcher) | Reference or dependency candidate for launch/runtime/build orchestration where it fits the HTML5/hot-reload workflow.                                                                             |
+| GameMaker manual command-line build docs                                                               | Official reference for GameMaker build invocation behavior and supported flags.                                                                                                                   |
+| YoYo Games build automation guidance                                                                   | Reference for supported GameMaker build automation and CI patterns.                                                                                                                               |
+| Adjacent GameMaker MCP servers                                                                         | Comparison points for scope decisions, not the source of truth for GMLoop's MCP design.                                                                                                           |
 
 ### Target CLI Taxonomy
 
-| Top-level command | Purpose | Primary backing workspace(s) |
-| --- | --- | --- |
-| `graph` | Build, query, diagnose, and visualize the semantic graph index. | `@gmloop/semantic`, `@gmloop/ui` |
-| `symbol` | Inspect symbols, context, usages, and relationships. | `@gmloop/semantic` |
-| `validate` | Validate GML files, projects, rooms, and resources. | `@gmloop/parser`, `@gmloop/semantic`, `@gmloop/refactor` |
-| `project` | Create, initialize, inspect, validate, clean, and prepare projects. | `@gmloop/cli`, `@gmloop/refactor`, `gm-cli` providers |
-| `resource` | Inspect and mutate project resource inventory and metadata. | `@gmloop/semantic`, `@gmloop/refactor`, `gm-cli` ResourceTool providers |
-| `room` | Inspect, validate, preview, and mutate rooms, instances, layers, and cameras. | `@gmloop/semantic`, `@gmloop/refactor`, `@gmloop/ui` |
-| `object` | Inspect, validate, and mutate object properties and events. | `@gmloop/semantic`, `@gmloop/refactor` |
-| `runner` or `game` | Build, run, package, check, log, and manage GameMaker process lifecycle. | `@gmloop/cli`, `@gmloop/runtime-wrapper`, `gm-cli` providers |
-| `runtime` | Inspect and mutate live in-game state through the runtime wrapper. | `@gmloop/runtime-wrapper`, `@gmloop/transpiler`, `@gmloop/cli` |
-| `profile` | Capture runtime performance snapshots and reports. | `@gmloop/runtime-wrapper`, `@gmloop/cli` |
-| `test` | Discover, author, run, parse, and report tests. | `@gmloop/cli`, `@gmloop/runtime-wrapper` |
-| `replay` | Record, run, compare, and assert deterministic sessions. | `@gmloop/runtime-wrapper`, `@gmloop/cli` |
-| `kit` | List, inspect, and import reusable GML helpers/templates. | `@gmloop/cli`, future `@gmloop/gml-kit`, `@gmloop/refactor` |
-| `task` | Manage autonomous-game task graph state. | `@gmloop/cli`, future task-graph domain layer |
-| `ui` | Validate, preview, and scaffold GMLoop UI-facing artifacts. | `@gmloop/ui`, `@gmloop/refactor`, `@gmloop/cli` |
+| Top-level command  | Purpose                                                                       | Primary backing workspace(s)                                            |
+| ------------------ | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `graph`            | Build, query, diagnose, and visualize the semantic graph index.               | `@gmloop/semantic`, `@gmloop/ui`                                        |
+| `symbol`           | Inspect symbols, context, usages, and relationships.                          | `@gmloop/semantic`                                                      |
+| `validate`         | Validate GML files, projects, rooms, and resources.                           | `@gmloop/parser`, `@gmloop/semantic`, `@gmloop/refactor`                |
+| `project`          | Create, initialize, inspect, validate, clean, and prepare projects.           | `@gmloop/cli`, `@gmloop/refactor`, `gm-cli` providers                   |
+| `resource`         | Inspect and mutate project resource inventory and metadata.                   | `@gmloop/semantic`, `@gmloop/refactor`, `gm-cli` ResourceTool providers |
+| `room`             | Inspect, validate, preview, and mutate rooms, instances, layers, and cameras. | `@gmloop/semantic`, `@gmloop/refactor`, `@gmloop/ui`                    |
+| `object`           | Inspect, validate, and mutate object properties and events.                   | `@gmloop/semantic`, `@gmloop/refactor`                                  |
+| `runner` or `game` | Build, run, package, check, log, and manage GameMaker process lifecycle.      | `@gmloop/cli`, `@gmloop/runtime-wrapper`, `gm-cli` providers            |
+| `runtime`          | Inspect and mutate live in-game state through the runtime wrapper.            | `@gmloop/runtime-wrapper`, `@gmloop/transpiler`, `@gmloop/cli`          |
+| `profile`          | Capture runtime performance snapshots and reports.                            | `@gmloop/runtime-wrapper`, `@gmloop/cli`                                |
+| `test`             | Discover, author, run, parse, and report tests.                               | `@gmloop/cli`, `@gmloop/runtime-wrapper`                                |
+| `replay`           | Record, run, compare, and assert deterministic sessions.                      | `@gmloop/runtime-wrapper`, `@gmloop/cli`                                |
+| `kit`              | List, inspect, and import reusable GML helpers/templates.                     | `@gmloop/cli`, future `@gmloop/gml-kit`, `@gmloop/refactor`             |
+| `task`             | Manage autonomous-game task graph state.                                      | `@gmloop/cli`, future task-graph domain layer                           |
+| `ui`               | Validate, preview, and scaffold GMLoop UI-facing artifacts.                   | `@gmloop/ui`, `@gmloop/refactor`, `@gmloop/cli`                         |
 
 ### Canonical Agent Command Surface
 
-| Capability | Target CLI commands | Target MCP names | Primary owner |
-| --- | --- | --- | --- |
-| Graph index and discovery | `graph index`, `graph search`, `graph doctor`, `graph visualize` | `gmloop_graph_index`, `gmloop_graph_search`, `gmloop_graph_doctor`, `gmloop_graph_visualize` | `@gmloop/semantic`, `@gmloop/ui` |
-| Symbol inspection and relationships | `symbol inspect`, `symbol context`, `symbol neighbors`, `symbol usages` | `gmloop_symbol_inspect`, `gmloop_symbol_context`, `gmloop_symbol_neighbors`, `gmloop_symbol_usages` | `@gmloop/semantic` |
-| Validation | `validate file`, `validate project`, `validate room`, `validate resource` | `gmloop_validate_file`, `gmloop_validate_project`, `gmloop_validate_room`, `gmloop_validate_resource` | parser/semantic/refactor |
-| Project lifecycle | `project create`, `project init`, `project inspect`, `project validate`, `project cache clean` | `gmloop_project_create`, `gmloop_project_init`, `gmloop_project_inspect`, `gmloop_project_validate`, `gmloop_project_cache_clean` | CLI/refactor/`gm-cli` providers |
-| Resource inventory | `resource list`, `resource find`, `resource inspect`, `resource deps`, `resource dependents`, `resource audit` | `gmloop_resource_list`, `gmloop_resource_find`, `gmloop_resource_inspect`, `gmloop_resource_deps`, `gmloop_resource_dependents`, `gmloop_resource_audit` | semantic |
-| Resource mutations | `resource add`, `resource remove`, `resource rename`, `resource duplicate`, `resource move` | `gmloop_resource_add`, `gmloop_resource_remove`, `gmloop_resource_rename`, `gmloop_resource_duplicate`, `gmloop_resource_move` | refactor/`gm-cli` ResourceTool providers |
-| Room inspection and analysis | `room list`, `room inspect`, `room query`, `room validate`, `room preview`, `room summary` | `gmloop_room_list`, `gmloop_room_inspect`, `gmloop_room_query`, `gmloop_room_validate`, `gmloop_room_preview`, `gmloop_room_summary` | semantic/ui |
-| Room mutations | `room create`, `room duplicate`, `room rename`, `room delete`, `room update`, `room repair` | `gmloop_room_create`, `gmloop_room_duplicate`, `gmloop_room_rename`, `gmloop_room_delete`, `gmloop_room_update`, `gmloop_room_repair` | refactor |
-| Room instances | `room instance add`, `room instance update`, `room instance delete` | `gmloop_room_instance_add`, `gmloop_room_instance_update`, `gmloop_room_instance_delete` | refactor/semantic |
-| Room layers and cameras | `room layer list/inspect/create/update/delete/reorder/move-resource`, `room camera list/inspect/update/frame` | Derived from the CLI leaf path, for example `gmloop_room_layer_create` and `gmloop_room_camera_update` | refactor/semantic |
-| Object inspection and mutation | `object list`, `object inspect`, `object update`, `object validate`, `object event list/inspect/add/update/delete` | Derived from the CLI leaf path, for example `gmloop_object_event_update` | semantic/refactor |
-| Build, run, package, and logs | `game build`, `game check-build`, `game run`, `game package`, `game logs`, or equivalent `runner` leaves | Derived from the CLI leaf path, for example `gmloop_game_build` or `gmloop_runner_logs` | CLI/runtime-wrapper/`gm-cli` providers |
-| Live runtime inspection and mutation | `runtime instances`, `runtime inspect`, `runtime get`, `runtime set`, `runtime call`, `runtime watch`, `runtime state`, `runtime logs` | Derived from the CLI leaf path, for example `gmloop_runtime_call` | runtime-wrapper/transpiler/CLI |
-| Profiling | `profile start`, `profile stop`, `profile snapshot`, `profile compare`, `profile report` | `gmloop_profile_start`, `gmloop_profile_stop`, `gmloop_profile_snapshot`, `gmloop_profile_compare`, `gmloop_profile_report` | runtime-wrapper/CLI |
-| Tests | `test list`, `test run`, `test results`, `test case create`, `test case update`, `test parse-results`, `test report` | Derived from the CLI leaf path, for example `gmloop_test_case_create` | CLI/runtime-wrapper |
-| Replays | `replay record`, `replay run`, `replay compare`, `replay assert` | `gmloop_replay_record`, `gmloop_replay_run`, `gmloop_replay_compare`, `gmloop_replay_assert` | runtime-wrapper/CLI |
-| Helper kit | `kit list`, `kit search`, `kit inspect`, `kit import`, `kit dependencies` | Derived from the CLI leaf path, for example `gmloop_kit_import` | CLI/gml-kit/refactor |
-| Task graph | `task init`, `task list`, `task next`, `task claim`, `task update`, `task complete`, `task block`, `task summary` | Derived from the CLI leaf path, for example `gmloop_task_next` | CLI/task-graph layer |
-| UI validation and scaffolding | `ui inspect`, `ui validate`, `ui preview`, `ui scaffold` | `gmloop_ui_inspect`, `gmloop_ui_validate`, `gmloop_ui_preview`, `gmloop_ui_scaffold` | UI/refactor/CLI |
+| Capability                           | Target CLI commands                                                                                                                    | Target MCP names                                                                                                                                         | Primary owner                            |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| Graph index and discovery            | `graph index`, `graph search`, `graph doctor`, `graph visualize`                                                                       | `gmloop_graph_index`, `gmloop_graph_search`, `gmloop_graph_doctor`, `gmloop_graph_visualize`                                                             | `@gmloop/semantic`, `@gmloop/ui`         |
+| Symbol inspection and relationships  | `symbol inspect`, `symbol context`, `symbol neighbors`, `symbol usages`                                                                | `gmloop_symbol_inspect`, `gmloop_symbol_context`, `gmloop_symbol_neighbors`, `gmloop_symbol_usages`                                                      | `@gmloop/semantic`                       |
+| Validation                           | `validate file`, `validate project`, `validate room`, `validate resource`                                                              | `gmloop_validate_file`, `gmloop_validate_project`, `gmloop_validate_room`, `gmloop_validate_resource`                                                    | parser/semantic/refactor                 |
+| Project lifecycle                    | `project create`, `project init`, `project inspect`, `project validate`, `project cache clean`                                         | `gmloop_project_create`, `gmloop_project_init`, `gmloop_project_inspect`, `gmloop_project_validate`, `gmloop_project_cache_clean`                        | CLI/refactor/`gm-cli` providers          |
+| Resource inventory                   | `resource list`, `resource find`, `resource inspect`, `resource deps`, `resource dependents`, `resource audit`                         | `gmloop_resource_list`, `gmloop_resource_find`, `gmloop_resource_inspect`, `gmloop_resource_deps`, `gmloop_resource_dependents`, `gmloop_resource_audit` | semantic                                 |
+| Resource mutations                   | `resource add`, `resource remove`, `resource rename`, `resource duplicate`, `resource move`                                            | `gmloop_resource_add`, `gmloop_resource_remove`, `gmloop_resource_rename`, `gmloop_resource_duplicate`, `gmloop_resource_move`                           | refactor/`gm-cli` ResourceTool providers |
+| Room inspection and analysis         | `room list`, `room inspect`, `room query`, `room validate`, `room preview`, `room summary`                                             | `gmloop_room_list`, `gmloop_room_inspect`, `gmloop_room_query`, `gmloop_room_validate`, `gmloop_room_preview`, `gmloop_room_summary`                     | semantic/ui                              |
+| Room mutations                       | `room create`, `room duplicate`, `room rename`, `room delete`, `room update`, `room repair`                                            | `gmloop_room_create`, `gmloop_room_duplicate`, `gmloop_room_rename`, `gmloop_room_delete`, `gmloop_room_update`, `gmloop_room_repair`                    | refactor                                 |
+| Room instances                       | `room instance add`, `room instance update`, `room instance delete`                                                                    | `gmloop_room_instance_add`, `gmloop_room_instance_update`, `gmloop_room_instance_delete`                                                                 | refactor/semantic                        |
+| Room layers and cameras              | `room layer list/inspect/create/update/delete/reorder/move-resource`, `room camera list/inspect/update/frame`                          | Derived from the CLI leaf path, for example `gmloop_room_layer_create` and `gmloop_room_camera_update`                                                   | refactor/semantic                        |
+| Object inspection and mutation       | `object list`, `object inspect`, `object update`, `object validate`, `object event list/inspect/add/update/delete`                     | Derived from the CLI leaf path, for example `gmloop_object_event_update`                                                                                 | semantic/refactor                        |
+| Build, run, package, and logs        | `game build`, `game check-build`, `game run`, `game package`, `game logs`, or equivalent `runner` leaves                               | Derived from the CLI leaf path, for example `gmloop_game_build` or `gmloop_runner_logs`                                                                  | CLI/runtime-wrapper/`gm-cli` providers   |
+| Live runtime inspection and mutation | `runtime instances`, `runtime inspect`, `runtime get`, `runtime set`, `runtime call`, `runtime watch`, `runtime state`, `runtime logs` | Derived from the CLI leaf path, for example `gmloop_runtime_call`                                                                                        | runtime-wrapper/transpiler/CLI           |
+| Profiling                            | `profile start`, `profile stop`, `profile snapshot`, `profile compare`, `profile report`                                               | `gmloop_profile_start`, `gmloop_profile_stop`, `gmloop_profile_snapshot`, `gmloop_profile_compare`, `gmloop_profile_report`                              | runtime-wrapper/CLI                      |
+| Tests                                | `test list`, `test run`, `test results`, `test case create`, `test case update`, `test parse-results`, `test report`                   | Derived from the CLI leaf path, for example `gmloop_test_case_create`                                                                                    | CLI/runtime-wrapper                      |
+| Replays                              | `replay record`, `replay run`, `replay compare`, `replay assert`                                                                       | `gmloop_replay_record`, `gmloop_replay_run`, `gmloop_replay_compare`, `gmloop_replay_assert`                                                             | runtime-wrapper/CLI                      |
+| Helper kit                           | `kit list`, `kit search`, `kit inspect`, `kit import`, `kit dependencies`                                                              | Derived from the CLI leaf path, for example `gmloop_kit_import`                                                                                          | CLI/gml-kit/refactor                     |
+| Task graph                           | `task init`, `task list`, `task next`, `task claim`, `task update`, `task complete`, `task block`, `task summary`                      | Derived from the CLI leaf path, for example `gmloop_task_next`                                                                                           | CLI/task-graph layer                     |
+| UI validation and scaffolding        | `ui inspect`, `ui validate`, `ui preview`, `ui scaffold`                                                                               | `gmloop_ui_inspect`, `gmloop_ui_validate`, `gmloop_ui_preview`, `gmloop_ui_scaffold`                                                                     | UI/refactor/CLI                          |
 
 ### Priority Order for Agent-Facing Work
 
-| Priority | Recommended focus |
-| --- | --- |
-| High | `graph search`, `symbol inspect`, `validate file/project`, `project create/init/validate`, `resource list/find/inspect/add/remove/rename`, `room list/inspect/update/instance add`, `object inspect/update/event update`, build/check/log commands backed by `gm-cli`, and runtime get/set/call/watch where hot reload requires it. |
-| Medium | `resource deps/dependents/audit`, `room preview/query/camera/layer`, `profile`, `test`, `replay`, `kit`, and task graph commands. |
-| Low | Cache cleanup, IDE/open convenience flows, and commands that only wrap editor convenience rather than enabling autonomous agent work. |
+| Priority | Recommended focus                                                                                                                                                                                                                                                                                                                   |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| High     | `graph search`, `symbol inspect`, `validate file/project`, `project create/init/validate`, `resource list/find/inspect/add/remove/rename`, `room list/inspect/update/instance add`, `object inspect/update/event update`, build/check/log commands backed by `gm-cli`, and runtime get/set/call/watch where hot reload requires it. |
+| Medium   | `resource deps/dependents/audit`, `room preview/query/camera/layer`, `profile`, `test`, `replay`, `kit`, and task graph commands.                                                                                                                                                                                                   |
+| Low      | Cache cleanup, IDE/open convenience flows, and commands that only wrap editor convenience rather than enabling autonomous agent work.                                                                                                                                                                                               |
 
 ### Explicitly Out of Scope for `@gmloop/mcp`
 
-| Capability class | Reason |
-| --- | --- |
-| Browser screenshots and page/video capture | Already handled by Playwright/browser MCP tools. |
-| Browser keyboard, mouse, and gamepad interaction | Already handled by Playwright/browser MCP tools. |
+| Capability class                                                  | Reason                                           |
+| ----------------------------------------------------------------- | ------------------------------------------------ |
+| Browser screenshots and page/video capture                        | Already handled by Playwright/browser MCP tools. |
+| Browser keyboard, mouse, and gamepad interaction                  | Already handled by Playwright/browser MCP tools. |
 | Browser navigation, DOM inspection, and viewport/device emulation | Already handled by Playwright/browser MCP tools. |
-| Generic browser-state observation | Already handled by Playwright/browser MCP tools. |
+| Generic browser-state observation                                 | Already handled by Playwright/browser MCP tools. |
 
 ## 7. Milestone 1: Complete Resource-Aware GameMaker Project Mutation
 
@@ -376,13 +376,13 @@ Each helper/system/template should include agent-readable metadata:
 
 ```json
 {
-  "id": "gmloop.camera.follow_2d",
-  "description": "Smooth 2D follow camera for object-centered rooms.",
-  "resources": ["scripts/scr_camera_follow", "objects/obj_camera_controller"],
-  "dependencies": ["gmloop.math.lerp"],
-  "tags": ["camera", "2d", "runtime"],
-  "agent_notes": "Use for player-following rooms. Requires a target instance id or object reference.",
-  "tests": ["gmloop.camera.follow_2d.basic"]
+    "id": "gmloop.camera.follow_2d",
+    "description": "Smooth 2D follow camera for object-centered rooms.",
+    "resources": ["scripts/scr_camera_follow", "objects/obj_camera_controller"],
+    "dependencies": ["gmloop.math.lerp"],
+    "tags": ["camera", "2d", "runtime"],
+    "agent_notes": "Use for player-following rooms. Requires a target instance id or object reference.",
+    "tests": ["gmloop.camera.follow_2d.basic"]
 }
 ```
 
@@ -577,17 +577,38 @@ The CLI and MCP surface should not expose provider-specific details unless neces
 
 Give agents durable, repo-local guidance for designing and building complete games rather than isolated code changes.
 
-### Proposed Skills
+### Packaged Skills
 
 ```text
-.agents/skills/game-design/SKILL.md
-.agents/skills/gml-gameplay/SKILL.md
-.agents/skills/gamemaker-resources/SKILL.md
-.agents/skills/gml-tests/SKILL.md
-.agents/skills/game-debugging/SKILL.md
-.agents/skills/game-polish-and-juice/SKILL.md
-.agents/skills/prototype-to-vertical-slice/SKILL.md
+src/cli/skills/game-design/SKILL.md
+src/cli/skills/gml-gameplay/SKILL.md
+src/cli/skills/gamemaker-resources/SKILL.md
+src/cli/skills/gml-tests/SKILL.md
+src/cli/skills/game-debugging/SKILL.md
+src/cli/skills/game-polish-and-juice/SKILL.md
+src/cli/skills/prototype-to-vertical-slice/SKILL.md
 ```
+
+This is a conventional Agent Skills collection: every `skills/<name>/SKILL.md`
+entry follows the open Agent Skills frontmatter and Markdown format. It is
+separate from GMLoop's repository-development skills under `.agents/skills`.
+`gmloop skills init --path <game-project>` copies missing collection entries to
+`<game-project>/.agents/skills`, where the game-building agent can discover,
+inspect, modify, and version them with the game project.
+
+The collection is packaged as ordinary skill directories, not a GMLoop-specific
+archive, manifest, registry, or runtime overlay. A skill may use the standard
+optional `scripts/`, `references/`, and `assets/` directories. The official
+`skills-ref` reference tool, or another established standards-compatible tool,
+owns conformance validation. GMLoop uses `gray-matter` only to extract metadata
+for the UI and must not grow a custom Agent Skills parser, schema, or validator.
+
+The Auto-Game UI lists every skill discovered in the loaded game's collection
+with its name, description, source path, file-availability status, and toggle.
+All discovered skills are enabled by default, and only disabled names are stored
+in `gmloop.json`. GMLoop adds no separate activation, trust, approval,
+permission, installation, or execution layer; the active AI tool or CLI retains
+those responsibilities through its normal Agent Skills behavior.
 
 ### `game-design` Skill Topics
 
@@ -641,9 +662,20 @@ how to avoid brittle log wording assertions
 how to report test results
 ```
 
-### First Work Slice
+### Current Implementation
 
-Add `game-design/SKILL.md` and `gamemaker-resources/SKILL.md` first. Those two skills should immediately improve agent behavior for project creation and resource edits.
+The seven skills above ship as the initial collection. Initialization is
+idempotent and never overwrites an existing project skill. Auto-Game discovers
+skills only from the loaded GameMaker project's `.agents/skills` directory;
+GMLoop's source-level `.agents/skills` directory is exclusively for agents
+developing GMLoop itself. Auto-Game never reads or modifies it, and those
+internal skills never enter the game-building catalog.
+
+Each starter skill includes an actionable workflow, ownership guardrails,
+verification expectations, and a concrete reporting or completion contract.
+Together they cover design scope, structured GameMaker resource mutation,
+idiomatic gameplay implementation, deterministic testing, evidence-driven
+debugging, accessible polish, and vertical-slice completion.
 
 ## 12. Milestone 6: Task Graph and Agent Work Queue
 
@@ -675,21 +707,18 @@ Example:
 
 ```json
 {
-  "id": "gameplay.player_movement.v1",
-  "title": "Implement basic player movement",
-  "status": "ready",
-  "owner": null,
-  "dependsOn": ["project.bootstrap"],
-  "acceptance": [
-    "Player object exists",
-    "Arrow/WASD movement works",
-    "Movement speed is configurable",
-    "Unit tests or smoke test exist"
-  ],
-  "files": [
-    "objects/obj_player",
-    "scripts/scr_player_input"
-  ]
+    "id": "gameplay.player_movement.v1",
+    "title": "Implement basic player movement",
+    "status": "ready",
+    "owner": null,
+    "dependsOn": ["project.bootstrap"],
+    "acceptance": [
+        "Player object exists",
+        "Arrow/WASD movement works",
+        "Movement speed is configurable",
+        "Unit tests or smoke test exist"
+    ],
+    "files": ["objects/obj_player", "scripts/scr_player_input"]
 }
 ```
 

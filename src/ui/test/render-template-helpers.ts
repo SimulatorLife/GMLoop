@@ -9,6 +9,25 @@ function isTemplateResult(value: unknown): value is TemplateResult {
     return Array.isArray(Reflect.get(value, "strings")) && Array.isArray(Reflect.get(value, "values"));
 }
 
+type RepeatDirectiveResult = Readonly<{
+    values: ReadonlyArray<unknown>;
+}>;
+
+function isRepeatDirectiveResult(value: unknown): value is RepeatDirectiveResult {
+    if (typeof value !== "object" || value === null) {
+        return false;
+    }
+    const directive = Reflect.get(value, "_$litDirective$");
+    const values = Reflect.get(value, "values");
+    return (
+        typeof directive === "function" &&
+        Array.isArray(values) &&
+        values.length === 3 &&
+        typeof values[1] === "function" &&
+        typeof values[2] === "function"
+    );
+}
+
 export function renderTemplateValue(value: unknown): string {
     if (Array.isArray(value)) {
         return value.map((entry) => renderTemplateValue(entry)).join("");
@@ -23,6 +42,20 @@ export function renderTemplateValue(value: unknown): string {
             }
         }
         return output;
+    }
+
+    if (isRepeatDirectiveResult(value)) {
+        const [items, , renderItem] = value.values;
+        if (
+            typeof items === "object" &&
+            items !== null &&
+            Symbol.iterator in items &&
+            typeof renderItem === "function"
+        ) {
+            return Array.from(items as Iterable<unknown>, (item, index) =>
+                renderTemplateValue(Reflect.apply(renderItem, undefined, [item, index]))
+            ).join("");
+        }
     }
 
     if (value === null || value === undefined) {
