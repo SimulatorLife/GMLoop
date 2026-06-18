@@ -12,7 +12,7 @@ import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import {
     GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
-    GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_SKILLS,
+    GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK,
     GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED,
     GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_PIPELINE,
     GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_TASK,
@@ -294,33 +294,52 @@ export class GmAutoGamePanel extends LightDomLitElement {
 
     #renderAiSkills() {
         const skills = this.model?.autoGamePipeline?.skills ?? [];
+        const agentPack = this.model?.autoGamePipeline?.agentPack;
+        const shouldOfferAgentPackAction = agentPack !== undefined && agentPack.status !== "current";
+        const agentPackActionLabel = agentPack?.status === "update-available" ? "Update" : "Initialize";
 
         return html`
             <gm-card class="catalog-card" .heading=${"AI Skills"}>
-                ${skills.length === 0
+                ${shouldOfferAgentPackAction
                     ? html`
                           <div class="auto-game-empty auto-game-skill-empty">
                               <p>
-                                  ${this.model?.loadedTarget === null
-                                      ? "Open a GameMaker project to discover its Auto-Game skills."
-                                      : "This project has no Auto-Game skills in .agents/skills."}
+                                  ${agentPack.status === "update-available"
+                                      ? `Auto-Game Agent Pack ${agentPack.availableVersion} is available; this project has ${agentPack.installedVersion ?? "an unknown version"}.`
+                                      : "Initialize GMLoop's Auto-Game Agent Pack to add project skills and guidance."}
                               </p>
                               <button
-                                  id="initialize-auto-game-skills"
+                                  id="initialize-auto-game-agent-pack"
                                   class="auto-game-control auto-game-control--primary"
                                   type="button"
                                   ?disabled=${!this.#hasPipelineController() || this.model?.loadedTarget === null}
                                   @click=${() => {
                                       this.dispatchEvent(
-                                          new CustomEvent(GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_SKILLS, {
+                                          new CustomEvent(GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK, {
                                               bubbles: true,
                                               composed: true
                                           })
                                       );
                                   }}
                               >
-                                  Initialize Auto-Game Skills
+                                  ${agentPackActionLabel} Auto-Game Agent Pack
                               </button>
+                          </div>
+                      `
+                    : nothing}
+                ${agentPack !== undefined && agentPack.conflicts.length > 0
+                    ? html`<p class="auto-game-skill-item__diagnostic">
+                          Preserved project-modified agent-pack files: ${agentPack.conflicts.join(", ")}
+                      </p>`
+                    : nothing}
+                ${skills.length === 0
+                    ? html`
+                          <div class="auto-game-empty auto-game-skill-empty auto-game-skill-empty--skills">
+                              <p>
+                                  ${this.model?.loadedTarget === null
+                                      ? "Open a GameMaker project to discover its Auto-Game skills."
+                                      : "This project has no Auto-Game skills in .agents/skills."}
+                              </p>
                           </div>
                       `
                     : html`<ul class="auto-game-skill-list">

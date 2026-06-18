@@ -24,7 +24,7 @@ import { EventBusManager } from "./event-bus-mixin.js";
 import {
     GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
     GRAPH_UI_EVENT_CYCLE_LABEL_MODE,
-    GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_SKILLS,
+    GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK,
     GRAPH_UI_EVENT_NAVIGATE_PAGE,
     GRAPH_UI_EVENT_RESET_DEFAULTS,
     GRAPH_UI_EVENT_SAVE_CONFIG,
@@ -224,9 +224,9 @@ export class GmAppShell extends LightDomLitElement {
         void this.#runAutoGameTask(prompt);
     };
 
-    #onInitializeAutoGameSkills = (): void => {
-        if (this.callbacks.onInitializeAutoGameSkills) {
-            void this.#runAutoGameSkillMutation(this.callbacks.onInitializeAutoGameSkills);
+    #onInitializeAutoGameAgentPack = (): void => {
+        if (this.callbacks.onInitializeAutoGameAgentPack) {
+            void this.#runAutoGameSkillMutation(this.callbacks.onInitializeAutoGameAgentPack);
         }
     };
 
@@ -269,7 +269,7 @@ export class GmAppShell extends LightDomLitElement {
             { event: GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD, handler: this.#onTriggerStopLiveReload },
             { event: GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_PIPELINE, handler: this.#onTriggerAutoGamePipeline },
             { event: GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_TASK, handler: this.#onTriggerAutoGameTask },
-            { event: GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_SKILLS, handler: this.#onInitializeAutoGameSkills },
+            { event: GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK, handler: this.#onInitializeAutoGameAgentPack },
             { event: GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED, handler: this.#onSetAutoGameSkillEnabled },
             { event: GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, handler: this.#onClearPageError },
             { event: "dismiss", handler: this.#onDismissErrorBanner }

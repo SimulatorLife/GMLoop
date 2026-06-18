@@ -23,7 +23,8 @@ tools/
 !docs/*.md
 !docs/**/*.md
 !**/*/README.md
-!src/cli/skills/*/SKILL.md
+!src/agent-pack/skills/*/SKILL.md
+!src/agent-pack/templates/*.md
 !.github/copilot-instructions.md
 
 **/.gmloop

@@ -1,13 +1,11 @@
 import { constants, type Dirent } from "node:fs";
-import { access, cp, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { access, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { Core } from "@gmloop/core";
 import matter from "gray-matter";
 
 const PROJECT_SKILLS_RELATIVE_PATH = path.join(".agents", "skills");
-const STARTER_SKILLS_TEMPLATE_ROOT = fileURLToPath(new URL("../../../../skills/", import.meta.url));
 
 /** A project-scoped Agent Skill rendered by the Auto-Game surface. */
 export type AutoGameProjectSkill = Readonly<{
@@ -17,13 +15,6 @@ export type AutoGameProjectSkill = Readonly<{
     name: string;
     sourcePath: string;
     status: "available" | "unreadable";
-}>;
-
-/** Result of installing the packaged skills into a GameMaker project. */
-export type AutoGameSkillInitializationResult = Readonly<{
-    copied: ReadonlyArray<string>;
-    projectRoot: string;
-    skipped: ReadonlyArray<string>;
 }>;
 
 type AutoGameConfiguration = Readonly<{
@@ -49,17 +40,6 @@ async function pathExists(candidatePath: string): Promise<boolean> {
     } catch {
         return false;
     }
-}
-
-/** Discover the standard skill directories packaged with the CLI. */
-export async function discoverPackagedAutoGameSkillNames(): Promise<ReadonlyArray<string>> {
-    const entries = await readdir(STARTER_SKILLS_TEMPLATE_ROOT, { withFileTypes: true });
-    return Object.freeze(
-        entries
-            .filter((entry) => entry.isDirectory())
-            .map((entry) => entry.name)
-            .sort()
-    );
 }
 
 /** Assert that a directory is the root of a GameMaker project. */
@@ -177,36 +157,6 @@ export async function discoverAutoGameProjectSkills(
             )
         )
     );
-}
-
-/** Copy missing packaged Auto-Game skills into a GameMaker project. */
-export async function initializeAutoGameProjectSkills(projectRoot: string): Promise<AutoGameSkillInitializationResult> {
-    const resolvedProjectRoot = await assertAutoGameProjectRoot(projectRoot);
-    const projectSkillsRoot = path.join(resolvedProjectRoot, PROJECT_SKILLS_RELATIVE_PATH);
-    const packagedSkillNames = await discoverPackagedAutoGameSkillNames();
-    await mkdir(projectSkillsRoot, { recursive: true });
-    const initializationResults = await Promise.all(
-        packagedSkillNames.map(async (skillName) => {
-            const targetDirectory = path.join(projectSkillsRoot, skillName);
-            if (await pathExists(targetDirectory)) {
-                return Object.freeze({ copied: false, skillName });
-            }
-            await cp(path.join(STARTER_SKILLS_TEMPLATE_ROOT, skillName), targetDirectory, {
-                errorOnExist: true,
-                force: false,
-                recursive: true
-            });
-            return Object.freeze({ copied: true, skillName });
-        })
-    );
-    const copied = initializationResults.filter((result) => result.copied).map((result) => result.skillName);
-    const skipped = initializationResults.filter((result) => !result.copied).map((result) => result.skillName);
-
-    return Object.freeze({
-        copied: Object.freeze(copied),
-        projectRoot: resolvedProjectRoot,
-        skipped: Object.freeze(skipped)
-    });
 }
 
 /** Persist one skill's enabled state as a disabled-name exception in gmloop.json. */

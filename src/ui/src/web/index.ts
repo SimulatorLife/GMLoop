@@ -320,11 +320,11 @@ export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
             },
             onStartLiveReload: () => startLiveReloadFromServer(),
             onStopLiveReload: () => stopLiveReloadFromServer(),
-            onInitializeAutoGameSkills: async () => {
-                const response = await fetch("/api/auto-game/skills/init", { method: "POST" });
+            onInitializeAutoGameAgentPack: async () => {
+                const response = await fetch("/api/auto-game/agent-pack/init", { method: "POST" });
                 const result = await readJsonResponse<MutationApiResponse>(response);
                 if (!response.ok || result.ok !== true) {
-                    throw new Error(result.error ?? "Auto-Game skill initialization failed.");
+                    throw new Error(result.error ?? "Auto-Game agent-pack initialization failed.");
                 }
                 reloadWhenChanged(result);
             },

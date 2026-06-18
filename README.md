@@ -7,6 +7,7 @@ This repository is the source monorepo for various GameMaker Language tools, inc
 - a codemod/refactor engine ([`@gmloop/refactor`](src/refactor))
 - a **gml** to **js** transpiler ([`@gmloop/transpiler`](src/transpiler))
 - HTML5-runtime live reloading ([`@gmloop/runtime-wrapper`](src/runtime-wrapper))
+- a standalone Auto-Game Agent Skills and project-guidance package ([`@gmloop/agent-pack`](src/agent-pack))
 - [parser](src/parser), [semantic analysis](src/semantic), and [CLI](src/cli) workspaces
 
 ## Table of contents
@@ -145,6 +146,26 @@ pnpm run cli -- transpile --write --path /absolute/path/to/MyGame
 | `@gmloop/cli` | `src/cli/` | Unified command-line entrypoints |
 | `@gmloop/mcp` | `src/mcp/` | MCP server surface for AI tooling integrations |
 | `@gmloop/ui` | `src/ui/` | Cross-project UI surfaces (graph, docs, fix, live-reload, playground) |
+| `@gmloop/agent-pack` | `src/agent-pack/` | Independently installable, vendor-neutral Auto-Game Agent Skills and project guidance |
+
+The Auto-Game agent pack is designed for standalone use in a game repository:
+
+```bash
+npm install -D @gmloop/agent-pack
+```
+
+Its published payload is ordinary Agent Skills directories plus portable project
+guidance, so consumers can inspect, copy, or point compatible tooling at the raw
+resources without installing the rest of GMLoop. When using the GMLoop UI, the
+Auto-Game page offers an initialize or update button whenever the opened project
+has no recorded pack installation or an older version.
+
+The agent pack has no separate executable or postinstall mutation. The one
+universal command surface remains GMLoop's CLI:
+
+```bash
+gmloop agent-pack init --path path/to/Game.yyp
+```
 
 ## Everyday commands
 

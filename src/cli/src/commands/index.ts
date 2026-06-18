@@ -1,3 +1,4 @@
+export * from "./agent-pack.js";
 export * from "./fix.js";
 export * from "./format.js";
 export * from "./generate-feather-metadata.js";
@@ -18,7 +19,6 @@ export * from "./room.js";
 export * from "./runner.js";
 export * from "./runtime.js";
 export * from "./script.js";
-export * from "./skills.js";
 export * from "./symbol.js";
 export * from "./test.js";
 export * from "./transpile.js";

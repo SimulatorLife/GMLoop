@@ -174,6 +174,16 @@ export type GraphVisualizationAutoGamePipelineSkill = Readonly<{
 }>;
 
 /**
+ * Installation and update state for the GMLoop Auto-Game agent pack.
+ */
+export type GraphVisualizationAutoGameAgentPack = Readonly<{
+    availableVersion: string;
+    conflicts: ReadonlyArray<string>;
+    installedVersion: string | null;
+    status: "current" | "not-installed" | "update-available";
+}>;
+
+/**
  * Host-provided LLM or thought-process output snippet for the Auto-Game page.
  */
 export type GraphVisualizationAutoGamePipelineLlmOutput = Readonly<{
@@ -189,6 +199,7 @@ export type GraphVisualizationAutoGamePipelineLlmOutput = Readonly<{
  */
 export type GraphVisualizationAutoGamePipelineModel = Readonly<{
     actions: ReadonlyArray<GraphVisualizationAutoGamePipelineAction>;
+    agentPack: GraphVisualizationAutoGameAgentPack;
     events: ReadonlyArray<GraphVisualizationAutoGamePipelineEvent>;
     llmOutputs: ReadonlyArray<GraphVisualizationAutoGamePipelineLlmOutput>;
     skills: ReadonlyArray<GraphVisualizationAutoGamePipelineSkill>;

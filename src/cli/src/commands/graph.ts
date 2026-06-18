@@ -19,10 +19,10 @@ import { createMinimumValueValidator } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { handleCliError } from "../cli-core/errors.js";
 import { createConfigOption, createPathOption, createVerboseOption } from "../cli-core/shared-command-options.js";
+import * as AgentPack from "../modules/auto-game-agent-pack/index.js";
 import {
     type AutoGameProjectSkill,
     discoverAutoGameProjectSkills,
-    initializeAutoGameProjectSkills,
     setAutoGameProjectSkillEnabled
 } from "../modules/auto-game-skills/index.js";
 import {
@@ -88,9 +88,13 @@ type GraphVisualizationExportResult = Readonly<{
 
 type GraphVisualizationProjectWorkflow = (typeof UI.PROJECT_WORKFLOWS)[number];
 
-function createAutoGamePipelineModel(skills: ReadonlyArray<AutoGameProjectSkill>) {
+function createAutoGamePipelineModel(
+    skills: ReadonlyArray<AutoGameProjectSkill>,
+    agentPack: AgentPack.AgentPackProjectStatus
+) {
     return Object.freeze({
         actions: Object.freeze([]),
+        agentPack,
         events: Object.freeze([]),
         llmOutputs: Object.freeze([]),
         skills: Object.freeze(skills.map((skill) => Object.freeze({ ...skill, id: skill.name }))),
@@ -103,6 +107,14 @@ function createAutoGamePipelineModel(skills: ReadonlyArray<AutoGameProjectSkill>
 }
 
 type AutoGamePipelineModel = ReturnType<typeof createAutoGamePipelineModel>;
+
+async function createAutoGamePipelineModelForProject(context: GraphResolutionContext): Promise<AutoGamePipelineModel> {
+    const [skills, agentPack] = await Promise.all([
+        discoverAutoGameProjectSkills(context.projectRoot, context.projectConfig),
+        AgentPack.readAgentPackProjectStatus(context.projectRoot)
+    ]);
+    return createAutoGamePipelineModel(skills, agentPack);
+}
 
 async function runGraphVisualizationProjectWorkflow(
     context: GraphResolutionContext,
@@ -1407,9 +1419,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         activeProjectConfigurationCatalog = await createGraphVisualizationProjectConfigurationCatalog(activeContext, {
             config: options.config
         });
-        activeAutoGamePipeline = createAutoGamePipelineModel(
-            await discoverAutoGameProjectSkills(activeContext.projectRoot, activeContext.projectConfig)
-        );
+        activeAutoGamePipeline = await createAutoGamePipelineModelForProject(activeContext);
     }
 
     function resolveActiveConfig() {
@@ -1470,9 +1480,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         activeProjectConfigurationCatalog = await createGraphVisualizationProjectConfigurationCatalog(context, {
             config: options.config
         });
-        activeAutoGamePipeline = createAutoGamePipelineModel(
-            await discoverAutoGameProjectSkills(context.projectRoot, context.projectConfig)
-        );
+        activeAutoGamePipeline = await createAutoGamePipelineModelForProject(context);
     }
 
     function createLoadedTarget(): GraphVisualizedLoadedTarget {
@@ -1924,14 +1932,14 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             saveConfig: ({ config }) => {
                 return writeActiveProjectConfig(config);
             },
-            initializeAutoGameSkills: async () => {
+            initializeAutoGameAgentPack: async () => {
                 if (!activeContext) {
-                    throw new Error("Open a GameMaker project before initializing Auto-Game skills.");
+                    throw new Error("Open a GameMaker project before initializing the Auto-Game agent pack.");
                 }
-                const result = await initializeAutoGameProjectSkills(activeContext.projectRoot);
+                const result = await AgentPack.initializeAgentPack(activeContext.projectRoot);
                 await refreshActiveVisualizationArtifacts(activeContext);
                 markServeRevisionChanged();
-                return Object.freeze({ changed: result.copied.length > 0 });
+                return Object.freeze({ changed: result.changed });
             },
             setAutoGameSkillEnabled: async ({ enabled, name }) => {
                 if (!activeContext) {

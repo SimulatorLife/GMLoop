@@ -44,6 +44,8 @@ then return here for deeper context.
   `@gmloop/format`.
 - [Runtime wrapper reference](../src/runtime-wrapper/README.md) — HTML5
   hot-reload bridge, patch application, and live function swapping.
+- [Agent-pack reference](../src/agent-pack/README.md) — Standalone raw Agent
+  Skills package and the universal `gmloop agent-pack init` project flow.
 
 ## Contributor workflow
 
@@ -71,7 +73,8 @@ then return here for deeper context.
   Long-running plan for the higher-level agent-driven game creation system
   that builds on top of the formatter, lint, refactor, semantic, transpiler,
   runtime wrapper, CLI, UI, and MCP workspaces, including the HTML5 runtime
-  fork, watcher pipeline, and hot-reload integration seams.
+  fork, watcher pipeline, hot-reload integration seams, and independently
+  installable `@gmloop/agent-pack` initialization/update flow.
 - [Define directive fixing plan](define-directive-fixing.md) — Parser/
   formatter/lint ownership plan for tolerating legacy `#define` spellings and
   related legacy keywords, and producing a normalized macro representation.

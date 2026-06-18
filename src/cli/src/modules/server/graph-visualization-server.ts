@@ -57,7 +57,7 @@ type GraphVisualizationServerCreateConfig = () => Promise<GraphVisualizationServ
 type GraphVisualizationServerSaveConfig = (
     input: Readonly<{ config: Readonly<Record<string, unknown>> }>
 ) => Promise<GraphVisualizationServerRegenerationResult>;
-type GraphVisualizationServerInitializeAutoGameSkills = () => Promise<GraphVisualizationServerRegenerationResult>;
+type GraphVisualizationServerInitializeAutoGameAgentPack = () => Promise<GraphVisualizationServerRegenerationResult>;
 type GraphVisualizationServerSetAutoGameSkillEnabled = (
     input: Readonly<{ enabled: boolean; name: string }>
 ) => Promise<GraphVisualizationServerRegenerationResult>;
@@ -77,7 +77,7 @@ export type GraphVisualizationServerOptions = Readonly<{
     stopLiveReload?: GraphVisualizationServerStopLiveReload;
     createConfig?: GraphVisualizationServerCreateConfig;
     saveConfig?: GraphVisualizationServerSaveConfig;
-    initializeAutoGameSkills?: GraphVisualizationServerInitializeAutoGameSkills;
+    initializeAutoGameAgentPack?: GraphVisualizationServerInitializeAutoGameAgentPack;
     setAutoGameSkillEnabled?: GraphVisualizationServerSetAutoGameSkillEnabled;
 }>;
 
@@ -218,8 +218,12 @@ async function routeGraphVisualizationServerRequest(
         return;
     }
 
-    if (request.method === "POST" && request.url === "/api/auto-game/skills/init" && options.initializeAutoGameSkills) {
-        await handleInitializeAutoGameSkillsRequest(options.initializeAutoGameSkills, response);
+    if (
+        request.method === "POST" &&
+        request.url === "/api/auto-game/agent-pack/init" &&
+        options.initializeAutoGameAgentPack
+    ) {
+        await handleInitializeAutoGameAgentPackRequest(options.initializeAutoGameAgentPack, response);
         return;
     }
 
@@ -421,12 +425,12 @@ async function handleSaveConfigRequest(
     }
 }
 
-async function handleInitializeAutoGameSkillsRequest(
-    initializeAutoGameSkills: GraphVisualizationServerInitializeAutoGameSkills,
+async function handleInitializeAutoGameAgentPackRequest(
+    initializeAutoGameAgentPack: GraphVisualizationServerInitializeAutoGameAgentPack,
     response: http.ServerResponse<http.IncomingMessage>
 ): Promise<void> {
     try {
-        const result = await initializeAutoGameSkills();
+        const result = await initializeAutoGameAgentPack();
         writeJsonResponse(response, 200, { changed: result.changed, ok: true });
     } catch (error: unknown) {
         writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });

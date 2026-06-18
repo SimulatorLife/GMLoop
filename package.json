@@ -139,6 +139,7 @@
     "gitignore": true
   },
   "devDependencies": {
+    "@gmloop/agent-pack": "workspace:*",
     "@gmloop/cli": "workspace:*",
     "@gmloop/core": "workspace:*",
     "@gmloop/fixture-runner": "workspace:*",

@@ -4,11 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { createSkillsCommand, runSkillsInit } from "../src/commands/skills.js";
+import { normalizeCommandLineArguments } from "../src/cli-core/cli-argument-normalization.js";
+import { createAgentPackCommand, runAgentPackInit } from "../src/commands/agent-pack.js";
+import * as AgentPack from "../src/modules/auto-game-agent-pack/index.js";
 import {
     discoverAutoGameProjectSkills,
-    discoverPackagedAutoGameSkillNames,
-    initializeAutoGameProjectSkills,
     setAutoGameProjectSkillEnabled
 } from "../src/modules/auto-game-skills/index.js";
 
@@ -26,41 +26,6 @@ async function writeSkill(projectRoot: string, directoryName: string, contents: 
     await mkdir(skillDirectory, { recursive: true });
     await writeFile(path.join(skillDirectory, "SKILL.md"), contents, "utf8");
 }
-
-void test("packaged Auto-Game skills are discovered from the collection directory in deterministic order", async () => {
-    const packagedSkillNames = await discoverPackagedAutoGameSkillNames();
-    assert.ok(packagedSkillNames.length > 0);
-    assert.deepEqual(packagedSkillNames, [...packagedSkillNames].sort());
-    assert.equal(new Set(packagedSkillNames).size, packagedSkillNames.length);
-});
-
-void test("Auto-Game initialization is inventory-independent, idempotent, and preserves project skills", async () => {
-    const fixture = await createGameProjectFixture();
-    try {
-        const packagedSkillNames = await discoverPackagedAutoGameSkillNames();
-        const preservedSkillName = packagedSkillNames.at(0);
-        assert.ok(preservedSkillName);
-        const customContents = `---\nname: ${preservedSkillName}\ndescription: Project-specific guidance.\n---\n\n# Custom\n`;
-        await writeSkill(fixture.projectRoot, preservedSkillName, customContents);
-
-        const first = await initializeAutoGameProjectSkills(fixture.projectRoot);
-        assert.deepEqual(
-            first.copied,
-            packagedSkillNames.filter((name) => name !== preservedSkillName)
-        );
-        assert.deepEqual(first.skipped, [preservedSkillName]);
-        assert.equal(
-            await readFile(path.join(fixture.projectRoot, ".agents", "skills", preservedSkillName, "SKILL.md"), "utf8"),
-            customContents
-        );
-
-        const second = await initializeAutoGameProjectSkills(fixture.projectRoot);
-        assert.deepEqual(second.copied, []);
-        assert.deepEqual(second.skipped, packagedSkillNames);
-    } finally {
-        await fixture.cleanup();
-    }
-});
 
 void test("Auto-Game discovery reads only the supplied GameMaker project skill root", async () => {
     const fixture = await createGameProjectFixture();
@@ -158,15 +123,15 @@ void test("Auto-Game skill toggles persist sorted disabled exceptions and preser
 void test("Auto-Game skill operations reject directories without a root-level yyp", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "gmloop-not-game-project-"));
     try {
-        await assert.rejects(() => initializeAutoGameProjectSkills(directory), /containing a \.yyp file/u);
+        await assert.rejects(() => AgentPack.initializeAgentPack(directory), /containing a \.yyp file/u);
         await assert.rejects(() => discoverAutoGameProjectSkills(directory, {}), /containing a \.yyp file/u);
     } finally {
         await rm(directory, { force: true, recursive: true });
     }
 });
 
-void test("skills init exposes the standard project path option", () => {
-    const command = createSkillsCommand();
+void test("agent-pack init exposes the standard project path option", () => {
+    const command = createAgentPackCommand();
     const init = command.commands.find((candidate) => candidate.name() === "init");
     assert.ok(init);
     assert.equal(
@@ -175,23 +140,31 @@ void test("skills init exposes the standard project path option", () => {
     );
 });
 
-void test("skills init accepts an explicit yyp path and reports deterministic results", async (context) => {
+void test("agent-pack is recognized as an explicit universal CLI command", () => {
+    assert.deepEqual(normalizeCommandLineArguments(["agent-pack", "--help"]), ["agent-pack", "--help"]);
+});
+
+void test("agent-pack init accepts an explicit yyp path and reports deterministic results", async (context) => {
     const fixture = await createGameProjectFixture();
     const output = new Array<string>();
     context.mock.method(console, "log", (value: string) => output.push(value));
     try {
-        const packagedSkillNames = await discoverPackagedAutoGameSkillNames();
-        await runSkillsInit({ path: path.join(fixture.projectRoot, "Fixture.yyp") });
+        const packagedSkillNames = await AgentPack.discoverPackagedSkillNames();
+        await runAgentPackInit({ path: path.join(fixture.projectRoot, "Fixture.yyp") });
         assert.equal(output.length, 1);
         const payload = JSON.parse(output[0] ?? "") as {
             command: string;
-            payload: { copied: Array<string>; skipped: Array<string> };
+            payload: { added: Array<string>; conflicts: Array<string>; version: string };
             projectRoot: string;
         };
-        assert.equal(payload.command, "skills init");
+        assert.equal(payload.command, "agent-pack init");
         assert.equal(payload.projectRoot, fixture.projectRoot);
-        assert.deepEqual(payload.payload.copied, packagedSkillNames);
-        assert.deepEqual(payload.payload.skipped, []);
+        assert.deepEqual(
+            payload.payload.added.filter((relativePath) => relativePath.endsWith("/SKILL.md")),
+            packagedSkillNames.map((name) => `.agents/skills/${name}/SKILL.md`)
+        );
+        assert.deepEqual(payload.payload.conflicts, []);
+        assert.equal(payload.payload.version, await AgentPack.readAgentPackVersion());
     } finally {
         await fixture.cleanup();
     }

@@ -771,7 +771,7 @@ void test("graph visualization server initializes and toggles project Auto-Game 
     await withGraphVisualizationServer(
         testContext,
         {
-            initializeAutoGameSkills: async () => {
+            initializeAutoGameAgentPack: async () => {
                 initialized += 1;
                 return { changed: true };
             },
@@ -787,7 +787,7 @@ void test("graph visualization server initializes and toggles project Auto-Game 
             }
         },
         async (handle) => {
-            const initResponse = await fetch(`${handle.url}/api/auto-game/skills/init`, { method: "POST" });
+            const initResponse = await fetch(`${handle.url}/api/auto-game/agent-pack/init`, { method: "POST" });
             assert.equal(initResponse.status, 200);
             assert.equal(initialized, 1);
 

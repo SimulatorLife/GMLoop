@@ -4,7 +4,7 @@ import test from "node:test";
 import type { PropertyValues } from "lit";
 
 import {
-    GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_SKILLS,
+    GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK,
     GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED,
     GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_PIPELINE,
     GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_TASK
@@ -117,7 +117,7 @@ void test("GmAutoGamePanel renders empty pipeline slots and MCP bridge metadata"
     assert.match(rendered, /\.gmloop\/agent-log\.jsonl/u);
     assert.match(rendered, /AI Skills/u);
     assert.match(rendered, /Open a GameMaker project to discover its Auto-Game skills/u);
-    assert.match(rendered, /id="initialize-auto-game-skills"[\s\S]*\?disabled=true/u);
+    assert.doesNotMatch(rendered, /initialize-auto-game-agent-pack/u);
     assert.match(rendered, /LLM Output/u);
     assert.match(rendered, /MCP Bridge/u);
     assert.match(rendered, /gmloop-mcp/u);
@@ -137,6 +137,12 @@ void test("GmAutoGamePanel renders host-provided pipeline details", () => {
                     label: "Start Pipeline"
                 }
             ],
+            agentPack: {
+                availableVersion: "0.0.1",
+                conflicts: [],
+                installedVersion: "0.0.1",
+                status: "current"
+            },
             events: [
                 {
                     detail: "Defined core loop and player verbs.",
@@ -202,6 +208,20 @@ void test("GmAutoGamePanel renders host-provided pipeline details", () => {
 void test("GmAutoGamePanel offers initialization for an empty loaded GameMaker project", () => {
     const panel = new TestableGmAutoGamePanel();
     panel.model = createMockModel({
+        autoGamePipeline: {
+            actions: [],
+            agentPack: {
+                availableVersion: "0.0.1",
+                conflicts: [],
+                installedVersion: null,
+                status: "not-installed"
+            },
+            events: [],
+            llmOutputs: [],
+            skills: [],
+            status: "idle",
+            statusText: "No project-scoped Auto-Game skills are installed."
+        },
         loadedTarget: {
             activePath: "/tmp/test/Test.yyp",
             projectRoot: "/tmp/test",
@@ -214,7 +234,51 @@ void test("GmAutoGamePanel offers initialization for an empty loaded GameMaker p
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /This project has no Auto-Game skills in \.agents\/skills/u);
-    assert.match(rendered, /id="initialize-auto-game-skills"[\s\S]*\?disabled=false/u);
+    assert.match(rendered, /Initialize GMLoop's Auto-Game Agent Pack/u);
+    assert.match(rendered, /id="initialize-auto-game-agent-pack"[\s\S]*\?disabled=false/u);
+});
+
+void test("GmAutoGamePanel offers an agent-pack update while retaining discovered skills", () => {
+    const panel = new TestableGmAutoGamePanel();
+    panel.model = createMockModel({
+        autoGamePipeline: {
+            actions: [],
+            agentPack: {
+                availableVersion: "0.0.2",
+                conflicts: [],
+                installedVersion: "0.0.1",
+                status: "update-available"
+            },
+            events: [],
+            llmOutputs: [],
+            skills: [
+                {
+                    description: "Design the game.",
+                    diagnostic: null,
+                    enabled: true,
+                    id: "game-design",
+                    name: "game-design",
+                    sourcePath: ".agents/skills/game-design/SKILL.md",
+                    status: "available"
+                }
+            ],
+            status: "idle",
+            statusText: "1 of 1 Auto-Game skills enabled."
+        },
+        loadedTarget: {
+            activePath: "/tmp/test/Test.yyp",
+            projectRoot: "/tmp/test",
+            selectedPaths: ["/tmp/test/Test.yyp"],
+            source: "cli-path"
+        }
+    });
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /Auto-Game Agent Pack 0\.0\.2 is available/u);
+    assert.match(rendered, /Update Auto-Game Agent Pack/u);
+    assert.match(rendered, /game-design/u);
 });
 
 void test("GmAutoGamePanel renders without server metadata when documentationCatalogs is null", () => {
@@ -255,6 +319,12 @@ void test("GmAppShell routes auto-game lifecycle events through the host callbac
             startCount += 1;
             return {
                 actions: [],
+                agentPack: {
+                    availableVersion: "0.0.1",
+                    conflicts: [],
+                    installedVersion: "0.0.1",
+                    status: "current"
+                },
                 events: [],
                 llmOutputs: [],
                 skills: [],
@@ -308,7 +378,7 @@ void test("GmAppShell routes auto-game one-time tasks through the host callback"
     assert.equal(receivedPrompt, "add player movement");
 });
 
-void test("GmAppShell routes project skill initialization and toggles through host callbacks", async () => {
+void test("GmAppShell routes agent-pack initialization and skill toggles through host callbacks", async () => {
     const shell = new TestableGmAppShell();
     let initialized = 0;
     let toggled: Readonly<{ enabled: boolean; name: string }> | null = null;
@@ -321,7 +391,7 @@ void test("GmAppShell routes project skill initialization and toggles through ho
         }
     });
     shell.callbacks = {
-        onInitializeAutoGameSkills: () => {
+        onInitializeAutoGameAgentPack: () => {
             initialized += 1;
         },
         onOpenProject: () => {},
@@ -336,7 +406,7 @@ void test("GmAppShell routes project skill initialization and toggles through ho
     };
 
     shell.connectedCallback();
-    shell.dispatchEvent(new CustomEvent(GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_SKILLS, { bubbles: true }));
+    shell.dispatchEvent(new CustomEvent(GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK, { bubbles: true }));
     shell.dispatchEvent(
         new CustomEvent(GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED, {
             bubbles: true,

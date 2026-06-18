@@ -14,25 +14,36 @@ If you are just getting started, begin with the [repository quick start](../../R
 
 ## Commands
 
-### `skills init` - Initialize Auto-Game Agent Skills
+### `agent-pack init` - Initialize or Update Auto-Game Agent Resources
 
-Copies the standard Agent Skills collection shipped under `skills/` into a
-GameMaker project's `.agents/skills` directory. Existing skill directories are
-preserved, so the command is safe to repeat and never overwrites project-owned
-instructions.
+Materializes the independently published `@gmloop/agent-pack` into a GameMaker
+project. The applicable resources include standard skills under
+`.agents/skills/` and portable project guidance such as `AGENTS.md` where
+needed. Repeat and upgrade runs preserve project-authored or project-modified
+content and report conflicts rather than silently overwriting it.
 
-For GMLoop maintainers, `src/cli/skills/` is the sole packaged-collection source.
-Drop a standard `<name>/SKILL.md` directory there and it is discovered, packaged,
-and included by `skills init` automatically; no registry, manifest, name list, or
-skill-specific loading code is required.
+The CLI consumes the standalone package and does not own a duplicate skill
+collection. For GMLoop maintainers, the agent-pack's `skills/` directory is the
+sole packaged-collection source. Drop a standard `<name>/SKILL.md` directory
+there and it is published and included by initialization automatically; no
+registry, manifest, name list, or skill-specific loading code is required.
 
 ```bash
-gmloop skills init --path path/to/Game.yyp
+gmloop agent-pack init --path path/to/Game.yyp
 ```
 
 The target must resolve to a GameMaker project root containing a `.yyp` file.
 GMLoop's own repository-development `.agents/skills` are not a source for this
 command or for Auto-Game discovery.
+
+Game projects that only need the raw resources can install them directly with
+`npm install -D @gmloop/agent-pack` without installing the GMLoop CLI or the rest of
+the monorepo tooling, then inspect, copy, or point compatible tooling at the
+package's standard collection. Package installation does not mutate project
+files, and the package has no separate executable. `gmloop agent-pack init` is
+the sole command-line initializer. The Auto-Game UI uses the CLI host to expose explicit initialize or update
+actions when the opened project's recorded pack version is missing or older than
+the version available to GMLoop.
 
 The shipped content is a standard Agent Skills collection, not a custom bundle:
 each `skills/<name>/SKILL.md` uses YAML frontmatter and Markdown and may include

@@ -41,6 +41,9 @@ importers:
       '@eslint/js':
         specifier: 'catalog:'
         version: 10.0.1(eslint@10.4.0)
+      '@gmloop/agent-pack':
+        specifier: workspace:*
+        version: link:src/agent-pack
       '@gmloop/cli':
         specifier: workspace:*
         version: link:src/cli
@@ -159,8 +162,13 @@ importers:
         specifier: ^1
         version: 1.3.2
 
+  src/agent-pack: {}
+
   src/cli:
     dependencies:
+      '@gmloop/agent-pack':
+        specifier: workspace:*
+        version: link:../agent-pack
       '@gmloop/core':
         specifier: workspace:*
         version: link:../core

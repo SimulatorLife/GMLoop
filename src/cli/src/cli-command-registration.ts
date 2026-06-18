@@ -1,5 +1,6 @@
 import type { CliCommandRegistry } from "./cli-core/command-manager.js";
 import { createCliCommandErrorHandler } from "./cli-core/errors.js";
+import { createAgentPackCommand } from "./commands/agent-pack.js";
 import { createCollectStatsCommand, runCollectStats } from "./commands/collect-stats.js";
 import { createFixCommand, runFixCommand } from "./commands/fix.js";
 import { createFormatCommand, runFormatCommand } from "./commands/format.js";
@@ -22,7 +23,6 @@ import { createRoomCommand } from "./commands/room.js";
 import { createRunnerCommand } from "./commands/runner.js";
 import { createRuntimeCommand } from "./commands/runtime.js";
 import { createScriptCommand } from "./commands/script.js";
-import { createSkillsCommand } from "./commands/skills.js";
 import { createSymbolCommand } from "./commands/symbol.js";
 import { createTestCommand } from "./commands/test.js";
 import { createTranspileCommand, runTranspileCommand } from "./commands/transpile.js";
@@ -170,8 +170,8 @@ function registerProjectWorkflowCommands({ registry }: CliCommandRegistryContext
     });
 
     registry.registerCommand({
-        command: createSkillsCommand(),
-        onError: createCliCommandErrorHandler({ prefix: "Skills command failed." })
+        command: createAgentPackCommand(),
+        onError: createCliCommandErrorHandler({ prefix: "Agent-pack command failed." })
     });
 }
 

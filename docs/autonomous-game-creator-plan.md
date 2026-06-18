@@ -577,15 +577,18 @@ The CLI and MCP surface should not expose provider-specific details unless neces
 
 Give agents durable, repo-local guidance for designing and building complete games rather than isolated code changes.
 
-### Packaged Skills
+### Standalone Agent Pack
 
 ```text
-src/cli/skills/
-  <skill-name>/
-    SKILL.md
-    scripts/       # optional
-    references/    # optional
-    assets/        # optional
+src/agent-pack/                 # published as @gmloop/agent-pack
+  skills/
+    <skill-name>/
+      SKILL.md
+      scripts/       # optional
+      references/    # optional
+      assets/        # optional
+  templates/
+    project-agents.md # installed as project-root AGENTS.md when applicable
 ```
 
 This is a conventional Agent Skills collection: every `skills/<name>/SKILL.md`
@@ -593,15 +596,25 @@ entry follows the open Agent Skills frontmatter and Markdown format. The design
 document deliberately does not duplicate the collection's current names or
 size; the directory contents are the inventory. The collection is separate
 from GMLoop's repository-development skills under `.agents/skills`.
-`gmloop skills init --path <game-project>` copies missing collection entries to
-`<game-project>/.agents/skills`, where the game-building agent can discover,
-inspect, modify, and version them with the game project.
+The standalone workspace publishes as `@gmloop/agent-pack`, so a game project
+can install the raw resources with `npm install -D @gmloop/agent-pack` and inspect,
+copy, or point standards-compatible tooling at them without installing the
+GMLoop CLI, UI, MCP server, or other workspaces. The npm package is only the
+distribution vehicle; its payload remains standard, inspectable Agent Skills
+directories and portable guidance files, and installation itself does not
+mutate project files.
 
-`src/cli/skills/` is the only packaged-collection source of truth. Initialization
-enumerates its skill directories at runtime; there is no parallel manifest,
-hard-coded skill-name catalog, registration step, or skill-specific loader. A
-maintainer adds a packaged Auto-Game skill by dropping a standard skill directory
-there. Package publication preserves that directory structure.
+The package has no independent executable. GMLoop retains one universal CLI,
+and `gmloop agent-pack init --path <game-project>` is its only command-line
+initialization surface. The Auto-Game UI invokes the same initializer through
+the GMLoop host rather than maintaining a second implementation.
+
+The agent-pack's `skills/` directory is the only packaged-collection source of
+truth. Publication and initialization enumerate its skill directories; there is
+no parallel manifest, hard-coded skill-name catalog, registration step, or
+skill-specific loader. A maintainer adds a packaged Auto-Game skill by dropping
+a standard skill directory there. `@gmloop/cli` depends on the agent-pack for
+initialization and must not keep a second copy of its resources.
 
 The collection is packaged as ordinary skill directories, not a GMLoop-specific
 archive, manifest, registry, or runtime overlay. A skill may use the standard
@@ -616,6 +629,16 @@ All discovered skills are enabled by default, and only disabled names are stored
 in `gmloop.json`. GMLoop adds no separate activation, trust, approval,
 permission, installation, or execution layer; the active AI tool or CLI retains
 those responsibilities through its normal Agent Skills behavior.
+
+When the opened project has no initialized agent pack, the UI shows an
+**Initialize Auto-Game Agent Pack** action. When its recorded installed version
+is older than the bundled package version, the same surface shows an **Update
+Auto-Game Agent Pack** action. Initialization materializes applicable resources,
+including `.agents/skills/` and `AGENTS.md` guidance where needed. Repeat and
+upgrade runs add missing files and refresh only files that still match their
+previously installed pack content; project-created or project-modified files are
+preserved and reported as conflicts. The UI refreshes the discovered catalog
+after success and exposes server failures or conflicts with corrective guidance.
 
 ### Portability Contract
 
@@ -641,10 +664,13 @@ and structured project mutation without assuming a particular client or tool.
 
 ### Current Implementation
 
-Every standard skill directory under `src/cli/skills/` is packaged and
-initialized automatically. Initialization is idempotent and never overwrites an
-existing project skill. Auto-Game discovers skills only from the loaded
-GameMaker project's `.agents/skills` directory;
+The independently publishable `@gmloop/agent-pack` workspace owns only the raw
+skill collection, project-guidance template, and package version. The main
+GMLoop CLI resolves those resources and owns version status, provenance, and
+conflict-safe materialization through `gmloop agent-pack init`; the package
+itself exposes no CLI or runtime API. The Auto-Game UI invokes that same CLI-host
+implementation. Auto-Game discovers skills only from the loaded GameMaker
+project's `.agents/skills` directory;
 GMLoop's source-level `.agents/skills` directory is exclusively for agents
 developing GMLoop itself. Auto-Game never reads or modifies it, and those
 internal skills never enter the game-building catalog.
