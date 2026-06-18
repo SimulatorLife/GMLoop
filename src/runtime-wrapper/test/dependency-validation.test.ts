@@ -1,9 +1,9 @@
 import { strict as assert } from "node:assert";
 import { describe, test } from "node:test";
 
-import { validateBatchPatchDependencies, validatePatchDependencies } from "../browser/runtime/patch-utils.js";
-import { createRuntimeWrapper } from "../browser/runtime/runtime-wrapper.js";
-import type { Patch, RuntimeRegistry } from "../browser/runtime/types.js";
+import { validateBatchPatchDependencies, validatePatchDependencies } from "../src/browser/runtime/patch-utils.js";
+import { createRuntimeWrapper } from "../src/browser/runtime/runtime-wrapper.js";
+import type { Patch, RuntimeRegistry } from "../src/browser/runtime/types.js";
 import { restoreGlobalProperties, snapshotGlobalProperties } from "./test-helpers/runtime-global-state.js";
 
 void describe("Dependency Validation", () => {

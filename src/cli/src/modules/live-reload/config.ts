@@ -9,8 +9,18 @@ export const HOT_RELOAD_DIR_NAME = ".gml-hot-reload";
 export const HOT_RELOAD_MARKER_START = "<!-- gml-hot-reload:start -->";
 export const HOT_RELOAD_MARKER_END = "<!-- gml-hot-reload:end -->";
 export const RUNTIME_WRAPPER_ASSET_MANIFEST_FILE_NAME = "runtime-wrapper-assets.manifest.json";
-export const LIVE_RELOAD_BOOTSTRAP_ENTRY_RELATIVE_PATH = path.posix.join("runtime-wrapper", "browser", "index.js");
-export const LIVE_RELOAD_BOOTSTRAP_CONFIG_RELATIVE_PATH = path.posix.join("runtime-wrapper", "browser", "config.js");
+export const LIVE_RELOAD_BOOTSTRAP_ENTRY_RELATIVE_PATH = path.posix.join(
+    "runtime-wrapper",
+    "src",
+    "browser",
+    "index.js"
+);
+export const LIVE_RELOAD_BOOTSTRAP_CONFIG_RELATIVE_PATH = path.posix.join(
+    "runtime-wrapper",
+    "src",
+    "browser",
+    "config.js"
+);
 export const LIVE_RELOAD_ASSET_ROOT_RELATIVE_PATH = "runtime-wrapper";
 
 export type LiveReloadLogLevel = "quiet" | "normal" | "debug";

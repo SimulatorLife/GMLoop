@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { DEFAULT_MAX_ERROR_HISTORY_SIZE, DEFAULT_MAX_UNDO_STACK_SIZE } from "../browser/runtime/runtime-defaults.js";
-import { createRuntimeWrapper } from "../browser/runtime/runtime-wrapper.js";
+import {
+    DEFAULT_MAX_ERROR_HISTORY_SIZE,
+    DEFAULT_MAX_UNDO_STACK_SIZE
+} from "../src/browser/runtime/runtime-defaults.js";
+import { createRuntimeWrapper } from "../src/browser/runtime/runtime-wrapper.js";
 
 void test("DEFAULT_MAX_UNDO_STACK_SIZE is a positive integer", () => {
     assert.ok(Number.isInteger(DEFAULT_MAX_UNDO_STACK_SIZE));

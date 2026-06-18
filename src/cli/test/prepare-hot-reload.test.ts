@@ -23,11 +23,11 @@ async function createTempDir(prefix: string): Promise<string> {
 
 async function createRuntimeWrapperRoot(root: string): Promise<string> {
     const runtimeRoot = path.join(root, "runtime-wrapper-dist");
-    await fs.mkdir(path.join(runtimeRoot, "browser", "runtime"), { recursive: true });
-    await fs.mkdir(path.join(runtimeRoot, "browser", "timing"), { recursive: true });
-    await fs.mkdir(path.join(runtimeRoot, "browser", "websocket"), { recursive: true });
+    await fs.mkdir(path.join(runtimeRoot, "src", "browser", "runtime"), { recursive: true });
+    await fs.mkdir(path.join(runtimeRoot, "src", "browser", "timing"), { recursive: true });
+    await fs.mkdir(path.join(runtimeRoot, "src", "browser", "websocket"), { recursive: true });
     await fs.writeFile(
-        path.join(runtimeRoot, "browser", "index.js"),
+        path.join(runtimeRoot, "src", "browser", "index.js"),
         [
             'import { createRuntimeWrapper, installScriptCallAdapter } from "./runtime/index.js";',
             'import { createWebSocketClient } from "./websocket/index.js";',
@@ -42,22 +42,22 @@ async function createRuntimeWrapperRoot(root: string): Promise<string> {
         "utf8"
     );
     await fs.writeFile(
-        path.join(runtimeRoot, "browser", "config.js"),
+        path.join(runtimeRoot, "src", "browser", "config.js"),
         "export const liveReloadBootstrapConfig = {};\n",
         "utf8"
     );
     await fs.writeFile(
-        path.join(runtimeRoot, "browser", "runtime", "index.js"),
+        path.join(runtimeRoot, "src", "browser", "runtime", "index.js"),
         "export const createRuntimeWrapper = () => ({});\nexport const installScriptCallAdapter = () => {};\n",
         "utf8"
     );
     await fs.writeFile(
-        path.join(runtimeRoot, "browser", "timing", "index.js"),
+        path.join(runtimeRoot, "src", "browser", "timing", "index.js"),
         "export const Timing = true;\n",
         "utf8"
     );
     await fs.writeFile(
-        path.join(runtimeRoot, "browser", "websocket", "index.js"),
+        path.join(runtimeRoot, "src", "browser", "websocket", "index.js"),
         "export const createWebSocketClient = () => {};\n",
         "utf8"
     );
@@ -94,18 +94,18 @@ void describe("prepareLiveReload", () => {
         assert.match(updated, new RegExp(HOT_RELOAD_MARKER_START));
         assert.match(
             updated,
-            /<script type="module" src="\.\/\.gml-hot-reload\/runtime-wrapper\/browser\/index\.js"><\/script>/u
+            /<script type="module" src="\.\/\.gml-hot-reload\/runtime-wrapper\/src\/browser\/index\.js"><\/script>/u
         );
-        assert.doesNotMatch(updated, /runtime-wrapper\/src\/runtime\/index\.js/u);
+        assert.doesNotMatch(updated, /runtime-wrapper\/browser\/index\.js/u);
 
         const runtimeEntryStats = await fs.stat(result.assets.bootstrapEntryPath);
         assert.equal(runtimeEntryStats.isFile(), true);
         const browserRuntimeStats = await fs.stat(
-            path.join(outputRoot, ".gml-hot-reload", "runtime-wrapper", "browser", "runtime", "index.js")
+            path.join(outputRoot, ".gml-hot-reload", "runtime-wrapper", "src", "browser", "runtime", "index.js")
         );
         assert.equal(browserRuntimeStats.isFile(), true);
         await assert.rejects(
-            () => fs.stat(path.join(outputRoot, ".gml-hot-reload", "runtime-wrapper", "src")),
+            () => fs.stat(path.join(outputRoot, ".gml-hot-reload", "runtime-wrapper", "browser")),
             /ENOENT/u
         );
 
@@ -281,7 +281,7 @@ void describe("runtime wrapper asset manifest parsing", () => {
     void it("returns cloned entry objects so parsed manifests cannot mutate the original JSON payload", () => {
         const manifestPayload = {
             version: 3,
-            entries: [{ relativePath: "browser/index.js", size: 12, mtimeMs: 1234 }]
+            entries: [{ relativePath: "src/browser/index.js", size: 12, mtimeMs: 1234 }]
         };
 
         const parsed = parseRuntimeWrapperAssetManifest(JSON.stringify(manifestPayload));

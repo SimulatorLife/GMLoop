@@ -29,7 +29,7 @@ interface RuntimeWrapperAssetManifest {
 
 const HOT_RELOAD_ASSET_MANIFEST_VERSION = 3;
 const DEFAULT_RUNTIME_WRAPPER_DIST_ROOT = resolveFromRepoRoot("src", "runtime-wrapper", "dist");
-const PUBLIC_RUNTIME_WRAPPER_ASSET_DIRECTORIES = Object.freeze(["browser"]);
+const PUBLIC_RUNTIME_WRAPPER_ASSET_DIRECTORIES = Object.freeze(["src/browser"]);
 
 export interface SyncLiveReloadAssetsOptions {
     outputRoot: string;
@@ -205,7 +205,7 @@ async function writeLiveReloadBootstrapConfig(
     targetRoot: string,
     bootstrapConfig: LiveReloadBootstrapConfig
 ): Promise<void> {
-    const targetConfigPath = path.join(targetRoot, "browser", "config.js");
+    const targetConfigPath = path.join(targetRoot, "src", "browser", "config.js");
     const rendered = `${renderLiveReloadBootstrapConfigModule(bootstrapConfig)}\n`;
 
     const existingContents = await fs.readFile(targetConfigPath, "utf8").catch((error) => {

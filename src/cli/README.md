@@ -304,7 +304,7 @@ The `live-reload dev` command will:
 1. Resolve `runtime.liveReload` from `gmloop.json`
 2. Build the GameMaker project into `runtime.liveReload.html5Output` when `runtime.liveReload.build` is configured
 3. Otherwise, locate an existing HTML5 output via `--html5-output`, `runtime.liveReload.html5Output`, or the latest GameMaker temp output
-4. Copy the self-contained `@gmloop/runtime-wrapper/dist/browser` asset tree into the output directory
+4. Copy the self-contained `@gmloop/runtime-wrapper/dist/src/browser` asset tree into the output directory
 5. Inject a single module bootstrap tag into `index.html`
 6. Start the file watcher plus the runtime, patch, and status servers against that prepared HTML5 output
 

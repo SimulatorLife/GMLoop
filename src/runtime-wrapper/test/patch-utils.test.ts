@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 
-import { calculateTimingMetrics } from "../browser/runtime/patch-utils.js";
+import { calculateTimingMetrics } from "../src/browser/runtime/patch-utils.js";
 
 void describe("calculateTimingMetrics", () => {
     void it("returns exact elements for integer percentile indices", () => {
