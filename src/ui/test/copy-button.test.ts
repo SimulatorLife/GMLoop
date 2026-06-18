@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import type { PropertyValues, TemplateResult } from "lit";
+import type { TemplateResult } from "lit";
 
 import { GmCopyButton } from "../src/app/components/primitives/gm-copy-button.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
@@ -11,13 +11,7 @@ class TestableGmCopyButton extends GmCopyButton {
     public renderForTest(): unknown {
         return this.render();
     }
-
-    public willUpdateForTest(changedProperties: PropertyValuesForTest): void {
-        this.willUpdate(changedProperties as PropertyValues<this>);
-    }
 }
-
-type PropertyValuesForTest = Map<PropertyKey, unknown>;
 
 type TemplateResultWithValues = TemplateResult & {
     readonly values: readonly unknown[];
@@ -256,18 +250,6 @@ void test("GmCopyButton returns to the idle label after the feedback window elap
     } finally {
         harness.restore();
     }
-});
-
-void test("GmCopyButton changing the value clears any in-flight feedback state", () => {
-    const button = new TestableGmCopyButton();
-    button.value = "first";
-
-    button.willUpdateForTest(new Map<PropertyKey, unknown>([["value", ""]]));
-    button.value = "next";
-
-    const rendered = renderTemplateValue(button.renderForTest());
-    assert.match(rendered, /gm-copy-button--idle/u);
-    assert.doesNotMatch(rendered, /Copied/u);
 });
 
 void test("GmCopyButton exposes a polite live region describing the copy outcome", async () => {

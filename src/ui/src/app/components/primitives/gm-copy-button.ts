@@ -1,18 +1,20 @@
-import { html, type PropertyValues } from "lit";
+import { html } from "lit";
 
+import { writeValueToClipboard } from "../copy-clipboard.js";
+import { CopyFeedbackController, type CopyFeedbackStatus } from "../copy-feedback-controller.js";
 import { LightDomLitElement } from "../light-dom-lit-element.js";
 
 /**
- * Closed set of feedback states the copy button reports after a copy attempt.
- *
- * The primitive only surfaces its own outcome to keep screen readers and
- * visual feedback aligned with a small, predictable set of strings.
+ * Default label rendered on the button before any copy has happened.
  */
-type CopyStatus = "idle" | "success" | "error";
-
-const COPY_FEEDBACK_DURATION_MS = 1500;
 const DEFAULT_LABEL = "Copy to clipboard";
+/**
+ * Label rendered on the button after a successful copy.
+ */
 const SUCCESS_LABEL = "Copied";
+/**
+ * Label rendered on the button after a failed copy attempt.
+ */
 const ERROR_LABEL = "Copy failed";
 
 /**
@@ -24,6 +26,13 @@ const ERROR_LABEL = "Copy failed";
  * asynchronous Clipboard API when available and falls back to a hidden
  * textarea + `document.execCommand("copy")` so older browsers and
  * non-secure-context test environments still receive the value.
+ *
+ * The feedback state machine (idle / success / error) and the badge reset
+ * timer are delegated to an injected {@link CopyFeedbackController}, so
+ * the primitive only needs to override {@link GmCopyButton.render} rather
+ * than a tangle of `connectedCallback` / `disconnectedCallback` /
+ * `willUpdate` overrides that used to mix presentation, lifecycle wiring,
+ * and state transitions in a single subclass.
  */
 export class GmCopyButton extends LightDomLitElement {
     public static properties = {
@@ -35,102 +44,66 @@ export class GmCopyButton extends LightDomLitElement {
 
     public accessor value = "";
 
-    #status: CopyStatus = "idle";
+    #feedback: CopyFeedbackController;
 
-    #feedbackResetTimer: ReturnType<typeof setTimeout> | null = null;
-
-    #onClick = (): void => {
-        void this.#copyValue();
-    };
-
-    public override connectedCallback(): void {
-        super.connectedCallback();
-        this.addEventListener("click", this.#onClick);
-    }
-
-    public override disconnectedCallback(): void {
-        this.removeEventListener("click", this.#onClick);
-        this.#clearFeedbackTimer();
-        super.disconnectedCallback();
-    }
-
-    protected override willUpdate(changedProperties: PropertyValues<this>): void {
-        if (changedProperties.has("value")) {
-            this.#clearFeedbackTimer();
-            this.#status = "idle";
-        }
-    }
-
-    async #copyValue(): Promise<void> {
-        if (this.value.length === 0) {
-            return;
-        }
-
-        const copied = await writeToClipboard(this.value);
-        this.#status = copied ? "success" : "error";
-        this.requestUpdate();
-        this.#clearFeedbackTimer();
-        this.#feedbackResetTimer = setTimeout(() => {
-            this.#status = "idle";
-            this.#feedbackResetTimer = null;
-            this.requestUpdate();
-        }, COPY_FEEDBACK_DURATION_MS);
-    }
-
-    #clearFeedbackTimer(): void {
-        if (this.#feedbackResetTimer === null) {
-            return;
-        }
-        clearTimeout(this.#feedbackResetTimer);
-        this.#feedbackResetTimer = null;
-    }
-
-    #resolveButtonLabel(): string {
-        if (this.#status === "success") {
-            return SUCCESS_LABEL;
-        }
-        if (this.#status === "error") {
-            return ERROR_LABEL;
-        }
-        return this.label;
-    }
-
-    #resolveFeedbackMessage(): string {
-        if (this.#status === "success") {
-            return `${this.value.length} characters copied to clipboard.`;
-        }
-        if (this.#status === "error") {
-            return "The browser blocked the copy attempt.";
-        }
-        return "";
+    public constructor() {
+        super();
+        this.#feedback = new CopyFeedbackController(this, {
+            callbacks: {
+                getValue: () => this.value,
+                onChange: () => this.requestUpdate()
+            },
+            copy: writeValueToClipboard
+        });
     }
 
     protected render() {
-        const buttonLabel = this.#resolveButtonLabel();
-        const feedbackMessage = this.#resolveFeedbackMessage();
+        const status = this.#feedback.status;
+        const buttonLabel = this.#resolveButtonLabel(status);
+        const feedbackMessage = this.#resolveFeedbackMessage(status);
         const isDisabled = this.value.length === 0;
 
         // The feedback line is rendered as its own single-line template to keep
         // Lit from inserting whitespace text nodes inside the button.
         return html`
             <button
-                class=${`gm-copy-button gm-copy-button--${this.#status}`}
+                class=${`gm-copy-button gm-copy-button--${status}`}
                 type="button"
                 ?disabled=${isDisabled}
                 aria-label=${buttonLabel}
                 title=${buttonLabel}
-                data-status=${this.#status}
-                @click=${this.#onClick}
+                data-status=${status}
+                @click=${() => void this.#feedback.trigger()}
             >
-                <span class="gm-copy-button__icon" aria-hidden="true">${this.#renderIcon()}</span>
+                <span class="gm-copy-button__icon" aria-hidden="true">${this.#renderIcon(status)}</span>
                 <span class="gm-copy-button__label">${buttonLabel}</span>
             </button>
             <span class="gm-copy-button__feedback" role="status" aria-live="polite">${feedbackMessage}</span>
         `;
     }
 
-    #renderIcon() {
-        if (this.#status === "success") {
+    #resolveButtonLabel(status: CopyFeedbackStatus): string {
+        if (status === "success") {
+            return SUCCESS_LABEL;
+        }
+        if (status === "error") {
+            return ERROR_LABEL;
+        }
+        return this.label;
+    }
+
+    #resolveFeedbackMessage(status: CopyFeedbackStatus): string {
+        if (status === "success") {
+            return `${this.value.length} characters copied to clipboard.`;
+        }
+        if (status === "error") {
+            return "The browser blocked the copy attempt.";
+        }
+        return "";
+    }
+
+    #renderIcon(status: CopyFeedbackStatus) {
+        if (status === "success") {
             return html`<svg
                 viewBox="0 0 24 24"
                 fill="none"
@@ -142,7 +115,7 @@ export class GmCopyButton extends LightDomLitElement {
                 <polyline points="5,12 10,17 19,7"></polyline>
             </svg>`;
         }
-        if (this.#status === "error") {
+        if (status === "error") {
             return html`<svg
                 viewBox="0 0 24 24"
                 fill="none"
@@ -166,40 +139,5 @@ export class GmCopyButton extends LightDomLitElement {
             <rect x="9" y="9" width="11" height="11" rx="2" ry="2"></rect>
             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
         </svg>`;
-    }
-}
-
-async function writeToClipboard(value: string): Promise<boolean> {
-    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText !== undefined) {
-        try {
-            await navigator.clipboard.writeText(value);
-            return true;
-        } catch {
-            // Fall through to the legacy fallback below.
-        }
-    }
-
-    return writeToClipboardLegacy(value);
-}
-
-function writeToClipboardLegacy(value: string): boolean {
-    if (typeof document === "undefined") {
-        return false;
-    }
-
-    const textarea = document.createElement("textarea");
-    textarea.value = value;
-    textarea.setAttribute("readonly", "");
-    textarea.style.position = "absolute";
-    textarea.style.left = "-9999px";
-    textarea.style.top = "0";
-    document.body.append(textarea);
-    textarea.select();
-    try {
-        return document.execCommand("copy");
-    } catch {
-        return false;
-    } finally {
-        textarea.remove();
     }
 }
