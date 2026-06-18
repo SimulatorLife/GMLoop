@@ -7,6 +7,24 @@ import { applyLogicalNormalizationWithChangeMetadata } from "../../src/rules/gml
 
 type MutableRecord = Record<string, unknown>;
 
+// Shared AST builders used by the simplifyStatementList tests. These live at
+// module scope so each test can describe a body without redeclaring the same
+// shape literal (which trips the sonarjs/no-identical-functions lint rule).
+function makeIfReturnTrue(conditionName: string): MutableRecord {
+    return {
+        type: "IfStatement",
+        test: { type: "Identifier", name: conditionName },
+        consequent: {
+            type: "BlockStatement",
+            body: [{ type: "ReturnStatement", argument: { type: "Literal", value: "true" } }]
+        }
+    };
+}
+
+function makeReturnFalse(): MutableRecord {
+    return { type: "ReturnStatement", argument: { type: "Literal", value: "false" } };
+}
+
 void test("simplifyStatementList: splicing during iteration skips the next element", () => {
     // This test exposes a bug where `body.splice(i + 1, 1)` mutates the array
     // during the for-loop, causing the loop index `i` to no longer point at the
@@ -364,4 +382,109 @@ void test("traversal reaches array elements even when earlier visits splice the 
     assert.equal(body.length, 1, "Grandchild should have been visited despite the mutator splicing the body");
     assert.equal(body[0]?.type, "Identifier");
     assert.equal((body[0] as { name?: string }).name, "flag");
+});
+
+void test("simplifyStatementList collapses every adjacent return-true/false pair, including ones deep in the list", () => {
+    // Regression: the in-place splice version of `simplifyStatementList`
+    // shifted elements down by one after every removal and only stayed
+    // correct because `continue` was paired with the splice. Walking the
+    // body via a snapshot removes that implicit invariant; this test asserts
+    // that all four pairs collapse when the body is processed end-to-end
+    // (the third pair sits at body[6..7] after two earlier collapses, so
+    // an off-by-one in the inspection index would skip it and leave a
+    // stray IfStatement + ReturnStatement behind).
+
+    const ast: MutableGameMakerAstNode = {
+        type: "Program",
+        body: [
+            makeIfReturnTrue("a"),
+            makeReturnFalse(),
+            makeIfReturnTrue("b"),
+            makeReturnFalse(),
+            makeIfReturnTrue("c"),
+            makeReturnFalse(),
+            makeIfReturnTrue("d"),
+            makeReturnFalse()
+        ]
+    };
+
+    applyLogicalNormalizationWithChangeMetadata(ast);
+
+    const body = ast.body as Array<MutableRecord>;
+    assert.equal(
+        body.length,
+        4,
+        "Every adjacent return pair should collapse; leftover IfStatements indicate an off-by-one in the inspection index"
+    );
+    for (const [index, entry] of body.entries()) {
+        assert.equal(
+            entry?.type,
+            "ReturnStatement",
+            `body[${index}] should be a ReturnStatement after collapsing all four pairs`
+        );
+    }
+});
+
+void test("simplifyStatementList leaves non-adjacent pairs and non-matching shapes untouched", () => {
+    // The accumulation loop must only collapse the IfStatement+ReturnStatement
+    // *pair* that sits at the current snapshot index; any ReturnStatement
+    // that is not immediately preceded by an eligible IfStatement (and any
+    // IfStatement whose consequent or sibling does not match the
+    // true/false-or-false/true shape) must survive into the accumulator
+    // verbatim so callers can rely on a deterministic pass-through.
+    const makeIfReturnString = (cond: string, value: string): MutableRecord => ({
+        type: "IfStatement",
+        test: { type: "Identifier", name: cond },
+        consequent: {
+            type: "BlockStatement",
+            body: [{ type: "ReturnStatement", argument: { type: "Literal", value } }]
+        }
+    });
+    const makeReturnNumber = (value: number): MutableRecord => ({
+        type: "ReturnStatement",
+        argument: { type: "Literal", value }
+    });
+    const makeExpr = (): MutableRecord => ({
+        type: "ExpressionStatement",
+        expression: { type: "Identifier", name: "noop" }
+    });
+
+    const firstIf = makeIfReturnTrue("cond");
+    const firstRet = makeReturnFalse();
+    const standaloneIf = makeIfReturnString("cond", "not_a_bool");
+    const standaloneRet = makeReturnNumber(42);
+    const other = makeExpr();
+    const ast: MutableGameMakerAstNode = {
+        type: "Program",
+        body: [firstIf, firstRet, standaloneIf, standaloneRet, other]
+    };
+
+    applyLogicalNormalizationWithChangeMetadata(ast);
+
+    const body = ast.body as Array<MutableRecord>;
+    // Only the first pair collapses; everything else stays exactly as it was.
+    assert.equal(body.length, 4, "Only the eligible pair should collapse");
+    assert.equal(body[0]?.type, "ReturnStatement", "First pair collapses to a ReturnStatement");
+    assert.equal(body[1], standaloneIf, "Standalone IfStatement should survive unchanged");
+    assert.equal(body[2], standaloneRet, "Standalone ReturnStatement should survive unchanged");
+    assert.equal(body[3], other, "ExpressionStatement should survive unchanged");
+});
+
+void test("simplifyStatementList returns false (no rewrite) when the body has no eligible pairs", () => {
+    // The accumulation loop must not replace `body` when nothing collapsed.
+    // We assert this indirectly by checking that the identity of every
+    // element is preserved (the accumulation path replaces the body only
+    // when at least one pair collapsed, while the no-op path leaves the
+    // reference and contents untouched).
+    const expr: MutableRecord = {
+        type: "ExpressionStatement",
+        expression: { type: "Identifier", name: "noop" }
+    };
+    const ast: MutableGameMakerAstNode = { type: "Program", body: [expr] };
+
+    applyLogicalNormalizationWithChangeMetadata(ast);
+
+    const body = ast.body as Array<MutableRecord>;
+    assert.equal(body.length, 1);
+    assert.equal(body[0], expr, "Unchanged elements must keep their reference");
 });
