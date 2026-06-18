@@ -239,35 +239,76 @@ function readExclusiveOrOperands(
 
 function simplifyStatementList(body: any[]): boolean {
     if (!Array.isArray(body)) return false;
+
+    // Iterate over a stable snapshot of `body` and accumulate the rewritten
+    // nodes into a fresh array, then swap that array back into `body` only
+    // when a rewrite actually occurred. The previous implementation relied
+    // on `body.splice(index + 1, 1)` inside a forward index loop, which
+    // shifted every later element down by one and coupled correctness to the
+    // precise placement of `continue` statements; a future edit that removed
+    // the `continue` (or added an unconditional `index += 1` at the bottom)
+    // would silently start skipping the sibling that shifted into the removed
+    // slot. Walking a snapshot keeps the inspection index aligned with the
+    // original pair positions regardless of how many slots the accumulator
+    // absorbs on each iteration, so the rewrite can no longer skip a sibling.
+    const snapshot = body.slice();
+    const rewritten: any[] = [];
     let changed = false;
 
-    // Only sibling pairs can be simplified here (`current` + `next`), so we stop at `length - 1`.
-    // Use explicit index traversal so in-place splices stay aligned with the next sibling pair.
-    for (let index = 0; index < body.length - 1; ) {
-        const current = body[index];
-        const next = body[index + 1];
-
-        if (current && next && current.type === "IfStatement" && !current.alternate) {
-            // if (cond) { return true; } return false;
-            const consequent = unwrapBlock(current.consequent);
-
-            if (consequent && consequent.type === "ReturnStatement" && next.type === "ReturnStatement") {
-                const consBool = getBooleanValue(consequent.argument);
-                const nextBool = getBooleanValue(next.argument);
-
-                const shouldNegate = resolveBooleanReturnNegation(consBool, nextBool);
-                if (shouldNegate !== null) {
-                    body[index] = createBooleanReturnStatement(current.test, current.start, next.end, shouldNegate);
-                    body.splice(index + 1, 1);
-                    changed = true;
-                    continue;
-                }
-            }
+    let index = 0;
+    while (index < snapshot.length) {
+        const current = snapshot[index];
+        const next = index + 1 < snapshot.length ? snapshot[index + 1] : undefined;
+        const collapsedReturn = maybeCollapseBooleanReturnPair(current, next);
+        if (collapsedReturn !== null) {
+            rewritten.push(collapsedReturn);
+            index += 2;
+            changed = true;
+            continue;
         }
 
+        rewritten.push(current);
         index += 1;
     }
+
+    if (changed) {
+        body.length = 0;
+        body.push(...rewritten);
+    }
     return changed;
+}
+
+/**
+ * Build the replacement `ReturnStatement` for an `if (cond) { return X; } return Y;`
+ * sibling pair whose literals resolve to `true`/`false` (or vice versa).
+ *
+ * Returns `null` when the pair is not eligible so the caller can keep the
+ * original sibling in place. Extracting this helper keeps the accumulation
+ * loop above focused on slot bookkeeping; all of the structural unwrapping
+ * and value-resolution logic lives here so it can be tested in isolation and
+ * so the loop's control flow is not entangled with conditional checks.
+ */
+function maybeCollapseBooleanReturnPair(current: any, next: any): any {
+    if (!isObjectLike(current) || !isObjectLike(next)) {
+        return null;
+    }
+    if (current.type !== "IfStatement" || current.alternate) {
+        return null;
+    }
+
+    const consequent = unwrapBlock(current.consequent);
+    if (!consequent || consequent.type !== "ReturnStatement" || next.type !== "ReturnStatement") {
+        return null;
+    }
+
+    const consBool = getBooleanValue(consequent.argument);
+    const nextBool = getBooleanValue(next.argument);
+    const shouldNegate = resolveBooleanReturnNegation(consBool, nextBool);
+    if (shouldNegate === null) {
+        return null;
+    }
+
+    return createBooleanReturnStatement(current.test, current.start, next.end, shouldNegate);
 }
 
 function simplifyIfStatement(node: any): boolean {
