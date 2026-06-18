@@ -497,10 +497,26 @@ function simplifyNot(node: any): boolean {
     }
 
     // Parentheses handling: !( (A) ) -> !A
+    //
+    // GML permits a redundant `ParenthesizedExpression` wrapper around a `!`
+    // operand (e.g. `!((cond))`) with no semantic difference, so we strip the
+    // wrapper by reassigning `node.argument` to the inner expression. The
+    // rewrite is intentionally in-place: the outer `UnaryExpression` node
+    // already lives at the correct position in its parent's child slot, and
+    // the visitor (`visitChildNodesPostOrder`) walks the *replaced* child on
+    // subsequent passes, so the bare inner expression will be revisited and
+    // any further `simplifyNot` matches will fire in a later traversal.
+    //
+    // Returning `true` here is part of the fixed-point contract: the
+    // orchestrator (`applyLogicalNormalizationWithChangeMetadata`) loops
+    // `traverseAndSimplify` until it returns `false`, so signalling a change
+    // guarantees another pass runs and catches the now-exposed inner operand.
+    // Returning `false` instead would terminate the loop after this rewrite,
+    // leaving `!(A)` un-simplified on this pass and any chained simplifications
+    // (`!(!A)` → `A`, `!(A && B)` → `!A || !B`, etc.) would silently no-op on
+    // inputs that need multiple collapse steps to reach a fixed point.
     if (argument.type === "ParenthesizedExpression") {
         node.argument = argument.expression;
-        // Don't mark as changed yet, wait for next pass to catch !A
-        // Actually, changing the child is a change.
         return true;
     }
 
