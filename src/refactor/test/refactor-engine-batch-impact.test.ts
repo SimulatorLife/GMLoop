@@ -273,6 +273,23 @@ void test("planBatchRename coalesces staged metadata rewrites for the same file"
                 addMetadataEdit() {},
                 groupByFile() {
                     return new Map();
+                },
+                hasChanges() {
+                    return this.edits.length > 0 || this.metadataEdits.length > 0 || this.fileRenames.length > 0;
+                },
+                collectChangedFilePaths() {
+                    const paths = new Set<string>();
+                    for (const edit of this.edits) {
+                        paths.add(edit.path);
+                    }
+                    for (const metadataEdit of this.metadataEdits) {
+                        paths.add(metadataEdit.path);
+                    }
+                    for (const fileRename of this.fileRenames) {
+                        paths.add(fileRename.oldPath);
+                        paths.add(fileRename.newPath);
+                    }
+                    return paths;
                 }
             };
         },

@@ -831,15 +831,12 @@ export class RefactorEngine {
             return { valid: false, errors, warnings };
         }
 
-        const { metadataEdits, fileRenames } = getWorkspaceArrays(workspace);
-        const hasTextEdits = workspace.edits.length > 0;
-        const hasMetadataEdits = metadataEdits.length > 0;
-        const hasFileRenames = fileRenames.length > 0;
-
-        if (!hasTextEdits && !hasMetadataEdits && !hasFileRenames) {
+        if (!workspace.hasChanges()) {
             errors.push("Workspace edit contains no changes");
             return { valid: false, errors, warnings };
         }
+
+        const { metadataEdits, fileRenames } = getWorkspaceArrays(workspace);
 
         // Organize edits by file path so we can validate that edits within the same
         // file don't overlap or conflict. Overlapping edits would produce ambiguous
@@ -1884,15 +1881,14 @@ export class RefactorEngine {
             return { valid: false, errors, warnings };
         }
 
-        const { metadataEdits, fileRenames } = getWorkspaceArrays(workspace);
-        const hasTextEdits = workspace.edits.length > 0;
-        const hasMetadataEdits = metadataEdits.length > 0;
-        const hasFileRenames = fileRenames.length > 0;
-
-        if (!hasTextEdits && !hasMetadataEdits && !hasFileRenames) {
+        if (!workspace.hasChanges()) {
             warnings.push("Workspace edit contains no changes - hot reload not needed");
             return { valid: true, errors, warnings };
         }
+
+        const { metadataEdits } = getWorkspaceArrays(workspace);
+        const hasTextEdits = workspace.edits.length > 0;
+        const hasMetadataEdits = metadataEdits.length > 0;
 
         if (!hasTextEdits && hasMetadataEdits) {
             warnings.push("Workspace edit contains metadata-only changes - hot reload patching not required");

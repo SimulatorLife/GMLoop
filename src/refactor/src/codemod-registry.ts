@@ -279,9 +279,8 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
             });
 
             const changedFiles = new Set<string>(result.applied.keys());
-            for (const fileRename of result.plan.workspace.fileRenames) {
-                changedFiles.add(fileRename.oldPath);
-                changedFiles.add(fileRename.newPath);
+            for (const touchedPath of result.plan.workspace.collectChangedFilePaths()) {
+                changedFiles.add(touchedPath);
             }
 
             return {
