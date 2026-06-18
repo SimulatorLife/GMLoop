@@ -106,12 +106,20 @@ void test("GmAutoGamePanel renders empty pipeline slots and MCP bridge metadata"
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /id="auto-game-page"[\s\S]*class=page content-page active/u);
-    assert.match(rendered, /Auto-game creation pipeline, AI skill readiness, MCP bridge status/u);
+    assert.match(rendered, /id="auto-game-content"[\s\S]*class="auto-game-dashboard"/u);
+    assert.match(rendered, /class="auto-game-primary-grid"[\s\S]*Pipeline Controls[\s\S]*AI Skills/u);
+    assert.match(rendered, /class="auto-game-secondary-grid"[\s\S]*Pipeline Feed[\s\S]*LLM Output/u);
+    assert.match(rendered, /class="auto-game-supporting"[\s\S]*MCP Bridge/u);
+    assert.doesNotMatch(rendered, /id="auto-game-meta"/u);
     assert.match(rendered, /Pipeline Controls/u);
-    assert.match(rendered, /id="start-auto-game-pipeline"[\s\S]*\?disabled=true/u);
+    assert.match(rendered, /id="start-auto-game-pipeline"[\s\S]*class="gm-btn gm-btn--primary"[\s\S]*\?disabled=true/u);
     assert.match(rendered, /id="pause-auto-game-pipeline"[\s\S]*\?disabled=true/u);
-    assert.match(rendered, /id="stop-auto-game-pipeline"[\s\S]*\?disabled=true/u);
+    assert.match(
+        rendered,
+        /id="stop-auto-game-pipeline"[\s\S]*class="gm-btn gm-btn--destructive"[\s\S]*\?disabled=true/u
+    );
     assert.match(rendered, /id="auto-game-task-prompt"[\s\S]*\?disabled=true/u);
+    assert.match(rendered, /class="gm-empty auto-game-empty--compact"[\s\S]*role="status"/u);
     assert.match(rendered, /No auto-game pipeline controller is connected/u);
     assert.match(rendered, /Pipeline Feed/u);
     assert.match(rendered, /\.gmloop\/agent-log\.jsonl/u);
@@ -191,13 +199,20 @@ void test("GmAutoGamePanel renders host-provided pipeline details", () => {
 
     assert.match(rendered, /Start Pipeline/u);
     assert.match(rendered, /Design pass complete/u);
+    assert.match(rendered, /<gm-badge[\s\S]*\.label=Success[\s\S]*\.tone=success/u);
+    assert.match(rendered, /<time[\s\S]*datetime=2026-01-01T00:00:00.000Z/u);
     assert.match(rendered, /game-design/u);
     assert.match(rendered, /Disable game-design/u);
+    assert.match(rendered, /class="auto-game-skill-toggle__track"/u);
+    assert.match(rendered, /\.label=Available[\s\S]*\.tone=success/u);
     assert.match(rendered, /Disable project-notes/u);
+    assert.match(rendered, /\.label=Unreadable[\s\S]*\.tone=error/u);
     assert.match(rendered, /Could not parse SKILL\.md frontmatter\./u);
     assert.match(rendered, /auto-game-skill-item--unreadable/u);
     assert.match(rendered, /\.agents\/skills\/game-design\/SKILL\.md/u);
     assert.match(rendered, /Scope note/u);
+    assert.match(rendered, /<gm-badge[\s\S]*\.label=thought/u);
+    assert.match(rendered, /<time[\s\S]*datetime=2026-01-01T00:00:01.000Z/u);
     assert.match(rendered, /Keep the first playable slice small\./u);
     assert.match(rendered, /id="start-auto-game-pipeline"[\s\S]*\?disabled=true/u);
     assert.match(rendered, /id="pause-auto-game-pipeline"[\s\S]*\?disabled=false/u);
@@ -279,6 +294,38 @@ void test("GmAutoGamePanel offers an agent-pack update while retaining discovere
     assert.match(rendered, /Auto-Game Agent Pack 0\.0\.2 is available/u);
     assert.match(rendered, /Update Auto-Game Agent Pack/u);
     assert.match(rendered, /game-design/u);
+});
+
+void test("GmAutoGamePanel presents preserved agent-pack conflicts as an actionable status", () => {
+    const panel = new TestableGmAutoGamePanel();
+    panel.model = createMockModel({
+        autoGamePipeline: {
+            actions: [],
+            agentPack: {
+                availableVersion: "0.0.2",
+                conflicts: ["skills/game-design/SKILL.md"],
+                installedVersion: "0.0.1",
+                status: "update-available"
+            },
+            events: [],
+            llmOutputs: [],
+            skills: [],
+            status: "blocked",
+            statusText: "Resolve preserved project changes before continuing."
+        },
+        loadedTarget: {
+            activePath: "/tmp/test/Test.yyp",
+            projectRoot: "/tmp/test",
+            selectedPaths: ["/tmp/test/Test.yyp"],
+            source: "cli-path"
+        }
+    });
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /class="auto-game-skill-item__diagnostic auto-game-conflict-notice"[\s\S]*role="status"/u);
+    assert.match(rendered, /Preserved project-modified agent-pack files: skills\/game-design\/SKILL\.md/u);
 });
 
 void test("GmAutoGamePanel renders without server metadata when documentationCatalogs is null", () => {
