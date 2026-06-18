@@ -128,12 +128,65 @@ function parseAgentPackReceipt(source: string, sourcePath: string): AgentPackRec
     });
 }
 
+/**
+ * Determine whether two read-only string arrays contain identical entries in
+ * the same order. Receipt payloads carry sorted, primitive-only arrays, so a
+ * straightforward length-plus-element scan is both clearer and materially
+ * cheaper than the previous JSON.stringify-based deep equality, which had to
+ * serialise both sides on every comparison and was sensitive to key ordering.
+ */
+function areStringArraysEqual(left: ReadonlyArray<string>, right: ReadonlyArray<string>): boolean {
+    if (left === right) {
+        return true;
+    }
+
+    if (left.length !== right.length) {
+        return false;
+    }
+
+    for (const [index, value] of left.entries()) {
+        if (value !== right[index]) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/**
+ * Determine whether two read-only string records expose identical entries.
+ * As with {@link areStringArraysEqual}, the receipt payloads guarantee
+ * primitive-only values, so strict-equality lookup on each key is sufficient
+ * — no JSON serialisation round-trip is required.
+ */
+function areStringRecordsEqual(
+    left: Readonly<Record<string, string>>,
+    right: Readonly<Record<string, string>>
+): boolean {
+    if (left === right) {
+        return true;
+    }
+
+    const leftKeys = Object.keys(left);
+    if (leftKeys.length !== Object.keys(right).length) {
+        return false;
+    }
+
+    for (const key of leftKeys) {
+        if (left[key] !== right[key]) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 function agentPackReceiptsMatch(left: AgentPackReceipt | null, right: AgentPackReceipt): boolean {
     return (
         left !== null &&
         left.version === right.version &&
-        JSON.stringify(left.conflicts) === JSON.stringify(right.conflicts) &&
-        JSON.stringify(left.files) === JSON.stringify(right.files)
+        areStringArraysEqual(left.conflicts, right.conflicts) &&
+        areStringRecordsEqual(left.files, right.files)
     );
 }
 
@@ -351,3 +404,16 @@ export async function initializeAgentPack(projectRoot: string): Promise<AgentPac
         updated: Object.freeze(updated)
     });
 }
+
+/**
+ * Test-only surface that exposes the receipt comparison helpers so the
+ * dedicated test file can exercise them directly without having to drive the
+ * full project initialization pipeline. The named `__agentPackTest__`
+ * marker keeps these references out of the public API while still being
+ * discoverable for the internal test suite.
+ */
+export const __agentPackTest__ = Object.freeze({
+    agentPackReceiptsMatch,
+    areStringArraysEqual,
+    areStringRecordsEqual
+});
