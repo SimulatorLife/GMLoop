@@ -15,10 +15,7 @@
  * editor integrations directly.
  */
 
-import { realpathSync } from "node:fs";
-import path from "node:path";
 import process from "node:process";
-import { fileURLToPath } from "node:url";
 
 import { Command } from "commander";
 
@@ -32,73 +29,19 @@ import { type CliCatalogEntry, createCliCommandCatalog } from "./cli-core/comman
 import { createCliCommandManager } from "./cli-core/command-manager.js";
 import { applyStandardCommandOptions } from "./cli-core/command-standard-options.js";
 import { handleCliError } from "./cli-core/errors.js";
+import {
+    isCliEntrypointModule,
+    isNodeTestRunnerProcess,
+    shouldAutoRunCliProcess
+} from "./cli-core/main-module-runner.js";
 import { createMcpToolCatalogEntries, type McpToolCatalogEntry } from "./cli-core/mcp-tool-catalog.js";
 import { resolveCliVersion } from "./cli-core/version.js";
 import { __formatTest__ } from "./commands/format.js";
 import { __runtimeTestHelpers__ as __runtimeTest__, parseRuntimeValue } from "./commands/runtime.js";
-import { isCliRunSkipped, SKIP_CLI_RUN_ENV_VAR } from "./shared/skip-cli-run.js";
+import { SKIP_CLI_RUN_ENV_VAR } from "./shared/skip-cli-run.js";
 
 function normalizeWriteChunk(chunk: string | Uint8Array, encoding?: BufferEncoding): string {
     return typeof chunk === "string" ? chunk : Buffer.from(chunk).toString(encoding);
-}
-
-function isNodeTestRunnerProcess(execArguments: ReadonlyArray<string> = process.execArgv): boolean {
-    return execArguments.some(
-        (argument) => argument === "--test" || argument.startsWith("--test=") || argument.startsWith("--test-")
-    );
-}
-
-function safeRealpath(p: string): string | null {
-    try {
-        return realpathSync(p);
-    } catch {
-        return null;
-    }
-}
-
-function isCliEntrypointModule(
-    entrypointPath: string | undefined = process.argv[1],
-    moduleUrl = import.meta.url
-): boolean {
-    if (!entrypointPath) {
-        return false;
-    }
-
-    const resolvedEntrypoint = safeRealpath(entrypointPath) ?? path.resolve(entrypointPath);
-    const resolvedModule = safeRealpath(fileURLToPath(moduleUrl)) ?? fileURLToPath(moduleUrl);
-
-    if (resolvedEntrypoint === resolvedModule) {
-        return true;
-    }
-
-    const resolvedIndexJs =
-        safeRealpath(path.resolve(path.dirname(resolvedModule), "../index.js")) ??
-        path.resolve(path.dirname(resolvedModule), "../index.js");
-    if (resolvedEntrypoint === resolvedIndexJs) {
-        return true;
-    }
-
-    const resolvedIndexTs =
-        safeRealpath(path.resolve(path.dirname(resolvedModule), "../index.ts")) ??
-        path.resolve(path.dirname(resolvedModule), "../index.ts");
-    if (resolvedEntrypoint === resolvedIndexTs) {
-        return true;
-    }
-
-    return false;
-}
-
-function shouldAutoRunCliProcess(
-    env: NodeJS.ProcessEnv = process.env,
-    execArguments: ReadonlyArray<string> = process.execArgv,
-    entrypointPath: string | undefined = process.argv[1],
-    moduleUrl = import.meta.url
-): boolean {
-    return (
-        isCliEntrypointModule(entrypointPath, moduleUrl) &&
-        !isCliRunSkipped(env) &&
-        !isNodeTestRunnerProcess(execArguments)
-    );
 }
 
 const program = applyStandardCommandOptions(new Command())
@@ -344,7 +287,7 @@ registerCliCommands({
     registry: cliCommandRegistry
 });
 
-if (shouldAutoRunCliProcess()) {
+if (shouldAutoRunCliProcess(process.env, process.execArgv, process.argv[1], import.meta.url)) {
     const normalizedArguments = normalizeCommandLineArguments(process.argv.slice(2));
 
     try {
