@@ -4,17 +4,13 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
-const { sortObjectKeys } = Core;
+const { sortObjectKeys, stringifyJsonForFile } = Core;
 
 type JsonPrimitive = boolean | null | number | string;
 type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
 type JsonObject = { [key: string]: JsonValue };
 
 const GMLOOP_DIRECTORY_NAME = ".gmloop";
-
-function stableStringify(payload: unknown): string {
-    return JSON.stringify(sortObjectKeys(payload), null, 2);
-}
 
 export function resolveGmloopRoot(projectRoot: string): string {
     return path.join(projectRoot, GMLOOP_DIRECTORY_NAME);
@@ -35,11 +31,19 @@ export async function ensureArtifactDirectory(projectRoot: string, domain: strin
 
 /**
  * Write JSON with stable key ordering to keep artifacts deterministic.
+ *
+ * Serialization delegates to {@link Core.stringifyJsonForFile} so trailing
+ * newline semantics, error handling for unserializable payloads, and
+ * indentation match the rest of the CLI's artifact-writing helpers
+ * (see `shared/fs-artifacts.ts`). The payload is pre-sorted via
+ * {@link Core.sortObjectKeys} so the on-disk format is deterministic across
+ * runs and platforms.
  */
 export async function writeArtifactJson(filePath: string, payload: unknown): Promise<void> {
     const directory = path.dirname(filePath);
     await mkdir(directory, { recursive: true });
-    await writeFile(filePath, `${stableStringify(payload)}\n`, "utf8");
+    const contents = stringifyJsonForFile(sortObjectKeys(payload), { space: 2 });
+    await writeFile(filePath, contents, "utf8");
 }
 
 /**
@@ -121,9 +125,17 @@ export async function fileExists(filePath: string): Promise<boolean> {
 
 /**
  * Build a deterministic artifact id from a scope prefix and canonical payload.
+ *
+ * The digest input is the payload serialized with sorted keys — the same
+ * canonical form used by {@link writeArtifactJson} — so ids derived from
+ * {@link createDeterministicArtifactId} stay stable across processes and
+ * platforms. The serialization intentionally omits a trailing newline so
+ * existing artifact filenames produced before this helper migrated to the
+ * shared utilities remain byte-for-byte comparable.
  */
 export function createDeterministicArtifactId(scope: string, payload: unknown): string {
-    const digest = createHash("sha256").update(stableStringify(payload)).digest("hex").slice(0, 12);
+    const serialized = JSON.stringify(sortObjectKeys(payload), null, 2);
+    const digest = createHash("sha256").update(serialized).digest("hex").slice(0, 12);
     return `${scope}-${digest}`;
 }
 
