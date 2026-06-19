@@ -136,56 +136,7 @@ function shouldSuppressComment(comment, _options) {
         return true;
     }
 
-    if (isPlainLeadingCommentInsideDocBlock(comment, _options?.originalText)) {
-        return true;
-    }
-
     return false;
-}
-
-function isPlainLeadingCommentInsideDocBlock(comment, originalText) {
-    const followingNode = comment?.followingNode;
-    if (!Core.isNonEmptyArray(followingNode?.docComments) || followingNode.docComments.includes(comment)) {
-        return false;
-    }
-
-    if (typeof originalText !== "string") {
-        return false;
-    }
-
-    const rawText = resolvePlainLeadingCommentRawText(comment, originalText);
-    if (rawText === null) {
-        return false;
-    }
-
-    if (comment?.type === "CommentLine" && /^\s*\/\/\//u.test(rawText)) {
-        return false;
-    }
-
-    const commentStartIndex = getCommentStartIndex(comment);
-    const followingNodeStartIndex = Core.getNodeStartIndex(followingNode);
-    if (
-        !Number.isInteger(commentStartIndex) ||
-        typeof followingNodeStartIndex !== "number" ||
-        commentStartIndex >= followingNodeStartIndex
-    ) {
-        return false;
-    }
-
-    const docCommentStarts = followingNode.docComments
-        .map(getCommentStartIndex)
-        .filter((startIndex) => Number.isInteger(startIndex));
-    if (docCommentStarts.length === 0 || commentStartIndex < Math.min(...docCommentStarts)) {
-        return false;
-    }
-
-    if (!Array.isArray(followingNode.plainLeadingLines)) {
-        followingNode.plainLeadingLines = [];
-    }
-    if (!followingNode.plainLeadingLines.includes(rawText)) {
-        followingNode.plainLeadingLines.push(rawText);
-    }
-    return true;
 }
 
 function suppressFormattedComment(comment, options) {
@@ -776,7 +727,7 @@ function handleDetachedOwnLineComment(comment, _text, options /*, ast */) {
         return true;
     }
 
-    if (attachPlainLeadingCommentInsideDocBlock(comment, followingNode, options?.originalText)) {
+    if (markPlainCommentInsideDocBlockAsPrinted(comment, followingNode)) {
         return true;
     }
 
@@ -816,8 +767,23 @@ function attachTrailingDocLineInsideExistingDocBlock(comment, followingNode, ori
     return true;
 }
 
-function attachPlainLeadingCommentInsideDocBlock(comment, followingNode, originalText) {
-    if (!Core.isNonEmptyArray(followingNode?.docComments) || typeof originalText !== "string") {
+/**
+ * Tracks a non-doc comment that sits between existing doc comments and the
+ * following node so the doc-comment output path can render it in source order
+ * without Prettier emitting it as a duplicate leading comment. Returns true
+ * to signal that the caller should skip the default leading-comment placement
+ * for this comment.
+ *
+ * Without this guard, plain `//` or block-style comments interleaved between
+ * `///` doc comments appear twice in the formatted output: once as a Prettier
+ * leading comment and again inside the doc-comment block.
+ */
+function markPlainCommentInsideDocBlockAsPrinted(comment, followingNode) {
+    if (!Core.isNonEmptyArray(followingNode?.docComments)) {
+        return false;
+    }
+
+    if (followingNode.docComments.includes(comment)) {
         return false;
     }
 
@@ -838,34 +804,14 @@ function attachPlainLeadingCommentInsideDocBlock(comment, followingNode, origina
         return false;
     }
 
-    const rawText = resolvePlainLeadingCommentRawText(comment, originalText);
-    if (rawText === null) {
-        return false;
+    if (!Array.isArray(followingNode._gmlEmbeddedLeadingComments)) {
+        followingNode._gmlEmbeddedLeadingComments = [];
     }
-
-    if (!Array.isArray(followingNode.plainLeadingLines)) {
-        followingNode.plainLeadingLines = [];
+    if (!followingNode._gmlEmbeddedLeadingComments.includes(comment)) {
+        followingNode._gmlEmbeddedLeadingComments.push(comment);
     }
-    followingNode.plainLeadingLines.push(rawText);
     comment.printed = true;
     return true;
-}
-
-function resolvePlainLeadingCommentRawText(comment, originalText) {
-    if (comment?.type === "CommentLine") {
-        return Core.getLineCommentRawText(comment, { originalText });
-    }
-
-    if (comment?.type !== "CommentBlock") {
-        return null;
-    }
-
-    const sourceSpan = resolveCommentSourceSpan(comment, originalText);
-    if (sourceSpan === null) {
-        return null;
-    }
-
-    return sourceSpan.originalText.slice(sourceSpan.startIndex, sourceSpan.endIndex + 1);
 }
 
 function handleDecorativeBlockCommentOwnLine(comment, _text, _options, ast) {
@@ -1215,6 +1161,10 @@ function handleCommentInEmptyLiteral(comment /*, text, options, ast, isLastComme
 
 function handleOnlyComments(comment, options, ast /*, isLastComment */) {
     if (attachDocCommentToFollowingNode(comment, options, ast)) {
+        return true;
+    }
+
+    if (markPlainCommentInsideDocBlockAsPrinted(comment, comment.followingNode)) {
         return true;
     }
 

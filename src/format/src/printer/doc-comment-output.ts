@@ -37,7 +37,6 @@ export function printNodeDocComments(node: any, path: any, options: any): any {
     const docCommentDocs: MutableDocCommentLines = Array.isArray(node.docComments)
         ? Core.toMutableArray(node.docComments as string[], { clone: true })
         : [];
-    const plainLeadingLines: string[] = Array.isArray(node.plainLeadingLines) ? node.plainLeadingLines : [];
 
     // The formatter trusts the AST's `docComments` as authoritative. Legacy doc
     // comment formats (e.g. `// @function`) are normalised by the lint rule
@@ -60,21 +59,13 @@ export function printNodeDocComments(node: any, path: any, options: any): any {
         node,
         printableDocComments,
         docCommentEntries: docCommentEntriesForMetadata,
-        plainLeadingLines,
         originalText,
         nodeStartIndex
     });
 
     const parts: any[] = [];
-    const shouldEmitPlainLeadingLines = plainLeadingLines.length > 0;
-
     if (mixedLeadingCommentBlock !== null) {
         parts.push(mixedLeadingCommentBlock, hardline);
-    } else if (shouldEmitPlainLeadingLines) {
-        parts.push(join(hardline, plainLeadingLines), hardline);
-        if (docCommentDocs.length === 0) {
-            parts.push(hardline);
-        }
     }
 
     if (docCommentDocs.length > 0) {
@@ -163,14 +154,12 @@ function buildMixedLeadingCommentBlock({
     node,
     printableDocComments,
     docCommentEntries,
-    plainLeadingLines,
     originalText,
     nodeStartIndex
 }: {
     node: any;
     printableDocComments: ReadonlyArray<unknown>;
     docCommentEntries: MutableDocCommentLines;
-    plainLeadingLines: ReadonlyArray<string>;
     originalText: string | null;
     nodeStartIndex: number | null;
 }): unknown {
@@ -180,7 +169,7 @@ function buildMixedLeadingCommentBlock({
         !Core.isNonEmptyArray(printableDocComments) ||
         printableDocComments.length !== docCommentEntries.length ||
         !docCommentEntries.every(isLineStyleDocCommentEntry) ||
-        (plainLeadingLines.length === 0 && !Array.isArray(node.comments))
+        (!Array.isArray(node.comments) && !Core.isNonEmptyArray(node._gmlEmbeddedLeadingComments))
     ) {
         return null;
     }
@@ -194,22 +183,13 @@ function buildMixedLeadingCommentBlock({
     }
 
     const earliestDocStartIndex = Math.min(...docItems.map((item) => item.sourceIndex));
-    const plainItems = [
-        ...resolveAttachedLeadingCommentItems(
-            node,
-            docCommentEntries,
-            originalText,
-            earliestDocStartIndex,
-            nodeStartIndex
-        ),
-        ...resolvePlainLeadingLineItems(
-            plainLeadingLines,
-            originalText,
-            earliestDocStartIndex,
-            nodeStartIndex,
-            docItems.length
-        )
-    ];
+    const plainItems = resolveEmbeddedLeadingCommentItems(
+        node,
+        docCommentEntries,
+        originalText,
+        earliestDocStartIndex,
+        nodeStartIndex
+    );
     if (plainItems.length === 0) {
         return null;
     }
@@ -226,21 +206,21 @@ function buildMixedLeadingCommentBlock({
     );
 }
 
-function resolveAttachedLeadingCommentItems(
+function resolveEmbeddedLeadingCommentItems(
     node: any,
     docCommentEntries: MutableDocCommentLines,
     originalText: string,
     leadingBlockStartIndex: number,
     nodeStartIndex: number
 ): LeadingCommentItem[] {
-    if (!Array.isArray(node.comments)) {
+    if (!Array.isArray(node._gmlEmbeddedLeadingComments)) {
         return [];
     }
 
     const docCommentEntrySet = new Set(docCommentEntries.filter(Core.isObjectLike));
     const items: LeadingCommentItem[] = [];
 
-    for (const comment of node.comments) {
+    for (const comment of node._gmlEmbeddedLeadingComments) {
         if (!Core.isObjectLike(comment) || docCommentEntrySet.has(comment)) {
             continue;
         }
@@ -255,7 +235,6 @@ function resolveAttachedLeadingCommentItems(
             continue;
         }
 
-        comment.printed = true;
         items.push({
             doc: rawText,
             endIndex: resolveDocCommentEndIndex(comment),
@@ -332,34 +311,6 @@ function resolveDocLeadingCommentItem(
         sourceIndex: Number.NaN,
         stableIndex
     };
-}
-
-function resolvePlainLeadingLineItems(
-    plainLeadingLines: ReadonlyArray<string>,
-    originalText: string,
-    leadingBlockStartIndex: number,
-    nodeStartIndex: number,
-    stableIndexOffset: number
-): ReadonlyArray<LeadingCommentItem> {
-    const items: LeadingCommentItem[] = [];
-    let searchIndex = leadingBlockStartIndex;
-
-    for (const [index, line] of plainLeadingLines.entries()) {
-        const sourceIndex = originalText.indexOf(line, searchIndex);
-        if (sourceIndex === -1 || sourceIndex >= nodeStartIndex) {
-            return [];
-        }
-
-        items.push({
-            doc: line,
-            endIndex: sourceIndex + line.length - 1,
-            sourceIndex,
-            stableIndex: stableIndexOffset + index
-        });
-        searchIndex = sourceIndex + line.length;
-    }
-
-    return items;
 }
 
 function joinLeadingCommentItemsPreservingSourceSpacing(
