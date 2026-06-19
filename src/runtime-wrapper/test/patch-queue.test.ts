@@ -12,10 +12,14 @@ class MockWebSocket {
     private listeners = new Map<string, Set<(event?: unknown) => void>>();
 
     constructor() {
-        setTimeout(() => {
+        // Defer the open transition by one macrotask tick (matching the
+        // `MockWebSocket` in `websocket.test.ts`). This previously used
+        // `setTimeout(..., 10)` which added a real 10ms race window that
+        // could compound with other test setup delays on slow CI runners.
+        setImmediate(() => {
             this.readyState = 1;
             this.triggerEvent("open");
-        }, 10);
+        });
     }
 
     addEventListener(event: string, handler: (event?: unknown) => void): void {
@@ -39,7 +43,7 @@ class MockWebSocket {
 
     close(): void {
         this.readyState = 3;
-        setTimeout(() => this.triggerEvent("close"), 10);
+        setImmediate(() => this.triggerEvent("close"));
     }
 
     triggerEvent(event: string, data?: unknown): void {
@@ -577,7 +581,24 @@ void test("getPatchQueueMetrics returns initial metrics when queuing is enabled"
     assert.strictEqual(metrics.lastFlushedAt, null);
 });
 
-void test("patch queue enqueues patches instead of applying immediately", async () => {
+void test("patch queue enqueues patches instead of applying immediately", async (t) => {
+    // === Determinism notes ===
+    // The previous version of this test relied on a real setTimeout(100) to
+    // fire the queue's flush timer, then awaited up to 300ms of real wall-clock
+    // time for the metrics to update. Under heavy CI load, the Node event loop
+    // can be delayed past the wait window (worker contention, GC pauses, file
+    // system events from sibling tests, etc.), causing the assertion to fail
+    // with "Timed out waiting for queue to flush pending patch". Evidence of
+    // the failure mode: the test would intermittently throw from
+    // `waitForQueueMetrics(..., 300)` even though the timer was scheduled for
+    // 100ms — the 100ms delay drifted past 300ms under load.
+    //
+    // The fix replaces the queue's flush timer with Node's `mock.timers` so
+    // the flush fires at an exact, deterministic moment controlled by the
+    // test. `setImmediate` and `setTimeout` are not mocked for the helper
+    // above (`createConnectedPatchQueueClient`) so the initial connection
+    // still uses real timers; mocking is enabled only for the body that
+    // exercises the queue's deferred flush.
     let patchesApplied = 0;
 
     const { client, ws, restoreRuntimeGlobals } = await createConnectedPatchQueueClient({
@@ -595,28 +616,33 @@ void test("patch queue enqueues patches instead of applying immediately", async 
         }
     });
 
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+
     try {
         sendScriptPatch(ws, "script:test1");
 
-        const metricsBeforeFlush = await waitForQueueMetrics(
-            client,
-            "queue to contain pending patch",
-            (metrics) => metrics.totalQueued === 1
-        );
-        assert.strictEqual(metricsBeforeFlush.totalQueued, 1);
-        assert.strictEqual(patchesApplied, 0);
+        // The patch lands in the queue synchronously, so the queue metrics
+        // are observable without polling — no real wait is required.
+        const metricsBeforeFlush = client.getPatchQueueMetrics();
+        assert.ok(metricsBeforeFlush !== null, "Patch queue metrics should be available while queuing is enabled");
+        assert.strictEqual(metricsBeforeFlush.totalQueued, 1, "Patch should be queued before the timer fires");
+        assert.strictEqual(metricsBeforeFlush.totalFlushed, 0, "Patch should not be flushed before the timer fires");
+        assert.strictEqual(metricsBeforeFlush.flushCount, 0, "No flush should have occurred yet");
+        assert.strictEqual(patchesApplied, 0, "Patches must not be applied while the queue is still pending");
 
-        const metricsAfterFlush = await waitForQueueMetrics(
-            client,
-            "queue to flush pending patch",
-            (metrics) => metrics.totalFlushed === 1 && metrics.flushCount === 1,
-            300
-        );
+        // Advance the mocked clock exactly one tick past the queue's flush
+        // interval. The flush timer was scheduled for 100ms, so ticking 100ms
+        // fires it deterministically — no event-loop latency involved.
+        t.mock.timers.tick(100);
 
-        assert.strictEqual(metricsAfterFlush.totalFlushed, 1);
-        assert.strictEqual(metricsAfterFlush.flushCount, 1);
-        assert.strictEqual(patchesApplied, 1);
+        const metricsAfterFlush = client.getPatchQueueMetrics();
+        assert.ok(metricsAfterFlush !== null, "Patch queue metrics should remain available after flush");
+        assert.strictEqual(metricsAfterFlush.totalFlushed, 1, "Queued patch should flush when the timer fires");
+        assert.strictEqual(metricsAfterFlush.flushCount, 1, "Exactly one flush should have occurred");
+        assert.strictEqual(metricsAfterFlush.lastFlushSize, 1, "The flush should have moved exactly one patch");
+        assert.strictEqual(patchesApplied, 1, "Queued patch should reach applyPatchBatch after the flush");
     } finally {
+        t.mock.timers.reset();
         client.disconnect();
         restoreRuntimeGlobals();
     }
