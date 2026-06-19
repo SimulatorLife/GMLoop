@@ -400,20 +400,33 @@ export class GmAutoGamePanel extends LightDomLitElement {
         const skills = this.model?.autoGamePipeline?.skills ?? [];
         const agentPack = this.model?.autoGamePipeline?.agentPack;
         const resources = agentPack?.resources ?? [];
-        const shouldOfferAgentPackAction = agentPack !== undefined && agentPack.status !== "current";
+        const shouldOfferAgentPackAction = agentPack !== undefined;
         const hasUntrackedProjectSkills = agentPack?.status === "not-installed" && skills.length > 0;
         const agentPackActionLabel =
-            agentPack?.status === "update-available"
-                ? "Update Auto-Game Agent Pack"
-                : hasUntrackedProjectSkills
-                  ? "Complete Auto-Game Setup"
-                  : "Initialize Auto-Game Agent Pack";
+            agentPack?.status === "current"
+                ? "Update / Re-sync Agent Pack"
+                : agentPack?.status === "update-available"
+                  ? "Update Auto-Game Agent Pack"
+                  : hasUntrackedProjectSkills
+                    ? "Complete Auto-Game Setup"
+                    : "Initialize Auto-Game Agent Pack";
         const agentPackNoticeLabel =
-            agentPack?.status === "update-available"
-                ? "Update Available"
-                : hasUntrackedProjectSkills
-                  ? "Setup Incomplete"
-                  : "Not Initialized";
+            agentPack?.status === "current"
+                ? "Up to Date"
+                : agentPack?.status === "update-available"
+                  ? "Update Available"
+                  : hasUntrackedProjectSkills
+                    ? "Setup Incomplete"
+                    : "Not Initialized";
+        const agentPackNoticeTone = agentPack?.status === "current" ? "success" : "warning";
+        const agentPackNoticeText =
+            agentPack?.status === "current"
+                ? `This project is synchronized with GMLoop's latest packaged skills and guidance (v${agentPack.installedVersion}). Re-sync to restore missing files or refresh templates without overwriting project changes.`
+                : agentPack?.status === "update-available"
+                  ? `Auto-Game Agent Pack ${agentPack.availableVersion} is available; this project has ${agentPack.installedVersion ?? "an unknown version"}.`
+                  : hasUntrackedProjectSkills
+                    ? `${String(skills.length)} project skill${skills.length === 1 ? " was" : "s were"} detected, but this project has no agent-pack installation record. Complete setup to synchronize GMLoop's packaged resources and record their version without overwriting project changes.`
+                    : "Initialize GMLoop's Auto-Game Agent Pack to add project skills and guidance.";
         const isAgentPackPending = this.state?.autoGamePendingOperation === "initialize-agent-pack";
         const isSkillMutationPending = this.state?.autoGamePendingOperation !== null;
 
@@ -431,14 +444,8 @@ export class GmAutoGamePanel extends LightDomLitElement {
                 ${shouldOfferAgentPackAction
                     ? html`
                           <div class="gm-empty auto-game-skill-empty">
-                              <gm-badge .label=${agentPackNoticeLabel} .tone=${"warning"}></gm-badge>
-                              <p>
-                                  ${agentPack.status === "update-available"
-                                      ? `Auto-Game Agent Pack ${agentPack.availableVersion} is available; this project has ${agentPack.installedVersion ?? "an unknown version"}.`
-                                      : hasUntrackedProjectSkills
-                                        ? `${String(skills.length)} project skill${skills.length === 1 ? " was" : "s were"} detected, but this project has no agent-pack installation record. Complete setup to synchronize GMLoop's packaged resources and record their version without overwriting project changes.`
-                                        : "Initialize GMLoop's Auto-Game Agent Pack to add project skills and guidance."}
-                              </p>
+                              <gm-badge .label=${agentPackNoticeLabel} .tone=${agentPackNoticeTone}></gm-badge>
+                              <p>${agentPackNoticeText}</p>
                               <label class="auto-game-initialize-option">
                                   <input
                                       type="checkbox"
@@ -457,7 +464,7 @@ export class GmAutoGamePanel extends LightDomLitElement {
                               </label>
                               <button
                                   id="initialize-auto-game-agent-pack"
-                                  class="gm-btn gm-btn--primary"
+                                  class="gm-btn ${agentPack?.status === "current" ? "" : "gm-btn--primary"}"
                                   type="button"
                                   ?disabled=${!this.#hasPipelineController() ||
                                   this.model?.loadedTarget === null ||

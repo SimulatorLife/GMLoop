@@ -237,6 +237,9 @@ void test("GmAutoGamePanel renders host-provided pipeline details", () => {
     assert.match(rendered, /AGENTS\.md packaged source preview/u);
     assert.match(rendered, /# Autonomous Game Development Guidance/u);
     assert.match(rendered, /\.agents\/skills\/gmloop-game-development-loop\/SKILL\.md/u);
+    assert.match(rendered, /Update \/ Re-sync Agent Pack/u);
+    assert.match(rendered, /\.label=Up to Date[\s\S]*\.tone=success/u);
+    assert.match(rendered, /id="initialize-auto-game-agent-pack"[\s\S]*\?disabled=true/u);
     assert.match(rendered, /id="start-auto-game-pipeline"[\s\S]*\?disabled=true/u);
     assert.match(rendered, /id="pause-auto-game-pipeline"[\s\S]*\?disabled=false/u);
     assert.match(rendered, /id="stop-auto-game-pipeline"[\s\S]*\?disabled=false/u);
@@ -425,6 +428,41 @@ void test("GmAutoGamePanel offers an agent-pack update while retaining discovere
     assert.match(rendered, /Auto-Game Agent Pack 0\.0\.2 is available/u);
     assert.match(rendered, /Update Auto-Game Agent Pack/u);
     assert.match(rendered, /game-design/u);
+});
+
+void test("GmAutoGamePanel offers a re-sync option when the agent-pack is up to date and project is loaded", () => {
+    const panel = new TestableGmAutoGamePanel();
+    panel.model = createMockModel({
+        autoGamePipeline: {
+            actions: [],
+            agentPack: {
+                availableVersion: "0.0.1",
+                conflicts: [],
+                installedVersion: "0.0.1",
+                resources: [],
+                status: "current"
+            },
+            events: [],
+            llmOutputs: [],
+            skills: [],
+            status: "idle",
+            statusText: "All skills up to date."
+        },
+        loadedTarget: {
+            activePath: "/tmp/test/Test.yyp",
+            projectRoot: "/tmp/test",
+            selectedPaths: ["/tmp/test/Test.yyp"],
+            source: "cli-path"
+        }
+    });
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /This project is synchronized with GMLoop's latest packaged skills/u);
+    assert.match(rendered, /Update \/ Re-sync Agent Pack/u);
+    assert.match(rendered, /\.label=Up to Date[\s\S]*\.tone=success/u);
+    assert.match(rendered, /id="initialize-auto-game-agent-pack"[\s\S]*\?disabled=false/u);
 });
 
 void test("GmAutoGamePanel presents preserved agent-pack conflicts as an actionable status", () => {
