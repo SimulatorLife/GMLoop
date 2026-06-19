@@ -28,6 +28,32 @@ void test("does not insert a blank line between variable blocks and following lo
     );
 });
 
+void test("preserves section spacing between local variable blocks and following loops", async () => {
+    const source = [
+        "function demo() {",
+        "    var setup = 1;",
+        "",
+        "    var previousX = -1;",
+        "    var previousY = -1;",
+        "    for (var index = 0; index < 10; index += 1) {",
+        "        previousX += index;",
+        "        previousY += index;",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+
+    const formatted = await Format.format(source);
+    const lines = formatted.trim().split("\n");
+    const forIndex = lines.findIndex((line) => line.includes("for (var index = 0"));
+
+    assert.equal(
+        lines[forIndex - 1],
+        "",
+        "Expected the formatter to preserve local variable section spacing before a following loop"
+    );
+});
+
 void test("inserts a blank line between large variable blocks and following loops at the top level", async () => {
     const source = [
         "var alpha = 1;",

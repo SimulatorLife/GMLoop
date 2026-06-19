@@ -47,7 +47,8 @@ function countContiguousVariableDeclarationsBeforeIndexWithSource(
         if (
             originalText !== null &&
             cursor < index &&
-            hasCommentBetweenStatements(statements[cursor], statements[cursor + 1], originalText)
+            (hasCommentBetweenStatements(statements[cursor], statements[cursor + 1], originalText) ||
+                hasBlankLineBetweenStatements(statements[cursor], statements[cursor + 1], originalText))
         ) {
             break;
         }
@@ -137,19 +138,59 @@ function isNodeImmediatelyPrecededByBlockComment(node, originalText: string): bo
     return sourceLine.startsWith("/*") || sourceLine.endsWith("*/");
 }
 
+function hasSourceBlankLineBeforeContiguousVariableBlock(
+    statements,
+    index: number,
+    originalText: string | null
+): boolean {
+    if (originalText === null || !Array.isArray(statements) || index <= 0 || index >= statements.length) {
+        return false;
+    }
+
+    let firstVariableIndex = index;
+    while (firstVariableIndex > 0 && statements[firstVariableIndex - 1]?.type === Core.VARIABLE_DECLARATION) {
+        if (
+            hasBlankLineBetweenStatements(
+                statements[firstVariableIndex - 1],
+                statements[firstVariableIndex],
+                originalText
+            )
+        ) {
+            break;
+        }
+
+        firstVariableIndex -= 1;
+    }
+
+    if (firstVariableIndex === 0) {
+        return false;
+    }
+
+    return hasBlankLineBetweenStatements(
+        statements[firstVariableIndex - 1],
+        statements[firstVariableIndex],
+        originalText
+    );
+}
+
 function shouldForceVariableBlockBeforeLoopPadding(
     statements,
     index,
     node,
     nextNode,
-    originalText: string | null
+    originalText: string | null,
+    isTopLevel = false
 ): boolean {
     if (node?.type !== Core.VARIABLE_DECLARATION || !isLoopLikeStatement(nextNode)) {
         return false;
     }
 
     const variableBlockSize = countContiguousVariableDeclarationsBeforeIndexWithSource(statements, index, originalText);
-    return variableBlockSize >= MIN_VARIABLE_DECLARATIONS_BEFORE_LOOP_PADDING;
+    if (isTopLevel && variableBlockSize >= MIN_VARIABLE_DECLARATIONS_BEFORE_LOOP_PADDING) {
+        return true;
+    }
+
+    return variableBlockSize > 1 && hasSourceBlankLineBeforeContiguousVariableBlock(statements, index, originalText);
 }
 
 function canForceAutomaticPadding(
@@ -242,14 +283,14 @@ function handleIntermediateTrailingSpacing({
         isLoopStatement &&
         (nextNodeIsVariableDeclaration || nextNodeIsLoop);
     const shouldForceVariableBlockLoopPadding =
-        isTopLevel &&
         hasAutomaticPaddingCapacityWithSuppressionGuard &&
         shouldForceVariableBlockBeforeLoopPadding(
             statements,
             index,
             node,
             nextNode,
-            typeof options.originalText === STRING_TYPE ? options.originalText : null
+            typeof options.originalText === STRING_TYPE ? options.originalText : null,
+            isTopLevel
         );
     const shouldForceConstructorStaticSectionPadding =
         hasAutomaticPaddingCapacityWithSuppressionGuard &&
@@ -460,6 +501,7 @@ export {
     handleTerminalTrailingSpacing,
     hasBlankLineBetweenStatements,
     hasCommentBetweenStatements,
+    hasSourceBlankLineBeforeContiguousVariableBlock,
     hasTrailingCommentOnStatementLine,
     isEndRegionDirectiveNode,
     isLoopLikeStatement,
