@@ -12,7 +12,6 @@ import { getUiErrorMessage } from "../error-message.js";
 import { createInitialFixWorkflowLogLines, createRunningFixWorkflowLogLines } from "../fix-workflow-progress.js";
 import { GraphVisualizationUiStore } from "../state/store.js";
 import type {
-    GraphVisualizationUiAutoGamePendingOperation,
     GraphVisualizationUiDocsView,
     GraphVisualizationUiPage,
     GraphVisualizationUiState
@@ -34,8 +33,6 @@ import {
     GRAPH_UI_EVENT_SET_DOCS_VIEW,
     GRAPH_UI_EVENT_SET_SEARCH_QUERY,
     GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW,
-    GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_PIPELINE,
-    GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_TASK,
     GRAPH_UI_EVENT_TRIGGER_CREATE_CONFIG,
     GRAPH_UI_EVENT_TRIGGER_FIX,
     GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT,
@@ -47,8 +44,6 @@ import {
     type GraphUiSaveConfigDetail,
     type GraphUiSetAutoGameSkillEnabledDetail,
     type GraphUiSetConfigViewDetail,
-    type GraphUiTriggerAutoGamePipelineDetail,
-    type GraphUiTriggerAutoGameTaskDetail,
     type GraphUiTriggerFixDetail
 } from "./events.js";
 import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
@@ -217,16 +212,6 @@ export class GmAppShell extends LightDomLitElement {
         void this.#stopLiveReload();
     };
 
-    #onTriggerAutoGamePipeline = (eventValue: Event): void => {
-        const action = (eventValue as CustomEvent<GraphUiTriggerAutoGamePipelineDetail>).detail.action;
-        void this.#runAutoGamePipelineAction(action);
-    };
-
-    #onTriggerAutoGameTask = (eventValue: Event): void => {
-        const prompt = (eventValue as CustomEvent<GraphUiTriggerAutoGameTaskDetail>).detail.prompt;
-        void this.#runAutoGameTask(prompt);
-    };
-
     #onInitializeAutoGameAgentPack = (eventValue: Event): void => {
         if (this.callbacks.onInitializeAutoGameAgentPack) {
             const options = (eventValue as CustomEvent<GraphUiInitializeAutoGameAgentPackDetail>).detail;
@@ -275,8 +260,7 @@ export class GmAppShell extends LightDomLitElement {
             { event: GRAPH_UI_EVENT_TRIGGER_FIX, handler: this.#onTriggerFix },
             { event: GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD, handler: this.#onTriggerStartLiveReload },
             { event: GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD, handler: this.#onTriggerStopLiveReload },
-            { event: GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_PIPELINE, handler: this.#onTriggerAutoGamePipeline },
-            { event: GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_TASK, handler: this.#onTriggerAutoGameTask },
+
             { event: GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK, handler: this.#onInitializeAutoGameAgentPack },
             { event: GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED, handler: this.#onSetAutoGameSkillEnabled },
             { event: GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, handler: this.#onClearPageError },
@@ -375,77 +359,6 @@ export class GmAppShell extends LightDomLitElement {
             this.#store.dispatch({ errorMessage: message, type: LIVE_RELOAD_ERROR_ACTION_TYPE });
         } finally {
             this.#store.dispatch({ pending: false, type: "set-live-reload-stop-pending" });
-        }
-    }
-
-    async #runAutoGamePipelineAction(action: GraphUiTriggerAutoGamePipelineDetail["action"]): Promise<void> {
-        if (!this.model || !this.model.isServerMode || this.#state.autoGamePendingOperation !== null) {
-            return;
-        }
-
-        const hostAction =
-            action === "start"
-                ? this.callbacks.onStartAutoGamePipeline
-                : action === "pause"
-                  ? this.callbacks.onPauseAutoGamePipeline
-                  : this.callbacks.onStopAutoGamePipeline;
-        if (!hostAction) {
-            return;
-        }
-
-        const operation: GraphVisualizationUiAutoGamePendingOperation = `pipeline-${action}`;
-        try {
-            this.#store.dispatch({ operation, pending: true, type: AUTO_GAME_OPERATION_PENDING_ACTION_TYPE });
-            this.#store.dispatch({ errorMessage: null, page: AUTO_GAME_PAGE, type: PAGE_ERROR_ACTION_TYPE });
-            const autoGamePipeline = await hostAction();
-            if (autoGamePipeline !== undefined) {
-                this.model = {
-                    ...this.model,
-                    autoGamePipeline
-                };
-            }
-        } catch (error) {
-            const message = getUiErrorMessage(error, "Unknown auto-game pipeline error");
-            this.#store.dispatch({ errorMessage: message, page: AUTO_GAME_PAGE, type: PAGE_ERROR_ACTION_TYPE });
-        } finally {
-            this.#store.dispatch({ operation, pending: false, type: AUTO_GAME_OPERATION_PENDING_ACTION_TYPE });
-        }
-    }
-
-    async #runAutoGameTask(prompt: string): Promise<void> {
-        if (
-            !this.model ||
-            !this.model.isServerMode ||
-            !this.callbacks.onRunAutoGameTask ||
-            this.#state.autoGamePendingOperation !== null ||
-            prompt.trim().length === 0
-        ) {
-            return;
-        }
-
-        try {
-            this.#store.dispatch({
-                operation: "run-task",
-                pending: true,
-                type: AUTO_GAME_OPERATION_PENDING_ACTION_TYPE
-            });
-            this.#store.dispatch({ errorMessage: null, page: AUTO_GAME_PAGE, type: PAGE_ERROR_ACTION_TYPE });
-            const autoGamePipeline = await this.callbacks.onRunAutoGameTask(prompt.trim());
-            if (autoGamePipeline !== undefined) {
-                this.model = {
-                    ...this.model,
-                    autoGamePipeline
-                };
-            }
-        } catch (error) {
-            const message = getUiErrorMessage(error, "Unknown auto-game task error");
-            this.#store.dispatch({ errorMessage: message, page: AUTO_GAME_PAGE, type: PAGE_ERROR_ACTION_TYPE });
-        } finally {
-            this.#store.dispatch({
-                operation: "run-task",
-                pending: false,
-                type: AUTO_GAME_OPERATION_PENDING_ACTION_TYPE
-            });
         }
     }
 

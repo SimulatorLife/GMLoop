@@ -88,7 +88,7 @@ The current graph UI uses a typed bundle-render boundary and a Lit component she
 - the Fix tab delegates configured refactor, lint, and format mutation to the CLI host, renders status/log output, and shows elapsed-time progress updates while runs are pending
 - the Live Reload surface renders watcher, WebSocket, patch, latency, error, and optional runtime-wrapper health snapshots from UI-owned DTOs
 - the Docs surface includes `CLI`, `MCP`, `Linting`, `Formatting`, and `Codemods` subviews for command, tool, and workspace rule catalogs
-- the Auto-Game surface renders optional host-provided pipeline controls, automation history, AI skill readiness, LLM output snippets, and MCP bridge information without owning pipeline execution
+- the Auto-Game surface renders automation history, AI skill readiness, LLM output snippets, and MCP bridge information to observe external agent activity without executing the pipeline or prompt inputs directly
 - loaded project state is shown in one canonical header location and reflects the active graph/config context
 - graph/docs/config/fix/playground/auto-game/live-reload page state, docs subview state, graph view mode, label mode, and search query are shareable through URL query params
 
@@ -179,7 +179,7 @@ Each tab has one top-level page toolbar. That toolbar owns the page title, subti
 
 ## Auto-Game Surface
 
-The Auto-Game surface remains presentation-only for pipeline execution, while the CLI host provides project-scoped Agent Skill discovery and agent-pack mutations. It scans only `<loaded-game-project>/.agents/skills`, renders every discovered skill with its name, description, source path, file-availability status, and enable/disable toggle, initializes or updates project resources from the standalone `@gmloop/agent-pack`, and persists only disabled-name exceptions in `gmloop.json`. The project skill list is a native disclosure that is closed by default so the operations dashboard remains compact and keyboard accessible.
+The Auto-Game surface is a companion interface for pipeline execution. It focuses on observability, listing discovered skills, and managing agent-pack synchronization. It scans only `<loaded-game-project>/.agents/skills`, renders every discovered skill with its name, description, source path, file-availability status, and enable/disable toggle, initializes or updates project resources from the standalone `@gmloop/agent-pack`, and persists only disabled-name exceptions in `gmloop.json`. The project skill list is a native disclosure that is closed by default so the operations dashboard remains compact and keyboard accessible.
 
 When the opened project has no recorded agent-pack installation and no skills, the empty state offers **Initialize Auto-Game Agent Pack**. If project skills exist without an installation receipt, it reports **Setup Incomplete** and offers **Complete Auto-Game Setup** because GMLoop cannot infer their package version or safely treat the full pack as current. When the installed version is older than GMLoop's available package version, it offers **Update Auto-Game Agent Pack**. A default-checked **Update Project .gitignore** option controls whether initialization merges GMLoop's generated/cache paths into the project-root ignore file. The host materializes standard skills and applicable guidance such as `AGENTS.md`, preserves project-authored or modified files, reports conflicts and server failures, and returns refreshed project skill state after success.
 
@@ -193,16 +193,11 @@ The UI is AI-vendor neutral: its catalog contract contains standard skill metada
 
 The GMLoop source repository's `.agents/skills` directory is exclusively for agents developing GMLoop. The Auto-Game UI and CLI host never read or modify it.
 
-The page includes lifecycle controls for `Start`, `Pause`, and `Stop`, plus a one-time task form. These controls dispatch typed UI events that `GmAppShell` routes to optional host callbacks:
+Observability is driven by host-provided state. Dispatched events for skill configuration and initialization are routed to host callbacks:
 
-- `onStartAutoGamePipeline`
-- `onPauseAutoGamePipeline`
-- `onStopAutoGamePipeline`
-- `onRunAutoGameTask`
 - `onInitializeAutoGameAgentPack`
 - `onSetAutoGameSkillEnabled`
 
-Those callbacks may return an updated `GraphVisualizationAutoGamePipelineModel` to refresh the page immediately. They may also return `null` or no value when the host owns refresh/polling separately.
 `onInitializeAutoGameAgentPack` receives `{ includeGitIgnore: boolean }`, matching the initialization checkbox.
 
 ## Live Reload Surface

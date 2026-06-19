@@ -5,9 +5,7 @@ import type { PropertyValues } from "lit";
 
 import {
     GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK,
-    GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED,
-    GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_PIPELINE,
-    GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_TASK
+    GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED
 } from "../src/app/components/events.js";
 import { GmAppShell } from "../src/app/components/gm-app-shell.js";
 import { GmAutoGamePanel } from "../src/app/components/gm-auto-game-panel.js";
@@ -107,20 +105,10 @@ void test("GmAutoGamePanel renders empty pipeline slots and MCP bridge metadata"
 
     assert.match(rendered, /id="auto-game-page"[\s\S]*class=page content-page active/u);
     assert.match(rendered, /id="auto-game-content"[\s\S]*class="auto-game-dashboard"/u);
-    assert.match(rendered, /class="auto-game-primary-grid"[\s\S]*Pipeline Controls[\s\S]*AI Skills/u);
+    assert.match(rendered, /class="auto-game-primary-grid"[\s\S]*AI Skills/u);
     assert.match(rendered, /class="auto-game-secondary-grid"[\s\S]*Pipeline Feed[\s\S]*LLM Output/u);
     assert.match(rendered, /class="auto-game-supporting"[\s\S]*MCP Bridge/u);
     assert.doesNotMatch(rendered, /id="auto-game-meta"/u);
-    assert.match(rendered, /Pipeline Controls/u);
-    assert.match(rendered, /id="start-auto-game-pipeline"[\s\S]*class="gm-btn gm-btn--primary"[\s\S]*\?disabled=true/u);
-    assert.match(rendered, /id="pause-auto-game-pipeline"[\s\S]*\?disabled=true/u);
-    assert.match(
-        rendered,
-        /id="stop-auto-game-pipeline"[\s\S]*class="gm-btn gm-btn--destructive"[\s\S]*\?disabled=true/u
-    );
-    assert.match(rendered, /id="auto-game-task-prompt"[\s\S]*\?disabled=true/u);
-    assert.match(rendered, /class="gm-empty auto-game-empty--compact"[\s\S]*role="status"/u);
-    assert.match(rendered, /No auto-game pipeline controller is connected/u);
     assert.match(rendered, /Pipeline Feed/u);
     assert.match(rendered, /\.gmloop\/agent-log\.jsonl/u);
     assert.match(rendered, /AI Skills/u);
@@ -211,12 +199,11 @@ void test("GmAutoGamePanel renders host-provided pipeline details", () => {
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /Start Pipeline/u);
     assert.match(rendered, /Design pass complete/u);
     assert.match(rendered, /<gm-badge[\s\S]*\.label=Success[\s\S]*\.tone=success/u);
     assert.match(rendered, /<time[\s\S]*datetime=2026-01-01T00:00:00.000Z/u);
     assert.match(rendered, /game-design/u);
-    assert.match(rendered, /class="auto-game-skill-disclosure"[\s\S]*?open/u);
+    assert.doesNotMatch(rendered, /class="auto-game-skill-disclosure"[\s\S]*?open/u);
     assert.match(rendered, /<summary>[\s\S]*Packaged Skills & Guidance Templates/u);
     assert.match(rendered, /Exclude game-design from Auto-Game/u);
     assert.match(rendered, /class="auto-game-skill-toggle__track"/u);
@@ -238,10 +225,6 @@ void test("GmAutoGamePanel renders host-provided pipeline details", () => {
     assert.match(rendered, /Update \/ Re-sync Agent Pack/u);
     assert.match(rendered, /\.label=Up to Date[\s\S]*\.tone=success/u);
     assert.match(rendered, /id="initialize-auto-game-agent-pack"[\s\S]*\?disabled=true/u);
-    assert.match(rendered, /id="start-auto-game-pipeline"[\s\S]*\?disabled=true/u);
-    assert.match(rendered, /id="pause-auto-game-pipeline"[\s\S]*\?disabled=false/u);
-    assert.match(rendered, /id="stop-auto-game-pipeline"[\s\S]*\?disabled=false/u);
-    assert.match(rendered, /id="auto-game-task-prompt"[\s\S]*\?disabled=false/u);
 });
 
 void test("GmAutoGamePanel offers initialization for an empty loaded GameMaker project", () => {
@@ -315,22 +298,6 @@ void test("GmAutoGamePanel disables initialization and shows the shared spinner 
     assert.match(rendered, /id="initialize-auto-game-agent-pack"[\s\S]*class="button-spinner"/u);
     assert.match(rendered, /id="initialize-auto-game-agent-pack"[\s\S]*Initialize Auto-Game Agent Pack/u);
     assert.match(rendered, /type="checkbox"[\s\S]*\?disabled=true/u);
-});
-
-void test("GmAutoGamePanel disables concurrent controls and preserves lifecycle labels while pending", () => {
-    const panel = new TestableGmAutoGamePanel();
-    panel.model = createMockModel();
-    panel.state = createMockState({ autoGamePendingOperation: "pipeline-start" });
-
-    const rendered = renderTemplateValue(panel.renderForTest());
-
-    assert.match(rendered, /id="start-auto-game-pipeline"[\s\S]*\?disabled=true/u);
-    assert.match(rendered, /id="start-auto-game-pipeline"[\s\S]*aria-busy=true/u);
-    assert.match(rendered, /id="start-auto-game-pipeline"[\s\S]*class="button-spinner"/u);
-    assert.match(rendered, /id="start-auto-game-pipeline"[\s\S]*Start/u);
-    assert.match(rendered, /id="pause-auto-game-pipeline"[\s\S]*\?disabled=true/u);
-    assert.match(rendered, /id="stop-auto-game-pipeline"[\s\S]*\?disabled=true/u);
-    assert.match(rendered, /id="run-auto-game-task"[\s\S]*\?disabled=true/u);
 });
 
 void test("GmAutoGamePanel presents detected skills without a receipt as incomplete setup", () => {
@@ -517,81 +484,6 @@ void test("GmAutoGamePanel renders inactive page class when not on Auto-Game pag
 
     assert.match(rendered, /id="auto-game-page"[\s\S]*class=page content-page/u);
     assert.doesNotMatch(rendered, /class=page content-page active/u);
-});
-
-void test("GmAppShell routes auto-game lifecycle events through the host callback", async () => {
-    const shell = new TestableGmAppShell();
-    let startCount = 0;
-    shell.model = createMockModel();
-    shell.callbacks = {
-        onOpenProject: () => {},
-        onRegenerate: () => {},
-        onSaveConfig: () => {},
-        onRunFix: () => ({ logLines: [], status: "success" }),
-        onStartLiveReload: () => null,
-        onStopLiveReload: () => {},
-        onStartAutoGamePipeline: () => {
-            startCount += 1;
-            return {
-                actions: [],
-                agentPack: {
-                    availableVersion: "0.0.1",
-                    conflicts: [],
-                    installedVersion: "0.0.1",
-                    resources: [],
-                    status: "current"
-                },
-                events: [],
-                llmOutputs: [],
-                skills: [],
-                status: "running",
-                statusText: "Creating the game."
-            };
-        }
-    };
-
-    shell.connectedCallback();
-    shell.dispatchEvent(
-        new CustomEvent(GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_PIPELINE, {
-            bubbles: true,
-            detail: { action: "start" }
-        })
-    );
-    await Promise.resolve();
-    shell.disconnectedCallback();
-
-    assert.equal(startCount, 1);
-    assert.equal(shell.model?.autoGamePipeline?.status, "running");
-});
-
-void test("GmAppShell routes auto-game one-time tasks through the host callback", async () => {
-    const shell = new TestableGmAppShell();
-    let receivedPrompt = "";
-    shell.model = createMockModel();
-    shell.callbacks = {
-        onOpenProject: () => {},
-        onRegenerate: () => {},
-        onSaveConfig: () => {},
-        onRunFix: () => ({ logLines: [], status: "success" }),
-        onStartLiveReload: () => null,
-        onStopLiveReload: () => {},
-        onRunAutoGameTask: (prompt) => {
-            receivedPrompt = prompt;
-            return null;
-        }
-    };
-
-    shell.connectedCallback();
-    shell.dispatchEvent(
-        new CustomEvent(GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_TASK, {
-            bubbles: true,
-            detail: { prompt: "  add player movement  " }
-        })
-    );
-    await Promise.resolve();
-    shell.disconnectedCallback();
-
-    assert.equal(receivedPrompt, "add player movement");
 });
 
 void test("GmAppShell routes agent-pack initialization and skill toggles through host callbacks", async () => {

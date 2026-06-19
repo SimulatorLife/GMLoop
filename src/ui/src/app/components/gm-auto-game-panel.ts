@@ -2,7 +2,6 @@ import { html, nothing } from "lit";
 
 import type {
     GraphVisualizationAutoGameAgentPackResource,
-    GraphVisualizationAutoGamePipelineAction,
     GraphVisualizationAutoGamePipelineEvent,
     GraphVisualizationAutoGamePipelineLlmOutput,
     GraphVisualizationAutoGamePipelineStatus
@@ -13,11 +12,7 @@ import {
     GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
     GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK,
     GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED,
-    GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_PIPELINE,
-    GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_TASK,
-    type GraphUiInitializeAutoGameAgentPackDetail,
-    type GraphUiTriggerAutoGamePipelineDetail,
-    type GraphUiTriggerAutoGameTaskDetail
+    type GraphUiInitializeAutoGameAgentPackDetail
 } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 import type { GmBadgeTone } from "./primitives/gm-badge.js";
@@ -39,21 +34,6 @@ function getSkillNameFromContent(content: string): string {
  * allocating a new Set on every render and lets the lifecycle buttons share
  * a single helper without per-action duplication.
  */
-const AUTO_GAME_LIFECYCLE_START_STATUSES: ReadonlySet<GraphVisualizationAutoGamePipelineStatus> =
-    new Set<GraphVisualizationAutoGamePipelineStatus>(["idle", "blocked", "success", "error"]);
-
-/**
- * Pipeline statuses in which the Pause action is enabled (only running).
- */
-const AUTO_GAME_LIFECYCLE_PAUSE_STATUSES: ReadonlySet<GraphVisualizationAutoGamePipelineStatus> =
-    new Set<GraphVisualizationAutoGamePipelineStatus>(["running"]);
-
-/**
- * Pipeline statuses in which the Stop action is enabled (anything that is
- * not idle).
- */
-const AUTO_GAME_LIFECYCLE_STOP_STATUSES: ReadonlySet<GraphVisualizationAutoGamePipelineStatus> =
-    new Set<GraphVisualizationAutoGamePipelineStatus>(["running", "blocked", "success", "error"]);
 
 function getPipelineStatusLabel(status: GraphVisualizationAutoGamePipelineStatus): string {
     return status.charAt(0).toUpperCase() + status.slice(1);
@@ -79,15 +59,12 @@ export class GmAutoGamePanel extends LightDomLitElement {
     public static properties = {
         model: { attribute: false },
         state: { attribute: false },
-        taskPrompt: { state: true },
         includeGitIgnore: { state: true }
     };
 
     public accessor model: GraphVisualizationUiModel | null = null;
 
     public accessor state: GraphVisualizationUiState | null = null;
-
-    private accessor taskPrompt = "";
 
     private accessor includeGitIgnore = true;
 
@@ -111,191 +88,8 @@ export class GmAutoGamePanel extends LightDomLitElement {
         super.disconnectedCallback();
     }
 
-    #dispatchPipelineAction(action: GraphUiTriggerAutoGamePipelineDetail["action"]): void {
-        this.dispatchEvent(
-            new CustomEvent<GraphUiTriggerAutoGamePipelineDetail>(GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_PIPELINE, {
-                bubbles: true,
-                composed: true,
-                detail: { action }
-            })
-        );
-    }
-
-    #onTaskInput = (event: Event): void => {
-        this.taskPrompt = (event.target as HTMLTextAreaElement).value;
-    };
-
-    #onTaskKeyDown = (event: KeyboardEvent): void => {
-        if (event.key !== "Enter" || (!event.metaKey && !event.ctrlKey)) {
-            return;
-        }
-
-        event.preventDefault();
-        this.#submitOneTimeTask();
-    };
-
-    #submitOneTimeTask(): void {
-        const prompt = this.taskPrompt.trim();
-        if (!this.#hasPipelineController() || this.state?.autoGamePendingOperation !== null || prompt.length === 0) {
-            return;
-        }
-
-        this.dispatchEvent(
-            new CustomEvent<GraphUiTriggerAutoGameTaskDetail>(GRAPH_UI_EVENT_TRIGGER_AUTO_GAME_TASK, {
-                bubbles: true,
-                composed: true,
-                detail: { prompt }
-            })
-        );
-        this.taskPrompt = "";
-    }
-
     #hasPipelineController(): boolean {
         return this.model?.isServerMode === true;
-    }
-
-    #getPipelineStatus(): GraphVisualizationAutoGamePipelineStatus {
-        return this.model?.autoGamePipeline?.status ?? "idle";
-    }
-
-    /**
-     * Decide whether a pipeline lifecycle button can fire its action in the
-     * current state. Each lifecycle action is allowed only from a specific set
-     * of pipeline statuses, but every action also requires a connected server
-     * mode. Centralizing the predicate keeps the per-action call sites to a
-     * single read.
-     */
-    #canRunLifecycleAction(allowedStatuses: ReadonlySet<GraphVisualizationAutoGamePipelineStatus>): boolean {
-        return (
-            this.#hasPipelineController() &&
-            this.state?.autoGamePendingOperation === null &&
-            allowedStatuses.has(this.#getPipelineStatus())
-        );
-    }
-
-    #renderPipelineAction(action: GraphVisualizationAutoGamePipelineAction) {
-        return html`
-            <button
-                class="gm-btn auto-game-action"
-                type="button"
-                ?disabled=${action.disabled}
-                title=${action.description}
-            >
-                <span class="auto-game-action__label">${action.label}</span>
-                <span class="auto-game-action__description">${action.description}</span>
-            </button>
-        `;
-    }
-
-    #renderPipelineControls() {
-        const actions = this.model?.autoGamePipeline?.actions ?? [];
-        const pendingOperation = this.state?.autoGamePendingOperation ?? null;
-        const canRunTask = this.#hasPipelineController() && pendingOperation === null;
-        const trimmedTaskPrompt = this.taskPrompt.trim();
-
-        return html`
-            <article class="gm-card auto-game-card auto-game-controls-card">
-                <div class="auto-game-card__heading">
-                    <div>
-                        <h3 class="gm-card__heading">Pipeline Controls</h3>
-                        <p>Manage the autonomous workflow or run a focused one-time task.</p>
-                    </div>
-                    <gm-badge
-                        .label=${getPipelineStatusLabel(this.#getPipelineStatus())}
-                        .tone=${getPipelineStatusBadgeTone(this.#getPipelineStatus())}
-                    ></gm-badge>
-                </div>
-                <div class="auto-game-control-stack">
-                    <div class="auto-game-lifecycle-controls" aria-label="Auto-game pipeline lifecycle controls">
-                        <button
-                            id="start-auto-game-pipeline"
-                            class="gm-btn gm-btn--primary"
-                            type="button"
-                            ?disabled=${!this.#canRunLifecycleAction(AUTO_GAME_LIFECYCLE_START_STATUSES)}
-                            aria-busy=${pendingOperation === "pipeline-start" ? "true" : "false"}
-                            @click=${() => this.#dispatchPipelineAction("start")}
-                        >
-                            ${renderProcessButtonContent({
-                                label: "Start",
-                                pending: pendingOperation === "pipeline-start"
-                            })}
-                        </button>
-                        <button
-                            id="pause-auto-game-pipeline"
-                            class="gm-btn"
-                            type="button"
-                            ?disabled=${!this.#canRunLifecycleAction(AUTO_GAME_LIFECYCLE_PAUSE_STATUSES)}
-                            aria-busy=${pendingOperation === "pipeline-pause" ? "true" : "false"}
-                            @click=${() => this.#dispatchPipelineAction("pause")}
-                        >
-                            ${renderProcessButtonContent({
-                                label: "Pause",
-                                pending: pendingOperation === "pipeline-pause"
-                            })}
-                        </button>
-                        <button
-                            id="stop-auto-game-pipeline"
-                            class="gm-btn gm-btn--destructive"
-                            type="button"
-                            ?disabled=${!this.#canRunLifecycleAction(AUTO_GAME_LIFECYCLE_STOP_STATUSES)}
-                            aria-busy=${pendingOperation === "pipeline-stop" ? "true" : "false"}
-                            @click=${() => this.#dispatchPipelineAction("stop")}
-                        >
-                            ${renderProcessButtonContent({
-                                label: "Stop",
-                                pending: pendingOperation === "pipeline-stop"
-                            })}
-                        </button>
-                    </div>
-                    ${this.#hasPipelineController()
-                        ? nothing
-                        : html`
-                              <p class="gm-empty auto-game-empty--compact" role="status">
-                                  No auto-game pipeline controller is connected for this host yet.
-                              </p>
-                          `}
-                    <form
-                        class="auto-game-task-form"
-                        @submit=${(event: SubmitEvent) => {
-                            event.preventDefault();
-                            this.#submitOneTimeTask();
-                        }}
-                    >
-                        <div class="auto-game-field-heading">
-                            <label for="auto-game-task-prompt">One-Time Task</label>
-                            <span>Press Ctrl+Enter or Cmd+Enter to run</span>
-                        </div>
-                        <textarea
-                            id="auto-game-task-prompt"
-                            name="auto-game-task-prompt"
-                            rows="3"
-                            placeholder="Add a player movement task..."
-                            .value=${this.taskPrompt}
-                            ?disabled=${!canRunTask}
-                            @input=${this.#onTaskInput}
-                            @keydown=${this.#onTaskKeyDown}
-                        ></textarea>
-                        <button
-                            id="run-auto-game-task"
-                            class="gm-btn gm-btn--primary auto-game-task-submit"
-                            type="submit"
-                            ?disabled=${!canRunTask || trimmedTaskPrompt.length === 0}
-                            aria-busy=${pendingOperation === "run-task" ? "true" : "false"}
-                        >
-                            ${renderProcessButtonContent({
-                                label: "Run Task",
-                                pending: pendingOperation === "run-task"
-                            })}
-                        </button>
-                    </form>
-                    ${actions.length === 0
-                        ? nothing
-                        : html`<div class="auto-game-action-list" aria-label="Host-provided pipeline actions">
-                              ${actions.map((action) => this.#renderPipelineAction(action))}
-                          </div>`}
-                </div>
-            </article>
-        `;
     }
 
     #renderPipelineEvent(event: GraphVisualizationAutoGamePipelineEvent) {
@@ -576,10 +370,7 @@ export class GmAutoGamePanel extends LightDomLitElement {
                           Open a GameMaker project to discover its Auto-Game skills.
                       </p>`
                     : nothing}
-                <details
-                    class="auto-game-skill-disclosure"
-                    ?open=${skillsToDisplay.length > 0 || templateItems.length > 0}
-                >
+                <details class="auto-game-skill-disclosure">
                     <summary>
                         <span>
                             <strong>Packaged Skills & Guidance Templates</strong>
@@ -696,7 +487,7 @@ export class GmAutoGamePanel extends LightDomLitElement {
                     : nothing}
                 <div id="auto-game-content" class="auto-game-dashboard">
                     <section class="auto-game-primary-grid" aria-label="Auto-Game operations">
-                        ${this.#renderPipelineControls()} ${this.#renderAiSkills()}
+                        ${this.#renderAiSkills()}
                     </section>
                     <section class="auto-game-secondary-grid" aria-label="Auto-Game activity">
                         ${this.#renderPipelineFeed()} ${this.#renderLlmOutputs()}

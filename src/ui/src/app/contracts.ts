@@ -31,11 +31,6 @@ export type GraphVisualizationHostMutationResult = Readonly<{
 }>;
 
 /**
- * Optional updated Auto-Game pipeline model returned by a host command callback.
- */
-export type GraphVisualizationAutoGamePipelineActionResult = GraphVisualizationAutoGamePipelineModel | null | undefined;
-
-/**
  * Normalized model consumed by the Lit graph visualization UI shell.
  */
 export type GraphVisualizationUiModel = Readonly<{
@@ -71,18 +66,7 @@ export type GraphVisualizationUiCallbacks = Readonly<{
         | null
         | Promise<GraphVisualizationLiveReloadModel | null>;
     onStopLiveReload: () => void | Promise<void>;
-    onStartAutoGamePipeline?: () =>
-        | GraphVisualizationAutoGamePipelineActionResult
-        | Promise<GraphVisualizationAutoGamePipelineActionResult>;
-    onPauseAutoGamePipeline?: () =>
-        | GraphVisualizationAutoGamePipelineActionResult
-        | Promise<GraphVisualizationAutoGamePipelineActionResult>;
-    onStopAutoGamePipeline?: () =>
-        | GraphVisualizationAutoGamePipelineActionResult
-        | Promise<GraphVisualizationAutoGamePipelineActionResult>;
-    onRunAutoGameTask?: (
-        prompt: string
-    ) => GraphVisualizationAutoGamePipelineActionResult | Promise<GraphVisualizationAutoGamePipelineActionResult>;
+
     onInitializeAutoGameAgentPack?: (options: GraphVisualizationAgentPackInitializationOptions) => void | Promise<void>;
     onSetAutoGameSkillEnabled?: (name: string, enabled: boolean) => void | Promise<void>;
 }>;
@@ -126,10 +110,7 @@ export function createNoopGraphVisualizationUiCallbacks(): GraphVisualizationUiC
         onRunFix: () => ({ logLines: ["Fix workflow is unavailable in this host."], status: "success" }),
         onStartLiveReload: () => null,
         onStopLiveReload: () => {},
-        onStartAutoGamePipeline: () => null,
-        onPauseAutoGamePipeline: () => null,
-        onStopAutoGamePipeline: () => null,
-        onRunAutoGameTask: () => null,
+
         onInitializeAutoGameAgentPack: () => {},
         onSetAutoGameSkillEnabled: () => {}
     };
