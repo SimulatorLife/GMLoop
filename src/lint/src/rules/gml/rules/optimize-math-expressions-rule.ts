@@ -25,7 +25,15 @@ import {
     type SourceTextEdit,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
-import { evaluateSkipDecision, resolveMathNumericPolicy } from "./optimize-math-skip-evaluator.js";
+import {
+    canAstShapeContainMathOptimizationCandidate,
+    containsMathOptimizationSyntax,
+    DEFAULT_MATH_SIGNAL_PATTERNS,
+    evaluateMathOptimizationCandidate,
+    evaluateSkipDecision,
+    MATH_OPTIMIZATION_POLICY_CONSTANTS,
+    resolveMathNumericPolicy
+} from "./optimize-math-skip-evaluator.js";
 
 const {
     getNodeStartIndex,
@@ -54,41 +62,10 @@ const SUPPORTED_OPAQUE_MATH_FACTOR_TYPES = new Set([
     "CallExpression"
 ]);
 const COMMENT_SEQUENCE_PATTERN = /\/\/|\/\*|\*\//u;
-const MANUAL_MATH_CALL_SIGNAL_PATTERN =
-    /\b(?:arccos|arcsin|arctan|arctan2|cos|darccos|darcsin|darctan|darctan2|dcos|degtorad|dsin|dtan|exp|lengthdir_[xy]|ln|log2|mean|point_direction|point_distance(?:_3d)?|power|radtodeg|sin|sqr|sqrt|tan)\s*\(/u;
-const NUMERIC_LITERAL_SIGNAL_PATTERN = /(?<![\w.])(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?(?![\w.])/iu;
-const STRONG_MATH_BINARY_OPERATORS = new Set(["*", "/", "%", "div", "mod"]);
-const ADDITIVE_MATH_BINARY_OPERATORS = new Set(["+", "-"]);
-const MATH_CALL_NAMES = new Set([
-    "arccos",
-    "arcsin",
-    "arctan",
-    "arctan2",
-    "cos",
-    "darccos",
-    "darcsin",
-    "darctan",
-    "darctan2",
-    "dcos",
-    "degtorad",
-    "dsin",
-    "dtan",
-    "exp",
-    "lengthdir_x",
-    "lengthdir_y",
-    "ln",
-    "log2",
-    "mean",
-    "point_direction",
-    "point_distance",
-    "point_distance_3d",
-    "power",
-    "radtodeg",
-    "sin",
-    "sqr",
-    "sqrt",
-    "tan"
-]);
+const NUMERIC_LITERAL_SIGNAL_PATTERN = DEFAULT_MATH_SIGNAL_PATTERNS.numericLiteralSignal;
+const DIVISION_BASED_OPTIMIZATION_SIGNAL_PATTERN = DEFAULT_MATH_SIGNAL_PATTERNS.divisionBasedSignal;
+const MAX_MATH_OPTIMIZATION_CANDIDATE_TEXT_LENGTH =
+    MATH_OPTIMIZATION_POLICY_CONSTANTS.MAX_OPTIMIZATION_CANDIDATE_LENGTH;
 
 function tryEvaluateExpression(node: any): any {
     const unwrapped = unwrapParenthesized(node);
@@ -556,97 +533,10 @@ function hasOverlapWithLastScheduledEdit(
 
 type SourceTextRange = Readonly<{ start: number; end: number }>;
 
-const MATH_OPTIMIZATION_SIGNAL_PATTERN =
-    /[*/%+-]|\b(?:div|mod|power|sqrt|sqr|sin|cos|tan|dsin|dcos|dtan|degtorad|radtodeg|arctan2|darctan2|ln|exp|log2|point_distance(?:_3d)?|point_direction|lengthdir_[xy]|dot_product(?:_3d)?|mean)\b/u;
-const MATH_STRONG_SIGNAL_PATTERN =
-    /[*/%]|\b(?:div|mod|power|sqrt|sqr|sin|cos|tan|dsin|dcos|dtan|degtorad|radtodeg|arctan2|darctan2|ln|exp|log2|point_distance(?:_3d)?|point_direction|lengthdir_[xy]|dot_product(?:_3d)?|mean)\b/u;
-const DIVISION_BASED_OPTIMIZATION_SIGNAL_PATTERN = /[/%]|\b(?:div|mod)\b/u;
-const MAX_MATH_OPTIMIZATION_CANDIDATE_TEXT_LENGTH = 2000;
-const MAX_MANUAL_NORMALIZATION_CANDIDATE_TEXT_LENGTH = 600;
-
 function isRangeInsideAnyRange(range: SourceTextRange, containerRanges: ReadonlyArray<SourceTextRange>): boolean {
     return containerRanges.some((containerRange) => {
         return range.start >= containerRange.start && range.end <= containerRange.end;
     });
-}
-
-function containsPotentialMathOptimizationSyntax(sourceTextOfNode: string): boolean {
-    if (!MATH_OPTIMIZATION_SIGNAL_PATTERN.test(sourceTextOfNode)) {
-        return false;
-    }
-
-    if (MATH_STRONG_SIGNAL_PATTERN.test(sourceTextOfNode)) {
-        return true;
-    }
-
-    // Avoid treating long string-concatenation chains as math candidates.
-    if (sourceTextOfNode.includes('"') || sourceTextOfNode.includes("'")) {
-        return false;
-    }
-
-    // Additive chains of function calls (for example string-building traces)
-    // can look math-like due embedded numeric literals but are not safe/valuable
-    // optimize-math candidates.
-    if (/\b[A-Za-z_]\w*\s*\(/u.test(sourceTextOfNode)) {
-        return false;
-    }
-
-    return NUMERIC_LITERAL_SIGNAL_PATTERN.test(sourceTextOfNode);
-}
-
-function shouldAttemptManualNormalization(sourceTextOfNode: string): boolean {
-    if (sourceTextOfNode.length > MAX_MANUAL_NORMALIZATION_CANDIDATE_TEXT_LENGTH) {
-        return false;
-    }
-
-    return (
-        DIVISION_BASED_OPTIMIZATION_SIGNAL_PATTERN.test(sourceTextOfNode) ||
-        sourceTextOfNode.includes("*") ||
-        MANUAL_MATH_CALL_SIGNAL_PATTERN.test(sourceTextOfNode) ||
-        ((sourceTextOfNode.includes("+") || sourceTextOfNode.includes("-")) &&
-            NUMERIC_LITERAL_SIGNAL_PATTERN.test(sourceTextOfNode))
-    );
-}
-
-function canAstShapeContainMathOptimizationCandidate(node: unknown): boolean {
-    const expression = unwrapParenthesized(node);
-    if (!expression) {
-        return false;
-    }
-
-    if (expression.type === "Literal") {
-        return Core.getLiteralNumberValue(expression) !== null;
-    }
-
-    if (expression.type === "UnaryExpression") {
-        return (
-            expression.operator === "-" ||
-            expression.operator === "+" ||
-            canAstShapeContainMathOptimizationCandidate(expression.argument)
-        );
-    }
-
-    if (expression.type === "CallExpression") {
-        const callName = Core.getCallExpressionIdentifierName(expression);
-        return typeof callName === "string" && MATH_CALL_NAMES.has(callName);
-    }
-
-    if (expression.type !== "BinaryExpression" || typeof expression.operator !== "string") {
-        return false;
-    }
-
-    if (STRONG_MATH_BINARY_OPERATORS.has(expression.operator)) {
-        return true;
-    }
-
-    if (!ADDITIVE_MATH_BINARY_OPERATORS.has(expression.operator)) {
-        return false;
-    }
-
-    return (
-        canAstShapeContainMathOptimizationCandidate(expression.left) ||
-        canAstShapeContainMathOptimizationCandidate(expression.right)
-    );
 }
 
 function tryReadNumericLiteralValue(node: unknown): number | null {
@@ -1398,7 +1288,7 @@ function performGeneralExpressionSimplification(node: any, sourceText: string, e
                     return;
                 }
 
-                if (!containsPotentialMathOptimizationSyntax(sourceTextOfNode)) {
+                if (!containsMathOptimizationSyntax(sourceTextOfNode)) {
                     return;
                 }
 
@@ -1425,7 +1315,13 @@ function performGeneralExpressionSimplification(node: any, sourceText: string, e
                         }
                     }
 
-                    if (!replacement && shouldAttemptManualNormalization(sourceTextOfNode)) {
+                    if (
+                        !replacement &&
+                        evaluateMathOptimizationCandidate({
+                            sourceText: sourceTextOfNode,
+                            nodeType: targetNode.type
+                        }).shouldAttemptManualNormalization
+                    ) {
                         replacement = attemptManualNormalization(sourceText, targetNode);
                     }
 
