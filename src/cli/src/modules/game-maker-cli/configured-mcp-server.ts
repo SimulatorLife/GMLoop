@@ -1,7 +1,7 @@
 import { access, constants, readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { isRecord } from "../../shared/error-guards.js";
+import { isRecord, tryParseJsonPayload } from "../../shared/error-guards.js";
 
 type ConfiguredMcpServerEntry = {
     args: Array<string>;
@@ -108,8 +108,13 @@ async function isReadableFile(filePath: string): Promise<boolean> {
 }
 
 function parseJsonMcpServerEntries(configurationText: string): Record<string, ConfiguredMcpServerEntry> {
-    const parsedValue = JSON.parse(configurationText) as unknown;
-    if (!isRecord(parsedValue)) {
+    // The on-disk `.mcp.json` is hand-edited by humans and frequently written
+    // by other tools. A truncated or otherwise malformed payload must not
+    // bubble a `SyntaxError` out of discovery — the surrounding loop walks
+    // several candidate paths and should fall through to the next file
+    // instead of rejecting the whole `Promise.all`.
+    const parsedValue = tryParseJsonPayload(configurationText);
+    if (parsedValue === null) {
         return {};
     }
 
