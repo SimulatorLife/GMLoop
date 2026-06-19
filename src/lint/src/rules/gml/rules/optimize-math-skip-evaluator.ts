@@ -80,6 +80,14 @@ export type MathOptimizationSignalPatterns = Readonly<{
      * Matches built-in GML math function calls that affect optimization strategy.
      */
     manualMathCallSignal: RegExp;
+    /**
+     * Matches any identifier-shaped token followed by an opening parenthesis,
+     * which is used as a cheap "looks like a function call" pre-filter.  The
+     * pattern is intentionally permissive — it is not a call-name catalogue
+     * but a structural detector that lets the policy exclude call-shaped
+     * expressions (e.g. string-building traces) from math treatment.
+     */
+    callExpressionPattern: RegExp;
 }>;
 
 /**
@@ -93,8 +101,63 @@ export const DEFAULT_MATH_SIGNAL_PATTERNS: MathOptimizationSignalPatterns = Obje
     divisionBasedSignal: /[/%]|\b(?:div|mod)\b/u,
     numericLiteralSignal: /(?<![\w.])(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?(?![\w.])/iu,
     manualMathCallSignal:
-        /\b(?:arccos|arcsin|arctan|arctan2|cos|darccos|darcsin|darctan|darctan2|dcos|dsin|dtan|exp|lengthdir_[xy]|ln|log2|mean|point_direction|point_distance(?:_3d)?|power|radtodeg|sin|sqr|sqrt|tan)\s*\(/u
+        /\b(?:arccos|arcsin|arctan|arctan2|cos|darccos|darcsin|darctan|darctan2|dcos|dsin|dtan|exp|lengthdir_[xy]|ln|log2|mean|point_direction|point_distance(?:_3d)?|power|radtodeg|sin|sqr|sqrt|tan)\s*\(/u,
+    callExpressionPattern: /\b[A-Za-z_]\w*\s*\(/u
 });
+
+/**
+ * Binary operators that strongly indicate the AST shape carries
+ * multiplicative / division-like math content.  Used by the AST-shape
+ * candidate predicate to short-circuit recursion.
+ */
+export const STRONG_MATH_BINARY_OPERATORS: ReadonlySet<string> = Object.freeze(new Set(["*", "/", "%", "div", "mod"]));
+
+/**
+ * Binary operators that indicate additive math content.  When a node uses
+ * one of these, the AST-shape candidate predicate still recurses into the
+ * operands so deeply-nested multiplicative content can still be detected.
+ */
+export const ADDITIVE_MATH_BINARY_OPERATORS: ReadonlySet<string> = Object.freeze(new Set(["+", "-"]));
+
+/**
+ * Names of GML built-in math functions that the AST-shape candidate
+ * predicate treats as legitimate math candidates when appearing as the
+ * callee of a `CallExpression`.  The set is intentionally narrow: only
+ * functions whose result depends solely on their arguments and which
+ * have no observable side effects are included.
+ */
+export const DEFAULT_MATH_CALL_NAMES: ReadonlySet<string> = Object.freeze(
+    new Set([
+        "arccos",
+        "arcsin",
+        "arctan",
+        "arctan2",
+        "cos",
+        "darccos",
+        "darcsin",
+        "darctan",
+        "darctan2",
+        "dcos",
+        "degtorad",
+        "dsin",
+        "dtan",
+        "exp",
+        "lengthdir_x",
+        "lengthdir_y",
+        "ln",
+        "log2",
+        "mean",
+        "point_direction",
+        "point_distance",
+        "point_distance_3d",
+        "power",
+        "radtodeg",
+        "sin",
+        "sqr",
+        "sqrt",
+        "tan"
+    ])
+);
 
 /**
  * Evaluates whether an AST node's position in the tree should be skipped
@@ -421,6 +484,135 @@ export function tryEvaluateNumericOperand(node: unknown): number | null {
  */
 export function areExpressionsSemanticallyEquivalent(left: unknown, right: unknown): boolean {
     return areExpressionNodesEquivalentIgnoringParentheses(left, right);
+}
+
+/**
+ * Decides whether the supplied source text is a viable math-optimization
+ * candidate.  The predicate is the policy counterpart of the
+ * `containsPotentialMathOptimizationSyntax` heuristic that used to live
+ * inside the rule body: it composes the configured signal patterns and a
+ * short set of disqualifying checks (string literals, call-shaped text)
+ * into a single decision the mechanism code can consult without
+ * re-implementing any thresholds.
+ *
+ * Decision order (matches the original heuristic so behaviour is preserved):
+ * 1. Bail out early if no math signal at all is present.
+ * 2. Accept immediately on a strong math signal.
+ * 3. Reject if a string literal appears (string concatenation territory).
+ * 4. Reject if any identifier-shaped call is present and we do not already
+ *    have a strong signal (call-heavy additive chains are not safe math
+ *    candidates).
+ * 5. Otherwise, accept only when a numeric literal is also present — this
+ *    is what disambiguates `x + y` (identifier-only, no rewrite) from
+ *    `x + 1` (numeric, optimizable).
+ *
+ * @param sourceText - The source text to evaluate.
+ * @param patterns - Optional pattern overrides; defaults to
+ *   {@link DEFAULT_MATH_SIGNAL_PATTERNS}.
+ * @returns true if the text should be passed to the optimization pipeline.
+ */
+export function containsMathOptimizationSyntax(
+    sourceText: string,
+    patterns: MathOptimizationSignalPatterns = DEFAULT_MATH_SIGNAL_PATTERNS
+): boolean {
+    if (typeof sourceText !== "string" || sourceText.length === 0) {
+        return false;
+    }
+
+    if (!patterns.mathOptimizationSignal.test(sourceText)) {
+        return false;
+    }
+
+    if (patterns.mathStrongSignal.test(sourceText)) {
+        return true;
+    }
+
+    // Additive chains of function calls (for example string-building traces)
+    // can look math-like due to embedded numeric literals but are not safe
+    // optimize-math candidates.  Strong-signal cases already returned above,
+    // so the call filter only affects the weak-signal branch.
+    if (/["']/u.test(sourceText)) {
+        return false;
+    }
+
+    if (patterns.callExpressionPattern.test(sourceText)) {
+        return false;
+    }
+
+    return patterns.numericLiteralSignal.test(sourceText);
+}
+
+/**
+ * Recursively decides whether an AST node's shape could ever carry math
+ * content that the optimization pipeline knows how to rewrite.  This
+ * mirrors the `canAstShapeContainMathOptimizationCandidate` predicate
+ * that used to live inside the rule body, but pulls the operator
+ * classifications and built-in math call name list from the policy
+ * constants so the rule no longer has to re-declare them inline.
+ *
+ * The predicate is intentionally conservative: it only returns true for
+ * shapes that contain at least one recognized math signal (a literal
+ * number, a math built-in call, a strong operator, or an additive
+ * expression whose sub-nodes look math-like).  Anything else is
+ * delegated back to the rule so callers do not over-eagerly traverse
+ * identifier-heavy blocks.
+ *
+ * @param node - The AST node to evaluate.
+ * @param mathCallNames - Optional override for the built-in math call
+ *   name catalogue; defaults to {@link DEFAULT_MATH_CALL_NAMES}.
+ * @returns true if the AST shape is a candidate for optimization.
+ */
+export function canAstShapeContainMathOptimizationCandidate(
+    node: unknown,
+    mathCallNames: ReadonlySet<string> = DEFAULT_MATH_CALL_NAMES
+): boolean {
+    if (!node || typeof node !== "object") {
+        return false;
+    }
+
+    const expression = unwrapParenthesized(node);
+    if (!expression) {
+        return false;
+    }
+
+    switch (expression.type) {
+        case "Literal": {
+            return getLiteralNumberValue(expression) !== null;
+        }
+        case "UnaryExpression": {
+            if (expression.operator !== "-" && expression.operator !== "+") {
+                return false;
+            }
+
+            return canAstShapeContainMathOptimizationCandidate(expression.argument, mathCallNames);
+        }
+        case "CallExpression": {
+            const callName = Core.getCallExpressionIdentifierName(expression);
+            return typeof callName === "string" && mathCallNames.has(callName);
+        }
+        case "BinaryExpression": {
+            const operator = expression.operator;
+            if (typeof operator !== "string") {
+                return false;
+            }
+
+            if (STRONG_MATH_BINARY_OPERATORS.has(operator)) {
+                return true;
+            }
+
+            if (!ADDITIVE_MATH_BINARY_OPERATORS.has(operator)) {
+                return false;
+            }
+
+            return (
+                canAstShapeContainMathOptimizationCandidate(expression.left, mathCallNames) ||
+                canAstShapeContainMathOptimizationCandidate(expression.right, mathCallNames)
+            );
+        }
+        // No default
+    }
+
+    return false;
 }
 
 /**
