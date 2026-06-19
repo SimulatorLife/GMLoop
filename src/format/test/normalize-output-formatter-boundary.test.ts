@@ -228,3 +228,47 @@ void test("normalizeFormattedOutput collapses blank lines after { before code un
         "blank line after { before code must be collapsed in if blocks"
     );
 });
+
+void test("normalizeFormattedOutput inserts blank line before doc comment following single-line block comment", () => {
+    // Regression: updateBlockCommentState incorrectly treated `/* ... */` (a
+    // single-line block comment that starts and ends on the same line) as
+    // opening a multi-line block comment.  This caused the blank-line check
+    // in ensureBlankLineBeforeTopLevelLineComments to see isInside=true on the
+    // following line and skip blank-line insertion before the `/// @description`.
+    const input = "/* single-line block comment */\n/// @description A description of this function\nfunction foo() {}";
+
+    const result = normalizeFormattedOutput(input);
+
+    const blankLineInserted = result.includes("*/\n\n/// @description");
+    assert.ok(
+        blankLineInserted,
+        `Expected a blank line between the single-line block comment and the following doc comment.\nActual output:\n${result}`
+    );
+});
+
+void test("normalizeFormattedOutput handles consecutive single-line block comments before doc comment", () => {
+    // Multiple single-line block comments followed by a doc comment.
+    const input =
+        "/* first */\n/* second */\n/// @function my_func\n/// @description My function\nfunction my_func() {}";
+
+    const result = normalizeFormattedOutput(input);
+
+    assert.ok(
+        result.includes("/* second */\n\n/// @function"),
+        `Expected blank line before doc comment after consecutive single-line block comments.\nActual output:\n${result}`
+    );
+});
+
+void test("normalizeFormattedOutput correctly tracks nested block-comment-like sequences in single-line comments", () => {
+    // A single-line block comment that contains `/*` and `*/` as part of its
+    // content (edge case — the comment is still single-line and should not
+    // affect blank-line logic).
+    const input = "/* comment with /* nested */ markers */\n/// @description Described\nfunction foo() {}";
+
+    const result = normalizeFormattedOutput(input);
+
+    assert.ok(
+        result.includes("markers */\n\n/// @description"),
+        `Expected blank line after single-line block comment with embedded markers.\nActual output:\n${result}`
+    );
+});
