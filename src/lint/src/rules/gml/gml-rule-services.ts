@@ -32,8 +32,8 @@ import {
  * the internal layout of that layer changes, only this file needs updating —
  * rule consumers stay stable.
  *
- * Transform modules that need broader doc-comment access should continue to
- * use {@link ./transforms/doc-comment-services.js}.
+ * Transform modules needing broader doc-comment access should import the
+ * helpers directly from `src/lint/src/doc-comment/index.js`.
  */
 export const gmlRuleDocCommentServices = Object.freeze({
     convertLegacyReturnsDescriptionLinesToMetadata,
