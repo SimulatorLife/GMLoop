@@ -17,7 +17,8 @@ import {
     parseJsonWithContext,
     readCxcDxStore,
     readRuntimeObjectPool,
-    toArray
+    toArray,
+    trimArrayToMaxSize
 } from "../src/browser/support/runtime-value-utils.js";
 
 /**
@@ -417,6 +418,50 @@ void describe("runtime-value-utils — polymorphism guardrails", () => {
                     "mismatch between local isErrorLike and Core.isErrorLike"
                 );
             }
+        });
+    });
+
+    void describe("trimArrayToMaxSize", () => {
+        void it("leaves the array unchanged when max size is unbounded (zero)", () => {
+            const array = [1, 2, 3, 4, 5];
+            trimArrayToMaxSize(array, 0);
+
+            assert.deepEqual(array, [1, 2, 3, 4, 5]);
+        });
+
+        void it("leaves the array unchanged when max size is negative", () => {
+            const array = [1, 2, 3];
+            trimArrayToMaxSize(array, -1);
+
+            assert.deepEqual(array, [1, 2, 3]);
+        });
+
+        void it("leaves the array unchanged when within limit", () => {
+            const array = [1, 2, 3, 4, 5];
+            trimArrayToMaxSize(array, 5);
+
+            assert.deepEqual(array, [1, 2, 3, 4, 5]);
+        });
+
+        void it("leaves the array unchanged when under limit", () => {
+            const array = [1, 2];
+            trimArrayToMaxSize(array, 5);
+
+            assert.deepEqual(array, [1, 2]);
+        });
+
+        void it("removes oldest entries when exceeding limit", () => {
+            const array = [1, 2, 3, 4, 5, 6, 7, 8];
+            trimArrayToMaxSize(array, 3);
+
+            assert.deepEqual(array, [6, 7, 8]);
+        });
+
+        void it("handles empty array", () => {
+            const array: Array<number> = [];
+            trimArrayToMaxSize(array, 3);
+
+            assert.deepEqual(array, []);
         });
     });
 });
