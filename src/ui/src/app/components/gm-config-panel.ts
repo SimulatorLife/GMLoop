@@ -17,12 +17,18 @@ import {
 } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 import { getLintFixableBadgeLabel } from "./lint-rule-labels.js";
+import {
+    isLintLevel,
+    isLintLevelFilter,
+    LINT_LEVEL_LABELS,
+    LINT_LEVELS,
+    type LintLevel,
+    type LintLevelFilter
+} from "./lint-rule-levels.js";
 import type { GmBadgeTone } from "./primitives/gm-badge.js";
 import { renderProcessButtonContent } from "./primitives/gm-button.js";
 
 type ConfigJsonObject = Record<string, unknown>;
-type LintLevel = GraphVisualizationProjectConfigurationLintRuleEntry["level"];
-type LintLevelFilter = "all" | LintLevel;
 type DraftParseResult = Readonly<
     { config: ConfigJsonObject; error: null; ok: true } | { config: null; error: string; ok: false }
 >;
@@ -34,7 +40,6 @@ const FORMAT_BUILDER_OPTION_NAMES = new Set([
     "semi",
     "tabWidth"
 ]);
-const LINT_LEVELS: ReadonlyArray<LintLevel> = ["error", "warn", "off"];
 
 function serializeConfigurationValue(value: unknown): string {
     return JSON.stringify(value, null, 2);
@@ -115,7 +120,7 @@ function readRawLintRuleLevel(config: ConfigJsonObject, ruleId: string): LintLev
         return null;
     }
     const rawLevel = lintRules[ruleId];
-    return rawLevel === "error" || rawLevel === "warn" || rawLevel === "off" ? rawLevel : null;
+    return isLintLevel(rawLevel) ? rawLevel : null;
 }
 
 function readRawCodemodConfig(config: ConfigJsonObject, codemodId: string): unknown {
@@ -131,13 +136,7 @@ function readRawCodemodConfig(config: ConfigJsonObject, codemodId: string): unkn
 }
 
 function getLintLevelLabel(level: LintLevel): string {
-    if (level === "error") {
-        return "Error";
-    }
-    if (level === "warn") {
-        return "Warn";
-    }
-    return "Off";
+    return LINT_LEVEL_LABELS[level];
 }
 
 function renderBadge(label: string, tone: GmBadgeTone = "neutral") {
@@ -297,7 +296,7 @@ export class GmConfigPanel extends LightDomLitElement {
             return;
         }
         const nextValue = target.value;
-        if (nextValue !== "all" && nextValue !== "error" && nextValue !== "off" && nextValue !== "warn") {
+        if (!isLintLevelFilter(nextValue)) {
             return;
         }
         this.#lintLevelFilter = nextValue;
