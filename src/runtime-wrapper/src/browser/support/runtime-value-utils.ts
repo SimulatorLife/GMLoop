@@ -171,16 +171,20 @@ export function isArrayBufferLike(value: unknown): value is ArrayBuffer {
  * and `DataView` instances).
  *
  * @remarks
- * The previous implementation used `ArrayBuffer.isView(value)`, which fails
- * for views that originate in a different realm because `ArrayBuffer.isView`
- * consults the realm-local `ArrayBuffer` constructor. The duck-typed check
- * below inspects the documented view surface (`buffer`, `byteOffset`,
- * `byteLength`) so cross-realm views and view-shaped shims are accepted.
- * Mirrors `@gmloop/core`'s `Core.isArrayBufferViewLike` (which is not
- * re-exported through the public Core namespace but is exercised by
- * `Core.isBinaryDataLike`).
+ * `ArrayBuffer.isView(value)` inspects the internal `[[ViewedArrayBuffer]]`
+ * slot, so it accepts cross-realm typed arrays but rejects duck-typed
+ * substitutes such as `Proxy` wrappers or plain objects produced by browser
+ * shims and test doubles — even when those substitutes expose the
+ * documented view surface. The duck-typed check below inspects the public
+ * shape (`buffer`, `byteOffset`, `byteLength`) so any collaborator exposing
+ * the view contract is classified uniformly, regardless of realm, prototype
+ * chain, or shim. Exposes the same surface as `@gmloop/core`'s
+ * `Core.isArrayBufferViewLike` so the runtime wrapper and shared core
+ * utility classify view-shaped collaborators consistently. Pinning this
+ * symmetry is enforced by the `contract symmetry with Core probes` test in
+ * `runtime-value-utils.test.ts`.
  */
-function isArrayBufferViewLike(value: unknown): value is ArrayBufferView {
+export function isArrayBufferViewLike(value: unknown): value is ArrayBufferView {
     if (!isObjectLike(value)) {
         return false;
     }

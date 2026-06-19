@@ -3,6 +3,7 @@ export {
     cloneObjectEntries,
     getErrorMessage,
     isArrayBufferLike,
+    isArrayBufferViewLike,
     isBinaryDataLike,
     isErrorLike,
     isNonEmptyArray,

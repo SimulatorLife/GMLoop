@@ -2,7 +2,14 @@ import { resolveRuntimeErrorMessage } from "../runtime/error-normalization.js";
 import type { Logger } from "../runtime/logger.js";
 import { validatePatch } from "../runtime/patch-utils.js";
 import type { Patch, PatchApplicator, RuntimePatchError, TrySafeApplyResult } from "../runtime/types.js";
-import { isArrayBufferLike, isBinaryDataLike, isErrorLike, parseJsonWithContext, toArray } from "../support/index.js";
+import {
+    isArrayBufferLike,
+    isArrayBufferViewLike,
+    isBinaryDataLike,
+    isErrorLike,
+    parseJsonWithContext,
+    toArray
+} from "../support/index.js";
 import { getHighResolutionTime } from "../timing/index.js";
 import {
     createInitialConnectionMetrics,
@@ -628,7 +635,7 @@ function toUint8Array(payload: ArrayBuffer | ArrayBufferView): Uint8Array {
         return new Uint8Array(payload);
     }
 
-    if (ArrayBuffer.isView(payload)) {
+    if (isArrayBufferViewLike(payload)) {
         return new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength);
     }
 
