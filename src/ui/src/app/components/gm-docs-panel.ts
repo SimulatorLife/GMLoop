@@ -54,7 +54,14 @@ export class GmDocsPanel extends LightDomLitElement {
         return html`
             <gm-card class="catalog-card" .heading=${entry.displayName}>
                 <p>${entry.description}</p>
-                <code class="catalog-usage">${entry.usage}</code>
+                <div class="catalog-copy-row">
+                    <code class="catalog-usage">${entry.usage}</code>
+                    <gm-copy-button
+                        class="catalog-copy-button"
+                        .value=${entry.usage}
+                        label=${`Copy ${entry.displayName} usage`}
+                    ></gm-copy-button>
+                </div>
                 <ul class="catalog-list">
                     ${entry.arguments.map(
                         (argumentValue) =>
@@ -77,6 +84,14 @@ export class GmDocsPanel extends LightDomLitElement {
         return html`
             <gm-card class="catalog-card" .heading=${entry.commandDisplayName}>
                 <p>${entry.description}</p>
+                <div class="catalog-copy-row catalog-copy-row--compact">
+                    <code class="catalog-usage">${entry.toolName}</code>
+                    <gm-copy-button
+                        class="catalog-copy-button"
+                        .value=${entry.toolName}
+                        label=${`Copy ${entry.commandDisplayName} tool name`}
+                    ></gm-copy-button>
+                </div>
                 <ul class="catalog-list">
                     ${entry.fields.map(
                         (fieldValue) =>
@@ -93,6 +108,14 @@ export class GmDocsPanel extends LightDomLitElement {
         return html`
             <gm-card class="catalog-card" .heading=${entry.title}>
                 <p>${entry.description}</p>
+                <div class="catalog-copy-row catalog-copy-row--compact">
+                    <code class="catalog-usage">${entry.title}</code>
+                    <gm-copy-button
+                        class="catalog-copy-button"
+                        .value=${entry.title}
+                        label=${`Copy ${entry.title} identifier`}
+                    ></gm-copy-button>
+                </div>
                 <div class="config-badge-row">
                     ${entry.badges.map((badge) => html`<gm-badge .label=${badge}></gm-badge>`)}
                 </div>

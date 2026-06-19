@@ -150,3 +150,33 @@
     color: var(--gm-text-subdued);
     font-size: var(--gm-text-sm);
 }
+
+.catalog-copy-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--gm-space-sm);
+    align-items: start;
+    margin-bottom: var(--gm-space-md);
+}
+
+.catalog-copy-row--compact {
+    align-items: center;
+}
+
+.catalog-copy-row .catalog-usage {
+    margin-bottom: 0;
+}
+
+.catalog-copy-button {
+    justify-self: end;
+}
+
+@media (max-width: 520px) {
+    .catalog-copy-row {
+        grid-template-columns: 1fr;
+    }
+
+    .catalog-copy-button {
+        justify-self: stretch;
+    }
+}
