@@ -1522,7 +1522,3 @@ function promoteLengthdirHalfDifference(
     AST.markPreviousSiblingForBlankLine(root, assignment, context);
     AST.removeNodeFromAst(root, assignment);
 }
-
-// Re-export the entire public API of math-ast-mutation.ts so callers importing
-// from this module get all mutation helpers transparently.
-export * from "./math-ast-mutation.js";
