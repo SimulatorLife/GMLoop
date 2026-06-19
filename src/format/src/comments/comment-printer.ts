@@ -136,56 +136,7 @@ function shouldSuppressComment(comment, _options) {
         return true;
     }
 
-    if (isPlainLeadingCommentInsideDocBlock(comment, _options?.originalText)) {
-        return true;
-    }
-
     return false;
-}
-
-function isPlainLeadingCommentInsideDocBlock(comment, originalText) {
-    const followingNode = comment?.followingNode;
-    if (!Core.isNonEmptyArray(followingNode?.docComments) || followingNode.docComments.includes(comment)) {
-        return false;
-    }
-
-    if (typeof originalText !== "string") {
-        return false;
-    }
-
-    const rawText = resolvePlainLeadingCommentRawText(comment, originalText);
-    if (rawText === null) {
-        return false;
-    }
-
-    if (comment?.type === "CommentLine" && /^\s*\/\/\//u.test(rawText)) {
-        return false;
-    }
-
-    const commentStartIndex = getCommentStartIndex(comment);
-    const followingNodeStartIndex = Core.getNodeStartIndex(followingNode);
-    if (
-        !Number.isInteger(commentStartIndex) ||
-        typeof followingNodeStartIndex !== "number" ||
-        commentStartIndex >= followingNodeStartIndex
-    ) {
-        return false;
-    }
-
-    const docCommentStarts = followingNode.docComments
-        .map(getCommentStartIndex)
-        .filter((startIndex) => Number.isInteger(startIndex));
-    if (docCommentStarts.length === 0 || commentStartIndex < Math.min(...docCommentStarts)) {
-        return false;
-    }
-
-    if (!Array.isArray(followingNode.plainLeadingLines)) {
-        followingNode.plainLeadingLines = [];
-    }
-    if (!followingNode.plainLeadingLines.includes(rawText)) {
-        followingNode.plainLeadingLines.push(rawText);
-    }
-    return true;
 }
 
 function suppressFormattedComment(comment, options) {
@@ -776,10 +727,6 @@ function handleDetachedOwnLineComment(comment, _text, options /*, ast */) {
         return true;
     }
 
-    if (attachPlainLeadingCommentInsideDocBlock(comment, followingNode, options?.originalText)) {
-        return true;
-    }
-
     addLeadingComment(followingNode, comment);
     comment.leading = true;
     comment.trailing = false;
@@ -814,58 +761,6 @@ function attachTrailingDocLineInsideExistingDocBlock(comment, followingNode, ori
     comment._gmlAttachedDocComment = true;
     comment.printed = true;
     return true;
-}
-
-function attachPlainLeadingCommentInsideDocBlock(comment, followingNode, originalText) {
-    if (!Core.isNonEmptyArray(followingNode?.docComments) || typeof originalText !== "string") {
-        return false;
-    }
-
-    const commentStartIndex = getCommentStartIndex(comment);
-    const followingNodeStartIndex = Core.getNodeStartIndex(followingNode);
-    if (
-        !Number.isInteger(commentStartIndex) ||
-        typeof followingNodeStartIndex !== "number" ||
-        commentStartIndex >= followingNodeStartIndex
-    ) {
-        return false;
-    }
-
-    const docCommentStarts = followingNode.docComments
-        .map(getCommentStartIndex)
-        .filter((startIndex) => Number.isInteger(startIndex));
-    if (docCommentStarts.length === 0 || commentStartIndex < Math.min(...docCommentStarts)) {
-        return false;
-    }
-
-    const rawText = resolvePlainLeadingCommentRawText(comment, originalText);
-    if (rawText === null) {
-        return false;
-    }
-
-    if (!Array.isArray(followingNode.plainLeadingLines)) {
-        followingNode.plainLeadingLines = [];
-    }
-    followingNode.plainLeadingLines.push(rawText);
-    comment.printed = true;
-    return true;
-}
-
-function resolvePlainLeadingCommentRawText(comment, originalText) {
-    if (comment?.type === "CommentLine") {
-        return Core.getLineCommentRawText(comment, { originalText });
-    }
-
-    if (comment?.type !== "CommentBlock") {
-        return null;
-    }
-
-    const sourceSpan = resolveCommentSourceSpan(comment, originalText);
-    if (sourceSpan === null) {
-        return null;
-    }
-
-    return sourceSpan.originalText.slice(sourceSpan.startIndex, sourceSpan.endIndex + 1);
 }
 
 function handleDecorativeBlockCommentOwnLine(comment, _text, _options, ast) {
