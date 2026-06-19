@@ -69,10 +69,11 @@ function resolveAutoGameStatusChipStatus(model: GraphVisualizationUiModel): GmSt
 }
 
 function resolveAutoGameStatusSummary(model: GraphVisualizationUiModel): string {
-    if (model.autoGamePipeline?.statusText) {
-        return model.autoGamePipeline.statusText;
+    const pipeline = model.autoGamePipeline;
+    if (pipeline?.status === "running" && pipeline.statusText) {
+        return pipeline.statusText;
     }
-    return "Auto-game creation pipeline, AI skill readiness, MCP bridge status, and automation activity.";
+    return "Run autonomous game-development pipelines and one-time tasks using AI agent skills.";
 }
 
 function resolveLiveReloadStatusChipStatus(model: GraphVisualizationUiModel): GmStatusChipStatus {

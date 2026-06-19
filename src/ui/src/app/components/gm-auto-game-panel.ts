@@ -1,12 +1,10 @@
 import { html, nothing } from "lit";
-import { repeat } from "lit/directives/repeat.js";
 
 import type {
     GraphVisualizationAutoGameAgentPackResource,
     GraphVisualizationAutoGamePipelineAction,
     GraphVisualizationAutoGamePipelineEvent,
     GraphVisualizationAutoGamePipelineLlmOutput,
-    GraphVisualizationAutoGamePipelineSkill,
     GraphVisualizationAutoGamePipelineStatus
 } from "../../graph/types.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
@@ -24,6 +22,16 @@ import {
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 import type { GmBadgeTone } from "./primitives/gm-badge.js";
 import { renderProcessButtonContent } from "./primitives/gm-button.js";
+
+function getSkillDescriptionFromContent(content: string): string {
+    const match = content.match(/description:\s*(.+)/u);
+    return match ? match[1].trim().replaceAll(/^['"]|['"]$/g, "") : "";
+}
+
+function getSkillNameFromContent(content: string): string {
+    const match = content.match(/name:\s*(.+)/u);
+    return match ? match[1].trim().replaceAll(/^['"]|['"]$/g, "") : "";
+}
 
 /**
  * Pipeline statuses in which the Start action is enabled (anything that is
@@ -331,15 +339,34 @@ export class GmAutoGamePanel extends LightDomLitElement {
         `;
     }
 
-    #renderSkill(skill: GraphVisualizationAutoGamePipelineSkill) {
+    #renderUnifiedSkill(skill: {
+        name: string;
+        description: string;
+        enabled: boolean;
+        status: "available" | "unreadable" | "packaged";
+        sourcePath: string;
+        isProjectSkill: boolean;
+        diagnostic?: string | null;
+    }) {
+        const isSkillMutationPending = this.state?.autoGamePendingOperation !== null;
+        const isToggleDisabled = !this.#hasPipelineController() || isSkillMutationPending || !skill.isProjectSkill;
+
         return html`
             <li class=${`auto-game-skill-item auto-game-skill-item--${skill.status}`}>
                 <div class="auto-game-skill-item__header">
                     <div class="auto-game-skill-item__identity">
                         <strong>${skill.name}</strong>
                         <gm-badge
-                            .label=${skill.status === "available" ? "Detected" : "Unreadable"}
-                            .tone=${skill.status === "available" ? "success" : "error"}
+                            .label=${skill.status === "available"
+                                ? "Skill (Detected)"
+                                : skill.status === "unreadable"
+                                  ? "Skill (Unreadable)"
+                                  : "Skill (Packaged)"}
+                            .tone=${skill.status === "available"
+                                ? "success"
+                                : skill.status === "unreadable"
+                                  ? "error"
+                                  : "muted"}
                         ></gm-badge>
                     </div>
                     <label class="auto-game-skill-toggle">
@@ -348,7 +375,7 @@ export class GmAutoGamePanel extends LightDomLitElement {
                             type="checkbox"
                             role="switch"
                             .checked=${skill.enabled}
-                            ?disabled=${!this.#hasPipelineController() || this.state?.autoGamePendingOperation !== null}
+                            ?disabled=${isToggleDisabled}
                             aria-label=${`${skill.enabled ? "Exclude" : "Include"} ${skill.name} ${
                                 skill.enabled ? "from" : "in"
                             } Auto-Game`}
@@ -371,28 +398,30 @@ export class GmAutoGamePanel extends LightDomLitElement {
                     </label>
                 </div>
                 <p>${skill.description}</p>
-                ${skill.diagnostic === null
-                    ? nothing
-                    : html`<p class="auto-game-skill-item__diagnostic" role="status">${skill.diagnostic}</p>`}
+                ${skill.diagnostic
+                    ? html`<p class="auto-game-skill-item__diagnostic" role="status">${skill.diagnostic}</p>`
+                    : nothing}
                 <code class="auto-game-item-meta">${skill.sourcePath}</code>
             </li>
         `;
     }
 
-    #renderAgentPackResource(resource: GraphVisualizationAutoGameAgentPackResource) {
+    #renderUnifiedTemplate(template: GraphVisualizationAutoGameAgentPackResource) {
         return html`
-            <details class="auto-game-resource-preview">
-                <summary>
-                    <span>
-                        <strong>${resource.targetPath}</strong>
-                        <code>${resource.packagePath}</code>
-                    </span>
-                    <gm-badge .label=${resource.kind === "template" ? "Template" : "Skill"}></gm-badge>
-                </summary>
-                <pre
-                    aria-label=${`${resource.targetPath} packaged source preview`}
-                ><code>${resource.content}</code></pre>
-            </details>
+            <li class="auto-game-skill-item auto-game-template-item">
+                <details class="auto-game-resource-preview">
+                    <summary>
+                        <span>
+                            <strong>${template.targetPath}</strong>
+                            <code>${template.packagePath}</code>
+                        </span>
+                        <gm-badge .label=${"Template"} .tone=${"neutral"}></gm-badge>
+                    </summary>
+                    <pre
+                        aria-label=${`${template.targetPath} packaged source preview`}
+                    ><code>${template.content}</code></pre>
+                </details>
+            </li>
         `;
     }
 
@@ -430,15 +459,61 @@ export class GmAutoGamePanel extends LightDomLitElement {
         const isAgentPackPending = this.state?.autoGamePendingOperation === "initialize-agent-pack";
         const isSkillMutationPending = this.state?.autoGamePendingOperation !== null;
 
+        const templateItems = resources.filter((resource) => resource.kind === "template");
+        const skillsToDisplay: Array<{
+            name: string;
+            description: string;
+            enabled: boolean;
+            status: "available" | "unreadable" | "packaged";
+            sourcePath: string;
+            isProjectSkill: boolean;
+            diagnostic?: string | null;
+        }> = [];
+
+        // Add project-scoped skills
+        for (const skill of skills) {
+            skillsToDisplay.push({
+                name: skill.name,
+                description: skill.description,
+                enabled: skill.enabled,
+                status: skill.status,
+                sourcePath: skill.sourcePath,
+                isProjectSkill: true,
+                diagnostic: skill.diagnostic
+            });
+        }
+
+        // Add packaged skills that are not already present in project-scoped skills
+        const packagedSkills = resources.filter((resource) => resource.kind === "skill");
+        for (const resource of packagedSkills) {
+            const parts = resource.targetPath.split("/");
+            const name = getSkillNameFromContent(resource.content) || parts.at(-2) || "";
+            const exists = skillsToDisplay.some((s) => s.name === name);
+            if (!exists) {
+                const description = getSkillDescriptionFromContent(resource.content);
+                skillsToDisplay.push({
+                    name,
+                    description,
+                    enabled: false,
+                    status: "packaged",
+                    sourcePath: resource.targetPath,
+                    isProjectSkill: false,
+                    diagnostic: null
+                });
+            }
+        }
+
+        const totalItemsCount = templateItems.length + skillsToDisplay.length;
+
         return html`
             <article class="gm-card auto-game-card auto-game-skills-card">
                 <div class="auto-game-card__heading">
                     <div>
-                        <h3 class="gm-card__heading">AI Skills</h3>
-                        <p>Choose which skills discovered in this project are included in Auto-Game.</p>
+                        <h3 class="gm-card__heading">AI Skills & Guidance</h3>
+                        <p>Configure the skills and templates included in Auto-Game.</p>
                     </div>
-                    ${skills.length > 0
-                        ? html`<gm-badge .label=${`${skills.length} Project Skills`}></gm-badge>`
+                    ${totalItemsCount > 0
+                        ? html`<gm-badge .label=${`${totalItemsCount} Resources`}></gm-badge>`
                         : nothing}
                 </div>
                 ${shouldOfferAgentPackAction
@@ -496,50 +571,37 @@ export class GmAutoGamePanel extends LightDomLitElement {
                           Preserved project-modified agent-pack files: ${agentPack.conflicts.join(", ")}
                       </p>`
                     : nothing}
-                <details class="auto-game-skill-disclosure">
+                ${this.model?.loadedTarget === null && totalItemsCount > 0
+                    ? html`<p class="auto-game-skill-unloaded-notice">
+                          Open a GameMaker project to discover its Auto-Game skills.
+                      </p>`
+                    : nothing}
+                <details
+                    class="auto-game-skill-disclosure"
+                    ?open=${skillsToDisplay.length > 0 || templateItems.length > 0}
+                >
                     <summary>
                         <span>
-                            <strong>Project Skills</strong>
-                            <small>Review and choose the skills included in Auto-Game.</small>
+                            <strong>Packaged Skills & Guidance Templates</strong>
+                            <small>Review templates and choose which skills are active.</small>
                         </span>
-                        <gm-badge .label=${String(skills.length)}></gm-badge>
+                        <gm-badge .label=${String(totalItemsCount)}></gm-badge>
                     </summary>
-                    ${skills.length === 0
+                    ${totalItemsCount === 0
                         ? html`
                               <div class="gm-empty auto-game-skill-empty auto-game-skill-empty--skills">
                                   <p>
                                       ${this.model?.loadedTarget === null
                                           ? "Open a GameMaker project to discover its Auto-Game skills."
-                                          : "This project has no Auto-Game skills in .agents/skills."}
+                                          : "No Auto-Game skills or templates are available."}
                                   </p>
                               </div>
                           `
                         : html`<ul class="auto-game-skill-list">
-                              ${repeat(
-                                  skills,
-                                  (skill) => skill.id,
-                                  (skill) => this.#renderSkill(skill)
-                              )}
+                              ${skillsToDisplay.map((skill) => this.#renderUnifiedSkill(skill))}
+                              ${templateItems.map((template) => this.#renderUnifiedTemplate(template))}
                           </ul>`}
                 </details>
-                <section class="auto-game-resource-section" aria-labelledby="auto-game-resource-heading">
-                    <div class="auto-game-resource-section__heading">
-                        <div>
-                            <h4 id="auto-game-resource-heading">Agent-Pack Resources</h4>
-                            <p>Preview packaged sources before they are synchronized into the project.</p>
-                        </div>
-                        <gm-badge .label=${String(resources.length)}></gm-badge>
-                    </div>
-                    ${resources.length === 0
-                        ? html`<p class="gm-empty auto-game-empty--compact">No packaged resources are available.</p>`
-                        : html`<div class="auto-game-resource-list">
-                              ${repeat(
-                                  resources,
-                                  (resource) => resource.packagePath,
-                                  (resource) => this.#renderAgentPackResource(resource)
-                              )}
-                          </div>`}
-                </section>
             </article>
         `;
     }

@@ -139,7 +139,7 @@ void test("Auto-Game toolbar renders page status in the single shared page toolb
 
     assert.match(rendered, /class="toolbar-heading-row"/u);
     assert.match(rendered, /id="toolbar-heading"[\s\S]*Auto-Game/u);
-    assert.match(rendered, /id="toolbar-subheading"[\s\S]*Auto-game creation pipeline/u);
+    assert.match(rendered, /id="toolbar-subheading"[\s\S]*Run autonomous game-development/u);
     assert.match(rendered, /<gm-status-chip[\s\S]*\.status=not-running[\s\S]*><\/gm-status-chip>/u);
     assert.doesNotMatch(rendered, /mcp-runtime-status-chip/u);
 });

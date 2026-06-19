@@ -216,14 +216,13 @@ void test("GmAutoGamePanel renders host-provided pipeline details", () => {
     assert.match(rendered, /<gm-badge[\s\S]*\.label=Success[\s\S]*\.tone=success/u);
     assert.match(rendered, /<time[\s\S]*datetime=2026-01-01T00:00:00.000Z/u);
     assert.match(rendered, /game-design/u);
-    assert.match(rendered, /<details class="auto-game-skill-disclosure">/u);
-    assert.doesNotMatch(rendered, /<details class="auto-game-skill-disclosure" open/u);
-    assert.match(rendered, /<summary>[\s\S]*Project Skills[\s\S]*Review and choose the skills included/u);
+    assert.match(rendered, /class="auto-game-skill-disclosure"[\s\S]*?open/u);
+    assert.match(rendered, /<summary>[\s\S]*Packaged Skills & Guidance Templates/u);
     assert.match(rendered, /Exclude game-design from Auto-Game/u);
     assert.match(rendered, /class="auto-game-skill-toggle__track"/u);
-    assert.match(rendered, /\.label=Detected[\s\S]*\.tone=success/u);
+    assert.match(rendered, /\.label=Skill \(Detected\)[\s\S]*\.tone=success/u);
     assert.match(rendered, /Exclude project-notes from Auto-Game/u);
-    assert.match(rendered, /\.label=Unreadable[\s\S]*\.tone=error/u);
+    assert.match(rendered, /\.label=Skill \(Unreadable\)[\s\S]*\.tone=error/u);
     assert.match(rendered, /Could not parse SKILL\.md frontmatter\./u);
     assert.match(rendered, /auto-game-skill-item--unreadable/u);
     assert.match(rendered, /\.agents\/skills\/game-design\/SKILL\.md/u);
@@ -231,7 +230,6 @@ void test("GmAutoGamePanel renders host-provided pipeline details", () => {
     assert.match(rendered, /<gm-badge[\s\S]*\.label=thought/u);
     assert.match(rendered, /<time[\s\S]*datetime=2026-01-01T00:00:01.000Z/u);
     assert.match(rendered, /Keep the first playable slice small\./u);
-    assert.match(rendered, /Agent-Pack Resources/u);
     assert.match(rendered, /AGENTS\.md/u);
     assert.match(rendered, /templates\/project-agents\.md/u);
     assert.match(rendered, /AGENTS\.md packaged source preview/u);
@@ -275,7 +273,7 @@ void test("GmAutoGamePanel offers initialization for an empty loaded GameMaker p
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /This project has no Auto-Game skills in \.agents\/skills/u);
+    assert.match(rendered, /No Auto-Game skills or templates are available\./u);
     assert.match(rendered, /Initialize GMLoop's Auto-Game Agent Pack/u);
     assert.match(rendered, /\.label=Not Initialized[\s\S]*\.tone=warning/u);
     assert.match(rendered, /Update Project \.gitignore/u);
@@ -378,7 +376,7 @@ void test("GmAutoGamePanel presents detected skills without a receipt as incompl
     assert.match(rendered, /1 project skill was detected, but this project has no agent-pack installation record/u);
     assert.match(rendered, /Complete setup to synchronize GMLoop's packaged resources and record their version/u);
     assert.match(rendered, /Complete Auto-Game Setup/u);
-    assert.match(rendered, /\.label=Detected[\s\S]*\.tone=success/u);
+    assert.match(rendered, /\.label=Skill \(Detected\)[\s\S]*\.tone=success/u);
     assert.match(rendered, />Included</u);
     assert.match(rendered, /Exclude game-design from Auto-Game/u);
     assert.doesNotMatch(rendered, /\.label=Available/u);
@@ -726,7 +724,7 @@ void test("GmAutoGamePanel renders agent-pack resources even when no project is 
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /Agent-Pack Resources/u);
+    assert.match(rendered, /Packaged Skills & Guidance Templates/u);
     assert.match(rendered, /AGENTS\.md/u);
     assert.match(rendered, /templates\/project-agents\.md/u);
     assert.match(rendered, /# Autonomous Game Guidance/u);
