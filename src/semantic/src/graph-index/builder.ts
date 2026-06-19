@@ -6,6 +6,7 @@ import { performance } from "node:perf_hooks";
 import { Core } from "@gmloop/core";
 
 import { isProjectManifestPath } from "../project-index/constants.js";
+import type { ProjectIndexCoordinatorInstance } from "../project-index/coordinator.js";
 import {
     buildProjectIndex,
     createProjectIndexCoordinator,
@@ -2000,7 +2001,18 @@ function readGraphDatabaseIntegrityStatus(database: GraphDatabase): GraphDatabas
     });
 }
 
-async function getOrBuildProjectIndex(projectRoot: string): Promise<ProjectIndexSnapshot> {
+/**
+ * Scan the project tree and aggregate manifest and source mtimes used by the
+ * project index's change-detection descriptor.
+ *
+ * Single responsibility: produce the filesystem-state input the project index
+ * build pipeline consumes. Any change to how the project tree is scanned or how
+ * file mtimes are aggregated for invalidation lives here.
+ */
+async function collectProjectIndexMtimes(projectRoot: string): Promise<{
+    manifestMtimes: Record<string, number>;
+    sourceMtimes: Record<string, number>;
+}> {
     const { yyFiles, gmlFiles } = await scanProjectTree(projectRoot);
     const manifestMtimes: Record<string, number> = {};
     const sourceMtimes: Record<string, number> = {};
@@ -2014,11 +2026,22 @@ async function getOrBuildProjectIndex(projectRoot: string): Promise<ProjectIndex
             sourceMtimes[file.relativePath] = file.mtimeMs;
         }
     }
+    return { manifestMtimes, sourceMtimes };
+}
 
+/**
+ * Create a project index coordinator whose build path tolerates malformed GML
+ * files so a single syntax-invalid source does not fail the whole index build.
+ *
+ * Single responsibility: configure how the project index is built (parser
+ * wiring + coordinator build contract). Any change to the parser chosen for
+ * the build, or to how the coordinator hands work off to `buildProjectIndex`,
+ * lives here.
+ */
+function createTolerantProjectIndexCoordinator(): ProjectIndexCoordinatorInstance {
     const baseParser = getDefaultProjectIndexParser();
     const tolerantParser = createTolerantProjectIndexParser(baseParser);
-
-    const coordinator = createProjectIndexCoordinator({
+    return createProjectIndexCoordinator({
         buildIndex: async (resolvedRoot, fsFacade, options) => {
             return await buildProjectIndex(resolvedRoot, fsFacade, {
                 ...options,
@@ -2026,6 +2049,20 @@ async function getOrBuildProjectIndex(projectRoot: string): Promise<ProjectIndex
             });
         }
     });
+}
+
+/**
+ * Get-or-build a project index snapshot for graph projection.
+ *
+ * Single responsibility: orchestrate the cache-aware get-or-build flow used
+ * by graph projection. Input collection is delegated to
+ * `collectProjectIndexMtimes`, build configuration is delegated to
+ * `createTolerantProjectIndexCoordinator`, and this function owns only the
+ * three-step orchestration plus resource cleanup.
+ */
+async function getOrBuildProjectIndex(projectRoot: string): Promise<ProjectIndexSnapshot> {
+    const { manifestMtimes, sourceMtimes } = await collectProjectIndexMtimes(projectRoot);
+    const coordinator = createTolerantProjectIndexCoordinator();
     try {
         const descriptor = createProjectIndexDescriptor({
             projectRoot,
@@ -2477,6 +2514,8 @@ export function doctorGraphIndex(options: GraphIndexBuildOptions): GraphDoctorRe
 }
 
 export const __graphIndexBuilderTest__ = Object.freeze({
+    collectProjectIndexMtimes,
     createSafeFtsQuery,
+    createTolerantProjectIndexCoordinator,
     resolveScipSymbol
 });
