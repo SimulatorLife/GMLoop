@@ -20,6 +20,7 @@ export type CommanderHookListener = (...args: Array<unknown>) => unknown;
 
 export interface CommanderLifecycle {
     hook?: (event: string, listener: CommanderHookListener) => unknown;
+    on?: (event: string, listener: CommanderHookListener) => unknown;
 }
 
 export interface CommanderAddCommandOptions {
@@ -31,6 +32,7 @@ export type CommanderActionHandler = (...args: Array<unknown>) => unknown;
 export interface CommanderCommandHost extends CommanderUsageProvider, CommanderLifecycle {
     addCommand?: (command: CommanderCommandHost, options?: CommanderAddCommandOptions) => unknown;
     action?: (handler: CommanderActionHandler) => unknown;
+    outputHelp?: (contextOptions?: { error?: boolean }) => unknown;
 }
 
 /**

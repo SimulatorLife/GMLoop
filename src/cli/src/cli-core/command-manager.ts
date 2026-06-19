@@ -9,7 +9,7 @@ import {
     createCommanderProgramContract,
     isCommanderCommandLike
 } from "./commander-contract.js";
-import { isCommanderErrorLike } from "./commander-error-utils.js";
+import { isCommanderErrorLike, isCommanderHelpError, isCommanderHelpLikeError } from "./commander-error-utils.js";
 import type { CommanderCommandLike, CommanderExecutor } from "./commander-types.js";
 import { CliUsageError, handleCliError } from "./errors.js";
 
@@ -73,6 +73,7 @@ class CliCommandManager {
     private readonly _commandEntryLookup: WeakMap<CommanderCommandLike, CliCommandEntry> = new WeakMap();
     private _defaultCommandEntry: CliCommandEntry | null = null;
     private _activeCommand: CommanderCommandLike | null = null;
+    private _lastHelpedCommand: CommanderCommandLike | null = null;
     private readonly _defaultErrorHandler: CliCommandErrorHandler;
 
     constructor({ program, onUnhandledError }: CliCommandManagerOptions) {
@@ -102,6 +103,8 @@ class CliCommandManager {
         this._programContract.hook("postAction", () => {
             this._activeCommand = null;
         });
+
+        this._captureLastHelpedCommand();
     }
 
     registerDefaultCommand({ command, run, onError }: CliCommandRegistrationOptions): CliCommandEntry {
@@ -206,15 +209,66 @@ class CliCommandManager {
             return false;
         }
 
-        if (error.code === "commander.helpDisplayed" || error.code === "commander.version") {
+        if (error.code === "commander.version") {
             return true;
         }
 
-        const commandFromError = error.command ?? this._activeCommand ?? this._program;
+        if (isCommanderHelpLikeError(error)) {
+            this._displayPendingHelpForMissingSubcommand(error);
+            this._lastHelpedCommand = null;
+            return true;
+        }
+
+        const commanderError = error;
+        const commandFromError = commanderError.command ?? this._activeCommand ?? this._program;
         const resolvedCommand = this._resolveCommandFromCommanderError(commandFromError);
-        const usageError = this._createUsageErrorFromCommanderError(error, resolvedCommand);
+        const usageError = this._createUsageErrorFromCommanderError(commanderError, resolvedCommand);
         this._handleCommandError(usageError, resolvedCommand ?? this._program);
         return true;
+    }
+
+    /**
+     * Commander fires `beforeAllHelp` on the program (and each ancestor) just
+     * before it renders help for any command. We capture the innermost
+     * command so we can recover it later when the parser surfaces a
+     * `commander.help` error after auto-rendering help to stderr.
+     */
+    private _captureLastHelpedCommand(): void {
+        const program = this._program;
+        if (!program || typeof program.on !== "function") {
+            return;
+        }
+
+        program.on("beforeAllHelp", (rawContext: unknown) => {
+            const context = rawContext as { command?: CommanderCommandLike } | null;
+            if (context && isCommanderCommandLike(context.command)) {
+                this._lastHelpedCommand = context.command;
+            }
+        });
+    }
+
+    /**
+     * When the parser auto-renders help because the user omitted a
+     * required subcommand (Commander writes the help to stderr, which our
+     * output shim silences), mirror the help to stdout so the user actually
+     * sees it. The capture happens via `beforeAllHelp` because the
+     * Commander error does not retain a command reference for this code.
+     */
+    private _displayPendingHelpForMissingSubcommand(error: { code: string }): void {
+        if (!isCommanderHelpError(error)) {
+            return;
+        }
+
+        const helpedCommand = this._lastHelpedCommand;
+        if (!helpedCommand) {
+            return;
+        }
+
+        if (typeof helpedCommand.outputHelp !== "function") {
+            return;
+        }
+
+        helpedCommand.outputHelp();
     }
 
     private _handleCommandError(error: unknown, command: CommanderCommandLike): void {
