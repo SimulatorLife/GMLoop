@@ -1474,7 +1474,20 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             activeProjectConfigurationCatalog = await createGraphVisualizationProjectConfigurationCatalog(null, {
                 config: options.config
             });
-            activeAutoGamePipeline = null;
+            const [availableVersion, resources] = await Promise.all([
+                AgentPack.readAgentPackVersion(),
+                AgentPack.readAgentPackResourcePreviews()
+            ]);
+            activeAutoGamePipeline = createAutoGamePipelineModel(
+                [],
+                {
+                    availableVersion,
+                    conflicts: Object.freeze([]),
+                    installedVersion: null,
+                    status: "not-installed"
+                },
+                resources
+            );
             return;
         }
 

@@ -97,7 +97,7 @@ void test("agent pack initialization installs skills, project guidance, and a ve
         assert.ok(result.added.includes(".gitignore"));
         assert.equal(
             await readFile(path.join(fixture.projectRoot, ".gitignore"), "utf8"),
-            "# GMLoop generated files\n.gmloop/\n.gmcache/\nnode_modules/\n.playwright-mcp/\n.agents/skills/**/gmloop-*\n"
+            "# GMLoop generated files\n.gmloop/\n.gmcache/\nnode_modules/\n.playwright-mcp/\n.agents/skills/**/gmloop-*\ncache/\n"
         );
         const projectGuidance = await readFile(path.join(fixture.projectRoot, "AGENTS.md"), "utf8");
         assert.match(projectGuidance, /# Autonomous Game Development Guidance/u);

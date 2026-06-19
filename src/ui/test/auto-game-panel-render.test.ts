@@ -694,3 +694,41 @@ void test("GmAppShell rejects duplicate agent-pack initialization events while t
     await Promise.resolve();
     shell.disconnectedCallback();
 });
+
+void test("GmAutoGamePanel renders agent-pack resources even when no project is loaded", () => {
+    const panel = new TestableGmAutoGamePanel();
+    panel.model = createMockModel({
+        loadedTarget: null,
+        autoGamePipeline: {
+            actions: [],
+            agentPack: {
+                availableVersion: "0.0.1",
+                conflicts: [],
+                installedVersion: null,
+                resources: [
+                    {
+                        content: "# Autonomous Game Guidance",
+                        kind: "template",
+                        packagePath: "templates/project-agents.md",
+                        targetPath: "AGENTS.md"
+                    }
+                ],
+                status: "not-installed"
+            },
+            events: [],
+            llmOutputs: [],
+            skills: [],
+            status: "idle",
+            statusText: null
+        }
+    });
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /Agent-Pack Resources/u);
+    assert.match(rendered, /AGENTS\.md/u);
+    assert.match(rendered, /templates\/project-agents\.md/u);
+    assert.match(rendered, /# Autonomous Game Guidance/u);
+    assert.match(rendered, /Open a GameMaker project to discover its Auto-Game skills\./u);
+});
