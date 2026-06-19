@@ -26,4 +26,5 @@ jobs:
         per-test fixtures, mocked-APIs, better teardown, explicit waits, or fake timers, and
         include evidence (failing reproduction or reasoning) that the old test
         flaked. Keep the scope tight by focusing on one flaky scenario and
-        ensuring the suite now runs reliably.
+        ensuring the suite now runs reliably. IMPORTANT: timeouts on tests to enforce maximum run durations
+        and prevent never-ending tests are *desired* and should be preserved and added where applicable/possible.
