@@ -886,3 +886,75 @@ export function shouldReportUnsafe(context: Rule.RuleContext): boolean {
 export function unwrapParenthesizedExpression(node: unknown): unknown {
     return Core.unwrapParenthesizedExpression(node);
 }
+
+/**
+ * Builds a GML rule that requires a paired enable call after the final disable
+ * call to a toggleable GPU state API, inserting the enable call as a trailing
+ * line when the source is missing it.
+ *
+ * This consolidates the "find last disable → check for enable after it →
+ * append reset" body that was previously copy-pasted into the
+ * `gml/require-ztest-enabled-reset` and `gml/require-zwrite-enabled-reset`
+ * factories. Each factory now declares only the function name, the
+ * corresponding disable/enable patterns, and the reset line — the matching,
+ * scan, and fix logic lives in this single helper.
+ *
+ * `disablePattern` and `enablePattern` must use the `g` flag so the helper's
+ * `lastIndex` reset on `enablePattern` is honored by the subsequent `exec`
+ * call. The helper rewrites `enablePattern.lastIndex` between uses; callers
+ * that retain a reference to the regex across rules are responsible for
+ * ensuring each call site uses its own regex instance (the two reset rule
+ * files already satisfy this by defining the patterns locally).
+ *
+ * @param definition Rule metadata describing the diagnostic message id.
+ * @param disablePattern Regex matching the disable call to scan for.
+ * @param enablePattern Regex matching the paired enable call.
+ * @param resetLine Statement appended at the end of the file when the enable
+ *   call is missing after the last disable call.
+ * @param messageText Diagnostic message body shown to the user.
+ * @returns A `Rule.RuleModule` that reports a single diagnostic on the last
+ *   disable call when no matching enable call follows it and offers an
+ *   autofix that appends the reset line at end-of-file.
+ */
+export function createRequireEnabledResetRule(
+    definition: GmlRuleDefinition,
+    disablePattern: RegExp,
+    enablePattern: RegExp,
+    resetLine: string,
+    messageText: string
+): Rule.RuleModule {
+    return Object.freeze({
+        meta: createMeta(definition, { messageText }),
+        create(context) {
+            return Object.freeze({
+                Program() {
+                    const sourceText = context.sourceCode.text;
+                    const disableMatches = [...sourceText.matchAll(disablePattern)];
+                    const lastDisable = disableMatches.at(-1);
+                    if (!lastDisable) {
+                        return;
+                    }
+
+                    const lastDisableIndex = lastDisable.index ?? 0;
+                    const lastDisableEnd = lastDisableIndex + lastDisable[0].length;
+                    enablePattern.lastIndex = lastDisableEnd;
+                    if (enablePattern.exec(sourceText) !== null) {
+                        return;
+                    }
+
+                    context.report({
+                        loc: resolveLocFromIndex(context, sourceText, lastDisableIndex),
+                        messageId: definition.messageId,
+                        fix: (fixer) => {
+                            const prefix = sourceText.endsWith("\n") ? "" : "\n";
+                            return fixer.insertTextAfterRange(
+                                [sourceText.length, sourceText.length],
+                                `${prefix}${resetLine}\n`
+                            );
+                        }
+                    });
+                }
+            });
+        }
+    });
+}
