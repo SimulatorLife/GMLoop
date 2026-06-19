@@ -1,7 +1,11 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+import { Core } from "@gmloop/core";
+
 import { isRecord } from "../../shared/error-guards.js";
+
+const { parseJsonWithContext, stringifyJsonForFile } = Core;
 
 type RunnerLifecycleState = "paused" | "running" | "stopped";
 
@@ -49,6 +53,17 @@ function resolveRunnerStatePath(projectRoot: string): string {
     return path.join(projectRoot, ".gmloop", "runtime", "runner-state.json");
 }
 
+/**
+ * Compare two {@link RunnerLogEntry} values for stable ordering.
+ *
+ * Logs are sorted first by ascending timestamp and then by message as a
+ * deterministic tie-breaker so logs emitted in the same millisecond keep a
+ * predictable sequence across reads and writes.
+ */
+function compareRunnerLogEntries(left: RunnerLogEntry, right: RunnerLogEntry): number {
+    return left.timestamp - right.timestamp || left.message.localeCompare(right.message);
+}
+
 function normalizeRunnerState(value: unknown): PersistedRunnerState {
     if (!isRecord(value)) {
         return DEFAULT_PERSISTED_STATE;
@@ -80,7 +95,7 @@ function normalizeRunnerState(value: unknown): PersistedRunnerState {
         );
     }
 
-    logs.sort((left, right) => left.timestamp - right.timestamp || left.message.localeCompare(right.message));
+    logs.sort(compareRunnerLogEntries);
 
     return Object.freeze({
         lastUpdatedAt,
@@ -92,9 +107,14 @@ function normalizeRunnerState(value: unknown): PersistedRunnerState {
 
 function readPersistedRunnerState(projectRoot: string): PersistedRunnerState {
     const statePath = resolveRunnerStatePath(projectRoot);
+    let raw: string;
     try {
-        const raw = readFileSync(statePath, "utf8");
-        return normalizeRunnerState(JSON.parse(raw) as unknown);
+        raw = readFileSync(statePath, "utf8");
+    } catch {
+        return DEFAULT_PERSISTED_STATE;
+    }
+    try {
+        return normalizeRunnerState(parseJsonWithContext(raw, { source: statePath, description: "runner state" }));
     } catch {
         return DEFAULT_PERSISTED_STATE;
     }
@@ -103,20 +123,11 @@ function readPersistedRunnerState(projectRoot: string): PersistedRunnerState {
 function writePersistedRunnerState(projectRoot: string, state: PersistedRunnerState): void {
     const statePath = resolveRunnerStatePath(projectRoot);
     mkdirSync(path.dirname(statePath), { recursive: true });
-    writeFileSync(
-        statePath,
-        `${JSON.stringify(
-            {
-                ...state,
-                logs: [...state.logs].sort(
-                    (left, right) => left.timestamp - right.timestamp || left.message.localeCompare(right.message)
-                )
-            },
-            null,
-            2
-        )}\n`,
-        "utf8"
-    );
+    const payload = {
+        ...state,
+        logs: [...state.logs].sort(compareRunnerLogEntries)
+    };
+    writeFileSync(statePath, stringifyJsonForFile(payload, { space: 2 }), "utf8");
 }
 
 function createRunnerStateStore(): RunnerStateStore {
