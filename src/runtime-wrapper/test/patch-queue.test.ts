@@ -281,6 +281,62 @@ void test("deduplicatePatchesById keeps only the newest patch for duplicate ids"
     assert.deepStrictEqual(result.patches, [uniquePatch, newestVersion]);
 });
 
+void test("patch queue coalesces queued duplicate ids before flushing", async () => {
+    const batchCalls: Array<Array<unknown>> = [];
+
+    const { client, ws, restoreRuntimeGlobals } = await createConnectedPatchQueueClient({
+        patchQueue: {
+            flushIntervalMs: 1000,
+            maxQueueSize: 10
+        },
+        wrapperMutator: (wrapper) => {
+            const originalApplyPatchBatch = wrapper.applyPatchBatch.bind(wrapper);
+            wrapper.applyPatchBatch = (patches: Array<unknown>) => {
+                batchCalls.push(patches);
+                return originalApplyPatchBatch(patches);
+            };
+            return wrapper;
+        }
+    });
+
+    try {
+        sendScriptPatch(ws, "gml/script/replace_me", "return 1;");
+        sendScriptPatch(ws, "gml/script/keep_me", "return 2;");
+        sendScriptPatch(ws, "gml/script/replace_me", "return 99;");
+
+        const queuedMetrics = await waitForQueueMetrics(
+            client,
+            "queue to coalesce duplicate patch before flush",
+            (snapshot) => snapshot.totalQueued === 3 && snapshot.totalDeduplicated === 1
+        );
+        assert.strictEqual(queuedMetrics.maxQueueDepth, 2);
+        assert.strictEqual(queuedMetrics.flushCount, 0);
+
+        const flushedCount = client.flushPatchQueue();
+        assert.strictEqual(flushedCount, 2);
+
+        assert.strictEqual(batchCalls.length, 1);
+        assert.deepStrictEqual(
+            batchCalls[0].map((patch) => {
+                assert.ok(typeof patch === "object" && patch !== null && "id" in patch);
+                return patch.id;
+            }),
+            ["gml/script/keep_me", "gml/script/replace_me"]
+        );
+
+        const flushedMetrics = await waitForQueueMetrics(
+            client,
+            "queue to flush coalesced duplicate patch",
+            (snapshot) => snapshot.totalFlushed === 2 && snapshot.flushCount === 1,
+            150
+        );
+        assert.strictEqual(flushedMetrics.totalDeduplicated, 1);
+    } finally {
+        client.disconnect();
+        restoreRuntimeGlobals();
+    }
+});
+
 void test("patch queue metrics account for partial batch failures", async () => {
     const { client, ws, restoreRuntimeGlobals } = await createConnectedPatchQueueClient({
         patchQueue: {
@@ -1029,10 +1085,10 @@ void test("patch queue clears flush timer on disconnect", async () => {
     }
 });
 
-void test("patch queue deduplicates patches with the same ID on flush", async () => {
+void test("patch queue deduplicates patches with the same ID before flush", async () => {
     // Simulates rapid saves: the same script is patched three times within the
-    // flush window. Only the last version should be applied; earlier occurrences
-    // are counted in totalDeduplicated and still reflected in totalFlushed.
+    // flush window. Only the last version remains queued; earlier occurrences
+    // are counted in totalDeduplicated without waiting for the flush path.
     let batchCallCount = 0;
     const batchArgs: Array<Array<unknown>> = [];
 
@@ -1060,8 +1116,8 @@ void test("patch queue deduplicates patches with the same ID on flush", async ()
 
         await waitForQueueMetrics(
             client,
-            "queue to contain three duplicate patches",
-            (snapshot) => snapshot.totalQueued === 3
+            "queue to coalesce three duplicate patches",
+            (snapshot) => snapshot.totalQueued === 3 && snapshot.totalDeduplicated === 2
         );
 
         const flushed = client.flushPatchQueue();
@@ -1073,11 +1129,11 @@ void test("patch queue deduplicates patches with the same ID on flush", async ()
             300
         );
 
-        // flushPatchQueue returns the original queue size (before deduplication).
-        assert.strictEqual(flushed, 3);
+        // flushPatchQueue returns the compacted queue size after enqueue-time deduplication.
+        assert.strictEqual(flushed, 1);
 
-        // totalFlushed counts all patches removed from the queue (including deduped).
-        assert.strictEqual(metrics.totalFlushed, 3);
+        // totalFlushed counts patches removed from the compacted queue.
+        assert.strictEqual(metrics.totalFlushed, 1);
 
         // Two of the three patches were deduplicated (only the last one applied).
         assert.strictEqual(metrics.totalDeduplicated, 2);
@@ -1106,7 +1162,11 @@ void test("patch queue deduplicates preserving the latest body of each patch", a
         ws.simulateMessage(JSON.stringify({ kind: "script", id: "script:versioned", js_body: "return 'v2';" }));
         ws.simulateMessage(JSON.stringify({ kind: "script", id: "script:versioned", js_body: "return 'v3';" }));
 
-        await waitForQueueMetrics(client, "queue to capture three patches", (snapshot) => snapshot.totalQueued === 3);
+        await waitForQueueMetrics(
+            client,
+            "queue to coalesce three patches",
+            (snapshot) => snapshot.totalQueued === 3 && snapshot.totalDeduplicated === 2
+        );
 
         client.flushPatchQueue();
 
