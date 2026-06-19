@@ -149,6 +149,20 @@ void test("GmAutoGamePanel renders host-provided pipeline details", () => {
                 availableVersion: "0.0.1",
                 conflicts: [],
                 installedVersion: "0.0.1",
+                resources: [
+                    {
+                        content: "# Autonomous Game Development Guidance\n\nIterate on a playable outcome.\n",
+                        kind: "template",
+                        packagePath: "templates/project-agents.md",
+                        targetPath: "AGENTS.md"
+                    },
+                    {
+                        content: "---\nname: gmloop-game-development-loop\n---\n",
+                        kind: "skill",
+                        packagePath: "skills/gmloop-game-development-loop/SKILL.md",
+                        targetPath: ".agents/skills/gmloop-game-development-loop/SKILL.md"
+                    }
+                ],
                 status: "current"
             },
             events: [
@@ -202,6 +216,9 @@ void test("GmAutoGamePanel renders host-provided pipeline details", () => {
     assert.match(rendered, /<gm-badge[\s\S]*\.label=Success[\s\S]*\.tone=success/u);
     assert.match(rendered, /<time[\s\S]*datetime=2026-01-01T00:00:00.000Z/u);
     assert.match(rendered, /game-design/u);
+    assert.match(rendered, /<details class="auto-game-skill-disclosure">/u);
+    assert.doesNotMatch(rendered, /<details class="auto-game-skill-disclosure" open/u);
+    assert.match(rendered, /<summary>[\s\S]*Project Skills[\s\S]*Review and choose the skills included/u);
     assert.match(rendered, /Exclude game-design from Auto-Game/u);
     assert.match(rendered, /class="auto-game-skill-toggle__track"/u);
     assert.match(rendered, /\.label=Detected[\s\S]*\.tone=success/u);
@@ -214,6 +231,12 @@ void test("GmAutoGamePanel renders host-provided pipeline details", () => {
     assert.match(rendered, /<gm-badge[\s\S]*\.label=thought/u);
     assert.match(rendered, /<time[\s\S]*datetime=2026-01-01T00:00:01.000Z/u);
     assert.match(rendered, /Keep the first playable slice small\./u);
+    assert.match(rendered, /Agent-Pack Resources/u);
+    assert.match(rendered, /AGENTS\.md/u);
+    assert.match(rendered, /templates\/project-agents\.md/u);
+    assert.match(rendered, /AGENTS\.md packaged source preview/u);
+    assert.match(rendered, /# Autonomous Game Development Guidance/u);
+    assert.match(rendered, /\.agents\/skills\/gmloop-game-development-loop\/SKILL\.md/u);
     assert.match(rendered, /id="start-auto-game-pipeline"[\s\S]*\?disabled=true/u);
     assert.match(rendered, /id="pause-auto-game-pipeline"[\s\S]*\?disabled=false/u);
     assert.match(rendered, /id="stop-auto-game-pipeline"[\s\S]*\?disabled=false/u);
@@ -229,6 +252,7 @@ void test("GmAutoGamePanel offers initialization for an empty loaded GameMaker p
                 availableVersion: "0.0.1",
                 conflicts: [],
                 installedVersion: null,
+                resources: [],
                 status: "not-installed"
             },
             events: [],
@@ -256,6 +280,58 @@ void test("GmAutoGamePanel offers initialization for an empty loaded GameMaker p
     assert.match(rendered, /id="initialize-auto-game-agent-pack"[\s\S]*\?disabled=false/u);
 });
 
+void test("GmAutoGamePanel disables initialization and shows the shared spinner while it is pending", () => {
+    const panel = new TestableGmAutoGamePanel();
+    panel.model = createMockModel({
+        autoGamePipeline: {
+            actions: [],
+            agentPack: {
+                availableVersion: "0.0.2",
+                conflicts: [],
+                installedVersion: null,
+                resources: [],
+                status: "not-installed"
+            },
+            events: [],
+            llmOutputs: [],
+            skills: [],
+            status: "idle",
+            statusText: "No project-scoped Auto-Game skills are installed."
+        },
+        loadedTarget: {
+            activePath: "/tmp/test/Test.yyp",
+            projectRoot: "/tmp/test",
+            selectedPaths: ["/tmp/test/Test.yyp"],
+            source: "cli-path"
+        }
+    });
+    panel.state = createMockState({ autoGamePendingOperation: "initialize-agent-pack" });
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /id="initialize-auto-game-agent-pack"[\s\S]*\?disabled=true/u);
+    assert.match(rendered, /id="initialize-auto-game-agent-pack"[\s\S]*aria-busy=true/u);
+    assert.match(rendered, /id="initialize-auto-game-agent-pack"[\s\S]*class="button-spinner"/u);
+    assert.match(rendered, /id="initialize-auto-game-agent-pack"[\s\S]*Initialize Auto-Game Agent Pack/u);
+    assert.match(rendered, /type="checkbox"[\s\S]*\?disabled=true/u);
+});
+
+void test("GmAutoGamePanel disables concurrent controls and preserves lifecycle labels while pending", () => {
+    const panel = new TestableGmAutoGamePanel();
+    panel.model = createMockModel();
+    panel.state = createMockState({ autoGamePendingOperation: "pipeline-start" });
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /id="start-auto-game-pipeline"[\s\S]*\?disabled=true/u);
+    assert.match(rendered, /id="start-auto-game-pipeline"[\s\S]*aria-busy=true/u);
+    assert.match(rendered, /id="start-auto-game-pipeline"[\s\S]*class="button-spinner"/u);
+    assert.match(rendered, /id="start-auto-game-pipeline"[\s\S]*Start/u);
+    assert.match(rendered, /id="pause-auto-game-pipeline"[\s\S]*\?disabled=true/u);
+    assert.match(rendered, /id="stop-auto-game-pipeline"[\s\S]*\?disabled=true/u);
+    assert.match(rendered, /id="run-auto-game-task"[\s\S]*\?disabled=true/u);
+});
+
 void test("GmAutoGamePanel presents detected skills without a receipt as incomplete setup", () => {
     const panel = new TestableGmAutoGamePanel();
     panel.model = createMockModel({
@@ -265,6 +341,7 @@ void test("GmAutoGamePanel presents detected skills without a receipt as incompl
                 availableVersion: "0.0.1",
                 conflicts: [],
                 installedVersion: null,
+                resources: [],
                 status: "not-installed"
             },
             events: [],
@@ -315,6 +392,7 @@ void test("GmAutoGamePanel offers an agent-pack update while retaining discovere
                 availableVersion: "0.0.2",
                 conflicts: [],
                 installedVersion: "0.0.1",
+                resources: [],
                 status: "update-available"
             },
             events: [],
@@ -358,6 +436,7 @@ void test("GmAutoGamePanel presents preserved agent-pack conflicts as an actiona
                 availableVersion: "0.0.2",
                 conflicts: ["skills/game-design/SKILL.md"],
                 installedVersion: "0.0.1",
+                resources: [],
                 status: "update-available"
             },
             events: [],
@@ -423,6 +502,7 @@ void test("GmAppShell routes auto-game lifecycle events through the host callbac
                     availableVersion: "0.0.1",
                     conflicts: [],
                     installedVersion: "0.0.1",
+                    resources: [],
                     status: "current"
                 },
                 events: [],
@@ -514,6 +594,7 @@ void test("GmAppShell routes agent-pack initialization and skill toggles through
             detail: { includeGitIgnore: false }
         })
     );
+    await Promise.resolve();
     shell.dispatchEvent(
         new CustomEvent(GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED, {
             bubbles: true,
@@ -526,4 +607,52 @@ void test("GmAppShell routes agent-pack initialization and skill toggles through
     assert.equal(initialized, 1);
     assert.deepEqual(initializationOptions, { includeGitIgnore: false });
     assert.deepEqual(toggled, { enabled: false, name: "game-design" });
+});
+
+void test("GmAppShell rejects duplicate agent-pack initialization events while the first is pending", async () => {
+    const shell = new TestableGmAppShell();
+    let resolveInitialization = (): void => {
+        throw new Error("Initialization promise resolver was not assigned.");
+    };
+    const initialization = new Promise<void>((resolve) => {
+        resolveInitialization = resolve;
+    });
+    let initializationCount = 0;
+    shell.model = createMockModel({
+        loadedTarget: {
+            activePath: "/tmp/test/Test.yyp",
+            projectRoot: "/tmp/test",
+            selectedPaths: ["/tmp/test/Test.yyp"],
+            source: "cli-path"
+        }
+    });
+    shell.callbacks = {
+        onInitializeAutoGameAgentPack: () => {
+            initializationCount += 1;
+            return initialization;
+        },
+        onOpenProject: () => {},
+        onRegenerate: () => {},
+        onRunFix: () => ({ logLines: [], status: "success" }),
+        onSaveConfig: () => {},
+        onStartLiveReload: () => null,
+        onStopLiveReload: () => {}
+    };
+
+    shell.connectedCallback();
+    const initializeEvent = () =>
+        new CustomEvent(GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK, {
+            bubbles: true,
+            detail: { includeGitIgnore: true }
+        });
+    shell.dispatchEvent(initializeEvent());
+    shell.dispatchEvent(initializeEvent());
+    await Promise.resolve();
+
+    assert.equal(initializationCount, 1);
+
+    resolveInitialization();
+    await initialization;
+    await Promise.resolve();
+    shell.disconnectedCallback();
 });

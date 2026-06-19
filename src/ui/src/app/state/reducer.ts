@@ -14,9 +14,11 @@ export function createInitialGraphVisualizationUiState(): GraphVisualizationUiSt
         fixLogLines: [],
         fixStatus: "idle",
         fixWorkflow: null,
+        autoGamePendingOperation: null,
         isConfigSavePending: false,
         isFixPending: false,
         isLiveReloadStartPending: false,
+        isLiveReloadStopPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",
@@ -40,8 +42,10 @@ function computePendingActionCount(state: GraphVisualizationUiState): number {
     if (state.isFixPending) count++;
     if (state.isConfigSavePending) count++;
     if (state.isLiveReloadStartPending) count++;
+    if (state.isLiveReloadStopPending) count++;
     if (state.isOpenProjectPending) count++;
     if (state.isRegeneratePending) count++;
+    if (state.autoGamePendingOperation !== null) count++;
     return count;
 }
 
@@ -160,6 +164,21 @@ export function reduceGraphVisualizationUiState(
                 ...state,
                 isLiveReloadStartPending: action.pending,
                 pendingActionCount: computePendingActionCount({ ...state, isLiveReloadStartPending: action.pending })
+            };
+        }
+        case "set-live-reload-stop-pending": {
+            return {
+                ...state,
+                isLiveReloadStopPending: action.pending,
+                pendingActionCount: computePendingActionCount({ ...state, isLiveReloadStopPending: action.pending })
+            };
+        }
+        case "set-auto-game-operation-pending": {
+            const autoGamePendingOperation = action.pending ? action.operation : null;
+            return {
+                ...state,
+                autoGamePendingOperation,
+                pendingActionCount: computePendingActionCount({ ...state, autoGamePendingOperation })
             };
         }
         case "set-live-reload-error": {

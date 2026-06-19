@@ -66,7 +66,8 @@
 .auto-game-action-list,
 .auto-game-feed-list,
 .auto-game-skill-list,
-.auto-game-llm-list {
+.auto-game-llm-list,
+.auto-game-resource-list {
   display: flex;
   flex-direction: column;
 }
@@ -79,7 +80,8 @@
 .auto-game-action-list,
 .auto-game-feed-list,
 .auto-game-skill-list,
-.auto-game-llm-list {
+.auto-game-llm-list,
+.auto-game-resource-list {
   gap: var(--gm-space-sm);
 }
 
@@ -90,6 +92,113 @@
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.auto-game-skill-disclosure,
+.auto-game-resource-preview {
+  border: 1px solid var(--gm-border-subtle);
+  border-radius: var(--gm-radius-md);
+  background: var(--gm-bg-subtle);
+}
+
+.auto-game-skill-disclosure > summary,
+.auto-game-resource-preview > summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--gm-space-md);
+  padding: var(--gm-space-md);
+  color: var(--gm-text);
+  cursor: pointer;
+}
+
+.auto-game-skill-disclosure > summary::before,
+.auto-game-resource-preview > summary::before {
+  content: ">";
+  color: var(--gm-text-subdued);
+  font-family: var(--gm-font-mono);
+  transition: transform var(--gm-transition);
+}
+
+.auto-game-skill-disclosure[open] > summary::before,
+.auto-game-resource-preview[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.auto-game-skill-disclosure > summary:hover,
+.auto-game-resource-preview > summary:hover {
+  background: var(--gm-bg-muted);
+}
+
+.auto-game-skill-disclosure > summary:focus-visible,
+.auto-game-resource-preview > summary:focus-visible {
+  outline: none;
+  box-shadow: var(--gm-shadow-focus);
+}
+
+.auto-game-skill-disclosure > summary > span,
+.auto-game-resource-preview > summary > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--gm-space-xs);
+}
+
+.auto-game-skill-disclosure > summary small,
+.auto-game-resource-preview > summary code {
+  color: var(--gm-text-subdued);
+  font-size: var(--gm-text-xs);
+  line-height: var(--gm-leading-normal);
+  overflow-wrap: anywhere;
+}
+
+.auto-game-skill-disclosure > .auto-game-skill-list,
+.auto-game-skill-disclosure > .auto-game-skill-empty {
+  margin: 0;
+  padding: 0 var(--gm-space-md) var(--gm-space-md);
+}
+
+.auto-game-resource-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-md);
+  margin-top: var(--gm-space-xl);
+}
+
+.auto-game-resource-section__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--gm-space-md);
+}
+
+.auto-game-resource-section__heading h4,
+.auto-game-resource-section__heading p {
+  margin: 0;
+}
+
+.auto-game-resource-section__heading h4 {
+  color: var(--gm-text);
+  font-size: var(--gm-text-sm);
+}
+
+.auto-game-resource-section__heading p {
+  margin-top: var(--gm-space-xs);
+  color: var(--gm-text-subdued);
+  font-size: var(--gm-text-xs);
+  line-height: var(--gm-leading-normal);
+}
+
+.auto-game-resource-preview pre {
+  margin: 0;
+  padding: var(--gm-space-md);
+  border-top: 1px solid var(--gm-border-subtle);
+  color: var(--gm-text-secondary);
+  font-family: var(--gm-font-mono);
+  font-size: var(--gm-text-xs);
+  line-height: var(--gm-leading-normal);
+  overflow: auto;
+  white-space: pre-wrap;
 }
 
 .auto-game-lifecycle-controls {
@@ -272,7 +381,10 @@
   background: var(--gm-success-surface);
 }
 
-.auto-game-skill-toggle input:checked + .auto-game-skill-toggle__track .auto-game-skill-toggle__thumb {
+.auto-game-skill-toggle
+  input:checked
+  + .auto-game-skill-toggle__track
+  .auto-game-skill-toggle__thumb {
   background: var(--gm-success-dot);
   transform: translateX(calc(var(--gm-height-xl) - var(--gm-space-xl)));
 }
@@ -406,7 +518,8 @@
 @media (max-width: 560px) {
   .auto-game-card__heading,
   .auto-game-skill-item__header,
-  .auto-game-field-heading {
+  .auto-game-field-heading,
+  .auto-game-resource-section__heading {
     align-items: flex-start;
     flex-direction: column;
   }

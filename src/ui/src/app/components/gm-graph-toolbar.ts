@@ -36,6 +36,7 @@ import {
     type ToolbarKeyboardShortcutAction
 } from "./keyboard-shortcut-policy.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
+import { renderProcessButtonContent } from "./primitives/gm-button.js";
 import type { GmStatusChipStatus } from "./primitives/gm-status-chip.js";
 
 const CLASS_BTN_CHIP_ACTIVE = "gm-btn--chip active";
@@ -581,15 +582,14 @@ export class GmGraphToolbar extends LightDomLitElement {
         const isPending = this.state?.isFixPending === true;
         const activeWorkflow = isPending ? (this.state?.fixWorkflow ?? null) : null;
         const workflows = [
-            { id: "run-fix", label: "Fix", pendingLabel: "Fixing...", workflow: "fix" },
-            { id: "run-format", label: "Format", pendingLabel: "Formatting...", workflow: "format" },
+            { id: "run-fix", label: "Fix", workflow: "fix" },
+            { id: "run-format", label: "Format", workflow: "format" },
             {
                 id: "run-refactor",
                 label: "Refactor / Codemods",
-                pendingLabel: "Refactoring...",
                 workflow: "refactor"
             },
-            { id: "run-lint", label: "Lint", pendingLabel: "Linting...", workflow: "lint" }
+            { id: "run-lint", label: "Lint", workflow: "lint" }
         ] as const;
 
         return html`
@@ -601,16 +601,13 @@ export class GmGraphToolbar extends LightDomLitElement {
                             type="button"
                             class=${index === 0 ? "gm-btn gm-btn--primary" : "gm-btn"}
                             ?disabled=${isPending}
+                            aria-busy=${activeWorkflow === entry.workflow ? "true" : "false"}
                             @click=${() => this.#emitFix(entry.workflow)}
                         >
-                            <span class="button-content">
-                                ${activeWorkflow === entry.workflow
-                                    ? html`<span class="button-spinner" aria-hidden="true"></span>`
-                                    : null}
-                                <span class="button-label"
-                                    >${activeWorkflow === entry.workflow ? entry.pendingLabel : entry.label}</span
-                                >
-                            </span>
+                            ${renderProcessButtonContent({
+                                label: entry.label,
+                                pending: activeWorkflow === entry.workflow
+                            })}
                         </button>
                     `
                 )}
@@ -625,9 +622,10 @@ export class GmGraphToolbar extends LightDomLitElement {
 
         const hasActiveSession = this.model.liveReload !== null;
         const isStartPending = this.state?.isLiveReloadStartPending === true;
+        const isStopPending = this.state?.isLiveReloadStopPending === true;
         const runtimeUrl = resolveLiveReloadRuntimeUrl(this.model.liveReload);
         const isRetry = this.state?.liveReloadErrorMessage !== null && !hasActiveSession;
-        const isStopDisabled = !hasActiveSession || isStartPending;
+        const isStopDisabled = !hasActiveSession || isStartPending || isStopPending;
         const startButtonTitle = isStartPending
             ? "Starting Live Reload"
             : isRetry
@@ -686,13 +684,12 @@ export class GmGraphToolbar extends LightDomLitElement {
                     title=${startButtonTitle}
                     @click=${() => this.#emitStartLiveReload()}
                 >
-                    ${isStartPending
-                        ? html`<span class="live-reload-btn-spinner" aria-hidden="true"></span>`
-                        : isRetry
-                          ? playIcon
-                          : hasActiveSession
-                            ? restartIcon
-                            : playIcon}
+                    ${renderProcessButtonContent({
+                        idleVisual: isRetry ? playIcon : hasActiveSession ? restartIcon : playIcon,
+                        label: "Start Live Reload",
+                        pending: isStartPending,
+                        visuallyHiddenLabel: true
+                    })}
                 </button>
                 ${runtimeUrl === null
                     ? null
@@ -713,10 +710,16 @@ export class GmGraphToolbar extends LightDomLitElement {
                     type="button"
                     class="live-reload-btn live-reload-btn--destructive"
                     ?disabled=${isStopDisabled}
+                    aria-busy=${isStopPending ? "true" : "false"}
                     title=${stopButtonTitle}
                     @click=${() => this.#emitStopLiveReload()}
                 >
-                    ${stopIcon}
+                    ${renderProcessButtonContent({
+                        idleVisual: stopIcon,
+                        label: "Stop Live Reload",
+                        pending: isStopPending,
+                        visuallyHiddenLabel: true
+                    })}
                 </button>
             </div>
         `;
@@ -842,16 +845,13 @@ export class GmGraphToolbar extends LightDomLitElement {
                                       id="regenerate"
                                       class="gm-btn--chip"
                                       ?disabled=${this.state.isRegeneratePending || !hasLoadedProject}
+                                      aria-busy=${this.state.isRegeneratePending ? "true" : "false"}
                                       @click=${() => this.#emitRegenerate()}
                                   >
-                                      <span class="button-content">
-                                          ${this.state.isRegeneratePending
-                                              ? html`<span class="button-spinner" aria-hidden="true"></span>`
-                                              : null}
-                                          <span class="button-label"
-                                              >${this.state.isRegeneratePending ? "Regenerating…" : "Regenerate"}</span
-                                          >
-                                      </span>
+                                      ${renderProcessButtonContent({
+                                          label: "Regenerate",
+                                          pending: this.state.isRegeneratePending
+                                      })}
                                   </button>
                               `
                             : null}

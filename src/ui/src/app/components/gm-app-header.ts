@@ -8,6 +8,7 @@ import {
     type GraphUiNavigatePageDetail
 } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
+import { renderProcessButtonContent } from "./primitives/gm-button.js";
 
 /**
  * Header, navigation, and loaded-target summary for graph/docs/config surfaces.
@@ -204,16 +205,13 @@ export class GmAppHeader extends LightDomLitElement {
                                 id="open-project"
                                 class="open-button"
                                 ?disabled=${this.state.isOpenProjectPending}
+                                aria-busy=${this.state.isOpenProjectPending ? "true" : "false"}
                                 @click=${() => this.#emitOpenProject()}
                             >
-                                <span class="button-content">
-                                    ${this.state.isOpenProjectPending
-                                        ? html`<span class="button-spinner" aria-hidden="true"></span>`
-                                        : null}
-                                    <span class="button-label"
-                                        >${this.state.isOpenProjectPending ? "Opening…" : "Open..."}</span
-                                    >
-                                </span>
+                                ${renderProcessButtonContent({
+                                    label: "Open...",
+                                    pending: this.state.isOpenProjectPending
+                                })}
                             </button>
                         </div>
                         <div id="loaded-target" class="loaded-path">

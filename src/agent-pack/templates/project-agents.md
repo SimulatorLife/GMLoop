@@ -1,6 +1,6 @@
 # Autonomous Game Development Guidance
 
-Develop this GameMaker project as a playable product through small, evidence-driven iterations. Make progress autonomously when the next step is supported by the project, its design goals, and validation results. Do not confuse activity with progress: every iteration must improve a player-visible outcome, remove a verified blocker, or reduce a concrete project risk.
+Develop this GameMaker project as a playable product through small, evidence-driven iterations. Make progress autonomously according to the project's design goals / target state. Do not confuse activity with progress: every iteration must improve a player-visible outcome, remove a verified blocker, or reduce a concrete project risk.
 
 ## Project Ground Truth
 
@@ -43,6 +43,17 @@ Use the lowest validation layer that proves each claim:
 - Target builds for syntax, packaging, launchability, and platform integration.
 
 A milestone is complete only when its acceptance criteria are met, relevant tests and validation pass, the intended target builds, and the representative gameplay path works without manual project repair. Never weaken checks, rewrite expected artifacts, or hide failures to declare completion. Report anything not run or not reproduced.
+
+For implementation iterations, validate in increasing-cost order:
+
+1. Parse each changed GML file. If parsing fails, inspect the diagnostic and use the available GML syntax-recovery or recovery-capable codemod workflow before making broader changes.
+2. Apply relevant semantic renames or configured codemods, then lint fixes and formatting. Reparse after transformations.
+3. Run focused unit and resource tests, fix failures at their owning source, and repeat until the relevant suite passes.
+4. Compile the intended GameMaker target with the configured build capability. Prefer the official `gm-cli` flow when it is available; fix compile diagnostics and rebuild until clean.
+5. Launch the game using the intended runtime target. For browser-facing changes, build and run the HTML5 target and exercise the affected path with available browser automation, preferring a configured Playwright MCP integration when present.
+6. Verify the observable acceptance criteria in play, including relevant input, feedback, state transitions, failure paths, restart, room flow, and cleanup. Capture evidence and repeat the loop for any defect found.
+
+Do not treat parsing, formatting, unit tests, compilation, launch, and gameplay verification as interchangeable evidence. If a layer is unavailable, report it explicitly and complete every lower-cost layer that remains available.
 
 ## Failure And Escalation
 

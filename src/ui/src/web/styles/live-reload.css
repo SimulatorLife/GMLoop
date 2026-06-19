@@ -77,22 +77,6 @@
   transform: translateY(-1px);
 }
 
-.live-reload-btn-spinner {
-  display: inline-block;
-  width: var(--gm-icon-sm);
-  height: var(--gm-icon-sm);
-  border: 2px solid var(--gm-spinner-track-dark);
-  border-top-color: var(--gm-action-primary-text);
-  border-radius: 50%;
-  animation: live-reload-btn-spin 600ms linear infinite;
-}
-
-@keyframes live-reload-btn-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .live-reload-stack {
   display: flex;
   flex-direction: column;

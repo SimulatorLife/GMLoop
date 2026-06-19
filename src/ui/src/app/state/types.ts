@@ -30,6 +30,15 @@ export type GraphVisualizationUiConfigView = "rendered" | "raw";
  */
 export type GraphVisualizationUiMcpServerStatus = "not-started" | "running" | "stopped";
 
+/** Auto-Game host operation currently awaiting completion. */
+export type GraphVisualizationUiAutoGamePendingOperation =
+    | "initialize-agent-pack"
+    | "pipeline-pause"
+    | "pipeline-start"
+    | "pipeline-stop"
+    | "run-task"
+    | "skill-toggle";
+
 /**
  * Immutable UI state for graph/docs/config surfaces.
  */
@@ -43,7 +52,9 @@ export type GraphVisualizationUiState = Readonly<{
     fixLogLines: ReadonlyArray<string>;
     fixStatus: "idle" | "running" | "success" | "error";
     fixWorkflow: GraphVisualizationProjectWorkflow | null;
+    autoGamePendingOperation: GraphVisualizationUiAutoGamePendingOperation | null;
     isLiveReloadStartPending: boolean;
+    isLiveReloadStopPending: boolean;
     isConfigSavePending: boolean;
     isFixPending: boolean;
     isOpenProjectPending: boolean;
@@ -83,6 +94,12 @@ export type GraphVisualizationUiAction =
     | Readonly<{ status: GraphVisualizationUiState["fixStatus"]; type: "set-fix-status" }>
     | Readonly<{ pending: boolean; type: "set-open-project-pending" }>
     | Readonly<{ pending: boolean; type: "set-live-reload-start-pending" }>
+    | Readonly<{ pending: boolean; type: "set-live-reload-stop-pending" }>
+    | Readonly<{
+          operation: GraphVisualizationUiAutoGamePendingOperation;
+          pending: boolean;
+          type: "set-auto-game-operation-pending";
+      }>
     | Readonly<{ errorMessage: string | null; type: "set-live-reload-error" }>
     | Readonly<{ errorMessage: string | null; type: "set-error" }>
     | Readonly<{ errorMessage: string | null; page: GraphVisualizationUiPage; type: "set-page-error" }>

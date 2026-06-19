@@ -203,7 +203,7 @@ void test("GmLiveReloadPanel preserves action labels while start is pending", ()
     const rendered = renderTemplateValue(toolbar.renderForTest());
 
     assert.match(rendered, /id="start-live-reload"[\s\S]*aria-busy=true/u);
-    assert.match(rendered, /live-reload-btn-spinner/u);
+    assert.match(rendered, /button-spinner/u);
     assert.match(rendered, /title=Starting Live Reload/u);
     assert.doesNotMatch(rendered, /Building & Starting/u);
     assert.doesNotMatch(rendered, /Refreshing\.\.\./u);
@@ -382,6 +382,22 @@ void test("GmGraphToolbar stop button is disabled while start is pending", () =>
     const rendered = renderTemplateValue(toolbar.renderForTest());
 
     assert.match(rendered, /id="stop-live-reload"[\s\S]*disabled/u);
+});
+
+void test("GmGraphToolbar disables Live Reload stop and shows the shared spinner while stopping", () => {
+    const toolbar = new TestableGmGraphToolbar();
+    toolbar.model = createMockModel(createStatusSnapshot());
+    toolbar.state = {
+        ...createMockState(),
+        isLiveReloadStopPending: true
+    };
+
+    const rendered = renderTemplateValue(toolbar.renderForTest());
+
+    assert.match(rendered, /id="stop-live-reload"[\s\S]*\?disabled=true/u);
+    assert.match(rendered, /id="stop-live-reload"[\s\S]*aria-busy=true/u);
+    assert.match(rendered, /id="stop-live-reload"[\s\S]*class="button-spinner"/u);
+    assert.match(rendered, /id="stop-live-reload"[\s\S]*Stop Live Reload/u);
 });
 
 void test("GmAppShell routes live-reload stop events through the host callback", async () => {

@@ -185,7 +185,7 @@ void test("Fix toolbar identifies the active workflow and disables concurrent pr
 
     const rendered = renderTemplateValue(toolbar.renderForTest());
 
-    assert.match(rendered, /id=run-format[\s\S]*\?disabled=true[\s\S]*Formatting\.\.\./u);
+    assert.match(rendered, /id=run-format[\s\S]*\?disabled=true[\s\S]*aria-busy=true[\s\S]*Format/u);
     assert.equal(Array.from(rendered.matchAll(/\?disabled=true/gu)).length, 4);
     assert.equal(Array.from(rendered.matchAll(/button-spinner/gu)).length, 1);
 });

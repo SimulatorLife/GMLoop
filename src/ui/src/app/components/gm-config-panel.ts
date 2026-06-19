@@ -18,6 +18,7 @@ import {
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 import { getLintFixableBadgeLabel } from "./lint-rule-labels.js";
 import type { GmBadgeTone } from "./primitives/gm-badge.js";
+import { renderProcessButtonContent } from "./primitives/gm-button.js";
 
 type ConfigJsonObject = Record<string, unknown>;
 type LintLevel = GraphVisualizationProjectConfigurationLintRuleEntry["level"];
@@ -380,14 +381,13 @@ export class GmConfigPanel extends LightDomLitElement {
                         type="button"
                         class="gm-btn gm-btn--primary"
                         ?disabled=${isSaveDisabled}
+                        aria-busy=${this.state?.isConfigSavePending === true ? "true" : "false"}
                         @click=${() => (draft.ok ? this.#emitSaveConfig(draft.config) : undefined)}
                     >
-                        <span class="button-content">
-                            ${this.state?.isConfigSavePending === true
-                                ? html`<span class="button-spinner" aria-hidden="true"></span>`
-                                : nothing}
-                            <span class="button-label">Save Config</span>
-                        </span>
+                        ${renderProcessButtonContent({
+                            label: "Save Config",
+                            pending: this.state?.isConfigSavePending === true
+                        })}
                     </button>
                     <button
                         type="button"
@@ -809,14 +809,13 @@ ${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}</pre
                                       type="button"
                                       class="gm-btn gm-btn--primary"
                                       ?disabled=${this.state.isRegeneratePending}
+                                      aria-busy=${this.state.isRegeneratePending ? "true" : "false"}
                                       @click=${this.#emitCreateConfig}
                                   >
-                                      <span class="button-content">
-                                          ${this.state.isRegeneratePending
-                                              ? html`<span class="button-spinner" aria-hidden="true"></span>`
-                                              : nothing}
-                                          <span class="button-label">Create Default Config</span>
-                                      </span>
+                                      ${renderProcessButtonContent({
+                                          label: "Create Default Config",
+                                          pending: this.state.isRegeneratePending
+                                      })}
                                   </button>
                               </div>
                           `}

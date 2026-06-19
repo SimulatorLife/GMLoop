@@ -2,6 +2,7 @@ import { html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 
 import type {
+    GraphVisualizationAutoGameAgentPackResource,
     GraphVisualizationAutoGamePipelineAction,
     GraphVisualizationAutoGamePipelineEvent,
     GraphVisualizationAutoGamePipelineLlmOutput,
@@ -22,6 +23,7 @@ import {
 } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 import type { GmBadgeTone } from "./primitives/gm-badge.js";
+import { renderProcessButtonContent } from "./primitives/gm-button.js";
 
 /**
  * Pipeline statuses in which the Start action is enabled (anything that is
@@ -126,7 +128,7 @@ export class GmAutoGamePanel extends LightDomLitElement {
 
     #submitOneTimeTask(): void {
         const prompt = this.taskPrompt.trim();
-        if (!this.#hasPipelineController() || prompt.length === 0) {
+        if (!this.#hasPipelineController() || this.state?.autoGamePendingOperation !== null || prompt.length === 0) {
             return;
         }
 
@@ -156,7 +158,11 @@ export class GmAutoGamePanel extends LightDomLitElement {
      * single read.
      */
     #canRunLifecycleAction(allowedStatuses: ReadonlySet<GraphVisualizationAutoGamePipelineStatus>): boolean {
-        return this.#hasPipelineController() && allowedStatuses.has(this.#getPipelineStatus());
+        return (
+            this.#hasPipelineController() &&
+            this.state?.autoGamePendingOperation === null &&
+            allowedStatuses.has(this.#getPipelineStatus())
+        );
     }
 
     #renderPipelineAction(action: GraphVisualizationAutoGamePipelineAction) {
@@ -175,7 +181,8 @@ export class GmAutoGamePanel extends LightDomLitElement {
 
     #renderPipelineControls() {
         const actions = this.model?.autoGamePipeline?.actions ?? [];
-        const canRunTask = this.#hasPipelineController();
+        const pendingOperation = this.state?.autoGamePendingOperation ?? null;
+        const canRunTask = this.#hasPipelineController() && pendingOperation === null;
         const trimmedTaskPrompt = this.taskPrompt.trim();
 
         return html`
@@ -197,27 +204,39 @@ export class GmAutoGamePanel extends LightDomLitElement {
                             class="gm-btn gm-btn--primary"
                             type="button"
                             ?disabled=${!this.#canRunLifecycleAction(AUTO_GAME_LIFECYCLE_START_STATUSES)}
+                            aria-busy=${pendingOperation === "pipeline-start" ? "true" : "false"}
                             @click=${() => this.#dispatchPipelineAction("start")}
                         >
-                            Start
+                            ${renderProcessButtonContent({
+                                label: "Start",
+                                pending: pendingOperation === "pipeline-start"
+                            })}
                         </button>
                         <button
                             id="pause-auto-game-pipeline"
                             class="gm-btn"
                             type="button"
                             ?disabled=${!this.#canRunLifecycleAction(AUTO_GAME_LIFECYCLE_PAUSE_STATUSES)}
+                            aria-busy=${pendingOperation === "pipeline-pause" ? "true" : "false"}
                             @click=${() => this.#dispatchPipelineAction("pause")}
                         >
-                            Pause
+                            ${renderProcessButtonContent({
+                                label: "Pause",
+                                pending: pendingOperation === "pipeline-pause"
+                            })}
                         </button>
                         <button
                             id="stop-auto-game-pipeline"
                             class="gm-btn gm-btn--destructive"
                             type="button"
                             ?disabled=${!this.#canRunLifecycleAction(AUTO_GAME_LIFECYCLE_STOP_STATUSES)}
+                            aria-busy=${pendingOperation === "pipeline-stop" ? "true" : "false"}
                             @click=${() => this.#dispatchPipelineAction("stop")}
                         >
-                            Stop
+                            ${renderProcessButtonContent({
+                                label: "Stop",
+                                pending: pendingOperation === "pipeline-stop"
+                            })}
                         </button>
                     </div>
                     ${this.#hasPipelineController()
@@ -253,8 +272,12 @@ export class GmAutoGamePanel extends LightDomLitElement {
                             class="gm-btn gm-btn--primary auto-game-task-submit"
                             type="submit"
                             ?disabled=${!canRunTask || trimmedTaskPrompt.length === 0}
+                            aria-busy=${pendingOperation === "run-task" ? "true" : "false"}
                         >
-                            Run Task
+                            ${renderProcessButtonContent({
+                                label: "Run Task",
+                                pending: pendingOperation === "run-task"
+                            })}
                         </button>
                     </form>
                     ${actions.length === 0
@@ -325,7 +348,7 @@ export class GmAutoGamePanel extends LightDomLitElement {
                             type="checkbox"
                             role="switch"
                             .checked=${skill.enabled}
-                            ?disabled=${!this.#hasPipelineController()}
+                            ?disabled=${!this.#hasPipelineController() || this.state?.autoGamePendingOperation !== null}
                             aria-label=${`${skill.enabled ? "Exclude" : "Include"} ${skill.name} ${
                                 skill.enabled ? "from" : "in"
                             } Auto-Game`}
@@ -356,9 +379,27 @@ export class GmAutoGamePanel extends LightDomLitElement {
         `;
     }
 
+    #renderAgentPackResource(resource: GraphVisualizationAutoGameAgentPackResource) {
+        return html`
+            <details class="auto-game-resource-preview">
+                <summary>
+                    <span>
+                        <strong>${resource.targetPath}</strong>
+                        <code>${resource.packagePath}</code>
+                    </span>
+                    <gm-badge .label=${resource.kind === "template" ? "Template" : "Skill"}></gm-badge>
+                </summary>
+                <pre
+                    aria-label=${`${resource.targetPath} packaged source preview`}
+                ><code>${resource.content}</code></pre>
+            </details>
+        `;
+    }
+
     #renderAiSkills() {
         const skills = this.model?.autoGamePipeline?.skills ?? [];
         const agentPack = this.model?.autoGamePipeline?.agentPack;
+        const resources = agentPack?.resources ?? [];
         const shouldOfferAgentPackAction = agentPack !== undefined && agentPack.status !== "current";
         const hasUntrackedProjectSkills = agentPack?.status === "not-installed" && skills.length > 0;
         const agentPackActionLabel =
@@ -373,6 +414,8 @@ export class GmAutoGamePanel extends LightDomLitElement {
                 : hasUntrackedProjectSkills
                   ? "Setup Incomplete"
                   : "Not Initialized";
+        const isAgentPackPending = this.state?.autoGamePendingOperation === "initialize-agent-pack";
+        const isSkillMutationPending = this.state?.autoGamePendingOperation !== null;
 
         return html`
             <article class="gm-card auto-game-card auto-game-skills-card">
@@ -400,6 +443,7 @@ export class GmAutoGamePanel extends LightDomLitElement {
                                   <input
                                       type="checkbox"
                                       .checked=${this.includeGitIgnore}
+                                      ?disabled=${isSkillMutationPending}
                                       @change=${(event: Event) => {
                                           this.includeGitIgnore = (event.target as HTMLInputElement).checked;
                                       }}
@@ -415,7 +459,10 @@ export class GmAutoGamePanel extends LightDomLitElement {
                                   id="initialize-auto-game-agent-pack"
                                   class="gm-btn gm-btn--primary"
                                   type="button"
-                                  ?disabled=${!this.#hasPipelineController() || this.model?.loadedTarget === null}
+                                  ?disabled=${!this.#hasPipelineController() ||
+                                  this.model?.loadedTarget === null ||
+                                  isSkillMutationPending}
+                                  aria-busy=${isAgentPackPending ? "true" : "false"}
                                   @click=${() => {
                                       this.dispatchEvent(
                                           new CustomEvent<GraphUiInitializeAutoGameAgentPackDetail>(
@@ -429,7 +476,10 @@ export class GmAutoGamePanel extends LightDomLitElement {
                                       );
                                   }}
                               >
-                                  ${agentPackActionLabel}
+                                  ${renderProcessButtonContent({
+                                      label: agentPackActionLabel,
+                                      pending: isAgentPackPending
+                                  })}
                               </button>
                           </div>
                       `
@@ -439,23 +489,50 @@ export class GmAutoGamePanel extends LightDomLitElement {
                           Preserved project-modified agent-pack files: ${agentPack.conflicts.join(", ")}
                       </p>`
                     : nothing}
-                ${skills.length === 0
-                    ? html`
-                          <div class="gm-empty auto-game-skill-empty auto-game-skill-empty--skills">
-                              <p>
-                                  ${this.model?.loadedTarget === null
-                                      ? "Open a GameMaker project to discover its Auto-Game skills."
-                                      : "This project has no Auto-Game skills in .agents/skills."}
-                              </p>
-                          </div>
-                      `
-                    : html`<ul class="auto-game-skill-list">
-                          ${repeat(
-                              skills,
-                              (skill) => skill.id,
-                              (skill) => this.#renderSkill(skill)
-                          )}
-                      </ul>`}
+                <details class="auto-game-skill-disclosure">
+                    <summary>
+                        <span>
+                            <strong>Project Skills</strong>
+                            <small>Review and choose the skills included in Auto-Game.</small>
+                        </span>
+                        <gm-badge .label=${String(skills.length)}></gm-badge>
+                    </summary>
+                    ${skills.length === 0
+                        ? html`
+                              <div class="gm-empty auto-game-skill-empty auto-game-skill-empty--skills">
+                                  <p>
+                                      ${this.model?.loadedTarget === null
+                                          ? "Open a GameMaker project to discover its Auto-Game skills."
+                                          : "This project has no Auto-Game skills in .agents/skills."}
+                                  </p>
+                              </div>
+                          `
+                        : html`<ul class="auto-game-skill-list">
+                              ${repeat(
+                                  skills,
+                                  (skill) => skill.id,
+                                  (skill) => this.#renderSkill(skill)
+                              )}
+                          </ul>`}
+                </details>
+                <section class="auto-game-resource-section" aria-labelledby="auto-game-resource-heading">
+                    <div class="auto-game-resource-section__heading">
+                        <div>
+                            <h4 id="auto-game-resource-heading">Agent-Pack Resources</h4>
+                            <p>Preview packaged sources before they are synchronized into the project.</p>
+                        </div>
+                        <gm-badge .label=${String(resources.length)}></gm-badge>
+                    </div>
+                    ${resources.length === 0
+                        ? html`<p class="gm-empty auto-game-empty--compact">No packaged resources are available.</p>`
+                        : html`<div class="auto-game-resource-list">
+                              ${repeat(
+                                  resources,
+                                  (resource) => resource.packagePath,
+                                  (resource) => this.#renderAgentPackResource(resource)
+                              )}
+                          </div>`}
+                </section>
             </article>
         `;
     }
