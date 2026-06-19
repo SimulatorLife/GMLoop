@@ -169,7 +169,7 @@ function buildMixedLeadingCommentBlock({
         !Core.isNonEmptyArray(printableDocComments) ||
         printableDocComments.length !== docCommentEntries.length ||
         !docCommentEntries.every(isLineStyleDocCommentEntry) ||
-        !Array.isArray(node.comments)
+        (!Array.isArray(node.comments) && !Core.isNonEmptyArray(node._gmlEmbeddedLeadingComments))
     ) {
         return null;
     }
@@ -183,7 +183,7 @@ function buildMixedLeadingCommentBlock({
     }
 
     const earliestDocStartIndex = Math.min(...docItems.map((item) => item.sourceIndex));
-    const plainItems = resolveAttachedLeadingCommentItems(
+    const plainItems = resolveEmbeddedLeadingCommentItems(
         node,
         docCommentEntries,
         originalText,
@@ -206,21 +206,21 @@ function buildMixedLeadingCommentBlock({
     );
 }
 
-function resolveAttachedLeadingCommentItems(
+function resolveEmbeddedLeadingCommentItems(
     node: any,
     docCommentEntries: MutableDocCommentLines,
     originalText: string,
     leadingBlockStartIndex: number,
     nodeStartIndex: number
 ): LeadingCommentItem[] {
-    if (!Array.isArray(node.comments)) {
+    if (!Array.isArray(node._gmlEmbeddedLeadingComments)) {
         return [];
     }
 
     const docCommentEntrySet = new Set(docCommentEntries.filter(Core.isObjectLike));
     const items: LeadingCommentItem[] = [];
 
-    for (const comment of node.comments) {
+    for (const comment of node._gmlEmbeddedLeadingComments) {
         if (!Core.isObjectLike(comment) || docCommentEntrySet.has(comment)) {
             continue;
         }
@@ -235,7 +235,6 @@ function resolveAttachedLeadingCommentItems(
             continue;
         }
 
-        comment.printed = true;
         items.push({
             doc: rawText,
             endIndex: resolveDocCommentEndIndex(comment),
