@@ -18,9 +18,9 @@ Do not replace a fast unit test with a runtime test when engine behavior is irre
 
 ## Determinism
 
-Control random seeds, clocks, input sequences, initial state, and fixture data. Keep tests independent of execution order and prior runs. Clean up created instances, files, rooms, and persistent state.
+Control random seeds, game clocks, input sequences, initial state, and fixture data. Mock or bypass dynamic time steps (like delta-time) and random number generators (`randomize()`) to ensure identical test execution. Keep tests independent of execution order and prior runs. Clean up created instances, files, rooms, and persistent state after every run.
 
-Test observable behavior rather than private implementation details or incidental log wording. Assert stable identifiers, state, outputs, resource relationships, and structured diagnostics.
+Test observable behavior rather than private implementation details or incidental log wording. Assert stable identifiers, state variables, returned outputs, resource relationships, and structured diagnostics.
 
 ## Coverage For Changes
 

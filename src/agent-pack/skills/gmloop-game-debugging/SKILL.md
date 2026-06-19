@@ -29,6 +29,6 @@ Use structured diagnostics, stack traces, resource inspection, deterministic sta
 
 ## Fix And Prove
 
-Fix the owning source rather than suppressing its downstream symptom. Add or strengthen a regression test when the behavior is automatable. Remove temporary instrumentation, rerun the minimal reproduction, then run the relevant resource validation, test, build, and runtime smoke checks.
+Fix the owning source rather than suppressing its downstream symptom. When the behavior is automatable, add or strengthen a regression test following the design guidelines in `gmloop-gml-tests`. Remove temporary instrumentation, rerun the minimal reproduction, then run the relevant resource validation, unit test, build, and runtime smoke checks (following `AGENTS.md`).
 
 Report the root cause, evidence that confirmed it, changed resources or scripts, regression coverage, and any environment-dependent behavior not reproduced.

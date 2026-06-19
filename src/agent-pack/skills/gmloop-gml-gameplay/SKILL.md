@@ -5,6 +5,11 @@ description: Implement gameplay systems in idiomatic GameMaker Language using cl
 
 # GML Gameplay
 
+Write gameplay logic inside GML scripts and object events. Focus on writing clean, idiomatic GameMaker Language code.
+
+> [!NOTE]
+> Creating/deleting resources, editing resource metadata, managing parent-child object structures, or room layer layouts is handled by `gmloop-gamemaker-resources`. Do not attempt to hand-edit JSON YY files or YYP files directly.
+
 Inspect the project's current object, script, input, collision, and room conventions before adding gameplay code. Match established patterns unless they are the source of the requested defect.
 
 ## Event Ownership
@@ -37,4 +42,4 @@ Avoid repeated whole-project searches, resource loads, large allocations, or exp
 
 ## Verify
 
-Add focused tests for pure calculations and state transitions. Use runtime smoke tests for engine-owned behavior such as rooms, instances, collisions, drawing, and async events. Exercise normal play, boundary values, pause/restart, win/loss, and cleanup paths.
+Do not replicate testing layer definitions here. For details on designing unit, resource integration, and smoke tests, refer to the testing guidelines in `gmloop-gml-tests`. Verify gameplay logic continuously using the validation steps in the project's development guidance (`AGENTS.md`).

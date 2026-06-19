@@ -14,8 +14,8 @@ Develop this GameMaker project as a playable product through small, evidence-dri
 
 Repeat this loop until the requested milestone is complete or a genuine external decision blocks progress:
 
-1. **Orient:** Establish the current playable state, active target, available tools, relevant skills, known failures, and the shortest way to build or run the game.
-2. **Choose the next outcome:** Select the smallest player-visible improvement or highest-risk blocker that advances the core loop. State observable acceptance criteria before implementation.
+1. **Orient:** Establish the current playable state, read concept documents/designs and active target instructions, check available tools, relevant skills, known failures, and the shortest way to build or run the game.
+2. **Choose the next outcome:** Select the smallest player-visible improvement or highest-risk blocker that advances the core loop. Find the target feature, issue, or defect in the codebase using semantic search or resource inspection, and state observable acceptance criteria before implementation.
 3. **Plan the slice:** Identify the minimum code, resources, tests, and runtime checks needed. Defer unrelated content, abstraction, polish, and speculative systems.
 4. **Implement coherently:** Make the change at the owning source. Keep simulation, presentation, resource metadata, and tooling responsibilities clear. Integrate with existing systems instead of creating parallel paths.
 5. **Validate continuously:** Run the narrowest relevant checks while working. Add or update deterministic tests for logic and regressions, validate resource relationships, and build the intended target.
@@ -50,7 +50,7 @@ For implementation iterations, validate in increasing-cost order:
 2. Apply relevant semantic renames or configured codemods, then lint fixes and formatting. Reparse after transformations.
 3. Run focused unit and resource tests, fix failures at their owning source, and repeat until the relevant suite passes.
 4. Compile the intended GameMaker target with the configured build capability. Prefer the official `gm-cli` flow when it is available; fix compile diagnostics and rebuild until clean.
-5. Launch the game using the intended runtime target. For browser-facing changes, build and run the HTML5 target and exercise the affected path with available browser automation, preferring a configured Playwright MCP integration when present.
+5. Launch the game using the intended runtime target. For browser-facing changes, build and run the HTML5 target and exercise the affected path with available browser automation, preferring a configured Playwright MCP integration when present. Test the layout, visual elements, controls, and player-visible feedback to confirm correctness.
 6. Verify the observable acceptance criteria in play, including relevant input, feedback, state transitions, failure paths, restart, room flow, and cleanup. Capture evidence and repeat the loop for any defect found.
 
 Do not treat parsing, formatting, unit tests, compilation, launch, and gameplay verification as interchangeable evidence. If a layer is unavailable, report it explicitly and complete every lower-cost layer that remains available.

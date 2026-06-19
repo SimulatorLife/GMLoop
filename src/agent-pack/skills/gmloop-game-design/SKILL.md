@@ -18,8 +18,8 @@ Record the smallest useful design contract:
 - Goals: explicit win, loss, and retry conditions.
 - Progression: what changes within a run and, only when needed, between runs.
 - Economy: resources, sources, sinks, scarcity, and risk/reward assumptions.
-- Feedback: how controls, danger, damage, success, failure, and progression remain readable.
-- Accessibility: input alternatives, readable presentation, motion and audio considerations, and difficulty assumptions.
+- Feedback: the conceptual signals the player needs to make informed decisions (danger, damage, success, failure, controls status). Detail what is communicated, leaving how it is polished (animations, juice, audio effects) to `gmloop-game-polish-and-juice`.
+- Accessibility: conceptual input alternatives, readability requirements, and motion/audio considerations.
 
 ## Bound The Scope
 

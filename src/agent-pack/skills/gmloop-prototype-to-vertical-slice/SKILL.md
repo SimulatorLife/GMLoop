@@ -15,8 +15,8 @@ The slice should include:
 - The complete core loop with its primary player verbs.
 - One representative environment, encounter, puzzle, or content path.
 - Progress, success, failure, retry, and exit behavior.
-- Readable gameplay feedback and a coherent minimum presentation pass.
-- Deterministic tests for suitable logic plus runtime and build verification.
+- Coherent player feedback and minimum presentation pass (relying on `gmloop-game-design` for conceptual signals and `gmloop-game-polish-and-juice` for the polish pass).
+- Deterministic tests for gameplay logic and runtime/build verification (relying on `gmloop-gml-tests` for standard test layer definitions).
 
 Write acceptance criteria before expanding implementation. Every task should connect to a slice criterion or remove a blocker to proving one.
 
@@ -25,9 +25,9 @@ Write acceptance criteria before expanding implementation. Every task should con
 1. Make the player journey completable with placeholder presentation.
 2. Stabilize state ownership, resource relationships, and room flow.
 3. Add tests for core rules and regressions.
-4. Add readable feedback, onboarding, and representative content.
+4. Integrate readability feedback, onboarding, and representative content.
 5. Validate build, launch, success, failure, retry, and cleanup.
-6. Polish the highest-frequency and highest-consequence moments.
+6. Polish the highest-frequency and highest-consequence moments (using `gmloop-game-polish-and-juice`).
 
 Defer content breadth, alternate modes, generalized frameworks, speculative extensibility, and progression that the representative journey does not exercise.
 

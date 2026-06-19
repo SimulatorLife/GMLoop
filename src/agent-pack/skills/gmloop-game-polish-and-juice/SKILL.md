@@ -20,11 +20,11 @@ Combine animation, timing, camera, particles, audio, UI, and transitions only wh
 
 ## Guardrails
 
-- Keep simulation rules outside Draw and cosmetic effects.
+- Keep simulation rules outside Draw and cosmetic effects. Polish elements must not mutate any game state variables that affect mechanics (e.g. coordinates, collision masks, health, cooldowns).
 - Do not let screenshake, flashes, particles, or audio obscure hazards and controls.
 - Provide reduced-motion, volume, contrast, and readability considerations where relevant.
 - Pool or bound frequently created effects and avoid expensive per-frame allocations.
-- Preserve deterministic gameplay and test outcomes when cosmetic effects are disabled.
+- Preserve deterministic gameplay and test outcomes when cosmetic effects are disabled or bypassed.
 - Reuse the project's visual and audio language instead of introducing unrelated effect styles.
 
 ## Evaluate

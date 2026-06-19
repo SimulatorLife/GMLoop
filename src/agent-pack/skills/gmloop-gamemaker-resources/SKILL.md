@@ -18,7 +18,10 @@ Do not infer resource identities from filenames alone when structured project me
 
 ## Mutate Through Structured Tools
 
-Prefer the narrowest structured operation that owns the change. Keep resource creation, object-event edits, room-instance placement, script edits, and project metadata changes inside the available project-tooling boundaries.
+Prefer the narrowest structured operation that owns the change. Keep resource creation, object-event additions or removals, parent-child inheritance changes, room-instance placement, and project metadata modifications inside the available project-tooling boundaries.
+
+> [!IMPORTANT]
+> Do not use resource metadata operations to write or modify GML gameplay logic code. All GML scripting inside object events or scripts belongs to `gmloop-gml-gameplay` and `gmloop-tooling`.
 
 Preserve stable resource names and identifiers unless the task explicitly requires a rename. When renaming, use the project-wide refactor transaction so references and metadata change together.
 
