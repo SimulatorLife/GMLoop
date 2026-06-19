@@ -105,19 +105,31 @@ function normalizeRequestPath(requestUrl) {
     return pathOnly.length === 0 ? "/" : pathOnly;
 }
 
-function resolveRuntimeFilePath(root, requestPath) {
-    let decoded;
+/**
+ * Resolve `requestPath` against the runtime root, rejecting any attempt to
+ * traverse outside of it.
+ *
+ * Two layered checks keep the resolution inside `root`:
+ *  1. The slash-normalized decoded path is scanned for any `..` segment up
+ *     front, so `path.resolve` below never sees a traversal shape.
+ *  2. After resolution, the relative path from `root` is inspected so any
+ *     other escape shape (encoded forms, absolute paths) is still caught.
+ *
+ * Both branches surface the same 403 error so callers see one observable
+ * failure mode for paths that resolve outside the runtime root.
+ */
+function resolveRuntimeFilePath(root: string, requestPath: string) {
+    let decoded: string;
     try {
         decoded = decodeURIComponent(requestPath);
     } catch {
         throw createRuntimeHttpError("Malformed request path.", 400);
     }
-    const sanitizedPath = decoded.replaceAll("\\", "/");
-    const sanitizedSegments = sanitizedPath.split("/").filter((segment) => segment && segment !== ".");
 
-    if (sanitizedSegments.includes("..")) {
+    if (decoded.replaceAll("\\", "/").split("/").includes("..")) {
         throw createRuntimeHttpError("Request path resolves outside runtime root.", 403);
     }
+
     const normalizedPath = path.normalize(decoded).replaceAll("\\", "/");
     const strippedPath = normalizedPath.startsWith("/") ? normalizedPath.slice(1) : normalizedPath;
     const candidate = strippedPath.length === 0 ? "." : strippedPath;

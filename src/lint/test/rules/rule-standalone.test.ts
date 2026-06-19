@@ -1196,6 +1196,50 @@ void test("prefer-hoistable-loop-accessors reports unsafeFix when insertion requ
     assertEquals(result.output, input);
 });
 
+void test("prefer-hoistable-loop-accessors reports body calls for user-configured function suffixes", () => {
+    // The `functionSuffixes` option lets users extend the rule beyond the
+    // built-in `array_length` default (for example `ds_list_size`,
+    // `string_length`, etc.). Repeated calls to a configured accessor inside
+    // a loop body should still be flagged as hoist candidates.
+    const input = [
+        "for (var i = 0; i < 10; i++) {",
+        "    sum += ds_list_size(list);",
+        "    sum += ds_list_size(list);",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("prefer-hoistable-loop-accessors", input, {
+        functionSuffixes: {
+            ds_list_size: "n"
+        }
+    });
+    assertEquals(result.messages.length, 1);
+    assertEquals(result.messages[0]?.messageId, "preferHoistableLoopAccessor");
+});
+
+void test("prefer-hoistable-loop-accessors respects null suffix override in body branch", () => {
+    // Disabling `array_length` via `functionSuffixes: { array_length: null }`
+    // must apply uniformly to both the test-expression branch and the body
+    // branch. A loop body that only uses the disabled accessor with no
+    // matching call in the test expression should not produce a diagnostic.
+    const input = [
+        "for (var i = 0; i < 10; i++) {",
+        "    sum += array_length(items);",
+        "    sum += array_length(items);",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("prefer-hoistable-loop-accessors", input, {
+        functionSuffixes: {
+            array_length: null
+        }
+    });
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
 void test("require-control-flow-braces does not rewrite multiline condition continuations", () => {
     const input = [
         "if (p.DistanceTo(vertices[0][0].p) < self.vertLength * 1.5)",
