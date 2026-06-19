@@ -9,6 +9,7 @@ import {
     cloneObjectEntries,
     getErrorMessage,
     isArrayBufferLike,
+    isArrayBufferViewLike,
     isBinaryDataLike,
     isErrorLike,
     isNonEmptyArray,
@@ -64,6 +65,72 @@ void describe("runtime-value-utils — polymorphism guardrails", () => {
             assert.equal(isArrayBufferLike(null), false);
             assert.equal(isArrayBufferLike(undefined), false);
             assert.equal(isArrayBufferLike("ArrayBuffer"), false);
+        });
+    });
+
+    void describe("isArrayBufferViewLike", () => {
+        void it("accepts typed-array views and DataView instances", () => {
+            assert.equal(isArrayBufferViewLike(new Uint8Array(8)), true);
+            assert.equal(isArrayBufferViewLike(new Int32Array(4)), true);
+            assert.equal(isArrayBufferViewLike(new DataView(new ArrayBuffer(8))), true);
+        });
+
+        void it("accepts a typed array from a different execution realm", () => {
+            const realm = vm.createContext({});
+            const foreignView = vm.runInContext("new Uint8Array(8)", realm);
+            // Sanity check: the foreign view should NOT satisfy the realm-local
+            // `instanceof Uint8Array` because each realm owns its own typed-array
+            // constructor, even though `ArrayBuffer.isView` happens to return
+            // true for cross-realm views (it inspects internal slots).
+            assert.equal(
+                foreignView instanceof Uint8Array,
+                false,
+                "precondition: foreign-realm views must fail instanceof Uint8Array checks"
+            );
+            assert.equal(isArrayBufferViewLike(foreignView), true);
+        });
+
+        void it("accepts a duck-typed view wrapped in a Proxy where ArrayBuffer.isView returns false", () => {
+            // `ArrayBuffer.isView` inspects the internal `[[ViewedArrayBuffer]]`
+            // slot and rejects proxies or duck-typed substitutes that lack it,
+            // even when they expose the documented surface. The capability probe
+            // below accepts such substitutes so the runtime wrapper can safely
+            // normalise payloads produced by browser shims or test doubles.
+            const realm = vm.createContext({});
+            const proxiedViewLike = vm.runInContext(
+                `new Proxy({ buffer: new ArrayBuffer(8), byteOffset: 0, byteLength: 8 }, {})`,
+                realm
+            );
+            assert.equal(
+                ArrayBuffer.isView(proxiedViewLike),
+                false,
+                "precondition: duck-typed proxies must fail ArrayBuffer.isView checks"
+            );
+            assert.equal(isArrayBufferViewLike(proxiedViewLike), true);
+        });
+
+        void it("accepts a duck-typed view lookalike (object with buffer + byteOffset + byteLength)", () => {
+            const viewLike = { buffer: new ArrayBuffer(8), byteOffset: 0, byteLength: 8 };
+            assert.equal(isArrayBufferViewLike(viewLike), true);
+        });
+
+        void it("rejects lookalikes missing buffer, byteOffset, or byteLength", () => {
+            assert.equal(isArrayBufferViewLike(new ArrayBuffer(8)), false, "ArrayBuffer itself is not a view");
+            assert.equal(isArrayBufferViewLike({ byteOffset: 0, byteLength: 8 }), false, "missing buffer");
+            assert.equal(
+                isArrayBufferViewLike({ buffer: new ArrayBuffer(8), byteLength: 8 }),
+                false,
+                "missing byteOffset"
+            );
+            assert.equal(
+                isArrayBufferViewLike({ buffer: new ArrayBuffer(8), byteOffset: 0 }),
+                false,
+                "missing byteLength"
+            );
+            assert.equal(isArrayBufferViewLike({ buffer: "not-an-object", byteOffset: 0, byteLength: 8 }), false);
+            assert.equal(isArrayBufferViewLike(null), false);
+            assert.equal(isArrayBufferViewLike(undefined), false);
+            assert.equal(isArrayBufferViewLike("Uint8Array"), false);
         });
     });
 
@@ -309,6 +376,26 @@ void describe("runtime-value-utils — polymorphism guardrails", () => {
                     isBinaryDataLike(sample),
                     Core.isBinaryDataLike(sample),
                     "mismatch between local isBinaryDataLike and Core.isBinaryDataLike"
+                );
+            }
+        });
+
+        void it("exposes the same ArrayBufferView classification as Core.isArrayBufferViewLike", () => {
+            const samples: Array<unknown> = [
+                new Uint8Array(8),
+                new Int32Array(4),
+                new DataView(new ArrayBuffer(8)),
+                new ArrayBuffer(8),
+                { buffer: new ArrayBuffer(8), byteOffset: 0, byteLength: 8 },
+                { byteOffset: 0, byteLength: 8 },
+                null,
+                "string"
+            ];
+            for (const sample of samples) {
+                assert.equal(
+                    isArrayBufferViewLike(sample),
+                    Core.isArrayBufferViewLike(sample),
+                    "mismatch between local isArrayBufferViewLike and Core.isArrayBufferViewLike"
                 );
             }
         });
