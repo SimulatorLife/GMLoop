@@ -158,11 +158,11 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
             "Align function doc-comment @param tags with the function signature (rename, reorder, and mark defaulted params as optional).",
         requiresSemanticProjectIndex: false,
         normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
-        async execute(
+        execute(
             _engine: CodemodEngine,
             request: ConfiguredCodemodRunRequest
         ): Promise<ConfiguredCodemodExecutionResult> {
-            return await executeSingleFileTextCodemod(
+            return executeSingleFileTextCodemod(
                 request,
                 "docCommentAlignment",
                 "No .gml files were selected for doc-comment alignment.",
@@ -175,11 +175,11 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
         description: "Expand unsupported scientific-notation number literals into plain decimal literals.",
         requiresSemanticProjectIndex: false,
         normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
-        async execute(
+        execute(
             _engine: CodemodEngine,
             request: ConfiguredCodemodRunRequest
         ): Promise<ConfiguredCodemodExecutionResult> {
-            return await executeSingleFileTextCodemod(
+            return executeSingleFileTextCodemod(
                 request,
                 "scientificNotation",
                 "No .gml files were selected for scientific-notation migration.",
@@ -237,11 +237,11 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
         description: "Hoist array_length(...) calls from safe for-loop conditions into local length variables.",
         requiresSemanticProjectIndex: false,
         normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
-        async execute(
+        execute(
             _engine: CodemodEngine,
             request: ConfiguredCodemodRunRequest
         ): Promise<ConfiguredCodemodExecutionResult> {
-            return await executeSingleFileTextCodemod(
+            return executeSingleFileTextCodemod(
                 request,
                 "loopLengthHoisting",
                 "No .gml files were selected for loop-length hoisting.",
