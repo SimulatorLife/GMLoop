@@ -94,7 +94,16 @@ export function createPreferHoistableLoopAccessorsRule(definition: GmlRuleDefini
                     let firstReportOffset: number | null = null;
                     let firstUnsafeOffset: number | null = null;
                     for (const loopNode of loopNodes) {
-                        if (loopNode.type === "ForStatement" && enabledHoistFunctionNames.size > 0) {
+                        // Skip the loop entirely when the user has disabled every
+                        // configured accessor (for example by setting
+                        // `functionSuffixes: { array_length: null }`). Without this
+                        // guard the body branch below would still match the
+                        // hardcoded `array_length` name and produce false positives.
+                        if (enabledHoistFunctionNames.size === 0) {
+                            continue;
+                        }
+
+                        if (loopNode.type === "ForStatement") {
                             const testCalls = collectLoopLengthAccessorCallsFromTestExpression({
                                 sourceText,
                                 testNode: (loopNode as any).test,
@@ -128,7 +137,7 @@ export function createPreferHoistableLoopAccessorsRule(definition: GmlRuleDefini
                         const loopCalls = Core.collectLoopLengthAccessorCallsFromAstNode({
                             sourceText,
                             rootNode: loopNode,
-                            enabledFunctionNames: new Set(["array_length"])
+                            enabledFunctionNames: enabledHoistFunctionNames
                         });
                         if (loopCalls.length === 0) {
                             continue;
@@ -138,7 +147,7 @@ export function createPreferHoistableLoopAccessorsRule(definition: GmlRuleDefini
                             const testCalls = Core.collectLoopLengthAccessorCallsFromAstNode({
                                 sourceText,
                                 rootNode: (loopNode as any).test,
-                                enabledFunctionNames: new Set(["array_length"])
+                                enabledFunctionNames: enabledHoistFunctionNames
                             });
                             if (testCalls.length > 0) {
                                 continue;
