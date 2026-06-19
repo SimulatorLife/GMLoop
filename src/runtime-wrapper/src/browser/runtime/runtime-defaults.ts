@@ -3,8 +3,8 @@
  *
  * This module is the single source of truth for tuning constants consumed by
  * {@link createRuntimeWrapper} and the surrounding runtime helpers. Keeping
- * the defaults in their own module (mirroring the `websocket-constants.ts`
- * pattern) gives us:
+ * the defaults in their own module (mirroring the inline-defaults pattern
+ * used at the top of `browser/websocket/client.ts`) gives us:
  *
  * - One place to review the runtime's tunable surface area
  * - Stable, importable references for tests and downstream tooling

@@ -11,5 +11,6 @@ export {
     parseJsonWithContext,
     readCxcDxStore,
     readRuntimeObjectPool,
-    toArray
+    toArray,
+    trimArrayToMaxSize
 } from "./runtime-value-utils.js";

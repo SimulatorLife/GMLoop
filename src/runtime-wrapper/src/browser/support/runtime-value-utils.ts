@@ -214,3 +214,22 @@ export function isArrayBufferViewLike(value: unknown): value is ArrayBufferView 
 export function isBinaryDataLike(value: unknown): value is ArrayBuffer | ArrayBufferView {
     return isArrayBufferLike(value) || isArrayBufferViewLike(value);
 }
+
+/**
+ * Trim the oldest entries from {@link array} so its length does not exceed
+ * {@link maxSize}.
+ *
+ * A non-positive {@link maxSize} is treated as unbounded (no trimming),
+ * which mirrors the runtime wrapper's policy of treating `0` as "no cap" for
+ * the undo stack and error history. The previous helper wrapped this decision
+ * in an `evaluateUndoStackTrimPolicy` object that every caller immediately
+ * spliced after inspecting; the direct mutation here removes that wrapper
+ * without changing observable behaviour.
+ */
+export function trimArrayToMaxSize<T>(array: Array<T>, maxSize: number): void {
+    if (maxSize <= 0 || array.length <= maxSize) {
+        return;
+    }
+
+    array.splice(0, array.length - maxSize);
+}

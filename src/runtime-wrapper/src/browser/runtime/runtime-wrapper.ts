@@ -1,4 +1,4 @@
-import { isErrorLike } from "../support/index.js";
+import { isErrorLike, trimArrayToMaxSize } from "../support/index.js";
 import { getHighResolutionTime } from "../timing/index.js";
 import {
     computeErrorAnalytics,
@@ -35,7 +35,6 @@ import type {
     RuntimeWrapperState,
     TrySafeApplyResult
 } from "./types.js";
-import { trimArrayToMaxSize } from "./undo-stack-policy.js";
 
 export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): RuntimeWrapper {
     const baseRegistry = createRegistry(options.registry);

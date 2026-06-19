@@ -86,6 +86,26 @@ function shouldParenthesizeTernaryConsequent(consequentNode: unknown): boolean {
 }
 
 /**
+ * Renders a binary or logical expression by recursively printing its left and
+ * right children and joining them with the operator. Children whose operator
+ * has weaker precedence than the parent are wrapped in parentheses to keep the
+ * textual representation faithful to the AST structure.
+ *
+ * Extracted so the `BinaryExpression` and `LogicalExpression` cases share an
+ * identical rendering path — the parser produces both node kinds for operators
+ * that share the same precedence/lattice rules, and the printed output is
+ * determined entirely by the operator string and child expressions, not by
+ * the AST node kind.
+ */
+function printBinaryLikeExpression(node: any, sourceText: string): string {
+    const leftPrinted = printExpression(node.left, sourceText);
+    const rightPrinted = printExpression(node.right, sourceText);
+    const left = shouldParenthesizeLogicalChild(node, node.left) ? `(${leftPrinted})` : leftPrinted;
+    const right = shouldParenthesizeLogicalChild(node, node.right) ? `(${rightPrinted})` : rightPrinted;
+    return `${left} ${node.operator} ${right}`;
+}
+
+/**
  * Reads the original source text associated with an AST node range.
  */
 export function readNodeText(sourceText: string, node: any): string | null {
@@ -120,18 +140,10 @@ export function printExpression(node: any, sourceText: string): string {
             return node.expression ? printExpression(node.expression, sourceText) : "";
         }
         case "BinaryExpression": {
-            const leftPrinted = printExpression(node.left, sourceText);
-            const rightPrinted = printExpression(node.right, sourceText);
-            const left = shouldParenthesizeLogicalChild(node, node.left) ? `(${leftPrinted})` : leftPrinted;
-            const right = shouldParenthesizeLogicalChild(node, node.right) ? `(${rightPrinted})` : rightPrinted;
-            return `${left} ${node.operator} ${right}`;
+            return printBinaryLikeExpression(node, sourceText);
         }
         case "LogicalExpression": {
-            const leftPrinted = printExpression(node.left, sourceText);
-            const rightPrinted = printExpression(node.right, sourceText);
-            const left = shouldParenthesizeLogicalChild(node, node.left) ? `(${leftPrinted})` : leftPrinted;
-            const right = shouldParenthesizeLogicalChild(node, node.right) ? `(${rightPrinted})` : rightPrinted;
-            return `${left} ${node.operator} ${right}`;
+            return printBinaryLikeExpression(node, sourceText);
         }
         case "UnaryExpression": {
             const argumentPrinted = printExpression(node.argument, sourceText);

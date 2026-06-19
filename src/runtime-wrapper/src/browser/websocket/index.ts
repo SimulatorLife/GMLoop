@@ -1,4 +1,4 @@
-export { createWebSocketClient } from "./client.js";
+export { createWebSocketClient, DEFAULT_READINESS_POLL_INTERVAL_MS } from "./client.js";
 export { ensureApplicationSurfaceAccessor, resolveRuntimeReadiness } from "./runtime-readiness.js";
 export type {
     MessageEventLike,
@@ -18,4 +18,3 @@ export type {
     WebSocketMetricsCollector,
     WebSocketPatchQueueManager
 } from "./types.js";
-export { DEFAULT_READINESS_POLL_INTERVAL_MS } from "./websocket-constants.js";
