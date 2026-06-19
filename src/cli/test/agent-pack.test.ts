@@ -45,6 +45,30 @@ void test("agent pack exposes a deterministic raw skill collection", async () =>
     );
 });
 
+void test("agent pack exposes every packaged template and skill for read-only preview", async () => {
+    const [resources, skillNames] = await Promise.all([
+        AgentPack.readAgentPackResourcePreviews(),
+        AgentPack.discoverPackagedSkillNames()
+    ]);
+
+    assert.deepEqual(
+        resources.slice(0, 2).map((resource) => resource.targetPath),
+        ["AGENTS.md", ".gitignore"]
+    );
+    assert.deepEqual(
+        resources.filter((resource) => resource.kind === "skill").map((resource) => resource.targetPath),
+        skillNames.map((name) => `.agents/skills/${name}/SKILL.md`)
+    );
+    assert.equal(
+        resources.every((resource) => resource.content.length > 0),
+        true
+    );
+    assert.equal(resources[0]?.packagePath, "templates/project-agents.md");
+    assert.match(resources[0]?.content ?? "", /# Autonomous Game Development Guidance/u);
+    assert.equal(resources[1]?.packagePath, "templates/project-gitignore");
+    assert.match(resources[1]?.content ?? "", /\.gmloop\//u);
+});
+
 void test("agent pack initialization installs skills, project guidance, and a version receipt", async () => {
     const fixture = await createGameProjectFixture();
     try {

@@ -173,6 +173,14 @@ export type GraphVisualizationAutoGamePipelineSkill = Readonly<{
     status: "available" | "unreadable";
 }>;
 
+/** Packaged agent-pack source that can be previewed without modifying a project. */
+export type GraphVisualizationAutoGameAgentPackResource = Readonly<{
+    content: string;
+    kind: "skill" | "template";
+    packagePath: string;
+    targetPath: string;
+}>;
+
 /**
  * Installation and update state for the GMLoop Auto-Game agent pack.
  */
@@ -180,6 +188,7 @@ export type GraphVisualizationAutoGameAgentPack = Readonly<{
     availableVersion: string;
     conflicts: ReadonlyArray<string>;
     installedVersion: string | null;
+    resources: ReadonlyArray<GraphVisualizationAutoGameAgentPackResource>;
     status: "current" | "not-installed" | "update-available";
 }>;
 

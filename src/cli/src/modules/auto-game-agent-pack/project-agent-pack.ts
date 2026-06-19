@@ -43,6 +43,14 @@ export type AgentPackInitializationOptions = Readonly<{
     includeGitIgnore: boolean;
 }>;
 
+/** Read-only packaged resource displayed by agent-pack consumers. */
+export type AgentPackResourcePreview = Readonly<{
+    content: string;
+    kind: "skill" | "template";
+    packagePath: string;
+    targetPath: string;
+}>;
+
 const DEFAULT_AGENT_PACK_INITIALIZATION_OPTIONS: AgentPackInitializationOptions = Object.freeze({
     includeGitIgnore: true
 });
@@ -58,6 +66,14 @@ type PackagedProjectFile = Readonly<{
     contents: Uint8Array;
     sourceHash: string;
     targetRelativePath: string;
+}>;
+
+type AgentPackResourceSource = Readonly<{
+    kind: AgentPackResourcePreview["kind"];
+    packagePath: string;
+    sourcePath: string;
+    synchronization: "managed-file" | "merge";
+    targetPath: string;
 }>;
 
 type ProjectFileDisposition = Readonly<{
@@ -228,15 +244,38 @@ async function collectFilesRecursively(directoryPath: string): Promise<ReadonlyA
     return Object.freeze(nestedPaths.flat());
 }
 
-async function readPackagedProjectFiles(): Promise<ReadonlyArray<PackagedProjectFile>> {
+async function readAgentPackResourceSources(): Promise<ReadonlyArray<AgentPackResourceSource>> {
     const skillFiles = await collectFilesRecursively(AGENT_PACK_SKILLS_ROOT);
-    const sourceEntries = [
+    return Object.freeze([
+        {
+            kind: "template",
+            packagePath: "templates/project-agents.md",
+            sourcePath: PROJECT_GUIDANCE_TEMPLATE_PATH,
+            synchronization: "managed-file",
+            targetPath: "AGENTS.md"
+        },
+        {
+            kind: "template",
+            packagePath: "templates/project-gitignore",
+            sourcePath: PROJECT_GITIGNORE_TEMPLATE_PATH,
+            synchronization: "merge",
+            targetPath: PROJECT_GITIGNORE_RELATIVE_PATH
+        },
         ...skillFiles.map((relativePath) => ({
+            kind: "skill" as const,
+            packagePath: path.posix.join("skills", ...relativePath.split(path.sep)),
             sourcePath: path.join(AGENT_PACK_SKILLS_ROOT, relativePath),
-            targetRelativePath: path.posix.join(PROJECT_SKILLS_RELATIVE_PATH, ...relativePath.split(path.sep))
-        })),
-        { sourcePath: PROJECT_GUIDANCE_TEMPLATE_PATH, targetRelativePath: "AGENTS.md" }
-    ].sort((left, right) => left.targetRelativePath.localeCompare(right.targetRelativePath));
+            synchronization: "managed-file" as const,
+            targetPath: path.posix.join(PROJECT_SKILLS_RELATIVE_PATH, ...relativePath.split(path.sep))
+        }))
+    ]);
+}
+
+async function readPackagedProjectFiles(): Promise<ReadonlyArray<PackagedProjectFile>> {
+    const resourceSources = await readAgentPackResourceSources();
+    const sourceEntries = resourceSources
+        .filter((entry) => entry.synchronization === "managed-file")
+        .sort((left, right) => left.targetPath.localeCompare(right.targetPath));
 
     return Object.freeze(
         await Promise.all(
@@ -245,7 +284,7 @@ async function readPackagedProjectFiles(): Promise<ReadonlyArray<PackagedProject
                 return Object.freeze({
                     contents,
                     sourceHash: hashContents(contents),
-                    targetRelativePath: entry.targetRelativePath
+                    targetRelativePath: entry.targetPath
                 });
             })
         )
@@ -377,6 +416,23 @@ export async function discoverPackagedSkillNames(): Promise<ReadonlyArray<string
         );
     }
     return Object.freeze(skillNames);
+}
+
+/** Read every packaged skill and template for presentation without mutating a project. */
+export async function readAgentPackResourcePreviews(): Promise<ReadonlyArray<AgentPackResourcePreview>> {
+    const sources = await readAgentPackResourceSources();
+    return Object.freeze(
+        await Promise.all(
+            sources.map(async (source) =>
+                Object.freeze({
+                    content: await readFile(source.sourcePath, "utf8"),
+                    kind: source.kind,
+                    packagePath: source.packagePath,
+                    targetPath: source.targetPath
+                })
+            )
+        )
+    );
 }
 
 /** Assert that a path is the root of a GameMaker project. */

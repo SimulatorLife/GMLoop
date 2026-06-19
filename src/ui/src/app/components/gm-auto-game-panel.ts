@@ -2,6 +2,7 @@ import { html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 
 import type {
+    GraphVisualizationAutoGameAgentPackResource,
     GraphVisualizationAutoGamePipelineAction,
     GraphVisualizationAutoGamePipelineEvent,
     GraphVisualizationAutoGamePipelineLlmOutput,
@@ -378,9 +379,27 @@ export class GmAutoGamePanel extends LightDomLitElement {
         `;
     }
 
+    #renderAgentPackResource(resource: GraphVisualizationAutoGameAgentPackResource) {
+        return html`
+            <details class="auto-game-resource-preview">
+                <summary>
+                    <span>
+                        <strong>${resource.targetPath}</strong>
+                        <code>${resource.packagePath}</code>
+                    </span>
+                    <gm-badge .label=${resource.kind === "template" ? "Template" : "Skill"}></gm-badge>
+                </summary>
+                <pre
+                    aria-label=${`${resource.targetPath} packaged source preview`}
+                ><code>${resource.content}</code></pre>
+            </details>
+        `;
+    }
+
     #renderAiSkills() {
         const skills = this.model?.autoGamePipeline?.skills ?? [];
         const agentPack = this.model?.autoGamePipeline?.agentPack;
+        const resources = agentPack?.resources ?? [];
         const shouldOfferAgentPackAction = agentPack !== undefined && agentPack.status !== "current";
         const hasUntrackedProjectSkills = agentPack?.status === "not-installed" && skills.length > 0;
         const agentPackActionLabel =
@@ -470,23 +489,50 @@ export class GmAutoGamePanel extends LightDomLitElement {
                           Preserved project-modified agent-pack files: ${agentPack.conflicts.join(", ")}
                       </p>`
                     : nothing}
-                ${skills.length === 0
-                    ? html`
-                          <div class="gm-empty auto-game-skill-empty auto-game-skill-empty--skills">
-                              <p>
-                                  ${this.model?.loadedTarget === null
-                                      ? "Open a GameMaker project to discover its Auto-Game skills."
-                                      : "This project has no Auto-Game skills in .agents/skills."}
-                              </p>
-                          </div>
-                      `
-                    : html`<ul class="auto-game-skill-list">
-                          ${repeat(
-                              skills,
-                              (skill) => skill.id,
-                              (skill) => this.#renderSkill(skill)
-                          )}
-                      </ul>`}
+                <details class="auto-game-skill-disclosure">
+                    <summary>
+                        <span>
+                            <strong>Project Skills</strong>
+                            <small>Review and choose the skills included in Auto-Game.</small>
+                        </span>
+                        <gm-badge .label=${String(skills.length)}></gm-badge>
+                    </summary>
+                    ${skills.length === 0
+                        ? html`
+                              <div class="gm-empty auto-game-skill-empty auto-game-skill-empty--skills">
+                                  <p>
+                                      ${this.model?.loadedTarget === null
+                                          ? "Open a GameMaker project to discover its Auto-Game skills."
+                                          : "This project has no Auto-Game skills in .agents/skills."}
+                                  </p>
+                              </div>
+                          `
+                        : html`<ul class="auto-game-skill-list">
+                              ${repeat(
+                                  skills,
+                                  (skill) => skill.id,
+                                  (skill) => this.#renderSkill(skill)
+                              )}
+                          </ul>`}
+                </details>
+                <section class="auto-game-resource-section" aria-labelledby="auto-game-resource-heading">
+                    <div class="auto-game-resource-section__heading">
+                        <div>
+                            <h4 id="auto-game-resource-heading">Agent-Pack Resources</h4>
+                            <p>Preview packaged sources before they are synchronized into the project.</p>
+                        </div>
+                        <gm-badge .label=${String(resources.length)}></gm-badge>
+                    </div>
+                    ${resources.length === 0
+                        ? html`<p class="gm-empty auto-game-empty--compact">No packaged resources are available.</p>`
+                        : html`<div class="auto-game-resource-list">
+                              ${repeat(
+                                  resources,
+                                  (resource) => resource.packagePath,
+                                  (resource) => this.#renderAgentPackResource(resource)
+                              )}
+                          </div>`}
+                </section>
             </article>
         `;
     }

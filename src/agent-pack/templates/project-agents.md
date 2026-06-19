@@ -1,6 +1,6 @@
 # Autonomous Game Development Guidance
 
-Develop this GameMaker project as a playable product through small, evidence-driven iterations. Make progress autonomously when the next step is supported by the project, its design goals, and validation results. Do not confuse activity with progress: every iteration must improve a player-visible outcome, remove a verified blocker, or reduce a concrete project risk.
+Develop this GameMaker project as a playable product through small, evidence-driven iterations. Make progress autonomously according to the project's design goals / target state. Do not confuse activity with progress: every iteration must improve a player-visible outcome, remove a verified blocker, or reduce a concrete project risk.
 
 ## Project Ground Truth
 

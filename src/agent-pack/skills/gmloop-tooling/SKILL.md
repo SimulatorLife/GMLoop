@@ -27,7 +27,7 @@ Treat `gmloop.json` as the project-root configuration shared by GMLoop workspace
 - `runtime` contains runner, build, live-reload, and related execution configuration when those workflows are used.
 - `autoGame` contains Auto-Game preferences such as excluded project skills.
 
-Inspect the current configuration catalog or relevant help before adding keys. Preserve unrelated sections, use the UI/configuration capability when available, and do not copy a stale exhaustive example over project-owned settings.
+Inspect the current configuration catalog or relevant help before adding keys. Preserve unrelated sections, use the UI/configuration capability when available, and do not copy a stale exhaustive example over project-owned settings. Do not modify `gmloop.json` unless explicitly asked to do so by the user.
 
 ## Apply A Source Change
 

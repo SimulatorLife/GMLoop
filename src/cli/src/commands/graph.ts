@@ -90,11 +90,12 @@ type GraphVisualizationProjectWorkflow = (typeof UI.PROJECT_WORKFLOWS)[number];
 
 function createAutoGamePipelineModel(
     skills: ReadonlyArray<AutoGameProjectSkill>,
-    agentPack: AgentPack.AgentPackProjectStatus
+    agentPackStatus: AgentPack.AgentPackProjectStatus,
+    resources: ReadonlyArray<AgentPack.AgentPackResourcePreview>
 ) {
     return Object.freeze({
         actions: Object.freeze([]),
-        agentPack,
+        agentPack: Object.freeze({ ...agentPackStatus, resources }),
         events: Object.freeze([]),
         llmOutputs: Object.freeze([]),
         skills: Object.freeze(skills.map((skill) => Object.freeze({ ...skill, id: skill.name }))),
@@ -109,11 +110,12 @@ function createAutoGamePipelineModel(
 type AutoGamePipelineModel = ReturnType<typeof createAutoGamePipelineModel>;
 
 async function createAutoGamePipelineModelForProject(context: GraphResolutionContext): Promise<AutoGamePipelineModel> {
-    const [skills, agentPack] = await Promise.all([
+    const [skills, agentPackStatus, resources] = await Promise.all([
         discoverAutoGameProjectSkills(context.projectRoot, context.projectConfig),
-        AgentPack.readAgentPackProjectStatus(context.projectRoot)
+        AgentPack.readAgentPackProjectStatus(context.projectRoot),
+        AgentPack.readAgentPackResourcePreviews()
     ]);
-    return createAutoGamePipelineModel(skills, agentPack);
+    return createAutoGamePipelineModel(skills, agentPackStatus, resources);
 }
 
 async function runGraphVisualizationProjectWorkflow(

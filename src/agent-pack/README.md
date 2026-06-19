@@ -10,6 +10,8 @@ npm install -D @gmloop/agent-pack
 
 The package has no standalone CLI and performs no postinstall project mutation. Consumers can inspect, copy, or point compatible tooling at `node_modules/@gmloop/agent-pack/skills/` directly.
 
+The GMLoop Auto-Game UI exposes read-only previews of the packaged project guidance, gitignore entries, and skill resources before initialization. These are package-source previews only; project-owned files remain authoritative and are never replaced by previewing them.
+
 When the main GMLoop CLI is available, initialize or update a GameMaker project with:
 
 ```bash
