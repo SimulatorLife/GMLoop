@@ -117,6 +117,12 @@ export function enqueuePatchForDeferredFlush(
 
     const queueState = state.patchQueue;
     const queueMetrics = queueState.queueMetrics;
+
+    const replacedQueuedPatch = replaceOlderQueuedPatchWithSameId(queueState, patch);
+    if (replacedQueuedPatch) {
+        queueMetrics.totalDeduplicated += 1;
+    }
+
     const effectiveQueueSize = queueState.queue.length - queueState.queueHead;
 
     if (effectiveQueueSize >= maxQueueSize) {
@@ -147,6 +153,22 @@ export function enqueuePatchForDeferredFlush(
     } else {
         scheduleFlush();
     }
+}
+
+function replaceOlderQueuedPatchWithSameId(queueState: PatchQueueState, patch: unknown): boolean {
+    const patchId = extractPatchId(patch);
+    if (patchId === null) {
+        return false;
+    }
+
+    for (let index = queueState.queue.length - 1; index >= queueState.queueHead; index -= 1) {
+        if (extractPatchId(queueState.queue[index]) === patchId) {
+            queueState.queue.splice(index, 1);
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /**
