@@ -256,6 +256,57 @@ void test("GmAutoGamePanel offers initialization for an empty loaded GameMaker p
     assert.match(rendered, /id="initialize-auto-game-agent-pack"[\s\S]*\?disabled=false/u);
 });
 
+void test("GmAutoGamePanel disables initialization and shows the shared spinner while it is pending", () => {
+    const panel = new TestableGmAutoGamePanel();
+    panel.model = createMockModel({
+        autoGamePipeline: {
+            actions: [],
+            agentPack: {
+                availableVersion: "0.0.2",
+                conflicts: [],
+                installedVersion: null,
+                status: "not-installed"
+            },
+            events: [],
+            llmOutputs: [],
+            skills: [],
+            status: "idle",
+            statusText: "No project-scoped Auto-Game skills are installed."
+        },
+        loadedTarget: {
+            activePath: "/tmp/test/Test.yyp",
+            projectRoot: "/tmp/test",
+            selectedPaths: ["/tmp/test/Test.yyp"],
+            source: "cli-path"
+        }
+    });
+    panel.state = createMockState({ autoGamePendingOperation: "initialize-agent-pack" });
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /id="initialize-auto-game-agent-pack"[\s\S]*\?disabled=true/u);
+    assert.match(rendered, /id="initialize-auto-game-agent-pack"[\s\S]*aria-busy=true/u);
+    assert.match(rendered, /id="initialize-auto-game-agent-pack"[\s\S]*class="button-spinner"/u);
+    assert.match(rendered, /id="initialize-auto-game-agent-pack"[\s\S]*Initialize Auto-Game Agent Pack/u);
+    assert.match(rendered, /type="checkbox"[\s\S]*\?disabled=true/u);
+});
+
+void test("GmAutoGamePanel disables concurrent controls and preserves lifecycle labels while pending", () => {
+    const panel = new TestableGmAutoGamePanel();
+    panel.model = createMockModel();
+    panel.state = createMockState({ autoGamePendingOperation: "pipeline-start" });
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /id="start-auto-game-pipeline"[\s\S]*\?disabled=true/u);
+    assert.match(rendered, /id="start-auto-game-pipeline"[\s\S]*aria-busy=true/u);
+    assert.match(rendered, /id="start-auto-game-pipeline"[\s\S]*class="button-spinner"/u);
+    assert.match(rendered, /id="start-auto-game-pipeline"[\s\S]*Start/u);
+    assert.match(rendered, /id="pause-auto-game-pipeline"[\s\S]*\?disabled=true/u);
+    assert.match(rendered, /id="stop-auto-game-pipeline"[\s\S]*\?disabled=true/u);
+    assert.match(rendered, /id="run-auto-game-task"[\s\S]*\?disabled=true/u);
+});
+
 void test("GmAutoGamePanel presents detected skills without a receipt as incomplete setup", () => {
     const panel = new TestableGmAutoGamePanel();
     panel.model = createMockModel({
@@ -514,6 +565,7 @@ void test("GmAppShell routes agent-pack initialization and skill toggles through
             detail: { includeGitIgnore: false }
         })
     );
+    await Promise.resolve();
     shell.dispatchEvent(
         new CustomEvent(GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED, {
             bubbles: true,
@@ -526,4 +578,52 @@ void test("GmAppShell routes agent-pack initialization and skill toggles through
     assert.equal(initialized, 1);
     assert.deepEqual(initializationOptions, { includeGitIgnore: false });
     assert.deepEqual(toggled, { enabled: false, name: "game-design" });
+});
+
+void test("GmAppShell rejects duplicate agent-pack initialization events while the first is pending", async () => {
+    const shell = new TestableGmAppShell();
+    let resolveInitialization = (): void => {
+        throw new Error("Initialization promise resolver was not assigned.");
+    };
+    const initialization = new Promise<void>((resolve) => {
+        resolveInitialization = resolve;
+    });
+    let initializationCount = 0;
+    shell.model = createMockModel({
+        loadedTarget: {
+            activePath: "/tmp/test/Test.yyp",
+            projectRoot: "/tmp/test",
+            selectedPaths: ["/tmp/test/Test.yyp"],
+            source: "cli-path"
+        }
+    });
+    shell.callbacks = {
+        onInitializeAutoGameAgentPack: () => {
+            initializationCount += 1;
+            return initialization;
+        },
+        onOpenProject: () => {},
+        onRegenerate: () => {},
+        onRunFix: () => ({ logLines: [], status: "success" }),
+        onSaveConfig: () => {},
+        onStartLiveReload: () => null,
+        onStopLiveReload: () => {}
+    };
+
+    shell.connectedCallback();
+    const initializeEvent = () =>
+        new CustomEvent(GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK, {
+            bubbles: true,
+            detail: { includeGitIgnore: true }
+        });
+    shell.dispatchEvent(initializeEvent());
+    shell.dispatchEvent(initializeEvent());
+    await Promise.resolve();
+
+    assert.equal(initializationCount, 1);
+
+    resolveInitialization();
+    await initialization;
+    await Promise.resolve();
+    shell.disconnectedCallback();
 });

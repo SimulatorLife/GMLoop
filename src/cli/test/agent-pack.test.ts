@@ -60,6 +60,15 @@ void test("agent pack initialization installs skills, project guidance, and a ve
         for (const [index, source] of installedSkillSources.entries()) {
             assert.match(source, new RegExp(String.raw`^---\nname: ${names[index] ?? ""}\n`, "u"));
         }
+        const toolingSkillSource = installedSkillSources[names.indexOf("gmloop-tooling")];
+        assert.ok(toolingSkillSource);
+        assert.match(toolingSkillSource, /MCP surface is generated from the current CLI command catalog/u);
+        assert.match(toolingSkillSource, /gmloop help <command>/u);
+        assert.match(toolingSkillSource, /lintRuleset/u);
+        assert.match(toolingSkillSource, /refactor\.codemods/u);
+        assert.match(toolingSkillSource, /syntax-recovery or recovery-capable codemod workflow/u);
+        assert.match(toolingSkillSource, /semantic rename transaction/u);
+        assert.doesNotMatch(toolingSkillSource, /gmloop_[a-z]/u);
         assert.ok(result.added.includes("AGENTS.md"));
         assert.ok(result.added.includes(".gitignore"));
         assert.equal(
@@ -71,6 +80,10 @@ void test("agent pack initialization installs skills, project guidance, and a ve
         assert.match(projectGuidance, /## Autonomous Iteration Loop/u);
         assert.match(projectGuidance, /smallest player-visible improvement/u);
         assert.match(projectGuidance, /## Validation And Completion/u);
+        assert.match(projectGuidance, /official `gm-cli` flow/u);
+        assert.match(projectGuidance, /HTML5 target/u);
+        assert.match(projectGuidance, /Playwright MCP integration/u);
+        assert.match(projectGuidance, /Do not treat parsing, formatting, unit tests, compilation, launch/u);
         assert.match(projectGuidance, /## Failure And Escalation/u);
         assert.doesNotMatch(projectGuidance, /\.agents\/skills/u);
         assert.doesNotMatch(projectGuidance, /agent pack/iu);

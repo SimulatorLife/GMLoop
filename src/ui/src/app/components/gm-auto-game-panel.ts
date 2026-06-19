@@ -22,6 +22,7 @@ import {
 } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 import type { GmBadgeTone } from "./primitives/gm-badge.js";
+import { renderProcessButtonContent } from "./primitives/gm-button.js";
 
 /**
  * Pipeline statuses in which the Start action is enabled (anything that is
@@ -126,7 +127,7 @@ export class GmAutoGamePanel extends LightDomLitElement {
 
     #submitOneTimeTask(): void {
         const prompt = this.taskPrompt.trim();
-        if (!this.#hasPipelineController() || prompt.length === 0) {
+        if (!this.#hasPipelineController() || this.state?.autoGamePendingOperation !== null || prompt.length === 0) {
             return;
         }
 
@@ -156,7 +157,11 @@ export class GmAutoGamePanel extends LightDomLitElement {
      * single read.
      */
     #canRunLifecycleAction(allowedStatuses: ReadonlySet<GraphVisualizationAutoGamePipelineStatus>): boolean {
-        return this.#hasPipelineController() && allowedStatuses.has(this.#getPipelineStatus());
+        return (
+            this.#hasPipelineController() &&
+            this.state?.autoGamePendingOperation === null &&
+            allowedStatuses.has(this.#getPipelineStatus())
+        );
     }
 
     #renderPipelineAction(action: GraphVisualizationAutoGamePipelineAction) {
@@ -175,7 +180,8 @@ export class GmAutoGamePanel extends LightDomLitElement {
 
     #renderPipelineControls() {
         const actions = this.model?.autoGamePipeline?.actions ?? [];
-        const canRunTask = this.#hasPipelineController();
+        const pendingOperation = this.state?.autoGamePendingOperation ?? null;
+        const canRunTask = this.#hasPipelineController() && pendingOperation === null;
         const trimmedTaskPrompt = this.taskPrompt.trim();
 
         return html`
@@ -197,27 +203,39 @@ export class GmAutoGamePanel extends LightDomLitElement {
                             class="gm-btn gm-btn--primary"
                             type="button"
                             ?disabled=${!this.#canRunLifecycleAction(AUTO_GAME_LIFECYCLE_START_STATUSES)}
+                            aria-busy=${pendingOperation === "pipeline-start" ? "true" : "false"}
                             @click=${() => this.#dispatchPipelineAction("start")}
                         >
-                            Start
+                            ${renderProcessButtonContent({
+                                label: "Start",
+                                pending: pendingOperation === "pipeline-start"
+                            })}
                         </button>
                         <button
                             id="pause-auto-game-pipeline"
                             class="gm-btn"
                             type="button"
                             ?disabled=${!this.#canRunLifecycleAction(AUTO_GAME_LIFECYCLE_PAUSE_STATUSES)}
+                            aria-busy=${pendingOperation === "pipeline-pause" ? "true" : "false"}
                             @click=${() => this.#dispatchPipelineAction("pause")}
                         >
-                            Pause
+                            ${renderProcessButtonContent({
+                                label: "Pause",
+                                pending: pendingOperation === "pipeline-pause"
+                            })}
                         </button>
                         <button
                             id="stop-auto-game-pipeline"
                             class="gm-btn gm-btn--destructive"
                             type="button"
                             ?disabled=${!this.#canRunLifecycleAction(AUTO_GAME_LIFECYCLE_STOP_STATUSES)}
+                            aria-busy=${pendingOperation === "pipeline-stop" ? "true" : "false"}
                             @click=${() => this.#dispatchPipelineAction("stop")}
                         >
-                            Stop
+                            ${renderProcessButtonContent({
+                                label: "Stop",
+                                pending: pendingOperation === "pipeline-stop"
+                            })}
                         </button>
                     </div>
                     ${this.#hasPipelineController()
@@ -253,8 +271,12 @@ export class GmAutoGamePanel extends LightDomLitElement {
                             class="gm-btn gm-btn--primary auto-game-task-submit"
                             type="submit"
                             ?disabled=${!canRunTask || trimmedTaskPrompt.length === 0}
+                            aria-busy=${pendingOperation === "run-task" ? "true" : "false"}
                         >
-                            Run Task
+                            ${renderProcessButtonContent({
+                                label: "Run Task",
+                                pending: pendingOperation === "run-task"
+                            })}
                         </button>
                     </form>
                     ${actions.length === 0
@@ -325,7 +347,7 @@ export class GmAutoGamePanel extends LightDomLitElement {
                             type="checkbox"
                             role="switch"
                             .checked=${skill.enabled}
-                            ?disabled=${!this.#hasPipelineController()}
+                            ?disabled=${!this.#hasPipelineController() || this.state?.autoGamePendingOperation !== null}
                             aria-label=${`${skill.enabled ? "Exclude" : "Include"} ${skill.name} ${
                                 skill.enabled ? "from" : "in"
                             } Auto-Game`}
@@ -373,6 +395,8 @@ export class GmAutoGamePanel extends LightDomLitElement {
                 : hasUntrackedProjectSkills
                   ? "Setup Incomplete"
                   : "Not Initialized";
+        const isAgentPackPending = this.state?.autoGamePendingOperation === "initialize-agent-pack";
+        const isSkillMutationPending = this.state?.autoGamePendingOperation !== null;
 
         return html`
             <article class="gm-card auto-game-card auto-game-skills-card">
@@ -400,6 +424,7 @@ export class GmAutoGamePanel extends LightDomLitElement {
                                   <input
                                       type="checkbox"
                                       .checked=${this.includeGitIgnore}
+                                      ?disabled=${isSkillMutationPending}
                                       @change=${(event: Event) => {
                                           this.includeGitIgnore = (event.target as HTMLInputElement).checked;
                                       }}
@@ -415,7 +440,10 @@ export class GmAutoGamePanel extends LightDomLitElement {
                                   id="initialize-auto-game-agent-pack"
                                   class="gm-btn gm-btn--primary"
                                   type="button"
-                                  ?disabled=${!this.#hasPipelineController() || this.model?.loadedTarget === null}
+                                  ?disabled=${!this.#hasPipelineController() ||
+                                  this.model?.loadedTarget === null ||
+                                  isSkillMutationPending}
+                                  aria-busy=${isAgentPackPending ? "true" : "false"}
                                   @click=${() => {
                                       this.dispatchEvent(
                                           new CustomEvent<GraphUiInitializeAutoGameAgentPackDetail>(
@@ -429,7 +457,10 @@ export class GmAutoGamePanel extends LightDomLitElement {
                                       );
                                   }}
                               >
-                                  ${agentPackActionLabel}
+                                  ${renderProcessButtonContent({
+                                      label: agentPackActionLabel,
+                                      pending: isAgentPackPending
+                                  })}
                               </button>
                           </div>
                       `

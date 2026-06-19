@@ -407,8 +407,8 @@ button:not([class]):disabled {
 
 .button-spinner {
   display: inline-block;
-  width: 14px;
-  height: 14px;
+  width: var(--gm-icon-sm);
+  height: var(--gm-icon-sm);
   border: 2px solid var(--gm-spinner-track-light);
   border-top-color: currentColor;
   border-radius: 50%;

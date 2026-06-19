@@ -12,6 +12,7 @@ import { getUiErrorMessage } from "../error-message.js";
 import { createInitialFixWorkflowLogLines, createRunningFixWorkflowLogLines } from "../fix-workflow-progress.js";
 import { GraphVisualizationUiStore } from "../state/store.js";
 import type {
+    GraphVisualizationUiAutoGamePendingOperation,
     GraphVisualizationUiDocsView,
     GraphVisualizationUiPage,
     GraphVisualizationUiState
@@ -56,6 +57,7 @@ import { LightDomLitElement } from "./light-dom-lit-element.js";
 const LIVE_RELOAD_ERROR_ACTION_TYPE = "set-live-reload-error";
 const FIX_LOG_LINES_ACTION_TYPE = "set-fix-log-lines";
 const PAGE_ERROR_ACTION_TYPE = "set-page-error";
+const AUTO_GAME_OPERATION_PENDING_ACTION_TYPE = "set-auto-game-operation-pending";
 const AUTO_GAME_PAGE: GraphVisualizationUiPage = "auto-game";
 
 const PAGE_MAIN_SECTION_ID: Readonly<Record<GraphVisualizationUiPage, string>> = Object.freeze({
@@ -228,7 +230,9 @@ export class GmAppShell extends LightDomLitElement {
     #onInitializeAutoGameAgentPack = (eventValue: Event): void => {
         if (this.callbacks.onInitializeAutoGameAgentPack) {
             const options = (eventValue as CustomEvent<GraphUiInitializeAutoGameAgentPackDetail>).detail;
-            void this.#runAutoGameSkillMutation(() => this.callbacks.onInitializeAutoGameAgentPack?.(options));
+            void this.#runAutoGameSkillMutation("initialize-agent-pack", () =>
+                this.callbacks.onInitializeAutoGameAgentPack?.(options)
+            );
         }
     };
 
@@ -237,7 +241,9 @@ export class GmAppShell extends LightDomLitElement {
             return;
         }
         const { enabled, name } = (eventValue as CustomEvent<GraphUiSetAutoGameSkillEnabledDetail>).detail;
-        void this.#runAutoGameSkillMutation(() => this.callbacks.onSetAutoGameSkillEnabled?.(name, enabled));
+        void this.#runAutoGameSkillMutation("skill-toggle", () =>
+            this.callbacks.onSetAutoGameSkillEnabled?.(name, enabled)
+        );
     };
 
     #onDismissErrorBanner = (): void => {
@@ -298,6 +304,16 @@ export class GmAppShell extends LightDomLitElement {
             | GraphVisualizationUiCallbacks["onRegenerate"]
             | NonNullable<GraphVisualizationUiCallbacks["onCreateConfig"]>
     ): Promise<void> {
+        const isAlreadyPending =
+            pendingType === "set-config-save-pending"
+                ? this.#state.isConfigSavePending
+                : pendingType === "set-open-project-pending"
+                  ? this.#state.isOpenProjectPending
+                  : this.#state.isRegeneratePending;
+        if (isAlreadyPending) {
+            return;
+        }
+
         try {
             this.#store.dispatch({ pending: true, type: pendingType });
             this.#store.dispatch({ errorMessage: null, page, type: PAGE_ERROR_ACTION_TYPE });
@@ -314,7 +330,7 @@ export class GmAppShell extends LightDomLitElement {
         if (!this.model || !this.model.isServerMode) {
             return;
         }
-        if (this.#state.isLiveReloadStartPending) {
+        if (this.#state.isLiveReloadStartPending || this.#state.isLiveReloadStopPending) {
             return;
         }
 
@@ -337,11 +353,17 @@ export class GmAppShell extends LightDomLitElement {
     }
 
     async #stopLiveReload(): Promise<void> {
-        if (!this.model || this.model.liveReload === null) {
+        if (
+            !this.model ||
+            this.model.liveReload === null ||
+            this.#state.isLiveReloadStartPending ||
+            this.#state.isLiveReloadStopPending
+        ) {
             return;
         }
 
         try {
+            this.#store.dispatch({ pending: true, type: "set-live-reload-stop-pending" });
             await this.callbacks.onStopLiveReload();
             this.model = {
                 ...this.model,
@@ -351,11 +373,13 @@ export class GmAppShell extends LightDomLitElement {
         } catch (error) {
             const message = getUiErrorMessage(error, "Unknown live-reload stop error");
             this.#store.dispatch({ errorMessage: message, type: LIVE_RELOAD_ERROR_ACTION_TYPE });
+        } finally {
+            this.#store.dispatch({ pending: false, type: "set-live-reload-stop-pending" });
         }
     }
 
     async #runAutoGamePipelineAction(action: GraphUiTriggerAutoGamePipelineDetail["action"]): Promise<void> {
-        if (!this.model || !this.model.isServerMode) {
+        if (!this.model || !this.model.isServerMode || this.#state.autoGamePendingOperation !== null) {
             return;
         }
 
@@ -369,7 +393,9 @@ export class GmAppShell extends LightDomLitElement {
             return;
         }
 
+        const operation: GraphVisualizationUiAutoGamePendingOperation = `pipeline-${action}`;
         try {
+            this.#store.dispatch({ operation, pending: true, type: AUTO_GAME_OPERATION_PENDING_ACTION_TYPE });
             this.#store.dispatch({ errorMessage: null, page: AUTO_GAME_PAGE, type: PAGE_ERROR_ACTION_TYPE });
             const autoGamePipeline = await hostAction();
             if (autoGamePipeline !== undefined) {
@@ -381,6 +407,8 @@ export class GmAppShell extends LightDomLitElement {
         } catch (error) {
             const message = getUiErrorMessage(error, "Unknown auto-game pipeline error");
             this.#store.dispatch({ errorMessage: message, page: AUTO_GAME_PAGE, type: PAGE_ERROR_ACTION_TYPE });
+        } finally {
+            this.#store.dispatch({ operation, pending: false, type: AUTO_GAME_OPERATION_PENDING_ACTION_TYPE });
         }
     }
 
@@ -389,12 +417,18 @@ export class GmAppShell extends LightDomLitElement {
             !this.model ||
             !this.model.isServerMode ||
             !this.callbacks.onRunAutoGameTask ||
+            this.#state.autoGamePendingOperation !== null ||
             prompt.trim().length === 0
         ) {
             return;
         }
 
         try {
+            this.#store.dispatch({
+                operation: "run-task",
+                pending: true,
+                type: AUTO_GAME_OPERATION_PENDING_ACTION_TYPE
+            });
             this.#store.dispatch({ errorMessage: null, page: AUTO_GAME_PAGE, type: PAGE_ERROR_ACTION_TYPE });
             const autoGamePipeline = await this.callbacks.onRunAutoGameTask(prompt.trim());
             if (autoGamePipeline !== undefined) {
@@ -406,23 +440,44 @@ export class GmAppShell extends LightDomLitElement {
         } catch (error) {
             const message = getUiErrorMessage(error, "Unknown auto-game task error");
             this.#store.dispatch({ errorMessage: message, page: AUTO_GAME_PAGE, type: PAGE_ERROR_ACTION_TYPE });
+        } finally {
+            this.#store.dispatch({
+                operation: "run-task",
+                pending: false,
+                type: AUTO_GAME_OPERATION_PENDING_ACTION_TYPE
+            });
         }
     }
 
-    async #runAutoGameSkillMutation(hostAction: () => void | Promise<void>): Promise<void> {
-        if (!this.model || !this.model.isServerMode || !hasLoadedGraphProject(this.model)) {
+    async #runAutoGameSkillMutation(
+        operation: "initialize-agent-pack" | "skill-toggle",
+        hostAction: () => void | Promise<void>
+    ): Promise<void> {
+        if (
+            !this.model ||
+            !this.model.isServerMode ||
+            !hasLoadedGraphProject(this.model) ||
+            this.#state.autoGamePendingOperation !== null
+        ) {
             return;
         }
         try {
+            this.#store.dispatch({ operation, pending: true, type: AUTO_GAME_OPERATION_PENDING_ACTION_TYPE });
             this.#store.dispatch({ errorMessage: null, page: AUTO_GAME_PAGE, type: PAGE_ERROR_ACTION_TYPE });
             await hostAction();
         } catch (error) {
             const message = getUiErrorMessage(error, "Unknown Auto-Game skill error");
             this.#store.dispatch({ errorMessage: message, page: AUTO_GAME_PAGE, type: PAGE_ERROR_ACTION_TYPE });
+        } finally {
+            this.#store.dispatch({ operation, pending: false, type: AUTO_GAME_OPERATION_PENDING_ACTION_TYPE });
         }
     }
 
     async #runFixWorkflow(workflow: GraphVisualizationProjectWorkflow): Promise<void> {
+        if (this.#state.isFixPending) {
+            return;
+        }
+
         const fixWorkflowStartedAt = Date.now();
         let hasReceivedFixProgress = false;
         const fixWorkflowProgressTimer = setInterval(() => {

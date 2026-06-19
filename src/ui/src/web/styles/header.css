@@ -140,7 +140,7 @@
   font-weight: 800;
 }
 
-.open-button:hover {
+.open-button:hover:not(:disabled) {
   background: linear-gradient(135deg, var(--gm-brand-teal-hover), var(--gm-brand-purple-hover));
   color: var(--gm-text-interactive);
 }
