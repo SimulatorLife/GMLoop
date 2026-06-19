@@ -169,6 +169,7 @@ void test("GmDocsPanel renders the Linting subview and project-facing rule conte
     assert.match(rendered, /gml\/normalize-operators/u);
     assert.match(rendered, /gml\/no-globalvar/u);
     assert.match(rendered, /<gm-badge[^>]*\.label=fixable/u);
+    assert.match(rendered, /label=Copy gml\/normalize-operators identifier/u);
     assert.doesNotMatch(rendered, /fixable:code/u);
 });
 
@@ -294,6 +295,39 @@ void test("GmDocsPanel leaves docs controls to the shared page toolbar", () => {
     assert.doesNotMatch(rendered, /Documentation view selector/u);
 });
 
+void test("GmDocsPanel exposes copy actions for CLI command usage", () => {
+    const panel = new TestableGmDocsPanel();
+    panel.model = {
+        autoGamePipeline: null,
+        data: {
+            edges: [],
+            generatedAt: "2026-01-01T00:00:00.000Z",
+            graphs: [],
+            nodes: [],
+            projectRoot: "/tmp/project"
+        },
+        documentationCatalogs: createDocumentationCatalogs(),
+        isServerMode: false,
+        lastFixRun: null,
+        loadedTarget: null,
+        liveReload: null,
+        mcpServerStatus: "not-started",
+        projectConfigurationCatalog: null,
+        startupState: null,
+        title: "Docs CLI View"
+    };
+    panel.state = createDocsPanelState("cli");
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /gmloop graph visualize <path>/u);
+    assert.match(
+        rendered,
+        /<gm-copy-button[\s\S]*class="catalog-copy-button"[\s\S]*\.value=gmloop graph visualize <path>/u
+    );
+    assert.match(rendered, /label=Copy graph visualize usage/u);
+});
+
 void test("GmDocsPanel filters the Linting subview by the current search query", () => {
     const panel = new TestableGmDocsPanel();
     panel.model = {
@@ -349,6 +383,7 @@ void test("GmDocsPanel shows a per-subview empty state when search has no matche
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /No commands match “does-not-exist”\./u);
+    assert.doesNotMatch(rendered, /Copy graph visualize usage/u);
     assert.doesNotMatch(rendered, /graph visualize/u);
 });
 
@@ -408,6 +443,8 @@ void test("GmDocsPanel renders the MCP tools subview and tool metadata when sele
 
     assert.match(rendered, /id="docs-page"[\s\S]*class=page content-page docs-page active/u);
     assert.match(rendered, /project status/u);
+    assert.match(rendered, /project_status/u);
+    assert.match(rendered, /label=Copy project status tool name/u);
     assert.match(rendered, /Read the current project status\./u);
     assert.match(rendered, /path/u);
     assert.match(rendered, /Project path to inspect\./u);

@@ -477,99 +477,12 @@ function printCallExpressionNode(node, path, options, print) {
         }
     }
 
-    let printedArgs;
-
-    if (node.arguments.length === 0) {
-        printedArgs = [printEmptyParens(path, options)];
-    } else {
-        // Single-pass: categorize callback + struct in one iteration.
-        const callbackArguments: unknown[] = [];
-        const structArguments: unknown[] = [];
-        const structArgumentsToBreak: unknown[] = [];
-        const args = node.arguments ?? [];
-        const argsLen = args.length;
-        for (let i = 0; i < argsLen; i++) {
-            const arg = args[i];
-            const argType = arg?.type;
-            if (
-                argType === Core.FUNCTION_DECLARATION ||
-                argType === Core.FUNCTION_EXPRESSION ||
-                argType === Core.CONSTRUCTOR_DECLARATION
-            ) {
-                callbackArguments.push(arg);
-            } else if (argType === Core.STRUCT_EXPRESSION) {
-                structArguments.push(arg);
-                const prevArg = i > 0 ? args[i - 1] : null;
-                if (shouldForceBreakStructArgument(arg, options, prevArg)) {
-                    structArgumentsToBreak.push(arg);
-                }
-            }
-        }
-
-        structArgumentsToBreak.forEach((argument: object) => {
-            forcedStructArgumentBreaks.set(argument, true);
-        });
-
-        const shouldFavorInlineArguments =
-            callbackArguments.length === 0 &&
-            structArguments.length === 0 &&
-            node.arguments.length <= 3 &&
-            node.arguments.every((argument) => !isComplexArgumentNode(argument));
-
-        const effectiveElementsPerLineLimit = shouldFavorInlineArguments ? node.arguments.length : Infinity;
-
-        const simplePrefixLength = countLeadingSimpleCallArguments(node);
-        const shouldForceCallbackBreaks = callbackArguments.length > 0 && simplePrefixLength <= 1;
-
-        const shouldForceBreakArguments =
-            callbackArguments.length > 1 || structArgumentsToBreak.length > 0 || shouldForceCallbackBreaks;
-
-        const shouldUseCallbackLayout = [args[0], args.at(-1)].some(
-            (argumentNode) =>
-                argumentNode?.type === Core.FUNCTION_DECLARATION ||
-                argumentNode?.type === Core.FUNCTION_EXPRESSION ||
-                argumentNode?.type === Core.CONSTRUCTOR_DECLARATION ||
-                argumentNode?.type === Core.STRUCT_EXPRESSION
-        );
-
-        const shouldIncludeInlineVariant =
-            shouldUseCallbackLayout && !shouldForceBreakArguments && simplePrefixLength > 1;
-
-        const hasCallbackArguments = callbackArguments.length > 0;
-
-        const { inlineDoc, multilineDoc } = buildCallArgumentsDocs(path, print, options, {
-            forceBreak: shouldForceBreakArguments,
-            maxElementsPerLine: effectiveElementsPerLineLimit,
-            includeInlineVariant: shouldIncludeInlineVariant,
-            hasCallbackArguments,
-            // Keep call expressions in l-value chains on one line to avoid
-            // breaking the chain into multiple visual lines (e.g. `foo().bar`).
-            // This preserves readability for chained property access after calls.
-            forceInline: isInLValueChain(path)
-        });
-
-        if (shouldUseCallbackLayout) {
-            const shouldPreferInlineCallbackLayout =
-                inlineDoc &&
-                hasCallbackArguments &&
-                simplePrefixLength > 1 &&
-                shouldIncludeInlineVariant &&
-                willBreak(inlineDoc);
-
-            if (shouldForceBreakArguments) {
-                printedArgs = [concat([breakParent, multilineDoc])];
-            } else if (shouldPreferInlineCallbackLayout) {
-                printedArgs = [inlineDoc];
-            } else if (inlineDoc) {
-                printedArgs = [conditionalGroup([inlineDoc, multilineDoc])];
-            } else {
-                printedArgs = [multilineDoc];
-            }
-        } else {
-            printedArgs = shouldForceBreakArguments ? [concat([breakParent, multilineDoc])] : [multilineDoc];
-        }
-    }
-
+    // Keep call expressions in l-value chains on one line to avoid
+    // breaking the chain into multiple visual lines (e.g. `foo().bar`).
+    // This preserves readability for chained property access after calls.
+    const printedArgs = buildCallLikeArgumentDocs(node, path, options, print, {
+        forceInline: isInLValueChain(path)
+    });
     const calleeDoc = print(OBJECT_TYPE);
 
     return isInLValueChain(path) ? concat([calleeDoc, ...printedArgs]) : group([calleeDoc, ...printedArgs]);
@@ -661,90 +574,7 @@ function printNewExpressionNode(node, path, options, print) {
         return concat(["new ", print("expression"), printEmptyParens(path, options)]);
     }
 
-    // Single-pass: categorize callback + struct in one iteration.
-    const callbackArguments: unknown[] = [];
-    const structArguments: unknown[] = [];
-    const structArgumentsToBreak: unknown[] = [];
-    const args = node.arguments ?? [];
-    const argsLen = args.length;
-    for (let i = 0; i < argsLen; i++) {
-        const arg = args[i];
-        const argType = arg?.type;
-        if (
-            argType === Core.FUNCTION_DECLARATION ||
-            argType === Core.FUNCTION_EXPRESSION ||
-            argType === Core.CONSTRUCTOR_DECLARATION
-        ) {
-            callbackArguments.push(arg);
-        } else if (argType === Core.STRUCT_EXPRESSION) {
-            structArguments.push(arg);
-            const prevArg = i > 0 ? args[i - 1] : null;
-            if (shouldForceBreakStructArgument(arg, options, prevArg)) {
-                structArgumentsToBreak.push(arg);
-            }
-        }
-    }
-
-    structArgumentsToBreak.forEach((argument: object) => {
-        forcedStructArgumentBreaks.set(argument, true);
-    });
-
-    const shouldFavorInlineArguments =
-        callbackArguments.length === 0 &&
-        structArguments.length === 0 &&
-        node.arguments.length <= 3 &&
-        node.arguments.every((argument) => !isComplexArgumentNode(argument));
-
-    const effectiveElementsPerLineLimit = shouldFavorInlineArguments ? node.arguments.length : Infinity;
-
-    const simplePrefixLength = countLeadingSimpleCallArguments(node);
-    const shouldForceCallbackBreaks = callbackArguments.length > 0 && simplePrefixLength <= 1;
-
-    const shouldForceBreakArguments =
-        callbackArguments.length > 1 || structArgumentsToBreak.length > 0 || shouldForceCallbackBreaks;
-
-    const shouldUseCallbackLayout = [args[0], args.at(-1)].some(
-        (argumentNode) =>
-            argumentNode?.type === Core.FUNCTION_DECLARATION ||
-            argumentNode?.type === Core.FUNCTION_EXPRESSION ||
-            argumentNode?.type === Core.CONSTRUCTOR_DECLARATION ||
-            argumentNode?.type === Core.STRUCT_EXPRESSION
-    );
-
-    const shouldIncludeInlineVariant = shouldUseCallbackLayout && !shouldForceBreakArguments && simplePrefixLength > 1;
-
-    const hasCallbackArguments = callbackArguments.length > 0;
-
-    const { inlineDoc, multilineDoc } = buildCallArgumentsDocs(path, print, options, {
-        forceBreak: shouldForceBreakArguments,
-        maxElementsPerLine: effectiveElementsPerLineLimit,
-        includeInlineVariant: shouldIncludeInlineVariant,
-        hasCallbackArguments
-    });
-
-    let printedArgs;
-
-    if (shouldUseCallbackLayout) {
-        const shouldPreferInlineCallbackLayout =
-            inlineDoc &&
-            hasCallbackArguments &&
-            simplePrefixLength > 1 &&
-            shouldIncludeInlineVariant &&
-            willBreak(inlineDoc);
-
-        if (shouldForceBreakArguments) {
-            printedArgs = [concat([breakParent, multilineDoc])];
-        } else if (shouldPreferInlineCallbackLayout) {
-            printedArgs = [inlineDoc];
-        } else if (inlineDoc) {
-            printedArgs = [conditionalGroup([inlineDoc, multilineDoc])];
-        } else {
-            printedArgs = [multilineDoc];
-        }
-    } else {
-        printedArgs = shouldForceBreakArguments ? [concat([breakParent, multilineDoc])] : [multilineDoc];
-    }
-
+    const printedArgs = buildCallLikeArgumentDocs(node, path, options, print);
     const calleeDoc = print("expression");
     // Use the computed `printedArgs` variant rather than always falling back to
     // `multilineDoc`. The earlier implementation accidentally ignored all of the
@@ -1314,6 +1144,138 @@ function shouldForceBreakStructArgument(argument, options, previousArgument) {
     }
 
     return false;
+}
+
+// Argument node kinds that trigger the callback/struct layout path.
+const CALLBACK_OR_STRUCT_ARGUMENT_TYPES = new Set([
+    Core.FUNCTION_DECLARATION,
+    Core.FUNCTION_EXPRESSION,
+    Core.CONSTRUCTOR_DECLARATION,
+    Core.STRUCT_EXPRESSION
+]);
+
+// Argument node kinds that count as a "callback" for layout purposes.
+const CALLBACK_ARGUMENT_TYPES = new Set([
+    Core.FUNCTION_DECLARATION,
+    Core.FUNCTION_EXPRESSION,
+    Core.CONSTRUCTOR_DECLARATION
+]);
+
+type CallLikeArgumentClassification = {
+    callbackArguments: unknown[];
+    structArguments: unknown[];
+    structArgumentsToBreak: unknown[];
+};
+
+/**
+ * Classifies call/new arguments into the buckets the layout pipeline
+ * needs: callback-bearing arguments, struct arguments, and structs that
+ * must force a line break before them. The walk is intentionally a single
+ * pass so the hot formatting path does not pay for two or three
+ * `node.arguments.filter(...)` passes.
+ */
+function classifyCallLikeArguments(node, options) {
+    const callbackArguments: unknown[] = [];
+    const structArguments: unknown[] = [];
+    const structArgumentsToBreak: unknown[] = [];
+    const args = node?.arguments ?? [];
+
+    for (let i = 0; i < args.length; i += 1) {
+        const arg = args[i];
+        const argType = arg?.type;
+
+        if (CALLBACK_ARGUMENT_TYPES.has(argType)) {
+            callbackArguments.push(arg);
+            continue;
+        }
+
+        if (argType === Core.STRUCT_EXPRESSION) {
+            structArguments.push(arg);
+            const previousArgument = i > 0 ? args[i - 1] : null;
+            if (shouldForceBreakStructArgument(arg, options, previousArgument)) {
+                structArgumentsToBreak.push(arg);
+            }
+        }
+    }
+
+    return { callbackArguments, structArguments, structArgumentsToBreak } satisfies CallLikeArgumentClassification;
+}
+
+/**
+ * Lays out the `(...)` argument list for a `CallExpression` or
+ * `NewExpression`, returning an array of Prettier docs to splice after the
+ * callee. Both printers share the same categorisation + layout decision
+ * tree, so the work lives here to avoid the ~70 lines of near-identical
+ * code that used to live in each printer.
+ *
+ * @param node - The `CallExpression` / `NewExpression` AST node.
+ * @param path - Prettier AstPath for the node.
+ * @param options - Prettier options for the active run.
+ * @param print - Recursive print callback from Prettier.
+ * @param options.forceInline - Force a single-line `()` even when the
+ *   layout would otherwise break. Used by call expressions in l-value
+ *   chains (e.g. `foo().bar`) so the chain stays on one visual line.
+ * @returns The argument-list docs (including the surrounding parens).
+ */
+function buildCallLikeArgumentDocs(node, path, options, print, { forceInline = false } = {}) {
+    if (node.arguments.length === 0) {
+        return [printEmptyParens(path, options)];
+    }
+
+    const args = node.arguments;
+    const { callbackArguments, structArguments, structArgumentsToBreak } = classifyCallLikeArguments(node, options);
+
+    structArgumentsToBreak.forEach((argument: object) => {
+        forcedStructArgumentBreaks.set(argument, true);
+    });
+
+    const simplePrefixLength = countLeadingSimpleCallArguments(node);
+    const shouldFavorInlineArguments =
+        callbackArguments.length === 0 &&
+        structArguments.length === 0 &&
+        args.length <= 3 &&
+        args.every((argument) => !isComplexArgumentNode(argument));
+    const effectiveElementsPerLineLimit = shouldFavorInlineArguments ? args.length : Infinity;
+
+    const shouldForceCallbackBreaks = callbackArguments.length > 0 && simplePrefixLength <= 1;
+    const shouldForceBreakArguments =
+        callbackArguments.length > 1 || structArgumentsToBreak.length > 0 || shouldForceCallbackBreaks;
+
+    const shouldUseCallbackLayout =
+        CALLBACK_OR_STRUCT_ARGUMENT_TYPES.has(args[0]?.type) ||
+        CALLBACK_OR_STRUCT_ARGUMENT_TYPES.has(args.at(-1)?.type);
+    const shouldIncludeInlineVariant = shouldUseCallbackLayout && !shouldForceBreakArguments && simplePrefixLength > 1;
+    const hasCallbackArguments = callbackArguments.length > 0;
+
+    const { inlineDoc, multilineDoc } = buildCallArgumentsDocs(path, print, options, {
+        forceBreak: shouldForceBreakArguments,
+        maxElementsPerLine: effectiveElementsPerLineLimit,
+        includeInlineVariant: shouldIncludeInlineVariant,
+        hasCallbackArguments,
+        forceInline
+    });
+
+    if (!shouldUseCallbackLayout) {
+        return shouldForceBreakArguments ? [concat([breakParent, multilineDoc])] : [multilineDoc];
+    }
+
+    const shouldPreferInlineCallbackLayout =
+        inlineDoc &&
+        hasCallbackArguments &&
+        simplePrefixLength > 1 &&
+        shouldIncludeInlineVariant &&
+        willBreak(inlineDoc);
+
+    if (shouldForceBreakArguments) {
+        return [concat([breakParent, multilineDoc])];
+    }
+    if (shouldPreferInlineCallbackLayout) {
+        return [inlineDoc];
+    }
+    if (inlineDoc) {
+        return [conditionalGroup([inlineDoc, multilineDoc])];
+    }
+    return [multilineDoc];
 }
 
 function hasLineBreakBetweenArguments(previousArgument, argument, options) {
