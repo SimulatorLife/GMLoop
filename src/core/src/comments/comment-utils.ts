@@ -86,6 +86,49 @@ export function isBlockComment(node: unknown): node is CommentBlockNode {
 }
 
 /**
+ * AST node kinds that Prettier cannot attach comments to via the
+ * `Printer.canAttachComment` contract. The set is intentionally tiny:
+ * comment nodes already own their own leading/trailing placements, and
+ * `EmptyStatement` has no source range worth attaching a comment to.
+ */
+const NON_ATTACHABLE_NODE_TYPES: ReadonlySet<string> = Object.freeze(new Set(["EmptyStatement"]));
+
+/**
+ * Decide whether Prettier may attach a comment to the given AST node.
+ *
+ * The helper mirrors the shape Prettier expects from
+ * {@link Printer.canAttachComment}: the comment system must be able to walk
+ * both the node and any neighbouring nodes in search of an attachable slot.
+ * Empty statements and the comment nodes themselves cannot carry additional
+ * comments, so they are excluded explicitly.
+ *
+ * Centralising this rule in `@gmloop/core` lets every Prettier adapter
+ * (formatter, linter, refactor) share the same boundary without each
+ * workspace re-implementing the predicate inline. The check stays defensive
+ * against non-object input so callers can pass loose values from parser
+ * adapters without sprinkling `?.` chains at every call site.
+ *
+ * @param node Candidate AST node to evaluate.
+ * @returns `true` when Prettier should consider this node attachable.
+ */
+export function canAttachComment(node: unknown): boolean {
+    if (!isObjectLike(node)) {
+        return false;
+    }
+
+    const type = (node as { type?: unknown }).type;
+    if (typeof type !== "string" || type.length === 0) {
+        return false;
+    }
+
+    if (type.includes("Comment")) {
+        return false;
+    }
+
+    return !NON_ATTACHABLE_NODE_TYPES.has(type);
+}
+
+/**
  * Determines whether the provided AST node carries at least one comment.
  *
  * Nodes in parser output sometimes attach bookkeeping values or plain strings
