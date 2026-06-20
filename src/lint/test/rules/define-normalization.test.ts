@@ -8,9 +8,9 @@ import { lintWithRule } from "./lint-rule-test-harness.js";
 const { Lint } = LintWorkspace;
 
 void describe("define directive normalization", () => {
-    void it("normalizes #define to #macro with single space separator", () => {
+    void it("normalizes #define to #macro while preserving space separator", () => {
         const input = "#define  LEGACY_MACRO 123456789\n";
-        const expected = "#macro LEGACY_MACRO 123456789\n";
+        const expected = "#macro  LEGACY_MACRO 123456789\n";
 
         const rule = Lint.plugin.rules["normalize-directives"];
         const messages: Array<{
@@ -61,8 +61,8 @@ void describe("define directive normalization", () => {
         const expected = [
             "#region Utility Scripts",
             "#endregion Utility Scripts",
-            "#region Setup",
-            "#endregion",
+            "//#region Setup",
+            "//#endregion",
             "",
             "if (ready) {",
             "    do_work();",

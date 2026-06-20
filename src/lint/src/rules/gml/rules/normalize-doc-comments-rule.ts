@@ -1132,7 +1132,12 @@ function synthesizeFunctionDocCommentBlock(
     }
 
     const alignedBlock = alignDescriptionContinuationLines(block);
-    return Array.from(reorderFunctionDocLinesForCanonicalTagLayout(alignedBlock));
+    const result = Array.from(reorderFunctionDocLinesForCanonicalTagLayout(alignedBlock));
+    return canonicalizeDescriptionToDesc(result);
+}
+
+function canonicalizeDescriptionToDesc(block: ReadonlyArray<string>): ReadonlyArray<string> {
+    return block.map((line) => line.replace(/^(\s*\/+\s*)@description\b/iu, "$1@desc"));
 }
 
 function processDocBlock(blockLines: Array<string>): Array<string> {
@@ -1266,7 +1271,7 @@ function flushDetachedDocCommentBlock(
         return;
     }
 
-    rewrittenLines.push(...normalizedDetachedDocBlock, ...pendingGapLines);
+    rewrittenLines.push(...canonicalizeDescriptionToDesc(normalizedDetachedDocBlock), ...pendingGapLines);
 }
 
 function applyJsDocTagAliasLine(line: string): string {
@@ -1515,7 +1520,8 @@ function synthesizeTextFallbackDocCommentBlock({
     }
 
     const alignedBlock = alignDescriptionContinuationLines(fallbackBlock);
-    return Array.from(reorderFunctionDocLinesForCanonicalTagLayout(alignedBlock));
+    const result = Array.from(reorderFunctionDocLinesForCanonicalTagLayout(alignedBlock));
+    return canonicalizeDescriptionToDesc(result);
 }
 
 export function createNormalizeDocCommentsRule(definition: GmlRuleDefinition): Rule.RuleModule {
@@ -1626,7 +1632,7 @@ export function createNormalizeDocCommentsRule(definition: GmlRuleDefinition): R
                                     rewrittenLines.push(...synthesized);
                                 }
                             } else if (processedBlock.length > 0) {
-                                rewrittenLines.push(...processedBlock);
+                                rewrittenLines.push(...canonicalizeDescriptionToDesc(processedBlock));
                             }
                             pendingDocBlock = [];
                             pendingGapLinesAfterDocBlock = [];

@@ -16,7 +16,7 @@ void test("normalize-doc-comments preserves non-return tag ordering while reorde
     ].join("\n");
 
     const expected = [
-        "/// @description Updates movement for the active player.",
+        "/// @desc Updates movement for the active player.",
         "/// @param [angle=90] Current heading in degrees.",
         "/// @customTag keep this custom metadata",
         "/// @param speed The per-step speed scalar.",
@@ -139,7 +139,7 @@ void test("normalize-doc-comments canonicalizes void returns and drops duplicate
     ].join("\n");
 
     const expected = [
-        "/// @description Draw points in array for debugging",
+        "/// @desc Draw points in array for debugging",
         "/// @returns {undefined}",
         "static draw_points = function () {",
         "    draw_circle(x, y, 2, false);",
@@ -176,7 +176,7 @@ void test("normalize-doc-comments infers Struct returns from struct-valued ident
         "    return foo;",
         "}",
         "",
-        "/// @description Keeps the instance data available after construction.",
+        "/// @desc Keeps the instance data available after construction.",
         "/// @returns {Struct}",
         "function assign_then_extend() {",
         "    data = {};",

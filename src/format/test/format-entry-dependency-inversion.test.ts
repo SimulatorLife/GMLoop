@@ -6,7 +6,7 @@ import { defaultGmlFormatProvider, type GmlFormatProvider } from "../src/compone
 import { createGmlFormat, Format } from "../src/format-entry.js";
 
 void test("format entry consumes the abstract provider instead of low-level formatter adapters", async () => {
-    const source = await readFile("src/format/src/format-entry.ts", "utf8");
+    const source = await readFile(new URL("../../src/format-entry.ts", import.meta.url), "utf8");
 
     // Verify high-level orchestration (format-entry.ts) does not directly
     // import concrete adapter subdirectories.

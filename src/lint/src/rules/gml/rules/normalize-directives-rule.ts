@@ -81,13 +81,14 @@ function normalizeDefineRegionLine(leadingWhitespace: string, directiveBody: str
 }
 
 function normalizeDefineMacroLine(line: string): string {
-    const defineMatch = /^(\s*)#define\b(.*)$/u.exec(line);
+    const defineMatch = /^(\s*)#define(\s+)(.*)$/u.exec(line);
     if (!defineMatch) {
         return line;
     }
 
     const leadingWhitespace = defineMatch[1] ?? "";
-    const directiveBody = (defineMatch[2] ?? "").trim();
+    const spacingAfterDefine = defineMatch[2] ?? " ";
+    const directiveBody = (defineMatch[3] ?? "").trim();
     if (directiveBody.length === 0) {
         return line;
     }
@@ -112,26 +113,14 @@ function normalizeDefineMacroLine(line: string): string {
         : directiveValueText;
     const normalizedMacroLine =
         normalizedDirectiveValue.length === 0
-            ? `${leadingWhitespace}#macro ${directiveName}`
-            : `${leadingWhitespace}#macro ${directiveName} ${normalizedDirectiveValue}`;
+            ? `${leadingWhitespace}#macro${spacingAfterDefine}${directiveName}`
+            : `${leadingWhitespace}#macro${spacingAfterDefine}${directiveName} ${normalizedDirectiveValue}`;
 
     return appendTrailingLineComment(normalizedMacroLine, lineCommentParts.commentText);
 }
 
 function normalizeCommentedDirectiveLine(line: string): string {
-    const match = /^(\s*)\/\/\s*#(region|endregion)\b(.*)$/u.exec(line);
-    if (!match) {
-        return line;
-    }
-
-    const leadingWhitespace = match[1] ?? "";
-    const directive = match[2] ?? "";
-    const name = match[3]?.trim() ?? "";
-    if (name.length === 0) {
-        return `${leadingWhitespace}#${directive}`;
-    }
-
-    return `${leadingWhitespace}#${directive} ${name}`;
+    return line;
 }
 
 function normalizeLegacyBlockKeywordLine(line: string): string | null {
