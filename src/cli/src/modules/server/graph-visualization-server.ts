@@ -22,6 +22,18 @@ type GraphVisualizationServerOpenProjectTargets = (
     input: Readonly<{ path: string | null }>
 ) => Promise<GraphVisualizationServerRegenerationResult>;
 
+export type GraphVisualizationServerPlaygroundFixture = Readonly<{
+    caseId: string;
+    kind: string;
+    inputGml: string;
+    expectedGml: string | null;
+    config: Record<string, unknown>;
+}>;
+
+type GraphVisualizationServerGetPlaygroundFixtures = () => Promise<
+    ReadonlyArray<GraphVisualizationServerPlaygroundFixture>
+>;
+
 type GraphVisualizationServerProcessPlayground = (
     input: Readonly<{
         gml: string;
@@ -32,6 +44,7 @@ type GraphVisualizationServerProcessPlayground = (
         refactor: boolean;
         codemodIds: ReadonlyArray<string>;
         transpileMode: "none" | "patch" | "expression";
+        fixtureId?: string;
     }>
 ) => Promise<Readonly<{ ast: string; output: string; error: string | null }>>;
 
@@ -81,6 +94,7 @@ export type GraphVisualizationServerOptions = Readonly<{
     saveConfig?: GraphVisualizationServerSaveConfig;
     initializeAutoGameAgentPack?: GraphVisualizationServerInitializeAutoGameAgentPack;
     setAutoGameSkillEnabled?: GraphVisualizationServerSetAutoGameSkillEnabled;
+    getPlaygroundFixtures?: GraphVisualizationServerGetPlaygroundFixtures;
 }>;
 
 export type GraphVisualizationServerHandle = ServerEndpoint &
@@ -172,6 +186,11 @@ async function routeGraphVisualizationServerRequest(
     }
 
     if (handleFixProgressRequest(request, response, options)) {
+        return;
+    }
+
+    if (request.method === "GET" && request.url === "/api/playground/fixtures" && options.getPlaygroundFixtures) {
+        await handleGetPlaygroundFixturesRequest(options.getPlaygroundFixtures, response);
         return;
     }
 
@@ -332,6 +351,18 @@ async function handleOpenProjectTargetsRequest(
             path: selectedPath.length > 0 ? selectedPath : null
         });
         writeJsonResponse(response, 200, createOpenProjectTargetsResponse(selectionResult));
+    } catch (error: unknown) {
+        writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });
+    }
+}
+
+async function handleGetPlaygroundFixturesRequest(
+    getPlaygroundFixtures: GraphVisualizationServerGetPlaygroundFixtures,
+    response: http.ServerResponse<http.IncomingMessage>
+): Promise<void> {
+    try {
+        const fixtures = await getPlaygroundFixtures();
+        writeJsonResponse(response, 200, { fixtures, ok: true });
     } catch (error: unknown) {
         writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });
     }
@@ -509,7 +540,8 @@ function createProcessPlaygroundInput(
         lint: parsedBody.lint === true,
         lintRuleIds: readStringListPayloadField(parsedBody, "lintRuleIds"),
         refactor: parsedBody.refactor === true,
-        transpileMode: readPlaygroundTranspileMode(parsedBody.transpileMode)
+        transpileMode: readPlaygroundTranspileMode(parsedBody.transpileMode),
+        fixtureId: typeof parsedBody.fixtureId === "string" ? parsedBody.fixtureId : undefined
     };
 }
 

@@ -1,11 +1,12 @@
 import { type ChildProcessWithoutNullStreams, execFile, spawn } from "node:child_process";
 import { existsSync, type FSWatcher, watch, type WatchListener, type WatchOptions } from "node:fs";
-import { access, constants, mkdir, writeFile } from "node:fs/promises";
+import { access, constants, mkdir, readFile, writeFile } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { Core } from "@gmloop/core";
+import { FixtureRunner } from "@gmloop/fixture-runner";
 import { Format } from "@gmloop/format";
 import { Lint, listLintRuleCatalogEntries } from "@gmloop/lint";
 import { Refactor, type RefactorCodemodId } from "@gmloop/refactor";
@@ -36,6 +37,7 @@ import {
 } from "../modules/live-reload/config.js";
 import { createRefactorBridges } from "../modules/refactor/bridge-factory.js";
 import {
+    type GraphVisualizationServerPlaygroundFixture,
     openUrlInDefaultBrowser,
     startGraphVisualizationServer
 } from "../modules/server/graph-visualization-server.js";
@@ -989,9 +991,16 @@ async function stopGraphVisualizationLiveReloadChildProcess(
     });
 }
 
-function createMutableGraphPlaygroundLintConfig(enabledRuleIds: ReadonlyArray<string>): Array<Record<string, unknown>> {
+function createMutableGraphPlaygroundLintConfig(
+    enabledRuleIds: ReadonlyArray<string>,
+    fixtureConfig: Record<string, unknown> | null = null
+): Array<Record<string, unknown>> {
     const enabledRules = new Set(enabledRuleIds);
     const enforceRuleFilter = enabledRules.size > 0;
+    const fixtureRuleEntries = fixtureConfig
+        ? Lint.configs.createLintRuleEntriesFromProjectConfig(fixtureConfig)
+        : null;
+
     return Lint.configs.recommended.map((config) => {
         const nextConfig = {
             ...config,
@@ -1000,10 +1009,21 @@ function createMutableGraphPlaygroundLintConfig(enabledRuleIds: ReadonlyArray<st
             rules: config.rules ? { ...config.rules } : undefined
         };
 
-        if (enforceRuleFilter && nextConfig.rules && typeof nextConfig.rules === "object") {
-            for (const ruleId of Object.keys(nextConfig.rules)) {
-                if (!enabledRules.has(ruleId)) {
-                    nextConfig.rules[ruleId] = "off";
+        const rules = nextConfig.rules as Record<string, unknown> | undefined;
+        if (rules && typeof rules === "object") {
+            if (fixtureRuleEntries) {
+                for (const [ruleId, ruleEntry] of Object.entries(fixtureRuleEntries)) {
+                    if (rules[ruleId] !== undefined) {
+                        rules[ruleId] = ruleEntry;
+                    }
+                }
+            }
+
+            if (enforceRuleFilter) {
+                for (const ruleId of Object.keys(rules)) {
+                    if (!enabledRules.has(ruleId)) {
+                        rules[ruleId] = "off";
+                    }
                 }
             }
         }
@@ -1914,6 +1934,53 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             void openNextPendingActiveProjectStatePath();
         };
 
+        let playgroundFixtures: ReadonlyArray<GraphVisualizationServerPlaygroundFixture> = [];
+        const discoverPlaygroundFixtures = async (): Promise<
+            ReadonlyArray<GraphVisualizationServerPlaygroundFixture>
+        > => {
+            if (playgroundFixtures.length > 0) {
+                return playgroundFixtures;
+            }
+            try {
+                const repoRoot = findRepoRootSync(path.dirname(fileURLToPath(import.meta.url)));
+                const fixtureRoots = [
+                    { kind: "format", path: path.join(repoRoot, "src", "format", "test", "fixtures") },
+                    { kind: "lint", path: path.join(repoRoot, "src", "lint", "test", "fixtures") },
+                    { kind: "refactor", path: path.join(repoRoot, "src", "refactor", "test", "fixtures") },
+                    { kind: "integration", path: path.join(repoRoot, "test", "fixtures", "integration") }
+                ];
+
+                const allCases: Array<GraphVisualizationServerPlaygroundFixture> = [];
+                for (const root of fixtureRoots) {
+                    if (!existsSync(root.path)) {
+                        continue;
+                    }
+                    const cases = await FixtureRunner.discoverFixtureCases(root.path);
+                    for (const c of cases) {
+                        if (c.inputFilePath && existsSync(c.inputFilePath)) {
+                            const inputGml = await readFile(c.inputFilePath, "utf8");
+                            const expectedGml =
+                                c.expectedFilePath && existsSync(c.expectedFilePath)
+                                    ? await readFile(c.expectedFilePath, "utf8")
+                                    : null;
+                            allCases.push({
+                                caseId: `${root.kind}/${c.caseId}`,
+                                kind: root.kind,
+                                inputGml,
+                                expectedGml,
+                                config: c.config
+                            });
+                        }
+                    }
+                }
+                playgroundFixtures = allCases;
+                return playgroundFixtures;
+            } catch (error) {
+                console.error("Failed to discover playground fixtures:", error);
+                return [];
+            }
+        };
+
         const writeActiveProjectConfig = async (config: Readonly<Record<string, unknown>>) => {
             const projectRoot = activeContext?.projectRoot ?? process.cwd();
             const configPath = path.join(projectRoot, "gmloop.json");
@@ -1930,6 +1997,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
 
         const server = await startGraphVisualizationServer({
             getUiRevision: () => activeServeRevision,
+            getPlaygroundFixtures: discoverPlaygroundFixtures,
             regenerate: async () => {
                 const previousPayloadString = safeStringifyVisualizationPayload();
                 if (!activeContext) {
@@ -2019,13 +2087,23 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 lintRuleIds,
                 refactor,
                 codemodIds,
-                transpileMode
+                transpileMode,
+                fixtureId
             }) => {
                 let ast: string;
                 let output = gml;
                 let error: string | null = null;
 
                 try {
+                    let projectConfig = activeContext?.projectConfig ?? null;
+                    if (fixtureId) {
+                        const fixtures = await discoverPlaygroundFixtures();
+                        const found = fixtures.find((f) => f.caseId === fixtureId);
+                        if (found) {
+                            projectConfig = found.config;
+                        }
+                    }
+
                     const parseAdapter = createGmlParserAdapter();
                     const program = parseAdapter(gml);
                     ast = JSON.stringify(
@@ -2042,7 +2120,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                             output,
                             codemodIds,
                             activeContext?.projectRoot ?? process.cwd(),
-                            activeContext?.projectConfig ?? null
+                            projectConfig
                         );
                     }
 
@@ -2050,7 +2128,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                         const eslint = new ESLint({
                             overrideConfigFile: true,
                             fix: true,
-                            overrideConfig: createMutableGraphPlaygroundLintConfig(lintRuleIds)
+                            overrideConfig: createMutableGraphPlaygroundLintConfig(lintRuleIds, projectConfig)
                         });
                         const [result] = await eslint.lintText(output, {
                             filePath: "graph-visualization-playground.gml"
@@ -2061,7 +2139,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                     if (format) {
                         output = await Format.format(
                             output,
-                            createGraphPlaygroundFormatOptions(formatOptionNames, activeContext?.projectConfig ?? null)
+                            createGraphPlaygroundFormatOptions(formatOptionNames, projectConfig)
                         );
                     }
 

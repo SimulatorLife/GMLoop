@@ -477,3 +477,113 @@ void test("playground panel input uses a highlighted overlay with synchronized t
     assert.match(rendered, /<textarea\s+class="playground-input"/u);
     assert.match(rendered, /@scroll=/u);
 });
+
+void test("playground panel selects a fixture, populates input, and applies its config rules", () => {
+    const panel = new TestableGmPlaygroundPanel();
+    panel.model = {
+        ...createMockModel(),
+        documentationCatalogs: {
+            cliCommands: [],
+            mcpServer: { name: "gmloop-mcp", version: "0.0.1" },
+            mcpTools: [],
+            workspaceRules: {
+                formatOptions: [
+                    {
+                        defaultValue: 100,
+                        description: "Preferred maximum line width.",
+                        name: "printWidth"
+                    }
+                ],
+                lintRules: [
+                    {
+                        description: "Rule for noGlobalvar.",
+                        fixable: null,
+                        ruleId: "gml/no-globalvar"
+                    }
+                ],
+                refactorCodemods: [
+                    {
+                        description: "Expand scientific notation.",
+                        id: "scientificNotation",
+                        requiresSemanticProjectIndex: false
+                    }
+                ]
+            }
+        },
+        projectConfigurationCatalog: createMockProjectConfigurationCatalog()
+    };
+    panel.state = createMockState();
+    panel.setExpandedSectionsForTest(true, true, true);
+
+    const testFixtures = [
+        {
+            caseId: "format/example-test",
+            kind: "format",
+            inputGml: "if (foo) { bar(); }",
+            expectedGml: "if (foo) {\n    bar();\n}",
+            config: {
+                printWidth: 80
+            }
+        },
+        {
+            caseId: "lint/example-test",
+            kind: "lint",
+            inputGml: "globalvar x;",
+            expectedGml: "globalvar x;",
+            config: {
+                lintRules: {
+                    "@gmloop/no-constructor-assignment": "error"
+                }
+            }
+        }
+    ];
+
+    // Set the fixtures list
+    panel.setFixturesForTest(testFixtures);
+
+    // Initial render
+    let rendered = renderTemplateValue(panel.renderForTest());
+
+    // Verify option tags in the dropdown exist
+    assert.match(rendered, /value=format\/example-test/u);
+    assert.match(rendered, /value=lint\/example-test/u);
+    assert.match(rendered, /\[format\] format\/example-test/u);
+    assert.match(rendered, /\[lint\] lint\/example-test/u);
+
+    // Select the format fixture
+    panel.selectFixtureForTest("format/example-test");
+    assert.equal(panel.getSelectedFixtureIdForTest(), "format/example-test");
+
+    rendered = renderTemplateValue(panel.renderForTest());
+    // Verify it is selected in the select element (indicated by ?selected=true)
+    assert.match(rendered, /value=format\/example-test\s+\?selected=true/u);
+
+    // Verify the input pane is populated with the fixture's input GML
+    assert.match(rendered, /if \(foo\) \{ bar\(\); \}/u);
+
+    // Verify correct format/lint/codemod options are applied according to the fixture's config
+    // Specifically, for format/example-test: printWidth is defined in config, so it should be checked
+    assert.match(rendered, /\.checked=true[\s\S]*?class="rule-details-item-key">printWidth<\/span>/u);
+    // Since lintRules are not defined, lint rules should not be checked
+    assert.match(
+        rendered,
+        /\.checked=false[\s\S]*?class="rule-details-item-key">@gmloop\/no-constructor-assignment<\/span>/u
+    );
+
+    // Select the lint fixture
+    panel.selectFixtureForTest("lint/example-test");
+    assert.equal(panel.getSelectedFixtureIdForTest(), "lint/example-test");
+
+    rendered = renderTemplateValue(panel.renderForTest());
+    assert.match(rendered, /value=lint\/example-test\s+\?selected=true/u);
+    // Verify the input is updated
+    assert.match(rendered, /globalvar x;/u);
+
+    // printWidth should now be false (not in lint fixture config)
+    assert.match(rendered, /\.checked=false[\s\S]*?class="rule-details-item-key">printWidth<\/span>/u);
+    // @gmloop/no-constructor-assignment should now be true
+    assert.match(
+        rendered,
+        /\.checked=true[\s\S]*?class="rule-details-item-key">@gmloop\/no-constructor-assignment<\/span>/u
+    );
+});

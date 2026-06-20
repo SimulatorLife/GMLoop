@@ -172,6 +172,9 @@ importers:
       '@gmloop/core':
         specifier: workspace:*
         version: link:../core
+      '@gmloop/fixture-runner':
+        specifier: workspace:*
+        version: link:../fixture-runner
       '@gmloop/format':
         specifier: workspace:*
         version: link:../format
@@ -366,6 +369,9 @@ importers:
 
   src/ui:
     dependencies:
+      diff:
+        specifier: ^7.0.0
+        version: 7.0.0
       lit:
         specifier: ^3.3.3
         version: 3.3.3
@@ -1178,6 +1184,10 @@ packages:
   diff-sequences@27.5.1:
     resolution: {integrity: sha512-k1gCAXAsNgLwEL+Y8Wvl+M6oEFj5bgazfZULpS5CneoPPXRaCCW7dm+q21Ky2VEE5X+VeRDBVg1Pcvvsr4TtNQ==}
     engines: {node: ^10.13.0 || ^12.13.0 || ^14.15.0 || >=15.0.0}
+
+  diff@7.0.0:
+    resolution: {integrity: sha512-PJWHUb1RFevKCwaFA9RlG5tCd+FO5iRh9A8HEtkmBH2Li03iJriB6m6JIN4rGz3K3JLawI7/veA1xzRKP6ISBw==}
+    engines: {node: '>=0.3.1'}
 
   doctypes@1.1.0:
     resolution: {integrity: sha512-LLBi6pEqS6Do3EKQ3J0NqHWV5hhb78Pi8vvESYwyOy2c31ZEZVdtitdzsQsKb7878PEERhzUk0ftqGhG6Mz+pQ==}
@@ -3363,6 +3373,8 @@ snapshots:
   detect-libc@2.1.2: {}
 
   diff-sequences@27.5.1: {}
+
+  diff@7.0.0: {}
 
   doctypes@1.1.0: {}
 

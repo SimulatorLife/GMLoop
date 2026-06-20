@@ -478,3 +478,61 @@
 .gml-plain {
   color: var(--gm-text);
 }
+
+/* ─── Fixture Select ─────────────────────────────────────── */
+.playground-fixture-select-container {
+  display: flex;
+  align-items: center;
+  gap: var(--gm-space-md);
+  flex: 1;
+  max-width: 400px;
+}
+
+.playground-fixture-label {
+  color: var(--gm-text-secondary);
+  font-size: var(--gm-text-sm);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.playground-fixture-select {
+  flex: 1;
+  min-height: var(--gm-height-md);
+}
+
+/* ─── Diff Styles ────────────────────────────────────────── */
+.diff-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.diff-line {
+  display: flex;
+  white-space: pre-wrap;
+  word-break: break-all;
+  padding: 0 var(--gm-space-xs);
+  min-height: var(--gm-leading-loose);
+}
+
+.diff-sign {
+  display: inline-block;
+  width: 1.5em;
+  user-select: none;
+  opacity: 0.6;
+  font-weight: bold;
+}
+
+.diff-added {
+  background-color: rgba(46, 160, 67, 0.15);
+  color: #3fb950;
+}
+
+.diff-removed {
+  background-color: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+  text-decoration: line-through;
+}
+
+.diff-unchanged {
+  color: var(--gm-text-secondary);
+}

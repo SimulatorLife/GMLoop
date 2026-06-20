@@ -25,6 +25,7 @@
   "dependencies": {
     "@gmloop/agent-pack": "workspace:*",
     "@gmloop/core": "workspace:*",
+    "@gmloop/fixture-runner": "workspace:*",
     "@gmloop/format": "workspace:*",
     "@gmloop/lint": "workspace:*",
     "@gmloop/parser": "workspace:*",

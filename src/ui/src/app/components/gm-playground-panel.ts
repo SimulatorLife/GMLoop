@@ -1,3 +1,4 @@
+import { diffLines } from "diff";
 import { html } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 
@@ -10,16 +11,14 @@ import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 import { PlaygroundSessionController } from "./playground-session-controller.js";
 
-/**
- * Interactive playground for GML parsing, formatting, and rule application.
- *
- * The class deliberately limits its `LitElement` overrides to `render` and the
- * `connectedCallback`/`disconnectedCallback` shims needed to wire the
- * `EventBusManager`. All the "react to property changes" and
- * "persist input + debounce" logic lives in an injected
- * `PlaygroundSessionController` so the host class stays shallow and focused
- * on presentation.
- */
+interface PlaygroundFixture {
+    caseId: string;
+    kind: string;
+    inputGml: string;
+    expectedGml: string | null;
+    config: Record<string, unknown>;
+}
+
 export class GmPlaygroundPanel extends LightDomLitElement {
     public static properties = {
         model: { attribute: false },
@@ -66,11 +65,39 @@ export class GmPlaygroundPanel extends LightDomLitElement {
     public connectedCallback(): void {
         super.connectedCallback();
         this.#eventBus.connect();
+        void this.#loadFixtures();
     }
 
     public disconnectedCallback(): void {
         this.#eventBus.disconnect();
         super.disconnectedCallback();
+    }
+
+    #fixtures: ReadonlyArray<PlaygroundFixture> = [];
+
+    #selectedFixtureId = "";
+
+    #expectedGml: string | null = null;
+
+    #loadingFixtures = false;
+
+    async #loadFixtures(): Promise<void> {
+        if (this.#fixtures.length > 0 || this.#loadingFixtures) {
+            return;
+        }
+        this.#loadingFixtures = true;
+        try {
+            const response = await fetch("/api/playground/fixtures");
+            if (response.ok) {
+                const data = await response.json();
+                this.#fixtures = data.fixtures ?? [];
+            }
+        } catch (error) {
+            console.error("Failed to load playground fixtures:", error);
+        } finally {
+            this.#loadingFixtures = false;
+            this.requestUpdate();
+        }
     }
 
     #gmlOutput = "";
@@ -147,11 +174,34 @@ export class GmPlaygroundPanel extends LightDomLitElement {
      * must keep their content on a single line with no leading/trailing
      * whitespace.
      */
+    #renderDiff(actual: string, expected: string): unknown {
+        const changes = diffLines(expected, actual);
+        const linesHtml = changes.flatMap((change) => {
+            const lines = change.value.split(/\r?\n/);
+            if (lines.length > 0 && lines.at(-1) === "") {
+                lines.pop();
+            }
+            return lines.map((line) => {
+                if (change.added) {
+                    return html`<div class="diff-line diff-added"><span class="diff-sign">+</span>${line}</div>`;
+                }
+                if (change.removed) {
+                    return html`<div class="diff-line diff-removed"><span class="diff-sign">-</span>${line}</div>`;
+                }
+                return html`<div class="diff-line diff-unchanged"><span class="diff-sign"> </span>${line}</div>`;
+            });
+        });
+        return html`<pre class="playground-output diff-container" aria-live="polite">${linesHtml}</pre>`;
+    }
+
     #renderOutput(message: string | null, viewMode: "code" | "ast", highlighted: string, astJson: string): unknown {
         if (message !== null) {
             return html`<div class="playground-output is-error" role="status" aria-live="polite">${message}</div>`;
         }
         if (viewMode === "code") {
+            if (this.#expectedGml !== null) {
+                return this.#renderDiff(this.#gmlOutput, this.#expectedGml);
+            }
             return html`<div class="playground-output" aria-live="polite">${unsafeHTML(highlighted)}</div>`;
         }
         return html`<pre class="playground-output" aria-live="polite">${astJson}</pre>`;
@@ -246,6 +296,61 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         }
     };
 
+    #onSelectFixture(fixtureId: string): void {
+        this.#selectedFixtureId = fixtureId;
+        const fixture = this.#fixtures.find((f) => f.caseId === fixtureId);
+        if (!fixture) {
+            this.#selectedFixtureId = "";
+            this.#expectedGml = null;
+            this.#syncEnabledFormatOptionsFromModel(this.model);
+            this.#syncEnabledLintRulesFromModel(this.model);
+            this.#syncEnabledCodemodsFromModel(this.model);
+            void this.#processInput();
+            this.requestUpdate();
+            return;
+        }
+
+        this.#expectedGml = fixture.expectedGml;
+
+        // Apply rules configured in the fixture config
+        const formatOptions = this.#resolveFormatOptions();
+        for (const option of formatOptions) {
+            const hasValue = fixture.config[option.name] !== undefined;
+            this.#enabledFormatOptions.set(option.name, hasValue);
+        }
+
+        const lintRules = this.#resolveLintRules();
+        for (const rule of lintRules) {
+            this.#enabledLintRules.set(rule.ruleId, false);
+        }
+        if (fixture.config.lintRules && typeof fixture.config.lintRules === "object") {
+            const lintRulesObj = fixture.config.lintRules as Record<string, unknown>;
+            for (const [ruleId, val] of Object.entries(lintRulesObj)) {
+                if (val !== "off") {
+                    this.#enabledLintRules.set(ruleId, true);
+                }
+            }
+        }
+
+        const codemods = this.#resolveCodemods();
+        for (const codemod of codemods) {
+            this.#enabledCodemods.set(codemod.id, false);
+        }
+        if (fixture.config.refactor && typeof fixture.config.refactor === "object") {
+            const refactor = fixture.config.refactor as Record<string, unknown>;
+            if (refactor.codemods && typeof refactor.codemods === "object") {
+                const codemodsObj = refactor.codemods as Record<string, unknown>;
+                for (const codemodId of Object.keys(codemodsObj)) {
+                    this.#enabledCodemods.set(codemodId, true);
+                }
+            }
+        }
+
+        this.#sessionController.setInput(fixture.inputGml);
+        this.#sessionController.flushProcessing();
+        this.requestUpdate();
+    }
+
     async #processInput(): Promise<void> {
         this.#error = null;
         const currentInput = this.#sessionController.input;
@@ -277,7 +382,8 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                     lintRuleIds: enabledLintRuleIds,
                     refactor: enabledCodemodIds.length > 0,
                     codemodIds: enabledCodemodIds,
-                    transpileMode: this.#transpileMode
+                    transpileMode: this.#transpileMode,
+                    fixtureId: this.#selectedFixtureId || undefined
                 })
             });
 
@@ -309,6 +415,21 @@ export class GmPlaygroundPanel extends LightDomLitElement {
     }
 
     #extractConfiguredFormatOptionNames(): ReadonlySet<string> {
+        if (this.#selectedFixtureId) {
+            const fixture = this.#fixtures.find((f) => f.caseId === this.#selectedFixtureId);
+            if (fixture && fixture.config) {
+                const workspaceRules = this.model?.documentationCatalogs?.workspaceRules;
+                const allFormatOptions = new Set((workspaceRules?.formatOptions ?? []).map((o) => o.name));
+                const configuredEntries = this.model?.projectConfigurationCatalog?.format.entries;
+                if (configuredEntries) {
+                    for (const entry of configuredEntries) {
+                        allFormatOptions.add(entry.name);
+                    }
+                }
+                const fixtureConfigKeys = Object.keys(fixture.config);
+                return new Set(fixtureConfigKeys.filter((key) => allFormatOptions.has(key)));
+            }
+        }
         const configuredEntries = this.model?.projectConfigurationCatalog?.format.entries;
         if (!configuredEntries || configuredEntries.length === 0) {
             return new Set<string>();
@@ -643,6 +764,29 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                         </span>
                         <span>${this.#controlsPanelOpen ? "Hide Controls" : "Show Controls"}</span>
                     </button>
+                    <div class="playground-fixture-select-container">
+                        <label for="playground-fixture-select" class="playground-fixture-label">Fixture Test:</label>
+                        <select
+                            id="playground-fixture-select"
+                            class="gm-select playground-fixture-select"
+                            @change=${(e: Event) => {
+                                const target = e.target as HTMLSelectElement;
+                                this.#onSelectFixture(target.value);
+                            }}
+                        >
+                            <option value="">None (Custom Input)</option>
+                            ${this.#fixtures.map(
+                                (fixture) => html`
+                                    <option
+                                        value=${fixture.caseId}
+                                        ?selected=${this.#selectedFixtureId === fixture.caseId}
+                                    >
+                                        [${fixture.kind}] ${fixture.caseId}
+                                    </option>
+                                `
+                            )}
+                        </select>
+                    </div>
                     <div class="gm-view-selector">
                         <button
                             type="button"
@@ -707,5 +851,29 @@ ${unsafeHTML(highlightGml(this.#sessionController.input))}</pre
                 </div>
             </section>
         `;
+    }
+
+    /** @internal */
+    public setFixturesForTest(fixtures: ReadonlyArray<PlaygroundFixture>): void {
+        this.#fixtures = fixtures;
+        this.requestUpdate();
+    }
+
+    /** @internal */
+    public selectFixtureForTest(fixtureId: string): void {
+        this.#onSelectFixture(fixtureId);
+    }
+
+    /** @internal */
+    public getSelectedFixtureIdForTest(): string {
+        return this.#selectedFixtureId;
+    }
+
+    /** @internal */
+    public setExpandedSectionsForTest(format: boolean, lint: boolean, codemod: boolean): void {
+        this.#showFormatDetails = format;
+        this.#showLintDetails = lint;
+        this.#showCodemodDetails = codemod;
+        this.requestUpdate();
     }
 }
