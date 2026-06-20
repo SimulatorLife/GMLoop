@@ -47,6 +47,8 @@ The implemented v1 contract is now:
 - CLI command parsing
 - HTTP server lifecycle
 - MCP tool discovery or execution
+- model selection, agent scheduling, task routing, or retry policy
+- approvals, permissions, agent memory, budgets, queues, or durable workflow state
 - runtime-wrapper patch application
 - hot-reload watch, transpile, or WebSocket server lifecycle
 
@@ -180,6 +182,15 @@ Each tab has one top-level page toolbar. That toolbar owns the page title, subti
 ## Auto-Game Surface
 
 The Auto-Game surface is a companion interface for pipeline execution. It focuses on observability, listing discovered skills, and managing agent-pack synchronization. It scans only `<loaded-game-project>/.agents/skills`, renders every discovered skill with its name, description, source path, file-availability status, and enable/disable toggle, initializes or updates project resources from the standalone `@gmloop/agent-pack`, and persists only disabled-name exceptions in `gmloop.json`. The project skill list is a native disclosure that is closed by default so the operations dashboard remains compact and keyboard accessible.
+
+This surface may expose MCP/tool readiness, graph and search context,
+validation evidence, fix/refactor actions, live-reload status, and lightweight
+handoffs such as copying a prompt, opening an external agent, or launching a
+configured companion command. It must not become a multi-agent DAG editor,
+model router, arbitrary-framework prompt debugger, workflow engine,
+approval/permission system, memory store, or background task queue. External
+agent coordinators own those concerns; the UI remains vendor-neutral and
+coordinator-neutral.
 
 When the opened project has no recorded agent-pack installation and no skills, the empty state offers **Initialize Auto-Game Agent Pack**. If project skills exist without an installation receipt, it reports **Setup Incomplete** and offers **Complete Auto-Game Setup** because GMLoop cannot infer their package version or safely treat the full pack as current. When the installed version is older than GMLoop's available package version, it offers **Update Auto-Game Agent Pack**. A default-checked **Update Project .gitignore** option controls whether initialization merges GMLoop's generated/cache paths into the project-root ignore file. The host materializes standard skills and applicable guidance such as `AGENTS.md`, preserves project-authored or modified files, reports conflicts and server failures, and returns refreshed project skill state after success.
 

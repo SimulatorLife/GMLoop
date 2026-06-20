@@ -659,3 +659,43 @@ The hot-reload system bypasses the static nature of the GameMaker HTML5 runner b
 - Auto-Game skills are vendor- and client-neutral. They must not require a specific LLM vendor, agent product, MCP server, command name, or provider-specific metadata to be useful.
 - Skills are self-contained and independently triggerable. They should describe required capabilities and outcomes instead of referring to other skills or assuming another skill has already run. Tool-specific examples belong only where the workflow cannot be expressed portably.
 - The GMLoop source repository's `.agents/skills` directory is exclusively for LLMs and agents developing GMLoop itself. It is never an Auto-Game skill source and is never read or modified by Auto-Game initialization or discovery.
+
+## 8. Agent Coordination Boundary
+
+GMLoop is a first-class GameMaker companion surface for AI agents, not a
+general multi-agent coordinator.
+
+GMLoop owns the GameMaker-specific tooling layer: project understanding,
+semantic graph context, parser/lint/refactor/format/fix workflows, live-reload
+status, MCP tool exposure, agent-pack installation, skill discovery, and
+project guidance. External agent managers own orchestration: model selection,
+agent scheduling, permissions, approvals, retries, memory, budgets, queues,
+task routing, and long-running workflow state.
+
+```text
+External agent coordinator
+  Codex / Claude Code / Qwen / OpenHands / AutoGen / CrewAI / LangGraph / etc.
+        |
+        | MCP + project files + skills + guidance
+        v
+GMLoop
+  parser / semantic graph / lint / refactor / format / fix / live reload / UI / MCP
+        |
+        v
+GameMaker project
+```
+
+The GMLoop UI may include an Auto-Game or Agents companion dashboard that
+exposes installed skills, skill enablement, packaged guidance previews,
+MCP/tool readiness, graph/search context, validation results, fix/refactor
+actions, live-reload status, and task evidence. It may provide lightweight
+affordances such as copying prompts, opening an external agent, or launching a
+configured companion command.
+
+The UI must not become a multi-agent DAG editor, model router, prompt debugger
+for arbitrary frameworks, workflow engine, approval/permission system, memory
+store, or background task queue. GMLoop integrations with agent frameworks are
+optional adapters over stable local contracts, not core dependencies. The core
+product remains vendor-neutral and coordinator-neutral: GMLoop makes agents
+better at working on GameMaker projects without inheriting the complexity,
+security risk, and product scope of a full agent platform.

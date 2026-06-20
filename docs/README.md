@@ -70,11 +70,12 @@ then return here for deeper context.
   `graph index`, `graph search`, and `graph doctor` CLI commands and the
   MCP and UI graph surfaces.
 - [Autonomous GameMaker creator plan](autonomous-game-creator-plan.md) —
-  Long-running plan for the higher-level agent-driven game creation system
+  Long-running plan for the GameMaker-specific agent companion surface
   that builds on top of the formatter, lint, refactor, semantic, transpiler,
   runtime wrapper, CLI, UI, and MCP workspaces, including the HTML5 runtime
-  fork, watcher pipeline, hot-reload integration seams, and independently
-  installable `@gmloop/agent-pack` initialization/update flow.
+  fork, watcher pipeline, hot-reload integration seams, independently
+  installable `@gmloop/agent-pack` initialization/update flow, and the explicit
+  boundary with external agent coordinators.
 - [Define directive fixing plan](define-directive-fixing.md) — Parser/
   formatter/lint ownership plan for tolerating legacy `#define` spellings and
   related legacy keywords, and producing a normalized macro representation.
@@ -91,12 +92,21 @@ then return here for deeper context.
 - [Architecture overview](../README.md#architecture-overview) — High-level map
   of the workspace packages, where generated assets live, and which scripts
   refresh them.
+- [Agent coordination boundary](../README.md#agent-coordination-boundary) —
+  Canonical product boundary between GMLoop's GameMaker-specific agent tooling
+  and orchestration owned by external agent coordinators.
 
 ## Agent and automation surfaces
+
+GMLoop supplies GameMaker-specific tools, context, skills, guidance, and
+evidence to agents. External agent managers own scheduling, routing, approvals,
+retries, memory, budgets, queues, and durable workflow state.
 
 - [MCP workspace reference](../src/mcp/README.md) — Current
   `@gmloop/mcp` package docs for exposing CLI-adjacent workflows to AI tooling.
 - [Agent routing and cadence design](agent-routing-cadence-plan.md) — Design
-  for the scheduled agent routing policy in `.github/workflows/weights.json`,
-  covering task categories, weighted pair selection, cadence filtering, and
-  manual override behaviour.
+  for this repository's external GitHub Actions maintenance automation in
+  `.github/workflows/weights.json`, covering task categories, weighted pair
+  selection, cadence filtering, and manual override behaviour. This is CI
+  infrastructure for maintaining GMLoop, not a GMLoop product capability or
+  an Auto-Game orchestration layer.

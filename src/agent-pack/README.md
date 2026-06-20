@@ -23,3 +23,9 @@ This materializes skills under `<game-project>/.agents/skills/`, adds project gu
 The `skills/` directory is the collection inventory. Every GMLoop-provided skill directory and its `SKILL.md` frontmatter name must start with `gmloop-`. Adding or removing a standard `gmloop-<name>/SKILL.md` directory requires no registry, hard-coded list, or skill-specific loader.
 
 Packaged tooling guidance is capability-oriented and discovery-first. It directs agents to the current MCP catalog and stable CLI help entrypoint rather than duplicating MCP tool names or schemas that evolve with GMLoop.
+
+The pack provides GameMaker-specific skills and guidance; it is not an agent
+orchestrator. The consuming agent manager retains model selection, scheduling,
+permissions, approvals, retries, memory, budgets, queues, task routing, and
+long-running workflow state. Pack content must remain vendor-neutral and must
+not require a particular coordinator or agent framework.

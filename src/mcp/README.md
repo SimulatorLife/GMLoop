@@ -4,6 +4,13 @@
 
 The current scaffold intentionally contains only the package framework, public namespace, and stdio server entrypoint. Tool registration should be implemented by deriving MCP tools from the CLI command catalog, not by redefining commands in this workspace.
 
+MCP is a stable local transport for GameMaker-specific tools, context, and
+evidence. It does not own model selection, agent scheduling, task routing,
+permissions, approvals, retries, memory, budgets, queues, or long-running
+workflow state. Those responsibilities remain with external agent
+coordinators. Framework-specific integrations must be optional adapters over
+the CLI-derived MCP contract, never core dependencies or MCP-only behavior.
+
 ## Full Implementation Plan
 
 ### Summary

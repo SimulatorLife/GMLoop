@@ -1,8 +1,8 @@
 # Autonomous GameMaker Creator Plan
 
-GMLoop has the lower-level ingredients for agent-assisted GameMaker development: parser, formatter, lint rules, refactors, semantic indexing, transpilation, runtime hot reload, a CLI, UI surfaces, fixture infrastructure, and an MCP workspace. The next step is to turn those tools into a higher-level autonomous game creation system that can design, modify, test, build, run, and iteratively improve complete GameMaker projects.
+GMLoop has the lower-level ingredients for agent-assisted GameMaker development: parser, formatter, lint rules, refactors, semantic indexing, transpilation, runtime hot reload, a CLI, UI surfaces, fixture infrastructure, and an MCP workspace. The next step is to make those tools a first-class GameMaker companion surface through which externally coordinated agents can design, modify, test, build, run, and iteratively improve complete GameMaker projects.
 
-The target is not merely an agent that writes `.gml` files. The target is a closed-loop GameMaker development platform where agents can safely mutate real GameMaker resources, reuse known-good gameplay systems, run validation, split work into tasks, and continue work through scheduled or PR-driven automation. The primary runtime target is GameMaker HTML5, with GMLoop hot-reload functionality as the default iteration loop so agents can quickly change gameplay code/resources, observe results, inspect diagnostics, and keep developing without slow full rebuild cycles whenever hot reload can provide a valid proof step.
+The target is not merely an agent that writes `.gml` files. The target is a GameMaker-specific tooling platform where agents can safely mutate real GameMaker resources, reuse known-good gameplay systems, run validation, and collect evidence. External agent coordinators own task splitting, scheduling, routing, approvals, retries, and long-running automation state. The primary runtime target is GameMaker HTML5, with GMLoop hot-reload functionality as the default iteration loop so agents can quickly change gameplay code/resources, observe results, inspect diagnostics, and keep developing without slow full rebuild cycles whenever hot reload can provide a valid proof step.
 
 ## 1. Foundation and Target Direction
 
@@ -18,10 +18,10 @@ The target platform builds on these responsibilities:
 - `@gmloop/cli` as the canonical command surface.
 - `@gmloop/ui` for browser-facing visualization and interaction.
 - `@gmloop/mcp` as the agent exposure layer for CLI-backed tools and graph resources.
-- GitHub Actions agent workflows for PR-comment-driven agent execution.
+- Optional external agent coordinators and CI workflows that consume GMLoop's stable local contracts.
 - [YoYoGames/gm-cli](https://github.com/YoYoGames/gm-cli) as the official GameMaker command-line tool for project creation, ResourceTool edits, compile/run/package workflows, manual lookup, GX.Games publishing, and its own ResourceTool MCP mode.
 
-The target state is a reusable game-creation operating system with rich project mutation APIs, build/run/test loops, game-design skills, task orchestration, helper libraries, scheduled autonomous improvement flows, and clean integration with the official GameMaker CLI ecosystem.
+The target state is a reusable GameMaker companion layer with rich project mutation APIs, build/run/test loops, game-design skills, helper libraries, task evidence, and clean integration with the official GameMaker CLI ecosystem. It is not a general agent operating system or workflow engine.
 
 ## 2. MCP Role and Architectural Boundary
 
@@ -33,7 +33,7 @@ The current and target layering is:
 GameMaker domain behavior and project/resource mutation logic
   -> CLI commands and structured output
     -> MCP tool exposure derived from the CLI catalog
-      -> agent clients and scheduled workflows
+  -> external agent clients and coordinators
 ```
 
 This means new autonomous-game capabilities should generally extend existing domain behavior and CLI commands first. Once the CLI command is in the catalog, the existing MCP server should expose it to agents without duplicating command behavior inside `@gmloop/mcp`.
@@ -72,7 +72,7 @@ The autonomous creation surface should converge on these durable capabilities:
 
 Target relationship:
 
-- GMLoop owns GML analysis, formatting, linting, semantic graph/context, refactors, hot reload, workflow orchestration, and the agent-facing command catalog.
+- GMLoop owns GML analysis, formatting, linting, semantic graph/context, refactors, hot reload, structured workflow actions and evidence, and the agent-facing command catalog.
 - `gm-cli` owns official GameMaker project initialization, runtime/toolchain acquisition, compile/run/package behavior, ResourceTool capabilities, manual lookup, and publish flows where those official paths are available and reliable.
 - GMLoop may wrap or delegate to `gm-cli` behind typed provider interfaces when doing so gives agents a more correct, complete, or future-proof GameMaker operation.
 - GMLoop should normalize `gm-cli` output into stable structured results with source paths, resource names, diagnostics, command provenance, and actionable failure reasons.
@@ -115,8 +115,8 @@ Required integration constraints:
 7. **Reusable building blocks beat repeated invention.**
    Agents should compose known-good helpers, systems, templates, and prefabs instead of inventing new state machines, input systems, cameras, and UI primitives every time.
 
-8. **Task graphs should coordinate agents.**
-   Scheduled agents and subagents need a machine-readable plan, not just freeform prompts. Work should be split, claimed, blocked, completed, and reviewed through explicit task metadata.
+8. **External coordinators should coordinate agents.**
+   GMLoop should return deterministic, machine-readable results and task evidence. External coordinators own splitting, claiming, blocking, scheduling, retries, and completion state.
 
 9. **Game design context is as important as code context.**
    Agents need skills and prompts for core loops, player agency, feedback, juice, scope, loss/win criteria, progression, balancing, and vertical-slice planning.
@@ -183,7 +183,6 @@ The CLI/MCP command surface is part of the autonomous creation target state. It 
 | `test`             | Discover, author, run, parse, and report tests.                               | `@gmloop/cli`, `@gmloop/runtime-wrapper`                                |
 | `replay`           | Record, run, compare, and assert deterministic sessions.                      | `@gmloop/runtime-wrapper`, `@gmloop/cli`                                |
 | `kit`              | List, inspect, and import reusable GML helpers/templates.                     | `@gmloop/cli`, future `@gmloop/gml-kit`, `@gmloop/refactor`             |
-| `task`             | Manage autonomous-game task graph state.                                      | `@gmloop/cli`, future task-graph domain layer                           |
 | `ui`               | Validate, preview, and scaffold GMLoop UI-facing artifacts.                   | `@gmloop/ui`, `@gmloop/refactor`, `@gmloop/cli`                         |
 
 ### Canonical Agent Command Surface
@@ -207,7 +206,6 @@ The CLI/MCP command surface is part of the autonomous creation target state. It 
 | Tests                                | `test list`, `test run`, `test results`, `test case create`, `test case update`, `test parse-results`, `test report`                   | Derived from the CLI leaf path, for example `gmloop_test_case_create`                                                                                    | CLI/runtime-wrapper                      |
 | Replays                              | `replay record`, `replay run`, `replay compare`, `replay assert`                                                                       | `gmloop_replay_record`, `gmloop_replay_run`, `gmloop_replay_compare`, `gmloop_replay_assert`                                                             | runtime-wrapper/CLI                      |
 | Helper kit                           | `kit list`, `kit search`, `kit inspect`, `kit import`, `kit dependencies`                                                              | Derived from the CLI leaf path, for example `gmloop_kit_import`                                                                                          | CLI/gml-kit/refactor                     |
-| Task graph                           | `task init`, `task list`, `task next`, `task claim`, `task update`, `task complete`, `task block`, `task summary`                      | Derived from the CLI leaf path, for example `gmloop_task_next`                                                                                           | CLI/task-graph layer                     |
 | UI validation and scaffolding        | `ui inspect`, `ui validate`, `ui preview`, `ui scaffold`                                                                               | `gmloop_ui_inspect`, `gmloop_ui_validate`, `gmloop_ui_preview`, `gmloop_ui_scaffold`                                                                     | UI/refactor/CLI                          |
 
 ### Priority Order for Agent-Facing Work
@@ -215,7 +213,7 @@ The CLI/MCP command surface is part of the autonomous creation target state. It 
 | Priority | Recommended focus                                                                                                                                                                                                                                                                                                                   |
 | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | High     | `graph search`, `symbol inspect`, `validate file/project`, `project create/init/validate`, `resource list/find/inspect/add/remove/rename`, `room list/inspect/update/instance add`, `object inspect/update/event update`, build/check/log commands backed by `gm-cli`, and runtime get/set/call/watch where hot reload requires it. |
-| Medium   | `resource deps/dependents/audit`, `room preview/query/camera/layer`, `profile`, `test`, `replay`, `kit`, and task graph commands.                                                                                                                                                                                                   |
+| Medium   | `resource deps/dependents/audit`, `room preview/query/camera/layer`, `profile`, `test`, `replay`, and `kit` commands.                                                                                                                                                                                                               |
 | Low      | Cache cleanup, IDE/open convenience flows, and commands that only wrap editor convenience rather than enabling autonomous agent work.                                                                                                                                                                                               |
 
 ### Explicitly Out of Scope for `@gmloop/mcp`
@@ -679,220 +677,78 @@ The current collection conforms to the content and portability contracts above.
 Its actual inventory is always obtained from the directory rather than repeated
 in documentation or source code.
 
-## 12. Milestone 6: Task Graph and Agent Work Queue
+## 12. Agent Coordination Boundary
 
-### Goal
+GMLoop is a first-class GameMaker companion surface for AI agents, not a
+general multi-agent coordinator.
 
-Give scheduled agents and subagents a machine-readable TODO list so they can coordinate without duplicating or thrashing work.
+GMLoop owns the GameMaker-specific tooling layer: project understanding,
+semantic graph context, parser/lint/refactor/format/fix workflows, live-reload
+status, MCP tool exposure, agent-pack installation, skill discovery, project
+guidance, and structured evidence from those operations.
 
-### Proposed Files
-
-For generated game projects:
-
-```text
-.gmloop/tasks.json
-.gmloop/plan.md
-.gmloop/game-design.md
-.gmloop/agent-log.jsonl
-```
-
-For the GMLoop repo itself, equivalent files could live under:
+External agent managers own orchestration: model selection, agent scheduling,
+permissions, approvals, retries, memory, budgets, queues, task routing, task
+claiming, and long-running workflow state. GMLoop must not add an internal task
+graph, agent work queue, scheduler, subagent runtime, or durable agent log as a
+parallel orchestration system.
 
 ```text
-docs/autonomous-game-creator-plan.md
-.agents/tasks.json
+External agent coordinator
+  Codex / Claude Code / Qwen / OpenHands / AutoGen / CrewAI / LangGraph / etc.
+        |
+        | MCP + project files + skills + guidance
+        v
+GMLoop
+  parser / semantic graph / lint / refactor / format / fix / live reload / UI / MCP
+        |
+        v
+GameMaker project
 ```
 
-### Task Schema
+### UI Boundary
 
-Example:
+The Auto-Game or Agents companion dashboard may expose installed skills, skill
+enablement, packaged guidance previews, MCP/tool readiness, graph/search
+context, validation results, fix/refactor actions, live-reload status, and task
+evidence supplied by a coordinator. It may provide lightweight affordances such
+as copying prompts, opening an external agent, or launching a configured
+companion command.
 
-```json
-{
-    "id": "gameplay.player_movement.v1",
-    "title": "Implement basic player movement",
-    "status": "ready",
-    "owner": null,
-    "dependsOn": ["project.bootstrap"],
-    "acceptance": [
-        "Player object exists",
-        "Arrow/WASD movement works",
-        "Movement speed is configurable",
-        "Unit tests or smoke test exist"
-    ],
-    "files": ["objects/obj_player", "scripts/scr_player_input"]
-}
-```
+The UI must not become a multi-agent DAG editor, model router, prompt debugger
+for arbitrary frameworks, workflow engine, approval/permission system, memory
+store, or background task queue.
 
-### CLI-First Commands
+### Optional Integration Contract
 
-```text
-gmloop tasks init
-gmloop tasks list
-gmloop tasks next
-gmloop tasks claim
-gmloop tasks split
-gmloop tasks complete
-gmloop tasks block
-gmloop tasks log
-```
+Integrations with agent frameworks are optional adapters over stable local
+contracts, not core dependencies. An adapter may configure MCP access, locate
+project guidance and enabled skills, launch an external coordinator, or pass
+structured GMLoop results back to it. It must not move coordinator-specific
+models, lifecycle state, or policy into GMLoop's core workspaces.
 
-Derived MCP tools should come from these commands:
+The core product remains vendor-neutral and coordinator-neutral. GMLoop makes
+agents better at working on GameMaker projects without inheriting the
+complexity, security risk, and product scope of a full agent platform.
 
-```text
-gmloop_tasks_list
-gmloop_tasks_next
-gmloop_tasks_claim
-gmloop_tasks_complete
-gmloop_tasks_block
-gmloop_tasks_split
-```
-
-Task graph transition logic should not live inside `@gmloop/mcp`.
-
-### Required Behavior
-
-- Dependency-aware next-task selection.
-- Status transitions with validation.
-- Acceptance criteria on every implementation task.
-- Machine-readable agent logs.
-- Optional links to PRs, commits, files, build runs, and test results.
-
-### First Work Slice
-
-1. Define the task schema.
-2. Add `gmloop tasks init/list/next/complete`.
-3. Store files as JSON with stable formatting.
-4. Add fixture tests.
-5. Add CLI catalog / MCP catalog tests proving the commands are exposed.
-
-## 13. Milestone 7: Scheduled Agentic Game Improvement Flow
-
-### Goal
-
-Extend the existing GitHub Actions agent workflow pattern from repo-maintenance tasks to game-creation tasks.
-
-### Proposed Workflows
-
-```text
-.github/workflows/agent-game-plan.yml
-.github/workflows/agent-game-implement.yml
-.github/workflows/agent-game-test.yml
-.github/workflows/agent-game-polish.yml
-.github/workflows/agent-game-review.yml
-```
-
-### Workflow Types
-
-```text
-daily prototype improvement
-nightly build/test repair
-weekly content expansion
-scheduled polish pass
-scheduled bug triage
-scheduled helper-library expansion
-```
-
-### Relationship to MCP
-
-Scheduled workflows may invoke CLI commands directly or through MCP-enabled agent clients. The workflow should not bypass the same capability boundaries: domain behavior remains below the CLI surface, CLI commands remain the canonical tool surface, and MCP remains an optional agent transport over those commands.
-
-### Required Behavior
-
-- Pull the next task from `.gmloop/tasks.json`.
-- Run the appropriate agent role prompt.
-- Require a repository diff or explicit blocked status.
-- Run relevant validation.
-- Commit or open a PR.
-- Write a machine-readable agent summary.
-- Update the task graph.
-
-### First Work Slice
-
-Create one scheduled workflow that runs in dry-run or issue-creation mode only:
-
-```text
-agent-game-plan.yml
-```
-
-It should inspect the task graph and propose the next implementation task without mutating game resources yet.
-
-## 14. Milestone 8: Subagent Orchestration
-
-### Goal
-
-Allow larger game-development goals to be split across specialized agents.
-
-### Roles
-
-```text
-designer
-planner
-implementer
-tester
-debugger
-refactorer
-polisher
-reviewer
-asset-integrator
-```
-
-### Orchestration Loop
-
-```text
-planner splits milestone into tasks
-implementer claims one ready task
-tester adds or updates tests
-debugger fixes failing validation
-reviewer checks design coherence and code quality
-polisher improves feel, feedback, and UX
-planner updates the task graph
-```
-
-### Relationship to MCP
-
-Subagents should use the MCP server as the agent tool surface when available, but they should still be exercising CLI-backed capabilities. A subagent should not need bespoke MCP-only behavior to create resources, import helpers, run tests, or update tasks.
-
-### Required Constraints
-
-- Each subagent gets one narrow task.
-- Each subagent must write a machine-readable summary.
-- Each subagent must cite changed files and validation results.
-- Agents should not silently rewrite unrelated systems.
-- Parent orchestration should prevent multiple agents from claiming the same task.
-
-### First Work Slice
-
-Add role prompt files and a sequential parent workflow before attempting parallel agents.
-
-```text
-.agents/roles/game-planner.md
-.agents/roles/game-implementer.md
-.agents/roles/game-tester.md
-.agents/roles/game-reviewer.md
-```
-
-## 15. End-to-End Target Workflow
+## 13. End-to-End Target Workflow
 
 The long-term autonomous creation loop should look like this:
 
 ```text
-1. User requests a game concept or feature.
-2. Agent creates or updates game-design.md.
-3. Agent splits the design into tasks.
-4. Agent selects the next ready task.
-5. Agent imports helpers/templates from gml-kit when applicable.
-6. Agent mutates GameMaker resources through existing CLI/MCP-backed structured commands.
-7. Agent formats and lints GML.
-8. Agent generates or updates tests.
-9. Agent hot-reloads into the HTML5 target where possible, then builds/runs/tests the GameMaker project through the best available provider, including `gm-cli` where available.
-10. Agent inspects logs and structured diagnostics.
-11. Agent fixes failures.
-12. Agent commits or opens a PR.
-13. Scheduled agents continue from the task graph.
+1. User requests a game concept or feature through an external agent coordinator.
+2. The coordinator creates or updates game-design.md, splits work, and selects the next task.
+3. The active agent imports helpers/templates from gml-kit when applicable.
+4. The agent mutates GameMaker resources through CLI/MCP-backed structured commands.
+5. The agent formats and lints GML.
+6. The agent generates or updates tests.
+7. The agent hot-reloads into the HTML5 target where possible, then builds/runs/tests the GameMaker project through the best available provider, including `gm-cli` where available.
+8. The agent inspects logs, structured diagnostics, and task evidence from GMLoop.
+9. The agent fixes failures.
+10. The external coordinator records workflow state and decides whether to commit, open a PR, retry, request approval, or schedule more work.
 ```
 
-## 16. Recommended Implementation Order
+## 14. Recommended Implementation Order
 
 ### Phase 1: Complete Existing GameMaker Mutation Surfaces
 
@@ -952,31 +808,19 @@ real provider investigation and fixture fallback
 CLI/MCP catalog coverage
 ```
 
-### Phase 5: Agent Skills and Task Graph
+### Phase 5: Agent Skills and Optional Coordinator Adapters
 
 Deliver:
 
 ```text
 game-design skill
 gamemaker-resources skill
-task schema
-tasks CLI commands
-CLI/MCP catalog coverage
+stable task-evidence result contracts
+optional coordinator launch/configuration adapters
+adapter contract tests
 ```
 
-### Phase 6: Scheduled and Subagent Workflows
-
-Deliver:
-
-```text
-scheduled game-planning workflow
-sequential subagent roles
-machine-readable summaries
-task graph updates
-validation-gated PR flow
-```
-
-## 17. Highest-Leverage Immediate PRs
+## 15. Highest-Leverage Immediate PRs
 
 1. **Implement one high-value mutation command family.**
    Best first target: `object event update`, because agents need a reliable way to put behavior into objects after creating or selecting a resource.
@@ -1002,10 +846,10 @@ validation-gated PR flow
 8. **Add game-design and GameMaker-resource agent skills.**
    Improve agent behavior before large automation is attempted.
 
-9. **Add a task graph.**
-   Enable scheduled agents and subagents to coordinate through explicit state.
+9. **Define an optional coordinator adapter contract.**
+   Support lightweight configuration, launch, and result handoff without importing framework-specific orchestration state or policy into GMLoop.
 
-## 18. Open Questions
+## 16. Open Questions
 
 1. Which `gm-cli` versions should GMLoop support or require for the first official-provider integration?
 2. Which GameMaker targets, runtimes, and toolchains should the first `gm-cli` build/run provider support?
@@ -1017,14 +861,14 @@ validation-gated PR flow
 8. What is the minimum viable headless test runner for the existing unit-test framework?
 9. Should generated games keep `.gmloop` metadata in the project root, or should metadata live outside the GameMaker project tree?
 10. How much of the runtime/playtest loop can be automated through HTML5 export, `gm-cli run`, and browser automation?
-11. What subagent roles should run in parallel versus sequentially?
+11. Which stable local contracts are needed for optional Codex, Claude Code, Qwen, OpenHands, AutoGen, CrewAI, or LangGraph adapters?
 12. Is the current CLI metadata rich enough for all future autonomous-game MCP schemas, or does the CLI catalog need additional option/argument annotations?
 13. Should MCP expose any additional read-only GameMaker project resources beyond CLI tools, such as `gm://project/overview` or `gm://resource/<name>`?
 14. Should human-readable mutation commands support `--json` consistently before agents rely on them heavily?
 
-## 19. Summary
+## 17. Summary
 
-The next stage for GMLoop is to become a GameMaker autonomous development platform, not only a set of GML code tools. The core unlocks are:
+The next stage for GMLoop is to become a first-class GameMaker companion surface for externally coordinated agents, not only a set of GML code tools. The core unlocks are:
 
 ```text
 completion of existing resource/object/room/test command surfaces
@@ -1035,8 +879,8 @@ reusable GML helper systems
 unit-test generation and execution
 GameMaker build/run validation
 game-design agent skills
-task graph orchestration
-scheduled and subagent workflows
+stable task-evidence contracts
+optional coordinator adapters
 ```
 
-The first priority should be completing high-level GameMaker mutation, validation, and provider-integration paths that let agents create resources, edit object events, place room instances, author tests, and prove builds without raw project-file edits. The MCP server should surface those capabilities through its CLI-derived tool catalog. `gm-cli` should be integrated where it provides official GameMaker lifecycle behavior, while GMLoop continues to own semantic analysis, hot reload, structured automation contracts, and autonomous workflow orchestration.
+The first priority should be completing high-level GameMaker mutation, validation, and provider-integration paths that let agents create resources, edit object events, place room instances, author tests, and prove builds without raw project-file edits. The MCP server should surface those capabilities through its CLI-derived tool catalog. `gm-cli` should be integrated where it provides official GameMaker lifecycle behavior, while GMLoop continues to own semantic analysis, hot reload, and structured GameMaker automation contracts. External coordinators retain workflow orchestration.

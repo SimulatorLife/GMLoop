@@ -15,6 +15,7 @@ This repository is the source monorepo for various GameMaker Language tools, inc
 - [Formatter at a glance](#formatter-at-a-glance)
 - [Quick start](#quick-start)
 - [Architecture overview](#architecture-overview)
+- [Agent coordination boundary](#agent-coordination-boundary)
 - [Everyday commands](#everyday-commands)
 - [CLI wrapper environment knobs](#cli-wrapper-environment-knobs)
 - [Configuration reference](#configuration-reference)
@@ -166,6 +167,42 @@ universal command surface remains GMLoop's CLI:
 ```bash
 gmloop agent-pack init --path path/to/Game.yyp
 ```
+
+## Agent Coordination Boundary
+
+GMLoop is a first-class GameMaker companion surface for AI agents, not a
+general multi-agent coordinator. It owns GameMaker-specific project
+understanding, semantic graph context, parser/lint/refactor/format/fix
+workflows, live-reload status, MCP tool exposure, agent-pack installation,
+skill discovery, and project guidance.
+
+External agent coordinators such as Codex, Claude Code, Qwen, OpenHands,
+AutoGen, CrewAI, and LangGraph own model selection, agent scheduling,
+permissions, approvals, retries, memory, budgets, queues, task routing, and
+long-running workflow state.
+
+```text
+External agent coordinator
+        |
+        | MCP + project files + skills + guidance
+        v
+GMLoop
+  parser / semantic graph / lint / refactor / format / fix / live reload / UI / MCP
+        |
+        v
+GameMaker project
+```
+
+The Auto-Game or Agents UI may present skills, packaged guidance, tool
+readiness, graph/search context, validation evidence, fix/refactor actions, and
+live-reload status. It may offer lightweight handoffs such as copying a prompt,
+opening an external agent, or launching a configured companion command. It must
+not become a multi-agent DAG editor, model router, arbitrary-framework prompt
+debugger, workflow engine, approval or permission system, memory store, or
+background task queue.
+
+Agent-framework integrations are optional adapters over stable local contracts.
+The core product remains vendor-neutral and coordinator-neutral.
 
 ## Everyday commands
 
