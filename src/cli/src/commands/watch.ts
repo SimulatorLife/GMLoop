@@ -69,7 +69,7 @@ import {
     getRuntimePathSegments,
     resolveScriptFileNameFromSegments
 } from "../modules/transpilation/runtime-identifiers.js";
-import { extractReferencesFromAst, extractSymbolsFromAst } from "../modules/transpilation/symbol-extraction.js";
+import { extractSymbolsAndReferencesFromAst } from "../modules/transpilation/symbol-extraction.js";
 import { type PatchWebSocketServer, startPatchWebSocketServer } from "../modules/websocket/server.js";
 import {
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_COUNT,
@@ -2131,9 +2131,10 @@ async function addScriptNamesFromFile(
         // parser without monkey-patching the @gmloop/parser namespace.
         const ast = parseAdapter(content);
         // Extract both symbols and references from the AST in a single traversal.
-        // This saves a second walk during transpileFile when the cache is reused.
-        const symbols = extractSymbolsFromAst(ast, filePath);
-        const references = extractReferencesFromAst(ast);
+        // Walking the AST twice (once for symbols, once for references) was the
+        // single largest CPU cost in the startup scan — for a project with N
+        // files, the single-pass walker below turns 2N walks into N.
+        const { symbols, references } = extractSymbolsAndReferencesFromAst(ast, filePath);
         registerScriptNamesFromSymbols(symbols, scriptNames);
         fileDataCache.set(filePath, { content, ast, symbols, references });
     } catch {
