@@ -34,7 +34,7 @@ if (camUpdateTimer >= 1 or fps < 70) { // Only update the mouse movement every 1
 	    The idea behind the algorithm is to imagine a sphere placed at P1 with radius of the first bone, and
 	    another sphere at P3 with the radius of the second bone. The intersection between these spheres is a
 	    circle representing all the possible placements of P2.
-	    The first step is to find the point of this circle, and the radius of this intersection circle
+	    The first step is to find the middle point of this circle, and the radius of this intersection circle
 	    */ ////////////////////////////////////////////////////////////////////////////////////////////////////////
 var p1_p3sqr = p1_p3 * p1_p3;
 var p2_p3sqr = length2 * length2;

@@ -18,8 +18,7 @@ switch (cannonball_type) {
 }
 
 var matrix = scr_matrix_build(
-    x,
-    y,
+    x, y,
     z + zfight,
     xrotation,
     yrotation,
@@ -30,8 +29,7 @@ var matrix = scr_matrix_build(
 );
 
 var matrix2 = scr_matrix_build(
-    x,
-    y,
+    x, y,
     z + zfight,
     xrotation,
     yrotation,
@@ -40,8 +38,6 @@ var matrix2 = scr_matrix_build(
     image_yscale,
     image_zscale + 90
 );
-
-#macro SQUARE(_value) sqr(_value)
 
 var total = 0;
 var limit = 99;
@@ -76,15 +72,13 @@ repeat (array_length(arr2)) {
     show_debug_message(arr2[i++]);
 }
 
-#macro INCREMENT(_v) ((_v)+1)
-
 do {
     value = INCREMENT(value);
     if (value == SQUARE(limit)) {
         value = sqr(limit);
         throw "Square limit";
     }
-} until (value > sqr(limit));
+} until (value > limit * limit);
 
 return total;
 
@@ -94,15 +88,15 @@ function bool_passthrough(condition) {
     return condition;
 }
 
-/// @param {bool} a The first boolean
-/// @param {bool} b The second boolean
-/// @returns {bool}
+/// @param {boolean} a The first boolean
+/// @param {boolean} b The second boolean
+/// @returns {any}
 function bool_negated(a, b) {
-    return !a and b;
+    return !a or !b;
 }
 
-/// @param {bool} condition
-/// @returns {bool}
+/// @param condition
+/// @returns {any}
 function bool_with_comment(condition) {
     if (condition) {
         // comment should stop simplification
@@ -117,26 +111,21 @@ function bool_with_comment(condition) {
 /// @param grid
 /// @returns {undefined}
 function iterate_structures(list, map, grid) {
-    var size = ds_list_size(list);
-    for (var i = 0; i < size; i++) {
+    for (var i = 0; i < ds_list_size(list); i++) {
         show_debug_message(list[| i]);
     }
 
-    var size = ds_map_size(map);
-    for (var key = 0; key <= size; key += 1) {
+    for (var key = 0; key <= ds_map_size(map); key += 1) {
         show_debug_message(ds_map_find_value(map, key));
     }
 
-    var width = ds_grid_width(grid);
-    for (var x = 0; x < width; x++) {
-        var height = ds_grid_height(grid);
-        for (var y = 0; y < height; y++) {
+    for (var x = 0; x < ds_grid_width(grid); x++) {
+        for (var y = 0; y < ds_grid_height(grid); y++) {
             show_debug_message(grid[# x, y]);
         }
     }
 
-    var size = ds_list_size(list);
-    for (var unsafe = 0; unsafe < size; other++) {
+    for (var unsafe = 0; unsafe < ds_list_size(list); other++) {
         show_debug_message(unsafe);
     }
 }

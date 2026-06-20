@@ -1140,6 +1140,10 @@ function canonicalizeDescriptionToDesc(block: ReadonlyArray<string>): ReadonlyAr
     return block.map((line) => line.replace(/^(\s*\/+\s*)@description\b/iu, "$1@desc"));
 }
 
+function canonicalizeDescToDescription(block: ReadonlyArray<string>): ReadonlyArray<string> {
+    return block.map((line) => line.replace(/^(\s*\/+\s*)@desc\b/iu, "$1@description"));
+}
+
 function processDocBlock(blockLines: Array<string>): Array<string> {
     if (blockLines.length === 0) {
         return [];
@@ -1271,7 +1275,12 @@ function flushDetachedDocCommentBlock(
         return;
     }
 
-    rewrittenLines.push(...canonicalizeDescriptionToDesc(normalizedDetachedDocBlock), ...pendingGapLines);
+    const isTopOfFile = rewrittenLines.every((line) => /^\s*$/u.test(line));
+    const finalBlock = isTopOfFile
+        ? canonicalizeDescToDescription(normalizedDetachedDocBlock)
+        : canonicalizeDescriptionToDesc(normalizedDetachedDocBlock);
+
+    rewrittenLines.push(...finalBlock, ...pendingGapLines);
 }
 
 function applyJsDocTagAliasLine(line: string): string {

@@ -1,5 +1,7 @@
 some(
     thisArgumentIsQuiteLong,
+    /// @param cool
+    /// @param {function} [f]
     function foo(cool, f = function () { ez(); }) : bar() constructor {
         self.cool = cool;
         self.f = f;
@@ -28,7 +30,7 @@ my_func4(undefined);
 /// @param [x=0]
 /// @param [y=0]
 /// @param [z=0]
-/// @returns {array}
+/// @returns {any}
 function func_coords(x = 0, y = 0, z = 0) {
     return [x, y, z];
 }
@@ -37,8 +39,8 @@ var myCoords = func_coords(10, undefined, 20);
 
 /// @ignore
 /// @desc Base class for all shapes. Shapes can be solid or not solid.
-///       Solid shapes will collide with other solid shapes, and
-///       non-solid shapes will not collide with anything.
+/// Solid shapes will collide with other solid shapes, and
+/// non-solid shapes will not collide with anything.
 /// @param [color]
 function Shape(color = undefined) constructor {
     self.color = color;
@@ -48,16 +50,18 @@ function Shape(color = undefined) constructor {
         show_debug_message("I'm a shape");
     };
 
+    /// / @func freeze()
     /// @desc This will delete any geometry info contained within the mesh itself.
-    ///       It will not delete any geometry added to a ColMesh.
-    ///       After a mesh has been frozen, it can no longer be added to a colmesh.
+    /// It will not delete any geometry added to a ColMesh.
+    /// After a mesh has been frozen, it can no longer be added to a colmesh.
     /// @returns {undefined}
     static freeze = function () {
         triangles = [];
         ds_list_destroy(shapeList);
     };
 
-    /// @param {bool} solid Whether the shape is solid or not
+    /// @param <boolean> solid Whether the shape is solid or not
+    /// @param solid
     /// @returns {undefined}
     static setSolid = function (solid) {
         if (solid) {
@@ -67,9 +71,8 @@ function Shape(color = undefined) constructor {
         }
     };
 }
-/// @param {real} r -  The radius of the circle
-/// @param r
-/// @returns {undefined}
+
+/// @param {real} r The radius of the circle
 function Circle(r) : Shape() constructor {
     self.r = r;
 }
@@ -78,22 +81,16 @@ var myCircle = new Circle(10);
 var circle2 = new Circle(myCircle.r);
 
 show_debug_message(myCircle.r);
-/// @param {real} r1 - The horizontal radius of the oval
-/// @param [r1=1]
+
+/// @param {real} [r1=1] The horizontal radius of the oval
 /// @param [r2=1]
-/// @returns {undefined}
 function Oval(r1 = 1, r2 = 1) : Shape() constructor {
     self.r1 = r1;
     self.r2 = r2;
 }
+
 /// @returns {undefined}
 function Line() : Shape() constructor {
-
-    /// @param x1
-    /// @param y1
-    /// @param x2
-    /// @param y2
-    /// @returns {undefined}
     set_points = function (x1, y1, x2, y2) {
         self.x1 = x1;
         self.y1 = y1;
@@ -103,32 +100,33 @@ function Line() : Shape() constructor {
 }
 
 /// @param settings
-/// @param fallback
-function choose_profile(settings, fallback) {
+/// @param [fallback]
+/// @returns {any}
+function choose_profile(settings, fallback = undefined) {
     var config = settings ?? global.default_settings;
     var themeCandidate = config.theme_override ?? fallback.theme_override;
     var finalTheme = themeCandidate ?? global.theme_defaults;
-    if ((config ?? fallback) == undefined) {
+    if (is_undefined((config ?? fallback))) {
         return "guest";
     }
-    return config.profile ?? (fallback.profile ?? "guest");
+    return config.profile ?? fallback.profile ?? "guest";
 }
 
 var best = choose_profile(undefined, {profile: "dev"});
 
-// Feather disable all
-// .__Destroy()
-// .__FromBuffer(buffer)
-// .__CopyFromBuffer(buffer)
-// .__FromString(string, )
-// .__Delete(position, count)
-// .__Insert(position, string, )
-// .__Overwrite(position, string, )
-// .__Prefix(string, )
-// .__Suffix(string, )
-// .__GetString()
-// .__GetBuffer()
 
+// Feather disable all
+/// @desc .__Destroy()
+/// .__FromBuffer(buffer)
+/// .__CopyFromBuffer(buffer)
+/// .__FromString(string, ...)
+/// .__Delete(position, count)
+/// .__Insert(position, string, ...)
+/// .__Overwrite(position, string, ...)
+/// .__Prefix(string, ...)
+/// .__Suffix(string, ...)
+/// .__GetString()
+/// .__GetBuffer()
 function __ChatterboxBufferBatch() constructor {
     __destroyed = false;
     __inBuffer = undefined;
@@ -143,21 +141,21 @@ function __ChatterboxBufferBatch() constructor {
         }
         __destroyed = true;
 
-        if (__inBuffer != undefined) {
+        if (!is_undefined(__inBuffer)) {
             buffer_delete(__inBuffer);
             __inBuffer = undefined;
         }
 
-        if (__inBuffer == undefined) {
+        if (is_undefined(__inBuffer)) {
             __destroyed = true;
         }
     };
 }
 
-/// @param [name="friend"]
-/// @param [greeting="Hello"]
-/// @returns {string}
-function greet(name = "friend", greeting = "Hello") {
+/// @returns {any}
+function greet() {
+    var name = argument_count > 0 ? argument[0] : "friend";
+    var greeting = argument_count > 1 ? argument[1] : "Hello";
     return $"{greeting}, ${name}";
 }
 
@@ -167,13 +165,13 @@ var message3 = greet("Bob", "Howdy");
 var message4 = greet("Chaz");
 var message5 = greet(undefined, "Welcome");
 
-/// @param {real} [multiplier=1] The multiplier to apply to the light direction
-/// @param {array<real>} [light_dir=[0, 0, -1]] The direction of the light
-/// @returns {array<real>}
-function handle_lighting(multiplier = 1, light_dir = [0, 0, -1]) {
+/// @param {real} [multiplier] The multiplier to apply to the light direction
+/// @param {array<real>} [light_dir=[0, 0, -1]] ] - The direction of the light
+/// @returns {any}
+function handle_lighting(multiplier = undefined, light_dir = [0, 0, -1]) {
     var dir = light_dir;
     var length = point_distance_3d(0, 0, 0, dir[0], dir[1], dir[2]);
-    length *= multiplier;
+    length *= multiplier ?? 1;
     if (abs(length) > math_get_epsilon()) {
         dir[0] /= length;
         dir[1] /= length;
@@ -186,35 +184,46 @@ function handle_lighting(multiplier = 1, light_dir = [0, 0, -1]) {
 /// @param {Id.Instance} b
 /// @param {real} dst
 /// @param {real} force
-/// @param {bool} [push_out=true]
-/// @param {bool} [pull_in=true]
-/// @returns {bool}
-function scr_spring(a, b, dst, force, push_out = true, pull_in = true) {
+/// @returns {any}
+function scr_spring(a, b, dst, force) {
     if (!instance_exists(a) or !instance_exists(b)) {
         return false;
+    }
+
+    var push_out = true;
+    if (argument_count > 4) {
+        push_out = argument[4];
+    }
+    var pull_in = true;
+    if (argument_count > 5) {
+        pull_in = argument[5];
     }
 
     var xoff = a.x - b.x;
     var yoff = a.y - b.y;
 
-    var actual_dist = sqr(xoff) + sqr(yoff);
-    if (abs(actual_dist) < math_get_epsilon()) {
+    var actual_dist = dot_product(xoff, yoff, xoff, yoff);
+    var eps = math_get_epsilon();
+    if (actual_dist <= eps) {
         return false;
     }
-    if (((actual_dist < sqr(dst)) and push_out) or ((actual_dist > sqr(dst)) and pull_in)){
+    if ((actual_dist < dst * dst and push_out) or (actual_dist > dst * dst and pull_in)){
         actual_dist = sqrt(actual_dist);
         var diff = actual_dist - dst;
 
+
         // normalize and multiply with diff and amount
-        var norm = (force * diff) / actual_dist;
+        var norm = force * diff / actual_dist;
         xoff *= norm;
         yoff *= norm;
+
 
         // calculate mass
         var m1, r1, r2;
         m1 = 1 / (b.mass + a.mass);
         r1 = b.mass * m1 * 0.5;
         r2 = a.mass * m1 * 0.5;
+
 
         // add speeds
         a.velocity.x -= xoff * r1;
@@ -224,7 +233,6 @@ function scr_spring(a, b, dst, force, push_out = true, pull_in = true) {
 
         return true;
     }
-
     return false;
 }
 
@@ -246,31 +254,34 @@ get_debug_text = function () {
     return txt;
 };
 
-/// @description Write a unit triangular prism into an existing vbuff.
-///              Local space: X∈[-0.5,+0.5], Y∈[-0.5,+0.5], base plane at Z=0, apex line at (Y=0,Z=1).
+/// @desc Write a unit triangular prism into an existing vbuff.
+/// Local space: X∈[-0.5,+0.5], Y∈[-0.5,+0.5], base plane at Z=0, apex line at (Y=0,Z=1).
 /// @param vbuff
 /// @param [colour=c_white]
 /// @param [alpha=1]
-/// @param trans_mat
+/// @param [trans_mat]
 /// @returns {undefined}
-function vertex_buffer_write_triangular_prism(vbuff, colour = c_white, alpha = 1, trans_mat) {
+function vertex_buffer_write_triangular_prism(vbuff, colour = c_white, alpha = 1, trans_mat = undefined) {
     var hx = 0.5, hy = 0.5, h = 1;
+
 
     // Base corners (Z = 0)
     var L0 = [-hx, -hy, 0]; // x-, y-
-    var L1 = [-hx, hy, 0]; // x-, y+
-    var R0 = [hx, -hy, 0]; // x+, y-
-    var R1 = [hx, hy, 0]; // x+, y+
+    var L1 = [-hx, +hy, 0]; // x-, y+
+    var R0 = [+hx, -hy, 0]; // x+, y-
+    var R1 = [+hx, +hy, 0]; // x+, y+
 
     // Apex line (Y=0, Z=1)
     var LA = [-hx, 0, h];
-    var RA = [hx, 0, h];
+    var RA = [+hx, 0, h];
+
 
     // Reusable UVs
     static uv00 = [0, 0];
     static uv10 = [1, 0];
     static uv11 = [1, 1];
     static uv01 = [0, 1];
+
 
     // Base quad (Z=0): L0-R0-R1, L0-R1-L1 (outside normal points to Z-; ok for debug)
     vertex_buffer_write_triangle(
@@ -298,6 +309,7 @@ function vertex_buffer_write_triangular_prism(vbuff, colour = c_white, alpha = 1
         trans_mat
     );
 
+
     // Left sloped face (y=-hy -> apex): quad L0-R0-RA-LA => (L0,R0,RA) + (L0,RA,LA)
     vertex_buffer_write_triangle(
         vbuff,
@@ -324,6 +336,7 @@ function vertex_buffer_write_triangular_prism(vbuff, colour = c_white, alpha = 1
         trans_mat
     );
 
+
     // Right sloped face (y=+hy -> apex): quad R1-L1-LA-RA => (R1,L1,LA) + (R1,LA,RA)
     vertex_buffer_write_triangle(
         vbuff,
@@ -349,6 +362,7 @@ function vertex_buffer_write_triangular_prism(vbuff, colour = c_white, alpha = 1
         alpha,
         trans_mat
     );
+
 
     // End caps (triangles in X)
     // X = -hx cap: L0, L1, LA

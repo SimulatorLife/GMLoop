@@ -1,4 +1,4 @@
-/// @description Initialize sound controller
+/// @desc Initialize sound controller
 
 /// @desc Set the gain for the master volume from the volume specified in the settings
 /// @returns {undefined}

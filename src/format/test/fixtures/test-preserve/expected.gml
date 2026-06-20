@@ -133,7 +133,7 @@ global.lighting.draw(
 // Value between 0 and 2, this is subtracted from crabs height
 z_wobble = ((sin(current_time * 0.004) + 1) * 2) + 2;
 
-/// @description Functions for skyboxes using an octahedron vertex buffer
+/// @desc Functions for skyboxes using an octahedron vertex buffer
 /// @param {Asset.GMSprite} [sprite=noone]
 /// @param {real} [subimg=0]
 /// @param {real} [octahedron_scale=1] The scale of the skybox octahedron
@@ -146,7 +146,7 @@ function AbstractSkyboxParent(sprite = noone, subimg = 0, octahedron_scale = 1, 
     self.cullmode = cull_clockwise;
 
     /// @override
-    /// @description Draw the zmodel
+    /// @desc Draw the zmodel
     /// @param {bool} [reset_matrix=true] Reset the world matrix after drawing?
     /// @returns {undefined}
     static draw = function (reset_matrix = true) {
@@ -205,7 +205,8 @@ function AbstractSkyboxParent(sprite = noone, subimg = 0, octahedron_scale = 1, 
         show_debug_message($"Error in instance: Can't edit fast-sampling instance!");\
         return true;                                                       \
     }
-/// @description Linear blend of *inst_a* ↔ *inst_b* into *this* instance
+
+/// @desc Linear blend of *inst_a* <-> *inst_b* into *this* instance
 /// @param inst_a
 /// @param inst_b
 /// @param {real} amount
