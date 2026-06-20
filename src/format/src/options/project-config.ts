@@ -1,19 +1,10 @@
 import type { GmloopProjectConfig } from "@gmloop/core";
 
-const FORMATTER_OWNED_CONFIG_KEYS = new Set([
-    "allowInlineControlFlowBlocks",
-    "bracketSpacing",
-    "endOfLine",
-    "inlineControlFlowBlockMargin",
-    "logicalOperatorsStyle",
-    "objectWrap",
-    "printWidth",
-    "semi",
-    "singleQuote",
-    "tabWidth",
-    "trailingComma",
-    "useTabs"
-]);
+import { PROJECT_FORMAT_OPTION_CATALOG } from "./project-config-catalog.js";
+
+const FORMATTER_OWNED_CONFIG_KEYS: ReadonlySet<string> = new Set(
+    PROJECT_FORMAT_OPTION_CATALOG.map((entry) => entry.name)
+);
 
 /**
  * Extract formatter-owned options from a shared `gmloop.json` object.
@@ -21,6 +12,10 @@ const FORMATTER_OWNED_CONFIG_KEYS = new Set([
  * The formatter must ignore project-aware sections owned by lint/refactor and
  * any unrelated future workspace config. Using an allowlist keeps the format
  * workspace scoped to layout options only.
+ *
+ * The allowlist is derived from {@link PROJECT_FORMAT_OPTION_CATALOG} so the
+ * set of keys accepted here and the option metadata exposed for UI and
+ * documentation surfaces can never drift apart.
  *
  * @param config Shared top-level project config.
  * @returns Formatter option bag containing only formatter-owned keys.
