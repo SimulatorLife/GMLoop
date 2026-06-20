@@ -28,9 +28,11 @@ import { createPreferStructLiteralAssignmentsRule } from "./rules/prefer-struct-
 import { createRemoveDefaultCommentsRule } from "./rules/remove-default-comments-rule.js";
 import { createRequireArgumentSeparatorsRule } from "./rules/require-argument-separators-rule.js";
 import { createRequireControlFlowBracesRule } from "./rules/require-control-flow-braces-rule.js";
+import {
+    createRequireZtestEnabledResetRule,
+    createRequireZwriteEnabledResetRule
+} from "./rules/require-gpu-toggle-reset-rule.js";
 import { createRequireRegionPairsRule } from "./rules/require-region-pairs-rule.js";
-import { createRequireZtestEnabledResetRule } from "./rules/require-ztest-enabled-reset-rule.js";
-import { createRequireZwriteEnabledResetRule } from "./rules/require-zwrite-enabled-reset-rule.js";
 import { createSimplifyRealCallsRule } from "./rules/simplify-real-calls-rule.js";
 
 type GmlRuleFactory = (definition: GmlRuleDefinition) => Rule.RuleModule;
