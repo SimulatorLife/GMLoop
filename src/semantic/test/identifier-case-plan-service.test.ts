@@ -5,10 +5,16 @@ import {
     applyIdentifierCasePlanSnapshot,
     captureIdentifierCasePlanSnapshot,
     getIdentifierCaseRenameForNode,
+    type IdentifierCasePlanPreparer,
+    type IdentifierCasePlanService,
+    type IdentifierCasePlanSnapshotApplicator,
+    type IdentifierCasePlanSnapshotCapture,
+    type IdentifierCaseRenameLookup,
     prepareIdentifierCasePlan,
     registerIdentifierCasePlanProvider,
     resetIdentifierCasePlanProvider,
-    resolveIdentifierCasePlanService
+    resolveIdentifierCasePlanService,
+    resolveIdentifierCasePlanServiceAs
 } from "../src/identifier-case/plan-service.js";
 
 void test("identifier case plan service exposes unified contract with 4 methods", { concurrency: false }, () => {
@@ -254,6 +260,126 @@ void test("registering new provider invalidates cached service", { concurrency: 
     const afterResetLookupResult = getIdentifierCaseRenameForNode({ type: "Identifier", name: "value" }, {});
     assert.strictEqual(afterResetLookupResult, null, "reset should route lookups back to default behavior");
     assert.strictEqual(secondProviderLookupCallCount, 2, "reset should stop routing lookups to replacement provider");
+
+    resetIdentifierCasePlanProvider();
+});
+
+/**
+ * Helper that demonstrates the Interface Segregation Principle: the caller
+ * only needs the rename-lookup role, so it accepts a narrow contract
+ * rather than the full composite service.
+ */
+function callRenameLookup(role: IdentifierCaseRenameLookup, node: { type: string; name: string }): string | null {
+    return role.getIdentifierCaseRenameForNode(node, {});
+}
+
+void test("resolveIdentifierCasePlanServiceAs projects the service onto a narrow role", { concurrency: false }, () => {
+    resetIdentifierCasePlanProvider();
+
+    let lookupCallCount = 0;
+
+    registerIdentifierCasePlanProvider(() => ({
+        prepareIdentifierCasePlan: async () => {},
+        getIdentifierCaseRenameForNode: () => {
+            lookupCallCount += 1;
+            return "ROLE_RENAME";
+        },
+        captureIdentifierCasePlanSnapshot: () => ({}),
+        applyIdentifierCasePlanSnapshot: () => {}
+    }));
+
+    // Project onto a single role: the caller of `callRenameLookup` only
+    // depends on the rename-lookup capability of the service.
+    const lookupRole: IdentifierCaseRenameLookup = resolveIdentifierCasePlanServiceAs<IdentifierCaseRenameLookup>();
+    const result = callRenameLookup(lookupRole, { type: "Identifier", name: "value" });
+    assert.strictEqual(result, "ROLE_RENAME");
+    assert.strictEqual(lookupCallCount, 1, "projected role should forward lookup calls to the provider");
+
+    // The same role projection returns the cached service on a second call
+    // (no provider re-invocation), so consumers can rely on a single
+    // resolution per service instance.
+    const cachedLookupRole: IdentifierCaseRenameLookup =
+        resolveIdentifierCasePlanServiceAs<IdentifierCaseRenameLookup>();
+    assert.strictEqual(cachedLookupRole, lookupRole, "subsequent projections should return the cached instance");
+    assert.strictEqual(lookupCallCount, 1, "cached projection should not re-invoke the provider");
+
+    resetIdentifierCasePlanProvider();
+});
+
+void test("resolveIdentifierCasePlanServiceAs supports every narrow role interface", { concurrency: false }, () => {
+    resetIdentifierCasePlanProvider();
+
+    const prepareCalls: Array<unknown> = [];
+    const lookupCalls: Array<unknown> = [];
+    const captureCalls: Array<unknown> = [];
+    const applyCalls: Array<unknown> = [];
+
+    registerIdentifierCasePlanProvider(() => ({
+        prepareIdentifierCasePlan: async (options) => {
+            prepareCalls.push(options);
+        },
+        getIdentifierCaseRenameForNode: (node, options) => {
+            lookupCalls.push({ node, options });
+            return "ok";
+        },
+        captureIdentifierCasePlanSnapshot: (options) => {
+            captureCalls.push(options);
+            return { marker: "snapshot" };
+        },
+        applyIdentifierCasePlanSnapshot: (snapshot, options) => {
+            applyCalls.push({ snapshot, options });
+        }
+    }));
+
+    // Each role projection resolves the *same* cached composite
+    // instance — the projection is a type-level contract, not a
+    // runtime transformation. The point of the role interfaces is to
+    // let consumers depend on the capability they need without
+    // forcing them to know about the other three.
+    const preparer: IdentifierCasePlanPreparer = resolveIdentifierCasePlanServiceAs<IdentifierCasePlanPreparer>();
+    const lookup: IdentifierCaseRenameLookup = resolveIdentifierCasePlanServiceAs<IdentifierCaseRenameLookup>();
+    const capture: IdentifierCasePlanSnapshotCapture =
+        resolveIdentifierCasePlanServiceAs<IdentifierCasePlanSnapshotCapture>();
+    const applicator: IdentifierCasePlanSnapshotApplicator =
+        resolveIdentifierCasePlanServiceAs<IdentifierCasePlanSnapshotApplicator>();
+
+    assert.strictEqual(
+        preparer,
+        lookup,
+        "role projections of the same cached service should reference the same instance"
+    );
+    assert.strictEqual(preparer, capture);
+    assert.strictEqual(preparer, applicator);
+
+    // Exercise each role's method through the projection. The
+    // TypeScript compiler enforces the role contract at the call site;
+    // the runtime dispatch still flows through the composite.
+    void preparer.prepareIdentifierCasePlan({ flag: "p" });
+    const lookupResult = lookup.getIdentifierCaseRenameForNode({ type: "Identifier", name: "n" }, { flag: "l" });
+    const snapshot = capture.captureIdentifierCasePlanSnapshot({ flag: "c" });
+    applicator.applyIdentifierCasePlanSnapshot(snapshot, { flag: "a" });
+
+    assert.strictEqual(prepareCalls.length, 1);
+    assert.strictEqual(lookupCalls.length, 1);
+    assert.strictEqual(lookupResult, "ok");
+    assert.strictEqual(captureCalls.length, 1);
+    assert.deepStrictEqual(snapshot, { marker: "snapshot" });
+    assert.strictEqual(applyCalls.length, 1);
+
+    // The composite projection returns the same cached service and
+    // exposes every method.
+    const composite: IdentifierCasePlanService = resolveIdentifierCasePlanServiceAs<IdentifierCasePlanService>();
+    assert.deepStrictEqual(Object.keys(composite).sort(), [
+        "applyIdentifierCasePlanSnapshot",
+        "captureIdentifierCasePlanSnapshot",
+        "getIdentifierCaseRenameForNode",
+        "prepareIdentifierCasePlan"
+    ]);
+    assert.strictEqual(
+        composite,
+        resolveIdentifierCasePlanService(),
+        "full-service projection should match the existing resolveIdentifierCasePlanService helper"
+    );
 
     resetIdentifierCasePlanProvider();
 });
