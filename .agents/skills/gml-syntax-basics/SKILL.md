@@ -17,7 +17,7 @@ It's very hard to correctly edit these manually!
 
 ## GML reserved names
 
-Your own names must avoid clashing with these:
+Your own names must avoid clashing with these (not an exaustive list):
 
 - `score`, `lives`, `health`
 - Position: `x`, `y`
@@ -36,9 +36,11 @@ Your own names must avoid clashing with these:
 
 ## GML Naming conventions
 
-- Use `snake_case` for all variables and functions
+- Use `snake_case` for variables and functions (including global variables and functions)
+- Use `PascalCase` for constructor functions (structs)
+- Use `UPPER_SNAKE_CASE` for macros
 - Prefix local variables with `_` (e.g., `var _temp_value`, `var _effect`)
-- Prefix resource names based on their type, e.g. obj_player, spr_player, etc.
+- Prefix resource names based on their type, e.g. `obj_player`, `spr_player_face`, `snd_squish`, etc.
 
 ## Type & Instance Checks
 
@@ -110,7 +112,7 @@ For string concatenation, use the `+` operator:
 var full_name = "Henry" + " " + "Smith";
 ```
 
-For string interpolation, use `$` at the start of the string, and `{}` for embedded expressions:
+For string interpolation, use `$` at the start of the string, and `{}` for embedded expressions. For example:
 
 ```gml
 var last_name = "Smith";
@@ -218,19 +220,26 @@ Multi-line macros use trailing `\`:
     "part2"
 ```
 
-Macro references are expanded at compile time. Macros cannot end with a semicolon, but can be used in expressions with or without semicolons:
+Macro references are expanded at compile time. 
+
+Macros but can include semicolons at the end of lines in multi-line macros, for example:
+```gml
+#macro __SCRIBBLE_GEN_WORD_NEW  __SCRIBBLE_GEN_WORD_END;\
+                                _word_width = 0;\
+                                _word_glyph_start = _i;\
+                                _word_bidi = _glyph_bidi;\
+                                __SCRIBBLE_GEN_WORD_START;
+```
+
+Macros can be used in expressions with or without semicolons:
 
 ```gml
 var speed = PLAYER_SPEED;
 ```
 
-## Logical Operators
-
-GML supports both symbolic and keyword forms.
-
 ## Operators
 
-GML supports the following expression operators.
+GML supports both symbolic and keyword forms. GML supports the following expression operators.
 
 | Category | Operators | Notes |
 |---|---|---|
@@ -266,8 +275,8 @@ $abcd
 GML JSDoc-style comments use triple slash syntax:
 
 ```gml
-/// @param {real} value
 /// @desc This function does something important with the value.
+/// @param {real} value
 /// @returns {real}
 ```
 
@@ -276,15 +285,15 @@ GML JSDoc-style comments use triple slash syntax:
 Code-folding regions use:
 
 ```gml
-#region My Region
+#region My region
 // ...many lines of code...
 #endregion
 ```
 
 ```gml
-#region My Region
+#region My 2nd region
 // ...many lines of code...
-#endregion End of My Region
+#endregion End of my 2nd region
 ```
 
 ## Control Flow Keywords
