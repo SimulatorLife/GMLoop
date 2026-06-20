@@ -1706,6 +1706,10 @@ function areSymbolSetsEqual(left: ReadonlyArray<string>, right: ReadonlyArray<st
         return left.length === right.length;
     }
 
+    if (left.length === right.length && left.every((symbol, index) => symbol === right[index])) {
+        return true;
+    }
+
     const leftSet = new Set(left);
     const rightSet = new Set(right);
 
