@@ -31,7 +31,7 @@ long-running workflow state. Pack content must remain vendor-neutral and must
 not require a particular coordinator or agent framework.
 
 ## References
-- https://github.com/yamadashy/repomix
-- https://github.com/microsoft/fastcontext
+- [repomix](https://github.com/yamadashy/repomix)
+- [fastcontext](https://github.com/microsoft/fastcontext)
 - [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)
 - [mcp-server-qdrant](https://github.com/qdrant/mcp-server-qdrant)
