@@ -3,17 +3,17 @@ import type { Rule } from "eslint";
 
 import { gmlRuleAutofixServices } from "../gml-rule-services.js";
 import type { GmlRuleDefinition } from "../index.js";
-import { applyDivisionToMultiplication } from "../math/math-division-to-multiplication.js";
-import { cleanupMultiplicativeIdentityParentheses } from "../math/math-parentheses-cleanup.js";
 // manual-transforms provide a comprehensive suite of normalization helpers that
 // the linter rule previously replicated only incompletely. We now invoke them
 // directly and print the resulting AST fragment ourselves so the rule can keep
 // its existing text-edit infrastructure and remain synchronous.
 import {
+    applyDivisionToMultiplication,
     applyManualMathNormalization,
     applyScalarCondensing,
+    cleanupMultiplicativeIdentityParentheses,
     simplifyZeroDivisionNumerators
-} from "../math/math-traversal-normalization.js";
+} from "../math/index.js";
 import {
     applySourceTextEdits,
     createCommentTokenRangeIndex,

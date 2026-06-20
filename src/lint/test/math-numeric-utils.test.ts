@@ -10,7 +10,7 @@ import {
     isLiteralNumber,
     isNegativeOneFactor,
     isNumericZeroLiteral
-} from "../src/rules/gml/math/math-numeric-utils.js";
+} from "../src/rules/gml/math/index.js";
 
 void test("computeNumericTolerance honours explicit tolerance overrides", () => {
     assert.strictEqual(computeNumericTolerance(0, 0.01), 0.01);

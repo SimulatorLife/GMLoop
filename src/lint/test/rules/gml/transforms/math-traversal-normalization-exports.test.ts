@@ -24,7 +24,7 @@ import {
     simplifyZeroDivisionNumerators,
     traverseZeroDivisionNumerators,
     unwrapEnclosingParentheses
-} from "../../../../src/rules/gml/math/math-traversal-normalization.js";
+} from "../../../../src/rules/gml/math/index.js";
 
 /**
  * Regression coverage for the single `export * from "./math-ast-mutation.js"`

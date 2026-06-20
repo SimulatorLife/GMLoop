@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { applyDivisionToMultiplication } from "../../../src/rules/gml/math/math-division-to-multiplication.js";
 import {
+    applyDivisionToMultiplication,
     DEFAULT_MATH_NUMERIC_POLICY,
     type MathNumericPolicy,
     resolveMathNumericPolicy
-} from "../../../src/rules/gml/math/math-numeric-policy.js";
+} from "../../../src/rules/gml/math/index.js";
 
 void test("DEFAULT_MATH_NUMERIC_POLICY matches the previous hardcoded thresholds", () => {
     // The values here intentionally match the constants that used to live as
