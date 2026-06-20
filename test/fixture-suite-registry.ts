@@ -46,11 +46,12 @@ function createFormatFixtureSuiteRegistration(): FixtureSuiteRegistration {
             const formatted = await runProfiledStage("format", async () =>
                 Format.format(inputText ?? "", formatOptions)
             );
+            const normalized = Format.normalizeFormattedOutput(formatted);
 
             return {
                 resultKind: "text" as const,
-                outputText: formatted,
-                changed: formatted !== (inputText ?? "")
+                outputText: normalized,
+                changed: normalized !== (inputText ?? "")
             };
         }
     });
