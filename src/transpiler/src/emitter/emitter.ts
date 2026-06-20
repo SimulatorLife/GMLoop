@@ -503,7 +503,11 @@ export class GmlToJsEmitter {
         }
         // Fast path: single statement
         if (stmts.length === 1) {
-            const code = this.emit(stmts[0]);
+            const stmt = stmts[0];
+            if (!stmt) {
+                return "";
+            }
+            const code = this.visit(stmt);
             return code ? this.ensureStatementTermination(code) : "";
         }
         // Multiple statements: use StringBuilder for efficiency.
@@ -1004,12 +1008,18 @@ export class GmlToJsEmitter {
     }
 
     /**
-     * Join argument nodes into a comma-separated string.
-     * This is optimized to avoid creating intermediate arrays.
+     * Append terminated statement output without re-entering the public emit lifecycle.
+     *
+     * This helper is only called while a parent AST node is already being emitted,
+     * so visiting child statements directly avoids redundant emit-depth bookkeeping
+     * in hot block/function/switch paths while preserving dependency collection.
      */
     private appendStatementsWithTermination(builder: StringBuilder, stmts: readonly GmlNode[]): void {
         for (const stmt of stmts) {
-            const code = this.emit(stmt);
+            if (!stmt) {
+                continue;
+            }
+            const code = this.visit(stmt);
             if (code) {
                 builder.append(this.ensureStatementTermination(code));
             }

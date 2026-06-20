@@ -129,6 +129,16 @@ void describe("GmlToJsEmitter.getDependencies()", () => {
         assert.ok(emitter.getDependencies().has("gml/script/scr_on_hit"));
     });
 
+    void it("collects script symbols inside function bodies without nested emit resets", () => {
+        const sem = makeScriptOracle(new Set(["scr_setup", "scr_after"]));
+        const ast = Parser.GMLParser.parse("function init() { scr_setup(); } scr_after();");
+        const emitter = new Transpiler.GmlToJsEmitter(sem);
+
+        emitter.emit(ast);
+
+        assert.deepEqual([...emitter.getDependencies()], ["gml/script/scr_setup", "gml/script/scr_after"]);
+    });
+
     void it("collects script constructor dependencies without wrapping constructor output", () => {
         const sem = Transpiler.createSemanticOracle({ scriptNames: new Set(["ScrProjectile"]) });
         const ast = Parser.GMLParser.parse("var projectile = new ScrProjectile(x, y);");
