@@ -7,7 +7,7 @@ import { createFormatFixtureSuiteDefinition } from "./fixture-suite-definition.j
 
 const fixtureSuite = createFormatFixtureSuiteDefinition();
 
-const LEGACY_CASE_IDS = Object.freeze(["test-argument-docs", "test-banner", "test-preserve", "test-flow"]);
+const LEGACY_CASE_IDS = Object.freeze(["test-banner", "test-preserve", "test-flow"]);
 
 const fixtureCases = await FixtureRunner.discoverFixtureCases(fixtureSuite.fixtureRoot);
 const runnableCaseIds = fixtureCases
