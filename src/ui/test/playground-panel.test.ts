@@ -587,3 +587,33 @@ void test("playground panel selects a fixture, populates input, and applies its 
         /\.checked=true[\s\S]*?class="rule-details-item-key">@gmloop\/no-constructor-assignment<\/span>/u
     );
 });
+
+void test("playground panel output diff highlights changes with GML syntax highlighting", () => {
+    const panel = new TestableGmPlaygroundPanel();
+    panel.model = createMockModel();
+    panel.state = createMockState();
+
+    // Set actual output and expected output to trigger diff rendering
+    panel.setOutputForTest(
+        'if (foo) {\n    show_debug_message("hello");\n}',
+        'if (foo) {\n    show_debug_message("world");\n}'
+    );
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    // Verify the diff container exists
+    assert.match(rendered, /class="playground-output diff-container"/u);
+
+    // Verify that diff-added and diff-removed lines exist
+    assert.match(rendered, /class="diff-line diff-added"/u);
+    assert.match(rendered, /class="diff-line diff-removed"/u);
+
+    // Verify syntax highlighting classes are present within the diff lines
+    // "if" should be highlighted as a keyword
+    assert.match(rendered, /<span class="gml-keyword">if<\/span>/u);
+    // "show_debug_message" should be highlighted as a function-name
+    assert.match(rendered, /<span class="gml-function-name">show_debug_message<\/span>/u);
+    // "hello" and "world" should be highlighted as strings
+    assert.match(rendered, /<span class="gml-string">"hello"<\/span>/u);
+    assert.match(rendered, /<span class="gml-string">"world"<\/span>/u);
+});
