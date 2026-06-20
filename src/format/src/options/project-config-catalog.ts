@@ -59,7 +59,8 @@ export const PROJECT_FORMAT_OPTION_CATALOG: ReadonlyArray<ProjectFormatOptionCat
     }),
     Object.freeze({
         defaultValue: false,
-        description: "Prefer single-quoted string literals when that output is valid.",
+        description:
+            "GML strings must use double quotes only, so the formatter preserves the source's original quote style and this option has no effect on string literal output.",
         name: "singleQuote"
     }),
     Object.freeze({
