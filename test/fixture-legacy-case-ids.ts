@@ -3,7 +3,7 @@
  * golden expectations are migrated to the current formatter/lint architecture.
  */
 export const LEGACY_FIXTURE_CASE_IDS_BY_WORKSPACE = Object.freeze({
-    format: Object.freeze(["test-argument-docs", "test-banner", "test-preserve"]),
+    format: Object.freeze(["test-argument-docs", "test-banner", "test-preserve", "test-flow"]),
     integration: Object.freeze([
         "test-int-doc-banner",
         "test-int-flow-hoist",
