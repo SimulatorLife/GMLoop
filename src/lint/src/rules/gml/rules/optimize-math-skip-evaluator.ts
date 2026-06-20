@@ -631,5 +631,5 @@ export const MATH_OPTIMIZATION_POLICY_CONSTANTS = Object.freeze({
 // (the math transform policy module) instead of having to import the math
 // workspace directly. The wrapper preserves the rule-layer boundary while
 // letting the optimize-math rule opt into stricter or more permissive limits.
-export type { MathNumericPolicy } from "../math/math-numeric-policy.js";
-export { DEFAULT_MATH_NUMERIC_POLICY, resolveMathNumericPolicy } from "../math/math-numeric-policy.js";
+export type { MathNumericPolicy } from "../math/index.js";
+export { DEFAULT_MATH_NUMERIC_POLICY, resolveMathNumericPolicy } from "../math/index.js";

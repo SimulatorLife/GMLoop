@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { attemptCondenseScalarProduct } from "../../src/rules/gml/math/math-scalar-condensing.js";
-import { applyScalarCondensing } from "../../src/rules/gml/math/math-traversal-normalization.js";
+import { applyScalarCondensing, attemptCondenseScalarProduct } from "../../src/rules/gml/math/index.js";
 
 void describe("applyScalarCondensing", () => {
     void it("combines numeric scalar factors", () => {
