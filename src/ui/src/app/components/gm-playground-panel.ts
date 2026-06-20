@@ -182,13 +182,16 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                 lines.pop();
             }
             return lines.map((line) => {
+                const highlighted = unsafeHTML(highlightGml(line));
                 if (change.added) {
-                    return html`<div class="diff-line diff-added"><span class="diff-sign">+</span>${line}</div>`;
+                    return html`<div class="diff-line diff-added"><span class="diff-sign">+</span>${highlighted}</div>`;
                 }
                 if (change.removed) {
-                    return html`<div class="diff-line diff-removed"><span class="diff-sign">-</span>${line}</div>`;
+                    return html`<div class="diff-line diff-removed">
+                        <span class="diff-sign">-</span>${highlighted}
+                    </div>`;
                 }
-                return html`<div class="diff-line diff-unchanged"><span class="diff-sign"> </span>${line}</div>`;
+                return html`<div class="diff-line diff-unchanged"><span class="diff-sign"> </span>${highlighted}</div>`;
             });
         });
         return html`<pre class="playground-output diff-container" aria-live="polite">${linesHtml}</pre>`;
@@ -351,6 +354,24 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         this.requestUpdate();
     }
 
+    #isFormatOrIntegrationFixtureSelected(): boolean {
+        if (!this.#selectedFixtureId) return false;
+        const fixture = this.#fixtures.find((f) => f.caseId === this.#selectedFixtureId);
+        return fixture?.kind === "format" || fixture?.kind === "integration";
+    }
+
+    #isLintOrIntegrationFixtureSelected(): boolean {
+        if (!this.#selectedFixtureId) return false;
+        const fixture = this.#fixtures.find((f) => f.caseId === this.#selectedFixtureId);
+        return fixture?.kind === "lint" || fixture?.kind === "integration";
+    }
+
+    #isRefactorOrIntegrationFixtureSelected(): boolean {
+        if (!this.#selectedFixtureId) return false;
+        const fixture = this.#fixtures.find((f) => f.caseId === this.#selectedFixtureId);
+        return fixture?.kind === "refactor" || fixture?.kind === "integration";
+    }
+
     async #processInput(): Promise<void> {
         this.#error = null;
         const currentInput = this.#sessionController.input;
@@ -376,11 +397,11 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     gml: currentInput,
-                    format: enabledFormatOptionNames.length > 0,
+                    format: enabledFormatOptionNames.length > 0 || this.#isFormatOrIntegrationFixtureSelected(),
                     formatOptionNames: enabledFormatOptionNames,
-                    lint: enabledLintRuleIds.length > 0,
+                    lint: enabledLintRuleIds.length > 0 || this.#isLintOrIntegrationFixtureSelected(),
                     lintRuleIds: enabledLintRuleIds,
-                    refactor: enabledCodemodIds.length > 0,
+                    refactor: enabledCodemodIds.length > 0 || this.#isRefactorOrIntegrationFixtureSelected(),
                     codemodIds: enabledCodemodIds,
                     transpileMode: this.#transpileMode,
                     fixtureId: this.#selectedFixtureId || undefined
@@ -874,6 +895,14 @@ ${unsafeHTML(highlightGml(this.#sessionController.input))}</pre
         this.#showFormatDetails = format;
         this.#showLintDetails = lint;
         this.#showCodemodDetails = codemod;
+        this.requestUpdate();
+    }
+
+    /** @internal */
+    public setOutputForTest(gmlOutput: string, expectedGml: string | null): void {
+        this.#gmlOutput = gmlOutput;
+        this.#expectedGml = expectedGml;
+        this.#error = null;
         this.requestUpdate();
     }
 }
