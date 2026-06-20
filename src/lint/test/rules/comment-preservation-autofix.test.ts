@@ -154,7 +154,7 @@ void test("combined auto-fixes preserve comments from the InterplanetaryFootball
     );
     assert.match(output, /if \(abs\(move_spd\) > math_get_epsilon\(\)\) \{/u);
     assert.match(output, /var weight = 0\.4 \+ 1\.2 \* sqr\(dp\);/u);
-    assert.match(output, /\/\/\/ @description Updates ground_dist' each step/u);
+    assert.match(output, /\/\/\/ @desc Updates ground_dist' each step/u);
     assert.match(output, /\/\/\/ @param \[ray_len=128\]/u);
     assert.match(output, /\/\/\/ @returns \{undefined\}/u);
 });

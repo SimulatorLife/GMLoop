@@ -25,7 +25,7 @@ void test("normalize-doc-comments promotes leading summary lines into @descripti
     ].join("\n");
 
     const output = runNormalizeDocCommentsRule(input);
-    assert.match(output, /\/\/\/ @description Leading summary/);
+    assert.match(output, /\/\/\/ @desc Leading summary/);
     assert.match(output, /\/\/\/\s+Additional note/);
     assert.match(output, /\/\/\/ @param value the input/);
     assert.doesNotMatch(output, /\/\/\/ @param value - the input/);
@@ -34,7 +34,7 @@ void test("normalize-doc-comments promotes leading summary lines into @descripti
 void test("normalize-doc-comments removes empty @description lines", () => {
     const input = ["/// @description", "function test() {}"].join("\n");
     const output = runNormalizeDocCommentsRule(input);
-    assert.doesNotMatch(output, /@description\s*$/m);
+    assert.doesNotMatch(output, /@desc\s*$/m);
 });
 
 void test("normalize-doc-comments removes top-of-file empty @description lines before plain comments", () => {
@@ -46,7 +46,7 @@ void test("normalize-doc-comments removes top-of-file empty @description lines b
     ].join("\n");
     const output = runNormalizeDocCommentsRule(input);
 
-    assert.doesNotMatch(output, /^\s*\/\/\/ @description\s*$/m);
+    assert.doesNotMatch(output, /^\s*\/\/\/ @desc\s*$/m);
     assert.match(output, /^\/\/ Cast a ray from high above to the ground so that the coin is placed onto the ground$/m);
 });
 
@@ -56,7 +56,7 @@ void test("normalize-doc-comments removes empty @description while preserving ad
     );
     const output = runNormalizeDocCommentsRule(input);
 
-    assert.doesNotMatch(output, /^\s*\/\/\/ @description\s*$/m);
+    assert.doesNotMatch(output, /^\s*\/\/\/ @desc\s*$/m);
     assert.match(output, /^\/\/\/ @param value$/m);
     assert.match(output, /^\/\/\/ @returns \{any\}$/m);
 });
@@ -64,13 +64,13 @@ void test("normalize-doc-comments removes empty @description while preserving ad
 void test("normalize-doc-comments preserves non-empty @description content", () => {
     const input = ["/// @description Initialize the sky background", "var a = 1;"].join("\n");
     const output = runNormalizeDocCommentsRule(input);
-    assert.match(output, /@description Initialize the sky background/);
+    assert.match(output, /@desc Initialize the sky background/);
 });
 
 void test("normalize-doc-comments canonicalizes legacy // @tag comments", () => {
     const input = ["// @description legacy style", "function demo() {}"].join("\n");
     const output = runNormalizeDocCommentsRule(input);
-    assert.match(output, /^\/\/\/ @description legacy style/m);
+    assert.match(output, /^\/\/\/ @desc legacy style/m);
 });
 
 void test("normalize-doc-comments synthesizes missing doc tags for undocumented functions", () => {
@@ -94,7 +94,7 @@ void test("normalize-doc-comments appends missing @param and @returns tags to ex
     ].join("\n");
     const output = runNormalizeDocCommentsRule(input);
 
-    assert.match(output, /^\/\/\/ @description Existing docs/m);
+    assert.match(output, /^\/\/\/ @desc Existing docs/m);
     assert.match(output, /^\/\/\/ @param alpha/m);
     assert.match(output, /^\/\/\/ @param beta/m);
     assert.match(output, /^\/\/\/ @returns \{undefined\}/m);
@@ -129,12 +129,12 @@ void test("normalize-doc-comments canonicalizes doc tag aliases via Core replace
     ].join("\n");
     const output = runNormalizeDocCommentsRule(input);
 
-    assert.match(output, /^\/\/\/ @description Computes a score$/m);
+    assert.match(output, /^\/\/\/ @desc Computes a score$/m);
     assert.match(output, /^\/\/\/ @param alpha first input$/m);
     assert.doesNotMatch(output, /^\/\/\/ @param alpha - first input$/m);
     assert.match(output, /^\/\/\/ @param beta$/m);
     assert.match(output, /^\/\/\/ @returns \{real\}$/m);
-    assert.doesNotMatch(output, /^\/\/\/ @desc\b/m);
+    assert.doesNotMatch(output, /^\/\/\/ @description\b/m);
     assert.doesNotMatch(output, /^\/\/\/ @arg\b/m);
     assert.doesNotMatch(output, /^\/\/\/ @params\b/m);
     assert.doesNotMatch(output, /^\/\/\/ @return\b/m);
@@ -197,7 +197,7 @@ void test("normalize-doc-comments removes legacy @function and normalizes defaul
     const output = runNormalizeDocCommentsRule(input);
 
     assert.doesNotMatch(output, /^\/\/\/ @function /m);
-    assert.match(output, /^\/\/\/ @description Updates ground_dist each step$/m);
+    assert.match(output, /^\/\/\/ @desc Updates ground_dist each step$/m);
     assert.match(output, /^\/\/\/ @param ray_len$/m);
     assert.match(output, /^\/\/\/ @returns \{undefined\}$/m);
 });
@@ -263,7 +263,7 @@ void test("normalize-doc-comments preserves multiline @description continuations
     ].join("\n");
     const output = runNormalizeDocCommentsRule(input);
 
-    assert.match(output, /^\/\/\/ @description Build a spawn packet/m);
+    assert.match(output, /^\/\/\/ @desc Build a spawn packet/m);
     assert.match(output, /^\/\/\/\s+with a deterministic seed/m);
     assert.match(output, /^\/\/\/ @param seed/m);
     assert.match(output, /^\/\/\/ @returns \{any\}/m);
@@ -309,7 +309,7 @@ void test("normalize-doc-comments preserves non-typed @returns payload while cle
     ].join("\n");
     const output = runNormalizeDocCommentsRule(input);
 
-    assert.match(output, /^\/\/\/ @description Parse one row$/m);
+    assert.match(output, /^\/\/\/ @desc Parse one row$/m);
     assert.match(output, /^\/\/\/ @param row$/m);
     assert.match(output, /^\/\/\/ @returns Parsed row object$/m);
     assert.doesNotMatch(output, /^\/\/\/\s*$/m);

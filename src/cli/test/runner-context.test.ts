@@ -64,7 +64,7 @@ void test("followRunnerLogs emits each fresh batch exactly once and stops at the
         // The follow cursor is initialised to `Date.now() - 1`, so synthetic
         // entries must use timestamps that fall after that baseline for the
         // helper to ever observe them.
-        const baseline = Date.now();
+        const baseline = Date.now() + 10_000;
         const firstBatch = [buildEntry(baseline + 1, "a"), buildEntry(baseline + 2, "b")];
         const secondBatch = [buildEntry(baseline + 3, "c")];
         let callIndex = 0;
@@ -98,7 +98,7 @@ void test("followRunnerLogs emits each fresh batch exactly once and stops at the
 
 void test("followRunnerLogs does not re-emit entries observed on a previous tick", async () => {
     await withFreshRunnerState(async () => {
-        const baseline = Date.now();
+        const baseline = Date.now() + 10_000;
         const stableSnapshot = [buildEntry(baseline + 1, "a"), buildEntry(baseline + 2, "b")];
         const emitted: Array<ReadonlyArray<RunnerLogEntry>> = [];
 

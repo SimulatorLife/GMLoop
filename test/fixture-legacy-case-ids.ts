@@ -13,13 +13,11 @@ export const LEGACY_FIXTURE_CASE_IDS_BY_WORKSPACE = Object.freeze({
         "test-int-manual-math",
         "test-int-math-docs",
         "test-int-math-nested",
-        "test-int-ops-logic"
+        "test-int-ops-logic",
+        "test-int-comments-ops",
+        "test-int-func-desc-docs",
+        "test-int-struct-literal"
     ])
 });
 
-export const INTEGRATION_LEGACY_CASE_IDS = Object.freeze([
-    ...LEGACY_FIXTURE_CASE_IDS_BY_WORKSPACE.integration,
-    "test-int-comments-ops",
-    "test-int-func-desc-docs",
-    "test-int-struct-literal"
-]);
+export const INTEGRATION_LEGACY_CASE_IDS = LEGACY_FIXTURE_CASE_IDS_BY_WORKSPACE.integration;

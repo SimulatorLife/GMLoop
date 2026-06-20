@@ -170,7 +170,7 @@ void test("normalize-doc-comments aligns multiline description continuations", (
         "\n"
     );
     const expected = [
-        "/// @description Alpha summary",
+        "/// @desc Alpha summary",
         "/// Beta continuation",
         "function demo() {",
         "    return 1;",
@@ -252,7 +252,7 @@ void test("normalize-doc-comments normalizes malformed csv docs while preserving
         ""
     ].join("\n");
     const expected = [
-        "/// @description Decodes an CSV string and outputs a 2D array",
+        "/// @desc Decodes an CSV string and outputs a 2D array",
         "/// @jujuadams 2020-06-28",
         "/// @param csv_string The CSV string to be decoded",
         '/// @param [cell_delimiter=","] Character to use to indicate where cells start and end. First 127 ASCII chars only. Defaults to a comma',
@@ -278,7 +278,7 @@ void test("normalize-doc-comments converts legacy returns description text to @r
         ""
     ].join("\n");
     const expected = [
-        "/// @description Summary",
+        "/// @desc Summary",
         "/// @returns {Boolean} Indicating if check passed",
         "function demo() {",
         "    return true;",
@@ -334,7 +334,7 @@ void test("normalize-doc-comments normalizes malformed csv docs while preserving
         ""
     ].join("\n");
     const expected = [
-        "/// @description Decodes an CSV string and outputs a 2D array",
+        "/// @desc Decodes an CSV string and outputs a 2D array",
         "/// @jujuadams 2020-06-28",
         "/// @param csv_string The CSV string to be decoded",
         '/// @param [cell_delimiter=","] Character to use to indicate where cells start and end. First 127 ASCII chars only. Defaults to a comma',
@@ -360,7 +360,7 @@ void test("normalize-doc-comments converts legacy returns description text to @r
         ""
     ].join("\n");
     const expected = [
-        "/// @description Summary",
+        "/// @desc Summary",
         "/// @returns {Boolean} Indicating if check passed",
         "function demo() {",
         "    return true;",
@@ -1109,7 +1109,7 @@ void test("full-file rewrite rules report the first changed source location", ()
         },
         {
             ruleName: "normalize-directives",
-            input: ["var keep = 1;", "// #region Setup", ""].join("\n"),
+            input: ["var keep = 1;", "begin;", "    nested += 1;", "end;", ""].join("\n"),
             expectedLoc: { line: 2, column: 0 }
         },
         {
