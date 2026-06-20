@@ -1,4 +1,4 @@
-import type { GameMakerAstNode } from "@gmloop/core";
+import { Core } from "@gmloop/core";
 
 import { handleComments, printComment } from "../comments/index.js";
 import { LogicalOperatorsStyle } from "../options/logical-operators-style.js";
@@ -76,11 +76,15 @@ export function createDefaultGmlFormatComponents(): GmlFormatComponentBundle {
         printers: {
             "gml-ast": {
                 print: defaultGmlFormatComponentImplementations.print,
-                // Accept any for the runtime types coming from the AST and comment
-                // helpers, satisfying TypeScript without adding deep imports.
-                isBlockComment: (comment: GameMakerAstNode) => comment?.type === "CommentBlock",
-                canAttachComment: (node: GameMakerAstNode) =>
-                    node?.type && !node.type.includes("Comment") && node?.type !== "EmptyStatement",
+                // Delegate the comment-classification predicates to the
+                // canonical helpers owned by `@gmloop/core`. Centralising
+                // these rules keeps the high-level Prettier wiring free of
+                // ad-hoc AST shape checks and lets any embedded consumer
+                // (or test) override the boundaries through the same
+                // dependency-inversion seam that already governs the
+                // parser, printer, and comment handlers.
+                isBlockComment: Core.isBlockComment,
+                canAttachComment: Core.canAttachComment,
                 printComment: defaultGmlFormatComponentImplementations.printComment,
                 handleComments: defaultGmlFormatComponentImplementations.handleComments
             }
