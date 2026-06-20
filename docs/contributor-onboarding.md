@@ -25,6 +25,12 @@ pnpm install
 `pnpm install` installs the exact dependency graph captured in `pnpm-lock.yaml`.
 Use `pnpm install` only after verifying the lockfile is current.
 
+Installation also regenerates the ignored local
+`.agents/skills/repomix-reference-gmloop` development skill. Once Husky is
+installed, merge pulls, rebase pulls, and branch checkouts keep that skill in
+sync with the current repository. Run `pnpm run skill:repomix` to refresh it
+manually when hooks are disabled with `HUSKY=0`.
+
 ## 3. Validate the workspace
 
 Start with the baseline repository checks used in CI-style local validation:

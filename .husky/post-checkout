@@ -1,0 +1,11 @@
+set -eu
+if [ -x "$HOME/.githooks/post-checkout" ]; then
+  echo "Chaining to global post-checkout hook"
+  chain="${GIT_HOOK_CHAIN:-0}"
+  chain=$((chain + 1))
+  GIT_HOOK_CHAIN="$chain" "$HOME/.githooks/post-checkout" "$@" || true
+fi
+
+if [ "${3:-0}" = "1" ]; then
+  pnpm run skill:repomix
+fi

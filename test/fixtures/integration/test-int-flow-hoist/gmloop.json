@@ -11,15 +11,7 @@
   "refactor": {
     "codemods": {
       "docCommentAlignment": {},
-      "loopLengthHoisting": {
-        "functionSuffixes": {
-          "array_length": "len",
-          "ds_list_size": "size",
-          "ds_map_size": "size",
-          "ds_grid_width": "width",
-          "ds_grid_height": "height"
-        }
-      }
+      "loopLengthHoisting": {}
     }
   },
   "fixture": {
