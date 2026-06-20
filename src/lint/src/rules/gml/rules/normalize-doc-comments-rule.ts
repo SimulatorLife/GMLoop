@@ -1583,9 +1583,8 @@ export function createNormalizeDocCommentsRule(definition: GmlRuleDefinition): R
                         // simple regex to recognize function headers in that case.
                         const isTextualFunctionDeclaration = isTextualNamedFunctionDeclarationLine(line);
                         const hasLeadingIndentation = /^\s+/u.test(line);
-                        const isTextualFunctionAssignment = /^\s*(?:var|static)\s+[A-Za-z_]\w*\s*=\s*function\b/u.test(
-                            line
-                        );
+                        const isTextualFunctionAssignment =
+                            /^\s*(?:var\s+|static\s+)?(?:[A-Za-z_]\w*\.)?[A-Za-z_]\w*\s*=\s*function\b/u.test(line);
                         const isTextualFunction =
                             isTextualFunctionDeclaration ||
                             (isTextualFunctionAssignment && (pendingDocBlock.length > 0 || !hasLeadingIndentation));

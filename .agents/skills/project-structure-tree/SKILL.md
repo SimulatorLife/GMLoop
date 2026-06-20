@@ -1,6 +1,6 @@
 ---
 name: project-structure-tree
-description: Use this skill to inspect the repository layout by running the root package script `tree`.
+description: Use this skill to see the full repository/codebase layout/structure, including all relevant directories, files, and hierarchy. This is useful for orienting in this project or confirming file locations before making changes.
 ---
 
 # Project Structure Tree

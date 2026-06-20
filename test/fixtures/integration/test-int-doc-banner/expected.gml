@@ -1,4 +1,4 @@
-/// @desc Top of file description comment
+/// @description Top of file description comment
 
 /// @desc ///// Banner comment
 var value = 1;

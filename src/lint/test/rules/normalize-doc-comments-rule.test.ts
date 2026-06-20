@@ -64,7 +64,7 @@ void test("normalize-doc-comments removes empty @description while preserving ad
 void test("normalize-doc-comments preserves non-empty @description content", () => {
     const input = ["/// @description Initialize the sky background", "var a = 1;"].join("\n");
     const output = runNormalizeDocCommentsRule(input);
-    assert.match(output, /@desc Initialize the sky background/);
+    assert.match(output, /@description Initialize the sky background/);
 });
 
 void test("normalize-doc-comments canonicalizes legacy // @tag comments", () => {
@@ -198,7 +198,7 @@ void test("normalize-doc-comments removes legacy @function and normalizes defaul
 
     assert.doesNotMatch(output, /^\/\/\/ @function /m);
     assert.match(output, /^\/\/\/ @desc Updates ground_dist each step$/m);
-    assert.match(output, /^\/\/\/ @param ray_len$/m);
+    assert.match(output, /^\/\/\/ @param \[ray_len=128\]$/m);
     assert.match(output, /^\/\/\/ @returns \{undefined\}$/m);
 });
 
