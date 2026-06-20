@@ -13,28 +13,68 @@ import {
 // - Core.assertPlainObject
 
 /**
- * Unified service contract covering plan preparation, rename lookups, and
- * snapshot capture/apply. Consolidates four formerly separate service types
- * into one object so callers receive the complete set of helpers without
- * needing to wire up multiple registries or resolve multiple services.
+ * Role contract for plan preparation.
  *
- * Before: callers needed to resolve four separate services (preparation,
- * rename-lookup, snapshot-capture, snapshot-apply) via four separate registries.
- * After: a single service object with one frozen interface containing all
- * four helpers, backed by a single registry with one normalization step.
+ * Consumers that only need to prepare a plan (e.g. CLI bootstrap or test
+ * fixtures that reset plan state) can depend on this narrow interface and
+ * do not need to know about rename lookups or snapshot operations.
  */
-export type IdentifierCasePlanService = {
+export interface IdentifierCasePlanPreparer {
     prepareIdentifierCasePlan(options: object | null | undefined): Promise<void>;
+}
+
+/**
+ * Role contract for rename lookups.
+ *
+ * Consumers that only need to resolve a rename for a given AST node (e.g.
+ * the identifier-case printer) can depend on this narrow interface and do
+ * not need to know about plan preparation or snapshot operations.
+ */
+export interface IdentifierCaseRenameLookup {
     getIdentifierCaseRenameForNode(
         node: GameMakerAstNode | null,
         options: Record<string, unknown> | null | undefined
     ): string | null;
+}
+
+/**
+ * Role contract for snapshot capture.
+ *
+ * Consumers that only need to capture the current plan state for later
+ * rehydration (e.g. environment teardown) can depend on this narrow
+ * interface and do not need to know about plan preparation or apply.
+ */
+export interface IdentifierCasePlanSnapshotCapture {
     captureIdentifierCasePlanSnapshot(options: unknown): ReturnType<typeof defaultCaptureIdentifierCasePlanSnapshot>;
+}
+
+/**
+ * Role contract for snapshot rehydration.
+ *
+ * Consumers that only need to rehydrate plan state from a previously
+ * captured snapshot (e.g. CLI teardown paths) can depend on this narrow
+ * interface and do not need to know about preparation or lookup.
+ */
+export interface IdentifierCasePlanSnapshotApplicator {
     applyIdentifierCasePlanSnapshot(
         snapshot: ReturnType<typeof defaultCaptureIdentifierCasePlanSnapshot>,
         options: Record<string, unknown> | null | undefined
     ): void;
-};
+}
+
+/**
+ * Composite service contract that combines every role interface. The
+ * default provider implementation realises the full intersection so
+ * callers that genuinely need every capability can resolve a single
+ * object; callers that only need a subset should depend on the
+ * corresponding role interface (`IdentifierCasePlanPreparer`,
+ * `IdentifierCaseRenameLookup`, etc.) and resolve it via
+ * `resolveIdentifierCasePlanServiceAs<TRole>()`.
+ */
+export type IdentifierCasePlanService = IdentifierCasePlanPreparer &
+    IdentifierCaseRenameLookup &
+    IdentifierCasePlanSnapshotCapture &
+    IdentifierCasePlanSnapshotApplicator;
 
 export type IdentifierCasePlanProvider = () => IdentifierCasePlanService;
 
@@ -131,34 +171,74 @@ export function resetIdentifierCasePlanProvider() {
 }
 
 /**
- * Resolve the active plan service.
+ * Resolve the active plan service projected onto a specific role.
  *
- * @returns {IdentifierCasePlanService}
+ * Callers that only need a subset of the plan service capabilities should
+ * pass the role interface they actually use (for example
+ * `resolveIdentifierCasePlanServiceAs<IdentifierCaseRenameLookup>()`), so
+ * the function's return type and the caller's contract stay narrowly
+ * focused. The composite `IdentifierCasePlanService` is the union of every
+ * role, so any role interface is a valid type argument.
+ *
+ * The type parameter is intentionally unconstrained because the role
+ * interfaces are *parts* of the composite (the composite extends the
+ * roles, not the other way around), which is the exact relationship the
+ * Interface Segregation Principle aims to express. The TypeScript
+ * compiler still verifies the call site because the caller assigns the
+ * return value to a typed binding.
+ *
+ * @typeParam TRole Role interface to project the service onto. Should be
+ *        one of the role interfaces (`IdentifierCasePlanPreparer`,
+ *        `IdentifierCaseRenameLookup`,
+ *        `IdentifierCasePlanSnapshotCapture`,
+ *        `IdentifierCasePlanSnapshotApplicator`) or the composite
+ *        `IdentifierCasePlanService`.
+ * @returns The cached service cast to the requested role projection.
  */
-export function resolveIdentifierCasePlanService(): IdentifierCasePlanService {
+export function resolveIdentifierCasePlanServiceAs<TRole>(): TRole {
     if (!currentProvider) {
         throw new Error(MISSING_PROVIDER_MESSAGE);
     }
 
     if (!cachedService) {
-        cachedService = normalizeService(currentProvider() as Record<string, unknown>);
+        cachedService = normalizeService(currentProvider() as unknown as Record<string, unknown>);
     }
 
-    return cachedService;
+    return cachedService as TRole;
+}
+
+/**
+ * Resolve the full composite plan service.
+ *
+ * Equivalent to `resolveIdentifierCasePlanServiceAs<IdentifierCasePlanService>()`.
+ * Prefer the role-specific projection above unless the caller genuinely
+ * needs every capability of the service.
+ *
+ * @returns {IdentifierCasePlanService}
+ */
+export function resolveIdentifierCasePlanService(): IdentifierCasePlanService {
+    return resolveIdentifierCasePlanServiceAs<IdentifierCasePlanService>();
 }
 
 /**
  * Prepare the identifier-case plan using the active service.
  *
+ * Internally resolves only the `IdentifierCasePlanPreparer` role so the
+ * caller is not exposed to the other three capabilities of the composite
+ * service.
+ *
  * @param {object | null | undefined} options Caller-provided configuration.
  * @returns {Promise<void>}
  */
 export function prepareIdentifierCasePlan(options) {
-    return resolveIdentifierCasePlanService().prepareIdentifierCasePlan(options);
+    return resolveIdentifierCasePlanServiceAs<IdentifierCasePlanPreparer>().prepareIdentifierCasePlan(options);
 }
 
 /**
  * Look up the rename to apply for a given AST node using the active service.
+ *
+ * Internally resolves only the `IdentifierCaseRenameLookup` role so the
+ * caller is not exposed to plan preparation or snapshot operations.
  *
  * @param node AST node under consideration.
  * @param options Identifier-case options bag captured from the formatter.
@@ -168,27 +248,43 @@ export function getIdentifierCaseRenameForNode(
     node: GameMakerAstNode | null,
     options: Record<string, string> | null | undefined
 ) {
-    return resolveIdentifierCasePlanService().getIdentifierCaseRenameForNode(node, options);
+    return resolveIdentifierCasePlanServiceAs<IdentifierCaseRenameLookup>().getIdentifierCaseRenameForNode(
+        node,
+        options
+    );
 }
 
 /**
  * Capture the identifier-case plan snapshot for later reuse.
+ *
+ * Internally resolves only the `IdentifierCasePlanSnapshotCapture` role so
+ * the caller is not exposed to plan preparation, lookup, or apply
+ * operations.
  *
  * @param {unknown} options Snapshot configuration passed through to the
  *        provider.
  * @returns {ReturnType<typeof defaultCaptureIdentifierCasePlanSnapshot>}
  */
 export function captureIdentifierCasePlanSnapshot(options) {
-    return resolveIdentifierCasePlanService().captureIdentifierCasePlanSnapshot(options);
+    return resolveIdentifierCasePlanServiceAs<IdentifierCasePlanSnapshotCapture>().captureIdentifierCasePlanSnapshot(
+        options
+    );
 }
 
 /**
  * Rehydrate identifier-case plan state from a previously captured snapshot.
+ *
+ * Internally resolves only the `IdentifierCasePlanSnapshotApplicator` role
+ * so the caller is not exposed to plan preparation, lookup, or capture
+ * operations.
  *
  * @param {ReturnType<typeof defaultCaptureIdentifierCasePlanSnapshot>} snapshot
  * @param {Record<string, unknown> | null | undefined} options
  * @returns {void}
  */
 export function applyIdentifierCasePlanSnapshot(snapshot, options) {
-    return resolveIdentifierCasePlanService().applyIdentifierCasePlanSnapshot(snapshot, options);
+    return resolveIdentifierCasePlanServiceAs<IdentifierCasePlanSnapshotApplicator>().applyIdentifierCasePlanSnapshot(
+        snapshot,
+        options
+    );
 }
