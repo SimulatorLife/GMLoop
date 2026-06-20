@@ -7,9 +7,9 @@ import { handleCliError } from "../cli-core/errors.js";
 import { createConfigOption, createPathOption, createWriteOption } from "../cli-core/shared-command-options.js";
 import {
     ensureProjectGraphIndex,
-    filterGraphIndexResultsByKind,
     printProjectPayload,
     resolveCommandProjectContext,
+    searchProjectGraphIndexByKind,
     type SharedProjectContextOptions
 } from "../workflow/project-root.js";
 
@@ -192,16 +192,7 @@ export function createRoomCommand(): Command {
     list.action(async function roomListAction() {
         const options = this.opts<RoomCommandSharedOptions>();
         const context = await ensureProjectGraphIndex(options);
-        const rooms = filterGraphIndexResultsByKind(
-            Semantic.searchGraphIndex({
-                databasePath: options.databasePath,
-                projectConfig: context.projectConfig,
-                projectRoot: context.projectRoot,
-                query: "",
-                toolsetRoot: options.toolsetRoot
-            }).results,
-            "room"
-        );
+        const rooms = searchProjectGraphIndexByKind(options, context, "", "room");
         printRoomPayload({ command: "room list", ok: true, payload: rooms });
     });
 
@@ -213,16 +204,9 @@ export function createRoomCommand(): Command {
     inspect.action(async function roomInspectAction(roomNameOrId: string) {
         const options = this.opts<RoomCommandSharedOptions>();
         const context = await ensureProjectGraphIndex(options);
-        const results = Semantic.searchGraphIndex({
-            databasePath: options.databasePath,
-            projectConfig: context.projectConfig,
-            projectRoot: context.projectRoot,
-            query: roomNameOrId,
-            toolsetRoot: options.toolsetRoot
-        }).results;
         const resolvedId = roomNameOrId.includes("::")
             ? roomNameOrId
-            : (filterGraphIndexResultsByKind(results, "room")[0]?.id ?? null);
+            : (searchProjectGraphIndexByKind(options, context, roomNameOrId, "room")[0]?.id ?? null);
         const payload =
             resolvedId === null
                 ? null
@@ -245,16 +229,7 @@ export function createRoomCommand(): Command {
         const options = this.opts<RoomCommandSharedOptions>();
         const context = await ensureProjectGraphIndex(options);
         const normalizedQuery = typeof text === "string" ? text : "";
-        const payload = filterGraphIndexResultsByKind(
-            Semantic.searchGraphIndex({
-                databasePath: options.databasePath,
-                projectConfig: context.projectConfig,
-                projectRoot: context.projectRoot,
-                query: normalizedQuery,
-                toolsetRoot: options.toolsetRoot
-            }).results,
-            "room"
-        );
+        const payload = searchProjectGraphIndexByKind(options, context, normalizedQuery, "room");
 
         printRoomPayload({ command: "room query", ok: true, payload });
     });
@@ -265,16 +240,7 @@ export function createRoomCommand(): Command {
     validate.action(async function roomValidateAction() {
         const options = this.opts<RoomCommandSharedOptions>();
         const context = await ensureProjectGraphIndex(options);
-        const rooms = filterGraphIndexResultsByKind(
-            Semantic.searchGraphIndex({
-                databasePath: options.databasePath,
-                projectConfig: context.projectConfig,
-                projectRoot: context.projectRoot,
-                query: "",
-                toolsetRoot: options.toolsetRoot
-            }).results,
-            "room"
-        );
+        const rooms = searchProjectGraphIndexByKind(options, context, "", "room");
 
         printRoomPayload({
             command: "room validate",
@@ -292,16 +258,7 @@ export function createRoomCommand(): Command {
     preview.action(async function roomPreviewAction() {
         const options = this.opts<RoomCommandSharedOptions>();
         const context = await ensureProjectGraphIndex(options);
-        const rooms = filterGraphIndexResultsByKind(
-            Semantic.searchGraphIndex({
-                databasePath: options.databasePath,
-                projectConfig: context.projectConfig,
-                projectRoot: context.projectRoot,
-                query: "",
-                toolsetRoot: options.toolsetRoot
-            }).results,
-            "room"
-        );
+        const rooms = searchProjectGraphIndexByKind(options, context, "", "room");
 
         printRoomPayload({
             command: "room preview",
@@ -319,16 +276,7 @@ export function createRoomCommand(): Command {
     summary.action(async function roomSummaryAction() {
         const options = this.opts<RoomCommandSharedOptions>();
         const context = await ensureProjectGraphIndex(options);
-        const rooms = filterGraphIndexResultsByKind(
-            Semantic.searchGraphIndex({
-                databasePath: options.databasePath,
-                projectConfig: context.projectConfig,
-                projectRoot: context.projectRoot,
-                query: "",
-                toolsetRoot: options.toolsetRoot
-            }).results,
-            "room"
-        );
+        const rooms = searchProjectGraphIndexByKind(options, context, "", "room");
 
         printRoomPayload({
             command: "room summary",

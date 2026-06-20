@@ -158,6 +158,45 @@ export function filterGraphIndexResultsByKind<T extends { kind: string }>(result
 }
 
 /**
+ * Run a kind-scoped graph index search for a command handler.
+ *
+ * Wraps {@link Semantic.searchGraphIndex} with the standard CLI option spread
+ * (`databasePath`, `projectConfig`, `projectRoot`, `toolsetRoot`) and applies
+ * {@link filterGraphIndexResultsByKind} in one step. This consolidates the
+ * "search → filter by kind" sequence that command orchestrators (room,
+ * object, etc.) previously had to inline, so each orchestrator body stays at
+ * a single abstraction layer.
+ *
+ * @param options Shared CLI options that carry the database path and toolset
+ *   root override. `force` is intentionally ignored here — index readiness is
+ *   the caller's responsibility (typically via {@link ensureProjectGraphIndex}).
+ * @param context Resolved project context produced by
+ *   {@link resolveCommandProjectContext} or {@link ensureProjectGraphIndex}.
+ * @param query Search query text; an empty string matches every indexed node.
+ * @param kind Resource kind to keep (e.g. `"room"`, `"object"`).
+ * @returns Array of search results whose `kind` matches the requested value.
+ */
+type GraphSearchResult = ReturnType<typeof Semantic.searchGraphIndex>["results"][number];
+
+export function searchProjectGraphIndexByKind(
+    options: SharedProjectContextOptions,
+    context: { projectConfig: Record<string, unknown>; projectRoot: string },
+    query: string,
+    kind: string
+): Array<GraphSearchResult> {
+    return filterGraphIndexResultsByKind(
+        Semantic.searchGraphIndex({
+            databasePath: options.databasePath,
+            projectConfig: context.projectConfig,
+            projectRoot: context.projectRoot,
+            query,
+            toolsetRoot: options.toolsetRoot
+        }).results,
+        kind
+    );
+}
+
+/**
  * Serialize a command result payload as pretty-printed JSON and write it to
  * stdout. All graph-backed commands use this single consistent format so that
  * machine consumers and MCP clients can rely on a stable output shape.
