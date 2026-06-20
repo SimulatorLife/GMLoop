@@ -7,19 +7,15 @@ import { createFormatFixtureSuiteDefinition } from "./fixture-suite-definition.j
 
 const fixtureSuite = createFormatFixtureSuiteDefinition();
 
-const LEGACY_CASE_IDS = Object.freeze([]);
-
 const fixtureCases = await FixtureRunner.discoverFixtureCases(fixtureSuite.fixtureRoot);
-const runnableCaseIds = fixtureCases
-    .map((fixtureCase) => fixtureCase.caseId)
-    .filter((caseId) => !LEGACY_CASE_IDS.includes(caseId));
+const runnableCaseIds = fixtureCases.map((fixtureCase) => fixtureCase.caseId);
 
-void test("formatter fixtures are discovered", () => {
+void test("formatter fixtures discovers fixture cases", () => {
     assert.equal(runnableCaseIds.length > 0, true, "Expected at least one formatter fixture case.");
 });
 
 void test(
-    "formatter fixtures run and pass",
+    "formatter fixtures run successfully",
     {
         timeout: 120_000
     },
