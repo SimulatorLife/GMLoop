@@ -298,6 +298,71 @@ void test("object event mutations reject invalid event descriptor format", async
     assert.match(eventAddResult.stderr, /Expected format: category:event \(for example Step:Begin\)\./u);
 });
 
+void test("room layer create supports dry-run and write modes", async () => {
+    const projectRoot = await createTemporaryRoomInstanceCliProject();
+    const roomMetadataPath = path.join(projectRoot, "rooms/rm_main/rm_main.yy");
+
+    try {
+        const dryRunResult = await runCliTestCommand({
+            argv: ["room", "layer", "create", "rm_main", "Gameplay", "-100", "--path", projectRoot, "--json"]
+        });
+
+        assert.equal(dryRunResult.exitCode, 0);
+        const dryRunPayload = JSON.parse(dryRunResult.stdout) as {
+            command: string;
+            payload: {
+                action: string;
+                depth: number;
+                dryRun: boolean;
+                layerName: string;
+                layerType: string;
+                roomPath: string;
+                writtenPaths: Array<string>;
+            };
+        };
+        assert.equal(dryRunPayload.command, "room layer create");
+        assert.equal(dryRunPayload.payload.action, "create");
+        assert.equal(dryRunPayload.payload.dryRun, true);
+        assert.equal(dryRunPayload.payload.layerName, "Gameplay");
+        assert.equal(dryRunPayload.payload.layerType, "instance");
+        assert.equal(dryRunPayload.payload.depth, -100);
+        assert.equal(dryRunPayload.payload.roomPath, "rooms/rm_main/rm_main.yy");
+        assert.deepEqual(dryRunPayload.payload.writtenPaths, ["rooms/rm_main/rm_main.yy"]);
+
+        const dryRunRoomMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        assert.equal(Core.asArray(dryRunRoomMetadata.layers).length, 2);
+
+        const writeResult = await runCliTestCommand({
+            argv: ["room", "layer", "create", "rm_main", "Gameplay", "-100", "--path", projectRoot, "--json", "--write"]
+        });
+
+        assert.equal(writeResult.exitCode, 0);
+        const writePayload = JSON.parse(writeResult.stdout) as {
+            payload: { dryRun: boolean; layerName: string; roomName: string };
+        };
+        assert.equal(writePayload.payload.dryRun, false);
+        assert.equal(writePayload.payload.layerName, "Gameplay");
+        assert.equal(writePayload.payload.roomName, "rm_main");
+
+        const updatedRoomMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        const layers = Core.asArray(updatedRoomMetadata.layers);
+        const createdLayer = layers[2] as Record<string, unknown>;
+        assert.ok(Core.isObjectLike(createdLayer));
+        assert.equal(createdLayer.resourceType, "GMRInstanceLayer");
+        assert.equal(createdLayer.name, "Gameplay");
+        assert.equal(createdLayer.depth, -100);
+        assert.deepEqual(createdLayer.instances, []);
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
 void test("room layer update planned leaf emits apply mode when write is requested", async () => {
     const updateResult = await runCliTestCommand({
         argv: ["room", "layer", "update", "--json", "--write"]

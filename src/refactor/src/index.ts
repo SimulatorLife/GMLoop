@@ -125,6 +125,7 @@ export type {
     AddObjectEventRequest,
     AddProjectResourceRequest,
     AddRoomInstanceRequest,
+    CreateRoomLayerRequest,
     DeleteObjectEventRequest,
     DeleteRoomInstanceRequest,
     DuplicateProjectResourceRequest,
@@ -137,6 +138,7 @@ export type {
     RenameProjectResourceRequest,
     RoomCameraMutationResult,
     RoomInstanceMutationResult,
+    RoomLayerMutationResult,
     UpdateObjectEventRequest,
     UpdateRoomCameraRequest,
     UpdateRoomInstanceRequest
@@ -146,6 +148,7 @@ export {
     addObjectEvent,
     addProjectResource,
     addRoomInstance,
+    createRoomLayer,
     deleteObjectEvent,
     deleteRoomInstance,
     duplicateProjectResource,

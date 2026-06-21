@@ -94,6 +94,24 @@ void test("object event delete MCP tool schema includes write mode option", () =
     }
 });
 
+void test("room layer create MCP tool schema includes mutation arguments and write option", () => {
+    const mcpCatalog = getMcpToolCatalogEntries();
+    const entry = mcpCatalog.find((candidate) => candidate.toolName === "gmloop_room_layer_create");
+    assert.ok(entry);
+
+    const writeField = entry.fields.find((field) => field.attributeName === "write");
+    assert.ok(writeField);
+    assert.equal(writeField.kind, "option");
+    assert.equal(writeField.valueType, "boolean");
+
+    for (const requiredArgument of ["room", "layer", "depth"]) {
+        const field = entry.fields.find((candidate) => candidate.attributeName === requiredArgument);
+        assert.ok(field, `Missing required argument field: ${requiredArgument}`);
+        assert.equal(field.kind, "argument");
+        assert.equal(field.required, true);
+    }
+});
+
 void test("room layer update MCP tool schema includes write mode option", () => {
     const mcpCatalog = getMcpToolCatalogEntries();
     const entry = mcpCatalog.find((candidate) => candidate.toolName === "gmloop_room_layer_update");
