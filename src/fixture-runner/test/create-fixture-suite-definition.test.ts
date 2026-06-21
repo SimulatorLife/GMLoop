@@ -20,7 +20,7 @@ void test("createFixtureSuiteDefinition resolves fixture root for source test ex
         workspaceName: "format",
         suiteName: "formatter fixtures",
         compiledWorkspaceTestFilePath: "src/format/dist/test/formatter-fixtures.test.js",
-        moduleUrl: "file:///workspace/GMLoop/src/format/test/fixture-suite-definition.ts",
+        moduleUrl: "file:///workspace/GMLoop/src/format/test/fixture-adapter.ts",
         sourceRelativeSegments: ["fixtures"],
         distRelativeSegments: ["..", "..", "test", "fixtures"],
         adapter: testAdapter
@@ -34,7 +34,7 @@ void test("createFixtureSuiteDefinition resolves fixture root for dist test exec
         workspaceName: "format",
         suiteName: "formatter fixtures",
         compiledWorkspaceTestFilePath: "src/format/dist/test/formatter-fixtures.test.js",
-        moduleUrl: "file:///workspace/GMLoop/src/format/dist/test/fixture-suite-definition.js",
+        moduleUrl: "file:///workspace/GMLoop/src/format/dist/test/fixture-adapter.js",
         sourceRelativeSegments: ["fixtures"],
         distRelativeSegments: ["..", "..", "test", "fixtures"],
         adapter: testAdapter

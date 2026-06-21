@@ -1,6 +1,6 @@
 import { FixtureRunner } from "@gmloop/fixture-runner";
 
-import { createLintFixtureSuiteDefinition } from "./fixture-suite-definition.js";
+import { createLintFixtureSuiteDefinition } from "./fixture-adapter.js";
 
 const fixtureSuite = createLintFixtureSuiteDefinition();
 

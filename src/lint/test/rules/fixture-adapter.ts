@@ -1,4 +1,4 @@
-import type { FixtureAdapter } from "@gmloop/fixture-runner";
+import { type FixtureAdapter, FixtureRunner } from "@gmloop/fixture-runner";
 import { ESLint } from "eslint";
 
 import { createLintRuleEntriesFromProjectConfig } from "../../src/configs/index.js";
@@ -77,5 +77,23 @@ export function createLintFixtureAdapter(): FixtureAdapter {
                 changed: lintedOutput !== (inputText ?? "")
             };
         }
+    });
+}
+
+/**
+ * Create the canonical lint fixture suite definition shared by workspace and
+ * aggregate fixture runs.
+ *
+ * @returns Lint fixture suite registration metadata.
+ */
+export function createLintFixtureSuiteDefinition() {
+    return FixtureRunner.createFixtureSuiteDefinition({
+        workspaceName: "lint",
+        suiteName: "lint rule fixtures",
+        compiledWorkspaceTestFilePath: "src/lint/dist/test/rules/rule-fixtures.test.js",
+        moduleUrl: import.meta.url,
+        sourceRelativeSegments: ["..", "fixtures"],
+        distRelativeSegments: ["..", "..", "..", "test", "fixtures"],
+        adapter: createLintFixtureAdapter()
     });
 }
