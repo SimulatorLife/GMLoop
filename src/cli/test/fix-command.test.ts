@@ -61,7 +61,8 @@ async function createSyntheticProject(): Promise<string> {
                                     caseStyle: "camel"
                                 }
                             }
-                        }
+                        },
+                        scientificNotation: {}
                     }
                 }
             },

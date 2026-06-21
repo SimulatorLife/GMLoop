@@ -2508,3 +2508,67 @@ void test("refactor codemod errors when gmloop.json cannot be found", async () =
         await rm(projectRoot, { recursive: true, force: true });
     }
 });
+
+void test("refactor codemod --write suppresses indexing warning for files repaired by repairLogicalNot", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                repairLogicalNot: {}
+            }
+        }
+    });
+
+    try {
+        await writeScriptResource(
+            projectRoot,
+            "demo_script",
+            'function demo_script(file) {\n    while (not file_text_eof(file)) {\n        show_debug_message("looping");\n    }\n}\n'
+        );
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+        const updatedSource = await readFile(path.join(projectRoot, "scripts/demo_script/demo_script.gml"), "utf8");
+        assert.match(updatedSource, /while \(! file_text_eof\(file\)\)/);
+        assert.doesNotMatch(result.stderr, /Warning: Skipping parse-invalid file/);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("refactor codemod --write prints indexing warning for parse-invalid files when repairLogicalNot is not enabled", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        scriptResourceName: {
+                            caseStyle: "camel"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        await writeScriptResource(
+            projectRoot,
+            "demo_script",
+            'function demo_script(file) {\n    while (not file_text_eof(file)) {\n        show_debug_message("looping");\n    }\n}\n'
+        );
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+        assert.match(result.stderr, /Warning: Skipping parse-invalid file/);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});

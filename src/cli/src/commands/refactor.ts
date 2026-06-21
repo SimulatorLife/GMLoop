@@ -124,7 +124,8 @@ async function buildProjectIndexWithParseTolerance(
 
 async function getOrBuildProjectIndex(
     projectRoot: string,
-    verbose: boolean
+    verbose: boolean,
+    selectedCodemodIds?: Array<RegisteredCodemodId>
 ): Promise<{ projectIndex: Awaited<ReturnType<typeof buildProjectIndex>>; coordinator: any }> {
     const { yyFiles, gmlFiles } = await Semantic.scanProjectTree(projectRoot);
     const manifestMtimes: Record<string, number> = {};
@@ -145,8 +146,29 @@ async function getOrBuildProjectIndex(
         console.warn(`Warning: Skipping parse-invalid file during refactor indexing: ${filePath} (${errorMessage})`);
     });
 
+    const baseFsFacade = Core.defaultFsFacade;
+    const customFsFacade = {
+        ...baseFsFacade,
+        readFile: async (filePath: string, encoding: BufferEncoding = "utf8") => {
+            const content = await baseFsFacade.readFile(filePath, encoding);
+            if (!selectedCodemodIds || selectedCodemodIds.length === 0) {
+                return content;
+            }
+            let repairedText = content;
+            if (selectedCodemodIds.includes("repairLogicalNot")) {
+                const result = await Refactor.RepairLogicalNot.applyRepairLogicalNotCodemod(repairedText, null);
+                repairedText = result.outputText;
+            }
+            if (selectedCodemodIds.includes("repairArgumentSeparators")) {
+                const result = Refactor.RepairArgumentSeparators.applyRepairArgumentSeparatorsCodemod(repairedText);
+                repairedText = result.outputText;
+            }
+            return repairedText;
+        }
+    };
+
     const coordinator = Semantic.createProjectIndexCoordinator({
-        fsFacade: undefined,
+        fsFacade: customFsFacade,
         buildIndex: async (resolvedRoot, fsFacade, options) => {
             if (verbose) {
                 console.log("Cache miss. Analyzing project files...");
@@ -594,7 +616,7 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
         if (verbose) {
             console.log("Building or loading semantic project index...");
         }
-        const buildResult = await getOrBuildProjectIndex(projectRoot, verbose);
+        const buildResult = await getOrBuildProjectIndex(projectRoot, verbose, selectedCodemodIds);
         projectIndex = buildResult.projectIndex;
         coordinator = buildResult.coordinator;
     }
