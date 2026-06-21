@@ -754,3 +754,83 @@ export function toNormalizedLowerCaseSet(
 
     return new Set(normalizedValues.map((entry) => entry.toLowerCase()));
 }
+
+/**
+ * Determine whether a character is a valid identifier start character in GML.
+ * Matches any letter (A-Z, a-z) or underscore (_).
+ *
+ * @param {unknown} character Candidate character to evaluate.
+ * @returns {boolean} `true` when the character can start an identifier.
+ */
+export function isIdentifierStartCharacter(character: unknown): boolean {
+    if (typeof character !== "string" || character.length === 0) {
+        return false;
+    }
+
+    const code = character.charCodeAt(0);
+    return (
+        (code >= 65 && code <= 90) || // A-Z
+        (code >= 97 && code <= 122) || // a-z
+        code === 95 // _
+    );
+}
+
+/**
+ * Determine whether a logical NOT alias ("not" or "NOT", etc.) is present at the
+ * given index and acts as a unary negation operator.
+ *
+ * @param {string} sourceText GML source text.
+ * @param {number} startIndex Index where the alias starts.
+ * @returns {boolean} `true` when the alias is a logical NOT operator.
+ */
+export function isLogicalNotOperatorAliasAt(sourceText: string, startIndex: number): boolean {
+    const aliasEnd = startIndex + 3; // "not".length
+    if (aliasEnd > sourceText.length) {
+        return false;
+    }
+
+    const keyword = sourceText.slice(startIndex, aliasEnd);
+    if (keyword.toLowerCase() !== "not") {
+        return false;
+    }
+
+    if (!isIdentifierBoundaryCharacter(sourceText[startIndex - 1])) {
+        return false;
+    }
+
+    if (!isIdentifierBoundaryCharacter(sourceText[aliasEnd])) {
+        return false;
+    }
+
+    // Find the previous non-whitespace character on the line
+    let prevCursor = startIndex - 1;
+    let previousCharacterOnLine: string | undefined;
+    while (prevCursor >= 0) {
+        const char = sourceText[prevCursor];
+        if (char === "\n" || char === "\r") {
+            break;
+        }
+        if (char !== " " && char !== "\t") {
+            previousCharacterOnLine = char;
+            break;
+        }
+        prevCursor -= 1;
+    }
+
+    if (previousCharacterOnLine === '"' || previousCharacterOnLine === "'" || previousCharacterOnLine === "`") {
+        return false;
+    }
+
+    // Find the next non-whitespace character
+    let operandIndex = aliasEnd;
+    while (operandIndex < sourceText.length) {
+        const char = sourceText[operandIndex];
+        if (char !== " " && char !== "\t" && char !== "\n" && char !== "\r") {
+            break;
+        }
+        operandIndex += 1;
+    }
+
+    const nextTokenStart = sourceText[operandIndex];
+    return nextTokenStart === "(" || isIdentifierStartCharacter(nextTokenStart);
+}

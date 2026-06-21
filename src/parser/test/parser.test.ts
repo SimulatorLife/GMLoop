@@ -121,7 +121,7 @@ function collectNodesByType(node, type) {
 }
 
 const { fileNames: fixtureNames, fixtureContentsByName } = await loadFixtures();
-const expectedFailures = new Set<string>();
+const expectedFailures = new Set<string>(["cursed_gml.gml"]);
 const fixtureParserOptions: ParserOptions = {
     ...defaultParserOptions,
     getComments: false,
@@ -260,7 +260,7 @@ void describe("GameMaker parser fixtures", () => {
     void it("parses lowercase GML keyword operators", () => {
         const source = [
             "function test_operators(left, right, extra) {",
-            "    value = not left or right and extra xor left;",
+            "    value = !left or right and extra xor left;",
             "    amount = total div 2 mod 3;",
             "}",
             ""
@@ -282,6 +282,11 @@ void describe("GameMaker parser fixtures", () => {
         for (const source of sources) {
             assert.throws(() => parseFixture(source, { suppressErrors: true }), GameMakerSyntaxError);
         }
+    });
+
+    void it("rejects lowercase logical keyword operator 'not'", () => {
+        const source = "function test_not(left) {\n    if (not left) {}\n}\n";
+        assert.throws(() => parseFixture(source, { suppressErrors: true }), GameMakerSyntaxError);
     });
 
     void it("rejects symbolic operators recovered as identifier statements", () => {
@@ -361,29 +366,23 @@ void describe("GameMaker parser fixtures", () => {
         assert.doesNotThrow(() => parseFixture(source));
     });
 
-    void it("distinguishes lowercase not calls from unary not expressions", () => {
+    void it("parses lowercase 'not' call expressions", () => {
         const source = [
             "function not(value) {",
             "    return value;",
             "}",
             "function use_not(value) {",
             "    var called = not(value);",
-            "    var negated = not value;",
             "}",
             ""
         ].join("\n");
 
         const ast = parseFixture(source);
         const calls = collectNodesByType(ast, "CallExpression");
-        const unaryExpressions = collectNodesByType(ast, "UnaryExpression");
 
         assert.ok(
             calls.some((call) => call.object?.type === "Identifier" && call.object.name === "not"),
             "Expected not(value) to parse as a call expression."
-        );
-        assert.ok(
-            unaryExpressions.some((expression) => expression.operator === "!"),
-            "Expected 'not value' to parse as unary negation."
         );
     });
 

@@ -5,7 +5,6 @@ import type { GmlRuleDefinition } from "../index.js";
 import {
     applySourceTextEdits,
     createMeta,
-    findPreviousNonWhitespaceCharacter,
     reportProgramTextRewrite,
     type SourceTextEdit
 } from "../rule-base-helpers.js";
@@ -67,48 +66,6 @@ function resolveReportLocation(context: Rule.RuleContext, index: number): { line
     }
 
     return { line, column: clampedIndex - lineStart };
-}
-
-function isIdentifierStartCharacter(character: string | undefined): boolean {
-    if (typeof character !== "string" || character.length === 0) {
-        return false;
-    }
-
-    const code = character.charCodeAt(0);
-    return (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code === 95;
-}
-
-function hasLogicalNotAliasAt(sourceText: string, startIndex: number): boolean {
-    const aliasEnd = startIndex + LOGICAL_NOT_ALIAS.length;
-    if (aliasEnd > sourceText.length) {
-        return false;
-    }
-
-    const keyword = sourceText.slice(startIndex, aliasEnd);
-    if (keyword.toLowerCase() !== LOGICAL_NOT_ALIAS) {
-        return false;
-    }
-
-    if (!Core.isIdentifierBoundaryCharacter(sourceText[startIndex - 1])) {
-        return false;
-    }
-
-    if (!Core.isIdentifierBoundaryCharacter(sourceText[aliasEnd])) {
-        return false;
-    }
-
-    const previousCharacterOnLine = findPreviousNonWhitespaceCharacter(sourceText, startIndex, true);
-    if (previousCharacterOnLine === '"' || previousCharacterOnLine === "'" || previousCharacterOnLine === "`") {
-        return false;
-    }
-
-    let operandIndex = aliasEnd;
-    while (operandIndex < sourceText.length && WHITESPACE_PATTERN.test(sourceText[operandIndex])) {
-        operandIndex += 1;
-    }
-
-    const nextTokenStart = sourceText[operandIndex];
-    return nextTokenStart === "(" || isIdentifierStartCharacter(nextTokenStart);
 }
 
 function isDirectiveLineAtIndex(sourceText: string, index: number): boolean {
@@ -176,7 +133,7 @@ function rewriteLogicalNotAliasesOutsideTrivia(sourceText: string, declaredMacro
 
         if (
             isProtectedMacroIdentifier(sourceText.slice(index, index + LOGICAL_NOT_ALIAS.length), declaredMacroNames) ||
-            !hasLogicalNotAliasAt(sourceText, index)
+            !Core.isLogicalNotOperatorAliasAt(sourceText, index)
         ) {
             index += 1;
             continue;

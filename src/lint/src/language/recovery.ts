@@ -26,7 +26,7 @@ export type RecoveryProjection = {
     textInsertions: ReadonlyArray<RecoveryTextInsertion>;
 };
 
-const UPPERCASE_LOGICAL_ALIAS_PATTERN = /\b(?:AND|OR|XOR|NOT)\b/gy;
+const UPPERCASE_LOGICAL_ALIAS_PATTERN = /\b(?:AND|OR|XOR)\b/gy;
 const STRING_LENGTH_PROPERTY = ".length";
 const ORPHAN_ASSIGNMENT_STATEMENT_PATTERN = /^\s*=\s*(?:\S.*)?;\s*$/u;
 const NUMERIC_ASSIGNMENT_STATEMENT_PATTERN = /^\s*\d+(?:\.\d+)?\s*=\s*/u;
@@ -293,6 +293,37 @@ function projectUppercaseLogicalAliasesForRecovery(sourceText: string): string {
         chunks.push(sourceText.slice(copiedThrough, start), alias.toLowerCase());
         copiedThrough = end;
         index = end;
+    }
+
+    if (copiedThrough === 0) {
+        return sourceText;
+    }
+
+    chunks.push(sourceText.slice(copiedThrough));
+    return chunks.join("");
+}
+
+function projectLogicalNotAliasesForRecovery(sourceText: string): string {
+    const chunks: Array<string> = [];
+    const scanState = Core.createStringCommentScanState();
+    const sourceLength = sourceText.length;
+
+    let copiedThrough = 0;
+    let index = 0;
+    while (index < sourceLength) {
+        const scannedIndex = Core.advanceStringCommentScan(sourceText, sourceLength, index, scanState, true);
+        if (scannedIndex !== index) {
+            index = scannedIndex;
+            continue;
+        }
+
+        if (Core.isLogicalNotOperatorAliasAt(sourceText, index)) {
+            chunks.push(sourceText.slice(copiedThrough, index), "!  ");
+            index += 3; // "not".length
+            copiedThrough = index;
+        } else {
+            index += 1;
+        }
     }
 
     if (copiedThrough === 0) {
@@ -634,6 +665,7 @@ export function createLimitedRecoveryProjection(sourceText: string, parseError?:
     let projectedSourceText = projectScientificNotationForRecovery(sourceText);
     projectedSourceText = projectMalformedDocTagLinesForRecovery(projectedSourceText);
     projectedSourceText = projectUppercaseLogicalAliasesForRecovery(projectedSourceText);
+    projectedSourceText = projectLogicalNotAliasesForRecovery(projectedSourceText);
     projectedSourceText = projectInvalidStandaloneLinesForRecovery(projectedSourceText);
     projectedSourceText = projectCompoundAssignmentsInControlConditionsForRecovery(projectedSourceText);
 

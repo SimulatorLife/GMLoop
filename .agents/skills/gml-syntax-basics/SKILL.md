@@ -112,7 +112,7 @@ For string concatenation, use the `+` operator:
 var full_name = "Henry" + " " + "Smith";
 ```
 
-For string interpolation, use `$` at the start of the string, and `{}` for embedded expressions. For example:
+For string interpolation, use `$` at the start of the string, and `{}` for embedded expressions. Prefer to use string interpolation for readability over concatenation. For example:
 
 ```gml
 var last_name = "Smith";
