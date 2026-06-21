@@ -254,7 +254,7 @@ GML supports both symbolic and keyword forms. GML supports the following express
 | String concatenation | `+`, `+=` | Both operands must be strings unless explicitly converted. |
 | Increment/decrement | `++`, `--` | Prefix and postfix forms differ. Avoid complex mixed expressions. |
 | Division/modulo | `div`, `%`, `mod`, `%=` | `div` is integer division. `mod` and `%` are equivalent modulo operators. |
-| Unary | `!`, `-`, `~` | Logical NOT, numeric negation, bitwise negation. Keyword form for `!` is `not`. |
+| Unary | `!`, `-`, `~` | Logical NOT, numeric negation, bitwise negation. Note: The parser strictly rejects `not` when used as a logical operator (use `!` instead). The name `not` is allowed as a user-defined identifier (e.g., variables, macros, or call expressions like `not(value)`). Invalid usages of `not` as a logical operator are repaired to `!` by the linter's recovery pre-processor and operator alias normalization rule. |
 | Conditional | `<condition> ? <expression1 (if true)> : <expression2 (if false)>` | Ternary conditional expression. Nested conditionals should be parenthesized. |
 
 ## Binary Literals

@@ -309,7 +309,10 @@ function reportOperatorAliasIfNeeded(
 
 export function createNormalizeOperatorAliasesRule(definition: GmlRuleDefinition): Rule.RuleModule {
     return Object.freeze({
-        meta: createMeta(definition),
+        meta: createMeta(definition, {
+            messageText:
+                "Use canonical GML operators (e.g. `&&`, `||`, `!`) instead of legacy operator aliases (e.g. `and`, `or`, `not`)."
+        }),
         create(context) {
             const declaredMacroNames = collectDeclaredMacroNames(context.sourceCode.text);
             return Object.freeze({
