@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { isDiagnosticErrorMessage, isDiagnosticStdoutMessage } from "../src/commands/format.js";
+import { __formatTest__, isDiagnosticErrorMessage, isDiagnosticStdoutMessage } from "../src/commands/format.js";
+
+const { configureConsoleMethodsForTests, getDefaultPrettierLogLevelForTests } = __formatTest__;
 
 // ---------------------------------------------------------------------------
 // isDiagnosticErrorMessage
@@ -98,65 +100,179 @@ void test("isDiagnosticStdoutMessage handles mixed case after lowercase start", 
 });
 
 // ---------------------------------------------------------------------------
-// Verify filter assignment contract: in "silent" mode, console.warn should
-// suppress stdout-style messages (functionName:) and console.log should
-// suppress error-style messages ([feather:diagnostic]).
+// Silent-mode console wiring
+//
+// These tests exercise the real production console wrappers installed by
+// `configureConsoleMethods("silent")` instead of re-implementing the wrapping
+// logic in the test. This proves the actual contract: when the CLI requests
+// silent log level, every console method dispatches through the correct
+// diagnostic filter — and, just as importantly, restoring the previous log
+// level puts the wrappers back to the originals.
 // ---------------------------------------------------------------------------
 
-void test("in silent mode console.warn uses isDiagnosticStdoutMessage and suppresses functionName: messages", () => {
-    const warnCalls: string[] = [];
+const RESTORE_LOG_LEVEL = getDefaultPrettierLogLevelForTests();
 
+void test("configureConsoleMethods('silent') suppresses function-name warnings via console.warn", (t) => {
     const originalWarn = console.warn;
     const originalLog = console.log;
 
-    // Simulate silent mode by temporarily installing filters.
-    const wrappedWarn: typeof console.warn = (...args) => {
-        const firstArg = String(args[0]);
-        if (!isDiagnosticStdoutMessage(firstArg)) {
-            warnCalls.push(firstArg);
-        }
-    };
-    console.warn = wrappedWarn;
-    console.log = () => {};
+    t.after(() => {
+        configureConsoleMethodsForTests(RESTORE_LOG_LEVEL);
+        assert.strictEqual(console.warn, originalWarn, "console.warn should be restored to original");
+        assert.strictEqual(console.log, originalLog, "console.log should be restored to original");
+    });
+
+    configureConsoleMethodsForTests("silent");
+
+    // Spy on stderr/stdout so we can observe exactly what the production
+    // wrappers choose to forward to the underlying console. This avoids
+    // re-implementing the wrapper logic in the test.
+    const capture = startConsoleOutputCapture();
 
     try {
-        // A functionName: message should be suppressed by warn (stdout filter).
-        console.warn("promoteLeadingDocCommentTextToDescription: filtered result");
-        // A normal warning should NOT be suppressed.
-        console.warn("Normal warning message");
-
-        assert.deepStrictEqual(warnCalls, ["Normal warning message"]);
+        console.warn("someInternalFunction: pre-promotion snapshot");
+        console.warn("Warning: real user-facing message");
     } finally {
-        console.warn = originalWarn;
-        console.log = originalLog;
+        capture.restore();
     }
+
+    const stderr = capture.stderrText();
+    assert.ok(
+        !stderr.includes("someInternalFunction: pre-promotion snapshot"),
+        `expected the function-name warning to be suppressed, but stderr got: ${stderr}`
+    );
+    assert.ok(
+        stderr.includes("Warning: real user-facing message"),
+        `expected the user-facing warning to be forwarded, but stderr got: ${stderr}`
+    );
 });
 
-void test("in silent mode console.log uses isDiagnosticErrorMessage and suppresses bracket-tag messages", () => {
-    const logCalls: string[] = [];
-
-    const originalLog = console.log;
+void test("configureConsoleMethods('silent') suppresses bracket-tag messages via console.log", (t) => {
     const originalWarn = console.warn;
+    const originalLog = console.log;
 
-    // Stub out warn - we only care about log for this test.
-    console.warn = () => {};
-    const wrappedLog: typeof console.log = (...args) => {
-        const firstArg = String(args[0]);
-        if (!isDiagnosticErrorMessage(firstArg)) {
-            logCalls.push(firstArg);
-        }
-    };
-    console.log = wrappedLog;
+    t.after(() => {
+        configureConsoleMethodsForTests(RESTORE_LOG_LEVEL);
+        assert.strictEqual(console.warn, originalWarn, "console.warn should be restored to original");
+        assert.strictEqual(console.log, originalLog, "console.log should be restored to original");
+    });
+
+    configureConsoleMethodsForTests("silent");
+
+    const capture = startConsoleOutputCapture();
 
     try {
-        // A functionName: message should NOT be suppressed by log (only warn filters it).
-        console.log("someInternalFunction: processing");
-        // An error-tag message should be suppressed by log (error filter).
         console.log("[feather:diagnostic] internal info");
-
-        assert.deepStrictEqual(logCalls, ["someInternalFunction: processing"]);
+        console.log("Formatted 5 files");
     } finally {
-        console.log = originalLog;
-        console.warn = originalWarn;
+        capture.restore();
     }
+
+    const stdout = capture.stdoutText();
+    assert.ok(
+        !stdout.includes("[feather:diagnostic]"),
+        `expected the bracket-tag message to be suppressed, but stdout got: ${stdout}`
+    );
+    assert.ok(
+        stdout.includes("Formatted 5 files"),
+        `expected the regular log message to be forwarded, but stdout got: ${stdout}`
+    );
 });
+
+void test("configureConsoleMethods('silent') assigns the asymmetric filter pairing the contract requires", (t) => {
+    const originalWarn = console.warn;
+    const originalLog = console.log;
+
+    t.after(() => {
+        configureConsoleMethodsForTests(RESTORE_LOG_LEVEL);
+        assert.strictEqual(console.warn, originalWarn, "console.warn should be restored to original");
+        assert.strictEqual(console.log, originalLog, "console.log should be restored to original");
+    });
+
+    configureConsoleMethodsForTests("silent");
+
+    const capture = startConsoleOutputCapture();
+
+    try {
+        console.warn("someInternalFunction: hello from warn");
+        console.log("someInternalFunction: hello from log");
+    } finally {
+        capture.restore();
+    }
+
+    // The same diagnostic input (a function-name message) is intentionally
+    // routed to two different console channels by callers in the wild. The
+    // contract: only console.warn filters function-name diagnostics; console
+    // .log must forward them untouched.
+    const stderr = capture.stderrText();
+    const stdout = capture.stdoutText();
+    assert.ok(
+        !stderr.includes("someInternalFunction: hello from warn"),
+        `console.warn must filter function-name diagnostics, but stderr got: ${stderr}`
+    );
+    assert.ok(
+        stdout.includes("someInternalFunction: hello from log"),
+        `console.log must forward function-name diagnostics untouched, but stdout got: ${stdout}`
+    );
+});
+
+void test("configureConsoleMethods with non-silent level restores the original console methods", (t) => {
+    const originalWarn = console.warn;
+    const originalLog = console.log;
+
+    t.after(() => {
+        configureConsoleMethodsForTests(RESTORE_LOG_LEVEL);
+    });
+
+    configureConsoleMethodsForTests("silent");
+    assert.notStrictEqual(console.warn, originalWarn, "silent mode must install a filtered wrapper");
+
+    configureConsoleMethodsForTests(RESTORE_LOG_LEVEL);
+    assert.strictEqual(console.warn, originalWarn, "non-silent level must restore the original console.warn");
+    assert.strictEqual(console.log, originalLog, "non-silent level must restore the original console.log");
+});
+
+interface ConsoleOutputCapture {
+    stdoutText(): string;
+    stderrText(): string;
+    restore(): void;
+}
+
+/**
+ * Replace the underlying stdout/stderr writers so the test can observe what
+ * `console.warn` and `console.log` actually emit after production installs its
+ * silent-mode wrappers. The handle's `restore()` puts the writers back; the
+ * buffered chunks remain available via {@link ConsoleOutputCapture.stdoutText}
+ * and {@link ConsoleOutputCapture.stderrText}.
+ */
+function startConsoleOutputCapture(): ConsoleOutputCapture {
+    const stdoutChunks: Array<string> = [];
+    const stderrChunks: Array<string> = [];
+
+    const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+    const originalStderrWrite = process.stderr.write.bind(process.stderr);
+
+    process.stdout.write = ((chunk: string | Uint8Array, ...rest: Array<unknown>) => {
+        stdoutChunks.push(typeof chunk === "string" ? chunk : chunk.toString());
+        return originalStdoutWrite(chunk, ...rest);
+    }) as typeof process.stdout.write;
+
+    process.stderr.write = ((chunk: string | Uint8Array, ...rest: Array<unknown>) => {
+        stderrChunks.push(typeof chunk === "string" ? chunk : chunk.toString());
+        return originalStderrWrite(chunk, ...rest);
+    }) as typeof process.stderr.write;
+
+    let restored = false;
+    return {
+        stdoutText: () => stdoutChunks.join(""),
+        stderrText: () => stderrChunks.join(""),
+        restore: () => {
+            if (restored) {
+                return;
+            }
+            restored = true;
+            process.stdout.write = originalStdoutWrite;
+            process.stderr.write = originalStderrWrite;
+        }
+    };
+}
