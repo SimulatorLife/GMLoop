@@ -1,8 +1,7 @@
-import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import type { GmlRuleDefinition } from "../index.js";
-import { createMeta, reportFullTextRewrite } from "../rule-base-helpers.js";
+import { createMeta, reportFullTextRewrite, rewriteSourceLines } from "../rule-base-helpers.js";
 
 type LineCommentParts = Readonly<{
     codeText: string;
@@ -160,30 +159,24 @@ export function createNormalizeDirectivesRule(definition: GmlRuleDefinition): Ru
             return Object.freeze({
                 Program() {
                     const text = context.sourceCode.text;
-                    const lineEnding = Core.dominantLineEnding(text);
-                    const lines = text.split(/\r?\n/u);
-                    const rewrittenLines = lines
-                        .map((line, index) => {
-                            let normalized: string | null = normalizeDefineMacroLine(line);
-                            if (normalized === null) {
-                                return normalized;
-                            }
-                            normalized = normalizeCommentedDirectiveLine(normalized);
-                            normalized = normalizeLegacyBlockKeywordLine(normalized);
-                            if (normalized === null) {
-                                return normalized;
-                            }
-
-                            const isLastLine = index === lines.length - 1;
-                            if (isLastLine && normalized.endsWith("\n")) {
-                                normalized = normalized.slice(0, -1);
-                            }
-
+                    const rewritten = rewriteSourceLines(text, (line, index, sourceLines) => {
+                        let normalized: string | null = normalizeDefineMacroLine(line);
+                        if (normalized === null) {
                             return normalized;
-                        })
-                        .filter((line): line is string => line !== null);
+                        }
+                        normalized = normalizeCommentedDirectiveLine(normalized);
+                        normalized = normalizeLegacyBlockKeywordLine(normalized);
+                        if (normalized === null) {
+                            return normalized;
+                        }
 
-                    const rewritten = rewrittenLines.join(lineEnding);
+                        const isLastLine = index === sourceLines.length - 1;
+                        if (isLastLine && normalized.endsWith("\n")) {
+                            normalized = normalized.slice(0, -1);
+                        }
+
+                        return normalized;
+                    });
                     reportFullTextRewrite(context, definition.messageId, text, rewritten);
                 }
             });
