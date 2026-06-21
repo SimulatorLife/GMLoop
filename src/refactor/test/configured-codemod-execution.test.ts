@@ -100,7 +100,6 @@ void test("listRegisteredCodemods returns the v1 configured codemod set", () => 
             "scientificNotation",
             "repairLogicalNot",
             "repairArgumentSeparators",
-            "repairUppercaseOperators",
             "globalvarToGlobal",
             "loopLengthHoisting",
             "namingConvention"
@@ -139,13 +138,7 @@ void test("listConfiguredCodemods reports normalized effective config and select
             selected: false,
             effectiveConfig: null
         },
-        {
-            id: "repairUppercaseOperators",
-            description: "Rewrite unparseable uppercase operators (AND, OR, XOR, DIV, MOD) to their canonical forms.",
-            configured: false,
-            selected: false,
-            effectiveConfig: null
-        },
+
         {
             id: "globalvarToGlobal",
             description:

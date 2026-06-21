@@ -191,7 +191,26 @@ const NON_CALL_PREFIX_KEYWORDS = new Set([
     "with",
     "function",
     "constructor",
-    "catch"
+    "catch",
+    "and",
+    "or",
+    "xor",
+    "not",
+    "div",
+    "mod",
+    "return",
+    "var",
+    "else",
+    "until",
+    "throw",
+    "new",
+    "try",
+    "finally",
+    "static",
+    "enum",
+    "globalvar",
+    "case",
+    "default"
 ]);
 
 function isLikelyCallArgumentGap(sourceText: string, leftIndex: number): boolean {

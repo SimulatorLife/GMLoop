@@ -29,7 +29,7 @@ void test("no-scientific-notation reports warnings for negative-exponent scienti
 });
 
 void test("no-scientific-notation reports warnings for all scientific notation forms in code without fixing", () => {
-    const input = `${["var a = 1e3;", "var b = .5E+2;", "var c = 4.50e-1;"].join("\n")  }\n`;
+    const input = `${["var a = 1e3;", "var b = .5E+2;", "var c = 4.50e-1;"].join("\n")}\n`;
     const result = runNoScientificNotationRule(input);
 
     assertEquals(result.messageCount, 3);

@@ -1,13 +1,17 @@
 import { Core } from "@gmloop/core";
 
-import type { RepairLogicalNotEdit, RepairLogicalNotResult } from "../../types.js";
+import { resolveSymbolId } from "../../symbol-queries.js";
+import type { PartialSemanticAnalyzer, RepairLogicalNotEdit, RepairLogicalNotResult } from "../../types.js";
 import { applySourceTextEdits } from "../codemod-helpers.js";
 
 /**
  * Repairs invalid logical 'not' and 'NOT' operators in source code by replacing them with '!'.
  * User-defined identifiers (such as function/variable names, macros, etc.) are preserved.
  */
-export function applyRepairLogicalNotCodemod(sourceText: string): RepairLogicalNotResult {
+export async function applyRepairLogicalNotCodemod(
+    sourceText: string,
+    semantic?: PartialSemanticAnalyzer | null
+): Promise<RepairLogicalNotResult> {
     if (!sourceText) {
         return Object.freeze({
             changed: false,
@@ -44,22 +48,25 @@ export function applyRepairLogicalNotCodemod(sourceText: string): RepairLogicalN
         }
 
         const word = sourceText.slice(index, index + 3);
-        if (
-            word.toLowerCase() === "not" &&
-            !declaredMacroNames.has(word.toLowerCase()) &&
-            Core.isLogicalNotOperatorAliasAt(sourceText, index)
-        ) {
-            edits.push(
-                Object.freeze({
-                    start: index,
-                    end: index + 3,
-                    text: "!"
-                })
-            );
-            index += 3;
-        } else {
-            index += 1;
+        if (word.toLowerCase() === "not") {
+            const hasUserDefinedSymbol = semantic ? (await resolveSymbolId(word, semantic)) !== null : false;
+            if (
+                !hasUserDefinedSymbol &&
+                !declaredMacroNames.has(word.toLowerCase()) &&
+                Core.isLogicalNotOperatorAliasAt(sourceText, index)
+            ) {
+                edits.push(
+                    Object.freeze({
+                        start: index,
+                        end: index + 3,
+                        text: "!"
+                    })
+                );
+                index += 3;
+                continue;
+            }
         }
+        index += 1;
     }
 
     if (edits.length === 0) {

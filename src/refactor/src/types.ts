@@ -127,8 +127,6 @@ export type RepairLogicalNotCodemodOptions = Readonly<Record<string, never>>;
  */
 export type RepairArgumentSeparatorsCodemodOptions = Readonly<Record<string, never>>;
 
-export type RepairUppercaseOperatorsCodemodOptions = Readonly<Record<string, never>>;
-
 /**
  * A single text edit produced by the repair-logical-not codemod.
  */
@@ -148,16 +146,6 @@ export type RepairArgumentSeparatorsEdit = CodemodEdit;
  * Per-file result returned by `applyRepairArgumentSeparatorsCodemod`.
  */
 export type RepairArgumentSeparatorsResult = CodemodResult;
-
-/**
- * A single text edit produced by the repair-uppercase-operators codemod.
- */
-export type RepairUppercaseOperatorsEdit = CodemodEdit;
-
-/**
- * Per-file result returned by `applyRepairUppercaseOperatorsCodemod`.
- */
-export type RepairUppercaseOperatorsResult = CodemodResult;
 
 /**
  * A single text edit produced by the scientific-notation codemod.
@@ -337,8 +325,7 @@ export type RefactorCodemodId =
     | "loopLengthHoisting"
     | "namingConvention"
     | "repairLogicalNot"
-    | "repairArgumentSeparators"
-    | "repairUppercaseOperators";
+    | "repairArgumentSeparators";
 
 /**
  * Normalized config payloads keyed by registered codemod id.
@@ -351,7 +338,6 @@ export interface RefactorCodemodConfigMap {
     namingConvention: NamingConventionPolicy;
     repairLogicalNot: RepairLogicalNotCodemodOptions;
     repairArgumentSeparators: RepairArgumentSeparatorsCodemodOptions;
-    repairUppercaseOperators: RepairUppercaseOperatorsCodemodOptions;
 }
 
 /**

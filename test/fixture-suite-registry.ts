@@ -127,7 +127,38 @@ function createLintFixtureSuiteRegistration(): FixtureSuiteRegistration {
                     filePath: `${fixtureCase.caseId}.gml`
                 })
             );
-            const lintedOutput = result.output ?? inputText ?? "";
+            let lintedOutput = result.output ?? inputText ?? "";
+
+            if (
+                ruleEntries["gml/require-argument-separators"] &&
+                ruleEntries["gml/require-argument-separators"] !== "off"
+            ) {
+                const repairResult =
+                    Refactor.RepairArgumentSeparators.applyRepairArgumentSeparatorsCodemod(lintedOutput);
+                if (repairResult.changed) {
+                    lintedOutput = repairResult.outputText;
+                }
+            }
+
+            if (
+                ruleEntries["gml/normalize-operator-aliases"] &&
+                ruleEntries["gml/normalize-operator-aliases"] !== "off"
+            ) {
+                const repairLogicalNotResult = await Refactor.RepairLogicalNot.applyRepairLogicalNotCodemod(
+                    lintedOutput,
+                    null
+                );
+                if (repairLogicalNotResult.changed) {
+                    lintedOutput = repairLogicalNotResult.outputText;
+                }
+            }
+
+            if (ruleEntries["gml/no-scientific-notation"] && ruleEntries["gml/no-scientific-notation"] !== "off") {
+                const repairScientificResult = Refactor.ScientificNotation.applyScientificNotationCodemod(lintedOutput);
+                if (repairScientificResult.changed) {
+                    lintedOutput = repairScientificResult.outputText;
+                }
+            }
 
             return {
                 resultKind: "text" as const,

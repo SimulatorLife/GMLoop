@@ -5,7 +5,6 @@ import { applyLoopLengthHoistingCodemod } from "./codemods/loop-length-hoisting/
 import { executeNamingConventionCodemod } from "./codemods/naming-convention/index.js";
 import { applyRepairArgumentSeparatorsCodemod } from "./codemods/repair-argument-separators/index.js";
 import { applyRepairLogicalNotCodemod } from "./codemods/repair-logical-not/index.js";
-import { applyRepairUppercaseOperatorsCodemod } from "./codemods/repair-uppercase-operators/index.js";
 import { applyScientificNotationCodemod } from "./codemods/scientific-notation/index.js";
 import { normalizeNamingConventionPolicy } from "./naming-convention-policy.js";
 import { assertRefactorConfigPlainObjectWithAllowedKeys } from "./refactor-config-assertions.js";
@@ -15,6 +14,7 @@ import type {
     ConfiguredCodemodRunResult,
     ConfiguredCodemodSummary,
     NamingConventionPolicy,
+    PartialSemanticAnalyzer,
     RefactorCodemodConfigEntry,
     RefactorCodemodConfigMap,
     RefactorCodemodId,
@@ -55,7 +55,6 @@ function normalizeEmptyObjectConfig<
         | "loopLengthHoisting"
         | "repairLogicalNot"
         | "repairArgumentSeparators"
-        | "repairUppercaseOperators"
 >(value: unknown, context: string): RefactorCodemodConfigEntry<T> {
     if (value === false) {
         return false;
@@ -65,16 +64,21 @@ function normalizeEmptyObjectConfig<
 }
 
 async function executeSingleFileTextCodemod(
+    engine: CodemodEngine,
     request: ConfiguredCodemodRunRequest,
     codemodId:
         | "docCommentAlignment"
         | "scientificNotation"
         | "loopLengthHoisting"
         | "repairLogicalNot"
-        | "repairArgumentSeparators"
-        | "repairUppercaseOperators",
+        | "repairArgumentSeparators",
     warningMessage: string,
-    transform: (sourceText: string) => Readonly<{ changed: boolean; outputText: string }>
+    transform: (
+        sourceText: string,
+        semantic: PartialSemanticAnalyzer | null
+    ) =>
+        | Promise<Readonly<{ changed: boolean; outputText: string }>>
+        | Readonly<{ changed: boolean; outputText: string }>
 ): Promise<ConfiguredCodemodExecutionResult> {
     if (request.gmlFilePaths.length === 0) {
         return {
@@ -97,9 +101,10 @@ async function executeSingleFileTextCodemod(
 
     const appliedFiles = new Map<string, string>();
     const changedFiles: Array<string> = [];
+    const semantic = engine.semantic;
     await Core.runSequentially(request.gmlFilePaths, async (filePath) => {
         const sourceText = await request.readFile(filePath);
-        const result = transform(sourceText);
+        const result = await transform(sourceText, semantic);
         if (!result.changed) {
             return;
         }
@@ -177,6 +182,7 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
             request: ConfiguredCodemodRunRequest
         ): Promise<ConfiguredCodemodExecutionResult> {
             return executeSingleFileTextCodemod(
+                _engine,
                 request,
                 "docCommentAlignment",
                 "No .gml files were selected for doc-comment alignment.",
@@ -194,6 +200,7 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
             request: ConfiguredCodemodRunRequest
         ): Promise<ConfiguredCodemodExecutionResult> {
             return executeSingleFileTextCodemod(
+                _engine,
                 request,
                 "scientificNotation",
                 "No .gml files were selected for scientific-notation migration.",
@@ -204,13 +211,14 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
     repairLogicalNot: Object.freeze({
         id: "repairLogicalNot",
         description: "Rewrite invalid logical 'not' and 'NOT' operators to '!'.",
-        requiresSemanticProjectIndex: false,
+        requiresSemanticProjectIndex: true,
         normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
         execute(
             _engine: CodemodEngine,
             request: ConfiguredCodemodRunRequest
         ): Promise<ConfiguredCodemodExecutionResult> {
             return executeSingleFileTextCodemod(
+                _engine,
                 request,
                 "repairLogicalNot",
                 "No .gml files were selected for logical 'not' repair.",
@@ -228,6 +236,7 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
             request: ConfiguredCodemodRunRequest
         ): Promise<ConfiguredCodemodExecutionResult> {
             return executeSingleFileTextCodemod(
+                _engine,
                 request,
                 "repairArgumentSeparators",
                 "No .gml files were selected for argument separator repair.",
@@ -235,23 +244,7 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
             );
         }
     }),
-    repairUppercaseOperators: Object.freeze({
-        id: "repairUppercaseOperators",
-        description: "Rewrite unparseable uppercase operators (AND, OR, XOR, DIV, MOD) to their canonical forms.",
-        requiresSemanticProjectIndex: false,
-        normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
-        execute(
-            _engine: CodemodEngine,
-            request: ConfiguredCodemodRunRequest
-        ): Promise<ConfiguredCodemodExecutionResult> {
-            return executeSingleFileTextCodemod(
-                request,
-                "repairUppercaseOperators",
-                "No .gml files were selected for uppercase operator repair.",
-                applyRepairUppercaseOperatorsCodemod
-            );
-        }
-    }),
+
     globalvarToGlobal: Object.freeze({
         id: "globalvarToGlobal",
         description:
@@ -307,6 +300,7 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
             request: ConfiguredCodemodRunRequest
         ): Promise<ConfiguredCodemodExecutionResult> {
             return executeSingleFileTextCodemod(
+                _engine,
                 request,
                 "loopLengthHoisting",
                 "No .gml files were selected for loop-length hoisting.",

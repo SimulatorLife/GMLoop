@@ -1,26 +1,54 @@
 import assert from "node:assert";
 import { test } from "node:test";
 
-import { Refactor } from "../src/index.js";
+import { type PartialSemanticAnalyzer, Refactor } from "../src/index.js";
 
 const { applyRepairLogicalNotCodemod } = Refactor.RepairLogicalNot;
 const { applyRepairArgumentSeparatorsCodemod } = Refactor.RepairArgumentSeparators;
-const { applyRepairUppercaseOperatorsCodemod } = Refactor.RepairUppercaseOperators;
 
-test("repairLogicalNot codemod", () => {
+test("repairLogicalNot codemod", async () => {
     // Lowercase and uppercase operators should be repaired
-    assert.strictEqual(applyRepairLogicalNotCodemod("if (not left) {}").outputText, "if (! left) {}");
-    assert.strictEqual(applyRepairLogicalNotCodemod("if (NOT left) {}").outputText, "if (! left) {}");
+    assert.strictEqual((await applyRepairLogicalNotCodemod("if (not left) {}")).outputText, "if (! left) {}");
+    assert.strictEqual((await applyRepairLogicalNotCodemod("if (NOT left) {}")).outputText, "if (! left) {}");
 
     // Comments, strings, macro declarations, and call expressions should be preserved
-    assert.strictEqual(applyRepairLogicalNotCodemod("var not = 1;").outputText, "var not = 1;");
-    assert.strictEqual(applyRepairLogicalNotCodemod("called = not(value);").outputText, "called = not(value);");
+    assert.strictEqual((await applyRepairLogicalNotCodemod("var not = 1;")).outputText, "var not = 1;");
+    assert.strictEqual((await applyRepairLogicalNotCodemod("called = not(value);")).outputText, "called = not(value);");
     assert.strictEqual(
-        applyRepairLogicalNotCodemod("// this is not a comment to rewrite").outputText,
+        (await applyRepairLogicalNotCodemod("// this is not a comment to rewrite")).outputText,
         "// this is not a comment to rewrite"
     );
-    assert.strictEqual(applyRepairLogicalNotCodemod('var s = "not a string";').outputText, 'var s = "not a string";');
-    assert.strictEqual(applyRepairLogicalNotCodemod("#macro not 1\nval = not;").outputText, "#macro not 1\nval = not;");
+    assert.strictEqual(
+        (await applyRepairLogicalNotCodemod('var s = "not a string";')).outputText,
+        'var s = "not a string";'
+    );
+    assert.strictEqual(
+        (await applyRepairLogicalNotCodemod("#macro not 1\nval = not;")).outputText,
+        "#macro not 1\nval = not;"
+    );
+});
+
+test("repairLogicalNot codemod preserves user-defined 'not' / 'NOT' symbols from semantic index", async () => {
+    const mockSemantic: PartialSemanticAnalyzer = {
+        resolveSymbolId(name: string) {
+            if (name === "NOT" || name === "not") {
+                return "some-symbol-id";
+            }
+            return null;
+        }
+    };
+
+    // If 'NOT' is user-defined in project, it should not be rewritten
+    const result1 = await applyRepairLogicalNotCodemod("if (NOT left) {}", mockSemantic);
+    assert.strictEqual(result1.outputText, "if (NOT left) {}");
+
+    // If 'not' (lowercase) is user-defined, it should not be rewritten
+    const result2 = await applyRepairLogicalNotCodemod("if (not left) {}", mockSemantic);
+    assert.strictEqual(result2.outputText, "if (not left) {}");
+
+    // Other casings not in index (like 'Not') should still be rewritten unless in index
+    const result3 = await applyRepairLogicalNotCodemod("if (Not left) {}", mockSemantic);
+    assert.strictEqual(result3.outputText, "if (! left) {}");
 });
 
 test("repairArgumentSeparators codemod", () => {
@@ -29,32 +57,4 @@ test("repairArgumentSeparators codemod", () => {
     // Comments, strings, and standard layouts should be preserved
     assert.strictEqual(applyRepairArgumentSeparatorsCodemod("foo(a, b, c)").outputText, "foo(a, b, c)");
     assert.strictEqual(applyRepairArgumentSeparatorsCodemod("if (a b) {}").outputText, "if (a b) {}");
-});
-
-test("repairUppercaseOperators codemod", () => {
-    // Uppercase operator aliases should be repaired to canonical forms
-    assert.strictEqual(
-        applyRepairUppercaseOperatorsCodemod("if (left AND right) {}").outputText,
-        "if (left && right) {}"
-    );
-    assert.strictEqual(
-        applyRepairUppercaseOperatorsCodemod("if (left OR right) {}").outputText,
-        "if (left || right) {}"
-    );
-    assert.strictEqual(
-        applyRepairUppercaseOperatorsCodemod("if (left XOR right) {}").outputText,
-        "if (left ^^ right) {}"
-    );
-    assert.strictEqual(applyRepairUppercaseOperatorsCodemod("a DIV b").outputText, "a div b");
-    assert.strictEqual(applyRepairUppercaseOperatorsCodemod("a MOD b").outputText, "a % b");
-
-    // Lowercase operators should be preserved
-    assert.strictEqual(
-        applyRepairUppercaseOperatorsCodemod("if (left and right) {}").outputText,
-        "if (left and right) {}"
-    );
-    assert.strictEqual(
-        applyRepairUppercaseOperatorsCodemod("if (left or right) {}").outputText,
-        "if (left or right) {}"
-    );
 });

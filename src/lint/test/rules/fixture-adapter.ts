@@ -87,14 +87,12 @@ export function createLintFixtureAdapter(): FixtureAdapter {
                 ruleEntries["gml/normalize-operator-aliases"] &&
                 ruleEntries["gml/normalize-operator-aliases"] !== "off"
             ) {
-                const repairLogicalNotResult = Codemods.RepairLogicalNot.applyRepairLogicalNotCodemod(lintedOutput);
+                const repairLogicalNotResult = await Codemods.RepairLogicalNot.applyRepairLogicalNotCodemod(
+                    lintedOutput,
+                    null
+                );
                 if (repairLogicalNotResult.changed) {
                     lintedOutput = repairLogicalNotResult.outputText;
-                }
-                const repairUppercaseResult =
-                    Codemods.RepairUppercaseOperators.applyRepairUppercaseOperatorsCodemod(lintedOutput);
-                if (repairUppercaseResult.changed) {
-                    lintedOutput = repairUppercaseResult.outputText;
                 }
             }
 
