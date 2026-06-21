@@ -99,6 +99,10 @@ export class GmGraphPanel extends LightDomLitElement {
 
     public accessor state: GraphVisualizationUiState | null = null;
 
+    public layoutCalculationCount = 0;
+
+    public filterCalculationCount = 0;
+
     #enabledNodeKinds = new Set<GraphLegendNodeKind>();
     #enabledEdgeTypes = new Set<GraphVisualizationEdgeType>();
     #selectedNodeId: string | null = null;
@@ -418,6 +422,7 @@ export class GmGraphPanel extends LightDomLitElement {
         const modelChanged = this.#cachedModel !== this.model;
         if (modelChanged) {
             this.#cachedModel = this.model;
+            this.layoutCalculationCount++;
             this.#cachedLayout = createGraphLayout(this.model.data.nodes, this.model.data.edges);
             this.#cachedNodeItems = listGraphNodeKindLegendItems(this.model.data.nodes);
             this.#cachedEdgeTypes = listGraphEdgeTypes(this.model.data.edges);
@@ -431,29 +436,27 @@ export class GmGraphPanel extends LightDomLitElement {
         }
 
         if (this.#cachedVisibleLayout === null) {
+            this.filterCalculationCount++;
             this.#cachedVisibleLayout = filterGraphLayoutForDisplay({
                 enabledEdgeTypes: this.#enabledEdgeTypes,
                 enabledNodeKinds: resolveEffectiveGraphNodeKinds(this.model.data.nodes, this.#enabledNodeKinds),
-                layout: this.#cachedLayout!,
+                layout: this.#cachedLayout,
                 matchesNode: (node) => this.#matchesSearch(node)
             });
             this.#cachedJsonValue = null;
         }
 
         const graphPageClassName = this.state.activePage === "graph" ? "page content-page active" : "page content-page";
-        const layout = this.#cachedLayout!;
-        const nodeItems = this.#cachedNodeItems!;
-        const edgeTypes = this.#cachedEdgeTypes!;
+        const layout = this.#cachedLayout;
+        const nodeItems = this.#cachedNodeItems;
+        const edgeTypes = this.#cachedEdgeTypes;
         const { edges: visibleEdges, nodes: visibleNodes } = this.#cachedVisibleLayout;
         const selectedNode = layout.nodes.find((node) => node.id === this.#selectedNodeId) ?? null;
 
-        let jsonValue = "";
-        if (this.state.activeGraphView === "json") {
-            if (this.#cachedJsonValue === null) {
-                this.#cachedJsonValue = JSON.stringify({ edges: visibleEdges, nodes: visibleNodes }, null, 2);
-            }
-            jsonValue = this.#cachedJsonValue;
+        if (this.#cachedJsonValue === null) {
+            this.#cachedJsonValue = JSON.stringify({ edges: visibleEdges, nodes: visibleNodes }, null, 2);
         }
+        const jsonValue = this.#cachedJsonValue;
 
         return html`
             <section id="graph-page" class=${graphPageClassName}>

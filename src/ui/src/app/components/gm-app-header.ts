@@ -1,6 +1,6 @@
 import { html, nothing } from "lit";
 
-import { type GraphVisualizationUiModel, hasLoadedGraphIndex } from "../contracts.js";
+import { type GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiPage, GraphVisualizationUiState } from "../state/types.js";
 import {
     GRAPH_UI_EVENT_NAVIGATE_PAGE,
@@ -38,10 +38,6 @@ export class GmAppHeader extends LightDomLitElement {
             return;
         }
 
-        if (page === "graph" && !hasLoadedGraphIndex(this.model)) {
-            return;
-        }
-
         this.dispatchEvent(
             new CustomEvent<GraphUiNavigatePageDetail>(GRAPH_UI_EVENT_NAVIGATE_PAGE, {
                 bubbles: true,
@@ -66,7 +62,6 @@ export class GmAppHeader extends LightDomLitElement {
         }
 
         const loadedTarget = this.model.loadedTarget;
-        const hasLoadedIndex = hasLoadedGraphIndex(this.model);
         const liveReloadPage: GraphVisualizationUiPage = "live-reload";
         const activePath = loadedTarget?.activePath ?? this.model.title;
         return html`
@@ -122,7 +117,6 @@ export class GmAppHeader extends LightDomLitElement {
                                     id="tab-graph"
                                     aria-pressed=${this.state.activePage === "graph"}
                                     aria-current=${this.#getAriaCurrentForPage("graph")}
-                                    ?disabled=${!hasLoadedIndex}
                                     class=${this.state.activePage === "graph"
                                         ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
                                         : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}

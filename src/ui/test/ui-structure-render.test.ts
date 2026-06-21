@@ -225,14 +225,14 @@ void test("graph toolbar renders grouped controls for search, view state, and ac
     assert.match(rendered, /id="regenerate"[\s\S]*class="gm-btn--chip"/u);
 });
 
-void test("graph index header tab is disabled when no graph index is loaded", () => {
+void test("graph index header tab remains enabled even when no graph index is loaded", () => {
     const header = new TestableGmAppHeader();
     header.model = createEmptyGraphModel();
     header.state = createMockState("docs");
 
     const rendered = renderTemplateValue(header.renderForTest());
 
-    assert.match(rendered, /id="tab-graph"[\s\S]*disabled/u);
+    assert.doesNotMatch(rendered, /id="tab-graph"[^>]*disabled/u);
 });
 
 void test("graph toolbar disables graph controls and regenerate without a loaded graph target", () => {
