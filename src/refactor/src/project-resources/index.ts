@@ -41,3 +41,5 @@ export type {
     UpdateRoomInstanceRequest
 } from "./room-instance-operations.js";
 export { addRoomInstance, deleteRoomInstance, updateRoomInstance } from "./room-instance-operations.js";
+export type { CreateRoomLayerRequest, RoomLayerMutationResult } from "./room-layer-operations.js";
+export { createRoomLayer } from "./room-layer-operations.js";

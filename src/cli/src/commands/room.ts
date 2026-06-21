@@ -1,4 +1,9 @@
-import { Refactor, type RoomCameraMutationResult, type RoomInstanceMutationResult } from "@gmloop/refactor";
+import {
+    Refactor,
+    type RoomCameraMutationResult,
+    type RoomInstanceMutationResult,
+    type RoomLayerMutationResult
+} from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import { Command } from "commander";
 
@@ -42,6 +47,14 @@ function parseCoordinateArgument(value: string, argumentName: "x" | "y"): number
     return parsed;
 }
 
+function parseLayerDepthArgument(value: string): number {
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed)) {
+        throw new TypeError(`Invalid room layer depth "${value}". Expected an integer value.`);
+    }
+    return parsed;
+}
+
 function parsePositiveDimensionArgument(value: string, argumentName: "height" | "width"): number {
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -68,6 +81,21 @@ function toRoomInstanceMutationPayload(result: RoomInstanceMutationResult) {
     };
 }
 
+function toRoomLayerMutationPayload(result: RoomLayerMutationResult) {
+    return {
+        action: result.action,
+        deletedPaths: result.deletedPaths,
+        depth: result.depth,
+        dryRun: result.dryRun,
+        layerName: result.layerName,
+        layerType: result.layerType,
+        roomName: result.roomName,
+        roomPath: result.roomPath,
+        warnings: result.warnings,
+        writtenPaths: result.writtenPaths
+    };
+}
+
 function toRoomCameraMutationPayload(result: RoomCameraMutationResult) {
     return {
         action: result.action,
@@ -83,6 +111,24 @@ function toRoomCameraMutationPayload(result: RoomCameraMutationResult) {
         x: result.x,
         y: result.y
     };
+}
+
+async function runRoomLayerCreateAction(
+    roomName: string,
+    layerName: string,
+    depth: number,
+    options: RoomMutationOptions
+): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const result = await Refactor.createRoomLayer({
+        depth,
+        dryRun: options.write !== true,
+        layerName,
+        projectRoot: context.projectRoot,
+        roomName
+    });
+
+    printRoomPayload({ command: "room layer create", ok: true, payload: toRoomLayerMutationPayload(result) });
 }
 
 async function runRoomCameraUpdateAction(
@@ -425,6 +471,19 @@ export function createRoomCommand(): Command {
         );
         if (layerMutationLeaves.has(layerLeaf)) {
             nested.addOption(createWriteOption());
+        }
+        if (layerLeaf === "create") {
+            nested.argument("<room>", "Room name").argument("<layer>", "Layer name").argument("<depth>", "Layer depth");
+            nested.action(async function roomLayerCreateAction(roomName: string, layerName: string, depth: string) {
+                try {
+                    const options = this.opts<RoomMutationOptions>();
+                    await runRoomLayerCreateAction(roomName, layerName, parseLayerDepthArgument(depth), options);
+                } catch (error) {
+                    handleCliError(error);
+                }
+            });
+            layer.addCommand(nested);
+            continue;
         }
         nested.action(function roomLayerAction() {
             const options = this.opts<RoomMutationOptions>();

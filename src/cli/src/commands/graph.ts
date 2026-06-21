@@ -1,12 +1,11 @@
 import { type ChildProcessWithoutNullStreams, execFile, spawn } from "node:child_process";
 import { existsSync, type FSWatcher, watch, type WatchListener, type WatchOptions } from "node:fs";
-import { access, constants, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, constants, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { Core } from "@gmloop/core";
-import { FixtureRunner } from "@gmloop/fixture-runner";
 import { Format } from "@gmloop/format";
 import { Lint, listLintRuleCatalogEntries } from "@gmloop/lint";
 import { Refactor, type RefactorCodemodId } from "@gmloop/refactor";
@@ -1934,47 +1933,64 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             void openNextPendingActiveProjectStatePath();
         };
 
-        let playgroundFixtures: ReadonlyArray<GraphVisualizationServerPlaygroundFixture> = [];
         const discoverPlaygroundFixtures = async (): Promise<
             ReadonlyArray<GraphVisualizationServerPlaygroundFixture>
         > => {
-            if (playgroundFixtures.length > 0) {
-                return playgroundFixtures;
-            }
             try {
-                const repoRoot = findRepoRootSync(path.dirname(fileURLToPath(import.meta.url)));
+                const fixtureRepoRoot = repoRoot;
                 const fixtureRoots = [
-                    { kind: "format", path: path.join(repoRoot, "src", "format", "test", "fixtures") },
-                    { kind: "lint", path: path.join(repoRoot, "src", "lint", "test", "fixtures") },
-                    { kind: "refactor", path: path.join(repoRoot, "src", "refactor", "test", "fixtures") },
-                    { kind: "integration", path: path.join(repoRoot, "test", "fixtures", "integration") }
+                    { kind: "format", path: path.join(fixtureRepoRoot, "src", "format", "test", "fixtures") },
+                    { kind: "lint", path: path.join(fixtureRepoRoot, "src", "lint", "test", "fixtures") },
+                    { kind: "refactor", path: path.join(fixtureRepoRoot, "src", "refactor", "test", "fixtures") },
+                    { kind: "integration", path: path.join(fixtureRepoRoot, "test", "fixtures", "integration") }
                 ];
 
-                const allCases: Array<GraphVisualizationServerPlaygroundFixture> = [];
-                for (const root of fixtureRoots) {
-                    if (!existsSync(root.path)) {
-                        continue;
-                    }
-                    const cases = await FixtureRunner.discoverFixtureCases(root.path);
-                    for (const c of cases) {
-                        if (c.inputFilePath && existsSync(c.inputFilePath)) {
-                            const inputGml = await readFile(c.inputFilePath, "utf8");
-                            const expectedGml =
-                                c.expectedFilePath && existsSync(c.expectedFilePath)
-                                    ? await readFile(c.expectedFilePath, "utf8")
-                                    : null;
-                            allCases.push({
-                                caseId: `${root.kind}/${c.caseId}`,
-                                kind: root.kind,
-                                inputGml,
-                                expectedGml,
-                                config: c.config
-                            });
+                const discoveredFixtureGroups = await Promise.all(
+                    fixtureRoots.map(async (fixtureRoot) => {
+                        if (!existsSync(fixtureRoot.path)) {
+                            return [];
                         }
-                    }
-                }
-                playgroundFixtures = allCases;
-                return playgroundFixtures;
+
+                        const entries = await readdir(fixtureRoot.path, { withFileTypes: true });
+                        const fixtureDirectories = entries
+                            .filter((entry) => entry.isDirectory())
+                            .map((entry) => entry.name)
+                            .sort((left, right) => left.localeCompare(right));
+
+                        return Promise.all(
+                            fixtureDirectories.map(async (caseId) => {
+                                const caseRoot = path.join(fixtureRoot.path, caseId);
+                                const inputFilePath = path.join(caseRoot, "input.gml");
+                                if (!existsSync(inputFilePath)) {
+                                    return null;
+                                }
+
+                                const expectedFilePath = path.join(caseRoot, "expected.gml");
+                                const configPath = path.join(caseRoot, "gmloop.json");
+                                const [inputGml, expectedGml, config] = await Promise.all([
+                                    readFile(inputFilePath, "utf8"),
+                                    existsSync(expectedFilePath)
+                                        ? readFile(expectedFilePath, "utf8")
+                                        : Promise.resolve(null),
+                                    existsSync(configPath)
+                                        ? readFile(configPath, "utf8").then(
+                                              (source) => JSON.parse(source) as Record<string, unknown>
+                                          )
+                                        : Promise.resolve({})
+                                ]);
+
+                                return {
+                                    caseId: `${fixtureRoot.kind}/${caseId}`,
+                                    kind: fixtureRoot.kind,
+                                    inputGml,
+                                    expectedGml,
+                                    config
+                                };
+                            })
+                        );
+                    })
+                );
+                return discoveredFixtureGroups.flat().filter((fixture) => fixture !== null);
             } catch (error) {
                 console.error("Failed to discover playground fixtures:", error);
                 return [];
