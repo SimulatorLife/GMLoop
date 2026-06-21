@@ -1970,5 +1970,7 @@ export const __formatTest__ = Object.freeze({
     },
     collectInlineSnapshotsForEvictionForTests: collectInlineSnapshotsForEviction,
     enforceSnapshotMemoryLimitForTests: enforceSnapshotMemoryLimit,
-    performPeriodicMemoryCleanupForTests: performPeriodicMemoryCleanup
+    performPeriodicMemoryCleanupForTests: performPeriodicMemoryCleanup,
+    configureConsoleMethodsForTests: configureConsoleMethods,
+    getDefaultPrettierLogLevelForTests: () => DEFAULT_PRETTIER_LOG_LEVEL
 });
