@@ -1,5 +1,5 @@
 import { type FixtureAdapter, FixtureRunner } from "@gmloop/fixture-runner";
-import { Refactor } from "@gmloop/refactor";
+import { Codemods } from "@gmloop/refactor";
 import { ESLint } from "eslint";
 
 import { createLintRuleEntriesFromProjectConfig } from "../../src/configs/index.js";
@@ -77,7 +77,7 @@ export function createLintFixtureAdapter(): FixtureAdapter {
                 ruleEntries["gml/require-argument-separators"] !== "off"
             ) {
                 const repairResult =
-                    Refactor.RepairArgumentSeparators.applyRepairArgumentSeparatorsCodemod(lintedOutput);
+                    Codemods.RepairArgumentSeparators.applyRepairArgumentSeparatorsCodemod(lintedOutput);
                 if (repairResult.changed) {
                     lintedOutput = repairResult.outputText;
                 }
@@ -87,19 +87,19 @@ export function createLintFixtureAdapter(): FixtureAdapter {
                 ruleEntries["gml/normalize-operator-aliases"] &&
                 ruleEntries["gml/normalize-operator-aliases"] !== "off"
             ) {
-                const repairLogicalNotResult = Refactor.RepairLogicalNot.applyRepairLogicalNotCodemod(lintedOutput);
+                const repairLogicalNotResult = Codemods.RepairLogicalNot.applyRepairLogicalNotCodemod(lintedOutput);
                 if (repairLogicalNotResult.changed) {
                     lintedOutput = repairLogicalNotResult.outputText;
                 }
                 const repairUppercaseResult =
-                    Refactor.RepairUppercaseOperators.applyRepairUppercaseOperatorsCodemod(lintedOutput);
+                    Codemods.RepairUppercaseOperators.applyRepairUppercaseOperatorsCodemod(lintedOutput);
                 if (repairUppercaseResult.changed) {
                     lintedOutput = repairUppercaseResult.outputText;
                 }
             }
 
             if (ruleEntries["gml/no-scientific-notation"] && ruleEntries["gml/no-scientific-notation"] !== "off") {
-                const repairScientificResult = Refactor.ScientificNotation.applyScientificNotationCodemod(lintedOutput);
+                const repairScientificResult = Codemods.ScientificNotation.applyScientificNotationCodemod(lintedOutput);
                 if (repairScientificResult.changed) {
                     lintedOutput = repairScientificResult.outputText;
                 }
