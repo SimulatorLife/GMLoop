@@ -664,10 +664,11 @@ void test("feather/gm1028 ignores malformed identifier metadata without throwing
     assertEquals(messages.length, 0);
 });
 
-void test("require-argument-separators preserves separator payload comments", () => {
+void test("require-argument-separators reports missing argument separators without fixing", () => {
     const input = "show_debug_message_ext(name /* keep */ payload);\n";
     const result = lintWithRule("require-argument-separators", input, {});
-    assertEquals(result.output, "show_debug_message_ext(name, /* keep */ payload);\n");
+    assertEquals(result.messages.length, 1);
+    assertEquals(result.output, input);
 });
 
 void test("feather/gm1056 lifts leading argument_count ternary fallbacks into params", () => {
@@ -1657,18 +1658,18 @@ void test("normalize-operator-aliases does not replace punctuation exclamation m
     assertEquals(result.output, expected);
 });
 
-void test("normalize-operator-aliases replaces invalid logical keyword 'not' with '!'", () => {
+void test("normalize-operator-aliases reports warnings for invalid logical keyword 'not' without fixing", () => {
     const input = ["if (not ready) {", "    value = not extra;", "}", ""].join("\n");
-    const expected = ["if (! ready) {", "    value = ! extra;", "}", ""].join("\n");
     const result = lintWithRule("normalize-operator-aliases", input, {});
-    assertEquals(result.output, expected);
+    assertEquals(result.messages.length, 2);
+    assertEquals(result.output, input);
 });
 
-void test("normalize-operator-aliases normalizes uppercase binary aliases and NOT", () => {
+void test("normalize-operator-aliases reports warnings for uppercase binary aliases and NOT without fixing", () => {
     const input = ["if (ready AND NOT done OR extra XOR flag) {", "    finish();", "}", ""].join("\n");
-    const expected = ["if (ready && ! done || extra ^^ flag) {", "    finish();", "}", ""].join("\n");
     const result = lintWithRule("normalize-operator-aliases", input, {});
-    assertEquals(result.output, expected);
+    assertEquals(result.messages.length, 4);
+    assertEquals(result.output, input);
 });
 
 void test("normalize-operator-aliases preserves macro-defined operator alias identifiers", () => {
@@ -1709,7 +1710,7 @@ void test("normalize-operator-aliases does not rewrite comment text containing '
     assertEquals(result.output, input);
 });
 
-void test("normalize-operator-aliases rewrites code aliases without mutating comment or string content", () => {
+void test("normalize-operator-aliases reports logical aliases in code without mutating comments, strings, or calls", () => {
     const input = [
         'var message = "not ready";',
         "/* not pending */",
@@ -1719,18 +1720,10 @@ void test("normalize-operator-aliases rewrites code aliases without mutating com
         "}",
         ""
     ].join("\n");
-    const expected = [
-        'var message = "not ready";',
-        "/* not pending */",
-        "if (! ready) {",
-        "    // not should stay untouched in comments",
-        "    value = !(extra);",
-        "}",
-        ""
-    ].join("\n");
 
     const result = lintWithRule("normalize-operator-aliases", input, {});
-    assertEquals(result.output, expected);
+    assertEquals(result.messages.length, 1);
+    assertEquals(result.output, input);
 });
 
 void test("normalize-operator-aliases does not rewrite escaped quote string content", () => {

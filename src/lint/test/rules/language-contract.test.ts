@@ -565,7 +565,7 @@ void test("require-argument-separators reports precise location and fixes commen
         true,
         { recovery: "limited" }
     );
-    assertEquals(fixedResult.output, "show_debug_message_ext(name, /* keep */ payload);\n");
+    assertEquals(fixedResult.output, undefined);
 });
 
 void test("require-control-flow-braces reports else-if chain bodies without autofixing", async () => {

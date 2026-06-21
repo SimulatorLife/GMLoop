@@ -3,6 +3,9 @@ import { Core } from "@gmloop/core";
 import { applyDocCommentAlignmentCodemod } from "./codemods/doc-comment-alignment/index.js";
 import { applyLoopLengthHoistingCodemod } from "./codemods/loop-length-hoisting/index.js";
 import { executeNamingConventionCodemod } from "./codemods/naming-convention/index.js";
+import { applyRepairArgumentSeparatorsCodemod } from "./codemods/repair-argument-separators/index.js";
+import { applyRepairLogicalNotCodemod } from "./codemods/repair-logical-not/index.js";
+import { applyRepairUppercaseOperatorsCodemod } from "./codemods/repair-uppercase-operators/index.js";
 import { applyScientificNotationCodemod } from "./codemods/scientific-notation/index.js";
 import { normalizeNamingConventionPolicy } from "./naming-convention-policy.js";
 import { assertRefactorConfigPlainObjectWithAllowedKeys } from "./refactor-config-assertions.js";
@@ -45,10 +48,15 @@ const EMPTY_ALLOWED_KEYS = new Set<string>();
 
 const GLOBALVAR_TO_GLOBAL_ALLOWED_KEYS = new Set(["excludeNames"]);
 
-function normalizeEmptyObjectConfig<T extends "docCommentAlignment" | "scientificNotation" | "loopLengthHoisting">(
-    value: unknown,
-    context: string
-): RefactorCodemodConfigEntry<T> {
+function normalizeEmptyObjectConfig<
+    T extends
+        | "docCommentAlignment"
+        | "scientificNotation"
+        | "loopLengthHoisting"
+        | "repairLogicalNot"
+        | "repairArgumentSeparators"
+        | "repairUppercaseOperators"
+>(value: unknown, context: string): RefactorCodemodConfigEntry<T> {
     if (value === false) {
         return false;
     }
@@ -58,7 +66,13 @@ function normalizeEmptyObjectConfig<T extends "docCommentAlignment" | "scientifi
 
 async function executeSingleFileTextCodemod(
     request: ConfiguredCodemodRunRequest,
-    codemodId: "docCommentAlignment" | "scientificNotation" | "loopLengthHoisting",
+    codemodId:
+        | "docCommentAlignment"
+        | "scientificNotation"
+        | "loopLengthHoisting"
+        | "repairLogicalNot"
+        | "repairArgumentSeparators"
+        | "repairUppercaseOperators",
     warningMessage: string,
     transform: (sourceText: string) => Readonly<{ changed: boolean; outputText: string }>
 ): Promise<ConfiguredCodemodExecutionResult> {
@@ -184,6 +198,57 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
                 "scientificNotation",
                 "No .gml files were selected for scientific-notation migration.",
                 applyScientificNotationCodemod
+            );
+        }
+    }),
+    repairLogicalNot: Object.freeze({
+        id: "repairLogicalNot",
+        description: "Rewrite invalid logical 'not' and 'NOT' operators to '!'.",
+        requiresSemanticProjectIndex: false,
+        normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
+        execute(
+            _engine: CodemodEngine,
+            request: ConfiguredCodemodRunRequest
+        ): Promise<ConfiguredCodemodExecutionResult> {
+            return executeSingleFileTextCodemod(
+                request,
+                "repairLogicalNot",
+                "No .gml files were selected for logical 'not' repair.",
+                applyRepairLogicalNotCodemod
+            );
+        }
+    }),
+    repairArgumentSeparators: Object.freeze({
+        id: "repairArgumentSeparators",
+        description: "Insert missing call argument separators (commas) where omitted.",
+        requiresSemanticProjectIndex: false,
+        normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
+        execute(
+            _engine: CodemodEngine,
+            request: ConfiguredCodemodRunRequest
+        ): Promise<ConfiguredCodemodExecutionResult> {
+            return executeSingleFileTextCodemod(
+                request,
+                "repairArgumentSeparators",
+                "No .gml files were selected for argument separator repair.",
+                applyRepairArgumentSeparatorsCodemod
+            );
+        }
+    }),
+    repairUppercaseOperators: Object.freeze({
+        id: "repairUppercaseOperators",
+        description: "Rewrite unparseable uppercase operators (AND, OR, XOR, DIV, MOD) to their canonical forms.",
+        requiresSemanticProjectIndex: false,
+        normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
+        execute(
+            _engine: CodemodEngine,
+            request: ConfiguredCodemodRunRequest
+        ): Promise<ConfiguredCodemodExecutionResult> {
+            return executeSingleFileTextCodemod(
+                request,
+                "repairUppercaseOperators",
+                "No .gml files were selected for uppercase operator repair.",
+                applyRepairUppercaseOperatorsCodemod
             );
         }
     }),

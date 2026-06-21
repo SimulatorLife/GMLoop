@@ -95,7 +95,16 @@ class InMemoryOverlayStorageBackend implements StorageBackend {
 void test("listRegisteredCodemods returns the v1 configured codemod set", () => {
     assert.deepEqual(
         Refactor.listRegisteredCodemods().map((codemod) => codemod.id),
-        ["docCommentAlignment", "scientificNotation", "globalvarToGlobal", "loopLengthHoisting", "namingConvention"]
+        [
+            "docCommentAlignment",
+            "scientificNotation",
+            "repairLogicalNot",
+            "repairArgumentSeparators",
+            "repairUppercaseOperators",
+            "globalvarToGlobal",
+            "loopLengthHoisting",
+            "namingConvention"
+        ]
     );
 });
 
@@ -112,6 +121,27 @@ void test("listConfiguredCodemods reports normalized effective config and select
         {
             id: "scientificNotation",
             description: "Expand unsupported scientific-notation number literals into plain decimal literals.",
+            configured: false,
+            selected: false,
+            effectiveConfig: null
+        },
+        {
+            id: "repairLogicalNot",
+            description: "Rewrite invalid logical 'not' and 'NOT' operators to '!'.",
+            configured: false,
+            selected: false,
+            effectiveConfig: null
+        },
+        {
+            id: "repairArgumentSeparators",
+            description: "Insert missing call argument separators (commas) where omitted.",
+            configured: false,
+            selected: false,
+            effectiveConfig: null
+        },
+        {
+            id: "repairUppercaseOperators",
+            description: "Rewrite unparseable uppercase operators (AND, OR, XOR, DIV, MOD) to their canonical forms.",
             configured: false,
             selected: false,
             effectiveConfig: null

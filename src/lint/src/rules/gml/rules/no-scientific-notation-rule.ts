@@ -42,10 +42,7 @@ export function createNoScientificNotationRule(definition: GmlRuleDefinition): R
                     for (const fix of fixes) {
                         context.report({
                             loc: context.sourceCode.getLocFromIndex(fix.start),
-                            messageId: definition.messageId,
-                            fix(fixer) {
-                                return fixer.replaceTextRange([fix.start, fix.end], fix.replacement);
-                            }
+                            messageId: definition.messageId
                         });
                     }
                 }

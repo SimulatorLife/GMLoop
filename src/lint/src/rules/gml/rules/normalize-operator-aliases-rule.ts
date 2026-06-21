@@ -2,12 +2,7 @@ import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import type { GmlRuleDefinition } from "../index.js";
-import {
-    applySourceTextEdits,
-    createMeta,
-    reportProgramTextRewrite,
-    type SourceTextEdit
-} from "../rule-base-helpers.js";
+import { createMeta } from "../rule-base-helpers.js";
 
 const LOGICAL_NOT_ALIAS = "not";
 const LOGICAL_NOT_OPERATOR = "!";
@@ -106,91 +101,6 @@ function isProtectedMacroIdentifier(identifier: string, declaredMacroNames: Read
     return declaredMacroNames.has(identifier.toLowerCase());
 }
 
-function rewriteLogicalNotAliasesOutsideTrivia(sourceText: string, declaredMacroNames: ReadonlySet<string>): string {
-    const edits: SourceTextEdit[] = [];
-    const scanState = Core.createStringCommentScanState();
-    const sourceLength = sourceText.length;
-    let index = 0;
-
-    while (index < sourceLength) {
-        const scannedIndex = Core.advanceStringCommentScan(sourceText, sourceLength, index, scanState, true);
-        if (scannedIndex !== index) {
-            index = scannedIndex;
-            continue;
-        }
-
-        if (isDirectiveLineAtIndex(sourceText, index)) {
-            index = findNextLineStart(sourceText, index);
-            continue;
-        }
-
-        const wordOperatorEdit = readWordOperatorAliasEditAt(sourceText, index, declaredMacroNames);
-        if (wordOperatorEdit) {
-            edits.push(wordOperatorEdit);
-            index = wordOperatorEdit.end;
-            continue;
-        }
-
-        if (
-            isProtectedMacroIdentifier(sourceText.slice(index, index + LOGICAL_NOT_ALIAS.length), declaredMacroNames) ||
-            !Core.isLogicalNotOperatorAliasAt(sourceText, index)
-        ) {
-            index += 1;
-            continue;
-        }
-
-        edits.push({
-            start: index,
-            end: index + LOGICAL_NOT_ALIAS.length,
-            text: LOGICAL_NOT_OPERATOR
-        });
-        index += LOGICAL_NOT_ALIAS.length;
-    }
-
-    return applySourceTextEdits(sourceText, edits);
-}
-
-function readWordOperatorAliasEditAt(
-    sourceText: string,
-    startIndex: number,
-    declaredMacroNames: ReadonlySet<string>
-): SourceTextEdit | null {
-    for (const operatorAlias of WORD_OPERATOR_ALIASES) {
-        const endIndex = startIndex + operatorAlias.length;
-        if (endIndex > sourceText.length) {
-            continue;
-        }
-
-        const sourceOperator = sourceText.slice(startIndex, endIndex);
-        if (sourceOperator.toLowerCase() !== operatorAlias) {
-            continue;
-        }
-        if (isProtectedMacroIdentifier(sourceOperator, declaredMacroNames)) {
-            continue;
-        }
-
-        if (
-            !Core.isIdentifierBoundaryCharacter(sourceText[startIndex - 1]) ||
-            !Core.isIdentifierBoundaryCharacter(sourceText[endIndex])
-        ) {
-            continue;
-        }
-
-        const canonicalOperator = Core.OPERATOR_ALIAS_MAP.get(operatorAlias);
-        if (typeof canonicalOperator !== "string" || sourceOperator === canonicalOperator) {
-            return null;
-        }
-
-        return {
-            start: startIndex,
-            end: endIndex,
-            text: canonicalOperator
-        };
-    }
-
-    return null;
-}
-
 function locateBinaryOperatorSourceRange(parameters: {
     sourceText: string;
     node: Rule.Node;
@@ -199,39 +109,19 @@ function locateBinaryOperatorSourceRange(parameters: {
     expressionStart: number;
     expressionEnd: number;
     declaredMacroNames: ReadonlySet<string>;
-}): [number, number] | null {
-    const leftNode = (parameters.node as { left?: Rule.Node }).left;
-    const rightNode = (parameters.node as { right?: Rule.Node }).right;
-    const leftEndIndex = leftNode ? Core.getNodeEndIndex(leftNode) : null;
-    const rightStartIndex = rightNode ? Core.getNodeStartIndex(rightNode) : null;
-    const searchStart =
-        typeof leftEndIndex === "number"
-            ? Core.clamp(leftEndIndex, parameters.expressionStart, parameters.expressionEnd)
-            : parameters.expressionStart;
-    const searchEnd =
-        typeof rightStartIndex === "number"
-            ? Core.clamp(rightStartIndex, searchStart, parameters.expressionEnd)
-            : parameters.expressionEnd;
-    if (searchStart >= searchEnd) {
-        return null;
-    }
-
-    const aliases = OPERATOR_ALIASES_BY_CANONICAL.get(parameters.normalizedOperator) ?? [];
-    const candidates = [...new Set([parameters.operator, parameters.normalizedOperator, ...aliases])].sort(
+}): readonly [number, number] | null {
+    const aliases = OPERATOR_ALIASES_BY_CANONICAL.get(parameters.normalizedOperator) ?? [parameters.normalizedOperator];
+    const candidateOperators = [...aliases, parameters.normalizedOperator].toSorted(
         (left, right) => right.length - left.length
     );
-    if (candidates.length === 0) {
-        return null;
-    }
 
-    const scanState = Core.createStringCommentScanState();
-    let cursor = searchStart;
-    while (cursor < searchEnd) {
+    let cursor = parameters.expressionStart;
+    while (cursor < parameters.expressionEnd) {
         const scannedIndex = Core.advanceStringCommentScan(
             parameters.sourceText,
-            parameters.sourceText.length,
+            parameters.expressionEnd,
             cursor,
-            scanState,
+            Core.createStringCommentScanState(),
             true
         );
         if (scannedIndex !== cursor) {
@@ -239,13 +129,17 @@ function locateBinaryOperatorSourceRange(parameters: {
             continue;
         }
 
-        for (const candidate of candidates) {
+        for (const candidate of candidateOperators) {
             const candidateEnd = cursor + candidate.length;
-            const sliced = parameters.sourceText.slice(cursor, candidateEnd);
-            if (candidateEnd > searchEnd || sliced.toLowerCase() !== candidate.toLowerCase()) {
+            if (candidateEnd > parameters.expressionEnd) {
                 continue;
             }
-            if (isProtectedMacroIdentifier(sliced, parameters.declaredMacroNames)) {
+
+            const sourceOperator = parameters.sourceText.slice(cursor, candidateEnd);
+            if (sourceOperator.toLowerCase() !== candidate) {
+                continue;
+            }
+            if (isProtectedMacroIdentifier(sourceOperator, parameters.declaredMacroNames)) {
                 continue;
             }
 
@@ -300,10 +194,13 @@ function reportOperatorAliasIfNeeded(
         return;
     }
 
+    const isUnparseable =
+        originalOperatorText === originalOperatorText.toUpperCase() && originalOperatorText !== canonical;
+
     context.report({
         loc: resolveReportLocation(context, operatorStart),
         messageId: definition.messageId,
-        fix: (fixer) => fixer.replaceTextRange([operatorStart, operatorEnd], canonical)
+        fix: isUnparseable ? null : (fixer) => fixer.replaceTextRange([operatorStart, operatorEnd], canonical)
     });
 }
 
@@ -317,9 +214,43 @@ export function createNormalizeOperatorAliasesRule(definition: GmlRuleDefinition
             const declaredMacroNames = collectDeclaredMacroNames(context.sourceCode.text);
             return Object.freeze({
                 Program() {
-                    reportProgramTextRewrite(context, definition, (sourceText) =>
-                        rewriteLogicalNotAliasesOutsideTrivia(sourceText, declaredMacroNames)
-                    );
+                    const sourceText = context.sourceCode.text;
+                    let index = 0;
+                    const scanState = Core.createStringCommentScanState();
+                    const sourceLength = sourceText.length;
+                    while (index < sourceLength) {
+                        const scannedIndex = Core.advanceStringCommentScan(
+                            sourceText,
+                            sourceLength,
+                            index,
+                            scanState,
+                            true
+                        );
+                        if (scannedIndex !== index) {
+                            index = scannedIndex;
+                            continue;
+                        }
+
+                        if (isDirectiveLineAtIndex(sourceText, index)) {
+                            index = findNextLineStart(sourceText, index);
+                            continue;
+                        }
+
+                        const word = sourceText.slice(index, index + LOGICAL_NOT_ALIAS.length);
+                        if (
+                            word.toLowerCase() === LOGICAL_NOT_ALIAS &&
+                            !isProtectedMacroIdentifier(word, declaredMacroNames) &&
+                            Core.isLogicalNotOperatorAliasAt(sourceText, index)
+                        ) {
+                            context.report({
+                                loc: resolveReportLocation(context, index),
+                                messageId: definition.messageId
+                            });
+                            index += LOGICAL_NOT_ALIAS.length;
+                        } else {
+                            index += 1;
+                        }
+                    }
                 },
                 BinaryExpression(node) {
                     reportOperatorAliasIfNeeded(context, definition, node, declaredMacroNames);
@@ -328,7 +259,7 @@ export function createNormalizeOperatorAliasesRule(definition: GmlRuleDefinition
                     reportOperatorAliasIfNeeded(context, definition, node, declaredMacroNames);
                 },
                 UnaryExpression() {
-                    // Parse-failure and legacy alias normalization is handled by Program text rewrite.
+                    // Parse-failure and legacy alias normalization is handled by Program text scan.
                 }
             });
         }

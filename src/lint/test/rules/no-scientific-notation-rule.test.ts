@@ -20,23 +20,23 @@ void test("no-scientific-notation is registered in the lint plugin", () => {
     assert.ok(rule, "Expected no-scientific-notation rule to be registered");
 });
 
-void test("no-scientific-notation auto-fixes negative-exponent scientific literals", () => {
+void test("no-scientific-notation reports warnings for negative-exponent scientific literals without fixing", () => {
     const input = "var epsilon = 1e-11;\n";
     const result = runNoScientificNotationRule(input);
 
     assertEquals(result.messageCount, 1);
-    assertEquals(result.output, "var epsilon = 0.00000000001;\n");
+    assertEquals(result.output, input);
 });
 
-void test("no-scientific-notation auto-fixes all scientific notation forms in code", () => {
-    const input = ["var a = 1e3;", "var b = .5E+2;", "var c = 4.50e-1;"].join("\n");
-    const result = runNoScientificNotationRule(`${input}\n`);
+void test("no-scientific-notation reports warnings for all scientific notation forms in code without fixing", () => {
+    const input = `${["var a = 1e3;", "var b = .5E+2;", "var c = 4.50e-1;"].join("\n")  }\n`;
+    const result = runNoScientificNotationRule(input);
 
     assertEquals(result.messageCount, 3);
-    assertEquals(result.output, "var a = 1000;\nvar b = 50;\nvar c = 0.45;\n");
+    assertEquals(result.output, input);
 });
 
-void test("no-scientific-notation auto-fixes malformed __scribble_random scientific notation source", () => {
+void test("no-scientific-notation reports warnings for malformed __scribble_random scientific notation source without fixing", () => {
     const input = [
         "/// @returns {any}",
         "function __scribble_random() {",
@@ -50,18 +50,7 @@ void test("no-scientific-notation auto-fixes malformed __scribble_random scienti
     const result = runNoScientificNotationRule(input);
 
     assertEquals(result.messageCount, 1);
-    assertEquals(
-        result.output,
-        [
-            "/// @returns {any}",
-            "function __scribble_random() {",
-            "    static _lcg = date_current_datetime() * 100;",
-            "    _lcg = (48271 * _lcg) mod 2147483647; // Lehmer",
-            "    return _lcg * 0.0000000004656612873077393;",
-            "}",
-            ""
-        ].join("\n")
-    );
+    assertEquals(result.output, input);
 });
 
 void test("no-scientific-notation does not touch scientific notation text in comments and strings", () => {

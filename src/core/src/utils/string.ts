@@ -832,5 +832,12 @@ export function isLogicalNotOperatorAliasAt(sourceText: string, startIndex: numb
     }
 
     const nextTokenStart = sourceText[operandIndex];
-    return nextTokenStart === "(" || isIdentifierStartCharacter(nextTokenStart);
+    if (nextTokenStart === "(") {
+        // If '(' is immediately adjacent to 'not' (no whitespace), it is a function call
+        if (operandIndex === aliasEnd) {
+            return false;
+        }
+        return true;
+    }
+    return isIdentifierStartCharacter(nextTokenStart);
 }

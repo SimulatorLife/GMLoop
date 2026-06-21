@@ -231,6 +231,7 @@ void test("isIdentifierStartCharacter matches valid identifier start characters"
 void test("isLogicalNotOperatorAliasAt detects not as an operator vs identifier", () => {
     assert.strictEqual(isLogicalNotOperatorAliasAt("not active", 0), true);
     assert.strictEqual(isLogicalNotOperatorAliasAt("NOT (active)", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not(active)", 0), false);
     assert.strictEqual(isLogicalNotOperatorAliasAt("var not = 1;", 4), false);
     assert.strictEqual(isLogicalNotOperatorAliasAt("obj.not = 1;", 4), false);
     assert.strictEqual(isLogicalNotOperatorAliasAt("if (not) {", 4), false);

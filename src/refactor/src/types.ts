@@ -118,6 +118,48 @@ export type LoopLengthHoistingCodemodOptions = Readonly<Record<string, never>>;
 export type ScientificNotationCodemodOptions = Readonly<Record<string, never>>;
 
 /**
+ * Options for the repair-logical-not codemod.
+ */
+export type RepairLogicalNotCodemodOptions = Readonly<Record<string, never>>;
+
+/**
+ * Options for the repair-argument-separators codemod.
+ */
+export type RepairArgumentSeparatorsCodemodOptions = Readonly<Record<string, never>>;
+
+export type RepairUppercaseOperatorsCodemodOptions = Readonly<Record<string, never>>;
+
+/**
+ * A single text edit produced by the repair-logical-not codemod.
+ */
+export type RepairLogicalNotEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by `applyRepairLogicalNotCodemod`.
+ */
+export type RepairLogicalNotResult = CodemodResult;
+
+/**
+ * A single text edit produced by the repair-argument-separators codemod.
+ */
+export type RepairArgumentSeparatorsEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by `applyRepairArgumentSeparatorsCodemod`.
+ */
+export type RepairArgumentSeparatorsResult = CodemodResult;
+
+/**
+ * A single text edit produced by the repair-uppercase-operators codemod.
+ */
+export type RepairUppercaseOperatorsEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by `applyRepairUppercaseOperatorsCodemod`.
+ */
+export type RepairUppercaseOperatorsResult = CodemodResult;
+
+/**
  * A single text edit produced by the scientific-notation codemod.
  */
 export type ScientificNotationEdit = CodemodEdit;
@@ -293,7 +335,10 @@ export type RefactorCodemodId =
     | "scientificNotation"
     | "globalvarToGlobal"
     | "loopLengthHoisting"
-    | "namingConvention";
+    | "namingConvention"
+    | "repairLogicalNot"
+    | "repairArgumentSeparators"
+    | "repairUppercaseOperators";
 
 /**
  * Normalized config payloads keyed by registered codemod id.
@@ -304,6 +349,9 @@ export interface RefactorCodemodConfigMap {
     globalvarToGlobal: GlobalvarToGlobalCodemodOptions;
     loopLengthHoisting: LoopLengthHoistingCodemodOptions;
     namingConvention: NamingConventionPolicy;
+    repairLogicalNot: RepairLogicalNotCodemodOptions;
+    repairArgumentSeparators: RepairArgumentSeparatorsCodemodOptions;
+    repairUppercaseOperators: RepairUppercaseOperatorsCodemodOptions;
 }
 
 /**
