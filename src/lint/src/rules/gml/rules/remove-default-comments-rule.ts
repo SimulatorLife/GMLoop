@@ -1,8 +1,7 @@
-import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import type { GmlRuleDefinition } from "../index.js";
-import { createMeta, reportProgramTextRewrite } from "../rule-base-helpers.js";
+import { createMeta, reportProgramTextRewrite, rewriteSourceLines } from "../rule-base-helpers.js";
 
 const DEFAULT_COMMENT_PLACEHOLDER_FRAGMENTS = Object.freeze([
     "Script assets have changed for v2.3.0",
@@ -47,12 +46,9 @@ export function createRemoveDefaultCommentsRule(definition: GmlRuleDefinition): 
         create(context) {
             return Object.freeze({
                 Program() {
-                    reportProgramTextRewrite(context, definition, (sourceText) => {
-                        const lineEnding = Core.dominantLineEnding(sourceText);
-                        const sourceLines = sourceText.split(/\r?\n/u);
-                        const rewrittenLines = sourceLines.filter((line) => !isDefaultPlaceholderCommentLine(line));
-                        return rewrittenLines.join(lineEnding);
-                    });
+                    reportProgramTextRewrite(context, definition, (sourceText) =>
+                        rewriteSourceLines(sourceText, (line) => (isDefaultPlaceholderCommentLine(line) ? null : line))
+                    );
                 }
             });
         }

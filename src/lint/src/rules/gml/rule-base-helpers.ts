@@ -730,6 +730,41 @@ export function applySourceTextEdits(sourceText: string, edits: ReadonlyArray<So
     return rewritten;
 }
 
+/**
+ * Splits source text on `\r?\n`, applies `transform` to each line, and joins
+ * the surviving lines back together using the dominant line ending from the
+ * original source. The transform callback receives the line, its index in the
+ * original array, and the full array of source lines. Returning `null` drops
+ * the line from the output entirely; returning a string replaces it.
+ *
+ * This consolidates the `Core.dominantLineEnding` + `text.split(/\r?\n/u)` +
+ * `result.join(lineEnding)` boilerplate that was previously copy-pasted into
+ * `no-empty-comments`, `remove-default-comments`, `no-assignment-in-condition`,
+ * and `normalize-directives`. Each of those rules now passes a per-line
+ * transform to this single helper instead of re-implementing the split/join
+ * mechanics.
+ *
+ * @param sourceText Full source text.
+ * @param transform Per-line transform; return `null` to drop the line.
+ * @returns The rewritten source text with the dominant line ending preserved.
+ */
+export function rewriteSourceLines(
+    sourceText: string,
+    transform: (line: string, index: number, sourceLines: ReadonlyArray<string>) => string | null
+): string {
+    const lineEnding = Core.dominantLineEnding(sourceText);
+    const sourceLines = sourceText.split(/\r?\n/u);
+    const rewrittenLines: Array<string> = [];
+    for (let index = 0; index < sourceLines.length; index += 1) {
+        const result = transform(sourceLines[index] ?? "", index, sourceLines);
+        if (result !== null) {
+            rewrittenLines.push(result);
+        }
+    }
+
+    return rewrittenLines.join(lineEnding);
+}
+
 export function computeLineStartOffsets(sourceText: string): Array<number> {
     const offsets = [0];
     for (let index = 0; index < sourceText.length; index += 1) {
