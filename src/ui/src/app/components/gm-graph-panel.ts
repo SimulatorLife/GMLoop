@@ -6,6 +6,7 @@ import { type GraphVisualizationUiModel, hasGraphEdges, hasLoadedGraphIndex } fr
 import {
     createGraphLayout,
     filterGraphLayoutForDisplay,
+    type GraphLayout,
     type GraphLayoutNode,
     type GraphLegendNodeKind,
     type GraphNodeKindLegendItem,
@@ -104,6 +105,14 @@ export class GmGraphPanel extends LightDomLitElement {
     #lastModelReference: GraphVisualizationUiModel | null = null;
     #initializedFiltersForModel = false;
 
+    #cachedModel: GraphVisualizationUiModel | null = null;
+    #cachedLayout: GraphLayout | null = null;
+    #cachedNodeItems: ReadonlyArray<GraphNodeKindLegendItem> | null = null;
+    #cachedEdgeTypes: ReadonlyArray<GraphVisualizationEdgeType> | null = null;
+    #cachedVisibleLayout: GraphLayout | null = null;
+    #cachedJsonValue: string | null = null;
+    #lastSearchQuery = "";
+
     #panX = 0;
     #panY = 0;
     #zoomScale = 1;
@@ -117,6 +126,7 @@ export class GmGraphPanel extends LightDomLitElement {
         this.#panY = 0;
         this.#zoomScale = 1;
         this.#selectedNodeId = null;
+        this.#cachedVisibleLayout = null;
         this.requestUpdate();
     };
 
@@ -171,6 +181,7 @@ export class GmGraphPanel extends LightDomLitElement {
                     this.#enabledEdgeTypes.add(type);
                 }
             }
+            this.#cachedVisibleLayout = null;
         }
     }
 
@@ -256,6 +267,7 @@ export class GmGraphPanel extends LightDomLitElement {
         } else {
             this.#enabledNodeKinds.add(kind);
         }
+        this.#cachedVisibleLayout = null;
         this.requestUpdate();
     }
 
@@ -265,6 +277,7 @@ export class GmGraphPanel extends LightDomLitElement {
         } else {
             this.#enabledEdgeTypes.add(type);
         }
+        this.#cachedVisibleLayout = null;
         this.requestUpdate();
     }
 
@@ -401,19 +414,46 @@ export class GmGraphPanel extends LightDomLitElement {
         }
 
         this.#syncFilterDefaults();
+
+        const modelChanged = this.#cachedModel !== this.model;
+        if (modelChanged) {
+            this.#cachedModel = this.model;
+            this.#cachedLayout = createGraphLayout(this.model.data.nodes, this.model.data.edges);
+            this.#cachedNodeItems = listGraphNodeKindLegendItems(this.model.data.nodes);
+            this.#cachedEdgeTypes = listGraphEdgeTypes(this.model.data.edges);
+            this.#cachedVisibleLayout = null;
+        }
+
+        const query = this.state.searchQuery.trim().toLowerCase();
+        if (query !== this.#lastSearchQuery) {
+            this.#lastSearchQuery = query;
+            this.#cachedVisibleLayout = null;
+        }
+
+        if (this.#cachedVisibleLayout === null) {
+            this.#cachedVisibleLayout = filterGraphLayoutForDisplay({
+                enabledEdgeTypes: this.#enabledEdgeTypes,
+                enabledNodeKinds: resolveEffectiveGraphNodeKinds(this.model.data.nodes, this.#enabledNodeKinds),
+                layout: this.#cachedLayout!,
+                matchesNode: (node) => this.#matchesSearch(node)
+            });
+            this.#cachedJsonValue = null;
+        }
+
         const graphPageClassName = this.state.activePage === "graph" ? "page content-page active" : "page content-page";
-        const layout = createGraphLayout(this.model.data.nodes, this.model.data.edges);
-        const nodeItems = listGraphNodeKindLegendItems(this.model.data.nodes);
-        const edgeTypes = listGraphEdgeTypes(this.model.data.edges);
-        const visibleLayout = filterGraphLayoutForDisplay({
-            enabledEdgeTypes: this.#enabledEdgeTypes,
-            enabledNodeKinds: resolveEffectiveGraphNodeKinds(this.model.data.nodes, this.#enabledNodeKinds),
-            layout,
-            matchesNode: (node) => this.#matchesSearch(node)
-        });
-        const { edges: visibleEdges, nodes: visibleNodes } = visibleLayout;
+        const layout = this.#cachedLayout!;
+        const nodeItems = this.#cachedNodeItems!;
+        const edgeTypes = this.#cachedEdgeTypes!;
+        const { edges: visibleEdges, nodes: visibleNodes } = this.#cachedVisibleLayout;
         const selectedNode = layout.nodes.find((node) => node.id === this.#selectedNodeId) ?? null;
-        const jsonValue = JSON.stringify({ edges: visibleEdges, nodes: visibleNodes }, null, 2);
+
+        let jsonValue = "";
+        if (this.state.activeGraphView === "json") {
+            if (this.#cachedJsonValue === null) {
+                this.#cachedJsonValue = JSON.stringify({ edges: visibleEdges, nodes: visibleNodes }, null, 2);
+            }
+            jsonValue = this.#cachedJsonValue;
+        }
 
         return html`
             <section id="graph-page" class=${graphPageClassName}>
