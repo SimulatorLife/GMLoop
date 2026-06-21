@@ -1031,6 +1031,37 @@ void test("no-assignment-in-condition does not rewrite grouped multiline conditi
     assertEquals(result.output, input);
 });
 
+void test("no-assignment-in-condition preserves bitwise compound assignments inside conditions", () => {
+    // GML supports bitwise compound assignments (|=, &=, ^=). A prior
+    // implementation that only excluded the arithmetic compound prefixes
+    // (+-*/%) from its lookbehind set rewrote `if (x |= y)` into the
+    // syntactically invalid `if (x |== y)`. The rule must leave every
+    // compound-assignment prefix — including bitwise — untouched while
+    // still rewriting bare `=` to `==`.
+    const input = [
+        "if (value = target) act();",
+        "if (flags |= mask) act();",
+        "if (flags &= mask) act();",
+        "if (flags ^= mask) act();",
+        "if (bits <<= 1) act();",
+        "if (bits >>= 1) act();",
+        ""
+    ].join("\n");
+    const expected = [
+        "if (value == target) act();",
+        "if (flags |= mask) act();",
+        "if (flags &= mask) act();",
+        "if (flags ^= mask) act();",
+        "if (bits <<= 1) act();",
+        "if (bits >>= 1) act();",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("no-assignment-in-condition", input, {});
+    assertEquals(result.messages.length > 0, true);
+    assertEquals(result.output, expected);
+});
+
 void test("no-globalvar diagnoses declared globals", () => {
     const input = [
         "globalvar score;",

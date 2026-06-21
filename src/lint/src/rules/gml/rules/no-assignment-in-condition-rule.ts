@@ -4,7 +4,12 @@ import type { GmlRuleDefinition } from "../index.js";
 import { createMeta, reportFullTextRewrite, rewriteSourceLines } from "../rule-base-helpers.js";
 
 function normalizeConditionAssignments(conditionText: string): string {
-    return conditionText.replaceAll(/(?<![=!<>+\-*/%])=(?![=])/g, "==");
+    // The lookbehind set enumerates every GML operator whose terminal `=`
+    // must NOT be rewritten: `==`, `!=`, `<=`, `>=`, `+=`, `-=`, `*=`, `/=`,
+    // `%=`, `<<=`, `>>=`, plus the bitwise compound forms `&=`, `^=`, `|=`.
+    // Omitting the bitwise characters mangles `if (x |= y)` into the
+    // syntactically invalid `if (x |== y)`.
+    return conditionText.replaceAll(/(?<![=!<>+\-*/%&|^])=(?![=])/g, "==");
 }
 
 function rewriteControlConditionAssignments(sourceText: string): string {
