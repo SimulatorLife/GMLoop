@@ -5,14 +5,8 @@ import type { GmlRuleDefinition } from "../index.js";
 import { createMeta } from "../rule-base-helpers.js";
 
 const LOGICAL_NOT_ALIAS = "not";
-const LOGICAL_NOT_OPERATOR = "!";
 const WHITESPACE_PATTERN = /\s/u;
 const WORD_OPERATOR_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/u;
-const WORD_OPERATOR_ALIASES = Object.freeze(
-    [...Core.OPERATOR_ALIAS_MAP.keys()]
-        .filter((operator) => operator !== LOGICAL_NOT_ALIAS && WORD_OPERATOR_PATTERN.test(operator))
-        .sort((left, right) => right.length - left.length)
-);
 const OPERATOR_ALIASES_BY_CANONICAL = createOperatorAliasesByCanonical();
 const MACRO_DECLARATION_PATTERN = /^\s*#macro\s+([A-Za-z_][A-Za-z0-9_]*)\b/gmu;
 
