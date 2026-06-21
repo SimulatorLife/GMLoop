@@ -273,6 +273,9 @@ importers:
       '@gmloop/fixture-runner':
         specifier: workspace:*
         version: link:../fixture-runner
+      '@gmloop/refactor':
+        specifier: workspace:*
+        version: link:../refactor
       eslint:
         specifier: 'catalog:'
         version: 10.4.0

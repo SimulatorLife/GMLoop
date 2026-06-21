@@ -1,4 +1,5 @@
 import { type FixtureAdapter, FixtureRunner } from "@gmloop/fixture-runner";
+import { Refactor } from "@gmloop/refactor";
 import { ESLint } from "eslint";
 
 import { createLintRuleEntriesFromProjectConfig } from "../../src/configs/index.js";
@@ -69,7 +70,40 @@ export function createLintFixtureAdapter(): FixtureAdapter {
                     filePath: `${fixtureCase.caseId}.gml`
                 })
             );
-            const lintedOutput = result.output ?? inputText ?? "";
+            let lintedOutput = result.output ?? inputText ?? "";
+
+            if (
+                ruleEntries["gml/require-argument-separators"] &&
+                ruleEntries["gml/require-argument-separators"] !== "off"
+            ) {
+                const repairResult =
+                    Refactor.RepairArgumentSeparators.applyRepairArgumentSeparatorsCodemod(lintedOutput);
+                if (repairResult.changed) {
+                    lintedOutput = repairResult.outputText;
+                }
+            }
+
+            if (
+                ruleEntries["gml/normalize-operator-aliases"] &&
+                ruleEntries["gml/normalize-operator-aliases"] !== "off"
+            ) {
+                const repairLogicalNotResult = Refactor.RepairLogicalNot.applyRepairLogicalNotCodemod(lintedOutput);
+                if (repairLogicalNotResult.changed) {
+                    lintedOutput = repairLogicalNotResult.outputText;
+                }
+                const repairUppercaseResult =
+                    Refactor.RepairUppercaseOperators.applyRepairUppercaseOperatorsCodemod(lintedOutput);
+                if (repairUppercaseResult.changed) {
+                    lintedOutput = repairUppercaseResult.outputText;
+                }
+            }
+
+            if (ruleEntries["gml/no-scientific-notation"] && ruleEntries["gml/no-scientific-notation"] !== "off") {
+                const repairScientificResult = Refactor.ScientificNotation.applyScientificNotationCodemod(lintedOutput);
+                if (repairScientificResult.changed) {
+                    lintedOutput = repairScientificResult.outputText;
+                }
+            }
 
             return {
                 resultKind: "text" as const,

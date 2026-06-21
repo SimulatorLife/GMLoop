@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@gmloop/fixture-runner": "workspace:*",
+    "@gmloop/refactor": "workspace:*",
     "eslint": "catalog:",
     "typescript": "catalog:"
   },
