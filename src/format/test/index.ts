@@ -1,2 +1,1 @@
-export { createFormatFixtureAdapter } from "./fixture-adapter.js";
-export { createFormatFixtureSuiteDefinition } from "./fixture-suite-definition.js";
+export { createFormatFixtureAdapter, createFormatFixtureSuiteDefinition } from "./fixture-adapter.js";

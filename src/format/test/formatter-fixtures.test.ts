@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { FixtureRunner } from "@gmloop/fixture-runner";
 
-import { createFormatFixtureSuiteDefinition } from "./fixture-suite-definition.js";
+import { createFormatFixtureSuiteDefinition } from "./fixture-adapter.js";
 
 const fixtureSuite = createFormatFixtureSuiteDefinition();
 

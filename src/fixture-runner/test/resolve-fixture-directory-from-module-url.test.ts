@@ -6,7 +6,7 @@ import { resolveFixtureDirectoryFromModuleUrl } from "../src/runner/resolve-fixt
 
 void test("resolveFixtureDirectoryFromModuleUrl uses the source layout outside dist", () => {
     const resolved = resolveFixtureDirectoryFromModuleUrl({
-        moduleUrl: "file:///workspace/GMLoop/src/format/test/fixture-suite-definition.ts",
+        moduleUrl: "file:///workspace/GMLoop/src/format/test/fixture-adapter.ts",
         sourceRelativeSegments: ["fixtures"],
         distRelativeSegments: ["..", "..", "test", "fixtures"]
     });
@@ -16,7 +16,7 @@ void test("resolveFixtureDirectoryFromModuleUrl uses the source layout outside d
 
 void test("resolveFixtureDirectoryFromModuleUrl switches to the dist layout when compiled tests run", () => {
     const resolved = resolveFixtureDirectoryFromModuleUrl({
-        moduleUrl: "file:///workspace/GMLoop/src/refactor/dist/test/fixture-suite-definition.js",
+        moduleUrl: "file:///workspace/GMLoop/src/refactor/dist/test/fixture-adapter.js",
         sourceRelativeSegments: ["fixtures"],
         distRelativeSegments: ["..", "..", "test", "fixtures"]
     });
