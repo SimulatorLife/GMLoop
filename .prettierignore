@@ -1,10 +1,13 @@
 # Ignore build artifacts and external installs when formatting this repository.
 node_modules/
 vendor/
-src/parser/node_modules/
-src/format/node_modules/
-src/cli/node_modules/
+**/node_modules/
 src/parser/generated/
+reports/
+resources/
+scripts/
+.qwen/
+.playwright-mcp/
 dist/
 build/
 coverage/
@@ -19,5 +22,11 @@ coverage/
 **/*.d.ts.map
 **/*.js.map
 *.gml
+*.yy
+*.yyp
 *.json
 *.g4
+.gmcache/
+.gmloop/
+.aiexclude
+tmp/

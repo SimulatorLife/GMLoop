@@ -82,8 +82,9 @@ void describe("project-index/project-tree", () => {
     void it("skips generated cache and dependency directories while traversing the project tree", async () => {
         const projectRoot = "/project";
         const directories = new Map<string, Array<string>>([
-            [projectRoot, [".gmcache", "node_modules", "scripts"]],
+            [projectRoot, [".gmcache", "cache", "node_modules", "scripts"]],
             [path.join(projectRoot, ".gmcache"), ["generated.gml", "generated.yy"]],
+            [path.join(projectRoot, "cache"), ["cached.gml", "cached.yy"]],
             [path.join(projectRoot, "node_modules"), ["dependency.gml", "dependency.yy"]],
             [path.join(projectRoot, "scripts"), ["player.gml", "player.yy"]]
         ]);

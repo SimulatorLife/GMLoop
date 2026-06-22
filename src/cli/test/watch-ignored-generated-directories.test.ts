@@ -48,17 +48,20 @@ async function startWatchServer(
 }
 
 void describe("watch command ignored generated directories", () => {
-    void it("skips .gmcache files during startup scan and status reporting", async () => {
+    void it("skips .gmcache and cache files during startup scan and status reporting", async () => {
         const testRoot = path.join("/tmp", `watch-ignore-generated-${Date.now()}-${randomUUID()}`);
         const projectScriptPath = path.join(testRoot, "scripts", "scr_player.gml");
         const generatedScriptPath = path.join(testRoot, ".gmcache", "generated", "scr_compat.gml");
+        const cacheScriptPath = path.join(testRoot, "cache", "generated", "scr_cached.gml");
         const abortController = new AbortController();
         const watchFactory = createMockWatchFactory();
 
         await mkdir(path.dirname(projectScriptPath), { recursive: true });
         await mkdir(path.dirname(generatedScriptPath), { recursive: true });
+        await mkdir(path.dirname(cacheScriptPath), { recursive: true });
         await writeFile(projectScriptPath, "function scr_player() { return 1; }", "utf8");
         await writeFile(generatedScriptPath, "function scr_compat() { return 2; }", "utf8");
+        await writeFile(cacheScriptPath, "function scr_cached() { return 3; }", "utf8");
 
         const { statusBaseUrl, watchPromise } = await startWatchServer(testRoot, abortController, watchFactory);
 
@@ -73,7 +76,9 @@ void describe("watch command ignored generated directories", () => {
             );
             assert.ok(
                 (payload.recentPatches ?? []).every(
-                    (patch) => patch.filePath !== path.join(".gmcache", "generated", "scr_compat.gml")
+                    (patch) =>
+                        patch.filePath !== path.join(".gmcache", "generated", "scr_compat.gml") &&
+                        patch.filePath !== path.join("cache", "generated", "scr_cached.gml")
                 ),
                 "ignored generated files should not appear in patch history"
             );
@@ -84,7 +89,7 @@ void describe("watch command ignored generated directories", () => {
         }
     });
 
-    void it("ignores .gmcache file change events after the watcher is already running", async () => {
+    void it("ignores .gmcache and cache file change events after the watcher is already running", async () => {
         const listenerCapture: { listener: WatchListener<string> | undefined } = { listener: undefined };
         const watchFactory = createMockWatchFactory(listenerCapture);
 
@@ -98,14 +103,18 @@ void describe("watch command ignored generated directories", () => {
                 await waitForStatus(context.baseUrl, (status) => status.scanComplete === true, 2000);
 
                 const generatedScriptPath = path.join(context.testDir, ".gmcache", "generated", "scr_compat.gml");
+                const cacheScriptPath = path.join(context.testDir, "cache", "generated", "scr_cached.gml");
                 await mkdir(path.dirname(generatedScriptPath), { recursive: true });
+                await mkdir(path.dirname(cacheScriptPath), { recursive: true });
                 await writeFile(generatedScriptPath, "function scr_compat() { return 2; }", "utf8");
+                await writeFile(cacheScriptPath, "function scr_cached() { return 3; }", "utf8");
 
                 const beforeStatus = await fetchStatusPayload(context.baseUrl);
                 const beforePatchCount = beforeStatus.totalPatchCount ?? 0;
 
                 assert.ok(listenerCapture.listener, "watch listener should be captured");
                 listenerCapture.listener?.("change", path.join(".gmcache", "generated", "scr_compat.gml"));
+                listenerCapture.listener?.("change", path.join("cache", "generated", "scr_cached.gml"));
 
                 // Poll until the patch count stabilizes or the deadline is reached.
                 // Using a polling approach instead of a fixed delay makes this test

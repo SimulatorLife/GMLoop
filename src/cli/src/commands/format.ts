@@ -1347,6 +1347,11 @@ async function formatDirectoryEntry(filePath, currentIgnorePaths) {
     }
 
     if (stats.isDirectory()) {
+        const dirName = path.basename(filePath);
+        if (Core.DEFAULT_PROJECT_EXCLUDES.directoryNames.includes(dirName)) {
+            recordSkippedDirectory(filePath);
+            return;
+        }
         if (await shouldSkipDirectory(filePath, currentIgnorePaths)) {
             return;
         }

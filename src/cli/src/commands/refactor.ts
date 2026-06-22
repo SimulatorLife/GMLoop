@@ -384,6 +384,9 @@ async function collectGmlFilesFromTarget(
                 for (const entry of entries) {
                     const entryPath = path.join(directoryPath, entry.name);
                     if (entry.isDirectory()) {
+                        if (Core.DEFAULT_PROJECT_EXCLUDES.directoryNames.includes(entry.name)) {
+                            continue;
+                        }
                         pendingDirectories.push(entryPath);
                         continue;
                     }
@@ -408,7 +411,7 @@ async function collectGmlFilesFromTarget(
     collectedFiles.add(path.relative(projectRoot, absoluteTargetPath));
 }
 
-async function collectTargetGmlFiles(projectRoot: string, targetPaths: Array<string>): Promise<Array<string>> {
+export async function collectTargetGmlFiles(projectRoot: string, targetPaths: Array<string>): Promise<Array<string>> {
     const collectedFiles = new Set<string>();
     await Core.runSequentially(targetPaths, async (targetPath) => {
         await collectGmlFilesFromTarget(projectRoot, targetPath, collectedFiles);

@@ -76,6 +76,10 @@ function* walkDirectoryTree(rootDirectoryPath: string): Generator<string> {
                 continue;
             }
 
+            if (Core.DEFAULT_PROJECT_EXCLUDES.directoryNames.includes(entry.name)) {
+                continue;
+            }
+
             const entryPath = path.join(currentDirectory, entry.name);
             pending.push(entryPath);
             yield entryPath;

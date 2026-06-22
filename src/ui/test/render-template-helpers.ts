@@ -28,9 +28,31 @@ function isRepeatDirectiveResult(value: unknown): value is RepeatDirectiveResult
     );
 }
 
+type UnsafeHtmlDirectiveResult = Readonly<{
+    values: ReadonlyArray<unknown>;
+}>;
+
+function isUnsafeHtmlDirectiveResult(value: unknown): value is UnsafeHtmlDirectiveResult {
+    if (typeof value !== "object" || value === null) {
+        return false;
+    }
+    const directive = Reflect.get(value, "_$litDirective$");
+    const values = Reflect.get(value, "values");
+    return (
+        typeof directive === "function" &&
+        Reflect.get(directive, "directiveName") === "unsafeHTML" &&
+        Array.isArray(values) &&
+        values.length === 1
+    );
+}
+
 export function renderTemplateValue(value: unknown): string {
     if (Array.isArray(value)) {
         return value.map((entry) => renderTemplateValue(entry)).join("");
+    }
+
+    if (isUnsafeHtmlDirectiveResult(value)) {
+        return renderTemplateValue(value.values[0]);
     }
 
     if (isTemplateResult(value)) {
