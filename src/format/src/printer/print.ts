@@ -65,7 +65,7 @@ import {
     softline,
     willBreak
 } from "./prettier-doc-builders.js";
-import { isLastStatement, isSkippableSemicolonWhitespace, optionalSemicolon } from "./semicolons.js";
+import { isLastStatement, optionalSemicolon } from "./semicolons.js";
 import { buildClauseGroup, printSingleClauseStatement } from "./single-clause-statement.js";
 import { shouldAddNewlinesAroundStatement } from "./statement-spacing-policy.js";
 import { handleIntermediateTrailingSpacing, handleTerminalTrailingSpacing } from "./statement-traversal-spacing.js";
@@ -1425,19 +1425,6 @@ function buildStatementPartsForPrinter({
     });
 
     const isFirstStatementInBlock = index === 0 && childPath.parent?.type !== Core.PROGRAM;
-
-    const textForSemicolons = originalTextCache || "";
-    let hasTerminatingSemicolon = false;
-    if (nodeEndIndex !== null) {
-        let cursor = nodeEndIndex;
-        while (
-            cursor < textForSemicolons.length &&
-            isSkippableSemicolonWhitespace(textForSemicolons.charCodeAt(cursor))
-        ) {
-            cursor++;
-        }
-        hasTerminatingSemicolon = textForSemicolons[cursor] === ";";
-    }
 
     const isVariableDeclaration = node.type === Core.VARIABLE_DECLARATION;
     const isStaticDeclaration = isVariableDeclaration && node.kind === "static";

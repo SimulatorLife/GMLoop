@@ -6,29 +6,32 @@ import { type PartialSemanticAnalyzer, Refactor } from "../src/index.js";
 const { applyRepairLogicalNotCodemod } = Refactor.RepairLogicalNot;
 const { applyRepairArgumentSeparatorsCodemod } = Refactor.RepairArgumentSeparators;
 
-test("repairLogicalNot codemod", async () => {
+void test("repairLogicalNot codemod", async () => {
     // Lowercase and uppercase operators should be repaired
-    assert.strictEqual((await applyRepairLogicalNotCodemod("if (not left) {}")).outputText, "if (! left) {}");
-    assert.strictEqual((await applyRepairLogicalNotCodemod("if (NOT left) {}")).outputText, "if (! left) {}");
+    const r1 = await applyRepairLogicalNotCodemod("if (not left) {}");
+    assert.strictEqual(r1.outputText, "if (! left) {}");
+
+    const r2 = await applyRepairLogicalNotCodemod("if (NOT left) {}");
+    assert.strictEqual(r2.outputText, "if (! left) {}");
 
     // Comments, strings, macro declarations, and call expressions should be preserved
-    assert.strictEqual((await applyRepairLogicalNotCodemod("var not = 1;")).outputText, "var not = 1;");
-    assert.strictEqual((await applyRepairLogicalNotCodemod("called = not(value);")).outputText, "called = not(value);");
-    assert.strictEqual(
-        (await applyRepairLogicalNotCodemod("// this is not a comment to rewrite")).outputText,
-        "// this is not a comment to rewrite"
-    );
-    assert.strictEqual(
-        (await applyRepairLogicalNotCodemod('var s = "not a string";')).outputText,
-        'var s = "not a string";'
-    );
-    assert.strictEqual(
-        (await applyRepairLogicalNotCodemod("#macro not 1\nval = not;")).outputText,
-        "#macro not 1\nval = not;"
-    );
+    const r3 = await applyRepairLogicalNotCodemod("var not = 1;");
+    assert.strictEqual(r3.outputText, "var not = 1;");
+
+    const r4 = await applyRepairLogicalNotCodemod("called = not(value);");
+    assert.strictEqual(r4.outputText, "called = not(value);");
+
+    const r5 = await applyRepairLogicalNotCodemod("// this is not a comment to rewrite");
+    assert.strictEqual(r5.outputText, "// this is not a comment to rewrite");
+
+    const r6 = await applyRepairLogicalNotCodemod('var s = "not a string";');
+    assert.strictEqual(r6.outputText, 'var s = "not a string";');
+
+    const r7 = await applyRepairLogicalNotCodemod("#macro not 1\nval = not;");
+    assert.strictEqual(r7.outputText, "#macro not 1\nval = not;");
 });
 
-test("repairLogicalNot codemod preserves user-defined 'not' / 'NOT' symbols from semantic index", async () => {
+void test("repairLogicalNot codemod preserves user-defined 'not' / 'NOT' symbols from semantic index", async () => {
     const mockSemantic: PartialSemanticAnalyzer = {
         resolveSymbolId(name: string) {
             if (name === "NOT" || name === "not") {
@@ -51,7 +54,7 @@ test("repairLogicalNot codemod preserves user-defined 'not' / 'NOT' symbols from
     assert.strictEqual(result3.outputText, "if (! left) {}");
 });
 
-test("repairArgumentSeparators codemod", () => {
+void test("repairArgumentSeparators codemod", () => {
     // Missing argument separators should be repaired
     assert.strictEqual(applyRepairArgumentSeparatorsCodemod("foo(a b c)").outputText, "foo(a, b, c)");
     // Comments, strings, and standard layouts should be preserved

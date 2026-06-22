@@ -16,7 +16,7 @@ import {
     resolvePortableAbsolutePath,
     walkAncestorDirectories
 } from "../src/fs/path.js";
-import { DEFAULT_PROJECT_EXCLUDES,isProjectPathExcluded } from "../src/project-config/project-excludes.js";
+import { DEFAULT_PROJECT_EXCLUDES, isProjectPathExcluded } from "../src/project-config/project-excludes.js";
 
 void describe("path-utils", () => {
     void describe("resolveContainedRelativePath", () => {

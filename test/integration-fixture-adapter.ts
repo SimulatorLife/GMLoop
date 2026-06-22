@@ -104,44 +104,48 @@ export function createIntegrationFixtureAdapter() {
                         filePath: `${fixtureCase.caseId}.gml`
                     })
                 );
-                let lintedOutput = result.output ?? refactoredText;
+                let currentLintedOutput = result.output ?? refactoredText;
 
                 if (
                     lintRuleEntries["gml/require-argument-separators"] &&
                     lintRuleEntries["gml/require-argument-separators"] !== "off"
                 ) {
                     const repairResult =
-                        Refactor.RepairArgumentSeparators.applyRepairArgumentSeparatorsCodemod(lintedOutput);
+                        Refactor.RepairArgumentSeparators.applyRepairArgumentSeparatorsCodemod(currentLintedOutput);
                     if (repairResult.changed) {
-                        lintedOutput = repairResult.outputText;
+                        currentLintedOutput = repairResult.outputText;
                     }
                 }
 
+                let afterLogicalNotOutput: string;
                 if (
                     lintRuleEntries["gml/normalize-operator-aliases"] &&
                     lintRuleEntries["gml/normalize-operator-aliases"] !== "off"
                 ) {
                     const repairLogicalNotResult = await Refactor.RepairLogicalNot.applyRepairLogicalNotCodemod(
-                        lintedOutput,
+                        currentLintedOutput,
                         null
                     );
-                    if (repairLogicalNotResult.changed) {
-                        lintedOutput = repairLogicalNotResult.outputText;
-                    }
+                    afterLogicalNotOutput = repairLogicalNotResult.changed
+                        ? repairLogicalNotResult.outputText
+                        : currentLintedOutput;
+                } else {
+                    afterLogicalNotOutput = currentLintedOutput;
                 }
 
+                let finalLintedOutput = afterLogicalNotOutput;
                 if (
                     lintRuleEntries["gml/no-scientific-notation"] &&
                     lintRuleEntries["gml/no-scientific-notation"] !== "off"
                 ) {
-                    const repairScientificResult = Refactor.ScientificNotation.applyScientificNotationCodemod(lintedOutput);
+                    const repairScientificResult = Refactor.ScientificNotation.applyScientificNotationCodemod(finalLintedOutput);
                     if (repairScientificResult.changed) {
-                        lintedOutput = repairScientificResult.outputText;
+                        finalLintedOutput = repairScientificResult.outputText;
                     }
                 }
 
                 const outputText = await runProfiledStage("format", async () =>
-                    Format.format(lintedOutput, formatOptions)
+                    Format.format(finalLintedOutput, formatOptions)
                 );
 
                 return {

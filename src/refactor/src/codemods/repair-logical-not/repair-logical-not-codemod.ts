@@ -21,9 +21,7 @@ export async function applyRepairLogicalNotCodemod(
     }
 
     const edits: RepairLogicalNotEdit[] = [];
-    const scanState = Core.createStringCommentScanState();
     const sourceLength = sourceText.length;
-    let index = 0;
 
     // Collect macro declarations to avoid rewriting macro names
     const declaredMacroNames = new Set<string>();
@@ -35,6 +33,48 @@ export async function applyRepairLogicalNotCodemod(
         }
     }
 
+    // Pre-scan file to collect all unique case variants of "not" at operator alias locations
+    const notVariants = new Set<string>();
+    const preScanState = Core.createStringCommentScanState();
+    let preScanIndex = 0;
+    while (preScanIndex < sourceLength) {
+        const scannedIndex = Core.advanceStringCommentScan(sourceText, sourceLength, preScanIndex, preScanState, true);
+        if (scannedIndex !== preScanIndex) {
+            preScanIndex = scannedIndex;
+            continue;
+        }
+
+        if (isDirectiveLineAtIndex(sourceText, preScanIndex)) {
+            preScanIndex = findNextLineStart(sourceText, preScanIndex);
+            continue;
+        }
+
+        const word = sourceText.slice(preScanIndex, preScanIndex + 3);
+        if (word.toLowerCase() === "not") {
+            if (Core.isLogicalNotOperatorAliasAt(sourceText, preScanIndex)) {
+                notVariants.add(word);
+            }
+            preScanIndex += 3;
+        } else {
+            preScanIndex += 1;
+        }
+    }
+
+    // Resolve user-defined symbol existence for all collected variants upfront in parallel (no-await-in-loop fix)
+    const userDefinedVariants = new Set<string>();
+    if (semantic && notVariants.size > 0) {
+        const variantsList = [...notVariants];
+        const symbols = await Promise.all(variantsList.map((variant) => resolveSymbolId(variant, semantic)));
+        for (const [idx, symbol] of symbols.entries()) {
+            if (symbol !== null) {
+                userDefinedVariants.add(variantsList[idx]);
+            }
+        }
+    }
+
+    // Main scan to build edits
+    const scanState = Core.createStringCommentScanState();
+    let index = 0;
     while (index < sourceLength) {
         const scannedIndex = Core.advanceStringCommentScan(sourceText, sourceLength, index, scanState, true);
         if (scannedIndex !== index) {
@@ -49,7 +89,7 @@ export async function applyRepairLogicalNotCodemod(
 
         const word = sourceText.slice(index, index + 3);
         if (word.toLowerCase() === "not") {
-            const hasUserDefinedSymbol = semantic ? (await resolveSymbolId(word, semantic)) !== null : false;
+            const hasUserDefinedSymbol = userDefinedVariants.has(word);
             if (
                 !hasUserDefinedSymbol &&
                 !declaredMacroNames.has(word.toLowerCase()) &&
