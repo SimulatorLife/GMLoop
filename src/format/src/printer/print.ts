@@ -1401,7 +1401,7 @@ function buildStatementPartsForPrinter({
         return { parts, previousNodeHadNewlineAddedAfter };
     }
 
-    let semi = optionalSemicolon(node.type);
+    const semi = optionalSemicolon(node.type);
     const { startIndex: nodeStartIndex, endIndex: nodeEndIndex } = Core.resolveNodeIndexRangeWithSource(
         node,
         sourceMetadata
@@ -1459,13 +1459,6 @@ function buildStatementPartsForPrinter({
             parts.push(hardline);
         }
     }
-
-    semi = normalizeStatementSemicolon({
-        node,
-        semi,
-        hasTerminatingSemicolon,
-        isStaticDeclaration
-    });
 
     // Preserve the `statement; // trailing comment` shape that GameMaker
     // authors rely on. When the child doc ends with a trailing comment token
@@ -1537,61 +1530,6 @@ function addLeadingStatementSpacing({
     ) {
         parts.push(hardline);
     }
-}
-
-function normalizeStatementSemicolon({ node, semi, hasTerminatingSemicolon, isStaticDeclaration }) {
-    if (semi !== ";") {
-        return semi;
-    }
-
-    const initializerIsFunctionExpression =
-        node.type === Core.VARIABLE_DECLARATION &&
-        Array.isArray(node.declarations) &&
-        node.declarations.length === 1 &&
-        (node.declarations[0]?.init?.type === Core.FUNCTION_EXPRESSION ||
-            node.declarations[0]?.init?.type === Core.FUNCTION_DECLARATION);
-
-    if (initializerIsFunctionExpression && !hasTerminatingSemicolon) {
-        return semi;
-    }
-
-    const assignmentExpressionForSemicolonCheck =
-        node.type === Core.ASSIGNMENT_EXPRESSION
-            ? node
-            : node.type === Core.EXPRESSION_STATEMENT && node.expression?.type === Core.ASSIGNMENT_EXPRESSION
-              ? node.expression
-              : null;
-
-    const isFunctionAssignmentExpression =
-        assignmentExpressionForSemicolonCheck?.operator === "=" &&
-        assignmentExpressionForSemicolonCheck?.right?.type === "FunctionDeclaration";
-
-    if (isFunctionAssignmentExpression && !hasTerminatingSemicolon) {
-        // Preserve the explicit terminator when normalizing anonymous
-        // function assignments so the formatter emits `= function () {};`
-        // instead of silently dropping the semicolon. The semicolon is part
-        // of the statement boundary rather than the function expression
-        // itself, so we add it whenever the source omitted one and rely on the
-        // caller to elide it when the original text already contained a
-        // trailing `;`.
-        return semi;
-    }
-
-    // Check for static function assignments - these should have semicolons
-    if (!hasTerminatingSemicolon && isStaticDeclaration) {
-        const hasFunctionInitializer =
-            Array.isArray(node.declarations) &&
-            node.declarations.some((declaration) => {
-                const initType = declaration?.init?.type;
-                return initType === "FunctionExpression" || initType === "FunctionDeclaration";
-            });
-
-        if (hasFunctionInitializer) {
-            return semi;
-        }
-    }
-
-    return semi;
 }
 
 function applyTrailingSpacing({
