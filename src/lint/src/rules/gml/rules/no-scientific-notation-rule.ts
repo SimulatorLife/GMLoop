@@ -6,30 +6,14 @@ import { createMeta } from "../rule-base-helpers.js";
 
 const { forEachScientificNotationToken, toPlainDecimalFromScientificLiteral } = gmlRuleMalformedServices;
 
-type ScientificNotationFix = Readonly<{
-    start: number;
-    end: number;
-    replacement: string;
-}>;
-
-function collectScientificNotationFixes(sourceText: string): ReadonlyArray<ScientificNotationFix> {
-    const fixes: ScientificNotationFix[] = [];
-
-    forEachScientificNotationToken(sourceText, (start, end, scientificText) => {
-        const replacement = toPlainDecimalFromScientificLiteral(scientificText);
-        if (replacement && replacement !== scientificText) {
-            fixes.push(Object.freeze({ start, end, replacement }));
-        }
-    });
-
-    return fixes;
-}
-
 /**
  * Creates the `gml/no-scientific-notation` rule.
  *
- * Replaces unsupported scientific-notation numeric literals (for example,
- * `1e-11`) with equivalent plain decimal literals accepted by GML.
+ * Reports scientific-notation numeric literals such as `1e-11` that GML
+ * cannot parse natively. Each match is only flagged when the underlying
+ * plain-decimal conversion succeeds, so cases that exceed the formatter's
+ * fixed-literal length limit are left alone rather than producing a
+ * "reported but unfixable" diagnostic.
  */
 export function createNoScientificNotationRule(definition: GmlRuleDefinition): Rule.RuleModule {
     return Object.freeze({
@@ -38,13 +22,17 @@ export function createNoScientificNotationRule(definition: GmlRuleDefinition): R
             return Object.freeze({
                 Program() {
                     const sourceText = context.sourceCode.text;
-                    const fixes = collectScientificNotationFixes(sourceText);
-                    for (const fix of fixes) {
+                    forEachScientificNotationToken(sourceText, (start, _end, scientificText) => {
+                        const replacement = toPlainDecimalFromScientificLiteral(scientificText);
+                        if (!replacement || replacement === scientificText) {
+                            return;
+                        }
+
                         context.report({
-                            loc: context.sourceCode.getLocFromIndex(fix.start),
+                            loc: context.sourceCode.getLocFromIndex(start),
                             messageId: definition.messageId
                         });
-                    }
+                    });
                 }
             });
         }
