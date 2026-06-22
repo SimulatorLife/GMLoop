@@ -322,6 +322,24 @@ void test("shared view selector keeps inactive tabs visually unoutlined", () => 
     );
 });
 
+void test("docs toolbar aligns subcategory tabs with the search input field", () => {
+    const source = readFileSync(new URL("../../src/web/styles/docs.css", import.meta.url), "utf8");
+
+    // The Docs toolbar pairs the CLI/MCP/Linting/Formatting/Codemods tab strip
+    // with a search panel that contains a label, the input, and a result summary.
+    // A naive `align-items: start` would leave the tab strip aligned with the
+    // label text rather than the input. Center the tab strip so it lines up
+    // with the input on wide layouts, and stack the controls into a single
+    // column on narrow viewports.
+    const docsToolbarRuleMatch = /\.toolbar-docs-controls\s*\{([^{}]*)\}/u.exec(source);
+    assert.notEqual(docsToolbarRuleMatch, null);
+    const docsToolbarRuleBody = docsToolbarRuleMatch?.[1] ?? "";
+    assert.match(docsToolbarRuleBody, /align-items:\s*center;/u);
+    assert.doesNotMatch(docsToolbarRuleBody, /align-items:\s*start;/u);
+
+    assert.match(source, /@media\s*\(max-width:\s*720px\)\s*\{[\s\S]*?\.toolbar-docs-controls\s*\{([^{}]*)\}/u);
+});
+
 void test("disabled button styles preserve the disabled cursor on hover", () => {
     const componentsSource = readFileSync(new URL("../../src/web/styles/components.css", import.meta.url), "utf8");
     const liveReloadSource = readFileSync(new URL("../../src/web/styles/live-reload.css", import.meta.url), "utf8");

@@ -9,7 +9,10 @@
     display: grid;
     grid-template-columns: minmax(0, auto) minmax(280px, 720px);
     gap: var(--gm-space-lg);
-    align-items: start;
+    /* Center the tabs against the search panel so the CLI/MCP/Linting/Formatting/
+       Codemods selector aligns with the search input field instead of the
+       surrounding label and result summary text. */
+    align-items: center;
 }
 
 .toolbar-docs-controls .gm-view-selector,
@@ -22,6 +25,13 @@
     gap: var(--gm-space-sm);
     margin: 0 0 var(--gm-space-xl);
     max-width: 720px;
+}
+
+@media (max-width: 720px) {
+    .toolbar-docs-controls {
+        grid-template-columns: minmax(0, 1fr);
+        align-items: stretch;
+    }
 }
 
 .docs-search-label {
