@@ -74,3 +74,15 @@ void test("no-scientific-notation is enabled in the recommended config", () => {
         "Expected gml/no-scientific-notation to be in the recommended config"
     );
 });
+
+void test("no-scientific-notation stays silent when the plain-decimal conversion exceeds the formatter's fixed-literal limit", () => {
+    // Exponent 5000 exceeds the core scanner's MAX_FIXED_LITERAL_LENGTH of
+    // 4096, so `toPlainDecimalFromScientificLiteral` returns null. The rule
+    // must skip these tokens rather than emitting a diagnostic that points
+    // at a fix the formatter cannot apply.
+    const input = "var huge = 1e5000;\n";
+    const result = runNoScientificNotationRule(input);
+
+    assertEquals(result.messageCount, 0);
+    assertEquals(result.output, input);
+});
