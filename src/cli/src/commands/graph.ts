@@ -49,7 +49,8 @@ import { findRepoRootSync } from "../shared/repo-root.js";
 import { discoverProjectRoot, resolveExplicitWorkflowTargetPath } from "../workflow/project-root.js";
 import {
     readGameMakerCliActiveProjectStateProjectPath,
-    resolveGameMakerCliActiveProjectStatePath
+    resolveGameMakerCliActiveProjectStatePath,
+    writeGameMakerCliActiveProjectState
 } from "./game-maker-cli.js";
 
 type GraphCommandSharedOptions = {
@@ -66,6 +67,7 @@ type GraphCommandSharedOptions = {
     output?: string;
     serve?: boolean;
     liveReload?: boolean;
+    projectState?: string;
 };
 
 type GraphResolutionContext = Readonly<{
@@ -1202,6 +1204,29 @@ async function resolveGraphVisualizationServeStartupState(
             source: "working-directory"
         };
     } catch {
+        try {
+            const statePath = resolveGameMakerCliActiveProjectStatePath({
+                env: process.env,
+                statePathOption: options.projectState
+            });
+            const activeProjectPath = await readGameMakerCliActiveProjectStateProjectPath({ statePath });
+            if (activeProjectPath !== null) {
+                const nextOptions = {
+                    ...options,
+                    path: activeProjectPath
+                };
+                const context = await resolveGraphContext(nextOptions);
+                await ensureGraphIndexForQuery(nextOptions, context);
+                return {
+                    context,
+                    selectedPaths: [activeProjectPath],
+                    source: "active-project-state"
+                };
+            }
+        } catch {
+            // Ignore state path load failures and fall through to demo project
+        }
+
         const defaultServeTargetPath = resolveDefaultGraphVisualizationServeTargetPath();
         if (defaultServeTargetPath === null) {
             return {
@@ -1895,6 +1920,21 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             await stopPreviousLiveReloadProcess;
             await refreshActiveVisualizationArtifacts(nextContext);
             activeStartupState = null;
+
+            if (source !== "active-project-state") {
+                try {
+                    await writeGameMakerCliActiveProjectState({
+                        env: process.env,
+                        projectPath: resolvedSelectedPath,
+                        statePathOption: options.projectState
+                    });
+                } catch (error) {
+                    console.error(
+                        `[graph visualize] Failed to write active project state: ${Core.getErrorMessage(error)}`
+                    );
+                }
+            }
+
             const nextPayloadString = safeStringifyVisualizationPayload();
             markServeRevisionChanged();
             return Object.freeze({ changed: previousPayloadString !== nextPayloadString, projectChanged });
@@ -2436,6 +2476,7 @@ export function createGraphCommand(): Command {
         .addOption(
             new Option("--live-reload", "Auto-rebuild and auto-reload served UI when src/ui/src changes").default(true)
         )
+        .addOption(new Option("--project-state <path>", "Active-project state file written by GMLoop UI."))
         .action(async function graphVisualizeCommandAction() {
             await runGraphCommandAction(async () => {
                 await runGraphVisualizeAction(this.opts<GraphCommandSharedOptions>());
@@ -2464,6 +2505,7 @@ export const __graphCommandTest__ = Object.freeze({
     resolveGraphVisualizationLiveReloadStartupOptions,
     resolveDefaultGraphVisualizationServeTargetPath,
     resolveGraphVisualizationUiSourceWatchRoot,
+    resolveGraphVisualizationServeStartupState,
     startGraphVisualizationActiveProjectStateWatcher,
     startGraphVisualizationUiSourceWatcher,
     streamProcessOutputByLine

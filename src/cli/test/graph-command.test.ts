@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { writeGameMakerCliActiveProjectState } from "../src/commands/game-maker-cli.js";
 import { __graphCommandTest__, createGraphCommand } from "../src/commands/graph.js";
 
 const SKIP_CLI_ENV_VAR = "PRETTIER_PLUGIN_GML_SKIP_CLI_RUN";
@@ -733,6 +734,154 @@ void test("graph visualize serve has no bundled demo fallback outside the reposi
         assert.equal(__graphCommandTest__.resolveDefaultGraphVisualizationServeTargetPath(temporaryDirectory), null);
     } finally {
         await fs.rm(temporaryDirectory, { force: true, recursive: true });
+    }
+});
+
+void test("resolveGraphVisualizationServeStartupState reads active project path from projectState state file", async () => {
+    const fixture = await createDualRootFixture();
+    const tempStateDir = await fs.mkdtemp(path.join(os.tmpdir(), "cli-graph-state-"));
+    const statePath = path.join(tempStateDir, "gm-cli-active-project.json");
+
+    try {
+        await writeGameMakerCliActiveProjectState({
+            env: {},
+            projectPath: fixture.projectRoot,
+            statePathOption: statePath
+        });
+
+        const startupState = await __graphCommandTest__.resolveGraphVisualizationServeStartupState(
+            {
+                projectState: statePath
+            },
+            null
+        );
+
+        assert.equal(startupState.source, "active-project-state");
+        assert.equal(startupState.selectedPaths.length, 1);
+        assert.equal(path.resolve(startupState.selectedPaths[0]), path.resolve(fixture.projectRoot, "Project.yyp"));
+        assert.notEqual(startupState.context, null);
+        assert.equal(startupState.context?.projectRoot, fixture.projectRoot);
+    } finally {
+        await fixture.cleanup();
+        await fs.rm(tempStateDir, { force: true, recursive: true });
+    }
+});
+
+void test("graph visualize --serve writes active project path to projectState file when a project is opened in the UI", async () => {
+    const fixture = await createDualRootFixture();
+    const tempStateDir = await fs.mkdtemp(path.join(os.tmpdir(), "cli-graph-state-serve-"));
+    const statePath = path.join(tempStateDir, "gm-cli-active-project.json");
+    let serveProcess: ReturnType<typeof spawn> | null = null;
+
+    try {
+        serveProcess = spawn(
+            process.execPath,
+            [
+                "--disable-warning=ExperimentalWarning",
+                path.resolve(REPO_ROOT, "src/cli/dist/index.js"),
+                "graph",
+                "visualize",
+                "--serve",
+                "--json",
+                "--no-open",
+                "--project-state",
+                statePath
+            ],
+            {
+                cwd: fixture.projectRoot,
+                stdio: ["ignore", "pipe", "pipe"]
+            }
+        );
+
+        const stdoutChunks: Array<string> = [];
+        const stderrChunks: Array<string> = [];
+        if (serveProcess.stdout) {
+            serveProcess.stdout.on("data", (chunk: Buffer | string) => {
+                stdoutChunks.push(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
+            });
+        }
+        if (serveProcess.stderr) {
+            serveProcess.stderr.on("data", (chunk: Buffer | string) => {
+                stderrChunks.push(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
+            });
+        }
+
+        const outputPayload = await new Promise<
+            { databasePath: string; payload: { url: string }; projectRoot: string } | { skipped: true }
+        >((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(
+                    new Error(
+                        `Timed out waiting for serve startup.\nSTDOUT:\n${stdoutChunks.join("")}\nSTDERR:\n${stderrChunks.join("")}`
+                    )
+                );
+            }, 10_000);
+
+            const maybeResolve = (): void => {
+                const stdoutText = stdoutChunks.join("");
+                const startIndex = stdoutText.indexOf("{");
+                if (startIndex === -1) {
+                    return;
+                }
+
+                try {
+                    const parsed = JSON.parse(stdoutText.slice(startIndex)) as {
+                        databasePath: string;
+                        payload: { url: string };
+                        projectRoot: string;
+                    };
+                    clearTimeout(timeout);
+                    resolve(parsed);
+                } catch {
+                    // Wait for more stdout
+                }
+            };
+
+            serveProcess.on("error", (error) => {
+                clearTimeout(timeout);
+                reject(error);
+            });
+            serveProcess.on("exit", (code) => {
+                clearTimeout(timeout);
+                const stderrText = stderrChunks.join("");
+                if (stderrText.includes("listen EPERM")) {
+                    resolve({ skipped: true });
+                    return;
+                }
+                reject(
+                    new Error(
+                        `Serve process exited before startup with code ${String(code)}.\nSTDOUT:\n${stdoutChunks.join("")}\nSTDERR:\n${stderrText}`
+                    )
+                );
+            });
+            serveProcess.stdout?.on("data", maybeResolve);
+        });
+
+        if ("skipped" in outputPayload) {
+            return;
+        }
+
+        const serverUrl = outputPayload.payload.url;
+
+        const response = await fetch(`${serverUrl}/api/open`, {
+            method: "POST",
+            body: JSON.stringify({ path: fixture.projectRoot }),
+            headers: {
+                "Content-Type": "application/json"
+            }
+        });
+
+        assert.equal(response.status, 200);
+        const result = (await response.json()) as { ok: boolean };
+        assert.equal(result.ok, true);
+
+        const stateContents = await fs.readFile(statePath, "utf8");
+        const parsedState = JSON.parse(stateContents) as { projectPath: string };
+        assert.equal(path.resolve(parsedState.projectPath), path.resolve(fixture.projectRoot, "Project.yyp"));
+    } finally {
+        serveProcess?.kill("SIGTERM");
+        await fixture.cleanup();
+        await fs.rm(tempStateDir, { force: true, recursive: true });
     }
 });
 
