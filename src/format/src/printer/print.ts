@@ -382,10 +382,20 @@ function tryPrintExpressionNode(node, path, options, print) {
 }
 
 function printParenthesizedExpressionNode(_node, path, options, print) {
+    const danglingCommentParts = printDanglingComments(path, options, undefined);
+    const hasDangling =
+        danglingCommentParts !== "" && (Array.isArray(danglingCommentParts) ? danglingCommentParts.length > 0 : true);
+
     if (shouldOmitSyntheticParens(path, options)) {
+        if (hasDangling) {
+            return concat([danglingCommentParts, " ", printWithoutExtraParens(path, print, "expression")]);
+        }
         return printWithoutExtraParens(path, print, "expression");
     }
 
+    if (hasDangling) {
+        return concat(["(", danglingCommentParts, " ", printWithoutExtraParens(path, print, "expression"), ")"]);
+    }
     return concat(["(", printWithoutExtraParens(path, print, "expression"), ")"]);
 }
 

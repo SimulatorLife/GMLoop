@@ -501,6 +501,14 @@ function binaryExpressionContainsString(node: any): boolean {
 function unwrapParenthesizedExpression(childPath: any, print: any): any {
     const childNode = childPath.getValue();
     if (childNode?.type === "ParenthesizedExpression") {
+        // If the node has comments attached by Prettier's comment-attachment pass,
+        // delegate to print() so Prettier's comment-printing pipeline handles them.
+        // Skipping directly to the inner expression would leave those comments
+        // unprinted, triggering "Comment was not printed" errors.
+        if (Core.isNonEmptyArray(childNode.comments)) {
+            return print();
+        }
+
         return childPath.call((innerPath: any) => unwrapParenthesizedExpression(innerPath, print), "expression");
     }
 
