@@ -13,6 +13,7 @@
   "refactor": {
     "codemods": {
       "docCommentAlignment": {},
+      "globalvarToGlobal": {},
       "loopLengthHoisting": {},
       "namingConvention": {
         "rules": {
@@ -83,7 +84,10 @@
           "tile_": "tilesetResourceName",
           "ps_": "particleSystemResourceName"
         }
-      }
+      },
+      "repairArgumentSeparators": {},
+      "repairLogicalNot": {},
+      "scientificNotation": {}
     }
   },
   "runtime": {

@@ -197,7 +197,6 @@ void test("config panel defaults to rendered view and exposes configuration deta
     assert.match(rendered, /id="config-page"[\s\S]*class=page content-page active/u);
     assert.doesNotMatch(rendered, /Config Path:?/iu);
     assert.doesNotMatch(rendered, /<dt>Draft<\/dt>/u);
-    assert.match(rendered, /<gm-badge[^>]*\.label=Saved/u);
     assert.doesNotMatch(rendered, /Project Root:?/iu);
     assert.doesNotMatch(rendered, /<dt>File<\/dt>/u);
     assert.match(rendered, /id="config-format-heading"[\s\S]*Format/u);
@@ -222,12 +221,46 @@ void test("config panel defaults to rendered view and exposes configuration deta
     assert.doesNotMatch(rendered, /config-severity-badge/u);
 });
 
+void test("config builder sections are collapsible panels and collapsed by default", () => {
+    const panel = new TestableGmConfigPanel();
+    panel.model = createMockModel();
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    // Check that Format, Lint, and Refactor sections are rendered as details elements with class config-builder-section
+    assert.match(rendered, /<details class="config-builder-section"[^>]*aria-labelledby="config-format-heading"/u);
+    assert.match(rendered, /<details class="config-builder-section"[^>]*aria-labelledby="config-lint-heading"/u);
+    assert.match(rendered, /<details class="config-builder-section"[^>]*aria-labelledby="config-refactor-heading"/u);
+
+    // Verify they do not have the 'open' attribute (collapsed by default)
+    assert.doesNotMatch(rendered, /<details class="config-builder-section"[^>]*\bopen\b/u);
+});
+
 void test("config toolbar restores rendered and raw JSON selector", () => {
+    // Mock global document.querySelector for this test
+    const originalDocument = (globalThis as any).document;
+    (globalThis as any).document = {
+        querySelector: (selector: string) => {
+            if (selector === "gm-config-panel") {
+                return {
+                    isDraftDirty: false,
+                    isDraftValid: true,
+                    draftValidationError: null
+                };
+            }
+            return null;
+        }
+    };
+
     const toolbar = new TestableGmGraphToolbar();
     toolbar.model = createMockModel();
     toolbar.state = createMockState();
 
     const rendered = renderTemplateValue(toolbar.renderForTest());
+
+    // Restore global document
+    (globalThis as any).document = originalDocument;
 
     assert.match(rendered, /id="toolbar-heading"[\s\S]*Config/u);
     assert.match(rendered, /id="toolbar-subheading"[\s\S]*Config path: \/tmp\/test\/gmloop\.json/u);
@@ -235,6 +268,11 @@ void test("config toolbar restores rendered and raw JSON selector", () => {
     assert.match(rendered, /id="config-view-rendered"/u);
     assert.match(rendered, /id="config-view-raw"/u);
     assert.match(rendered, /Raw JSON/u);
+
+    // Assert Save actions moved to toolbar
+    assert.match(rendered, /<gm-badge[^>]*\.label=Saved/u);
+    assert.match(rendered, /Save Config/u);
+    assert.match(rendered, /Reset Draft/u);
 });
 
 void test("config panel renders editable raw JSON view", () => {
@@ -249,7 +287,6 @@ void test("config panel renders editable raw JSON view", () => {
 
     assert.match(rendered, /id="config-raw-json"/u);
     assert.match(rendered, /class="config-raw-textarea"/u);
-    assert.match(rendered, /Save Config/u);
     assert.match(rendered, /JSON is valid/u);
 });
 
@@ -263,6 +300,18 @@ void test("config severity selector uses severity-colored active states", () => 
     assert.match(
         source,
         /\.config-rule-level-selector\s*>\s*\.config-rule-level-warn\[aria-pressed="true"\]\s*\{[\s\S]*background:\s*var\(--gm-warning-surface\);/u
+    );
+});
+
+void test("config builder sections have collapse indicator styles", () => {
+    const source = readFileSync(new URL("../../src/web/styles/config.css", import.meta.url), "utf8");
+
+    // Verify indicator is defined on summary::before
+    assert.match(source, /\.config-builder-section\s+summary::before\s*\{[\s\S]*content:\s*["']▶["'];/u);
+    // Verify rotation on open state
+    assert.match(
+        source,
+        /\.config-builder-section\[open\]\s+summary::before\s*\{[\s\S]*transform:\s*rotate\(90deg\);/u
     );
 });
 

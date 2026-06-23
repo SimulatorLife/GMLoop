@@ -1353,8 +1353,8 @@ export class GmlSemanticBridge {
             // folder rename. Accept either the current staged destination or the
             // corresponding on-disk source path that will become that destination.
             if (this.doesWorkspaceFilePathExist(oldFilePath) && oldFilePath !== newFilePath) {
-                    edit.addFileRename(oldFilePath, newFilePath);
-                }
+                edit.addFileRename(oldFilePath, newFilePath);
+            }
         }
 
         for (const sidecarRename of collectResourceSidecarRenames({

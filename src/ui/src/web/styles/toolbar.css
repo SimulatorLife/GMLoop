@@ -129,3 +129,26 @@
     opacity: 0.65;
   }
 }
+
+.toolbar-config-actions-container {
+  display: flex;
+  gap: var(--gm-space-lg);
+  align-items: center;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.toolbar-config-save-group {
+  display: flex;
+  gap: var(--gm-space-md);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.toolbar-config-save-group .config-validation {
+  font-size: var(--gm-text-xs);
+  max-width: 350px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

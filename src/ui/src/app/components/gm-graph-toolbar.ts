@@ -269,12 +269,18 @@ export class GmGraphToolbar extends LightDomLitElement {
         this.#emitSearchQuery(target.value);
     };
 
+    #onConfigDraftChanged = (): void => {
+        this.requestUpdate();
+    };
+
     public connectedCallback(): void {
         super.connectedCallback();
         this.addEventListener("keydown", this.#onKeyDown);
+        globalThis.addEventListener("gmloop-config-draft-changed", this.#onConfigDraftChanged);
     }
 
     public disconnectedCallback(): void {
+        globalThis.removeEventListener("gmloop-config-draft-changed", this.#onConfigDraftChanged);
         super.disconnectedCallback();
         this.removeEventListener("keydown", this.#onKeyDown);
     }
@@ -551,26 +557,71 @@ export class GmGraphToolbar extends LightDomLitElement {
             return null;
         }
 
+        const configPanel = typeof document === "undefined" ? null : (document.querySelector("gm-config-panel"));
+        const isDirty = configPanel?.isDraftDirty === true;
+        const isValid = configPanel?.isDraftValid !== false;
+        const validationError = configPanel?.draftValidationError ?? null;
+        const isSavePending = this.state.isConfigSavePending === true;
+        const isSaveDisabled = !isValid || !isDirty || isSavePending;
+        const isResetDisabled = !isDirty || isSavePending;
+
+        const badgeLabel = isValid ? (isDirty ? "Unsaved" : "Saved") : "Invalid";
+        const badgeTone = isValid ? (isDirty ? "warning" : "success") : "error";
+
         return html`
-            <div class="gm-view-selector" role="group" aria-label="Configuration view selector">
-                <button
-                    id="config-view-rendered"
-                    type="button"
-                    aria-pressed=${this.state.activeConfigView === "rendered"}
-                    class=${this.state.activeConfigView === "rendered" ? CLASS_BTN_CHIP_ACTIVE : CLASS_BTN_CHIP}
-                    @click=${() => this.#emitConfigView("rendered")}
-                >
-                    Rendered
-                </button>
-                <button
-                    id="config-view-raw"
-                    type="button"
-                    aria-pressed=${this.state.activeConfigView === "raw"}
-                    class=${this.state.activeConfigView === "raw" ? CLASS_BTN_CHIP_ACTIVE : CLASS_BTN_CHIP}
-                    @click=${() => this.#emitConfigView("raw")}
-                >
-                    Raw JSON
-                </button>
+            <div class="toolbar-config-actions-container">
+                <div class="gm-view-selector" role="group" aria-label="Configuration view selector">
+                    <button
+                        id="config-view-rendered"
+                        type="button"
+                        aria-pressed=${this.state.activeConfigView === "rendered"}
+                        class=${this.state.activeConfigView === "rendered" ? CLASS_BTN_CHIP_ACTIVE : CLASS_BTN_CHIP}
+                        @click=${() => this.#emitConfigView("rendered")}
+                    >
+                        Rendered
+                    </button>
+                    <button
+                        id="config-view-raw"
+                        type="button"
+                        aria-pressed=${this.state.activeConfigView === "raw"}
+                        class=${this.state.activeConfigView === "raw" ? CLASS_BTN_CHIP_ACTIVE : CLASS_BTN_CHIP}
+                        @click=${() => this.#emitConfigView("raw")}
+                    >
+                        Raw JSON
+                    </button>
+                </div>
+
+                <div class="toolbar-config-save-group">
+                    <gm-badge .label=${badgeLabel} .tone=${badgeTone}></gm-badge>
+
+                    <button
+                        type="button"
+                        class="gm-btn gm-btn--primary"
+                        ?disabled=${isSaveDisabled}
+                        aria-busy=${isSavePending}
+                        @click=${() => configPanel?.saveDraft()}
+                    >
+                        ${renderProcessButtonContent({
+                            label: "Save Config",
+                            pending: isSavePending
+                        })}
+                    </button>
+                    <button
+                        type="button"
+                        class="gm-btn gm-btn--chip"
+                        ?disabled=${isResetDisabled}
+                        @click=${() => configPanel?.resetDraft()}
+                    >
+                        Reset Draft
+                    </button>
+
+                    <span
+                        class=${isValid ? "config-validation is-valid" : "config-validation is-invalid"}
+                        aria-live="polite"
+                    >
+                        ${isValid ? "JSON is valid and ready to save." : validationError}
+                    </span>
+                </div>
             </div>
         `;
     }

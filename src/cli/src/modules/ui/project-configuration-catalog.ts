@@ -263,7 +263,7 @@ function createRefactorConfigurationEntries(
             Object.freeze({
                 config: configuredCodemods[codemod.id] ?? null,
                 description: codemod.description,
-                enabled: configuredCodemods[codemod.id] !== false,
+                enabled: configuredCodemods[codemod.id] !== undefined && configuredCodemods[codemod.id] !== false,
                 id: codemod.id,
                 requiresSemanticProjectIndex: semanticIndexDependentCodemodIds.has(codemod.id)
             })

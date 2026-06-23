@@ -208,6 +208,7 @@ export class GmConfigPanel extends LightDomLitElement {
         }
         this.#draftCatalogKey = key;
         this.#draftText = serializeConfigurationValue(createEditableConfigFromCatalog(catalog));
+        this.dispatchEvent(new CustomEvent("gmloop-config-draft-changed", { bubbles: true, composed: true }));
     }
 
     #readDraft(): DraftParseResult {
@@ -217,6 +218,7 @@ export class GmConfigPanel extends LightDomLitElement {
     #setDraftConfig(config: ConfigJsonObject): void {
         this.#draftText = serializeConfigurationValue(config);
         this.requestUpdate();
+        this.dispatchEvent(new CustomEvent("gmloop-config-draft-changed", { bubbles: true, composed: true }));
     }
 
     #updateDraftConfig(mutator: (config: ConfigJsonObject) => void): void {
@@ -236,7 +238,40 @@ export class GmConfigPanel extends LightDomLitElement {
         }
         this.#draftText = target.value;
         this.requestUpdate();
+        this.dispatchEvent(new CustomEvent("gmloop-config-draft-changed", { bubbles: true, composed: true }));
     };
+
+    public get isDraftDirty(): boolean {
+        if (!this.model?.projectConfigurationCatalog) {
+            return false;
+        }
+        const initialText = serializeConfigurationValue(
+            createEditableConfigFromCatalog(this.model.projectConfigurationCatalog)
+        );
+        return this.#draftText !== initialText;
+    }
+
+    public get isDraftValid(): boolean {
+        return this.#readDraft().ok;
+    }
+
+    public get draftValidationError(): string | null {
+        const result = this.#readDraft();
+        return result.ok ? null : result.error;
+    }
+
+    public saveDraft(): void {
+        const draft = this.#readDraft();
+        if (draft.ok) {
+            this.#emitSaveConfig(draft.config);
+        }
+    }
+
+    public resetDraft(): void {
+        if (this.model?.projectConfigurationCatalog) {
+            this.#resetDraft(this.model.projectConfigurationCatalog);
+        }
+    }
 
     #setFormatEntry(entry: GraphVisualizationProjectConfigurationEntry, rawValue: string, checked: boolean): void {
         this.#updateDraftConfig((config) => {
@@ -332,6 +367,7 @@ export class GmConfigPanel extends LightDomLitElement {
         this.#draftCatalogKey = "";
         this.#ensureDraftForCatalog(catalog);
         this.requestUpdate();
+        this.dispatchEvent(new CustomEvent("gmloop-config-draft-changed", { bubbles: true, composed: true }));
     }
 
     #isLintFilterResetDisabled(): boolean {
@@ -362,71 +398,20 @@ export class GmConfigPanel extends LightDomLitElement {
         });
     }
 
-    #renderSavePanel(catalog: GraphVisualizationProjectConfigurationCatalog, draft: DraftParseResult) {
-        const initialText = serializeConfigurationValue(createEditableConfigFromCatalog(catalog));
-        const isDirty = this.#draftText !== initialText;
-        const isSaveDisabled = !draft.ok || !isDirty || this.state?.isConfigSavePending === true;
-
-        return html`
-            <aside class="config-save-panel" aria-label="Config save and JSON preview">
-                <div class="config-save-panel-header">
-                    ${renderBadge(
-                        draft.ok ? (isDirty ? "Unsaved" : "Saved") : "Invalid",
-                        draft.ok ? (isDirty ? "warning" : "success") : "error"
-                    )}
-                </div>
-                <div class="config-save-actions">
-                    <button
-                        type="button"
-                        class="gm-btn gm-btn--primary"
-                        ?disabled=${isSaveDisabled}
-                        aria-busy=${this.state?.isConfigSavePending === true ? "true" : "false"}
-                        @click=${() => (draft.ok ? this.#emitSaveConfig(draft.config) : undefined)}
-                    >
-                        ${renderProcessButtonContent({
-                            label: "Save Config",
-                            pending: this.state?.isConfigSavePending === true
-                        })}
-                    </button>
-                    <button
-                        type="button"
-                        class="gm-btn gm-btn--chip"
-                        ?disabled=${!isDirty || this.state?.isConfigSavePending === true}
-                        @click=${() => this.#resetDraft(catalog)}
-                    >
-                        Reset Draft
-                    </button>
-                </div>
-                <p class=${draft.ok ? "config-validation is-valid" : "config-validation is-invalid"} aria-live="polite">
-                    ${draft.ok ? "JSON is valid and ready to save." : draft.error}
-                </p>
-                <div class="config-json-preview-header">
-                    <span class="config-json-preview-title">JSON draft</span>
-                    <gm-copy-button
-                        class="config-json-copy"
-                        .value=${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}
-                        label="Copy config JSON"
-                    ></gm-copy-button>
-                </div>
-                <pre class="config-json-preview">
-${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}</pre
-                >
-            </aside>
-        `;
-    }
-
     #renderFormatBuilder(catalog: GraphVisualizationProjectConfigurationCatalog, draftConfig: ConfigJsonObject) {
         const entries = catalog.format.entries.filter((entry) => FORMAT_BUILDER_OPTION_NAMES.has(entry.name));
         return html`
-            <section class="config-builder-section" aria-labelledby="config-format-heading">
-                <div class="config-section-heading">
-                    <h3 id="config-format-heading">Format</h3>
-                    <p>Formatter-owned options saved at the top level of <code>gmloop.json</code>.</p>
-                </div>
+            <details class="config-builder-section" aria-labelledby="config-format-heading">
+                <summary>
+                    <div class="config-section-heading">
+                        <h3 id="config-format-heading">Format</h3>
+                        <p>Formatter-owned options saved at the top level of <code>gmloop.json</code>.</p>
+                    </div>
+                </summary>
                 <div class="config-form-grid">
                     ${entries.map((entry) => this.#renderFormatControl(entry, draftConfig))}
                 </div>
-            </section>
+            </details>
         `;
     }
 
@@ -511,25 +496,30 @@ ${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}</pre
             typeof draftConfig.lintRuleset === "string" ? draftConfig.lintRuleset : catalog.lint.ruleset;
 
         return html`
-            <section class="config-builder-section" aria-labelledby="config-lint-heading">
-                <div class="config-section-heading config-section-heading--split">
-                    <div>
-                        <h3 id="config-lint-heading">Lint</h3>
-                        <p>Choose the base ruleset and override individual rule severities.</p>
+            <details class="config-builder-section" aria-labelledby="config-lint-heading">
+                <summary>
+                    <div
+                        class="config-section-heading config-section-heading--split"
+                        @click=${(e: Event) => e.stopPropagation()}
+                    >
+                        <div>
+                            <h3 id="config-lint-heading">Lint</h3>
+                            <p>Choose the base ruleset and override individual rule severities.</p>
+                        </div>
+                        <label class="config-inline-field">
+                            <span>Ruleset</span>
+                            <select @change=${this.#setLintRuleset}>
+                                ${catalog.lint.rulesets.map(
+                                    (ruleset) => html`
+                                        <option value=${ruleset.name} ?selected=${selectedRuleset === ruleset.name}>
+                                            ${ruleset.name}
+                                        </option>
+                                    `
+                                )}
+                            </select>
+                        </label>
                     </div>
-                    <label class="config-inline-field">
-                        <span>Ruleset</span>
-                        <select @change=${this.#setLintRuleset}>
-                            ${catalog.lint.rulesets.map(
-                                (ruleset) => html`
-                                    <option value=${ruleset.name} ?selected=${selectedRuleset === ruleset.name}>
-                                        ${ruleset.name}
-                                    </option>
-                                `
-                            )}
-                        </select>
-                    </label>
-                </div>
+                </summary>
                 ${this.#renderLintFilters(catalog)}
                 <div class="config-rule-table" role="table" aria-label="Lint rule configuration">
                     <div class="config-rule-table-header" role="row">
@@ -540,7 +530,7 @@ ${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}</pre
                         ? html`<p class="config-empty">No lint rules match these filters.</p>`
                         : filteredLintRules.map((entry) => this.#renderLintRuleRow(entry, draftConfig))}
                 </div>
-            </section>
+            </details>
         `;
     }
 
@@ -642,15 +632,17 @@ ${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}</pre
 
     #renderRefactorBuilder(catalog: GraphVisualizationProjectConfigurationCatalog, draftConfig: ConfigJsonObject) {
         return html`
-            <section class="config-builder-section" aria-labelledby="config-refactor-heading">
-                <div class="config-section-heading">
-                    <h3 id="config-refactor-heading">Refactor</h3>
-                    <p>Enable project codemods and inspect per-codemod JSON payloads.</p>
-                </div>
+            <details class="config-builder-section" aria-labelledby="config-refactor-heading">
+                <summary>
+                    <div class="config-section-heading">
+                        <h3 id="config-refactor-heading">Refactor</h3>
+                        <p>Enable project codemods and inspect per-codemod JSON payloads.</p>
+                    </div>
+                </summary>
                 <div class="config-codemod-table">
                     ${catalog.refactor.codemods.map((codemod) => this.#renderCodemodRow(codemod, draftConfig))}
                 </div>
-            </section>
+            </details>
         `;
     }
 
@@ -715,19 +707,14 @@ ${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}</pre
                         <h3>Rendered Config</h3>
                         <p>Fix the JSON syntax in Raw JSON before using the visual editor.</p>
                     </section>
-                    ${this.#renderSavePanel(catalog, draft)}
                 </div>
             `;
         }
 
         return html`
             <div class="config-editor-layout">
-                <div class="config-builder-main">
-                    ${this.#renderFormatBuilder(catalog, draft.config)}
-                    ${this.#renderLintBuilder(catalog, draft.config)}
-                    ${this.#renderRefactorBuilder(catalog, draft.config)}
-                </div>
-                ${this.#renderSavePanel(catalog, draft)}
+                ${this.#renderFormatBuilder(catalog, draft.config)} ${this.#renderLintBuilder(catalog, draft.config)}
+                ${this.#renderRefactorBuilder(catalog, draft.config)}
             </div>
         `;
     }
@@ -758,7 +745,6 @@ ${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}</pre
                         ${draft.ok ? "JSON is valid." : draft.error}
                     </p>
                 </section>
-                ${this.#renderSavePanel(catalog, draft)}
             </div>
         `;
     }

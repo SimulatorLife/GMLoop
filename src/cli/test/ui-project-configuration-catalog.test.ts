@@ -6,7 +6,14 @@ import { createGraphVisualizationProjectConfigurationCatalog } from "../src/modu
 void test("project configuration catalog exposes all lint rules and available rulesets", async () => {
     const catalog = await createGraphVisualizationProjectConfigurationCatalog(
         {
-            projectConfig: { lintRuleset: "recommended" },
+            projectConfig: {
+                lintRuleset: "recommended",
+                refactor: {
+                    codemods: {
+                        loopLengthHoisting: {}
+                    }
+                }
+            },
             projectRoot: "/tmp/gmloop-ui-catalog"
         },
         {},
@@ -61,4 +68,12 @@ void test("project configuration catalog exposes all lint rules and available ru
     assert.equal(catalog.gameMakerCli.cliCommands[0]?.displayName, "manual read");
     assert.equal(catalog.gameMakerCli.mcpTools[0]?.name, "status");
     assert.equal(catalog.gameMakerCli.mcpServer.serverId, "gamemaker-resource-tool");
+
+    const loopLengthHoistingCodemod = catalog.refactor.codemods.find((c) => c.id === "loopLengthHoisting");
+    assert.ok(loopLengthHoistingCodemod);
+    assert.equal(loopLengthHoistingCodemod.enabled, true);
+
+    const namingConventionCodemod = catalog.refactor.codemods.find((c) => c.id === "namingConvention");
+    assert.ok(namingConventionCodemod);
+    assert.equal(namingConventionCodemod.enabled, false);
 });
