@@ -1,22 +1,20 @@
-import { writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
 import {
     getManifestResources,
-    type ProjectManifestEntry,
     readProjectMetadataDocument,
     resolveProjectManifestFile
 } from "./project-resource-operations.js";
+import {
+    assertFiniteCoordinate,
+    locateRoomReference,
+    type ResourceReference,
+    writeRoomDocumentIfApplying
+} from "./room-resource-helpers.js";
 
-const ROOM_RESOURCE_DIRECTORY = "rooms";
 const CAMERA_ID_PATTERN = /^(?:camera|view)_(\d+)$/iu;
-
-type ResourceReference = Readonly<{
-    name: string;
-    path: string;
-}>;
 
 type RoomCameraMutationContext = Readonly<{
     cameraIndex: number;
@@ -59,33 +57,6 @@ export interface RoomCameraMutationResult {
     y: number;
 }
 
-function locateRoomReference(
-    manifestResources: ReadonlyArray<ProjectManifestEntry>,
-    roomName: string
-): ResourceReference {
-    const expectedPrefix = `${ROOM_RESOURCE_DIRECTORY}/`;
-    let located: ResourceReference | null = null;
-
-    for (const manifestResource of manifestResources) {
-        if (manifestResource.id.name !== roomName || !manifestResource.id.path.startsWith(expectedPrefix)) {
-            continue;
-        }
-        if (located !== null) {
-            throw new Error(`Found multiple room resources named '${roomName}' in the project manifest.`);
-        }
-        located = Object.freeze({
-            name: manifestResource.id.name,
-            path: manifestResource.id.path
-        });
-    }
-
-    if (located === null) {
-        throw new Error(`Could not find room resource '${roomName}' in the project manifest.`);
-    }
-
-    return located;
-}
-
 function parseCameraIndex(cameraId: string): number {
     const directIndex = Number(cameraId);
     if (Number.isInteger(directIndex) && directIndex >= 0) {
@@ -108,12 +79,6 @@ function assertFiniteDimension(value: number, dimensionName: "height" | "width")
         throw new TypeError(
             `Invalid camera ${dimensionName} ${String(value)}. Expected a positive finite numeric value.`
         );
-    }
-}
-
-function assertFiniteCoordinate(value: number, coordinateName: "x" | "y"): void {
-    if (!Number.isFinite(value)) {
-        throw new TypeError(`Invalid camera ${coordinateName} ${String(value)}. Expected a finite numeric value.`);
     }
 }
 
@@ -144,22 +109,6 @@ async function resolveRoomCameraMutationContext(
         roomReference,
         view: view as Record<string, unknown>
     });
-}
-
-async function writeRoomDocumentIfApplying(
-    dryRun: boolean,
-    roomAbsolutePath: string,
-    roomDocument: Record<string, unknown>
-): Promise<void> {
-    if (dryRun) {
-        return;
-    }
-
-    await writeFile(
-        roomAbsolutePath,
-        `${Core.stringifyProjectMetadataDocument(roomDocument, roomAbsolutePath)}\n`,
-        "utf8"
-    );
 }
 
 /**

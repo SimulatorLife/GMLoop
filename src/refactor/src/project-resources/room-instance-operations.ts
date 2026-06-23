@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
@@ -10,9 +9,14 @@ import {
     readProjectMetadataDocument,
     resolveProjectManifestFile
 } from "./project-resource-operations.js";
+import {
+    assertFiniteCoordinate,
+    locateObjectReference,
+    locateRoomReference,
+    type ResourceReference,
+    writeRoomDocumentIfApplying
+} from "./room-resource-helpers.js";
 
-const ROOM_RESOURCE_DIRECTORY = "rooms";
-const OBJECT_RESOURCE_DIRECTORY = "objects";
 const INSTANCE_LAYER_RESOURCE_TYPE = "GMRInstanceLayer";
 const ROOM_INSTANCE_RESOURCE_TYPE = "GMRInstance";
 const ROOM_INSTANCE_NAME_PREFIX = "inst_";
@@ -20,11 +24,6 @@ const ROOM_INSTANCE_NAME_PREFIX = "inst_";
 type RoomInstanceLayerRecord = Record<string, unknown> & {
     instances: Array<unknown>;
 };
-
-type ResourceReference = Readonly<{
-    name: string;
-    path: string;
-}>;
 
 type LocatedRoomInstance = Readonly<{
     index: number;
@@ -91,36 +90,6 @@ export interface RoomInstanceMutationResult {
     writtenPaths: Array<string>;
     x: number;
     y: number;
-}
-
-function locateResourceReference(
-    manifestResources: ReadonlyArray<ProjectManifestEntry>,
-    resourceDirectory: string,
-    resourceName: string
-): ResourceReference {
-    const expectedPrefix = `${resourceDirectory}/`;
-    let located: ResourceReference | null = null;
-
-    for (const manifestResource of manifestResources) {
-        if (manifestResource.id.name !== resourceName || !manifestResource.id.path.startsWith(expectedPrefix)) {
-            continue;
-        }
-        if (located !== null) {
-            throw new Error(
-                `Found multiple ${resourceDirectory} resources named '${resourceName}' in the project manifest.`
-            );
-        }
-        located = Object.freeze({
-            name: manifestResource.id.name,
-            path: manifestResource.id.path
-        });
-    }
-
-    if (located === null) {
-        throw new Error(`Could not find ${resourceDirectory} resource '${resourceName}' in the project manifest.`);
-    }
-
-    return located;
 }
 
 function findInstanceLayer(roomDocument: Record<string, unknown>, roomName: string): RoomInstanceLayerRecord {
@@ -252,7 +221,7 @@ async function resolveRoomInstanceMutationContext(
     const manifest = await resolveProjectManifestFile(projectRoot);
     const manifestDocument = await readProjectMetadataDocument(manifest.absolutePath);
     const manifestResources = getManifestResources(manifestDocument);
-    const roomReference = locateResourceReference(manifestResources, ROOM_RESOURCE_DIRECTORY, roomName);
+    const roomReference = locateRoomReference(manifestResources, roomName);
     const roomAbsolutePath = path.join(projectRoot, Core.fromPosixPath(roomReference.path));
     const roomDocument = await readProjectMetadataDocument(roomAbsolutePath);
     const instanceLayer = findInstanceLayer(roomDocument, roomName);
@@ -267,28 +236,6 @@ async function resolveRoomInstanceMutationContext(
     });
 }
 
-async function writeRoomDocumentIfApplying(
-    dryRun: boolean,
-    roomAbsolutePath: string,
-    roomDocument: Record<string, unknown>
-): Promise<void> {
-    if (dryRun) {
-        return;
-    }
-
-    await writeFile(
-        roomAbsolutePath,
-        `${Core.stringifyProjectMetadataDocument(roomDocument, roomAbsolutePath)}\n`,
-        "utf8"
-    );
-}
-
-function assertFiniteCoordinate(value: number, coordinateName: "x" | "y"): void {
-    if (!Number.isFinite(value)) {
-        throw new TypeError(`Invalid ${coordinateName} coordinate ${String(value)}. Expected a finite numeric value.`);
-    }
-}
-
 /**
  * Add an object instance to the first instance layer in a GameMaker room.
  *
@@ -300,11 +247,7 @@ export async function addRoomInstance(request: AddRoomInstanceRequest): Promise<
     assertFiniteCoordinate(request.y, "y");
 
     const context = await resolveRoomInstanceMutationContext(request.projectRoot, request.roomName);
-    const objectReference = locateResourceReference(
-        context.manifestResources,
-        OBJECT_RESOURCE_DIRECTORY,
-        request.objectName
-    );
+    const objectReference = locateObjectReference(context.manifestResources, request.objectName);
     const instanceLayer = context.instanceLayer;
     const instanceId = `${ROOM_INSTANCE_NAME_PREFIX}${randomUUID().replaceAll("-", "")}`;
     const roomInstance = createRoomInstance(instanceId, objectReference, request.x, request.y);

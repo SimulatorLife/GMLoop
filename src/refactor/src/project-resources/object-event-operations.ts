@@ -6,12 +6,10 @@ import { Parser } from "@gmloop/parser";
 
 import {
     getManifestResources,
-    type ProjectManifestEntry,
     readProjectMetadataDocument,
     resolveProjectManifestFile
 } from "./project-resource-operations.js";
-
-const OBJECT_RESOURCE_DIRECTORY = "objects";
+import { locateObjectReference, type ResourceReference } from "./room-resource-helpers.js";
 
 const OBJECT_EVENT_TYPES = Object.freeze({
     cleanup: 2,
@@ -35,11 +33,6 @@ const OBJECT_EVENT_NUMBERS = Object.freeze({
     draw: Object.freeze({ begin: 72, draw: 0, end: 73, gui: 64, guibegin: 65, guiend: 66, pre: 76, post: 77 }),
     step: Object.freeze({ begin: 1, end: 2, normal: 0, step: 0 })
 });
-
-type ResourceReference = Readonly<{
-    name: string;
-    path: string;
-}>;
 
 type ObjectEventMutationContext = Readonly<{
     event: Record<string, unknown>;
@@ -107,33 +100,6 @@ export interface ObjectEventMutationResult {
     objectPath: string;
     warnings: Array<string>;
     writtenPaths: Array<string>;
-}
-
-function locateObjectReference(
-    manifestResources: ReadonlyArray<ProjectManifestEntry>,
-    objectName: string
-): ResourceReference {
-    const expectedPrefix = `${OBJECT_RESOURCE_DIRECTORY}/`;
-    let located: ResourceReference | null = null;
-
-    for (const manifestResource of manifestResources) {
-        if (manifestResource.id.name !== objectName || !manifestResource.id.path.startsWith(expectedPrefix)) {
-            continue;
-        }
-        if (located !== null) {
-            throw new Error(`Found multiple object resources named '${objectName}' in the project manifest.`);
-        }
-        located = Object.freeze({
-            name: manifestResource.id.name,
-            path: manifestResource.id.path
-        });
-    }
-
-    if (located === null) {
-        throw new Error(`Could not find object resource '${objectName}' in the project manifest.`);
-    }
-
-    return located;
 }
 
 function normalizeDescriptorKey(value: string): string {
