@@ -110,6 +110,52 @@ function createLiveReloadStatusSnapshot() {
     };
 }
 
+/**
+ * Parsed JSON payload emitted by `graph visualize --serve` once the dev
+ * server has finished bootstrapping. Reused by the two serve-startup
+ * integration tests below so the JSON-extraction logic lives in exactly
+ * one place (and ESLint's `sonarjs/no-identical-functions` rule stays
+ * satisfied).
+ */
+type GraphServeStartupPayload = {
+    databasePath: string;
+    payload: { url: string };
+    projectRoot: string;
+};
+
+/**
+ * Returns a callback that drains the buffered stdout of a serve-startup
+ * child process, attempts to parse the first JSON object it contains, and
+ * resolves the surrounding promise once a complete payload is observed.
+ *
+ * The callback is intentionally tolerant of partial JSON: each `data`
+ * event joins the existing chunks and re-attempts the parse, only
+ * resolving once `JSON.parse` succeeds. The caller is responsible for
+ * wiring up the matching `error` and `exit` listeners that drive the
+ * `resolve({ skipped: true })` and rejection paths.
+ */
+function createServeStartupJsonResolver(
+    stdoutChunks: ReadonlyArray<string>,
+    timeout: ReturnType<typeof setTimeout>,
+    resolve: (value: GraphServeStartupPayload) => void
+): () => void {
+    return () => {
+        const stdoutText = stdoutChunks.join("");
+        const startIndex = stdoutText.indexOf("{");
+        if (startIndex === -1) {
+            return;
+        }
+
+        try {
+            const parsed = JSON.parse(stdoutText.slice(startIndex)) as GraphServeStartupPayload;
+            clearTimeout(timeout);
+            resolve(parsed);
+        } catch {
+            // Wait for more stdout if the JSON is incomplete.
+        }
+    };
+}
+
 void test("CLI command catalog includes graph leaf commands", async () => {
     const cliModule = await loadCliModule();
     const catalog = cliModule.getCliCommandCatalog();
@@ -484,25 +530,7 @@ void test("graph visualize --serve boots without a project path and waits for UI
                 );
             }, 5000);
 
-            const maybeResolve = (): void => {
-                const stdoutText = stdoutChunks.join("");
-                const startIndex = stdoutText.indexOf("{");
-                if (startIndex === -1) {
-                    return;
-                }
-
-                try {
-                    const parsed = JSON.parse(stdoutText.slice(startIndex)) as {
-                        databasePath: string;
-                        payload: { url: string };
-                        projectRoot: string;
-                    };
-                    clearTimeout(timeout);
-                    resolve(parsed);
-                } catch {
-                    // Wait for more stdout if the JSON is incomplete.
-                }
-            };
+            const maybeResolve = createServeStartupJsonResolver(stdoutChunks, timeout, resolve);
 
             serveProcess.on("error", (error) => {
                 clearTimeout(timeout);
@@ -817,25 +845,7 @@ void test("graph visualize --serve writes active project path to projectState fi
                 );
             }, 10_000);
 
-            const maybeResolve = (): void => {
-                const stdoutText = stdoutChunks.join("");
-                const startIndex = stdoutText.indexOf("{");
-                if (startIndex === -1) {
-                    return;
-                }
-
-                try {
-                    const parsed = JSON.parse(stdoutText.slice(startIndex)) as {
-                        databasePath: string;
-                        payload: { url: string };
-                        projectRoot: string;
-                    };
-                    clearTimeout(timeout);
-                    resolve(parsed);
-                } catch {
-                    // Wait for more stdout
-                }
-            };
+            const maybeResolve = createServeStartupJsonResolver(stdoutChunks, timeout, resolve);
 
             serveProcess.on("error", (error) => {
                 clearTimeout(timeout);
