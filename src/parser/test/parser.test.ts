@@ -121,7 +121,7 @@ function collectNodesByType(node, type) {
 }
 
 const { fileNames: fixtureNames, fixtureContentsByName } = await loadFixtures();
-const expectedFailures = new Set<string>(["cursed_gml.gml"]);
+const expectedFailures = new Set<string>();
 const fixtureParserOptions: ParserOptions = {
     ...defaultParserOptions,
     getComments: false,
@@ -292,7 +292,7 @@ void describe("GameMaker parser fixtures", () => {
 
         const ast = parseFixture(lowercaseSource);
         const statement = ast.body[0].body.body[0];
-        const testExpr = statement.test;
+        const testExpr = statement.test.type === "ParenthesizedExpression" ? statement.test.expression : statement.test;
         assert.strictEqual(testExpr.type, "UnaryExpression");
         assert.strictEqual(testExpr.operator, "!");
     });

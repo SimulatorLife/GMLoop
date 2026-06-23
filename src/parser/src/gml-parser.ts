@@ -465,26 +465,6 @@ export class GMLParser {
     }
 }
 
-function isDirectiveLineAtIndex(sourceText: string, index: number): boolean {
-    const lineStart = sourceText.lastIndexOf("\n", index - 1) + 1;
-    for (let cursor = lineStart; cursor < sourceText.length; cursor += 1) {
-        const character = sourceText[cursor];
-        if (character === "\n" || character === "\r") {
-            return false;
-        }
-        if (/\s/u.test(character ?? "")) {
-            continue;
-        }
-        return character === "#";
-    }
-    return false;
-}
-
-function findNextLineStart(sourceText: string, index: number): number {
-    const nextLineBreak = sourceText.indexOf("\n", index);
-    return nextLineBreak === -1 ? sourceText.length : nextLineBreak + 1;
-}
-
 function projectLogicalNotAliasesForRecovery(sourceText: string): string {
     const chunks: Array<string> = [];
     const scanState = Core.createStringCommentScanState();
@@ -492,15 +472,40 @@ function projectLogicalNotAliasesForRecovery(sourceText: string): string {
 
     let copiedThrough = 0;
     let index = 0;
+
+    let isAtLineStart = true;
+    let isOnDirectiveLine = false;
+
     while (index < sourceLength) {
         const scannedIndex = Core.advanceStringCommentScan(sourceText, sourceLength, index, scanState, true);
         if (scannedIndex !== index) {
+            const skippedText = sourceText.slice(index, scannedIndex);
+            const lastNewlineIndex = Math.max(skippedText.lastIndexOf("\n"), skippedText.lastIndexOf("\r"));
+            if (lastNewlineIndex === -1) {
+                if (skippedText.length > 0) {
+                    isAtLineStart = false;
+                }
+            } else {
+                isAtLineStart = false;
+                isOnDirectiveLine = false;
+            }
             index = scannedIndex;
             continue;
         }
 
-        if (isDirectiveLineAtIndex(sourceText, index)) {
-            index = findNextLineStart(sourceText, index);
+        const char = sourceText[index] ?? "";
+        if (char === "\n" || char === "\r") {
+            isAtLineStart = true;
+            isOnDirectiveLine = false;
+        } else if (isAtLineStart && char !== " " && char !== "\t") {
+                if (char === "#") {
+                    isOnDirectiveLine = true;
+                }
+                isAtLineStart = false;
+            }
+
+        if (isOnDirectiveLine) {
+            index += 1;
             continue;
         }
 
@@ -509,6 +514,7 @@ function projectLogicalNotAliasesForRecovery(sourceText: string): string {
                 chunks.push(sourceText.slice(copiedThrough, index), "!  ");
                 index += 3;
                 copiedThrough = index;
+                isAtLineStart = false;
                 continue;
             }
         index += 1;
