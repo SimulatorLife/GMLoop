@@ -1,22 +1,15 @@
-import { writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
 import {
     getManifestResources,
-    type ProjectManifestEntry,
     readProjectMetadataDocument,
     resolveProjectManifestFile
 } from "./project-resource-operations.js";
+import { locateRoomReference, type ResourceReference, writeRoomDocumentIfApplying } from "./room-resource-helpers.js";
 
-const ROOM_RESOURCE_DIRECTORY = "rooms";
 const INSTANCE_LAYER_RESOURCE_TYPE = "GMRInstanceLayer";
-
-type ResourceReference = Readonly<{
-    name: string;
-    path: string;
-}>;
 
 type RoomLayerMutationContext = Readonly<{
     layers: Array<unknown>;
@@ -51,33 +44,6 @@ export interface RoomLayerMutationResult {
     roomPath: string;
     warnings: Array<string>;
     writtenPaths: Array<string>;
-}
-
-function locateRoomReference(
-    manifestResources: ReadonlyArray<ProjectManifestEntry>,
-    roomName: string
-): ResourceReference {
-    const expectedPrefix = `${ROOM_RESOURCE_DIRECTORY}/`;
-    let located: ResourceReference | null = null;
-
-    for (const manifestResource of manifestResources) {
-        if (manifestResource.id.name !== roomName || !manifestResource.id.path.startsWith(expectedPrefix)) {
-            continue;
-        }
-        if (located !== null) {
-            throw new Error(`Found multiple room resources named '${roomName}' in the project manifest.`);
-        }
-        located = Object.freeze({
-            name: manifestResource.id.name,
-            path: manifestResource.id.path
-        });
-    }
-
-    if (located === null) {
-        throw new Error(`Could not find room resource '${roomName}' in the project manifest.`);
-    }
-
-    return located;
 }
 
 function assertRoomLayerName(layerName: string): void {
@@ -154,22 +120,6 @@ async function resolveRoomLayerMutationContext(
         roomDocument,
         roomReference
     });
-}
-
-async function writeRoomDocumentIfApplying(
-    dryRun: boolean,
-    roomAbsolutePath: string,
-    roomDocument: Record<string, unknown>
-): Promise<void> {
-    if (dryRun) {
-        return;
-    }
-
-    await writeFile(
-        roomAbsolutePath,
-        `${Core.stringifyProjectMetadataDocument(roomDocument, roomAbsolutePath)}\n`,
-        "utf8"
-    );
 }
 
 /**
