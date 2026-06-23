@@ -189,3 +189,32 @@ void test("timers and counters both record through shared increment path", async
     assert.equal(report.counters.files, 2);
     assert.ok(typeof report.timings.parse === "number");
 });
+
+void test("startTimer reports non-negative sub-millisecond durations", () => {
+    const tracker = createMetricsTracker({ category: "high-resolution" });
+    const { recording, reporting } = tracker;
+
+    const stop = recording.timers.startTimer("op");
+    const report = reporting.summary.snapshot();
+    assert.equal(report.timings.op, undefined);
+
+    stop();
+    const after = reporting.summary.snapshot();
+
+    const duration = after.timings.op;
+    assert.ok(typeof duration === "number");
+    assert.ok(duration >= 0, `startTimer should record a non-negative duration, got ${duration}`);
+});
+
+void test("timeSync accumulates measured duration into timings", () => {
+    const tracker = createMetricsTracker({ category: "time-sync" });
+    const { recording, reporting } = tracker;
+
+    const result = recording.timers.timeSync("compute", () => 7);
+    assert.equal(result, 7);
+
+    const report = reporting.summary.snapshot();
+    const duration = report.timings.compute;
+    assert.ok(typeof duration === "number");
+    assert.ok(duration >= 0, `timeSync should record a non-negative duration, got ${duration}`);
+});
