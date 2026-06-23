@@ -191,7 +191,8 @@ export class GMLParser {
     constructor(text: string, options: Partial<ParserOptions> = {}) {
         const validatedText = Core.validateSourceText(text);
         this.originalText = validatedText;
-        this.text = Core.normalizeSimpleEscapeCase(validatedText);
+        const normalizedEscapes = Core.normalizeSimpleEscapeCase(validatedText);
+        this.text = projectLogicalNotAliasesForRecovery(normalizedEscapes);
         this.whitespaces = [];
         this.comments = [];
         const parserConstructor = (this.constructor as typeof GMLParser | undefined) ?? GMLParser;
@@ -462,4 +463,61 @@ export class GMLParser {
     simplifyLocationInfo(obj) {
         Core.simplifyLocationMetadata(obj);
     }
+}
+
+function isDirectiveLineAtIndex(sourceText: string, index: number): boolean {
+    const lineStart = sourceText.lastIndexOf("\n", index - 1) + 1;
+    for (let cursor = lineStart; cursor < sourceText.length; cursor += 1) {
+        const character = sourceText[cursor];
+        if (character === "\n" || character === "\r") {
+            return false;
+        }
+        if (/\s/u.test(character ?? "")) {
+            continue;
+        }
+        return character === "#";
+    }
+    return false;
+}
+
+function findNextLineStart(sourceText: string, index: number): number {
+    const nextLineBreak = sourceText.indexOf("\n", index);
+    return nextLineBreak === -1 ? sourceText.length : nextLineBreak + 1;
+}
+
+function projectLogicalNotAliasesForRecovery(sourceText: string): string {
+    const chunks: Array<string> = [];
+    const scanState = Core.createStringCommentScanState();
+    const sourceLength = sourceText.length;
+
+    let copiedThrough = 0;
+    let index = 0;
+    while (index < sourceLength) {
+        const scannedIndex = Core.advanceStringCommentScan(sourceText, sourceLength, index, scanState, true);
+        if (scannedIndex !== index) {
+            index = scannedIndex;
+            continue;
+        }
+
+        if (isDirectiveLineAtIndex(sourceText, index)) {
+            index = findNextLineStart(sourceText, index);
+            continue;
+        }
+
+        const word = sourceText.slice(index, index + 3);
+        if (word.toLowerCase() === "not" && Core.isLogicalNotOperatorAliasAt(sourceText, index)) {
+                chunks.push(sourceText.slice(copiedThrough, index), "!  ");
+                index += 3;
+                copiedThrough = index;
+                continue;
+            }
+        index += 1;
+    }
+
+    if (copiedThrough === 0) {
+        return sourceText;
+    }
+
+    chunks.push(sourceText.slice(copiedThrough));
+    return chunks.join("");
 }

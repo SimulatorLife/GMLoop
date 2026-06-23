@@ -271,7 +271,6 @@ void describe("GameMaker parser fixtures", () => {
 
     void it("rejects uppercase GML keyword operators", () => {
         const sources = [
-            "function test_not(left) {\n    if (NOT left) {}\n}\n",
             "function test_and(left, right) {\n    if (left AND right) {}\n}\n",
             "function test_or(left, right) {\n    if (left OR right) {}\n}\n",
             "function test_xor(left, right) {\n    if (left XOR right) {}\n}\n",
@@ -284,9 +283,18 @@ void describe("GameMaker parser fixtures", () => {
         }
     });
 
-    void it("rejects lowercase logical keyword operator 'not'", () => {
-        const source = "function test_not(left) {\n    if (not left) {}\n}\n";
-        assert.throws(() => parseFixture(source, { suppressErrors: true }), GameMakerSyntaxError);
+    void it("parses logical keyword operators 'not' and 'NOT'", () => {
+        const lowercaseSource = "function test_not(left) {\n    if (not left) {}\n}\n";
+        const uppercaseSource = "function test_not(left) {\n    if (NOT left) {}\n}\n";
+
+        assert.doesNotThrow(() => parseFixture(lowercaseSource));
+        assert.doesNotThrow(() => parseFixture(uppercaseSource));
+
+        const ast = parseFixture(lowercaseSource);
+        const statement = ast.body[0].body.body[0];
+        const testExpr = statement.test;
+        assert.strictEqual(testExpr.type, "UnaryExpression");
+        assert.strictEqual(testExpr.operator, "!");
     });
 
     void it("rejects symbolic operators recovered as identifier statements", () => {
