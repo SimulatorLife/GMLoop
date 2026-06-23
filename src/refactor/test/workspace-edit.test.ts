@@ -329,6 +329,18 @@ void test("validateFileRenameOperations rejects duplicate sources, duplicate des
     );
 });
 
+void test("WorkspaceEdit.addFileRename filters out identity renames and identical duplicate renames", () => {
+    const workspace = new WorkspaceEdit();
+    workspace.addFileRename("scripts/a.gml", "scripts/a.gml"); // Identity rename
+    assert.equal(workspace.fileRenames.length, 0);
+
+    workspace.addFileRename("scripts/a.gml", "scripts/b.gml");
+    workspace.addFileRename("scripts/a.gml", "scripts/b.gml"); // Duplicate rename
+    assert.equal(workspace.fileRenames.length, 1);
+    assert.equal(workspace.fileRenames[0].oldPath, "scripts/a.gml");
+    assert.equal(workspace.fileRenames[0].newPath, "scripts/b.gml");
+});
+
 void test("validateFileRenameOperations rejects empty and unchanged paths", () => {
     const errors = validateFileRenameOperations([
         { oldPath: "", newPath: "scripts/b.gml" },

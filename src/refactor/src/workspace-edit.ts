@@ -355,6 +355,15 @@ export class WorkspaceEdit implements WorkspaceLike {
     }
 
     addFileRename(oldPath: string, newPath: string): void {
+        if (oldPath === newPath) {
+            return;
+        }
+        const alreadyExists = this.fileRenames.some(
+            (rename) => rename.oldPath === oldPath && rename.newPath === newPath
+        );
+        if (alreadyExists) {
+            return;
+        }
         this.fileRenames.push({ oldPath, newPath });
         const mutableState = getMutableState(this);
         mutableState.touchedFilePaths.add(oldPath);

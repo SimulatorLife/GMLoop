@@ -65,3 +65,31 @@ void describe("collectResourceSidecarRenames single-file resources", () => {
         });
     }
 });
+
+void describe("collectResourceSidecarRenames carryover exclusions", () => {
+    void it("excludes directory carryover entries case-insensitively", () => {
+        const renames = collectResourceSidecarRenames({
+            resourceType: "GMNote",
+            metadataDocument: {},
+            currentResourcePath: "notes/TODO/TODO.yy",
+            oldName: "TODO",
+            newName: "todo",
+            fileRenameDestinationDir: "notes/todo",
+            primaryRenamedPaths: ["notes/TODO/TODO.yy"],
+            doesWorkspaceFilePathExist: (candidatePath) => {
+                return candidatePath === "notes/TODO/TODO.txt" || candidatePath === "notes/TODO/todo.txt";
+            },
+            doesWorkspaceDirectoryPathExist: (candidatePath) => {
+                return candidatePath === "notes/TODO" || candidatePath === "notes/todo";
+            },
+            listWorkspaceDirectoryEntries: (candidatePath) => {
+                if (candidatePath === "notes/TODO" || candidatePath === "notes/todo") {
+                    return ["todo.txt", "TODO.yy"];
+                }
+                return [];
+            }
+        });
+
+        assert.deepEqual(renames, [{ oldPath: "notes/TODO/TODO.txt", newPath: "notes/todo/todo.txt" }]);
+    });
+});

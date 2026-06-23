@@ -259,12 +259,18 @@ function collectDirectoryCarryoverRenames(parameters: {
 }): Array<ResourceSidecarRename> {
     const renames: Array<ResourceSidecarRename> = [];
 
+    const lowercasedExcludedPaths = new Set(Array.from(parameters.excludedPaths).map((p) => p.toLowerCase()));
+    const lowercasedExcludedDirectoryPaths = new Set(
+        Array.from(parameters.excludedDirectoryPaths).map((p) => p.toLowerCase())
+    );
+
     const visitDirectory = (sourceDirectoryPath: string, destinationDirectoryPath: string): void => {
         for (const entryName of parameters.listWorkspaceDirectoryEntries(sourceDirectoryPath)) {
             const oldEntryPath = path.posix.join(sourceDirectoryPath, entryName);
+            const oldEntryPathLower = oldEntryPath.toLowerCase();
             if (
-                parameters.excludedPaths.has(oldEntryPath) ||
-                pathIsInsideAnyDirectory(oldEntryPath, parameters.excludedDirectoryPaths)
+                lowercasedExcludedPaths.has(oldEntryPathLower) ||
+                pathIsInsideAnyDirectory(oldEntryPathLower, lowercasedExcludedDirectoryPaths)
             ) {
                 continue;
             }
