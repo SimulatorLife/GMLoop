@@ -130,13 +130,23 @@ function getNodeEndIndex(node: unknown): number | null {
 /**
  * Resolves both the starting and ending offsets for a node in a single call.
  *
- * The helper mirrors `getNodeStartIndex` / `getNodeEndIndex`
- * by returning `null` when either boundary is unavailable.
+ * The helper mirrors {@link getNodeStartIndex} / {@link getNodeEndIndex} and
+ * returns `null` for either boundary when it cannot be resolved from the
+ * node's location metadata.
  *
- * The end boundary is exclusive when defined.
+ * Boundary semantics:
+ * - `start` mirrors `getNodeStartIndex` (zero-based character index).
+ * - `end` mirrors `getNodeEndIndex` (one-past-the-last-character index,
+ *   suitable for use as the exclusive bound of `String#slice`).
+ *
+ * When the node has a numeric `end` it is bumped by one to convert the
+ * inclusive end-of-token marker emitted by the parser into an exclusive
+ * slice bound. When `end` is missing but `start` is present, the start is
+ * reused so single-token constructs still produce a non-null degenerate
+ * range. Both fields are `null` only when neither boundary can be derived.
  *
  * @param {unknown} node AST node whose bounds should be retrieved.
- * @returns {{ start: number | null, end: number | null }}
+ * @returns `{ start, end }` with `start` zero-based and `end` exclusive.
  */
 function getNodeRangeIndices(node: unknown): NodeRange {
     const start = getNodeStartIndex(node);
@@ -219,11 +229,22 @@ function assignClonedLocation<TTarget extends GameMakerAstNode>(
 /**
  * Select the preferred location object from a list of candidates.
  *
- * Returns the first object-like candidate found.
- * Numeric indices are normalized to `{ index: number }`.
+ * Iterates `candidates` in declaration order and returns the first one that
+ * is neither `null` nor `undefined`. Object-like inputs are returned as-is;
+ * numeric inputs are normalized to `{ index: number }` so downstream
+ * consumers can treat every accepted value uniformly as a
+ * {@link LocationObject}.
  *
- * @param {...(object|number|null|undefined)} candidates
- * @returns {object | null}
+ * Useful when reconciling location metadata from multiple parser sources
+ * (for example an explicit `node.start` together with a fallback value
+ * derived from the parser's token stream), or when callers want to accept
+ * either a raw index or a fully populated location descriptor through the
+ * same code path.
+ *
+ * @param {...(object|number|null|undefined)} candidates Ordered location
+ *        candidates; earlier entries win when several are usable.
+ * @returns {LocationObject | null} First usable candidate, or `null` when
+ *          every entry is nullish.
  */
 function getPreferredLocation(...candidates: Array<LocationObject | number | null | undefined>): LocationObject | null {
     for (const candidate of candidates) {
@@ -244,22 +265,29 @@ function getPreferredLocation(...candidates: Array<LocationObject | number | nul
 }
 
 /**
- * Retrieve the zero-based line number where `node` begins.
+ * Retrieve the one-based line number where `node` begins.
+ *
+ * Line numbers follow the ANTLR/`GameMakerAstLocation.line` convention: the
+ * first line of the source file is `1`, not `0`. Returns `null` when the
+ * node has no resolvable `start` location.
  *
  * @param {unknown} node AST node.
- * @returns {number | null} Line index or `null`.
+ * @returns {number | null} One-based line index or `null`.
  */
 function getNodeStartLine(node: unknown): number | null {
     return getLocationNumber(node, "start", "line");
 }
 
 /**
- * Retrieve the zero-based line number where `node` ends.
+ * Retrieve the one-based line number where `node` ends.
  *
- * Falls back to the node's start line if no explicit end line exists.
+ * Line numbers follow the ANTLR/`GameMakerAstLocation.line` convention: the
+ * first line of the source file is `1`, not `0`. Falls back to the node's
+ * start line when no explicit end line is attached so single-token
+ * constructs still produce a usable anchor.
  *
  * @param {unknown} node AST node.
- * @returns {number | null} Line index or `null`.
+ * @returns {number | null} One-based line index or `null`.
  */
 function getNodeEndLine(node: unknown): number | null {
     return getLocationNumber(node, "end", "line") ?? getLocationNumber(node, "start", "line");
