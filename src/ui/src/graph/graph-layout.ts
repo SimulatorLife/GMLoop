@@ -3,7 +3,7 @@ import type {
     GraphVisualizationEdgeType,
     GraphVisualizationNodeKind,
     GraphVisualizationNodeRecord
-} from "../graph/types.js";
+} from "./types.js";
 
 export type GraphLayoutNode = GraphVisualizationNodeRecord &
     Readonly<{

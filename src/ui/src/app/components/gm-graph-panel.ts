@@ -1,8 +1,5 @@
 import { html, svg } from "lit";
 
-import { EDGE_LINE_VISUAL_STYLES, NODE_VISUAL_STYLES } from "../../graph/graph-visualization-style-metadata.js";
-import type { GraphVisualizationEdgeType, GraphVisualizationNodeKind } from "../../graph/types.js";
-import { type GraphVisualizationUiModel, hasGraphEdges, hasLoadedGraphIndex } from "../contracts.js";
 import {
     createGraphLayout,
     filterGraphLayoutForDisplay,
@@ -14,7 +11,10 @@ import {
     listGraphNodeKindLegendItems,
     listGraphNodeKinds,
     resolveEffectiveGraphNodeKinds
-} from "../graph-layout.js";
+} from "../../graph/graph-layout.js";
+import { EDGE_LINE_VISUAL_STYLES, NODE_VISUAL_STYLES } from "../../graph/graph-visualization-style-metadata.js";
+import type { GraphVisualizationEdgeType, GraphVisualizationNodeKind } from "../../graph/types.js";
+import { type GraphVisualizationUiModel, hasGraphEdges, hasLoadedGraphIndex } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { EventBusManager } from "./event-bus-mixin.js";
 import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, GRAPH_UI_EVENT_RESET_DEFAULTS } from "./events.js";

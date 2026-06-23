@@ -10,7 +10,7 @@ import {
     listGraphNodeKindLegendItems,
     listGraphNodeKinds,
     resolveEffectiveGraphNodeKinds
-} from "../src/app/graph-layout.js";
+} from "../src/graph/graph-layout.js";
 import type {
     GraphVisualizationEdgeType,
     GraphVisualizationNodeKind,

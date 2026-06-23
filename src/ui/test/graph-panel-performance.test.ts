@@ -3,9 +3,9 @@ import test from "node:test";
 
 import { GmGraphPanel } from "../src/app/components/gm-graph-panel.js";
 import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
-import type { GraphLegendNodeKind } from "../src/app/graph-layout.js";
 import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
+import type { GraphLegendNodeKind } from "../src/graph/graph-layout.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
 
 class TestableGmGraphPanel extends GmGraphPanel {
