@@ -2555,11 +2555,7 @@ void test("refactor codemod --write prints indexing warning for parse-invalid fi
     });
 
     try {
-        await writeScriptResource(
-            projectRoot,
-            "demo_script",
-            'function demo_script(file) {\n    while (not file_text_eof(file)) {\n        show_debug_message("looping");\n    }\n}\n'
-        );
+        await writeScriptResource(projectRoot, "demo_script", "function demo_script(file) {\n    while ( {\n}\n");
 
         const result = await runCliTestCommand({
             argv: ["refactor", "codemod", "--write"],

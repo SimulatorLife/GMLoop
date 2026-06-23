@@ -127,7 +127,10 @@ async function getOrBuildProjectIndex(
     verbose: boolean,
     selectedCodemodIds?: Array<RegisteredCodemodId>
 ): Promise<{ projectIndex: Awaited<ReturnType<typeof buildProjectIndex>>; coordinator: any }> {
+    console.log("[refactor] Scanning project tree...");
     const { yyFiles, gmlFiles } = await Semantic.scanProjectTree(projectRoot);
+    console.log(`[refactor] Found ${yyFiles.length} manifest files and ${gmlFiles.length} GML files.`);
+    console.log("[refactor] Loading semantic project index...");
     const manifestMtimes: Record<string, number> = {};
     const sourceMtimes: Record<string, number> = {};
     for (const file of yyFiles) {
@@ -170,13 +173,22 @@ async function getOrBuildProjectIndex(
     const coordinator = Semantic.createProjectIndexCoordinator({
         fsFacade: customFsFacade,
         buildIndex: async (resolvedRoot, fsFacade, options) => {
-            if (verbose) {
-                console.log("Cache miss. Analyzing project files...");
-            }
+            console.log("[refactor] Cache miss. Rebuilding project index...");
+            let lastLogTime = Date.now();
             return await buildProjectIndex(resolvedRoot, fsFacade, {
                 ...options,
                 logger: verbose ? console : undefined,
-                parseGml: tolerantParser
+                parseGml: tolerantParser,
+                onProgress: (progress: any) => {
+                    if (progress.stage === "gml-parse" && progress.current && progress.total) {
+                        const now = Date.now();
+                        // Throttle logging to once per 500ms or when complete to avoid flooding
+                        if (now - lastLogTime > 500 || progress.current === progress.total) {
+                            console.log(`[refactor] Parsing GML files... (${progress.current}/${progress.total})`);
+                            lastLogTime = now;
+                        }
+                    }
+                }
             });
         }
     });
@@ -191,9 +203,7 @@ async function getOrBuildProjectIndex(
         ...descriptor,
         projectRoot
     });
-    if (verbose) {
-        console.log(`Semantic project index loaded (source: ${ready.source}).`);
-    }
+    console.log(`[refactor] Semantic project index loaded (source: ${ready.source}).`);
     return { projectIndex: ready.projectIndex, coordinator };
 }
 

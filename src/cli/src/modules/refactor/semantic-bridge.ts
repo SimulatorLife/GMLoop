@@ -2300,13 +2300,30 @@ export class GmlSemanticBridge {
         return dependents;
     }
 
-    listNamingConventionTargets(
+    async listNamingConventionTargets(
         filePaths?: Array<string>,
         categories?: ReadonlyArray<BridgeNamingConventionCategory>
-    ): MaybePromise<Array<BridgeNamingConventionTarget>> {
+    ): Promise<Array<BridgeNamingConventionTarget>> {
         const targets: Array<BridgeNamingConventionTarget> = [];
         const requestedCategories = categories === undefined ? null : new Set(categories);
         const shouldIncludePath = createNamingTargetPathPredicate(this.projectRoot, filePaths);
+
+        // Preload GML source texts in parallel to avoid synchronous fs reads in the loop
+        if (includesAnyRequestedNamingCategory(requestedCategories, LOCAL_NAMING_CATEGORIES)) {
+            const files = (this.projectIndex.files ?? {}) as Record<string, SemanticFileRecord>;
+            const filesToPreload: Array<string> = [];
+            for (const [filePath, fileRecord] of Object.entries(files)) {
+                const fileDeclarations = fileRecord?.declarations ?? [];
+                if (shouldIncludePath(filePath) && fileDeclarations.length > 0) {
+                    filesToPreload.push(filePath);
+                }
+            }
+            if (filesToPreload.length > 0) {
+                await Core.runInParallel(filesToPreload, async (filePath) => {
+                    await this.preloadProjectSourceText(filePath);
+                });
+            }
+        }
 
         const pushTarget = (target: BridgeNamingConventionTarget): void => {
             targets.push(target);
@@ -3386,6 +3403,20 @@ export class GmlSemanticBridge {
 
         const objectName = sourceText.slice(cursor + 1, objectEnd);
         return objectName.length > 0 ? objectName : null;
+    }
+
+    private async preloadProjectSourceText(filePath: string): Promise<void> {
+        if (this.sourceTextByPath.has(filePath)) {
+            return;
+        }
+
+        const absolutePath = path.resolve(this.projectRoot, filePath);
+        try {
+            const sourceText = await fs.promises.readFile(absolutePath, "utf8");
+            this.sourceTextByPath.set(filePath, sourceText);
+        } catch {
+            this.sourceTextByPath.set(filePath, null);
+        }
     }
 
     private readProjectSourceText(filePath: string): string | null {

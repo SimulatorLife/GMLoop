@@ -2119,8 +2119,11 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                         projectRoot: activeContext.projectRoot,
                         status: "success"
                     });
+                    activeFixProgressLogLines.push("Rebuilding SQLite graph index database...");
                     await ensureGraphIndex({ ...options, force: true }, activeContext);
+                    activeFixProgressLogLines.push("Refreshing graph visualization artifacts...");
                     await refreshActiveVisualizationArtifacts(activeContext);
+                    activeFixProgressLogLines.push("Fix workflow post-processing complete.");
                     markServeRevisionChanged();
                     return result;
                 } finally {

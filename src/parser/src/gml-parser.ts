@@ -498,11 +498,11 @@ function projectLogicalNotAliasesForRecovery(sourceText: string): string {
             isAtLineStart = true;
             isOnDirectiveLine = false;
         } else if (isAtLineStart && char !== " " && char !== "\t") {
-                if (char === "#") {
-                    isOnDirectiveLine = true;
-                }
-                isAtLineStart = false;
+            if (char === "#") {
+                isOnDirectiveLine = true;
             }
+            isAtLineStart = false;
+        }
 
         if (isOnDirectiveLine) {
             index += 1;
@@ -511,12 +511,12 @@ function projectLogicalNotAliasesForRecovery(sourceText: string): string {
 
         const word = sourceText.slice(index, index + 3);
         if (word.toLowerCase() === "not" && Core.isLogicalNotOperatorAliasAt(sourceText, index)) {
-                chunks.push(sourceText.slice(copiedThrough, index), "!  ");
-                index += 3;
-                copiedThrough = index;
-                isAtLineStart = false;
-                continue;
-            }
+            chunks.push(sourceText.slice(copiedThrough, index), "!  ");
+            index += 3;
+            copiedThrough = index;
+            isAtLineStart = false;
+            continue;
+        }
         index += 1;
     }
 

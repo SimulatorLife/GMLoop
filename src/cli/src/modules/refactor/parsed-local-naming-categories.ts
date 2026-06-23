@@ -83,8 +83,8 @@ function extractParsedLocalDeclarationMetadata(sourceText: string): ParsedLocalD
         key: string | number | null
     ): void => {
         if (Array.isArray(value)) {
-            for (const [entryIndex, entry] of value.entries()) {
-                visitNode(entry, insideConstructorScope, value, entryIndex);
+            for (let i = 0, len = value.length; i < len; i++) {
+                visitNode(value[i], insideConstructorScope, value, i);
             }
             return;
         }
@@ -102,8 +102,10 @@ function extractParsedLocalDeclarationMetadata(sourceText: string): ParsedLocalD
         const node = value as Record<string, unknown>;
 
         if (!Core.isVariableDeclarationNode(node)) {
-            for (const [childKey, child] of Object.entries(node)) {
-                visitNode(child, nextInsideConstructorScope, node, childKey);
+            const keys = Object.keys(node);
+            for (let i = 0, len = keys.length; i < len; i++) {
+                const childKey = keys[i];
+                visitNode(node[childKey], nextInsideConstructorScope, node, childKey);
             }
             return;
         }
@@ -128,8 +130,10 @@ function extractParsedLocalDeclarationMetadata(sourceText: string): ParsedLocalD
             }
         }
 
-        for (const [childKey, child] of Object.entries(node)) {
-            visitNode(child, nextInsideConstructorScope, node, childKey);
+        const keys = Object.keys(node);
+        for (let i = 0, len = keys.length; i < len; i++) {
+            const childKey = keys[i];
+            visitNode(node[childKey], nextInsideConstructorScope, node, childKey);
         }
     };
 

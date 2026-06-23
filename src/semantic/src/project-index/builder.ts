@@ -1221,6 +1221,8 @@ function ensureFileRecord(filesMap, relativePath, scopeId) {
         scriptCalls: []
     }));
 }
+const TRAVERSAL_LINK_KEYS = new Set(["parent", "enclosingNode", "precedingNode", "followingNode"]);
+
 function traverseAst(root, visitor) {
     if (!Core.isObjectLike(root)) {
         return;
@@ -1237,7 +1239,15 @@ function traverseAst(root, visitor) {
         }
         seen.add(node);
         visitor(node);
-        for (const key of Object.keys(node)) {
+        const keys = Object.keys(node);
+        for (const key of keys) {
+            if (TRAVERSAL_LINK_KEYS.has(key)) {
+                if (key === "parent" && node.type === "ConstructorDeclaration") {
+                    // fall through to traverse the constructor's parent clause
+                } else {
+                    continue;
+                }
+            }
             pushNodeValueChildren(stack, node[key]);
         }
     }
@@ -1654,10 +1664,19 @@ function collectConstructorVariableDeclarationScopeIds(ast) {
         }
 
         const childInsideConstructor = insideConstructor || nodeType === "ConstructorDeclaration";
-        for (const value of Object.values(node)) {
+        const keys = Object.keys(node);
+        for (const key of keys) {
+            if (TRAVERSAL_LINK_KEYS.has(key)) {
+                if (key === "parent" && nodeType === "ConstructorDeclaration") {
+                    // fall through
+                } else {
+                    continue;
+                }
+            }
+            const value = node[key];
             if (Array.isArray(value)) {
-                for (const child of value) {
-                    visit(child, childInsideConstructor);
+                for (const element of value) {
+                    visit(element, childInsideConstructor);
                 }
                 continue;
             }
@@ -2374,8 +2393,11 @@ async function processProjectGmlFilesForIndex({
     builtInNames,
     projectRoot,
     signal,
-    identifierSink
+    identifierSink,
+    onProgress
 }) {
+    let processed = 0;
+    const total = gmlFiles.length;
     await processWithConcurrency(
         gmlFiles,
         gmlConcurrency,
@@ -2395,6 +2417,10 @@ async function processProjectGmlFilesForIndex({
                 projectRoot,
                 identifierSink
             });
+            processed += 1;
+            if (onProgress) {
+                onProgress({ stage: "gml-parse", current: processed, total });
+            }
         },
         { signal }
     );
@@ -2492,7 +2518,8 @@ export async function buildProjectIndex(projectRoot, fsFacade = Core.defaultFsFa
             builtInNames,
             projectRoot: resolvedRoot,
             signal,
-            identifierSink
+            identifierSink,
+            onProgress: options?.onProgress
         });
         recordMemoryHighWater();
 
