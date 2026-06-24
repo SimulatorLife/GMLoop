@@ -175,7 +175,7 @@ void test("playground panel view selector uses semantic <button> elements", () =
     panel.state = createMockState();
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /button\s+type="button"\s+class="gm-btn--chip active"\s+aria-pressed=true/u);
+    assert.match(rendered, /button\s+type="button"\s+class="rule-toggle active"\s+aria-pressed=true/u);
     assert.match(rendered, /Output Code/u);
     assert.match(rendered, /AST View/u);
 });
@@ -234,8 +234,8 @@ void test("playground panel renders transpile modes in the controls panel and of
     assert.match(controlsPanelMatch[0], /Expression Transpile/u);
     assert.match(rendered, /Patch Transpile/);
     assert.match(rendered, /Expression Transpile/);
-    assert.equal([...rendered.matchAll(/class="rule-toggle active"/gu)].length, 0);
-    assert.equal([...rendered.matchAll(/class="rule-toggle "/gu)].length, 2);
+    assert.equal([...rendered.matchAll(/class="rule-toggle active"/gu)].length, 1);
+    assert.equal([...rendered.matchAll(/class="rule-toggle "/gu)].length, 3);
 });
 
 void test("playground panel starts with the shared demo sample source", () => {

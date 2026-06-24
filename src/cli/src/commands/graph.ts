@@ -1444,6 +1444,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         null;
     let activeFixProgressLogLines = new Array<string>();
     let isFixWorkflowRunning = false;
+    let activeFixWorkflow: GraphVisualizationProjectWorkflow | null = null;
     const activeLiveReloadSession: GraphVisualizationLiveReloadSessionState = {
         childProcess: null,
         childStderrBuffer: [],
@@ -2104,6 +2105,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 }
 
                 activeFixProgressLogLines = [];
+                activeFixWorkflow = workflow;
                 isFixWorkflowRunning = true;
                 try {
                     const result = await runGraphVisualizationProjectWorkflow(
@@ -2128,12 +2130,15 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                     return result;
                 } finally {
                     isFixWorkflowRunning = false;
+                    activeFixWorkflow = null;
                 }
             },
             getFixProgress: () =>
                 Object.freeze({
                     isRunning: isFixWorkflowRunning,
-                    logLines: Object.freeze([...activeFixProgressLogLines])
+                    logLines: Object.freeze([...activeFixProgressLogLines]),
+                    status: isFixWorkflowRunning ? "running" : (activeLastFixRun?.status ?? "idle"),
+                    workflow: activeFixWorkflow ?? undefined
                 }),
             clearFixProgress: () => {
                 activeFixProgressLogLines = [];

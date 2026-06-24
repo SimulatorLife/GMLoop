@@ -435,6 +435,96 @@ export class GmAppShell extends LightDomLitElement {
         }
     }
 
+    #reconnectTimer: ReturnType<typeof setInterval> | null = null;
+
+    #reconnectToActiveFixWorkflow = async (): Promise<void> => {
+        if (!this.model?.isServerMode || this.#state.isFixPending) {
+            return;
+        }
+
+        try {
+            const response = await fetch("/api/fix/progress", {
+                cache: "no-store",
+                headers: { Accept: "application/json" }
+            });
+            if (!response.ok) {
+                return;
+            }
+            const progress = (await response.json()) as {
+                isRunning: boolean;
+                logLines: string[];
+                workflow?: GraphVisualizationProjectWorkflow;
+                status?: string;
+            };
+
+            if (progress.isRunning && progress.workflow) {
+                const workflow = progress.workflow;
+                this.#store.dispatch({ pending: true, type: "set-fix-pending", workflow });
+                this.#store.dispatch({ logLines: progress.logLines, type: "set-fix-log-lines" });
+                this.#store.dispatch({ errorMessage: null, type: "set-fix-error" });
+
+                this.#reconnectTimer = setInterval(async () => {
+                    try {
+                        const pollResponse = await fetch("/api/fix/progress", {
+                            cache: "no-store",
+                            headers: { Accept: "application/json" }
+                        });
+                        if (!pollResponse.ok) {
+                            return;
+                        }
+                        const pollProgress = (await pollResponse.json()) as {
+                            isRunning: boolean;
+                            logLines: string[];
+                            workflow?: GraphVisualizationProjectWorkflow;
+                            status?: string;
+                        };
+
+                        this.#store.dispatch({ logLines: pollProgress.logLines, type: "set-fix-log-lines" });
+
+                        if (!pollProgress.isRunning) {
+                            if (this.#reconnectTimer) {
+                                clearInterval(this.#reconnectTimer);
+                                this.#reconnectTimer = null;
+                            }
+                            this.#store.dispatch({ pending: false, type: "set-fix-pending", workflow });
+                            this.#store.dispatch({
+                                status: pollProgress.status === "success" ? "success" : "error",
+                                type: "set-fix-status"
+                            });
+                        }
+                    } catch (error) {
+                        console.error("Error polling reconnected fix workflow progress:", error);
+                    }
+                }, 1000);
+            }
+        } catch (error) {
+            console.error("Failed to reconnect to active fix workflow:", error);
+        }
+    };
+
+    public override connectedCallback(): void {
+        super.connectedCallback();
+        void this.#reconnectToActiveFixWorkflow();
+    }
+
+    public override disconnectedCallback(): void {
+        if (this.#reconnectTimer) {
+            clearInterval(this.#reconnectTimer);
+            this.#reconnectTimer = null;
+        }
+        super.disconnectedCallback();
+    }
+
+    /** @internal */
+    public getStoreForTest(): GraphVisualizationUiStore {
+        return this.#store;
+    }
+
+    /** @internal */
+    public getStateForTest(): GraphVisualizationUiState {
+        return this.#state;
+    }
+
     protected override render() {
         if (!this.model) {
             return html``;

@@ -232,7 +232,7 @@ Current graph serve-mode host actions are:
 - `POST /api/reindex`: force-regenerate the current graph index
 - `POST /api/open`: switch the active UI project globally, optionally using a caller-supplied `path`
 - `POST /api/fix`: run the requested `fix`, `format`, `refactor`, or `lint` project workflow in write mode and return log lines for the Fix tab
-- `GET /api/fix/progress`: return the latest in-flight fix workflow log lines so the Fix tab can live-update while work is running
+- `GET /api/fix/progress`: return the latest in-flight fix workflow log lines, the running workflow type, and status so the Fix tab can live-update while work is running and automatically reconnect across UI hot-reloads and refreshes
 - `POST /api/live-reload/start`: build and start the configured live-reload pipeline, then return the latest live-reload model
 
 The host serves the bundle entry document and static asset files, while `@gmloop/ui` remains responsible for typed rendering contracts and client presentation behavior.

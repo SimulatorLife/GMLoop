@@ -711,6 +711,63 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         `;
     }
 
+    #renderFixtureSelector() {
+        return html`
+            <div class="playground-control-section">
+                <div class="playground-control-section-header">
+                    <label for="playground-fixture-select">Fixture Test</label>
+                    <span class="playground-control-section-note">Load test case</span>
+                </div>
+                <select
+                    id="playground-fixture-select"
+                    class="gm-select playground-fixture-select"
+                    @change=${(e: Event) => {
+                        const target = e.target as HTMLSelectElement;
+                        this.#onSelectFixture(target.value);
+                    }}
+                >
+                    <option value="">None (Custom Input)</option>
+                    ${this.#fixtures.map(
+                        (fixture) => html`
+                            <option value=${fixture.caseId} ?selected=${this.#selectedFixtureId === fixture.caseId}>
+                                [${fixture.kind}] ${fixture.caseId}
+                            </option>
+                        `
+                    )}
+                </select>
+            </div>
+        `;
+    }
+
+    #renderViewModeControls() {
+        return html`
+            <div class="playground-control-section">
+                <div class="playground-control-section-header">
+                    <span>View Mode</span>
+                    <span class="playground-control-section-note">Output representation</span>
+                </div>
+                <div class="rule-toggles">
+                    <button
+                        type="button"
+                        class="rule-toggle ${this.#viewMode === "code" ? "active" : ""}"
+                        aria-pressed=${this.#viewMode === "code"}
+                        @click=${() => this.#setViewMode("code")}
+                    >
+                        Output Code
+                    </button>
+                    <button
+                        type="button"
+                        class="rule-toggle ${this.#viewMode === "ast" ? "active" : ""}"
+                        aria-pressed=${this.#viewMode === "ast"}
+                        @click=${() => this.#setViewMode("ast")}
+                    >
+                        AST View
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
     #renderTranspileControls() {
         return html`
             <div class="playground-control-section">
@@ -748,6 +805,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                 aria-label="Playground controls"
             >
                 <div class="playground-controls-body">
+                    ${this.#renderFixtureSelector()} ${this.#renderViewModeControls()}
                     ${this.#renderTranspileControls()} ${this.#renderRuleDetails()}
                 </div>
             </aside>
@@ -785,47 +843,6 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                         </span>
                         <span>${this.#controlsPanelOpen ? "Hide Controls" : "Show Controls"}</span>
                     </button>
-                    <div class="playground-fixture-select-container">
-                        <label for="playground-fixture-select" class="playground-fixture-label">Fixture Test:</label>
-                        <select
-                            id="playground-fixture-select"
-                            class="gm-select playground-fixture-select"
-                            @change=${(e: Event) => {
-                                const target = e.target as HTMLSelectElement;
-                                this.#onSelectFixture(target.value);
-                            }}
-                        >
-                            <option value="">None (Custom Input)</option>
-                            ${this.#fixtures.map(
-                                (fixture) => html`
-                                    <option
-                                        value=${fixture.caseId}
-                                        ?selected=${this.#selectedFixtureId === fixture.caseId}
-                                    >
-                                        [${fixture.kind}] ${fixture.caseId}
-                                    </option>
-                                `
-                            )}
-                        </select>
-                    </div>
-                    <div class="gm-view-selector">
-                        <button
-                            type="button"
-                            class="gm-btn--chip ${this.#viewMode === "code" ? "active" : ""}"
-                            aria-pressed=${this.#viewMode === "code"}
-                            @click=${() => this.#setViewMode("code")}
-                        >
-                            Output Code
-                        </button>
-                        <button
-                            type="button"
-                            class="gm-btn--chip ${this.#viewMode === "ast" ? "active" : ""}"
-                            aria-pressed=${this.#viewMode === "ast"}
-                            @click=${() => this.#setViewMode("ast")}
-                        >
-                            AST View
-                        </button>
-                    </div>
                 </div>
                 <div class=${controlsPanelClassName}>
                     ${this.#renderControlsPanel()}

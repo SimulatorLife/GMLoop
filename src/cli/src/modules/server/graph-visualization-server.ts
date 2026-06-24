@@ -63,6 +63,8 @@ type GraphVisualizationServerRunFix = (
 type GraphVisualizationServerFixProgress = Readonly<{
     isRunning: boolean;
     logLines: ReadonlyArray<string>;
+    status?: string;
+    workflow?: GraphVisualizationProjectWorkflow;
 }>;
 type GraphVisualizationServerGetFixProgress = () => GraphVisualizationServerFixProgress;
 type GraphVisualizationServerClearFixProgress = () => void;

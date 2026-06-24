@@ -25,6 +25,8 @@ type FixProgressApiResponse = Readonly<{
     isRunning?: boolean;
     logLines?: ReadonlyArray<string>;
     ok?: boolean;
+    status?: string;
+    workflow?: GraphVisualizationProjectWorkflow;
 }>;
 
 type MutationApiResponse = Readonly<{
