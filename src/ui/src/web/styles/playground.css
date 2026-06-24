@@ -1,29 +1,21 @@
 #playground-page {
   display: none;
-  grid-template-rows: auto 1fr;
   height: calc(100vh - 300px);
   min-height: 560px;
   border: 1px solid var(--gm-border);
   border-radius: var(--gm-radius-xl);
-  overflow: auto;
+  overflow: hidden;
   background: var(--gm-bg-light);
   box-shadow: var(--gm-shadow);
   backdrop-filter: var(--gm-blur-lg);
 }
 
 #playground-page.active {
-  display: grid;
+  display: flex;
+  flex-direction: column;
 }
 
-.playground-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--gm-space-section-gap);
-  padding: var(--gm-space-lg) var(--gm-space-xl);
-  background: var(--gm-bg-light);
-  border-bottom: 1px solid var(--gm-border);
-}
+
 
 .playground-controls-toggle {
   display: inline-flex;
@@ -81,14 +73,15 @@
 .playground-layout {
   position: relative;
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 320px;
   min-height: 0;
+  flex: 1;
   overflow: hidden;
   transition: grid-template-columns var(--gm-transition);
 }
 
 .playground-layout.controls-collapsed {
-  grid-template-columns: 72px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 72px;
 }
 
 .playground-controls-panel {
@@ -97,7 +90,7 @@
   min-height: 0;
   overflow: hidden;
   background: var(--gm-bg-inset);
-  border-right: 1px solid var(--gm-border);
+  border-left: 1px solid var(--gm-border);
 }
 
 .playground-control-section-note {

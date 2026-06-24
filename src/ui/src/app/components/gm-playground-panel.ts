@@ -31,9 +31,6 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
     public constructor() {
         super();
-        if ("matchMedia" in globalThis && globalThis.matchMedia("(max-width: 920px)").matches) {
-            this.#controlsPanelOpen = false;
-        }
     }
 
     // The session controller is declared before the callbacks it references
@@ -107,8 +104,6 @@ export class GmPlaygroundPanel extends LightDomLitElement {
     #viewMode: "code" | "ast" = "code";
 
     #transpileMode: "none" | "patch" | "expression" = "none";
-
-    #controlsPanelOpen = true;
 
     #error: string | null = null;
 
@@ -543,12 +538,6 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         this.requestUpdate();
     }
 
-    #toggleControlsPanel(event: Event): void {
-        event.preventDefault();
-        this.#controlsPanelOpen = !this.#controlsPanelOpen;
-        this.requestUpdate();
-    }
-
     #renderRuleRow(parameters: { description: string; keyText: string; onToggle: () => void; selected: boolean }) {
         return html`
             <label class="rule-details-item" title=${parameters.description}>
@@ -798,10 +787,11 @@ export class GmPlaygroundPanel extends LightDomLitElement {
     }
 
     #renderControlsPanel() {
+        const isOpen = this.state?.playgroundControlsOpen === true;
         return html`
             <aside
                 id="playground-controls-panel"
-                class="playground-controls-panel ${this.#controlsPanelOpen ? "is-open" : "is-collapsed"}"
+                class="playground-controls-panel ${isOpen ? "is-open" : "is-collapsed"}"
                 aria-label="Playground controls"
             >
                 <div class="playground-controls-body">
@@ -817,9 +807,10 @@ export class GmPlaygroundPanel extends LightDomLitElement {
             return html``;
         }
 
+        const isOpen = this.state.playgroundControlsOpen === true;
         const activeClassName =
             this.state.activePage === "playground" ? "page content-page active" : "page content-page";
-        const controlsPanelClassName = this.#controlsPanelOpen
+        const controlsPanelClassName = isOpen
             ? "playground-layout controls-open"
             : "playground-layout controls-collapsed";
 
@@ -828,24 +819,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                 ${this.state.playgroundErrorMessage
                     ? html`<gm-error-banner .message=${this.state.playgroundErrorMessage}></gm-error-banner>`
                     : null}
-                <div class="playground-toolbar">
-                    <button
-                        type="button"
-                        class="playground-controls-toggle ${this.#controlsPanelOpen ? "is-open" : "is-closed"}"
-                        aria-controls="playground-controls-panel"
-                        aria-expanded=${this.#controlsPanelOpen}
-                        @click=${(event: Event) => this.#toggleControlsPanel(event)}
-                    >
-                        <span class="playground-controls-toggle-icon" aria-hidden="true">
-                            <span></span>
-                            <span></span>
-                            <span></span>
-                        </span>
-                        <span>${this.#controlsPanelOpen ? "Hide Controls" : "Show Controls"}</span>
-                    </button>
-                </div>
                 <div class=${controlsPanelClassName}>
-                    ${this.#renderControlsPanel()}
                     <div class="playground-main">
                         <div class="editor-pane">
                             <div class="pane-header">
@@ -886,6 +860,7 @@ ${unsafeHTML(highlightGml(this.#sessionController.input))}</pre
                             )}
                         </div>
                     </div>
+                    ${this.#renderControlsPanel()}
                 </div>
             </section>
         `;

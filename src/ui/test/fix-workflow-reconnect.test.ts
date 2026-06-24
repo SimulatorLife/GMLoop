@@ -111,7 +111,7 @@ void test("GmAppShell reconnects to in-flight fix workflow on connection and pol
     assert.equal(timerInterval, 1000);
 
     if (timerCallback) {
-        await (timerCallback)();
+        await timerCallback();
     }
 
     await new Promise((resolve) => setTimeout(resolve, 10));

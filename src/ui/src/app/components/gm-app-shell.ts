@@ -33,6 +33,7 @@ import {
     GRAPH_UI_EVENT_SET_DOCS_VIEW,
     GRAPH_UI_EVENT_SET_SEARCH_QUERY,
     GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW,
+    GRAPH_UI_EVENT_TOGGLE_PLAYGROUND_CONTROLS,
     GRAPH_UI_EVENT_TRIGGER_CREATE_CONFIG,
     GRAPH_UI_EVENT_TRIGGER_FIX,
     GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT,
@@ -235,6 +236,10 @@ export class GmAppShell extends LightDomLitElement {
         this.#store.dispatch({ type: "clear-error" });
     };
 
+    #onTogglePlaygroundControls = (): void => {
+        this.#store.dispatch({ type: "toggle-playground-controls" });
+    };
+
     #onClearPageError = (event: Event): void => {
         const customEvent = event as CustomEvent<GraphUiClearPageErrorDetail>;
         this.#store.dispatch({ page: customEvent.detail.page, type: "clear-page-error" });
@@ -264,6 +269,7 @@ export class GmAppShell extends LightDomLitElement {
             { event: GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK, handler: this.#onInitializeAutoGameAgentPack },
             { event: GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED, handler: this.#onSetAutoGameSkillEnabled },
             { event: GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, handler: this.#onClearPageError },
+            { event: GRAPH_UI_EVENT_TOGGLE_PLAYGROUND_CONTROLS, handler: this.#onTogglePlaygroundControls },
             { event: "dismiss", handler: this.#onDismissErrorBanner }
         ]);
 

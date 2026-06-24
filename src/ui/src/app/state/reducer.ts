@@ -30,6 +30,12 @@ export function createInitialGraphVisualizationUiState(): GraphVisualizationUiSt
         docsErrorMessage: null,
         configErrorMessage: null,
         playgroundErrorMessage: null,
+        playgroundControlsOpen:
+            typeof globalThis !== "undefined" &&
+            "matchMedia" in globalThis &&
+            globalThis.matchMedia("(max-width: 920px)").matches
+                ? false
+                : true,
         autoGameErrorMessage: null
     };
 }
@@ -103,6 +109,12 @@ export function reduceGraphVisualizationUiState(
             return {
                 ...state,
                 activeGraphView: state.activeGraphView === "visual" ? "json" : "visual"
+            };
+        }
+        case "toggle-playground-controls": {
+            return {
+                ...state,
+                playgroundControlsOpen: !state.playgroundControlsOpen
             };
         }
         case "cycle-label-mode": {

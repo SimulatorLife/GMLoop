@@ -68,6 +68,7 @@ export type GraphVisualizationUiState = Readonly<{
     docsErrorMessage: string | null;
     configErrorMessage: string | null;
     playgroundErrorMessage: string | null;
+    playgroundControlsOpen: boolean;
     autoGameErrorMessage: string | null;
 }>;
 
@@ -81,6 +82,7 @@ export type GraphVisualizationUiAction =
     | Readonly<{ mcpServerStatus: GraphVisualizationUiMcpServerStatus; type: "set-mcp-server-status" }>
     | Readonly<{ searchQuery: string; type: "set-search-query" }>
     | Readonly<{ type: "toggle-graph-view" }>
+    | Readonly<{ type: "toggle-playground-controls" }>
     | Readonly<{ type: "cycle-label-mode" }>
     | Readonly<{ pending: boolean; type: "set-regenerate-pending" }>
     | Readonly<{ pending: boolean; type: "set-config-save-pending" }>

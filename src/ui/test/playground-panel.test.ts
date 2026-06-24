@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import { GmGraphToolbar } from "../src/app/components/gm-graph-toolbar.js";
 import { GmPlaygroundPanel } from "../src/app/components/gm-playground-panel.js";
 import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
 import { DEFAULT_PLAYGROUND_GML_SOURCE } from "../src/app/playground-default-gml.js";
@@ -11,6 +12,12 @@ import type { GraphVisualizationProjectConfigurationCatalog } from "../src/graph
 import { renderTemplateValue } from "./render-template-helpers.js";
 
 class TestableGmPlaygroundPanel extends GmPlaygroundPanel {
+    public renderForTest(): unknown {
+        return this.render();
+    }
+}
+
+class TestableGmGraphToolbar extends GmGraphToolbar {
     public renderForTest(): unknown {
         return this.render();
     }
@@ -150,17 +157,22 @@ function createMockProjectConfigurationCatalog(): GraphVisualizationProjectConfi
 }
 
 void test("playground panel renders controls panel toggle with expanded state", () => {
+    const toolbar = new TestableGmGraphToolbar();
+    toolbar.model = createMockModel();
+    toolbar.state = createMockState();
+    const toolbarRendered = renderTemplateValue(toolbar.renderForTest());
+
     const panel = new TestableGmPlaygroundPanel();
     panel.model = createMockModel();
     panel.state = createMockState();
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /id="playground-page"[\s\S]*class=page content-page active/u);
-    assert.match(rendered, /button\s+type="button"\s+class="playground-controls-toggle is-open"/u);
-    assert.match(rendered, /aria-controls="playground-controls-panel"/u);
-    assert.match(rendered, /aria-expanded=true/u);
-    assert.match(rendered, /class="playground-controls-toggle-icon"\s+aria-hidden="true"/u);
-    assert.match(rendered, />\s*Hide Controls\s*</u);
+    assert.match(toolbarRendered, /button\s+type="button"\s+class="playground-controls-toggle is-open"/u);
+    assert.match(toolbarRendered, /aria-controls="playground-controls-panel"/u);
+    assert.match(toolbarRendered, /aria-expanded=true/u);
+    assert.match(toolbarRendered, /class="playground-controls-toggle-icon"\s+aria-hidden="true"/u);
+    assert.match(toolbarRendered, />\s*Hide Controls\s*</u);
     assert.match(rendered, /id="playground-controls-panel"/u);
     assert.doesNotMatch(rendered, /Format, lint, codemod, and transpile selections/u);
     assert.doesNotMatch(rendered, />\s*Collapse\s*</u);
@@ -197,6 +209,14 @@ void test("playground panel clears debounce timer on disconnect", () => {
 });
 
 void test("playground panel toolbar keeps rule sections out of the top bar", () => {
+    const toolbar = new TestableGmGraphToolbar();
+    toolbar.model = {
+        ...createMockModel(),
+        projectConfigurationCatalog: createMockProjectConfigurationCatalog()
+    };
+    toolbar.state = createMockState();
+    const toolbarRendered = renderTemplateValue(toolbar.renderForTest());
+
     const panel = new TestableGmPlaygroundPanel();
     panel.model = {
         ...createMockModel(),
@@ -204,15 +224,10 @@ void test("playground panel toolbar keeps rule sections out of the top bar", () 
     };
     panel.state = createMockState();
     const rendered = renderTemplateValue(panel.renderForTest());
-    const toolbarStart = rendered.indexOf('class="playground-toolbar"');
-    const layoutStart = rendered.indexOf("class=playground-layout controls-open");
-    const toolbarContent = rendered.slice(toolbarStart, layoutStart);
 
-    assert.notEqual(toolbarStart, -1);
-    assert.notEqual(layoutStart, -1);
-    assert.doesNotMatch(toolbarContent, /Format Options/u);
-    assert.doesNotMatch(toolbarContent, /Lint Rules/u);
-    assert.doesNotMatch(toolbarContent, /Codemods/u);
+    assert.doesNotMatch(toolbarRendered, /Format Options/u);
+    assert.doesNotMatch(toolbarRendered, /Lint Rules/u);
+    assert.doesNotMatch(toolbarRendered, /Codemods/u);
     assert.match(rendered, /class="playground-controls-panel is-open"/u);
     assert.match(rendered, /Format Options/u);
     assert.match(rendered, /Lint Rules/u);

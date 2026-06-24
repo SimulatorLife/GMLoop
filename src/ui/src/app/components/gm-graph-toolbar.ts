@@ -20,6 +20,7 @@ import {
     GRAPH_UI_EVENT_SET_DOCS_VIEW,
     GRAPH_UI_EVENT_SET_SEARCH_QUERY,
     GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW,
+    GRAPH_UI_EVENT_TOGGLE_PLAYGROUND_CONTROLS,
     GRAPH_UI_EVENT_TRIGGER_FIX,
     GRAPH_UI_EVENT_TRIGGER_REGENERATE,
     GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD,
@@ -557,9 +558,10 @@ export class GmGraphToolbar extends LightDomLitElement {
             return null;
         }
 
-        const configPanel = (
-            typeof document === "undefined" ? null : document.querySelector("gm-config-panel")
-        );
+        const configPanel =
+            typeof document === "undefined"
+                ? null
+                : (document.querySelector("gm-config-panel"));
         const isDirty = configPanel?.isDraftDirty === true;
         const isValid = configPanel?.isDraftValid !== false;
         const validationError = configPanel?.draftValidationError ?? null;
@@ -779,6 +781,37 @@ export class GmGraphToolbar extends LightDomLitElement {
         `;
     }
 
+    #emitTogglePlaygroundControls(): void {
+        this.dispatchEvent(
+            new CustomEvent(GRAPH_UI_EVENT_TOGGLE_PLAYGROUND_CONTROLS, {
+                bubbles: true,
+                composed: true
+            })
+        );
+    }
+
+    #renderPlaygroundControls() {
+        const isOpen = this.state?.playgroundControlsOpen === true;
+        return html`
+            <div class="toolbar-control-group">
+                <button
+                    type="button"
+                    class="playground-controls-toggle ${isOpen ? "is-open" : "is-closed"}"
+                    aria-controls="playground-controls-panel"
+                    aria-expanded=${isOpen ? "true" : "false"}
+                    @click=${() => this.#emitTogglePlaygroundControls()}
+                >
+                    <span class="playground-controls-toggle-icon" aria-hidden="true">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </span>
+                    <span>${isOpen ? "Hide Controls" : "Show Controls"}</span>
+                </button>
+            </div>
+        `;
+    }
+
     protected render() {
         if (!this.model || !this.state) {
             return html``;
@@ -822,7 +855,6 @@ export class GmGraphToolbar extends LightDomLitElement {
         const fixControlsClassName = this.state.activePage === "fix" ? "toolbar-fix-controls" : "";
         const docsControlsClassName = this.state.activePage === "docs" ? "toolbar-docs-controls" : "";
         const configControlsClassName = this.state.activePage === "config" ? "toolbar-config-controls" : "";
-
         return html`
             <div id="page-toolbar" class="page-toolbar">
                 <div class="toolbar-heading-row">
@@ -843,6 +875,9 @@ export class GmGraphToolbar extends LightDomLitElement {
                         ? html`<div id="live-reload-controls" class=${liveReloadControlsClassName}>
                               ${this.#renderLiveReloadControls()}
                           </div>`
+                        : null}
+                    ${this.state.activePage === "playground"
+                        ? html`<div class="toolbar-playground-controls">${this.#renderPlaygroundControls()}</div>`
                         : null}
                 </div>
                 ${this.state.activePage === "docs"

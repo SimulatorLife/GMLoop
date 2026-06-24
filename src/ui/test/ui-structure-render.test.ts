@@ -305,10 +305,6 @@ void test("spacing tokens define shared page and toolbar rhythm", () => {
         responsiveSource,
         /main\s*\{[\s\S]*padding:\s*var\(--gm-space-lg\)\s+var\(--gm-space-lg\)\s+var\(--gm-space-lg\);/u
     );
-    assert.match(
-        responsiveSource,
-        /\.playground-toolbar\s*\{[\s\S]*flex-direction:\s*column;[\s\S]*gap:\s*var\(--gm-space-md\);/u
-    );
 });
 
 void test("shared view selector keeps inactive tabs visually unoutlined", () => {
