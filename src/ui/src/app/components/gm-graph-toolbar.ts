@@ -557,7 +557,9 @@ export class GmGraphToolbar extends LightDomLitElement {
             return null;
         }
 
-        const configPanel = typeof document === "undefined" ? null : document.querySelector("gm-config-panel");
+        const configPanel = (
+            typeof document === "undefined" ? null : document.querySelector("gm-config-panel")
+        );
         const isDirty = configPanel?.isDraftDirty === true;
         const isValid = configPanel?.isDraftValid !== false;
         const validationError = configPanel?.draftValidationError ?? null;
