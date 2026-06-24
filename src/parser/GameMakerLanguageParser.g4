@@ -306,8 +306,8 @@ newExpression
     ;
 
 lValueStartExpression
-    : identifier # IdentifierLValue
-    | newExpression # NewLValue
+    : newExpression # NewLValue
+    | identifier # IdentifierLValue
     | Dot memberIdentifier # ImplicitMemberDotLValue
     | OpenParen expression CloseParen # ParenthesizedLValue
     | structLiteral # StructLiteralLValue
@@ -558,6 +558,7 @@ softKeyword
     | And
     | Or
     | Xor
+    | New
     ;
 
 propertySoftKeyword

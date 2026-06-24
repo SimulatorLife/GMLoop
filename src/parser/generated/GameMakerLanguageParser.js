@@ -67,14 +67,14 @@ const serializedATN = [4,1,114,772,2,0,7,0,2,1,7,1,2,2,7,2,2,3,7,3,2,4,7,
 94,96,98,100,102,104,106,108,110,112,114,116,118,120,122,124,126,128,130,
 132,134,136,138,140,142,144,146,148,150,152,0,15,1,0,28,31,1,0,24,25,1,0,
 36,37,2,0,19,19,42,43,1,0,38,41,1,0,22,23,1,0,3,8,3,0,19,19,35,35,50,59,
-1,1,108,108,1,1,111,111,1,0,101,102,4,0,27,27,30,31,47,49,96,96,2,0,12,12,
-15,15,2,0,14,14,16,16,4,0,3,97,99,99,103,106,112,114,843,0,155,1,0,0,0,2,
-160,1,0,0,0,4,192,1,0,0,0,6,197,1,0,0,0,8,203,1,0,0,0,10,242,1,0,0,0,12,
-244,1,0,0,0,14,248,1,0,0,0,16,252,1,0,0,0,18,254,1,0,0,0,20,256,1,0,0,0,
-22,258,1,0,0,0,24,260,1,0,0,0,26,273,1,0,0,0,28,277,1,0,0,0,30,283,1,0,0,
-0,32,288,1,0,0,0,34,291,1,0,0,0,36,300,1,0,0,0,38,310,1,0,0,0,40,313,1,0,
-0,0,42,317,1,0,0,0,44,320,1,0,0,0,46,322,1,0,0,0,48,326,1,0,0,0,50,341,1,
-0,0,0,52,343,1,0,0,0,54,348,1,0,0,0,56,359,1,0,0,0,58,372,1,0,0,0,60,374,
+1,1,108,108,1,1,111,111,1,0,101,102,5,0,27,27,30,31,47,49,75,75,96,96,2,
+0,12,12,15,15,2,0,14,14,16,16,4,0,3,97,99,99,103,106,112,114,843,0,155,1,
+0,0,0,2,160,1,0,0,0,4,192,1,0,0,0,6,197,1,0,0,0,8,203,1,0,0,0,10,242,1,0,
+0,0,12,244,1,0,0,0,14,248,1,0,0,0,16,252,1,0,0,0,18,254,1,0,0,0,20,256,1,
+0,0,0,22,258,1,0,0,0,24,260,1,0,0,0,26,273,1,0,0,0,28,277,1,0,0,0,30,283,
+1,0,0,0,32,288,1,0,0,0,34,291,1,0,0,0,36,300,1,0,0,0,38,310,1,0,0,0,40,313,
+1,0,0,0,42,317,1,0,0,0,44,320,1,0,0,0,46,322,1,0,0,0,48,326,1,0,0,0,50,341,
+1,0,0,0,52,343,1,0,0,0,54,348,1,0,0,0,56,359,1,0,0,0,58,372,1,0,0,0,60,374,
 1,0,0,0,62,391,1,0,0,0,64,399,1,0,0,0,66,401,1,0,0,0,68,412,1,0,0,0,70,431,
 1,0,0,0,72,480,1,0,0,0,74,491,1,0,0,0,76,511,1,0,0,0,78,513,1,0,0,0,80,516,
 1,0,0,0,82,521,1,0,0,0,84,523,1,0,0,0,86,535,1,0,0,0,88,557,1,0,0,0,90,562,
@@ -144,17 +144,17 @@ const serializedATN = [4,1,114,772,2,0,7,0,2,1,7,1,2,2,7,2,2,3,7,3,2,4,7,
 0,0,0,348,349,5,77,0,0,349,354,3,122,61,0,350,351,5,18,0,0,351,353,3,122,
 61,0,352,350,1,0,0,0,353,356,1,0,0,0,354,352,1,0,0,0,354,355,1,0,0,0,355,
 357,1,0,0,0,356,354,1,0,0,0,357,358,5,17,0,0,358,55,1,0,0,0,359,360,5,75,
-0,0,360,361,3,122,61,0,361,362,3,86,43,0,362,57,1,0,0,0,363,373,3,122,61,
-0,364,373,3,56,28,0,365,366,5,21,0,0,366,373,3,124,62,0,367,368,5,10,0,0,
-368,369,3,70,35,0,369,370,5,11,0,0,370,373,1,0,0,0,371,373,3,106,53,0,372,
-363,1,0,0,0,372,364,1,0,0,0,372,365,1,0,0,0,372,367,1,0,0,0,372,371,1,0,
-0,0,373,59,1,0,0,0,374,382,3,58,29,0,375,377,3,62,31,0,376,375,1,0,0,0,377,
-380,1,0,0,0,378,376,1,0,0,0,378,379,1,0,0,0,379,381,1,0,0,0,380,378,1,0,
-0,0,381,383,3,64,32,0,382,378,1,0,0,0,382,383,1,0,0,0,383,61,1,0,0,0,384,
-385,3,84,42,0,385,386,3,66,33,0,386,387,5,9,0,0,387,392,1,0,0,0,388,389,
-5,21,0,0,389,392,3,124,62,0,390,392,3,86,43,0,391,384,1,0,0,0,391,388,1,
-0,0,0,391,390,1,0,0,0,392,63,1,0,0,0,393,394,3,84,42,0,394,395,3,66,33,0,
-395,396,5,9,0,0,396,400,1,0,0,0,397,398,5,21,0,0,398,400,3,124,62,0,399,
+0,0,360,361,3,122,61,0,361,362,3,86,43,0,362,57,1,0,0,0,363,373,3,56,28,
+0,364,373,3,122,61,0,365,366,5,21,0,0,366,373,3,124,62,0,367,368,5,10,0,
+0,368,369,3,70,35,0,369,370,5,11,0,0,370,373,1,0,0,0,371,373,3,106,53,0,
+372,363,1,0,0,0,372,364,1,0,0,0,372,365,1,0,0,0,372,367,1,0,0,0,372,371,
+1,0,0,0,373,59,1,0,0,0,374,382,3,58,29,0,375,377,3,62,31,0,376,375,1,0,0,
+0,377,380,1,0,0,0,378,376,1,0,0,0,378,379,1,0,0,0,379,381,1,0,0,0,380,378,
+1,0,0,0,381,383,3,64,32,0,382,378,1,0,0,0,382,383,1,0,0,0,383,61,1,0,0,0,
+384,385,3,84,42,0,385,386,3,66,33,0,386,387,5,9,0,0,387,392,1,0,0,0,388,
+389,5,21,0,0,389,392,3,124,62,0,390,392,3,86,43,0,391,384,1,0,0,0,391,388,
+1,0,0,0,391,390,1,0,0,0,392,63,1,0,0,0,393,394,3,84,42,0,394,395,3,66,33,
+0,395,396,5,9,0,0,396,400,1,0,0,0,397,398,5,21,0,0,398,400,3,124,62,0,399,
 393,1,0,0,0,399,397,1,0,0,0,400,65,1,0,0,0,401,406,3,70,35,0,402,403,5,18,
 0,0,403,405,3,70,35,0,404,402,1,0,0,0,405,408,1,0,0,0,406,404,1,0,0,0,406,
 407,1,0,0,0,407,67,1,0,0,0,408,406,1,0,0,0,409,413,3,46,23,0,410,413,3,70,
@@ -1435,7 +1435,7 @@ export default class GameMakerLanguageParser extends antlr4.Parser {
 	            this.state = 303;
 	            this._errHandler.sync(this);
 	            _la = this._input.LA(1);
-	            if(((((_la - 27)) & ~0x1f) === 0 && ((1 << (_la - 27)) & 7340057) !== 0) || _la===96 || _la===103) {
+	            if(((((_la - 27)) & ~0x1f) === 0 && ((1 << (_la - 27)) & 7340057) !== 0) || ((((_la - 75)) & ~0x1f) === 0 && ((1 << (_la - 75)) & 270532609) !== 0)) {
 	                this.state = 302;
 	                this.identifier();
 	            }
@@ -1784,27 +1784,23 @@ export default class GameMakerLanguageParser extends antlr4.Parser {
 	    try {
 	        this.state = 372;
 	        this._errHandler.sync(this);
-	        switch(this._input.LA(1)) {
-	        case 27:
-	        case 30:
-	        case 31:
-	        case 47:
-	        case 48:
-	        case 49:
-	        case 96:
-	        case 103:
-	            localctx = new IdentifierLValueContext(this, localctx);
+	        var la_ = this._interp.adaptivePredict(this._input,26,this._ctx);
+	        switch(la_) {
+	        case 1:
+	            localctx = new NewLValueContext(this, localctx);
 	            this.enterOuterAlt(localctx, 1);
 	            this.state = 363;
-	            this.identifier();
-	            break;
-	        case 75:
-	            localctx = new NewLValueContext(this, localctx);
-	            this.enterOuterAlt(localctx, 2);
-	            this.state = 364;
 	            this.newExpression();
 	            break;
-	        case 21:
+
+	        case 2:
+	            localctx = new IdentifierLValueContext(this, localctx);
+	            this.enterOuterAlt(localctx, 2);
+	            this.state = 364;
+	            this.identifier();
+	            break;
+
+	        case 3:
 	            localctx = new ImplicitMemberDotLValueContext(this, localctx);
 	            this.enterOuterAlt(localctx, 3);
 	            this.state = 365;
@@ -1812,7 +1808,8 @@ export default class GameMakerLanguageParser extends antlr4.Parser {
 	            this.state = 366;
 	            this.memberIdentifier();
 	            break;
-	        case 10:
+
+	        case 4:
 	            localctx = new ParenthesizedLValueContext(this, localctx);
 	            this.enterOuterAlt(localctx, 4);
 	            this.state = 367;
@@ -1822,15 +1819,14 @@ export default class GameMakerLanguageParser extends antlr4.Parser {
 	            this.state = 369;
 	            this.match(GameMakerLanguageParser.CloseParen);
 	            break;
-	        case 12:
-	        case 15:
+
+	        case 5:
 	            localctx = new StructLiteralLValueContext(this, localctx);
 	            this.enterOuterAlt(localctx, 5);
 	            this.state = 371;
 	            this.structLiteral();
 	            break;
-	        default:
-	            throw new antlr4.error.NoViableAltException(this);
+
 	        }
 	    } catch (re) {
 	    	if(re instanceof antlr4.error.RecognitionException) {
@@ -3276,7 +3272,7 @@ export default class GameMakerLanguageParser extends antlr4.Parser {
 	        this.state = 639;
 	        this._errHandler.sync(this);
 	        _la = this._input.LA(1);
-	        if((((_la) & ~0x1f) === 0 && ((1 << _la) & 3355443200) !== 0) || ((((_la - 47)) & ~0x1f) === 0 && ((1 << (_la - 47)) & 131079) !== 0) || ((((_la - 96)) & ~0x1f) === 0 && ((1 << (_la - 96)) & 1509) !== 0)) {
+	        if((((_la) & ~0x1f) === 0 && ((1 << _la) & 3355443200) !== 0) || ((((_la - 47)) & ~0x1f) === 0 && ((1 << (_la - 47)) & 268566535) !== 0) || ((((_la - 96)) & ~0x1f) === 0 && ((1 << (_la - 96)) & 1509) !== 0)) {
 	            this.state = 626;
 	            this.structItem();
 	            this.state = 633;
@@ -3342,6 +3338,7 @@ export default class GameMakerLanguageParser extends antlr4.Parser {
 	        case 48:
 	        case 49:
 	        case 64:
+	        case 75:
 	        case 96:
 	        case 103:
 	        case 104:
@@ -3425,6 +3422,7 @@ export default class GameMakerLanguageParser extends antlr4.Parser {
 	        case 47:
 	        case 48:
 	        case 49:
+	        case 75:
 	        case 96:
 	            this.enterOuterAlt(localctx, 2);
 	            this.state = 653;
@@ -3475,7 +3473,7 @@ export default class GameMakerLanguageParser extends antlr4.Parser {
 	        this.state = 661;
 	        this._errHandler.sync(this);
 	        _la = this._input.LA(1);
-	        if(((((_la - 27)) & ~0x1f) === 0 && ((1 << (_la - 27)) & 7340057) !== 0) || _la===96 || _la===103) {
+	        if(((((_la - 27)) & ~0x1f) === 0 && ((1 << (_la - 27)) & 7340057) !== 0) || ((((_la - 75)) & ~0x1f) === 0 && ((1 << (_la - 75)) & 270532609) !== 0)) {
 	            this.state = 660;
 	            this.identifier();
 	        }
@@ -3555,7 +3553,7 @@ export default class GameMakerLanguageParser extends antlr4.Parser {
 	        this.state = 689;
 	        this._errHandler.sync(this);
 	        _la = this._input.LA(1);
-	        if(((((_la - 27)) & ~0x1f) === 0 && ((1 << (_la - 27)) & 7340057) !== 0) || _la===96 || _la===103) {
+	        if(((((_la - 27)) & ~0x1f) === 0 && ((1 << (_la - 27)) & 7340057) !== 0) || ((((_la - 75)) & ~0x1f) === 0 && ((1 << (_la - 75)) & 270532609) !== 0)) {
 	            this.state = 678;
 	            this.parameterArgument();
 	            this.state = 683;
@@ -3653,6 +3651,7 @@ export default class GameMakerLanguageParser extends antlr4.Parser {
 	        case 47:
 	        case 48:
 	        case 49:
+	        case 75:
 	        case 96:
 	            this.enterOuterAlt(localctx, 2);
 	            this.state = 699;
@@ -3690,6 +3689,7 @@ export default class GameMakerLanguageParser extends antlr4.Parser {
 	        case 47:
 	        case 48:
 	        case 49:
+	        case 75:
 	        case 96:
 	        case 103:
 	            this.enterOuterAlt(localctx, 1);
@@ -3735,7 +3735,7 @@ export default class GameMakerLanguageParser extends antlr4.Parser {
 	        this.state = 710;
 	        this._errHandler.sync(this);
 	        _la = this._input.LA(1);
-	        if(((((_la - 27)) & ~0x1f) === 0 && ((1 << (_la - 27)) & 7340057) !== 0) || ((((_la - 96)) & ~0x1f) === 0 && ((1 << (_la - 96)) & 229) !== 0)) {
+	        if(((((_la - 27)) & ~0x1f) === 0 && ((1 << (_la - 27)) & 7340057) !== 0) || ((((_la - 75)) & ~0x1f) === 0 && ((1 << (_la - 75)) & 480247809) !== 0)) {
 	            this.state = 709;
 	            this.enumeratorList();
 	        }
@@ -3824,6 +3824,7 @@ export default class GameMakerLanguageParser extends antlr4.Parser {
 	        case 47:
 	        case 48:
 	        case 49:
+	        case 75:
 	        case 96:
 	        case 103:
 	            this.enterOuterAlt(localctx, 1);
@@ -4057,7 +4058,7 @@ export default class GameMakerLanguageParser extends antlr4.Parser {
 	        this.enterOuterAlt(localctx, 1);
 	        this.state = 759;
 	        _la = this._input.LA(1);
-	        if(!(((((_la - 27)) & ~0x1f) === 0 && ((1 << (_la - 27)) & 7340057) !== 0) || _la===96)) {
+	        if(!(((((_la - 27)) & ~0x1f) === 0 && ((1 << (_la - 27)) & 7340057) !== 0) || _la===75 || _la===96)) {
 	        this._errHandler.recoverInline(this);
 	        }
 	        else {
@@ -9470,6 +9471,10 @@ class SoftKeywordContext extends antlr4.ParserRuleContext {
 
 	Xor() {
 	    return this.getToken(GameMakerLanguageParser.Xor, 0);
+	};
+
+	New() {
+	    return this.getToken(GameMakerLanguageParser.New, 0);
 	};
 
 	enterRule(listener) {

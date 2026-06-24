@@ -1123,4 +1123,21 @@ switch (x) {
             })
         );
     });
+
+    void it("allows 'new' to be used as an identifier or function argument", () => {
+        const sources = [
+            "ai.set_target(new, TargetInstance(plyr_inst));",
+            "var new = true;",
+            "self.new = true;",
+            "new MyStruct();",
+            "return _add_shape(new, ColmeshDynamic(shape, matrix));"
+        ];
+
+        for (const source of sources) {
+            assert.doesNotThrow(() => parseFixture(source), `Failed to parse: ${source}`);
+            const ast = parseFixture(source);
+            assert.ok(ast);
+            assert.equal(ast.type, "Program");
+        }
+    });
 });
