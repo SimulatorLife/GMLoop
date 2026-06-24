@@ -60,4 +60,14 @@ void test("repairArgumentSeparators codemod", () => {
     // Comments, strings, and standard layouts should be preserved
     assert.strictEqual(applyRepairArgumentSeparatorsCodemod("foo(a, b, c)").outputText, "foo(a, b, c)");
     assert.strictEqual(applyRepairArgumentSeparatorsCodemod("if (a b) {}").outputText, "if (a b) {}");
+
+    // Constructor/New instantiations, binary operators, prefix operators should not insert commas
+    assert.strictEqual(
+        applyRepairArgumentSeparatorsCodemod("ai.set_target(new TargetInstance(plyr_inst, false, true, false));")
+            .outputText,
+        "ai.set_target(new TargetInstance(plyr_inst, false, true, false));"
+    );
+    assert.strictEqual(applyRepairArgumentSeparatorsCodemod("foo(a and b)").outputText, "foo(a and b)");
+    assert.strictEqual(applyRepairArgumentSeparatorsCodemod("foo(a div b)").outputText, "foo(a div b)");
+    assert.strictEqual(applyRepairArgumentSeparatorsCodemod("foo(not a)").outputText, "foo(not a)");
 });

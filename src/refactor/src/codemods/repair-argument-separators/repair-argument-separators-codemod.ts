@@ -38,11 +38,37 @@ export function applyRepairArgumentSeparatorsCodemod(sourceText: string): Repair
             continue;
         }
 
-        if (
-            !canTerminateArgumentExpression(recoveryScanSource[previousIndex] ?? "") ||
-            !canStartArgumentExpression(recoveryScanSource[nextIndex] ?? "") ||
-            !isLikelyCallArgumentGap(recoveryScanSource, previousIndex)
-        ) {
+        const prevChar = recoveryScanSource[previousIndex] ?? "";
+        if (!canTerminateArgumentExpression(prevChar)) {
+            continue;
+        }
+
+        if (isIdentifierCharacter(prevChar)) {
+            const token = readIdentifierTokenEndingAt(recoveryScanSource, previousIndex);
+            if (token && NON_CALL_PREFIX_KEYWORDS.has(token.value.toLowerCase())) {
+                continue;
+            }
+        }
+
+        const nextChar = recoveryScanSource[nextIndex] ?? "";
+        if (!canStartArgumentExpression(nextChar)) {
+            continue;
+        }
+
+        if (isIdentifierCharacter(nextChar)) {
+            const token = readIdentifierTokenStartingAt(recoveryScanSource, nextIndex);
+            if (
+                token &&
+                NON_CALL_PREFIX_KEYWORDS.has(token.toLowerCase()) &&
+                token.toLowerCase() !== "new" &&
+                token.toLowerCase() !== "not" &&
+                token.toLowerCase() !== "function"
+            ) {
+                continue;
+            }
+        }
+
+        if (!isLikelyCallArgumentGap(recoveryScanSource, previousIndex)) {
             continue;
         }
 
@@ -182,6 +208,20 @@ function readIdentifierTokenEndingAt(sourceText: string, endIndex: number): Iden
     });
 }
 
+function readIdentifierTokenStartingAt(sourceText: string, startIndex: number): string | null {
+    const character = sourceText[startIndex] ?? "";
+    if (!isIdentifierCharacter(character)) {
+        return null;
+    }
+
+    let endIndex = startIndex;
+    while (endIndex < sourceText.length && isIdentifierCharacter(sourceText[endIndex] ?? "")) {
+        endIndex += 1;
+    }
+
+    return sourceText.slice(startIndex, endIndex);
+}
+
 const NON_CALL_PREFIX_KEYWORDS = new Set([
     "if",
     "for",
@@ -210,7 +250,11 @@ const NON_CALL_PREFIX_KEYWORDS = new Set([
     "enum",
     "globalvar",
     "case",
-    "default"
+    "default",
+    "do",
+    "break",
+    "continue",
+    "exit"
 ]);
 
 function isLikelyCallArgumentGap(sourceText: string, leftIndex: number): boolean {
