@@ -24,7 +24,7 @@ type ExistingParamDocLine = Readonly<{
 }>;
 
 const PARAM_PARSE_PATTERN =
-    /^(\s*\/\/\/\s*@param)(\s+\{[^}]+\})?(\s+)(\[\*?[A-Za-z_][A-Za-z0-9_]*(?:=[^\]]*)?\]|\*?[A-Za-z_][A-Za-z0-9_]*)(.*)$/u;
+    /^(\s*\/\/\/\s*@param)(\s+\{[^}]+\})?(\s+)(\[\*?[A-Za-z_][A-Za-z0-9_]*(?:\s*=[^\]]*)?\]|\*?[A-Za-z_][A-Za-z0-9_]*)(.*)$/u;
 const PARAM_NAME_TOKEN_PATTERN = /^\[?(\*?[A-Za-z_][A-Za-z0-9_]*)/u;
 
 function computeLineStarts(sourceText: string): Array<number> {
@@ -173,7 +173,8 @@ function buildParamDocLine(
                 if (equalsIndex === -1) {
                     paramNameToken = `[${asteriskPrefix}${parameter.name}]`;
                 } else {
-                    const defaultValue = originalToken.slice(equalsIndex, -1);
+                    const suffixStartIndex = 1 + asteriskPrefix.length + existingParamDocLine.name.length;
+                    const defaultValue = originalToken.slice(suffixStartIndex, -1);
                     paramNameToken = `[${asteriskPrefix}${parameter.name}${defaultValue}]`;
                 }
             } else if (originalToken.startsWith("*")) {
@@ -201,7 +202,7 @@ function rewriteDocCommentBlock(
         .filter((entry): entry is ExistingParamDocLine => entry !== null);
 
     const usedParamDocLineIndexes = new Set<number>();
-    const matchedDocLines = Array.from({length: functionParameters.length}).fill(null);
+    const matchedDocLines = Array.from<ExistingParamDocLine | null>({ length: functionParameters.length }).fill(null);
 
     // Phase 1: Match by name first for all parameters
     for (const [i, functionParameter] of functionParameters.entries()) {

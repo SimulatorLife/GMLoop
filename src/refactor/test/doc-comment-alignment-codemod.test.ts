@@ -130,3 +130,35 @@ void test("applyDocCommentAlignmentCodemod aligns renamed parameters while prese
         ].join("\n")
     );
 });
+
+void test("applyDocCommentAlignmentCodemod synthesizes @param tags when missing", () => {
+    const sourceText = ["/// @description Sample function", "function sample(x, y) {", "}", ""].join("\n");
+    const result = applyDocCommentAlignmentCodemod(sourceText);
+    assert.equal(result.changed, true);
+    assert.equal(
+        result.outputText,
+        ["/// @description Sample function", "/// @param x", "/// @param y", "function sample(x, y) {", "}", ""].join(
+            "\n"
+        )
+    );
+});
+
+void test("applyDocCommentAlignmentCodemod removes extra JSDoc @param tags when signature has no parameters", () => {
+    const sourceText = ["/// @description Sample function", "/// @param {real} x", "function sample() {", "}", ""].join(
+        "\n"
+    );
+    const result = applyDocCommentAlignmentCodemod(sourceText);
+    assert.equal(result.changed, true);
+    assert.equal(result.outputText, ["/// @description Sample function", "function sample() {", "}", ""].join("\n"));
+});
+
+void test("applyDocCommentAlignmentCodemod handles spaces around the equals sign in JSDoc default values", () => {
+    const sourceText = [
+        "/// @param {real} [bonus_damage = 0] - Additional damage",
+        "function sample(bonus_damage = 0) {",
+        "}",
+        ""
+    ].join("\n");
+    const result = applyDocCommentAlignmentCodemod(sourceText);
+    assert.equal(result.changed, false);
+});
