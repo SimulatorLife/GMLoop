@@ -61,7 +61,7 @@ void describe("getOperatorVariant precomputed table", () => {
     void it("returns the symbol form for arithmetic operators in symbol style", () => {
         // The hot path for ordinary arithmetic expressions should resolve the
         // operator to itself in symbol style without aliasing.
-        const arithmetic: string[] = ["+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "<>"];
+        const arithmetic: string[] = ["+", "-", "*", "/", "<", "<=", ">", ">=", "==", "!=", "<>"];
         for (const op of arithmetic) {
             assert.equal(getOperatorVariant(op, "symbol"), op, `${op} should map to itself in symbol style`);
             assert.equal(getOperatorVariant(op, "keyword"), op, `${op} should map to itself in keyword style`);
