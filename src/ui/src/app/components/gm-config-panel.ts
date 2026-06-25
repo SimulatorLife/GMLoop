@@ -11,6 +11,7 @@ import { getUiErrorMessage } from "../error-message.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import {
     GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
+    GRAPH_UI_EVENT_CONFIG_DRAFT_CHANGED,
     GRAPH_UI_EVENT_SAVE_CONFIG,
     GRAPH_UI_EVENT_TRIGGER_CREATE_CONFIG,
     type GraphUiSaveConfigDetail
@@ -201,6 +202,10 @@ export class GmConfigPanel extends LightDomLitElement {
         );
     }
 
+    #emitDraftChanged(): void {
+        this.dispatchEvent(new CustomEvent(GRAPH_UI_EVENT_CONFIG_DRAFT_CHANGED, { bubbles: true, composed: true }));
+    }
+
     #ensureDraftForCatalog(catalog: GraphVisualizationProjectConfigurationCatalog): void {
         const key = `${catalog.gmloop.configPath ?? "missing"}:${serializeConfigurationValue(catalog.gmloop.rawConfig)}`;
         if (key === this.#draftCatalogKey) {
@@ -208,7 +213,7 @@ export class GmConfigPanel extends LightDomLitElement {
         }
         this.#draftCatalogKey = key;
         this.#draftText = serializeConfigurationValue(createEditableConfigFromCatalog(catalog));
-        this.dispatchEvent(new CustomEvent("gmloop-config-draft-changed", { bubbles: true, composed: true }));
+        this.#emitDraftChanged();
     }
 
     #readDraft(): DraftParseResult {
@@ -218,7 +223,7 @@ export class GmConfigPanel extends LightDomLitElement {
     #setDraftConfig(config: ConfigJsonObject): void {
         this.#draftText = serializeConfigurationValue(config);
         this.requestUpdate();
-        this.dispatchEvent(new CustomEvent("gmloop-config-draft-changed", { bubbles: true, composed: true }));
+        this.#emitDraftChanged();
     }
 
     #updateDraftConfig(mutator: (config: ConfigJsonObject) => void): void {
@@ -238,7 +243,7 @@ export class GmConfigPanel extends LightDomLitElement {
         }
         this.#draftText = target.value;
         this.requestUpdate();
-        this.dispatchEvent(new CustomEvent("gmloop-config-draft-changed", { bubbles: true, composed: true }));
+        this.#emitDraftChanged();
     };
 
     public get isDraftDirty(): boolean {
@@ -367,7 +372,7 @@ export class GmConfigPanel extends LightDomLitElement {
         this.#draftCatalogKey = "";
         this.#ensureDraftForCatalog(catalog);
         this.requestUpdate();
-        this.dispatchEvent(new CustomEvent("gmloop-config-draft-changed", { bubbles: true, composed: true }));
+        this.#emitDraftChanged();
     }
 
     #isLintFilterResetDisabled(): boolean {

@@ -13,6 +13,7 @@ import {
     searchMcpEntries
 } from "./docs-search.js";
 import {
+    GRAPH_UI_EVENT_CONFIG_DRAFT_CHANGED,
     GRAPH_UI_EVENT_CYCLE_LABEL_MODE,
     GRAPH_UI_EVENT_NAVIGATE_PAGE,
     GRAPH_UI_EVENT_RESET_DEFAULTS,
@@ -31,6 +32,7 @@ import {
     type GraphUiSetSearchQueryDetail,
     type GraphUiTriggerFixDetail
 } from "./events.js";
+import type { GmConfigPanel } from "./gm-config-panel.js";
 import {
     evaluateToolbarKeyboardShortcut,
     resolveKeyboardShortcutTarget,
@@ -277,11 +279,11 @@ export class GmGraphToolbar extends LightDomLitElement {
     public connectedCallback(): void {
         super.connectedCallback();
         this.addEventListener("keydown", this.#onKeyDown);
-        globalThis.addEventListener("gmloop-config-draft-changed", this.#onConfigDraftChanged);
+        globalThis.addEventListener(GRAPH_UI_EVENT_CONFIG_DRAFT_CHANGED, this.#onConfigDraftChanged);
     }
 
     public disconnectedCallback(): void {
-        globalThis.removeEventListener("gmloop-config-draft-changed", this.#onConfigDraftChanged);
+        globalThis.removeEventListener(GRAPH_UI_EVENT_CONFIG_DRAFT_CHANGED, this.#onConfigDraftChanged);
         super.disconnectedCallback();
         this.removeEventListener("keydown", this.#onKeyDown);
     }
@@ -559,9 +561,7 @@ export class GmGraphToolbar extends LightDomLitElement {
         }
 
         const configPanel =
-            typeof document === "undefined"
-                ? null
-                : (document.querySelector("gm-config-panel"));
+            typeof document === "undefined" ? null : document.querySelector<GmConfigPanel>("gm-config-panel");
         const isDirty = configPanel?.isDraftDirty === true;
         const isValid = configPanel?.isDraftValid !== false;
         const validationError = configPanel?.draftValidationError ?? null;

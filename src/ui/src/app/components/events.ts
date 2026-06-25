@@ -19,6 +19,7 @@ export const GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK = "gmloop-initialize
 export const GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED = "gmloop-set-auto-game-skill-enabled";
 export const GRAPH_UI_EVENT_TRIGGER_CREATE_CONFIG = "gmloop-trigger-create-config";
 export const GRAPH_UI_EVENT_SAVE_CONFIG = "gmloop-save-config";
+export const GRAPH_UI_EVENT_CONFIG_DRAFT_CHANGED = "gmloop-config-draft-changed";
 export const GRAPH_UI_EVENT_SET_CONFIG_VIEW = "gmloop-set-config-view";
 export const GRAPH_UI_EVENT_RESET_DEFAULTS = "gmloop-reset-defaults";
 export const GRAPH_UI_EVENT_CLEAR_PAGE_ERROR = "gmloop-clear-page-error";

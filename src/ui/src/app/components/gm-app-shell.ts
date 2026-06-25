@@ -52,6 +52,9 @@ import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 const LIVE_RELOAD_ERROR_ACTION_TYPE = "set-live-reload-error";
 const FIX_LOG_LINES_ACTION_TYPE = "set-fix-log-lines";
+const FIX_PENDING_ACTION_TYPE = "set-fix-pending";
+const FIX_STATUS_ACTION_TYPE = "set-fix-status";
+const FIX_ERROR_ACTION_TYPE = "set-fix-error";
 const PAGE_ERROR_ACTION_TYPE = "set-page-error";
 const AUTO_GAME_OPERATION_PENDING_ACTION_TYPE = "set-auto-game-operation-pending";
 const AUTO_GAME_PAGE: GraphVisualizationUiPage = "auto-game";
@@ -410,8 +413,8 @@ export class GmAppShell extends LightDomLitElement {
         }, 1000);
 
         try {
-            this.#store.dispatch({ pending: true, type: "set-fix-pending", workflow });
-            this.#store.dispatch({ errorMessage: null, type: "set-fix-error" });
+            this.#store.dispatch({ pending: true, type: FIX_PENDING_ACTION_TYPE, workflow });
+            this.#store.dispatch({ errorMessage: null, type: FIX_ERROR_ACTION_TYPE });
             this.#store.dispatch({
                 logLines: createInitialFixWorkflowLogLines(workflow),
                 type: FIX_LOG_LINES_ACTION_TYPE
@@ -430,18 +433,52 @@ export class GmAppShell extends LightDomLitElement {
                 }
             });
             this.#store.dispatch({ logLines: result.logLines, type: FIX_LOG_LINES_ACTION_TYPE });
-            this.#store.dispatch({ status: result.status, type: "set-fix-status" });
+            this.#store.dispatch({ status: result.status, type: FIX_STATUS_ACTION_TYPE });
         } catch (error) {
             const message = getUiErrorMessage(error, "Unknown fix workflow error");
-            this.#store.dispatch({ errorMessage: message, type: "set-fix-error" });
-            this.#store.dispatch({ status: "error", type: "set-fix-status" });
+            this.#store.dispatch({ errorMessage: message, type: FIX_ERROR_ACTION_TYPE });
+            this.#store.dispatch({ status: "error", type: FIX_STATUS_ACTION_TYPE });
         } finally {
             clearInterval(fixWorkflowProgressTimer);
-            this.#store.dispatch({ pending: false, type: "set-fix-pending", workflow });
+            this.#store.dispatch({ pending: false, type: FIX_PENDING_ACTION_TYPE, workflow });
         }
     }
 
     #reconnectTimer: ReturnType<typeof setInterval> | null = null;
+
+    async #pollReconnectedFixWorkflowProgress(workflow: GraphVisualizationProjectWorkflow): Promise<void> {
+        try {
+            const pollResponse = await fetch("/api/fix/progress", {
+                cache: "no-store",
+                headers: { Accept: "application/json" }
+            });
+            if (!pollResponse.ok) {
+                return;
+            }
+            const pollProgress = (await pollResponse.json()) as {
+                isRunning: boolean;
+                logLines: string[];
+                workflow?: GraphVisualizationProjectWorkflow;
+                status?: string;
+            };
+
+            this.#store.dispatch({ logLines: pollProgress.logLines, type: FIX_LOG_LINES_ACTION_TYPE });
+
+            if (!pollProgress.isRunning) {
+                if (this.#reconnectTimer) {
+                    clearInterval(this.#reconnectTimer);
+                    this.#reconnectTimer = null;
+                }
+                this.#store.dispatch({ pending: false, type: FIX_PENDING_ACTION_TYPE, workflow });
+                this.#store.dispatch({
+                    status: pollProgress.status === "success" ? "success" : "error",
+                    type: FIX_STATUS_ACTION_TYPE
+                });
+            }
+        } catch (error) {
+            console.error("Error polling reconnected fix workflow progress:", error);
+        }
+    }
 
     #reconnectToActiveFixWorkflow = async (): Promise<void> => {
         if (!this.model?.isServerMode || this.#state.isFixPending) {
@@ -465,42 +502,12 @@ export class GmAppShell extends LightDomLitElement {
 
             if (progress.isRunning && progress.workflow) {
                 const workflow = progress.workflow;
-                this.#store.dispatch({ pending: true, type: "set-fix-pending", workflow });
-                this.#store.dispatch({ logLines: progress.logLines, type: "set-fix-log-lines" });
-                this.#store.dispatch({ errorMessage: null, type: "set-fix-error" });
+                this.#store.dispatch({ pending: true, type: FIX_PENDING_ACTION_TYPE, workflow });
+                this.#store.dispatch({ logLines: progress.logLines, type: FIX_LOG_LINES_ACTION_TYPE });
+                this.#store.dispatch({ errorMessage: null, type: FIX_ERROR_ACTION_TYPE });
 
-                this.#reconnectTimer = setInterval(async () => {
-                    try {
-                        const pollResponse = await fetch("/api/fix/progress", {
-                            cache: "no-store",
-                            headers: { Accept: "application/json" }
-                        });
-                        if (!pollResponse.ok) {
-                            return;
-                        }
-                        const pollProgress = (await pollResponse.json()) as {
-                            isRunning: boolean;
-                            logLines: string[];
-                            workflow?: GraphVisualizationProjectWorkflow;
-                            status?: string;
-                        };
-
-                        this.#store.dispatch({ logLines: pollProgress.logLines, type: "set-fix-log-lines" });
-
-                        if (!pollProgress.isRunning) {
-                            if (this.#reconnectTimer) {
-                                clearInterval(this.#reconnectTimer);
-                                this.#reconnectTimer = null;
-                            }
-                            this.#store.dispatch({ pending: false, type: "set-fix-pending", workflow });
-                            this.#store.dispatch({
-                                status: pollProgress.status === "success" ? "success" : "error",
-                                type: "set-fix-status"
-                            });
-                        }
-                    } catch (error) {
-                        console.error("Error polling reconnected fix workflow progress:", error);
-                    }
+                this.#reconnectTimer = setInterval(() => {
+                    void this.#pollReconnectedFixWorkflowProgress(workflow);
                 }, 1000);
             }
         } catch (error) {

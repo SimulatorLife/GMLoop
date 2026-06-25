@@ -131,9 +131,7 @@ void test("GmAppShell reconnects to in-flight fix workflow on connection and pol
 });
 
 void test("GmAppShell cleans up the reconnect timer on disconnection", async (t) => {
-    let fetchCount = 0;
     globalThis.fetch = async () => {
-        fetchCount++;
         return Response.json({
             isRunning: true,
             logLines: ["Fixing..."],
