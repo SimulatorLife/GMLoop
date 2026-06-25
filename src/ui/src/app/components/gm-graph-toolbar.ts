@@ -18,7 +18,6 @@ import {
     GRAPH_UI_EVENT_NAVIGATE_PAGE,
     GRAPH_UI_EVENT_RESET_DEFAULTS,
     GRAPH_UI_EVENT_SET_CONFIG_VIEW,
-    GRAPH_UI_EVENT_SET_DOCS_VIEW,
     GRAPH_UI_EVENT_SET_SEARCH_QUERY,
     GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW,
     GRAPH_UI_EVENT_TOGGLE_PLAYGROUND_CONTROLS,
@@ -28,7 +27,6 @@ import {
     GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD,
     type GraphUiNavigatePageDetail,
     type GraphUiSetConfigViewDetail,
-    type GraphUiSetDocsViewDetail,
     type GraphUiSetSearchQueryDetail,
     type GraphUiTriggerFixDetail
 } from "./events.js";
@@ -160,18 +158,18 @@ function resolveFixStatusSummary(state: GraphVisualizationUiState): string {
 function resolveDocsStatusSummary(model: GraphVisualizationUiModel, state: GraphVisualizationUiState): string {
     const docsPanelContent = createGraphVisualizationDocsPanelContent(model.documentationCatalogs);
     if (state.activeDocsView === "cli") {
-        return docsPanelContent.cliMetaText;
+        return `CLI: ${docsPanelContent.cliMetaText} Commands and flags for local project workflows.`;
     }
     if (state.activeDocsView === "mcp") {
-        return docsPanelContent.mcpMetaText;
+        return `MCP: ${docsPanelContent.mcpMetaText} Agent-facing tools and input fields.`;
     }
     if (state.activeDocsView === "linting") {
-        return docsPanelContent.lintingMetaText;
+        return `Linting: ${docsPanelContent.lintingMetaText} Rule diagnostics and autofix metadata.`;
     }
     if (state.activeDocsView === "formatting") {
-        return docsPanelContent.formattingMetaText;
+        return `Formatting: ${docsPanelContent.formattingMetaText} Formatter options and defaults.`;
     }
-    return docsPanelContent.codemodsMetaText;
+    return `Codemods: ${docsPanelContent.codemodsMetaText} Project-wide refactors exposed by GMLoop.`;
 }
 
 /**
@@ -298,16 +296,6 @@ export class GmGraphToolbar extends LightDomLitElement {
                 bubbles: true,
                 composed: true,
                 detail: { searchQuery }
-            })
-        );
-    }
-
-    #emitDocsView(docsView: GraphVisualizationUiState["activeDocsView"]): void {
-        this.dispatchEvent(
-            new CustomEvent<GraphUiSetDocsViewDetail>(GRAPH_UI_EVENT_SET_DOCS_VIEW, {
-                bubbles: true,
-                composed: true,
-                detail: { docsView }
             })
         );
     }
@@ -460,7 +448,7 @@ export class GmGraphToolbar extends LightDomLitElement {
         return null;
     }
 
-    #renderDocsControls() {
+    #renderDocsSearchControls() {
         if (!this.model || !this.state) {
             return null;
         }
@@ -484,61 +472,17 @@ export class GmGraphToolbar extends LightDomLitElement {
                       : codemodsSearchResult.totalCount;
         const searchResultSummary = createSearchResultSummary(searchQuery, this.state.activeDocsView, totalCount);
 
-        // Docs subview and catalog search controls stay in the shared page toolbar
-        // so the Docs panel remains content-only and every tab has one control surface.
         return html`
-            <div class="gm-view-selector" role="group" aria-label="Documentation view selector">
-                <button
-                    id="docs-view-cli"
-                    aria-pressed=${this.state.activeDocsView === "cli"}
-                    class=${this.state.activeDocsView === "cli" ? CLASS_BTN_CHIP_ACTIVE : CLASS_BTN_CHIP}
-                    @click=${() => this.#emitDocsView("cli")}
-                >
-                    CLI
-                </button>
-                <button
-                    id="docs-view-mcp"
-                    aria-pressed=${this.state.activeDocsView === "mcp"}
-                    class=${this.state.activeDocsView === "mcp" ? CLASS_BTN_CHIP_ACTIVE : CLASS_BTN_CHIP}
-                    @click=${() => this.#emitDocsView("mcp")}
-                >
-                    MCP
-                </button>
-                <button
-                    id="docs-view-linting"
-                    aria-pressed=${this.state.activeDocsView === "linting"}
-                    class=${this.state.activeDocsView === "linting" ? CLASS_BTN_CHIP_ACTIVE : CLASS_BTN_CHIP}
-                    @click=${() => this.#emitDocsView("linting")}
-                >
-                    Linting
-                </button>
-                <button
-                    id="docs-view-formatting"
-                    aria-pressed=${this.state.activeDocsView === "formatting"}
-                    class=${this.state.activeDocsView === "formatting" ? CLASS_BTN_CHIP_ACTIVE : CLASS_BTN_CHIP}
-                    @click=${() => this.#emitDocsView("formatting")}
-                >
-                    Formatting
-                </button>
-                <button
-                    id="docs-view-codemods"
-                    aria-pressed=${this.state.activeDocsView === "codemods"}
-                    class=${this.state.activeDocsView === "codemods" ? CLASS_BTN_CHIP_ACTIVE : CLASS_BTN_CHIP}
-                    @click=${() => this.#emitDocsView("codemods")}
-                >
-                    Codemods
-                </button>
-            </div>
-            <div class="docs-search-panel" role="search" aria-label="Filter documentation catalog">
-                <label class="docs-search-label" for="docs-search-input">Search current docs view</label>
+            <div class="toolbar-docs-search" role="search" aria-label="Filter documentation catalog">
                 <div class="docs-search-controls">
                     <input
                         id="docs-search-input"
                         class="docs-search-input"
                         type="search"
+                        aria-label="Search current docs view"
                         .value=${this.state.searchQuery}
                         aria-describedby="toolbar-subheading docs-search-summary"
-                        placeholder="Search names, descriptions, flags, and badges"
+                        placeholder="Search docs"
                         @input=${this.#onSearchInput}
                     />
                     <button
@@ -853,7 +797,6 @@ export class GmGraphToolbar extends LightDomLitElement {
         const liveReloadControlsClassName =
             this.state.activePage === LIVE_RELOAD_PAGE ? "toolbar-live-reload-controls" : "";
         const fixControlsClassName = this.state.activePage === "fix" ? "toolbar-fix-controls" : "";
-        const docsControlsClassName = this.state.activePage === "docs" ? "toolbar-docs-controls" : "";
         const configControlsClassName = this.state.activePage === "config" ? "toolbar-config-controls" : "";
         return html`
             <div id="page-toolbar" class="page-toolbar">
@@ -879,10 +822,8 @@ export class GmGraphToolbar extends LightDomLitElement {
                     ${this.state.activePage === "playground"
                         ? html`<div class="toolbar-playground-controls">${this.#renderPlaygroundControls()}</div>`
                         : null}
+                    ${this.state.activePage === "docs" ? this.#renderDocsSearchControls() : null}
                 </div>
-                ${this.state.activePage === "docs"
-                    ? html`<div id="docs-controls" class=${docsControlsClassName}>${this.#renderDocsControls()}</div>`
-                    : null}
                 <div id="graph-controls" class=${graphControlsClassName}>
                     <div class="toolbar-control-group toolbar-search-group">
                         <input

@@ -332,7 +332,7 @@ const DEFAULT_EMPTY_GML_RULE_SCHEMA: ReadonlyArray<unknown> = Object.freeze([
 
 export function createMeta(definition: GmlRuleDefinition, overrides: RuleMetaOverrides = {}): Rule.RuleMetaData {
     const docs = {
-        description: `Rule for ${definition.messageId}.`,
+        description: definition.description,
         recommended: false,
         requiresProjectContext: false
     };

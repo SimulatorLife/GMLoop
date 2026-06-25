@@ -108,6 +108,32 @@ void test("GmCopyButton uses the configured label when no copy has happened yet"
     assert.match(rendered, /<span class="gm-copy-button__label">Copy config JSON<\/span>/u);
 });
 
+void test("GmCopyButton can use a compact visible label with a more specific accessible label", () => {
+    const button = new TestableGmCopyButton();
+    button.value = "payload";
+    button.label = "Copy";
+    button.accessibleLabel = "Copy project status tool name";
+
+    const rendered = renderTemplateValue(button.renderForTest());
+
+    assert.match(rendered, /aria-label=Copy project status tool name/u);
+    assert.match(rendered, /title=Copy project status tool name/u);
+    assert.match(rendered, /<span class="gm-copy-button__label">Copy<\/span>/u);
+});
+
+void test("GmCopyButton can hide the visible label while keeping the accessible label", () => {
+    const button = new TestableGmCopyButton();
+    button.value = "payload";
+    button.label = "Copy";
+    button.accessibleLabel = "Copy project status tool name";
+    button.hideLabel = true;
+
+    const rendered = renderTemplateValue(button.renderForTest());
+
+    assert.match(rendered, /aria-label=Copy project status tool name/u);
+    assert.doesNotMatch(rendered, /gm-copy-button__label/u);
+});
+
 void test("GmCopyButton disables itself when the value is empty", () => {
     const button = new TestableGmCopyButton();
 

@@ -14,8 +14,20 @@ import {
     searchCliEntries,
     searchMcpEntries
 } from "./docs-search.js";
-import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "./events.js";
+import {
+    GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
+    GRAPH_UI_EVENT_SET_DOCS_VIEW,
+    type GraphUiSetDocsViewDetail
+} from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
+
+const DOCS_VIEW_LABELS: Readonly<Record<GraphVisualizationUiDocsView, string>> = Object.freeze({
+    cli: "CLI",
+    codemods: "Codemods",
+    formatting: "Formatting",
+    linting: "Linting",
+    mcp: "MCP"
+});
 
 /**
  * Docs surface for CLI, MCP, linting, formatting, and codemods catalog entries.
@@ -50,76 +62,154 @@ export class GmDocsPanel extends LightDomLitElement {
         super.disconnectedCallback();
     }
 
-    #renderCliCard(entry: GraphVisualizationCliCatalogEntry) {
+    #emitDocsView(docsView: GraphVisualizationUiDocsView): void {
+        this.dispatchEvent(
+            new CustomEvent<GraphUiSetDocsViewDetail>(GRAPH_UI_EVENT_SET_DOCS_VIEW, {
+                bubbles: true,
+                composed: true,
+                detail: { docsView }
+            })
+        );
+    }
+
+    #renderViewButton(
+        activeDocsView: GraphVisualizationUiDocsView,
+        docsView: GraphVisualizationUiDocsView,
+        count: number
+    ) {
+        const isActive = activeDocsView === docsView;
         return html`
-            <gm-card class="catalog-card" .heading=${entry.displayName}>
-                <p>${entry.description}</p>
-                <div class="catalog-copy-row">
-                    <code class="catalog-usage">${entry.usage}</code>
+            <button
+                id=${`docs-view-${docsView}`}
+                class=${isActive ? "docs-nav-button active" : "docs-nav-button"}
+                type="button"
+                aria-pressed=${isActive}
+                @click=${() => this.#emitDocsView(docsView)}
+            >
+                <span class="docs-nav-label">${DOCS_VIEW_LABELS[docsView]}</span>
+                <span class="docs-nav-count">${count}</span>
+            </button>
+        `;
+    }
+
+    #renderDocsControls(parameters: {
+        activeDocsView: GraphVisualizationUiDocsView;
+        counts: Readonly<Record<GraphVisualizationUiDocsView, number>>;
+    }) {
+        return html`
+            <aside class="docs-sidebar" aria-label="Documentation sections">
+                <div class="docs-sidebar-heading">Reference</div>
+                <div class="docs-nav" role="group" aria-label="Documentation view selector">
+                    ${this.#renderViewButton(parameters.activeDocsView, "cli", parameters.counts.cli)}
+                    ${this.#renderViewButton(parameters.activeDocsView, "mcp", parameters.counts.mcp)}
+                    ${this.#renderViewButton(parameters.activeDocsView, "linting", parameters.counts.linting)}
+                    ${this.#renderViewButton(parameters.activeDocsView, "formatting", parameters.counts.formatting)}
+                    ${this.#renderViewButton(parameters.activeDocsView, "codemods", parameters.counts.codemods)}
+                </div>
+            </aside>
+        `;
+    }
+
+    #renderCliEntry(entry: GraphVisualizationCliCatalogEntry) {
+        return html`
+            <article class="docs-reference-entry">
+                <div class="docs-entry-main">
+                    <h3>${entry.displayName}</h3>
+                    <p>${entry.description}</p>
+                </div>
+                <div class="docs-usage-shell">
+                    <code class="docs-usage">${entry.usage}</code>
                     <gm-copy-button
-                        class="catalog-copy-button"
+                        class="docs-usage-copy-button"
                         .value=${entry.usage}
-                        label=${`Copy ${entry.displayName} usage`}
+                        accessibleLabel=${`Copy ${entry.displayName} usage`}
+                        label="Copy"
+                        ?hideLabel=${true}
                     ></gm-copy-button>
                 </div>
-                <ul class="catalog-list">
-                    ${entry.arguments.map(
-                        (argumentValue) =>
-                            html`<li class="catalog-item">
-                                <code>${argumentValue.name}</code>: ${argumentValue.description}
-                            </li>`
-                    )}
-                    ${entry.options.map(
-                        (optionValue) =>
-                            html`<li class="catalog-item">
-                                <code>${optionValue.flags}</code>: ${optionValue.description}
-                            </li>`
-                    )}
-                </ul>
-            </gm-card>
+                ${entry.arguments.length > 0 || entry.options.length > 0
+                    ? html`<details class="docs-detail-container">
+                          <summary>Arguments and options</summary>
+                          <dl class="docs-detail-list">
+                              ${entry.arguments.map(
+                                  (argumentValue) =>
+                                      html`<div class="docs-detail-row">
+                                          <dt><code>${argumentValue.name}</code></dt>
+                                          <dd>${argumentValue.description}</dd>
+                                      </div>`
+                              )}
+                              ${entry.options.map(
+                                  (optionValue) =>
+                                      html`<div class="docs-detail-row">
+                                          <dt><code>${optionValue.flags}</code></dt>
+                                          <dd>${optionValue.description}</dd>
+                                      </div>`
+                              )}
+                          </dl>
+                      </details>`
+                    : null}
+            </article>
         `;
     }
 
-    #renderMcpCard(entry: GraphVisualizationMcpToolCatalogEntry) {
+    #renderMcpEntry(entry: GraphVisualizationMcpToolCatalogEntry) {
         return html`
-            <gm-card class="catalog-card" .heading=${entry.commandDisplayName}>
-                <p>${entry.description}</p>
-                <div class="catalog-copy-row catalog-copy-row--compact">
-                    <code class="catalog-usage">${entry.toolName}</code>
+            <article class="docs-reference-entry">
+                <div class="docs-entry-main">
+                    <h3>${entry.commandDisplayName}</h3>
+                    <p>${entry.description}</p>
+                </div>
+                <div class="docs-usage-shell">
+                    <code class="docs-usage">${entry.toolName}</code>
                     <gm-copy-button
-                        class="catalog-copy-button"
+                        class="docs-usage-copy-button"
                         .value=${entry.toolName}
-                        label=${`Copy ${entry.commandDisplayName} tool name`}
+                        accessibleLabel=${`Copy ${entry.commandDisplayName} tool name`}
+                        label="Copy"
+                        ?hideLabel=${true}
                     ></gm-copy-button>
                 </div>
-                <ul class="catalog-list">
-                    ${entry.fields.map(
-                        (fieldValue) =>
-                            html`<li class="catalog-item">
-                                <code>${fieldValue.name}</code>: ${fieldValue.description}
-                            </li>`
-                    )}
-                </ul>
-            </gm-card>
+                ${entry.fields.length > 0
+                    ? html`<details class="docs-detail-container">
+                          <summary>Fields</summary>
+                          <dl class="docs-detail-list">
+                              ${entry.fields.map(
+                                  (fieldValue) =>
+                                      html`<div class="docs-detail-row">
+                                          <dt><code>${fieldValue.name}</code></dt>
+                                          <dd>${fieldValue.description}</dd>
+                                      </div>`
+                              )}
+                          </dl>
+                      </details>`
+                    : null}
+            </article>
         `;
     }
 
-    #renderCatalogCard(entry: GraphVisualizationDocsPanelCatalogEntry) {
+    #renderCatalogEntry(entry: GraphVisualizationDocsPanelCatalogEntry) {
         return html`
-            <gm-card class="catalog-card" .heading=${entry.title}>
-                <p>${entry.description}</p>
-                <div class="catalog-copy-row catalog-copy-row--compact">
-                    <code class="catalog-usage">${entry.title}</code>
+            <article class="docs-reference-entry">
+                <div class="docs-entry-main">
+                    <div class="docs-entry-heading">
+                        <h3>${entry.title}</h3>
+                        <div class="docs-badge-row">
+                            ${entry.badges.map((badge) => html`<gm-badge .label=${badge}></gm-badge>`)}
+                        </div>
+                    </div>
+                    <p>${entry.description}</p>
+                </div>
+                <div class="docs-usage-shell">
+                    <code class="docs-usage">${entry.title}</code>
                     <gm-copy-button
-                        class="catalog-copy-button"
+                        class="docs-usage-copy-button"
                         .value=${entry.title}
-                        label=${`Copy ${entry.title} identifier`}
+                        accessibleLabel=${`Copy ${entry.title} identifier`}
+                        label="Copy"
+                        ?hideLabel=${true}
                     ></gm-copy-button>
                 </div>
-                <div class="config-badge-row">
-                    ${entry.badges.map((badge) => html`<gm-badge .label=${badge}></gm-badge>`)}
-                </div>
-            </gm-card>
+            </article>
         `;
     }
 
@@ -137,13 +227,13 @@ export class GmDocsPanel extends LightDomLitElement {
 
         return html`
             <div id=${subpageId} class=${className}>
-                <div id=${contentId} class="docs-grid">
+                <div id=${contentId} class="docs-reference-list">
                     ${emptyMessage === null
                         ? searchResult.entries.length === 0
                             ? html`<p class="catalog-empty">
                                   ${createNoSearchResultsMessage(searchQuery, activeDocsView)}
                               </p>`
-                            : searchResult.entries.map((entry) => this.#renderCatalogCard(entry))
+                            : searchResult.entries.map((entry) => this.#renderCatalogEntry(entry))
                         : html`<p class="catalog-empty">${emptyMessage}</p>`}
                 </div>
             </div>
@@ -161,65 +251,80 @@ export class GmDocsPanel extends LightDomLitElement {
         const searchQuery = normalizeCatalogSearchQuery(this.state.searchQuery);
         const cliSearchResult = searchCliEntries(docsPanelContent.cliEntries, searchQuery);
         const mcpSearchResult = searchMcpEntries(docsPanelContent.mcpEntries, searchQuery);
-
+        const lintingSearchResult = searchCatalogEntries(docsPanelContent.lintingEntries, searchQuery);
+        const formattingSearchResult = searchCatalogEntries(docsPanelContent.formattingEntries, searchQuery);
+        const codemodsSearchResult = searchCatalogEntries(docsPanelContent.codemodsEntries, searchQuery);
+        const counts: Readonly<Record<GraphVisualizationUiDocsView, number>> = {
+            cli: cliSearchResult.totalCount,
+            codemods: codemodsSearchResult.totalCount,
+            formatting: formattingSearchResult.totalCount,
+            linting: lintingSearchResult.totalCount,
+            mcp: mcpSearchResult.totalCount
+        };
         return html`
             <section id="docs-page" class=${docsPageClassName}>
                 ${this.state.docsErrorMessage
                     ? html`<gm-error-banner .message=${this.state.docsErrorMessage}></gm-error-banner>`
                     : null}
-                <div id="docs-content">
-                    <div
-                        id="cli-page"
-                        class=${this.state.activeDocsView === "cli" ? "docs-subpage" : "docs-subpage hidden"}
-                    >
-                        <div id="cli-content" class="docs-grid">
-                            ${docsPanelContent.cliEntries.length === 0
-                                ? html`<p class="catalog-empty">No commands are available right now.</p>`
-                                : cliSearchResult.entries.length === 0
-                                  ? html`<p class="catalog-empty">
-                                        ${createNoSearchResultsMessage(searchQuery, "cli")}
-                                    </p>`
-                                  : cliSearchResult.entries.map((entry) => this.#renderCliCard(entry))}
+                <div id="docs-content" class="docs-layout">
+                    ${this.#renderDocsControls({
+                        activeDocsView: this.state.activeDocsView,
+                        counts
+                    })}
+                    <main class="docs-main" aria-label="Documentation content">
+                        <div
+                            id="cli-page"
+                            class=${this.state.activeDocsView === "cli" ? "docs-subpage" : "docs-subpage hidden"}
+                        >
+                            <div id="cli-content" class="docs-reference-list">
+                                ${docsPanelContent.cliEntries.length === 0
+                                    ? html`<p class="catalog-empty">No commands are available right now.</p>`
+                                    : cliSearchResult.entries.length === 0
+                                      ? html`<p class="catalog-empty">
+                                            ${createNoSearchResultsMessage(searchQuery, "cli")}
+                                        </p>`
+                                      : cliSearchResult.entries.map((entry) => this.#renderCliEntry(entry))}
+                            </div>
                         </div>
-                    </div>
-                    <div
-                        id="docs-mcp-page"
-                        class=${this.state.activeDocsView === "mcp" ? "docs-subpage" : "docs-subpage hidden"}
-                    >
-                        <div id="mcp-content" class="docs-grid">
-                            ${docsPanelContent.mcpEntries.length === 0
-                                ? html`<p class="catalog-empty">No tools are available right now.</p>`
-                                : mcpSearchResult.entries.length === 0
-                                  ? html`<p class="catalog-empty">
-                                        ${createNoSearchResultsMessage(searchQuery, "mcp")}
-                                    </p>`
-                                  : mcpSearchResult.entries.map((entry) => this.#renderMcpCard(entry))}
+                        <div
+                            id="docs-mcp-page"
+                            class=${this.state.activeDocsView === "mcp" ? "docs-subpage" : "docs-subpage hidden"}
+                        >
+                            <div id="mcp-content" class="docs-reference-list">
+                                ${docsPanelContent.mcpEntries.length === 0
+                                    ? html`<p class="catalog-empty">No tools are available right now.</p>`
+                                    : mcpSearchResult.entries.length === 0
+                                      ? html`<p class="catalog-empty">
+                                            ${createNoSearchResultsMessage(searchQuery, "mcp")}
+                                        </p>`
+                                      : mcpSearchResult.entries.map((entry) => this.#renderMcpEntry(entry))}
+                            </div>
                         </div>
-                    </div>
-                    ${this.#renderCatalogSubpage({
-                        activeDocsView: "linting",
-                        contentId: "linting-content",
-                        emptyMessage: docsPanelContent.lintingEmptyMessage,
-                        entries: docsPanelContent.lintingEntries,
-                        searchQuery,
-                        subpageId: "linting-page"
-                    })}
-                    ${this.#renderCatalogSubpage({
-                        activeDocsView: "formatting",
-                        contentId: "formatting-content",
-                        emptyMessage: docsPanelContent.formattingEmptyMessage,
-                        entries: docsPanelContent.formattingEntries,
-                        searchQuery,
-                        subpageId: "formatting-page"
-                    })}
-                    ${this.#renderCatalogSubpage({
-                        activeDocsView: "codemods",
-                        contentId: "codemods-content",
-                        emptyMessage: docsPanelContent.codemodsEmptyMessage,
-                        entries: docsPanelContent.codemodsEntries,
-                        searchQuery,
-                        subpageId: "codemods-page"
-                    })}
+                        ${this.#renderCatalogSubpage({
+                            activeDocsView: "linting",
+                            contentId: "linting-content",
+                            emptyMessage: docsPanelContent.lintingEmptyMessage,
+                            entries: docsPanelContent.lintingEntries,
+                            searchQuery,
+                            subpageId: "linting-page"
+                        })}
+                        ${this.#renderCatalogSubpage({
+                            activeDocsView: "formatting",
+                            contentId: "formatting-content",
+                            emptyMessage: docsPanelContent.formattingEmptyMessage,
+                            entries: docsPanelContent.formattingEntries,
+                            searchQuery,
+                            subpageId: "formatting-page"
+                        })}
+                        ${this.#renderCatalogSubpage({
+                            activeDocsView: "codemods",
+                            contentId: "codemods-content",
+                            emptyMessage: docsPanelContent.codemodsEmptyMessage,
+                            entries: docsPanelContent.codemodsEntries,
+                            searchQuery,
+                            subpageId: "codemods-page"
+                        })}
+                    </main>
                 </div>
             </section>
         `;

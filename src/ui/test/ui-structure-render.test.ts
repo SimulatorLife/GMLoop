@@ -190,7 +190,7 @@ void test("Fix toolbar identifies the active workflow and disables concurrent pr
     assert.equal(Array.from(rendered.matchAll(/button-spinner/gu)).length, 1);
 });
 
-void test("Docs toolbar owns subcategory controls and catalog search", () => {
+void test("Docs toolbar owns catalog search but not subcategory controls", () => {
     const toolbar = new TestableGmGraphToolbar();
     toolbar.model = createMockModel();
     toolbar.state = createMockState("docs");
@@ -198,17 +198,11 @@ void test("Docs toolbar owns subcategory controls and catalog search", () => {
     const rendered = renderTemplateValue(toolbar.renderForTest());
 
     assert.match(rendered, /id="toolbar-heading"[\s\S]*Docs/u);
-    assert.match(rendered, /id="toolbar-subheading"[\s\S]*Command help is not available right now\./u);
-    assert.match(rendered, /id="docs-controls"[\s\S]*class="gm-view-selector"/u);
-    assert.match(rendered, /id="docs-controls"[\s\S]*id="docs-view-cli"/u);
-    assert.match(rendered, /id="docs-controls"[\s\S]*id="docs-view-mcp"/u);
-    assert.match(rendered, /id="docs-controls"[\s\S]*id="docs-view-linting"/u);
-    assert.match(rendered, /id="docs-controls"[\s\S]*id="docs-view-formatting"/u);
-    assert.match(rendered, /id="docs-controls"[\s\S]*id="docs-view-codemods"/u);
-    assert.doesNotMatch(rendered, /id="docs-view-rules"/u);
-    assert.match(rendered, /id="docs-view-cli"[\s\S]*class=gm-btn--chip active/u);
-    assert.match(rendered, /id="docs-controls"[\s\S]*id="docs-search-input"/u);
+    assert.match(rendered, /id="toolbar-subheading"[\s\S]*CLI: Command help is not available right now\./u);
+    assert.match(rendered, /role="search" aria-label="Filter documentation catalog"/u);
     assert.match(rendered, /id="docs-search-input"[\s\S]*aria-describedby="toolbar-subheading docs-search-summary"/u);
+    assert.doesNotMatch(rendered, /id="docs-controls"/u);
+    assert.doesNotMatch(rendered, /Documentation view selector/u);
 });
 
 void test("graph toolbar renders grouped controls for search, view state, and actions", () => {
@@ -318,22 +312,30 @@ void test("shared view selector keeps inactive tabs visually unoutlined", () => 
     );
 });
 
-void test("docs toolbar aligns subcategory tabs with the search input field", () => {
+void test("docs stylesheet defines a constrained documentation browser layout", () => {
     const source = readFileSync(new URL("../../src/web/styles/docs.css", import.meta.url), "utf8");
 
-    // The Docs toolbar pairs the CLI/MCP/Linting/Formatting/Codemods tab strip
-    // with a search panel that contains a label, the input, and a result summary.
-    // A naive `align-items: start` would leave the tab strip aligned with the
-    // label text rather than the input. Center the tab strip so it lines up
-    // with the input on wide layouts, and stack the controls into a single
-    // column on narrow viewports.
-    const docsToolbarRuleMatch = /\.toolbar-docs-controls\s*\{([^{}]*)\}/u.exec(source);
-    assert.notEqual(docsToolbarRuleMatch, null);
-    const docsToolbarRuleBody = docsToolbarRuleMatch?.[1] ?? "";
-    assert.match(docsToolbarRuleBody, /align-items:\s*center;/u);
-    assert.doesNotMatch(docsToolbarRuleBody, /align-items:\s*start;/u);
-
-    assert.match(source, /@media\s*\(max-width:\s*720px\)\s*\{[\s\S]*?\.toolbar-docs-controls\s*\{([^{}]*)\}/u);
+    assert.doesNotMatch(source, /auto-fit/u);
+    assert.match(source, /\.docs-layout\s*\{[\s\S]*grid-template-areas:\s*"sidebar main";/u);
+    assert.match(
+        source,
+        /\.docs-layout\s*\{[\s\S]*grid-template-columns:\s*minmax\(168px,\s*216px\)\s+minmax\(0,\s*1fr\);/u
+    );
+    assert.match(source, /\.docs-reference-entry\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\);/u);
+    assert.match(source, /\.docs-usage-shell\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/u);
+    assert.match(source, /\.docs-usage-copy-button\s+\.gm-copy-button\s*\{[\s\S]*min-width:\s*var\(--gm-height-sm\);/u);
+    assert.match(source, /\.docs-usage-copy-button\s+\.gm-copy-button__label\s*\{[\s\S]*clip-path:\s*inset\(50%\);/u);
+    assert.match(source, /\.docs-detail-container\s*\{[\s\S]*border:\s*1px solid var\(--gm-border-subtle\);/u);
+    assert.match(source, /\.docs-detail-container summary\s*\{[\s\S]*min-height:\s*var\(--gm-height-sm\);/u);
+    assert.match(
+        source,
+        /\.docs-detail-row\s*\{[\s\S]*grid-template-columns:\s*minmax\(156px,\s*220px\)\s+minmax\(0,\s*1fr\);/u
+    );
+    assert.match(source, /@media\s*\(max-width:\s*1100px\)\s*\{[\s\S]*?\.docs-nav\s*\{[\s\S]*overflow-x:\s*auto;/u);
+    assert.match(
+        source,
+        /@media\s*\(max-width:\s*760px\)\s*\{[\s\S]*?\.docs-reference-entry\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\);/u
+    );
 });
 
 void test("disabled button styles preserve the disabled cursor on hover", () => {

@@ -5,6 +5,8 @@ import { createGmlRule, type GmlRuleDefinition } from "./gml/index.js";
 
 export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freeze([
     {
+        description:
+            "Find repeated length and collection accessor calls inside loops so they can be hoisted into a local value.",
         mapKey: "GmlPreferHoistableLoopAccessors",
         shortName: "prefer-hoistable-loop-accessors",
         fullId: "gml/prefer-hoistable-loop-accessors",
@@ -27,6 +29,7 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         ])
     },
     {
+        description: "Detect expressions inside loops that can be calculated once before the loop runs.",
         mapKey: "GmlPreferLoopInvariantExpressions",
         shortName: "prefer-loop-invariant-expressions",
         fullId: "gml/prefer-loop-invariant-expressions",
@@ -42,6 +45,8 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         ])
     },
     {
+        description:
+            "Prefer initializing structs with literal properties instead of assigning each property after creation.",
         mapKey: "GmlPreferStructLiteralAssignments",
         shortName: "prefer-struct-literal-assignments",
         fullId: "gml/prefer-struct-literal-assignments",
@@ -57,30 +62,35 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         ])
     },
     {
+        description: "Prefer array_push for appending values instead of manually assigning at array_length.",
         mapKey: "GmlPreferArrayPush",
         shortName: "prefer-array-push",
         fullId: "gml/prefer-array-push",
         messageId: "preferArrayPush"
     },
     {
+        description: "Prefer compound assignment operators when a variable is updated from its own value.",
         mapKey: "GmlPreferCompoundAssignments",
         shortName: "prefer-compound-assignments",
         fullId: "gml/prefer-compound-assignments",
         messageId: "preferCompoundAssignments"
     },
     {
+        description: "Prefer ++ and -- for simple increment or decrement assignments.",
         mapKey: "GmlPreferIncrementDecrementOperators",
         shortName: "prefer-increment-decrement-operators",
         fullId: "gml/prefer-increment-decrement-operators",
         messageId: "preferIncrementDecrementOperators"
     },
     {
+        description: "Return expressions directly instead of assigning to a temporary immediately before returning.",
         mapKey: "GmlPreferDirectReturn",
         shortName: "prefer-direct-return",
         fullId: "gml/prefer-direct-return",
         messageId: "preferDirectReturn"
     },
     {
+        description: "Simplify boolean control flow by removing redundant branches and temporary boolean variables.",
         mapKey: "GmlOptimizeLogicalFlow",
         shortName: "optimize-logical-flow",
         fullId: "gml/optimize-logical-flow",
@@ -98,6 +108,7 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
     {
         // Read-only rule with NO auto-fix
         // globalvar replacement cannot be done safely on a per-file bases
+        description: "Report legacy globalvar declarations that require a project-aware migration.",
         mapKey: "GmlNoGlobalvar",
         shortName: "no-globalvar",
         fullId: "gml/no-globalvar",
@@ -105,102 +116,120 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         schema: Object.freeze([])
     },
     {
+        description: "Report region blocks that do not contain any meaningful code or comments.",
         mapKey: "GmlNoEmptyRegions",
         shortName: "no-empty-regions",
         fullId: "gml/no-empty-regions",
         messageId: "noEmptyRegions"
     },
     {
+        description: "Remove comments that contain no useful text after comment markers are stripped.",
         mapKey: "GmlNoEmptyComments",
         shortName: "no-empty-comments",
         fullId: "gml/no-empty-comments",
         messageId: "noEmptyComments"
     },
     {
+        description: "Report scientific notation literals because GameMaker does not accept them in all GML contexts.",
         mapKey: "GmlNoScientificNotation",
         shortName: "no-scientific-notation",
         fullId: "gml/no-scientific-notation",
         messageId: "noScientificNotation"
     },
     {
+        description: "Replace string interpolation that contains only a plain string literal with that literal.",
         mapKey: "GmlNoUnnecessaryStringInterpolation",
         shortName: "no-unnecessary-string-interpolation",
         fullId: "gml/no-unnecessary-string-interpolation",
         messageId: "noUnnecessaryStringInterpolation"
     },
     {
+        description: "Remove GameMaker's generated placeholder comments from otherwise empty event code.",
         mapKey: "GmlRemoveDefaultComments",
         shortName: "remove-default-comments",
         fullId: "gml/remove-default-comments",
         messageId: "removeDefaultComments"
     },
     {
+        description: "Normalize triple-slash function documentation tags into GMLoop's canonical doc-comment shape.",
         mapKey: "GmlNormalizeDocComments",
         shortName: "normalize-doc-comments",
         fullId: "gml/normalize-doc-comments",
         messageId: "normalizeDocComments"
     },
     {
+        description: "Normalize banner comments so decorative separators use one consistent project style.",
         mapKey: "GmlNormalizeBannerComments",
         shortName: "normalize-banner-comments",
         fullId: "gml/normalize-banner-comments",
         messageId: "normalizeBannerComments"
     },
     {
+        description:
+            "Normalize compiler directives and macro-like comment directives to the supported spelling and layout.",
         mapKey: "GmlNormalizeDirectives",
         shortName: "normalize-directives",
         fullId: "gml/normalize-directives",
         messageId: "normalizeDirectives"
     },
     {
+        description: "Require braces around control-flow bodies so nested statements remain unambiguous.",
         mapKey: "GmlRequireControlFlowBraces",
         shortName: "require-control-flow-braces",
         fullId: "gml/require-control-flow-braces",
         messageId: "requireControlFlowBraces"
     },
     {
+        description: "Require matching #region and #endregion directive pairs.",
         mapKey: "GmlRequireRegionPairs",
         shortName: "require-region-pairs",
         fullId: "gml/require-region-pairs",
         messageId: "requireRegionPairs"
     },
     {
+        description: "Require zwrite_enable to be restored after code temporarily disables depth-buffer writes.",
         mapKey: "GmlRequireZwriteEnabledReset",
         shortName: "require-zwrite-enabled-reset",
         fullId: "gml/require-zwrite-enabled-reset",
         messageId: "requireZwriteEnabledReset"
     },
     {
+        description: "Require ztest_enable to be restored after code temporarily disables depth testing.",
         mapKey: "GmlRequireZtestEnabledReset",
         shortName: "require-ztest-enabled-reset",
         fullId: "gml/require-ztest-enabled-reset",
         messageId: "requireZtestEnabledReset"
     },
     {
+        description: "Report assignments used inside conditions, where equality checks are usually intended.",
         mapKey: "GmlNoAssignmentInCondition",
         shortName: "no-assignment-in-condition",
         fullId: "gml/no-assignment-in-condition",
         messageId: "noAssignmentInCondition"
     },
     {
+        description: "Prefer is_undefined checks over direct comparisons that can be confused with ordinary values.",
         mapKey: "GmlPreferIsUndefinedCheck",
         shortName: "prefer-is-undefined-check",
         fullId: "gml/prefer-is-undefined-check",
         messageId: "preferIsUndefinedCheck"
     },
     {
+        description: "Prefer epsilon-based floating-point comparisons over exact equality checks.",
         mapKey: "GmlPreferEpsilonComparisons",
         shortName: "prefer-epsilon-comparisons",
         fullId: "gml/prefer-epsilon-comparisons",
         messageId: "preferEpsilonComparisons"
     },
     {
+        description: "Normalize textual operator aliases such as and, or, not, div, and mod to canonical operators.",
         mapKey: "GmlNormalizeOperatorAliases",
         shortName: "normalize-operator-aliases",
         fullId: "gml/normalize-operator-aliases",
         messageId: "normalizeOperatorAliases"
     },
     {
+        description: "Prefer string interpolation when it makes string concatenation clearer and safer.",
         mapKey: "GmlPreferStringInterpolation",
         shortName: "prefer-string-interpolation",
         fullId: "gml/prefer-string-interpolation",
@@ -216,12 +245,14 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         ])
     },
     {
+        description: "Simplify constant math expressions and redundant numeric operations.",
         mapKey: "GmlOptimizeMathExpressions",
         shortName: "optimize-math-expressions",
         fullId: "gml/optimize-math-expressions",
         messageId: "optimizeMathExpressions"
     },
     {
+        description: "Require commas between function arguments and optionally repair missing separators.",
         mapKey: "GmlRequireArgumentSeparators",
         shortName: "require-argument-separators",
         fullId: "gml/require-argument-separators",
@@ -231,18 +262,22 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         ])
     },
     {
+        description: "Remove unnecessary real() calls around values that are already numeric.",
         mapKey: "GmlSimplifyRealCalls",
         shortName: "simplify-real-calls",
         fullId: "gml/simplify-real-calls",
         messageId: "simplifyRealCalls"
     },
     {
+        description:
+            "Report unary plus before identifiers because it is visually subtle and rarely intentional in GML.",
         mapKey: "GmlNoUnaryPlusOnIdentifier",
         shortName: "no-unary-plus-on-identifier",
         fullId: "gml/no-unary-plus-on-identifier",
         messageId: "noUnaryPlusOnIdentifier"
     },
     {
+        description: "Replace negative zero literals with plain zero to avoid misleading numeric intent.",
         mapKey: "GmlNoNegativeZero",
         shortName: "no-negative-zero",
         fullId: "gml/no-negative-zero",

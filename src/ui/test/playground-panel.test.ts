@@ -320,7 +320,7 @@ void test("playground panel starts with all format/lint/codemod controls uncheck
                 ],
                 lintRules: [
                     {
-                        description: "Rule for noGlobalvar.",
+                        description: "Report legacy globalvar declarations that require a project-aware migration.",
                         fixable: null,
                         ruleId: "gml/no-globalvar"
                     }
@@ -369,7 +369,7 @@ void test("playground panel falls back to workspace catalogs when project config
                 ],
                 lintRules: [
                     {
-                        description: "Rule for noGlobalvar.",
+                        description: "Report legacy globalvar declarations that require a project-aware migration.",
                         fixable: null,
                         ruleId: "gml/no-globalvar"
                     }
@@ -511,7 +511,7 @@ void test("playground panel selects a fixture, populates input, and applies its 
                 ],
                 lintRules: [
                     {
-                        description: "Rule for noGlobalvar.",
+                        description: "Report legacy globalvar declarations that require a project-aware migration.",
                         fixable: null,
                         ruleId: "gml/no-globalvar"
                     }

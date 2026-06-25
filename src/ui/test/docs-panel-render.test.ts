@@ -161,15 +161,16 @@ void test("GmDocsPanel renders the Linting subview and project-facing rule conte
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /id="docs-page"[\s\S]*class=page content-page docs-page active/u);
-    assert.doesNotMatch(rendered, /id=docs-view-linting/u);
-    assert.doesNotMatch(rendered, /id=docs-search-input/u);
+    assert.match(rendered, /id=docs-view-linting[\s\S]*class=docs-nav-button active/u);
+    assert.doesNotMatch(rendered, /id="docs-search-input"/u);
     assert.match(rendered, /id=linting-page[\s\S]*?class=docs-subpage>/u);
     assert.match(rendered, /id=formatting-page[\s\S]*?class=docs-subpage hidden>/u);
     assert.match(rendered, /id=codemods-page[\s\S]*?class=docs-subpage hidden>/u);
     assert.match(rendered, /gml\/normalize-operators/u);
     assert.match(rendered, /gml\/no-globalvar/u);
     assert.match(rendered, /<gm-badge[^>]*\.label=fixable/u);
-    assert.match(rendered, /label=Copy gml\/normalize-operators identifier/u);
+    assert.match(rendered, /accessibleLabel=Copy gml\/normalize-operators identifier/u);
+    assert.match(rendered, /label="Copy"/u);
     assert.doesNotMatch(rendered, /fixable:code/u);
 });
 
@@ -265,7 +266,7 @@ void test("GmDocsPanel renders per-subview empty states when rule data is unavai
     assert.match(rendered, /Linting rules are not available right now\./u);
 });
 
-void test("GmDocsPanel leaves docs controls to the shared page toolbar", () => {
+void test("GmDocsPanel owns docs navigation controls", () => {
     const panel = new TestableGmDocsPanel();
     panel.model = {
         autoGamePipeline: null,
@@ -291,8 +292,13 @@ void test("GmDocsPanel leaves docs controls to the shared page toolbar", () => {
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.doesNotMatch(rendered, /role="search" aria-label="Filter documentation catalog"/u);
-    assert.doesNotMatch(rendered, /id=docs-search-input/u);
-    assert.doesNotMatch(rendered, /Documentation view selector/u);
+    assert.doesNotMatch(rendered, /id="docs-search-input"/u);
+    assert.match(rendered, /class="docs-nav" role="group" aria-label="Documentation view selector"/u);
+    assert.match(rendered, /id=docs-view-cli[\s\S]*class=docs-nav-button active/u);
+    assert.match(rendered, /id=docs-view-mcp/u);
+    assert.match(rendered, /id=docs-view-linting/u);
+    assert.match(rendered, /id=docs-view-formatting/u);
+    assert.match(rendered, /id=docs-view-codemods/u);
 });
 
 void test("GmDocsPanel exposes copy actions for CLI command usage", () => {
@@ -321,11 +327,18 @@ void test("GmDocsPanel exposes copy actions for CLI command usage", () => {
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /gmloop graph visualize <path>/u);
+    assert.match(rendered, /class="docs-reference-entry"/u);
+    assert.match(rendered, /class="docs-usage-shell"[\s\S]*class="docs-usage">gmloop graph visualize <path><\/code>/u);
+    assert.match(rendered, /<details class="docs-detail-container">[\s\S]*<summary>Arguments and options<\/summary>/u);
+    assert.doesNotMatch(rendered, /<details class="docs-detail-container" open/u);
+    assert.match(rendered, /class="docs-detail-row"[\s\S]*<code>path<\/code>[\s\S]*Path to the project to inspect\./u);
+    assert.match(rendered, /class="docs-detail-row"[\s\S]*<code>--out<\/code>[\s\S]*Write the bundle to disk\./u);
     assert.match(
         rendered,
-        /<gm-copy-button[\s\S]*class="catalog-copy-button"[\s\S]*\.value=gmloop graph visualize <path>/u
+        /<gm-copy-button[\s\S]*class="docs-usage-copy-button"[\s\S]*\.value=gmloop graph visualize <path>/u
     );
-    assert.match(rendered, /label=Copy graph visualize usage/u);
+    assert.match(rendered, /accessibleLabel=Copy graph visualize usage/u);
+    assert.match(rendered, /label="Copy"/u);
 });
 
 void test("GmDocsPanel filters the Linting subview by the current search query", () => {
@@ -383,7 +396,7 @@ void test("GmDocsPanel shows a per-subview empty state when search has no matche
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /No commands match “does-not-exist”\./u);
-    assert.doesNotMatch(rendered, /Copy graph visualize usage/u);
+    assert.doesNotMatch(rendered, /accessibleLabel=Copy graph visualize usage/u);
     assert.doesNotMatch(rendered, /graph visualize/u);
 });
 
@@ -444,7 +457,9 @@ void test("GmDocsPanel renders the MCP tools subview and tool metadata when sele
     assert.match(rendered, /id="docs-page"[\s\S]*class=page content-page docs-page active/u);
     assert.match(rendered, /project status/u);
     assert.match(rendered, /project_status/u);
-    assert.match(rendered, /label=Copy project status tool name/u);
+    assert.match(rendered, /accessibleLabel=Copy project status tool name/u);
+    assert.match(rendered, /label="Copy"/u);
+    assert.match(rendered, /<details class="docs-detail-container">[\s\S]*<summary>Fields<\/summary>/u);
     assert.match(rendered, /Read the current project status\./u);
     assert.match(rendered, /path/u);
     assert.match(rendered, /Project path to inspect\./u);

@@ -189,6 +189,10 @@ function resolvePrebuiltWebDirectory(): PrebuiltWebDirectory | null {
         return Object.freeze({ path: workspaceWebDirectory, workspaceRoot });
     }
 
+    if (workspaceWebDirectory !== null) {
+        return Object.freeze({ path: workspaceWebDirectory, workspaceRoot });
+    }
+
     return null;
 }
 
@@ -208,7 +212,11 @@ async function readNewestModificationTime(directoryPath: string): Promise<number
 }
 
 async function isWorkspaceWebBundleFresh(workspaceRoot: string, webDirectory: string): Promise<boolean> {
-    const buildStats = await stat(path.join(webDirectory, GRAPH_VISUALIZATION_ENTRY_HTML_PATH));
+    const buildStats = await stat(path.join(webDirectory, GRAPH_VISUALIZATION_ENTRY_HTML_PATH)).catch(() => null);
+    if (buildStats === null) {
+        return false;
+    }
+
     const viteConfigStats = await stat(path.join(workspaceRoot, "vite.config.ts"));
     const buildTime = buildStats.mtimeMs;
     const sourceTime = Math.max(

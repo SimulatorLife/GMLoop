@@ -5,6 +5,7 @@ import { createMeta } from "../../src/rules/gml/rule-base-helpers.js";
 
 void test("createMeta uses the default empty-object schema when a rule definition omits schema", () => {
     const meta = createMeta({
+        description: "Test default schema rule.",
         mapKey: "GmlTestDefaultSchema",
         shortName: "test-default-schema",
         fullId: "gml/test-default-schema",
@@ -26,6 +27,7 @@ void test("createMeta preserves explicit rule schemas", () => {
     ]);
 
     const meta = createMeta({
+        description: "Test explicit schema rule.",
         mapKey: "GmlTestExplicitSchema",
         shortName: "test-explicit-schema",
         fullId: "gml/test-explicit-schema",

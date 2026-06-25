@@ -36,9 +36,15 @@ const ERROR_LABEL = "Copy failed";
  */
 export class GmCopyButton extends LightDomLitElement {
     public static properties = {
+        accessibleLabel: { type: String },
+        hideLabel: { type: Boolean },
         label: { type: String },
         value: { type: String }
     };
+
+    public accessor accessibleLabel = "";
+
+    public accessor hideLabel = false;
 
     public accessor label = DEFAULT_LABEL;
 
@@ -60,6 +66,7 @@ export class GmCopyButton extends LightDomLitElement {
     protected render() {
         const status = this.#feedback.status;
         const buttonLabel = this.#resolveButtonLabel(status);
+        const accessibleButtonLabel = this.#resolveAccessibleButtonLabel(status, buttonLabel);
         const feedbackMessage = this.#resolveFeedbackMessage(status);
         const isDisabled = this.value.length === 0;
 
@@ -70,13 +77,13 @@ export class GmCopyButton extends LightDomLitElement {
                 class=${`gm-copy-button gm-copy-button--${status}`}
                 type="button"
                 ?disabled=${isDisabled}
-                aria-label=${buttonLabel}
-                title=${buttonLabel}
+                aria-label=${accessibleButtonLabel}
+                title=${accessibleButtonLabel}
                 data-status=${status}
                 @click=${() => void this.#feedback.trigger()}
             >
                 <span class="gm-copy-button__icon" aria-hidden="true">${this.#renderIcon(status)}</span>
-                <span class="gm-copy-button__label">${buttonLabel}</span>
+                ${this.hideLabel ? null : html`<span class="gm-copy-button__label">${buttonLabel}</span>`}
             </button>
             <span class="gm-copy-button__feedback" role="status" aria-live="polite">${feedbackMessage}</span>
         `;
@@ -90,6 +97,13 @@ export class GmCopyButton extends LightDomLitElement {
             return ERROR_LABEL;
         }
         return this.label;
+    }
+
+    #resolveAccessibleButtonLabel(status: CopyFeedbackStatus, buttonLabel: string): string {
+        if (status !== "idle" || this.accessibleLabel.length === 0) {
+            return buttonLabel;
+        }
+        return this.accessibleLabel;
     }
 
     #resolveFeedbackMessage(status: CopyFeedbackStatus): string {

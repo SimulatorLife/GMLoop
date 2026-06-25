@@ -4,7 +4,6 @@ import test from "node:test";
 import { GmAppHeader } from "../src/app/components/gm-app-header.js";
 import { GmAppShell } from "../src/app/components/gm-app-shell.js";
 import { GmDocsPanel } from "../src/app/components/gm-docs-panel.js";
-import { GmGraphToolbar } from "../src/app/components/gm-graph-toolbar.js";
 import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
 import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
@@ -23,12 +22,6 @@ class TestableGmAppHeader extends GmAppHeader {
 }
 
 class TestableGmDocsPanel extends GmDocsPanel {
-    public renderForTest(): unknown {
-        return this.render();
-    }
-}
-
-class TestableGmGraphToolbar extends GmGraphToolbar {
     public renderForTest(): unknown {
         return this.render();
     }
@@ -145,16 +138,16 @@ void test("GmAppShell error banner has role=alert and tabindex=-1 for keyboard f
     assert.equal(shell.model !== null, true);
 });
 
-void test("GmGraphToolbar renders Docs subview tabs with shared view selector semantics", () => {
-    const toolbar = new TestableGmGraphToolbar();
-    toolbar.model = createMockModel();
-    toolbar.state = createMockState();
+void test("GmDocsPanel renders Docs subview tabs with shared selector semantics", () => {
+    const panel = new TestableGmDocsPanel();
+    panel.model = createMockModel();
+    panel.state = createMockState();
 
-    const rendered = renderTemplateValue(toolbar.renderForTest());
+    const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /<div class="gm-view-selector" role="group" aria-label="Documentation view selector">/u);
-    assert.match(rendered, /id="docs-view-cli"[\s\S]*class=gm-btn--chip active/u);
-    assert.match(rendered, /id="docs-view-mcp"[\s\S]*class=gm-btn--chip/u);
+    assert.match(rendered, /<div class="docs-nav" role="group" aria-label="Documentation view selector">/u);
+    assert.match(rendered, /id=docs-view-cli[\s\S]*class=docs-nav-button active/u);
+    assert.match(rendered, /id=docs-view-mcp[\s\S]*class=docs-nav-button/u);
 });
 
 void test("GmDocsPanel uses a dedicated id for MCP docs subview to avoid id collisions", () => {
