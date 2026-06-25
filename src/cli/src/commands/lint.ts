@@ -1394,6 +1394,7 @@ export async function runLintCommand(command: CommanderCommandLike): Promise<voi
 
     const lintRunStartedAtNanoseconds = readMonotonicNanoseconds();
     let lintedFileCount = 0;
+    let lastLogTime = 0;
 
     let results: Array<ESLint.LintResult>;
     try {
@@ -1404,6 +1405,12 @@ export async function runLintCommand(command: CommanderCommandLike): Promise<voi
             createExecutorForTarget: () => new ESLint(eslintConstructorOptions),
             onTargetCompleted: async ({ target, targetResults, elapsedNanoseconds }) => {
                 lintedFileCount += targetResults.length;
+
+                const now = Date.now();
+                if (now - lastLogTime > 1000) {
+                    console.log(`[lint] Checking GML files... (${lintedFileCount} processed)`);
+                    lastLogTime = now;
+                }
 
                 if (options.verbose) {
                     emitVerboseLintTargetTiming({
@@ -1435,6 +1442,10 @@ export async function runLintCommand(command: CommanderCommandLike): Promise<voi
         console.error(Core.getErrorMessage(error));
         setProcessExitCode(2);
         return;
+    }
+
+    if (lintedFileCount > 0) {
+        console.log(`[lint] Checking GML files... (${lintedFileCount} processed)`);
     }
 
     try {

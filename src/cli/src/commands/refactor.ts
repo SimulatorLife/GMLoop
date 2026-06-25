@@ -652,6 +652,8 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
         }
 
         const resolvePath = (filePath: string) => path.resolve(projectRoot, filePath);
+        let currentCodemodId: string | null = null;
+        let lastProgressLogTime = 0;
         let hasPendingSemanticIndexRefresh = shouldDeferInitialSemanticIndexBuild;
         const result = await engine.executeConfiguredCodemods({
             projectRoot,
@@ -664,7 +666,18 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
             dryRun,
             onlyCodemods: selectedCodemodIds,
             onBeforeCodemod: (codemodId) => {
+                currentCodemodId = codemodId;
+                lastProgressLogTime = 0;
                 console.log(`\n[${codemodId}] running...`);
+            },
+            onProgress: (progress) => {
+                const now = Date.now();
+                if (now - lastProgressLogTime > 1000 || progress.current === progress.total) {
+                    console.log(
+                        `[${currentCodemodId ?? ""}] Processing files... (${progress.current}/${progress.total})`
+                    );
+                    lastProgressLogTime = now;
+                }
             },
             onAfterCodemod: async (summary, context) => {
                 const completedCodemodId = remainingSelectedCodemodIds.shift();

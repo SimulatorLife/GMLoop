@@ -102,22 +102,29 @@ async function executeSingleFileTextCodemod(
     const appliedFiles = new Map<string, string>();
     const changedFiles: Array<string> = [];
     const semantic = engine.semantic;
+    let current = 0;
+    const total = request.gmlFilePaths.length;
     await Core.runSequentially(request.gmlFilePaths, async (filePath) => {
+        if (request.onProgress) {
+            await request.onProgress({ current, total, filePath });
+        }
         const sourceText = await request.readFile(filePath);
         const result = await transform(sourceText, semantic);
-        if (!result.changed) {
-            return;
+        if (result.changed) {
+            changedFiles.push(filePath);
+            if (request.dryRun === false && request.writeFile) {
+                await request.writeFile(filePath, result.outputText);
+                appliedFiles.set(filePath, "");
+            } else {
+                appliedFiles.set(filePath, result.outputText);
+            }
         }
-
-        changedFiles.push(filePath);
-        if (request.dryRun === false && request.writeFile) {
-            await request.writeFile(filePath, result.outputText);
-            appliedFiles.set(filePath, "");
-            return;
-        }
-
-        appliedFiles.set(filePath, result.outputText);
+        current++;
     });
+
+    if (request.onProgress && total > 0) {
+        await request.onProgress({ current: total, total, filePath: "" });
+    }
 
     return {
         appliedFiles,

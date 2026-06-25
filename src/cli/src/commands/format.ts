@@ -685,6 +685,10 @@ let inMemorySnapshotCount = 0;
 // Track processed files for periodic cache cleanup.
 let processedFileCount = 0;
 
+// Track GML files for progress reporting.
+let processedGmlFilesCount = 0;
+let lastLogTime = 0;
+
 function ensureRevertSnapshotDirectory() {
     if (revertSnapshotDirectory) {
         return revertSnapshotDirectory;
@@ -888,6 +892,8 @@ async function resetFormattingSession(onParseError: ParseErrorActionValue) {
     clearFormattingCache();
     inMemorySnapshotCount = 0;
     processedFileCount = 0;
+    processedGmlFilesCount = 0;
+    lastLogTime = 0;
 }
 
 /**
@@ -1483,6 +1489,13 @@ async function formatSingleFile(filePath, activeIgnorePaths = []) {
         encounteredFormattableFile = true;
         timedFormattableFileCount += 1;
 
+        processedGmlFilesCount += 1;
+        const now = Date.now();
+        if (now - lastLogTime > 1000) {
+            console.log(`[format] Checking GML files... (${processedGmlFilesCount} processed)`);
+            lastLogTime = now;
+        }
+
         const data = await readTextFile(filePath);
         const cacheKey = createFormattingCacheKey(data, formattingOptions);
         let formatted = getFormattingCacheEntry(cacheKey);
@@ -1656,6 +1669,9 @@ async function formatResolvedTarget({ targetPath, targetIsDirectory, projectRoot
  * @param {{ targetPath: string, targetIsDirectory: boolean }} params
  */
 function finalizeFormattingRun({ targetPath, targetIsDirectory, targetPathProvided }) {
+    if (processedGmlFilesCount > 0) {
+        console.log(`[format] Checking GML files... (${processedGmlFilesCount} processed)`);
+    }
     if (encounteredFormattableFile) {
         if (dryRunModeEnabled) {
             logDryRunModeSummary();

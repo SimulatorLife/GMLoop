@@ -165,6 +165,7 @@ export interface ConfiguredCodemodRunRequest {
     dryRunOverlayStorageBackend?: StorageBackend;
     onTelemetry?: (telemetry: CodemodExecutionTelemetry) => void;
     onBeforeCodemod?: (codemodId: RefactorCodemodId) => MaybePromise<void>;
+    onProgress?: (progress: { current: number; total: number; filePath: string }) => MaybePromise<void>;
     onAfterCodemod?: (summary: ConfiguredCodemodSummary, context: {
         readFile: WorkspaceReadFile;
     }) => MaybePromise<void>;
