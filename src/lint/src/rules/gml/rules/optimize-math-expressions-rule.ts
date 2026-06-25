@@ -25,6 +25,7 @@ import {
     type SourceTextEdit,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
+import { applyManualMathCanonicalForms } from "./optimize-math-manual-canonical-forms-policy.js";
 import {
     canAstShapeContainMathOptimizationCandidate,
     containsMathOptimizationSyntax,
@@ -482,41 +483,14 @@ function extractHalfLengthdirRotationExpression(node: any, variableName: string,
 }
 
 function rewriteManualMathCanonicalForms(sourceText: string): string {
-    let rewritten = sourceText;
-
-    // common simplifications
-    // remove trivial multiplications by 1, but avoid touching decimal literals
-    // and identifiers that happen to end with '1'. The original regexes only
-    // guarded against digits and dots, which meant a name like `length1 * xyz`
-    // would be incorrectly rewritten to `lengthxyz` (see testBanner). We now
-    // treat word characters as boundaries when appropriate.
-    rewritten = rewritten.replaceAll(/\* 1(?![\w.])/g, "").replaceAll(/(?<![\w.])1 \* /g, "");
-
-    // Convert `sqrt(a*a + b*b + c*c)` patterns to the faster
-    // `point_distance_3d(0, 0, 0, a, b, c)` call. This is a heuristic but it
-    // matches the majority of realistic use cases; the integration tests depend
-    // on it.
-    rewritten = rewritten.replaceAll(
-        /sqrt\(\s*([A-Za-z0-9_.[\]]+)\s*\*\s*\1\s*\+\s*([A-Za-z0-9_.[\]]+)\s*\*\s*\2\s*\+\s*([A-Za-z0-9_.[\]]+)\s*\*\s*\3\s*\)/g,
-        "point_distance_3d(0, 0, 0, $1, $2, $3)"
-    );
-    rewritten = rewritten.replaceAll(
-        /sqrt\(\s*dot_product_3d\(\s*([A-Za-z0-9_.[\]]+)\s*,\s*([A-Za-z0-9_.[\]]+)\s*,\s*([A-Za-z0-9_.[\]]+)\s*,\s*\1\s*,\s*\2\s*,\s*\3\s*\)\s*\)/g,
-        "point_distance_3d(0, 0, 0, $1, $2, $3)"
-    );
-    // Collapse explicit undefined guard multiplication into the nullish-coalescing
-    // shorthand.
-    rewritten = rewritten.replaceAll(
-        /if\s*\(\s*!is_undefined\(\s*([A-Za-z0-9_.]+)\s*\)\s*\)\s*\{\s*([A-Za-z0-9_.]+)\s*\*=\s*\1\s*;\s*\}/g,
-        "$2 *= $1 ?? 1;"
-    );
-
-    // Replace zero-checks with epsilon comparisons so floating point logic is more
-    // robust. This corresponds to the transformation exercised by
-    // `testFunctions`.
-    rewritten = rewritten.replaceAll(/if\s*\(\s*([A-Za-z0-9_.]+)\s*!=\s*0\s*\)/g, "if (abs($1) > math_get_epsilon())");
-
-    return rewritten;
+    // The canonical-form pass used to live inline here, but the policy
+    // (which patterns to rewrite into which canonical forms) and the
+    // mechanism (iterating the rule list over the buffer) had become
+    // inseparable. Both responsibilities are now owned by
+    // `optimize-math-manual-canonical-forms-policy.ts`; this function is a
+    // thin mechanism wrapper that delegates to the policy module so the
+    // rule body stays focused on AST-level concerns.
+    return applyManualMathCanonicalForms(sourceText);
 }
 
 function hasOverlappingRange(start: number, end: number, edits: ReadonlyArray<SourceTextEdit>): boolean {
