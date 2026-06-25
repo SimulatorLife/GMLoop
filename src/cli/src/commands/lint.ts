@@ -1407,8 +1407,8 @@ export async function runLintCommand(command: CommanderCommandLike): Promise<voi
                 lintedFileCount += targetResults.length;
 
                 const now = Date.now();
-                if (now - lastLogTime > 1000) {
-                    console.log(`[lint] Checking GML files... (${lintedFileCount} processed)`);
+                if (now - lastLogTime > 1000 && !options.quiet) {
+                    process.stderr.write(`[lint] Checking GML files... (${lintedFileCount} processed)\n`);
                     lastLogTime = now;
                 }
 
@@ -1444,8 +1444,8 @@ export async function runLintCommand(command: CommanderCommandLike): Promise<voi
         return;
     }
 
-    if (lintedFileCount > 0) {
-        console.log(`[lint] Checking GML files... (${lintedFileCount} processed)`);
+    if (lintedFileCount > 0 && !options.quiet) {
+        process.stderr.write(`[lint] Checking GML files... (${lintedFileCount} processed)\n`);
     }
 
     try {
