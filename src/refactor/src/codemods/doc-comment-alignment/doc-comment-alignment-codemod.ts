@@ -18,13 +18,14 @@ type FunctionParameter = Readonly<{
 type ExistingParamDocLine = Readonly<{
     index: number;
     name: string;
+    rawParamToken: string;
     typeText: string;
     suffix: string;
 }>;
 
 const PARAM_PARSE_PATTERN =
-    /^(\s*\/\/\/\s*@param)(\s+\{[^}]+\})?(\s+)(\[[A-Za-z_][A-Za-z0-9_]*(?:=[^\]]*)?\]|[A-Za-z_][A-Za-z0-9_]*)(.*)$/u;
-const PARAM_NAME_TOKEN_PATTERN = /^\[?([A-Za-z_][A-Za-z0-9_]*)/u;
+    /^(\s*\/\/\/\s*@param)(\s+\{[^}]+\})?(\s+)(\[\*?[A-Za-z_][A-Za-z0-9_]*(?:=[^\]]*)?\]|\*?[A-Za-z_][A-Za-z0-9_]*)(.*)$/u;
+const PARAM_NAME_TOKEN_PATTERN = /^\[?(\*?[A-Za-z_][A-Za-z0-9_]*)/u;
 
 function computeLineStarts(sourceText: string): Array<number> {
     const lineStarts = [0];
@@ -137,14 +138,16 @@ function extractExistingParamDocLine(line: string, index: number): ExistingParam
 
     const rawParamToken = match[4] ?? "";
     const parsedName = PARAM_NAME_TOKEN_PATTERN.exec(rawParamToken);
-    const name = parsedName?.[1] ?? null;
-    if (!name) {
+    const rawName = parsedName?.[1] ?? null;
+    if (!rawName) {
         return null;
     }
+    const name = rawName.replace(/^\*+/u, "");
 
     return Object.freeze({
         index,
         name,
+        rawParamToken,
         typeText: (match[2] ?? "").trim(),
         suffix: match[5] ?? ""
     });
@@ -158,32 +161,34 @@ function buildParamDocLine(
     const typeSegment = Core.isNonEmptyString(existingParamDocLine?.typeText ?? "")
         ? ` ${existingParamDocLine?.typeText ?? ""}`
         : "";
-    const paramNameToken = parameter.optional ? `[${parameter.name}]` : parameter.name;
-    const suffix = existingParamDocLine?.suffix ?? "";
-    const suffixSegment = suffix.length === 0 ? "" : /^\s/u.test(suffix) ? suffix : ` ${suffix}`;
-    return `${indentation}/// @param${typeSegment} ${paramNameToken}${suffixSegment}`;
-}
 
-function chooseExistingParamDocLine(
-    parameter: FunctionParameter,
-    parameterIndex: number,
-    existingParamDocLines: ReadonlyArray<ExistingParamDocLine>,
-    usedIndexes: Set<number>
-): ExistingParamDocLine | null {
-    for (const existingParamDocLine of existingParamDocLines) {
-        if (existingParamDocLine.name === parameter.name && !usedIndexes.has(existingParamDocLine.index)) {
-            usedIndexes.add(existingParamDocLine.index);
-            return existingParamDocLine;
+    let paramNameToken = parameter.optional ? `[${parameter.name}]` : parameter.name;
+    if (existingParamDocLine) {
+        const originalToken = existingParamDocLine.rawParamToken;
+        if (parameter.optional) {
+            if (originalToken.startsWith("[") && originalToken.endsWith("]")) {
+                const hasAsterisk = originalToken.includes("*");
+                const asteriskPrefix = hasAsterisk ? "*" : "";
+                const equalsIndex = originalToken.indexOf("=");
+                if (equalsIndex === -1) {
+                    paramNameToken = `[${asteriskPrefix}${parameter.name}]`;
+                } else {
+                    const defaultValue = originalToken.slice(equalsIndex, -1);
+                    paramNameToken = `[${asteriskPrefix}${parameter.name}${defaultValue}]`;
+                }
+            } else if (originalToken.startsWith("*")) {
+                paramNameToken = `*${parameter.name}`;
+            } else {
+                paramNameToken = `[${parameter.name}]`;
+            }
+        } else {
+            paramNameToken = parameter.name;
         }
     }
 
-    const positional = existingParamDocLines[parameterIndex] ?? null;
-    if (positional && !usedIndexes.has(positional.index)) {
-        usedIndexes.add(positional.index);
-        return positional;
-    }
-
-    return null;
+    const suffix = existingParamDocLine?.suffix ?? "";
+    const suffixSegment = suffix.length === 0 ? "" : /^\s/u.test(suffix) ? suffix : ` ${suffix}`;
+    return `${indentation}/// @param${typeSegment} ${paramNameToken}${suffixSegment}`;
 }
 
 function rewriteDocCommentBlock(
@@ -196,13 +201,36 @@ function rewriteDocCommentBlock(
         .filter((entry): entry is ExistingParamDocLine => entry !== null);
 
     const usedParamDocLineIndexes = new Set<number>();
+    const matchedDocLines = Array.from({length: functionParameters.length}).fill(null);
+
+    // Phase 1: Match by name first for all parameters
+    for (const [i, functionParameter] of functionParameters.entries()) {
+        const parameter = functionParameter;
+        for (const existingParamDocLine of existingParamDocLines) {
+            if (
+                existingParamDocLine.name === parameter.name &&
+                !usedParamDocLineIndexes.has(existingParamDocLine.index)
+            ) {
+                usedParamDocLineIndexes.add(existingParamDocLine.index);
+                matchedDocLines[i] = existingParamDocLine;
+                break;
+            }
+        }
+    }
+
+    // Phase 2: Positional fallback for unmatched parameters
+    for (let i = 0; i < functionParameters.length; i++) {
+        if (matchedDocLines[i] === null) {
+            const positional = existingParamDocLines[i] ?? null;
+            if (positional && !usedParamDocLineIndexes.has(positional.index)) {
+                usedParamDocLineIndexes.add(positional.index);
+                matchedDocLines[i] = positional;
+            }
+        }
+    }
+
     const rewrittenParamLines = functionParameters.map((parameter, parameterIndex) => {
-        const existingParamDocLine = chooseExistingParamDocLine(
-            parameter,
-            parameterIndex,
-            existingParamDocLines,
-            usedParamDocLineIndexes
-        );
+        const existingParamDocLine = matchedDocLines[parameterIndex];
         return buildParamDocLine(indentation, parameter, existingParamDocLine);
     });
 
