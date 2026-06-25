@@ -237,6 +237,127 @@ async function writeTestCaseManifest(projectRoot: string, manifest: TestCaseMani
     return manifestPath;
 }
 
+/**
+ * Canonicalize a test case entry from raw CLI arguments.
+ *
+ * The manifest contract allows the `expected` field to be absent when the
+ * caller has no expectation to record, but the CLI surfaces the flag as
+ * `string | undefined`. This helper collapses both shapes (and trims a
+ * non-empty value) into the single immutable entry shape consumed by
+ * {@link upsertTestCaseEntry} and the persisted manifest.
+ *
+ * @param parameters - The raw CLI arguments for the entry.
+ * @param parameters.target - Stable target function/script identifier.
+ * @param parameters.name - Stable test case name within the target.
+ * @param parameters.expected - Optional, free-form expected behaviour summary.
+ * @returns A frozen {@link TestCaseManifestEntry} that omits `expected` when
+ *   the supplied value is absent or whitespace-only.
+ */
+function normalizeTestCaseEntry(parameters: {
+    target: string;
+    name: string;
+    expected: string | undefined;
+}): TestCaseManifestEntry {
+    const { target, name, expected } = parameters;
+    if (typeof expected === "string" && expected.trim().length > 0) {
+        return Object.freeze({ expected: expected.trim(), name, target });
+    }
+    return Object.freeze({ name, target });
+}
+
+/**
+ * Locate the index of a manifest entry by its `(target, name)` pair.
+ *
+ * Centralizing the composite-key lookup keeps the orchestrating command
+ * handlers free of inline `Array.prototype.findIndex` calls and prevents the
+ * two callers from drifting on the equality semantics.
+ *
+ * @param manifest - The manifest to search.
+ * @param target - Target identifier to match.
+ * @param name - Case name to match.
+ * @returns The zero-based index of the matching entry, or `-1` when no entry
+ *   matches.
+ */
+function findTestCaseEntryIndex(manifest: TestCaseManifest, target: string, name: string): number {
+    return manifest.cases.findIndex((entry) => entry.target === target && entry.name === name);
+}
+
+/**
+ * Structural equality check for {@link TestCaseManifestEntry} values.
+ *
+ * Entries are flat objects of primitive values, so a JSON round-trip
+ * comparison provides a deterministic, allocation-light equality check. The
+ * comparison is sensitive to property insertion order, which is acceptable
+ * because {@link normalizeTestCaseEntry} emits fields in a single canonical
+ * order (`{ expected, name, target }` or `{ name, target }`). Exposing this
+ * helper lets the command handlers treat the change-detection step as a
+ * single delegation rather than re-encoding the serialization logic inline.
+ *
+ * @param left - First entry to compare.
+ * @param right - Second entry to compare.
+ * @returns `true` when both entries serialize to identical JSON; otherwise
+ *   `false`.
+ */
+function areTestCaseEntriesStructurallyEqual(left: TestCaseManifestEntry, right: TestCaseManifestEntry): boolean {
+    return JSON.stringify(left) === JSON.stringify(right);
+}
+
+/**
+ * Result of upserting an entry into a {@link TestCaseManifest}.
+ */
+type TestCaseUpsertResult = Readonly<{
+    manifest: TestCaseManifest;
+    entry: TestCaseManifestEntry;
+    changed: boolean;
+}>;
+
+/**
+ * Insert or replace an entry in a manifest, preserving sort order.
+ *
+ * The helper performs the array bookkeeping the command handlers used to do
+ * inline (`findIndex` to detect existence, a `splice`-style spread to mutate
+ * the entries array, and a structural equality check for change detection).
+ * Callers receive an immutable {@link TestCaseManifest} plus the entry that
+ * was ultimately stored, so the orchestrators can focus on payload assembly
+ * and write semantics rather than on primitive array manipulation.
+ *
+ * @param parameters - The manifest to update and the entry to upsert.
+ * @param parameters.manifest - The current manifest, treated as immutable.
+ * @param parameters.entry - The entry to insert or replace.
+ * @returns The resulting manifest, the stored entry, and whether the entry
+ *   was newly added (`true`) or replaced an existing entry whose shape
+ *   changed (`true`) versus left an existing identical entry untouched
+ *   (`false`).
+ */
+function upsertTestCaseEntry(parameters: {
+    manifest: TestCaseManifest;
+    entry: TestCaseManifestEntry;
+}): TestCaseUpsertResult {
+    const { manifest, entry } = parameters;
+    const existingIndex = findTestCaseEntryIndex(manifest, entry.target, entry.name);
+
+    if (existingIndex === -1) {
+        return {
+            changed: true,
+            entry,
+            manifest: createTestCaseManifest([...manifest.cases, entry])
+        };
+    }
+
+    const existing = manifest.cases[existingIndex];
+    if (existing !== undefined && areTestCaseEntriesStructurallyEqual(existing, entry)) {
+        return { changed: false, entry: existing, manifest };
+    }
+
+    const nextCases = [...manifest.cases];
+    nextCases[existingIndex] = entry;
+    return {
+        changed: true,
+        entry,
+        manifest: createTestCaseManifest(nextCases)
+    };
+}
+
 async function runTestListAction(options: TestOptions): Promise<void> {
     const projectRoot = await resolveTestProjectRoot(options);
     const files = await findTestFiles(projectRoot, options.pattern);
@@ -336,24 +457,19 @@ async function runTestCaseCreateAction(
 ): Promise<void> {
     const projectRoot = await resolveTestProjectRoot(options);
     const manifest = await readTestCaseManifest(projectRoot);
-    const existingIndex = manifest.cases.findIndex((entry) => entry.target === target && entry.name === name);
-    const normalizedEntry: TestCaseManifestEntry =
-        typeof expected === "string" && expected.trim().length > 0
-            ? { expected: expected.trim(), name, target }
-            : { name, target };
-    const changed = existingIndex === -1;
-    const nextCases = changed ? [...manifest.cases, normalizedEntry] : [...manifest.cases];
-    const nextManifest = createTestCaseManifest(nextCases);
+    const entry = normalizeTestCaseEntry({ expected, name, target });
+    const { changed, manifest: nextManifest } = upsertTestCaseEntry({ entry, manifest });
+    const writeMode = options.write === true;
+    const manifestPath = writeMode ? await writeTestCaseManifest(projectRoot, nextManifest) : null;
 
-    const manifestPath = options.write === true ? await writeTestCaseManifest(projectRoot, nextManifest) : null;
     printTestPayload(
         {
             command: "test case create",
             payload: {
-                case: normalizedEntry,
+                case: entry,
                 changed,
                 manifestPath,
-                mode: options.write === true ? "apply" : "dry-run",
+                mode: writeMode ? "apply" : "dry-run",
                 ok: true,
                 projectRoot
             }
@@ -370,14 +486,15 @@ async function runTestCaseUpdateAction(
 ): Promise<void> {
     const projectRoot = await resolveTestProjectRoot(options);
     const manifest = await readTestCaseManifest(projectRoot);
-    const existingIndex = manifest.cases.findIndex((entry) => entry.target === target && entry.name === name);
-    if (existingIndex === -1) {
+    const writeMode = options.write === true;
+
+    if (findTestCaseEntryIndex(manifest, target, name) === -1) {
         printTestPayload(
             {
                 command: "test case update",
                 payload: {
                     case: { name, target },
-                    mode: options.write === true ? "apply" : "dry-run",
+                    mode: writeMode ? "apply" : "dry-run",
                     ok: false,
                     reason: "test_case_not_found"
                 }
@@ -387,25 +504,18 @@ async function runTestCaseUpdateAction(
         return;
     }
 
-    const existing = manifest.cases[existingIndex];
-    const nextEntry: TestCaseManifestEntry =
-        typeof expected === "string" && expected.trim().length > 0
-            ? { expected: expected.trim(), name, target }
-            : { name, target };
-    const changed = JSON.stringify(existing) !== JSON.stringify(nextEntry);
-    const nextCases = [...manifest.cases];
-    nextCases[existingIndex] = nextEntry;
-    const nextManifest = createTestCaseManifest(nextCases);
-    const manifestPath =
-        options.write === true && changed ? await writeTestCaseManifest(projectRoot, nextManifest) : null;
+    const entry = normalizeTestCaseEntry({ expected, name, target });
+    const { changed, manifest: nextManifest } = upsertTestCaseEntry({ entry, manifest });
+    const manifestPath = writeMode && changed ? await writeTestCaseManifest(projectRoot, nextManifest) : null;
+
     printTestPayload(
         {
             command: "test case update",
             payload: {
-                case: nextEntry,
+                case: entry,
                 changed,
                 manifestPath,
-                mode: options.write === true ? "apply" : "dry-run",
+                mode: writeMode ? "apply" : "dry-run",
                 ok: true,
                 projectRoot
             }
@@ -484,6 +594,10 @@ export function createTestCommand(): Command {
  * discourage accidental consumption by runtime callers.
  */
 export const __testCommandTestHelpers__ = Object.freeze({
+    areTestCaseEntriesStructurallyEqual,
+    findTestCaseEntryIndex,
     isValidTestCaseManifest,
-    isValidTestCaseManifestEntry
+    isValidTestCaseManifestEntry,
+    normalizeTestCaseEntry,
+    upsertTestCaseEntry
 });
