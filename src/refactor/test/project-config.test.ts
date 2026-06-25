@@ -28,8 +28,7 @@ void test("normalizeRefactorProjectConfig accepts a populated refactor section",
                         }
                     }
                 },
-                scientificNotation: {},
-                docCommentAlignment: {}
+                scientificNotation: {}
             }
         }
     });
@@ -46,8 +45,7 @@ void test("normalizeRefactorProjectConfig accepts a populated refactor section",
                         }
                     }
                 },
-                scientificNotation: {},
-                docCommentAlignment: {}
+                scientificNotation: {}
             }
         });
     } finally {
@@ -99,6 +97,19 @@ void test("normalizeRefactorProjectConfig rejects malformed refactor sections", 
         () =>
             Refactor.normalizeRefactorProjectConfig({
                 codemods: {
+                    docCommentAlignment: {}
+                }
+            }),
+        {
+            name: "TypeError",
+            message: /Unknown refactor codemod/
+        }
+    );
+
+    assert.throws(
+        () =>
+            Refactor.normalizeRefactorProjectConfig({
+                codemods: {
                     namingConvention: {
                         rules: {
                             localVariable: {
@@ -126,7 +137,7 @@ void test("normalizeRefactorProjectConfigOrNull returns null for unknown top-lev
 void test("normalizeRefactorProjectConfigOrNull returns null for unknown codemod ids", () => {
     const result = normalizeRefactorProjectConfigOrNull({
         codemods: {
-            unknownCodemod: {}
+            docCommentAlignment: {}
         }
     });
     assert.strictEqual(result, null);
@@ -150,14 +161,12 @@ void test("normalizeRefactorProjectConfigOrNull returns null for invalid codemod
 void test("normalizeRefactorProjectConfigOrNull returns normalized config for valid inputs", () => {
     const result = normalizeRefactorProjectConfigOrNull({
         codemods: {
-            scientificNotation: {},
-            docCommentAlignment: {}
+            scientificNotation: {}
         }
     });
     assert.deepEqual(result, {
         codemods: {
-            scientificNotation: {},
-            docCommentAlignment: {}
+            scientificNotation: {}
         }
     });
 });

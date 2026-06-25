@@ -10,7 +10,6 @@
   },
   "refactor": {
     "codemods": {
-      "docCommentAlignment": {},
       "loopLengthHoisting": {}
     }
   },

@@ -606,7 +606,7 @@ void test("graph visualization server forwards sanitized lint rule ids for playg
                 lint: true,
                 lintRuleIds: ["@gmloop/no-constructor-assignment", 42, "", "no-undef"],
                 refactor: false,
-                codemodIds: ["docCommentAlignment", "", 123, "scientificNotation"],
+                codemodIds: ["globalvarToGlobal", "", 123, "scientificNotation"],
                 transpileMode: "none"
             }),
             headers: { "Content-Type": "application/json" },
@@ -615,7 +615,7 @@ void test("graph visualization server forwards sanitized lint rule ids for playg
         assert.equal(response.status, 200);
         assert.deepEqual(receivedFormatOptionNames, ["printWidth", "useTabs"]);
         assert.deepEqual(receivedLintRuleIds, ["@gmloop/no-constructor-assignment", "no-undef"]);
-        assert.deepEqual(receivedCodemodIds, ["docCommentAlignment", "scientificNotation"]);
+        assert.deepEqual(receivedCodemodIds, ["globalvarToGlobal", "scientificNotation"]);
     } finally {
         await handle.stop();
     }

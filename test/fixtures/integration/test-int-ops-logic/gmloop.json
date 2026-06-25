@@ -9,11 +9,6 @@
     "gml/optimize-math-expressions": "error",
     "gml/optimize-logical-flow": "error"
   },
-  "refactor": {
-    "codemods": {
-      "docCommentAlignment": {}
-    }
-  },
   "fixture": {
     "kind": "integration",
     "assertion": "transform",

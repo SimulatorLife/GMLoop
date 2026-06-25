@@ -3,11 +3,6 @@
   "lintRules": {
     "gml/normalize-doc-comments": "error"
   },
-  "refactor": {
-    "codemods": {
-      "docCommentAlignment": {}
-    }
-  },
   "fixture": {
     "kind": "integration",
     "assertion": "transform"

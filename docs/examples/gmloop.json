@@ -12,7 +12,6 @@
   },
   "refactor": {
     "codemods": {
-      "docCommentAlignment": {},
       "globalvarToGlobal": {},
       "loopLengthHoisting": {},
       "namingConvention": {

@@ -96,7 +96,6 @@ void test("listRegisteredCodemods returns the v1 configured codemod set", () => 
     assert.deepEqual(
         Refactor.listRegisteredCodemods().map((codemod) => codemod.id),
         [
-            "docCommentAlignment",
             "scientificNotation",
             "repairLogicalNot",
             "repairArgumentSeparators",
@@ -109,14 +108,6 @@ void test("listRegisteredCodemods returns the v1 configured codemod set", () => 
 
 void test("listConfiguredCodemods reports normalized effective config and selection state", () => {
     assert.deepEqual(Refactor.listConfiguredCodemods({ codemods: { globalvarToGlobal: {} } }, ["globalvarToGlobal"]), [
-        {
-            id: "docCommentAlignment",
-            description:
-                "Align function doc-comment @param tags with the function signature (rename, reorder, and mark defaulted params as optional).",
-            configured: false,
-            selected: false,
-            effectiveConfig: null
-        },
         {
             id: "scientificNotation",
             description: "Expand unsupported scientific-notation number literals into plain decimal literals.",

@@ -43,23 +43,6 @@ export type CodemodResult = Readonly<{
 }>;
 
 /**
- * Options for the doc-comment-alignment codemod.
- *
- * No options are currently supported.
- */
-export type DocCommentAlignmentCodemodOptions = Readonly<Record<string, never>>;
-
-/**
- * A single text edit produced by the doc-comment-alignment codemod.
- */
-export type DocCommentAlignmentEdit = CodemodEdit;
-
-/**
- * Per-file result returned by `applyDocCommentAlignmentCodemod`.
- */
-export type DocCommentAlignmentResult = CodemodResult;
-
-/**
  * A single edit produced by the loop-length hoisting codemod.
  */
 export type LoopLengthHoistingEdit = CodemodEdit;
@@ -319,7 +302,6 @@ export interface NamingConventionPolicy {
  * Stable identifiers for codemods exposed through project configuration and the CLI.
  */
 export type RefactorCodemodId =
-    | "docCommentAlignment"
     | "scientificNotation"
     | "globalvarToGlobal"
     | "loopLengthHoisting"
@@ -331,7 +313,6 @@ export type RefactorCodemodId =
  * Normalized config payloads keyed by registered codemod id.
  */
 export interface RefactorCodemodConfigMap {
-    docCommentAlignment: DocCommentAlignmentCodemodOptions;
     scientificNotation: ScientificNotationCodemodOptions;
     globalvarToGlobal: GlobalvarToGlobalCodemodOptions;
     loopLengthHoisting: LoopLengthHoistingCodemodOptions;

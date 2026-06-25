@@ -1,6 +1,5 @@
 import { Core } from "@gmloop/core";
 
-import { applyDocCommentAlignmentCodemod } from "./codemods/doc-comment-alignment/index.js";
 import { applyLoopLengthHoistingCodemod } from "./codemods/loop-length-hoisting/index.js";
 import { executeNamingConventionCodemod } from "./codemods/naming-convention/index.js";
 import { applyRepairArgumentSeparatorsCodemod } from "./codemods/repair-argument-separators/index.js";
@@ -49,12 +48,7 @@ const EMPTY_ALLOWED_KEYS = new Set<string>();
 const GLOBALVAR_TO_GLOBAL_ALLOWED_KEYS = new Set(["excludeNames"]);
 
 function normalizeEmptyObjectConfig<
-    T extends
-        | "docCommentAlignment"
-        | "scientificNotation"
-        | "loopLengthHoisting"
-        | "repairLogicalNot"
-        | "repairArgumentSeparators"
+    T extends "scientificNotation" | "loopLengthHoisting" | "repairLogicalNot" | "repairArgumentSeparators"
 >(value: unknown, context: string): RefactorCodemodConfigEntry<T> {
     if (value === false) {
         return false;
@@ -66,12 +60,7 @@ function normalizeEmptyObjectConfig<
 async function executeSingleFileTextCodemod(
     engine: CodemodEngine,
     request: ConfiguredCodemodRunRequest,
-    codemodId:
-        | "docCommentAlignment"
-        | "scientificNotation"
-        | "loopLengthHoisting"
-        | "repairLogicalNot"
-        | "repairArgumentSeparators",
+    codemodId: "scientificNotation" | "loopLengthHoisting" | "repairLogicalNot" | "repairArgumentSeparators",
     warningMessage: string,
     transform: (
         sourceText: string,
@@ -178,25 +167,6 @@ function normalizeNamingConventionConfig(
 }
 
 const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.freeze({
-    docCommentAlignment: Object.freeze({
-        id: "docCommentAlignment",
-        description:
-            "Align function doc-comment @param tags with the function signature (rename, reorder, and mark defaulted params as optional).",
-        requiresSemanticProjectIndex: false,
-        normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
-        execute(
-            _engine: CodemodEngine,
-            request: ConfiguredCodemodRunRequest
-        ): Promise<ConfiguredCodemodExecutionResult> {
-            return executeSingleFileTextCodemod(
-                _engine,
-                request,
-                "docCommentAlignment",
-                "No .gml files were selected for doc-comment alignment.",
-                applyDocCommentAlignmentCodemod
-            );
-        }
-    }),
     scientificNotation: Object.freeze({
         id: "scientificNotation",
         description: "Expand unsupported scientific-notation number literals into plain decimal literals.",

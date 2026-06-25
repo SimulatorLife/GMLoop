@@ -9,7 +9,6 @@ export function createDefaultGmloopProjectConfig(): Readonly<Record<string, unkn
         printWidth: 120,
         refactor: Object.freeze({
             codemods: Object.freeze({
-                docCommentAlignment: Object.freeze({}),
                 globalvarToGlobal: Object.freeze({}),
                 loopLengthHoisting: Object.freeze({}),
                 namingConvention: Object.freeze({

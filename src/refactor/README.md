@@ -426,8 +426,7 @@ configures the `function` category.
                     "rm_": "roomResourceName"
                 }
             },
-            "scientificNotation": {},
-            "docCommentAlignment": {}
+            "scientificNotation": {}
         }
     }
 }
