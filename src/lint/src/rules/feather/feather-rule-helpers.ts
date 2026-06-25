@@ -1,15 +1,17 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import { gmlRuleDeprecatedIdentifierServices } from "../gml/gml-rule-services.js";
-import { findMatchingBraceEndIndex, resolveLocFromIndex } from "../gml/rule-base-helpers.js";
+import { gmlRuleBaseHelpersServices, gmlRuleDeprecatedIdentifierServices } from "../gml/gml-rule-services.js";
 import type { EnumBlockMatch, EnumDeclarationMatch, MacroLineSegments } from "./feather-rule-types.js";
 import type { FeatherManifestEntry } from "./manifest.js";
 
-// Consume rule-services contracts so this file does not reach two directory
-// levels into the shared doc-comment layer; the abstraction is the only
-// surface that rule implementations are allowed to depend on.
+// Consume rule-services contracts so this file does not reach across the
+// `feather/` ↔ `gml/` domain boundary for shared parsing helpers. The facade
+// in `gml-rule-services.js` is the only surface that rule implementations
+// outside the `gml/` domain are allowed to depend on, so internal layout
+// changes under `rules/gml/rule-base-helpers.js` stay isolated to that file.
 const { getDeprecatedIdentifierCatalogEntry } = gmlRuleDeprecatedIdentifierServices;
+const { findMatchingBraceEndIndex, resolveLocFromIndex } = gmlRuleBaseHelpersServices;
 
 export function createFeatherRuleMeta(entry: FeatherManifestEntry): Rule.RuleMetaData {
     const meta: Rule.RuleMetaData = {
