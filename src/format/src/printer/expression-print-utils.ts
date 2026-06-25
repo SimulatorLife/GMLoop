@@ -100,6 +100,10 @@ export function shouldOmitSyntheticParens(path: any, _options: any): boolean {
     const parentKey = safeGetPathName(path);
     const expression = node.expression;
 
+    if (shouldStripRedundantConditionalParentheses(parent, parentKey, expression)) {
+        return true;
+    }
+
     if (shouldStripStandaloneAdditiveParentheses(parent, parentKey, expression)) {
         return true;
     }
@@ -367,6 +371,36 @@ function shouldFlattenTernaryTest(parentKey: any, expression: any): boolean {
         expressionType === "MemberDotExpression" ||
         expressionType === "MemberIndexExpression"
     );
+}
+
+function shouldStripRedundantConditionalParentheses(parent: any, parentKey: any, expression: any): boolean {
+    const innermostExpression = Core.unwrapParenthesizedExpression(expression);
+
+    if (!parent || innermostExpression?.type !== "TernaryExpression") {
+        return false;
+    }
+
+    switch (parent.type) {
+        case "ParenthesizedExpression": {
+            return parentKey === "expression";
+        }
+        case "AssignmentExpression": {
+            return parentKey === "right";
+        }
+        case "VariableDeclarator": {
+            return parentKey === "init";
+        }
+        case "ExpressionStatement": {
+            return parentKey === "expression";
+        }
+        case "ReturnStatement":
+        case "ThrowStatement": {
+            return parentKey === "argument";
+        }
+        default: {
+            return false;
+        }
+    }
 }
 
 function shouldWrapTernaryExpression(path: any): boolean {

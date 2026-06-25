@@ -49,6 +49,8 @@ export const NUMERIC_STRING_LITERAL_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[
  */
 export const INLINEABLE_SINGLE_STATEMENT_TYPES = new Set([
     "ReturnStatement",
+    "BreakStatement",
+    "ContinueStatement",
     "ExitStatement",
     "ExpressionStatement",
     "CallExpression"

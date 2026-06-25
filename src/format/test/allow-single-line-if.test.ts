@@ -174,3 +174,23 @@ void test("keeps short control-flow blocks inline when enabled and they fit prin
 
     assert.strictEqual(formatted, ["function inline_guard() {", "    if (ready) { return; }", "}", ""].join("\n"));
 });
+
+void test("keeps short continue guards inline with trailing suffix comments when enabled", async () => {
+    const source = [
+        "function draw_part(shader) {",
+        "    if (shader < 0) { continue; } // Shader does not exist",
+        "}",
+        ""
+    ].join("\n");
+
+    const formatted = await Format.format(source, {
+        allowInlineControlFlowBlocks: true
+    });
+
+    assert.strictEqual(
+        formatted,
+        ["function draw_part(shader) {", "    if (shader < 0) { continue; } // Shader does not exist", "}", ""].join(
+            "\n"
+        )
+    );
+});

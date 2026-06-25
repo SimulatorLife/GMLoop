@@ -141,6 +141,49 @@ function shouldPreserveClauseBlockAdjacency(clauseNode, bodyNode) {
     return isLogicalComparisonClause(clauseNode);
 }
 
+function getBoundaryIndex(boundary): number | null {
+    if (typeof boundary === NUMBER_TYPE) {
+        return boundary;
+    }
+
+    if (boundary && typeof boundary.index === NUMBER_TYPE) {
+        return boundary.index;
+    }
+
+    return null;
+}
+
+function isTrailingCommentAfterNode(comment, node): boolean {
+    if (!Core.isLineComment(comment)) {
+        return false;
+    }
+
+    if (comment.trailing !== true && comment.placement !== "endOfLine") {
+        return false;
+    }
+
+    const commentStartIndex = getBoundaryIndex(comment.start);
+    const nodeEndIndex = Core.getNodeEndIndex(node);
+
+    return commentStartIndex !== null && typeof nodeEndIndex === NUMBER_TYPE && commentStartIndex >= nodeEndIndex;
+}
+
+function hasOnlyTrailingSuffixComments(node): boolean {
+    const comments = Core.getCommentArray(node);
+
+    for (const comment of comments) {
+        if (!isTrailingCommentAfterNode(comment, node)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function canInlineSingleStatementBlock(bodyNode, onlyStatement): boolean {
+    return !Core.hasComment(onlyStatement) && (!Core.hasComment(bodyNode) || hasOnlyTrailingSuffixComments(bodyNode));
+}
+
 /**
  * Prints loop/control-flow forms that share the shape `keyword (clause) statement`.
  */
@@ -169,17 +212,12 @@ export function printSingleClauseStatement(path, options, print, keyword, clause
         if (INLINEABLE_SINGLE_STATEMENT_TYPES.has(bodyNode.type) && !Core.hasComment(bodyNode)) {
             inlineReturnDoc = print(bodyKey);
             inlineStatementType = bodyNode.type;
-        } else if (
-            bodyNode.type === "BlockStatement" &&
-            !Core.hasComment(bodyNode) &&
-            Array.isArray(bodyNode.body) &&
-            bodyNode.body.length === 1
-        ) {
+        } else if (bodyNode.type === "BlockStatement" && Array.isArray(bodyNode.body) && bodyNode.body.length === 1) {
             const [onlyStatement] = bodyNode.body;
             if (
                 onlyStatement &&
                 INLINEABLE_SINGLE_STATEMENT_TYPES.has(onlyStatement.type) &&
-                !Core.hasComment(onlyStatement)
+                canInlineSingleStatementBlock(bodyNode, onlyStatement)
             ) {
                 const startLine = bodyNode.start?.line;
                 const endLine = bodyNode.end?.line;

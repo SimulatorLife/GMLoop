@@ -13,6 +13,27 @@ void test("does not wrap ternary initializers in parentheses", async () => {
     assert.strictEqual(formatted, expected, "Expected ternary variable initializers not to be wrapped in parentheses.");
 });
 
+void test("omits redundant assignment parentheses around commented ternary expressions", async () => {
+    const source = [
+        "function choose_shader(part_type) {",
+        "    shader = (/*emitterMesh ? emitter_mesh_shader : */ (part_type.mesh_enabled ? mesh_shader : regular_shader));",
+        "}",
+        ""
+    ].join("\n");
+
+    const formatted = await Format.format(source, { parser: "gml-parse" });
+
+    assert.strictEqual(
+        formatted,
+        [
+            "function choose_shader(part_type) {",
+            "    shader = /*emitterMesh ? emitter_mesh_shader : */ part_type.mesh_enabled ? mesh_shader : regular_shader;",
+            "}",
+            ""
+        ].join("\n")
+    );
+});
+
 void test("preserves parentheses around nested ternary expressions in true branches", async () => {
     const source = [
         "function build_values(value1, value2, value3) {",
