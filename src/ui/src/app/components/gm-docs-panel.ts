@@ -110,7 +110,17 @@ export class GmDocsPanel extends LightDomLitElement {
         `;
     }
 
+    #resolveCliCopyValue(entry: GraphVisualizationCliCatalogEntry): string {
+        const projectRoot = this.model?.loadedTarget?.projectRoot ?? null;
+        if (projectRoot === null) {
+            return entry.usage;
+        }
+
+        return `gmloop ${entry.commandPath.join(" ")} --path ${quoteShellArgument(projectRoot)}`;
+    }
+
     #renderCliEntry(entry: GraphVisualizationCliCatalogEntry) {
+        const copyValue = this.#resolveCliCopyValue(entry);
         return html`
             <article class="docs-reference-entry">
                 <div class="docs-entry-main">
@@ -118,11 +128,11 @@ export class GmDocsPanel extends LightDomLitElement {
                     <p>${entry.description}</p>
                 </div>
                 <div class="docs-usage-shell">
-                    <code class="docs-usage">${entry.usage}</code>
+                    <code class="docs-usage">${copyValue}</code>
                     <gm-copy-button
                         class="docs-usage-copy-button"
-                        .value=${entry.usage}
-                        accessibleLabel=${`Copy ${entry.displayName} usage`}
+                        .value=${copyValue}
+                        accessibleLabel=${`Copy runnable ${entry.displayName} command`}
                         label="Copy"
                         ?hideLabel=${true}
                     ></gm-copy-button>
@@ -329,4 +339,12 @@ export class GmDocsPanel extends LightDomLitElement {
             </section>
         `;
     }
+}
+
+function quoteShellArgument(argumentValue: string): string {
+    if (/^[\w./:@%+=,-]+$/u.test(argumentValue)) {
+        return argumentValue;
+    }
+
+    return `'${argumentValue.replaceAll("'", String.raw`'\''`)}'`;
 }

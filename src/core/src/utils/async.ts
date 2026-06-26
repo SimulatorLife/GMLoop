@@ -98,21 +98,21 @@ export async function runInParallelWithLimit<T, R>(
     const results: Array<R> = Array.from({ length: entries.length });
     let currentIndex = 0;
 
-    // Worker function pulls items from the shared queue and processes them recursively.
-    // Each worker continuously processes items until the queue is exhausted, enabling
-    // controlled concurrency without await-in-loop patterns.
-    const processNext = async (): Promise<void> => {
+    // Worker function pulls items from the shared queue and processes them through
+    // promise continuations. This keeps bounded concurrency without an async
+    // recursive await frame after each completed entry.
+    const processNext = (): Promise<void> => {
         const indexToProcess = currentIndex;
         currentIndex += 1;
 
         if (indexToProcess >= entries.length) {
-            return;
+            return Promise.resolve();
         }
 
-        results[indexToProcess] = await callback(entries[indexToProcess], indexToProcess);
-
-        // Process the next item from the shared queue
-        await processNext();
+        return Promise.resolve(callback(entries[indexToProcess], indexToProcess)).then((result) => {
+            results[indexToProcess] = result;
+            return processNext();
+        });
     };
 
     const workers = Array.from({ length: Math.min(limit, entries.length) }, () => processNext());

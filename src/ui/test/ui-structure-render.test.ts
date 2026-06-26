@@ -299,6 +299,11 @@ void test("spacing tokens define shared page and toolbar rhythm", () => {
         responsiveSource,
         /main\s*\{[\s\S]*padding:\s*var\(--gm-space-lg\)\s+var\(--gm-space-lg\)\s+var\(--gm-space-lg\);/u
     );
+    assert.match(responsiveSource, /\.toolbar-search-group,[\s\S]*\.toolbar-docs-search\s*\{[\s\S]*width:\s*100%;/u);
+    assert.match(
+        responsiveSource,
+        /\.toolbar-heading-row\s+\.toolbar-docs-search\s*\{[\s\S]*flex:\s*0 1 auto;[\s\S]*max-width:\s*none;/u
+    );
 });
 
 void test("shared view selector keeps inactive tabs visually unoutlined", () => {
@@ -325,6 +330,12 @@ void test("docs stylesheet defines a constrained documentation browser layout", 
     assert.match(source, /\.docs-usage-shell\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/u);
     assert.match(source, /\.docs-usage-copy-button\s+\.gm-copy-button\s*\{[\s\S]*min-width:\s*var\(--gm-height-sm\);/u);
     assert.match(source, /\.docs-usage-copy-button\s+\.gm-copy-button__label\s*\{[\s\S]*clip-path:\s*inset\(50%\);/u);
+    assert.match(source, /\.toolbar-docs-search\s*\{[\s\S]*width:\s*100%;/u);
+    assert.match(source, /\.docs-search-summary:empty\s*\{[\s\S]*display:\s*none;/u);
+    assert.match(
+        source,
+        /@media\s*\(max-width:\s*920px\)\s*\{[\s\S]*?\.toolbar-heading-row\s+\.toolbar-docs-search\s*\{[\s\S]*flex:\s*0 1 auto;[\s\S]*max-width:\s*none;/u
+    );
     assert.match(source, /\.docs-detail-container\s*\{[\s\S]*border:\s*1px solid var\(--gm-border-subtle\);/u);
     assert.match(source, /\.docs-detail-container summary\s*\{[\s\S]*min-height:\s*var\(--gm-height-sm\);/u);
     assert.match(

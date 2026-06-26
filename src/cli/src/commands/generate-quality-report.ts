@@ -399,15 +399,16 @@ function readCheckstyle(checkstyleFiles) {
 function normalizeLocator(testCase) {
     const node = testCase?.node || {};
     const rawFile = typeof node.file === "string" ? node.file.trim() : "";
+    const testName = typeof node.name === "string" ? node.name.trim() : "";
+    if (!testName) {
+        return null;
+    }
     if (rawFile) {
-        return `file:${path.normalize(rawFile).replaceAll("\\", "/").toLowerCase()}`;
+        return `file:${path.normalize(rawFile).replaceAll("\\", "/").toLowerCase()}${FILE_NAME_SEPARATOR}${testName}`;
     }
     const className = typeof node.classname === "string" ? node.classname.trim() : "";
     if (className) {
-        return `class:${className}`.toLowerCase();
-    }
-    if (isNonEmptyArray(testCase?.suitePath)) {
-        return `suite:${testCase.suitePath.join("::")}`.toLowerCase();
+        return `class:${className}${FILE_NAME_SEPARATOR}${testName}`.toLowerCase();
     }
     return null;
 }
@@ -440,13 +441,33 @@ function collectCaseDifferences(baseResults, targetResults) {
 
 function collectMissingCases(sourceResults, comparisonResults) {
     const comparableReportNames = collectComparableReportNames(sourceResults, comparisonResults);
+    const comparisonIdentities = collectComparableRecordIdentities(comparisonResults, comparableReportNames);
     const missing = [];
     for (const [key, record] of sourceResults.results.entries()) {
-        if (!comparisonResults.results.has(key) && isComparableReportRecord(record, comparableReportNames)) {
+        if (
+            !comparisonResults.results.has(key) &&
+            isComparableReportRecord(record, comparableReportNames) &&
+            !comparisonIdentities.has(normalizeLocator(record))
+        ) {
             missing.push(record);
         }
     }
     return missing;
+}
+
+function collectComparableRecordIdentities(resultSet, comparableReportNames) {
+    const identities = new Set();
+    for (const record of resultSet.results.values()) {
+        if (!isComparableReportRecord(record, comparableReportNames)) {
+            continue;
+        }
+
+        const identity = normalizeLocator(record);
+        if (identity) {
+            identities.add(identity);
+        }
+    }
+    return identities;
 }
 
 function collectComparableReportNames(sourceResults, comparisonResults) {
@@ -1036,6 +1057,15 @@ function recordScanDiagnostics(
     }
 }
 
+function hasUsableReportPayload(scan: {
+    coverage: unknown;
+    lint: { warnings?: number; errors?: number } | null;
+    duplicates: unknown;
+    health: unknown;
+}): boolean {
+    return Boolean(scan.coverage || scan.duplicates || scan.health || scan.lint);
+}
+
 function readTestResults(candidateDirs, { workspace }: DetectTestResultsOptions = {}) {
     const workspaceRoot = workspace || process.env.GITHUB_WORKSPACE || process.cwd();
     const directories = normalizeResultDirectories(candidateDirs, workspaceRoot);
@@ -1049,7 +1079,7 @@ function readTestResults(candidateDirs, { workspace }: DetectTestResultsOptions 
 
         recordScanDiagnostics(scan, directory, { notes, missingDirs, emptyDirs });
 
-        if (scan.status === ScanStatus.MISSING || scan.status === ScanStatus.EMPTY) {
+        if (scan.status === ScanStatus.MISSING || (scan.status === ScanStatus.EMPTY && !hasUsableReportPayload(scan))) {
             continue;
         }
 

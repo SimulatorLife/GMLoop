@@ -337,8 +337,44 @@ void test("GmDocsPanel exposes copy actions for CLI command usage", () => {
         rendered,
         /<gm-copy-button[\s\S]*class="docs-usage-copy-button"[\s\S]*\.value=gmloop graph visualize <path>/u
     );
-    assert.match(rendered, /accessibleLabel=Copy graph visualize usage/u);
+    assert.match(rendered, /accessibleLabel=Copy runnable graph visualize command/u);
     assert.match(rendered, /label="Copy"/u);
+    assert.match(rendered, /\?hideLabel=true/u);
+});
+
+void test("GmDocsPanel copies runnable CLI commands when a project is open", () => {
+    const panel = new TestableGmDocsPanel();
+    panel.model = {
+        autoGamePipeline: null,
+        data: {
+            edges: [],
+            generatedAt: "2026-01-01T00:00:00.000Z",
+            graphs: [],
+            nodes: [],
+            projectRoot: "/tmp/project"
+        },
+        documentationCatalogs: createDocumentationCatalogs(),
+        isServerMode: false,
+        lastFixRun: null,
+        loadedTarget: {
+            activePath: "/Users/henrykirk/GMLoop/vendor/3DSpider",
+            projectRoot: "/Users/henrykirk/GMLoop/vendor/3DSpider",
+            selectedPaths: ["/Users/henrykirk/GMLoop/vendor/3DSpider"],
+            source: "cli-path"
+        },
+        liveReload: null,
+        mcpServerStatus: "not-started",
+        projectConfigurationCatalog: null,
+        startupState: null,
+        title: "Docs CLI View"
+    };
+    panel.state = createDocsPanelState("cli");
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /gmloop graph visualize --path \/Users\/henrykirk\/GMLoop\/vendor\/3DSpider/u);
+    assert.match(rendered, /gmloop format --path \/Users\/henrykirk\/GMLoop\/vendor\/3DSpider/u);
+    assert.match(rendered, /\.value=gmloop format --path \/Users\/henrykirk\/GMLoop\/vendor\/3DSpider/u);
 });
 
 void test("GmDocsPanel filters the Linting subview by the current search query", () => {
@@ -396,7 +432,7 @@ void test("GmDocsPanel shows a per-subview empty state when search has no matche
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /No commands match “does-not-exist”\./u);
-    assert.doesNotMatch(rendered, /accessibleLabel=Copy graph visualize usage/u);
+    assert.doesNotMatch(rendered, /accessibleLabel=Copy runnable graph visualize command/u);
     assert.doesNotMatch(rendered, /graph visualize/u);
 });
 

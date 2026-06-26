@@ -47,8 +47,14 @@
   }
 
   .toolbar-control-group,
-  .toolbar-search-group {
+  .toolbar-search-group,
+  .toolbar-docs-search {
     width: 100%;
+  }
+
+  .toolbar-heading-row .toolbar-docs-search {
+    flex: 0 1 auto;
+    max-width: none;
   }
 
   .toolbar-control-group {

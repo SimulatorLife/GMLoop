@@ -98,6 +98,7 @@
     display: grid;
     gap: var(--gm-space-sm);
     min-width: 0;
+    width: 100%;
     flex: 1 1 360px;
     max-width: 560px;
 }
@@ -148,6 +149,11 @@
     color: var(--gm-text-subdued);
     font-size: var(--gm-text-sm);
     line-height: var(--gm-leading-normal);
+}
+
+.docs-search-summary:empty {
+    display: none;
+    min-height: 0;
 }
 
 .docs-reference-list {
@@ -362,6 +368,14 @@
         order: 2;
     }
 
+}
+
+@media (max-width: 920px) {
+    .toolbar-heading-row .toolbar-docs-search {
+        flex: 0 1 auto;
+        width: 100%;
+        max-width: none;
+    }
 }
 
 @media (max-width: 760px) {
