@@ -46,6 +46,9 @@ then return here for deeper context.
   hot-reload bridge, patch application, and live function swapping.
 - [Agent-pack reference](../src/agent-pack/README.md) — Standalone raw Agent
   Skills package and the universal `gmloop agent-pack init` project flow.
+- [Fixture-runner reference](../src/fixture-runner/README.md) — Shared fixture
+  discovery, execution, assertion, and profiling framework used by
+  format, lint, refactor, and integration suites.
 
 ## Contributor workflow
 
