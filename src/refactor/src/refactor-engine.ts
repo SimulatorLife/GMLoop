@@ -272,6 +272,25 @@ function applyGroupedTextEditsToContent(
     return result;
 }
 
+function collectOutOfBoundsTextEditErrors(
+    filePath: string,
+    contentLength: number,
+    edits: ReadonlyArray<Pick<TextEdit, "end" | "start">>
+): Array<string> {
+    const errors: Array<string> = [];
+
+    for (const edit of edits) {
+        if (edit.start > contentLength || edit.end > contentLength) {
+            errors.push(
+                `Text edit for ${filePath} targets range ${edit.start}-${edit.end}, ` +
+                    `but the file length is ${contentLength}`
+            );
+        }
+    }
+
+    return errors;
+}
+
 /**
  * RefactorEngine coordinates semantic-safe edits across the project.
  * It consumes parser spans and semantic bindings to plan WorkspaceEdits
@@ -971,25 +990,42 @@ export class RefactorEngine {
         const grouped = workspace.groupByFile();
         const results = new Map<string, string>();
 
-        const textEditResults = await Core.runInParallelWithLimit(
+        const plannedTextEditResults = await Core.runInParallelWithLimit(
             grouped,
             async ([filePath, edits]) => {
                 const originalContent = sourceTextByPath?.get(filePath) ?? (await readFile(filePath));
-                const newContent = applyGroupedTextEditsToContent(originalContent, edits);
-
-                // Write the modified content to disk unless we're in dry-run mode, which
-                // lets callers preview changes before committing them.
-                if (!dryRun && writeFile !== undefined) {
-                    await writeFile(filePath, newContent);
+                const rangeErrors = collectOutOfBoundsTextEditErrors(filePath, originalContent.length, edits);
+                if (rangeErrors.length > 0) {
+                    throw new RangeError(rangeErrors.join("; "));
                 }
 
-                return [filePath, includeResultContent ? newContent : ""] as const;
+                const newContent = applyGroupedTextEditsToContent(originalContent, edits);
+
+                return {
+                    filePath,
+                    newContent,
+                    resultContent: includeResultContent ? newContent : ""
+                };
             },
             APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT
         );
 
-        for (const [filePath, newContent] of textEditResults) {
-            results.set(filePath, newContent);
+        // Write only after every changed source file has been read and range-checked.
+        // This keeps applyWorkspaceEdit atomic for stale plans whose offsets no longer
+        // fit the current file contents: no earlier file is written before a later
+        // out-of-bounds edit is discovered.
+        if (!dryRun && writeFile !== undefined) {
+            await Core.runInParallelWithLimit(
+                plannedTextEditResults,
+                async ({ filePath, newContent }) => {
+                    await writeFile(filePath, newContent);
+                },
+                APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT
+            );
+        }
+
+        for (const { filePath, resultContent } of plannedTextEditResults) {
+            results.set(filePath, resultContent);
         }
 
         const { metadataEdits, fileRenames } = getWorkspaceArrays(workspace);
