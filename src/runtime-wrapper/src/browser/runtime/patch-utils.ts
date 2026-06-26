@@ -1533,17 +1533,17 @@ const __resolveWritableGmlPropertyKey = (target, prop) => {
     }
     return __resolveMinifiedGmlPropertyKey(prop) ?? prop;
 };
-	const __gml_proxy = new Proxy(__gml_scope, {
-	    has(target, prop) {
-	        if (typeof prop !== "string") {
-	            return prop in target;
-	        }
-	        if (prop === "self") {
-	            return true;
-	        }
-	        const key = __resolveExistingGmlPropertyKey(target, prop);
-	        if (key !== null) {
-	            return true;
+const __gml_proxy = new Proxy(__gml_scope, {
+    has(target, prop) {
+        if (typeof prop !== "string") {
+            return prop in target;
+        }
+        if (prop === "self") {
+            return true;
+        }
+        const key = __resolveExistingGmlPropertyKey(target, prop);
+        if (key !== null) {
+            return true;
         }
         const __has_global_value = __global_scope && prop in __global_scope;
         if (Object.prototype.hasOwnProperty.call(__gml_constants, prop)) {
@@ -1570,16 +1570,16 @@ const __resolveWritableGmlPropertyKey = (target, prop) => {
         }
         return false;
     },
-	    get(target, prop, receiver) {
-	        if (typeof prop !== "string") {
-	            return Reflect.get(target, prop, receiver);
-	        }
-	        if (prop === "self") {
-	            return __gml_proxy;
-	        }
-	        const key = __resolveExistingGmlPropertyKey(target, prop);
-	        if (key !== null) {
-	            return Reflect.get(target, key, receiver);
+    get(target, prop, receiver) {
+        if (typeof prop !== "string") {
+            return Reflect.get(target, prop, receiver);
+        }
+        if (prop === "self") {
+            return __gml_proxy;
+        }
+        const key = __resolveExistingGmlPropertyKey(target, prop);
+        if (key !== null) {
+            return Reflect.get(target, key, receiver);
         }
         const __has_global_value = __global_scope && prop in __global_scope;
         const __global_value = __has_global_value ? __global_scope[prop] : undefined;
@@ -1777,17 +1777,17 @@ const __resolveRuntimeValue = (prop) => {
     }
     return undefined;
 };
-	const __gml_proxy = new Proxy(__gml_scope, {
-	    has(target, prop) {
-	        if (typeof prop !== "string") {
-	            return prop in target;
-	        }
-	        if (prop === "self") {
-	            return true;
-	        }
-	        const key = __resolveExistingGmlPropertyKey(target, prop);
-	        if (key !== null) {
-	            return true;
+const __gml_proxy = new Proxy(__gml_scope, {
+    has(target, prop) {
+        if (typeof prop !== "string") {
+            return prop in target;
+        }
+        if (prop === "self") {
+            return true;
+        }
+        const key = __resolveExistingGmlPropertyKey(target, prop);
+        if (key !== null) {
+            return true;
         }
         return (
             Object.prototype.hasOwnProperty.call(__gml_constants, prop) ||
@@ -1797,16 +1797,16 @@ const __resolveRuntimeValue = (prop) => {
             (__global_scope !== null && prop in __global_scope)
         );
     },
-	    get(target, prop, receiver) {
-	        if (typeof prop !== "string") {
-	            return Reflect.get(target, prop, receiver);
-	        }
-	        if (prop === "self") {
-	            return __gml_proxy;
-	        }
-	        const key = __resolveExistingGmlPropertyKey(target, prop);
-	        if (key !== null) {
-	            return Reflect.get(target, key, receiver);
+    get(target, prop, receiver) {
+        if (typeof prop !== "string") {
+            return Reflect.get(target, prop, receiver);
+        }
+        if (prop === "self") {
+            return __gml_proxy;
+        }
+        const key = __resolveExistingGmlPropertyKey(target, prop);
+        if (key !== null) {
+            return Reflect.get(target, key, receiver);
         }
         if (Object.prototype.hasOwnProperty.call(__gml_constants, prop)) {
             return __gml_constants[prop];
