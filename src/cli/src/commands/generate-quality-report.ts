@@ -20,7 +20,6 @@ const {
     compactArray,
     ensureMap,
     getErrorMessageOrFallback,
-    isNonEmptyArray,
     isNonEmptyTrimmedString,
     isObjectLike,
     parseJsonWithContext,
@@ -35,6 +34,7 @@ const parser = new XMLParser({
 });
 
 const NON_WORKSPACE_PATH_SEGMENTS = new Set(["dist", "test", "tests", "reports", "report", "node_modules"]);
+const NON_WORKSPACE_PATH_PATTERNS = [/^report-/u];
 const GENERIC_REPORT_FILE_STEMS = new Set([
     "junit",
     "junit-report",
@@ -220,7 +220,11 @@ function extractWorkspaceNameFromReportPath(reportFilePath: string): string {
     }
 
     const parentDirectoryName = path.basename(path.dirname(normalized));
-    if (!parentDirectoryName || NON_WORKSPACE_PATH_SEGMENTS.has(parentDirectoryName)) {
+    if (
+        !parentDirectoryName ||
+        NON_WORKSPACE_PATH_SEGMENTS.has(parentDirectoryName) ||
+        NON_WORKSPACE_PATH_PATTERNS.some((pattern) => pattern.test(parentDirectoryName))
+    ) {
         return "";
     }
     return parentDirectoryName;

@@ -1317,6 +1317,7 @@ void test("quality report preserves lint counts when a target only has checkstyl
             }),
         isCliUsageError
     );
+    process.exitCode = undefined;
 
     const merged = readTestResults([mergeDir], { workspace });
     assert.strictEqual(merged.lint?.warnings, 1);
