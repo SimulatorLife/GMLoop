@@ -144,6 +144,7 @@ pnpm run cli -- transpile --write --path /absolute/path/to/MyGame
 | `@gmloop/transpiler` | `src/transpiler/` | GML -> JavaScript emission |
 | `@gmloop/runtime-wrapper` | `src/runtime-wrapper/` | HTML5 runtime hot-reload bridge |
 | `@gmloop/core` | `src/core/` | Shared AST/types/helpers |
+| `@gmloop/fixture-runner` | `src/fixture-runner/` | Shared fixture discovery, execution, assertion, and profiling framework used by format/lint/refactor/integration suites |
 | `@gmloop/cli` | `src/cli/` | Unified command-line entrypoints |
 | `@gmloop/mcp` | `src/mcp/` | MCP server surface for AI tooling integrations |
 | `@gmloop/ui` | `src/ui/` | Cross-project UI surfaces (graph, docs, fix, live-reload, playground) |
@@ -395,6 +396,7 @@ Start here for deeper context and plans:
 - [`src/lint/README.md`](src/lint/README.md) (ESLint language plugin + rules)
 - [`src/runtime-wrapper/README.md`](src/runtime-wrapper/README.md) (HTML5 hot-reload bridge)
 - [`src/mcp/README.md`](src/mcp/README.md) (MCP server surface for AI tooling)
+- [`src/fixture-runner/README.md`](src/fixture-runner/README.md) (shared fixture discovery, execution, and profiling framework)
 - [GitHub Releases](https://github.com/SimulatorLife/GMLoop/releases) (project changelog and release notes)
 
 ## References / Tools / Docs
