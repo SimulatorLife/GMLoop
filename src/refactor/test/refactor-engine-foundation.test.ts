@@ -786,6 +786,37 @@ void test("applyWorkspaceEdit rejects malformed text edit ranges before writing"
     assert.equal(writeCount, 0);
 });
 
+void test("applyWorkspaceEdit rejects stale out-of-bounds edit ranges before writing", async () => {
+    const engine = new RefactorEngineClass();
+    const ws = new WorkspaceEditFactory();
+    ws.addEdit("scripts/first.gml", 0, 4, "show_debug_message");
+    ws.addEdit("scripts/stale.gml", 8, 12, "renamed");
+
+    const writes: Record<string, string> = {};
+
+    await assert.rejects(
+        () =>
+            engine.applyWorkspaceEdit(ws, {
+                readFile: async (filePath) => {
+                    if (filePath === "scripts/first.gml") {
+                        return "call();";
+                    }
+
+                    return "tiny";
+                },
+                writeFile: async (filePath, content) => {
+                    writes[filePath] = content;
+                },
+                dryRun: false
+            }),
+        {
+            message: /targets range 8-12, but the file length is 4/
+        }
+    );
+
+    assert.deepEqual(writes, {});
+});
+
 void test("executeRename validates required parameters", async () => {
     const engine = new RefactorEngineClass();
     type ExecuteRenameArgs = Parameters<RefactorEngine["executeRename"]>[0];
