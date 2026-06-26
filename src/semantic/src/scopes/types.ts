@@ -169,6 +169,41 @@ export type ScopeDependent = {
 };
 
 /**
+ * A scope that should be re-analysed after a semantic change.
+ */
+export type ScopeInvalidationEntry = {
+    scopeId: string;
+    scopeKind: string;
+    reason: "self" | "dependent" | "descendant";
+};
+
+/**
+ * Options shared by hot-reload invalidation queries.
+ */
+export type ScopeInvalidationOptions = {
+    /** Include child scopes nested inside each changed scope. */
+    includeDescendants?: boolean;
+};
+
+/**
+ * A transitive dependent scope with its distance from the changed scope.
+ */
+export type ScopeDependentDepth = {
+    dependentScopeId: string;
+    dependentScopeKind: string;
+    depth: number;
+};
+
+/**
+ * A descendant scope with its nesting depth below the queried scope.
+ */
+export type ScopeDescendant = {
+    scopeId: string;
+    scopeKind: string;
+    depth: number;
+};
+
+/**
  * Occurrence tracking for a specific identifier within a scope.
  */
 export type IdentifierOccurrences = {

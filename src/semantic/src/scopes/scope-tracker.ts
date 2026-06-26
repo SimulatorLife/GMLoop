@@ -35,7 +35,11 @@ import type {
     Occurrence,
     ScopeDependency,
     ScopeDependent,
+    ScopeDependentDepth,
+    ScopeDescendant,
     ScopeDetails,
+    ScopeInvalidationEntry,
+    ScopeInvalidationOptions,
     ScopeMetadata,
     ScopeModificationDetails,
     ScopeModificationMetadata,
@@ -52,7 +56,7 @@ import type {
 
 const DEFAULT_DECLARATION_ROLE: ScopeRole = Object.freeze({ type: "declaration" });
 const DEFAULT_REFERENCE_ROLE: ScopeRole = Object.freeze({ type: "reference" });
-const EMPTY_INVALIDATION_SET: Array<{ scopeId: string; scopeKind: string; reason: string }> = [];
+const EMPTY_INVALIDATION_SET: ScopeInvalidationEntry[] = [];
 
 /**
  * Manages lexical and structural scopes, symbol declarations, and references.
@@ -1377,8 +1381,8 @@ export class ScopeTracker implements ScipExportView {
 
     public getInvalidationSet(
         scopeId: string | null | undefined,
-        { includeDescendants = false }: { includeDescendants?: boolean } = {}
-    ): Array<{ scopeId: string; scopeKind: string; reason: string }> {
+        { includeDescendants = false }: ScopeInvalidationOptions = {}
+    ): ScopeInvalidationEntry[] {
         if (!scopeId) {
             return [];
         }
@@ -1388,14 +1392,10 @@ export class ScopeTracker implements ScipExportView {
             return [];
         }
 
-        const invalidationSet: Array<{
-            scopeId: string;
-            scopeKind: string;
-            reason: string;
-        }> = [];
+        const invalidationSet: ScopeInvalidationEntry[] = [];
         const seenScopes = new Set<string>();
 
-        const addScope = (scopeIdToAdd: string, scopeKind: string, reason: string): void => {
+        const addScope = (scopeIdToAdd: string, scopeKind: string, reason: ScopeInvalidationEntry["reason"]): void => {
             if (seenScopes.has(scopeIdToAdd)) {
                 return;
             }
@@ -1425,6 +1425,91 @@ export class ScopeTracker implements ScipExportView {
     }
 
     /**
+     * Computes invalidation sets for known changed scope identifiers in one pass.
+     *
+     * Hot-reload coordinators that already have changed scope ids can use this
+     * method to avoid path normalization and path-index lookups. Duplicate scope
+     * ids are ignored, and transitive dependent/descendant traversals are shared
+     * across the batch to keep reload invalidation work bounded.
+     *
+     * @param scopeIds - Scope identifiers to invalidate from
+     * @param options - Configuration options
+     * @param options.includeDescendants - Whether to include descendant scopes
+     * @returns Map of scope id to its invalidation set
+     */
+    public getBatchInvalidationSetsForScopes(
+        scopeIds: Iterable<string>,
+        { includeDescendants = false }: ScopeInvalidationOptions = {}
+    ): Map<string, ScopeInvalidationEntry[]> {
+        const results = new Map<string, ScopeInvalidationEntry[]>();
+        const transitiveDependentsCache = new Map<string, ScopeDependentDepth[]>();
+        const descendantScopesCache = includeDescendants ? new Map<string, ScopeDescendant[]>() : null;
+
+        for (const scopeId of scopeIds) {
+            if (!scopeId || typeof scopeId !== "string" || scopeId.length === 0 || results.has(scopeId)) {
+                continue;
+            }
+
+            const scope = this.scopesById.get(scopeId);
+            if (!scope) {
+                results.set(scopeId, EMPTY_INVALIDATION_SET);
+                continue;
+            }
+
+            const invalidationSet: ScopeInvalidationEntry[] = [
+                {
+                    scopeId: scope.id,
+                    scopeKind: scope.kind,
+                    reason: "self"
+                }
+            ];
+            const seenScopes = new Set<string>([scope.id]);
+
+            let dependents = transitiveDependentsCache.get(scopeId);
+            if (!dependents) {
+                dependents = this.getTransitiveDependents(scopeId);
+                transitiveDependentsCache.set(scopeId, dependents);
+            }
+
+            for (const dep of dependents) {
+                if (seenScopes.has(dep.dependentScopeId)) {
+                    continue;
+                }
+                seenScopes.add(dep.dependentScopeId);
+                invalidationSet.push({
+                    scopeId: dep.dependentScopeId,
+                    scopeKind: dep.dependentScopeKind,
+                    reason: "dependent"
+                });
+            }
+
+            if (includeDescendants) {
+                let descendants = descendantScopesCache?.get(scopeId);
+                if (!descendants) {
+                    descendants = this.getDescendantScopes(scopeId);
+                    descendantScopesCache?.set(scopeId, descendants);
+                }
+
+                for (const desc of descendants) {
+                    if (seenScopes.has(desc.scopeId)) {
+                        continue;
+                    }
+                    seenScopes.add(desc.scopeId);
+                    invalidationSet.push({
+                        scopeId: desc.scopeId,
+                        scopeKind: desc.scopeKind,
+                        reason: "descendant"
+                    });
+                }
+            }
+
+            results.set(scopeId, invalidationSet);
+        }
+
+        return results;
+    }
+
+    /**
      * Computes invalidation sets for multiple file paths in a single pass.
      *
      * This method is optimized for hot-reload scenarios where multiple files
@@ -1439,20 +1524,12 @@ export class ScopeTracker implements ScipExportView {
      */
     public getBatchInvalidationSets(
         paths: Iterable<string>,
-        { includeDescendants = false }: { includeDescendants?: boolean } = {}
-    ): Map<string, Array<{ scopeId: string; scopeKind: string; reason: string }>> {
-        const results = new Map<string, Array<{ scopeId: string; scopeKind: string; reason: string }>>();
-        const transitiveDependentsCache = new Map<
-            string,
-            Array<{ dependentScopeId: string; dependentScopeKind: string; depth: number }>
-        >();
-        const normalizedPathResultsCache = new Map<
-            string,
-            Array<{ scopeId: string; scopeKind: string; reason: string }>
-        >();
-        const descendantScopesCache = includeDescendants
-            ? new Map<string, Array<{ scopeId: string; scopeKind: string; depth: number }>>()
-            : null;
+        { includeDescendants = false }: ScopeInvalidationOptions = {}
+    ): Map<string, ScopeInvalidationEntry[]> {
+        const results = new Map<string, ScopeInvalidationEntry[]>();
+        const transitiveDependentsCache = new Map<string, ScopeDependentDepth[]>();
+        const normalizedPathResultsCache = new Map<string, ScopeInvalidationEntry[]>();
+        const descendantScopesCache = includeDescendants ? new Map<string, ScopeDescendant[]>() : null;
 
         for (const path of paths) {
             if (!path || typeof path !== "string" || path.length === 0) {
@@ -1477,11 +1554,7 @@ export class ScopeTracker implements ScipExportView {
                 continue;
             }
 
-            const pathInvalidationSet: Array<{
-                scopeId: string;
-                scopeKind: string;
-                reason: string;
-            }> = [];
+            const pathInvalidationSet: ScopeInvalidationEntry[] = [];
             const seenScopes = new Set<string>();
 
             for (const scopeId of scopeIds) {
@@ -1545,18 +1618,12 @@ export class ScopeTracker implements ScipExportView {
         return results;
     }
 
-    public getDescendantScopes(
-        scopeId: string | null | undefined
-    ): Array<{ scopeId: string; scopeKind: string; depth: number }> {
+    public getDescendantScopes(scopeId: string | null | undefined): ScopeDescendant[] {
         if (!scopeId) {
             return [];
         }
 
-        const descendants: Array<{
-            scopeId: string;
-            scopeKind: string;
-            depth: number;
-        }> = [];
+        const descendants: ScopeDescendant[] = [];
         const children = this.scopeChildrenIndex.get(scopeId);
         if (!children || children.size === 0) {
             return descendants;
