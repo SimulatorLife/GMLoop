@@ -45,3 +45,42 @@ void test("executeConfiguredCodemods runs scientificNotation codemod", async () 
     ]);
     assert.equal(result.appliedFiles.get("scripts/example.gml"), "return 0.00062;\n");
 });
+
+void test("executeConfiguredCodemods never applies scientificNotation to GameMaker metadata files", async () => {
+    const yySourceText = '{"resourceType":"GMAnimCurve","tv1":-1.4575198E-07,}\n';
+    const reads: Array<string> = [];
+    const writes: Array<string> = [];
+    const engine = new Refactor.RefactorEngine();
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["animcurves/curve_elastic_norm/curve_elastic_norm.yy", "MyGame.yyp"],
+        config: {
+            codemods: {
+                scientificNotation: {}
+            }
+        },
+        readFile: async (filePath) => {
+            reads.push(filePath);
+            return yySourceText;
+        },
+        writeFile: async (filePath) => {
+            writes.push(filePath);
+        },
+        dryRun: false
+    });
+
+    assert.deepEqual(reads, []);
+    assert.deepEqual(writes, []);
+    assert.deepEqual(result.summaries, [
+        {
+            id: "scientificNotation",
+            changed: false,
+            changedFiles: [],
+            warnings: ["No .gml files were selected for scientific-notation migration."],
+            errors: []
+        }
+    ]);
+    assert.equal(result.appliedFiles.size, 0);
+});

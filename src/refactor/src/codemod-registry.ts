@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { Core } from "@gmloop/core";
 
 import { applyLoopLengthHoistingCodemod } from "./codemods/loop-length-hoisting/index.js";
@@ -47,6 +49,10 @@ const EMPTY_ALLOWED_KEYS = new Set<string>();
 
 const GLOBALVAR_TO_GLOBAL_ALLOWED_KEYS = new Set(["excludeNames"]);
 
+function isGmlSourceFilePath(candidatePath: string): boolean {
+    return path.extname(candidatePath.trim()).toLowerCase() === ".gml";
+}
+
 function normalizeEmptyObjectConfig<
     T extends "scientificNotation" | "loopLengthHoisting" | "repairLogicalNot" | "repairArgumentSeparators"
 >(value: unknown, context: string): RefactorCodemodConfigEntry<T> {
@@ -69,7 +75,9 @@ async function executeSingleFileTextCodemod(
         | Promise<Readonly<{ changed: boolean; outputText: string }>>
         | Readonly<{ changed: boolean; outputText: string }>
 ): Promise<ConfiguredCodemodExecutionResult> {
-    if (request.gmlFilePaths.length === 0) {
+    const gmlSourceFilePaths = request.gmlFilePaths.filter((filePath) => isGmlSourceFilePath(filePath));
+
+    if (gmlSourceFilePaths.length === 0) {
         return {
             appliedFiles: new Map(),
             summary: {
@@ -92,8 +100,8 @@ async function executeSingleFileTextCodemod(
     const changedFiles: Array<string> = [];
     const semantic = engine.semantic;
     let current = 0;
-    const total = request.gmlFilePaths.length;
-    await Core.runSequentially(request.gmlFilePaths, async (filePath) => {
+    const total = gmlSourceFilePaths.length;
+    await Core.runSequentially(gmlSourceFilePaths, async (filePath) => {
         if (request.onProgress) {
             await request.onProgress({ current, total, filePath });
         }

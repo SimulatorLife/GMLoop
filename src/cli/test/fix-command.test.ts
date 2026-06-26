@@ -139,6 +139,9 @@ void test("fix runs codemods, lint fixes, and formatting in sequence for a proje
             "consumer_script",
             "function consumer_script() {\n    return demo_script();\n}\n"
         );
+        const animationCurvePath = "animcurves/curve_elastic_norm/curve_elastic_norm.yy";
+        const animationCurveSource = '{"resourceType":"GMAnimCurve","tv1":-1.4575198E-07,}\n';
+        await writeProjectFile(projectRoot, animationCurvePath, animationCurveSource);
 
         const result = await runCliTestCommand({
             argv: ["fix", "--write"],
@@ -161,6 +164,7 @@ void test("fix runs codemods, lint fixes, and formatting in sequence for a proje
         // The lint fix inlines the variable and expands the numeric literal 1e3 → 1000.
         assert.match(scriptSource, /return 1000;/);
         assert.doesNotMatch(scriptSource, /1e3/);
+        assert.equal(await readFile(path.join(projectRoot, animationCurvePath), "utf8"), animationCurveSource);
     } finally {
         await rm(projectRoot, { recursive: true, force: true });
     }

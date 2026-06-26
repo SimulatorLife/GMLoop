@@ -24,7 +24,7 @@ import {
     createWriteOption
 } from "../cli-core/shared-command-options.js";
 import { createRefactorBridges } from "../modules/refactor/bridge-factory.js";
-import { isRefactorResourcePath } from "../modules/refactor/gml-resource-path.js";
+import { isRefactorGmlSourcePath } from "../modules/refactor/gml-resource-path.js";
 import { GmlSemanticBridge } from "../modules/refactor/index.js";
 import {
     discoverProjectRoot,
@@ -246,7 +246,7 @@ function listIndexedGmlFilePaths(projectIndex: unknown): Array<string> {
     }
 
     return Object.keys(files)
-        .filter((filePath) => isRefactorResourcePath(filePath))
+        .filter((filePath) => isRefactorGmlSourcePath(filePath))
         .toSorted();
 }
 
@@ -401,7 +401,7 @@ async function collectGmlFilesFromTarget(
                         continue;
                     }
 
-                    if (entry.isFile() && isRefactorResourcePath(entry.name)) {
+                    if (entry.isFile() && isRefactorGmlSourcePath(entry.name)) {
                         collectedFiles.add(path.relative(projectRoot, entryPath));
                     }
                 }
@@ -414,7 +414,7 @@ async function collectGmlFilesFromTarget(
         return;
     }
 
-    if (!stats.isFile() || !isRefactorResourcePath(absoluteTargetPath)) {
+    if (!stats.isFile() || !isRefactorGmlSourcePath(absoluteTargetPath)) {
         return;
     }
 

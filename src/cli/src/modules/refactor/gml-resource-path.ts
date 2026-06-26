@@ -3,6 +3,16 @@ import path from "node:path";
 const REFRACTOR_RESOURCE_EXTENSIONS = Object.freeze([".gml", ".yy"]);
 
 /**
+ * Check whether a path points to a GameMaker source file (`.gml`).
+ *
+ * @param {string} candidatePath Candidate path to classify.
+ * @returns {boolean} `true` when the path ends with `.gml`.
+ */
+export function isRefactorGmlSourcePath(candidatePath: string): boolean {
+    return path.extname(candidatePath.trim()).toLowerCase() === ".gml";
+}
+
+/**
  * Check whether a path points to a refactor-owned source/metadata file type.
  *
  * The refactor workflow traverses both script sources (`.gml`) and owner
