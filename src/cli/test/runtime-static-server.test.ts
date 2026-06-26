@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -43,6 +43,33 @@ void describe("runtime static server", () => {
             assert.equal(response.status, 200);
             const text = await response.text();
             assert.equal(text, "<html><body>ok</body></html>");
+        } finally {
+            if (server) {
+                await server.stop();
+            }
+            await rm(tempDir, { recursive: true, force: true });
+        }
+    });
+
+    void it("serves index.html when a directory is requested", async () => {
+        const tempDir = await mkdtemp(path.join(os.tmpdir(), "gml-runtime-server-dir-"));
+        const subDir = path.join(tempDir, "subdir");
+        await mkdir(subDir, { recursive: true });
+        await writeFile(path.join(subDir, "index.html"), "<html><body>dir-index</body></html>");
+
+        let server;
+        try {
+            server = await startRuntimeStaticServer({
+                runtimeRoot: tempDir,
+                host: "127.0.0.1",
+                port: 0,
+                verbose: false
+            });
+
+            const response = await fetch(`${server.url}subdir/`);
+            assert.equal(response.status, 200);
+            const text = await response.text();
+            assert.equal(text, "<html><body>dir-index</body></html>");
         } finally {
             if (server) {
                 await server.stop();

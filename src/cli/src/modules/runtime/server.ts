@@ -86,12 +86,12 @@ function formatRuntimeHttpErrorMessage(error: unknown, statusCode: number, fallb
     return fallbackMessage;
 }
 
-function resolveMimeType(filePath) {
+function resolveMimeType(filePath: string): string {
     const extension = path.extname(filePath).toLowerCase();
     return MIME_TYPES.get(extension) ?? "application/octet-stream";
 }
 
-function normalizeRequestPath(requestUrl) {
+function normalizeRequestPath(requestUrl: string): string {
     if (typeof requestUrl !== "string" || requestUrl.length === 0) {
         return "/";
     }
@@ -143,15 +143,21 @@ function resolveRuntimeFilePath(root: string, requestPath: string) {
     return target;
 }
 
-async function sendFileResponse(res, filePath, { method }) {
-    const stats = await fs.stat(filePath);
-    let servingPath = filePath;
+async function sendFileResponse(
+    res: http.ServerResponse,
+    filePath: string,
+    { method }: { method: string }
+): Promise<void> {
+    const initialStats = await fs.stat(filePath);
 
-    if (stats.isDirectory()) {
-        servingPath = path.join(filePath, "index.html");
-    }
-
-    const fileStats = await fs.stat(servingPath);
+    // When the requested path is a directory, the runtime serves its
+    // `index.html`. The directory stat is not the file we ultimately stream,
+    // so we re-stat the index.html entry. In the common case of a regular
+    // file, however, the first stat is already the correct stats for the
+    // resource we are about to stream, so we skip a redundant second
+    // `fs.stat` syscall on every asset request.
+    const servingPath = initialStats.isDirectory() ? path.join(filePath, "index.html") : filePath;
+    const fileStats = initialStats.isDirectory() ? await fs.stat(servingPath) : initialStats;
 
     if (!fileStats.isFile()) {
         throw createRuntimeHttpError("Requested resource is not a file.", 404);
@@ -234,7 +240,7 @@ async function sendFileResponse(res, filePath, { method }) {
     });
 }
 
-function writeError(res, statusCode, message) {
+function writeError(res: http.ServerResponse, statusCode: number, message: string): void {
     res.statusCode = statusCode;
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
     res.end(message);
