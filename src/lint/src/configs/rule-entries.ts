@@ -60,11 +60,10 @@ export function createLintRuleEntriesFromProjectConfig(
     config: Record<string, unknown>
 ): Readonly<Record<string, Linter.RuleEntry>> {
     const normalizedRules = normalizeLintRulesConfig(config);
-    const enabledRules = Object.entries(normalizedRules).filter(([, level]) => level !== "off");
 
     return Object.freeze(
         Object.fromEntries(
-            enabledRules.map(([ruleId, level]) => {
+            Object.entries(normalizedRules).map(([ruleId, level]) => {
                 const ruleOptions = extractRuleOptions(config, ruleId);
                 return [
                     ruleId,
@@ -92,11 +91,10 @@ export function createLintRuleEntriesFromProjectConfigOrNull(
     if (normalizedRules === null) {
         return null;
     }
-    const enabledRules = Object.entries(normalizedRules).filter(([, level]) => level !== "off");
 
     return Object.freeze(
         Object.fromEntries(
-            enabledRules.map(([ruleId, level]) => {
+            Object.entries(normalizedRules).map(([ruleId, level]) => {
                 const ruleOptions = extractRuleOptions(config, ruleId);
                 return [
                     ruleId,

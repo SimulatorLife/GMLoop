@@ -225,6 +225,5 @@ Performance-sensitive autofix rules also have dedicated regression coverage unde
 
 ## TODO
 
-- **BUG**: When lint-fixing is run through the GMLoop CLI, if no eslint configuration file is detected in the target GameMaker project, the CLI should fall back to a default, "recommended" ruleset.
 - Add an ESLint auto-fix rule that detects simple numeric accumulation loops like `alpha += index` over a fixed range and replaces them with the equivalent arithmetic-series expression. Example: `for index = 0..9` can become `alpha += count * (count - 1) * 0.5`, avoiding unnecessary runtime iteration.
 - Continue splitting the remaining multi-purpose `optimize-logical-flow` behaviors into focused rules; direct boolean return passthroughs and boolean literal comparisons now live in focused rules.

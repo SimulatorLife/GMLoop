@@ -94,6 +94,18 @@ void test("createLintRuleEntriesFromProjectConfig builds enabled rule entries", 
     });
 });
 
+void test("createLintRuleEntriesFromProjectConfig preserves explicit off entries", () => {
+    const ruleEntries = createLintRuleEntriesFromProjectConfig({
+        lintRuleset: "recommended",
+        lintRules: {
+            "gml/normalize-operator-aliases": "off"
+        }
+    });
+
+    assert.equal(ruleEntries["gml/normalize-operator-aliases"], "off");
+    assert.equal(ruleEntries["gml/no-scientific-notation"], "error");
+});
+
 void test("createLintRuleEntriesFromProjectConfig includes enabled preset rules", () => {
     const ruleEntries = createLintRuleEntriesFromProjectConfig({
         lintRuleset: "performance"
@@ -101,7 +113,7 @@ void test("createLintRuleEntriesFromProjectConfig includes enabled preset rules"
 
     assert.equal(ruleEntries["gml/no-globalvar"], "warn");
     assert.equal(ruleEntries["gml/prefer-direct-boolean-return"], "warn");
-    assert.equal("gml/prefer-string-interpolation" in ruleEntries, false);
+    assert.equal(ruleEntries["gml/prefer-string-interpolation"], "off");
 });
 
 void test("createLintRuleEntriesFromProjectConfig passes matching top-level rule options", () => {
@@ -181,10 +193,12 @@ void test("createLintRuleEntriesFromProjectConfigOrNull returns null for invalid
 void test("createLintRuleEntriesFromProjectConfigOrNull returns valid entries for correct config", () => {
     const result = createLintRuleEntriesFromProjectConfigOrNull({
         lintRules: {
-            "gml/no-globalvar": "error"
+            "gml/no-globalvar": "error",
+            "gml/normalize-operator-aliases": "off"
         }
     });
     assert.deepEqual(result, {
-        "gml/no-globalvar": "error"
+        "gml/no-globalvar": "error",
+        "gml/normalize-operator-aliases": "off"
     });
 });

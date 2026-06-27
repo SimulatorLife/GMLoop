@@ -6,7 +6,7 @@ import process from "node:process";
 import { Core } from "@gmloop/core";
 import * as LintWorkspace from "@gmloop/lint";
 import { Command } from "commander";
-import { ESLint } from "eslint";
+import { ESLint, type Linter } from "eslint";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import type { CommanderCommandLike } from "../cli-core/commander-types.js";
@@ -949,6 +949,50 @@ function toEslintOverrideConfig(): NonNullable<ConstructorParameters<typeof ESLi
     return entries as NonNullable<ConstructorParameters<typeof ESLint>[0]>["overrideConfig"];
 }
 
+function mergeProjectLintRuleEntriesIntoRecommendedConfig(
+    lintRuleEntries: Readonly<Record<string, Linter.RuleEntry>>
+): NonNullable<ConstructorParameters<typeof ESLint>[0]>["overrideConfig"] {
+    const mergedOverrideEntries = LINT_NAMESPACE.configs.recommended.map((entry) => {
+        if (!entry.rules) {
+            return entry;
+        }
+
+        return {
+            ...entry,
+            rules: {
+                ...entry.rules,
+                ...lintRuleEntries
+            }
+        };
+    });
+
+    return mergedOverrideEntries as NonNullable<ConstructorParameters<typeof ESLint>[0]>["overrideConfig"];
+}
+
+async function loadGmloopProjectLintOverrideConfig(
+    gmloopConfigPath: string
+): Promise<NonNullable<ConstructorParameters<typeof ESLint>[0]>["overrideConfig"]> {
+    const gmloopConfig = await Core.loadGmloopProjectConfig(gmloopConfigPath);
+    const lintRuleEntries = LINT_NAMESPACE.configs.createLintRuleEntriesFromProjectConfig(gmloopConfig);
+    return mergeProjectLintRuleEntriesIntoRecommendedConfig(lintRuleEntries);
+}
+
+function resolveOptionalGmloopConfigPath(searchRoot: string): string | null {
+    for (const directory of Core.walkAncestorDirectories(searchRoot, { includeSelf: true })) {
+        const candidatePath = path.join(directory, "gmloop.json");
+        try {
+            const stats = statSync(candidatePath);
+            if (stats.isFile()) {
+                return candidatePath;
+            }
+        } catch {
+            // Keep walking ancestors until a project config is found.
+        }
+    }
+
+    return null;
+}
+
 function isCanonicalGmlWiring(config: ResolvedConfigLike): boolean {
     return config.plugins?.gml === LINT_NAMESPACE.plugin && config.language === LINT_NAMESPACE.plugin.languages?.gml;
 }
@@ -1178,12 +1222,13 @@ function createEslintConstructorOptions(
 async function configureLintConfig(parameters: {
     eslintConstructorOptions: ConstructorParameters<typeof ESLint>[0];
     cwd: string;
+    eslintCwd: string;
     targets: ReadonlyArray<string>;
     configPath: string | null;
     noDefaultConfig: boolean;
     quiet: boolean;
 }): Promise<number> {
-    const { eslintConstructorOptions, cwd, targets, configPath, noDefaultConfig, quiet } = parameters;
+    const { eslintConstructorOptions, cwd, eslintCwd, targets, configPath, noDefaultConfig, quiet } = parameters;
 
     if (configPath) {
         let resolvedGmloopConfigPath: string;
@@ -1205,29 +1250,36 @@ async function configureLintConfig(parameters: {
         }
 
         try {
-            const gmloopConfig = await Core.loadGmloopProjectConfig(resolvedGmloopConfigPath);
-            const lintRuleEntries = LINT_NAMESPACE.configs.createLintRuleEntriesFromProjectConfig(gmloopConfig);
-            const mergedOverrideEntries = LINT_NAMESPACE.configs.recommended.map((entry) => {
-                if (!entry.rules) {
-                    return entry;
-                }
-
-                return {
-                    ...entry,
-                    rules: {
-                        ...entry.rules,
-                        ...lintRuleEntries
-                    }
-                };
-            });
+            const overrideConfig = await loadGmloopProjectLintOverrideConfig(resolvedGmloopConfigPath);
             eslintConstructorOptions.overrideConfigFile = true;
-            eslintConstructorOptions.overrideConfig = mergedOverrideEntries as NonNullable<
-                ConstructorParameters<typeof ESLint>[0]
-            >["overrideConfig"];
+            eslintConstructorOptions.overrideConfig = overrideConfig;
             return 0;
         } catch (error) {
             console.error(
                 `Failed to load gmloop config at ${resolvedGmloopConfigPath}: ${Core.getErrorMessage(error)}`
+            );
+            return 2;
+        }
+    }
+
+    const discoveryResult = discoverFlatConfig(eslintCwd);
+    if (discoveryResult.selectedConfigPath) {
+        // Intentionally let ESLint resolve and select the active config file natively.
+        // This preserves ESLint's sibling-config precedence rules and avoids CLI-side
+        // config selection divergence from direct ESLint execution.
+        return 0;
+    }
+
+    const discoveredGmloopConfigPath = resolveOptionalGmloopConfigPath(eslintCwd);
+    if (discoveredGmloopConfigPath) {
+        try {
+            const overrideConfig = await loadGmloopProjectLintOverrideConfig(discoveredGmloopConfigPath);
+            eslintConstructorOptions.overrideConfigFile = true;
+            eslintConstructorOptions.overrideConfig = overrideConfig;
+            return 0;
+        } catch (error) {
+            console.error(
+                `Failed to load gmloop config at ${discoveredGmloopConfigPath}: ${Core.getErrorMessage(error)}`
             );
             return 2;
         }
@@ -1245,14 +1297,6 @@ async function configureLintConfig(parameters: {
         }
 
         eslintConstructorOptions.overrideConfig = toEslintOverrideConfig();
-        return 0;
-    }
-
-    const discoveryResult = discoverFlatConfig(cwd);
-    if (discoveryResult.selectedConfigPath) {
-        // Intentionally let ESLint resolve and select the active config file natively.
-        // This preserves ESLint's sibling-config precedence rules and avoids CLI-side
-        // config selection divergence from direct ESLint execution.
         return 0;
     }
 
@@ -1364,6 +1408,7 @@ export async function runLintCommand(command: CommanderCommandLike): Promise<voi
     const configExitCode = await configureLintConfig({
         eslintConstructorOptions,
         cwd: commandCwd,
+        eslintCwd,
         targets,
         configPath: options.config,
         noDefaultConfig: options.noDefaultConfig,

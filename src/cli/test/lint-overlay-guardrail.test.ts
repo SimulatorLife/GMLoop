@@ -13,6 +13,25 @@ const { Lint } = LintWorkspace;
 const GML_LANGUAGE = Lint.plugin.languages?.gml;
 assert.ok(GML_LANGUAGE, "Expected canonical GML language wiring in lint plugin tests.");
 
+function collectConfiguredRuleValues(overrideConfig: unknown, ruleId: string): Array<unknown> {
+    if (!Array.isArray(overrideConfig)) {
+        return [];
+    }
+
+    return overrideConfig.flatMap((entry) => {
+        if (!entry || typeof entry !== "object" || !("rules" in entry)) {
+            return [];
+        }
+
+        const rules = entry.rules;
+        if (!rules || typeof rules !== "object" || Array.isArray(rules) || !(ruleId in rules)) {
+            return [];
+        }
+
+        return [(rules as Record<string, unknown>)[ruleId]];
+    });
+}
+
 void test("wiring requires both plugin identity and language", () => {
     assert.equal(
         __lintCommandTest__.isCanonicalGmlWiring({
@@ -167,6 +186,7 @@ void test("configureLintConfig defers discovered config selection to ESLint", as
     const exitCode = await __lintCommandTest__.configureLintConfig({
         eslintConstructorOptions,
         cwd: tempRoot,
+        eslintCwd: tempRoot,
         targets: ["."],
         configPath: null,
         noDefaultConfig: false,
@@ -178,6 +198,82 @@ void test("configureLintConfig defers discovered config selection to ESLint", as
     assert.equal(eslintConstructorOptions.overrideConfig, undefined);
 });
 
+void test("configureLintConfig uses implicit gmloop.json when no flat config exists", async () => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gml-lint-gmloop-discovery-"));
+    await fs.writeFile(
+        path.join(tempRoot, "gmloop.json"),
+        `${JSON.stringify({ lintRules: { "gml/normalize-operator-aliases": "off" } }, null, 2)}\n`,
+        "utf8"
+    );
+
+    const warnings: Array<unknown> = [];
+    await withTemporaryProperty(
+        console,
+        "warn",
+        (...messages: Array<unknown>) => {
+            warnings.push(...messages);
+        },
+        async () => {
+            const eslintConstructorOptions: { overrideConfigFile?: string | true; overrideConfig?: unknown } = {};
+            const exitCode = await __lintCommandTest__.configureLintConfig({
+                eslintConstructorOptions,
+                cwd: tempRoot,
+                eslintCwd: tempRoot,
+                targets: ["."],
+                configPath: null,
+                noDefaultConfig: false,
+                quiet: false
+            });
+
+            assert.equal(exitCode, 0);
+            assert.equal(eslintConstructorOptions.overrideConfigFile, true);
+            assert.deepEqual(
+                new Set(
+                    collectConfiguredRuleValues(
+                        eslintConstructorOptions.overrideConfig,
+                        "gml/normalize-operator-aliases"
+                    )
+                ),
+                new Set(["off"])
+            );
+        }
+    );
+
+    assert.deepEqual(warnings, []);
+});
+
+void test("configureLintConfig discovers gmloop.json from external target lint root", async () => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gml-lint-external-gmloop-"));
+    const workspaceRoot = path.join(tempRoot, "workspace");
+    const projectRoot = path.join(tempRoot, "external", "Project");
+    const nestedLintRoot = path.join(projectRoot, "scripts", "demo");
+    await fs.mkdir(workspaceRoot, { recursive: true });
+    await fs.mkdir(nestedLintRoot, { recursive: true });
+    await fs.writeFile(
+        path.join(projectRoot, "gmloop.json"),
+        `${JSON.stringify({ lintRules: { "gml/prefer-direct-return": "off" } }, null, 2)}\n`,
+        "utf8"
+    );
+
+    const eslintConstructorOptions: { overrideConfigFile?: string | true; overrideConfig?: unknown } = {};
+    const exitCode = await __lintCommandTest__.configureLintConfig({
+        eslintConstructorOptions,
+        cwd: workspaceRoot,
+        eslintCwd: nestedLintRoot,
+        targets: [nestedLintRoot],
+        configPath: null,
+        noDefaultConfig: false,
+        quiet: false
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(eslintConstructorOptions.overrideConfigFile, true);
+    assert.deepEqual(
+        new Set(collectConfiguredRuleValues(eslintConstructorOptions.overrideConfig, "gml/prefer-direct-return")),
+        new Set(["off"])
+    );
+});
+
 void test("configureLintConfig applies bundled fallback when discovery finds no config", async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gml-lint-config-fallback-"));
     const eslintConstructorOptions: { overrideConfigFile?: string; overrideConfig?: unknown } = {};
@@ -185,6 +281,7 @@ void test("configureLintConfig applies bundled fallback when discovery finds no 
     const exitCode = await __lintCommandTest__.configureLintConfig({
         eslintConstructorOptions,
         cwd: tempRoot,
+        eslintCwd: tempRoot,
         targets: ["."],
         configPath: null,
         noDefaultConfig: false,
@@ -203,6 +300,7 @@ void test("configureLintConfig disables config-file lookup when defaults are dis
     const exitCode = await __lintCommandTest__.configureLintConfig({
         eslintConstructorOptions,
         cwd: tempRoot,
+        eslintCwd: tempRoot,
         targets: ["."],
         configPath: null,
         noDefaultConfig: true,

@@ -137,6 +137,12 @@ pnpm run cli -- lint --write path/to/project
 
 Post-lint config inspections (overlay wiring and processor policy enforcement) also run sequentially per file to bound peak memory usage on very large project scans.
 
+Config resolution prefers a discovered ESLint flat config when one exists. If no
+flat config is found, `lint` discovers `gmloop.json` from the lint root and
+applies the bundled GML config with project `lintRuleset` and `lintRules`
+overrides. Projects with `gmloop.json` do not need an `eslint.config.*` file for
+the CLI or UI lint-fix workflow.
+
 If you use a custom ESLint flat config and enable Feather or performance
 overlay rules, make sure the matching config entry also wires the canonical GML
 plugin and language (`plugins: { gml: Lint.plugin }` and
