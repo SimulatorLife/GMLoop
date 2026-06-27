@@ -156,6 +156,7 @@ const GRAPH_RESOURCE_NODE_KINDS = new Set<GraphNodeKind>([
     "data_file",
     "extension",
     "font",
+    "folder",
     "note",
     "object",
     "particle_system",
@@ -244,6 +245,7 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
         case "data_file":
         case "extension":
         case "font":
+        case "folder":
         case "note":
         case "object":
         case "object_event":
@@ -670,6 +672,9 @@ function normalizeResourceKind(resourceType: string | null): GraphNodeKind | nul
         }
         case "GMFont": {
             return "font";
+        }
+        case "GMFolder": {
+            return "folder";
         }
         case "GMIncludedFile": {
             return "data_file";

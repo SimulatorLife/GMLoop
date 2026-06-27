@@ -2187,3 +2187,62 @@ void test("buildGraphIndex projects room layers as distinct room_layer nodes wit
         await fixture.cleanup();
     }
 });
+
+void test("buildGraphIndex projects GameMaker folders as resource nodes for visualization", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-folder-nodes-");
+
+    try {
+        await fixture.writeProjectFile(
+            "Project.yyp",
+            JSON.stringify({
+                name: "Project",
+                resourceType: "GMProject",
+                Folders: [{ name: "Rooms", folderPath: "folders/Rooms.yy" }]
+            })
+        );
+        await fixture.writeProjectFile(
+            "folders/Rooms.yy",
+            JSON.stringify({ name: "Rooms", resourceType: "GMFolder", folderPath: "folders/Rooms.yy" })
+        );
+
+        const result = await buildGraphIndex({ projectRoot: fixture.projectRoot });
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const folderNodeId = "project::resource::folders/Rooms.yy";
+            const folderNode = database
+                .prepare(
+                    "SELECT kind, name, display_name AS displayName, resource_path AS resourcePath FROM nodes WHERE id = ?"
+                )
+                .get(folderNodeId) as
+                | { displayName: string; kind: string; name: string; resourcePath: string }
+                | undefined;
+            assert.deepEqual(folderNode, {
+                displayName: "Rooms",
+                kind: "folder",
+                name: "Rooms",
+                resourcePath: "folders/Rooms.yy"
+            });
+
+            const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
+            assert.ok(
+                visualizationData.nodes.some(
+                    (node) => node.id === folderNodeId && node.kind === "folder" && node.displayName === "Rooms"
+                ),
+                "expected graph visualization export to include the folder resource node"
+            );
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) =>
+                        edge.source === "project::resource::Project.yyp" &&
+                        edge.target === folderNodeId &&
+                        edge.type === "contains"
+                ),
+                "expected graph visualization export to connect the project to its folder resource"
+            );
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});
