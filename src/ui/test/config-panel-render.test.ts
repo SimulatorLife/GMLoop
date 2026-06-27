@@ -290,6 +290,21 @@ void test("config panel renders editable raw JSON view", () => {
     assert.match(rendered, /JSON is valid/u);
 });
 
+void test("config panel renders a copy button for the raw JSON view", () => {
+    const panel = new TestableGmConfigPanel();
+    panel.model = createMockModel();
+    panel.state = {
+        ...createMockState(),
+        activeConfigView: "raw"
+    };
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /id="copy-config-raw-json"[\s\S]*class="config-raw-copy-button"/u);
+    assert.match(rendered, /accessibleLabel="Copy raw config JSON to clipboard"/u);
+    assert.match(rendered, /label="Copy JSON"/u);
+});
+
 void test("config severity selector uses severity-colored active states", () => {
     const source = readFileSync(new URL("../../src/web/styles/config.css", import.meta.url), "utf8");
 

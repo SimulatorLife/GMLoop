@@ -729,10 +729,20 @@ export class GmConfigPanel extends LightDomLitElement {
             <div class="config-editor-layout config-editor-layout--raw">
                 <section class="config-builder-section config-raw-editor">
                     <div class="config-section-heading">
-                        <h3>Raw JSON</h3>
-                        <p>
-                            Edit the exact <code>gmloop.json</code> payload. The rendered builder uses this same draft.
-                        </p>
+                        <div class="config-section-heading-text">
+                            <h3>Raw JSON</h3>
+                            <p>
+                                Edit the exact <code>gmloop.json</code> payload. The rendered builder uses this same
+                                draft.
+                            </p>
+                        </div>
+                        <gm-copy-button
+                            id="copy-config-raw-json"
+                            class="config-raw-copy-button"
+                            .value=${this.#draftText}
+                            accessibleLabel="Copy raw config JSON to clipboard"
+                            label="Copy JSON"
+                        ></gm-copy-button>
                     </div>
                     <textarea
                         id="config-raw-json"

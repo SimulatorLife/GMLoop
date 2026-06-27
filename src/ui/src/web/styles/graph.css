@@ -210,6 +210,30 @@ text {
   display: block;
 }
 
+#json-view-shell {
+  position: absolute;
+  inset: 0;
+  display: none;
+}
+
+#json-view-shell.visible {
+  display: block;
+}
+
+#json-view-shell > #json-view {
+  position: static;
+  inset: auto;
+  width: 100%;
+  height: 100%;
+}
+
+.json-view-copy-button {
+  position: absolute;
+  top: var(--gm-space-md);
+  right: var(--gm-space-md);
+  z-index: 5;
+}
+
 #legend {
   position: absolute;
   right: var(--gm-space-xl);
