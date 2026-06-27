@@ -42,6 +42,7 @@ void test("ruleIds contract keeps canonical ids with PascalCase keys", () => {
     assertEquals((ruleIds as Record<string, string>).GmlPreferDirectReturn, "gml/prefer-direct-return");
     assertEquals((ruleIds as Record<string, string>).GmlPreferDirectBooleanReturn, "gml/prefer-direct-boolean-return");
     assertEquals((ruleIds as Record<string, string>).GmlRemoveDefaultComments, "gml/remove-default-comments");
+    assertEquals((ruleIds as Record<string, string>).GmlNormalizeDocParamDefaults, "gml/normalize-doc-param-defaults");
     assertEquals((ruleIds as Record<string, string>).FeatherGM1000, "feather/gm1000");
 });
 
@@ -87,6 +88,7 @@ void test("config arrays are readonly FlatConfig[] values and share the pinned f
     assertEquals(recommendedGml.rules["gml/prefer-increment-decrement-operators"], "warn");
     assertEquals(recommendedGml.rules["gml/prefer-loop-invariant-expressions"], "warn");
     assertEquals(recommendedGml.rules["gml/remove-default-comments"], "warn");
+    assertEquals(recommendedGml.rules["gml/normalize-doc-param-defaults"], "warn");
     assertEquals(recommendedGml.rules["gml/require-region-pairs"], "error");
 
     assertEquals(recommendedFeather.plugins?.feather, Lint.featherPlugin);

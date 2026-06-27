@@ -126,6 +126,11 @@ const expectedRules = Object.freeze([
         schema: [{ type: "object", additionalProperties: false, properties: {} }]
     },
     {
+        shortName: "normalize-doc-param-defaults",
+        messageId: "normalizeDocParamDefaults",
+        schema: [{ type: "object", additionalProperties: false, properties: {} }]
+    },
+    {
         shortName: "normalize-banner-comments",
         messageId: "normalizeBannerComments",
         schema: [{ type: "object", additionalProperties: false, properties: {} }]

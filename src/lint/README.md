@@ -109,6 +109,7 @@ Built-in `gml/*` rule short names:
 - `remove-default-comments`
 - `normalize-banner-comments`
 - `normalize-doc-comments`
+- `normalize-doc-param-defaults`
 - `normalize-directives`
 - `require-control-flow-braces`
 - `require-region-pairs`
@@ -155,6 +156,8 @@ to direct boolean returns. It owns this focused fix instead of the broader
 `normalize-banner-comments` canonicalizes decorative banner comments (line and block forms) and rewrites method-list `///` banner lines (outside of function declarations) to plain `//` comments.
 
 `normalize-doc-comments` canonicalizes doc tags/content within a single file, including removing `@param` separator hyphens (for example, `@param value - desc` to `@param value desc`). It synthesizes missing tags for declaration/assignment-style function docs. Constructors, including for inherited constructors (`function X(...) : Parent(...) constructor`). For struct/object literal property functions, the rule synthesizes docs, including `@returns`. Canonical ordering keeps non-param metadata tags before the param block, but preserves custom tags interleaved between `@param` lines when intentionally authored that way.
+
+`normalize-doc-param-defaults` owns optional `@param` default cleanup when the default text cannot be represented safely on one doc-comment line. For example, when synthesized docs would otherwise include a multiline default expression, it collapses that tag to a default-free optional parameter such as `/// @param [matrix]`.
 
 `normalize-operator-aliases` is intentionally syntax-safety scoped: it repairs invalid `not` operator usage to `!` in executable code (while skipping uses in comments, string literals, and user-defined identifiers like `not(value)` or `#macro not 1`), and avoids style rewrites. Since logical `not` is strictly rejected by the GML parser, the linter's pre-parser recovery maps invalid logical `not`/`NOT` to `!  ` (preserving source offsets) so that the file remains parseable for this rule to diagnose and permanently fix it.
 Logical operator style normalization (`&&`/`||`/`^^` vs `and`/`or`/`xor`) belongs to the formatter (`@gmloop/format`, `logicalOperatorsStyle`), so lint does not rewrite those forms.

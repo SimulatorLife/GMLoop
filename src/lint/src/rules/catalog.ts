@@ -165,6 +165,13 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         messageId: "normalizeDocComments"
     },
     {
+        description: "Normalize optional @param defaults that cannot be represented safely on one doc-comment line.",
+        mapKey: "GmlNormalizeDocParamDefaults",
+        shortName: "normalize-doc-param-defaults",
+        fullId: "gml/normalize-doc-param-defaults",
+        messageId: "normalizeDocParamDefaults"
+    },
+    {
         description: "Normalize banner comments so decorative separators use one consistent project style.",
         mapKey: "GmlNormalizeBannerComments",
         shortName: "normalize-banner-comments",

@@ -157,6 +157,45 @@ void test("recommended config auto-fixes malformed region pairs", async () => {
     assert.equal(result.messages.length, 0);
 });
 
+void test("recommended config normalizes synthesized multiline optional doc-param defaults", async () => {
+    const sourceText = [
+        "function bake(aab, matrix = matrix_build_identity(",
+        "), mask = 0) {",
+        "    return matrix;",
+        "}",
+        ""
+    ].join("\n");
+
+    const eslint = new ESLint({
+        overrideConfigFile: true,
+        fix: true,
+        overrideConfig: createMutableRecommendedConfig()
+    });
+
+    const [firstPass] = await eslint.lintText(sourceText, {
+        filePath: "recommended-config-doc-param-defaults.gml"
+    });
+    const [secondPass] = await eslint.lintText(firstPass.output ?? sourceText, {
+        filePath: "recommended-config-doc-param-defaults.gml"
+    });
+
+    assert.equal(
+        secondPass.output ?? firstPass.output,
+        [
+            "/// @param aab",
+            "/// @param [matrix]",
+            "/// @param [mask=0]",
+            "/// @returns {any}",
+            "function bake(aab, matrix = matrix_build_identity(",
+            "), mask = 0) {",
+            "    return matrix;",
+            "}",
+            ""
+        ].join("\n")
+    );
+    assert.equal(secondPass.messages.length, 0);
+});
+
 void test("recommended config applies the conservative feather safe subset", async () => {
     const sourceText = [
         "enum Fruit {",

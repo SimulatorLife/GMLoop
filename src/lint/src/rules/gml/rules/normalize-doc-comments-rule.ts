@@ -253,6 +253,10 @@ function countNamedFunctionParameters(functionNode: AstNodeWithType): number {
     return count;
 }
 
+function isSingleLineDefaultValueText(defaultValueText: string): boolean {
+    return !/[\r\n]/u.test(defaultValueText);
+}
+
 function extractDefaultParameterValueText(sourceText: string, parameterNode: AstNodeWithType): string | null {
     const parameterRange = Reflect.get(parameterNode, "range");
     if (Array.isArray(parameterRange) && parameterRange.length === 2) {
@@ -263,7 +267,7 @@ function extractDefaultParameterValueText(sourceText: string, parameterNode: Ast
             const separatorOffset = parameterText.indexOf("=");
             if (separatorOffset !== -1) {
                 const defaultValueText = parameterText.slice(separatorOffset + 1).trim();
-                if (defaultValueText.length > 0) {
+                if (defaultValueText.length > 0 && isSingleLineDefaultValueText(defaultValueText)) {
                     return defaultValueText;
                 }
             }
@@ -287,7 +291,7 @@ function extractDefaultParameterValueText(sourceText: string, parameterNode: Ast
     }
 
     const defaultValueText = sourceText.slice(startOffset, endOffset).trim();
-    return defaultValueText.length > 0 ? defaultValueText : null;
+    return defaultValueText.length > 0 && isSingleLineDefaultValueText(defaultValueText) ? defaultValueText : null;
 }
 
 function alignDescriptionContinuationLines(docLines: ReadonlyArray<string>): ReadonlyArray<string> {
@@ -1045,12 +1049,17 @@ function synthesizeFunctionDocCommentBlock(
     const params = (functionNode as any).params || [];
     for (const param of params) {
         const paramName = resolveParameterName(param);
+        let hasDefaultParameter = false;
         let defaultVal: string | undefined;
 
         if (param.type === "DefaultParameter" || param.type === "AssignmentPattern") {
+            const rightNode = Reflect.get(param, "right");
+            hasDefaultParameter = Boolean(rightNode && typeof rightNode === "object");
             const extractedDefault = extractDefaultParameterValueText(sourceText, param);
             if (extractedDefault !== null) {
                 defaultVal = extractedDefault;
+            } else if (isFunctionInitializerNode(rightNode)) {
+                defaultVal = "function";
             }
         }
 
@@ -1058,7 +1067,11 @@ function synthesizeFunctionDocCommentBlock(
         const cleanName = normalizeDocParamName(paramName);
         if (existingParams.has(cleanName)) {
             if (defaultVal === undefined) {
-                updateExistingParamDocWithoutDefault(block, cleanName);
+                if (hasDefaultParameter) {
+                    updateExistingParamDocAsOptionalWithoutDefault(block, cleanName);
+                } else {
+                    updateExistingParamDocWithoutDefault(block, cleanName);
+                }
             } else {
                 updateExistingParamDocWithDefault(block, cleanName, defaultVal);
             }
@@ -1066,7 +1079,7 @@ function synthesizeFunctionDocCommentBlock(
         }
 
         if (defaultVal === undefined) {
-            block.push(`${indentation}/// @param ${cleanName}`);
+            block.push(`${indentation}/// @param ${hasDefaultParameter ? `[${cleanName}]` : cleanName}`);
         } else if (isFunctionDefaultValueText(defaultVal)) {
             block.push(`${indentation}/// @param {function} [${cleanName}]`);
         } else {
@@ -1326,6 +1339,29 @@ function updateExistingParamDocWithDefault(docBlock: Array<string>, parameterNam
                 requiredParamMatch[2] ?? (isFunctionDefaultValueText(defaultVal) ? " {function}" : "");
             docBlock[index] =
                 `${requiredParamMatch[1]}${typeAnnotation}${requiredParamMatch[3]}${normalizedDocName}${requiredParamMatch[4]}`;
+            return;
+        }
+    }
+}
+
+function updateExistingParamDocAsOptionalWithoutDefault(docBlock: Array<string>, parameterName: string): void {
+    const escapedParameterName = Core.escapeRegExp(parameterName);
+    for (const [index, line] of docBlock.entries()) {
+        const optionalParamMatch = new RegExp(
+            String.raw`^(\s*///\s*@param)(\s+\{[^}]+\})?(\s+)\[${escapedParameterName}(?:=[^\]]*)?\](.*)$`
+        ).exec(line);
+        if (optionalParamMatch) {
+            docBlock[index] =
+                `${optionalParamMatch[1]}${optionalParamMatch[2] ?? ""}${optionalParamMatch[3]}[${parameterName}]${optionalParamMatch[4]}`;
+            return;
+        }
+
+        const requiredParamMatch = new RegExp(
+            String.raw`^(\s*///\s*@param)(\s+\{[^}]+\})?(\s+)${escapedParameterName}\b(.*)$`
+        ).exec(line);
+        if (requiredParamMatch) {
+            docBlock[index] =
+                `${requiredParamMatch[1]}${requiredParamMatch[2] ?? ""}${requiredParamMatch[3]}[${parameterName}]${requiredParamMatch[4]}`;
             return;
         }
     }
