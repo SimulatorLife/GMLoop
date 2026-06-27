@@ -99,6 +99,7 @@ Built-in `gml/*` rule short names:
 - `prefer-compound-assignments`
 - `prefer-increment-decrement-operators`
 - `prefer-direct-return`
+- `prefer-direct-boolean-return`
 - `optimize-logical-flow`
 - `no-globalvar`
 - `no-empty-regions`
@@ -136,6 +137,11 @@ comment-bearing statement spans.
 `prefer-direct-return` rewrites adjacent local-return boilerplate from
 `var value = expression; return value;` to `return expression;` when no comments would be dropped and the initializer does not reference the declared identifier.
 
+`prefer-direct-boolean-return` rewrites boolean passthrough branches such as
+`if (cond) return true; return false;` and `if (cond) return false; else return true;`
+to direct boolean returns. It owns this focused fix instead of the broader
+`optimize-logical-flow` rule.
+
 `require-control-flow-braces` reports and autofixes unbraced control-flow statements by inserting structural `{ ... }` blocks. It does not depend on the formatter for that rewrite; the formatter remains responsible only for subsequent layout/canonical rendering.
 
 `require-region-pairs` reports malformed `#region` / `#endregion` pairs. The autofix removes standalone `#endregion` directives and appends missing `#endregion` directives at the bottom of the file.
@@ -153,7 +159,7 @@ comment-bearing statement spans.
 `normalize-operator-aliases` is intentionally syntax-safety scoped: it repairs invalid `not` operator usage to `!` in executable code (while skipping uses in comments, string literals, and user-defined identifiers like `not(value)` or `#macro not 1`), and avoids style rewrites. Since logical `not` is strictly rejected by the GML parser, the linter's pre-parser recovery maps invalid logical `not`/`NOT` to `!  ` (preserving source offsets) so that the file remains parseable for this rule to diagnose and permanently fix it.
 Logical operator style normalization (`&&`/`||`/`^^` vs `and`/`or`/`xor`) belongs to the formatter (`@gmloop/format`, `logicalOperatorsStyle`), so lint does not rewrite those forms.
 
-`optimize-logical-flow` condenses boolean passthrough branches (for example `if (cond) return true; return false;`) into direct returns. Nullish guard assignments (`if (is_undefined(x)) x = y;` / `if (x == undefined) x = y;`) are owned by `feather/gm2061`, because they correspond to Feather's official nullish-coalescing diagnostic. Comment-bearing ranges are intentionally skipped so autofixes never strip authored comments while optimizing nearby comment-free logic.
+`optimize-logical-flow` simplifies logical expressions, boolean literal comparisons, and conditional assignment branches. Direct boolean return passthroughs are owned by `prefer-direct-boolean-return`. Nullish guard assignments (`if (is_undefined(x)) x = y;` / `if (x == undefined) x = y;`) are owned by `feather/gm2061`, because they correspond to Feather's official nullish-coalescing diagnostic. Comment-bearing ranges are intentionally skipped so autofixes never strip authored comments while optimizing nearby comment-free logic.
 `optimize-logical-flow` and `optimize-math-expressions` clone candidate AST fragments using a traversal-link-stripping helper (skipping `parent`/context pointers) so autofix performance remains stable on very large scripts.
 `prefer-loop-invariant-expressions` memoizes subtree hoistability checks per loop, caches normalized in-scope identifier names across loop iterations, reuses a single replacement target set for equivalent invariant expressions, and uses indexed comment-token range checks so large loop-heavy files avoid repeated full-source rescans.
 `optimize-math-expressions` only performs reciprocal-term cancellation on side-effect-free operands (identifiers/member accesses/literals). Call-expression operands are intentionally excluded from that cancellation path.
@@ -212,4 +218,4 @@ Performance-sensitive autofix rules also have dedicated regression coverage unde
 
 - **BUG**: When lint-fixing is run through the GMLoop CLI, if no eslint configuration file is detected in the target GameMaker project, the CLI should fall back to a default, "recommended" ruleset.
 - Add an ESLint auto-fix rule that detects simple numeric accumulation loops like `alpha += index` over a fixed range and replaces them with the equivalent arithmetic-series expression. Example: `for index = 0..9` can become `alpha += count * (count - 1) * 0.5`, avoiding unnecessary runtime iteration.
-- **BUG**: Split the large, multi-purpose `optimize-logical-flow` rule into multiple focused rules that each target a specific logical optimization pattern
+- Continue splitting the remaining multi-purpose `optimize-logical-flow` behaviors into focused rules; direct boolean return passthroughs now live in `prefer-direct-boolean-return`.

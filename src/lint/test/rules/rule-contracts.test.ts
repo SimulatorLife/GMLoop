@@ -80,6 +80,11 @@ const expectedRules = Object.freeze([
         schema: [{ type: "object", additionalProperties: false, properties: {} }]
     },
     {
+        shortName: "prefer-direct-boolean-return",
+        messageId: "preferDirectBooleanReturn",
+        schema: [{ type: "object", additionalProperties: false, properties: {} }]
+    },
+    {
         shortName: "optimize-logical-flow",
         messageId: "optimizeLogicalFlow",
         schema: [

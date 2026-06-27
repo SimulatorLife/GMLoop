@@ -1,5 +1,6 @@
 {
   "lintRules": {
+    "gml/prefer-direct-boolean-return": "error",
     "gml/optimize-logical-flow": "error",
     "feather/gm2061": "error"
   },

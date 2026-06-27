@@ -19,6 +19,7 @@ const RECOMMENDED_RULES: Readonly<Record<string, LintRuleLevel>> = Object.freeze
     "gml/prefer-compound-assignments": "warn",
     "gml/prefer-increment-decrement-operators": "warn",
     "gml/prefer-direct-return": "warn",
+    "gml/prefer-direct-boolean-return": "warn",
     "gml/optimize-logical-flow": "warn",
     "gml/no-globalvar": "warn",
     "gml/no-empty-regions": "warn",

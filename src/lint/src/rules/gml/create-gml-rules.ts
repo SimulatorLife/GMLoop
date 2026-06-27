@@ -17,6 +17,7 @@ import { createOptimizeLogicalFlowRule } from "./rules/optimize-logical-flow-rul
 import { createOptimizeMathExpressionsRule } from "./rules/optimize-math-expressions-rule.js";
 import { createPreferArrayPushRule } from "./rules/prefer-array-push-rule.js";
 import { createPreferCompoundAssignmentsRule } from "./rules/prefer-compound-assignments-rule.js";
+import { createPreferDirectBooleanReturnRule } from "./rules/prefer-direct-boolean-return-rule.js";
 import { createPreferDirectReturnRule } from "./rules/prefer-direct-return-rule.js";
 import { createPreferEpsilonComparisonsRule } from "./rules/prefer-epsilon-comparisons-rule.js";
 import { createPreferHoistableLoopAccessorsRule } from "./rules/prefer-hoistable-loop-accessors-rule.js";
@@ -46,6 +47,7 @@ const gmlRuleFactoriesByShortName = Object.freeze(
         ["prefer-compound-assignments", createPreferCompoundAssignmentsRule],
         ["prefer-increment-decrement-operators", createPreferIncrementDecrementOperatorsRule],
         ["prefer-direct-return", createPreferDirectReturnRule],
+        ["prefer-direct-boolean-return", createPreferDirectBooleanReturnRule],
         ["optimize-logical-flow", createOptimizeLogicalFlowRule],
         ["no-globalvar", createNoGlobalvarRule],
         ["no-empty-comments", createNoEmptyCommentsRule],

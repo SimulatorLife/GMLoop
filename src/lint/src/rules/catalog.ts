@@ -90,6 +90,13 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         messageId: "preferDirectReturn"
     },
     {
+        description: "Return boolean conditions directly instead of routing through true and false branches.",
+        mapKey: "GmlPreferDirectBooleanReturn",
+        shortName: "prefer-direct-boolean-return",
+        fullId: "gml/prefer-direct-boolean-return",
+        messageId: "preferDirectBooleanReturn"
+    },
+    {
         description: "Simplify boolean control flow by removing redundant branches and temporary boolean variables.",
         mapKey: "GmlOptimizeLogicalFlow",
         shortName: "optimize-logical-flow",

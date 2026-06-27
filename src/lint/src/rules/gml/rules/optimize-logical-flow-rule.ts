@@ -20,6 +20,7 @@ const {
     evaluateHasLogicalNormalizationSignal,
     evaluateIsElsePrefixedIfAtIndex,
     evaluateIsIfNodeInElseIfChain,
+    evaluateCanDirectBooleanReturnBenefitFromNormalization,
     evaluateCanIfStatementBenefitFromNormalization,
     evaluateCanUnaryExpressionBenefitFromNormalization,
     evaluateCanLogicalExpressionBenefitFromNormalization,
@@ -49,22 +50,43 @@ function isRangeInsideAnyRange(range: SourceTextRange, existingRanges: ReadonlyA
     return existingRanges.some((existingRange) => range.start >= existingRange.start && range.end <= existingRange.end);
 }
 
+function readFollowingStatement(node: unknown): unknown {
+    const parent = Core.unwrapParenthesizedExpression((node as { parent?: unknown }).parent);
+    if (!parent || typeof parent !== "object") {
+        return null;
+    }
+
+    const body = (parent as { body?: unknown }).body;
+    if (!Array.isArray(body)) {
+        return null;
+    }
+
+    const index = body.indexOf(node);
+    if (index === -1 || index + 1 >= body.length) {
+        return null;
+    }
+
+    return body[index + 1];
+}
+
 export function createOptimizeLogicalFlowRule(definition: GmlRuleDefinition): Rule.RuleModule {
     return Object.freeze({
         meta: createMeta(definition),
         create(context) {
             const rewrittenNodeRanges: SourceTextRange[] = [];
+            const skippedNodeRanges: SourceTextRange[] = [];
 
             return Object.freeze({
-                "BlockStatement, LogicalExpression, BinaryExpression, UnaryExpression[operator='!'], IfStatement"(
-                    node: any
-                ) {
+                "LogicalExpression, BinaryExpression, UnaryExpression[operator='!'], IfStatement"(node: any) {
                     const nodeRange = getNodeRange(node);
                     if (!nodeRange) {
                         return;
                     }
 
-                    if (isRangeInsideAnyRange(nodeRange, rewrittenNodeRanges)) {
+                    if (
+                        isRangeInsideAnyRange(nodeRange, rewrittenNodeRanges) ||
+                        isRangeInsideAnyRange(nodeRange, skippedNodeRanges)
+                    ) {
                         return;
                     }
 
@@ -74,22 +96,31 @@ export function createOptimizeLogicalFlowRule(definition: GmlRuleDefinition): Ru
                         return;
                     }
 
-                    if (
+                    const isElseIfNode =
                         node.type === "IfStatement" &&
                         (evaluateIsIfNodeInElseIfChain(node) ||
-                            evaluateIsElsePrefixedIfAtIndex(fullSourceText, nodeRange.start))
-                    ) {
-                        return;
-                    }
+                            evaluateIsElsePrefixedIfAtIndex(fullSourceText, nodeRange.start));
+                    const isDirectBooleanReturn =
+                        node.type === "IfStatement" &&
+                        evaluateCanDirectBooleanReturnBenefitFromNormalization(node, readFollowingStatement(node));
 
                     if (
-                        (node.type === "BlockStatement" ||
-                            node.type === "LogicalExpression" ||
+                        (node.type === "LogicalExpression" ||
                             node.type === "BinaryExpression" ||
                             node.type === "UnaryExpression") &&
                         !evaluateHasLogicalNormalizationSignal(sourceText)
                     ) {
                         return;
+                    }
+
+                    if (node.type === "IfStatement") {
+                        if (isDirectBooleanReturn && !isElseIfNode) {
+                            skippedNodeRanges.push(nodeRange);
+                            return;
+                        }
+                        if (isElseIfNode && !isDirectBooleanReturn) {
+                            return;
+                        }
                     }
 
                     if (node.type === "IfStatement" && !evaluateCanIfStatementBenefitFromNormalization(node)) {
@@ -117,7 +148,11 @@ export function createOptimizeLogicalFlowRule(definition: GmlRuleDefinition): Ru
                         return;
                     }
 
-                    const newText = gmlRuleAutofixServices.printNodeForAutofix(normalizationResult.ast, fullSourceText);
+                    const printedText = gmlRuleAutofixServices.printNodeForAutofix(
+                        normalizationResult.ast,
+                        fullSourceText
+                    );
+                    const newText = isElseIfNode && isDirectBooleanReturn ? `{ ${printedText} }` : printedText;
 
                     if (normalizeWhitespaceForComparison(sourceText) !== normalizeWhitespaceForComparison(newText)) {
                         rewrittenNodeRanges.push(nodeRange);

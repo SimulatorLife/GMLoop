@@ -137,6 +137,17 @@ function maskCommentsAndStringsForRecovery(sourceText: string): string {
     const scanState = Core.createStringCommentScanState();
 
     while (index < sourceText.length) {
+        if (isDirectiveLineAtIndex(sourceText, index)) {
+            const lineEndIndex = findNextLineStart(sourceText, index);
+            for (let cursor = index; cursor < lineEndIndex; cursor += 1) {
+                if (!isLineTerminator(chars[cursor] ?? "")) {
+                    chars[cursor] = " ";
+                }
+            }
+            index = lineEndIndex;
+            continue;
+        }
+
         const scannedIndex = Core.advanceStringCommentScan(sourceText, sourceText.length, index, scanState, true);
         if (scannedIndex !== index) {
             // Mask the comment or string with spaces so it is ignored
@@ -153,6 +164,26 @@ function maskCommentsAndStringsForRecovery(sourceText: string): string {
     }
 
     return chars.join("");
+}
+
+function isDirectiveLineAtIndex(sourceText: string, index: number): boolean {
+    const lineStart = sourceText.lastIndexOf("\n", index - 1) + 1;
+    for (let cursor = lineStart; cursor < sourceText.length; cursor += 1) {
+        const character = sourceText[cursor];
+        if (character === "\n" || character === "\r") {
+            return false;
+        }
+        if (/\s/u.test(character ?? "")) {
+            continue;
+        }
+        return character === "#";
+    }
+    return false;
+}
+
+function findNextLineStart(sourceText: string, index: number): number {
+    const nextLineBreak = sourceText.indexOf("\n", index);
+    return nextLineBreak === -1 ? sourceText.length : nextLineBreak + 1;
 }
 
 function findPreviousNonWhitespaceIndex(

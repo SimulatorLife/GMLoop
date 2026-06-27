@@ -239,18 +239,15 @@ export function evaluateCanIfStatementBenefitFromNormalization(node: unknown): b
         : [];
 
     if (consequentStatement && alternateStatement) {
-        if (
-            (consequentStatement as { type?: string }).type === "ReturnStatement" &&
-            (alternateStatement as { type?: string }).type === "ReturnStatement"
-        ) {
-            const consequentValue = Core.getBooleanLiteralValue(
-                (consequentStatement as { argument?: unknown }).argument,
-                { acceptBooleanPrimitives: true }
-            );
-            const alternateValue = Core.getBooleanLiteralValue(
-                (alternateStatement as { argument?: unknown }).argument,
-                { acceptBooleanPrimitives: true }
-            );
+        const consequentReturn = extractSingleReturnStatement(consequentStatement);
+        const alternateReturn = extractSingleReturnStatement(alternateStatement);
+        if (consequentReturn && alternateReturn) {
+            const consequentValue = Core.getBooleanLiteralValue(consequentReturn.argument, {
+                acceptBooleanPrimitives: true
+            });
+            const alternateValue = Core.getBooleanLiteralValue(alternateReturn.argument, {
+                acceptBooleanPrimitives: true
+            });
             return (
                 (consequentValue === "true" && alternateValue === "false") ||
                 (consequentValue === "false" && alternateValue === "true")
@@ -267,6 +264,79 @@ export function evaluateCanIfStatementBenefitFromNormalization(node: unknown): b
     }
 
     return false;
+}
+
+function extractSingleReturnStatement(statement: unknown): { argument?: unknown } | null {
+    const unwrappedStatement = Core.unwrapParenthesizedExpression(statement);
+    if (!unwrappedStatement || typeof unwrappedStatement !== "object") {
+        return null;
+    }
+
+    if ((unwrappedStatement as { type?: string }).type === "ReturnStatement") {
+        return unwrappedStatement;
+    }
+
+    if ((unwrappedStatement as { type?: string }).type !== "BlockStatement") {
+        return null;
+    }
+
+    const body = (unwrappedStatement as { body?: unknown[] }).body;
+    if (!Array.isArray(body) || body.length !== 1) {
+        return null;
+    }
+
+    const onlyStatement = Core.unwrapParenthesizedExpression(body[0]);
+    if (!onlyStatement || (onlyStatement as { type?: string }).type !== "ReturnStatement") {
+        return null;
+    }
+
+    return onlyStatement;
+}
+
+function areOppositeBooleanReturnArguments(left: unknown, right: unknown): boolean {
+    const leftBoolean = Core.getBooleanLiteralValue(left, { acceptBooleanPrimitives: true });
+    const rightBoolean = Core.getBooleanLiteralValue(right, { acceptBooleanPrimitives: true });
+    return (
+        ((leftBoolean === "true" && rightBoolean === "false") ||
+            (leftBoolean === "false" && rightBoolean === "true")) &&
+        leftBoolean !== rightBoolean
+    );
+}
+
+/**
+ * Pure evaluator: returns `true` when an `IfStatement` is a direct boolean
+ * return candidate owned by `gml/prefer-direct-boolean-return`.
+ */
+export function evaluateCanDirectBooleanReturnBenefitFromNormalization(
+    node: unknown,
+    followingStatement: unknown = null
+): boolean {
+    const ifNode = Core.unwrapParenthesizedExpression(node);
+    if (!ifNode || (ifNode as { type?: string }).type !== "IfStatement") {
+        return false;
+    }
+
+    const consequentReturn = extractSingleReturnStatement((ifNode as { consequent?: unknown }).consequent);
+    if (!consequentReturn || !Object.hasOwn(consequentReturn, "argument")) {
+        return false;
+    }
+
+    const alternateStatement = (ifNode as { alternate?: unknown }).alternate;
+    if (alternateStatement) {
+        const alternateReturn = extractSingleReturnStatement(alternateStatement);
+        return (
+            alternateReturn !== null &&
+            Object.hasOwn(alternateReturn, "argument") &&
+            areOppositeBooleanReturnArguments(consequentReturn.argument, alternateReturn.argument)
+        );
+    }
+
+    const trailingReturn = extractSingleReturnStatement(followingStatement);
+    return (
+        trailingReturn !== null &&
+        Object.hasOwn(trailingReturn, "argument") &&
+        areOppositeBooleanReturnArguments(consequentReturn.argument, trailingReturn.argument)
+    );
 }
 
 /**
@@ -448,6 +518,7 @@ export const optimizeLogicalFlowPolicy = Object.freeze({
     evaluateIsElsePrefixedIfAtIndex,
     evaluateIsIfNodeInElseIfChain,
     evaluateCanIfStatementBenefitFromNormalization,
+    evaluateCanDirectBooleanReturnBenefitFromNormalization,
     evaluateCanBooleanLiteralComparisonBenefitFromNormalization,
     evaluateCanUnaryExpressionBenefitFromNormalization,
     evaluateCanLogicalExpressionBenefitFromNormalization,

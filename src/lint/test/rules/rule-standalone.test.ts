@@ -1843,29 +1843,6 @@ void test("require-control-flow-braces preserves already braced single-line repe
     assertEquals(result.output, input);
 });
 
-void test("optimize-logical-flow collapses boolean passthrough if/return patterns", () => {
-    const input = [
-        "function bool_passthrough(condition) {",
-        "    if (!!condition) {",
-        "        return true;",
-        "    }",
-        "",
-        "    return false;",
-        "}",
-        ""
-    ].join("\n");
-
-    const expected = ["function bool_passthrough(condition) {", "    return condition;", "}", ""].join("\n");
-
-    const result = lintWithRule("optimize-logical-flow", input, {});
-    assert.ok(result.messages.length > 0, "optimize-logical-flow should report diagnostics");
-    assertEquals(
-        result.output,
-        expected,
-        "optimize-logical-flow should reduce a boolean passthrough branch to a direct return"
-    );
-});
-
 void test("feather/gm2061 rewrites both undefined guard forms to ??=", () => {
     const input = [
         "function ensure_cache(cache_entry) {",

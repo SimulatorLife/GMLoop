@@ -71,3 +71,25 @@ void test("repairArgumentSeparators codemod", () => {
     assert.strictEqual(applyRepairArgumentSeparatorsCodemod("foo(a div b)").outputText, "foo(a div b)");
     assert.strictEqual(applyRepairArgumentSeparatorsCodemod("foo(not a)").outputText, "foo(not a)");
 });
+
+void test("repairArgumentSeparators codemod preserves comments, strings, and region directives", () => {
+    const examples = [
+        "#region Shared functions (this is only overwritten for the dynamic)",
+        "\t#region Shared functions (this is only overwritten for the dynamic)",
+        "// Shared functions (this is only overwritten for the dynamic)",
+        "/// Shared functions (this is only overwritten for the dynamic)",
+        "/* Shared functions (this is only overwritten for the dynamic) */",
+        'var note = "Shared functions (this is only overwritten for the dynamic)";'
+    ];
+
+    for (const sourceText of examples) {
+        assert.strictEqual(applyRepairArgumentSeparatorsCodemod(sourceText).outputText, sourceText);
+    }
+
+    assert.strictEqual(
+        applyRepairArgumentSeparatorsCodemod(
+            "#region Shared functions (this is only overwritten for the dynamic)\nfoo(a b c)\n#endregion"
+        ).outputText,
+        "#region Shared functions (this is only overwritten for the dynamic)\nfoo(a, b, c)\n#endregion"
+    );
+});
