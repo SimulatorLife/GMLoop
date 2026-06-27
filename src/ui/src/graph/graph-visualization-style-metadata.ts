@@ -97,6 +97,7 @@ export const NODE_VISUAL_STYLES: ReadonlyArray<NodeVisualStyle> = Object.freeze(
     { color: "#7f5539", kind: "extension" },
     { color: "#6c757d", kind: "file" },
     { color: "#f4a261", kind: "font" },
+    { color: "#adb5bd", kind: "folder" },
     { color: "#4dabf7", kind: "function" },
     { color: "#1f78b4", kind: "script" },
     { color: "#2a9d8f", kind: "object" },

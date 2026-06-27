@@ -45,6 +45,7 @@ export type GraphNodeKind =
     | "extension"
     | "file"
     | "font"
+    | "folder"
     | "function"
     | "global_variable"
     | "instance_variable"

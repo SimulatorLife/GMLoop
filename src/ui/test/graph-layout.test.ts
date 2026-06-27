@@ -188,6 +188,7 @@ void test("listGraphNodeKindLegendItems nests child kinds under semantic parent 
         "anim_curve",
         "data_file",
         "extension",
+        "folder",
         "font",
         "note",
         "object",
