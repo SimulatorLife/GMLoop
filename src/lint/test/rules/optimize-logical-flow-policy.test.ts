@@ -19,7 +19,6 @@ import { Core } from "@gmloop/core";
 import {
     DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS,
     evaluateAreComparableAssignmentTargetsEquivalent,
-    evaluateCanBooleanLiteralComparisonBenefitFromNormalization,
     evaluateCanIfStatementBenefitFromNormalization,
     evaluateCanLogicalExpressionBenefitFromNormalization,
     evaluateCanUnaryExpressionBenefitFromNormalization,
@@ -185,54 +184,6 @@ void test("evaluateIsIfNodeInElseIfChain returns false for a non-if node", () =>
 
     assert.strictEqual(evaluateIsIfNodeInElseIfChain(expressionStatement), false);
 });
-
-// ---------------------------------------------------------------------------
-// evaluateCanBooleanLiteralComparisonBenefitFromNormalization
-// ---------------------------------------------------------------------------
-
-void test("evaluateCanBooleanLiteralComparisonBenefitFromNormalization detects == true patterns", () => {
-    const node = {
-        type: "BinaryExpression",
-        operator: "==",
-        left: { type: "Literal", value: true },
-        right: { type: "Identifier", name: "ready" }
-    };
-    assert.strictEqual(evaluateCanBooleanLiteralComparisonBenefitFromNormalization(node), true);
-});
-
-void test("evaluateCanBooleanLiteralComparisonBenefitFromNormalization detects != true patterns", () => {
-    const node = {
-        type: "BinaryExpression",
-        operator: "!=",
-        left: { type: "Literal", value: true },
-        right: { type: "Identifier", name: "ready" }
-    };
-    assert.strictEqual(evaluateCanBooleanLiteralComparisonBenefitFromNormalization(node), true);
-});
-
-void test("evaluateCanBooleanLiteralComparisonBenefitFromNormalization rejects non-comparison operators", () => {
-    const node = {
-        type: "BinaryExpression",
-        operator: "+",
-        left: { type: "Literal", value: true },
-        right: { type: "Identifier", name: "ready" }
-    };
-    assert.strictEqual(evaluateCanBooleanLiteralComparisonBenefitFromNormalization(node), false);
-});
-
-void test("evaluateCanBooleanLiteralComparisonBenefitFromNormalization rejects boolean-vs-boolean", () => {
-    const node = {
-        type: "BinaryExpression",
-        operator: "==",
-        left: { type: "Literal", value: true },
-        right: { type: "Literal", value: false }
-    };
-    assert.strictEqual(evaluateCanBooleanLiteralComparisonBenefitFromNormalization(node), false);
-});
-
-// ---------------------------------------------------------------------------
-// evaluateCanUnaryExpressionBenefitFromNormalization
-// ---------------------------------------------------------------------------
 
 void test("evaluateCanUnaryExpressionBenefitFromNormalization detects !! patterns", () => {
     const node = {
@@ -523,7 +474,6 @@ void test("optimizeLogicalFlowPolicy namespace exposes the expected evaluators",
         "evaluateIsElsePrefixedIfAtIndex",
         "evaluateIsIfNodeInElseIfChain",
         "evaluateCanIfStatementBenefitFromNormalization",
-        "evaluateCanBooleanLiteralComparisonBenefitFromNormalization",
         "evaluateCanUnaryExpressionBenefitFromNormalization",
         "evaluateCanLogicalExpressionBenefitFromNormalization",
         "evaluateAreComparableAssignmentTargetsEquivalent",

@@ -8,6 +8,7 @@
   "lintRules": {
     "gml/normalize-doc-comments": "error",
     "gml/prefer-hoistable-loop-accessors": "error",
+    "gml/no-boolean-literal-comparisons": "error",
     "gml/optimize-logical-flow": "error"
   },
   "refactor": {

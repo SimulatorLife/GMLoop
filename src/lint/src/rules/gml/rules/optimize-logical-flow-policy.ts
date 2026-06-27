@@ -221,10 +221,6 @@ export function evaluateCanIfStatementBenefitFromNormalization(node: unknown): b
         return false;
     }
 
-    if (evaluateCanBooleanLiteralComparisonBenefitFromNormalization((ifNode as { test?: unknown }).test)) {
-        return true;
-    }
-
     const consequentStatement = (ifNode as { consequent?: unknown }).consequent;
     const alternateStatement = (ifNode as { alternate?: unknown }).alternate;
 
@@ -337,36 +333,6 @@ export function evaluateCanDirectBooleanReturnBenefitFromNormalization(
         Object.hasOwn(trailingReturn, "argument") &&
         areOppositeBooleanReturnArguments(consequentReturn.argument, trailingReturn.argument)
     );
-}
-
-/**
- * Pure evaluator: returns `true` when the supplied comparison is a
- * `BinaryExpression` of operator `==` or `!=` where exactly one side is a
- * boolean literal — the shape the normalizer collapses into a plain
- * identifier or its negation.
- */
-export function evaluateCanBooleanLiteralComparisonBenefitFromNormalization(node: unknown): boolean {
-    const comparisonNode = Core.unwrapParenthesizedExpression(node);
-    if (
-        !comparisonNode ||
-        (comparisonNode as { type?: string }).type !== "BinaryExpression" ||
-        ((comparisonNode as { operator?: string }).operator !== "==" &&
-            (comparisonNode as { operator?: string }).operator !== "!=")
-    ) {
-        return false;
-    }
-
-    const left = Core.unwrapParenthesizedExpression((comparisonNode as { left?: unknown }).left);
-    const right = Core.unwrapParenthesizedExpression((comparisonNode as { right?: unknown }).right);
-    if (!left || !right) {
-        return false;
-    }
-
-    const leftBoolean = Core.getBooleanLiteralValue(left, { acceptBooleanPrimitives: true });
-    const rightBoolean = Core.getBooleanLiteralValue(right, { acceptBooleanPrimitives: true });
-    const hasLeftBoolean = leftBoolean === "true" || leftBoolean === "false";
-    const hasRightBoolean = rightBoolean === "true" || rightBoolean === "false";
-    return hasLeftBoolean !== hasRightBoolean;
 }
 
 /**
@@ -519,7 +485,6 @@ export const optimizeLogicalFlowPolicy = Object.freeze({
     evaluateIsIfNodeInElseIfChain,
     evaluateCanIfStatementBenefitFromNormalization,
     evaluateCanDirectBooleanReturnBenefitFromNormalization,
-    evaluateCanBooleanLiteralComparisonBenefitFromNormalization,
     evaluateCanUnaryExpressionBenefitFromNormalization,
     evaluateCanLogicalExpressionBenefitFromNormalization,
     evaluateAreComparableAssignmentTargetsEquivalent,

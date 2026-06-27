@@ -518,6 +518,7 @@ void test("gml semantic fix rules do not reformat canonical macro declaration sp
         "prefer-struct-literal-assignments",
         "prefer-compound-assignments",
         "prefer-direct-return",
+        "no-boolean-literal-comparisons",
         "optimize-logical-flow",
         "normalize-doc-comments",
         "normalize-directives",
@@ -1890,7 +1891,7 @@ void test("optimize-logical-flow does not own Feather GM2061 nullish guard fixes
     assertEquals(result.output, input);
 });
 
-void test("optimize-logical-flow simplifies boolean literal comparisons in if conditions", () => {
+void test("no-boolean-literal-comparisons simplifies boolean literal comparisons in if conditions", () => {
     const input = [
         "if (xinput == true) { return move_horizontal(); }",
         "if (true == xinput) { return move_horizontal(); }",
@@ -1911,8 +1912,8 @@ void test("optimize-logical-flow simplifies boolean literal comparisons in if co
         ""
     ].join("\n");
 
-    const result = lintWithRule("optimize-logical-flow", input, {});
-    assert.ok(result.messages.length > 0, "optimize-logical-flow should report diagnostics");
+    const result = lintWithRule("no-boolean-literal-comparisons", input, {});
+    assert.ok(result.messages.length > 0, "no-boolean-literal-comparisons should report diagnostics");
     assertEquals(result.output, expected);
 });
 

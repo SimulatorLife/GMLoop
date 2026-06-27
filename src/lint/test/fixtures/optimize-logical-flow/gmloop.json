@@ -1,6 +1,7 @@
 {
   "lintRules": {
     "gml/prefer-direct-boolean-return": "error",
+    "gml/no-boolean-literal-comparisons": "error",
     "gml/optimize-logical-flow": "error",
     "feather/gm2061": "error"
   },

@@ -97,6 +97,13 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         messageId: "preferDirectBooleanReturn"
     },
     {
+        description: "Avoid comparing boolean expressions to boolean literals.",
+        mapKey: "GmlNoBooleanLiteralComparisons",
+        shortName: "no-boolean-literal-comparisons",
+        fullId: "gml/no-boolean-literal-comparisons",
+        messageId: "noBooleanLiteralComparisons"
+    },
+    {
         description: "Simplify boolean control flow by removing redundant branches and temporary boolean variables.",
         mapKey: "GmlOptimizeLogicalFlow",
         shortName: "optimize-logical-flow",
