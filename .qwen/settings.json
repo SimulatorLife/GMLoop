@@ -43,8 +43,8 @@
           "contextWindowSize": 524288,
           "maxRetries": 3,
           "samplingParams": {
-            "top_p": 0.97,
-            "temperature": 0.25
+            "top_p": 0.9,
+            "temperature": 0.2
           }
         }
       }
