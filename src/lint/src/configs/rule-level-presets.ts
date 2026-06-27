@@ -81,6 +81,7 @@ function createPerformanceRuleSet(): Readonly<Record<string, LintRuleLevel>> {
         "gml/prefer-loop-invariant-expressions": "off",
         "gml/prefer-struct-literal-assignments": "off",
         "gml/no-globalvar": "warn",
+        "gml/prefer-direct-boolean-return": "warn",
         "gml/prefer-string-interpolation": "off"
     };
 

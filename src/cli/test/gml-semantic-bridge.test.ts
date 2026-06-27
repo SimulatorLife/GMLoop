@@ -2424,6 +2424,142 @@ void describe("GmlSemanticBridge tests", () => {
         assert.ok(!targets.some((target) => target.category === "scriptResourceName" && target.name === "Vector3"));
     });
 
+    void it("listNamingConventionTargets does not classify constructor names as variable targets", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-constructor-naming-"));
+        const relativeFilePath = "scripts/use_health/use_health.gml";
+        const sourceText = [
+            "hp = new HealthConfig(1, 1);",
+            "hp.set_damage_for_type(eDamageType.roll, 1);  // Can take damage from player rolling into it",
+            ""
+        ].join("\n");
+        const constructorReferenceStart = sourceText.indexOf("HealthConfig");
+        const enumMemberReferenceStart = sourceText.indexOf("roll");
+
+        fs.mkdirSync(path.join(tmpRoot, "scripts", "use_health"), { recursive: true });
+        fs.writeFileSync(path.join(tmpRoot, relativeFilePath), sourceText, "utf8");
+
+        try {
+            const mockProjectIndex = {
+                resources: {
+                    "scripts/HealthConfig/HealthConfig.yy": {
+                        path: "scripts/HealthConfig/HealthConfig.yy",
+                        name: "HealthConfig",
+                        resourceType: "GMScript"
+                    }
+                },
+                identifiers: {
+                    scripts: {
+                        "scope:script:HealthConfig": {
+                            identifierId: "script:scope:script:HealthConfig",
+                            name: "HealthConfig",
+                            resourcePath: "scripts/HealthConfig/HealthConfig.yy",
+                            declarations: [
+                                {
+                                    name: "HealthConfig",
+                                    filePath: "scripts/HealthConfig/HealthConfig.gml",
+                                    classifications: ["function", "constructor", "struct"]
+                                }
+                            ]
+                        }
+                    },
+                    enumMembers: {
+                        "enum-member:eDamageType:roll": {
+                            identifierId: "enum-member:eDamageType:roll",
+                            enumName: "eDamageType",
+                            name: "roll",
+                            declarations: [
+                                {
+                                    name: "roll",
+                                    filePath: "scripts/damage_type/damage_type.gml",
+                                    start: { index: 24 },
+                                    end: { index: 27 }
+                                }
+                            ],
+                            references: [
+                                {
+                                    filePath: relativeFilePath,
+                                    start: { index: enumMemberReferenceStart },
+                                    end: { index: enumMemberReferenceStart + "roll".length - 1 }
+                                }
+                            ]
+                        }
+                    },
+                    globalVariables: {
+                        HealthConfig: {
+                            identifierId: "global:HealthConfig",
+                            name: "HealthConfig",
+                            declarations: [
+                                {
+                                    name: "HealthConfig",
+                                    filePath: relativeFilePath,
+                                    start: { index: constructorReferenceStart },
+                                    end: { index: constructorReferenceStart + "HealthConfig".length - 1 }
+                                }
+                            ]
+                        }
+                    },
+                    instanceVariables: {
+                        HealthConfig: {
+                            identifierId: "instance:HealthConfig",
+                            name: "HealthConfig",
+                            declarations: [
+                                {
+                                    name: "HealthConfig",
+                                    filePath: relativeFilePath,
+                                    start: { index: constructorReferenceStart },
+                                    end: { index: constructorReferenceStart + "HealthConfig".length - 1 }
+                                }
+                            ]
+                        }
+                    }
+                },
+                files: {
+                    [relativeFilePath]: {
+                        declarations: [
+                            {
+                                name: "HealthConfig",
+                                scopeId: "scope:event",
+                                classifications: ["variable"],
+                                start: { index: constructorReferenceStart },
+                                end: { index: constructorReferenceStart + "HealthConfig".length - 1 }
+                            }
+                        ],
+                        references: []
+                    }
+                },
+                scopes: {
+                    "scope:event": {
+                        kind: "function"
+                    }
+                }
+            };
+
+            const bridge = new GmlSemanticBridge(mockProjectIndex, tmpRoot);
+            const targets = await bridge.listNamingConventionTargets();
+
+            assert.ok(
+                targets.some((target) => target.category === "constructorFunction" && target.name === "HealthConfig"),
+                "Expected HealthConfig to remain a constructor naming target"
+            );
+            assert.ok(
+                targets.some((target) => target.category === "enumMember" && target.name === "roll"),
+                "Expected the enum member from the sample to remain renameable"
+            );
+            assert.ok(
+                !targets.some(
+                    (target) =>
+                        target.name === "HealthConfig" &&
+                        (target.category === "localVariable" ||
+                            target.category === "globalVariable" ||
+                            target.category === "instanceVariable")
+                ),
+                "Expected constructor names to be excluded from generic variable naming targets"
+            );
+        } finally {
+            fs.rmSync(tmpRoot, { recursive: true, force: true });
+        }
+    });
+
     void it("listNamingConventionTargets keeps plain functions in mixed multi-callable scripts out of structDeclaration fallback", async () => {
         const mockProjectIndex = {
             resources: {

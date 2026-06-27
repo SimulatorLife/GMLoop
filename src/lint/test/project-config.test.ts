@@ -35,6 +35,7 @@ void test("normalizeLintRulesConfig supports lintRuleset preset names", () => {
     });
 
     assert.equal(rules["gml/no-scientific-notation"], "error");
+    assert.equal(rules["gml/prefer-direct-boolean-return"], "warn");
     assert.equal(rules["gml/prefer-hoistable-loop-accessors"], "warn");
     assert.equal(rules["feather/gm1003"], "warn");
 });
@@ -45,6 +46,7 @@ void test("normalizeLintRulesConfig supports the all ruleset", () => {
     });
 
     assert.equal(rules["gml/no-scientific-notation"], "error");
+    assert.equal(rules["gml/prefer-direct-boolean-return"], "warn");
     assert.equal(rules["gml/prefer-hoistable-loop-accessors"], "warn");
     assert.equal(rules["feather/gm1000"], "warn");
     assert.equal(rules["feather/gm2031"], "warn");
@@ -96,6 +98,7 @@ void test("createLintRuleEntriesFromProjectConfig includes enabled preset rules"
     });
 
     assert.equal(ruleEntries["gml/no-globalvar"], "warn");
+    assert.equal(ruleEntries["gml/prefer-direct-boolean-return"], "warn");
     assert.equal("gml/prefer-string-interpolation" in ruleEntries, false);
 });
 

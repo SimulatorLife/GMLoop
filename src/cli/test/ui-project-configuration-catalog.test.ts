@@ -63,6 +63,12 @@ void test("project configuration catalog exposes all lint rules and available ru
     assert.ok(recommendedRuleset);
     assert.ok(catalog.lint.rules.length > recommendedRuleset.ruleIds.length);
     assert.ok(catalog.lint.rules.some((rule) => rule.ruleId === "gml/no-globalvar" && rule.level === "warn"));
+    assert.ok(
+        catalog.lint.rules.some((rule) => rule.ruleId === "gml/prefer-direct-boolean-return" && rule.level === "warn")
+    );
+    const performanceRuleset = catalog.lint.rulesets.find((ruleset) => ruleset.name === "performance");
+    assert.ok(performanceRuleset);
+    assert.ok(performanceRuleset.ruleIds.includes("gml/prefer-direct-boolean-return"));
     assert.ok(ruleLevels.has("off"));
     assert.equal(catalog.gameMakerCli.available, true);
     assert.equal(catalog.gameMakerCli.cliCommands[0]?.displayName, "manual read");

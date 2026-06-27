@@ -598,6 +598,88 @@ void test("executeConfiguredCodemods applies structDeclaration policy to constru
     );
 });
 
+void test("executeConfiguredCodemods preserves Pascal constructor uses while renaming enum members", async () => {
+    const sourceText = [
+        "hp = new HealthConfig(1, 1);",
+        "hp.set_damage_for_type(eDamageType.roll, 1);  // Can take damage from player rolling into it",
+        ""
+    ].join("\n");
+    const constructorReferenceStart = sourceText.indexOf("HealthConfig");
+    const enumMemberReferenceStart = sourceText.indexOf("roll");
+
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => [
+            {
+                name: "HealthConfig",
+                category: "constructorFunction",
+                path: "scripts/HealthConfig/HealthConfig.gml",
+                scopeId: null,
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "objects/obj_enemy/Create_0.gml",
+                        start: constructorReferenceStart,
+                        end: constructorReferenceStart + "HealthConfig".length,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: null
+                    }
+                ]
+            },
+            {
+                name: "roll",
+                category: "enumMember",
+                path: "scripts/damage_type/damage_type.gml",
+                scopeId: null,
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "objects/obj_enemy/Create_0.gml",
+                        start: enumMemberReferenceStart,
+                        end: enumMemberReferenceStart + "roll".length,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: null
+                    }
+                ]
+            }
+        ]
+    };
+    const engine = new Refactor.RefactorEngine({ semantic });
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["objects/obj_enemy/Create_0.gml"],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        structDeclaration: {
+                            caseStyle: "pascal"
+                        },
+                        enumMember: {
+                            caseStyle: "upper_snake"
+                        },
+                        variable: {
+                            caseStyle: "lower_snake"
+                        }
+                    }
+                }
+            }
+        },
+        readFile: async () => sourceText
+    });
+
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(
+        result.appliedFiles.get("objects/obj_enemy/Create_0.gml"),
+        [
+            "hp = new HealthConfig(1, 1);",
+            "hp.set_damage_for_type(eDamageType.ROLL, 1);  // Can take damage from player rolling into it",
+            ""
+        ].join("\n")
+    );
+});
+
 void test("executeConfiguredCodemods preserves allowed leading underscores for resource renames", async () => {
     const semantic: PartialSemanticAnalyzer = {
         listNamingConventionTargets: async () => [

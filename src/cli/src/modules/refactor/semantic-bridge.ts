@@ -2506,6 +2506,14 @@ export class GmlSemanticBridge {
                 knownShadowableNames.add(entry.name);
             }
         }
+        for (const entry of Object.values(this.identifiers.scripts ?? {})) {
+            for (const declaration of this.getScriptCallableDeclarations(entry)) {
+                knownShadowableNames.add(declaration.name);
+            }
+            if (typeof entry?.name === "string") {
+                knownShadowableNames.add(entry.name);
+            }
+        }
         for (const resource of Object.values(this.resources ?? {})) {
             if (typeof resource?.name === "string") {
                 knownShadowableNames.add(resource.name);
@@ -2579,6 +2587,14 @@ export class GmlSemanticBridge {
                 knownResourceNames.add(entry.name.toLowerCase());
             }
         }
+        for (const entry of Object.values(this.identifiers.scripts ?? {})) {
+            for (const declaration of this.getScriptCallableDeclarations(entry)) {
+                knownResourceNames.add(declaration.name.toLowerCase());
+            }
+            if (typeof entry?.name === "string") {
+                knownResourceNames.add(entry.name.toLowerCase());
+            }
+        }
 
         for (const entry of Object.values(this.identifiers.instanceVariables ?? {})) {
             const declarationFilePath = this.getDeclarationFilePath(entry);
@@ -2618,6 +2634,14 @@ export class GmlSemanticBridge {
             }
         }
         for (const entry of Object.values(this.identifiers.enums ?? {})) {
+            if (typeof entry?.name === "string") {
+                knownGlobalNames.add(entry.name);
+            }
+        }
+        for (const entry of Object.values(this.identifiers.scripts ?? {})) {
+            for (const declaration of this.getScriptCallableDeclarations(entry)) {
+                knownGlobalNames.add(declaration.name);
+            }
             if (typeof entry?.name === "string") {
                 knownGlobalNames.add(entry.name);
             }

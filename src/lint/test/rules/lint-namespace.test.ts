@@ -110,6 +110,9 @@ void test("config arrays are readonly FlatConfig[] values and share the pinned f
 
     const [featherOverlay] = Lint.configs.feather;
     assertEquals(featherOverlay.plugins?.feather, Lint.featherPlugin);
+
+    const [performanceConfig] = Lint.configs.performance;
+    assertEquals(performanceConfig.rules["gml/prefer-direct-boolean-return"], "warn");
 });
 
 void test("all config enables every registered rule at its recommended level", () => {
