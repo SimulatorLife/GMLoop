@@ -29,6 +29,17 @@
   margin-bottom: var(--gm-space-md);
 }
 
+.config-section-heading-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-xs);
+  min-width: 0;
+}
+
+.config-raw-copy-button {
+  flex-shrink: 0;
+}
+
 .config-section-heading h3 {
   margin: 0;
   color: var(--gm-text);

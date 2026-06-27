@@ -553,7 +553,16 @@ export class GmGraphPanel extends LightDomLitElement {
                         )}
                     </g>
                 </svg>
-                <pre id="json-view" class=${this.state.activeGraphView === "json" ? "visible" : ""}>${jsonValue}</pre>
+                <div id="json-view-shell" class=${this.state.activeGraphView === "json" ? "visible" : ""}>
+                    <gm-copy-button
+                        id="copy-graph-json"
+                        class="json-view-copy-button"
+                        .value=${jsonValue}
+                        accessibleLabel="Copy graph JSON to clipboard"
+                        label="Copy JSON"
+                    ></gm-copy-button>
+                    <pre id="json-view">${jsonValue}</pre>
+                </div>
                 ${this.#renderLegend(nodeItems, edgeTypes)} ${this.#renderSelectedNode(selectedNode)}
             </section>
         `;
