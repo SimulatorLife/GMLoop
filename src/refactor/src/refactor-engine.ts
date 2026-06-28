@@ -1112,7 +1112,7 @@ export class RefactorEngine {
 
         // Plan each rename independently and merge immediately to avoid retaining
         // every intermediate workspace in memory for large rename batches.
-        const merged = new WorkspaceEdit();
+        let merged = new WorkspaceEdit();
         const metadataEditsByPath = new Map<string, string>();
         const semantic = this.semantic;
         const supportsBatchWorkspaceOverlay = semanticSupportsBatchWorkspaceOverlay(semantic);
@@ -1145,6 +1145,7 @@ export class RefactorEngine {
         // the deduplicated map into the final workspace only after all individual
         // renames have been planned.
         flushDedupedMetadataEdits(merged, metadataEditsByPath);
+        merged = dropRedundantTextEditsForMetadataRewrites(merged);
 
         // Validate the merged result for overlapping edits
         const validation = await this.validateRename(merged);

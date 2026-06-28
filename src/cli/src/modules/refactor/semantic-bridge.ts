@@ -442,21 +442,27 @@ function isResourceAssetReferenceRecord(value: unknown): value is ResourceAssetR
     return typeof reference.propertyPath === "string" && typeof reference.targetPath === "string";
 }
 
-function isResourceMetadataRecord(value: unknown): value is ResourceMetadataRecord {
+function normalizeResourceMetadataRecord(value: unknown): ResourceMetadataRecord | null {
     if (!Core.isObjectLike(value)) {
-        return false;
+        return null;
     }
     const record = value as Record<string, unknown>;
 
     if (typeof record.path !== "string") {
-        return false;
+        return null;
     }
 
     if (!Array.isArray(record.assetReferences)) {
-        return false;
+        return {
+            assetReferences: [],
+            path: record.path
+        };
     }
 
-    return record.assetReferences.every((reference) => isResourceAssetReferenceRecord(reference));
+    return {
+        assetReferences: record.assetReferences.filter((reference) => isResourceAssetReferenceRecord(reference)),
+        path: record.path
+    };
 }
 
 const normalizedMetadataReferenceTargetPathCache = new Map<string, string>();
@@ -1394,25 +1400,26 @@ export class GmlSemanticBridge {
         const referencingMetadataRecordsByTargetPath = new Map<string, Array<ResourceMetadataRecord>>();
 
         for (const resourceRecord of Object.values(this.resources)) {
-            if (!isResourceMetadataRecord(resourceRecord)) {
+            const metadataRecord = normalizeResourceMetadataRecord(resourceRecord);
+            if (metadataRecord === null) {
                 continue;
             }
 
-            metadataRecordsByPath.set(resourceRecord.path, resourceRecord);
-            if (Semantic.isProjectManifestPath(resourceRecord.path)) {
-                manifestMetadataRecords.push(resourceRecord);
+            metadataRecordsByPath.set(metadataRecord.path, metadataRecord);
+            if (Semantic.isProjectManifestPath(metadataRecord.path)) {
+                manifestMetadataRecords.push(metadataRecord);
             }
 
-            for (const assetReference of resourceRecord.assetReferences) {
+            for (const assetReference of metadataRecord.assetReferences) {
                 const referencedMetadataRecords =
                     referencingMetadataRecordsByTargetPath.get(assetReference.targetPath) ?? [];
-                referencedMetadataRecords.push(resourceRecord);
+                referencedMetadataRecords.push(metadataRecord);
                 referencingMetadataRecordsByTargetPath.set(assetReference.targetPath, referencedMetadataRecords);
 
                 const lowerTargetPath = normalizeMetadataReferenceTargetPath(assetReference.targetPath);
                 const lowerReferencedMetadataRecords =
                     referencingMetadataRecordsByLowerTargetPath.get(lowerTargetPath) ?? [];
-                lowerReferencedMetadataRecords.push(resourceRecord);
+                lowerReferencedMetadataRecords.push(metadataRecord);
                 referencingMetadataRecordsByLowerTargetPath.set(lowerTargetPath, lowerReferencedMetadataRecords);
             }
         }

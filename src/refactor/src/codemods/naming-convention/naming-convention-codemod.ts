@@ -666,6 +666,39 @@ function includesWholeProjectSelection(projectRoot: string, targetPaths: Readonl
     return targetPaths.every((targetPath) => resolveProjectPath(projectRoot, targetPath) === absoluteProjectRoot);
 }
 
+function resolveNamingTargetQueryFilePaths(parameters: {
+    projectRoot: string;
+    targetPaths: ReadonlyArray<string>;
+    gmlFilePaths: ReadonlyArray<string>;
+    isSelectedTargetPath: (targetPath: string) => boolean;
+}): Array<string> {
+    if (parameters.targetPaths.length === 0) {
+        return [...parameters.gmlFilePaths];
+    }
+
+    const filePathsByAbsolutePath = new Map(
+        parameters.gmlFilePaths.map((filePath) => [resolveProjectPath(parameters.projectRoot, filePath), filePath])
+    );
+    const exactSelectedFilePaths: Array<string> = [];
+    let hasNonFileTargetPath = false;
+
+    for (const targetPath of parameters.targetPaths) {
+        const filePath = filePathsByAbsolutePath.get(resolveProjectPath(parameters.projectRoot, targetPath));
+        if (filePath === undefined) {
+            hasNonFileTargetPath = true;
+            break;
+        }
+
+        exactSelectedFilePaths.push(filePath);
+    }
+
+    if (!hasNonFileTargetPath) {
+        return [...Core.uniqueArray(exactSelectedFilePaths)];
+    }
+
+    return parameters.gmlFilePaths.filter((filePath) => parameters.isSelectedTargetPath(filePath));
+}
+
 function getNamingTargetIdentity(target: NamingConventionTarget): string {
     const occurrenceIdentity = target.occurrences
         .map(
@@ -856,7 +889,14 @@ export async function planNamingConventionCodemod(
     const isSelectedTargetPath = createPathSelectionMatcher(parameters.projectRoot, parameters.targetPaths, []);
     const selectedWholeProject =
         includesWholeProjectSelection(parameters.projectRoot, parameters.targetPaths) && !tracksLocalTargets;
-    const selectedFilePaths = [...(parameters.gmlFilePaths ?? [])];
+    const selectedFilePaths = selectedWholeProject
+        ? [...(parameters.gmlFilePaths ?? [])]
+        : resolveNamingTargetQueryFilePaths({
+              projectRoot: parameters.projectRoot,
+              targetPaths: parameters.targetPaths,
+              gmlFilePaths: parameters.gmlFilePaths ?? [],
+              isSelectedTargetPath
+          });
     const queryPaths = selectedWholeProject
         ? []
         : buildNamingTargetQueryPaths(parameters.projectRoot, selectedFilePaths);
