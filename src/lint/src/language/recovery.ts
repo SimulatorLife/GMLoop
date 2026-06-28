@@ -1,7 +1,7 @@
 import { Core } from "@gmloop/core";
 
-import { recoverParseSourceFromMissingBrace } from "../malformed/source-preprocessing.js";
 import { findNextNonWhitespaceIndex, findPreviousNonWhitespaceIndex } from "../rules/gml/rule-base-helpers.js";
+import { recoverParseSourceFromMissingBrace } from "./missing-brace-recovery.js";
 
 export type RecoveryMode = "none" | "limited";
 
