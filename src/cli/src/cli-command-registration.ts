@@ -1,5 +1,7 @@
+import type { CliCatalogEntry } from "./cli-core/command-catalog.js";
 import type { CliCommandRegistry } from "./cli-core/command-manager.js";
 import { createCliCommandErrorHandler } from "./cli-core/errors.js";
+import type { McpToolCatalogEntry } from "./cli-core/mcp-tool-catalog.js";
 import { createAgentPackCommand } from "./commands/agent-pack.js";
 import { createCollectStatsCommand, runCollectStats } from "./commands/collect-stats.js";
 import { createFixCommand, runFixCommand } from "./commands/fix.js";
@@ -33,6 +35,8 @@ import { createWatchCommand } from "./commands/watch.js";
 type CliCommandRegistrationEnvironment = Readonly<{
     defaultCommandName: string;
     env: NodeJS.ProcessEnv;
+    getCliCommandCatalog: () => ReadonlyArray<CliCatalogEntry>;
+    getMcpToolCatalogEntries: () => ReadonlyArray<McpToolCatalogEntry>;
     registry: CliCommandRegistry;
 }>;
 
@@ -43,6 +47,12 @@ type CliCommandRegistryContext = Readonly<{
 type CliCommandEnvironmentRegistryContext = CliCommandRegistryContext &
     Readonly<{
         env: NodeJS.ProcessEnv;
+    }>;
+
+type CliCommandCatalogRegistryContext = CliCommandEnvironmentRegistryContext &
+    Readonly<{
+        getCliCommandCatalog: () => ReadonlyArray<CliCatalogEntry>;
+        getMcpToolCatalogEntries: () => ReadonlyArray<McpToolCatalogEntry>;
     }>;
 
 type CliDefaultCommandRegistrationContext = CliCommandRegistryContext &
@@ -57,12 +67,23 @@ type CliDefaultCommandRegistrationContext = CliCommandRegistryContext &
  * test capture, and autorun behavior while command wiring remains a clear CLI
  * catalog concern.
  */
-export function registerCliCommands({ defaultCommandName, env, registry }: CliCommandRegistrationEnvironment): void {
+export function registerCliCommands({
+    defaultCommandName,
+    env,
+    getCliCommandCatalog,
+    getMcpToolCatalogEntries,
+    registry
+}: CliCommandRegistrationEnvironment): void {
     registerDefaultFormattingCommand({ defaultCommandName, registry });
     registerAnalysisCommands({ registry });
     registerGenerationCommands({ env, registry });
     registerProjectWorkflowCommands({ registry });
-    registerUtilityCommands({ registry });
+    registerUtilityCommands({
+        env,
+        getCliCommandCatalog,
+        getMcpToolCatalogEntries,
+        registry
+    });
 }
 
 function registerDefaultFormattingCommand({
@@ -175,9 +196,14 @@ function registerProjectWorkflowCommands({ registry }: CliCommandRegistryContext
     });
 }
 
-function registerUtilityCommands({ registry }: CliCommandRegistryContext): void {
+function registerUtilityCommands({
+    env,
+    getCliCommandCatalog,
+    getMcpToolCatalogEntries,
+    registry
+}: CliCommandCatalogRegistryContext): void {
     registry.registerCommand({
-        command: createGameMakerCliCommand(),
+        command: createGameMakerCliCommand({ env, getCliCommandCatalog, getMcpToolCatalogEntries }),
         onError: createCliCommandErrorHandler({ prefix: "GameMaker CLI command failed." })
     });
 

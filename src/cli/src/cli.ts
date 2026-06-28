@@ -284,6 +284,8 @@ export const __test__ = Object.freeze({
 registerCliCommands({
     defaultCommandName: FORMAT_ACTION,
     env: process.env,
+    getCliCommandCatalog,
+    getMcpToolCatalogEntries,
     registry: cliCommandRegistry
 });
 

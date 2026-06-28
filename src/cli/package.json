@@ -18,7 +18,7 @@
     "root_path": "."
   },
   "scripts": {
-    "build:types": "tsc -b tsconfig.json",
+    "build:types": "tsc -b tsconfig.json && chmod +x dist/index.js",
     "clean:types": "rm -rf dist",
     "test": "pnpm run build:types && node --disable-warning=ExperimentalWarning --test-force-exit --test dist/test/*.test.js"
   },

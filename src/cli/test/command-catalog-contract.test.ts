@@ -50,6 +50,19 @@ void test("mcp command is excluded from MCP tool catalog", () => {
     );
 });
 
+void test("official gm-cli integration helpers and ResourceTool mirrors are excluded from MCP catalog", () => {
+    const mcpCatalog = getMcpToolCatalogEntries();
+    const toolNames = new Set(mcpCatalog.map((entry) => entry.toolName));
+
+    assert.equal(toolNames.has("gmloop_gm_cli_capability_audit"), false);
+    assert.equal(toolNames.has("gmloop_gm_cli_mcp"), false);
+    assert.equal(toolNames.has("gmloop_resource_add"), false);
+    assert.equal(toolNames.has("gmloop_resource_remove"), false);
+    assert.equal(toolNames.has("gmloop_resource_rename"), false);
+    assert.equal(toolNames.has("gmloop_resource_duplicate"), false);
+    assert.equal(toolNames.has("gmloop_resource_move"), false);
+});
+
 void test("object event update MCP tool schema includes write mode option", () => {
     const mcpCatalog = getMcpToolCatalogEntries();
     const entry = mcpCatalog.find((candidate) => candidate.toolName === "gmloop_object_event_update");

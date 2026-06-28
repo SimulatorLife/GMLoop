@@ -21,6 +21,38 @@ void test("gm-cli mcp help documents active project path resolution", async () =
     assert.match(result.stdout, /gm-cli-active-project\.json/u);
 });
 
+void test("gm-cli capability-audit emits boundary classifications without exposing gm-cli through MCP", async () => {
+    const result = await runCliTestCommand({
+        argv: ["gm-cli", "capability-audit", "--json"]
+    });
+
+    assert.equal(result.exitCode, 0);
+    const payload = JSON.parse(result.stdout) as {
+        ok: boolean;
+        payload: {
+            capabilities: Array<{
+                classification: string;
+                gmloopMcpTool: string | null;
+                operation: string;
+                status: string;
+            }>;
+            official: { available: boolean };
+        };
+    };
+    assert.equal(payload.ok, true);
+    assert.equal(payload.payload.official.available, false);
+
+    const resourceAdd = payload.payload.capabilities.find((entry) => entry.operation === "resource add");
+    assert.ok(resourceAdd);
+    assert.equal(resourceAdd.classification, "direct_gm_cli_mcp");
+    assert.equal(resourceAdd.gmloopMcpTool, null);
+
+    const objectEventList = payload.payload.capabilities.find((entry) => entry.operation === "object event list");
+    assert.ok(objectEventList);
+    assert.equal(objectEventList.classification, "gmloop_native_missing");
+    assert.equal(objectEventList.status, "gmloop_placeholder");
+});
+
 void test("gm-cli active-project state stores a resolved .yyp path", async () => {
     const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "gmloop-gm-cli-active-project-"));
     const projectDirectory = path.join(temporaryDirectory, "Game");

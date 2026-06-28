@@ -5,9 +5,16 @@ import path from "node:path";
 import { Core } from "@gmloop/core";
 import { Command } from "commander";
 
+import type { CliCatalogEntry } from "../cli-core/command-catalog.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { excludeCommandFromMcpTools } from "../cli-core/mcp-command-exclusion.js";
+import type { McpToolCatalogEntry } from "../cli-core/mcp-tool-catalog.js";
+import {
+    createGameMakerCapabilityBoundaryAudit,
+    loadGameMakerCliCompanionCatalog
+} from "../modules/game-maker-cli/index.js";
 import { resolveFromRepoRoot } from "../shared/workspace-paths.js";
+import { printProjectPayload, resolveExplicitWorkflowTargetPath } from "../workflow/project-root.js";
 
 const ACTIVE_PROJECT_PATH_ENV_VAR = "GMLOOP_GM_CLI_PROJECT_PATH";
 const ACTIVE_PROJECT_STATE_PATH_ENV_VAR = "GMLOOP_GM_CLI_PROJECT_STATE_PATH";
@@ -30,9 +37,28 @@ type GameMakerCliMcpCommandOptions = Readonly<{
     projectState?: string;
 }>;
 
+type GameMakerCliCapabilityAuditOptions = Readonly<{
+    json?: boolean;
+    path?: string;
+    toolPath?: string;
+}>;
+
 type GameMakerCliActiveProjectSetOptions = Readonly<{
     projectState?: string;
 }>;
+
+type GameMakerCliCommandDependencies = Readonly<{
+    getCliCommandCatalog: () => ReadonlyArray<CliCatalogEntry>;
+    getMcpToolCatalogEntries: () => ReadonlyArray<McpToolCatalogEntry>;
+}>;
+
+function createEmptyCliCatalog(): ReadonlyArray<CliCatalogEntry> {
+    return Object.freeze([]);
+}
+
+function createEmptyMcpToolCatalog(): ReadonlyArray<McpToolCatalogEntry> {
+    return Object.freeze([]);
+}
 
 function normalizeNonEmptyString(value: string | undefined): string | null {
     const trimmedValue = value?.trim();
@@ -232,8 +258,10 @@ async function runGameMakerCliMcpSubprocess(options: {
  * Create the `gmloop gm-cli` command group for official GameMaker CLI integration.
  */
 export function createGameMakerCliCommand({
-    env = process.env
-}: Partial<GameMakerCliCommandEnvironment> = {}): Command {
+    env = process.env,
+    getCliCommandCatalog = createEmptyCliCatalog,
+    getMcpToolCatalogEntries = createEmptyMcpToolCatalog
+}: Partial<GameMakerCliCommandEnvironment & GameMakerCliCommandDependencies> = {}): Command {
     const command = applyStandardCommandOptions(new Command("gm-cli")).description(
         "Manage official GameMaker CLI integration helpers."
     );
@@ -283,6 +311,29 @@ export function createGameMakerCliCommand({
                 statePathOption: options.projectState
             });
             console.log(JSON.stringify(result, null, 2));
+        });
+
+    command
+        .command("capability-audit")
+        .description("Compare GMLoop companion commands with the official gm-cli and ResourceTool MCP catalog.")
+        .option("--path <path>", "GameMaker .yyp file or project directory used for ResourceTool MCP discovery.")
+        .option("--tool-path <path>", "Explicit gm-cli executable path.")
+        .option("--json", "Emit JSON output.")
+        .action(async (options: GameMakerCliCapabilityAuditOptions) => {
+            const projectRoot = resolveExplicitWorkflowTargetPath(options.path);
+            const companionCatalog = await loadGameMakerCliCompanionCatalog({
+                projectRoot,
+                toolPath: options.toolPath ?? null
+            });
+            const audit = createGameMakerCapabilityBoundaryAudit({
+                cliCatalog: getCliCommandCatalog(),
+                companionCatalog,
+                mcpCatalog: getMcpToolCatalogEntries()
+            });
+            printProjectPayload({
+                ok: true,
+                payload: audit
+            });
         });
 
     return excludeCommandFromMcpTools(command);

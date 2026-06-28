@@ -1,9 +1,17 @@
 import assert from "node:assert/strict";
+import { stat } from "node:fs/promises";
 import test from "node:test";
 
 import { __test__ } from "../src/cli.js";
 
 const { isCliEntrypointModule, isNodeTestRunnerProcess, shouldAutoRunCliProcess } = __test__;
+
+void test("compiled CLI package entrypoint is executable for direct gmloop invocation", async () => {
+    const indexPathJs = new URL("../index.js", import.meta.url).pathname;
+    const stats = await stat(indexPathJs);
+
+    assert.notEqual(stats.mode & 0o111, 0);
+});
 
 void test("isNodeTestRunnerProcess identifies node --test execution flags", () => {
     assert.equal(isNodeTestRunnerProcess(["--test"]), true);

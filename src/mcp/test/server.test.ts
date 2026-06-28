@@ -21,7 +21,9 @@ void test("MCP workspace scaffold declares the server package and plan", async (
 
     assert.match(packageJsonText, /"name": "@gmloop\/mcp"/);
     assert.match(packageJsonText, /"gmloop-mcp": "\.\/dist\/src\/main\.js"/);
-    assert.match(readmeText, /## Full Implementation Plan/);
+    assert.match(readmeText, /## Contract/);
+    assert.match(readmeText, /CLI-derived MCP contract/);
+    assert.match(readmeText, /official `gm-cli` and ResourceTool behavior as a companion MCP surface/);
     assert.match(readmeText, /registerTool/);
     assert.match(readmeText, /gmloop_graph_search/);
 });
