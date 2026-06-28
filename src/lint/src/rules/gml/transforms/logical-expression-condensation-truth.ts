@@ -293,49 +293,73 @@ function searchMinimalCover(primes, candidateIndices, remainingMinterms) {
     return best ?? [];
 }
 
-function buildTermFromImplicant(implicant, variableCount) {
-    const factors = [];
+/**
+ * Walks the (mask, value) bit-pair of an implicant and emits the literal
+ * that should appear at each variable position.
+ *
+ * For each bit position whose `mask` bit is `0` the bit is "active" in the
+ * implicant and must contribute one literal to the resulting expression:
+ *
+ * - When `positiveWhenSet` is `true` (DNF / sum-of-products) the literal is
+ *   `v` when `value`'s bit is set and `!v` when it is clear.
+ * - When `positiveWhenSet` is `false` (CNF / product-of-sums) the polarity
+ *   is inverted, matching De Morgan's duality between the two forms.
+ *
+ * Bits whose `mask` bit is `1` are "don't care" and contribute no literal;
+ * they are simply skipped. The returned list preserves bit order so the
+ * caller can decide how to combine the literals (AND for terms, OR for
+ * clauses).
+ */
+function collectImplicantLiterals(implicant, variableCount, positiveWhenSet) {
+    const literals = [];
     for (let index = 0; index < variableCount; index++) {
         const bit = 1 << index;
         if ((implicant.mask & bit) !== 0) {
             continue;
         }
-        const positive = (implicant.value & bit) !== 0;
+        const isPositive = (implicant.value & bit) !== 0;
         const variable = createBooleanVariable({ index });
-        factors.push(positive ? variable : createBooleanNot(variable));
+        const usePositive = positiveWhenSet ? isPositive : !isPositive;
+        literals.push(usePositive ? variable : createBooleanNot(variable));
     }
+    return literals;
+}
 
+/**
+ * Builds a DNF term (sum-of-products AND-chain) from an implicant.
+ * `positiveWhenSet=true` selects the bit polarity for the sum-of-products
+ * form, so a set bit in the implicant value produces the bare variable
+ * and a clear bit produces its negation. An empty mask produces `true`,
+ * matching the identity element of conjunction.
+ */
+function buildTermFromImplicant(implicant, variableCount) {
+    const factors = collectImplicantLiterals(implicant, variableCount, true);
     if (factors.length === 0) {
         return createBooleanConstant(true);
     }
-
     if (factors.length === 1) {
         return factors[0];
     }
-
     return createBooleanAnd(factors);
 }
 
+/**
+ * Builds a CNF clause (product-of-sums OR-chain) from an implicant.
+ * `positiveWhenSet=false` inverts the bit polarity relative to DNF so a
+ * set bit in the implicant value produces the negated variable and a
+ * clear bit produces the bare variable, which is exactly what De Morgan's
+ * law demands when converting a maxterm cover into a product-of-sums.
+ * An empty mask produces `false`, matching the identity element of
+ * disjunction.
+ */
 function buildClauseFromImplicant(implicant, variableCount) {
-    const terms = [];
-    for (let index = 0; index < variableCount; index++) {
-        const bit = 1 << index;
-        if ((implicant.mask & bit) !== 0) {
-            continue;
-        }
-        const positive = (implicant.value & bit) !== 0;
-        const variable = createBooleanVariable({ index });
-        terms.push(positive ? createBooleanNot(variable) : variable);
-    }
-
+    const terms = collectImplicantLiterals(implicant, variableCount, false);
     if (terms.length === 0) {
         return createBooleanConstant(false);
     }
-
     if (terms.length === 1) {
         return terms[0];
     }
-
     return createBooleanOr(terms);
 }
 
