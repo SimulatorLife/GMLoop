@@ -10,6 +10,7 @@ This document synthesizes the target state for the GameMaker Language parser pro
 4. **Robust Semantic Analysis**: Implement a semantic layer that annotates the parse tree to power linting, refactoring, and transpilation, using the Sourcegraph Code Intelligence Protocol (SCIP) as the canonical symbol model.
 5. **Bounded-Memory Refactors**: Run large-project semantic indexing and codemod pipelines without retaining monolithic project-wide aggregates in memory. The target architecture uses bounded-memory streaming with spill-to-disk backends and whole-plan validation only where correctness requires it.
 6. **Live Hot-Reloading**: Enable true hot-loading of GML code, assets, and shaders without restarting the game by transpiling GML to JavaScript on demand and injecting it via a runtime wrapper. Live-reload UI status must be driven by automatic timer/focus polling of the status endpoint, not by a manual refresh button or parallel host refresh callback. Server-mode live-reload controls must remain visually stable: Stop is always present and disabled when no active session can be stopped. UI-triggered Live Reload startup must finish build/setup sequencing before opening the game runtime tab; successful startup responses must include a concrete runtime URL, and the UI must open that URL directly rather than pre-opening an `about:blank` placeholder. UI-triggered starts use start-or-reuse semantics so an existing healthy watcher/status/runtime session is adopted instead of starting a duplicate process that fails on occupied ports; new UI-owned watcher children must receive per-session status and WebSocket ports instead of binding the fixed default ports. Vite/served-UI hot reloads must preserve the host-owned game Live Reload session by keeping the web bootstrap payload synchronized after start/stop, so remounting the UI cannot expose stale Start controls or orphan a running watcher process. Each UI tab has one top-level page toolbar containing the page title, subtitle, lifecycle badge, and main page controls; UI lifecycle badges use the shared `gm-status-chip` component with a closed set of labels. Docs subview selection and catalog search are page-level controls and belong in that shared toolbar, not in a second Docs body toolbar.
+7. **Official GameMaker Tool Complementarity**: Treat YoYoGames `gm-cli` and its ResourceTool MCP server as companion surfaces in autonomous GameMaker workflows. GMLoop should not proxy or mirror the official surface wholesale. It should provide GameMaker-specific semantic graph context, validation, lint/format/refactor workflows, hot reload, task evidence, and missing high-level automation that complements `gm-cli`. Native GMLoop implementations are appropriate when GMLoop-specific semantic/refactor context, hot-reload behavior, deterministic fixture tests, or missing official coverage requires them.
 
 Concrete graph-index, retrieval, and visualization target-state details now live in [docs/gml-graph-index-plan.md](gml-graph-index-plan.md). Graph/search/context retrieval is owned by `@gmloop/semantic`; CLI, MCP, and UI layers present those semantic facts without duplicating graph truth.
 
@@ -21,9 +22,20 @@ Concrete graph-index, retrieval, and visualization target-state details now live
 - **Linter (`/lint`)**: Semantic and content rewrites, synthetic tag generation, legacy prefix or tag normalization, default placeholder comment cleanup, and local single-file diagnostics and autofix rewrites. **Lint rule autofixes are responsible for fixing valid-but-forbidden syntax (e.g., style violations or deprecated patterns that are still syntactically valid).**
 - **Refactor (`/refactor`)**: Codemod and migration transforms, explicit rename or refactor transactions, cross-file edits, metadata edits, impact analysis, hot-reload validation, project-wide identifier indexing, rename safety, hoist-name generation, and all other project-aware functionality. **Codemod/fixer commands are responsible for repairing non-parsable source text to restore parsability.**
 - **Core (`/core`)**: Shared doc-comment helpers, AST metadata utilities, and normalization primitives.
+- **CLI (`/cli`)**: Provides the canonical command surface, path resolution, structured output, and GMLoop workflow coordination. It may integrate with `gm-cli` where a GMLoop workflow needs official tool output, but it should not become a wholesale proxy for `gm-cli` or duplicate ResourceTool's MCP surface.
 - **CLI Watcher (`/cli`)**: Monitors the filesystem, coordinates the transpilation pipeline, emits telemetry, and manages the WebSocket server.
 - **Transpiler (`/transpiler`)**: Parses GML via ANTLR4, converts GML AST to JavaScript, and generates patch objects.
 - **Runtime Wrapper (`/runtime-wrapper`)**: Injected into the browser; maintains a hot registry of patched functions and overrides GML dispatchers.
+- **MCP (`/mcp`)**: Exposes CLI-derived GMLoop tools and read-only resources for agents. It is a companion to, not a replacement for, `gm-cli`'s ResourceTool MCP server. It must not duplicate GMLoop CLI behavior, mirror `gm-cli`'s MCP catalog, own project metadata mutation already covered by ResourceTool, or implement browser automation primitives.
+
+### 2.1.1 Official Tool Complementarity Boundary
+
+For GameMaker lifecycle operations, the design order is:
+
+1. Check the current `gm-cli` command catalog and ResourceTool MCP catalog so GMLoop does not duplicate an official capability.
+2. If the official MCP surface already serves the agent workflow directly, document that agents should use it alongside GMLoop.
+3. Add a GMLoop CLI/MCP capability only when it contributes GMLoop-owned value: semantic graph context, validation evidence, lint/format/refactor orchestration, hot-reload integration, deterministic fixture behavior, or a missing high-level operation.
+4. When a GMLoop workflow consumes `gm-cli` output internally, keep that integration narrow and typed; do not mirror the full official tool surface.
 
 ### 2.2 Doc-Comment Ownership
 
@@ -568,8 +580,8 @@ The hot-reload system bypasses the static nature of the GameMaker HTML5 runner b
 
 ### 6.2 System Architecture
 
-- **GameMaker build tooling (external)**: Produces the HTML5 export through `gm-cli` or Igor. GMLoop delegates export generation to these tools instead of reimplementing the GameMaker build pipeline.
-- **GameMaker project editing/manual lookup (external)**: ResourceTool and manual search stay owned by `gm-cli`; GMLoop should delegate those workflows instead of maintaining parallel CLI mutation/search implementations.
+- **GameMaker build tooling (external)**: Produces the HTML5 export through `gm-cli` or Igor. Agents may use those tools directly; GMLoop should add build commands only where it contributes hot-reload setup, evidence capture, log parsing, validation, or orchestration.
+- **GameMaker project editing/manual lookup (external)**: ResourceTool and manual search stay owned by `gm-cli`. GMLoop should not maintain parallel CLI/MCP mirrors for those operations, but may add companion workflows that connect official results to semantic graph, diagnostics, refactors, or task evidence.
 - **Dev server (Node.js/CLI)**: Watches GML files, transpiles them into JavaScript functions on demand, and broadcasts them as JSON patches via WebSocket.
 - **Runtime wrapper (browser)**: Listens for patches via WebSocket and swaps function references in the GameMaker engine's internal registry.
 

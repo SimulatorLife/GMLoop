@@ -2,7 +2,7 @@
 
 GMLoop has the lower-level ingredients for agent-assisted GameMaker development: parser, formatter, lint rules, refactors, semantic indexing, transpilation, runtime hot reload, a CLI, UI surfaces, fixture infrastructure, and an MCP workspace. The next step is to make those tools a first-class GameMaker companion surface through which externally coordinated agents can design, modify, test, build, run, and iteratively improve complete GameMaker projects.
 
-The target is not merely an agent that writes `.gml` files. The target is a GameMaker-specific tooling platform where agents can safely mutate real GameMaker resources, reuse known-good gameplay systems, run validation, and collect evidence. External agent coordinators own task splitting, scheduling, routing, approvals, retries, and long-running automation state. The primary runtime target is GameMaker HTML5, with GMLoop hot-reload functionality as the default iteration loop so agents can quickly change gameplay code/resources, observe results, inspect diagnostics, and keep developing without slow full rebuild cycles whenever hot reload can provide a valid proof step.
+The target is not merely an agent that writes `.gml` files. The target is a GameMaker-specific tooling platform where agents can safely mutate real GameMaker resources, reuse known-good gameplay systems, run validation, and collect evidence. The official GameMaker CLI (`gm-cli`) and its ResourceTool MCP server should be used alongside GMLoop for the project/resource/build/manual/publish capabilities they already own. GMLoop should complement that surface with semantic graph context, validation, lint/format/refactor workflows, hot reload, task evidence, and missing high-level automation. External agent coordinators own task splitting, scheduling, routing, approvals, retries, and long-running automation state. The primary runtime target is GameMaker HTML5, with GMLoop hot-reload functionality as the default iteration loop so agents can quickly change gameplay code/resources, observe results, inspect diagnostics, and keep developing without slow full rebuild cycles whenever hot reload can provide a valid proof step.
 
 ## 1. Foundation and Target Direction
 
@@ -21,7 +21,7 @@ The target platform builds on these responsibilities:
 - Optional external agent coordinators and CI workflows that consume GMLoop's stable local contracts.
 - [YoYoGames/gm-cli](https://github.com/YoYoGames/gm-cli) as the official GameMaker command-line tool for project creation, ResourceTool edits, compile/run/package workflows, manual lookup, GX.Games publishing, and its own ResourceTool MCP mode.
 
-The target state is a reusable GameMaker companion layer with rich project mutation APIs, build/run/test loops, game-design skills, helper libraries, task evidence, and clean integration with the official GameMaker CLI ecosystem. It is not a general agent operating system or workflow engine.
+The target state is a reusable GameMaker companion layer with rich project mutation APIs, build/run/test loops, game-design skills, helper libraries, task evidence, and clean integration with the official GameMaker CLI ecosystem. GMLoop and `gm-cli` are complementary tool surfaces: GMLoop should add GameMaker-specific intelligence and automation where it owns unique value, while agents can call `gm-cli` / ResourceTool MCP directly for official lifecycle operations. It is not a general agent operating system or workflow engine.
 
 ## 2. MCP Role and Architectural Boundary
 
@@ -38,7 +38,7 @@ GameMaker domain behavior and project/resource mutation logic
 
 This means new autonomous-game capabilities should generally extend existing domain behavior and CLI commands first. Once the CLI command is in the catalog, the existing MCP server should expose it to agents without duplicating command behavior inside `@gmloop/mcp`.
 
-Important nuance: MCP can and should expose high-level tools such as "add a resource" or "create a room". In that sense, agents using MCP do not need to know how `.yyp` or `.yy` files are edited. The lower-level `.yyp` / `.yy` mutation is already abstracted by the CLI/refactor/resource command layer for supported operations.
+Important nuance: GMLoop MCP can expose high-level tools where GMLoop adds project intelligence, validation, hot reload, graph context, test evidence, or missing automation. It should not mirror the official ResourceTool MCP catalog just to put the same operation under a `gmloop_` name. Agents should be expected to use both MCP servers when both are configured.
 
 MCP-specific work should be limited to:
 
@@ -56,9 +56,9 @@ This plan should describe where the system is headed rather than maintain a live
 
 The autonomous creation surface should converge on these durable capabilities:
 
-- project and resource creation, deletion, duplication, rename, movement, and validation;
+- project and resource creation, deletion, duplication, rename, movement, and validation through the right companion surface: official `gm-cli` / ResourceTool MCP for official metadata operations, and GMLoop for graph-aware validation, orchestration, hot reload, and missing automation;
 - object, event, room, layer, camera, sprite, sound, shader, script, path, timeline, font, sequence, tile set, and included-file operations where they are meaningful for autonomous creation;
-- high-level GameMaker operations that hide `.yyp` and `.yy` structure from agents while preserving exact metadata correctness;
+- high-level GameMaker operations that hide `.yyp` and `.yy` structure from agents while preserving exact metadata correctness through the official provider or a GMLoop-owned extension as appropriate;
 - graph-backed project inspection and context retrieval for planning edits;
 - structured dry-run and write modes for mutations;
 - deterministic JSON summaries for CLI users and MCP consumers;
@@ -68,17 +68,18 @@ The autonomous creation surface should converge on these durable capabilities:
 
 ## 4. YoYoGames `gm-cli` Integration Target
 
-`gm-cli` is an official command-line interface for editing, compiling, packaging, and running GameMaker projects. It should be treated as a first-class integration point, not as a competitor to GMLoop.
+`gm-cli` is an official command-line interface for editing, compiling, packaging, and running GameMaker projects. It should be treated as a first-class companion surface, not as a competitor to GMLoop and not merely as an implementation detail hidden behind GMLoop.
 
 Target relationship:
 
 - GMLoop owns GML analysis, formatting, linting, semantic graph/context, refactors, hot reload, structured workflow actions and evidence, and the agent-facing command catalog.
 - `gm-cli` owns official GameMaker project initialization, runtime/toolchain acquisition, compile/run/package behavior, ResourceTool capabilities, manual lookup, and publish flows where those official paths are available and reliable.
-- GMLoop may wrap or delegate to `gm-cli` behind typed provider interfaces when doing so gives agents a more correct, complete, or future-proof GameMaker operation.
-- GMLoop should normalize `gm-cli` output into stable structured results with source paths, resource names, diagnostics, command provenance, and actionable failure reasons.
-- GMLoop should expose `gm-cli`-backed operations through its normal CLI command catalog so MCP tools remain derived from GMLoop CLI metadata.
+- GMLoop may call `gm-cli` behind typed provider interfaces when a GMLoop-owned workflow needs official tool output, such as build evidence, artifact paths, or ResourceTool results combined with graph-aware validation.
+- GMLoop should not expose a duplicate `gmloop_*` tool for every official `gm-cli` / ResourceTool command. If the official MCP tool already serves the agent workflow, agents should use that tool directly alongside GMLoop.
+- GMLoop should expose `gm-cli`-informed operations through its normal CLI command catalog only when the command adds GMLoop-owned value such as semantic context, validation, dry-run planning, hot reload, test evidence, or workflow aggregation.
 - GMLoop should not reimplement official `gm-cli` behavior purely to avoid invoking it. Reimplementation is justified only when GMLoop needs tighter semantic integration, deterministic fixture-mode tests, hot-reload-specific behavior, or capabilities that `gm-cli` does not provide.
-- `gm-cli resourcetool mcp` can be used as an interoperability target or fallback for direct ResourceTool access, but GMLoop's MCP server should remain catalog-derived from GMLoop CLI commands rather than becoming a proxy full of MCP-only business logic.
+- Before implementing a project/resource/build command, check the current `gm-cli` command catalog and ResourceTool MCP catalog. If a matching official operation exists, decide whether agents should call it directly or whether GMLoop adds enough unique value to justify a companion command.
+- `gm-cli resourcetool mcp` should be a normal companion MCP server in autonomous workflows. GMLoop's MCP server should remain catalog-derived from GMLoop CLI commands rather than becoming a proxy full of ResourceTool duplicates.
 - `gm-cli manual` can provide official GameMaker documentation lookup for agents; GMLoop should prefer structured, citation-friendly summaries over asking agents to infer API behavior from memory.
 - `gm-cli run`, `compile`, and `package` should be candidates for the real build/run provider, with fixture/mock providers retained for tests and environments without a GameMaker toolchain.
 - `gm-cli gxgames` should be considered the publishing provider when autonomous workflows reach packaging and release stages.
@@ -98,7 +99,7 @@ Required integration constraints:
    Editing `.yyp` and `.yy` files directly is fragile. Agents should call high-level commands such as resource, object, room, test, and build operations. The command implementation should handle the underlying GameMaker metadata safely.
 
 2. **Use and extend existing abstractions first.**
-   Before adding a new workspace or API, check whether the capability belongs in the existing `resource`, `object`, `room`, `project`, `runner`, `test`, `refactor`, `semantic`, or provider-integration paths. Prefer delegating official GameMaker lifecycle work to `gm-cli` when it is the better owner.
+   Before adding a new workspace or API, check whether the capability belongs in the existing `resource`, `object`, `room`, `project`, `runner`, `test`, `refactor`, `semantic`, or provider-integration paths. Prefer direct use of official `gm-cli` / ResourceTool MCP capabilities when they already serve the workflow.
 
 3. **CLI is the source of truth for agent tools.**
    New autonomous-game behavior should be added as CLI commands with structured output. MCP should expose those commands by deriving tools from the CLI command catalog, not by defining parallel MCP-only tools.
@@ -109,8 +110,8 @@ Required integration constraints:
 5. **Validation must close the loop.**
    The system must be able to format, lint, test, build, run, inspect logs, and iterate from failures. Autonomous game creation is not reliable without an automated proof step.
 
-6. **Official tools should be integrated, not shadowed.**
-   When `gm-cli` provides a stable project, ResourceTool, build, run, package, manual, or publish capability, GMLoop should wrap it behind typed provider contracts and structured outputs instead of creating a parallel version of the same official workflow.
+6. **Official tools should be companions, not shadows.**
+   When `gm-cli` provides a stable project, ResourceTool, build, run, package, manual, or publish capability, agents may use that official tool directly. GMLoop should add a separate command only when it contributes GMLoop-owned context, validation, hot reload, refactor planning, task evidence, or missing automation.
 
 7. **Reusable building blocks beat repeated invention.**
    Agents should compose known-good helpers, systems, templates, and prefabs instead of inventing new state machines, input systems, cameras, and UI primitives every time.
@@ -152,13 +153,13 @@ The CLI/MCP command surface is part of the autonomous creation target state. It 
 | Change workflow              | To add, remove, or rename an MCP command tool, change the CLI command definition.                                                                                                                             |
 | Resources exception          | MCP resources may still exist for read-only graph/context/project views, but command-like behavior must come from CLI-derived tools.                                                                          |
 | Browser-tool exception       | Browser automation primitives should be delegated to Playwright/browser MCP tooling rather than reimplemented in `@gmloop/mcp`.                                                                               |
-| External tool strategy       | When `gm-cli`, Stitch, or another proven package owns a GameMaker project, launcher, ResourceTool, or build concern well, wrap it cleanly behind GMLoop CLI/provider contracts rather than reimplementing it. |
+| External tool strategy       | When `gm-cli`, Stitch, or another proven package owns a GameMaker project, launcher, ResourceTool, or build concern well, use it as a companion surface or narrow dependency rather than reimplementing it. |
 
 ### External Tooling Strategy
 
 | Source                                                                                                 | Target use                                                                                                                                                                                        |
 | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [YoYoGames/gm-cli](https://github.com/YoYoGames/gm-cli)                                                | Preferred official integration point for project creation, ResourceTool edits, compile/run/package, runtime/toolchain handling, manual lookup, MCP ResourceTool interoperability, and publishing. |
+| [YoYoGames/gm-cli](https://github.com/YoYoGames/gm-cli)                                                | Official companion surface and first ownership check for project creation, ResourceTool edits, compile/run/package, runtime/toolchain handling, manual lookup, MCP ResourceTool interoperability, and publishing. |
 | [bscotch/stitch](https://github.com/bscotch/stitch)                                                    | Reference for GameMaker project automation patterns and possible reusable implementation ideas where they fit GMLoop boundaries.                                                                  |
 | [bscotch/stitch `packages/yy`](https://github.com/bscotch/stitch/tree/develop/packages/yy)             | Reference or dependency candidate for `.yy`/`.yyp` schema handling when it avoids duplicating GameMaker metadata logic.                                                                           |
 | [bscotch/stitch `packages/launcher`](https://github.com/bscotch/stitch/tree/develop/packages/launcher) | Reference or dependency candidate for launch/runtime/build orchestration where it fits the HTML5/hot-reload workflow.                                                                             |
@@ -173,8 +174,8 @@ The CLI/MCP command surface is part of the autonomous creation target state. It 
 | `graph`            | Build, query, diagnose, and visualize the semantic graph index.               | `@gmloop/semantic`, `@gmloop/ui`                                        |
 | `symbol`           | Inspect symbols, context, usages, and relationships.                          | `@gmloop/semantic`                                                      |
 | `validate`         | Validate GML files, projects, rooms, and resources.                           | `@gmloop/parser`, `@gmloop/semantic`, `@gmloop/refactor`                |
-| `project`          | Create, initialize, inspect, validate, clean, and prepare projects.           | `@gmloop/cli`, `@gmloop/refactor`, `gm-cli` providers                   |
-| `resource`         | Inspect and mutate project resource inventory and metadata.                   | `@gmloop/semantic`, `@gmloop/refactor`, `gm-cli` ResourceTool providers |
+| `project`          | Inspect, validate, prepare, and augment projects with GMLoop-specific setup. Official creation/initialization may stay on `gm-cli` / ResourceTool MCP unless GMLoop adds companion value. | `@gmloop/cli`, `@gmloop/refactor`, `gm-cli` companion providers         |
+| `resource`         | Inspect, validate, and augment project resource inventory with graph/refactor context. Official resource creation/editing may stay on ResourceTool MCP unless GMLoop adds companion value. | `@gmloop/semantic`, `@gmloop/refactor`, `gm-cli` ResourceTool companion |
 | `room`             | Inspect, validate, preview, and mutate rooms, instances, layers, and cameras. | `@gmloop/semantic`, `@gmloop/refactor`, `@gmloop/ui`                    |
 | `object`           | Inspect, validate, and mutate object properties and events.                   | `@gmloop/semantic`, `@gmloop/refactor`                                  |
 | `runner` or `game` | Build, run, package, check, log, and manage GameMaker process lifecycle.      | `@gmloop/cli`, `@gmloop/runtime-wrapper`, `gm-cli` providers            |
@@ -192,9 +193,9 @@ The CLI/MCP command surface is part of the autonomous creation target state. It 
 | Graph index and discovery            | `graph index`, `graph search`, `graph doctor`, `graph visualize`                                                                       | `gmloop_graph_index`, `gmloop_graph_search`, `gmloop_graph_doctor`, `gmloop_graph_visualize`                                                             | `@gmloop/semantic`, `@gmloop/ui`         |
 | Symbol inspection and relationships  | `symbol inspect`, `symbol context`, `symbol neighbors`, `symbol usages`                                                                | `gmloop_symbol_inspect`, `gmloop_symbol_context`, `gmloop_symbol_neighbors`, `gmloop_symbol_usages`                                                      | `@gmloop/semantic`                       |
 | Validation                           | `validate file`, `validate project`, `validate room`, `validate resource`                                                              | `gmloop_validate_file`, `gmloop_validate_project`, `gmloop_validate_room`, `gmloop_validate_resource`                                                    | parser/semantic/refactor                 |
-| Project lifecycle                    | `project create`, `project init`, `project inspect`, `project validate`, `project cache clean`                                         | `gmloop_project_create`, `gmloop_project_init`, `gmloop_project_inspect`, `gmloop_project_validate`, `gmloop_project_cache_clean`                        | CLI/refactor/`gm-cli` providers          |
+| Project lifecycle                    | `project create`, `project init`, `project inspect`, `project validate`, `project cache clean`                                         | `gmloop_project_create`, `gmloop_project_init`, `gmloop_project_inspect`, `gmloop_project_validate`, `gmloop_project_cache_clean`                        | CLI/refactor plus `gm-cli` as a companion surface; expose GMLoop commands only where they add GMLoop-owned value |
 | Resource inventory                   | `resource list`, `resource find`, `resource inspect`, `resource deps`, `resource dependents`, `resource audit`                         | `gmloop_resource_list`, `gmloop_resource_find`, `gmloop_resource_inspect`, `gmloop_resource_deps`, `gmloop_resource_dependents`, `gmloop_resource_audit` | semantic                                 |
-| Resource mutations                   | `resource add`, `resource remove`, `resource rename`, `resource duplicate`, `resource move`                                            | `gmloop_resource_add`, `gmloop_resource_remove`, `gmloop_resource_rename`, `gmloop_resource_duplicate`, `gmloop_resource_move`                           | refactor/`gm-cli` ResourceTool providers |
+| Resource mutations                   | `resource add`, `resource remove`, `resource rename`, `resource duplicate`, `resource move`                                            | `gmloop_resource_add`, `gmloop_resource_remove`, `gmloop_resource_rename`, `gmloop_resource_duplicate`, `gmloop_resource_move`                           | ResourceTool MCP for official edits; GMLoop commands only for graph-aware, refactor-aware, hot-reload-aware, or missing operations |
 | Room inspection and analysis         | `room list`, `room inspect`, `room query`, `room validate`, `room preview`, `room summary`                                             | `gmloop_room_list`, `gmloop_room_inspect`, `gmloop_room_query`, `gmloop_room_validate`, `gmloop_room_preview`, `gmloop_room_summary`                     | semantic/ui                              |
 | Room mutations                       | `room create`, `room duplicate`, `room rename`, `room delete`, `room update`, `room repair`                                            | `gmloop_room_create`, `gmloop_room_duplicate`, `gmloop_room_rename`, `gmloop_room_delete`, `gmloop_room_update`, `gmloop_room_repair`                    | refactor                                 |
 | Room instances                       | `room instance add`, `room instance update`, `room instance delete`                                                                    | `gmloop_room_instance_add`, `gmloop_room_instance_update`, `gmloop_room_instance_delete`                                                                 | refactor/semantic                        |
@@ -233,7 +234,16 @@ Allow agents to safely inspect and mutate real GameMaker projects through the ex
 
 ### Target Direction
 
-Resource-aware commands should let agents modify a GameMaker project through high-level operations while the owning implementation preserves `.yyp`, `.yy`, folder, and resource metadata invariants. GMLoop should use its own semantic/refactor APIs where deep project context is needed, and should integrate with `gm-cli resourcetool` where the official ResourceTool is the stronger or broader project-editing backend.
+Resource-aware commands should let agents modify a GameMaker project through high-level operations while the owning implementation preserves `.yyp`, `.yy`, folder, and resource metadata invariants. The first design question for every project or resource mutation is whether `gm-cli` / ResourceTool already owns the operation and whether agents can call that official MCP tool directly. GMLoop should add a companion command only when it contributes GMLoop-owned value: graph-aware validation, refactor planning, hot-reload coordination, deterministic fixtures, higher-level workflow aggregation, or behavior missing from the official surface.
+
+### Provider Ownership Rule
+
+Do not duplicate official GameMaker project/resource behavior. Target commands such as `project create`, `resource add`, `room create`, or `object update` are possible GMLoop automation contracts, not claims that GMLoop must expose a duplicate for every ResourceTool operation or hand-write every `.yy` / `.yyp` change. Their design order is:
+
+1. Discover whether the current `gm-cli` command catalog or ResourceTool MCP catalog exposes the operation.
+2. If the official MCP tool is sufficient, document/use that tool directly in the autonomous workflow.
+3. Add a GMLoop companion command only when it adds semantic graph/refactor context, validation evidence, dry-run planning, hot-reload coordination, deterministic fixture behavior, workflow aggregation, or missing capability.
+4. Keep direct `.yy` / `.yyp` mutation logic domain-owned under refactor/project-resource APIs, never in MCP and never scattered through command handlers.
 
 ### Priority Command Families
 
@@ -260,7 +270,7 @@ gmloop test case update
 
 Do not add separate MCP-only commands for these. Implement the underlying behavior in the relevant command/domain/refactor layer, then let MCP expose the command catalog.
 
-When a command delegates to `gm-cli resourcetool`, the GMLoop command should still own path resolution, dry-run/write semantics, output normalization, test fixtures, and MCP catalog metadata. Agents should not have to choose between "GMLoop project mutation" and "official ResourceTool mutation"; the GMLoop CLI should present one coherent automation contract.
+When a GMLoop command consumes `gm-cli resourcetool`, the command should own only the additional GMLoop contract it adds, such as path resolution into the active graph, dry-run planning, validation evidence, test fixtures, or MCP catalog metadata. Agents should not be forced through GMLoop when the official ResourceTool MCP tool is the clearer direct operation.
 
 ### Optional New Domain Layer
 
@@ -281,8 +291,8 @@ But this should be justified by real duplication or missing shared modeling. Pre
 ### Required Behavior
 
 - Preserve valid `.yyp` and `.yy` structure.
-- Reuse existing `@gmloop/refactor` resource mutation paths where applicable.
-- Delegate to `gm-cli resourcetool` where official ResourceTool coverage is more complete or safer.
+- Reuse existing `@gmloop/refactor` resource mutation paths where GMLoop-specific semantic/refactor context is required.
+- Use `gm-cli resourcetool` directly or as a narrow dependency where official ResourceTool coverage exists, is more complete, or is safer.
 - Generate or preserve stable resource IDs where required.
 - Keep folders and resource metadata consistent.
 - Support dry-run previews where mutations can write.
@@ -497,7 +507,7 @@ Allow agents to prove that a generated or modified GameMaker game actually build
 
 ### Target Direction
 
-The CLI should expose a high-level build/run/check surface that can use multiple providers without forcing agents to learn provider-specific details. `gm-cli` should be the preferred real local provider for official GameMaker project initialization, runtime/toolchain management, compile, run, and package workflows. Fixture and mock providers should remain available for deterministic tests and environments without a local GameMaker toolchain.
+The CLI should expose GMLoop-owned build/run/check surfaces where GMLoop adds value, such as normalized evidence, log parsing, hot-reload setup, graph context, or CI/test aggregation. Agents may also call `gm-cli` build/run/package commands directly through the official MCP surface. Fixture and mock providers should remain available for deterministic tests and environments without a local GameMaker toolchain.
 
 ### Possible Workspace
 
@@ -513,7 +523,7 @@ or:
 src/gamemaker-build
 ```
 
-This workspace would expose a provider-backed build facade rather than hardcoding one build mechanism.
+This workspace would expose GMLoop-specific build evidence and orchestration without hardcoding one build mechanism or mirroring the full `gm-cli` command surface.
 
 ### CLI Commands
 
@@ -545,11 +555,11 @@ html5-export
 mock-fixture
 ```
 
-The CLI and MCP surface should not expose provider-specific details unless necessary. Agents should call the high-level build/run/check command; GMLoop can decide whether that means invoking `gm-cli run`, `gm-cli compile`, `gm-cli package`, a lower-level local toolchain, an existing GitHub Action, a Stitch-backed action, an HTML5 hot-reload export, or a fixture-mode build.
+The CLI and MCP surface should not expose provider-specific details unless necessary. Agents can call official `gm-cli` build/run/package tools directly when those are the right operation. A GMLoop build/run/check command is justified when it aggregates evidence, parses logs, coordinates hot reload, or chooses among providers for a GMLoop-owned workflow.
 
 ### External Provider Direction
 
-`gm-cli` is the primary external provider candidate because it is the official GameMaker CLI and covers runtime acquisition plus compile/run/package workflows. Other providers, including open-source GitHub Actions such as Stitch, can be investigated for CI-specific build checks. Do not make agent prompts depend directly on any provider. Wrap each provider behind the GMLoop build facade.
+`gm-cli` is the primary official companion for runtime acquisition plus compile/run/package workflows. Other providers, including open-source GitHub Actions such as Stitch, can be investigated for CI-specific build checks. Do not hide direct official-tool usage when it is the clearest operation; reserve GMLoop build commands for workflows that add GMLoop-owned evidence, validation, or orchestration.
 
 ### Required Behavior
 
@@ -563,10 +573,10 @@ The CLI and MCP surface should not expose provider-specific details unless neces
 ### First Work Slice
 
 1. Decide whether build/check/run belongs in the existing `runner` command family or a `game` command family.
-2. Add a provider contract with `gm-cli` and mock/fixture implementations as the initial target shape.
+2. Add a provider contract only for GMLoop-owned build evidence/orchestration, with `gm-cli` and mock/fixture implementations as candidate inputs.
 3. Add log parsing for representative GameMaker build failures.
 4. Add CI fixture tests around log parsing.
-5. Add a real `gm-cli` provider once local/CI credentials, target platform, and runtime constraints are known.
+5. Add a real `gm-cli`-backed GMLoop workflow only once local/CI credentials, target platform, runtime constraints, and the added GMLoop value are known.
 6. Verify MCP catalog exposure comes from the CLI command.
 
 ## 11. Milestone 5: Game Design and Game-Building Agent Skills
@@ -825,8 +835,8 @@ adapter contract tests
 1. **Implement one high-value mutation command family.**
    Best first target: `object event update`, because agents need a reliable way to put behavior into objects after creating or selecting a resource.
 
-2. **Add or harden a `gm-cli resourcetool` integration slice.**
-   Start with one mutation or inspection class, normalize the result into GMLoop's structured command contract, and prove the MCP catalog exposes the GMLoop command rather than a parallel MCP-only tool.
+2. **Clarify or add one companion ResourceTool workflow.**
+   Start with one mutation or inspection class and decide whether agents should use the official ResourceTool MCP directly or whether GMLoop adds graph-aware validation, dry-run planning, hot-reload coordination, or task evidence worth exposing as a separate CLI-derived MCP tool.
 
 3. **Improve structured JSON output for resource mutations.**
    Agent/MCP usage benefits from consistent JSON payloads, deterministic ordering, dry-run summaries, and actionable error codes.
@@ -840,8 +850,8 @@ adapter contract tests
 6. **Add a minimal `gml-kit` helper library.**
    Start with a small manifest-driven library rather than a large prefab system.
 
-7. **Audit and extend the runner/build surface around `gm-cli`.**
-   Start with provider contracts, `gm-cli` capability detection, fixture providers, and log parsing before committing to a specific local or CI backend.
+7. **Audit and extend the runner/build surface alongside `gm-cli`.**
+   Start by separating direct official `gm-cli` MCP usage from GMLoop-owned build evidence, fixture providers, log parsing, and hot-reload coordination.
 
 8. **Add game-design and GameMaker-resource agent skills.**
    Improve agent behavior before large automation is attempted.
@@ -854,8 +864,8 @@ adapter contract tests
 1. Which `gm-cli` versions should GMLoop support or require for the first official-provider integration?
 2. Which GameMaker targets, runtimes, and toolchains should the first `gm-cli` build/run provider support?
 3. Can the open-source Stitch GitHub Action reliably build the target project types in CI, and should it remain a secondary provider behind `gm-cli`?
-4. When should GMLoop call `gm-cli resourcetool` directly versus use internal refactor/resource APIs?
-5. Should GMLoop expose any read-only bridge to `gm-cli manual`, or should manual lookup stay a provider behind specific planning/diagnostic commands?
+4. Which ResourceTool operations should agents call directly through `gm-cli` MCP, and which deserve a separate GMLoop companion command because they add graph/refactor/hot-reload context?
+5. Should manual lookup stay entirely on `gm-cli` MCP, or should GMLoop add read-only companion context that links manual results to symbols, diagnostics, or graph nodes?
 6. Should the reusable GML kit be shipped as source resources, package artifacts, or project templates?
 7. How should generated projects distinguish production resources from test-only resources?
 8. What is the minimum viable headless test runner for the existing unit-test framework?
@@ -874,7 +884,7 @@ The next stage for GMLoop is to become a first-class GameMaker companion surface
 completion of existing resource/object/room/test command surfaces
 CLI-backed agent tool commands
 existing MCP exposure through the CLI catalog
-official `gm-cli` integration for project, ResourceTool, build/run/package, manual, and publish workflows
+direct companion use of official `gm-cli` MCP for project, ResourceTool, build/run/package, manual, and publish workflows
 reusable GML helper systems
 unit-test generation and execution
 GameMaker build/run validation
@@ -883,4 +893,4 @@ stable task-evidence contracts
 optional coordinator adapters
 ```
 
-The first priority should be completing high-level GameMaker mutation, validation, and provider-integration paths that let agents create resources, edit object events, place room instances, author tests, and prove builds without raw project-file edits. The MCP server should surface those capabilities through its CLI-derived tool catalog. `gm-cli` should be integrated where it provides official GameMaker lifecycle behavior, while GMLoop continues to own semantic analysis, hot reload, and structured GameMaker automation contracts. External coordinators retain workflow orchestration.
+The first priority should be completing high-level GameMaker mutation, validation, and companion-tool paths that let agents create resources, edit object events, place room instances, author tests, and prove builds without raw project-file edits. GMLoop MCP should surface GMLoop-owned capabilities through its CLI-derived tool catalog. `gm-cli` MCP should remain a peer surface for official GameMaker lifecycle behavior, while GMLoop continues to own semantic analysis, hot reload, and structured GameMaker automation contracts. External coordinators retain workflow orchestration.

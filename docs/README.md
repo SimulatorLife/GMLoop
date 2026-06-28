@@ -77,8 +77,10 @@ then return here for deeper context.
   that builds on top of the formatter, lint, refactor, semantic, transpiler,
   runtime wrapper, CLI, UI, and MCP workspaces, including the HTML5 runtime
   fork, watcher pipeline, hot-reload integration seams, independently
-  installable `@gmloop/agent-pack` initialization/update flow, and the explicit
-  boundary with external agent coordinators.
+  installable `@gmloop/agent-pack` initialization/update flow, the explicit
+  boundary with external agent coordinators, and the rule that official
+  `gm-cli` / ResourceTool MCP capabilities are companion surfaces that GMLoop
+  should extend or complement rather than mirror.
 - [Define directive fixing plan](define-directive-fixing.md) — Parser/
   formatter/lint ownership plan for tolerating legacy `#define` spellings and
   related legacy keywords, and producing a normalized macro representation.

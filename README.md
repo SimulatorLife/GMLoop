@@ -177,6 +177,15 @@ understanding, semantic graph context, parser/lint/refactor/format/fix
 workflows, live-reload status, MCP tool exposure, agent-pack installation,
 skill discovery, and project guidance.
 
+GMLoop should complement, not replace, the official GameMaker CLI. In
+auto-game workflows, agents may use both GMLoop's MCP server and
+[YoYoGames/gm-cli](https://github.com/YoYoGames/gm-cli)'s ResourceTool MCP
+server directly. GMLoop owns GameMaker-specific semantic context, validation,
+lint/format/refactor workflows, hot reload, graph-backed inspection, task
+evidence, and missing high-level automation. It should avoid recreating
+official `gm-cli` project/resource/build/manual/publish capabilities unless
+GMLoop-specific context or behavior is required.
+
 External agent coordinators such as Codex, Claude Code, Qwen, OpenHands,
 AutoGen, CrewAI, and LangGraph own model selection, agent scheduling,
 permissions, approvals, retries, memory, budgets, queues, task routing, and

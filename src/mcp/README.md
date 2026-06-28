@@ -1,8 +1,8 @@
 # `@gmloop/mcp`
 
-`@gmloop/mcp` is the planned MCP server workspace for exposing GMLoop CLI behavior to LLM, AI, and agent clients.
+`@gmloop/mcp` exposes GMLoop CLI behavior to LLM, AI, and agent clients.
 
-The current scaffold intentionally contains only the package framework, public namespace, and stdio server entrypoint. Tool registration should be implemented by deriving MCP tools from the CLI command catalog, not by redefining commands in this workspace.
+Tool registration is derived from the CLI command catalog rather than redefined in this workspace. Adding, removing, or renaming an agent-facing command tool starts with the GMLoop CLI command definition, not MCP-local business logic.
 
 MCP is a stable local transport for GameMaker-specific tools, context, and
 evidence. It does not own model selection, agent scheduling, task routing,
@@ -11,39 +11,40 @@ workflow state. Those responsibilities remain with external agent
 coordinators. Framework-specific integrations must be optional adapters over
 the CLI-derived MCP contract, never core dependencies or MCP-only behavior.
 
-## Full Implementation Plan
+`@gmloop/mcp` also must not duplicate official GameMaker CLI behavior. When
+`gm-cli` or its ResourceTool MCP server already owns a project/resource/build
+operation, agents may use that official MCP server directly alongside GMLoop.
+Add a GMLoop MCP tool only when the underlying CLI command contributes
+GMLoop-owned value such as semantic graph context, validation, lint/format/
+refactor orchestration, hot reload, deterministic fixtures, or task evidence.
+MCP resources may surface read-only graph/context data, but command-like writes
+must stay CLI-derived.
+
+## Contract
 
 ### Summary
 
-- Add a new workspace package `src/mcp` named `@gmloop/mcp`.
-- Implement a stdio-only MCP server that dynamically registers one MCP tool per real CLI command.
 - Make the CLI's registered Commander commands the single source of truth for MCP tools, tool descriptions, options, and positional arguments.
 - Do not add MCP-only command behavior, raw argv escape hatches, legacy aliases, or duplicate command definitions. New MCP tools/options must appear only by adding CLI commands/options.
-- Include graph-index resources backed by `@gmloop/semantic`, including graph overview, node, context, and neighbors resources.
+- Keep graph-index resources backed by `@gmloop/semantic`, including graph overview, node, context, and neighbors resources.
+- Treat official `gm-cli` and ResourceTool behavior as a companion MCP surface, not as something this workspace mirrors.
 
-### Key Changes
+### CLI / MCP Boundary
 
 - Treat the CLI workspace as the owner of the canonical command/tool surface:
     - It is in scope to update and improve `@gmloop/cli`'s public API so it exposes commands, options, argument metadata, command documentation, and execution helpers in a standard, intentional shape for MCP consumption.
     - The MCP workspace should consume only that public CLI API, not private CLI files, Commander internals, duplicated registries, or command-specific redefinitions.
     - The ideal target is a small, typed, stable CLI facade that can serve both the CLI binary and MCP workspace from the same registered command definitions.
-- Refactor the CLI so importing `@gmloop/cli` is side-effect free and its public API cleanly exposes the command catalog MCP needs:
-    - Move executable startup into a dedicated CLI main entrypoint.
-    - Keep the package public root as an importable API surface.
-    - Update the CLI `bin` target to the new main entrypoint.
-    - Add or improve first-class CLI public exports for command discovery and execution, rather than requiring `@gmloop/mcp` to import CLI internals or reconstruct command definitions.
 - Extend the CLI command manager/catalog to expose registered command metadata through a stable, documented public API:
     - Command name, description, usage/help text.
     - Positional arguments from Commander metadata.
     - Visible options from Commander metadata, excluding hidden help/alias options.
     - Runner support that lets another workspace invoke the same registered command logic while capturing `stdout`, `stderr`, and `exitCode`.
     - Public types for command metadata and execution results so MCP schema generation can depend on explicit contracts instead of Commander implementation details.
-- Remove reliance on the hardcoded/stale command-name list for command discovery. The current list includes `performance` without a registered command; the new catalog should derive names from registered commands and remove that obsolete path.
-- Add `@gmloop/mcp` with:
-    - `package.json`, `index.ts`, `src/index.ts`, `src/main.ts`, `tsconfig.json`, and `test/`.
-    - A `gmloop-mcp` bin using `StdioServerTransport`.
-    - Direct workspace import via `import { CLI } from "@gmloop/cli"`.
-    - `@modelcontextprotocol/sdk` and `zod` as direct dependencies.
+- For official GameMaker project/resource/build capabilities:
+    - Expect agents to use `gm-cli` / ResourceTool MCP directly when that tool is the right operation.
+    - Expose a GMLoop command only when the CLI layer adds GMLoop-owned context, validation, hot-reload, refactor, or evidence behavior.
+    - Do not register separate MCP tools that call ResourceTool directly unless they are read-only resources or explicitly remain under the `gmloop gm-cli` integration surface.
 
 ### MCP Tool Behavior
 
