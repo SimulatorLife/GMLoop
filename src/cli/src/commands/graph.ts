@@ -734,13 +734,13 @@ const GRAPH_VISUALIZATION_LIVE_RELOAD_START_POLL_INTERVAL_MS = 200;
  * the Node event loop alive past shutdown and surface as an unhandled
  * rejection if the probe ever throws.
  */
-async function awaitGraphVisualizationLiveReloadStartup<TTimerHandle = ReturnType<typeof setTimeout>>(
+function awaitGraphVisualizationLiveReloadStartup<TTimerHandle = ReturnType<typeof setTimeout>>(
     probe: GraphVisualizationLiveReloadStartupProbe,
     timings: Readonly<{ pollIntervalMs: number; startupTimeoutMs: number }>,
     externalSignal: AbortSignal | null = null,
     timers: GraphVisualizationLiveReloadStartupTimers<TTimerHandle> = DEFAULT_GRAPH_VISUALIZATION_LIVE_RELOAD_STARTUP_TIMERS as GraphVisualizationLiveReloadStartupTimers<TTimerHandle>
 ): Promise<GraphVisualizationLiveReloadModel> {
-    return await new Promise<GraphVisualizationLiveReloadModel>((resolve, reject) => {
+    return new Promise<GraphVisualizationLiveReloadModel>((resolve, reject) => {
         let settled = false;
         let pollTimerHandle: TTimerHandle | null = null;
         const startupTimerHandle = timers.scheduleTimeout(() => {
@@ -1118,8 +1118,8 @@ function readOsaScriptErrorStderr(error: unknown): string {
     return typeof stderrCandidate === "string" ? stderrCandidate : "";
 }
 
-async function runOsaScript(lines: ReadonlyArray<string>): Promise<OsaScriptExecutionResult> {
-    return await new Promise<OsaScriptExecutionResult>((resolve, reject) => {
+function runOsaScript(lines: ReadonlyArray<string>): Promise<OsaScriptExecutionResult> {
+    return new Promise<OsaScriptExecutionResult>((resolve, reject) => {
         const args = lines.flatMap((line) => ["-e", line] as const);
         execFile("osascript", args, { encoding: "utf8" }, (error, stdout, stderr) => {
             if (error) {
@@ -1314,11 +1314,11 @@ function printGraphOutput(payload: unknown, asJson: boolean, humanText: string):
     console.log(humanText);
 }
 
-async function ensureGraphIndex(
+function ensureGraphIndex(
     options: GraphCommandSharedOptions,
     context: GraphResolutionContext
 ): Promise<Awaited<ReturnType<typeof Semantic.buildGraphIndex>>> {
-    return await Semantic.buildGraphIndex({
+    return Semantic.buildGraphIndex({
         databasePath: options.databasePath,
         projectConfig: context.projectConfig,
         projectRoot: context.projectRoot,
@@ -2097,7 +2097,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 if (!nextPathFromPicker) {
                     return Object.freeze({ changed: false, projectChanged: false });
                 }
-                return await openProjectTargetPath(nextPathFromPicker, "finder-open");
+                return openProjectTargetPath(nextPathFromPicker, "finder-open");
             },
             runFix: async ({ workflow }) => {
                 if (!activeContext) {
