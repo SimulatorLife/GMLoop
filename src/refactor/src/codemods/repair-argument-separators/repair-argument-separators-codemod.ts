@@ -1,7 +1,7 @@
 import { Core } from "@gmloop/core";
 
 import type { RepairArgumentSeparatorsEdit, RepairArgumentSeparatorsResult } from "../../types.js";
-import { applySourceTextEdits } from "../codemod-helpers.js";
+import { applySourceTextEdits, findNextLineStart, isDirectiveLineAtIndex } from "../codemod-helpers.js";
 
 /**
  * Repairs missing argument separators (commas) in function calls (e.g. `foo(a b c)` to `foo(a, b, c)`).
@@ -164,26 +164,6 @@ function maskCommentsAndStringsForRecovery(sourceText: string): string {
     }
 
     return chars.join("");
-}
-
-function isDirectiveLineAtIndex(sourceText: string, index: number): boolean {
-    const lineStart = sourceText.lastIndexOf("\n", index - 1) + 1;
-    for (let cursor = lineStart; cursor < sourceText.length; cursor += 1) {
-        const character = sourceText[cursor];
-        if (character === "\n" || character === "\r") {
-            return false;
-        }
-        if (/\s/u.test(character ?? "")) {
-            continue;
-        }
-        return character === "#";
-    }
-    return false;
-}
-
-function findNextLineStart(sourceText: string, index: number): number {
-    const nextLineBreak = sourceText.indexOf("\n", index);
-    return nextLineBreak === -1 ? sourceText.length : nextLineBreak + 1;
 }
 
 function findPreviousNonWhitespaceIndex(

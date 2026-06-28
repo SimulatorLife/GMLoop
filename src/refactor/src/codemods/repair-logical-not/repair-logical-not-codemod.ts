@@ -2,7 +2,7 @@ import { Core } from "@gmloop/core";
 
 import { resolveSymbolId } from "../../symbol-queries.js";
 import type { PartialSemanticAnalyzer, RepairLogicalNotEdit, RepairLogicalNotResult } from "../../types.js";
-import { applySourceTextEdits } from "../codemod-helpers.js";
+import { applySourceTextEdits, findNextLineStart, isDirectiveLineAtIndex } from "../codemod-helpers.js";
 
 /**
  * Repairs invalid logical 'not' and 'NOT' operators in source code by replacing them with '!'.
@@ -123,24 +123,4 @@ export async function applyRepairLogicalNotCodemod(
         outputText,
         appliedEdits: Object.freeze(edits)
     });
-}
-
-function isDirectiveLineAtIndex(sourceText: string, index: number): boolean {
-    const lineStart = sourceText.lastIndexOf("\n", index - 1) + 1;
-    for (let cursor = lineStart; cursor < sourceText.length; cursor += 1) {
-        const character = sourceText[cursor];
-        if (character === "\n" || character === "\r") {
-            return false;
-        }
-        if (/\s/u.test(character ?? "")) {
-            continue;
-        }
-        return character === "#";
-    }
-    return false;
-}
-
-function findNextLineStart(sourceText: string, index: number): number {
-    const nextLineBreak = sourceText.indexOf("\n", index);
-    return nextLineBreak === -1 ? sourceText.length : nextLineBreak + 1;
 }
