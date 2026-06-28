@@ -97,7 +97,8 @@ void test("room command keeps inspection leaves and drops bespoke mutation leave
     );
 });
 
-void test("object planned leaves emit concrete non-stub payloads", async () => {
+void test("object planned leaves expose event inspection while keeping object update deferred", async () => {
+    const projectRoot = await createTemporaryObjectEventCliProject();
     const updateResult = await runCliTestCommand({
         argv: ["object", "update", "obj_player", "--json"]
     });
@@ -118,16 +119,44 @@ void test("object planned leaves emit concrete non-stub payloads", async () => {
     assert.equal(updatePayload.payload.state, "not_available");
     assert.equal(updatePayload.payload.details.object, "obj_player");
 
-    const eventListResult = await runCliTestCommand({
-        argv: ["object", "event", "list", "obj_player", "--json"]
-    });
-    assert.equal(eventListResult.exitCode, 0);
-    const eventListPayload = JSON.parse(eventListResult.stdout) as {
-        command: string;
-        payload: { state: string };
-    };
-    assert.equal(eventListPayload.command, "object event list");
-    assert.equal(eventListPayload.payload.state, "not_available");
+    try {
+        const eventListResult = await runCliTestCommand({
+            argv: ["object", "event", "list", "obj_player", "--path", projectRoot, "--json"]
+        });
+        assert.equal(eventListResult.exitCode, 0);
+        const eventListPayload = JSON.parse(eventListResult.stdout) as {
+            command: string;
+            payload: {
+                events: Array<{
+                    descriptor: string;
+                    eventFilePath: string;
+                    parse: { ok: boolean };
+                    source: { present: boolean; summary: string };
+                }>;
+            };
+        };
+        assert.equal(eventListPayload.command, "object event list");
+        assert.equal(eventListPayload.payload.events[0]?.descriptor, "create:create");
+        assert.equal(eventListPayload.payload.events[0]?.eventFilePath, "objects/obj_player/0_0.gml");
+        assert.equal(eventListPayload.payload.events[0]?.parse.ok, true);
+        assert.equal(eventListPayload.payload.events[0]?.source.present, true);
+        assert.equal(eventListPayload.payload.events[0]?.source.summary, "x = 1;");
+
+        const eventInspectResult = await runCliTestCommand({
+            argv: ["object", "event", "inspect", "obj_player", "Create:0", "--path", projectRoot, "--json"]
+        });
+        assert.equal(eventInspectResult.exitCode, 0);
+        const eventInspectPayload = JSON.parse(eventInspectResult.stdout) as {
+            command: string;
+            payload: { descriptor: string; eventType: number; eventNumber: number };
+        };
+        assert.equal(eventInspectPayload.command, "object event inspect");
+        assert.equal(eventInspectPayload.payload.descriptor, "create:create");
+        assert.equal(eventInspectPayload.payload.eventType, 0);
+        assert.equal(eventInspectPayload.payload.eventNumber, 0);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
 });
 
 void test("object event add, update, and delete support dry-run and write modes", async () => {
@@ -363,6 +392,51 @@ void test("room layer create supports dry-run and write modes", async () => {
     }
 });
 
+void test("room layer list and inspect expose structured room metadata", async () => {
+    const projectRoot = await createTemporaryRoomInstanceCliProject();
+
+    try {
+        const listResult = await runCliTestCommand({
+            argv: ["room", "layer", "list", "rm_main", "--path", projectRoot, "--json"]
+        });
+        assert.equal(listResult.exitCode, 0);
+        const listPayload = JSON.parse(listResult.stdout) as {
+            command: string;
+            payload: {
+                layers: Array<{
+                    depth: number | null;
+                    instanceCount: number;
+                    layerName: string;
+                    layerType: string;
+                    visible: boolean | null;
+                }>;
+            };
+        };
+        assert.equal(listPayload.command, "room layer list");
+        assert.deepEqual(
+            listPayload.payload.layers.map((layer) => layer.layerName),
+            ["Instances", "Background"]
+        );
+        assert.equal(listPayload.payload.layers[0]?.layerType, "GMRInstanceLayer");
+        assert.equal(listPayload.payload.layers[0]?.instanceCount, 0);
+
+        const inspectResult = await runCliTestCommand({
+            argv: ["room", "layer", "inspect", "rm_main", "Background", "--path", projectRoot, "--json"]
+        });
+        assert.equal(inspectResult.exitCode, 0);
+        const inspectPayload = JSON.parse(inspectResult.stdout) as {
+            command: string;
+            payload: { depth: number | null; layerName: string; layerType: string };
+        };
+        assert.equal(inspectPayload.command, "room layer inspect");
+        assert.equal(inspectPayload.payload.layerName, "Background");
+        assert.equal(inspectPayload.payload.layerType, "GMRBackgroundLayer");
+        assert.equal(inspectPayload.payload.depth, 100);
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
 void test("room layer update planned leaf emits apply mode when write is requested", async () => {
     const updateResult = await runCliTestCommand({
         argv: ["room", "layer", "update", "--json", "--write"]
@@ -382,6 +456,50 @@ void test("room layer update planned leaf emits apply mode when write is request
     assert.equal(updatePayload.payload.capability, "room_layer_mutation");
     assert.equal(updatePayload.payload.mode, "apply");
     assert.equal(updatePayload.payload.state, "not_available");
+});
+
+void test("room camera list and inspect expose structured view metadata", async () => {
+    const projectRoot = await createTemporaryRoomInstanceCliProject();
+
+    try {
+        const listResult = await runCliTestCommand({
+            argv: ["room", "camera", "list", "rm_main", "--path", projectRoot, "--json"]
+        });
+        assert.equal(listResult.exitCode, 0);
+        const listPayload = JSON.parse(listResult.stdout) as {
+            command: string;
+            payload: {
+                cameras: Array<{
+                    cameraId: string;
+                    enabled: boolean;
+                    height: number | null;
+                    visible: boolean;
+                    width: number | null;
+                    x: number | null;
+                    y: number | null;
+                }>;
+            };
+        };
+        assert.equal(listPayload.command, "room camera list");
+        assert.equal(listPayload.payload.cameras[0]?.cameraId, "camera_0");
+        assert.equal(listPayload.payload.cameras[0]?.enabled, false);
+        assert.equal(listPayload.payload.cameras[0]?.x, 0);
+
+        const inspectResult = await runCliTestCommand({
+            argv: ["room", "camera", "inspect", "rm_main", "camera_0", "--path", projectRoot, "--json"]
+        });
+        assert.equal(inspectResult.exitCode, 0);
+        const inspectPayload = JSON.parse(inspectResult.stdout) as {
+            command: string;
+            payload: { cameraId: string; height: number | null; width: number | null };
+        };
+        assert.equal(inspectPayload.command, "room camera inspect");
+        assert.equal(inspectPayload.payload.cameraId, "camera_0");
+        assert.equal(inspectPayload.payload.width, 1024);
+        assert.equal(inspectPayload.payload.height, 768);
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
 });
 
 void test("room camera update supports dry-run and write modes", async () => {

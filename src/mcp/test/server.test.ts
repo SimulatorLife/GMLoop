@@ -68,6 +68,14 @@ void test("MCP server registers CLI-derived graph tools and graph resources", ()
 
     assert.ok(toolNames.includes("gmloop_test_case_create"));
     assert.ok(toolNames.includes("gmloop_test_case_update"));
+    assert.ok(toolNames.includes("gmloop_project_inspect"));
+    assert.ok(toolNames.includes("gmloop_project_validate"));
+    assert.ok(toolNames.includes("gmloop_object_event_list"));
+    assert.ok(toolNames.includes("gmloop_object_event_inspect"));
+    assert.ok(toolNames.includes("gmloop_room_layer_list"));
+    assert.ok(toolNames.includes("gmloop_room_layer_inspect"));
+    assert.ok(toolNames.includes("gmloop_room_camera_list"));
+    assert.ok(toolNames.includes("gmloop_room_camera_inspect"));
 
     assert.ok(Object.hasOwn(server._registeredTools, "gmloop_graph_search"));
     assert.ok(Object.hasOwn(server._registeredTools, "gmloop_script_add"));
@@ -75,6 +83,8 @@ void test("MCP server registers CLI-derived graph tools and graph resources", ()
     assert.ok(Object.hasOwn(server._registeredTools, "gmloop_script_duplicate"));
     assert.ok(Object.hasOwn(server._registeredTools, "gmloop_test_case_create"));
     assert.ok(Object.hasOwn(server._registeredTools, "gmloop_test_case_update"));
+    assert.ok(Object.hasOwn(server._registeredTools, "gmloop_project_inspect"));
+    assert.ok(Object.hasOwn(server._registeredTools, "gmloop_project_validate"));
     assert.ok(Object.hasOwn(server._registeredResources, "gm://graph/overview"));
     assert.ok(Object.hasOwn(server._registeredResourceTemplates, "graph-node"));
     assert.ok(Object.hasOwn(server._registeredResourceTemplates, "graph-context"));

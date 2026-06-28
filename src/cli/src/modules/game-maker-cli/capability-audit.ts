@@ -124,16 +124,14 @@ const PLANNED_CAPABILITIES: ReadonlyArray<PlannedCapability> = Object.freeze([
     }),
     createPlannedCapability({
         commandPath: ["object", "event", "list"],
-        classification: "gmloop_native_missing",
+        classification: "gmloop_companion",
         officialTerms: ["object event list", "list object events"],
-        placeholderCommand: true,
         rationale: "Object event inventory should be graph/refactor aware for autonomous edits."
     }),
     createPlannedCapability({
         commandPath: ["object", "event", "inspect"],
-        classification: "gmloop_native_missing",
+        classification: "gmloop_companion",
         officialTerms: ["object event inspect", "inspect object event"],
-        placeholderCommand: true,
         rationale: "Object event inspection should connect handlers to graph and validation context."
     }),
     ...[
@@ -156,13 +154,9 @@ const PLANNED_CAPABILITIES: ReadonlyArray<PlannedCapability> = Object.freeze([
     ...[
         ["room", "update"],
         ["room", "repair"],
-        ["room", "layer", "list"],
-        ["room", "layer", "inspect"],
         ["room", "layer", "update"],
         ["room", "layer", "delete"],
         ["room", "layer", "reorder"],
-        ["room", "camera", "list"],
-        ["room", "camera", "inspect"],
         ["room", "camera", "frame"]
     ].map((commandPath) =>
         createPlannedCapability({
@@ -171,6 +165,19 @@ const PLANNED_CAPABILITIES: ReadonlyArray<PlannedCapability> = Object.freeze([
             officialTerms: [commandPath.join(" ")],
             placeholderCommand: true,
             rationale: "This should become a GMLoop-owned companion only when backed by graph/refactor validation."
+        })
+    ),
+    ...[
+        ["room", "layer", "list"],
+        ["room", "layer", "inspect"],
+        ["room", "camera", "list"],
+        ["room", "camera", "inspect"]
+    ].map((commandPath) =>
+        createPlannedCapability({
+            commandPath,
+            classification: "gmloop_companion",
+            officialTerms: [commandPath.join(" ")],
+            rationale: "GMLoop owns this room metadata inspection as graph/refactor-aware companion context."
         })
     ),
     ...[

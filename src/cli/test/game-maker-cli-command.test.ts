@@ -49,8 +49,8 @@ void test("gm-cli capability-audit emits boundary classifications without exposi
 
     const objectEventList = payload.payload.capabilities.find((entry) => entry.operation === "object event list");
     assert.ok(objectEventList);
-    assert.equal(objectEventList.classification, "gmloop_native_missing");
-    assert.equal(objectEventList.status, "gmloop_placeholder");
+    assert.equal(objectEventList.classification, "gmloop_companion");
+    assert.equal(objectEventList.status, "gmloop_available");
 });
 
 void test("gm-cli active-project state stores a resolved .yyp path", async () => {

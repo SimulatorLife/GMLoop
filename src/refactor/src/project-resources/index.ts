@@ -2,10 +2,18 @@ export type {
     AddObjectEventRequest,
     DeleteObjectEventRequest,
     ObjectEventDescriptor,
+    ObjectEventInspectionResult,
     ObjectEventMutationResult,
+    ObjectEventParseSummary,
     UpdateObjectEventRequest
 } from "./object-event-operations.js";
-export { addObjectEvent, deleteObjectEvent, updateObjectEvent } from "./object-event-operations.js";
+export {
+    addObjectEvent,
+    deleteObjectEvent,
+    inspectObjectEvent,
+    listObjectEvents,
+    updateObjectEvent
+} from "./object-event-operations.js";
 export type { ProjectResourceKindValue } from "./project-resource-kinds.js";
 export {
     isProjectResourceKind,
@@ -32,8 +40,12 @@ export {
     renameProjectResource,
     resolveProjectManifestFile
 } from "./project-resource-operations.js";
-export type { RoomCameraMutationResult, UpdateRoomCameraRequest } from "./room-camera-operations.js";
-export { updateRoomCamera } from "./room-camera-operations.js";
+export type {
+    RoomCameraInspectionResult,
+    RoomCameraMutationResult,
+    UpdateRoomCameraRequest
+} from "./room-camera-operations.js";
+export { inspectRoomCamera, listRoomCameras, updateRoomCamera } from "./room-camera-operations.js";
 export type {
     AddRoomInstanceRequest,
     DeleteRoomInstanceRequest,
@@ -41,5 +53,9 @@ export type {
     UpdateRoomInstanceRequest
 } from "./room-instance-operations.js";
 export { addRoomInstance, deleteRoomInstance, updateRoomInstance } from "./room-instance-operations.js";
-export type { CreateRoomLayerRequest, RoomLayerMutationResult } from "./room-layer-operations.js";
-export { createRoomLayer } from "./room-layer-operations.js";
+export type {
+    CreateRoomLayerRequest,
+    RoomLayerInspectionResult,
+    RoomLayerMutationResult
+} from "./room-layer-operations.js";
+export { createRoomLayer, inspectRoomLayer, listRoomLayers } from "./room-layer-operations.js";

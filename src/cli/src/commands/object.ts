@@ -24,7 +24,6 @@ function addObjectSharedOptions(command: Command): Command {
 }
 
 const OBJECT_NAME_ARGUMENT_DESCRIPTION = "Object name";
-const OBJECT_EVENT_MUTATION_CAPABILITY = "object_event_mutation";
 const EVENT_DESCRIPTOR_ARGUMENT_DESCRIPTION = "Event descriptor (category:event)";
 
 type ObjectEventDescriptor = Readonly<{
@@ -53,6 +52,19 @@ function toObjectEventMutationPayload(result: Awaited<ReturnType<typeof Refactor
         objectPath: result.objectPath,
         warnings: result.warnings,
         writtenPaths: result.writtenPaths
+    };
+}
+
+function toObjectEventInspectionPayload(result: Awaited<ReturnType<typeof Refactor.inspectObjectEvent>>) {
+    return {
+        descriptor: result.descriptor,
+        eventFilePath: result.eventFilePath,
+        eventNumber: result.eventNumber,
+        eventType: result.eventType,
+        objectName: result.objectName,
+        objectPath: result.objectPath,
+        parse: result.parse,
+        source: result.source
     };
 }
 
@@ -135,6 +147,40 @@ function emitObjectUnavailableLeaf(
             mode: options.write === true ? "apply" : "dry-run",
             state: "not_available"
         }
+    });
+}
+
+async function runObjectEventListAction(objectName: string, options: ObjectMutationOptions): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const events = await Refactor.listObjectEvents({
+        objectName,
+        projectRoot: context.projectRoot
+    });
+    printObjectPayload({
+        command: "object event list",
+        ok: true,
+        payload: {
+            events: events.map(toObjectEventInspectionPayload),
+            object: objectName
+        }
+    });
+}
+
+async function runObjectEventInspectAction(
+    objectName: string,
+    eventDescriptor: ObjectEventDescriptor,
+    options: ObjectMutationOptions
+): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const event = await Refactor.inspectObjectEvent({
+        descriptor: eventDescriptor,
+        objectName,
+        projectRoot: context.projectRoot
+    });
+    printObjectPayload({
+        command: "object event inspect",
+        ok: event.parse.ok,
+        payload: toObjectEventInspectionPayload(event)
     });
 }
 
@@ -251,11 +297,12 @@ export function createObjectCommand(): Command {
             .description("Object event list.")
             .argument("<object>", OBJECT_NAME_ARGUMENT_DESCRIPTION)
     );
-    eventList.action(function objectEventListAction(objectName: string) {
-        const options = this.opts<ObjectMutationOptions>();
-        emitObjectUnavailableLeaf("object event list", options, OBJECT_EVENT_MUTATION_CAPABILITY, {
-            object: objectName
-        });
+    eventList.action(async function objectEventListAction(objectName: string) {
+        try {
+            await runObjectEventListAction(objectName, this.opts<ObjectMutationOptions>());
+        } catch (error) {
+            handleCliError(error);
+        }
     });
 
     const eventInspect = addObjectSharedOptions(
@@ -264,12 +311,13 @@ export function createObjectCommand(): Command {
             .argument("<object>", OBJECT_NAME_ARGUMENT_DESCRIPTION)
             .argument("<event>", EVENT_DESCRIPTOR_ARGUMENT_DESCRIPTION)
     );
-    eventInspect.action(function objectEventInspectAction(objectName: string, eventDescriptor: string) {
-        const options = this.opts<ObjectMutationOptions>();
-        emitObjectUnavailableLeaf("object event inspect", options, OBJECT_EVENT_MUTATION_CAPABILITY, {
-            event: eventDescriptor,
-            object: objectName
-        });
+    eventInspect.action(async function objectEventInspectAction(objectName: string, eventDescriptor: string) {
+        try {
+            const parsedDescriptor = parseObjectEventDescriptor(eventDescriptor);
+            await runObjectEventInspectAction(objectName, parsedDescriptor, this.opts<ObjectMutationOptions>());
+        } catch (error) {
+            handleCliError(error);
+        }
     });
 
     const eventAdd = addObjectSharedOptions(

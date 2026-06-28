@@ -191,6 +191,23 @@ pnpm run cli -- mcp
 This command is intended to be launched by an MCP host process, not from the
 in-process CLI test/capture runner.
 
+### `project inspect` / `project validate` - Auto-Game Readiness
+
+`project inspect` reports the project root, `.yyp` manifest, `gmloop.json`
+status, installed Auto-Game agent-pack status, project skills, resource
+inventory, semantic graph summary, and configured official `gm-cli` /
+ResourceTool MCP availability.
+
+`project validate` emits deterministic evidence records for GMLoop-owned
+readiness checks: config, graph, resource inventory, agent pack, parser status,
+persisted test results, runner state, and official companion-tool availability.
+It does not run generic official `gm-cli` build or ResourceTool mutations.
+
+```bash
+gmloop project inspect --path path/to/Game.yyp --json
+gmloop project validate --path path/to/Game.yyp --json
+```
+
 ### Official `gm-cli`
 
 GMLoop does not wrap or mirror the official GameMaker CLI. Use `gm-cli`
@@ -247,7 +264,6 @@ pnpm run cli -- watch /path/to/project --auto-inject
 **Options:**
 
 - `[targetPath]` - Directory to watch (default: current directory)
-- `--extensions <ext...>` - File extensions to watch (default: `.gml`; custom extensions are allowed)
 - `--polling` - Use polling instead of native file watching
 - `--polling-interval <ms>` - Polling interval in milliseconds (default: 1000)
 - `--verbose` - Enable verbose logging with detailed transpilation output

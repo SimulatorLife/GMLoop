@@ -19,6 +19,11 @@ type RoomLayerMutationContext = Readonly<{
     roomReference: ResourceReference;
 }>;
 
+type RoomLayerInspectionContext = Readonly<{
+    layers: ReadonlyArray<unknown>;
+    roomReference: ResourceReference;
+}>;
+
 /**
  * Parameters for creating a GameMaker room instance layer.
  */
@@ -46,6 +51,20 @@ export interface RoomLayerMutationResult {
     writtenPaths: Array<string>;
 }
 
+/**
+ * Read-only summary of one room layer.
+ */
+export interface RoomLayerInspectionResult {
+    depth: number | null;
+    instanceCount: number;
+    layerName: string;
+    layerType: string;
+    roomName: string;
+    roomPath: string;
+    subLayerCount: number;
+    visible: boolean | null;
+}
+
 function assertRoomLayerName(layerName: string): void {
     if (layerName.trim() !== layerName || layerName.length === 0) {
         throw new TypeError("Room layer name must be a non-empty string without leading or trailing whitespace.");
@@ -65,6 +84,34 @@ function readLayerName(layer: unknown): string | null {
 
     const layerRecord = layer as Record<string, unknown>;
     return Core.getNonEmptyString(layerRecord.name) ?? Core.getNonEmptyString(layerRecord["%Name"]);
+}
+
+function readLayerType(layer: Record<string, unknown>): string {
+    return Core.getNonEmptyString(layer.resourceType) ?? "unknown";
+}
+
+function readLayerDepth(layer: Record<string, unknown>): number | null {
+    return typeof layer.depth === "number" && Number.isFinite(layer.depth) ? layer.depth : null;
+}
+
+function readLayerVisible(layer: Record<string, unknown>): boolean | null {
+    return typeof layer.visible === "boolean" ? layer.visible : null;
+}
+
+function inspectLayerRecord(
+    context: RoomLayerInspectionContext,
+    layer: Record<string, unknown>
+): RoomLayerInspectionResult {
+    return Object.freeze({
+        depth: readLayerDepth(layer),
+        instanceCount: Core.asArray(layer.instances).length,
+        layerName: readLayerName(layer) ?? "",
+        layerType: readLayerType(layer),
+        roomName: context.roomReference.name,
+        roomPath: context.roomReference.path,
+        subLayerCount: Core.asArray(layer.layers).length,
+        visible: readLayerVisible(layer)
+    });
 }
 
 function assertUniqueLayerName(layers: ReadonlyArray<unknown>, layerName: string, roomName: string): void {
@@ -120,6 +167,54 @@ async function resolveRoomLayerMutationContext(
         roomDocument,
         roomReference
     });
+}
+
+async function resolveRoomLayerInspectionContext(
+    projectRootInput: string,
+    roomName: string
+): Promise<RoomLayerInspectionContext> {
+    const context = await resolveRoomLayerMutationContext(projectRootInput, roomName);
+    return Object.freeze({
+        layers: Object.freeze([...context.layers]),
+        roomReference: context.roomReference
+    });
+}
+
+/**
+ * List layers declared by one GameMaker room.
+ *
+ * @param request - Project root and room name to inspect.
+ * @returns Deterministic layer summaries in room metadata order.
+ */
+export async function listRoomLayers(request: {
+    projectRoot: string;
+    roomName: string;
+}): Promise<ReadonlyArray<RoomLayerInspectionResult>> {
+    const context = await resolveRoomLayerInspectionContext(request.projectRoot, request.roomName);
+    return Object.freeze(
+        context.layers
+            .filter((layer): layer is Record<string, unknown> => Core.isObjectLike(layer))
+            .map((layer) => inspectLayerRecord(context, layer))
+    );
+}
+
+/**
+ * Inspect one layer declared by a GameMaker room.
+ *
+ * @param request - Project root, room name, and layer name to inspect.
+ * @returns The matching layer summary.
+ */
+export async function inspectRoomLayer(request: {
+    layerName: string;
+    projectRoot: string;
+    roomName: string;
+}): Promise<RoomLayerInspectionResult> {
+    const layers = await listRoomLayers(request);
+    const layer = layers.find((entry) => entry.layerName === request.layerName);
+    if (layer === undefined) {
+        throw new Error(`Could not find room layer '${request.layerName}' in room '${request.roomName}'.`);
+    }
+    return layer;
 }
 
 /**

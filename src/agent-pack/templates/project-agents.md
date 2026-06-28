@@ -14,11 +14,11 @@ Develop this GameMaker project as a playable product through small, evidence-dri
 
 Repeat this loop until the requested milestone is complete or a genuine external decision blocks progress:
 
-1. **Orient:** Establish the current playable state, read concept documents/designs and active target instructions, check available tools, relevant skills, known failures, and the shortest way to build or run the game.
+1. **Orient:** Establish the current playable state, read concept documents/designs and active target instructions, check available GMLoop and official `gm-cli` / ResourceTool MCP tools, relevant skills, known failures, and the shortest way to build or run the game. Use `gmloop project inspect --json` when available to summarize readiness.
 2. **Choose the next outcome:** Select the smallest player-visible improvement or highest-risk blocker that advances the core loop. Find the target feature, issue, or defect in the codebase using semantic search or resource inspection, and state observable acceptance criteria before implementation.
 3. **Plan the slice:** Identify the minimum code, resources, tests, and runtime checks needed. Defer unrelated content, abstraction, polish, and speculative systems.
 4. **Implement coherently:** Make the change at the owning source. Keep simulation, presentation, resource metadata, and tooling responsibilities clear. Integrate with existing systems instead of creating parallel paths.
-5. **Validate continuously:** Run the narrowest relevant checks while working. Add or update deterministic tests for logic and regressions, validate resource relationships, and build the intended target.
+5. **Validate continuously:** Run the narrowest relevant checks while working. Add or update deterministic tests for logic and regressions, validate resource relationships, and build the intended target. Use `gmloop project validate --json` to collect GMLoop-owned evidence before claiming the iteration is proven.
 6. **Play and evaluate:** Exercise the changed behavior in its real room and lifecycle when runtime access is available. Check controls, feedback, success, failure, retry, pause, transitions, persistence, and cleanup as applicable.
 7. **Respond to evidence:** Fix root causes. If an assumption fails, revise the plan and acceptance criteria explicitly rather than layering patches over the symptom.
 8. **Close the iteration:** Record what changed, evidence collected, known limitations, and the next highest-value outcome. Leave the project buildable and its working state understandable to the next agent or developer.

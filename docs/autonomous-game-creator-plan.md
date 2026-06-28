@@ -194,9 +194,9 @@ The CLI/MCP command surface is part of the autonomous creation target state. It 
 | Graph index and discovery            | `graph index`, `graph search`, `graph doctor`, `graph visualize`                                                                       | `gmloop_graph_index`, `gmloop_graph_search`, `gmloop_graph_doctor`, `gmloop_graph_visualize`                                                             | `@gmloop/semantic`, `@gmloop/ui`         |
 | Symbol inspection and relationships  | `symbol inspect`, `symbol context`, `symbol neighbors`, `symbol usages`                                                                | `gmloop_symbol_inspect`, `gmloop_symbol_context`, `gmloop_symbol_neighbors`, `gmloop_symbol_usages`                                                      | `@gmloop/semantic`                       |
 | Validation                           | `validate file`, `validate project`, `validate room`, `validate resource`                                                              | `gmloop_validate_file`, `gmloop_validate_project`, `gmloop_validate_room`, `gmloop_validate_resource`                                                    | parser/semantic/refactor                 |
-| Project lifecycle                    | `project create`, `project init`, `project inspect`, `project validate`, `project cache clean`                                         | `gmloop_project_create`, `gmloop_project_init`, `gmloop_project_inspect`, `gmloop_project_validate`, `gmloop_project_cache_clean`                        | CLI/refactor plus `gm-cli` as a companion surface; expose GMLoop commands only where they add GMLoop-owned value |
+| Project lifecycle                    | `project inspect`, `project validate`, `project cache clean`; official `gm-cli init` / project creation for ordinary creation flows     | `gmloop_project_inspect`, `gmloop_project_validate`, `gmloop_project_cache_clean`                                                                         | CLI/refactor plus `gm-cli` as a companion surface; expose GMLoop commands only where they add GMLoop-owned value |
 | Resource inventory                   | `resource list`, `resource find`, `resource inspect`, `resource deps`, `resource dependents`, `resource audit`                         | `gmloop_resource_list`, `gmloop_resource_find`, `gmloop_resource_inspect`, `gmloop_resource_deps`, `gmloop_resource_dependents`, `gmloop_resource_audit` | semantic                                 |
-| Resource mutations                   | `resource add`, `resource remove`, `resource rename`, `resource duplicate`, `resource move`                                            | `gmloop_resource_add`, `gmloop_resource_remove`, `gmloop_resource_rename`, `gmloop_resource_duplicate`, `gmloop_resource_move`                           | ResourceTool MCP for official edits; GMLoop commands only for graph-aware, refactor-aware, hot-reload-aware, or missing operations |
+| Resource mutations                   | Official ResourceTool MCP for ordinary `add/remove/rename/duplicate/move`; GMLoop companion commands only when they add project intelligence | No generic `gmloop_resource_*` mirrors unless a command adds graph/refactor/hot-reload/evidence value                                                     | ResourceTool MCP for official edits; GMLoop commands only for graph-aware, refactor-aware, hot-reload-aware, or missing operations |
 | Room inspection and analysis         | `room list`, `room inspect`, `room query`, `room validate`, `room preview`, `room summary`                                             | `gmloop_room_list`, `gmloop_room_inspect`, `gmloop_room_query`, `gmloop_room_validate`, `gmloop_room_preview`, `gmloop_room_summary`                     | semantic/ui                              |
 | Room mutations                       | `room create`, `room duplicate`, `room rename`, `room delete`, `room update`, `room repair`                                            | `gmloop_room_create`, `gmloop_room_duplicate`, `gmloop_room_rename`, `gmloop_room_delete`, `gmloop_room_update`, `gmloop_room_repair`                    | refactor                                 |
 | Room instances                       | `room instance add`, `room instance update`, `room instance delete`                                                                    | `gmloop_room_instance_add`, `gmloop_room_instance_update`, `gmloop_room_instance_delete`                                                                 | refactor/semantic                        |
@@ -214,8 +214,8 @@ The CLI/MCP command surface is part of the autonomous creation target state. It 
 
 | Priority | Recommended focus                                                                                                                                                                                                                                                                                                                   |
 | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| High     | `graph search`, `symbol inspect`, `validate file/project`, `project create/init/validate`, `resource list/find/inspect/add/remove/rename`, `room list/inspect/update/instance add`, `object inspect/update/event update`, build/check/log commands backed by `gm-cli`, and runtime get/set/call/watch where hot reload requires it. |
-| Medium   | `resource deps/dependents/audit`, `room preview/query/camera/layer`, `profile`, `test`, `replay`, and `kit` commands.                                                                                                                                                                                                               |
+| High     | `project inspect/validate`, `graph search`, `symbol inspect`, `validate file/project`, `resource list/find/inspect`, `object event list/inspect/add/update/delete`, `room layer/camera inspection`, `room instance add/update/delete`, build/check/log evidence around direct `gm-cli` usage, and runtime get/set/call/watch where hot reload requires it. |
+| Medium   | `resource deps/dependents/audit`, fuller `room update/repair/layer/camera` mutations, `profile`, `test` result parsing/reporting, `replay`, and `kit` commands.                                                                                                                                                                    |
 | Low      | Cache cleanup, IDE/open convenience flows, and commands that only wrap editor convenience rather than enabling autonomous agent work.                                                                                                                                                                                               |
 
 ### Explicitly Out of Scope for `@gmloop/mcp`
@@ -301,16 +301,14 @@ But this should be justified by real duplication or missing shared modeling. Pre
 - Include fixture tests for each supported resource mutation.
 - Include CLI catalog / MCP catalog tests proving the commands are exposed to agents.
 
-### First Work Slice
+### Current Work Slice
 
-The first implementation slice should complete one high-value command family or provider-backed operation rather than create a new parallel surface. Good candidates:
+The initial mutation/test leaves are already represented by the current CLI/MCP surface: object event add/update/delete, room instance add/update/delete, room layer create, room camera update, and test case create/update. The next implementation slice is the Auto-Game readiness and evidence loop:
 
-1. Implement `object event add/update/delete` for a minimal event type such as Create or Step.
-2. Or implement `room instance add/update/delete` for basic object placement.
-3. Or implement `test case create/update` to connect the existing `test` command to a real test-authoring flow.
-4. Or add a narrow `gm-cli resourcetool` provider adapter for one mutation class while preserving GMLoop's structured result contract.
-
-The recommended first slice is `object event update`, because it directly enables agents to create a resource with `resource add object ...` and then put behavior into it through an existing command family.
+1. Use `project inspect` to summarize `.yyp`, `gmloop.json`, agent-pack, project skills, graph/resource state, and official `gm-cli` / ResourceTool MCP availability.
+2. Use `project validate` to aggregate GMLoop-owned evidence records from parser, graph, resource inventory, agent-pack, persisted tests, runner/runtime state, and official companion-tool availability.
+3. Fill read-side inspection gaps before broader mutation work: object event list/inspect, room layer list/inspect, and room camera list/inspect.
+4. Keep generic project/resource creation and metadata mutation official-tool-first unless GMLoop adds graph/refactor/hot-reload/evidence value.
 
 ## 8. Milestone 2: Reusable GML Helper Library and Templates
 
@@ -761,19 +759,18 @@ The long-term autonomous creation loop should look like this:
 
 ## 14. Recommended Implementation Order
 
-### Phase 1: Complete Existing GameMaker Mutation Surfaces
+### Phase 1: Complete Auto-Game Readiness And Evidence Loop
 
 Deliver:
 
 ```text
-object event editing
-room instance editing
-room layer editing
-room camera editing
-test case create/update
-gm-cli ResourceTool provider adapter where useful
-fixture tests
-structured JSON output improvements
+project inspect
+project validate
+structured evidence records
+object event list/inspect
+room layer list/inspect
+room camera list/inspect
+official gm-cli / ResourceTool MCP availability reporting
 CLI catalog tests
 MCP catalog exposure tests
 ```
@@ -791,13 +788,11 @@ fixture import tests
 CLI/MCP catalog coverage
 ```
 
-### Phase 3: GameMaker Unit-Test Adapter
+### Phase 3: GameMaker Unit-Test Adapter Completion
 
 Deliver:
 
 ```text
-test manifest format
-test case create/update implementation
 sample generated tests
 result parser
 JUnit output
@@ -833,31 +828,25 @@ adapter contract tests
 
 ## 15. Highest-Leverage Immediate PRs
 
-1. **Implement one high-value mutation command family.**
-   Best first target: `object event update`, because agents need a reliable way to put behavior into objects after creating or selecting a resource.
+1. **Complete the project readiness/evidence loop.**
+   `project inspect` and `project validate` should give agents one structured place to understand project state, installed guidance, available companion tooling, validation evidence, and next actions.
 
-2. **Clarify or add one companion ResourceTool workflow.**
-   Start with one mutation or inspection class and decide whether agents should use the official ResourceTool MCP directly or whether GMLoop adds graph-aware validation, dry-run planning, hot-reload coordination, or task evidence worth exposing as a separate CLI-derived MCP tool.
+2. **Replace read-side room/object placeholders with real inspection.**
+   Object event list/inspect and room layer/camera list/inspect are the highest-value missing context for autonomous edits.
 
-3. **Improve structured JSON output for resource mutations.**
-   Agent/MCP usage benefits from consistent JSON payloads, deterministic ordering, dry-run summaries, and actionable error codes.
+3. **Keep the official-tool boundary executable.**
+   Update `gmloop gm-cli capability-audit --json` tests whenever GMLoop-owned capabilities move from placeholder to available, and keep generic ResourceTool mirrors out of GMLoop MCP.
 
-4. **Add MCP catalog tests for autonomous-game commands.**
-   Verify the MCP server exposes CLI-backed tools automatically and keeps names, schemas, write behavior, and result payloads stable.
+4. **Extend evidence beyond static checks.**
+   Add normalized build/log/runtime evidence only where GMLoop aggregates diagnostics or connects results to autonomous-loop state; otherwise agents should call official `gm-cli` MCP directly.
 
-5. **Implement `test case create/update`.**
-   This connects the existing `test` command family to real test authoring.
-
-6. **Add a minimal `gml-kit` helper library.**
+5. **Add a minimal `gml-kit` helper library.**
    Start with a small manifest-driven library rather than a large prefab system.
 
-7. **Audit and extend the runner/build surface alongside `gm-cli`.**
+6. **Audit and extend the runner/build surface alongside `gm-cli`.**
    Start by separating direct official `gm-cli` MCP usage from GMLoop-owned build evidence, fixture providers, log parsing, and hot-reload coordination.
 
-8. **Add game-design and GameMaker-resource agent skills.**
-   Improve agent behavior before large automation is attempted.
-
-9. **Define an optional coordinator adapter contract.**
+7. **Define an optional coordinator adapter contract.**
    Support lightweight configuration, launch, and result handoff without importing framework-specific orchestration state or policy into GMLoop.
 
 ## 16. Open Questions

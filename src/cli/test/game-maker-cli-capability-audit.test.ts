@@ -87,21 +87,34 @@ void test("capability audit keeps ordinary resource mutations on the official Re
     assert.deepEqual(resourceAdd.officialMcpTools, ["resource_add"]);
 });
 
-void test("capability audit reports GMLoop companion placeholders separately from implemented commands", () => {
+void test("capability audit reports implemented companion reads separately from placeholders", () => {
     const audit = createGameMakerCapabilityBoundaryAudit({
-        cliCatalog: [createCliEntry("object event list"), createCliEntry("object event update")],
+        cliCatalog: [
+            createCliEntry("object event list"),
+            createCliEntry("object event update"),
+            createCliEntry("room layer update")
+        ],
         companionCatalog: createCompanionCatalog(),
-        mcpCatalog: [createMcpEntry("object event list"), createMcpEntry("object event update")]
+        mcpCatalog: [
+            createMcpEntry("object event list"),
+            createMcpEntry("object event update"),
+            createMcpEntry("room layer update")
+        ]
     });
 
     const objectEventList = audit.capabilities.find((entry) => entry.operation === "object event list");
     assert.ok(objectEventList);
-    assert.equal(objectEventList.classification, "gmloop_native_missing");
-    assert.equal(objectEventList.status, "gmloop_placeholder");
+    assert.equal(objectEventList.classification, "gmloop_companion");
+    assert.equal(objectEventList.status, "gmloop_available");
     assert.equal(objectEventList.gmloopMcpTool, "gmloop_object_event_list");
 
     const objectEventUpdate = audit.capabilities.find((entry) => entry.operation === "object event update");
     assert.ok(objectEventUpdate);
     assert.equal(objectEventUpdate.classification, "gmloop_companion");
     assert.equal(objectEventUpdate.status, "gmloop_available");
+
+    const roomLayerUpdate = audit.capabilities.find((entry) => entry.operation === "room layer update");
+    assert.ok(roomLayerUpdate);
+    assert.equal(roomLayerUpdate.classification, "gmloop_native_missing");
+    assert.equal(roomLayerUpdate.status, "gmloop_placeholder");
 });

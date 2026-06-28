@@ -10,12 +10,14 @@ GMLoop is a GameMaker development toolchain for GML parsing, formatting, linting
 ## Discover The Current Surface
 
 1. Resolve the project root from the active `.yyp` file.
-2. Inspect the connected MCP server's current tools and resources before choosing an operation.
-3. Use each discovered tool's description and input schema as the authoritative contract.
-4. For CLI usage details, use the stable help entrypoint: `gmloop help <command>`.
-5. If a capability is absent, do not invent a tool name, option, or payload. Use another discovered capability or report the missing operation.
+2. Inspect the connected GMLoop MCP server's current tools and resources before choosing a GMLoop operation.
+3. Inspect the official `gm-cli` / ResourceTool MCP surface when it is configured; use it directly for official project creation, resource metadata mutation, manual lookup, build, run, package, and publish operations when it already owns the workflow.
+4. Run the GMLoop capability boundary audit when ownership is unclear: `gmloop gm-cli capability-audit --json`.
+5. Use each discovered tool's description and input schema as the authoritative contract.
+6. For CLI usage details, use the stable help entrypoint: `gmloop help <command>`.
+7. If a capability is absent, do not invent a tool name, option, or payload. Use another discovered capability or report the missing operation.
 
-Expect capability groups for source parsing and validation, formatting, lint diagnostics and fixes, refactors and codemods, semantic graph inspection, project/resource inspection, tests, replay, runtime, and reporting. The exact commands and MCP tools may evolve without changing this workflow.
+Expect GMLoop capability groups for source parsing and validation, formatting, lint diagnostics and fixes, refactors and codemods, semantic graph inspection, project/resource inspection, tests, replay, runtime, readiness evidence, and reporting. The exact commands and MCP tools may evolve without changing this workflow.
 
 ## Understand `gmloop.json`
 
@@ -46,7 +48,7 @@ Do not use formatting as syntax recovery. Do not perform project-wide text repla
 
 ## Continue Into Game Validation
 
-After GMLoop source checks pass, continue with the project's autonomous development lifecycle for GameMaker compilation, unit tests, HTML5 execution, and gameplay/browser verification. Keep source-quality evidence distinct from engine build and runtime evidence; a successful parse does not prove that the game compiles or behaves correctly.
+After GMLoop source checks pass, continue with the project's autonomous development lifecycle for GameMaker compilation, unit tests, HTML5 execution, and gameplay/browser verification. Use `gmloop project inspect --json` to orient on installed skills, graph/resource state, and companion-tool availability, then use `gmloop project validate --json` to collect GMLoop-owned evidence. Keep source-quality evidence distinct from engine build and runtime evidence; a successful parse does not prove that the game compiles or behaves correctly.
 
 ## Report
 

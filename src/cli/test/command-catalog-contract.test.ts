@@ -89,6 +89,45 @@ void test("object event update MCP tool schema includes write mode option", () =
     assert.equal(handlerField.required, true);
 });
 
+void test("project readiness MCP tool schemas include project path and graph options", () => {
+    const mcpCatalog = getMcpToolCatalogEntries();
+
+    for (const toolName of ["gmloop_project_inspect", "gmloop_project_validate"] as const) {
+        const entry = mcpCatalog.find((candidate) => candidate.toolName === toolName);
+        assert.ok(entry, `Missing MCP tool: ${toolName}`);
+
+        for (const fieldName of ["path", "config", "databasePath", "toolsetRoot", "json"]) {
+            const field = entry.fields.find((candidate) => candidate.attributeName === fieldName);
+            assert.ok(field, `Missing project readiness field: ${fieldName}`);
+            assert.equal(field.kind, "option");
+        }
+    }
+});
+
+void test("read-side object and room inspection MCP schemas expose required lookup arguments", () => {
+    const mcpCatalog = getMcpToolCatalogEntries();
+    const requiredArgumentsByTool = new Map<string, ReadonlyArray<string>>([
+        ["gmloop_object_event_list", ["object"]],
+        ["gmloop_object_event_inspect", ["object", "event"]],
+        ["gmloop_room_layer_list", ["room"]],
+        ["gmloop_room_layer_inspect", ["room", "layer"]],
+        ["gmloop_room_camera_list", ["room"]],
+        ["gmloop_room_camera_inspect", ["room", "camera_id"]]
+    ]);
+
+    for (const [toolName, requiredArguments] of requiredArgumentsByTool) {
+        const entry = mcpCatalog.find((candidate) => candidate.toolName === toolName);
+        assert.ok(entry, `Missing MCP tool: ${toolName}`);
+
+        for (const requiredArgument of requiredArguments) {
+            const field = entry.fields.find((candidate) => candidate.attributeName === requiredArgument);
+            assert.ok(field, `Missing required argument field '${requiredArgument}' on ${toolName}`);
+            assert.equal(field.kind, "argument");
+            assert.equal(field.required, true);
+        }
+    }
+});
+
 void test("object event delete MCP tool schema includes write mode option", () => {
     const mcpCatalog = getMcpToolCatalogEntries();
     const entry = mcpCatalog.find((candidate) => candidate.toolName === "gmloop_object_event_delete");

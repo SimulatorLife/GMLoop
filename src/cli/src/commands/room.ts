@@ -113,6 +113,37 @@ function toRoomCameraMutationPayload(result: RoomCameraMutationResult) {
     };
 }
 
+function toRoomLayerInspectionPayload(result: Awaited<ReturnType<typeof Refactor.inspectRoomLayer>>) {
+    return {
+        depth: result.depth,
+        instanceCount: result.instanceCount,
+        layerName: result.layerName,
+        layerType: result.layerType,
+        roomName: result.roomName,
+        roomPath: result.roomPath,
+        subLayerCount: result.subLayerCount,
+        visible: result.visible
+    };
+}
+
+function toRoomCameraInspectionPayload(result: Awaited<ReturnType<typeof Refactor.inspectRoomCamera>>) {
+    return {
+        cameraId: result.cameraId,
+        enabled: result.enabled,
+        height: result.height,
+        portHeight: result.portHeight,
+        portWidth: result.portWidth,
+        portX: result.portX,
+        portY: result.portY,
+        roomName: result.roomName,
+        roomPath: result.roomPath,
+        visible: result.visible,
+        width: result.width,
+        x: result.x,
+        y: result.y
+    };
+}
+
 async function runRoomLayerCreateAction(
     roomName: string,
     layerName: string,
@@ -226,6 +257,74 @@ function emitRoomUnavailableLeaf(
             mode: options.write === true ? "apply" : "dry-run",
             state: "not_available"
         }
+    });
+}
+
+async function runRoomLayerListAction(roomName: string, options: RoomMutationOptions): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const layers = await Refactor.listRoomLayers({
+        projectRoot: context.projectRoot,
+        roomName
+    });
+    printRoomPayload({
+        command: "room layer list",
+        ok: true,
+        payload: {
+            layers: layers.map(toRoomLayerInspectionPayload),
+            room: roomName
+        }
+    });
+}
+
+async function runRoomLayerInspectAction(
+    roomName: string,
+    layerName: string,
+    options: RoomMutationOptions
+): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const layer = await Refactor.inspectRoomLayer({
+        layerName,
+        projectRoot: context.projectRoot,
+        roomName
+    });
+    printRoomPayload({
+        command: "room layer inspect",
+        ok: true,
+        payload: toRoomLayerInspectionPayload(layer)
+    });
+}
+
+async function runRoomCameraListAction(roomName: string, options: RoomMutationOptions): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const cameras = await Refactor.listRoomCameras({
+        projectRoot: context.projectRoot,
+        roomName
+    });
+    printRoomPayload({
+        command: "room camera list",
+        ok: true,
+        payload: {
+            cameras: cameras.map(toRoomCameraInspectionPayload),
+            room: roomName
+        }
+    });
+}
+
+async function runRoomCameraInspectAction(
+    roomName: string,
+    cameraId: string,
+    options: RoomMutationOptions
+): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const camera = await Refactor.inspectRoomCamera({
+        cameraId,
+        projectRoot: context.projectRoot,
+        roomName
+    });
+    printRoomPayload({
+        command: "room camera inspect",
+        ok: true,
+        payload: toRoomCameraInspectionPayload(camera)
     });
 }
 
@@ -485,6 +584,30 @@ export function createRoomCommand(): Command {
             layer.addCommand(nested);
             continue;
         }
+        if (layerLeaf === "list") {
+            nested.argument("<room>", "Room name");
+            nested.action(async function roomLayerListAction(roomName: string) {
+                try {
+                    await runRoomLayerListAction(roomName, this.opts<RoomMutationOptions>());
+                } catch (error) {
+                    handleCliError(error);
+                }
+            });
+            layer.addCommand(nested);
+            continue;
+        }
+        if (layerLeaf === "inspect") {
+            nested.argument("<room>", "Room name").argument("<layer>", "Layer name");
+            nested.action(async function roomLayerInspectAction(roomName: string, layerName: string) {
+                try {
+                    await runRoomLayerInspectAction(roomName, layerName, this.opts<RoomMutationOptions>());
+                } catch (error) {
+                    handleCliError(error);
+                }
+            });
+            layer.addCommand(nested);
+            continue;
+        }
         nested.action(function roomLayerAction() {
             const options = this.opts<RoomMutationOptions>();
             emitRoomUnavailableLeaf(`room layer ${layerLeaf}`, options, "room_layer_mutation");
@@ -532,6 +655,30 @@ export function createRoomCommand(): Command {
                         parsedHeight,
                         options
                     );
+                } catch (error) {
+                    handleCliError(error);
+                }
+            });
+            camera.addCommand(nested);
+            continue;
+        }
+        if (cameraLeaf === "list") {
+            nested.argument("<room>", "Room name");
+            nested.action(async function roomCameraListAction(roomName: string) {
+                try {
+                    await runRoomCameraListAction(roomName, this.opts<RoomMutationOptions>());
+                } catch (error) {
+                    handleCliError(error);
+                }
+            });
+            camera.addCommand(nested);
+            continue;
+        }
+        if (cameraLeaf === "inspect") {
+            nested.argument("<room>", "Room name").argument("<camera-id>", "Camera id");
+            nested.action(async function roomCameraInspectAction(roomName: string, cameraId: string) {
+                try {
+                    await runRoomCameraInspectAction(roomName, cameraId, this.opts<RoomMutationOptions>());
                 } catch (error) {
                     handleCliError(error);
                 }
