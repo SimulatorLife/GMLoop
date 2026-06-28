@@ -16,7 +16,7 @@ export type TimedLintRunResult = Readonly<{
     outputText: string;
 }>;
 
-export const STILE_OPTIMIZE_MATH_OUTPUT_HASH = "25c5f2d39f30aed9597fd4b2f78944fef837928236b2d787db3f1ac3a42253c1";
+export const STILE_OPTIMIZE_MATH_OUTPUT_HASH = "898d2b6c1e4fa1edc3fdd4616739172c9fbcbb9409417e9e4dbb56b64fcb80a2";
 
 /**
  * Builds a batch of GML source lines with deeply nested loop-invariant expressions,

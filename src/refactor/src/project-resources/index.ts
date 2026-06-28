@@ -55,7 +55,17 @@ export type {
 export { addRoomInstance, deleteRoomInstance, updateRoomInstance } from "./room-instance-operations.js";
 export type {
     CreateRoomLayerRequest,
+    DeleteRoomLayerRequest,
+    ReorderRoomLayerRequest,
     RoomLayerInspectionResult,
-    RoomLayerMutationResult
+    RoomLayerMutationResult,
+    UpdateRoomLayerRequest
 } from "./room-layer-operations.js";
-export { createRoomLayer, inspectRoomLayer, listRoomLayers } from "./room-layer-operations.js";
+export {
+    createRoomLayer,
+    deleteRoomLayer,
+    inspectRoomLayer,
+    listRoomLayers,
+    reorderRoomLayer,
+    updateRoomLayer
+} from "./room-layer-operations.js";

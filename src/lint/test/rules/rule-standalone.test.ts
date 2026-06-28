@@ -1986,6 +1986,54 @@ void test("optimize-logical-flow parenthesizes nested ternary consequents in aut
     );
 });
 
+void test("optimize-logical-flow preserves binary expression precedence in assignment ternary autofix", () => {
+    const input = [
+        "function group_smf(time, ta, tb, tc) {",
+        "    if (time < tb) {",
+        "        d = (time - mean(ta, tb)) / (tb - ta);",
+        "    } else {",
+        "        d = (tc == tb) ? 1 : 0.5 + (time - tb) / (tc - tb);",
+        "    }",
+        "    return d;",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("optimize-logical-flow", input, {});
+
+    assert.ok(result.messages.length > 0, "optimize-logical-flow should report diagnostics");
+    assert.ok(
+        result.output.includes(
+            "d = time < tb ? (time - mean(ta, tb)) / (tb - ta) : (tc == tb) ? 1 : 0.5 + (time - tb) / (tc - tb);"
+        ),
+        "Expected ternary autofix to preserve arithmetic grouping."
+    );
+    assertEquals(
+        result.output.includes("time - mean(ta, tb) / tb - ta"),
+        false,
+        "Expected autofix output not to flatten grouped numerator and denominator expressions."
+    );
+});
+
+void test("optimize-logical-flow preserves same-precedence right operands in assignment ternary autofix", () => {
+    const input = [
+        "function choose_value(flag, a, b, c) {",
+        "    if (flag) {",
+        "        value = a - (b - c);",
+        "    } else {",
+        "        value = a / (b / c);",
+        "    }",
+        "    return value;",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("optimize-logical-flow", input, {});
+
+    assert.ok(result.messages.length > 0, "optimize-logical-flow should report diagnostics");
+    assert.ok(result.output.includes("value = flag ? a - (b - c) : a / (b / c);"));
+});
+
 void test("no-unary-plus-on-identifier autofixes +identifier to bare identifier", () => {
     const input = "var value = +count;\n";
     const expected = "var value = count;\n";

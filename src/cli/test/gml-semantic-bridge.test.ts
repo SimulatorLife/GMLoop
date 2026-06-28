@@ -3462,6 +3462,178 @@ void describe("GmlSemanticBridge tests", () => {
         );
     });
 
+    void it("listNamingConventionTargets clamps local declaration occurrences to identifier tokens", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-local-range-"));
+        const relativeFilePath = "scripts/group_vertex_buffers/group_vertex_buffers.gml";
+        const absoluteFilePath = path.join(tmpRoot, relativeFilePath);
+        const sourceText = [
+            "function group_vertex_buffers() {",
+            "    var _ltX0 =   _l*_cos - _t*_sin;",
+            "    var _ltZ  = -(_l*_sin + _t*_cos) + _z;",
+            "    return _ltX0 + _ltZ;",
+            "}",
+            ""
+        ].join("\n");
+
+        fs.mkdirSync(path.dirname(absoluteFilePath), { recursive: true });
+        fs.writeFileSync(absoluteFilePath, sourceText, "utf8");
+
+        const ltX0DeclarationStart = findNthIndex(sourceText, "_ltX0", 1);
+        const ltX0ReferenceStart = findNthIndex(sourceText, "_ltX0", 2);
+        const ltZDeclarationStart = findNthIndex(sourceText, "_ltZ", 1);
+        const ltZReferenceStart = findNthIndex(sourceText, "_ltZ", 2);
+
+        const mockProjectIndex = {
+            identifiers: {
+                instanceVariables: {}
+            },
+            files: {
+                [relativeFilePath]: {
+                    declarations: [
+                        {
+                            name: "_ltX0",
+                            scopeId: "scope:function",
+                            classifications: ["variable"],
+                            start: { index: ltX0DeclarationStart },
+                            end: { index: sourceText.indexOf("=", ltX0DeclarationStart) }
+                        },
+                        {
+                            name: "_ltZ",
+                            scopeId: "scope:function",
+                            classifications: ["variable"],
+                            start: { index: ltZDeclarationStart },
+                            end: { index: sourceText.indexOf("=", ltZDeclarationStart) }
+                        }
+                    ],
+                    references: [
+                        {
+                            name: "_ltX0",
+                            scopeId: "scope:function",
+                            start: { index: ltX0ReferenceStart },
+                            end: { index: ltX0ReferenceStart + "_ltX0".length - 1 },
+                            declaration: {
+                                name: "_ltX0",
+                                scopeId: "scope:function",
+                                start: { index: ltX0DeclarationStart }
+                            }
+                        },
+                        {
+                            name: "_ltZ",
+                            scopeId: "scope:function",
+                            start: { index: ltZReferenceStart },
+                            end: { index: ltZReferenceStart + "_ltZ".length - 1 },
+                            declaration: {
+                                name: "_ltZ",
+                                scopeId: "scope:function",
+                                start: { index: ltZDeclarationStart }
+                            }
+                        }
+                    ]
+                }
+            }
+        };
+
+        const bridge = new GmlSemanticBridge(mockProjectIndex, tmpRoot);
+        const targets = await bridge.listNamingConventionTargets([relativeFilePath], ["localVariable"]);
+        const ltX0Target = targets.find((target) => target.name === "_ltX0");
+        const ltZTarget = targets.find((target) => target.name === "_ltZ");
+
+        assert.deepEqual(
+            ltX0Target?.occurrences.map((occurrence) => sourceText.slice(occurrence.start, occurrence.end)),
+            ["_ltX0", "_ltX0"]
+        );
+        assert.deepEqual(
+            ltZTarget?.occurrences.map((occurrence) => sourceText.slice(occurrence.start, occurrence.end)),
+            ["_ltZ", "_ltZ"]
+        );
+    });
+
+    void it("namingConvention codemod preserves initializers when local declaration semantic ranges include assignment syntax", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-cannonfather-fix-"));
+        const relativeFilePath = "scripts/group_vertex_buffers/group_vertex_buffers.gml";
+        const absoluteFilePath = path.join(tmpRoot, relativeFilePath);
+        const sourceText = [
+            "function group_vertex_buffers() {",
+            "    var _ltX0 =   _l*_cos - _t*_sin;",
+            "    var _ltZ  = -(_l*_sin + _t*_cos) + _z;",
+            "    var _rtX0 =   _r*_cos - _t*_sin;",
+            "    var _rtZ  = -(_r*_sin + _t*_cos) + _z;",
+            "    return _ltX0 + _ltZ + _rtX0 + _rtZ;",
+            "}",
+            ""
+        ].join("\n");
+        const names = ["_ltX0", "_ltZ", "_rtX0", "_rtZ"];
+
+        fs.mkdirSync(path.dirname(absoluteFilePath), { recursive: true });
+        fs.writeFileSync(absoluteFilePath, sourceText, "utf8");
+
+        const declarations = names.map((name) => {
+            const start = findNthIndex(sourceText, name, 1);
+            return {
+                name,
+                scopeId: "scope:function",
+                classifications: ["variable"],
+                start: { index: start },
+                end: { index: sourceText.indexOf("=", start) }
+            };
+        });
+        const references = names.map((name) => {
+            const start = findNthIndex(sourceText, name, 2);
+            const declarationStart = findNthIndex(sourceText, name, 1);
+            return {
+                name,
+                scopeId: "scope:function",
+                start: { index: start },
+                end: { index: start + name.length - 1 },
+                declaration: {
+                    name,
+                    scopeId: "scope:function",
+                    start: { index: declarationStart }
+                }
+            };
+        });
+        const semantic = new GmlSemanticBridge(
+            {
+                identifiers: {
+                    instanceVariables: {}
+                },
+                files: {
+                    [relativeFilePath]: {
+                        declarations,
+                        references
+                    }
+                }
+            },
+            tmpRoot
+        );
+        const engine = new Refactor.RefactorEngine({ semantic });
+        const result = await engine.executeConfiguredCodemods({
+            projectRoot: tmpRoot,
+            targetPaths: [relativeFilePath],
+            gmlFilePaths: [relativeFilePath],
+            config: {
+                codemods: {
+                    namingConvention: {
+                        rules: {
+                            localVariable: {
+                                caseStyle: "lower_snake",
+                                bannedPrefixes: ["_"]
+                            }
+                        }
+                    }
+                }
+            },
+            readFile: async () => sourceText
+        });
+        const outputText = result.appliedFiles.get(relativeFilePath) ?? "";
+
+        assert.match(outputText, /var lt_x0 =\s+_l\*_cos - _t\*_sin;/);
+        assert.match(outputText, /var lt_z\s+= -\(_l\*_sin \+ _t\*_cos\) \+ _z;/);
+        assert.match(outputText, /var rt_x0 =\s+_r\*_cos - _t\*_sin;/);
+        assert.match(outputText, /var rt_z\s+= -\(_r\*_sin \+ _t\*_cos\) \+ _z;/);
+        assert.doesNotMatch(outputText, /var\s+\w+\s{2,}_[lrtb]\*/u);
+    });
+
     void it("listNamingConventionTargets synthesizes implicit instance-variable targets from object assignments", async () => {
         const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-instance-targets-"));
         const relativeFilePath = "objects/oActorParent/Create_0.gml";

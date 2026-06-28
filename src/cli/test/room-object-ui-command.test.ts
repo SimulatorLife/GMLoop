@@ -437,25 +437,170 @@ void test("room layer list and inspect expose structured room metadata", async (
     }
 });
 
-void test("room layer update planned leaf emits apply mode when write is requested", async () => {
-    const updateResult = await runCliTestCommand({
-        argv: ["room", "layer", "update", "--json", "--write"]
-    });
+void test("room layer update, reorder, and delete support dry-run and write modes", async () => {
+    const projectRoot = await createTemporaryRoomInstanceCliProject();
+    const roomMetadataPath = path.join(projectRoot, "rooms/rm_main/rm_main.yy");
 
-    assert.equal(updateResult.exitCode, 0);
-    const updatePayload = JSON.parse(updateResult.stdout) as {
-        command: string;
-        payload: {
-            capability: string;
-            mode: string;
-            state: string;
+    try {
+        const dryRunResult = await runCliTestCommand({
+            argv: [
+                "room",
+                "layer",
+                "update",
+                "rm_main",
+                "Instances",
+                "--name",
+                "Actors",
+                "--depth",
+                "-50",
+                "--path",
+                projectRoot,
+                "--json"
+            ]
+        });
+        assert.equal(dryRunResult.exitCode, 0);
+        const dryRunPayload = JSON.parse(dryRunResult.stdout) as {
+            command: string;
+            payload: {
+                action: string;
+                changed: boolean;
+                depth: number;
+                dryRun: boolean;
+                layerIndex: number;
+                layerName: string;
+                previousLayerIndex: number | null;
+                writtenPaths: Array<string>;
+            };
         };
-    };
+        assert.equal(dryRunPayload.command, "room layer update");
+        assert.equal(dryRunPayload.payload.action, "update");
+        assert.equal(dryRunPayload.payload.changed, true);
+        assert.equal(dryRunPayload.payload.dryRun, true);
+        assert.equal(dryRunPayload.payload.layerName, "Actors");
+        assert.equal(dryRunPayload.payload.depth, -50);
+        assert.equal(dryRunPayload.payload.layerIndex, 0);
+        assert.equal(dryRunPayload.payload.previousLayerIndex, 0);
+        assert.deepEqual(dryRunPayload.payload.writtenPaths, ["rooms/rm_main/rm_main.yy"]);
 
-    assert.equal(updatePayload.command, "room layer update");
-    assert.equal(updatePayload.payload.capability, "room_layer_mutation");
-    assert.equal(updatePayload.payload.mode, "apply");
-    assert.equal(updatePayload.payload.state, "not_available");
+        const dryRunRoomMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        const dryRunLayers = Core.asArray(dryRunRoomMetadata.layers);
+        const originalFirstLayer = dryRunLayers[0] as Record<string, unknown>;
+        assert.equal(originalFirstLayer.name, "Instances");
+        assert.equal(originalFirstLayer.depth, 0);
+
+        const updateWriteResult = await runCliTestCommand({
+            argv: [
+                "room",
+                "layer",
+                "update",
+                "rm_main",
+                "Instances",
+                "--name",
+                "Actors",
+                "--depth",
+                "-50",
+                "--path",
+                projectRoot,
+                "--json",
+                "--write"
+            ]
+        });
+        assert.equal(updateWriteResult.exitCode, 0);
+
+        const createResult = await runCliTestCommand({
+            argv: [
+                "room",
+                "layer",
+                "create",
+                "rm_main",
+                "Foreground",
+                "-200",
+                "--path",
+                projectRoot,
+                "--json",
+                "--write"
+            ]
+        });
+        assert.equal(createResult.exitCode, 0);
+
+        const reorderResult = await runCliTestCommand({
+            argv: ["room", "layer", "reorder", "rm_main", "Foreground", "0", "--path", projectRoot, "--json", "--write"]
+        });
+        assert.equal(reorderResult.exitCode, 0);
+        const reorderPayload = JSON.parse(reorderResult.stdout) as {
+            payload: { action: string; changed: boolean; layerIndex: number; previousLayerIndex: number | null };
+        };
+        assert.equal(reorderPayload.payload.action, "reorder");
+        assert.equal(reorderPayload.payload.changed, true);
+        assert.equal(reorderPayload.payload.layerIndex, 0);
+        assert.equal(reorderPayload.payload.previousLayerIndex, 2);
+
+        const deleteResult = await runCliTestCommand({
+            argv: ["room", "layer", "delete", "rm_main", "Background", "--path", projectRoot, "--json", "--write"]
+        });
+        assert.equal(deleteResult.exitCode, 0);
+        const deletePayload = JSON.parse(deleteResult.stdout) as {
+            payload: { action: string; changed: boolean; layerName: string };
+        };
+        assert.equal(deletePayload.payload.action, "delete");
+        assert.equal(deletePayload.payload.changed, true);
+        assert.equal(deletePayload.payload.layerName, "Background");
+
+        const updatedRoomMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        const layers = Core.asArray(updatedRoomMetadata.layers);
+        assert.deepEqual(
+            layers.map((layer) => {
+                if (!Core.isObjectLike(layer)) {
+                    return null;
+                }
+                const layerRecord = layer as Record<string, unknown>;
+                return layerRecord.name;
+            }),
+            ["Foreground", "Actors"]
+        );
+        const actorsLayer = layers[1] as Record<string, unknown>;
+        assert.equal(actorsLayer["%Name"], "Actors");
+        assert.equal(actorsLayer.depth, -50);
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("room layer delete rejects non-empty instance layers", async () => {
+    const projectRoot = await createTemporaryRoomInstanceCliProject();
+
+    try {
+        const addInstanceResult = await runCliTestCommand({
+            argv: [
+                "room",
+                "instance",
+                "add",
+                "rm_main",
+                "obj_player",
+                "10",
+                "20",
+                "--path",
+                projectRoot,
+                "--json",
+                "--write"
+            ]
+        });
+        assert.equal(addInstanceResult.exitCode, 0);
+
+        const deleteResult = await runCliTestCommand({
+            argv: ["room", "layer", "delete", "rm_main", "Instances", "--path", projectRoot, "--json", "--write"]
+        });
+        assert.equal(deleteResult.exitCode, 1);
+        assert.match(deleteResult.stderr, /contains 1 instance\(s\) and cannot be deleted/u);
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
 });
 
 void test("room camera list and inspect expose structured view metadata", async () => {

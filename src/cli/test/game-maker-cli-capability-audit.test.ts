@@ -87,18 +87,24 @@ void test("capability audit keeps ordinary resource mutations on the official Re
     assert.deepEqual(resourceAdd.officialMcpTools, ["resource_add"]);
 });
 
-void test("capability audit reports implemented companion reads separately from placeholders", () => {
+void test("capability audit reports implemented companion leaves separately from placeholders", () => {
     const audit = createGameMakerCapabilityBoundaryAudit({
         cliCatalog: [
             createCliEntry("object event list"),
             createCliEntry("object event update"),
-            createCliEntry("room layer update")
+            createCliEntry("room layer update"),
+            createCliEntry("room layer delete"),
+            createCliEntry("room layer reorder"),
+            createCliEntry("room repair")
         ],
         companionCatalog: createCompanionCatalog(),
         mcpCatalog: [
             createMcpEntry("object event list"),
             createMcpEntry("object event update"),
-            createMcpEntry("room layer update")
+            createMcpEntry("room layer update"),
+            createMcpEntry("room layer delete"),
+            createMcpEntry("room layer reorder"),
+            createMcpEntry("room repair")
         ]
     });
 
@@ -115,6 +121,21 @@ void test("capability audit reports implemented companion reads separately from 
 
     const roomLayerUpdate = audit.capabilities.find((entry) => entry.operation === "room layer update");
     assert.ok(roomLayerUpdate);
-    assert.equal(roomLayerUpdate.classification, "gmloop_native_missing");
-    assert.equal(roomLayerUpdate.status, "gmloop_placeholder");
+    assert.equal(roomLayerUpdate.classification, "gmloop_companion");
+    assert.equal(roomLayerUpdate.status, "gmloop_available");
+
+    const roomLayerDelete = audit.capabilities.find((entry) => entry.operation === "room layer delete");
+    assert.ok(roomLayerDelete);
+    assert.equal(roomLayerDelete.classification, "gmloop_companion");
+    assert.equal(roomLayerDelete.status, "gmloop_available");
+
+    const roomLayerReorder = audit.capabilities.find((entry) => entry.operation === "room layer reorder");
+    assert.ok(roomLayerReorder);
+    assert.equal(roomLayerReorder.classification, "gmloop_companion");
+    assert.equal(roomLayerReorder.status, "gmloop_available");
+
+    const roomRepair = audit.capabilities.find((entry) => entry.operation === "room repair");
+    assert.ok(roomRepair);
+    assert.equal(roomRepair.classification, "gmloop_native_missing");
+    assert.equal(roomRepair.status, "gmloop_placeholder");
 });

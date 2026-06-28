@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 import {
+    type OccurrenceKindValue,
     readExclusiveSemanticLocationIndex,
     readSemanticLocationIndex,
     WORKSPACE_EDIT_REVISION_TOKEN
@@ -338,6 +339,57 @@ function resolveOccurrenceEndIndex(endIndex: unknown): number | null {
 
 function isIdentifierBoundary(character: string | undefined): boolean {
     return character === undefined || !/[A-Za-z0-9_]/u.test(character);
+}
+
+function isIdentifierTokenAt(sourceText: string, startIndex: number, identifierName: string): boolean {
+    if (startIndex < 0 || identifierName.length === 0) {
+        return false;
+    }
+
+    const endIndex = startIndex + identifierName.length;
+    return (
+        sourceText.slice(startIndex, endIndex) === identifierName &&
+        isIdentifierBoundary(sourceText[startIndex - 1]) &&
+        isIdentifierBoundary(sourceText[endIndex])
+    );
+}
+
+function createIdentifierTokenOccurrence(parameters: {
+    sourceText: string | null;
+    filePath: string;
+    name: string;
+    startIndex: number | null;
+    endIndex: number | null;
+    scopeId: unknown;
+    kind: OccurrenceKindValue;
+}): SymbolOccurrence | null {
+    if (parameters.startIndex === null) {
+        return null;
+    }
+
+    if (parameters.sourceText === null) {
+        if (parameters.endIndex === null || parameters.endIndex <= parameters.startIndex) {
+            return null;
+        }
+        return {
+            path: parameters.filePath,
+            start: parameters.startIndex,
+            end: parameters.endIndex,
+            scopeId: typeof parameters.scopeId === "string" ? parameters.scopeId : undefined,
+            kind: parameters.kind
+        };
+    }
+
+    if (!isIdentifierTokenAt(parameters.sourceText, parameters.startIndex, parameters.name)) {
+        return null;
+    }
+    return {
+        path: parameters.filePath,
+        start: parameters.startIndex,
+        end: parameters.startIndex + parameters.name.length,
+        scopeId: typeof parameters.scopeId === "string" ? parameters.scopeId : undefined,
+        kind: parameters.kind
+    };
 }
 
 /**
@@ -2690,6 +2742,7 @@ export class GmlSemanticBridge {
                 const occurrences = this.collectLocalOccurrences(
                     filePath,
                     declaration,
+                    sourceText,
                     indexedReferenceOccurrences,
                     category === "staticVariable" &&
                         this.isConstructorStaticMemberDeclaration(filePath, declaration, sourceText)
@@ -3053,33 +3106,35 @@ export class GmlSemanticBridge {
     private collectLocalOccurrences(
         filePath: string,
         declaration: any,
+        sourceText: string | null,
         indexedReferenceOccurrences: LocalReferenceIndex,
         includeConstructorStaticMemberReferences = false
     ): Array<SymbolOccurrence> {
         const declarationStartIndex = declaration?.start?.index ?? null;
         const declarationScopeId = declaration?.scopeId ?? null;
-        const occurrences: Array<SymbolOccurrence> = [
-            {
-                path: filePath,
-                start: declaration.start?.index ?? 0,
-                end: resolveOccurrenceEndIndex(declaration.end?.index) ?? 0,
-                scopeId: declaration.scopeId ?? undefined,
-                kind: "definition"
-            }
-        ];
+        const declarationName = typeof declaration.name === "string" ? declaration.name : "";
+        const declarationOccurrence = createIdentifierTokenOccurrence({
+            sourceText,
+            filePath,
+            name: declarationName,
+            startIndex: declarationStartIndex,
+            endIndex: resolveOccurrenceEndIndex(declaration.end?.index),
+            scopeId: declaration.scopeId,
+            kind: "definition"
+        });
+        if (declarationOccurrence === null) {
+            return [];
+        }
+        const occurrences: Array<SymbolOccurrence> = [declarationOccurrence];
 
-        const referenceKey = this.createLocalReferenceKey(
-            typeof declaration.name === "string" ? declaration.name : "",
-            declarationScopeId,
-            declarationStartIndex
-        );
+        const referenceKey = this.createLocalReferenceKey(declarationName, declarationScopeId, declarationStartIndex);
         occurrences.push(...(indexedReferenceOccurrences.get(referenceKey) ?? []));
 
-        if (!includeConstructorStaticMemberReferences || typeof declaration.name !== "string") {
+        if (!includeConstructorStaticMemberReferences || declarationName.length === 0) {
             return occurrences;
         }
 
-        if (!this.tryCollectUnresolvedConstructorStaticMemberOccurrences(declaration.name, occurrences)) {
+        if (!this.tryCollectUnresolvedConstructorStaticMemberOccurrences(declarationName, occurrences)) {
             return [];
         }
 
@@ -3139,6 +3194,19 @@ export class GmlSemanticBridge {
                 continue;
             }
 
+            const referenceOccurrence = createIdentifierTokenOccurrence({
+                sourceText,
+                filePath,
+                name: reference.name,
+                startIndex,
+                endIndex,
+                scopeId: reference.scopeId,
+                kind: "reference"
+            });
+            if (referenceOccurrence === null) {
+                continue;
+            }
+
             const declarationStartIndex = readSemanticLocationIndex(referenceDeclaration.start);
             const declarationScopeId =
                 typeof referenceDeclaration.scopeId === "string" ? referenceDeclaration.scopeId : null;
@@ -3148,13 +3216,7 @@ export class GmlSemanticBridge {
                 declarationStartIndex
             );
             const scopedOccurrences = indexedOccurrences.get(referenceKey) ?? [];
-            scopedOccurrences.push({
-                path: filePath,
-                start: startIndex,
-                end: endIndex,
-                scopeId: typeof reference.scopeId === "string" ? reference.scopeId : undefined,
-                kind: "reference"
-            });
+            scopedOccurrences.push(referenceOccurrence);
             indexedOccurrences.set(referenceKey, scopedOccurrences);
         }
 

@@ -22,8 +22,12 @@ type RoomCommandSharedOptions = SharedProjectContextOptions;
 
 type RoomMutationOptions = SharedProjectContextOptions &
     Readonly<{
+        depth?: string;
+        name?: string;
         write?: boolean;
     }>;
+
+const ROOM_LAYER_NAME_ARGUMENT_DESCRIPTION = "Layer name";
 
 function addRoomSharedOptions(command: Command): Command {
     return command
@@ -51,6 +55,14 @@ function parseLayerDepthArgument(value: string): number {
     const parsed = Number(value);
     if (!Number.isInteger(parsed)) {
         throw new TypeError(`Invalid room layer depth "${value}". Expected an integer value.`);
+    }
+    return parsed;
+}
+
+function parseLayerIndexArgument(value: string): number {
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+        throw new TypeError(`Invalid room layer index "${value}". Expected a zero-based integer value.`);
     }
     return parsed;
 }
@@ -84,11 +96,14 @@ function toRoomInstanceMutationPayload(result: RoomInstanceMutationResult) {
 function toRoomLayerMutationPayload(result: RoomLayerMutationResult) {
     return {
         action: result.action,
+        changed: result.changed,
         deletedPaths: result.deletedPaths,
         depth: result.depth,
         dryRun: result.dryRun,
+        layerIndex: result.layerIndex,
         layerName: result.layerName,
         layerType: result.layerType,
+        previousLayerIndex: result.previousLayerIndex,
         roomName: result.roomName,
         roomPath: result.roomPath,
         warnings: result.warnings,
@@ -160,6 +175,58 @@ async function runRoomLayerCreateAction(
     });
 
     printRoomPayload({ command: "room layer create", ok: true, payload: toRoomLayerMutationPayload(result) });
+}
+
+async function runRoomLayerUpdateAction(
+    roomName: string,
+    layerName: string,
+    options: RoomMutationOptions
+): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const result = await Refactor.updateRoomLayer({
+        depth: options.depth === undefined ? null : parseLayerDepthArgument(options.depth),
+        dryRun: options.write !== true,
+        layerName,
+        newLayerName: options.name ?? null,
+        projectRoot: context.projectRoot,
+        roomName
+    });
+
+    printRoomPayload({ command: "room layer update", ok: true, payload: toRoomLayerMutationPayload(result) });
+}
+
+async function runRoomLayerDeleteAction(
+    roomName: string,
+    layerName: string,
+    options: RoomMutationOptions
+): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const result = await Refactor.deleteRoomLayer({
+        dryRun: options.write !== true,
+        layerName,
+        projectRoot: context.projectRoot,
+        roomName
+    });
+
+    printRoomPayload({ command: "room layer delete", ok: true, payload: toRoomLayerMutationPayload(result) });
+}
+
+async function runRoomLayerReorderAction(
+    roomName: string,
+    layerName: string,
+    layerIndex: number,
+    options: RoomMutationOptions
+): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const result = await Refactor.reorderRoomLayer({
+        dryRun: options.write !== true,
+        layerIndex,
+        layerName,
+        projectRoot: context.projectRoot,
+        roomName
+    });
+
+    printRoomPayload({ command: "room layer reorder", ok: true, payload: toRoomLayerMutationPayload(result) });
 }
 
 async function runRoomCameraUpdateAction(
@@ -328,9 +395,117 @@ async function runRoomCameraInspectAction(
     });
 }
 
+function createRoomLayerCommand(): Command {
+    const layer = applyStandardCommandOptions(new Command("layer")).description("Room layer operations.");
+    const layerMutationLeaves = new Set(["create", "update", "delete", "reorder", "move-resource"]);
+    for (const layerLeaf of ["list", "inspect", "create", "update", "delete", "reorder", "move-resource"]) {
+        const nested = addRoomSharedOptions(
+            applyStandardCommandOptions(new Command(layerLeaf)).description(`Room layer ${layerLeaf}.`)
+        );
+        if (layerMutationLeaves.has(layerLeaf)) {
+            nested.addOption(createWriteOption());
+        }
+        if (layerLeaf === "create") {
+            nested
+                .argument("<room>", "Room name")
+                .argument("<layer>", ROOM_LAYER_NAME_ARGUMENT_DESCRIPTION)
+                .argument("<depth>", "Layer depth");
+            nested.action(async function roomLayerCreateAction(roomName: string, layerName: string, depth: string) {
+                try {
+                    const options = this.opts<RoomMutationOptions>();
+                    await runRoomLayerCreateAction(roomName, layerName, parseLayerDepthArgument(depth), options);
+                } catch (error) {
+                    handleCliError(error);
+                }
+            });
+            layer.addCommand(nested);
+            continue;
+        }
+        if (layerLeaf === "update") {
+            nested
+                .argument("<room>", "Room name")
+                .argument("<layer>", ROOM_LAYER_NAME_ARGUMENT_DESCRIPTION)
+                .option("--name <layer-name>", "Updated layer name.")
+                .option("--depth <depth>", "Updated layer depth.");
+            nested.action(async function roomLayerUpdateAction(roomName: string, layerName: string) {
+                try {
+                    await runRoomLayerUpdateAction(roomName, layerName, this.opts<RoomMutationOptions>());
+                } catch (error) {
+                    handleCliError(error);
+                }
+            });
+            layer.addCommand(nested);
+            continue;
+        }
+        if (layerLeaf === "delete") {
+            nested.argument("<room>", "Room name").argument("<layer>", ROOM_LAYER_NAME_ARGUMENT_DESCRIPTION);
+            nested.action(async function roomLayerDeleteAction(roomName: string, layerName: string) {
+                try {
+                    await runRoomLayerDeleteAction(roomName, layerName, this.opts<RoomMutationOptions>());
+                } catch (error) {
+                    handleCliError(error);
+                }
+            });
+            layer.addCommand(nested);
+            continue;
+        }
+        if (layerLeaf === "reorder") {
+            nested
+                .argument("<room>", "Room name")
+                .argument("<layer>", ROOM_LAYER_NAME_ARGUMENT_DESCRIPTION)
+                .argument("<index>", "Zero-based layer index");
+            nested.action(async function roomLayerReorderAction(roomName: string, layerName: string, index: string) {
+                try {
+                    await runRoomLayerReorderAction(
+                        roomName,
+                        layerName,
+                        parseLayerIndexArgument(index),
+                        this.opts<RoomMutationOptions>()
+                    );
+                } catch (error) {
+                    handleCliError(error);
+                }
+            });
+            layer.addCommand(nested);
+            continue;
+        }
+        if (layerLeaf === "list") {
+            nested.argument("<room>", "Room name");
+            nested.action(async function roomLayerListAction(roomName: string) {
+                try {
+                    await runRoomLayerListAction(roomName, this.opts<RoomMutationOptions>());
+                } catch (error) {
+                    handleCliError(error);
+                }
+            });
+            layer.addCommand(nested);
+            continue;
+        }
+        if (layerLeaf === "inspect") {
+            nested.argument("<room>", "Room name").argument("<layer>", ROOM_LAYER_NAME_ARGUMENT_DESCRIPTION);
+            nested.action(async function roomLayerInspectAction(roomName: string, layerName: string) {
+                try {
+                    await runRoomLayerInspectAction(roomName, layerName, this.opts<RoomMutationOptions>());
+                } catch (error) {
+                    handleCliError(error);
+                }
+            });
+            layer.addCommand(nested);
+            continue;
+        }
+        nested.action(function roomLayerAction() {
+            const options = this.opts<RoomMutationOptions>();
+            emitRoomUnavailableLeaf(`room layer ${layerLeaf}`, options, "room_layer_mutation");
+        });
+        layer.addCommand(nested);
+    }
+
+    return layer;
+}
+
 export function createRoomCommand(): Command {
     const command = applyStandardCommandOptions(new Command("room")).description(
-        "Inspect room resources. Use `gm-cli resourcetool ...` for room edits."
+        "Inspect rooms and apply GMLoop-owned companion room mutations."
     );
 
     const list = addRoomSharedOptions(applyStandardCommandOptions(new Command("list")).description("List rooms."));
@@ -562,58 +737,7 @@ export function createRoomCommand(): Command {
     instance.addCommand(instanceUpdate);
     instance.addCommand(instanceDelete);
 
-    const layer = applyStandardCommandOptions(new Command("layer")).description("Room layer operations.");
-    const layerMutationLeaves = new Set(["create", "update", "delete", "reorder", "move-resource"]);
-    for (const layerLeaf of ["list", "inspect", "create", "update", "delete", "reorder", "move-resource"]) {
-        const nested = addRoomSharedOptions(
-            applyStandardCommandOptions(new Command(layerLeaf)).description(`Room layer ${layerLeaf}.`)
-        );
-        if (layerMutationLeaves.has(layerLeaf)) {
-            nested.addOption(createWriteOption());
-        }
-        if (layerLeaf === "create") {
-            nested.argument("<room>", "Room name").argument("<layer>", "Layer name").argument("<depth>", "Layer depth");
-            nested.action(async function roomLayerCreateAction(roomName: string, layerName: string, depth: string) {
-                try {
-                    const options = this.opts<RoomMutationOptions>();
-                    await runRoomLayerCreateAction(roomName, layerName, parseLayerDepthArgument(depth), options);
-                } catch (error) {
-                    handleCliError(error);
-                }
-            });
-            layer.addCommand(nested);
-            continue;
-        }
-        if (layerLeaf === "list") {
-            nested.argument("<room>", "Room name");
-            nested.action(async function roomLayerListAction(roomName: string) {
-                try {
-                    await runRoomLayerListAction(roomName, this.opts<RoomMutationOptions>());
-                } catch (error) {
-                    handleCliError(error);
-                }
-            });
-            layer.addCommand(nested);
-            continue;
-        }
-        if (layerLeaf === "inspect") {
-            nested.argument("<room>", "Room name").argument("<layer>", "Layer name");
-            nested.action(async function roomLayerInspectAction(roomName: string, layerName: string) {
-                try {
-                    await runRoomLayerInspectAction(roomName, layerName, this.opts<RoomMutationOptions>());
-                } catch (error) {
-                    handleCliError(error);
-                }
-            });
-            layer.addCommand(nested);
-            continue;
-        }
-        nested.action(function roomLayerAction() {
-            const options = this.opts<RoomMutationOptions>();
-            emitRoomUnavailableLeaf(`room layer ${layerLeaf}`, options, "room_layer_mutation");
-        });
-        layer.addCommand(nested);
-    }
+    const layer = createRoomLayerCommand();
 
     const camera = applyStandardCommandOptions(new Command("camera")).description("Room camera operations.");
     const cameraMutationLeaves = new Set(["update", "frame"]);

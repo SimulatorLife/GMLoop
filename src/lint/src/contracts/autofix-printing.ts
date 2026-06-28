@@ -2,8 +2,9 @@
  * JavaScript string rendering for lint autofix output.
  *
  * PURPOSE: Renders AST nodes back to GML source text for rule-level autofixes.
- * This is an output-only concern — it does NOT perform layout, formatting, or
- * precedence analysis for pretty-printing; those belong in `@gmloop/format`.
+ * This is an output-only concern — it performs only the minimal precedence
+ * preservation needed to keep synthesized autofixes semantically faithful.
+ * Full layout formatting belongs in `@gmloop/format`.
  *
  * ARCHITECTURAL BOUNDARY: This module is intentionally isolated in `src/contracts/`
  * (a directory that holds cross-cutting public APIs for the lint workspace) so
@@ -26,36 +27,41 @@
 
 import { Core, isMemberAccessor } from "@gmloop/core";
 
-function getLogicalPrecedence(operator: string): number {
-    switch (operator) {
-        case "||": {
-            return 1;
-        }
-        case "&&": {
-            return 2;
-        }
-        default: {
-            return Number.POSITIVE_INFINITY;
-        }
-    }
-}
-
-function shouldParenthesizeLogicalChild(parent: any, child: any): boolean {
+function shouldParenthesizeBinaryChild(parent: any, child: any, side: "left" | "right"): boolean {
     if (!child || typeof child !== "object") {
         return false;
     }
 
+    const unwrappedChild = Core.unwrapParenthesizedExpression(child);
     if (
-        (child.type !== "BinaryExpression" && child.type !== "LogicalExpression") ||
-        typeof child.operator !== "string"
+        !unwrappedChild ||
+        (unwrappedChild.type !== "BinaryExpression" && unwrappedChild.type !== "LogicalExpression") ||
+        typeof unwrappedChild.operator !== "string"
     ) {
         return false;
     }
 
     const parentOperator = typeof parent.operator === "string" ? parent.operator : "";
-    const parentPrecedence = getLogicalPrecedence(parentOperator);
-    const childPrecedence = getLogicalPrecedence(child.operator);
-    return childPrecedence < parentPrecedence;
+    const childOperator = unwrappedChild.operator;
+    const parentInfo = Core.getOperatorInfo(parentOperator);
+    const childInfo = Core.getOperatorInfo(childOperator);
+    if (!parentInfo || !childInfo) {
+        return false;
+    }
+
+    if (childInfo.prec < parentInfo.prec) {
+        return true;
+    }
+
+    if (childInfo.prec > parentInfo.prec) {
+        return false;
+    }
+
+    if (side === "left") {
+        return parentInfo.assoc === "right";
+    }
+
+    return parentInfo.assoc === "left";
 }
 
 function shouldParenthesizeUnaryArgument(argument: any): boolean {
@@ -100,8 +106,8 @@ function shouldParenthesizeTernaryConsequent(consequentNode: unknown): boolean {
 function printBinaryLikeExpression(node: any, sourceText: string): string {
     const leftPrinted = printExpression(node.left, sourceText);
     const rightPrinted = printExpression(node.right, sourceText);
-    const left = shouldParenthesizeLogicalChild(node, node.left) ? `(${leftPrinted})` : leftPrinted;
-    const right = shouldParenthesizeLogicalChild(node, node.right) ? `(${rightPrinted})` : rightPrinted;
+    const left = shouldParenthesizeBinaryChild(node, node.left, "left") ? `(${leftPrinted})` : leftPrinted;
+    const right = shouldParenthesizeBinaryChild(node, node.right, "right") ? `(${rightPrinted})` : rightPrinted;
     return `${left} ${node.operator} ${right}`;
 }
 

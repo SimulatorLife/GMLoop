@@ -128,6 +128,7 @@ export type {
     CreateRoomLayerRequest,
     DeleteObjectEventRequest,
     DeleteRoomInstanceRequest,
+    DeleteRoomLayerRequest,
     DuplicateProjectResourceRequest,
     MoveProjectResourceRequest,
     ObjectEventDescriptor,
@@ -138,6 +139,7 @@ export type {
     ProjectResourceMutationResult,
     RemoveProjectResourceRequest,
     RenameProjectResourceRequest,
+    ReorderRoomLayerRequest,
     RoomCameraInspectionResult,
     RoomCameraMutationResult,
     RoomInstanceMutationResult,
@@ -145,7 +147,8 @@ export type {
     RoomLayerMutationResult,
     UpdateObjectEventRequest,
     UpdateRoomCameraRequest,
-    UpdateRoomInstanceRequest
+    UpdateRoomInstanceRequest,
+    UpdateRoomLayerRequest
 } from "./project-resources/index.js";
 export * as ProjectResources from "./project-resources/index.js";
 export {
@@ -155,6 +158,7 @@ export {
     createRoomLayer,
     deleteObjectEvent,
     deleteRoomInstance,
+    deleteRoomLayer,
     duplicateProjectResource,
     inspectObjectEvent,
     inspectRoomCamera,
@@ -165,9 +169,11 @@ export {
     moveProjectResource,
     removeProjectResource,
     renameProjectResource,
+    reorderRoomLayer,
     updateObjectEvent,
     updateRoomCamera,
-    updateRoomInstance
+    updateRoomInstance,
+    updateRoomLayer
 } from "./project-resources/index.js";
 export {
     isProjectResourceKind,

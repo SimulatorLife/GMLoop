@@ -36,15 +36,51 @@ export interface CreateRoomLayerRequest {
 }
 
 /**
+ * Parameters for updating a GameMaker room layer's refactor-safe metadata.
+ */
+export interface UpdateRoomLayerRequest {
+    depth: number | null;
+    dryRun?: boolean;
+    layerName: string;
+    newLayerName: string | null;
+    projectRoot: string;
+    roomName: string;
+}
+
+/**
+ * Parameters for deleting an empty GameMaker room layer.
+ */
+export interface DeleteRoomLayerRequest {
+    dryRun?: boolean;
+    layerName: string;
+    projectRoot: string;
+    roomName: string;
+}
+
+/**
+ * Parameters for reordering a GameMaker room layer in metadata order.
+ */
+export interface ReorderRoomLayerRequest {
+    dryRun?: boolean;
+    layerIndex: number;
+    layerName: string;
+    projectRoot: string;
+    roomName: string;
+}
+
+/**
  * Summary returned after a room layer metadata mutation.
  */
 export interface RoomLayerMutationResult {
-    action: "create";
+    action: "create" | "delete" | "reorder" | "update";
+    changed: boolean;
     deletedPaths: Array<string>;
     depth: number;
     dryRun: boolean;
+    layerIndex: number;
     layerName: string;
     layerType: "instance";
+    previousLayerIndex: number | null;
     roomName: string;
     roomPath: string;
     warnings: Array<string>;
@@ -114,11 +150,69 @@ function inspectLayerRecord(
     });
 }
 
+function findLayerIndex(layers: ReadonlyArray<unknown>, layerName: string, roomName: string): number {
+    const layerIndex = layers.findIndex((layer) => readLayerName(layer) === layerName);
+    if (layerIndex === -1) {
+        throw new Error(`Could not find room layer '${layerName}' in room '${roomName}'.`);
+    }
+    return layerIndex;
+}
+
+function readMutableLayerRecord(
+    layers: ReadonlyArray<unknown>,
+    layerIndex: number,
+    layerName: string
+): Record<string, unknown> {
+    const layer = layers[layerIndex];
+    if (!Core.isObjectLike(layer)) {
+        throw new TypeError(`Room layer '${layerName}' metadata is not an object.`);
+    }
+    return layer as Record<string, unknown>;
+}
+
 function assertUniqueLayerName(layers: ReadonlyArray<unknown>, layerName: string, roomName: string): void {
     for (const layer of layers) {
         if (readLayerName(layer) === layerName) {
             throw new Error(`Room '${roomName}' already contains a layer named '${layerName}'.`);
         }
+    }
+}
+
+function assertUniqueLayerNameForUpdate(
+    layers: ReadonlyArray<unknown>,
+    currentLayerName: string,
+    newLayerName: string,
+    roomName: string
+): void {
+    for (const layer of layers) {
+        const existingLayerName = readLayerName(layer);
+        if (existingLayerName === newLayerName && existingLayerName !== currentLayerName) {
+            throw new Error(`Room '${roomName}' already contains a layer named '${newLayerName}'.`);
+        }
+    }
+}
+
+function assertEmptyLayerForDeletion(layer: Record<string, unknown>, layerName: string): void {
+    const instances = Core.asArray(layer.instances);
+    if (instances.length > 0) {
+        throw new Error(
+            `Room layer '${layerName}' contains ${String(instances.length)} instance(s) and cannot be deleted.`
+        );
+    }
+
+    const subLayers = Core.asArray(layer.layers);
+    if (subLayers.length > 0) {
+        throw new Error(
+            `Room layer '${layerName}' contains ${String(subLayers.length)} sub-layer(s) and cannot be deleted.`
+        );
+    }
+}
+
+function assertLayerIndex(layerIndex: number, layers: ReadonlyArray<unknown>): void {
+    if (!Number.isInteger(layerIndex) || layerIndex < 0 || layerIndex >= layers.length) {
+        throw new TypeError(
+            `Invalid room layer index ${String(layerIndex)}. Expected an integer from 0 to ${String(layers.length - 1)}.`
+        );
     }
 }
 
@@ -230,17 +324,158 @@ export async function createRoomLayer(request: CreateRoomLayerRequest): Promise<
     const context = await resolveRoomLayerMutationContext(request.projectRoot, request.roomName);
     assertUniqueLayerName(context.layers, request.layerName, context.roomReference.name);
     context.layers.push(createInstanceLayer(request.layerName, request.depth));
+    const layerIndex = context.layers.length - 1;
 
     const dryRun = request.dryRun !== false;
     await writeRoomDocumentIfApplying(dryRun, context.roomAbsolutePath, context.roomDocument);
 
     return {
         action: "create",
+        changed: true,
         deletedPaths: [],
         depth: request.depth,
         dryRun,
+        layerIndex,
         layerName: request.layerName,
         layerType: "instance",
+        previousLayerIndex: null,
+        roomName: context.roomReference.name,
+        roomPath: context.roomReference.path,
+        warnings: [],
+        writtenPaths: [context.roomReference.path]
+    };
+}
+
+/**
+ * Update refactor-safe room layer metadata.
+ *
+ * @param request - Room layer update request.
+ * @returns Summary of the planned or applied room metadata mutation.
+ */
+export async function updateRoomLayer(request: UpdateRoomLayerRequest): Promise<RoomLayerMutationResult> {
+    if (request.newLayerName === null && request.depth === null) {
+        throw new TypeError("Room layer update requires --name, --depth, or both.");
+    }
+    if (request.newLayerName !== null) {
+        assertRoomLayerName(request.newLayerName);
+    }
+    if (request.depth !== null) {
+        assertLayerDepth(request.depth);
+    }
+
+    const context = await resolveRoomLayerMutationContext(request.projectRoot, request.roomName);
+    const layerIndex = findLayerIndex(context.layers, request.layerName, context.roomReference.name);
+    const layer = readMutableLayerRecord(context.layers, layerIndex, request.layerName);
+    const currentDepth = readLayerDepth(layer);
+    const nextLayerName = request.newLayerName ?? request.layerName;
+    const nextDepth = request.depth ?? currentDepth;
+    if (request.newLayerName !== null) {
+        assertUniqueLayerNameForUpdate(
+            context.layers,
+            request.layerName,
+            request.newLayerName,
+            context.roomReference.name
+        );
+    }
+    if (nextDepth === null) {
+        throw new Error(`Room layer '${request.layerName}' does not have a numeric depth to preserve.`);
+    }
+
+    const changed = readLayerName(layer) !== nextLayerName || currentDepth !== nextDepth;
+    layer.name = nextLayerName;
+    layer["%Name"] = nextLayerName;
+    layer.depth = nextDepth;
+
+    const dryRun = request.dryRun !== false;
+    await writeRoomDocumentIfApplying(dryRun, context.roomAbsolutePath, context.roomDocument);
+
+    return {
+        action: "update",
+        changed,
+        deletedPaths: [],
+        depth: nextDepth,
+        dryRun,
+        layerIndex,
+        layerName: nextLayerName,
+        layerType: "instance",
+        previousLayerIndex: layerIndex,
+        roomName: context.roomReference.name,
+        roomPath: context.roomReference.path,
+        warnings: [],
+        writtenPaths: [context.roomReference.path]
+    };
+}
+
+/**
+ * Delete an empty room layer from GameMaker room metadata.
+ *
+ * @param request - Room layer deletion request.
+ * @returns Summary of the planned or applied room metadata mutation.
+ */
+export async function deleteRoomLayer(request: DeleteRoomLayerRequest): Promise<RoomLayerMutationResult> {
+    const context = await resolveRoomLayerMutationContext(request.projectRoot, request.roomName);
+    const layerIndex = findLayerIndex(context.layers, request.layerName, context.roomReference.name);
+    const layer = readMutableLayerRecord(context.layers, layerIndex, request.layerName);
+    assertEmptyLayerForDeletion(layer, request.layerName);
+    const depth = readLayerDepth(layer);
+    if (depth === null) {
+        throw new Error(`Room layer '${request.layerName}' does not have a numeric depth.`);
+    }
+
+    context.layers.splice(layerIndex, 1);
+
+    const dryRun = request.dryRun !== false;
+    await writeRoomDocumentIfApplying(dryRun, context.roomAbsolutePath, context.roomDocument);
+
+    return {
+        action: "delete",
+        changed: true,
+        deletedPaths: [],
+        depth,
+        dryRun,
+        layerIndex,
+        layerName: request.layerName,
+        layerType: "instance",
+        previousLayerIndex: layerIndex,
+        roomName: context.roomReference.name,
+        roomPath: context.roomReference.path,
+        warnings: [],
+        writtenPaths: [context.roomReference.path]
+    };
+}
+
+/**
+ * Reorder a room layer in GameMaker room metadata.
+ *
+ * @param request - Room layer reorder request.
+ * @returns Summary of the planned or applied room metadata mutation.
+ */
+export async function reorderRoomLayer(request: ReorderRoomLayerRequest): Promise<RoomLayerMutationResult> {
+    const context = await resolveRoomLayerMutationContext(request.projectRoot, request.roomName);
+    assertLayerIndex(request.layerIndex, context.layers);
+    const previousLayerIndex = findLayerIndex(context.layers, request.layerName, context.roomReference.name);
+    const layer = readMutableLayerRecord(context.layers, previousLayerIndex, request.layerName);
+    const depth = readLayerDepth(layer);
+    if (depth === null) {
+        throw new Error(`Room layer '${request.layerName}' does not have a numeric depth.`);
+    }
+
+    context.layers.splice(previousLayerIndex, 1);
+    context.layers.splice(request.layerIndex, 0, layer);
+
+    const dryRun = request.dryRun !== false;
+    await writeRoomDocumentIfApplying(dryRun, context.roomAbsolutePath, context.roomDocument);
+
+    return {
+        action: "reorder",
+        changed: previousLayerIndex !== request.layerIndex,
+        deletedPaths: [],
+        depth,
+        dryRun,
+        layerIndex: request.layerIndex,
+        layerName: request.layerName,
+        layerType: "instance",
+        previousLayerIndex,
         roomName: context.roomReference.name,
         roomPath: context.roomReference.path,
         warnings: [],
