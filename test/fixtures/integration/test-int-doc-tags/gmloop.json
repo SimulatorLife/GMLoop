@@ -2,7 +2,8 @@
   "printWidth": 120,
   "allowInlineControlFlowBlocks": false,
   "lintRules": {
-    "gml/normalize-doc-comments": "error"
+    "gml/normalize-doc-comments": "error",
+    "gml/normalize-doc-param-separators": "error"
   },
   "fixture": {
     "kind": "integration",

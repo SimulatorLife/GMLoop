@@ -345,15 +345,6 @@ function normalizeUndefinedOptionalDefaultParamDocLine(line: string): string {
     return `${normalized[1]}[${normalized[2]}]${normalized[3]}`;
 }
 
-function normalizeParamDescriptionSeparatorHyphen(line: string): string {
-    const normalized = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+(?:\[[^\]]+\]|[A-Za-z0-9_]+))\s+-\s+(.+)$/u.exec(line);
-    if (!normalized) {
-        return line;
-    }
-
-    return `${normalized[1]} ${normalized[2]}`;
-}
-
 function normalizeParamDescriptionSpacing(line: string): string {
     const normalized = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+(?:\[[^\]]+\]|[A-Za-z0-9_]+))\s{2,}(\S.*)$/u.exec(line);
     if (!normalized) {
@@ -1177,7 +1168,6 @@ function processDocBlock(blockLines: Array<string>): Array<string> {
         .map((line) => (hasOverrideTag ? line : normalizeReturnDocLineType(line)))
         .map((line) => normalizeDocParamLineParameterName(line))
         .map((line) => normalizeUndefinedOptionalDefaultParamDocLine(line))
-        .map((line) => normalizeParamDescriptionSeparatorHyphen(line))
         .map((line) => normalizeParamDescriptionSpacing(line))
         .filter((line) => !emptyDescriptionPattern.test(line))
         .filter((line) => line.trimStart() !== "///")

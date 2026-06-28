@@ -3,6 +3,7 @@
   "printWidth": 95,
   "lintRules": {
     "gml/normalize-doc-comments": "error",
+    "gml/normalize-doc-param-separators": "error",
     "gml/require-argument-separators": "error",
     "feather/gm1056": "error",
     "gml/prefer-is-undefined-check": "error",

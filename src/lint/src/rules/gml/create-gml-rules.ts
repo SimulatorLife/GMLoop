@@ -14,6 +14,7 @@ import { createNormalizeBannerCommentsRule } from "./rules/normalize-banner-comm
 import { createNormalizeDirectivesRule } from "./rules/normalize-directives-rule.js";
 import { createNormalizeDocCommentsRule } from "./rules/normalize-doc-comments-rule.js";
 import { createNormalizeDocParamDefaultsRule } from "./rules/normalize-doc-param-defaults-rule.js";
+import { createNormalizeDocParamSeparatorsRule } from "./rules/normalize-doc-param-separators-rule.js";
 import { createNormalizeOperatorAliasesRule } from "./rules/normalize-operator-aliases-rule.js";
 import { createOptimizeLogicalFlowRule } from "./rules/optimize-logical-flow-rule.js";
 import { createOptimizeMathExpressionsRule } from "./rules/optimize-math-expressions-rule.js";
@@ -60,6 +61,7 @@ const gmlRuleFactoriesByShortName = Object.freeze(
         ["remove-default-comments", createRemoveDefaultCommentsRule],
         ["normalize-doc-comments", createNormalizeDocCommentsRule],
         ["normalize-doc-param-defaults", createNormalizeDocParamDefaultsRule],
+        ["normalize-doc-param-separators", createNormalizeDocParamSeparatorsRule],
         ["normalize-banner-comments", createNormalizeBannerCommentsRule],
         ["normalize-directives", createNormalizeDirectivesRule],
         ["require-control-flow-braces", createRequireControlFlowBracesRule],

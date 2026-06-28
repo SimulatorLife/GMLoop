@@ -7,6 +7,7 @@
   "lintRuleset": "recommended",
   "lintRules": {
     "gml/normalize-doc-comments": "error",
+    "gml/normalize-doc-param-separators": "error",
     "gml/prefer-hoistable-loop-accessors": "error",
     "gml/no-boolean-literal-comparisons": "error",
     "gml/optimize-logical-flow": "error"

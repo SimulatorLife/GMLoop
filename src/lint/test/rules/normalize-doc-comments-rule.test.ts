@@ -27,8 +27,7 @@ void test("normalize-doc-comments promotes leading summary lines into @descripti
     const output = runNormalizeDocCommentsRule(input);
     assert.match(output, /\/\/\/ @desc Leading summary/);
     assert.match(output, /\/\/\/\s+Additional note/);
-    assert.match(output, /\/\/\/ @param value the input/);
-    assert.doesNotMatch(output, /\/\/\/ @param value - the input/);
+    assert.match(output, /\/\/\/ @param value - the input/);
 });
 
 void test("normalize-doc-comments removes empty @description lines", () => {
@@ -130,8 +129,7 @@ void test("normalize-doc-comments canonicalizes doc tag aliases via Core replace
     const output = runNormalizeDocCommentsRule(input);
 
     assert.match(output, /^\/\/\/ @desc Computes a score$/m);
-    assert.match(output, /^\/\/\/ @param alpha first input$/m);
-    assert.doesNotMatch(output, /^\/\/\/ @param alpha - first input$/m);
+    assert.match(output, /^\/\/\/ @param alpha - first input$/m);
     assert.match(output, /^\/\/\/ @param beta$/m);
     assert.match(output, /^\/\/\/ @returns \{real\}$/m);
     assert.doesNotMatch(output, /^\/\/\/ @description\b/m);
@@ -324,7 +322,7 @@ void test("normalize-doc-comments preserves function indentation for synthesized
     assert.match(output, /^ {4}\/\/\/ @returns \{any\}$/m);
 });
 
-void test("normalize-doc-comments removes @param separator hyphens for typed optional params", () => {
+void test("normalize-doc-comments leaves @param separator hyphens for the focused separator rule", () => {
     const input = [
         "/// @param {real} [xup=0] - The camera's up vector (default +Z axis)",
         "/// @param {real} [yup=0] - The camera's up vector (default +Z axis)",
@@ -335,10 +333,8 @@ void test("normalize-doc-comments removes @param separator hyphens for typed opt
 
     const output = runNormalizeDocCommentsRule(input);
 
-    assert.match(output, /^\/\/\/ @param \{real\} \[xup=0\] The camera's up vector \(default \+Z axis\)$/m);
-    assert.match(output, /^\/\/\/ @param \{real\} \[yup=0\] The camera's up vector \(default \+Z axis\)$/m);
-    assert.doesNotMatch(output, /\[xup=0\] - The camera's up vector/m);
-    assert.doesNotMatch(output, /\[yup=0\] - The camera's up vector/m);
+    assert.match(output, /^\/\/\/ @param \{real\} \[xup=0\] - The camera's up vector \(default \+Z axis\)$/m);
+    assert.match(output, /^\/\/\/ @param \{real\} \[yup=0\] - The camera's up vector \(default \+Z axis\)$/m);
 });
 
 void test("normalize-doc-comments repairs malformed optional @param defaults with extra brackets", () => {

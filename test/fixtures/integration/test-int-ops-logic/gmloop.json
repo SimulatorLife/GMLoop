@@ -4,6 +4,7 @@
   "logicalOperatorsStyle": "keywords",
   "lintRules": {
     "gml/normalize-doc-comments": "error",
+    "gml/normalize-doc-param-separators": "error",
     "gml/normalize-operator-aliases": "error",
     "gml/prefer-is-undefined-check": "error",
     "gml/optimize-math-expressions": "error",

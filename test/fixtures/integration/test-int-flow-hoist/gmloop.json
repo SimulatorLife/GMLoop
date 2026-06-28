@@ -3,6 +3,7 @@
   "allowInlineControlFlowBlocks": false,
   "lintRules": {
     "gml/normalize-doc-comments": "error",
+    "gml/normalize-doc-param-separators": "error",
     "gml/prefer-hoistable-loop-accessors": "error",
     "gml/optimize-logical-flow": "error",
     "gml/normalize-directives": "error",

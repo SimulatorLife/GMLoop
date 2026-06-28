@@ -179,6 +179,13 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         messageId: "normalizeDocParamDefaults"
     },
     {
+        description: "Remove legacy separator hyphens from @param description text.",
+        mapKey: "GmlNormalizeDocParamSeparators",
+        shortName: "normalize-doc-param-separators",
+        fullId: "gml/normalize-doc-param-separators",
+        messageId: "normalizeDocParamSeparators"
+    },
+    {
         description: "Normalize banner comments so decorative separators use one consistent project style.",
         mapKey: "GmlNormalizeBannerComments",
         shortName: "normalize-banner-comments",

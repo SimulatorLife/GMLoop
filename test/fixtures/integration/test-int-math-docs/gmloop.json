@@ -3,6 +3,7 @@
   "allowInlineControlFlowBlocks": false,
   "lintRules": {
     "gml/normalize-doc-comments": "error",
+    "gml/normalize-doc-param-separators": "error",
     "gml/remove-default-comments": "error",
     "gml/optimize-math-expressions": "error"
   },
