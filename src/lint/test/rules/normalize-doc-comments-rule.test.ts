@@ -200,7 +200,7 @@ void test("normalize-doc-comments removes legacy @function and normalizes defaul
     assert.match(output, /^\/\/\/ @returns \{undefined\}$/m);
 });
 
-void test("normalize-doc-comments omits explicit undefined defaults in typed optional @param docs", () => {
+void test("normalize-doc-comments leaves explicit undefined optional @param defaults to the focused rule", () => {
     const input = [
         "function local_assignment_container(seed) {",
         "    /// @param {Struct.MyCustomStruct} [first=undefined] first typed description should remain.",
@@ -218,9 +218,8 @@ void test("normalize-doc-comments omits explicit undefined defaults in typed opt
 
     assert.match(
         output,
-        /^ {4}\/\/\/ @param \{Struct\.MyCustomStruct\} \[first\] first typed description should remain\.$/m
+        /^ {4}\/\/\/ @param \{Struct\.MyCustomStruct\} \[first=undefined\] first typed description should remain\.$/m
     );
-    assert.doesNotMatch(output, /\[first=undefined\]/m);
     assert.match(output, /^ {4}\/\/\/ @custom local annotations should stay\.$/m);
     assert.match(output, /^ {4}\/\/\/ @param second second description should remain\.$/m);
     assert.match(output, /^ {4}\/\/\/ @returns \{undefined\}$/m);

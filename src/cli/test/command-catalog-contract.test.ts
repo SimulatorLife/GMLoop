@@ -217,7 +217,7 @@ void test("room layer update/delete/reorder MCP tool schemas include mutation fi
     }
 });
 
-void test("room camera update MCP tool schema includes mutation arguments and write option", () => {
+void test("room camera update/frame MCP tool schemas include mutation arguments and write option", () => {
     const mcpCatalog = getMcpToolCatalogEntries();
     const entry = mcpCatalog.find((candidate) => candidate.toolName === "gmloop_room_camera_update");
     assert.ok(entry);
@@ -233,6 +233,25 @@ void test("room camera update MCP tool schema includes mutation arguments and wr
         assert.equal(field.kind, "argument");
         assert.equal(field.required, true);
     }
+
+    const frameEntry = mcpCatalog.find((candidate) => candidate.toolName === "gmloop_room_camera_frame");
+    assert.ok(frameEntry);
+    const frameWriteField = frameEntry.fields.find((field) => field.attributeName === "write");
+    assert.ok(frameWriteField);
+    assert.equal(frameWriteField.kind, "option");
+    assert.equal(frameWriteField.valueType, "boolean");
+
+    for (const requiredArgument of ["room", "camera_id", "layer"]) {
+        const field = frameEntry.fields.find((candidate) => candidate.attributeName === requiredArgument);
+        assert.ok(field, `Missing required argument field on frame: ${requiredArgument}`);
+        assert.equal(field.kind, "argument");
+        assert.equal(field.required, true);
+    }
+
+    const paddingField = frameEntry.fields.find((candidate) => candidate.attributeName === "padding");
+    assert.ok(paddingField);
+    assert.equal(paddingField.kind, "option");
+    assert.equal(paddingField.required, false);
 });
 
 void test("room instance add/update/delete MCP tool schemas include mutation arguments and write option", () => {

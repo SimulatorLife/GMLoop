@@ -145,7 +145,8 @@ const PLANNED_CAPABILITIES: ReadonlyArray<PlannedCapability> = Object.freeze([
         ["room", "layer", "update"],
         ["room", "layer", "delete"],
         ["room", "layer", "reorder"],
-        ["room", "camera", "update"]
+        ["room", "camera", "update"],
+        ["room", "camera", "frame"]
     ].map((commandPath) =>
         createPlannedCapability({
             commandPath,
@@ -156,8 +157,7 @@ const PLANNED_CAPABILITIES: ReadonlyArray<PlannedCapability> = Object.freeze([
     ),
     ...[
         ["room", "update"],
-        ["room", "repair"],
-        ["room", "camera", "frame"]
+        ["room", "repair"]
     ].map((commandPath) =>
         createPlannedCapability({
             commandPath,

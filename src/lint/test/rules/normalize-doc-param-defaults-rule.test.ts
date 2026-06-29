@@ -40,7 +40,7 @@ void test("normalize-doc-param-defaults preserves valid single-line optional def
     assert.equal(result.output, input);
 });
 
-void test("normalize-doc-param-defaults preserves explicit undefined optional defaults", () => {
+void test("normalize-doc-param-defaults leaves explicit undefined defaults to the focused undefined-default rule", () => {
     const input = ["/// @param [first=undefined]", "function bake(first) {", "    return first;", "}"].join("\n");
 
     const result = runNormalizeDocParamDefaultsRule(input);

@@ -745,6 +745,148 @@ void test("room camera update supports dry-run and write modes", async () => {
     }
 });
 
+void test("room camera frame uses room instances to set a padded playable viewport", async () => {
+    const projectRoot = await createTemporaryRoomInstanceCliProject();
+    const roomMetadataPath = path.join(projectRoot, "rooms/rm_main/rm_main.yy");
+
+    try {
+        const firstInstanceResult = await runCliTestCommand({
+            argv: [
+                "room",
+                "instance",
+                "add",
+                "rm_main",
+                "obj_player",
+                "10",
+                "20",
+                "--path",
+                projectRoot,
+                "--json",
+                "--write"
+            ]
+        });
+        assert.equal(firstInstanceResult.exitCode, 0);
+
+        const secondInstanceResult = await runCliTestCommand({
+            argv: [
+                "room",
+                "instance",
+                "add",
+                "rm_main",
+                "obj_player",
+                "110",
+                "70",
+                "--path",
+                projectRoot,
+                "--json",
+                "--write"
+            ]
+        });
+        assert.equal(secondInstanceResult.exitCode, 0);
+
+        const dryRunResult = await runCliTestCommand({
+            argv: [
+                "room",
+                "camera",
+                "frame",
+                "rm_main",
+                "camera_0",
+                "Instances",
+                "--padding",
+                "16",
+                "--path",
+                projectRoot,
+                "--json"
+            ]
+        });
+        assert.equal(dryRunResult.exitCode, 0);
+        const dryRunPayload = JSON.parse(dryRunResult.stdout) as {
+            command: string;
+            payload: {
+                action: string;
+                dryRun: boolean;
+                framedInstanceCount: number | null;
+                height: number;
+                layerName: string | null;
+                width: number;
+                x: number;
+                y: number;
+            };
+        };
+        assert.equal(dryRunPayload.command, "room camera frame");
+        assert.equal(dryRunPayload.payload.action, "frame");
+        assert.equal(dryRunPayload.payload.dryRun, true);
+        assert.equal(dryRunPayload.payload.framedInstanceCount, 2);
+        assert.equal(dryRunPayload.payload.layerName, "Instances");
+        assert.equal(dryRunPayload.payload.x, -6);
+        assert.equal(dryRunPayload.payload.y, 4);
+        assert.equal(dryRunPayload.payload.width, 132);
+        assert.equal(dryRunPayload.payload.height, 82);
+
+        const dryRunRoomMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        const dryRunViews = dryRunRoomMetadata.views as Array<Record<string, unknown>>;
+        assert.equal(dryRunViews[0].xview, 0);
+
+        const writeResult = await runCliTestCommand({
+            argv: [
+                "room",
+                "camera",
+                "frame",
+                "rm_main",
+                "camera_0",
+                "Instances",
+                "--padding",
+                "16",
+                "--path",
+                projectRoot,
+                "--json",
+                "--write"
+            ]
+        });
+        assert.equal(writeResult.exitCode, 0);
+        const writePayload = JSON.parse(writeResult.stdout) as {
+            payload: { dryRun: boolean; framedInstanceCount: number | null; layerName: string | null };
+        };
+        assert.equal(writePayload.payload.dryRun, false);
+        assert.equal(writePayload.payload.framedInstanceCount, 2);
+        assert.equal(writePayload.payload.layerName, "Instances");
+
+        const updatedRoomMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        const updatedViewSettings = updatedRoomMetadata.viewSettings as Record<string, unknown>;
+        const updatedViews = updatedRoomMetadata.views as Array<Record<string, unknown>>;
+        assert.equal(updatedViewSettings.enableViews, true);
+        assert.equal(updatedViews[0].visible, true);
+        assert.equal(updatedViews[0].xview, -6);
+        assert.equal(updatedViews[0].yview, 4);
+        assert.equal(updatedViews[0].wview, 132);
+        assert.equal(updatedViews[0].hview, 82);
+        assert.equal(updatedViews[0].wport, 132);
+        assert.equal(updatedViews[0].hport, 82);
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("room camera frame rejects empty layers", async () => {
+    const projectRoot = await createTemporaryRoomInstanceCliProject();
+
+    try {
+        const result = await runCliTestCommand({
+            argv: ["room", "camera", "frame", "rm_main", "camera_0", "Background", "--path", projectRoot, "--json"]
+        });
+        assert.equal(result.exitCode, 1);
+        assert.match(result.stderr, /does not contain any frameable instances/u);
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
 void test("ui planned leaves emit concrete payloads without unsupported backend state", async () => {
     const previewResult = await runCliTestCommand({
         argv: ["ui", "preview", "--json"]

@@ -95,6 +95,7 @@ void test("capability audit reports implemented companion leaves separately from
             createCliEntry("room layer update"),
             createCliEntry("room layer delete"),
             createCliEntry("room layer reorder"),
+            createCliEntry("room camera frame"),
             createCliEntry("room repair")
         ],
         companionCatalog: createCompanionCatalog(),
@@ -104,6 +105,7 @@ void test("capability audit reports implemented companion leaves separately from
             createMcpEntry("room layer update"),
             createMcpEntry("room layer delete"),
             createMcpEntry("room layer reorder"),
+            createMcpEntry("room camera frame"),
             createMcpEntry("room repair")
         ]
     });
@@ -133,6 +135,11 @@ void test("capability audit reports implemented companion leaves separately from
     assert.ok(roomLayerReorder);
     assert.equal(roomLayerReorder.classification, "gmloop_companion");
     assert.equal(roomLayerReorder.status, "gmloop_available");
+
+    const roomCameraFrame = audit.capabilities.find((entry) => entry.operation === "room camera frame");
+    assert.ok(roomCameraFrame);
+    assert.equal(roomCameraFrame.classification, "gmloop_companion");
+    assert.equal(roomCameraFrame.status, "gmloop_available");
 
     const roomRepair = audit.capabilities.find((entry) => entry.operation === "room repair");
     assert.ok(roomRepair);

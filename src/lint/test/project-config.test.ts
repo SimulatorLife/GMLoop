@@ -36,6 +36,7 @@ void test("normalizeLintRulesConfig supports lintRuleset preset names", () => {
 
     assert.equal(rules["gml/no-scientific-notation"], "error");
     assert.equal(rules["gml/normalize-doc-param-defaults"], "warn");
+    assert.equal(rules["gml/normalize-doc-param-undefined-defaults"], "warn");
     assert.equal(rules["gml/prefer-direct-boolean-return"], "warn");
     assert.equal(rules["gml/prefer-hoistable-loop-accessors"], "warn");
     assert.equal(rules["feather/gm1003"], "warn");
@@ -48,6 +49,7 @@ void test("normalizeLintRulesConfig supports the all ruleset", () => {
 
     assert.equal(rules["gml/no-scientific-notation"], "error");
     assert.equal(rules["gml/normalize-doc-param-defaults"], "warn");
+    assert.equal(rules["gml/normalize-doc-param-undefined-defaults"], "warn");
     assert.equal(rules["gml/prefer-direct-boolean-return"], "warn");
     assert.equal(rules["gml/prefer-hoistable-loop-accessors"], "warn");
     assert.equal(rules["feather/gm1000"], "warn");

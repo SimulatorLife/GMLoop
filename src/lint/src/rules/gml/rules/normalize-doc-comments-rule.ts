@@ -336,15 +336,6 @@ function formatOptionalParamDocName(parameterName: string, defaultValueText: str
     return `[${parameterName}=${defaultValueText}]`;
 }
 
-function normalizeUndefinedOptionalDefaultParamDocLine(line: string): string {
-    const normalized = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+)\[([A-Za-z0-9_]+)\s*=\s*undefined\](.*)$/u.exec(line);
-    if (!normalized) {
-        return line;
-    }
-
-    return `${normalized[1]}[${normalized[2]}]${normalized[3]}`;
-}
-
 function normalizeParamDescriptionSpacing(line: string): string {
     const normalized = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+(?:\[[^\]]+\]|[A-Za-z0-9_]+))\s{2,}(\S.*)$/u.exec(line);
     if (!normalized) {
@@ -1167,7 +1158,6 @@ function processDocBlock(blockLines: Array<string>): Array<string> {
         .map((line) => applyJsDocTagAliasLine(line))
         .map((line) => (hasOverrideTag ? line : normalizeReturnDocLineType(line)))
         .map((line) => normalizeDocParamLineParameterName(line))
-        .map((line) => normalizeUndefinedOptionalDefaultParamDocLine(line))
         .map((line) => normalizeParamDescriptionSpacing(line))
         .filter((line) => !emptyDescriptionPattern.test(line))
         .filter((line) => line.trimStart() !== "///")
@@ -1314,6 +1304,10 @@ function updateExistingParamDocWithDefault(docBlock: Array<string>, parameterNam
             String.raw`^(\s*///\s*@param)(\s+\{[^}]+\})?(\s+)\[${escapedParameterName}(?:=[^\]]*)?\]*(.*)$`
         ).exec(line);
         if (optionalParamMatch) {
+            if (isUndefinedDefaultValueText(defaultVal)) {
+                return;
+            }
+
             const typeAnnotation =
                 optionalParamMatch[2] ?? (isFunctionDefaultValueText(defaultVal) ? " {function}" : "");
             docBlock[index] =

@@ -1,6 +1,7 @@
 {
   "lintRules": {
     "gml/normalize-doc-comments": "error",
+    "gml/normalize-doc-param-undefined-defaults": "error",
     "gml/normalize-doc-param-separators": "error"
   },
   "fixture": {

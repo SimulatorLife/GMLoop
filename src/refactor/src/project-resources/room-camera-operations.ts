@@ -31,6 +31,15 @@ type RoomCameraInspectionContext = Readonly<{
     viewsEnabled: boolean;
 }>;
 
+type RoomCameraFrameTarget = Readonly<{
+    height: number;
+    instanceCount: number;
+    layerName: string;
+    width: number;
+    x: number;
+    y: number;
+}>;
+
 /**
  * Parameters for updating one GameMaker room camera/view rectangle.
  */
@@ -46,14 +55,28 @@ export interface UpdateRoomCameraRequest {
 }
 
 /**
+ * Parameters for framing one room camera around instances on a room layer.
+ */
+export interface FrameRoomCameraRequest {
+    cameraId: string;
+    dryRun?: boolean;
+    layerName: string;
+    padding: number;
+    projectRoot: string;
+    roomName: string;
+}
+
+/**
  * Summary returned after a room camera/view metadata mutation.
  */
 export interface RoomCameraMutationResult {
-    action: "update";
+    action: "frame" | "update";
     cameraId: string;
     deletedPaths: Array<string>;
     dryRun: boolean;
+    framedInstanceCount: number | null;
     height: number;
+    layerName: string | null;
     roomName: string;
     roomPath: string;
     warnings: Array<string>;
@@ -107,6 +130,14 @@ function assertFiniteDimension(value: number, dimensionName: "height" | "width")
     }
 }
 
+function assertNonNegativePadding(value: number): void {
+    if (!Number.isFinite(value) || value < 0) {
+        throw new TypeError(
+            `Invalid camera frame padding ${String(value)}. Expected a non-negative finite numeric value.`
+        );
+    }
+}
+
 function readFiniteNumberField(record: Record<string, unknown>, fieldName: string): number | null {
     const value = record[fieldName];
     return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -114,6 +145,70 @@ function readFiniteNumberField(record: Record<string, unknown>, fieldName: strin
 
 function readBooleanField(record: Record<string, unknown>, fieldName: string): boolean {
     return record[fieldName] === true;
+}
+
+function readLayerName(layer: Record<string, unknown>): string | null {
+    return Core.getNonEmptyString(layer.name) ?? Core.getNonEmptyString(layer["%Name"]);
+}
+
+function locateLayerForFraming(
+    roomDocument: Record<string, unknown>,
+    roomName: string,
+    layerName: string
+): Record<string, unknown> {
+    for (const layer of Core.asArray(roomDocument.layers)) {
+        if (!Core.isObjectLike(layer)) {
+            continue;
+        }
+
+        const layerRecord = layer as Record<string, unknown>;
+        if (readLayerName(layerRecord) === layerName) {
+            return layerRecord;
+        }
+    }
+
+    throw new Error(`Could not find room layer '${layerName}' in room '${roomName}'.`);
+}
+
+function readInstanceCoordinate(instance: Record<string, unknown>, fieldName: "x" | "y", layerName: string): number {
+    const value = Number(instance[fieldName]);
+    if (!Number.isFinite(value)) {
+        throw new TypeError(
+            `Room layer '${layerName}' contains an instance with invalid ${fieldName} coordinate metadata.`
+        );
+    }
+    return value;
+}
+
+function resolveCameraFrameTarget(
+    roomDocument: Record<string, unknown>,
+    roomName: string,
+    layerName: string,
+    padding: number
+): RoomCameraFrameTarget {
+    const layer = locateLayerForFraming(roomDocument, roomName, layerName);
+    const instances = Core.asArray(layer.instances).filter((instance): instance is Record<string, unknown> =>
+        Core.isObjectLike(instance)
+    );
+    if (instances.length === 0) {
+        throw new Error(`Room layer '${layerName}' in room '${roomName}' does not contain any frameable instances.`);
+    }
+
+    const xCoordinates = instances.map((instance) => readInstanceCoordinate(instance, "x", layerName));
+    const yCoordinates = instances.map((instance) => readInstanceCoordinate(instance, "y", layerName));
+    const minX = Math.min(...xCoordinates);
+    const maxX = Math.max(...xCoordinates);
+    const minY = Math.min(...yCoordinates);
+    const maxY = Math.max(...yCoordinates);
+
+    return Object.freeze({
+        height: Math.max(1, maxY - minY + padding * 2),
+        instanceCount: instances.length,
+        layerName,
+        width: Math.max(1, maxX - minX + padding * 2),
+        x: minX - padding,
+        y: minY - padding
+    });
 }
 
 function inspectRoomCameraRecord(
@@ -268,7 +363,9 @@ export async function updateRoomCamera(request: UpdateRoomCameraRequest): Promis
         cameraId: `camera_${context.cameraIndex}`,
         deletedPaths: [],
         dryRun,
+        framedInstanceCount: null,
         height: request.height,
+        layerName: null,
         roomName: context.roomReference.name,
         roomPath: context.roomReference.path,
         warnings: [],
@@ -276,5 +373,58 @@ export async function updateRoomCamera(request: UpdateRoomCameraRequest): Promis
         writtenPaths: [context.roomReference.path],
         x: request.x,
         y: request.y
+    };
+}
+
+/**
+ * Frame one room camera/view rectangle around instances on a room layer.
+ *
+ * @param request - Room camera frame request.
+ * @returns Summary of the planned or applied room metadata mutation.
+ */
+export async function frameRoomCamera(request: FrameRoomCameraRequest): Promise<RoomCameraMutationResult> {
+    assertNonNegativePadding(request.padding);
+
+    const context = await resolveRoomCameraMutationContext(request.projectRoot, request.roomName, request.cameraId);
+    const target = resolveCameraFrameTarget(
+        context.roomDocument,
+        context.roomReference.name,
+        request.layerName,
+        request.padding
+    );
+    context.view.xview = target.x;
+    context.view.yview = target.y;
+    context.view.wview = target.width;
+    context.view.hview = target.height;
+    context.view.xport = 0;
+    context.view.yport = 0;
+    context.view.wport = target.width;
+    context.view.hport = target.height;
+    context.view.visible = true;
+
+    const viewSettings = Core.isObjectLike(context.roomDocument.viewSettings)
+        ? (context.roomDocument.viewSettings as Record<string, unknown>)
+        : {};
+    viewSettings.enableViews = true;
+    context.roomDocument.viewSettings = viewSettings;
+
+    const dryRun = request.dryRun !== false;
+    await writeRoomDocumentIfApplying(dryRun, context.roomAbsolutePath, context.roomDocument);
+
+    return {
+        action: "frame",
+        cameraId: `camera_${context.cameraIndex}`,
+        deletedPaths: [],
+        dryRun,
+        framedInstanceCount: target.instanceCount,
+        height: target.height,
+        layerName: target.layerName,
+        roomName: context.roomReference.name,
+        roomPath: context.roomReference.path,
+        warnings: [],
+        width: target.width,
+        writtenPaths: [context.roomReference.path],
+        x: target.x,
+        y: target.y
     };
 }

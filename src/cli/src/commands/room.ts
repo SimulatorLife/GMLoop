@@ -24,6 +24,7 @@ type RoomMutationOptions = SharedProjectContextOptions &
     Readonly<{
         depth?: string;
         name?: string;
+        padding?: string;
         write?: boolean;
     }>;
 
@@ -75,6 +76,14 @@ function parsePositiveDimensionArgument(value: string, argumentName: "height" | 
     return parsed;
 }
 
+function parseNonNegativePaddingArgument(value: string): number {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+        throw new TypeError(`Invalid room camera padding "${value}". Expected a non-negative finite numeric value.`);
+    }
+    return parsed;
+}
+
 function toRoomInstanceMutationPayload(result: RoomInstanceMutationResult) {
     return {
         action: result.action,
@@ -117,7 +126,9 @@ function toRoomCameraMutationPayload(result: RoomCameraMutationResult) {
         cameraId: result.cameraId,
         deletedPaths: result.deletedPaths,
         dryRun: result.dryRun,
+        framedInstanceCount: result.framedInstanceCount,
         height: result.height,
+        layerName: result.layerName,
         roomName: result.roomName,
         roomPath: result.roomPath,
         warnings: result.warnings,
@@ -251,6 +262,25 @@ async function runRoomCameraUpdateAction(
     });
 
     printRoomPayload({ command: "room camera update", ok: true, payload: toRoomCameraMutationPayload(result) });
+}
+
+async function runRoomCameraFrameAction(
+    roomName: string,
+    cameraId: string,
+    layerName: string,
+    options: RoomMutationOptions
+): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const result = await Refactor.frameRoomCamera({
+        cameraId,
+        dryRun: options.write !== true,
+        layerName,
+        padding: options.padding === undefined ? 0 : parseNonNegativePaddingArgument(options.padding),
+        projectRoot: context.projectRoot,
+        roomName
+    });
+
+    printRoomPayload({ command: "room camera frame", ok: true, payload: toRoomCameraMutationPayload(result) });
 }
 
 async function runRoomInstanceAddAction(
@@ -779,6 +809,22 @@ export function createRoomCommand(): Command {
                         parsedHeight,
                         options
                     );
+                } catch (error) {
+                    handleCliError(error);
+                }
+            });
+            camera.addCommand(nested);
+            continue;
+        }
+        if (cameraLeaf === "frame") {
+            nested
+                .argument("<room>", "Room name")
+                .argument("<camera-id>", "Camera id")
+                .argument("<layer>", "Layer name")
+                .option("--padding <pixels>", "Padding around framed instance coordinates.");
+            nested.action(async function roomCameraFrameAction(roomName: string, cameraId: string, layerName: string) {
+                try {
+                    await runRoomCameraFrameAction(roomName, cameraId, layerName, this.opts<RoomMutationOptions>());
                 } catch (error) {
                     handleCliError(error);
                 }

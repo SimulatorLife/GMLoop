@@ -41,11 +41,12 @@ export {
     resolveProjectManifestFile
 } from "./project-resource-operations.js";
 export type {
+    FrameRoomCameraRequest,
     RoomCameraInspectionResult,
     RoomCameraMutationResult,
     UpdateRoomCameraRequest
 } from "./room-camera-operations.js";
-export { inspectRoomCamera, listRoomCameras, updateRoomCamera } from "./room-camera-operations.js";
+export { frameRoomCamera, inspectRoomCamera, listRoomCameras, updateRoomCamera } from "./room-camera-operations.js";
 export type {
     AddRoomInstanceRequest,
     DeleteRoomInstanceRequest,

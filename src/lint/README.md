@@ -112,6 +112,7 @@ Built-in `gml/*` rule short names:
 - `normalize-doc-comments`
 - `normalize-doc-param-defaults`
 - `normalize-doc-param-separators`
+- `normalize-doc-param-undefined-defaults`
 - `normalize-directives`
 - `require-control-flow-braces`
 - `require-region-pairs`
@@ -167,6 +168,8 @@ fix instead of the broader `optimize-logical-flow` rule.
 `normalize-doc-param-defaults` owns optional `@param` default cleanup when the default text cannot be represented safely on one doc-comment line. For example, when synthesized docs would otherwise include a multiline default expression, it collapses that tag to a default-free optional parameter such as `/// @param [matrix]`.
 
 `normalize-doc-param-separators` removes legacy `@param` separator hyphens in doc comments (for example, `@param value - desc` to `@param value desc`).
+
+`normalize-doc-param-undefined-defaults` removes explicit `undefined` defaults from optional `@param` names (for example, `@param [value=undefined]` to `@param [value]`).
 
 `normalize-operator-aliases` is intentionally syntax-safety scoped: it repairs invalid `not` operator usage to `!` in executable code (while skipping uses in comments, string literals, and user-defined identifiers like `not(value)` or `#macro not 1`), and avoids style rewrites. Since logical `not` is strictly rejected by the GML parser, the linter's pre-parser recovery maps invalid logical `not`/`NOT` to `!  ` (preserving source offsets) so that the file remains parseable for this rule to diagnose and permanently fix it.
 Logical operator style normalization (`&&`/`||`/`^^` vs `and`/`or`/`xor`) belongs to the formatter (`@gmloop/format`, `logicalOperatorsStyle`), so lint does not rewrite those forms.
