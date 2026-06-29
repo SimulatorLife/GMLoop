@@ -156,9 +156,7 @@ const PLANNED_CAPABILITIES: ReadonlyArray<PlannedCapability> = Object.freeze([
             rationale: "GMLoop owns this as a refactor-aware companion operation with dry-run/write semantics."
         })
     ),
-    ...[
-        ["room", "update"]
-    ].map((commandPath) =>
+    ...[["room", "update"]].map((commandPath) =>
         createPlannedCapability({
             commandPath,
             classification: "gmloop_native_missing",
