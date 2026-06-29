@@ -969,7 +969,11 @@ export async function planNamingConventionCodemod(
                         resolvedRules,
                         { includeMessage: false }
                     );
-                    if (callableEvaluation.compliant) {
+                    if (
+                        callableEvaluation.compliant &&
+                        callableTarget.category !== "constructorFunction" &&
+                        callableTarget.category !== "structDeclaration"
+                    ) {
                         appendTopLevelRenameOnce(topLevelRenames, seenTopLevelRenames, {
                             symbolId: callableTarget.symbolId,
                             newName: evaluation.suggestedName

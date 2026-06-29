@@ -151,6 +151,8 @@ export function generateIdentifierEntryScipId(entry: IdentifierEntry, nestedName
         scipKind = "macro";
     } else if (id.startsWith("enum:")) {
         scipKind = "enum";
+    } else if (id.startsWith("enum-member:")) {
+        scipKind = "enum-member";
     } else if (id.startsWith("global:") || id.startsWith("instance:")) {
         scipKind = "var";
     } else {

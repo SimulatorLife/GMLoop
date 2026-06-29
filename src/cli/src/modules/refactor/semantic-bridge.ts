@@ -1336,6 +1336,7 @@ export class GmlSemanticBridge {
         if (!Core.isObjectLike(entry)) {
             if (
                 symbolId.startsWith("gml/enum/") ||
+                symbolId.startsWith("gml/enum-member/") ||
                 symbolId.startsWith("gml/macro/") ||
                 symbolId.startsWith("gml/var/")
             ) {
@@ -1346,13 +1347,19 @@ export class GmlSemanticBridge {
 
         const typedEntry = entry as { identifierId?: unknown };
 
-        if (symbolId.startsWith("gml/enum/") || symbolId.startsWith("gml/macro/") || symbolId.startsWith("gml/var/")) {
+        if (
+            symbolId.startsWith("gml/enum/") ||
+            symbolId.startsWith("gml/enum-member/") ||
+            symbolId.startsWith("gml/macro/") ||
+            symbolId.startsWith("gml/var/")
+        ) {
             return true;
         }
 
         return (
             typeof typedEntry.identifierId === "string" &&
             (typedEntry.identifierId.startsWith("enum:") ||
+                typedEntry.identifierId.startsWith("enum-member:") ||
                 typedEntry.identifierId.startsWith("macro:") ||
                 typedEntry.identifierId.startsWith("instance:"))
         );
@@ -2544,7 +2551,7 @@ export class GmlSemanticBridge {
                 occurrences: this.collectEntryOccurrences(entry),
                 path: declarationFilePath,
                 scopeId: entry.scopeId ?? null,
-                symbolId: null
+                symbolId: this.generateScipId(entry)
             });
         }
     }
