@@ -3010,7 +3010,7 @@ void test("executeConfiguredCodemods renames enum member references across diffe
 
     const files = new Map<string, string>([
         ["scripts/group_test/group_test.gml", "enum eTestResultType { console }\n"],
-        ["scripts/group_vertex_buffers/group_vertex_buffers.gml", "func_run(eTestResultType.console);\n"]
+        ["scripts/group_vertex_buffers/group_vertex_buffers.gml", "func_run(eTestResultType.console, false);\n"]
     ]);
 
     const result = await engine.executeConfiguredCodemods({
@@ -3035,6 +3035,6 @@ void test("executeConfiguredCodemods renames enum member references across diffe
     assert.equal(result.appliedFiles.get("scripts/group_test/group_test.gml"), "enum eTestResultType { CONSOLE }\n");
     assert.equal(
         result.appliedFiles.get("scripts/group_vertex_buffers/group_vertex_buffers.gml"),
-        "func_run(eTestResultType.CONSOLE);\n"
+        "func_run(eTestResultType.CONSOLE, false);\n"
     );
 });

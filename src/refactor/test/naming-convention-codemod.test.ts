@@ -44,8 +44,6 @@ void test("namingConvention preserves constructor/struct declarations when scrip
         }
     ];
 
-    const sourceTexts = new Map<string, string>([["scripts/Attack/Attack.gml", "function Attack() constructor {}"]]);
-
     const semantic: PartialSemanticAnalyzer = {
         listNamingConventionTargets: async () => targets,
         validateEdits: async () => ({ errors: [], warnings: [] })

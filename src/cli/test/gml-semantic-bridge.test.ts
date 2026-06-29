@@ -3109,6 +3109,52 @@ void describe("GmlSemanticBridge tests", () => {
         }
     });
 
+    void it("returns exact enum member occurrence ranges before comma-separated call arguments", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-enum-member-range-"));
+
+        try {
+            const enumSource = "enum eTestResultType { console }\n";
+            const useSource = "func_run_test_group(test_cases_uvs, eTestResultType.console, false);\n";
+
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "group_test"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "group_vertex_buffers"), { recursive: true });
+            fs.writeFileSync(
+                path.join(tmpRoot, "MyGame.yyp"),
+                `${JSON.stringify({ name: "MyGame", resourceType: "GMProject" }, null, 2)}\n`
+            );
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "group_test", "group_test.yy"),
+                `${JSON.stringify({ name: "group_test", resourceType: "GMScript" }, null, 2)}\n`
+            );
+            fs.writeFileSync(path.join(tmpRoot, "scripts", "group_test", "group_test.gml"), enumSource);
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "group_vertex_buffers", "group_vertex_buffers.yy"),
+                `${JSON.stringify({ name: "group_vertex_buffers", resourceType: "GMScript" }, null, 2)}\n`
+            );
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "group_vertex_buffers", "group_vertex_buffers.gml"),
+                useSource
+            );
+
+            const projectIndex = await Semantic.buildProjectIndex(tmpRoot);
+            const bridge = new GmlSemanticBridge(projectIndex, tmpRoot);
+            const targets = await bridge.listNamingConventionTargets();
+            const consoleTarget = targets.find(
+                (target) => target.category === "enumMember" && target.name === "console"
+            );
+
+            assert.ok(consoleTarget);
+            const referenceOccurrence = consoleTarget.occurrences.find(
+                (occurrence) => occurrence.path === "scripts/group_vertex_buffers/group_vertex_buffers.gml"
+            );
+
+            assert.ok(referenceOccurrence);
+            assert.equal(useSource.slice(referenceOccurrence.start, referenceOccurrence.end), "console");
+        } finally {
+            fs.rmSync(tmpRoot, { recursive: true, force: true });
+        }
+    });
+
     void it("listMacroExpansionDependencies reports caller-scoped identifiers consumed by referenced macros", async () => {
         const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-macro-deps-"));
 

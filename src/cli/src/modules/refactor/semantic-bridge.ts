@@ -3273,6 +3273,10 @@ export class GmlSemanticBridge {
 
     private collectEntryOccurrences(entry: SemanticIdentifierEntry): Array<SymbolOccurrence> {
         const occurrences: Array<SymbolOccurrence> = [];
+        const isEnumMemberEntry =
+            entry.identifierId?.startsWith("enum-member:") === true &&
+            Core.isNonEmptyString(entry.name) &&
+            Core.isNonEmptyString(entry.enumName);
 
         for (const declaration of entry.declarations ?? []) {
             const declarationStart = readSemanticLocationIndex(declaration.start) ?? 0;
@@ -3295,11 +3299,22 @@ export class GmlSemanticBridge {
             const referenceEnd = readExclusiveSemanticLocationIndex(reference.end) ?? 0;
             const locationStart = readSemanticLocationIndex(referenceLocationRecord?.start) ?? 0;
             const locationEnd = readExclusiveSemanticLocationIndex(referenceLocationRecord?.end) ?? 0;
+            const rawStart = referenceStart || locationStart;
+            const rawEnd = referenceEnd || locationEnd;
+            const exactEnumMemberRange = isEnumMemberEntry
+                ? this.resolveEnumMemberReferenceRange({
+                      filePath: typeof reference.filePath === "string" ? reference.filePath : "",
+                      startIndex: rawStart,
+                      endIndex: rawEnd,
+                      enumName: entry.enumName,
+                      memberName: entry.name
+                  })
+                : null;
 
             occurrences.push({
                 path: typeof reference.filePath === "string" ? reference.filePath : "",
-                start: referenceStart || locationStart,
-                end: referenceEnd || locationEnd,
+                start: exactEnumMemberRange?.start ?? rawStart,
+                end: exactEnumMemberRange?.end ?? rawEnd,
                 scopeId: typeof reference.scopeId === "string" ? reference.scopeId : undefined,
                 kind: "reference"
             });
@@ -3395,14 +3410,22 @@ export class GmlSemanticBridge {
                 continue;
             }
 
-            if (!this.isEnumMemberReferenceSourceMatch(unresolvedReference.filePath, start, entry.enumName)) {
+            const exactRange = this.resolveEnumMemberReferenceRange({
+                filePath: unresolvedReference.filePath,
+                startIndex: start,
+                endIndex: end,
+                enumName: entry.enumName,
+                memberName: entry.name
+            });
+
+            if (exactRange === null) {
                 continue;
             }
 
             occurrences.push({
                 path: unresolvedReference.filePath,
-                start,
-                end,
+                start: exactRange.start,
+                end: exactRange.end,
                 scopeId:
                     typeof unresolvedReference.reference.scopeId === "string"
                         ? unresolvedReference.reference.scopeId
@@ -3484,8 +3507,49 @@ export class GmlSemanticBridge {
         return sourceText[nextCursor] === "(";
     }
 
-    private isEnumMemberReferenceSourceMatch(filePath: string, startIndex: number, enumName: string): boolean {
-        return this.readDottedReferenceOwnerName(filePath, startIndex) === enumName;
+    private resolveEnumMemberReferenceRange(parameters: {
+        filePath: string;
+        startIndex: number;
+        endIndex: number;
+        enumName: string;
+        memberName: string;
+    }): { start: number; end: number } | null {
+        const sourceText = this.readProjectSourceText(parameters.filePath);
+        if (
+            sourceText === null ||
+            parameters.startIndex < 0 ||
+            parameters.endIndex <= parameters.startIndex ||
+            parameters.endIndex > sourceText.length ||
+            !Core.isNonEmptyString(parameters.enumName) ||
+            !Core.isNonEmptyString(parameters.memberName)
+        ) {
+            return null;
+        }
+
+        const candidateStarts = [parameters.startIndex];
+        let searchStart = parameters.startIndex + 1;
+        while (searchStart < parameters.endIndex) {
+            const candidateStart = sourceText.indexOf(parameters.memberName, searchStart);
+            if (candidateStart === -1 || candidateStart >= parameters.endIndex) {
+                break;
+            }
+            candidateStarts.push(candidateStart);
+            searchStart = candidateStart + 1;
+        }
+
+        for (const candidateStart of candidateStarts) {
+            if (
+                isIdentifierTokenAt(sourceText, candidateStart, parameters.memberName) &&
+                this.readDottedReferenceOwnerName(parameters.filePath, candidateStart) === parameters.enumName
+            ) {
+                return {
+                    start: candidateStart,
+                    end: candidateStart + parameters.memberName.length
+                };
+            }
+        }
+
+        return null;
     }
 
     private isKnownEnumMemberReference(filePath: string, startIndex: number): boolean {
