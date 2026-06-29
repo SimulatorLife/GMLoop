@@ -7,9 +7,8 @@ import {
     readProjectMetadataDocument,
     resolveProjectManifestFile
 } from "./project-resource-operations.js";
+import { createDefaultInstanceLayer } from "./room-metadata-defaults.js";
 import { locateRoomReference, type ResourceReference, writeRoomDocumentIfApplying } from "./room-resource-helpers.js";
-
-const INSTANCE_LAYER_RESOURCE_TYPE = "GMRInstanceLayer";
 
 type RoomLayerMutationContext = Readonly<{
     layers: Array<unknown>;
@@ -216,31 +215,6 @@ function assertLayerIndex(layerIndex: number, layers: ReadonlyArray<unknown>): v
     }
 }
 
-function createInstanceLayer(layerName: string, depth: number): Record<string, unknown> {
-    return {
-        $GMRInstanceLayer: "",
-        "%Name": layerName,
-        depth,
-        effectEnabled: true,
-        effectType: null,
-        gridX: 32,
-        gridY: 32,
-        hierarchyFrozen: false,
-        inheritLayerDepth: false,
-        inheritLayerSettings: false,
-        inheritSubLayers: true,
-        inheritVisibility: true,
-        instances: [],
-        layers: [],
-        name: layerName,
-        properties: [],
-        resourceType: INSTANCE_LAYER_RESOURCE_TYPE,
-        resourceVersion: "2.0",
-        userdefinedDepth: false,
-        visible: true
-    };
-}
-
 async function resolveRoomLayerMutationContext(
     projectRootInput: string,
     roomName: string
@@ -323,7 +297,7 @@ export async function createRoomLayer(request: CreateRoomLayerRequest): Promise<
 
     const context = await resolveRoomLayerMutationContext(request.projectRoot, request.roomName);
     assertUniqueLayerName(context.layers, request.layerName, context.roomReference.name);
-    context.layers.push(createInstanceLayer(request.layerName, request.depth));
+    context.layers.push(createDefaultInstanceLayer(request.layerName, request.depth));
     const layerIndex = context.layers.length - 1;
 
     const dryRun = request.dryRun !== false;

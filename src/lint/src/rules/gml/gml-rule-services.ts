@@ -3,6 +3,7 @@ import { Core } from "@gmloop/core";
 import { printExpression, printNodeForAutofix, readNodeText } from "../../contracts/autofix-printing.js";
 import {
     convertLegacyReturnsDescriptionLinesToMetadata,
+    convertLegacyReturnsDescriptionLineToMetadata,
     normalizeDocParamName,
     promoteLeadingDocCommentTextToDescription,
     resolveParameterName
@@ -36,6 +37,7 @@ import {
  * helpers directly from `src/lint/src/doc-comment/index.js`.
  */
 export const gmlRuleDocCommentServices = Object.freeze({
+    convertLegacyReturnsDescriptionLineToMetadata,
     convertLegacyReturnsDescriptionLinesToMetadata,
     normalizeDocParamName,
     promoteLeadingDocCommentTextToDescription,

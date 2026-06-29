@@ -30,6 +30,7 @@ const RECOMMENDED_RULES: Readonly<Record<string, LintRuleLevel>> = Object.freeze
     "gml/no-unnecessary-string-interpolation": "warn",
     "gml/remove-default-comments": "warn",
     "gml/normalize-doc-comments": "warn",
+    "gml/normalize-doc-returns": "warn",
     "gml/normalize-doc-param-defaults": "warn",
     "gml/normalize-doc-param-separators": "warn",
     "gml/normalize-doc-param-undefined-defaults": "warn",

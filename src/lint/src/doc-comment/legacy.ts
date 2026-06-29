@@ -172,80 +172,19 @@ export function convertLegacyReturnsDescriptionLinesToMetadata(
 
     const convertedReturns: string[] = [];
     const retainedLines: string[] = [];
-    const normalizedTypeAnnotation =
-        typeof opts.normalizeDocCommentTypeAnnotations === "function"
-            ? opts.normalizeDocCommentTypeAnnotations
-            : undefined;
-
     for (const line of normalizedLines) {
         if (typeof line !== STRING_TYPE) {
             retainedLines.push(line);
             continue;
         }
 
-        const match = line.match(/^(\s*\/\/\/)(.*)$/);
-        if (!match) {
+        const convertedLine = convertLegacyReturnsDescriptionLineToMetadata(line, opts);
+        if (convertedLine === line) {
             retainedLines.push(line);
             continue;
         }
 
-        const [, prefix = "///", suffix = ""] = match;
-        const trimmedSuffix = suffix.trim();
-
-        if (trimmedSuffix.length === 0) {
-            retainedLines.push(line);
-            continue;
-        }
-
-        if (trimmedSuffix.startsWith("@")) {
-            retainedLines.push(line);
-            continue;
-        }
-
-        const returnsMatch = trimmedSuffix.match(LEGACY_RETURNS_DESCRIPTION_PATTERN);
-        let payload: string;
-
-        const returnsColonMatch = trimmedSuffix.match(/^returns\s*:\s*(.*)$/i);
-
-        if (returnsColonMatch) {
-            payload = (returnsColonMatch[1] ?? "").trim();
-        } else if (returnsMatch) {
-            payload = returnsMatch[0];
-        } else {
-            retainedLines.push(line);
-            continue;
-        }
-
-        const payloadParts = parseLegacyReturnPayload(payload);
-        if (!payloadParts) {
-            retainedLines.push(line);
-            continue;
-        }
-
-        let { typeText, descriptionText } = payloadParts;
-
-        if (descriptionText.length > 0 && /^[a-z]/.test(descriptionText)) {
-            descriptionText = capitalize(descriptionText);
-        }
-
-        let normalizedType = typeText.trim();
-        if (normalizedType.length > 0 && !/^\{.*\}$/.test(normalizedType)) {
-            normalizedType = `{${normalizedType}}`;
-        }
-
-        if (normalizedTypeAnnotation && normalizedType.length > 0) {
-            normalizedType = normalizedTypeAnnotation(normalizedType);
-        }
-
-        let converted = `${prefix} @returns`;
-        if (normalizedType.length > 0) {
-            converted += ` ${normalizedType}`;
-        }
-        if (descriptionText.length > 0) {
-            converted += ` ${descriptionText}`;
-        }
-
-        convertedReturns.push(converted);
+        convertedReturns.push(convertedLine);
     }
 
     if (convertedReturns.length === 0) {
@@ -269,6 +208,82 @@ export function convertLegacyReturnsDescriptionLinesToMetadata(
     copyDocCommentFlags(docLines, resultLines);
 
     return resultLines as DocCommentLines;
+}
+
+/**
+ * Converts one legacy doc-comment return line into canonical `@returns`
+ * metadata.
+ *
+ * @param line Source line to inspect.
+ * @param opts Optional type-annotation normalizer for converted return types.
+ * @returns Converted line, or the original line when it is not a legacy return description.
+ */
+export function convertLegacyReturnsDescriptionLineToMetadata(
+    line: string,
+    opts: { normalizeDocCommentTypeAnnotations?: (line: string) => string } = {}
+): string {
+    const match = line.match(/^(\s*\/\/\/)(.*)$/);
+    if (!match) {
+        return line;
+    }
+
+    const [, prefix = "///", suffix = ""] = match;
+    const trimmedSuffix = suffix.trim();
+    if (trimmedSuffix.length === 0 || trimmedSuffix.startsWith("@")) {
+        return line;
+    }
+
+    const returnsColonMatch = trimmedSuffix.match(/^returns\s*:\s*(.*)$/i);
+    const returnsMatch = trimmedSuffix.match(LEGACY_RETURNS_DESCRIPTION_PATTERN);
+    let payload: string;
+
+    if (returnsColonMatch) {
+        payload = (returnsColonMatch[1] ?? "").trim();
+    } else if (returnsMatch && isKnownLegacyReturnType(returnsMatch.groups?.type ?? "")) {
+        payload = returnsMatch[0];
+    } else {
+        return line;
+    }
+
+    const payloadParts = parseLegacyReturnPayload(payload);
+    if (!payloadParts) {
+        return line;
+    }
+
+    let { typeText, descriptionText } = payloadParts;
+
+    if (descriptionText.length > 0 && /^[a-z]/.test(descriptionText)) {
+        descriptionText = capitalize(descriptionText);
+    }
+
+    let normalizedType = typeText.trim();
+    if (normalizedType.length > 0 && !/^\{.*\}$/.test(normalizedType)) {
+        normalizedType = `{${normalizedType}}`;
+    }
+
+    const normalizedTypeAnnotation =
+        typeof opts.normalizeDocCommentTypeAnnotations === "function" ? opts.normalizeDocCommentTypeAnnotations : null;
+    if (normalizedTypeAnnotation && normalizedType.length > 0) {
+        normalizedType = normalizedTypeAnnotation(normalizedType);
+    }
+
+    let converted = `${prefix} @returns`;
+    if (normalizedType.length > 0) {
+        converted += ` ${normalizedType}`;
+    }
+    if (descriptionText.length > 0) {
+        converted += ` ${descriptionText}`;
+    }
+
+    return converted;
+}
+
+function isKnownLegacyReturnType(typeText: string): boolean {
+    const normalizedTypeText = typeText
+        .trim()
+        .replaceAll(/^\{|\}$/gu, "")
+        .toLowerCase();
+    return KNOWN_TYPES.has(normalizedTypeText) || normalizedTypeText.startsWith("struct.");
 }
 
 function isLegacyFunctionTagWithoutParams(line: string | null) {

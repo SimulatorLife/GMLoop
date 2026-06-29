@@ -172,6 +172,13 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         messageId: "normalizeDocComments"
     },
     {
+        description: "Convert legacy return description lines into canonical @returns doc-comment metadata.",
+        mapKey: "GmlNormalizeDocReturns",
+        shortName: "normalize-doc-returns",
+        fullId: "gml/normalize-doc-returns",
+        messageId: "normalizeDocReturns"
+    },
+    {
         description: "Normalize optional @param defaults that cannot be represented safely on one doc-comment line.",
         mapKey: "GmlNormalizeDocParamDefaults",
         shortName: "normalize-doc-param-defaults",

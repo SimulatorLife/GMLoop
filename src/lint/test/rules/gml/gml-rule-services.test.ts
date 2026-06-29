@@ -41,6 +41,7 @@ async function readFeatherSourceFiles(): Promise<ReadonlyMap<string, string>> {
 }
 
 void test("gmlRuleDocCommentServices exposes the doc-comment contract needed by rules", () => {
+    assert.equal(typeof gmlRuleDocCommentServices.convertLegacyReturnsDescriptionLineToMetadata, "function");
     assert.equal(typeof gmlRuleDocCommentServices.convertLegacyReturnsDescriptionLinesToMetadata, "function");
     assert.equal(typeof gmlRuleDocCommentServices.promoteLeadingDocCommentTextToDescription, "function");
     assert.equal(typeof gmlRuleDocCommentServices.normalizeDocParamName, "function");

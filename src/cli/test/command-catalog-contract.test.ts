@@ -254,6 +254,22 @@ void test("room camera update/frame MCP tool schemas include mutation arguments 
     assert.equal(paddingField.required, false);
 });
 
+void test("room repair MCP tool schema includes room argument and write option", () => {
+    const mcpCatalog = getMcpToolCatalogEntries();
+    const entry = mcpCatalog.find((candidate) => candidate.toolName === "gmloop_room_repair");
+    assert.ok(entry);
+
+    const roomField = entry.fields.find((field) => field.attributeName === "room");
+    assert.ok(roomField);
+    assert.equal(roomField.kind, "argument");
+    assert.equal(roomField.required, true);
+
+    const writeField = entry.fields.find((field) => field.attributeName === "write");
+    assert.ok(writeField);
+    assert.equal(writeField.kind, "option");
+    assert.equal(writeField.valueType, "boolean");
+});
+
 void test("room instance add/update/delete MCP tool schemas include mutation arguments and write option", () => {
     const mcpCatalog = getMcpToolCatalogEntries();
     const addEntry = mcpCatalog.find((candidate) => candidate.toolName === "gmloop_room_instance_add");

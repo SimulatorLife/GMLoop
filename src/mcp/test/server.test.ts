@@ -77,6 +77,7 @@ void test("MCP server registers CLI-derived graph tools and graph resources", ()
     assert.ok(toolNames.includes("gmloop_room_camera_list"));
     assert.ok(toolNames.includes("gmloop_room_camera_inspect"));
     assert.ok(toolNames.includes("gmloop_room_camera_frame"));
+    assert.ok(toolNames.includes("gmloop_room_repair"));
 
     assert.ok(Object.hasOwn(server._registeredTools, "gmloop_graph_search"));
     assert.ok(Object.hasOwn(server._registeredTools, "gmloop_script_add"));

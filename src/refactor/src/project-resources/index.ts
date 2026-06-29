@@ -70,3 +70,10 @@ export {
     reorderRoomLayer,
     updateRoomLayer
 } from "./room-layer-operations.js";
+export type {
+    RepairRoomRequest,
+    RoomRepairAppliedRepair,
+    RoomRepairDiagnostic,
+    RoomRepairResult
+} from "./room-repair-operations.js";
+export { repairRoom } from "./room-repair-operations.js";

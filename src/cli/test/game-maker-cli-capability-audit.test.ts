@@ -143,6 +143,11 @@ void test("capability audit reports implemented companion leaves separately from
 
     const roomRepair = audit.capabilities.find((entry) => entry.operation === "room repair");
     assert.ok(roomRepair);
-    assert.equal(roomRepair.classification, "gmloop_native_missing");
-    assert.equal(roomRepair.status, "gmloop_placeholder");
+    assert.equal(roomRepair.classification, "gmloop_companion");
+    assert.equal(roomRepair.status, "gmloop_available");
+
+    const roomUpdate = audit.capabilities.find((entry) => entry.operation === "room update");
+    assert.ok(roomUpdate);
+    assert.equal(roomUpdate.classification, "gmloop_native_missing");
+    assert.equal(roomUpdate.status, "gmloop_missing");
 });

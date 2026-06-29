@@ -16,6 +16,7 @@ import { createNormalizeDocCommentsRule } from "./rules/normalize-doc-comments-r
 import { createNormalizeDocParamDefaultsRule } from "./rules/normalize-doc-param-defaults-rule.js";
 import { createNormalizeDocParamSeparatorsRule } from "./rules/normalize-doc-param-separators-rule.js";
 import { createNormalizeDocParamUndefinedDefaultsRule } from "./rules/normalize-doc-param-undefined-defaults-rule.js";
+import { createNormalizeDocReturnsRule } from "./rules/normalize-doc-returns-rule.js";
 import { createNormalizeOperatorAliasesRule } from "./rules/normalize-operator-aliases-rule.js";
 import { createOptimizeLogicalFlowRule } from "./rules/optimize-logical-flow-rule.js";
 import { createOptimizeMathExpressionsRule } from "./rules/optimize-math-expressions-rule.js";
@@ -61,6 +62,7 @@ const gmlRuleFactoriesByShortName = Object.freeze(
         ["no-unnecessary-string-interpolation", createNoUnnecessaryStringInterpolationRule],
         ["remove-default-comments", createRemoveDefaultCommentsRule],
         ["normalize-doc-comments", createNormalizeDocCommentsRule],
+        ["normalize-doc-returns", createNormalizeDocReturnsRule],
         ["normalize-doc-param-defaults", createNormalizeDocParamDefaultsRule],
         ["normalize-doc-param-separators", createNormalizeDocParamSeparatorsRule],
         ["normalize-doc-param-undefined-defaults", createNormalizeDocParamUndefinedDefaultsRule],

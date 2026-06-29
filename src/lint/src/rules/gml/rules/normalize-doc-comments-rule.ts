@@ -12,12 +12,8 @@ import {
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
 
-const {
-    convertLegacyReturnsDescriptionLinesToMetadata,
-    normalizeDocParamName,
-    promoteLeadingDocCommentTextToDescription,
-    resolveParameterName
-} = gmlRuleDocCommentServices;
+const { normalizeDocParamName, promoteLeadingDocCommentTextToDescription, resolveParameterName } =
+    gmlRuleDocCommentServices;
 
 const { applyJsDocTagAliasReplacements, getNodeStartIndex } = Core;
 
@@ -1165,9 +1161,7 @@ function processDocBlock(blockLines: Array<string>): Array<string> {
 
     const promotedBlock = promoteLeadingDocCommentTextToDescription(normalizedBlock, [], true);
 
-    const returnsNormalizedBlock = convertLegacyReturnsDescriptionLinesToMetadata(promotedBlock);
-
-    const dedupedReturnsBlock = dedupeReturnDocLines(returnsNormalizedBlock);
+    const dedupedReturnsBlock = dedupeReturnDocLines(promotedBlock);
 
     return Array.from(alignDescriptionContinuationLines(dedupedReturnsBlock));
 }

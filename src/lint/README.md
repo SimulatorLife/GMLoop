@@ -110,6 +110,7 @@ Built-in `gml/*` rule short names:
 - `remove-default-comments`
 - `normalize-banner-comments`
 - `normalize-doc-comments`
+- `normalize-doc-returns`
 - `normalize-doc-param-defaults`
 - `normalize-doc-param-separators`
 - `normalize-doc-param-undefined-defaults`
@@ -164,6 +165,8 @@ fix instead of the broader `optimize-logical-flow` rule.
 `normalize-banner-comments` canonicalizes decorative banner comments (line and block forms) and rewrites method-list `///` banner lines (outside of function declarations) to plain `//` comments.
 
 `normalize-doc-comments` canonicalizes doc tags/content within a single file. It synthesizes missing tags for declaration/assignment-style function docs. Constructors, including for inherited constructors (`function X(...) : Parent(...) constructor`). For struct/object literal property functions, the rule synthesizes docs, including `@returns`. Canonical ordering keeps non-param metadata tags before the param block, but preserves custom tags interleaved between `@param` lines when intentionally authored that way.
+
+`normalize-doc-returns` converts legacy return description lines into canonical `@returns` metadata (for example, `Returns: Boolean, indicating success` to `@returns {Boolean} Indicating success`).
 
 `normalize-doc-param-defaults` owns optional `@param` default cleanup when the default text cannot be represented safely on one doc-comment line. For example, when synthesized docs would otherwise include a multiline default expression, it collapses that tag to a default-free optional parameter such as `/// @param [matrix]`.
 

@@ -9,6 +9,7 @@ import {
     type ProjectResourceKindValue,
     requireProjectResourceKind
 } from "./project-resource-kinds.js";
+import { createDefaultInstanceLayer, createDefaultRoomViews } from "./room-metadata-defaults.js";
 
 const RESOURCE_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 const EMPTY_PNG_BYTES = Buffer.from(
@@ -365,26 +366,6 @@ function createParentReference(context: ProjectResourceContext): { name: string;
     };
 }
 
-function createDefaultRoomViews(): Array<Record<string, number | boolean | null>> {
-    return Array.from({ length: 8 }, () => ({
-        hborder: 32,
-        hport: 768,
-        hspeed: -1,
-        hview: 768,
-        inherit: false,
-        objectId: null,
-        vborder: 32,
-        visible: false,
-        vspeed: -1,
-        wport: 1024,
-        wview: 1024,
-        xport: 0,
-        xview: 0,
-        yport: 0,
-        yview: 0
-    }));
-}
-
 function createResourceMetadataDocument(context: ProjectResourceContext): Record<string, unknown> {
     const parent = createParentReference(context);
 
@@ -446,28 +427,7 @@ function createResourceMetadataDocument(context: ProjectResourceContext): Record
                 instanceCreationOrder: [],
                 isDnd: false,
                 layers: [
-                    {
-                        $GMRInstanceLayer: "",
-                        "%Name": "Instances",
-                        depth: 0,
-                        effectEnabled: true,
-                        effectType: null,
-                        gridX: 32,
-                        gridY: 32,
-                        hierarchyFrozen: false,
-                        inheritLayerDepth: false,
-                        inheritLayerSettings: false,
-                        inheritSubLayers: true,
-                        inheritVisibility: true,
-                        instances: [],
-                        layers: [],
-                        name: "Instances",
-                        properties: [],
-                        resourceType: "GMRInstanceLayer",
-                        resourceVersion: "2.0",
-                        userdefinedDepth: false,
-                        visible: true
-                    },
+                    createDefaultInstanceLayer("Instances", 0),
                     {
                         $GMRBackgroundLayer: "",
                         "%Name": "Background",

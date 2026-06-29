@@ -358,10 +358,10 @@ void test("room layer create supports dry-run and write modes", async () => {
         assert.equal(dryRunPayload.payload.roomPath, "rooms/rm_main/rm_main.yy");
         assert.deepEqual(dryRunPayload.payload.writtenPaths, ["rooms/rm_main/rm_main.yy"]);
 
-        const dryRunRoomMetadata = Core.parseProjectMetadataDocumentForMutation(
+        const dryRunRoomMetadata = Core.parseProjectMetadataDocument(
             await readFile(roomMetadataPath, "utf8"),
             roomMetadataPath
-        ).document;
+        );
         assert.equal(Core.asArray(dryRunRoomMetadata.layers).length, 2);
 
         const writeResult = await runCliTestCommand({
@@ -482,10 +482,10 @@ void test("room layer update, reorder, and delete support dry-run and write mode
         assert.equal(dryRunPayload.payload.previousLayerIndex, 0);
         assert.deepEqual(dryRunPayload.payload.writtenPaths, ["rooms/rm_main/rm_main.yy"]);
 
-        const dryRunRoomMetadata = Core.parseProjectMetadataDocumentForMutation(
+        const dryRunRoomMetadata = Core.parseProjectMetadataDocument(
             await readFile(roomMetadataPath, "utf8"),
             roomMetadataPath
-        ).document;
+        );
         const dryRunLayers = Core.asArray(dryRunRoomMetadata.layers);
         const originalFirstLayer = dryRunLayers[0] as Record<string, unknown>;
         assert.equal(originalFirstLayer.name, "Instances");
@@ -882,6 +882,128 @@ void test("room camera frame rejects empty layers", async () => {
         });
         assert.equal(result.exitCode, 1);
         assert.match(result.stderr, /does not contain any frameable instances/u);
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("room repair plans and applies common room metadata repairs", async () => {
+    const projectRoot = await createTemporaryRoomInstanceCliProject();
+    const roomMetadataPath = path.join(projectRoot, "rooms/rm_main/rm_main.yy");
+
+    try {
+        const addInstanceResult = await runCliTestCommand({
+            argv: [
+                "room",
+                "instance",
+                "add",
+                "rm_main",
+                "obj_player",
+                "10",
+                "20",
+                "--path",
+                projectRoot,
+                "--json",
+                "--write"
+            ]
+        });
+        assert.equal(addInstanceResult.exitCode, 0);
+        const addInstancePayload = JSON.parse(addInstanceResult.stdout) as {
+            payload: { instanceId: string };
+        };
+
+        const corruptedRoomMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        const corruptedLayer = Core.asArray(corruptedRoomMetadata.layers)[0] as Record<string, unknown>;
+        const corruptedInstance = Core.asArray(corruptedLayer.instances)[0] as Record<string, unknown>;
+        delete corruptedInstance.name;
+        corruptedRoomMetadata.viewSettings = "invalid";
+        corruptedRoomMetadata.views = [null];
+        corruptedRoomMetadata.instanceCreationOrder = [
+            {
+                name: addInstancePayload.payload.instanceId,
+                path: "rooms/wrong/wrong.yy"
+            },
+            {
+                name: "inst_missing",
+                path: "rooms/rm_main/rm_main.yy"
+            }
+        ];
+        await writeFile(roomMetadataPath, `${JSON.stringify(corruptedRoomMetadata, null, 4)}\n`, "utf8");
+
+        const dryRunResult = await runCliTestCommand({
+            argv: ["room", "repair", "rm_main", "--path", projectRoot, "--json"]
+        });
+        assert.equal(dryRunResult.exitCode, 0);
+        const dryRunPayload = JSON.parse(dryRunResult.stdout) as {
+            command: string;
+            payload: {
+                changed: boolean;
+                dryRun: boolean;
+                repairs: Array<{ code: string }>;
+                writtenPaths: Array<string>;
+            };
+        };
+        assert.equal(dryRunPayload.command, "room repair");
+        assert.equal(dryRunPayload.payload.changed, true);
+        assert.equal(dryRunPayload.payload.dryRun, true);
+        assert.deepEqual(dryRunPayload.payload.writtenPaths, ["rooms/rm_main/rm_main.yy"]);
+        assert.ok(dryRunPayload.payload.repairs.some((repair) => repair.code === "room.viewSettings.not_object"));
+        assert.ok(
+            dryRunPayload.payload.repairs.some((repair) => repair.code === "room.instanceCreationOrder.invalid_path")
+        );
+        assert.ok(dryRunPayload.payload.repairs.some((repair) => repair.code === "room.instance.name_mismatch"));
+
+        const dryRunRoomMetadata = Core.parseProjectMetadataDocument(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        );
+        assert.equal(dryRunRoomMetadata.viewSettings, "invalid");
+
+        const writeResult = await runCliTestCommand({
+            argv: ["room", "repair", "rm_main", "--path", projectRoot, "--json", "--write"]
+        });
+        assert.equal(writeResult.exitCode, 0);
+        const writePayload = JSON.parse(writeResult.stdout) as {
+            payload: { changed: boolean; dryRun: boolean; roomName: string };
+        };
+        assert.equal(writePayload.payload.changed, true);
+        assert.equal(writePayload.payload.dryRun, false);
+        assert.equal(writePayload.payload.roomName, "rm_main");
+
+        const repairedRoomMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        const repairedViewSettings = repairedRoomMetadata.viewSettings as Record<string, unknown>;
+        const repairedViews = repairedRoomMetadata.views as Array<unknown>;
+        const repairedCreationOrder = repairedRoomMetadata.instanceCreationOrder as Array<Record<string, unknown>>;
+        const repairedLayer = Core.asArray(repairedRoomMetadata.layers)[0] as Record<string, unknown>;
+        const repairedInstance = Core.asArray(repairedLayer.instances)[0] as Record<string, unknown>;
+        assert.equal(repairedViewSettings.enableViews, false);
+        assert.equal(repairedViews.length, 8);
+        assert.ok(Core.isObjectLike(repairedViews[0]));
+        assert.equal(repairedInstance.name, addInstancePayload.payload.instanceId);
+        assert.equal(repairedInstance["%Name"], addInstancePayload.payload.instanceId);
+        assert.deepEqual(repairedCreationOrder, [
+            {
+                name: addInstancePayload.payload.instanceId,
+                path: "rooms/rm_main/rm_main.yy"
+            }
+        ]);
+
+        const cleanResult = await runCliTestCommand({
+            argv: ["room", "repair", "rm_main", "--path", projectRoot, "--json"]
+        });
+        assert.equal(cleanResult.exitCode, 0);
+        const cleanPayload = JSON.parse(cleanResult.stdout) as {
+            payload: { changed: boolean; repairs: Array<unknown>; writtenPaths: Array<string> };
+        };
+        assert.equal(cleanPayload.payload.changed, false);
+        assert.deepEqual(cleanPayload.payload.repairs, []);
+        assert.deepEqual(cleanPayload.payload.writtenPaths, []);
     } finally {
         await rm(projectRoot, { force: true, recursive: true });
     }

@@ -2,7 +2,8 @@ import {
     Refactor,
     type RoomCameraMutationResult,
     type RoomInstanceMutationResult,
-    type RoomLayerMutationResult
+    type RoomLayerMutationResult,
+    type RoomRepairResult
 } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import { Command } from "commander";
@@ -136,6 +137,21 @@ function toRoomCameraMutationPayload(result: RoomCameraMutationResult) {
         writtenPaths: result.writtenPaths,
         x: result.x,
         y: result.y
+    };
+}
+
+function toRoomRepairPayload(result: RoomRepairResult) {
+    return {
+        action: result.action,
+        changed: result.changed,
+        deletedPaths: result.deletedPaths,
+        diagnostics: result.diagnostics,
+        dryRun: result.dryRun,
+        repairs: result.repairs,
+        roomName: result.roomName,
+        roomPath: result.roomPath,
+        warnings: result.warnings,
+        writtenPaths: result.writtenPaths
     };
 }
 
@@ -281,6 +297,17 @@ async function runRoomCameraFrameAction(
     });
 
     printRoomPayload({ command: "room camera frame", ok: true, payload: toRoomCameraMutationPayload(result) });
+}
+
+async function runRoomRepairAction(roomName: string, options: RoomMutationOptions): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const result = await Refactor.repairRoom({
+        dryRun: options.write !== true,
+        projectRoot: context.projectRoot,
+        roomName
+    });
+
+    printRoomPayload({ command: "room repair", ok: true, payload: toRoomRepairPayload(result) });
 }
 
 async function runRoomInstanceAddAction(
@@ -700,10 +727,13 @@ export function createRoomCommand(): Command {
 
     const repair = addRoomSharedOptions(
         applyStandardCommandOptions(new Command("repair")).description("Repair a room.").argument("<room>", "Room name")
-    );
-    repair.action(function roomRepairAction(roomName: string) {
-        const options = this.opts<RoomCommandSharedOptions>();
-        emitRoomUnavailableLeaf("room repair", options, "room_repair", { room: roomName });
+    ).addOption(createWriteOption());
+    repair.action(async function roomRepairAction(roomName: string) {
+        try {
+            await runRoomRepairAction(roomName, this.opts<RoomMutationOptions>());
+        } catch (error) {
+            handleCliError(error);
+        }
     });
 
     const instance = applyStandardCommandOptions(new Command("instance")).description("Room instance operations.");

@@ -214,8 +214,8 @@ The CLI/MCP command surface is part of the autonomous creation target state. It 
 
 | Priority | Recommended focus                                                                                                                                                                                                                                                                                                                   |
 | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| High     | `project inspect/validate`, `graph search`, `symbol inspect`, `validate file/project`, `resource list/find/inspect`, `object event list/inspect/add/update/delete`, `room layer list/inspect/create/update/delete/reorder`, `room camera list/inspect/update/frame`, `room instance add/update/delete`, build/check/log evidence around direct `gm-cli` usage, and runtime get/set/call/watch where hot reload requires it. |
-| Medium   | `resource deps/dependents/audit`, fuller `room update/repair`, `profile`, `test` result parsing/reporting, `replay`, and `kit` commands.                                                                                                                                                                    |
+| High     | `project inspect/validate`, `graph search`, `symbol inspect`, `validate file/project`, `resource list/find/inspect`, `object event list/inspect/add/update/delete`, `room repair`, `room layer list/inspect/create/update/delete/reorder`, `room camera list/inspect/update/frame`, `room instance add/update/delete`, build/check/log evidence around direct `gm-cli` usage, and runtime get/set/call/watch where hot reload requires it. |
+| Medium   | `resource deps/dependents/audit`, fuller `room update`, `profile`, `test` result parsing/reporting, `replay`, and `kit` commands.                                                                                                                                                                    |
 | Low      | Cache cleanup, IDE/open convenience flows, and commands that only wrap editor convenience rather than enabling autonomous agent work.                                                                                                                                                                                               |
 
 ### Explicitly Out of Scope for `@gmloop/mcp`
@@ -305,10 +305,10 @@ But this should be justified by real duplication or missing shared modeling. Pre
 
 ### Current Work Slice
 
-The initial mutation/test leaves are already represented by the current CLI/MCP surface: object event add/update/delete, room instance add/update/delete, room layer create/update/delete/reorder, room camera update/frame, and test case create/update. The Auto-Game readiness and read-side context slice is also represented by project inspect/validate, object event list/inspect, room layer list/inspect, and room camera list/inspect. The next implementation slice is dynamic playable-proof evidence plus the remaining room-level gaps:
+The initial mutation/test leaves are already represented by the current CLI/MCP surface: object event add/update/delete, room repair, room instance add/update/delete, room layer create/update/delete/reorder, room camera update/frame, and test case create/update. The Auto-Game readiness and read-side context slice is also represented by project inspect/validate, object event list/inspect, room layer list/inspect, and room camera list/inspect. The next implementation slice is dynamic playable-proof evidence plus the remaining room-level gap:
 
 1. Add normalized build/log/runtime evidence only where GMLoop aggregates diagnostics or connects results to autonomous-loop state.
-2. Fill remaining room companion gaps where GMLoop adds validation value: `room update` and `room repair`.
+2. Fill the remaining room companion gap where GMLoop adds validation value: `room update`.
 3. Continue using `project inspect` and `project validate` as the readiness/evidence entry points for autonomous agents.
 4. Keep generic project/resource creation and metadata mutation official-tool-first unless GMLoop adds graph/refactor/hot-reload/evidence value.
 
@@ -833,8 +833,8 @@ adapter contract tests
 1. **Extend evidence beyond static checks.**
    Add normalized build/log/runtime evidence only where GMLoop aggregates diagnostics or connects results to autonomous-loop state; otherwise agents should call official `gm-cli` MCP directly.
 
-2. **Finish the remaining room-level companion gaps.**
-   `room update` and `room repair` are the remaining room operations that should be implemented only with validation or repair diagnostics beyond ordinary ResourceTool edits.
+2. **Finish the remaining room-level companion gap.**
+   `room update` is the remaining room operation that should be implemented only with validation semantics beyond ordinary ResourceTool edits.
 
 3. **Keep the official-tool boundary executable.**
    Update `gmloop gm-cli capability-audit --json` tests whenever GMLoop-owned capabilities move from placeholder to available, and keep generic ResourceTool mirrors out of GMLoop MCP.

@@ -268,7 +268,7 @@ void test("normalize-doc-comments normalizes malformed csv docs while preserving
     assertEquals(result.output, expected);
 });
 
-void test("normalize-doc-comments converts legacy returns description text to @returns metadata", () => {
+void test("normalize-doc-returns converts legacy returns description text to @returns metadata", () => {
     const input = [
         "/// Summary",
         "/// Returns: Boolean, indicating if check passed",
@@ -278,7 +278,7 @@ void test("normalize-doc-comments converts legacy returns description text to @r
         ""
     ].join("\n");
     const expected = [
-        "/// @desc Summary",
+        "/// Summary",
         "/// @returns {Boolean} Indicating if check passed",
         "function demo() {",
         "    return true;",
@@ -286,7 +286,7 @@ void test("normalize-doc-comments converts legacy returns description text to @r
         ""
     ].join("\n");
 
-    const result = lintWithRule("normalize-doc-comments", input, {});
+    const result = lintWithRule("normalize-doc-returns", input, {});
     assertEquals(result.output, expected);
 });
 
@@ -350,7 +350,7 @@ void test("normalize-doc-comments normalizes malformed csv docs while preserving
     assertEquals(result.output, expected);
 });
 
-void test("normalize-doc-comments converts legacy returns description text to @returns metadata", () => {
+void test("normalize-doc-returns converts legacy returns description text to @returns metadata", () => {
     const input = [
         "/// Summary",
         "/// Returns: Boolean, indicating if check passed",
@@ -360,7 +360,7 @@ void test("normalize-doc-comments converts legacy returns description text to @r
         ""
     ].join("\n");
     const expected = [
-        "/// @desc Summary",
+        "/// Summary",
         "/// @returns {Boolean} Indicating if check passed",
         "function demo() {",
         "    return true;",
@@ -368,7 +368,7 @@ void test("normalize-doc-comments converts legacy returns description text to @r
         ""
     ].join("\n");
 
-    const result = lintWithRule("normalize-doc-comments", input, {});
+    const result = lintWithRule("normalize-doc-returns", input, {});
     assertEquals(result.output, expected);
 });
 
