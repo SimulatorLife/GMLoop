@@ -1,6 +1,6 @@
 ---
 
-name: gml-syntax-basics
+name: gmloop-gml-syntax-basics
 description: Understand and work with GameMaker Language (GML), including its syntax differences from JavaScript, GML-specific language constructs, data accessors, keywords, constants, and formatting conventions.
 ---
 

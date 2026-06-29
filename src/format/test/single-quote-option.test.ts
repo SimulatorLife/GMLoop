@@ -2,7 +2,7 @@
  * Regression tests for the `singleQuote` formatter option.
  *
  * GML strings must use double quotes only (see the
- * `.agents/skills/gml-syntax-basics/SKILL.md` strings section). The
+ * `.agents/skills/gmloop-gml-syntax-basics/SKILL.md` strings section). The
  * formatter preserves the source's original quote style for every string
  * literal, so the `singleQuote` option is intentionally a no-op on the
  * formatted output. These tests lock that contract in so a future contributor
