@@ -1164,7 +1164,7 @@ export class GmlSemanticBridge {
         const symbolEntry = Core.isNonEmptyString(symbolId) ? this.findSymbolInCollections(symbolId) : null;
         if (symbolEntry) {
             this.collectOccurrencesFromExactSymbolEntry(symbolEntry, symbolName, symbolId, occurrences);
-        } else {
+        } else if (!this.isResourceSymbolId(symbolId)) {
             const candidateEntries = this.getIndexes().entriesByRelatedName.get(symbolName);
             if (candidateEntries) {
                 for (const entry of candidateEntries) {
@@ -1196,7 +1196,7 @@ export class GmlSemanticBridge {
             this.collectOccurrencesFromGmlFiles(symbolName, occurrences);
         }
 
-        return this.deduplicateOccurrences(occurrences);
+        return this.deduplicateOccurrences(this.normalizeSourceBackedGmlOccurrences(symbolName, occurrences));
     }
 
     private collectMacroBodyReferenceOccurrences(symbolName: string, occurrences: Array<SymbolOccurrence>): void {
@@ -1293,7 +1293,16 @@ export class GmlSemanticBridge {
                 );
 
                 if (coupledDeclarations.length === 1) {
-                    this.collectOccurrencesFromEntry(coupledDeclarations[0].entry, symbolName, symbolId, occurrences);
+                    const coupledDeclaration = coupledDeclarations[0];
+                    const category = this.getScriptCallableNamingCategory(
+                        coupledDeclaration.entry,
+                        coupledDeclaration.declaration,
+                        true,
+                        this.extractDeclarationKinds(coupledDeclaration.entry)
+                    );
+                    if (category !== "constructorFunction" && category !== "structDeclaration") {
+                        this.collectOccurrencesFromEntry(coupledDeclaration.entry, symbolName, symbolId, occurrences);
+                    }
                 }
 
                 return;
@@ -1312,6 +1321,11 @@ export class GmlSemanticBridge {
             return false;
         }
 
+        if (this.isResourceSymbolId(symbolId)) {
+            const resource = this.findResourceByName(symbolId.slice(symbolId.lastIndexOf("/") + 1));
+            return resource !== null && this.shouldResourceRenameCollectDiskOccurrences(resource);
+        }
+
         const resource = this.findResourceByName(symbolName, true);
         if (resource === null) {
             return false;
@@ -1322,12 +1336,7 @@ export class GmlSemanticBridge {
 
     private shouldCollectConstructorRuntimeTypeReferences(entry: unknown, symbolId: string | null): boolean {
         if (Core.isNonEmptyString(symbolId) && symbolId.startsWith("gml/scripts/")) {
-            const typedEntry = Core.isObjectLike(entry) ? (entry as SemanticIdentifierEntry) : null;
-            const resource = typedEntry
-                ? this.findResourceBySymbol(typedEntry, symbolId)
-                : this.findResourceByName(symbolId.slice(12), true);
-            const category = this.getScriptResourceDeclarationNamingCategory(resource?.path);
-            return category === "constructorFunction" || category === "structDeclaration";
+            return false;
         }
 
         if (!Core.isObjectLike(entry)) {
@@ -1349,7 +1358,6 @@ export class GmlSemanticBridge {
         if (!Core.isObjectLike(entry)) {
             if (
                 symbolId.startsWith("gml/enum/") ||
-                symbolId.startsWith("gml/enum-member/") ||
                 symbolId.startsWith("gml/macro/") ||
                 symbolId.startsWith("gml/var/")
             ) {
@@ -1360,19 +1368,13 @@ export class GmlSemanticBridge {
 
         const typedEntry = entry as { identifierId?: unknown };
 
-        if (
-            symbolId.startsWith("gml/enum/") ||
-            symbolId.startsWith("gml/enum-member/") ||
-            symbolId.startsWith("gml/macro/") ||
-            symbolId.startsWith("gml/var/")
-        ) {
+        if (symbolId.startsWith("gml/enum/") || symbolId.startsWith("gml/macro/") || symbolId.startsWith("gml/var/")) {
             return true;
         }
 
         return (
             typeof typedEntry.identifierId === "string" &&
             (typedEntry.identifierId.startsWith("enum:") ||
-                typedEntry.identifierId.startsWith("enum-member:") ||
                 typedEntry.identifierId.startsWith("macro:") ||
                 typedEntry.identifierId.startsWith("instance:"))
         );
@@ -2143,10 +2145,12 @@ export class GmlSemanticBridge {
                         continue;
                     }
 
-                    pushEntryReferenceOccurrence(ref, occurrences);
+                    this.collectEntryReferenceOccurrence(entry, ref, occurrences);
                 }
             }
 
+            this.collectUnresolvedEnumMemberOccurrences(entry, occurrences);
+            this.collectEnumMemberMetadataOccurrences(entry, occurrences);
             return;
         }
         // Case B: The entry name itself matches (e.g. macro name, enum name, or script resource name)
@@ -2159,10 +2163,51 @@ export class GmlSemanticBridge {
         if (Array.isArray(entry.references)) {
             for (const ref of entry.references) {
                 if (ref.targetName === symbolName) {
-                    pushEntryReferenceOccurrence(ref, occurrences);
+                    this.collectEntryReferenceOccurrence(entry, ref, occurrences);
                 }
             }
         }
+    }
+
+    private collectEntryReferenceOccurrence(
+        entry: SemanticIdentifierEntry,
+        ref: SemanticEntryReferenceRecord,
+        occurrences: Array<SymbolOccurrence>
+    ): void {
+        if (
+            entry.identifierId?.startsWith("enum-member:") !== true ||
+            !Core.isNonEmptyString(entry.name) ||
+            !Core.isNonEmptyString(entry.enumName)
+        ) {
+            pushEntryReferenceOccurrence(ref, occurrences);
+            return;
+        }
+
+        const start = ref.start?.index ?? ref.location?.start?.index ?? 0;
+        const end = resolveOccurrenceEndIndex(ref.end?.index ?? ref.location?.end?.index);
+        const filePath = typeof ref.filePath === "string" ? ref.filePath : "";
+        if (!Core.isNonEmptyString(filePath) || end === null || end <= start) {
+            return;
+        }
+
+        const exactRange = this.resolveEnumMemberReferenceRange({
+            filePath,
+            startIndex: start,
+            endIndex: end,
+            enumName: entry.enumName,
+            memberName: entry.name
+        });
+        if (exactRange === null) {
+            return;
+        }
+
+        occurrences.push({
+            path: filePath,
+            start: exactRange.start,
+            end: exactRange.end,
+            scopeId: typeof ref.scopeId === "string" ? ref.scopeId : undefined,
+            kind: "reference"
+        });
     }
 
     /**
@@ -2259,9 +2304,83 @@ export class GmlSemanticBridge {
         // Add references
         if (Array.isArray(entry.references)) {
             for (const ref of entry.references) {
-                pushEntryReferenceOccurrence(ref, occurrences);
+                this.collectEntryReferenceOccurrence(entry, ref, occurrences);
             }
         }
+
+        this.collectUnresolvedEnumMemberOccurrences(entry, occurrences);
+        this.collectEnumMemberMetadataOccurrences(entry, occurrences);
+    }
+
+    private normalizeSourceBackedGmlOccurrences(
+        symbolName: string,
+        occurrences: Array<SymbolOccurrence>
+    ): Array<SymbolOccurrence> {
+        if (!Core.isNonEmptyString(symbolName)) {
+            return occurrences;
+        }
+
+        const normalizedOccurrences: Array<SymbolOccurrence> = [];
+        for (const occurrence of occurrences) {
+            const normalizedOccurrence = this.normalizeSourceBackedGmlOccurrence(symbolName, occurrence);
+            if (normalizedOccurrence !== null) {
+                normalizedOccurrences.push(normalizedOccurrence);
+            }
+        }
+
+        return normalizedOccurrences;
+    }
+
+    private normalizeSourceBackedGmlOccurrence(
+        symbolName: string,
+        occurrence: SymbolOccurrence
+    ): SymbolOccurrence | null {
+        if (path.extname(occurrence.path).toLowerCase() !== ".gml") {
+            return occurrence;
+        }
+
+        const sourceText = this.readProjectSourceText(occurrence.path);
+        if (sourceText === null) {
+            return occurrence;
+        }
+
+        if (isIdentifierTokenAt(sourceText, occurrence.start, symbolName)) {
+            return {
+                ...occurrence,
+                end: occurrence.start + symbolName.length
+            };
+        }
+
+        const nearbyStart = Math.max(0, occurrence.start - symbolName.length);
+        const nearbyEnd = Math.min(sourceText.length, occurrence.end + symbolName.length);
+        const nearbySource = sourceText.slice(nearbyStart, nearbyEnd);
+        const candidateStarts: Array<number> = [];
+        let searchOffset = 0;
+
+        while (searchOffset < nearbySource.length) {
+            const localStart = nearbySource.indexOf(symbolName, searchOffset);
+            if (localStart === -1) {
+                break;
+            }
+
+            const candidateStart = nearbyStart + localStart;
+            if (isIdentifierTokenAt(sourceText, candidateStart, symbolName)) {
+                candidateStarts.push(candidateStart);
+            }
+
+            searchOffset = localStart + symbolName.length;
+        }
+
+        if (candidateStarts.length !== 1) {
+            return null;
+        }
+
+        const start = candidateStarts[0];
+        return {
+            ...occurrence,
+            start,
+            end: start + symbolName.length
+        };
     }
 
     /**
@@ -2468,6 +2587,10 @@ export class GmlSemanticBridge {
                 continue;
             }
 
+            if (category === "scriptResourceName" && this.isConstructorBackedScriptResource(resource)) {
+                continue;
+            }
+
             pushTarget({
                 category,
                 name: resource.name,
@@ -2477,6 +2600,26 @@ export class GmlSemanticBridge {
                 symbolId: this.generateResourceScipId(resource)
             });
         }
+    }
+
+    private isConstructorBackedScriptResource(resource: SemanticResourceRecord): boolean {
+        if (resource.resourceType !== "GMScript" || !Core.isNonEmptyString(resource.path)) {
+            return false;
+        }
+
+        const declarations = this.getScriptCallableDeclarationsForResource(resource.path);
+        if (declarations.length !== 1) {
+            return false;
+        }
+
+        const declaration = declarations[0];
+        const category = this.getScriptCallableNamingCategory(
+            declaration.entry,
+            declaration.declaration,
+            true,
+            this.extractDeclarationKinds(declaration.entry)
+        );
+        return category === "constructorFunction" || category === "structDeclaration";
     }
 
     private collectScriptCallableNamingConventionTargets(
@@ -2804,6 +2947,12 @@ export class GmlSemanticBridge {
 
     private findSymbolInCollections(symbolId: string): any {
         const indexes = this.getIndexes();
+        const resourceSymbolMatch = symbolId.match(/^gml\/([^/]+)\/(.+)$/);
+        if (resourceSymbolMatch && this.isResourceSymbolId(symbolId)) {
+            const resource = this.findResourceByName(resourceSymbolMatch[2]);
+            return resource === null ? null : this.createSyntheticResourceEntry(resource, symbolId);
+        }
+
         const directEntry = indexes.entriesByIdentifierId.get(symbolId) ?? indexes.entriesByScipId.get(symbolId);
         if (directEntry) {
             return directEntry;
@@ -2840,6 +2989,8 @@ export class GmlSemanticBridge {
                     // Create a synthetic symbol entry for the resource
                     return this.createSyntheticResourceEntry(resource, symbolId);
                 }
+
+                return null;
             }
 
             const resolvedScipId = indexes.exactResolveSymbolIds.get(name);
@@ -2965,6 +3116,35 @@ export class GmlSemanticBridge {
 
         const declarations = this.getScriptCallableDeclarationsForResource(resource.path);
         return declarations.length > 1;
+    }
+
+    private isResourceSymbolId(symbolId: string | null): symbolId is string {
+        if (!Core.isNonEmptyString(symbolId)) {
+            return false;
+        }
+
+        const match = symbolId.match(/^gml\/([^/]+)\//);
+        if (match === null) {
+            return false;
+        }
+
+        return [
+            "objects",
+            "sprites",
+            "sounds",
+            "rooms",
+            "paths",
+            "curves",
+            "sequences",
+            "scripts",
+            "shaders",
+            "fonts",
+            "timelines",
+            "tilesets",
+            "particlesystems",
+            "notes",
+            "extensions"
+        ].includes(match[1]);
     }
 
     private getScriptCallableNamingCategory(
@@ -3432,6 +3612,56 @@ export class GmlSemanticBridge {
                         : undefined,
                 kind: "reference"
             });
+        }
+
+        this.collectProjectFileEnumMemberOccurrences(entry, occurrences);
+    }
+
+    private collectProjectFileEnumMemberOccurrences(
+        entry: SemanticIdentifierEntry,
+        occurrences: Array<SymbolOccurrence>
+    ): void {
+        if (!Core.isNonEmptyString(entry.name) || !Core.isNonEmptyString(entry.enumName)) {
+            return;
+        }
+
+        for (const [filePath, fileRecord] of Object.entries(this.projectIndex.files ?? {})) {
+            const typedFileRecord = fileRecord as SemanticFileRecord;
+            for (const reference of typedFileRecord.references ?? []) {
+                if (!Core.isObjectLike(reference) || reference.name !== entry.name) {
+                    continue;
+                }
+
+                const classifications = Core.asArray(reference.classifications);
+                if (!classifications.includes("property")) {
+                    continue;
+                }
+
+                const start = readSemanticLocationIndex(reference.start);
+                const end = readExclusiveSemanticLocationIndex(reference.end);
+                if (start === null || end === null || end <= start) {
+                    continue;
+                }
+
+                const exactRange = this.resolveEnumMemberReferenceRange({
+                    filePath,
+                    startIndex: start,
+                    endIndex: end,
+                    enumName: entry.enumName,
+                    memberName: entry.name
+                });
+                if (exactRange === null) {
+                    continue;
+                }
+
+                occurrences.push({
+                    path: filePath,
+                    start: exactRange.start,
+                    end: exactRange.end,
+                    scopeId: typeof reference.scopeId === "string" ? reference.scopeId : undefined,
+                    kind: "reference"
+                });
+            }
         }
     }
 

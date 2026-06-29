@@ -57,6 +57,12 @@ trust_level = "trusted"
 
 [sandbox_workspace_write]
 network_access = true
+writable_roots = [
+  "/Users/henrykirk/GMLoop",
+  "/Users/henrykirk/Desktop/CannonFatherSource/cannonfather",
+  "/Users/henrykirk/.npm",
+  "/private/tmp"
+]
 
 [agents]
 max_threads = 5

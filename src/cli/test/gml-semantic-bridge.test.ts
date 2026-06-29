@@ -82,6 +82,70 @@ void describe("GmlSemanticBridge tests", () => {
         assert.strictEqual(occurrences[0].kind, Refactor.OccurrenceKind.REFERENCE);
     });
 
+    void it("does not resolve explicit script resource ids through same-name callable symbols", () => {
+        const mockProjectIndex = {
+            identifiers: {
+                scripts: {
+                    "scope:script:Attack": {
+                        identifierId: "script:Attack",
+                        name: "Attack",
+                        resourcePath: "scripts/attack/attack.yy",
+                        declarations: [
+                            {
+                                name: "Attack",
+                                filePath: "scripts/attack/attack.gml",
+                                start: { index: 9 },
+                                end: { index: 14 },
+                                classifications: ["identifier", "declaration", "constructor"]
+                            }
+                        ],
+                        references: [
+                            {
+                                filePath: "objects/obj_crab_large/Create_0.gml",
+                                name: "Attack",
+                                start: { index: 20 },
+                                end: { index: 25 }
+                            }
+                        ]
+                    }
+                }
+            },
+            resources: {
+                "scripts/attack/attack.yy": {
+                    name: "Attack",
+                    path: "scripts/attack/attack.yy",
+                    resourceType: "GMScript"
+                }
+            }
+        };
+
+        const bridge = new GmlSemanticBridge(mockProjectIndex, "/tmp");
+
+        assert.deepEqual(bridge.getSymbolOccurrences("Attack", "gml/scripts/Attack"), []);
+        assert.deepEqual(
+            bridge.getSymbolOccurrences("Attack", "gml/script/Attack").map((occurrence) => ({
+                kind: occurrence.kind,
+                path: occurrence.path,
+                start: occurrence.start,
+                end: occurrence.end
+            })),
+            [
+                {
+                    kind: Refactor.OccurrenceKind.DEFINITION,
+                    path: "scripts/attack/attack.gml",
+                    start: 9,
+                    end: 15
+                },
+                {
+                    kind: Refactor.OccurrenceKind.REFERENCE,
+                    path: "objects/obj_crab_large/Create_0.gml",
+                    start: 20,
+                    end: 26
+                }
+            ]
+        );
+    });
+
     void it("normalizes semantic end indexes to exclusive naming convention occurrences", async () => {
         const mockProjectIndex = {
             identifiers: {
@@ -2716,6 +2780,147 @@ void describe("GmlSemanticBridge tests", () => {
                         path: "scripts/cm_aab/cm_aab.gml",
                         start: consumerSource.lastIndexOf("CM_RAY"),
                         end: consumerSource.lastIndexOf("CM_RAY") + "CM_RAY".length
+                    }
+                ]
+            );
+        } finally {
+            fs.rmSync(tmpRoot, { recursive: true, force: true });
+        }
+    });
+
+    void it("getSymbolOccurrences returns exact enum member ranges before comma-separated call arguments", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-enum-member-call-"));
+
+        try {
+            const enumSource = ["enum eTestResultType {", "    console", "}", ""].join("\n");
+            const consumerSource = [
+                "function group_vertex_buffers() {",
+                "    func_run_test_group(test_cases_uvs, eTestResultType.console, false);",
+                "}",
+                ""
+            ].join("\n");
+
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "group_test"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "group_vertex_buffers"), { recursive: true });
+            fs.writeFileSync(
+                path.join(tmpRoot, "MyGame.yyp"),
+                `${JSON.stringify({ name: "MyGame", resourceType: "GMProject" }, null, 2)}\n`
+            );
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "group_test", "group_test.yy"),
+                `${JSON.stringify({ name: "group_test", resourceType: "GMScript" }, null, 2)}\n`
+            );
+            fs.writeFileSync(path.join(tmpRoot, "scripts", "group_test", "group_test.gml"), enumSource);
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "group_vertex_buffers", "group_vertex_buffers.yy"),
+                `${JSON.stringify({ name: "group_vertex_buffers", resourceType: "GMScript" }, null, 2)}\n`
+            );
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "group_vertex_buffers", "group_vertex_buffers.gml"),
+                consumerSource
+            );
+
+            const projectIndex = await Semantic.buildProjectIndex(tmpRoot);
+            const bridge = new GmlSemanticBridge(projectIndex, tmpRoot);
+            const occurrences = bridge
+                .getSymbolOccurrences("console", "gml/enum-member/console")
+                .toSorted((left, right) => `${left.path}:${left.start}`.localeCompare(`${right.path}:${right.start}`));
+            const declarationStart = enumSource.indexOf("console");
+            const referenceStart = consumerSource.indexOf("console");
+
+            assert.deepEqual(
+                occurrences.map((occurrence) => ({
+                    kind: occurrence.kind,
+                    path: occurrence.path,
+                    start: occurrence.start,
+                    end: occurrence.end
+                })),
+                [
+                    {
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        path: "scripts/group_test/group_test.gml",
+                        start: declarationStart,
+                        end: declarationStart + "console".length
+                    },
+                    {
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        path: "scripts/group_vertex_buffers/group_vertex_buffers.gml",
+                        start: referenceStart,
+                        end: referenceStart + "console".length
+                    }
+                ]
+            );
+        } finally {
+            fs.rmSync(tmpRoot, { recursive: true, force: true });
+        }
+    });
+
+    void it("getSymbolOccurrences limits enum member renames to matching dotted enum references", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-enum-member-dotted-"));
+
+        try {
+            const enumSource = ["enum eDamageType {", "    damage,", "    step", "}", ""].join("\n");
+            const consumerSource = [
+                "function Weapon(damage) : Attack(knockback, cooldown_max, damage) constructor {",
+                "    curr_sys.step();",
+                "    return eDamageType.damage + eDamageType.step;",
+                "}",
+                ""
+            ].join("\n");
+
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "damage_defs"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "Weapon"), { recursive: true });
+            fs.writeFileSync(
+                path.join(tmpRoot, "MyGame.yyp"),
+                `${JSON.stringify({ name: "MyGame", resourceType: "GMProject" }, null, 2)}\n`
+            );
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "damage_defs", "damage_defs.yy"),
+                `${JSON.stringify({ name: "damage_defs", resourceType: "GMScript" }, null, 2)}\n`
+            );
+            fs.writeFileSync(path.join(tmpRoot, "scripts", "damage_defs", "damage_defs.gml"), enumSource);
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "Weapon", "Weapon.yy"),
+                `${JSON.stringify({ name: "Weapon", resourceType: "GMScript" }, null, 2)}\n`
+            );
+            fs.writeFileSync(path.join(tmpRoot, "scripts", "Weapon", "Weapon.gml"), consumerSource);
+
+            const projectIndex = await Semantic.buildProjectIndex(tmpRoot);
+            const bridge = new GmlSemanticBridge(projectIndex, tmpRoot);
+            const damageOccurrences = bridge
+                .getSymbolOccurrences("damage", "gml/enum-member/damage")
+                .filter((occurrence) => occurrence.path === "scripts/Weapon/Weapon.gml");
+            const stepOccurrences = bridge
+                .getSymbolOccurrences("step", "gml/enum-member/step")
+                .filter((occurrence) => occurrence.path === "scripts/Weapon/Weapon.gml");
+            const enumDamageStart = consumerSource.indexOf("damage", consumerSource.indexOf("eDamageType.damage"));
+            const enumStepStart = consumerSource.indexOf("step", consumerSource.indexOf("eDamageType.step"));
+
+            assert.deepEqual(
+                damageOccurrences.map((occurrence) => ({
+                    kind: occurrence.kind,
+                    start: occurrence.start,
+                    end: occurrence.end
+                })),
+                [
+                    {
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        start: enumDamageStart,
+                        end: enumDamageStart + "damage".length
+                    }
+                ]
+            );
+            assert.deepEqual(
+                stepOccurrences.map((occurrence) => ({
+                    kind: occurrence.kind,
+                    start: occurrence.start,
+                    end: occurrence.end
+                })),
+                [
+                    {
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        start: enumStepStart,
+                        end: enumStepStart + "step".length
                     }
                 ]
             );
