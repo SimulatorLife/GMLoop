@@ -466,9 +466,8 @@ function resolveSymbolKind(rawSymbolKind: string): {
 
     if (rawSymbolKind === "enum-member") {
         return {
-            kind: null,
-            requiresRestart: false,
-            reason: "Enum member renames require dependent script recompilation"
+            kind: SymbolKind.ENUM_MEMBER,
+            requiresRestart: false
         };
     }
 
@@ -722,6 +721,19 @@ export async function checkHotReloadSafety(
             return {
                 safe: false,
                 reason: "Macro/enum renames require dependent script recompilation",
+                requiresRestart: false,
+                canAutoFix: true,
+                suggestions: [
+                    "The hot reload system will automatically recompile all dependent scripts",
+                    "Consider using the batch rename API to update multiple related symbols"
+                ]
+            };
+        }
+
+        case SymbolKind.ENUM_MEMBER: {
+            return {
+                safe: false,
+                reason: "Enum member renames require dependent script recompilation",
                 requiresRestart: false,
                 canAutoFix: true,
                 suggestions: [

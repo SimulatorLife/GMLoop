@@ -653,10 +653,23 @@ export class GmlSemanticBridge {
         Map<string, MutableProjectMetadataDocument | null>
     >();
 
-    constructor(projectIndex: unknown, projectRoot: string = process.cwd()) {
+    private readFile: ((filePath: string) => Promise<string> | string) | null = null;
+
+    constructor(
+        projectIndex: unknown,
+        projectRoot: string = process.cwd(),
+        readFile?: ((filePath: string) => Promise<string> | string) | null
+    ) {
         this.projectIndex = Core.isObjectLike(projectIndex) ? (projectIndex as Record<string, unknown>) : {};
         this.projectRoot = projectRoot;
         this.localNamingCategoryResolver = new ParsedLocalNamingCategoryResolver(projectRoot);
+        if (readFile) {
+            this.readFile = readFile;
+        }
+    }
+
+    public setReadFile(readFile: (filePath: string) => Promise<string> | string): void {
+        this.readFile = readFile;
     }
 
     /**
@@ -2375,20 +2388,19 @@ export class GmlSemanticBridge {
         const shouldIncludePath = createNamingTargetPathPredicate(this.projectRoot, filePaths);
 
         // Preload GML source texts in parallel to avoid synchronous fs reads in the loop
-        if (includesAnyRequestedNamingCategory(requestedCategories, LOCAL_NAMING_CATEGORIES)) {
-            const files = (this.projectIndex.files ?? {}) as Record<string, SemanticFileRecord>;
-            const filesToPreload: Array<string> = [];
-            for (const [filePath, fileRecord] of Object.entries(files)) {
-                const fileDeclarations = fileRecord?.declarations ?? [];
-                if (shouldIncludePath(filePath) && fileDeclarations.length > 0) {
-                    filesToPreload.push(filePath);
-                }
+        const files = (this.projectIndex.files ?? {}) as Record<string, SemanticFileRecord>;
+        const filesToPreload: Array<string> = [];
+        for (const [filePath, fileRecord] of Object.entries(files)) {
+            const hasDeclarations = (fileRecord?.declarations ?? []).length > 0;
+            const hasReferences = (fileRecord?.references ?? []).length > 0;
+            if (shouldIncludePath(filePath) && (hasDeclarations || hasReferences)) {
+                filesToPreload.push(filePath);
             }
-            if (filesToPreload.length > 0) {
-                await Core.runInParallel(filesToPreload, async (filePath) => {
-                    await this.preloadProjectSourceText(filePath);
-                });
-            }
+        }
+        if (filesToPreload.length > 0) {
+            await Core.runInParallel(filesToPreload, async (filePath) => {
+                await this.preloadProjectSourceText(filePath);
+            });
         }
 
         const pushTarget = (target: BridgeNamingConventionTarget): void => {
@@ -3092,19 +3104,28 @@ export class GmlSemanticBridge {
         }
 
         const declarations = this.getScriptCallableDeclarationsForResource(resourcePath);
-        if (declarations.length !== 1) {
+        if (declarations.length === 0) {
             return null;
         }
 
-        for (const entry of this.getScriptResourceIndexes().scriptEntriesByResourcePath.get(resourcePath) ?? []) {
+        let hasConstructor = false;
+        let hasStruct = false;
+
+        for (const { entry } of declarations) {
             const declarationKinds = this.extractDeclarationKinds(entry);
             if (declarationKinds.has("constructor")) {
-                return "constructorFunction";
+                hasConstructor = true;
             }
-
             if (declarationKinds.has("struct")) {
-                return "structDeclaration";
+                hasStruct = true;
             }
+        }
+
+        if (hasConstructor) {
+            return "constructorFunction";
+        }
+        if (hasStruct) {
+            return "structDeclaration";
         }
 
         return null;
@@ -3510,9 +3531,10 @@ export class GmlSemanticBridge {
             return;
         }
 
-        const absolutePath = path.resolve(this.projectRoot, filePath);
         try {
-            const sourceText = await fs.promises.readFile(absolutePath, "utf8");
+            const sourceText = this.readFile
+                ? await this.readFile(filePath)
+                : await fs.promises.readFile(path.resolve(this.projectRoot, filePath), "utf8");
             this.sourceTextByPath.set(filePath, sourceText);
         } catch {
             this.sourceTextByPath.set(filePath, null);

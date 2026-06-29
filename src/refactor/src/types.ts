@@ -412,7 +412,8 @@ export const SymbolKind = Object.freeze({
     VAR: "var",
     EVENT: "event",
     MACRO: "macro",
-    ENUM: "enum"
+    ENUM: "enum",
+    ENUM_MEMBER: "enum-member"
 } as const);
 
 export type SymbolKindValue = (typeof SymbolKind)[keyof typeof SymbolKind];

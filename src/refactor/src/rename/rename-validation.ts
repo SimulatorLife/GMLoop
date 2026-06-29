@@ -680,6 +680,10 @@ function removeCoupledScriptResourceCallableDuplicates(symbolIds: ReadonlyArray<
     const filtered: Array<string> = [];
 
     for (const symbolId of symbolIds) {
+        if (symbolId.startsWith("gml/enum-member/") || symbolId.includes("enum-member:")) {
+            continue;
+        }
+
         if (symbolId.startsWith("gml/script/")) {
             const scriptName = symbolId.slice("gml/script/".length);
             if (symbolIdSet.has(`gml/scripts/${scriptName}`)) {
