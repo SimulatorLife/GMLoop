@@ -13,6 +13,7 @@ type ResourceRecord = {
 };
 
 type IdentifierEntry = Record<string, unknown> & {
+    enumName?: string;
     name?: string;
     identifierId?: string;
 };
@@ -153,6 +154,9 @@ export function generateIdentifierEntryScipId(entry: IdentifierEntry, nestedName
         scipKind = "enum";
     } else if (id.startsWith("enum-member:")) {
         scipKind = "enum-member";
+        if (entry.enumName) {
+            return `gml/${scipKind}/${entry.enumName}/${name}`;
+        }
     } else if (id.startsWith("global:") || id.startsWith("instance:")) {
         scipKind = "var";
     } else {

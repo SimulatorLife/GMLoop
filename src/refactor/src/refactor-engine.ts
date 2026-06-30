@@ -21,7 +21,12 @@ import {
     CODEMOD_READ_THROUGH_CACHE_MIN_ENTRIES,
     RENAME_VALIDATION_CACHE_MAX_SIZE
 } from "./refactor-constants.js";
-import { assertRenameRequest, assertValidIdentifierName, extractSymbolName } from "./rename/index.js";
+import {
+    assertRenameRequest,
+    assertValidIdentifierName,
+    extractSymbolName,
+    parseSymbolIdParts
+} from "./rename/index.js";
 import {
     detectCircularRenames,
     detectCrossRenameNameConfusion,
@@ -574,7 +579,8 @@ export class RefactorEngine {
             normalizedNewName,
             occurrences,
             this.semantic,
-            this.semantic
+            this.semantic,
+            { symbolKind: parseSymbolIdParts(symbolId)?.symbolKind ?? null }
         );
 
         for (const conflict of conflicts) {
@@ -816,7 +822,8 @@ export class RefactorEngine {
                 normalizedNewName,
                 occurrences,
                 this.semantic,
-                this.semantic
+                this.semantic,
+                { symbolKind: parseSymbolIdParts(symbolId)?.symbolKind ?? null }
             );
 
             if (conflicts.length > 0) {
@@ -2209,7 +2216,8 @@ export class RefactorEngine {
                 normalizedNewName,
                 occurrences,
                 this.semantic,
-                this.semantic
+                this.semantic,
+                { symbolKind: parseSymbolIdParts(symbolId)?.symbolKind ?? null }
             );
             conflicts.push(...detectedConflicts);
 
@@ -2511,6 +2519,7 @@ export class RefactorEngine {
         oldName: string;
         newName: string;
         occurrences: Array<SymbolOccurrence>;
+        symbolId?: string;
     }): Promise<Array<ConflictEntry>> {
         const { oldName, newName, occurrences } = request ?? {};
 
@@ -2527,7 +2536,9 @@ export class RefactorEngine {
         // Pass semantic analyzer twice: once as SymbolResolver for scope lookups,
         // once as KeywordProvider for reserved keyword checks. The SemanticAnalyzer
         // interface supports both roles through optional method implementations.
-        return await detectRenameConflicts(oldName, newName, occurrences, this.semantic, this.semantic);
+        return await detectRenameConflicts(oldName, newName, occurrences, this.semantic, this.semantic, {
+            symbolKind: parseSymbolIdParts(request.symbolId ?? "")?.symbolKind ?? null
+        });
     }
 
     /**

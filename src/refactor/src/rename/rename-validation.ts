@@ -18,12 +18,16 @@ import {
 import {
     assertValidIdentifierName,
     DEFAULT_RESERVED_KEYWORDS,
+    ENUM_MEMBER_RESERVED_KEYWORDS,
     extractSymbolName,
     parseSymbolIdParts,
     tryNormalizeIdentifierName
 } from "./index.js";
 
 type MaybePromise<T> = Promise<T> | T;
+type RenameConflictContext = {
+    symbolKind: string | null;
+};
 
 /**
  * Internal sentinel value to represent global (unscoped) symbol occurrences.
@@ -184,8 +188,13 @@ function checkShadowingConflicts(
  * @returns Set of all reserved keywords (lowercase)
  */
 function buildReservedKeywordSet(
-    keywordProvider: Partial<KeywordProvider> | null
+    keywordProvider: Partial<KeywordProvider> | null,
+    context: RenameConflictContext
 ): MaybePromise<ReadonlySet<string> | Set<string>> {
+    if (context.symbolKind === "enum-member") {
+        return ENUM_MEMBER_RESERVED_KEYWORDS;
+    }
+
     if (!Core.hasMethods(keywordProvider, "getReservedKeywords")) {
         return DEFAULT_RESERVED_KEYWORDS;
     }
@@ -219,9 +228,11 @@ export async function detectRenameConflicts(
     newName: string,
     occurrences: Array<SymbolOccurrence>,
     resolver: Partial<SymbolResolver> | null,
-    keywordProvider: Partial<KeywordProvider> | null
+    keywordProvider: Partial<KeywordProvider> | null,
+    context?: RenameConflictContext
 ): Promise<Array<ConflictEntry>> {
     const conflicts: Array<ConflictEntry> = [];
+    const resolvedContext = context ?? { symbolKind: null };
 
     let normalizedNewName: string;
     try {
@@ -241,7 +252,7 @@ export async function detectRenameConflicts(
     }
 
     // Check if new name conflicts with reserved keywords
-    const reservedKeywords = buildReservedKeywordSet(keywordProvider);
+    const reservedKeywords = buildReservedKeywordSet(keywordProvider, resolvedContext);
     const resolvedReservedKeywords = isPromiseLike(reservedKeywords) ? await reservedKeywords : reservedKeywords;
     if (resolvedReservedKeywords.has(normalizedNewName.toLowerCase())) {
         conflicts.push({

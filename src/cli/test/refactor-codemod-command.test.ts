@@ -2033,6 +2033,91 @@ void test("refactor codemod --write does not rename constructor fields captured 
     }
 });
 
+void test("refactor codemod --write renames enum members that collide with built-in variables and enum initializer references", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        enumMember: {
+                            caseStyle: "upper_snake"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        await writeScriptResource(
+            projectRoot,
+            "SpartEmitter",
+            [
+                "enum eSpartEmitterType {",
+                "    None, Stream, Retired, Dynamic",
+                "}",
+                "",
+                "function use_spart_emitter_type() {",
+                "    return eSpartEmitterType.Dynamic;",
+                "}",
+                ""
+            ].join("\n")
+        );
+        await writeScriptResource(
+            projectRoot,
+            "TransitionController",
+            [
+                "enum eTransitionState {",
+                "    idle = 0,",
+                "    complete = 1,",
+                "    delaying,",
+                "    in,",
+                "    out,",
+                "    partway_in,",
+                "    partway_out",
+                "}",
+                "",
+                "enum eTransitionType {",
+                "    in = eTransitionState.in,",
+                "    out = eTransitionState.out,",
+                "    partway_in = eTransitionState.partway_in,",
+                "    partway_out = eTransitionState.partway_out",
+                "}",
+                "",
+                "function use_transition_state() {",
+                "    return eTransitionState.out + eTransitionType.partway_out;",
+                "}",
+                ""
+            ].join("\n")
+        );
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+        const emitterSource = await readFile(path.join(projectRoot, "scripts/SpartEmitter/SpartEmitter.gml"), "utf8");
+        const transitionSource = await readFile(
+            path.join(projectRoot, "scripts/TransitionController/TransitionController.gml"),
+            "utf8"
+        );
+
+        assert.match(emitterSource, /NONE, STREAM, RETIRED, DYNAMIC/);
+        assert.match(emitterSource, /eSpartEmitterType\.DYNAMIC/);
+        assert.doesNotMatch(result.stdout, /gml\/enum-member\/Dynamic.+reserved keyword/);
+        assert.match(transitionSource, /IN = eTransitionState\.IN/);
+        assert.match(transitionSource, /OUT = eTransitionState\.OUT/);
+        assert.match(transitionSource, /PARTWAY_IN = eTransitionState\.PARTWAY_IN/);
+        assert.match(transitionSource, /PARTWAY_OUT = eTransitionState\.PARTWAY_OUT/);
+        assert.match(transitionSource, /eTransitionState\.OUT \+ eTransitionType\.PARTWAY_OUT/);
+
+        await assertProjectGmlFilesParse(projectRoot);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
 void test("refactor codemod --write updates constructor inheritance references when renaming struct declarations", async () => {
     const projectRoot = await createSyntheticProject({
         refactor: {

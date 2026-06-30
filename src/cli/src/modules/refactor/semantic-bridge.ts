@@ -3703,7 +3703,7 @@ export class GmlSemanticBridge {
         this.collectUnresolvedEnumMemberOccurrences(entry, occurrences);
         this.collectEnumMemberMetadataOccurrences(entry, occurrences);
 
-        return occurrences.filter((occurrence) => occurrence.path.length > 0);
+        return this.deduplicateOccurrences(occurrences);
     }
 
     private collectEnumMemberMetadataOccurrences(
@@ -3815,6 +3815,73 @@ export class GmlSemanticBridge {
         }
 
         this.collectProjectFileEnumMemberOccurrences(entry, occurrences);
+        this.collectSourceBackedEnumMemberDottedOccurrences(entry, occurrences);
+    }
+
+    private collectSourceBackedEnumMemberDottedOccurrences(
+        entry: SemanticIdentifierEntry,
+        occurrences: Array<SymbolOccurrence>
+    ): void {
+        if (!Core.isNonEmptyString(entry.name) || !Core.isNonEmptyString(entry.enumName)) {
+            return;
+        }
+
+        for (const filePath of Object.keys(this.projectIndex.files ?? {})) {
+            const sourceText = this.readProjectSourceText(filePath);
+            if (sourceText === null) {
+                continue;
+            }
+
+            this.collectDottedEnumMemberOccurrencesFromSource({
+                filePath,
+                sourceText,
+                enumName: entry.enumName,
+                memberName: entry.name,
+                occurrences
+            });
+        }
+    }
+
+    private collectDottedEnumMemberOccurrencesFromSource(parameters: {
+        filePath: string;
+        sourceText: string;
+        enumName: string;
+        memberName: string;
+        occurrences: Array<SymbolOccurrence>;
+    }): void {
+        const scanState = Core.createStringCommentScanState();
+        const sourceLength = parameters.sourceText.length;
+        let index = 0;
+
+        while (index < sourceLength) {
+            const scannedIndex = Core.advanceStringCommentScan(
+                parameters.sourceText,
+                sourceLength,
+                index,
+                scanState,
+                true
+            );
+            if (scannedIndex !== index) {
+                index = scannedIndex;
+                continue;
+            }
+
+            if (
+                isIdentifierTokenAt(parameters.sourceText, index, parameters.memberName) &&
+                this.readDottedReferenceOwnerName(parameters.filePath, index) === parameters.enumName
+            ) {
+                parameters.occurrences.push({
+                    path: parameters.filePath,
+                    start: index,
+                    end: index + parameters.memberName.length,
+                    kind: "reference"
+                });
+                index += parameters.memberName.length;
+                continue;
+            }
+
+            index += 1;
+        }
     }
 
     private collectProjectFileEnumMemberOccurrences(
