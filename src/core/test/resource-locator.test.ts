@@ -77,3 +77,52 @@ void test("resource locator falls back to the repository resources directory whe
         rmSync(fixture.fixtureRootPath, { force: true, recursive: true });
     }
 });
+
+void test("resource locator treats missing package.json as non-match (regression for existsSync removal)", () => {
+    // After migrating `tryReadPackageName` away from `fs.existsSync` to a
+    // try/catch around `readFileSync`, a directory without a package.json
+    // must continue to look like a non-match so the upward walk keeps
+    // moving toward the real core package directory. This test asserts
+    // that a subtree with no package.json files still resolves through the
+    // existing core workspace fixture.
+    const fixture = createTemporaryCoreWorkspaceFixture();
+
+    try {
+        const intermediateDirectoryPath = path.join(fixture.packageDirectoryPath, "dist", "src");
+        // The fixture creates only the nested module directory and the
+        // core package.json. Everything between the leaf and the core
+        // package is intentionally empty of package.json files, so the
+        // locator must traverse them without raising.
+        assert.doesNotThrow(() => __resolveBundledResourceBaseDirectoryForTests(intermediateDirectoryPath));
+        assert.equal(
+            __resolveBundledResourceBaseDirectoryForTests(intermediateDirectoryPath),
+            fixture.repositoryResourceDirectoryPath
+        );
+    } finally {
+        rmSync(fixture.fixtureRootPath, { force: true, recursive: true });
+    }
+});
+
+void test("resource locator skips directories whose package.json names do not match", () => {
+    // Mirrors the missing-file regression above, but verifies the
+    // post-migration flow when a package.json is present yet irrelevant.
+    // Reading still has to succeed (no `existsSync` race) and the
+    // unrelated name must not derail the walk toward the core package.
+    const fixture = createTemporaryCoreWorkspaceFixture();
+    const unrelatedPackageDirectoryPath = path.join(fixture.fixtureRootPath, "packages", "unrelated");
+
+    try {
+        mkdirSync(unrelatedPackageDirectoryPath, { recursive: true });
+        writeFileSync(
+            path.join(unrelatedPackageDirectoryPath, "package.json"),
+            JSON.stringify({ name: "not-the-core-package" }, null, 2)
+        );
+
+        assert.equal(
+            __resolveBundledResourceBaseDirectoryForTests(fixture.nestedModuleDirectoryPath),
+            fixture.repositoryResourceDirectoryPath
+        );
+    } finally {
+        rmSync(fixture.fixtureRootPath, { force: true, recursive: true });
+    }
+});
