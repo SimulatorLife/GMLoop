@@ -4379,6 +4379,205 @@ void describe("GmlSemanticBridge tests", () => {
         );
     });
 
+    void it("getSymbolOccurrences includes explicit self member tokens for instance-variable renames", () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-self-instance-member-"));
+        const filePath = "scripts/ColmeshShape/ColmeshShape.gml";
+        const sourceText = [
+            "function ColmeshDynamic(M) constructor {",
+            "    self.M = matrix_build_identity();",
+            "    static get_min_max = function() {",
+            "        return matrix_transform_vertex(M, 0, 0, 0);",
+            "    }",
+            "}",
+            ""
+        ].join("\n");
+
+        try {
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "ColmeshShape"), { recursive: true });
+            fs.writeFileSync(path.join(tmpRoot, filePath), sourceText, "utf8");
+
+            const selfMemberStart = sourceText.indexOf("M = matrix_build_identity");
+            const bareReferenceStart = sourceText.indexOf("M, 0, 0, 0");
+            const mockProjectIndex = {
+                identifiers: {
+                    instanceVariables: {
+                        "var:M": {
+                            identifierId: "var:M",
+                            name: "M",
+                            references: [
+                                {
+                                    filePath,
+                                    name: "M",
+                                    scopeId: "scope:ColmeshDynamic",
+                                    start: { index: bareReferenceStart },
+                                    end: { index: bareReferenceStart }
+                                }
+                            ]
+                        }
+                    }
+                },
+                resources: {},
+                files: {
+                    [filePath]: {
+                        references: []
+                    }
+                },
+                scopes: {}
+            };
+
+            const bridge = new GmlSemanticBridge(mockProjectIndex, tmpRoot);
+            const occurrences = bridge.getSymbolOccurrences("M", "gml/var/M");
+
+            assert.ok(
+                occurrences.some(
+                    (occurrence) =>
+                        occurrence.path === filePath &&
+                        occurrence.start === selfMemberStart &&
+                        occurrence.end === selfMemberStart + "M".length
+                ),
+                "expected self.M member token to be reported as an instance-variable occurrence"
+            );
+            assert.ok(
+                occurrences.some(
+                    (occurrence) =>
+                        occurrence.path === filePath &&
+                        occurrence.start === bareReferenceStart &&
+                        occurrence.end === bareReferenceStart + "M".length
+                ),
+                "expected bare M token to remain an instance-variable occurrence"
+            );
+        } finally {
+            fs.rmSync(tmpRoot, { force: true, recursive: true });
+        }
+    });
+
+    void it("listNamingConventionTargets excludes outer constructor arguments from static function body references", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-static-function-local-"));
+        const filePath = "scripts/ColmeshShape/ColmeshShape.gml";
+        const sourceText = [
+            "function ColmeshDynamic(shape, M, group) constructor {",
+            "    self.M = matrix_build_identity();",
+            "    static set_matrix = function(_M, _moving = true) {",
+            "        array_copy(M, 0, _M, 0, 16);",
+            "    };",
+            "    static get_min_max = function() {",
+            "        return matrix_transform_vertex(M, 0, 0, 0);",
+            "    };",
+            "    set_matrix(M, false);",
+            "}",
+            ""
+        ].join("\n");
+
+        try {
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "ColmeshShape"), { recursive: true });
+            fs.writeFileSync(path.join(tmpRoot, filePath), sourceText, "utf8");
+
+            const constructorParameterStart = sourceText.indexOf("M, group");
+            const staticParameterStart = sourceText.indexOf("_M, _moving");
+            const staticParameterReferenceStart = sourceText.indexOf("_M, 0, 16");
+            const staticSetMatrixFieldReferenceStart = sourceText.indexOf("M, 0, _M");
+            const staticGetMinMaxFieldReferenceStart = sourceText.indexOf("M, 0, 0, 0");
+            const constructorParameterReferenceStart = sourceText.indexOf("M, false");
+            const mockProjectIndex = {
+                identifiers: {},
+                resources: {},
+                files: {
+                    [filePath]: {
+                        declarations: [
+                            {
+                                name: "M",
+                                filePath,
+                                scopeId: "scope:ColmeshDynamic",
+                                classifications: ["parameter"],
+                                start: { index: constructorParameterStart },
+                                end: { index: constructorParameterStart }
+                            },
+                            {
+                                name: "_M",
+                                filePath,
+                                scopeId: "scope:set_matrix",
+                                classifications: ["parameter"],
+                                start: { index: staticParameterStart },
+                                end: { index: staticParameterStart + "_M".length - 1 }
+                            }
+                        ],
+                        references: [
+                            {
+                                name: "M",
+                                scopeId: "scope:set_matrix",
+                                classifications: ["variable"],
+                                start: { index: staticSetMatrixFieldReferenceStart },
+                                end: { index: staticSetMatrixFieldReferenceStart },
+                                declaration: {
+                                    name: "M",
+                                    scopeId: "scope:ColmeshDynamic",
+                                    start: { index: constructorParameterStart }
+                                }
+                            },
+                            {
+                                name: "_M",
+                                scopeId: "scope:set_matrix",
+                                classifications: ["parameter"],
+                                start: { index: staticParameterReferenceStart },
+                                end: { index: staticParameterReferenceStart + "_M".length - 1 },
+                                declaration: {
+                                    name: "_M",
+                                    scopeId: "scope:set_matrix",
+                                    start: { index: staticParameterStart }
+                                }
+                            },
+                            {
+                                name: "M",
+                                scopeId: "scope:get_min_max",
+                                classifications: ["variable"],
+                                start: { index: staticGetMinMaxFieldReferenceStart },
+                                end: { index: staticGetMinMaxFieldReferenceStart },
+                                declaration: {
+                                    name: "M",
+                                    scopeId: "scope:ColmeshDynamic",
+                                    start: { index: constructorParameterStart }
+                                }
+                            },
+                            {
+                                name: "M",
+                                scopeId: "scope:ColmeshDynamic",
+                                classifications: ["parameter"],
+                                start: { index: constructorParameterReferenceStart },
+                                end: { index: constructorParameterReferenceStart },
+                                declaration: {
+                                    name: "M",
+                                    scopeId: "scope:ColmeshDynamic",
+                                    start: { index: constructorParameterStart }
+                                }
+                            }
+                        ]
+                    }
+                },
+                scopes: {}
+            };
+
+            const bridge = new GmlSemanticBridge(mockProjectIndex, tmpRoot);
+            const targets = await bridge.listNamingConventionTargets([filePath], ["argument"]);
+            const constructorParameterTarget = targets.find((target) => target.name === "M");
+            const staticParameterTarget = targets.find((target) => target.name === "_M");
+
+            assert.deepEqual(
+                constructorParameterTarget?.occurrences.map((occurrence) =>
+                    sourceText.slice(occurrence.start, occurrence.end)
+                ),
+                ["M", "M"]
+            );
+            assert.deepEqual(
+                staticParameterTarget?.occurrences.map((occurrence) =>
+                    sourceText.slice(occurrence.start, occurrence.end)
+                ),
+                ["_M", "_M"]
+            );
+        } finally {
+            fs.rmSync(tmpRoot, { force: true, recursive: true });
+        }
+    });
+
     void it("collectImplicitInstanceVariableTargets excludes script-scope property references", () => {
         const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-implicit-script-scope-"));
         const scriptFilePath = "scripts/conveniencefunctions/conveniencefunctions.gml";

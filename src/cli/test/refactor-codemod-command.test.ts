@@ -1975,6 +1975,64 @@ void test("refactor codemod --write skips argument renames that would collide wi
     }
 });
 
+void test("refactor codemod --write does not rename constructor fields captured by static function bodies as arguments", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        argument: {
+                            caseStyle: "lower_snake"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        await writeScriptResource(
+            projectRoot,
+            "ColmeshShape",
+            [
+                "function ColmeshDynamic(shape, M, group) constructor {",
+                "    self.M = matrix_build_identity();",
+                "    static set_matrix = function(_M, _moving = true) {",
+                "        array_copy(M, 0, _M, 0, 16);",
+                "    };",
+                "    static get_min_max = function(forceUpdate = true) {",
+                "        var t = matrix_transform_vertex(M, 0, 0, 0);",
+                "        return t;",
+                "    };",
+                "    set_matrix(M, false);",
+                "}",
+                ""
+            ].join("\n")
+        );
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+        const updatedSource = await readFile(path.join(projectRoot, "scripts/ColmeshShape/ColmeshShape.gml"), "utf8");
+
+        assert.match(updatedSource, /function ColmeshDynamic\(shape, m, group\) constructor/);
+        assert.match(updatedSource, /self\.M = matrix_build_identity\(\);/);
+        assert.match(updatedSource, /static set_matrix = function\(_m, _moving = true\)/);
+        assert.match(updatedSource, /array_copy\(M, 0, _m, 0, 16\);/);
+        assert.match(updatedSource, /matrix_transform_vertex\(M, 0, 0, 0\);/);
+        assert.match(updatedSource, /set_matrix\(m, false\);/);
+        assert.doesNotMatch(updatedSource, /array_copy\(m, 0, _m, 0, 16\);/);
+        assert.doesNotMatch(updatedSource, /matrix_transform_vertex\(m, 0, 0, 0\);/);
+
+        await assertProjectGmlFilesParse(projectRoot);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
 void test("refactor codemod --write updates constructor inheritance references when renaming struct declarations", async () => {
     const projectRoot = await createSyntheticProject({
         refactor: {

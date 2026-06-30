@@ -2153,6 +2153,7 @@ export class GmlSemanticBridge {
                 }
             }
 
+            this.collectSelfMemberInstanceVariableOccurrences(entry, symbolName, occurrences);
             this.collectUnresolvedEnumMemberOccurrences(entry, occurrences);
             this.collectEnumMemberMetadataOccurrences(entry, occurrences);
             return;
@@ -2160,6 +2161,7 @@ export class GmlSemanticBridge {
         // Case B: The entry name itself matches (e.g. macro name, enum name, or script resource name)
         if (entry.name === symbolName) {
             this.collectAllFromEntry(entry, occurrences);
+            this.collectSelfMemberInstanceVariableOccurrences(entry, symbolName, occurrences);
             return;
         }
 
@@ -2314,6 +2316,113 @@ export class GmlSemanticBridge {
 
         this.collectUnresolvedEnumMemberOccurrences(entry, occurrences);
         this.collectEnumMemberMetadataOccurrences(entry, occurrences);
+    }
+
+    private collectSelfMemberInstanceVariableOccurrences(
+        entry: SemanticIdentifierEntry,
+        symbolName: string,
+        occurrences: Array<SymbolOccurrence>
+    ): void {
+        if (!this.isInstanceVariableEntry(entry) || !Core.isNonEmptyString(symbolName)) {
+            return;
+        }
+
+        for (const filePath of this.getEntrySourceFilePaths(entry)) {
+            const sourceText = this.readProjectSourceText(filePath);
+            if (sourceText === null) {
+                continue;
+            }
+
+            this.collectSelfMemberOccurrencesFromSource(filePath, sourceText, symbolName, occurrences);
+        }
+    }
+
+    private isInstanceVariableEntry(entry: SemanticIdentifierEntry): boolean {
+        for (const instanceEntry of Object.values(this.identifiers.instanceVariables ?? {})) {
+            if (instanceEntry === entry) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private getEntrySourceFilePaths(entry: SemanticIdentifierEntry): Array<string> {
+        const filePaths = new Set<string>();
+        const declarationFilePath = this.getDeclarationFilePath(entry);
+        if (Core.isNonEmptyString(declarationFilePath)) {
+            filePaths.add(declarationFilePath);
+        }
+
+        for (const declaration of entry.declarations ?? []) {
+            if (typeof declaration.filePath === "string") {
+                filePaths.add(declaration.filePath);
+            }
+        }
+
+        for (const reference of entry.references ?? []) {
+            if (typeof reference.filePath === "string") {
+                filePaths.add(reference.filePath);
+            }
+        }
+
+        return [...filePaths];
+    }
+
+    private collectSelfMemberOccurrencesFromSource(
+        filePath: string,
+        sourceText: string,
+        symbolName: string,
+        occurrences: Array<SymbolOccurrence>
+    ): void {
+        const scanState = Core.createStringCommentScanState();
+        const sourceLength = sourceText.length;
+        let index = 0;
+
+        while (index < sourceLength) {
+            const scannedIndex = Core.advanceStringCommentScan(sourceText, sourceLength, index, scanState, true);
+            if (scannedIndex !== index) {
+                index = scannedIndex;
+                continue;
+            }
+
+            if (isIdentifierTokenAt(sourceText, index, symbolName) && this.isSelfMemberNameAt(sourceText, index)) {
+                occurrences.push({
+                    path: filePath,
+                    start: index,
+                    end: index + symbolName.length,
+                    kind: "reference"
+                });
+                index += symbolName.length;
+                continue;
+            }
+
+            index += 1;
+        }
+    }
+
+    private isSelfMemberNameAt(sourceText: string, memberStartIndex: number): boolean {
+        let cursor = memberStartIndex - 1;
+        while (cursor >= 0 && /\s/u.test(sourceText[cursor] ?? "")) {
+            cursor -= 1;
+        }
+
+        if (sourceText[cursor] !== ".") {
+            return false;
+        }
+
+        cursor -= 1;
+        while (cursor >= 0 && /\s/u.test(sourceText[cursor] ?? "")) {
+            cursor -= 1;
+        }
+
+        const ownerEndIndex = cursor + 1;
+        while (cursor >= 0 && /[A-Za-z0-9_]/u.test(sourceText[cursor] ?? "")) {
+            cursor -= 1;
+        }
+
+        const ownerName = sourceText.slice(cursor + 1, ownerEndIndex);
+        return ownerName === "self" && isIdentifierBoundary(sourceText[cursor]);
     }
 
     private normalizeSourceBackedGmlOccurrences(
@@ -3467,6 +3576,18 @@ export class GmlSemanticBridge {
             }
 
             const declarationStartIndex = readSemanticLocationIndex(referenceDeclaration.start);
+            if (
+                declarationStartIndex !== null &&
+                this.isOuterLocalReferenceInsideConstructorStaticFunction(
+                    filePath,
+                    sourceText,
+                    startIndex,
+                    declarationStartIndex
+                )
+            ) {
+                continue;
+            }
+
             const declarationScopeId =
                 typeof referenceDeclaration.scopeId === "string" ? referenceDeclaration.scopeId : null;
             const referenceKey = this.createLocalReferenceKey(
@@ -3481,6 +3602,34 @@ export class GmlSemanticBridge {
 
         this.localReferenceOccurrencesByFilePath.set(filePath, indexedOccurrences);
         return indexedOccurrences;
+    }
+
+    private isOuterLocalReferenceInsideConstructorStaticFunction(
+        filePath: string,
+        sourceText: string | null,
+        referenceStartIndex: number,
+        declarationStartIndex: number
+    ): boolean {
+        const staticFunctionRanges = this.localNamingCategoryResolver.listConstructorStaticFunctionRanges(
+            filePath,
+            sourceText
+        );
+
+        for (const staticFunctionRange of staticFunctionRanges) {
+            const referenceIsInsideStaticFunction =
+                referenceStartIndex >= staticFunctionRange.start && referenceStartIndex <= staticFunctionRange.end;
+            if (!referenceIsInsideStaticFunction) {
+                continue;
+            }
+
+            const declarationIsInsideStaticFunction =
+                declarationStartIndex >= staticFunctionRange.start && declarationStartIndex <= staticFunctionRange.end;
+            if (!declarationIsInsideStaticFunction) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private isMemberAccessReference(sourceText: string | null, startIndex: number): boolean {
