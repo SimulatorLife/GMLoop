@@ -196,7 +196,7 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
     repairLogicalNot: Object.freeze({
         id: "repairLogicalNot",
         description: "Rewrite invalid logical 'not' and 'NOT' operators to '!'.",
-        requiresSemanticProjectIndex: true,
+        requiresSemanticProjectIndex: false,
         normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
         execute(
             _engine: CodemodEngine,
