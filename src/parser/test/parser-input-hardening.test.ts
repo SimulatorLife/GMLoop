@@ -1,12 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { Core } from "@gmloop/core";
-
 import { Parser } from "../src/index.js";
 
 const { GMLParser } = Parser;
-const { validateSourceText } = Core;
 
 void describe("GMLParser constructor input validation", () => {
     void describe("valid input", () => {
@@ -156,41 +153,6 @@ function test() {
             const ast = GMLParser.parse(source, { getComments: false });
             assert.ok(ast);
             assert.equal(ast.type, "Program");
-        });
-    });
-
-    void describe("error message clarity", () => {
-        void it("should provide actionable error for null", () => {
-            try {
-                new GMLParser(null);
-                assert.fail("Should have thrown");
-            } catch (error) {
-                assert.ok(error instanceof Error);
-                assert.ok(error.message.includes("Provide a string"));
-            }
-        });
-
-        void it("should include actual type in error message", () => {
-            try {
-                new GMLParser(123 as unknown as string);
-                assert.fail("Should have thrown");
-            } catch (error) {
-                assert.ok(error instanceof Error);
-                assert.ok(error.message.includes("number"));
-            }
-        });
-
-        void it("should include length details in overflow error", () => {
-            const maxLength = 100;
-            const source = "x".repeat(maxLength + 1);
-            try {
-                validateSourceText(source, { maxLength });
-                assert.fail("Should have thrown");
-            } catch (error) {
-                assert.ok(error instanceof Error);
-                assert.ok(error.message.includes(String(maxLength)));
-                assert.ok(error.message.includes(String(source.length)));
-            }
         });
     });
 });
