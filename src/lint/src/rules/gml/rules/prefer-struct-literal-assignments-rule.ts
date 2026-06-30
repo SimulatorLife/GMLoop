@@ -4,6 +4,7 @@ import type { Rule } from "eslint";
 import type { GmlRuleDefinition } from "../index.js";
 import {
     computeLineStartOffsets,
+    containsCommentToken,
     createMeta,
     findFirstChangedCharacterOffset,
     isCommentOnlyLine,
@@ -17,10 +18,6 @@ type StructAssignmentRecord = Readonly<{
     valueText: string;
     trailingComment: string | null;
 }>;
-
-function containsInlineCommentTokens(valueText: string): boolean {
-    return valueText.includes("//") || valueText.includes("/*") || valueText.includes("*/");
-}
 
 function parseStructAssignmentLine(line: string): StructAssignmentRecord | null {
     const dotAssignmentPattern =
@@ -189,7 +186,7 @@ export function createPreferStructLiteralAssignmentsRule(definition: GmlRuleDefi
                         let hasInlineCommentInValue = false;
                         let hasDuplicatePropertyAssignment = false;
                         for (const assignment of cluster) {
-                            if (containsInlineCommentTokens(assignment.valueText)) {
+                            if (containsCommentToken(assignment.valueText)) {
                                 hasInlineCommentInValue = true;
                                 break;
                             }

@@ -4,6 +4,7 @@ import type { Rule } from "eslint";
 import type { GmlRuleDefinition } from "../index.js";
 import {
     type AstNodeRecord,
+    containsCommentToken,
     createMeta,
     type IdentifierNode,
     isAssignmentExpressionNodeWithOperator,
@@ -69,10 +70,6 @@ function isSupportedBinaryOperator(operator: unknown): operator is SupportedBina
 
 function isAssignmentExpressionNode(node: unknown): node is AssignmentExpressionNode {
     return isAssignmentExpressionNodeWithOperator(node, (operator): operator is "=" => operator === "=");
-}
-
-function containsCommentToken(expressionText: string): boolean {
-    return expressionText.includes("//") || expressionText.includes("/*") || expressionText.includes("*/");
 }
 
 function tryGetCompoundAssignmentCandidate(node: unknown): CompoundAssignmentCandidate | null {
