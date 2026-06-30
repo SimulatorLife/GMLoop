@@ -1,6 +1,6 @@
 import type { Logger } from "../runtime/logger.js";
 import type { PatchApplicator } from "../runtime/types.js";
-import { getHighResolutionTime } from "../timing/index.js";
+import { getHighResolutionTime } from "../timing.js";
 import type { PatchQueueMetrics, PatchQueueState, WebSocketClientState, WebSocketConnectionMetrics } from "./types.js";
 
 const QUEUE_COMPACTION_THRESHOLD_MULTIPLIER = 2;

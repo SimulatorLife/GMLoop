@@ -10,7 +10,7 @@ import {
     parseJsonWithContext,
     toArray
 } from "../support/index.js";
-import { getHighResolutionTime } from "../timing/index.js";
+import { getHighResolutionTime } from "../timing.js";
 import {
     createInitialConnectionMetrics,
     createPatchQueueState,
