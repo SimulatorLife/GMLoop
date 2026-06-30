@@ -190,13 +190,25 @@ async function sendFileResponse(
             }
             errorHandled = true;
 
-            // Remove specific listeners to prevent memory leaks
+            // Detach every listener registered below before tearing the stream
+            // down. Node keeps the listeners attached to the underlying
+            // EventEmitter instances for as long as the emitter exists, so any
+            // callback we leave behind keeps the request/response pair alive
+            // (closing over `stream`, `res`, and `cleanup` itself). On a long
+            // watcher session that turns into a slow file-descriptor leak as
+            // every aborted request strands one orphan emitter.
             stream.removeListener("error", cleanup);
             stream.removeListener("close", handleStreamClose);
             res.removeListener("close", handleResponseClose);
             res.removeListener("error", handleResponseError);
 
-            // Destroy the stream if it's still open
+            // Force the file read stream closed if it hasn't already emitted
+            // `end`/`close`. `pipe` only stops emitting when the source ends,
+            // so an early disconnect (browser tab closed, network drop) leaves
+            // the descriptor open until GC eventually runs the auto-close.
+            // Without this guard the server accumulates unread fds until the
+            // process hits `EMFILE`, which the watcher treats as a fatal
+            // restart on every subsequent request.
             if (stream.readable || !stream.destroyed) {
                 stream.destroy();
             }
@@ -220,19 +232,37 @@ async function sendFileResponse(
         };
 
         const handleResponseClose = () => {
-            // Response closed by client - clean up the stream
+            // The HTTP response ended before the file stream drained
+            // (client disconnect, proxy timeout, or server keep-alive
+            // teardown). Forwarding to `cleanup` makes sure the in-flight
+            // read stream is destroyed and the surrounding promise settles,
+            // which lets the request handler release its own resources.
             cleanup();
         };
 
         const handleResponseError = (error: unknown) => {
-            // Response encountered an error - clean up the stream
+            // Node emits `error` on the response stream when the underlying
+            // socket fails (e.g. ECONNRESET). We forward the original error
+            // so `cleanup` rejects the awaiting promise with a meaningful
+            // cause instead of swallowing it as a graceful close.
             cleanup(error);
         };
 
         stream.on("error", cleanup);
         stream.on("close", handleStreamClose);
 
-        // Critical: Monitor response lifecycle to prevent stream leaks when client disconnects
+        // Critical: hook the HTTP response (not just the file stream) into the
+        // cleanup pipeline. `pipe` only reacts to events on the *source*
+        // stream, so a client disconnect that closes `res` while the file
+        // stream is still readable would otherwise leave the read stream
+        // running to completion in the background. That keeps the underlying
+        // file descriptor open for the rest of the stream's lifetime, holds
+        // the file lock on Windows, and stalls the watcher if the file is
+        // later rewritten by an editor. Listening for both `close` (graceful
+        // disconnect) and `error` (socket failure) covers the two ways a
+        // response can end prematurely and routes each into the same
+        // idempotent `cleanup` above, which is what actually destroys the
+        // read stream and frees the descriptor.
         res.on("close", handleResponseClose);
         res.on("error", handleResponseError);
 
