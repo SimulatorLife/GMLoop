@@ -354,6 +354,10 @@ function isIdentifierTokenAt(sourceText: string, startIndex: number, identifierN
     );
 }
 
+function escapeRegExpLiteral(value: string): string {
+    return value.replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`);
+}
+
 function createIdentifierTokenOccurrence(parameters: {
     sourceText: string | null;
     filePath: string;
@@ -2582,12 +2586,12 @@ export class GmlSemanticBridge {
                 continue;
             }
 
-            const category = this.getResourceNamingCategory(resource);
-            if (!category) {
+            if (resource.resourceType === "GMScript" && this.isConstructorBackedScriptResource(resource)) {
                 continue;
             }
 
-            if (category === "scriptResourceName" && this.isConstructorBackedScriptResource(resource)) {
+            const category = this.getResourceNamingCategory(resource);
+            if (!category) {
                 continue;
             }
 
@@ -2603,23 +2607,59 @@ export class GmlSemanticBridge {
     }
 
     private isConstructorBackedScriptResource(resource: SemanticResourceRecord): boolean {
-        if (resource.resourceType !== "GMScript" || !Core.isNonEmptyString(resource.path)) {
+        if (
+            resource.resourceType !== "GMScript" ||
+            !Core.isNonEmptyString(resource.path) ||
+            !Core.isNonEmptyString(resource.name)
+        ) {
             return false;
         }
 
         const declarations = this.getScriptCallableDeclarationsForResource(resource.path);
-        if (declarations.length !== 1) {
+        if (declarations.length === 1) {
+            const declaration = declarations[0];
+            const category = this.getScriptCallableNamingCategory(
+                declaration.entry,
+                declaration.declaration,
+                true,
+                this.extractDeclarationKinds(declaration.entry)
+            );
+            return category === "constructorFunction" || category === "structDeclaration";
+        }
+
+        return this.isConstructorBackedScriptResourceSource(resource);
+    }
+
+    private isConstructorBackedScriptResourceSource(resource: SemanticResourceRecord): boolean {
+        if (!Core.isNonEmptyString(resource.path) || !Core.isNonEmptyString(resource.name)) {
             return false;
         }
 
-        const declaration = declarations[0];
-        const category = this.getScriptCallableNamingCategory(
-            declaration.entry,
-            declaration.declaration,
-            true,
-            this.extractDeclarationKinds(declaration.entry)
+        const scriptPath = resource.path.replace(/\.yy$/iu, ".gml");
+        if (scriptPath === resource.path) {
+            return false;
+        }
+
+        const sourceText = this.readProjectSourceText(scriptPath);
+        if (sourceText === null) {
+            return false;
+        }
+
+        const functionDeclarationPattern = new RegExp(
+            String.raw`\bfunction\s+${escapeRegExpLiteral(resource.name)}\s*\(`,
+            "u"
         );
-        return category === "constructorFunction" || category === "structDeclaration";
+        const match = functionDeclarationPattern.exec(sourceText);
+        if (match === null) {
+            return false;
+        }
+
+        const bodyStart = sourceText.indexOf("{", match.index);
+        if (bodyStart === -1) {
+            return false;
+        }
+
+        return /\bconstructor\b/u.test(sourceText.slice(match.index, bodyStart));
     }
 
     private collectScriptCallableNamingConventionTargets(
@@ -2646,17 +2686,24 @@ export class GmlSemanticBridge {
                     continue;
                 }
 
-                if (isCoupledSingleCallableResource && declaration.name === resource?.name) {
+                const category = this.getScriptCallableNamingCategory(
+                    entry,
+                    declaration,
+                    hasSingleCallableDeclaration,
+                    entryDeclarationKinds
+                );
+
+                if (
+                    isCoupledSingleCallableResource &&
+                    declaration.name === resource?.name &&
+                    category !== "constructorFunction" &&
+                    category !== "structDeclaration"
+                ) {
                     continue;
                 }
 
                 pushTarget({
-                    category: this.getScriptCallableNamingCategory(
-                        entry,
-                        declaration,
-                        hasSingleCallableDeclaration,
-                        entryDeclarationKinds
-                    ),
+                    category,
                     name: declaration.name,
                     occurrences: [],
                     path: declaration.filePath,
@@ -3078,6 +3125,10 @@ export class GmlSemanticBridge {
     private shouldResourceRenameCollectDiskOccurrences(resource: SemanticResourceRecord): boolean {
         if (resource.resourceType !== "GMScript" || typeof resource.path !== "string") {
             return true;
+        }
+
+        if (this.isConstructorBackedScriptResource(resource)) {
+            return false;
         }
 
         const declarations = this.getScriptCallableDeclarationsForResource(resource.path);

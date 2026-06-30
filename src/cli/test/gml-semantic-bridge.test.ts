@@ -146,6 +146,60 @@ void describe("GmlSemanticBridge tests", () => {
         );
     });
 
+    void it("listNamingConventionTargets skips constructor-backed script resource names when declarations are missing", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-constructor-resource-"));
+
+        try {
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "attack"), { recursive: true });
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "attack", "attack.gml"),
+                [
+                    "function Attack(knockback = 0) : Object() constructor {",
+                    "    self.knockback = knockback;",
+                    "}",
+                    ""
+                ].join("\n")
+            );
+
+            const mockProjectIndex = {
+                identifiers: {
+                    scripts: {
+                        "scope:script:Attack": {
+                            identifierId: "script:Attack",
+                            name: "Attack",
+                            resourcePath: "scripts/attack/attack.yy",
+                            declarations: [],
+                            references: []
+                        }
+                    }
+                },
+                resources: {
+                    "scripts/attack/attack.yy": {
+                        name: "Attack",
+                        path: "scripts/attack/attack.yy",
+                        resourceType: "GMScript"
+                    }
+                }
+            };
+
+            const bridge = new GmlSemanticBridge(mockProjectIndex, tmpRoot);
+            const targets = await bridge.listNamingConventionTargets();
+
+            assert.ok(
+                !targets.some(
+                    (target) =>
+                        target.category === "scriptResourceName" &&
+                        target.symbolId === "gml/scripts/Attack" &&
+                        target.name === "Attack"
+                ),
+                "constructor-backed script resource should not be treated as a script resource naming target"
+            );
+            assert.deepEqual(bridge.getSymbolOccurrences("Attack", "gml/scripts/Attack"), []);
+        } finally {
+            fs.rmSync(tmpRoot, { recursive: true, force: true });
+        }
+    });
+
     void it("normalizes semantic end indexes to exclusive naming convention occurrences", async () => {
         const mockProjectIndex = {
             identifiers: {

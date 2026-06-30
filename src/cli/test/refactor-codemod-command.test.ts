@@ -168,6 +168,140 @@ void test("refactor codemod --write preserves valid bit-shift assignments and ne
     }
 });
 
+void test("refactor codemod --write repairs logical not before enum-member naming builds the semantic index", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                repairLogicalNot: {},
+                namingConvention: {
+                    rules: {
+                        enumMember: {
+                            caseStyle: "upper_snake"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        await writeScriptResource(
+            projectRoot,
+            "group_test",
+            [
+                "enum eTestResultType {",
+                "    text,",
+                "    console",
+                "}",
+                "",
+                "function func_run_test_group(test_cases, result_type = eTestResultType.text, verbose = true) {",
+                "    switch (result_type) {",
+                "        case eTestResultType.console:",
+                "            return verbose;",
+                "    }",
+                "}",
+                ""
+            ].join("\n")
+        );
+        await writeScriptResource(
+            projectRoot,
+            "group_vertex_buffers",
+            [
+                "function test_vertex_buffers() {",
+                "    while(not file_text_eof(file_mtl)){",
+                "        break;",
+                "    }",
+                "    func_run_test_group(test_cases_uvs, eTestResultType.console, false);",
+                "}",
+                ""
+            ].join("\n")
+        );
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+
+        const enumSource = await readFile(path.join(projectRoot, "scripts/group_test/group_test.gml"), "utf8");
+        const usageSource = await readFile(
+            path.join(projectRoot, "scripts/group_vertex_buffers/group_vertex_buffers.gml"),
+            "utf8"
+        );
+
+        assert.match(enumSource, /CONSOLE/);
+        assert.match(enumSource, /case eTestResultType\.CONSOLE:/);
+        assert.match(usageSource, /while\(! file_text_eof\(file_mtl\)\)/);
+        assert.match(usageSource, /func_run_test_group\(test_cases_uvs, eTestResultType\.CONSOLE, false\);/);
+        assert.doesNotMatch(usageSource, /eTestResultType\.console/);
+        await assertProjectGmlFilesParse(projectRoot);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("refactor codemod --write renames constructor declarations and constructor call sites together", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        constructorFunction: {
+                            caseStyle: "pascal"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        await writeScriptResource(
+            projectRoot,
+            "MPController",
+            [
+                "function MPController(cell_size, world_width = room_width, world_height = room_height) : Object() constructor {",
+                "    self.cell_size = cell_size;",
+                "}",
+                ""
+            ].join("\n")
+        );
+        await writeObjectResource(projectRoot, "obj_level_controller", {
+            "Create_0.gml": [
+                "function create_controller() {",
+                "    global.mp_controller = new MPController(GRID_SIZE);",
+                "}",
+                ""
+            ].join("\n")
+        });
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+
+        const constructorSource = await readFile(
+            path.join(projectRoot, "scripts/MPController/MPController.gml"),
+            "utf8"
+        );
+        const objectSource = await readFile(
+            path.join(projectRoot, "objects/obj_level_controller/Create_0.gml"),
+            "utf8"
+        );
+
+        assert.match(constructorSource, /function MpController\(/);
+        assert.doesNotMatch(constructorSource, /function MPController\(/);
+        assert.match(objectSource, /new MpController\(GRID_SIZE\)/);
+        assert.doesNotMatch(objectSource, /new MPController\(GRID_SIZE\)/);
+        await assertProjectGmlFilesParse(projectRoot);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
 void test("refactor codemod --write preserves allowed leading underscores while applying safe snake-case renames", async () => {
     const projectRoot = await createSyntheticProject({
         refactor: {
