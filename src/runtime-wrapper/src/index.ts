@@ -1,5 +1,5 @@
 import * as Runtime from "./browser/runtime/index.js";
-import * as Timing from "./browser/timing/index.js";
+import * as Timing from "./browser/timing.js";
 import * as Clients from "./browser/websocket/index.js";
 
 // Export the RuntimeWrapper namespace as the primary public API
@@ -75,4 +75,4 @@ export type {
 } from "./browser/websocket/index.js";
 export * as Clients from "./browser/websocket/index.js";
 // The Timing namespace is the canonical public surface for timing utilities.
-export * as Timing from "./browser/timing/index.js";
+export * as Timing from "./browser/timing.js";

@@ -1,5 +1,5 @@
 import { isErrorLike, trimArrayToMaxSize } from "../support/index.js";
-import { getHighResolutionTime } from "../timing/index.js";
+import { getHighResolutionTime } from "../timing.js";
 import {
     computeErrorAnalytics,
     computeErrorsForPatch,
