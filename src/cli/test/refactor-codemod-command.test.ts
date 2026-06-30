@@ -2055,6 +2055,14 @@ void test("refactor codemod --write updates constructor runtime type checks for 
                 "function input_value_is_binding_legacy(_value) {",
                 '    return instanceof(_value) == "__input_class_binding";',
                 "}",
+                "",
+                "function input_value_uses_static_binding() {",
+                '    return struct_get(static_get(__input_class_binding), "set_text");',
+                "}",
+                "",
+                "function input_value_calls_static_binding() {",
+                '    scr_call_static(__input_class_binding, "reset");',
+                "}",
                 ""
             ].join("\n")
         );
@@ -2065,9 +2073,9 @@ void test("refactor codemod --write updates constructor runtime type checks for 
         });
 
         assert.equal(result.exitCode, 0);
-        await access(path.join(projectRoot, "scripts", "__InputClassBinding", "__InputClassBinding.gml"));
+        await access(path.join(projectRoot, "scripts", "__input_class_binding", "__input_class_binding.gml"));
         const constructorSource = await readFile(
-            path.join(projectRoot, "scripts", "__InputClassBinding", "__InputClassBinding.gml"),
+            path.join(projectRoot, "scripts", "__input_class_binding", "__input_class_binding.gml"),
             "utf8"
         );
         const emptyBindingSource = await readFile(
@@ -2083,6 +2091,8 @@ void test("refactor codemod --write updates constructor runtime type checks for 
         assert.match(emptyBindingSource, /return new __InputClassBinding\(\);/);
         assert.match(bindingChecksSource, /is_instanceof\(_value, __InputClassBinding\);/);
         assert.match(bindingChecksSource, /instanceof\(_value\) == "__InputClassBinding";/);
+        assert.match(bindingChecksSource, /static_get\(__InputClassBinding\)/);
+        assert.match(bindingChecksSource, /scr_call_static\(__InputClassBinding, "reset"\);/);
         assert.doesNotMatch(bindingChecksSource, /\b__input_class_binding\b/);
 
         await assertProjectGmlFilesParse(projectRoot);

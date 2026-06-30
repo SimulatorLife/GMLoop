@@ -565,6 +565,14 @@ void describe("GmlSemanticBridge tests", () => {
                 "function input_value_is_binding_legacy(_value) {",
                 '    return instanceof(_value) == "__input_class_binding";',
                 "}",
+                "",
+                "function input_value_uses_static_binding() {",
+                '    return struct_get(static_get(__input_class_binding), "set_text");',
+                "}",
+                "",
+                "function input_value_calls_static_binding() {",
+                '    scr_call_static(__input_class_binding, "reset");',
+                "}",
                 ""
             ].join("\n");
             fs.writeFileSync(
@@ -576,10 +584,12 @@ void describe("GmlSemanticBridge tests", () => {
             const bridge = new GmlSemanticBridge(projectIndex, tmpRoot);
             const occurrences = bridge.getSymbolOccurrences(
                 "__input_class_binding",
-                "gml/scripts/__input_class_binding"
+                "gml/script/__input_class_binding"
             );
             const bareTypeReferenceStart = findNthIndex(consumerSource, "__input_class_binding", 1);
             const stringTypeReferenceStart = findNthIndex(consumerSource, "__input_class_binding", 2);
+            const staticGetReferenceStart = findNthIndex(consumerSource, "__input_class_binding", 3);
+            const staticCallReferenceStart = findNthIndex(consumerSource, "__input_class_binding", 4);
 
             assert.ok(
                 occurrences.some(
@@ -600,6 +610,26 @@ void describe("GmlSemanticBridge tests", () => {
                         occurrence.kind === Refactor.OccurrenceKind.REFERENCE
                 ),
                 "expected instanceof string comparison to be reported as an occurrence"
+            );
+            assert.ok(
+                occurrences.some(
+                    (occurrence) =>
+                        occurrence.path === "scripts/input_value_is_binding/input_value_is_binding.gml" &&
+                        occurrence.start === staticGetReferenceStart &&
+                        occurrence.end === staticGetReferenceStart + "__input_class_binding".length &&
+                        occurrence.kind === Refactor.OccurrenceKind.REFERENCE
+                ),
+                "expected static_get constructor reference to be reported as an occurrence"
+            );
+            assert.ok(
+                occurrences.some(
+                    (occurrence) =>
+                        occurrence.path === "scripts/input_value_is_binding/input_value_is_binding.gml" &&
+                        occurrence.start === staticCallReferenceStart &&
+                        occurrence.end === staticCallReferenceStart + "__input_class_binding".length &&
+                        occurrence.kind === Refactor.OccurrenceKind.REFERENCE
+                ),
+                "expected scr_call_static constructor reference to be reported as an occurrence"
             );
         } finally {
             fs.rmSync(tmpRoot, { recursive: true, force: true });

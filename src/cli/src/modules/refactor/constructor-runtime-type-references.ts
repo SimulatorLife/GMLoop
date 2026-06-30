@@ -114,6 +114,18 @@ function collectConstructorRuntimeTypeReferencesFromAst(
             return;
         }
 
+        if (isCallExpressionIdentifierMatch(node, "static_get")) {
+            const constructorArg = Core.getCallExpressionArguments(node)[0];
+            pushUniqueOccurrence(occurrences, seenKeys, readIdentifierOccurrence(constructorArg));
+            return;
+        }
+
+        if (isCallExpressionIdentifierMatch(node, "scr_call_static")) {
+            const constructorArg = Core.getCallExpressionArguments(node)[0];
+            pushUniqueOccurrence(occurrences, seenKeys, readIdentifierOccurrence(constructorArg));
+            return;
+        }
+
         if (!Core.isBinaryExpressionNode(node)) {
             return;
         }
@@ -144,28 +156,32 @@ function collectConstructorRuntimeTypeReferencesFromText(
     const occurrences: Array<ConstructorRuntimeTypeReferenceOccurrence> = [];
     const seenKeys = new Set<string>();
     const isInstanceofPattern = /\bis_instanceof\s*\([^,()]+(?:\([^)]*\)[^,()]*)?,\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)/g;
+    const staticGetPattern = /\bstatic_get\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)/g;
+    const scrCallStaticPattern = /\bscr_call_static\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,/g;
     const instanceofLiteralPattern = /\binstanceof\s*\([^)]*\)\s*(?:==|!=|=|<>)\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\1/g;
     const reversedInstanceofLiteralPattern =
         /(['"])([A-Za-z_][A-Za-z0-9_]*)\1\s*(?:==|!=|=|<>)\s*\binstanceof\s*\([^)]*\)/g;
 
-    for (const match of sourceText.matchAll(isInstanceofPattern)) {
-        const name = match[1];
-        const matchedText = match[0];
-        const matchIndex = match.index;
-        if (!Core.isNonEmptyString(name) || typeof matchIndex !== "number") {
-            continue;
-        }
+    for (const pattern of [isInstanceofPattern, staticGetPattern, scrCallStaticPattern]) {
+        for (const match of sourceText.matchAll(pattern)) {
+            const name = match[1];
+            const matchedText = match[0];
+            const matchIndex = match.index;
+            if (!Core.isNonEmptyString(name) || typeof matchIndex !== "number") {
+                continue;
+            }
 
-        const startOffset = matchedText.lastIndexOf(name);
-        if (startOffset === -1) {
-            continue;
-        }
+            const startOffset = matchedText.lastIndexOf(name);
+            if (startOffset === -1) {
+                continue;
+            }
 
-        pushUniqueOccurrence(occurrences, seenKeys, {
-            name,
-            start: matchIndex + startOffset,
-            end: matchIndex + startOffset + name.length
-        });
+            pushUniqueOccurrence(occurrences, seenKeys, {
+                name,
+                start: matchIndex + startOffset,
+                end: matchIndex + startOffset + name.length
+            });
+        }
     }
 
     for (const pattern of [instanceofLiteralPattern, reversedInstanceofLiteralPattern]) {
@@ -207,6 +223,8 @@ function collectConstructorRuntimeTypeReferences(sourceText: string): Array<Cons
  * These occurrences cover the GameMaker patterns that encode constructor names
  * outside the semantic index today:
  * - `is_instanceof(value, ConstructorName)`
+ * - `static_get(ConstructorName)`
+ * - `scr_call_static(ConstructorName, methodName, args)`
  * - `instanceof(value) == "ConstructorName"`
  *
  * @param context Files and project root to inspect.
