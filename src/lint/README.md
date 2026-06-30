@@ -160,7 +160,7 @@ fix instead of the broader `optimize-logical-flow` rule.
 
 `prefer-loop-invariant-expressions` hoists a single side-effect-free, loop-invariant expression into a cached `var` declared immediately before the loop. Equivalent occurrences inside the same loop reuse that single cache declaration, and later lint passes skip re-hoisting the synthetic `cached_*` initializers into ancestor loops. The rule is intentionally conservative: it skips unknown calls, non-deterministic reads (for example `current_time`), dynamic DS/map accessors, and member/index reads that could be invalidated by loop-local mutations or impure calls.
 
-`remove-default-comments` removes default GameMaker placeholder and migration-banner comments.
+`remove-default-comments` removes default GameMaker placeholder and migration-banner comments. If an object event file contains only those placeholder comments, the rule replaces them with `// Intentionally empty: overrides inherited/default object event behavior.` instead of making the file empty. Comment-only object events can be intentional in GameMaker because the event file can override inherited or default event behavior, such as disabling an automatic draw event.
 
 `normalize-banner-comments` canonicalizes decorative banner comments (line and block forms) and rewrites method-list `///` banner lines (outside of function declarations) to plain `//` comments.
 

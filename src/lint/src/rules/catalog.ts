@@ -158,7 +158,8 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         messageId: "noUnnecessaryStringInterpolation"
     },
     {
-        description: "Remove GameMaker's generated placeholder comments from otherwise empty event code.",
+        description:
+            "Remove GameMaker's generated placeholder comments, preserving placeholder-only object events as explicit intentional-empty overrides.",
         mapKey: "GmlRemoveDefaultComments",
         shortName: "remove-default-comments",
         fullId: "gml/remove-default-comments",

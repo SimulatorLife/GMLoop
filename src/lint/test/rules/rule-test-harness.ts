@@ -222,6 +222,7 @@ export function lintWithFeatherRule(
 export function runGmlRule(parameters: {
     rule: { create: (context: never) => { Program?: (node: never) => void } };
     code: string;
+    filename?: string;
     programNode: Record<string, unknown>;
 }): { messageCount: number; output: string } {
     const fixes: Array<ReplaceTextRangeFixOperation> = [];
@@ -229,6 +230,8 @@ export function runGmlRule(parameters: {
     const getLocFromIndex = createLocResolver(parameters.code);
 
     const context = {
+        filename: parameters.filename ?? "test.gml",
+        physicalFilename: parameters.filename ?? "test.gml",
         options: [{}],
         sourceCode: {
             text: parameters.code,
