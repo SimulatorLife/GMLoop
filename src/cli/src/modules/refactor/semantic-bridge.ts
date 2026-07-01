@@ -2736,6 +2736,10 @@ export class GmlSemanticBridge {
             return category === "constructorFunction" || category === "structDeclaration";
         }
 
+        if (declarations.length > 1) {
+            return false;
+        }
+
         return this.isConstructorBackedScriptResourceSource(resource);
     }
 
@@ -3106,7 +3110,13 @@ export class GmlSemanticBridge {
         const resourceSymbolMatch = symbolId.match(/^gml\/([^/]+)\/(.+)$/);
         if (resourceSymbolMatch && this.isResourceSymbolId(symbolId)) {
             const resource = this.findResourceByName(resourceSymbolMatch[2]);
-            return resource === null ? null : this.createSyntheticResourceEntry(resource, symbolId);
+            const caseInsensitiveResource = resource ?? this.findResourceByName(resourceSymbolMatch[2], true);
+            return caseInsensitiveResource === null
+                ? null
+                : this.createSyntheticResourceEntry(
+                      caseInsensitiveResource,
+                      `gml/${resourceSymbolMatch[1]}/${caseInsensitiveResource.name}`
+                  );
         }
 
         const directEntry = indexes.entriesByIdentifierId.get(symbolId) ?? indexes.entriesByScipId.get(symbolId);
@@ -3451,12 +3461,30 @@ export class GmlSemanticBridge {
         let hasConstructor = false;
         let hasStruct = false;
 
-        for (const { entry } of declarations) {
-            const declarationKinds = this.extractDeclarationKinds(entry);
+        if (declarations.length !== 1) {
+            return null;
+        }
+
+        for (const { entry, declaration } of declarations) {
+            const declarationKinds = new Set<string>();
+            for (const classification of Core.asArray(declaration.classifications)) {
+                if (typeof classification === "string") {
+                    declarationKinds.add(classification);
+                }
+            }
+
             if (declarationKinds.has("constructor")) {
                 hasConstructor = true;
             }
             if (declarationKinds.has("struct")) {
+                hasStruct = true;
+            }
+
+            const entryDeclarationKinds = this.extractDeclarationKinds(entry);
+            if (entryDeclarationKinds.has("constructor")) {
+                hasConstructor = true;
+            }
+            if (entryDeclarationKinds.has("struct")) {
                 hasStruct = true;
             }
         }
