@@ -19,16 +19,14 @@ type SupportedNullishOperator = "??";
 type SupportedBinaryOperator = SupportedArithmeticOperator | SupportedBitwiseOperator | SupportedNullishOperator;
 type CompoundAssignmentOperator = "+=" | "-=" | "*=" | "/=" | "%=" | "|=" | "&=" | "^=" | "??=";
 
-type AssignmentExpressionNode = AstNodeRecord &
-    Readonly<{
-        type: "AssignmentExpression";
-        operator: "=";
-        left: unknown;
-        right: unknown;
-    }>;
-
 type CompoundAssignmentCandidate = Readonly<{
-    assignmentExpression: AssignmentExpressionNode;
+    assignmentExpression: AstNodeRecord &
+        Readonly<{
+            type: "AssignmentExpression";
+            operator: "=";
+            left: unknown;
+            right: unknown;
+        }>;
     leftIdentifier: IdentifierNode;
     rightBinaryExpression: AstNodeRecord &
         Readonly<{
@@ -67,16 +65,12 @@ function isSupportedBinaryOperator(operator: unknown): operator is SupportedBina
     );
 }
 
-function isAssignmentExpressionNode(node: unknown): node is AssignmentExpressionNode {
-    return isAssignmentExpressionNodeWithOperator(node, (operator): operator is "=" => operator === "=");
-}
-
 function containsCommentToken(expressionText: string): boolean {
     return expressionText.includes("//") || expressionText.includes("/*") || expressionText.includes("*/");
 }
 
 function tryGetCompoundAssignmentCandidate(node: unknown): CompoundAssignmentCandidate | null {
-    if (!isAssignmentExpressionNode(node)) {
+    if (!isAssignmentExpressionNodeWithOperator(node, (operator): operator is "=" => operator === "=")) {
         return null;
     }
 
