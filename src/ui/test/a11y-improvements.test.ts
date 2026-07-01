@@ -4,10 +4,9 @@ import test from "node:test";
 import { GmAppHeader } from "../src/app/components/gm-app-header.js";
 import { GmAppShell } from "../src/app/components/gm-app-shell.js";
 import { GmDocsPanel } from "../src/app/components/gm-docs-panel.js";
-import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
-import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
+import { createMockGraphVisualizationUiModel, createMockGraphVisualizationUiState } from "./ui-model-state-fixtures.js";
 
 class TestableGmAppShell extends GmAppShell {
     public renderForTest(): unknown {
@@ -54,22 +53,8 @@ function renderShellSkipLinkForPage(page: GraphVisualizationUiState["activePage"
     }
 }
 
-function createMockModel(): GraphVisualizationUiModel {
-    return {
-        autoGamePipeline: null,
-        data: {
-            edges: [],
-            generatedAt: "2026-01-01T00:00:00.000Z",
-            graphs: [],
-            nodes: [],
-            projectRoot: "/tmp/test"
-        },
-        documentationCatalogs: null,
-        isServerMode: false,
-        lastFixRun: null,
-        loadedTarget: null,
-        liveReload: null,
-        mcpServerStatus: "not-started",
+function createMockModel() {
+    return createMockGraphVisualizationUiModel({
         projectConfigurationCatalog: {
             format: { entries: [] },
             gameMakerCli: {
@@ -99,20 +84,12 @@ function createMockModel(): GraphVisualizationUiModel {
             lint: { rules: [], rulesets: [], ruleset: null },
             refactor: { codemods: [] }
         },
-        startupState: null,
         title: "Test"
-    };
+    });
 }
 
-function createMockState(): GraphVisualizationUiState {
-    return {
-        ...createInitialGraphVisualizationUiState(),
-        activeDocsView: "cli",
-        activeGraphView: "visual",
-        activePage: "docs",
-        activeConfigView: "rendered",
-        labelMode: "auto"
-    };
+function createMockState() {
+    return createMockGraphVisualizationUiState({ activePage: "docs" });
 }
 
 void test("GmAppShell targets graph content in skip-link by default", () => {
