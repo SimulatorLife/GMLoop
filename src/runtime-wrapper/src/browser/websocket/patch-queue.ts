@@ -79,6 +79,10 @@ export function enqueuePendingPatchUntilRuntimeReady(
     patch: unknown,
     maxPendingPatches: number
 ): void {
+    if (replaceOlderPatchWithSameId(state.pendingPatches, state.pendingPatchHead, patch, "replace")) {
+        return;
+    }
+
     const effectivePendingCount = state.pendingPatches.length - state.pendingPatchHead;
     if (effectivePendingCount >= maxPendingPatches) {
         state.pendingPatchHead += 1;
@@ -118,7 +122,7 @@ export function enqueuePatchForDeferredFlush(
     const queueState = state.patchQueue;
     const queueMetrics = queueState.queueMetrics;
 
-    const replacedQueuedPatch = replaceOlderQueuedPatchWithSameId(queueState, patch);
+    const replacedQueuedPatch = replaceOlderPatchWithSameId(queueState.queue, queueState.queueHead, patch, "remove");
     if (replacedQueuedPatch) {
         queueMetrics.totalDeduplicated += 1;
     }
@@ -155,15 +159,24 @@ export function enqueuePatchForDeferredFlush(
     }
 }
 
-function replaceOlderQueuedPatchWithSameId(queueState: PatchQueueState, patch: unknown): boolean {
+function replaceOlderPatchWithSameId(
+    patches: Array<unknown>,
+    headIndex: number,
+    patch: unknown,
+    mode: "replace" | "remove"
+): boolean {
     const patchId = extractPatchId(patch);
     if (patchId === null) {
         return false;
     }
 
-    for (let index = queueState.queue.length - 1; index >= queueState.queueHead; index -= 1) {
-        if (extractPatchId(queueState.queue[index]) === patchId) {
-            queueState.queue.splice(index, 1);
+    for (let index = patches.length - 1; index >= headIndex; index -= 1) {
+        if (extractPatchId(patches[index]) === patchId) {
+            if (mode === "replace") {
+                patches[index] = patch;
+            } else {
+                patches.splice(index, 1);
+            }
             return true;
         }
     }
