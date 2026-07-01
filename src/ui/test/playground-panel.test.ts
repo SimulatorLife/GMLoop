@@ -4,12 +4,10 @@ import test from "node:test";
 
 import { GmGraphToolbar } from "../src/app/components/gm-graph-toolbar.js";
 import { GmPlaygroundPanel } from "../src/app/components/gm-playground-panel.js";
-import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
 import { DEFAULT_PLAYGROUND_GML_SOURCE } from "../src/app/playground-default-gml.js";
-import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
-import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import type { GraphVisualizationProjectConfigurationCatalog } from "../src/graph/types.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
+import { createMockGraphVisualizationUiModel, createMockGraphVisualizationUiState } from "./ui-model-state-fixtures.js";
 
 class TestableGmPlaygroundPanel extends GmPlaygroundPanel {
     public renderForTest(): unknown {
@@ -23,37 +21,14 @@ class TestableGmGraphToolbar extends GmGraphToolbar {
     }
 }
 
-function createMockModel(): GraphVisualizationUiModel {
-    return {
-        autoGamePipeline: null,
-        data: {
-            edges: [],
-            generatedAt: "2026-01-01T00:00:00.000Z",
-            graphs: [],
-            nodes: [],
-            projectRoot: "/tmp/test"
-        },
-        documentationCatalogs: null,
-        isServerMode: false,
-        lastFixRun: null,
-        loadedTarget: { activePath: "/test", projectRoot: "/tmp/test", selectedPaths: [], source: "working-directory" },
-        liveReload: null,
-        mcpServerStatus: "not-started",
-        projectConfigurationCatalog: null,
-        startupState: null,
-        title: "Test GMLoop"
-    };
+function createMockModel() {
+    return createMockGraphVisualizationUiModel({
+        loadedTarget: { activePath: "/test", projectRoot: "/tmp/test", selectedPaths: [], source: "working-directory" }
+    });
 }
 
-function createMockState(): GraphVisualizationUiState {
-    return {
-        ...createInitialGraphVisualizationUiState(),
-        activeConfigView: "rendered",
-        activePage: "playground",
-        activeGraphView: "visual",
-        activeDocsView: "cli",
-        labelMode: "auto"
-    };
+function createMockState() {
+    return createMockGraphVisualizationUiState({ activePage: "playground" });
 }
 
 function createEmptyProjectConfigurationCatalog(): GraphVisualizationProjectConfigurationCatalog {

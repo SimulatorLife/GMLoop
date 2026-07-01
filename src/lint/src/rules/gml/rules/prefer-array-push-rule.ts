@@ -12,27 +12,21 @@ import {
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
 
-type AssignmentExpressionNode = Readonly<{
-    type: "AssignmentExpression";
-    operator: "=";
-    left: unknown;
-    right: unknown;
-}>;
-
 type CallExpressionNode = Readonly<{
     type: "CallExpression";
     arguments?: Array<unknown> | null;
 }>;
 
 type PreferArrayPushCandidate = Readonly<{
-    assignmentExpression: AssignmentExpressionNode;
+    assignmentExpression: Readonly<{
+        type: "AssignmentExpression";
+        operator: "=";
+        left: unknown;
+        right: unknown;
+    }>;
     arrayExpression: unknown;
     valueExpression: unknown;
 }>;
-
-function isAssignmentExpressionNode(node: unknown): node is AssignmentExpressionNode {
-    return isAssignmentExpressionNodeWithOperator(node, (operator): operator is "=" => operator === "=");
-}
 
 function isCallExpressionNode(node: unknown): node is CallExpressionNode {
     return isAstNodeRecord(node) && node.type === "CallExpression";
@@ -77,7 +71,7 @@ function sliceNodeText(sourceText: string, node: unknown): string | null {
 }
 
 function tryGetPreferArrayPushCandidate(node: unknown, sourceText: string): PreferArrayPushCandidate | null {
-    if (!isAssignmentExpressionNode(node)) {
+    if (!isAssignmentExpressionNodeWithOperator(node, (operator): operator is "=" => operator === "=")) {
         return null;
     }
 

@@ -14,15 +14,13 @@ import {
 type IncrementDecrementAssignmentOperator = "+=" | "-=";
 type IncrementDecrementOperator = "++" | "--";
 
-type AssignmentExpressionNode = Readonly<{
-    type: "AssignmentExpression";
-    operator: IncrementDecrementAssignmentOperator;
-    left: unknown;
-    right: unknown;
-}>;
-
 type PreferIncrementDecrementCandidate = Readonly<{
-    assignmentExpression: AssignmentExpressionNode;
+    assignmentExpression: Readonly<{
+        type: "AssignmentExpression";
+        operator: IncrementDecrementAssignmentOperator;
+        left: unknown;
+        right: unknown;
+    }>;
     operator: IncrementDecrementOperator;
 }>;
 
@@ -33,10 +31,6 @@ const INCREMENT_DECREMENT_OPERATOR_BY_ASSIGNMENT_OPERATOR = Object.freeze({
 
 function isIncrementDecrementAssignmentOperator(operator: unknown): operator is IncrementDecrementAssignmentOperator {
     return operator === "+=" || operator === "-=";
-}
-
-function isAssignmentExpressionNode(node: unknown): node is AssignmentExpressionNode {
-    return isAssignmentExpressionNodeWithOperator(node, isIncrementDecrementAssignmentOperator);
 }
 
 function isNumericLiteralOne(node: unknown, sourceText: string): boolean {
@@ -68,7 +62,7 @@ function tryGetPreferIncrementDecrementCandidate(
     node: unknown,
     sourceText: string
 ): PreferIncrementDecrementCandidate | null {
-    if (!isAssignmentExpressionNode(node)) {
+    if (!isAssignmentExpressionNodeWithOperator(node, isIncrementDecrementAssignmentOperator)) {
         return null;
     }
 
