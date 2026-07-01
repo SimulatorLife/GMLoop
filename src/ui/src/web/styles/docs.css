@@ -69,7 +69,7 @@
 }
 
 .docs-nav-button.active,
-.docs-nav-button[aria-pressed="true"] {
+.docs-nav-button[aria-selected="true"] {
     border-color: var(--gm-border-interactive);
     background: var(--gm-surface-active);
     color: var(--gm-text);
