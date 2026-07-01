@@ -1,4 +1,3 @@
-export * from "./array-flags.js";
 export * from "./description-utils.js";
 export * from "./function-doc-comment-attachments.js";
 export * from "./node-metadata.js";
