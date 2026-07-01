@@ -1,7 +1,12 @@
 import assert from "node:assert";
 import { test } from "node:test";
 
-import { deduplicatePatchesById } from "../src/browser/websocket/patch-queue.js";
+import {
+    createInitialConnectionMetrics,
+    deduplicatePatchesById,
+    enqueuePendingPatchUntilRuntimeReady
+} from "../src/browser/websocket/patch-queue.js";
+import type { WebSocketClientState } from "../src/browser/websocket/types.js";
 import { Clients, Runtime } from "../src/index.js";
 
 const { createRuntimeWrapper } = Runtime;
@@ -65,6 +70,21 @@ const DEFAULT_PATCH_QUEUE_OPTIONS = {
     flushIntervalMs: 1000,
     maxQueueSize: 50
 };
+
+function createPendingPatchState(): WebSocketClientState {
+    return {
+        ws: null,
+        isConnected: false,
+        reconnectTimer: null,
+        manuallyDisconnected: false,
+        connectionMetrics: createInitialConnectionMetrics(),
+        patchQueue: null,
+        pendingPatches: [],
+        pendingPatchHead: 0,
+        readinessTimer: null,
+        runtimeReady: false
+    };
+}
 
 type RuntimeWrapperInstance = ReturnType<typeof createRuntimeWrapper>;
 type WebSocketClientOptions = Parameters<typeof createWebSocketClient>[0];
@@ -219,6 +239,34 @@ async function createConnectedPatchQueueClient(options: PatchQueueClientSetupOpt
 
     return { wrapper, client, ws, restoreRuntimeGlobals };
 }
+
+void test("pending runtime-readiness queue replaces duplicate patch ids before flush", () => {
+    const state = createPendingPatchState();
+
+    enqueuePendingPatchUntilRuntimeReady(state, { kind: "script", id: "script:pending", js_body: "return 1;" }, 10);
+    enqueuePendingPatchUntilRuntimeReady(state, { kind: "script", id: "script:other", js_body: "return 2;" }, 10);
+    enqueuePendingPatchUntilRuntimeReady(state, { kind: "script", id: "script:pending", js_body: "return 3;" }, 10);
+
+    assert.deepStrictEqual(state.pendingPatches, [
+        { kind: "script", id: "script:pending", js_body: "return 3;" },
+        { kind: "script", id: "script:other", js_body: "return 2;" }
+    ]);
+    assert.strictEqual(state.pendingPatchHead, 0);
+});
+
+void test("pending runtime-readiness queue replaces duplicates before enforcing max size", () => {
+    const state = createPendingPatchState();
+
+    enqueuePendingPatchUntilRuntimeReady(state, { kind: "script", id: "script:first", js_body: "return 1;" }, 2);
+    enqueuePendingPatchUntilRuntimeReady(state, { kind: "script", id: "script:second", js_body: "return 2;" }, 2);
+    enqueuePendingPatchUntilRuntimeReady(state, { kind: "script", id: "script:first", js_body: "return 10;" }, 2);
+
+    assert.deepStrictEqual(state.pendingPatches, [
+        { kind: "script", id: "script:first", js_body: "return 10;" },
+        { kind: "script", id: "script:second", js_body: "return 2;" }
+    ]);
+    assert.strictEqual(state.pendingPatchHead, 0);
+});
 
 void test("patch queue tracks patches received without double-counting on flush", async () => {
     const { client, ws, restoreRuntimeGlobals } = await createConnectedPatchQueueClient({
