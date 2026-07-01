@@ -214,13 +214,22 @@ export class LiveReloadPollingController implements ReactiveController {
         }
 
         const effectivePollIntervalMs = Math.max(configPollIntervalMs ?? this.#pollIntervalMs, MIN_POLL_INTERVAL_MS);
-        void this.#pollStatusUrl(statusUrl);
+        void this.#pollStatusUrl(statusUrl, false);
         this.#pollTimer = globalThis.setInterval(() => {
-            void this.#pollStatusUrl(statusUrl);
+            void this.#pollStatusUrl(statusUrl, false);
         }, effectivePollIntervalMs);
     }
 
-    async #pollStatusUrl(statusUrl: string): Promise<void> {
+    /**
+     * Fetch the live-reload status snapshot for {@link statusUrl}.
+     *
+     * @param silent - When `true`, transient poll failures (HTTP errors,
+     *   malformed payloads, network errors) are dropped without updating
+     *   `pollErrorMessage`. Scheduled polls report failures so the host can
+     *   surface an error banner; visibility-triggered polls stay quiet so
+     *   a momentary hiccup does not flash one.
+     */
+    async #pollStatusUrl(statusUrl: string, silent: boolean): Promise<void> {
         try {
             const response = await fetch(statusUrl, {
                 headers: { Accept: "application/json" }
@@ -240,43 +249,16 @@ export class LiveReloadPollingController implements ReactiveController {
                 polledStatus: snapshot
             };
         } catch (error) {
-            const message = getUiErrorMessage(error, "Unknown polling error.");
-            this.#state = {
-                pollErrorMessage: message,
-                polledStatus: this.#state.polledStatus
-            };
-        }
-
-        this.#callbacks.onStatusChange(this.#state.polledStatus);
-        this.#callbacks.onErrorMessageChange(this.#state.pollErrorMessage);
-        this.#callbacks.requestUpdate();
-    }
-
-    async #pollStatusUrlIfNeeded(): Promise<void> {
-        if (this.#lastStatusUrl === null) {
-            return;
-        }
-
-        try {
-            const response = await fetch(this.#lastStatusUrl, {
-                headers: { Accept: "application/json" }
-            });
-            if (!response.ok) {
-                return;
+            // Visibility-triggered polls stay quiet on transient errors so
+            // a momentary hiccup does not flash an error banner; scheduled
+            // polls still surface the failure.
+            if (!silent) {
+                const message = getUiErrorMessage(error, "Unknown polling error.");
+                this.#state = {
+                    pollErrorMessage: message,
+                    polledStatus: this.#state.polledStatus
+                };
             }
-
-            const payload: unknown = await response.json();
-            const snapshot = normalizeStatusSnapshot(payload, true);
-            if (snapshot === null) {
-                return;
-            }
-
-            this.#state = {
-                pollErrorMessage: null,
-                polledStatus: snapshot
-            };
-        } catch {
-            // Silently ignore focus-triggered poll errors.
         }
 
         this.#callbacks.onStatusChange(this.#state.polledStatus);
@@ -285,8 +267,9 @@ export class LiveReloadPollingController implements ReactiveController {
     }
 
     #onVisibilityChange = (): void => {
-        if (document.visibilityState === "visible") {
-            void this.#pollStatusUrlIfNeeded();
+        const statusUrl = this.#lastStatusUrl;
+        if (document.visibilityState === "visible" && statusUrl !== null) {
+            void this.#pollStatusUrl(statusUrl, true);
         }
     };
 }
