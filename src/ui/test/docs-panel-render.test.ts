@@ -163,9 +163,12 @@ void test("GmDocsPanel renders the Linting subview and project-facing rule conte
     assert.match(rendered, /id="docs-page"[\s\S]*class=page content-page docs-page active/u);
     assert.match(rendered, /id=docs-view-linting[\s\S]*class=docs-nav-button active/u);
     assert.doesNotMatch(rendered, /id="docs-search-input"/u);
-    assert.match(rendered, /id=linting-page[\s\S]*?class=docs-subpage>/u);
-    assert.match(rendered, /id=formatting-page[\s\S]*?class=docs-subpage hidden>/u);
-    assert.match(rendered, /id=codemods-page[\s\S]*?class=docs-subpage hidden>/u);
+    assert.match(
+        rendered,
+        /id=linting-page[\s\S]*?class=docs-subpage[\s\S]*role="tabpanel"[\s\S]*aria-labelledby=docs-view-linting/u
+    );
+    assert.match(rendered, /id=formatting-page[\s\S]*?class=docs-subpage hidden[\s\S]*role="tabpanel"/u);
+    assert.match(rendered, /id=codemods-page[\s\S]*?class=docs-subpage hidden[\s\S]*role="tabpanel"/u);
     assert.match(rendered, /gml\/normalize-operators/u);
     assert.match(rendered, /gml\/no-globalvar/u);
     assert.match(rendered, /<gm-badge[^>]*\.label=fixable/u);
@@ -199,9 +202,9 @@ void test("GmDocsPanel renders the Formatting subview and option entries", () =>
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /id=formatting-page[\s\S]*?class=docs-subpage>/u);
-    assert.match(rendered, /id=linting-page[\s\S]*?class=docs-subpage hidden>/u);
-    assert.match(rendered, /id=codemods-page[\s\S]*?class=docs-subpage hidden>/u);
+    assert.match(rendered, /id=formatting-page[\s\S]*?class=docs-subpage[\s\S]*role="tabpanel"/u);
+    assert.match(rendered, /id=linting-page[\s\S]*?class=docs-subpage hidden[\s\S]*role="tabpanel"/u);
+    assert.match(rendered, /id=codemods-page[\s\S]*?class=docs-subpage hidden[\s\S]*role="tabpanel"/u);
     assert.match(rendered, /printWidth/u);
     assert.match(rendered, /trailingComma/u);
 });
@@ -231,9 +234,9 @@ void test("GmDocsPanel renders the Codemods subview and refactor entries", () =>
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /id=codemods-page[\s\S]*?class=docs-subpage>/u);
-    assert.match(rendered, /id=linting-page[\s\S]*?class=docs-subpage hidden>/u);
-    assert.match(rendered, /id=formatting-page[\s\S]*?class=docs-subpage hidden>/u);
+    assert.match(rendered, /id=codemods-page[\s\S]*?class=docs-subpage[\s\S]*role="tabpanel"/u);
+    assert.match(rendered, /id=linting-page[\s\S]*?class=docs-subpage hidden[\s\S]*role="tabpanel"/u);
+    assert.match(rendered, /id=formatting-page[\s\S]*?class=docs-subpage hidden[\s\S]*role="tabpanel"/u);
     assert.match(rendered, /refactor\/globalvar-to-global/u);
     assert.match(rendered, /refactor\/event-numbers-to-constants/u);
 });
@@ -293,9 +296,15 @@ void test("GmDocsPanel owns docs navigation controls", () => {
 
     assert.doesNotMatch(rendered, /role="search" aria-label="Filter documentation catalog"/u);
     assert.doesNotMatch(rendered, /id="docs-search-input"/u);
-    assert.match(rendered, /class="docs-nav" role="group" aria-label="Documentation view selector"/u);
-    assert.match(rendered, /id=docs-view-cli[\s\S]*class=docs-nav-button active/u);
-    assert.match(rendered, /id=docs-view-mcp/u);
+    assert.match(rendered, /class="docs-nav" role="tablist" aria-label="Documentation view selector"/u);
+    assert.match(
+        rendered,
+        /id=docs-view-cli[\s\S]*class=docs-nav-button active[\s\S]*role="tab"[\s\S]*aria-selected=true[\s\S]*aria-controls=cli-page[\s\S]*tabindex=0/u
+    );
+    assert.match(
+        rendered,
+        /id=docs-view-mcp[\s\S]*role="tab"[\s\S]*aria-selected=false[\s\S]*aria-controls=docs-mcp-page[\s\S]*tabindex=-1/u
+    );
     assert.match(rendered, /id=docs-view-linting/u);
     assert.match(rendered, /id=docs-view-formatting/u);
     assert.match(rendered, /id=docs-view-codemods/u);

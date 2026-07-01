@@ -145,9 +145,15 @@ void test("GmDocsPanel renders Docs subview tabs with shared selector semantics"
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /<div class="docs-nav" role="group" aria-label="Documentation view selector">/u);
-    assert.match(rendered, /id=docs-view-cli[\s\S]*class=docs-nav-button active/u);
-    assert.match(rendered, /id=docs-view-mcp[\s\S]*class=docs-nav-button/u);
+    assert.match(rendered, /<div class="docs-nav" role="tablist" aria-label="Documentation view selector">/u);
+    assert.match(
+        rendered,
+        /id=docs-view-cli[\s\S]*class=docs-nav-button active[\s\S]*role="tab"[\s\S]*aria-selected=true[\s\S]*aria-controls=cli-page[\s\S]*tabindex=0/u
+    );
+    assert.match(
+        rendered,
+        /id=docs-view-mcp[\s\S]*class=docs-nav-button[\s\S]*role="tab"[\s\S]*aria-selected=false[\s\S]*aria-controls=docs-mcp-page[\s\S]*tabindex=-1/u
+    );
 });
 
 void test("GmDocsPanel uses a dedicated id for MCP docs subview to avoid id collisions", () => {

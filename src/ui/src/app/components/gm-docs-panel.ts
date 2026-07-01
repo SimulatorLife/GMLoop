@@ -29,6 +29,22 @@ const DOCS_VIEW_LABELS: Readonly<Record<GraphVisualizationUiDocsView, string>> =
     mcp: "MCP"
 });
 
+const DOCS_VIEW_ORDER: ReadonlyArray<GraphVisualizationUiDocsView> = Object.freeze([
+    "cli",
+    "mcp",
+    "linting",
+    "formatting",
+    "codemods"
+]);
+
+const DOCS_VIEW_CONTENT_IDS: Readonly<Record<GraphVisualizationUiDocsView, string>> = Object.freeze({
+    cli: "cli-page",
+    codemods: "codemods-page",
+    formatting: "formatting-page",
+    linting: "linting-page",
+    mcp: "docs-mcp-page"
+});
+
 /**
  * Docs surface for CLI, MCP, linting, formatting, and codemods catalog entries.
  */
@@ -83,13 +99,31 @@ export class GmDocsPanel extends LightDomLitElement {
                 id=${`docs-view-${docsView}`}
                 class=${isActive ? "docs-nav-button active" : "docs-nav-button"}
                 type="button"
-                aria-pressed=${isActive}
+                role="tab"
+                aria-selected=${isActive}
+                aria-controls=${DOCS_VIEW_CONTENT_IDS[docsView]}
+                tabindex=${isActive ? "0" : "-1"}
                 @click=${() => this.#emitDocsView(docsView)}
+                @keydown=${(event: KeyboardEvent) => {
+                    void this.#onDocsViewKeyDown(event, docsView);
+                }}
             >
                 <span class="docs-nav-label">${DOCS_VIEW_LABELS[docsView]}</span>
                 <span class="docs-nav-count">${count}</span>
             </button>
         `;
+    }
+
+    async #onDocsViewKeyDown(event: KeyboardEvent, docsView: GraphVisualizationUiDocsView): Promise<void> {
+        const nextDocsView = resolveKeyboardDocsView(event.key, docsView);
+        if (nextDocsView === docsView) {
+            return;
+        }
+
+        event.preventDefault();
+        this.#emitDocsView(nextDocsView);
+        await this.updateComplete;
+        this.querySelector<HTMLButtonElement>(`#docs-view-${nextDocsView}`)?.focus();
     }
 
     #renderDocsControls(parameters: {
@@ -99,7 +133,7 @@ export class GmDocsPanel extends LightDomLitElement {
         return html`
             <aside class="docs-sidebar" aria-label="Documentation sections">
                 <div class="docs-sidebar-heading">Reference</div>
-                <div class="docs-nav" role="group" aria-label="Documentation view selector">
+                <div class="docs-nav" role="tablist" aria-label="Documentation view selector">
                     ${this.#renderViewButton(parameters.activeDocsView, "cli", parameters.counts.cli)}
                     ${this.#renderViewButton(parameters.activeDocsView, "mcp", parameters.counts.mcp)}
                     ${this.#renderViewButton(parameters.activeDocsView, "linting", parameters.counts.linting)}
@@ -236,7 +270,7 @@ export class GmDocsPanel extends LightDomLitElement {
         const searchResult = searchCatalogEntries(entries, searchQuery);
 
         return html`
-            <div id=${subpageId} class=${className}>
+            <div id=${subpageId} class=${className} role="tabpanel" aria-labelledby=${`docs-view-${activeDocsView}`}>
                 <div id=${contentId} class="docs-reference-list">
                     ${emptyMessage === null
                         ? searchResult.entries.length === 0
@@ -285,6 +319,8 @@ export class GmDocsPanel extends LightDomLitElement {
                         <div
                             id="cli-page"
                             class=${this.state.activeDocsView === "cli" ? "docs-subpage" : "docs-subpage hidden"}
+                            role="tabpanel"
+                            aria-labelledby="docs-view-cli"
                         >
                             <div id="cli-content" class="docs-reference-list">
                                 ${docsPanelContent.cliEntries.length === 0
@@ -299,6 +335,8 @@ export class GmDocsPanel extends LightDomLitElement {
                         <div
                             id="docs-mcp-page"
                             class=${this.state.activeDocsView === "mcp" ? "docs-subpage" : "docs-subpage hidden"}
+                            role="tabpanel"
+                            aria-labelledby="docs-view-mcp"
                         >
                             <div id="mcp-content" class="docs-reference-list">
                                 ${docsPanelContent.mcpEntries.length === 0
@@ -347,4 +385,28 @@ function quoteShellArgument(argumentValue: string): string {
     }
 
     return `'${argumentValue.replaceAll("'", String.raw`'\''`)}'`;
+}
+
+function resolveKeyboardDocsView(
+    key: string,
+    currentDocsView: GraphVisualizationUiDocsView
+): GraphVisualizationUiDocsView {
+    if (key === "Home") {
+        return DOCS_VIEW_ORDER[0];
+    }
+
+    if (key === "End") {
+        return DOCS_VIEW_ORDER.at(-1) ?? currentDocsView;
+    }
+
+    const currentIndex = DOCS_VIEW_ORDER.indexOf(currentDocsView);
+    if (key === "ArrowDown" || key === "ArrowRight") {
+        return DOCS_VIEW_ORDER[(currentIndex + 1) % DOCS_VIEW_ORDER.length];
+    }
+
+    if (key === "ArrowUp" || key === "ArrowLeft") {
+        return DOCS_VIEW_ORDER[(currentIndex - 1 + DOCS_VIEW_ORDER.length) % DOCS_VIEW_ORDER.length];
+    }
+
+    return currentDocsView;
 }
