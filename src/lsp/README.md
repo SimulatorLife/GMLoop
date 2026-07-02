@@ -47,8 +47,16 @@ A feature is complete only when it:
 - Does not require a specific editor or agent tool.
 - Is reachable through the approved `lsp-mcp-server` tool surface.
 
-## Final Target
-
 The language server should be boring, standard, constrained, agent-agnostic, and small.
 
 Most intelligence should live in reusable GML systems; the server should only expose that intelligence through the standard LSP capabilities reachable by `lsp-mcp-server`.
+
+## Launching and Communication Transport
+
+The language server is started via the CLI using:
+
+```sh
+gmloop lsp
+```
+
+To ensure seamless integration with LSP/MCP clients (such as `lsp-mcp-server`) and editor extensions, the server does not require command-line options like `--stdio`. Instead, it defaults to standard I/O (stdio) transport internally by explicitly wiring `process.stdin` and `process.stdout` into the LSP connection.

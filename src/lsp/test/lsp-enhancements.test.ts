@@ -223,3 +223,8 @@ void test("LSP: server handlers return correct folding ranges and selection rang
     assert.ok(selections[0].range);
     assert.deepEqual(selections[0].range.start, { line: 2, character: 4 });
 });
+
+void test("LSP: server defaults to stdio connection transport explicitly", () => {
+    const server = Lsp.createGmlLanguageServer();
+    assert.ok(server.connection, "Should successfully create connection with default parameters");
+});

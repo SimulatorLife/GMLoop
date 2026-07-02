@@ -12,14 +12,14 @@ The LSP workspace owns protocol transport, document synchronization, range conve
 
 ## Editor Usage
 
-Build the workspace, then point an editor LSP client at the binary:
+Build the workspace, then run GMLoop's LSP server:
 
 ```sh
-pnpm --filter @gmloop/lsp run build:types
-gmloop-lsp
+# Start the LSP server over stdio
+gmloop lsp
 ```
 
-The server speaks JSON-RPC over stdio and targets `.gml` files only.
+The server explicitly wires standard input and standard output (`process.stdin` / `process.stdout`) to speak JSON-RPC over stdio by default, without requiring any command-line flags. It targets `.gml` files only.
 
 ## Using With `lsp-mcp-server`
 

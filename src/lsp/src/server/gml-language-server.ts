@@ -161,7 +161,9 @@ function runNotificationTask(connection: GmlLanguageServerConnection, task: () =
 /**
  * Create the GML language server and attach all protocol handlers to the connection.
  */
-export function createGmlLanguageServer(connection = createConnection(ProposedFeatures.all)) {
+export function createGmlLanguageServer(
+    connection = createConnection(ProposedFeatures.all, process.stdin, process.stdout)
+) {
     const documents = createGmlDocumentStore();
     const semanticIndex = createGmlSemanticIndex(documents);
     const lintRunner = createLintRunner(false);
