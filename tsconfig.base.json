@@ -10,6 +10,7 @@
       "@gmloop/format": ["./src/format/index.ts"],
       "@gmloop/fixture-runner": ["./src/fixture-runner/index.ts"],
       "@gmloop/lint": ["./src/lint/index.ts"],
+      "@gmloop/lsp": ["./src/lsp/index.ts"],
       "@gmloop/semantic": ["./src/semantic/index.ts"],
       "@gmloop/transpiler": ["./src/transpiler/index.ts"],
       "@gmloop/refactor": ["./src/refactor/index.ts"],

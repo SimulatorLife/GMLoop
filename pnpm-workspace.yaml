@@ -2,6 +2,7 @@ packages:
     - src/agent-pack
     - src/cli
     - src/lint
+    - src/lsp
     - src/format
     - src/parser
     - src/core

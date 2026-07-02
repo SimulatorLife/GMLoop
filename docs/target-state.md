@@ -27,6 +27,7 @@ Concrete graph-index, retrieval, and visualization target-state details now live
 - **Transpiler (`/transpiler`)**: Parses GML via ANTLR4, converts GML AST to JavaScript, and generates patch objects.
 - **Runtime Wrapper (`/runtime-wrapper`)**: Injected into the browser; maintains a hot registry of patched functions and overrides GML dispatchers.
 - **MCP (`/mcp`)**: Exposes CLI-derived GMLoop tools and read-only resources for agents. It is a companion to, not a replacement for, `gm-cli`'s ResourceTool MCP server. It must not duplicate GMLoop CLI behavior, mirror `gm-cli`'s MCP catalog, own project metadata mutation already covered by ResourceTool, or implement browser automation primitives.
+- **LSP (`/lsp`)**: Provides the GML Language Server Protocol surface for editors and LSP-to-MCP bridges. It owns protocol transport, document synchronization, range conversion, and session lifecycle, while delegating parser diagnostics, lint diagnostics/fixes, formatting, semantic symbol/navigation facts, and refactor edits to their owning workspaces. It must not duplicate GMLoop MCP tools or reimplement semantic/refactor/lint/format behavior.
 
 ### 2.1.1 Official Tool Complementarity Boundary
 

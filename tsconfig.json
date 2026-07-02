@@ -8,6 +8,7 @@
     { "path": "./src/semantic" },
     { "path": "./src/transpiler" },
     { "path": "./src/lint" },
+    { "path": "./src/lsp" },
     { "path": "./src/format" },
     { "path": "./src/cli" },
     { "path": "./src/runtime-wrapper" },

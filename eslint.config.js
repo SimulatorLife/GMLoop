@@ -77,6 +77,7 @@ const publicWorkspaceTypes = [
     "semantic",
     "plugin",
     "lint",
+    "lsp",
     "ui",
     "fixture-runner",
     "refactor",
@@ -241,6 +242,7 @@ const tsConfig = defineConfig({
             { type: "semantic", pattern: "src/semantic/**" },
             { type: "plugin", pattern: "src/format/**" },
             { type: "lint", pattern: "src/lint/**" },
+            { type: "lsp", pattern: "src/lsp/**" },
             { type: "fixture-runner", pattern: "src/fixture-runner/**" },
             { type: "refactor", pattern: "src/refactor/**" },
             { type: "runtime-wrapper", pattern: "src/runtime-wrapper/**" },
@@ -616,6 +618,18 @@ const tsConfig = defineConfig({
                     {
                         from: { type: "mcp" },
                         allow: workspaceEntryPointTypes("core", "cli", "mcp")
+                    },
+                    {
+                        from: { type: "lsp" },
+                        allow: workspaceEntryPointTypes(
+                            "core",
+                            "parser",
+                            "semantic",
+                            "plugin",
+                            "lint",
+                            "refactor",
+                            "lsp"
+                        )
                     },
                     {
                         from: { type: "test" },
