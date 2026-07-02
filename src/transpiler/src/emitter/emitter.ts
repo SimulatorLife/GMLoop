@@ -134,11 +134,31 @@ export class GmlToJsEmitter {
     }
 
     emit(ast: StatementLike): string {
+        return this.emitWithLifecycle(ast, true);
+    }
+
+    /**
+     * Emit an AST fragment while preserving dependency and globalvar state already
+     * collected by the current patch emission.
+     *
+     * This is for transpiler API code that lowers one logical hot-reload patch
+     * from several AST fragments, such as unwrapped script parameters followed by
+     * a function body. It avoids extra parse/emit passes and prevents later
+     * fragments from clearing script dependencies found in earlier fragments.
+     *
+     * @param ast - AST node or program fragment to emit
+     * @returns JavaScript for the supplied fragment
+     */
+    emitFragment(ast: StatementLike): string {
+        return this.emitWithLifecycle(ast, false);
+    }
+
+    private emitWithLifecycle(ast: StatementLike, resetTopLevelState: boolean): string {
         if (!ast) {
             return "";
         }
         const isTopLevelEmit = this.emitDepth === 0;
-        if (isTopLevelEmit) {
+        if (isTopLevelEmit && resetTopLevelState) {
             this.globalVars.clear();
             this.initializedGlobalVars.clear();
             this.scriptRefs.clear();

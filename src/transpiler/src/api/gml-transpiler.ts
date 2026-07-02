@@ -6,7 +6,6 @@ import {
     collectLocalVariables,
     createSemanticOracle,
     type EmitOptions,
-    ensureStatementTerminated,
     type FunctionDeclarationNode,
     GmlToJsEmitter,
     type IdentifierAnalyzer,
@@ -210,7 +209,7 @@ export class GmlTranspiler {
             } else if (isDefaultParameterNode(parameter) && isIdentifierNode(parameter.left)) {
                 const name = parameter.left.name;
                 if (parameter.right) {
-                    const defaultValue = emitter.emit(parameter.right);
+                    const defaultValue = emitter.emitFragment(parameter.right);
                     line = `var ${name} = args[${index}] === undefined ? ${defaultValue} : args[${index}];`;
                 } else {
                     line = `var ${name} = args[${index}];`;
@@ -232,17 +231,10 @@ export class GmlTranspiler {
             return emitter.emit(body).trim();
         }
 
-        const builder = new StringBuilder(body.body.length);
-        for (const statement of body.body) {
-            const code = emitter.emit(statement);
-            if (!code) {
-                continue;
-            }
-
-            builder.append(ensureStatementTerminated(code));
-        }
-
-        return builder.toString("\n");
+        return emitter.emitFragment({
+            type: "Program",
+            body: body.body
+        });
     }
 
     private createTranspileError(contextLabel: string, error: unknown, code?: TranspilerErrorCode): TranspilerError {
