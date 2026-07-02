@@ -702,6 +702,13 @@ function removeCoupledScriptResourceCallableDuplicates(symbolIds: ReadonlyArray<
             }
         }
 
+        if (symbolId.startsWith("gml/function/")) {
+            const functionName = symbolId.slice("gml/function/".length);
+            if (symbolIdSet.has(`gml/scripts/${functionName}`)) {
+                continue;
+            }
+        }
+
         filtered.push(symbolId);
     }
 

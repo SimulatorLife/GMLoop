@@ -2736,6 +2736,10 @@ export class GmlSemanticBridge {
             return category === "constructorFunction" || category === "structDeclaration";
         }
 
+        if (declarations.length > 1) {
+            return false;
+        }
+
         return this.isConstructorBackedScriptResourceSource(resource);
     }
 

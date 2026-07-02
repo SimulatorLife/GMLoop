@@ -3586,6 +3586,66 @@ void describe("GmlSemanticBridge tests", () => {
         assert.ok(targets.some((target) => target.category === "function" && target.name === "helper_fn"));
     });
 
+    void it("listNamingConventionTargets includes script resources with same-name constructors in multi-callable files", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-multi-constructor-resource-"));
+        const mockProjectIndex = {
+            resources: {
+                "scripts/Attack/Attack.yy": {
+                    path: "scripts/Attack/Attack.yy",
+                    name: "Attack",
+                    resourceType: "GMScript"
+                }
+            },
+            identifiers: {
+                scripts: {
+                    "scope:script:Attack": {
+                        identifierId: "script:scope:script:Attack",
+                        name: "Attack",
+                        resourcePath: "scripts/Attack/Attack.yy",
+                        declarations: [
+                            {
+                                name: "Attack",
+                                filePath: "scripts/Attack/Attack.gml",
+                                classifications: ["function", "constructor", "struct"]
+                            },
+                            {
+                                name: "AttackProjectileCircle",
+                                filePath: "scripts/Attack/Attack.gml",
+                                classifications: ["function", "constructor", "struct"]
+                            }
+                        ]
+                    }
+                }
+            }
+        };
+
+        try {
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "Attack"), { recursive: true });
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "Attack", "Attack.gml"),
+                [
+                    "function Attack() constructor {}",
+                    "function AttackProjectileCircle() : Attack() constructor {}",
+                    ""
+                ].join("\n"),
+                "utf8"
+            );
+
+            const bridge = new GmlSemanticBridge(mockProjectIndex, tmpRoot);
+            const targets = await bridge.listNamingConventionTargets();
+
+            assert.ok(targets.some((target) => target.category === "scriptResourceName" && target.name === "Attack"));
+            assert.ok(targets.some((target) => target.category === "constructorFunction" && target.name === "Attack"));
+            assert.ok(
+                targets.some(
+                    (target) => target.category === "constructorFunction" && target.name === "AttackProjectileCircle"
+                )
+            );
+        } finally {
+            fs.rmSync(tmpRoot, { recursive: true, force: true });
+        }
+    });
+
     void it("getSymbolOccurrences keeps multi-function script resource renames independent from same-name callables", () => {
         const mockProjectIndex = {
             resources: {

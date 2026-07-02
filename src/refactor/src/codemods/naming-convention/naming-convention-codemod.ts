@@ -1,6 +1,10 @@
 import { Core } from "@gmloop/core";
 
-import { evaluateNamingConvention, resolveNamingConventionRules } from "../../naming-convention-policy.js";
+import {
+    evaluateNamingConvention,
+    NAMING_CATEGORY_PARENTS,
+    resolveNamingConventionRules
+} from "../../naming-convention-policy.js";
 import { DEFAULT_RESERVED_KEYWORDS } from "../../rename/index.js";
 import {
     detectCircularRenames,
@@ -17,6 +21,7 @@ import type {
     MacroExpansionDependency,
     NamingCategory,
     NamingConventionCodemodPlan,
+    NamingConventionPolicy,
     NamingConventionTarget,
     NamingConventionViolation,
     PartialSemanticAnalyzer,
@@ -757,6 +762,18 @@ function findSameNameScriptCallableTarget(
     return null;
 }
 
+function hasConfiguredRuleInNamingCategoryChain(policy: NamingConventionPolicy, category: NamingCategory): boolean {
+    let cursor: NamingCategory | null = category;
+    while (cursor !== null) {
+        if (policy.rules[cursor] !== undefined) {
+            return true;
+        }
+        cursor = NAMING_CATEGORY_PARENTS[cursor];
+    }
+
+    return false;
+}
+
 function appendTopLevelRenameOnce(
     topLevelRenames: Array<{ symbolId: string; newName: string }>,
     seenTopLevelRenames: Set<string>,
@@ -971,8 +988,7 @@ export async function planNamingConventionCodemod(
                     );
                     if (
                         callableEvaluation.compliant &&
-                        callableTarget.category !== "constructorFunction" &&
-                        callableTarget.category !== "structDeclaration"
+                        !hasConfiguredRuleInNamingCategoryChain(policy, callableTarget.category)
                     ) {
                         appendTopLevelRenameOnce(topLevelRenames, seenTopLevelRenames, {
                             symbolId: callableTarget.symbolId,

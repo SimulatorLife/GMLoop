@@ -2957,6 +2957,80 @@ void test("executeConfiguredCodemods preserves PascalCase constructor when renam
     assert.equal(requests[0].newName, "attack");
 });
 
+void test("executeConfiguredCodemods aligns same-name constructors for resource-only script naming rules", async () => {
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => [
+            {
+                name: "Attack",
+                category: "scriptResourceName",
+                path: "scripts/Attack/Attack.yy",
+                scopeId: null,
+                symbolId: "gml/scripts/Attack",
+                occurrences: []
+            },
+            {
+                name: "Attack",
+                category: "constructorFunction",
+                path: "scripts/Attack/Attack.gml",
+                scopeId: null,
+                symbolId: "gml/function/Attack",
+                occurrences: [
+                    {
+                        path: "scripts/Attack/Attack.gml",
+                        start: 9,
+                        end: 15,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: null
+                    }
+                ]
+            }
+        ]
+    };
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const preparedRenameRequests: Array<Array<{ newName: string; symbolId: string }>> = [];
+
+    Object.assign(engine, {
+        async prepareBatchRenamePlan(
+            request: Array<{ symbolId: string; newName: string }>
+        ): Promise<BatchRenamePlanSummary> {
+            preparedRenameRequests.push(request);
+            return createBatchRenamePlanSummary([]);
+        }
+    });
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["scripts/Attack/Attack.gml"],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        scriptResourceName: {
+                            caseStyle: "lower"
+                        }
+                    }
+                }
+            }
+        },
+        readFile: async () => "function Attack() constructor {}\n"
+    });
+
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+
+    assert.equal(preparedRenameRequests.length, 1);
+    assert.deepEqual(preparedRenameRequests[0], [
+        {
+            symbolId: "gml/scripts/Attack",
+            newName: "attack"
+        },
+        {
+            symbolId: "gml/function/Attack",
+            newName: "attack"
+        }
+    ]);
+});
+
 void test("executeConfiguredCodemods renames enum member references across different files", async () => {
     const consoleSymbolId = "gml/enum-member/console";
     const semantic: PartialSemanticAnalyzer = {
