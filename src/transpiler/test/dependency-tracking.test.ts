@@ -239,6 +239,25 @@ void describe("GmlTranspiler.transpileScript — dependencies in metadata", () =
         const deps = patch.metadata?.dependencies ?? [];
         assert.equal(deps.length, 1, "Repeated calls to the same script should be deduplicated");
     });
+
+    void it("preserves every script dependency while unwrapping multi-statement scripts", () => {
+        const oracle = Transpiler.createSemanticOracle({
+            scriptNames: new Set(["scr_default", "scr_first", "scr_second"])
+        });
+        const transpiler = new Transpiler.GmlTranspiler({ semantic: oracle });
+
+        const patch = transpiler.transpileScript({
+            sourceText:
+                "function update(value = scr_default()) { scr_first(); value = scr_second(value); return value; }",
+            symbolId: "gml/script/update"
+        });
+
+        assert.deepEqual(patch.metadata?.dependencies, [
+            "gml/script/scr_default",
+            "gml/script/scr_first",
+            "gml/script/scr_second"
+        ]);
+    });
 });
 
 void describe("GmlTranspiler.transpileEvent — dependencies in metadata", () => {
