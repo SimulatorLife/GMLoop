@@ -287,6 +287,7 @@ interface WatchLifecycle {
     scanComplete: boolean;
     unknownScanPromise: Promise<void> | null;
     unknownScanQueued: boolean;
+    unknownScanDetectedAt: number | null;
     unknownScanConcurrency: number;
     dependentRetranspileConcurrency: number;
 }
@@ -935,6 +936,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         scanComplete: false,
         unknownScanPromise: null,
         unknownScanQueued: false,
+        unknownScanDetectedAt: null,
         unknownScanConcurrency: resolveUnknownScanConcurrency(maxConcurrentDirs),
         dependentRetranspileConcurrency: resolveUnknownScanConcurrency(maxConcurrentDirs),
         fileSnapshots: new Map(),
@@ -1213,7 +1215,8 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                             runtimeContext,
                             verbose,
                             quiet,
-                            internalAbortController.signal
+                            internalAbortController.signal,
+                            Date.now()
                         ).catch((error) => {
                             const message = getErrorMessage(error, {
                                 fallback: "Unknown polling scan error"
@@ -1310,12 +1313,14 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                 (eventType, filename) => {
                     if (!filename) {
                         const unknownKey = `${normalizedPath}::unknown`;
+                        const fileChangeDetectedAt = Date.now();
                         const triggerUnknown = () =>
                             scheduleUnknownFileChanges(
                                 runtimeContext,
                                 verbose,
                                 quiet,
-                                internalAbortController.signal
+                                internalAbortController.signal,
+                                fileChangeDetectedAt
                             ).catch((error) => {
                                 const message = getErrorMessage(error, {
                                     fallback: "Unknown file processing error"
@@ -1583,7 +1588,8 @@ async function handleUnknownFileChanges(
     runtimeContext: RuntimeContext,
     verbose: boolean,
     quiet: boolean,
-    abortSignal?: AbortSignal
+    abortSignal: AbortSignal | undefined,
+    fileChangeDetectedAt: number
 ): Promise<void> {
     const discoveredFilePaths = await collectWatchedFilePaths(
         runtimeContext.watchRoot,
@@ -1639,7 +1645,8 @@ async function handleUnknownFileChanges(
                 quiet,
                 runtimeContext,
                 fileStats: entry.stats,
-                abortSignal
+                abortSignal,
+                fileChangeDetectedAt
             });
         },
         runtimeContext.unknownScanConcurrency
@@ -1653,8 +1660,10 @@ function processQueuedUnknownFileChanges(
     abortSignal?: AbortSignal
 ): Promise<void> {
     runtimeContext.unknownScanQueued = false;
+    const fileChangeDetectedAt = runtimeContext.unknownScanDetectedAt ?? Date.now();
+    runtimeContext.unknownScanDetectedAt = null;
 
-    return handleUnknownFileChanges(runtimeContext, verbose, quiet, abortSignal).then(() =>
+    return handleUnknownFileChanges(runtimeContext, verbose, quiet, abortSignal, fileChangeDetectedAt).then(() =>
         runtimeContext.unknownScanQueued
             ? processQueuedUnknownFileChanges(runtimeContext, verbose, quiet, abortSignal)
             : Promise.resolve()
@@ -1665,13 +1674,18 @@ function scheduleUnknownFileChanges(
     runtimeContext: RuntimeContext,
     verbose: boolean,
     quiet: boolean,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    fileChangeDetectedAt: number = Date.now()
 ): Promise<void> {
     // Unknown filename events can burst during watcher start-up on some platforms.
     // Ignore them until the initial scan has completed so we avoid expensive
     // duplicate stats against the same tree while the scanner is already walking it.
     if (!runtimeContext.scanComplete) {
         return Promise.resolve();
+    }
+
+    if (runtimeContext.unknownScanDetectedAt === null || fileChangeDetectedAt < runtimeContext.unknownScanDetectedAt) {
+        runtimeContext.unknownScanDetectedAt = fileChangeDetectedAt;
     }
 
     if (runtimeContext.unknownScanPromise !== null) {
