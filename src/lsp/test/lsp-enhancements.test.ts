@@ -159,3 +159,67 @@ void test("LSP: project cache uses Map-based cache to avoid eviction on multi-ro
         await proj2.cleanup();
     }
 });
+
+void test("LSP: server handlers return correct folding ranges and selection ranges", async () => {
+    const mockConnection: any = {
+        onInitialize: () => {},
+        onInitialized: () => {},
+        onDidOpenTextDocument: () => {},
+        onDidChangeTextDocument: () => {},
+        onDidSaveTextDocument: () => {},
+        onDidCloseTextDocument: () => {},
+        onDocumentFormatting: () => {},
+        onDefinition: () => {},
+        onReferences: () => {},
+        onDocumentSymbol: () => {},
+        onWorkspaceSymbol: () => {},
+        onHover: () => {},
+        onPrepareRename: () => {},
+        onRenameRequest: () => {},
+        onCompletion: () => {},
+        onCodeAction: () => {},
+        onDocumentHighlight: (fn: any) => {
+            mockConnection.documentHighlight = fn;
+        },
+        onFoldingRanges: (fn: any) => {
+            mockConnection.foldingRanges = fn;
+        },
+        onSelectionRanges: (fn: any) => {
+            mockConnection.selectionRanges = fn;
+        },
+        console: { warn: () => {} },
+        client: { register: async () => {} }
+    };
+
+    const server = Lsp.createGmlLanguageServer(mockConnection);
+    const docStore = server.documents;
+
+    const uri = Lsp.filePathToUri("/tmp/test-file.gml");
+    docStore.open({
+        uri,
+        languageId: "gml",
+        version: 1,
+        text: "#region main\nfunction main() {\n    return 0;\n}\n#endregion\n"
+    });
+
+    // 1. Test folding ranges
+    assert.ok(mockConnection.foldingRanges, "Should register folding range handler");
+    const folding = mockConnection.foldingRanges({ textDocument: { uri } });
+    assert.ok(folding.length >= 2, "Should find at least region and brace folding");
+
+    const regionFold = folding.find((f: any) => f.startLine === 0 && f.endLine === 4);
+    assert.ok(regionFold);
+
+    const braceFold = folding.find((f: any) => f.startLine === 1 && f.endLine === 3);
+    assert.ok(braceFold);
+
+    // 2. Test selection ranges
+    assert.ok(mockConnection.selectionRanges, "Should register selection range handler");
+    const selections = mockConnection.selectionRanges({
+        textDocument: { uri },
+        positions: [{ line: 2, character: 4 }]
+    });
+    assert.equal(selections.length, 1);
+    assert.ok(selections[0].range);
+    assert.deepEqual(selections[0].range.start, { line: 2, character: 4 });
+});

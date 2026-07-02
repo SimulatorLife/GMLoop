@@ -8,10 +8,15 @@ import {
     createConnection,
     Diagnostic,
     DidChangeConfigurationNotification,
+    DocumentHighlight,
+    DocumentHighlightKind,
+    FoldingRange,
+    FoldingRangeKind,
     InitializeResult,
     Location,
     ProposedFeatures,
     Range,
+    SelectionRange,
     TextDocumentSyncKind,
     TextEdit,
     WorkspaceEdit,
@@ -187,7 +192,10 @@ export function createGmlLanguageServer(connection = createConnection(ProposedFe
                 },
                 completionProvider: {
                     triggerCharacters: [".", "_"]
-                }
+                },
+                documentHighlightProvider: true,
+                foldingRangeProvider: true,
+                selectionRangeProvider: true
             }
         })
     );
@@ -378,6 +386,134 @@ export function createGmlLanguageServer(connection = createConnection(ProposedFe
         ];
     });
 
+    connection.onDocumentHighlight(async ({ textDocument, position }): Promise<DocumentHighlight[]> => {
+        const document = documents.get(textDocument.uri);
+        if (!document) {
+            return [];
+        }
+
+        const offset = positionToOffset(document, position);
+        const word = readWordAtPosition(document, offset);
+        if (!word) {
+            return [];
+        }
+
+        const references = await semanticIndex.findReferences(document, offset, word.name, true);
+        const localReferences = references.filter((loc) => loc.uri === textDocument.uri);
+
+        return localReferences.map((ref) => ({
+            range: ref.range,
+            kind: DocumentHighlightKind.Text
+        }));
+    });
+
+    connection.onFoldingRanges(({ textDocument }): FoldingRange[] => {
+        const document = documents.get(textDocument.uri);
+        if (!document) {
+            return [];
+        }
+
+        const lines = document.sourceText.split(/\r?\n/u);
+        const foldingRanges: FoldingRange[] = [];
+        const regionStack: number[] = [];
+        const braceStack: number[] = [];
+
+        for (const [i, lineText] of lines.entries()) {
+            const line = lineText.trim();
+
+            if (line.startsWith("#region")) {
+                regionStack.push(i);
+            } else if (line.startsWith("#endregion")) {
+                const startLine = regionStack.pop();
+                if (startLine !== undefined && startLine < i) {
+                    foldingRanges.push({
+                        startLine,
+                        endLine: i,
+                        kind: FoldingRangeKind.Region
+                    });
+                }
+            }
+
+            if (line.includes("{")) {
+                braceStack.push(i);
+            }
+            if (line.includes("}")) {
+                const startLine = braceStack.pop();
+                if (startLine !== undefined && startLine < i - 1) {
+                    foldingRanges.push({
+                        startLine,
+                        endLine: i
+                    });
+                }
+            }
+        }
+        return foldingRanges;
+    });
+
+    connection.onSelectionRanges(({ textDocument, positions }): SelectionRange[] => {
+        const document = documents.get(textDocument.uri);
+        if (!document) {
+            return [];
+        }
+
+        let ast: any;
+        try {
+            ast = Parser.GMLParser.parse(document.sourceText);
+        } catch {
+            return [];
+        }
+
+        return positions.map((pos) => {
+            const offset = positionToOffset(document, pos);
+            const nodePath: any[] = [];
+
+            const visit = (node: any) => {
+                if (!node || typeof node !== "object") {
+                    return;
+                }
+                const start = getOffset(node.start);
+                const end = getOffset(node.end);
+                if (typeof start === "number" && typeof end === "number" && offset >= start && offset <= end) {
+                    nodePath.push(node);
+                    for (const key of Object.keys(node)) {
+                        if (
+                            key === "parent" ||
+                            key === "enclosingNode" ||
+                            key === "precedingNode" ||
+                            key === "followingNode"
+                        ) {
+                            continue;
+                        }
+                        const child = node[key];
+                        if (Array.isArray(child)) {
+                            for (const item of child) {
+                                visit(item);
+                            }
+                        } else if (child && typeof child === "object") {
+                            visit(child);
+                        }
+                    }
+                }
+            };
+            visit(ast);
+
+            let currentRange: SelectionRange | undefined;
+            for (const node of nodePath) {
+                const start = getOffset(node.start);
+                const end = getOffset(node.end);
+                if (typeof start === "number" && typeof end === "number") {
+                    const startPos = offsetToPosition(document, start);
+                    const endPos = offsetToPosition(document, end);
+                    currentRange = {
+                        range: { start: startPos, end: endPos },
+                        parent: currentRange
+                    };
+                }
+            }
+            return currentRange ?? { range: { start: pos, end: pos } };
+        });
+    });
+
     return Object.freeze({
         connection,
         documents,
@@ -393,4 +529,14 @@ export function createGmlLanguageServer(connection = createConnection(ProposedFe
 export function runGmlLanguageServerStdio(): void {
     const server = createGmlLanguageServer();
     server.listen();
+}
+
+function getOffset(nodePos: any): number | undefined {
+    if (typeof nodePos === "number") {
+        return nodePos;
+    }
+    if (nodePos && typeof nodePos === "object" && typeof nodePos.index === "number") {
+        return nodePos.index;
+    }
+    return undefined;
 }

@@ -15,7 +15,7 @@ const PROJECT_SKILLS_RELATIVE_PATH = ".agents/skills";
 const PROJECT_GITIGNORE_RELATIVE_PATH = ".gitignore";
 const PROJECT_GITIGNORE_SECTION_HEADING = "# GMLoop generated files";
 const GMLOOP_SKILL_NAME_PREFIX = "gmloop-";
-const SYNCHRONIZATION_MANAGED_FILE = "managed-file";
+const SYNCHRONIZATION_MANAGED_FILE = "managed-file" as const;
 
 /** Installation state for the agent pack in one GameMaker project. */
 export type AgentPackProjectStatusKind = "current" | "not-installed" | "update-available";

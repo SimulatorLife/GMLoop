@@ -100,7 +100,7 @@ void test("agent pack initialization installs skills, project guidance, and a ve
         assert.ok(result.added.includes(".gitignore"));
         assert.equal(
             await readFile(path.join(fixture.projectRoot, ".gitignore"), "utf8"),
-            "# GMLoop generated files\n.gmloop/\n.gmcache/\nnode_modules/\n.playwright-mcp/\n.agents/skills/**/gmloop-*\ncache/\nrepomix-output.xml\n"
+            "# GMLoop generated files\n.gmloop/\n.gmcache/\nnode_modules/\n.playwright-mcp/\n.lsp-mcp.json\n.agents/skills/**/gmloop-*\ncache/\nrepomix-output.xml\n"
         );
         const lspMcpConfig = await readFile(path.join(fixture.projectRoot, ".lsp-mcp.json"), "utf8");
         assert.match(lspMcpConfig, /"id": "gml"/u);
@@ -142,7 +142,7 @@ void test("agent pack initialization merges missing gitignore entries without re
         assert.ok(mergedGitIgnore.startsWith(existingGitIgnore));
         assert.match(
             mergedGitIgnore,
-            /# GMLoop generated files\n\.gmcache\/\n\.playwright-mcp\/\n\.agents\/skills\/\*\*\/gmloop-\*/u
+            /# GMLoop generated files\n\.gmcache\/\n\.playwright-mcp\/\n\.lsp-mcp\.json\n\.agents\/skills\/\*\*\/gmloop-\*/u
         );
         assert.equal(Array.from(mergedGitIgnore.matchAll(/\.gmloop/gu)).length, 1);
         assert.equal(Array.from(mergedGitIgnore.matchAll(/node_modules/gu)).length, 1);

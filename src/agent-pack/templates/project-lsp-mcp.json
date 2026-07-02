@@ -6,7 +6,7 @@
       "languageIds": ["gml"],
       "command": "gmloop",
       "args": ["lsp"],
-      "rootPatterns": ["*.yyp", "AGENTS.md"]
+      "rootPatterns": ["*.yyp"]
     }
   ]
 }

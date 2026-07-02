@@ -2,6 +2,7 @@
 .gmcache/
 node_modules/
 .playwright-mcp/
+.lsp-mcp.json
 .agents/skills/**/gmloop-*
 cache/
 repomix-output.xml
