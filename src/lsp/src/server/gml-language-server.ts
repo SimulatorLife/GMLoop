@@ -2,15 +2,12 @@ import { Core } from "@gmloop/core";
 import { Format } from "@gmloop/format";
 import { Lint } from "@gmloop/lint";
 import { Parser } from "@gmloop/parser";
-import { Refactor } from "@gmloop/refactor";
 import { ESLint, type Linter } from "eslint";
 import {
     CodeActionKind,
-    CompletionItemKind,
     createConnection,
     Diagnostic,
     DidChangeConfigurationNotification,
-    Hover,
     InitializeResult,
     Location,
     ProposedFeatures,
@@ -30,11 +27,7 @@ import {
 } from "../documents/index.js";
 import { createGmlSemanticIndex } from "../intelligence/index.js";
 import { eslintMessageToDiagnostic, parserErrorToDiagnostic } from "../protocol/diagnostics.js";
-import {
-    createSingleDocumentWorkspaceEdit,
-    createWholeDocumentTextEdit,
-    sourceOffsetEditsToTextEdits
-} from "../protocol/edits.js";
+import { createSingleDocumentWorkspaceEdit, createWholeDocumentTextEdit } from "../protocol/edits.js";
 
 /**
  * Stable identity used by LSP clients when they connect to GMLoop's GML server.
@@ -150,42 +143,6 @@ async function createLintFixWorkspaceEdit(
     return createSingleDocumentWorkspaceEdit(document, [createWholeDocumentTextEdit(document, fixedText)]);
 }
 
-function createRenameWorkspaceEdit(
-    document: GmlTextDocument,
-    locations: ReadonlyArray<Location>,
-    newName: string
-): WorkspaceEdit | null {
-    const refactorWorkspace = new Refactor.WorkspaceEdit();
-
-    for (const location of locations) {
-        if (location.uri !== document.uri) {
-            continue;
-        }
-
-        const start = positionToOffset(document, location.range.start);
-        const end = positionToOffset(document, location.range.end);
-        refactorWorkspace.addEdit(document.filePath, start, end, newName);
-    }
-
-    const groupedEdits = refactorWorkspace.groupByFile();
-    const edits = groupedEdits.get(document.filePath) ?? [];
-    if (edits.length === 0) {
-        return null;
-    }
-
-    return createSingleDocumentWorkspaceEdit(
-        document,
-        sourceOffsetEditsToTextEdits(
-            document,
-            edits.map((edit) => ({
-                start: edit.start,
-                end: edit.end,
-                text: edit.newText
-            }))
-        )
-    );
-}
-
 function reportAsyncNotificationError(connection: GmlLanguageServerConnection, error: unknown): void {
     connection.console.warn(Core.getErrorMessageOrFallback(error));
 }
@@ -215,10 +172,6 @@ export function createGmlLanguageServer(connection = createConnection(ProposedFe
             serverInfo: GML_LANGUAGE_SERVER_METADATA,
             capabilities: {
                 textDocumentSync: TextDocumentSyncKind.Incremental,
-                diagnosticProvider: {
-                    interFileDependencies: true,
-                    workspaceDiagnostics: false
-                },
                 documentFormattingProvider: true,
                 definitionProvider: true,
                 referencesProvider: true,
@@ -267,7 +220,7 @@ export function createGmlLanguageServer(connection = createConnection(ProposedFe
         runNotificationTask(connection, async () => {
             const document = documents.get(textDocument.uri);
             if (document) {
-                await semanticIndex.buildForDocument(document);
+                await semanticIndex.refreshForDocument(document);
                 await publishDiagnostics(document);
             }
         });
@@ -294,23 +247,25 @@ export function createGmlLanguageServer(connection = createConnection(ProposedFe
             return [];
         }
 
-        const word = readWordAtPosition(document, positionToOffset(document, position));
+        const offset = positionToOffset(document, position);
+        const word = readWordAtPosition(document, offset);
         if (!word) {
             return [];
         }
 
-        const definition = await semanticIndex.findDefinition(document, word.name);
+        const definition = await semanticIndex.findDefinition(document, offset, word.name);
         return definition ? [definition] : [];
     });
 
-    connection.onReferences(async ({ textDocument, position }): Promise<Location[]> => {
+    connection.onReferences(async ({ textDocument, position, context }): Promise<Location[]> => {
         const document = documents.get(textDocument.uri);
         if (!document) {
             return [];
         }
 
-        const word = readWordAtPosition(document, positionToOffset(document, position));
-        return word ? await semanticIndex.findReferences(document, word.name) : [];
+        const offset = positionToOffset(document, position);
+        const word = readWordAtPosition(document, offset);
+        return word ? await semanticIndex.findReferences(document, offset, word.name, context.includeDeclaration) : [];
     });
 
     connection.onDocumentSymbol(async ({ textDocument }) => {
@@ -323,24 +278,19 @@ export function createGmlLanguageServer(connection = createConnection(ProposedFe
         return document ? await semanticIndex.searchWorkspaceSymbols(document, query) : [];
     });
 
-    connection.onHover(({ textDocument, position }): Hover | null => {
+    connection.onHover(async ({ textDocument, position }) => {
         const document = documents.get(textDocument.uri);
         if (!document) {
             return null;
         }
 
-        const word = readWordAtPosition(document, positionToOffset(document, position));
+        const offset = positionToOffset(document, position);
+        const word = readWordAtPosition(document, offset);
         if (!word) {
             return null;
         }
 
-        return {
-            contents: {
-                kind: "markdown",
-                value: `\`${word.name}\``
-            },
-            range: word.range
-        };
+        return await semanticIndex.hover(document, offset, word.name);
     });
 
     connection.onPrepareRename(({ textDocument, position }) => {
@@ -363,8 +313,7 @@ export function createGmlLanguageServer(connection = createConnection(ProposedFe
             return null;
         }
 
-        const references = await semanticIndex.findReferences(document, word.name);
-        return createRenameWorkspaceEdit(document, references, newName);
+        return await semanticIndex.planRename(document, positionToOffset(document, position), word.name, newName);
     });
 
     connection.onCompletion(async ({ textDocument, position }) => {
@@ -374,11 +323,7 @@ export function createGmlLanguageServer(connection = createConnection(ProposedFe
         }
 
         const prefix = readWordAtPosition(document, positionToOffset(document, position))?.name ?? "";
-        const symbols = await semanticIndex.searchWorkspaceSymbols(document, prefix);
-        return symbols.map((symbol) => ({
-            label: symbol.name,
-            kind: CompletionItemKind.Text
-        }));
+        return await semanticIndex.searchCompletions(document, prefix);
     });
 
     connection.onCodeAction(async ({ textDocument, context }) => {

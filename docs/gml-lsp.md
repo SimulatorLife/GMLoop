@@ -40,15 +40,19 @@ Example MCP configuration:
 }
 ```
 
-Configure the bridge's language-server catalog so `.gml` files use:
+Configure the bridge's language-server catalog in `.lsp-mcp.json` or `lsp-mcp.json` so `.gml` files use:
 
 ```json
 {
-  "gml": {
-    "command": "gmloop-lsp",
-    "args": [],
-    "extensions": [".gml"]
-  }
+  "servers": [
+    {
+      "id": "gml",
+      "extensions": [".gml"],
+      "languageIds": ["gml"],
+      "command": "gmloop-lsp",
+      "args": []
+    }
+  ]
 }
 ```
 

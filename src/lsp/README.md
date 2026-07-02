@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This workspace/module (`src/lsp`) contains the GML language server implementation, which exposes GameMaker project intelligence through standard Language Server Protocol capabilities for use through `lsp-mcp-server`.
+This workspace/module (`src/lsp`) contains the GML language server implementation, which exposes GameMakerLanguage project intelligence through standard Language Server Protocol capabilities for use through `lsp-mcp-server`.
 
 It is not an agent framework, MCP server, custom refactor tool, project manager, build runner, or IDE replacement.
 

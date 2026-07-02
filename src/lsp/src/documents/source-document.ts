@@ -153,7 +153,15 @@ export function offsetsToRange(document: GmlTextDocument, start: number, end: nu
     };
 }
 
-function createDocument(uri: string, languageId: string, version: number, sourceText: string): GmlTextDocument {
+/**
+ * Create a tracked GML text document from raw text.
+ */
+export function createGmlTextDocument(
+    uri: string,
+    languageId: string,
+    version: number,
+    sourceText: string
+): GmlTextDocument {
     return Object.freeze({
         uri,
         filePath: uriToFilePath(uri),
@@ -185,7 +193,7 @@ export function createGmlDocumentStore(): GmlDocumentStore {
 
     return {
         open(document) {
-            const tracked = createDocument(document.uri, document.languageId, document.version, document.text);
+            const tracked = createGmlTextDocument(document.uri, document.languageId, document.version, document.text);
             documents.set(document.uri, tracked);
             return tracked;
         },
@@ -196,10 +204,10 @@ export function createGmlDocumentStore(): GmlDocumentStore {
             }
 
             const updatedText = changes.reduce((sourceText, change) => {
-                const transientDocument = createDocument(uri, current.languageId, version, sourceText);
+                const transientDocument = createGmlTextDocument(uri, current.languageId, version, sourceText);
                 return applyDocumentChange(transientDocument, version, change);
             }, current.sourceText);
-            const updated = createDocument(uri, current.languageId, version, updatedText);
+            const updated = createGmlTextDocument(uri, current.languageId, version, updatedText);
             documents.set(uri, updated);
             return updated;
         },
