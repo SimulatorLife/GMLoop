@@ -140,6 +140,8 @@
     "gitignore": true
   },
   "devDependencies": {
+    "@eslint/compat": "catalog:",
+    "@eslint/js": "catalog:",
     "@gmloop/agent-pack": "workspace:*",
     "@gmloop/cli": "workspace:*",
     "@gmloop/core": "workspace:*",
@@ -153,14 +155,9 @@
     "@gmloop/semantic": "workspace:*",
     "@gmloop/transpiler": "workspace:*",
     "@gmloop/ui": "workspace:*",
-    "@eslint/compat": "catalog:",
-    "eslint": "catalog:",
     "@types/node": "catalog:",
-    "ws": "catalog:",
-    "@eslint/js": "catalog:",
-    "prettier": "catalog:",
-    "typescript": "catalog:",
     "c8": "^9",
+    "eslint": "catalog:",
     "eslint-config-prettier": "^10",
     "eslint-import-resolver-typescript": "^4",
     "eslint-plugin-boundaries": "catalog:",
@@ -179,8 +176,13 @@
     "globals": "^16",
     "husky": "^9",
     "jscpd": "^4.2.3",
+    "lsp-mcp-server": "^1.1.20",
+    "prettier": "catalog:",
     "tree-node-cli": "^1",
+    "typescript": "catalog:",
     "typescript-eslint": "^8",
+    "typescript-language-server": "^5.3.0",
+    "ws": "catalog:",
     "yaml-eslint-parser": "^1"
   },
   "packageManager": "pnpm@11.5.0"
