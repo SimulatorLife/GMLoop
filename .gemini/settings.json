@@ -59,7 +59,10 @@
     "lsp": {
       "command": "pnpm",
       "args": ["exec", "lsp-mcp-server"],
-      "timeout": 600000
+      "timeout": 600000,
+      "env": {
+        "LSP_LOG_LEVEL": "debug"
+      }
     },
     "playwright": {
       "command": "npx",
