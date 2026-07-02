@@ -533,7 +533,7 @@ export class GmConfigPanel extends LightDomLitElement {
                     </div>
                     ${filteredLintRules.length === 0
                         ? html`<p class="config-empty">No lint rules match these filters.</p>`
-                        : filteredLintRules.map((entry) => this.#renderLintRuleRow(entry, draftConfig))}
+                        : filteredLintRules.map((entry) => this.#renderLintRuleRow(entry, draftConfig, catalog))}
                 </div>
             </details>
         `;
@@ -588,8 +588,25 @@ export class GmConfigPanel extends LightDomLitElement {
         `;
     }
 
-    #renderLintRuleRow(entry: GraphVisualizationProjectConfigurationLintRuleEntry, draftConfig: ConfigJsonObject) {
-        const effectiveLevel = readRawLintRuleLevel(draftConfig, entry.ruleId) ?? entry.level;
+    #renderLintRuleRow(
+        entry: GraphVisualizationProjectConfigurationLintRuleEntry,
+        draftConfig: ConfigJsonObject,
+        catalog: GraphVisualizationProjectConfigurationCatalog
+    ) {
+        const explicitLevel = readRawLintRuleLevel(draftConfig, entry.ruleId);
+        let rulesetLevel: LintLevel | null = null;
+        if (explicitLevel === null) {
+            const selectedRulesetName =
+                typeof draftConfig.lintRuleset === "string" ? draftConfig.lintRuleset : catalog.lint.ruleset;
+            if (selectedRulesetName !== null) {
+                const ruleset = catalog.lint.rulesets.find((rs) => rs.name === selectedRulesetName);
+                if (ruleset) {
+                    const level = ruleset.ruleLevels[entry.ruleId];
+                    rulesetLevel = level !== undefined && isLintLevel(level) ? level : null;
+                }
+            }
+        }
+        const effectiveLevel = explicitLevel ?? rulesetLevel ?? entry.level;
         const fixableBadgeLabel = getLintFixableBadgeLabel(entry.fixable);
         const hasOptions = Object.keys(entry.options).length > 0;
 

@@ -75,15 +75,25 @@ void test("normalizeLintRulesConfig merges lintRuleset with explicit lintRules o
 void test("normalizeLintRulesConfig rejects invalid lintRuleset values", () => {
     assert.throws(() => normalizeLintRulesConfig({ lintRuleset: "unknown" }), {
         name: "TypeError",
-        message: "gmloop.json lintRuleset must be one of recommended, all, feather, performance."
+        message: "gmloop.json lintRuleset must be one of recommended, all, feather, performance, fixible."
     });
 });
 
 void test("normalizeLintRulesConfig rejects non-string lintRuleset values", () => {
     assert.throws(() => normalizeLintRulesConfig({ lintRuleset: 123 }), {
         name: "TypeError",
-        message: "gmloop.json lintRuleset must be one of recommended, all, feather, performance."
+        message: "gmloop.json lintRuleset must be one of recommended, all, feather, performance, fixible."
     });
+});
+
+void test("normalizeLintRulesConfig supports the fixible ruleset", () => {
+    const rules = normalizeLintRulesConfig({
+        lintRuleset: "fixible"
+    });
+
+    assert.equal(rules["gml/prefer-array-push"], "warn");
+    assert.equal(rules["feather/gm1033"], "warn");
+    assert.equal(rules["feather/gm1004"], undefined);
 });
 
 void test("createLintRuleEntriesFromProjectConfig builds enabled rule entries", () => {

@@ -128,11 +128,13 @@ function createMockModel(): GraphVisualizationUiModel {
                 rulesets: [
                     {
                         name: "recommended",
-                        ruleIds: ["gml/no-globalvar", "gml/require-region-pairs"]
+                        ruleIds: ["gml/no-globalvar", "gml/require-region-pairs"],
+                        ruleLevels: { "gml/no-globalvar": "warn", "gml/require-region-pairs": "error" }
                     },
                     {
                         name: "performance",
-                        ruleIds: ["gml/no-globalvar"]
+                        ruleIds: ["gml/no-globalvar"],
+                        ruleLevels: { "gml/no-globalvar": "warn" }
                     }
                 ],
                 ruleset: "recommended"

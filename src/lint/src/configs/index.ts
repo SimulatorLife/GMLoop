@@ -2,6 +2,7 @@ import type { LintPluginShape } from "../contracts/index.js";
 import {
     ALL_RULE_LEVELS,
     FEATHER_RULE_LEVELS,
+    FIXIBLE_RULE_LEVELS,
     type LintRuleLevel,
     PERFORMANCE_RULE_LEVELS,
     RECOMMENDED_GML_RULE_LEVELS,
@@ -45,6 +46,7 @@ export type LintConfigSets = Readonly<{
     recommended: ReadonlyArray<FlatConfig>;
     feather: ReadonlyArray<FlatConfig>;
     performance: ReadonlyArray<FlatConfig>;
+    fixible: ReadonlyArray<FlatConfig>;
 }>;
 
 /**
@@ -104,5 +106,18 @@ export function createLintConfigsWithPlugins(plugins: LintConfigPluginSet): Lint
         })
     ]);
 
-    return Object.freeze({ recommended, all, feather, performance });
+    const fixible: ReadonlyArray<FlatConfig> = Object.freeze([
+        Object.freeze({
+            files: GML_LINT_FILES_GLOB,
+            plugins: Object.freeze({
+                gml: plugins.gmlPlugin,
+                feather: plugins.featherPlugin
+            }),
+            language: "gml/gml",
+            languageOptions: Object.freeze({ recovery: "limited" }),
+            rules: FIXIBLE_RULE_LEVELS
+        })
+    ]);
+
+    return Object.freeze({ recommended, all, feather, performance, fixible });
 }

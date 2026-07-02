@@ -430,6 +430,7 @@ export type GraphVisualizationProjectConfigurationLintRuleEntry = Readonly<{
 export type GraphVisualizationProjectConfigurationLintRulesetEntry = Readonly<{
     name: string;
     ruleIds: ReadonlyArray<string>;
+    ruleLevels: Readonly<Record<string, "error" | "off" | "warn">>;
 }>;
 
 export type GraphVisualizationProjectConfigurationRefactorCodemodEntry = Readonly<{

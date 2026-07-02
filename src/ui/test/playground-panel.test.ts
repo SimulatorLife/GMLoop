@@ -112,7 +112,8 @@ function createMockProjectConfigurationCatalog(): GraphVisualizationProjectConfi
             rulesets: [
                 {
                     name: "recommended",
-                    ruleIds: ["@gmloop/no-constructor-assignment"]
+                    ruleIds: ["@gmloop/no-constructor-assignment"],
+                    ruleLevels: { "@gmloop/no-constructor-assignment": "warn" }
                 }
             ],
             ruleset: null

@@ -1,3 +1,4 @@
+import { featherLintRuleMap, gmlLintRuleMap } from "../rules/catalog.js";
 import { featherManifest } from "../rules/feather/manifest.js";
 import type { LintRuleLevel } from "./lint-rule-level.js";
 
@@ -9,7 +10,7 @@ export const PERFORMANCE_OVERRIDE_RULE_IDS = Object.freeze([
     "gml/prefer-string-interpolation"
 ]);
 
-export type LintRulesetName = "all" | "recommended" | "feather" | "performance";
+export type LintRulesetName = "all" | "recommended" | "feather" | "performance" | "fixible";
 
 const RECOMMENDED_RULES: Readonly<Record<string, LintRuleLevel>> = Object.freeze({
     "gml/prefer-hoistable-loop-accessors": "warn",
@@ -101,11 +102,34 @@ function createPerformanceRuleSet(): Readonly<Record<string, LintRuleLevel>> {
 
 const PERFORMANCE_RULES = createPerformanceRuleSet();
 
+function createFixibleRuleSet(): Readonly<Record<string, LintRuleLevel>> {
+    const rules: Record<string, LintRuleLevel> = {};
+
+    for (const [ruleName, ruleModule] of Object.entries(gmlLintRuleMap)) {
+        if (ruleModule.meta?.fixable) {
+            const ruleId = `gml/${ruleName}`;
+            rules[ruleId] = RECOMMENDED_RULES[ruleId] ?? "warn";
+        }
+    }
+
+    for (const [ruleName, ruleModule] of Object.entries(featherLintRuleMap)) {
+        if (ruleModule.meta?.fixable) {
+            const ruleId = `feather/${ruleName}`;
+            rules[ruleId] = FEATHER_RULES[ruleId] ?? "warn";
+        }
+    }
+
+    return Object.freeze(rules);
+}
+
+const FIXIBLE_RULES = createFixibleRuleSet();
+
 export const LINT_RULESET_NAMES: ReadonlyArray<LintRulesetName> = Object.freeze([
     "recommended",
     "all",
     "feather",
-    "performance"
+    "performance",
+    "fixible"
 ]);
 
 export const LINT_RULESET_RULE_LEVELS: Readonly<Record<LintRulesetName, Readonly<Record<string, LintRuleLevel>>>> =
@@ -116,7 +140,8 @@ export const LINT_RULESET_RULE_LEVELS: Readonly<Record<LintRulesetName, Readonly
         }),
         all: ALL_RULES,
         feather: FEATHER_RULES,
-        performance: PERFORMANCE_RULES
+        performance: PERFORMANCE_RULES,
+        fixible: FIXIBLE_RULES
     });
 
 export const ALL_RULE_LEVELS = ALL_RULES;
@@ -124,5 +149,6 @@ export const RECOMMENDED_GML_RULE_LEVELS = RECOMMENDED_RULES;
 export const RECOMMENDED_SAFE_FEATHER_RULE_LEVELS = RECOMMENDED_SAFE_FEATHER_RULES;
 export const FEATHER_RULE_LEVELS = FEATHER_RULES;
 export const PERFORMANCE_RULE_LEVELS = PERFORMANCE_RULES;
+export const FIXIBLE_RULE_LEVELS = FIXIBLE_RULES;
 
 export { LintRuleLevel } from "./lint-rule-level.js";
