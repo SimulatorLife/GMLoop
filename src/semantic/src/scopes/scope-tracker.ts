@@ -977,6 +977,13 @@ export class ScopeTracker implements ScipExportView {
                 }
                 current = current.parent;
             }
+
+            const indexedDeclaration = this.resolveUniqueIndexedDeclaration(name);
+            if (indexedDeclaration) {
+                this.identifierCache.write(name, refScopeId, indexedDeclaration);
+                return indexedDeclaration.scopeId;
+            }
+
             this.identifierCache.write(name, refScopeId, null);
             return null;
         }
@@ -990,8 +997,42 @@ export class ScopeTracker implements ScipExportView {
             }
         }
 
+        const indexedDeclaration = this.resolveUniqueIndexedDeclaration(name);
+        if (indexedDeclaration) {
+            this.identifierCache.write(name, refScopeId, indexedDeclaration);
+            return indexedDeclaration.scopeId;
+        }
+
         this.identifierCache.write(name, refScopeId, null);
         return null;
+    }
+
+    private resolveUniqueIndexedDeclaration(name: string): ScopeSymbolMetadata | null {
+        const scopeSummaryMap = this.symbolToScopesIndex.get(name);
+        if (!scopeSummaryMap) {
+            return null;
+        }
+
+        let foundDeclaration: ScopeSymbolMetadata | null = null;
+        for (const [scopeId, summary] of scopeSummaryMap) {
+            if (!summary.hasDeclaration) {
+                continue;
+            }
+
+            const scope = this.scopesById.get(scopeId);
+            const declaration = scope?.symbolMetadata.get(name) ?? null;
+            if (!declaration) {
+                continue;
+            }
+
+            if (foundDeclaration) {
+                return null;
+            }
+
+            foundDeclaration = declaration;
+        }
+
+        return foundDeclaration;
     }
 
     /**
