@@ -34,6 +34,10 @@ import { formatCliError, handleCliError } from "../cli-core/errors.js";
 import { createStatusUrl, createWebSocketUrl, DEFAULT_GM_TEMP_ROOT } from "../modules/live-reload/config.js";
 import { prepareLiveReload } from "../modules/live-reload/session.js";
 import {
+    type LiveReloadRegisteredSession,
+    writeLiveReloadSessionRegistry
+} from "../modules/live-reload/session-registry.js";
+import {
     type RuntimeStaticServerHandle,
     type RuntimeStaticServerInstance,
     startRuntimeStaticServer
@@ -201,6 +205,7 @@ interface InfrastructureConfig {
     abortSignal?: AbortSignal;
     onWebSocketServerReady?: (server: PatchWebSocketServer) => void;
     onStatusServerReady?: (server: StatusServerHandle) => void;
+    liveReloadSession?: Pick<LiveReloadRegisteredSession, "projectRoot" | "startSource" | "yypPath">;
 }
 
 /**
@@ -790,6 +795,42 @@ async function startWatchRuntimeServerAfterPatchServers({
     }
 }
 
+async function writeLiveReloadSessionAfterStartup(
+    parameters: Readonly<{
+        liveReloadSession: Pick<LiveReloadRegisteredSession, "projectRoot" | "startSource" | "yypPath"> | undefined;
+        normalizedPath: string;
+        runtimeServerController: RuntimeStaticServerInstance | null;
+        statusServerController: StatusServerHandle | null;
+        websocketServerController: PatchWebSocketServer | null;
+    }>
+): Promise<void> {
+    if (parameters.liveReloadSession === undefined || parameters.statusServerController === null) {
+        return;
+    }
+
+    const websocketUrl = parameters.websocketServerController?.url ?? "";
+    const statusUrl = parameters.statusServerController.url;
+    const websocketEndpoint = websocketUrl.length > 0 ? new URL(websocketUrl) : null;
+    const statusEndpoint = new URL(statusUrl);
+
+    await writeLiveReloadSessionRegistry({
+        lastHeartbeatAt: Date.now(),
+        processId: process.pid,
+        projectRoot: parameters.liveReloadSession.projectRoot,
+        runtimeUrl: parameters.runtimeServerController?.url ?? null,
+        startSource: parameters.liveReloadSession.startSource,
+        status: "running",
+        statusHost: statusEndpoint.hostname,
+        statusPort: Number(statusEndpoint.port),
+        statusUrl,
+        watchedRoot: parameters.normalizedPath,
+        websocketHost: websocketEndpoint?.hostname ?? "",
+        websocketPort: websocketEndpoint === null ? 0 : Number(websocketEndpoint.port),
+        websocketUrl,
+        yypPath: parameters.liveReloadSession.yypPath
+    });
+}
+
 /**
  * Executes the watch command.
  *
@@ -836,7 +877,8 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         runtimeResolver = resolveRuntimeSource,
         runtimeDescriptor = describeRuntimeSource,
         runtimeServerStarter = startRuntimeStaticServer,
-        watchFactory = watch
+        watchFactory = watch,
+        liveReloadSession
     } = options;
     const unknownServerStopErrorMessage = "Unknown server stop error";
 
@@ -968,6 +1010,13 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                 port: statusPort,
                 getSnapshot: () => {
                     const latencyStats = computeHotReloadLatencyStats(runtimeContext.metrics);
+                    const recentMetrics = runtimeContext.metrics.slice(-10);
+                    const recentErrors = runtimeContext.errors.slice(-10).map((e) => ({
+                        timestamp: e.timestamp,
+                        filePath: path.relative(normalizedPath, e.filePath),
+                        error: e.error
+                    }));
+                    const lastMetric = runtimeContext.metrics.at(-1) ?? null;
                     return {
                         uptime: Date.now() - runtimeContext.startTime,
                         patchCount: runtimeContext.metrics.length,
@@ -975,21 +1024,28 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                         patchHistorySize: runtimeContext.patches.length,
                         maxPatchHistory: runtimeContext.bounds.maxEntries,
                         errorCount: runtimeContext.errors.length,
-                        recentPatches: runtimeContext.metrics.slice(-10).map((m) => ({
+                        recentPatches: recentMetrics.map((m) => ({
                             id: m.patchId,
                             timestamp: m.timestamp,
                             durationMs: m.durationMs,
                             filePath: path.relative(normalizedPath, m.filePath),
-                            hotReloadLatencyMs: m.hotReloadLatencyMs
+                            hotReloadLatencyMs: m.hotReloadLatencyMs,
+                            patchResult: m.patchResult
                         })),
-                        recentErrors: runtimeContext.errors.slice(-10).map((e) => ({
-                            timestamp: e.timestamp,
-                            filePath: path.relative(normalizedPath, e.filePath),
-                            error: e.error
-                        })),
+                        recentErrors,
                         runtimeUrl: runtimeServerController?.url ?? null,
+                        statusUrl: statusServerController?.url,
+                        websocketUrl: websocketServerController?.url,
                         websocketClients: runtimeContext.websocketServer?.getClientCount() ?? 0,
+                        websocketConnectionCount: runtimeContext.websocketServer?.getClientCount() ?? 0,
                         scanComplete: runtimeContext.scanComplete,
+                        watchedRoot: normalizedPath,
+                        lastChangedFile:
+                            lastMetric === null ? null : path.relative(normalizedPath, lastMetric.filePath),
+                        lastPatchId: lastMetric?.patchId ?? null,
+                        lastPatchResult: lastMetric?.patchResult ?? null,
+                        transpileErrors: recentErrors,
+                        runtimeErrors: [],
                         avgHotReloadLatencyMs: latencyStats?.avg,
                         p95HotReloadLatencyMs: latencyStats?.p95
                     };
@@ -1028,6 +1084,14 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         statusServerController,
         unknownServerStopErrorMessage,
         verbose,
+        websocketServerController
+    });
+
+    await writeLiveReloadSessionAfterStartup({
+        liveReloadSession,
+        normalizedPath,
+        runtimeServerController,
+        statusServerController,
         websocketServerController
     });
 

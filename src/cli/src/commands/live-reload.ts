@@ -21,6 +21,10 @@ import {
     prepareLiveReload,
     startLiveReloadDevSession
 } from "../modules/live-reload/session.js";
+import {
+    discoverLiveReloadSessionByPath,
+    type LiveReloadRegisteredSession
+} from "../modules/live-reload/session-registry.js";
 import { startRuntimeStaticServer } from "../modules/runtime/server.js";
 import {
     DEFAULT_RUNTIME_PACKAGE,
@@ -42,6 +46,11 @@ import {
     WATCH_STATUS_OUTPUT_FORMAT_VALUES,
     WATCH_STATUS_OUTPUT_FORMATS
 } from "./watch/status.js";
+
+const PROJECT_PATH_OPTION_DESCRIPTION = "Project directory or .yyp path.";
+const PROJECT_PATH_OPTION_FLAG = "--path <project>";
+const PROJECT_SESSION_PATH_OPTION_DESCRIPTION =
+    "Project directory or .yyp path used to discover the project-local live-reload session.";
 
 type RuntimeDescriptorFormatter = (source: RuntimeSourceDescriptor) => string;
 
@@ -80,6 +89,27 @@ interface LiveReloadDevCommandOptions extends LiveReloadPrepareCommandOptions {
     runtimeDescriptor?: RuntimeDescriptorFormatter;
     runtimeServerStarter?: typeof startRuntimeStaticServer;
     abortSignal?: AbortSignal;
+    forceNew?: boolean;
+    reuseExisting?: boolean;
+    startSource?: "cli" | "mcp" | "ui";
+}
+
+interface LiveReloadStatusCommandOptions {
+    endpoint?: "status" | "health" | "ping" | "ready";
+    format?: string;
+    path?: string;
+    statusHost?: string;
+    statusPort?: number;
+}
+
+interface LiveReloadPathCommandOptions {
+    path?: string;
+}
+
+interface LiveReloadWaitForPatchCommandOptions extends LiveReloadPathCommandOptions {
+    pollIntervalMs?: number;
+    sincePatchId?: string;
+    timeoutMs?: number;
 }
 
 function createLiveReloadBootstrapConfig(
@@ -179,11 +209,14 @@ export async function runLiveReloadDevCommand(
     targetPath: string,
     options: LiveReloadDevCommandOptions = {}
 ): Promise<void> {
-    await startLiveReloadDevSession({
+    const result = await startLiveReloadDevSession({
         targetPath,
         html5OutputRoot: options.html5Output,
         gmTempRoot: options.gmTempRoot,
         bootstrapConfig: createLiveReloadBootstrapConfig(options),
+        forceNew: options.forceNew,
+        reuseExisting: options.reuseExisting,
+        startSource: options.startSource ?? "cli",
         watchOptions: {
             polling: options.polling,
             pollingInterval: options.pollingInterval,
@@ -210,6 +243,161 @@ export async function runLiveReloadDevCommand(
             runtimeServerStarter: options.runtimeServerStarter ?? startRuntimeStaticServer
         }
     });
+    if (result.mode === "attached" && result.session !== null && options.quiet !== true) {
+        reportLiveReloadAttachedSession(result.session);
+    }
+}
+
+function reportLiveReloadAttachedSession(session: LiveReloadRegisteredSession): void {
+    console.log("Attached to existing live-reload session.");
+    console.log(`Project root: ${session.projectRoot}`);
+    console.log(`Runtime URL: ${session.runtimeUrl ?? "<not served>"}`);
+    console.log(`Status URL: ${session.statusUrl}`);
+    console.log(`WebSocket URL: ${session.websocketUrl}`);
+}
+
+export async function runLiveReloadStatusCommand(options: LiveReloadStatusCommandOptions = {}): Promise<void> {
+    if (options.path) {
+        const discovery = await discoverLiveReloadSessionByPath(options.path);
+        if (!discovery.alive || discovery.session === null) {
+            console.error(`No active live-reload session is registered for ${options.path}.`);
+            process.exit(1);
+        }
+
+        await runWatchStatusCommand({
+            endpoint: options.endpoint,
+            format: options.format,
+            statusHost: discovery.session.statusHost,
+            statusPort: discovery.session.statusPort
+        });
+        return;
+    }
+
+    await runWatchStatusCommand(options);
+}
+
+export async function runLiveReloadDiscoverCommand(options: LiveReloadPathCommandOptions = {}): Promise<void> {
+    const targetPath = options.path ?? process.cwd();
+    const discovery = await discoverLiveReloadSessionByPath(targetPath);
+    console.log(
+        JSON.stringify(
+            {
+                command: "live-reload discover",
+                ok: true,
+                payload: discovery
+            },
+            null,
+            2
+        )
+    );
+}
+
+export async function runLiveReloadAttachCommand(options: LiveReloadPathCommandOptions = {}): Promise<void> {
+    const targetPath = options.path ?? process.cwd();
+    const discovery = await discoverLiveReloadSessionByPath(targetPath);
+    if (!discovery.alive || discovery.session === null) {
+        console.error(`No active live-reload session is registered for ${targetPath}.`);
+        process.exit(1);
+    }
+
+    console.log(
+        JSON.stringify(
+            {
+                command: "live-reload attach",
+                ok: true,
+                payload: discovery.session
+            },
+            null,
+            2
+        )
+    );
+}
+
+async function fetchLiveReloadStatusPayload(session: LiveReloadRegisteredSession): Promise<unknown> {
+    const statusEndpointUrl = session.statusUrl.endsWith("/status") ? session.statusUrl : `${session.statusUrl}/status`;
+    const response = await fetch(statusEndpointUrl);
+    if (!response.ok) {
+        throw new Error(`Live-reload status request failed with HTTP ${String(response.status)}.`);
+    }
+
+    return await response.json();
+}
+
+function readLastPatchId(statusPayload: unknown): string | null {
+    if (!Core.isObjectLike(statusPayload)) {
+        return null;
+    }
+
+    const lastPatchId = (statusPayload as Record<string, unknown>).lastPatchId;
+    return typeof lastPatchId === "string" && lastPatchId.length > 0 ? lastPatchId : null;
+}
+
+async function delayLiveReloadPatchPoll(pollIntervalMs: number): Promise<void> {
+    await new Promise((resolve) => {
+        setTimeout(resolve, pollIntervalMs);
+    });
+}
+
+async function pollLiveReloadStatusForPatch(
+    parameters: Readonly<{
+        deadline: number;
+        pollIntervalMs: number;
+        session: LiveReloadRegisteredSession;
+        sincePatchId: string | undefined;
+    }>
+): Promise<Record<string, unknown> | null> {
+    if (Date.now() > parameters.deadline) {
+        return null;
+    }
+
+    const rawStatusPayload = await fetchLiveReloadStatusPayload(parameters.session);
+    const statusPayload = Core.isObjectLike(rawStatusPayload) ? (rawStatusPayload as Record<string, unknown>) : {};
+    const lastPatchId = readLastPatchId(statusPayload);
+    if (lastPatchId !== null && lastPatchId !== parameters.sincePatchId) {
+        return statusPayload;
+    }
+
+    await delayLiveReloadPatchPoll(parameters.pollIntervalMs);
+    return await pollLiveReloadStatusForPatch(parameters);
+}
+
+export async function runLiveReloadWaitForPatchCommand(
+    options: LiveReloadWaitForPatchCommandOptions = {}
+): Promise<void> {
+    const targetPath = options.path ?? process.cwd();
+    const discovery = await discoverLiveReloadSessionByPath(targetPath);
+    if (!discovery.alive || discovery.session === null) {
+        console.error(`No active live-reload session is registered for ${targetPath}.`);
+        process.exit(1);
+    }
+
+    const timeoutMs = options.timeoutMs ?? 10_000;
+    const pollIntervalMs = options.pollIntervalMs ?? 250;
+    const deadline = Date.now() + timeoutMs;
+    const latestPayload = await pollLiveReloadStatusForPatch({
+        deadline,
+        pollIntervalMs,
+        session: discovery.session,
+        sincePatchId: options.sincePatchId
+    });
+
+    if (latestPayload !== null) {
+        console.log(
+            JSON.stringify(
+                {
+                    command: "live-reload wait-for-patch",
+                    ok: true,
+                    payload: latestPayload
+                },
+                null,
+                2
+            )
+        );
+        return;
+    }
+
+    console.error(`Timed out waiting for a live-reload patch after ${String(timeoutMs)}ms.`);
+    process.exit(1);
 }
 
 function applySharedLiveReloadPrepareOptions(command: Command): Command {
@@ -333,6 +521,25 @@ function createLiveReloadDevSubcommand(): Command {
             )
         )
         .option("--no-runtime-server", "Disable starting the HTML5 runtime static server.")
+        .addOption(
+            new Option(
+                "--force-new",
+                "Start a new live-reload session even when a healthy project session is registered."
+            ).default(false)
+        )
+        .addOption(
+            new Option(
+                "--reuse-existing <boolean>",
+                "Attach to a healthy project session instead of starting a duplicate."
+            )
+                .argParser((value) => value !== "false")
+                .default(true)
+        )
+        .addOption(
+            new Option("--start-source <source>", "Live-reload session owner.")
+                .choices(["cli", "mcp", "ui"])
+                .default("cli")
+        )
         .action((targetPath: string, options: LiveReloadDevCommandOptions) =>
             runLiveReloadDevCommand(targetPath, options)
         );
@@ -344,6 +551,7 @@ function createLiveReloadStatusSubcommand(): Command {
 
     return command
         .description("Query the running live-reload status server for metrics and diagnostics.")
+        .addOption(new Option(PROJECT_PATH_OPTION_FLAG, PROJECT_SESSION_PATH_OPTION_DESCRIPTION))
         .addOption(
             new Option("--status-host <host>", "Status server host")
                 .default(DEFAULT_LIVE_RELOAD_STATUS_HOST)
@@ -365,7 +573,48 @@ function createLiveReloadStatusSubcommand(): Command {
                 .choices(["status", "health", "ping", "ready"] as const)
                 .default("status")
         )
-        .action((options) => runWatchStatusCommand(options));
+        .action((options: LiveReloadStatusCommandOptions) => runLiveReloadStatusCommand(options));
+}
+
+function createLiveReloadDiscoverSubcommand(): Command {
+    const command = new Command("discover");
+    applyStandardCommandOptions(command);
+
+    return command
+        .description("Discover the project-local live-reload session registry.")
+        .addOption(new Option(PROJECT_PATH_OPTION_FLAG, PROJECT_PATH_OPTION_DESCRIPTION).default(process.cwd()))
+        .action((options: LiveReloadPathCommandOptions) => runLiveReloadDiscoverCommand(options));
+}
+
+function createLiveReloadAttachSubcommand(): Command {
+    const command = new Command("attach");
+    applyStandardCommandOptions(command);
+
+    return command
+        .description("Attach to a healthy project-local live-reload session registry.")
+        .addOption(new Option(PROJECT_PATH_OPTION_FLAG, PROJECT_PATH_OPTION_DESCRIPTION).default(process.cwd()))
+        .action((options: LiveReloadPathCommandOptions) => runLiveReloadAttachCommand(options));
+}
+
+function createLiveReloadWaitForPatchSubcommand(): Command {
+    const command = new Command("wait-for-patch");
+    applyStandardCommandOptions(command);
+
+    return command
+        .description("Wait until the registered live-reload session reports a new patch.")
+        .addOption(new Option(PROJECT_PATH_OPTION_FLAG, PROJECT_PATH_OPTION_DESCRIPTION).default(process.cwd()))
+        .addOption(new Option("--since-patch-id <id>", "Existing patch id to wait past."))
+        .addOption(
+            new Option("--timeout-ms <ms>", "Maximum wait time in milliseconds.")
+                .argParser(createMinimumValueValidator(1, "Timeout must be a positive integer."))
+                .default(10_000)
+        )
+        .addOption(
+            new Option("--poll-interval-ms <ms>", "Polling interval in milliseconds.")
+                .argParser(createMinimumValueValidator(1, "Poll interval must be a positive integer."))
+                .default(250)
+        )
+        .action((options: LiveReloadWaitForPatchCommandOptions) => runLiveReloadWaitForPatchCommand(options));
 }
 
 export function createLiveReloadCommand(): Command {
@@ -374,8 +623,11 @@ export function createLiveReloadCommand(): Command {
 
     return command
         .description("Prepare, run, and inspect the HTML5 live-reload workflow.")
+        .addCommand(createLiveReloadAttachSubcommand())
         .addCommand(createLiveReloadBuildSubcommand())
+        .addCommand(createLiveReloadDiscoverSubcommand())
         .addCommand(createLiveReloadPrepareSubcommand())
         .addCommand(createLiveReloadDevSubcommand())
-        .addCommand(createLiveReloadStatusSubcommand());
+        .addCommand(createLiveReloadStatusSubcommand())
+        .addCommand(createLiveReloadWaitForPatchSubcommand());
 }

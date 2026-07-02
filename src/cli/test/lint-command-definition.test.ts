@@ -214,6 +214,26 @@ void test("lint accepts --path pointing to a single .gml file target", async () 
     }
 });
 
+void test("lint accepts a direct .gml file argument and never reports a silent zero-file run", async () => {
+    const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "gmloop-cli-lint-direct-file-"));
+
+    try {
+        const targetFile = path.join(temporaryDirectory, "clean.gml");
+        await writeFile(targetFile, "var x = 1;\n", "utf8");
+
+        const result = await runCliTestCommand({
+            argv: ["lint", "--no-default-config", targetFile]
+        });
+
+        assert.equal(result.exitCode, 0);
+        assert.match(result.stdout, /✓ 1 file checked, no problems found\./);
+        assert.doesNotMatch(result.stderr, /0 processed/);
+        assert.doesNotMatch(result.stderr, /No \.gml files were linted/u);
+    } finally {
+        await rm(temporaryDirectory, { recursive: true, force: true });
+    }
+});
+
 void test("lint ignores .gmcache and cache directories during project file discovery", async () => {
     const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "gmloop-cli-lint-ignore-dirs-"));
 

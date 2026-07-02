@@ -54,6 +54,12 @@ export interface TranspilationMetrics {
      * the initial scan, where no change event fires).
      */
     hotReloadLatencyMs?: number;
+    patchResult?: {
+        delivered: boolean;
+        failureCount: number;
+        successCount: number;
+        totalClients: number;
+    };
 }
 
 export type ErrorCategory = "syntax" | "validation" | "internal" | "unknown";
@@ -768,6 +774,13 @@ export function transpileFile(
                     console.log(`  ↳ Streamed to ${broadcastResult.successCount} client(s)`);
                 }
             }
+
+            metrics.patchResult = {
+                delivered: (broadcastResult?.successCount ?? 0) > 0,
+                failureCount: broadcastResult?.failureCount ?? 0,
+                successCount: broadcastResult?.successCount ?? 0,
+                totalClients: broadcastResult?.totalClients ?? 0
+            };
         } else if (verbose && !quiet) {
             console.log("  ↳ Runtime patch unchanged; skipping patch broadcast");
         }

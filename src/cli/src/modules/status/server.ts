@@ -34,6 +34,12 @@ export interface StatusSnapshot {
         filePath: string;
         /** End-to-end hot-reload latency from file-change detection to patch broadcast, when available. */
         hotReloadLatencyMs?: number;
+        patchResult?: {
+            delivered: boolean;
+            failureCount: number;
+            successCount: number;
+            totalClients: number;
+        };
     }>;
     recentErrors: Array<{
         timestamp: number;
@@ -45,6 +51,28 @@ export interface StatusSnapshot {
     scanComplete?: boolean;
     /** Runtime static server URL for clients that need to reconnect after UI reloads. */
     runtimeUrl?: string | null;
+    statusUrl?: string;
+    watchedRoot?: string;
+    websocketConnectionCount?: number;
+    websocketUrl?: string;
+    lastChangedFile?: string | null;
+    lastPatchId?: string | null;
+    lastPatchResult?: {
+        delivered: boolean;
+        failureCount: number;
+        successCount: number;
+        totalClients: number;
+    } | null;
+    transpileErrors?: Array<{
+        error: string;
+        filePath: string;
+        timestamp: number;
+    }>;
+    runtimeErrors?: Array<{
+        error: string;
+        filePath: string;
+        timestamp: number;
+    }>;
     /** Average end-to-end hot-reload latency (ms) across all patches in the current metrics window. */
     avgHotReloadLatencyMs?: number;
     /** 95th-percentile end-to-end hot-reload latency (ms) across all patches in the current metrics window. */

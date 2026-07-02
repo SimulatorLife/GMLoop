@@ -182,6 +182,19 @@ function displayPretty(data: unknown, endpoint: string): void {
         patchCount: number;
         errorCount: number;
         websocketClients: number;
+        runtimeUrl?: string | null;
+        statusUrl?: string;
+        watchedRoot?: string;
+        websocketConnectionCount?: number;
+        websocketUrl?: string;
+        lastChangedFile?: string | null;
+        lastPatchId?: string | null;
+        lastPatchResult?: {
+            delivered: boolean;
+            failureCount: number;
+            successCount: number;
+            totalClients: number;
+        } | null;
         recentPatches: Array<{
             id: string;
             timestamp: number;
@@ -200,6 +213,29 @@ function displayPretty(data: unknown, endpoint: string): void {
     console.log(`Total patches: ${statusData.patchCount}`);
     console.log(`Total errors: ${statusData.errorCount}`);
     console.log(`WebSocket clients: ${statusData.websocketClients}`);
+    if (statusData.watchedRoot) {
+        console.log(`Watched root: ${statusData.watchedRoot}`);
+    }
+    if (statusData.runtimeUrl !== undefined) {
+        console.log(`Runtime URL: ${statusData.runtimeUrl ?? "<not served>"}`);
+    }
+    if (statusData.statusUrl) {
+        console.log(`Status URL: ${statusData.statusUrl}`);
+    }
+    if (statusData.websocketUrl) {
+        console.log(`WebSocket URL: ${statusData.websocketUrl}`);
+    }
+    if (statusData.lastChangedFile) {
+        console.log(`Last changed file: ${statusData.lastChangedFile}`);
+    }
+    if (statusData.lastPatchId) {
+        console.log(`Last patch ID: ${statusData.lastPatchId}`);
+    }
+    if (statusData.lastPatchResult) {
+        console.log(
+            `Last patch delivery: ${statusData.lastPatchResult.successCount}/${statusData.lastPatchResult.totalClients} client(s)`
+        );
+    }
 
     if (statusData.recentPatches.length > 0) {
         console.log("\nRecent patches:");

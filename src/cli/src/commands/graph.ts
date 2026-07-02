@@ -484,6 +484,8 @@ function createGraphVisualizationLiveReloadDevCommandArgs(
         String(startupOptions.statusPort),
         "--status-host",
         startupOptions.statusHost,
+        "--start-source",
+        "ui",
         "--quiet"
     ];
 }

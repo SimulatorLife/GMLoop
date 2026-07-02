@@ -198,6 +198,10 @@ status, installed Auto-Game agent-pack status, project skills, resource
 inventory, semantic graph summary, and configured official `gm-cli` /
 ResourceTool MCP availability.
 
+`configuredOfficialMcp` means a ResourceTool MCP server definition was found
+in project or local MCP config files and could be probed. It does not reflect
+MCP tools injected directly by the current agent host process.
+
 `project validate` emits deterministic evidence records for GMLoop-owned
 readiness checks: config, graph, resource inventory, agent pack, parser status,
 persisted test results, runner state, and official companion-tool availability.
@@ -330,20 +334,23 @@ pnpm run cli -- live-reload prepare --html5-output /path/to/output
 # Start the full live-reload dev session (builds first when configured)
 pnpm run cli -- live-reload dev /path/to/project
 
-# Query the running status server
-pnpm run cli -- live-reload status
+# Query the running status server by project path
+pnpm run cli -- live-reload status --path /path/to/project --format json
 ```
 
 The `live-reload dev` command will:
 
-1. Resolve `runtime.liveReload` from `gmloop.json`
-2. Build the GameMaker project into `runtime.liveReload.html5Output` when `runtime.liveReload.build` is configured
-3. Otherwise, locate an existing HTML5 output via `--html5-output`, `runtime.liveReload.html5Output`, or the latest GameMaker temp output
-4. Copy the self-contained `@gmloop/runtime-wrapper/dist/src/browser` asset tree into the output directory
-5. Inject a single module bootstrap tag into `index.html`
-6. Start the file watcher plus the runtime, patch, and status servers against that prepared HTML5 output
+1. Resolve the canonical GameMaker project root and project-local `.gmloop/live-reload-session.json` registry.
+2. Attach to a healthy registered session for that project unless `--force-new` or `--reuse-existing false` is set.
+3. Resolve `runtime.liveReload` from `gmloop.json`.
+4. Build the GameMaker project into `runtime.liveReload.html5Output` when `runtime.liveReload.build` is configured.
+5. Otherwise, locate an existing HTML5 output via `--html5-output`, `runtime.liveReload.html5Output`, or the latest GameMaker temp output.
+6. Copy the self-contained `@gmloop/runtime-wrapper/dist/src/browser` asset tree into the output directory.
+7. Inject a single module bootstrap tag into `index.html`.
+8. Start the file watcher plus the runtime, patch, and status servers against that prepared HTML5 output, then write the session registry.
 
 The injected bootstrap uses the configured `--websocket-host`, `--websocket-port`, `--status-host`, and `--status-port` values so the running game can connect deterministically to the live-reload services.
+Human and JSON status output report the runtime URL, status URL, and WebSocket URL separately so automation does not confuse the playable runtime with the status endpoint.
 The watcher ignores generated/cache directories such as `.gmcache`, `.gml-hot-reload`, `dist`, and `node_modules` so the patch stream stays focused on project-owned GML sources.
 
 **Project config for one-click graph UI startup:**
@@ -683,9 +690,14 @@ pnpm run cli -- live-reload dev /path/to/project
 
 # Force an existing output directory when build orchestration is not configured
 pnpm run cli -- live-reload dev /path/to/project --html5-output /path/to/html5/output
+
+# Intentionally start a second session for debugging
+pnpm run cli -- live-reload dev /path/to/project --force-new
 ```
 
 When `runtime.liveReload.build` exists, `live-reload dev` treats `runtime.liveReload.html5Output` as the canonical output directory, rebuilds it before injection, and serves that same prepared output as the runtime URL shown by the UI.
+
+By default, `live-reload dev` is attach-or-start. If `.gmloop/live-reload-session.json` points to a healthy status server for the same canonical project root, the command prints the existing runtime URL, status URL, and WebSocket URL instead of starting parallel servers.
 
 Igor builds materialize project prefab packages from `.gmcache/prefabs` into the project-local `prefabs` path while the build runs, then remove the temporary materialization after the build. This keeps one-click Live Reload startup aligned with GameMaker projects whose package cache already contains the referenced prefab libraries.
 
@@ -728,16 +740,22 @@ pnpm run cli -- live-reload status --endpoint ready
 # Get JSON output for scripting/automation
 pnpm run cli -- live-reload status --format json
 
+# Discover the registered session without knowing the status port
+pnpm run cli -- live-reload status --path /path/to/project --format json
+
 # Query custom host/port
 pnpm run cli -- live-reload status --status-host 127.0.0.1 --status-port 18000
 ```
 
 **Options:**
 
+- `--path <project>` - Project directory or `.yyp` path used to locate `.gmloop/live-reload-session.json`
 - `--status-host <host>` - Status server host (default: 127.0.0.1, env: WATCH_STATUS_HOST)
 - `--status-port <port>` - Status server port (default: 17891, env: WATCH_STATUS_PORT)
 - `--format <format>` - Output format: `pretty` (default) or `json`
 - `--endpoint <endpoint>` - Endpoint to query: `status` (default), `health`, `ping`, or `ready`
+
+Agents can also use `live-reload discover`, `live-reload attach`, and `live-reload wait-for-patch` by project path. Through MCP these appear as `gmloop_live_reload_discover`, `gmloop_live_reload_attach`, and `gmloop_live_reload_wait_for_patch`.
 
 **Example Output:**
 

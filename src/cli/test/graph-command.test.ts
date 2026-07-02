@@ -745,6 +745,8 @@ void test("graph visualize live-reload dev args include configured startup paths
         "47911",
         "--status-host",
         "127.0.0.1",
+        "--start-source",
+        "ui",
         "--quiet"
     ]);
 });

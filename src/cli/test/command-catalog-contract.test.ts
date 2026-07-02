@@ -104,6 +104,31 @@ void test("project readiness MCP tool schemas include project path and graph opt
     }
 });
 
+void test("live-reload MCP tool schemas expose project-path attach and patch wait workflows", () => {
+    const mcpCatalog = getMcpToolCatalogEntries();
+    const expectedPathTools = [
+        "gmloop_live_reload_discover",
+        "gmloop_live_reload_attach",
+        "gmloop_live_reload_status",
+        "gmloop_live_reload_wait_for_patch"
+    ];
+
+    for (const toolName of expectedPathTools) {
+        const entry = mcpCatalog.find((candidate) => candidate.toolName === toolName);
+        assert.ok(entry, `Missing MCP tool: ${toolName}`);
+
+        const pathField = entry.fields.find((field) => field.attributeName === "path");
+        assert.ok(pathField, `Missing path field on ${toolName}`);
+        assert.equal(pathField.kind, "option");
+    }
+
+    const waitTool = mcpCatalog.find((candidate) => candidate.toolName === "gmloop_live_reload_wait_for_patch");
+    assert.ok(waitTool);
+    assert.ok(waitTool.fields.some((field) => field.attributeName === "sincePatchId"));
+    assert.ok(waitTool.fields.some((field) => field.attributeName === "timeoutMs"));
+    assert.ok(waitTool.fields.some((field) => field.attributeName === "pollIntervalMs"));
+});
+
 void test("read-side object and room inspection MCP schemas expose required lookup arguments", () => {
     const mcpCatalog = getMcpToolCatalogEntries();
     const requiredArgumentsByTool = new Map<string, ReadonlyArray<string>>([

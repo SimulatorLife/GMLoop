@@ -40,3 +40,6 @@ description: Organize GameMaker resources, manage layout and naming, structure p
 
 12. **Use object inheritance for shared instance behavior.**
     Prefer clear parent-child object hierarchies when multiple objects share behavior, state, events, or lifecycle logic. For example, use a hierarchy like `obj_entity -> obj_enemy -> obj_zombie` instead of duplicating movement, health, collision, damage, animation, or cleanup logic across many separate objects. This makes shared behavior easier to update in one place, keeps specific objects smaller, and makes the project easier to reason about because each child object only needs to define what makes it different.
+
+13. **Maintain/use one top-level script file `macros` for project-wide macros and configurations.**
+   This "macros" script should contain any/all project-wide macros like `RELEASE`, a true/false flag that indicates whether the project is in release mode. During development, it should be set to `false`, and debug-only code/objects can be conditionally compiled/included based on this flag. Avoid scattering these values across multiple scripts or objects. This centralization makes it easier to manage and update configurations as the project evolves.
