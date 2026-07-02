@@ -48,13 +48,14 @@ void test("semantic index resolves definitions, references, hover, and cross-fil
     const fixture = await createTwoScriptProject();
 
     try {
-        const document = Lsp.createGmlDocumentStore().open({
+        const store = Lsp.createGmlDocumentStore();
+        const document = store.open({
             uri: Lsp.filePathToUri(fixture.sourcePath),
             languageId: "gml",
             version: 1,
             text: fixture.sourceText
         });
-        const semanticIndex = Lsp.createGmlSemanticIndex();
+        const semanticIndex = Lsp.createGmlSemanticIndex(store);
         const offset = fixture.sourceText.indexOf("target();");
 
         const definition = await semanticIndex.findDefinition(document, offset, "target");

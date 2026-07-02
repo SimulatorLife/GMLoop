@@ -7,6 +7,7 @@ export * from "./generate-quality-report.js";
 export * from "./graph.js";
 export * from "./lint.js";
 export * from "./live-reload.js";
+export * from "./lsp.js";
 export * from "./mcp.js";
 export * from "./object.js";
 export * from "./parse.js";

@@ -8,9 +8,11 @@ type ParserErrorLike = Readonly<{
     column?: number;
     line?: number;
     name?: string;
+    offendingText?: string;
+    wrongSymbol?: string;
 }>;
 
-function createSingleCharacterRange(line: number, column: number): Range {
+function createDiagnosticRange(line: number, column: number, length: number): Range {
     const start = {
         line: Math.max(0, line - 1),
         character: Math.max(0, column)
@@ -19,7 +21,7 @@ function createSingleCharacterRange(line: number, column: number): Range {
         start,
         end: {
             line: start.line,
-            character: start.character + 1
+            character: start.character + length
         }
     };
 }
@@ -32,9 +34,11 @@ export function parserErrorToDiagnostic(document: GmlTextDocument, error: unknow
     const candidate = Core.isObjectLike(error) ? (error as ParserErrorLike) : {};
     const line = typeof candidate.line === "number" ? candidate.line : 1;
     const column = typeof candidate.column === "number" ? candidate.column : 0;
+    const offendingText = typeof candidate.offendingText === "string" ? candidate.offendingText : candidate.wrongSymbol;
+    const length = typeof offendingText === "string" && offendingText.length > 0 ? offendingText.length : 1;
 
     return Diagnostic.create(
-        createSingleCharacterRange(line, column),
+        createDiagnosticRange(line, column, length),
         Core.getErrorMessageOrFallback(error),
         DiagnosticSeverity.Error,
         candidate.name ?? "parser",

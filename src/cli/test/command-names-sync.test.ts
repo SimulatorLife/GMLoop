@@ -19,6 +19,7 @@ void test("CLI_COMMAND_NAMES includes all expected commands", () => {
         "graph",
         "lint",
         "live-reload",
+        "lsp",
         "mcp",
         "object",
         "parse",

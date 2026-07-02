@@ -13,6 +13,7 @@ import { createGenerateQualityReportCommand, runGenerateQualityReport } from "./
 import { createGraphCommand } from "./commands/graph.js";
 import { createLintCommand, runLintCommand } from "./commands/lint.js";
 import { createLiveReloadCommand } from "./commands/live-reload.js";
+import { createLspCommand } from "./commands/lsp.js";
 import { createMcpCommand } from "./commands/mcp.js";
 import { createObjectCommand } from "./commands/object.js";
 import { createParseCommand, runParseCommand } from "./commands/parse.js";
@@ -210,6 +211,11 @@ function registerUtilityCommands({
     registry.registerCommand({
         command: createMcpCommand(),
         onError: createCliCommandErrorHandler({ prefix: "MCP command failed." })
+    });
+
+    registry.registerCommand({
+        command: createLspCommand(),
+        onError: createCliCommandErrorHandler({ prefix: "LSP command failed." })
     });
 
     registry.registerCommand({

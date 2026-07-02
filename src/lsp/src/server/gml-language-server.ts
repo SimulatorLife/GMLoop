@@ -158,9 +158,10 @@ function runNotificationTask(connection: GmlLanguageServerConnection, task: () =
  */
 export function createGmlLanguageServer(connection = createConnection(ProposedFeatures.all)) {
     const documents = createGmlDocumentStore();
-    const semanticIndex = createGmlSemanticIndex();
+    const semanticIndex = createGmlSemanticIndex(documents);
     const lintRunner = createLintRunner(false);
     const lintFixRunner = createLintRunner(true);
+    const pendingDiagnostics = new Map<string, NodeJS.Timeout>();
 
     async function publishDiagnostics(document: GmlTextDocument): Promise<void> {
         const diagnostics = await collectDiagnostics(document, lintRunner);
@@ -208,15 +209,35 @@ export function createGmlLanguageServer(connection = createConnection(ProposedFe
     });
 
     connection.onDidChangeTextDocument(({ textDocument, contentChanges }) => {
-        runNotificationTask(connection, async () => {
-            const document = documents.update(textDocument.uri, textDocument.version, contentChanges);
-            if (document) {
-                await publishDiagnostics(document);
-            }
-        });
+        const document = documents.update(textDocument.uri, textDocument.version, contentChanges);
+        if (!document) {
+            return;
+        }
+
+        const existingTimer = pendingDiagnostics.get(textDocument.uri);
+        if (existingTimer) {
+            clearTimeout(existingTimer);
+        }
+
+        const timer = setTimeout(() => {
+            pendingDiagnostics.delete(textDocument.uri);
+            runNotificationTask(connection, async () => {
+                const doc = documents.get(textDocument.uri);
+                if (doc && doc.version === textDocument.version) {
+                    await publishDiagnostics(doc);
+                }
+            });
+        }, 300);
+        pendingDiagnostics.set(textDocument.uri, timer);
     });
 
     connection.onDidSaveTextDocument(({ textDocument }) => {
+        const existingTimer = pendingDiagnostics.get(textDocument.uri);
+        if (existingTimer) {
+            clearTimeout(existingTimer);
+            pendingDiagnostics.delete(textDocument.uri);
+        }
+
         runNotificationTask(connection, async () => {
             const document = documents.get(textDocument.uri);
             if (document) {
@@ -227,17 +248,26 @@ export function createGmlLanguageServer(connection = createConnection(ProposedFe
     });
 
     connection.onDidCloseTextDocument(({ textDocument }) => {
+        const existingTimer = pendingDiagnostics.get(textDocument.uri);
+        if (existingTimer) {
+            clearTimeout(existingTimer);
+            pendingDiagnostics.delete(textDocument.uri);
+        }
+
         documents.close(textDocument.uri);
         void connection.sendDiagnostics({ uri: textDocument.uri, diagnostics: [] });
     });
 
-    connection.onDocumentFormatting(async ({ textDocument }): Promise<TextEdit[]> => {
+    connection.onDocumentFormatting(async ({ textDocument, options }): Promise<TextEdit[]> => {
         const document = documents.get(textDocument.uri);
         if (!document) {
             return [];
         }
 
-        const formatted = await Format.format(document.sourceText);
+        const formatted = await Format.format(document.sourceText, {
+            tabWidth: options?.tabSize,
+            useTabs: options?.insertSpaces === false
+        });
         return [createWholeDocumentTextEdit(document, formatted)];
     });
 

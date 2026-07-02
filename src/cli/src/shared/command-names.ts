@@ -20,6 +20,7 @@ export const CLI_COMMAND_NAMES = Object.freeze(
         "graph",
         "lint",
         "live-reload",
+        "lsp",
         "mcp",
         "object",
         "parse",

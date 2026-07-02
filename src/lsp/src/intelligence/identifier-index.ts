@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { Core } from "@gmloop/core";
+import { Core, type FsFacade } from "@gmloop/core";
 import { Refactor } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import type {
@@ -14,7 +14,13 @@ import type {
     WorkspaceSymbol
 } from "vscode-languageserver/node.js";
 
-import { createGmlTextDocument, filePathToUri, type GmlTextDocument, offsetsToRange } from "../documents/index.js";
+import {
+    createGmlTextDocument,
+    filePathToUri,
+    type GmlDocumentStore,
+    type GmlTextDocument,
+    offsetsToRange
+} from "../documents/index.js";
 import { gmlSymbolKindToCompletionItemKind, gmlSymbolKindToLspSymbolKind } from "../protocol/index.js";
 
 type NavigationIndex = Awaited<ReturnType<typeof Semantic.buildProjectNavigationIndex>>;
@@ -190,13 +196,64 @@ async function refactorWorkspaceEditToLspWorkspaceEdit(
     return Object.keys(changes).length > 0 ? { changes } : null;
 }
 
-async function buildSemanticIndexForDocument(document: GmlTextDocument): Promise<NavigationState | null> {
+function createLspFsFacade(documents: GmlDocumentStore, baseFs: FsFacade = Core.defaultFsFacade): FsFacade {
+    return {
+        ...baseFs,
+        async readFile(filePath, encoding) {
+            const resolvedPath = path.resolve(filePath);
+            const openDoc = documents.list().find((doc) => path.resolve(doc.filePath) === resolvedPath);
+            if (openDoc) {
+                return openDoc.sourceText;
+            }
+            return baseFs.readFile(filePath, encoding);
+        },
+        async stat(filePath) {
+            const resolvedPath = path.resolve(filePath);
+            const openDoc = documents.list().find((doc) => path.resolve(doc.filePath) === resolvedPath);
+            if (openDoc) {
+                let baseStats = { mtimeMs: Date.now() };
+                try {
+                    baseStats = await baseFs.stat(filePath);
+                } catch {
+                    // Ignore missing files since the document exists in memory
+                }
+                return {
+                    ...baseStats,
+                    mtimeMs: Date.now() // Treat open documents as dirty to ensure re-indexing uses the new in-memory text
+                };
+            }
+            return baseFs.stat(filePath);
+        }
+    };
+}
+
+let builtInsMetadata: Record<string, unknown> | null = null;
+
+function getBuiltInsMetadata(): Record<string, unknown> {
+    if (builtInsMetadata === null) {
+        try {
+            const payload = Core.loadBundledIdentifierMetadata();
+            builtInsMetadata =
+                Core.isObjectLike(payload) && Core.isObjectLike(payload.identifiers)
+                    ? (payload.identifiers as Record<string, unknown>)
+                    : {};
+        } catch {
+            builtInsMetadata = {};
+        }
+    }
+    return builtInsMetadata;
+}
+
+async function buildSemanticIndexForDocument(
+    document: GmlTextDocument,
+    fsFacade: FsFacade = Core.defaultFsFacade
+): Promise<NavigationState | null> {
     const projectRoot = await Semantic.findProjectRoot({ filepath: document.filePath });
     if (!projectRoot) {
         return null;
     }
 
-    const index = await Semantic.buildProjectNavigationIndex(projectRoot, Core.defaultFsFacade, {
+    const index = await Semantic.buildProjectNavigationIndex(projectRoot, fsFacade, {
         concurrency: { gml: 1, gmlParsing: 1 }
     });
 
@@ -209,40 +266,60 @@ async function buildSemanticIndexForDocument(document: GmlTextDocument): Promise
 /**
  * Create the semantic project-index query facade used by the LSP server.
  */
-export function createGmlSemanticIndex(): GmlSemanticIndex {
-    let cachedState: NavigationState | null = null;
-    let inFlightBuild: Promise<NavigationState | null> | null = null;
+export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemanticIndex {
+    const cachedStates = new Map<string, NavigationState>();
+    const inFlightBuilds = new Map<string, Promise<NavigationState | null>>();
+    const fsFacade = createLspFsFacade(documents);
 
     async function ensureIndex(document: GmlTextDocument): Promise<NavigationState | null> {
-        const currentState = cachedState;
-        if (currentState && isPathInside(currentState.projectRoot, document.filePath)) {
+        const projectRoot = await Semantic.findProjectRoot({ filepath: document.filePath });
+        if (!projectRoot) {
+            return null;
+        }
+
+        const resolvedRoot = path.resolve(projectRoot);
+        const currentState = cachedStates.get(resolvedRoot);
+        if (currentState) {
             return currentState;
         }
 
-        if (inFlightBuild === null) {
-            inFlightBuild = buildSemanticIndexForDocument(document)
+        let inFlight = inFlightBuilds.get(resolvedRoot);
+        if (!inFlight) {
+            inFlight = buildSemanticIndexForDocument(document, fsFacade)
                 .then((state) => {
-                    cachedState = state;
+                    if (state) {
+                        cachedStates.set(resolvedRoot, state);
+                    }
                     return state;
                 })
                 .finally(() => {
-                    inFlightBuild = null;
+                    inFlightBuilds.delete(resolvedRoot);
                 });
+            inFlightBuilds.set(resolvedRoot, inFlight);
         }
 
-        return await inFlightBuild;
+        return await inFlight;
     }
 
     async function refreshIndex(document: GmlTextDocument): Promise<NavigationState | null> {
-        inFlightBuild = buildSemanticIndexForDocument(document)
+        const projectRoot = await Semantic.findProjectRoot({ filepath: document.filePath });
+        if (!projectRoot) {
+            return null;
+        }
+
+        const resolvedRoot = path.resolve(projectRoot);
+        const inFlight = buildSemanticIndexForDocument(document, fsFacade)
             .then((state) => {
-                cachedState = state;
+                if (state) {
+                    cachedStates.set(resolvedRoot, state);
+                }
                 return state;
             })
             .finally(() => {
-                inFlightBuild = null;
+                inFlightBuilds.delete(resolvedRoot);
             });
-        return await inFlightBuild;
+        inFlightBuilds.set(resolvedRoot, inFlight);
+        return await inFlight;
     }
 
     return {
@@ -283,15 +360,45 @@ export function createGmlSemanticIndex(): GmlSemanticIndex {
 
             const symbolId = findSymbolId(state.index, document, offset, identifierName);
             const facts = symbolId ? Semantic.getNavigationHoverFacts(state.index, symbolId) : null;
-            return facts
-                ? {
-                      contents: {
-                          kind: "markdown",
-                          value: `\`${facts.displayName}\`\n\n${facts.kind} - ${facts.symbolId}`
-                      },
-                      range: offsetsToRange(document, offset, offset + identifierName.length)
-                  }
-                : null;
+            if (facts) {
+                return {
+                    contents: {
+                        kind: "markdown",
+                        value: `\`${facts.displayName}\`\n\n${facts.kind} - ${facts.symbolId}`
+                    },
+                    range: offsetsToRange(document, offset, offset + identifierName.length)
+                };
+            }
+
+            // Fallback: check if built-in
+            const builtIns = getBuiltInsMetadata();
+            let builtIn = builtIns[identifierName];
+            if (!builtIn) {
+                const nameLower = identifierName.toLowerCase();
+                const matchedKey = Object.keys(builtIns).find((k) => k.toLowerCase() === nameLower);
+                if (matchedKey) {
+                    builtIn = builtIns[matchedKey];
+                }
+            }
+
+            if (Core.isObjectLike(builtIn)) {
+                const info = builtIn as Record<string, unknown>;
+                const type = typeof info.type === "string" ? info.type : "unknown";
+                let markdown = `\`${identifierName}\`\n\nBuilt-in ${type}`;
+                if (typeof info.manualPath === "string" && info.manualPath.length > 0) {
+                    const manualUrl = `https://manual.gamemaker.io/monthly/en-US/#t=${encodeURIComponent(info.manualPath)}`;
+                    markdown += `\n\n[Open GameMaker Manual Page](${manualUrl})`;
+                }
+                return {
+                    contents: {
+                        kind: "markdown",
+                        value: markdown
+                    },
+                    range: offsetsToRange(document, offset, offset + identifierName.length)
+                };
+            }
+
+            return null;
         },
         async listDocumentSymbols(document) {
             const state = await ensureIndex(document);
@@ -325,10 +432,30 @@ export function createGmlSemanticIndex(): GmlSemanticIndex {
                 return [];
             }
 
-            return Semantic.searchNavigationWorkspaceSymbols(state.index, query, 50).map((symbol) => ({
+            const projectSymbols = Semantic.searchNavigationWorkspaceSymbols(state.index, query, 50).map((symbol) => ({
                 label: symbol.displayName,
                 kind: gmlSymbolKindToCompletionItemKind(symbol.kind)
             }));
+
+            const queryLower = query.toLowerCase();
+            const builtIns = getBuiltInsMetadata();
+            const matchingBuiltIns: CompletionItem[] = [];
+            for (const [name, rawInfo] of Object.entries(builtIns)) {
+                if (name.toLowerCase().includes(queryLower)) {
+                    const info = Core.isObjectLike(rawInfo) ? (rawInfo as Record<string, unknown>) : {};
+                    const type = typeof info.type === "string" ? info.type : "unknown";
+                    matchingBuiltIns.push({
+                        label: name,
+                        kind: gmlSymbolKindToCompletionItemKind(type),
+                        detail: `Built-in ${type}`
+                    });
+                    if (matchingBuiltIns.length >= 50) {
+                        break;
+                    }
+                }
+            }
+
+            return [...projectSymbols, ...matchingBuiltIns];
         },
         async planRename(document, offset, identifierName, newName) {
             const state = await ensureIndex(document);
