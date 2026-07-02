@@ -70,6 +70,7 @@ export type GmlHoverFacts = Readonly<{
 type ProjectIndexSource = Readonly<{
     identifiers: Record<string, unknown>;
     projectRoot: string;
+    relationships: Record<string, unknown>;
 }>;
 
 type LocationRecord = Readonly<{
@@ -225,6 +226,7 @@ function normalizeProjectIndexSource(projectIndex: unknown): ProjectIndexSource 
     const source = asRecord(projectIndex);
     const projectRoot = readString(source.projectRoot);
     const identifiers = asRecord(source.identifiers);
+    const relationships = asRecord(source.relationships);
 
     if (projectRoot === null) {
         return null;
@@ -232,7 +234,8 @@ function normalizeProjectIndexSource(projectIndex: unknown): ProjectIndexSource 
 
     return {
         projectRoot,
-        identifiers
+        identifiers,
+        relationships
     };
 }
 
@@ -248,6 +251,73 @@ function compareSymbols(left: GmlNavigationSymbol, right: GmlNavigationSymbol): 
 
 function listAllOccurrences(symbol: GmlNavigationSymbol): GmlNavigationOccurrence[] {
     return [...symbol.definitions, ...symbol.references].toSorted(compareOccurrencesByLocation);
+}
+
+function createScriptCallReference(
+    projectRoot: string,
+    symbol: GmlNavigationSymbol,
+    rawScriptCall: unknown
+): GmlNavigationOccurrence | null {
+    const scriptCall = asRecord(rawScriptCall);
+    const from = asRecord(scriptCall.from);
+    const location = readOccurrenceLocation(projectRoot, readString(from.filePath), scriptCall);
+    if (!location) {
+        return null;
+    }
+
+    return {
+        displayName: symbol.displayName,
+        kind: symbol.kind,
+        location,
+        name: symbol.name,
+        role: "reference",
+        scopeId: readString(from.scopeId),
+        symbolId: symbol.symbolId
+    };
+}
+
+function mergeScriptCallReferences(
+    projectRoot: string,
+    symbols: ReadonlyArray<GmlNavigationSymbol>,
+    relationships: Record<string, unknown>
+): GmlNavigationSymbol[] {
+    const scriptCalls = relationships.scriptCalls;
+    if (!Array.isArray(scriptCalls)) {
+        return [...symbols];
+    }
+
+    const referencesBySymbolId = new Map<string, GmlNavigationOccurrence[]>();
+    for (const rawScriptCall of scriptCalls) {
+        const target = asRecord(asRecord(rawScriptCall).target);
+        const targetScopeId = readString(target.scopeId);
+        const targetName = readString(target.name);
+        const symbol = symbols.find(
+            (candidate) =>
+                (targetScopeId !== null && candidate.symbolId === `script:${targetScopeId}`) ||
+                (targetName !== null && candidate.kind === "script" && candidate.name === targetName)
+        );
+        if (!symbol) {
+            continue;
+        }
+
+        const reference = createScriptCallReference(projectRoot, symbol, rawScriptCall);
+        if (!reference) {
+            continue;
+        }
+
+        const references = Core.getOrCreateMapEntry(referencesBySymbolId, symbol.symbolId, () => []);
+        references.push(reference);
+    }
+
+    return symbols.map((symbol) => {
+        const additionalReferences = referencesBySymbolId.get(symbol.symbolId) ?? [];
+        return additionalReferences.length === 0
+            ? symbol
+            : {
+                  ...symbol,
+                  references: [...symbol.references, ...additionalReferences].toSorted(compareOccurrencesByLocation)
+              };
+    });
 }
 
 function isOffsetInRange(offset: number, range: GmlNavigationRange): boolean {
@@ -281,9 +351,11 @@ export function createProjectNavigationIndex(projectIndex: unknown): GmlProjectN
         }
     }
 
+    const mergedSymbols = mergeScriptCallReferences(source.projectRoot, symbols, source.relationships);
+
     return {
         projectRoot: source.projectRoot,
-        symbols: symbols.toSorted(compareSymbols)
+        symbols: mergedSymbols.toSorted(compareSymbols)
     };
 }
 

@@ -151,24 +151,40 @@ async function refactorWorkspaceEditToLspWorkspaceEdit(
 ): Promise<WorkspaceEdit | null> {
     const changes: Record<string, TextEdit[]> = {};
 
-    for (const [filePath, edits] of workspace.groupByFile()) {
-        const sourceText = await fs.readFile(filePath, "utf8");
-        const document = createGmlTextDocument(filePathToUri(filePath), "gml", 0, sourceText);
-        changes[document.uri] = edits.map((edit) => ({
-            range: offsetsToRange(document, edit.start, edit.end),
-            newText: edit.newText
-        }));
+    const groupedTextEdits = await Promise.all(
+        [...workspace.groupByFile()].map(async ([filePath, edits]) => {
+            const sourceText = await fs.readFile(filePath, "utf8");
+            const document = createGmlTextDocument(filePathToUri(filePath), "gml", 0, sourceText);
+            return {
+                uri: document.uri,
+                edits: edits.map((edit) => ({
+                    range: offsetsToRange(document, edit.start, edit.end),
+                    newText: edit.newText
+                }))
+            };
+        })
+    );
+    for (const groupedTextEdit of groupedTextEdits) {
+        changes[groupedTextEdit.uri] = groupedTextEdit.edits;
     }
 
-    for (const metadataEdit of workspace.metadataEdits) {
-        const sourceText = await fs.readFile(metadataEdit.path, "utf8");
-        const document = createGmlTextDocument(filePathToUri(metadataEdit.path), "json", 0, sourceText);
-        const edits = changes[document.uri] ?? [];
-        edits.push({
-            range: offsetsToRange(document, 0, document.sourceText.length),
-            newText: metadataEdit.content
-        });
-        changes[document.uri] = edits;
+    const metadataTextEdits = await Promise.all(
+        workspace.metadataEdits.map(async (metadataEdit) => {
+            const sourceText = await fs.readFile(metadataEdit.path, "utf8");
+            const document = createGmlTextDocument(filePathToUri(metadataEdit.path), "json", 0, sourceText);
+            return {
+                uri: document.uri,
+                edit: {
+                    range: offsetsToRange(document, 0, document.sourceText.length),
+                    newText: metadataEdit.content
+                }
+            };
+        })
+    );
+    for (const metadataTextEdit of metadataTextEdits) {
+        const edits = changes[metadataTextEdit.uri] ?? [];
+        edits.push(metadataTextEdit.edit);
+        changes[metadataTextEdit.uri] = edits;
     }
 
     return Object.keys(changes).length > 0 ? { changes } : null;
