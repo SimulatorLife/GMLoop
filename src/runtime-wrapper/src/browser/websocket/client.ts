@@ -128,26 +128,23 @@ function applyIncomingPatchInternal(
         state.connectionMetrics.patchErrors += 1;
     };
 
-    if (wrapper && wrapper.trySafeApply) {
+    const applyPatchAndRecordOutcome = (applyPatch: (patch: Patch) => boolean): boolean => {
         const appliedStartAt = getHighResolutionTime();
-        const applied = applyPatchSafely(patch, wrapper, onError);
+        const applied = applyPatch(patch);
         if (applied) {
             recordSuccess(getHighResolutionTime() - appliedStartAt);
         } else {
             recordFailure();
         }
         return applied;
+    };
+
+    if (wrapper && wrapper.trySafeApply) {
+        return applyPatchAndRecordOutcome((p) => applyPatchSafely(p, wrapper, onError));
     }
 
     if (wrapper) {
-        const appliedStartAt = getHighResolutionTime();
-        const applied = applyPatchDirectly(patch, wrapper, onError);
-        if (applied) {
-            recordSuccess(getHighResolutionTime() - appliedStartAt);
-        } else {
-            recordFailure();
-        }
-        return applied;
+        return applyPatchAndRecordOutcome((p) => applyPatchDirectly(p, wrapper, onError));
     }
 
     return true;
