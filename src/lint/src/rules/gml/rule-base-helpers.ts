@@ -765,6 +765,95 @@ export function rewriteSourceLines(
     return rewrittenLines.join(lineEnding);
 }
 
+/**
+ * Structural description of a single source line paired with its absolute
+ * offset, used by lint rules that report per-line diagnostics and fixes.
+ */
+export type SourceLine = Readonly<{
+    startOffset: number;
+    text: string;
+}>;
+
+/**
+ * Splits `sourceText` into per-line records, capturing both the line text
+ * (with trailing line-ending removed) and the absolute offset of the line's
+ * first character.
+ *
+ * Centralises the per-line collection pattern that was previously duplicated
+ * across the doc-comment normalization rules (`normalize-doc-returns`,
+ * `normalize-doc-param-separators`, and
+ * `normalize-doc-param-undefined-defaults`). Each rule now calls this helper
+ * instead of re-implementing the split/offset bookkeeping.
+ *
+ * @param sourceText Full source text to slice.
+ * @returns The list of source-line records in source order.
+ */
+export function collectSourceLines(sourceText: string): ReadonlyArray<SourceLine> {
+    const lines: Array<SourceLine> = [];
+    const linePattern = /[^\r\n]*(?:\r\n|\r|\n|$)/gu;
+    let match: RegExpExecArray | null;
+    while ((match = linePattern.exec(sourceText)) !== null) {
+        const rawLine = match[0];
+        if (rawLine.length === 0 && match.index === sourceText.length) {
+            break;
+        }
+
+        lines.push({
+            startOffset: match.index,
+            text: rawLine.replace(/(?:\r\n|\r|\n)$/u, "")
+        });
+
+        if (linePattern.lastIndex === sourceText.length) {
+            break;
+        }
+    }
+
+    return lines;
+}
+
+/**
+ * Reports one ESLint diagnostic and autofix per source line whose text changes
+ * after applying `normalizeLine`.
+ *
+ * The fix rewrites the line's character range in place using
+ * `fixer.replaceTextRange`, so surrounding lines and their offsets are not
+ * affected. Rules pass a per-line `normalizeLine` callback (typically a
+ * regular-expression substitution) and rely on this helper to handle the
+ * line iteration, the equality short-circuit, the location resolution, and
+ * the fixer wiring.
+ *
+ * This consolidates the `reportXxxFixes` pattern that was previously
+ * copy-pasted into `normalize-doc-returns`,
+ * `normalize-doc-param-separators`, and
+ * `normalize-doc-param-undefined-defaults`. Each rule now delegates the
+ * boilerplate here and supplies only the per-line normalization function.
+ *
+ * @param context ESLint rule context whose `sourceCode` is inspected.
+ * @param definition Rule metadata whose `messageId` is used for diagnostics.
+ * @param normalizeLine Per-line transform; lines whose return value equals
+ *   the original text are skipped.
+ */
+export function reportLineTextFixes(
+    context: Rule.RuleContext,
+    definition: GmlRuleDefinition,
+    normalizeLine: (line: string) => string
+): void {
+    const sourceText = context.sourceCode.text;
+    for (const line of collectSourceLines(sourceText)) {
+        const normalizedLine = normalizeLine(line.text);
+        if (normalizedLine === line.text) {
+            continue;
+        }
+
+        context.report({
+            loc: resolveLocFromIndex(context, sourceText, line.startOffset),
+            messageId: definition.messageId,
+            fix: (fixer) =>
+                fixer.replaceTextRange([line.startOffset, line.startOffset + line.text.length], normalizedLine)
+        });
+    }
+}
+
 export function computeLineStartOffsets(sourceText: string): Array<number> {
     const offsets = [0];
     for (let index = 0; index < sourceText.length; index += 1) {

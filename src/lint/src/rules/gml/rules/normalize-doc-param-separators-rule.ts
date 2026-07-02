@@ -1,7 +1,7 @@
 import type { Rule } from "eslint";
 
 import type { GmlRuleDefinition } from "../index.js";
-import { createMeta, resolveLocFromIndex } from "../rule-base-helpers.js";
+import { createMeta, reportLineTextFixes } from "../rule-base-helpers.js";
 
 const paramDescriptionSeparatorPattern =
     /^(\s*\/\/\/\s*@param(?:\s+\{[^}\r\n]+\})?\s+(?:\[[^\]\r\n]+\]|[A-Za-z0-9_]+))\s+-\s+(.+)$/u;
@@ -13,34 +13,6 @@ function normalizeDocParamSeparatorLine(line: string): string {
     }
 
     return `${normalized[1]} ${normalized[2]}`;
-}
-
-type SourceLine = Readonly<{
-    startOffset: number;
-    text: string;
-}>;
-
-function collectSourceLines(sourceText: string): ReadonlyArray<SourceLine> {
-    const lines: Array<SourceLine> = [];
-    const linePattern = /[^\r\n]*(?:\r\n|\r|\n|$)/gu;
-    let match: RegExpExecArray | null;
-    while ((match = linePattern.exec(sourceText)) !== null) {
-        const rawLine = match[0];
-        if (rawLine.length === 0 && match.index === sourceText.length) {
-            break;
-        }
-
-        lines.push({
-            startOffset: match.index,
-            text: rawLine.replace(/(?:\r\n|\r|\n)$/u, "")
-        });
-
-        if (linePattern.lastIndex === sourceText.length) {
-            break;
-        }
-    }
-
-    return lines;
 }
 
 /**
@@ -58,23 +30,6 @@ export function sanitizeDocCommentParamDescriptionSeparators(text: string): stri
         .join(lineEnding);
 }
 
-function reportDocParamSeparatorFixes(context: Rule.RuleContext, definition: GmlRuleDefinition): void {
-    const sourceText = context.sourceCode.text;
-    for (const line of collectSourceLines(sourceText)) {
-        const normalizedLine = normalizeDocParamSeparatorLine(line.text);
-        if (normalizedLine === line.text) {
-            continue;
-        }
-
-        context.report({
-            loc: resolveLocFromIndex(context, sourceText, line.startOffset),
-            messageId: definition.messageId,
-            fix: (fixer) =>
-                fixer.replaceTextRange([line.startOffset, line.startOffset + line.text.length], normalizedLine)
-        });
-    }
-}
-
 /**
  * Creates the rule module that owns single-line `@param` description
  * separator cleanup.
@@ -90,7 +45,7 @@ export function createNormalizeDocParamSeparatorsRule(definition: GmlRuleDefinit
         create(context: Rule.RuleContext): Rule.RuleListener {
             return {
                 Program() {
-                    reportDocParamSeparatorFixes(context, definition);
+                    reportLineTextFixes(context, definition, normalizeDocParamSeparatorLine);
                 }
             };
         }
