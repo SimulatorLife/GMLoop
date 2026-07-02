@@ -1,5 +1,11 @@
 {
   "mcpServers": {
+    "lsp": {
+      "type": "stdio",
+      "command": "pnpm",
+      "tools": ["*"],
+      "args": ["exec", "lsp-mcp-server"]
+    },
     "playwright": {
       "type": "stdio",
       "command": "npx",

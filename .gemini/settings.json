@@ -56,6 +56,11 @@
   },
   "useWriteTodos": false,
   "mcpServers": {
+    "lsp": {
+      "command": "pnpm",
+      "args": ["exec", "lsp-mcp-server"],
+      "timeout": 600000
+    },
     "playwright": {
       "command": "npx",
       "args": [

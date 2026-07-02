@@ -135,6 +135,12 @@
     ]
   },
   "mcpServers": {
+    "lsp": {
+      "command": "pnpm",
+      "args": ["exec", "lsp-mcp-server"],
+      "timeout": 600000,
+      "trust": true
+    },
     "playwright": {
       "command": "npx",
       "args": [

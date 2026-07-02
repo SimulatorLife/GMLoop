@@ -32,6 +32,12 @@ args = [
 enabled = true
 default_tools_approval_mode = "approve"
 
+[mcp_servers.lsp]
+command = "pnpm"
+args = ["exec", "lsp-mcp-server"]
+enabled = true
+default_tools_approval_mode = "approve"
+
 [features]
 shell_snapshot = true           # Speed up repeated commands
 unified_exec = true
