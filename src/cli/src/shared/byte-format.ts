@@ -146,7 +146,7 @@ function formatByteSize(
     let formattedValue = value.toFixed(decimalPlaces);
 
     if (trimTrailingZeros && decimalPlaces > 0) {
-        formattedValue = formattedValue.replace(/(?:\.0+|(\.\d*?[1-9])0+)$/, "$1");
+        formattedValue = formattedValue.replace(/(?:\.0+|(?<trim>\.\d*?[1-9])0+)$/, "$<trim>");
     }
 
     const unitSeparator = typeof separator === "string" ? separator : "";
