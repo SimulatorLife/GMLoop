@@ -15,6 +15,7 @@ const PROJECT_SKILLS_RELATIVE_PATH = ".agents/skills";
 const PROJECT_GITIGNORE_RELATIVE_PATH = ".gitignore";
 const PROJECT_GITIGNORE_SECTION_HEADING = "# GMLoop generated files";
 const GMLOOP_SKILL_NAME_PREFIX = "gmloop-";
+const SYNCHRONIZATION_MANAGED_FILE = "managed-file";
 
 /** Installation state for the agent pack in one GameMaker project. */
 export type AgentPackProjectStatusKind = "current" | "not-installed" | "update-available";
@@ -252,14 +253,14 @@ async function readAgentPackResourceSources(): Promise<ReadonlyArray<AgentPackRe
             kind: "template",
             packagePath: "templates/project-agents.md",
             sourcePath: PROJECT_GUIDANCE_TEMPLATE_PATH,
-            synchronization: "managed-file",
+            synchronization: SYNCHRONIZATION_MANAGED_FILE,
             targetPath: "AGENTS.md"
         },
         {
             kind: "template",
             packagePath: "templates/project-lsp-mcp.json",
             sourcePath: PROJECT_LSP_MCP_TEMPLATE_PATH,
-            synchronization: "managed-file",
+            synchronization: SYNCHRONIZATION_MANAGED_FILE,
             targetPath: ".lsp-mcp.json"
         },
         {
@@ -273,7 +274,7 @@ async function readAgentPackResourceSources(): Promise<ReadonlyArray<AgentPackRe
             kind: "skill" as const,
             packagePath: path.posix.join("skills", ...relativePath.split(path.sep)),
             sourcePath: path.join(AGENT_PACK_SKILLS_ROOT, relativePath),
-            synchronization: "managed-file" as const,
+            synchronization: SYNCHRONIZATION_MANAGED_FILE,
             targetPath: path.posix.join(PROJECT_SKILLS_RELATIVE_PATH, ...relativePath.split(path.sep))
         }))
     ]);
@@ -282,7 +283,7 @@ async function readAgentPackResourceSources(): Promise<ReadonlyArray<AgentPackRe
 async function readPackagedProjectFiles(): Promise<ReadonlyArray<PackagedProjectFile>> {
     const resourceSources = await readAgentPackResourceSources();
     const sourceEntries = resourceSources
-        .filter((entry) => entry.synchronization === "managed-file")
+        .filter((entry) => entry.synchronization === SYNCHRONIZATION_MANAGED_FILE)
         .sort((left, right) => left.targetPath.localeCompare(right.targetPath));
 
     return Object.freeze(

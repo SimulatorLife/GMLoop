@@ -56,11 +56,6 @@ export type GmlSemanticIndex = Readonly<{
     searchWorkspaceSymbols(document: GmlTextDocument, query: string): Promise<WorkspaceSymbol[]>;
 }>;
 
-function isPathInside(rootPath: string, filePath: string): boolean {
-    const relativePath = path.relative(path.resolve(rootPath), path.resolve(filePath));
-    return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
-}
-
 async function readDocumentForLocation(
     openedDocument: GmlTextDocument,
     location: NavigationOccurrence["location"]
@@ -205,13 +200,13 @@ function createLspFsFacade(documents: GmlDocumentStore, baseFs: FsFacade = Core.
             if (openDoc) {
                 return openDoc.sourceText;
             }
-            return baseFs.readFile(filePath, encoding);
+            return await baseFs.readFile(filePath, encoding);
         },
         async stat(filePath) {
             const resolvedPath = path.resolve(filePath);
             const openDoc = documents.list().find((doc) => path.resolve(doc.filePath) === resolvedPath);
             if (openDoc) {
-                let baseStats = { mtimeMs: Date.now() };
+                let baseStats: { mtimeMs?: number } = { mtimeMs: Date.now() };
                 try {
                     baseStats = await baseFs.stat(filePath);
                 } catch {
@@ -284,17 +279,18 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         }
 
         let inFlight = inFlightBuilds.get(resolvedRoot);
-        if (!inFlight) {
-            inFlight = buildSemanticIndexForDocument(document, fsFacade)
-                .then((state) => {
-                    if (state) {
-                        cachedStates.set(resolvedRoot, state);
-                    }
-                    return state;
-                })
-                .finally(() => {
-                    inFlightBuilds.delete(resolvedRoot);
-                });
+        if (inFlight === undefined) {
+            const buildPromise = (async () => {
+                const state = await buildSemanticIndexForDocument(document, fsFacade);
+                if (state) {
+                    cachedStates.set(resolvedRoot, state);
+                }
+                return state;
+            })();
+
+            inFlight = buildPromise.finally(() => {
+                inFlightBuilds.delete(resolvedRoot);
+            });
             inFlightBuilds.set(resolvedRoot, inFlight);
         }
 
