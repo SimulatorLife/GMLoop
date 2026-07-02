@@ -132,7 +132,6 @@ jobs:
             reports/lcov.info
             reports/jscpd-report.json
             reports/project-health.json
-            reports/tree.txt
           retention-days: 7
 
   summarize:

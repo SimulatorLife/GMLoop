@@ -1,6 +1,7 @@
 // Import all domain modules with namespace prefixes to organize the public API
 import * as GraphIndex from "./graph-index/index.js";
 import * as IdentifierCase from "./identifier-case/index.js";
+import * as Navigation from "./navigation/index.js";
 import * as ProjectIndex from "./project-index/index.js";
 import * as Scopes from "./scopes/index.js";
 import * as Symbols from "./symbols/index.js";
@@ -11,11 +12,13 @@ import * as Symbols from "./symbols/index.js";
 export const Semantic = Object.freeze({
     ...GraphIndex,
     ...IdentifierCase,
+    ...Navigation,
     ...ProjectIndex,
     ...Scopes,
     ...Symbols,
     GraphIndex,
     IdentifierCase,
+    Navigation,
     ProjectIndex,
     Scopes,
     Symbols
