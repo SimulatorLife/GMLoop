@@ -2216,12 +2216,11 @@ void test("buildGraphIndex projects GameMaker folders as resource nodes for visu
                 .get(folderNodeId) as
                 | { displayName: string; kind: string; name: string; resourcePath: string }
                 | undefined;
-            assert.deepEqual(folderNode, {
-                displayName: "Rooms",
-                kind: "folder",
-                name: "Rooms",
-                resourcePath: "folders/Rooms.yy"
-            });
+            assert.ok(folderNode, "expected graph database to include the folder resource node");
+            assert.equal(folderNode.displayName, "Rooms");
+            assert.equal(folderNode.kind, "folder");
+            assert.equal(folderNode.name, "Rooms");
+            assert.equal(folderNode.resourcePath, "folders/Rooms.yy");
 
             const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
             assert.ok(
