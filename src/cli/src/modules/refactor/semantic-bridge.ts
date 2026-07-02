@@ -3105,7 +3105,9 @@ export class GmlSemanticBridge {
         const indexes = this.getIndexes();
         const resourceSymbolMatch = symbolId.match(/^gml\/([^/]+)\/(.+)$/);
         if (resourceSymbolMatch && this.isResourceSymbolId(symbolId)) {
-            const resource = this.findResourceByName(resourceSymbolMatch[2]);
+            const resource =
+                this.findResourceByName(resourceSymbolMatch[2]) ??
+                this.findResourceByName(resourceSymbolMatch[2], true);
             return resource === null ? null : this.createSyntheticResourceEntry(resource, symbolId);
         }
 
@@ -3372,12 +3374,15 @@ export class GmlSemanticBridge {
     }
 
     private getResourceNamingCategory(
-        resource: { path?: string | null; resourceType?: string | null } | null | undefined
+        resource: SemanticResourceRecord | null | undefined
     ): BridgeNamingConventionTarget["category"] | null {
         const resourceType = resource?.resourceType;
         switch (resourceType) {
             case "GMScript": {
-                const declarationCategory = this.getScriptResourceDeclarationNamingCategory(resource?.path);
+                const declarationCategory = this.getScriptResourceDeclarationNamingCategory(
+                    resource?.path,
+                    resource?.name
+                );
                 if (declarationCategory !== null) {
                     return declarationCategory;
                 }
@@ -3437,35 +3442,31 @@ export class GmlSemanticBridge {
     }
 
     private getScriptResourceDeclarationNamingCategory(
-        resourcePath: string | null | undefined
+        resourcePath: string | null | undefined,
+        resourceName: string | null | undefined
     ): Extract<BridgeNamingConventionTarget["category"], "constructorFunction" | "structDeclaration"> | null {
-        if (!Core.isNonEmptyString(resourcePath)) {
+        if (!Core.isNonEmptyString(resourcePath) || !Core.isNonEmptyString(resourceName)) {
             return null;
         }
 
         const declarations = this.getScriptCallableDeclarationsForResource(resourcePath);
-        if (declarations.length === 0) {
+        if (declarations.length !== 1) {
             return null;
         }
 
-        let hasConstructor = false;
-        let hasStruct = false;
-
-        for (const { entry } of declarations) {
-            const declarationKinds = this.extractDeclarationKinds(entry);
-            if (declarationKinds.has("constructor")) {
-                hasConstructor = true;
-            }
-            if (declarationKinds.has("struct")) {
-                hasStruct = true;
-            }
+        const [{ declaration, entry }] = declarations;
+        if (declaration.name !== resourceName) {
+            return null;
         }
 
-        if (hasConstructor) {
-            return "constructorFunction";
-        }
-        if (hasStruct) {
-            return "structDeclaration";
+        const category = this.getScriptCallableNamingCategory(
+            entry,
+            declaration,
+            true,
+            this.extractDeclarationKinds(entry)
+        );
+        if (category === "constructorFunction" || category === "structDeclaration") {
+            return category;
         }
 
         return null;
