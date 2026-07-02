@@ -52,8 +52,8 @@ void test("agent pack exposes every packaged template and skill for read-only pr
     ]);
 
     assert.deepEqual(
-        resources.slice(0, 2).map((resource) => resource.targetPath),
-        ["AGENTS.md", ".gitignore"]
+        resources.slice(0, 3).map((resource) => resource.targetPath),
+        ["AGENTS.md", ".lsp-mcp.json", ".gitignore"]
     );
     assert.deepEqual(
         resources.filter((resource) => resource.kind === "skill").map((resource) => resource.targetPath),
@@ -65,8 +65,10 @@ void test("agent pack exposes every packaged template and skill for read-only pr
     );
     assert.equal(resources[0]?.packagePath, "templates/project-agents.md");
     assert.match(resources[0]?.content ?? "", /# Autonomous Game Development Guidance/u);
-    assert.equal(resources[1]?.packagePath, "templates/project-gitignore");
-    assert.match(resources[1]?.content ?? "", /\.gmloop\//u);
+    assert.equal(resources[1]?.packagePath, "templates/project-lsp-mcp.json");
+    assert.match(resources[1]?.content ?? "", /gmloop/u);
+    assert.equal(resources[2]?.packagePath, "templates/project-gitignore");
+    assert.match(resources[2]?.content ?? "", /\.gmloop\//u);
 });
 
 void test("agent pack initialization installs skills, project guidance, and a version receipt", async () => {
@@ -94,11 +96,14 @@ void test("agent pack initialization installs skills, project guidance, and a ve
         assert.match(toolingSkillSource, /semantic rename transaction/u);
         assert.doesNotMatch(toolingSkillSource, /gmloop_[a-z]/u);
         assert.ok(result.added.includes("AGENTS.md"));
+        assert.ok(result.added.includes(".lsp-mcp.json"));
         assert.ok(result.added.includes(".gitignore"));
         assert.equal(
             await readFile(path.join(fixture.projectRoot, ".gitignore"), "utf8"),
             "# GMLoop generated files\n.gmloop/\n.gmcache/\nnode_modules/\n.playwright-mcp/\n.agents/skills/**/gmloop-*\ncache/\nrepomix-output.xml\n"
         );
+        const lspMcpConfig = await readFile(path.join(fixture.projectRoot, ".lsp-mcp.json"), "utf8");
+        assert.match(lspMcpConfig, /"id": "gml"/u);
         const projectGuidance = await readFile(path.join(fixture.projectRoot, "AGENTS.md"), "utf8");
         assert.match(projectGuidance, /# Autonomous Game Development Guidance/u);
         assert.match(projectGuidance, /## Autonomous Iteration Loop/u);

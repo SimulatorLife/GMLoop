@@ -9,6 +9,7 @@ const AGENT_PACK_ROOT = path.dirname(fileURLToPath(import.meta.resolve(`${AGENT_
 const AGENT_PACK_SKILLS_ROOT = path.join(AGENT_PACK_ROOT, "skills");
 const PROJECT_GUIDANCE_TEMPLATE_PATH = path.join(AGENT_PACK_ROOT, "templates", "project-agents.md");
 const PROJECT_GITIGNORE_TEMPLATE_PATH = path.join(AGENT_PACK_ROOT, "templates", "project-gitignore");
+const PROJECT_LSP_MCP_TEMPLATE_PATH = path.join(AGENT_PACK_ROOT, "templates", "project-lsp-mcp.json");
 const PROJECT_RECEIPT_RELATIVE_PATH = ".gmloop/agent-pack.json";
 const PROJECT_SKILLS_RELATIVE_PATH = ".agents/skills";
 const PROJECT_GITIGNORE_RELATIVE_PATH = ".gitignore";
@@ -253,6 +254,13 @@ async function readAgentPackResourceSources(): Promise<ReadonlyArray<AgentPackRe
             sourcePath: PROJECT_GUIDANCE_TEMPLATE_PATH,
             synchronization: "managed-file",
             targetPath: "AGENTS.md"
+        },
+        {
+            kind: "template",
+            packagePath: "templates/project-lsp-mcp.json",
+            sourcePath: PROJECT_LSP_MCP_TEMPLATE_PATH,
+            synchronization: "managed-file",
+            targetPath: ".lsp-mcp.json"
         },
         {
             kind: "template",
