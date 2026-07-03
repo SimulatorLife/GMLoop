@@ -286,6 +286,27 @@
   font-variant-numeric: tabular-nums;
 }
 
+.live-reload-detail-list dd {
+  display: flex;
+  align-items: center;
+  gap: var(--gm-space-sm);
+}
+
+.live-reload-endpoint-value {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.live-reload-endpoint-copy {
+  flex: 0 0 auto;
+}
+
+.live-reload-endpoint-copy .gm-copy-button {
+  min-width: var(--gm-height-xl);
+  padding: 0;
+  justify-content: center;
+}
+
 .live-reload-detail-list code {
   display: block;
   max-width: 100%;
@@ -329,5 +350,9 @@
   .live-reload-detail-list div,
   .live-reload-session-list div {
     grid-template-columns: 1fr;
+  }
+
+  .live-reload-detail-list dd {
+    align-items: flex-start;
   }
 }
