@@ -785,6 +785,27 @@ function hasConfiguredRuleInNamingCategoryChain(policy: NamingConventionPolicy, 
     return false;
 }
 
+function isGlobalLocalCollisionNamingTarget(target: NamingConventionTarget): boolean {
+    if (target.category === "enumMember") {
+        return false;
+    }
+
+    if (target.symbolId !== null) {
+        return true;
+    }
+
+    const { category } = target;
+    return (
+        category.endsWith("ResourceName") ||
+        category === "constructorFunction" ||
+        category === "function" ||
+        category === "structDeclaration" ||
+        category === "enum" ||
+        category === "macro" ||
+        category === "globalVariable"
+    );
+}
+
 function appendTopLevelRenameOnce(
     topLevelRenames: Array<{ symbolId: string; newName: string }>,
     seenTopLevelRenames: Set<string>,
@@ -953,12 +974,7 @@ export async function planNamingConventionCodemod(
     // Collect all global asset/resource names (both original and suggested renamed ones)
     const globalAssetNames = new Set<string>();
     for (const target of queriedTargets) {
-        if (
-            target.symbolId !== null ||
-            target.category.endsWith("ResourceName") ||
-            target.category === "constructorFunction" ||
-            target.category === "function"
-        ) {
+        if (isGlobalLocalCollisionNamingTarget(target)) {
             globalAssetNames.add(target.name.toLowerCase());
             const evaluation = evaluateNamingConvention(target.name, target.category, policy, resolvedRules, {
                 includeMessage: false

@@ -354,6 +354,24 @@ function isIdentifierTokenAt(sourceText: string, startIndex: number, identifierN
     );
 }
 
+function findIdentifierEndIndex(sourceText: string, startIndex: number): number {
+    let cursor = startIndex;
+    while (cursor < sourceText.length && /[A-Za-z0-9_]/u.test(sourceText[cursor] ?? "")) {
+        cursor += 1;
+    }
+
+    return cursor;
+}
+
+function isCallExpressionCalleeAt(sourceText: string, endIndex: number): boolean {
+    let cursor = endIndex;
+    while (cursor < sourceText.length && /\s/u.test(sourceText[cursor] ?? "")) {
+        cursor += 1;
+    }
+
+    return sourceText[cursor] === "(";
+}
+
 function escapeRegExpLiteral(value: string): string {
     return value.replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`);
 }
@@ -635,6 +653,7 @@ export class GmlSemanticBridge {
     private readonly diskIdentifierOccurrenceIndexesByFilePath = new Map<string, GmlIdentifierOccurrenceIndex | null>();
     private diskOccurrencesBySymbolName: Map<string, Array<SymbolOccurrence>> | null = null;
     private constructorStaticMemberNameCounts: Map<string, number> | null = null;
+    private sourceBackedDottedCallOccurrencesByName: Map<string, Array<SymbolOccurrence>> | null = null;
     private constructorRuntimeTypeReferencesByExactName: Map<
         string,
         Array<Pick<SymbolOccurrence, "end" | "path" | "start">>
@@ -692,6 +711,7 @@ export class GmlSemanticBridge {
         this.localReferenceOccurrencesByFilePath.clear();
         this.localNamingCategoryResolver.clear();
         this.constructorStaticMemberNameCounts = null;
+        this.sourceBackedDottedCallOccurrencesByName = null;
         this.constructorRuntimeTypeReferencesByExactName = null;
         this.enumNames = null;
         this.macroBodyReferencesByExactName = null;
@@ -3982,12 +4002,99 @@ export class GmlSemanticBridge {
             });
         }
 
+        this.collectSourceBackedConstructorStaticMemberDottedOccurrences(symbolName, collected);
+
         if (collected.length > 0 && (this.getConstructorStaticMemberNameCounts().get(symbolName) ?? 0) !== 1) {
             return false;
         }
 
         occurrences.push(...collected);
         return true;
+    }
+
+    private collectSourceBackedConstructorStaticMemberDottedOccurrences(
+        symbolName: string,
+        occurrences: Array<SymbolOccurrence>
+    ): void {
+        if (!Core.isNonEmptyString(symbolName)) {
+            return;
+        }
+
+        occurrences.push(...(this.getSourceBackedDottedCallOccurrencesByName().get(symbolName) ?? []));
+    }
+
+    private getSourceBackedDottedCallOccurrencesByName(): Map<string, Array<SymbolOccurrence>> {
+        const existingIndex = this.sourceBackedDottedCallOccurrencesByName;
+        if (existingIndex !== null) {
+            return existingIndex;
+        }
+
+        const dottedCallOccurrencesByName = new Map<string, Array<SymbolOccurrence>>();
+        for (const filePath of Object.keys(this.projectIndex.files ?? {})) {
+            if (!filePath.endsWith(".gml")) {
+                continue;
+            }
+
+            const sourceText = this.readProjectSourceText(filePath);
+            if (sourceText === null) {
+                continue;
+            }
+
+            this.collectDottedIdentifierOccurrencesFromSource({
+                filePath,
+                sourceText,
+                occurrencesByName: dottedCallOccurrencesByName
+            });
+        }
+
+        this.sourceBackedDottedCallOccurrencesByName = dottedCallOccurrencesByName;
+        return dottedCallOccurrencesByName;
+    }
+
+    private collectDottedIdentifierOccurrencesFromSource(parameters: {
+        filePath: string;
+        sourceText: string;
+        occurrencesByName: Map<string, Array<SymbolOccurrence>>;
+    }): void {
+        const scanState = Core.createStringCommentScanState();
+        const sourceLength = parameters.sourceText.length;
+        let index = 0;
+
+        while (index < sourceLength) {
+            const scannedIndex = Core.advanceStringCommentScan(
+                parameters.sourceText,
+                sourceLength,
+                index,
+                scanState,
+                true
+            );
+            if (scannedIndex !== index) {
+                index = scannedIndex;
+                continue;
+            }
+
+            if (
+                isIdentifierBoundary(parameters.sourceText[index - 1]) &&
+                /[A-Za-z_]/u.test(parameters.sourceText[index] ?? "") &&
+                this.readDottedReferenceOwnerName(parameters.filePath, index) !== null &&
+                isCallExpressionCalleeAt(parameters.sourceText, findIdentifierEndIndex(parameters.sourceText, index))
+            ) {
+                const end = findIdentifierEndIndex(parameters.sourceText, index);
+                const name = parameters.sourceText.slice(index, end);
+                const occurrences = parameters.occurrencesByName.get(name) ?? [];
+                occurrences.push({
+                    path: parameters.filePath,
+                    start: index,
+                    end,
+                    kind: "reference"
+                });
+                parameters.occurrencesByName.set(name, occurrences);
+                index = end;
+                continue;
+            }
+
+            index += 1;
+        }
     }
 
     private isConstructorStaticMemberBareCallReferenceSourceMatch(

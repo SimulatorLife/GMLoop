@@ -2708,6 +2708,105 @@ void describe("GmlSemanticBridge tests", () => {
         }
     });
 
+    void it("listNamingConventionTargets supplements constructor static member references from dotted source calls", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-static-member-source-"));
+        const timerFilePath = "scripts/Timer/Timer.gml";
+        const curveFilePath = "scripts/CurveHandlerTimed/CurveHandlerTimed.gml";
+        const timerSource = [
+            "function Timer() constructor {",
+            "    self.multiplier = 1;",
+            "",
+            "    static get_multiplier = function() {",
+            "        return self.multiplier;",
+            "    };",
+            "}",
+            ""
+        ].join("\n");
+        const curveSource = [
+            "function CurveHandlerTimed() constructor {",
+            "    self.timer = new Timer();",
+            "",
+            "    static set_curve_config = function(speed_multiplier) {",
+            "        if (speed_multiplier != timer.get_multiplier()) {",
+            "            timer.get_multiplier();",
+            "        }",
+            "    };",
+            "}",
+            ""
+        ].join("\n");
+
+        try {
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "Timer"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "CurveHandlerTimed"), { recursive: true });
+            fs.writeFileSync(path.join(tmpRoot, timerFilePath), timerSource, "utf8");
+            fs.writeFileSync(path.join(tmpRoot, curveFilePath), curveSource, "utf8");
+
+            const declarationStart = findNthIndex(timerSource, "get_multiplier", 1);
+            const firstCallStart = findNthIndex(curveSource, "get_multiplier", 1);
+            const secondCallStart = findNthIndex(curveSource, "get_multiplier", 2);
+
+            const mockProjectIndex = {
+                identifiers: {},
+                files: {
+                    [timerFilePath]: {
+                        declarations: [
+                            {
+                                name: "get_multiplier",
+                                scopeId: "scope:timer",
+                                classifications: ["variable"],
+                                start: { index: declarationStart },
+                                end: { index: declarationStart + "get_multiplier".length - 1 }
+                            }
+                        ],
+                        references: []
+                    },
+                    [curveFilePath]: {
+                        declarations: [],
+                        references: []
+                    }
+                }
+            };
+
+            const bridge = new GmlSemanticBridge(mockProjectIndex, tmpRoot);
+            const targets = await bridge.listNamingConventionTargets([timerFilePath], ["staticVariable"]);
+            const target = targets.find(
+                (candidate) => candidate.category === "staticVariable" && candidate.name === "get_multiplier"
+            );
+
+            assert.ok(target);
+            assert.deepEqual(
+                target.occurrences.map((occurrence) => ({
+                    end: occurrence.end,
+                    kind: occurrence.kind,
+                    path: occurrence.path,
+                    start: occurrence.start
+                })),
+                [
+                    {
+                        end: declarationStart + "get_multiplier".length,
+                        kind: "definition",
+                        path: timerFilePath,
+                        start: declarationStart
+                    },
+                    {
+                        end: firstCallStart + "get_multiplier".length,
+                        kind: "reference",
+                        path: curveFilePath,
+                        start: firstCallStart
+                    },
+                    {
+                        end: secondCallStart + "get_multiplier".length,
+                        kind: "reference",
+                        path: curveFilePath,
+                        start: secondCallStart
+                    }
+                ]
+            );
+        } finally {
+            fs.rmSync(tmpRoot, { recursive: true, force: true });
+        }
+    });
+
     void it("listNamingConventionTargets keeps plain functions in mixed multi-callable scripts out of structDeclaration fallback", async () => {
         const mockProjectIndex = {
             resources: {
