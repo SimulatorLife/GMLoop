@@ -69,6 +69,18 @@ const PAGE_MAIN_SECTION_ID: Readonly<Record<GraphVisualizationUiPage, string>> =
     playground: "playground-page"
 });
 
+function resolveServerRelativeApiEndpoint(pathname: string): string | null {
+    if (globalThis.location === undefined) {
+        return null;
+    }
+
+    try {
+        return new URL(pathname, globalThis.location.href).toString();
+    } catch {
+        return null;
+    }
+}
+
 /**
  * Root app shell that composes header, toolbar, and graph/docs/config surfaces.
  *
@@ -447,8 +459,13 @@ export class GmAppShell extends LightDomLitElement {
     #reconnectTimer: ReturnType<typeof setInterval> | null = null;
 
     async #pollReconnectedFixWorkflowProgress(workflow: GraphVisualizationProjectWorkflow): Promise<void> {
+        const progressEndpoint = resolveServerRelativeApiEndpoint("/api/fix/progress");
+        if (progressEndpoint === null) {
+            return;
+        }
+
         try {
-            const pollResponse = await fetch("/api/fix/progress", {
+            const pollResponse = await fetch(progressEndpoint, {
                 cache: "no-store",
                 headers: { Accept: "application/json" }
             });
@@ -485,8 +502,13 @@ export class GmAppShell extends LightDomLitElement {
             return;
         }
 
+        const progressEndpoint = resolveServerRelativeApiEndpoint("/api/fix/progress");
+        if (progressEndpoint === null) {
+            return;
+        }
+
         try {
-            const response = await fetch("/api/fix/progress", {
+            const response = await fetch(progressEndpoint, {
                 cache: "no-store",
                 headers: { Accept: "application/json" }
             });
