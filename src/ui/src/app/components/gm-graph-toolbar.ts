@@ -176,33 +176,45 @@ function resolveDocsStatusSummary(model: GraphVisualizationUiModel, state: Graph
  * Return true when toolbar keyboard shortcuts should yield to native text entry.
  */
 export function isToolbarKeyboardShortcutTextEntryTarget(target: EventTarget | null): boolean {
-    if (target && "tagName" in target && typeof target.tagName === "string") {
-        const tagName = target.tagName.toUpperCase();
-        if (tagName === "TEXTAREA" || tagName === "SELECT") {
-            return true;
+    const check = (el: EventTarget | null): boolean => {
+        if (el && "tagName" in el && typeof el.tagName === "string") {
+            const tagName = el.tagName.toUpperCase();
+            if (tagName === "TEXTAREA" || tagName === "SELECT") {
+                return true;
+            }
+
+            if (tagName === "INPUT") {
+                const inputType = ((el as any).type || "text").toLowerCase();
+                return !["button", "checkbox", "color", "file", "image", "radio", "range", "reset", "submit"].includes(
+                    inputType
+                );
+            }
         }
 
-        if (tagName === "INPUT") {
-            const inputType = ((target as any).type || "text").toLowerCase();
-            return !["button", "checkbox", "color", "file", "image", "radio", "range", "reset", "submit"].includes(
-                inputType
-            );
+        if (typeof Element !== "undefined" && el instanceof Element) {
+            if (el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) {
+                return true;
+            }
+
+            if (el instanceof HTMLInputElement) {
+                const inputType = el.type.toLowerCase();
+                return !["button", "checkbox", "color", "file", "image", "radio", "range", "reset", "submit"].includes(
+                    inputType
+                );
+            }
+
+            return typeof HTMLElement !== "undefined" && el instanceof HTMLElement && el.isContentEditable;
         }
+
+        return false;
+    };
+
+    if (check(target)) {
+        return true;
     }
 
-    if (typeof Element !== "undefined" && target instanceof Element) {
-        if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) {
-            return true;
-        }
-
-        if (target instanceof HTMLInputElement) {
-            const inputType = target.type.toLowerCase();
-            return !["button", "checkbox", "color", "file", "image", "radio", "range", "reset", "submit"].includes(
-                inputType
-            );
-        }
-
-        return typeof HTMLElement !== "undefined" && target instanceof HTMLElement && target.isContentEditable;
+    if (typeof document !== "undefined" && document.activeElement && check(document.activeElement)) {
+        return true;
     }
 
     return false;

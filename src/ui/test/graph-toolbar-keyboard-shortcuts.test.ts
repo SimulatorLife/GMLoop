@@ -192,3 +192,23 @@ void test("isToolbarKeyboardShortcutTextEntryTarget returns true for targets wit
     assert.equal(isToolbarKeyboardShortcutTextEntryTarget(dummyTargetSelect), true);
     assert.equal(isToolbarKeyboardShortcutTextEntryTarget(dummyTargetButtonInput), false);
 });
+
+void test("isToolbarKeyboardShortcutTextEntryTarget falls back to document.activeElement when the target is null or unrecognised", () => {
+    const originalDocument = (globalThis as any).document;
+    const dummyInput = { tagName: "INPUT", type: "search" } as unknown as HTMLElement;
+
+    try {
+        (globalThis as any).document = {
+            activeElement: dummyInput
+        };
+
+        assert.equal(isToolbarKeyboardShortcutTextEntryTarget(null), true);
+        assert.equal(isToolbarKeyboardShortcutTextEntryTarget({ tagName: "DIV" } as unknown as EventTarget), true);
+    } finally {
+        if (originalDocument === undefined) {
+            delete (globalThis as any).document;
+        } else {
+            (globalThis as any).document = originalDocument;
+        }
+    }
+});
