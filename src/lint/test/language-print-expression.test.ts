@@ -61,3 +61,30 @@ void test("printExpression preserves parser member accessors for MemberIndexExpr
 
     assertEquals(rendered, "_player_verb_struct[$_verb_array[_i]]");
 });
+
+void test("printExpression parenthesizes nested ternary branches", () => {
+    const rendered = printExpression(
+        {
+            type: "ConditionalExpression",
+            test: { type: "Identifier", name: "outer" },
+            consequent: {
+                type: "ConditionalExpression",
+                test: { type: "Identifier", name: "leftCondition" },
+                consequent: { type: "Identifier", name: "leftValue" },
+                alternate: { type: "Identifier", name: "leftFallback" }
+            },
+            alternate: {
+                type: "ConditionalExpression",
+                test: { type: "Identifier", name: "rightCondition" },
+                consequent: { type: "Identifier", name: "rightValue" },
+                alternate: { type: "Identifier", name: "rightFallback" }
+            }
+        },
+        ""
+    );
+
+    assertEquals(
+        rendered,
+        "outer ? (leftCondition ? leftValue : leftFallback) : (rightCondition ? rightValue : rightFallback)"
+    );
+});

@@ -1904,7 +1904,7 @@ void test("optimize-logical-flow parenthesizes nested ternary consequents in aut
     );
 });
 
-void test("optimize-logical-flow preserves binary expression precedence in assignment ternary autofix", () => {
+void test("optimize-logical-flow parenthesizes alternate nested ternaries in assignment ternary autofix", () => {
     const input = [
         "function group_smf(time, ta, tb, tc) {",
         "    if (time < tb) {",
@@ -1922,9 +1922,9 @@ void test("optimize-logical-flow preserves binary expression precedence in assig
     assert.ok(result.messages.length > 0, "optimize-logical-flow should report diagnostics");
     assert.ok(
         result.output.includes(
-            "d = time < tb ? (time - mean(ta, tb)) / (tb - ta) : (tc == tb) ? 1 : 0.5 + (time - tb) / (tc - tb);"
+            "d = time < tb ? (time - mean(ta, tb)) / (tb - ta) : ((tc == tb) ? 1 : 0.5 + (time - tb) / (tc - tb));"
         ),
-        "Expected ternary autofix to preserve arithmetic grouping."
+        "Expected nested alternate ternary to be wrapped in parentheses for valid GML syntax."
     );
     assertEquals(
         result.output.includes("time - mean(ta, tb) / tb - ta"),

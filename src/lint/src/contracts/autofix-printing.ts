@@ -82,13 +82,13 @@ function shouldParenthesizeUnaryArgument(argument: any): boolean {
     }
 }
 
-function shouldParenthesizeTernaryConsequent(consequentNode: unknown): boolean {
-    const unwrappedConsequent = Core.unwrapParenthesizedExpression(consequentNode);
-    if (!Core.isNode(unwrappedConsequent)) {
+function shouldParenthesizeNestedTernaryBranch(branchNode: unknown): boolean {
+    const unwrappedBranch = Core.unwrapParenthesizedExpression(branchNode);
+    if (!Core.isNode(unwrappedBranch)) {
         return false;
     }
 
-    return Core.isConditionalExpressionNode(unwrappedConsequent) || Core.isTernaryExpressionNode(unwrappedConsequent);
+    return Core.isConditionalExpressionNode(unwrappedBranch) || Core.isTernaryExpressionNode(unwrappedBranch);
 }
 
 /**
@@ -187,10 +187,13 @@ export function printExpression(node: any, sourceText: string): string {
         case "ConditionalExpression": {
             const test = printExpression(node.test, sourceText);
             const consequentPrinted = printExpression(node.consequent, sourceText);
-            const alternate = printExpression(node.alternate, sourceText);
-            const consequent = shouldParenthesizeTernaryConsequent(node.consequent)
+            const alternatePrinted = printExpression(node.alternate, sourceText);
+            const consequent = shouldParenthesizeNestedTernaryBranch(node.consequent)
                 ? `(${consequentPrinted})`
                 : consequentPrinted;
+            const alternate = shouldParenthesizeNestedTernaryBranch(node.alternate)
+                ? `(${alternatePrinted})`
+                : alternatePrinted;
             return `${test} ? ${consequent} : ${alternate}`;
         }
         case "AssignmentExpression": {
