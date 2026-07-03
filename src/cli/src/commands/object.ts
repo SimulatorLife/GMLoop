@@ -223,37 +223,6 @@ export function createObjectCommand(): Command {
         printObjectPayload({ command: "object list", ok: true, payload });
     });
 
-    const inspect = addObjectSharedOptions(
-        applyStandardCommandOptions(new Command("inspect"))
-            .description("Inspect one object.")
-            .argument("<object>", "Object name or graph node id.")
-    );
-    inspect.action(async function objectInspectAction(objectNameOrId: string) {
-        const options = this.opts<SharedProjectContextOptions>();
-        const context = await ensureProjectGraphIndex(options);
-        const results = Semantic.searchGraphIndex({
-            databasePath: options.databasePath,
-            projectConfig: context.projectConfig,
-            projectRoot: context.projectRoot,
-            query: objectNameOrId,
-            toolsetRoot: options.toolsetRoot
-        }).results;
-        const resolvedId = objectNameOrId.includes("::")
-            ? objectNameOrId
-            : (filterGraphIndexResultsByKind(results, "object")[0]?.id ?? null);
-        const payload =
-            resolvedId === null
-                ? null
-                : Semantic.getGraphNode({
-                      databasePath: options.databasePath,
-                      nodeId: resolvedId,
-                      projectConfig: context.projectConfig,
-                      projectRoot: context.projectRoot,
-                      toolsetRoot: options.toolsetRoot
-                  });
-        printObjectPayload({ command: "object inspect", ok: payload !== null, payload });
-    });
-
     const update = addObjectSharedOptions(
         applyStandardCommandOptions(new Command("update"))
             .description("Update object.")
@@ -381,7 +350,6 @@ export function createObjectCommand(): Command {
     event.addCommand(eventDelete);
 
     command.addCommand(list);
-    command.addCommand(inspect);
     command.addCommand(update);
     command.addCommand(validate);
     command.addCommand(event);

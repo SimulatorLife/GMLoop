@@ -59,45 +59,6 @@ function resolveNodeIdFromQuery(
     return nodeId;
 }
 
-async function runInspectResourceAction(nameOrId: string, options: ResourceCommandSharedOptions): Promise<void> {
-    const context = await ensureProjectGraphIndex(options);
-    const resolvedId = resolveNodeIdFromQuery(nameOrId, options, context);
-    const payload = Semantic.getGraphNode({
-        databasePath: options.databasePath,
-        nodeId: resolvedId,
-        projectConfig: context.projectConfig,
-        projectRoot: context.projectRoot,
-        toolsetRoot: options.toolsetRoot
-    });
-    printProjectPayload({ ok: payload !== null, payload });
-}
-
-async function runDepsResourceAction(nameOrId: string, options: ResourceCommandSharedOptions): Promise<void> {
-    const context = await ensureProjectGraphIndex(options);
-    const nodeId = resolveNodeIdFromQuery(nameOrId, options, context);
-    const neighbors = Semantic.getGraphNeighbors({
-        databasePath: options.databasePath,
-        nodeId,
-        projectConfig: context.projectConfig,
-        projectRoot: context.projectRoot,
-        toolsetRoot: options.toolsetRoot
-    });
-    printProjectPayload({ ok: true, payload: neighbors.filter((entry) => entry.direction === "outgoing") });
-}
-
-async function runDependentsResourceAction(nameOrId: string, options: ResourceCommandSharedOptions): Promise<void> {
-    const context = await ensureProjectGraphIndex(options);
-    const nodeId = resolveNodeIdFromQuery(nameOrId, options, context);
-    const usages = Semantic.getGraphUsages({
-        databasePath: options.databasePath,
-        nodeId,
-        projectConfig: context.projectConfig,
-        projectRoot: context.projectRoot,
-        toolsetRoot: options.toolsetRoot
-    });
-    printProjectPayload({ ok: true, payload: usages });
-}
-
 /**
  * Create the graph-backed resource inspection command suite.
  */
@@ -144,79 +105,19 @@ export function createResourceCommand(): Command {
         });
     });
 
-    const inspectCommand = addSharedOptions(
-        applyStandardCommandOptions(new Command("inspect"))
-            .description("Inspect one resource by id or query.")
-            .argument("<nameOrId>", "Resource name or graph node id.")
-    );
-    inspectCommand.action(async function resourceInspectCommandAction(nameOrId: string) {
-        await runResourceCommandAction(async () => {
-            await runInspectResourceAction(nameOrId, this.opts<ResourceCommandSharedOptions>());
-        });
-    });
-
-    const depsCommand = addSharedOptions(
-        applyStandardCommandOptions(new Command("deps"))
-            .description("List outgoing dependencies for a resource.")
-            .argument("<nameOrId>", "Resource name or graph node id.")
-    );
-    depsCommand.action(async function resourceDepsCommandAction(nameOrId: string) {
-        await runResourceCommandAction(async () => {
-            await runDepsResourceAction(nameOrId, this.opts<ResourceCommandSharedOptions>());
-        });
-    });
-
-    const dependentsCommand = addSharedOptions(
-        applyStandardCommandOptions(new Command("dependents"))
-            .description("List incoming usages for a resource.")
-            .argument("<nameOrId>", "Resource name or graph node id.")
-    );
-    dependentsCommand.action(async function resourceDependentsCommandAction(nameOrId: string) {
-        await runResourceCommandAction(async () => {
-            await runDependentsResourceAction(nameOrId, this.opts<ResourceCommandSharedOptions>());
-        });
-    });
-
-    const auditCommand = addSharedOptions(
-        applyStandardCommandOptions(new Command("audit")).description("Run graph-backed resource audit summary.")
-    );
-    auditCommand.action(async function resourceAuditCommandAction() {
-        await runResourceCommandAction(async () => {
-            const options = this.opts<ResourceCommandSharedOptions>();
-            const context = await ensureProjectGraphIndex(options);
-            const everything = Semantic.searchGraphIndex({
-                databasePath: options.databasePath,
-                limit: 2000,
-                projectConfig: context.projectConfig,
-                projectRoot: context.projectRoot,
-                query: "",
-                toolsetRoot: options.toolsetRoot
-            });
-            const kindCounts = everything.results.reduce<Record<string, number>>((acc, entry) => {
-                acc[entry.kind] = (acc[entry.kind] ?? 0) + 1;
-                return acc;
-            }, {});
-            printProjectPayload({ ok: true, payload: { kindCounts, total: everything.results.length } });
-        });
-    });
-
     command.addHelpText(
         "after",
         [
             "",
             "Examples:",
             "  pnpm dlx gmloop resource list --path path/to/project",
-            "  pnpm dlx gmloop resource inspect scr_player --path path/to/project",
+            "  pnpm dlx gmloop resource find scr_player --path path/to/project",
             '  pnpm dlx @gamemaker/gm-cli@latest resourcetool eval "resource list"'
         ].join("\n")
     );
 
     command.addCommand(listCommand);
     command.addCommand(findCommand);
-    command.addCommand(inspectCommand);
-    command.addCommand(depsCommand);
-    command.addCommand(dependentsCommand);
-    command.addCommand(auditCommand);
 
     return command;
 }

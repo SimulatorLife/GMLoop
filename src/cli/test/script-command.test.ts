@@ -11,7 +11,6 @@ void describe("Script command", () => {
         assert.deepEqual(command.commands.map((entry) => entry.name()).sort(), [
             "add",
             "duplicate",
-            "inspect",
             "list",
             "remove",
             "rename",

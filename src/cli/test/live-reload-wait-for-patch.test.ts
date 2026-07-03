@@ -1,0 +1,234 @@
+import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import os from "node:os";
+import path from "node:path";
+import { test } from "node:test";
+
+import { runCliTestCommand } from "../src/cli.js";
+import { createStatusUrl } from "../src/modules/live-reload/config.js";
+import { writeLiveReloadSessionRegistry } from "../src/modules/live-reload/session-registry.js";
+
+async function createTempSessionProject(port: number): Promise<string> {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-live-reload-wait-"));
+    await writeFile(
+        path.join(projectRoot, "Game.yyp"),
+        JSON.stringify({ name: "Game", resourceType: "GMProject", resources: [] }),
+        "utf8"
+    );
+    await writeLiveReloadSessionRegistry({
+        lastHeartbeatAt: Date.now(),
+        processId: process.pid,
+        projectRoot,
+        yypPath: path.join(projectRoot, "Game.yyp"),
+        runtimeUrl: "http://127.0.0.1:50000/",
+        startSource: "cli",
+        status: "running",
+        statusHost: "127.0.0.1",
+        statusPort: port,
+        statusUrl: createStatusUrl("127.0.0.1", port),
+        watchedRoot: projectRoot,
+        websocketHost: "127.0.0.1",
+        websocketPort: 50_002,
+        websocketUrl: "ws://127.0.0.1:50002"
+    });
+    return projectRoot;
+}
+
+function startStatusServer(port: number, initialPatches: Array<{ patchId: string }> = []) {
+    const state = {
+        patches: [...initialPatches],
+        scanComplete: true,
+        uptimeMs: 100,
+        watcherStatus: "running"
+    };
+
+    const server = createServer((req, res) => {
+        if (req.url === "/status") {
+            const lastPatch = state.patches.at(-1);
+            const responseData = {
+                ...state,
+                lastPatchId: lastPatch ? lastPatch.patchId : null
+            };
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify(responseData));
+            return;
+        }
+        res.writeHead(404);
+        res.end();
+    });
+
+    return {
+        close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+        listen: () => new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve)),
+        state
+    };
+}
+
+void test("live-reload wait-for-patch succeeds instantly if a new patch exists", async () => {
+    const port = 60_991;
+    const projectRoot = await createTempSessionProject(port);
+    const server = startStatusServer(port, [{ patchId: "patch-1" }]);
+    await server.listen();
+
+    try {
+        const result = await runCliTestCommand({
+            argv: [
+                "live-reload",
+                "wait-for-patch",
+                "--since-patch-id",
+                "patch-0",
+                "--path",
+                projectRoot,
+                "--timeout-ms",
+                "500"
+            ]
+        });
+        if (result.exitCode !== 0) {
+            console.log("WAIT-FOR-PATCH STDOUT:", result.stdout);
+            console.log("WAIT-FOR-PATCH STDERR:", result.stderr);
+        }
+        assert.equal(result.exitCode, 0);
+        const payload = JSON.parse(result.stdout) as { ok: boolean; payload: { patches: Array<{ patchId: string }> } };
+        assert.equal(payload.ok, true);
+        assert.equal(payload.payload.patches.length, 1);
+        assert.equal(payload.payload.patches[0]?.patchId, "patch-1");
+    } finally {
+        await server.close();
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("live-reload wait-for-patch polls and resolves when a new patch is produced", async () => {
+    const port = 60_992;
+    const projectRoot = await createTempSessionProject(port);
+    const server = startStatusServer(port, [{ patchId: "patch-1" }]);
+    await server.listen();
+
+    // After 150ms, append a new patch to status response
+    const timer = setTimeout(() => {
+        server.state.patches.push({ patchId: "patch-2" });
+    }, 150);
+
+    try {
+        const result = await runCliTestCommand({
+            argv: [
+                "live-reload",
+                "wait-for-patch",
+                "--since-patch-id",
+                "patch-1",
+                "--path",
+                projectRoot,
+                "--poll-interval-ms",
+                "50",
+                "--timeout-ms",
+                "1000"
+            ]
+        });
+        assert.equal(result.exitCode, 0);
+        const payload = JSON.parse(result.stdout) as { ok: boolean; payload: { patches: Array<{ patchId: string }> } };
+        assert.equal(payload.ok, true);
+        assert.equal(payload.payload.patches.length, 2);
+        assert.equal(payload.payload.patches[1]?.patchId, "patch-2");
+    } finally {
+        clearTimeout(timer);
+        await server.close();
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("live-reload wait-for-patch infers since-patch-id if omitted", async () => {
+    const port = 60_993;
+    const projectRoot = await createTempSessionProject(port);
+    const server = startStatusServer(port, [{ patchId: "patch-1" }]);
+    await server.listen();
+
+    // After 150ms, append a new patch to status response.
+    // The wait-for-patch command will infer patch-1 as the baseline because
+    // it fetches status once at start. So patch-2 is recognized as the new patch!
+    const timer = setTimeout(() => {
+        server.state.patches.push({ patchId: "patch-2" });
+    }, 150);
+
+    try {
+        const result = await runCliTestCommand({
+            argv: [
+                "live-reload",
+                "wait-for-patch",
+                "--path",
+                projectRoot,
+                "--poll-interval-ms",
+                "50",
+                "--timeout-ms",
+                "1000"
+            ]
+        });
+        assert.equal(result.exitCode, 0);
+        const payload = JSON.parse(result.stdout) as { ok: boolean; payload: { patches: Array<{ patchId: string }> } };
+        assert.equal(payload.ok, true);
+        assert.equal(payload.payload.patches.length, 2);
+        assert.equal(payload.payload.patches[1]?.patchId, "patch-2");
+    } finally {
+        clearTimeout(timer);
+        await server.close();
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("live-reload wait-for-patch fails with timeout structured JSON on expiry", async () => {
+    const port = 60_994;
+    const projectRoot = await createTempSessionProject(port);
+    const server = startStatusServer(port, [{ patchId: "patch-1" }]);
+    await server.listen();
+
+    try {
+        const result = await runCliTestCommand({
+            argv: [
+                "live-reload",
+                "wait-for-patch",
+                "--since-patch-id",
+                "patch-1",
+                "--path",
+                projectRoot,
+                "--poll-interval-ms",
+                "50",
+                "--timeout-ms",
+                "200"
+            ]
+        });
+        assert.equal(result.exitCode, 1);
+        const payload = JSON.parse(result.stdout) as { ok: boolean; code: string; error: string };
+        assert.equal(payload.ok, false);
+        assert.equal(payload.code, "timeout");
+        assert.match(payload.error, /timed out/i);
+    } finally {
+        await server.close();
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("live-reload wait-for-patch fails with connection_failed structured JSON if offline", async () => {
+    const port = 60_995; // Server not listening
+    const projectRoot = await createTempSessionProject(port);
+    try {
+        const result = await runCliTestCommand({
+            argv: [
+                "live-reload",
+                "wait-for-patch",
+                "--since-patch-id",
+                "patch-1",
+                "--path",
+                projectRoot,
+                "--timeout-ms",
+                "200"
+            ]
+        });
+        assert.equal(result.exitCode, 1);
+        const payload = JSON.parse(result.stdout) as { ok: boolean; code: string; error: string };
+        assert.equal(payload.ok, false);
+        assert.equal(payload.code, "connection_failed");
+        assert.match(payload.error, /Failed to connect/i);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});

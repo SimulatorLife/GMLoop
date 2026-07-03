@@ -20,10 +20,6 @@ void test("resource command catalog includes list and find leaves", async () => 
     const catalog = getCliCommandCatalog();
     assert.ok(catalog.some((entry) => entry.displayName === "resource list"));
     assert.ok(catalog.some((entry) => entry.displayName === "resource find"));
-    assert.ok(catalog.some((entry) => entry.displayName === "resource inspect"));
-    assert.ok(catalog.some((entry) => entry.displayName === "resource deps"));
-    assert.ok(catalog.some((entry) => entry.displayName === "resource dependents"));
-    assert.ok(catalog.some((entry) => entry.displayName === "resource audit"));
     assert.equal(
         catalog.some((entry) => entry.displayName === "resource add"),
         false

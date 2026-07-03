@@ -13,7 +13,7 @@ void test("runtime command catalog includes expected leaves", async () => {
     assert.ok(leaves.has("runtime get"));
     assert.ok(leaves.has("runtime set"));
     assert.ok(leaves.has("runtime call"));
-    assert.ok(leaves.has("runtime watch"));
+    assert.ok(leaves.has("runtime observe"));
     assert.ok(leaves.has("runtime state"));
     assert.ok(leaves.has("runtime logs"));
 });
@@ -53,7 +53,7 @@ void test("runtime set/get round-trips persisted values", async () => {
 void test("runtime call/logs produce structured output and include runner logs", async () => {
     await withTempProject("runtime-call-logs", async (projectRoot) => {
         const startRunner = await runCliTestCommand({
-            argv: ["runner", "start", "--project", projectRoot, "--json"],
+            argv: ["runner", "lifecycle", "start", "--project", projectRoot, "--json"],
             env: {
                 ...process.env,
                 GMLOOP_RUNNER_COMMAND: "node",
@@ -86,7 +86,7 @@ void test("runtime call/logs produce structured output and include runner logs",
         assert.ok(logsPayload.payload.payload.some((entry) => entry.message.includes("Runner started")));
 
         const stopRunner = await runCliTestCommand({
-            argv: ["runner", "stop", "--project", projectRoot, "--json"]
+            argv: ["runner", "lifecycle", "stop", "--project", projectRoot, "--json"]
         });
         assert.equal(stopRunner.exitCode, 0);
     });

@@ -24,5 +24,4 @@ export * from "./symbol.js";
 export * from "./test.js";
 export * from "./transpile.js";
 export * from "./ui.js";
-export * from "./validate.js";
 export * from "./watch.js";

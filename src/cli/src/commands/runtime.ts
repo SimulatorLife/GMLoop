@@ -243,12 +243,12 @@ async function runRuntimeCallAction(options: RuntimeOptions): Promise<void> {
     });
 }
 
-async function runRuntimeWatchAction(options: RuntimeOptions): Promise<void> {
+async function runRuntimeObserveAction(options: RuntimeOptions): Promise<void> {
     const projectRoot = await resolveRuntimeProjectRoot(options);
     const runtimeState = readRuntimeProjectState(projectRoot);
     const expression = options.expression ?? "";
     const instanceCount = Object.keys(runtimeState.instances).length;
-    printRuntimePayload("runtime watch", {
+    printRuntimePayload("runtime observe", {
         expression,
         ok: true,
         sample: {
@@ -355,13 +355,13 @@ export function createRuntimeCommand(): Command {
         await runRuntimeCallAction(this.opts<RuntimeOptions>());
     });
 
-    const watch = shared(
-        applyStandardCommandOptions(new Command("watch"))
-            .description("Watch runtime expression changes.")
-            .requiredOption("--expression <expr>", "Expression to watch.")
+    const observe = shared(
+        applyStandardCommandOptions(new Command("observe"))
+            .description("Observe runtime expression changes.")
+            .requiredOption("--expression <expr>", "Expression to observe.")
     );
-    watch.action(async function runtimeWatchAction() {
-        await runRuntimeWatchAction(this.opts<RuntimeOptions>());
+    observe.action(async function runtimeObserveAction() {
+        await runRuntimeObserveAction(this.opts<RuntimeOptions>());
     });
 
     const state = shared(
@@ -383,7 +383,7 @@ export function createRuntimeCommand(): Command {
     command.addCommand(get);
     command.addCommand(set);
     command.addCommand(call);
-    command.addCommand(watch);
+    command.addCommand(observe);
     command.addCommand(state);
     command.addCommand(logs);
 

@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
-import { Command } from "commander";
+import { Command, Argument } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { handleCliError } from "../cli-core/errors.js";
@@ -288,50 +288,42 @@ export function createRunnerCommand(): Command {
         "Control runtime runner lifecycle and logs."
     );
 
-    const start = addRunnerSharedOptions(
-        applyStandardCommandOptions(new Command("start"))
-            .description("Start the runner process.")
-            .option("--debug", "Start in debug mode.")
+    const lifecycle = addRunnerSharedOptions(
+        applyStandardCommandOptions(new Command("lifecycle"))
+            .description("Manage the runner process lifecycle (start, stop, restart, pause, resume).")
+            .addArgument(
+                new Argument("<action>", "Lifecycle action to perform.").choices([
+                    "start",
+                    "stop",
+                    "restart",
+                    "pause",
+                    "resume"
+                ])
+            )
+            .option("--debug", "Start/restart in debug mode.")
     );
-    start.action(async function runnerStartAction() {
-        await runRunnerCommandAction(() => {
-            return runRunnerStartAction(this.opts<RunnerOptions>());
-        });
-    });
-
-    const stop = addRunnerSharedOptions(
-        applyStandardCommandOptions(new Command("stop")).description("Stop the runner process.")
-    );
-    stop.action(async function runnerStopAction() {
-        await runRunnerCommandAction(() => {
-            return runRunnerStopAction(this.opts<RunnerOptions>());
-        });
-    });
-
-    const restart = addRunnerSharedOptions(
-        applyStandardCommandOptions(new Command("restart")).description("Restart the runner process.")
-    );
-    restart.action(async function runnerRestartAction() {
-        await runRunnerCommandAction(() => {
-            return runRunnerRestartAction(this.opts<RunnerOptions>());
-        });
-    });
-
-    const pause = addRunnerSharedOptions(
-        applyStandardCommandOptions(new Command("pause")).description("Pause runner execution.")
-    );
-    pause.action(async function runnerPauseAction() {
-        await runRunnerCommandAction(() => {
-            return runRunnerPauseAction(this.opts<RunnerOptions>());
-        });
-    });
-
-    const resume = addRunnerSharedOptions(
-        applyStandardCommandOptions(new Command("resume")).description("Resume runner execution.")
-    );
-    resume.action(async function runnerResumeAction() {
-        await runRunnerCommandAction(() => {
-            return runRunnerResumeAction(this.opts<RunnerOptions>());
+    lifecycle.action(async function runnerLifecycleAction(action: string) {
+        await runRunnerCommandAction(async () => {
+            const options = this.opts<RunnerOptions>();
+            switch (action) {
+                case "start":
+                    await runRunnerStartAction(options);
+                    break;
+                case "stop":
+                    await runRunnerStopAction(options);
+                    break;
+                case "restart":
+                    await runRunnerRestartAction(options);
+                    break;
+                case "pause":
+                    await runRunnerPauseAction(options);
+                    break;
+                case "resume":
+                    await runRunnerResumeAction(options);
+                    break;
+                default:
+                    throw new Error(`Unsupported lifecycle action: ${action}`);
+            }
         });
     });
 
@@ -385,11 +377,7 @@ export function createRunnerCommand(): Command {
     room.addCommand(roomSet);
     room.addCommand(roomCurrent);
 
-    command.addCommand(start);
-    command.addCommand(stop);
-    command.addCommand(restart);
-    command.addCommand(pause);
-    command.addCommand(resume);
+    command.addCommand(lifecycle);
     command.addCommand(status);
     command.addCommand(logs);
     command.addCommand(clearLogs);

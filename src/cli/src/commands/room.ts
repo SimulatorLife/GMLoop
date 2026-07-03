@@ -450,24 +450,6 @@ async function runRoomLayerListAction(roomName: string, options: RoomMutationOpt
     });
 }
 
-async function runRoomLayerInspectAction(
-    roomName: string,
-    layerName: string,
-    options: RoomMutationOptions
-): Promise<void> {
-    const context = await resolveCommandProjectContext(options);
-    const layer = await Refactor.inspectRoomLayer({
-        layerName,
-        projectRoot: context.projectRoot,
-        roomName
-    });
-    printRoomPayload({
-        command: "room layer inspect",
-        ok: true,
-        payload: toRoomLayerInspectionPayload(layer)
-    });
-}
-
 async function runRoomCameraListAction(roomName: string, options: RoomMutationOptions): Promise<void> {
     const context = await resolveCommandProjectContext(options);
     const cameras = await Refactor.listRoomCameras({
@@ -484,28 +466,10 @@ async function runRoomCameraListAction(roomName: string, options: RoomMutationOp
     });
 }
 
-async function runRoomCameraInspectAction(
-    roomName: string,
-    cameraId: string,
-    options: RoomMutationOptions
-): Promise<void> {
-    const context = await resolveCommandProjectContext(options);
-    const camera = await Refactor.inspectRoomCamera({
-        cameraId,
-        projectRoot: context.projectRoot,
-        roomName
-    });
-    printRoomPayload({
-        command: "room camera inspect",
-        ok: true,
-        payload: toRoomCameraInspectionPayload(camera)
-    });
-}
-
 function createRoomLayerCommand(): Command {
     const layer = applyStandardCommandOptions(new Command("layer")).description("Room layer operations.");
     const layerMutationLeaves = new Set(["create", "update", "delete", "reorder", "move-resource"]);
-    for (const layerLeaf of ["list", "inspect", "create", "update", "delete", "reorder", "move-resource"]) {
+    for (const layerLeaf of ["list", "create", "update", "delete", "reorder", "move-resource"]) {
         const nested = addRoomSharedOptions(
             applyStandardCommandOptions(new Command(layerLeaf)).description(`Room layer ${layerLeaf}.`)
         );
@@ -588,18 +552,6 @@ function createRoomLayerCommand(): Command {
             layer.addCommand(nested);
             continue;
         }
-        if (layerLeaf === "inspect") {
-            nested.argument("<room>", "Room name").argument("<layer>", ROOM_LAYER_NAME_ARGUMENT_DESCRIPTION);
-            nested.action(async function roomLayerInspectAction(roomName: string, layerName: string) {
-                try {
-                    await runRoomLayerInspectAction(roomName, layerName, this.opts<RoomMutationOptions>());
-                } catch (error) {
-                    handleCliError(error);
-                }
-            });
-            layer.addCommand(nested);
-            continue;
-        }
         nested.action(function roomLayerAction() {
             const options = this.opts<RoomMutationOptions>();
             emitRoomUnavailableLeaf(`room layer ${layerLeaf}`, options, "room_layer_mutation");
@@ -630,37 +582,6 @@ export function createRoomCommand(): Command {
             "room"
         );
         printRoomPayload({ command: "room list", ok: true, payload: rooms });
-    });
-
-    const inspect = addRoomSharedOptions(
-        applyStandardCommandOptions(new Command("inspect"))
-            .description("Inspect one room.")
-            .argument("<room>", "Room name or graph node id.")
-    );
-    inspect.action(async function roomInspectAction(roomNameOrId: string) {
-        const options = this.opts<RoomCommandSharedOptions>();
-        const context = await ensureProjectGraphIndex(options);
-        const results = Semantic.searchGraphIndex({
-            databasePath: options.databasePath,
-            projectConfig: context.projectConfig,
-            projectRoot: context.projectRoot,
-            query: roomNameOrId,
-            toolsetRoot: options.toolsetRoot
-        }).results;
-        const resolvedId = roomNameOrId.includes("::")
-            ? roomNameOrId
-            : (filterGraphIndexResultsByKind(results, "room")[0]?.id ?? null);
-        const payload =
-            resolvedId === null
-                ? null
-                : Semantic.getGraphNode({
-                      databasePath: options.databasePath,
-                      nodeId: resolvedId,
-                      projectConfig: context.projectConfig,
-                      projectRoot: context.projectRoot,
-                      toolsetRoot: options.toolsetRoot
-                  });
-        printRoomPayload({ command: "room inspect", ok: payload !== null, payload });
     });
 
     const query = addRoomSharedOptions(
@@ -875,7 +796,7 @@ export function createRoomCommand(): Command {
 
     const camera = applyStandardCommandOptions(new Command("camera")).description("Room camera operations.");
     const cameraMutationLeaves = new Set(["update", "frame"]);
-    for (const cameraLeaf of ["list", "inspect", "update", "frame"]) {
+    for (const cameraLeaf of ["list", "update", "frame"]) {
         const nested = addRoomSharedOptions(
             applyStandardCommandOptions(new Command(cameraLeaf)).description(`Room camera ${cameraLeaf}.`)
         );
@@ -900,17 +821,13 @@ export function createRoomCommand(): Command {
             ) {
                 try {
                     const options = this.opts<RoomMutationOptions>();
-                    const parsedX = parseCoordinateArgument(x, "x");
-                    const parsedY = parseCoordinateArgument(y, "y");
-                    const parsedWidth = parsePositiveDimensionArgument(width, "width");
-                    const parsedHeight = parsePositiveDimensionArgument(height, "height");
                     await runRoomCameraUpdateAction(
                         roomName,
                         cameraId,
-                        parsedX,
-                        parsedY,
-                        parsedWidth,
-                        parsedHeight,
+                        parseCoordinateArgument(x, "x"),
+                        parseCoordinateArgument(y, "y"),
+                        parsePositiveDimensionArgument(width, "width"),
+                        parsePositiveDimensionArgument(height, "height"),
                         options
                     );
                 } catch (error) {
@@ -924,8 +841,8 @@ export function createRoomCommand(): Command {
             nested
                 .argument("<room>", "Room name")
                 .argument("<camera-id>", "Camera id")
-                .argument("<layer>", "Layer name")
-                .option("--padding <pixels>", "Padding around framed instance coordinates.");
+                .argument("<layer>", ROOM_LAYER_NAME_ARGUMENT_DESCRIPTION)
+                .option("--padding <value>", "Bounding frame padding.");
             nested.action(async function roomCameraFrameAction(roomName: string, cameraId: string, layerName: string) {
                 try {
                     await runRoomCameraFrameAction(roomName, cameraId, layerName, this.opts<RoomMutationOptions>());
@@ -948,18 +865,6 @@ export function createRoomCommand(): Command {
             camera.addCommand(nested);
             continue;
         }
-        if (cameraLeaf === "inspect") {
-            nested.argument("<room>", "Room name").argument("<camera-id>", "Camera id");
-            nested.action(async function roomCameraInspectAction(roomName: string, cameraId: string) {
-                try {
-                    await runRoomCameraInspectAction(roomName, cameraId, this.opts<RoomMutationOptions>());
-                } catch (error) {
-                    handleCliError(error);
-                }
-            });
-            camera.addCommand(nested);
-            continue;
-        }
         nested.action(function roomCameraAction() {
             const options = this.opts<RoomMutationOptions>();
             emitRoomUnavailableLeaf(`room camera ${cameraLeaf}`, options, "room_camera_mutation");
@@ -968,7 +873,6 @@ export function createRoomCommand(): Command {
     }
 
     command.addCommand(list);
-    command.addCommand(inspect);
     command.addCommand(query);
     command.addCommand(validate);
     command.addCommand(preview);

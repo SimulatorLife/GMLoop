@@ -23,7 +23,11 @@ export const MCP_TOOL_DENY_LIST: ReadonlyArray<ReadonlyArray<string>> = Object.f
     // Internal platform/toolchain command families.
     Object.freeze(["ui"]),
     Object.freeze(["profile"]),
-    Object.freeze(["test"])
+    Object.freeze(["test"]),
+    // Low-level live-reload or file watching commands
+    Object.freeze(["watch"]),
+    Object.freeze(["live-reload", "prepare"]),
+    Object.freeze(["live-reload", "build"])
 ]);
 
 /**

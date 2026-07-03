@@ -169,9 +169,6 @@ void test("CLI command catalog includes graph leaf commands", async () => {
     assert.ok(!catalog.some((entry) => entry.displayName === "graph neighbors"));
     assert.ok(!catalog.some((entry) => entry.displayName === "graph usages"));
     assert.ok(catalog.some((entry) => entry.displayName === "symbol inspect"));
-    assert.ok(catalog.some((entry) => entry.displayName === "symbol context"));
-    assert.ok(catalog.some((entry) => entry.displayName === "symbol neighbors"));
-    assert.ok(catalog.some((entry) => entry.displayName === "symbol usages"));
     assert.ok(!catalog.some((entry) => entry.displayName === "performance"));
 });
 

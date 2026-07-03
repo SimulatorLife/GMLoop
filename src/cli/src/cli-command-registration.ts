@@ -30,7 +30,6 @@ import { createSymbolCommand } from "./commands/symbol.js";
 import { createTestCommand } from "./commands/test.js";
 import { createTranspileCommand, runTranspileCommand } from "./commands/transpile.js";
 import { createUiCommand } from "./commands/ui.js";
-import { createValidateCommand } from "./commands/validate.js";
 import { createWatchCommand } from "./commands/watch.js";
 
 type CliCommandRegistrationEnvironment = Readonly<{
@@ -251,11 +250,6 @@ function registerUtilityCommands({
     registry.registerCommand({
         command: createRuntimeCommand(),
         onError: createCliCommandErrorHandler({ prefix: "Runtime command failed." })
-    });
-
-    registry.registerCommand({
-        command: createValidateCommand(),
-        onError: createCliCommandErrorHandler({ prefix: "Validate command failed." })
     });
 
     registry.registerCommand({

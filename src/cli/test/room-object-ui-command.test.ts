@@ -81,19 +81,7 @@ void test("room command keeps inspection leaves and drops bespoke mutation leave
 
     assert.deepEqual(
         commandNames,
-        [
-            "camera",
-            "inspect",
-            "instance",
-            "layer",
-            "preview",
-            "query",
-            "repair",
-            "summary",
-            "update",
-            "validate",
-            "list"
-        ].sort()
+        ["camera", "instance", "layer", "preview", "query", "repair", "summary", "update", "validate", "list"].sort()
     );
 });
 
@@ -392,7 +380,7 @@ void test("room layer create supports dry-run and write modes", async () => {
     }
 });
 
-void test("room layer list and inspect expose structured room metadata", async () => {
+void test("room layer list exposes structured room metadata", async () => {
     const projectRoot = await createTemporaryRoomInstanceCliProject();
 
     try {
@@ -419,19 +407,6 @@ void test("room layer list and inspect expose structured room metadata", async (
         );
         assert.equal(listPayload.payload.layers[0]?.layerType, "GMRInstanceLayer");
         assert.equal(listPayload.payload.layers[0]?.instanceCount, 0);
-
-        const inspectResult = await runCliTestCommand({
-            argv: ["room", "layer", "inspect", "rm_main", "Background", "--path", projectRoot, "--json"]
-        });
-        assert.equal(inspectResult.exitCode, 0);
-        const inspectPayload = JSON.parse(inspectResult.stdout) as {
-            command: string;
-            payload: { depth: number | null; layerName: string; layerType: string };
-        };
-        assert.equal(inspectPayload.command, "room layer inspect");
-        assert.equal(inspectPayload.payload.layerName, "Background");
-        assert.equal(inspectPayload.payload.layerType, "GMRBackgroundLayer");
-        assert.equal(inspectPayload.payload.depth, 100);
     } finally {
         await rm(projectRoot, { force: true, recursive: true });
     }
@@ -603,7 +578,7 @@ void test("room layer delete rejects non-empty instance layers", async () => {
     }
 });
 
-void test("room camera list and inspect expose structured view metadata", async () => {
+void test("room camera list exposes structured view metadata", async () => {
     const projectRoot = await createTemporaryRoomInstanceCliProject();
 
     try {
@@ -629,19 +604,6 @@ void test("room camera list and inspect expose structured view metadata", async 
         assert.equal(listPayload.payload.cameras[0]?.cameraId, "camera_0");
         assert.equal(listPayload.payload.cameras[0]?.enabled, false);
         assert.equal(listPayload.payload.cameras[0]?.x, 0);
-
-        const inspectResult = await runCliTestCommand({
-            argv: ["room", "camera", "inspect", "rm_main", "camera_0", "--path", projectRoot, "--json"]
-        });
-        assert.equal(inspectResult.exitCode, 0);
-        const inspectPayload = JSON.parse(inspectResult.stdout) as {
-            command: string;
-            payload: { cameraId: string; height: number | null; width: number | null };
-        };
-        assert.equal(inspectPayload.command, "room camera inspect");
-        assert.equal(inspectPayload.payload.cameraId, "camera_0");
-        assert.equal(inspectPayload.payload.width, 1024);
-        assert.equal(inspectPayload.payload.height, 768);
     } finally {
         await rm(projectRoot, { force: true, recursive: true });
     }

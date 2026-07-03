@@ -23,8 +23,8 @@ import {
 } from "../modules/live-reload/session.js";
 import {
     discoverLiveReloadSessionByPath,
-    type LiveReloadRegisteredSession
-} from "../modules/live-reload/session-registry.js";
+    type LiveReloadRegisteredSession,
+    resolveLiveReloadProjectIdentity} from "../modules/live-reload/session-registry.js";
 import { startRuntimeStaticServer } from "../modules/runtime/server.js";
 import {
     DEFAULT_RUNTIME_PACKAGE,
@@ -51,6 +51,7 @@ const PROJECT_PATH_OPTION_DESCRIPTION = "Project directory or .yyp path.";
 const PROJECT_PATH_OPTION_FLAG = "--path <project>";
 const PROJECT_SESSION_PATH_OPTION_DESCRIPTION =
     "Project directory or .yyp path used to discover the project-local live-reload session.";
+const LIVE_RELOAD_WAIT_FOR_PATCH_COMMAND = "live-reload wait-for-patch";
 
 type RuntimeDescriptorFormatter = (source: RuntimeSourceDescriptor) => string;
 
@@ -292,27 +293,6 @@ export async function runLiveReloadDiscoverCommand(options: LiveReloadPathComman
     );
 }
 
-export async function runLiveReloadAttachCommand(options: LiveReloadPathCommandOptions = {}): Promise<void> {
-    const targetPath = options.path ?? process.cwd();
-    const discovery = await discoverLiveReloadSessionByPath(targetPath);
-    if (!discovery.alive || discovery.session === null) {
-        console.error(`No active live-reload session is registered for ${targetPath}.`);
-        process.exit(1);
-    }
-
-    console.log(
-        JSON.stringify(
-            {
-                command: "live-reload attach",
-                ok: true,
-                payload: discovery.session
-            },
-            null,
-            2
-        )
-    );
-}
-
 async function fetchLiveReloadStatusPayload(session: LiveReloadRegisteredSession): Promise<unknown> {
     const statusEndpointUrl = session.statusUrl.endsWith("/status") ? session.statusUrl : `${session.statusUrl}/status`;
     const response = await fetch(statusEndpointUrl);
@@ -365,27 +345,78 @@ export async function runLiveReloadWaitForPatchCommand(
     options: LiveReloadWaitForPatchCommandOptions = {}
 ): Promise<void> {
     const targetPath = options.path ?? process.cwd();
+    const identity = await resolveLiveReloadProjectIdentity(targetPath);
+    const sessionFileExisted = await Core.readTextFile(identity.registryPath)
+        .then(() => true)
+        .catch(() => false);
+
     const discovery = await discoverLiveReloadSessionByPath(targetPath);
     if (!discovery.alive || discovery.session === null) {
-        console.error(`No active live-reload session is registered for ${targetPath}.`);
+        if (sessionFileExisted) {
+            const payload = {
+                command: LIVE_RELOAD_WAIT_FOR_PATCH_COMMAND,
+                ok: false,
+                error: `Failed to connect to the active live-reload status server for ${targetPath}.`,
+                code: "connection_failed"
+            };
+            console.log(JSON.stringify(payload, null, 2));
+            console.error(payload.error);
+            process.exit(1);
+        }
+
+        const payload = {
+            command: LIVE_RELOAD_WAIT_FOR_PATCH_COMMAND,
+            ok: false,
+            error: `No active live-reload session is registered for ${targetPath}.`,
+            code: "no_session"
+        };
+        console.log(JSON.stringify(payload, null, 2));
+        console.error(payload.error);
         process.exit(1);
+    }
+
+    let sincePatchId = options.sincePatchId;
+    if (!sincePatchId) {
+        try {
+            const initialPayload = await fetchLiveReloadStatusPayload(discovery.session);
+            sincePatchId = readLastPatchId(initialPayload) ?? undefined;
+        } catch {
+            // Ignore baseline fetch error; will wait for any patch
+        }
     }
 
     const timeoutMs = options.timeoutMs ?? 10_000;
     const pollIntervalMs = options.pollIntervalMs ?? 250;
     const deadline = Date.now() + timeoutMs;
-    const latestPayload = await pollLiveReloadStatusForPatch({
-        deadline,
-        pollIntervalMs,
-        session: discovery.session,
-        sincePatchId: options.sincePatchId
-    });
+
+    let latestPayload: Record<string, unknown> | null = null;
+    try {
+        latestPayload = await pollLiveReloadStatusForPatch({
+            deadline,
+            pollIntervalMs,
+            session: discovery.session,
+            sincePatchId
+        });
+    } catch (error) {
+        const errorMessage = Core.getErrorMessage(error, {
+            fallback: "Failed to wait for live-reload patch."
+        });
+        const payload = {
+            command: LIVE_RELOAD_WAIT_FOR_PATCH_COMMAND,
+            ok: false,
+            error: errorMessage,
+            code: "error"
+        };
+        console.log(JSON.stringify(payload, null, 2));
+        console.error(payload.error);
+        process.exit(1);
+    }
 
     if (latestPayload !== null) {
         console.log(
             JSON.stringify(
                 {
-                    command: "live-reload wait-for-patch",
+                    command: LIVE_RELOAD_WAIT_FOR_PATCH_COMMAND,
                     ok: true,
                     payload: latestPayload
                 },
@@ -396,7 +427,14 @@ export async function runLiveReloadWaitForPatchCommand(
         return;
     }
 
-    console.error(`Timed out waiting for a live-reload patch after ${String(timeoutMs)}ms.`);
+    const payload = {
+        command: LIVE_RELOAD_WAIT_FOR_PATCH_COMMAND,
+        ok: false,
+        error: `Timed out waiting for a live-reload patch after ${String(timeoutMs)}ms.`,
+        code: "timeout"
+    };
+    console.log(JSON.stringify(payload, null, 2));
+    console.error(payload.error);
     process.exit(1);
 }
 
@@ -586,16 +624,6 @@ function createLiveReloadDiscoverSubcommand(): Command {
         .action((options: LiveReloadPathCommandOptions) => runLiveReloadDiscoverCommand(options));
 }
 
-function createLiveReloadAttachSubcommand(): Command {
-    const command = new Command("attach");
-    applyStandardCommandOptions(command);
-
-    return command
-        .description("Attach to a healthy project-local live-reload session registry.")
-        .addOption(new Option(PROJECT_PATH_OPTION_FLAG, PROJECT_PATH_OPTION_DESCRIPTION).default(process.cwd()))
-        .action((options: LiveReloadPathCommandOptions) => runLiveReloadAttachCommand(options));
-}
-
 function createLiveReloadWaitForPatchSubcommand(): Command {
     const command = new Command("wait-for-patch");
     applyStandardCommandOptions(command);
@@ -623,11 +651,10 @@ export function createLiveReloadCommand(): Command {
 
     return command
         .description("Prepare, run, and inspect the HTML5 live-reload workflow.")
-        .addCommand(createLiveReloadAttachSubcommand())
         .addCommand(createLiveReloadBuildSubcommand())
         .addCommand(createLiveReloadDiscoverSubcommand())
         .addCommand(createLiveReloadPrepareSubcommand())
         .addCommand(createLiveReloadDevSubcommand())
         .addCommand(createLiveReloadStatusSubcommand())
-        .addCommand(createLiveReloadWaitForPatchSubcommand());
+        .addCommand(createLiveReloadWaitForPatchSubcommand(), { hidden: true });
 }

@@ -156,7 +156,6 @@ void test("live-reload MCP tool schemas expose project-path attach and patch wai
     const mcpCatalog = getMcpToolCatalogEntries();
     const expectedPathTools = [
         "gmloop_live_reload_discover",
-        "gmloop_live_reload_attach",
         "gmloop_live_reload_status",
         "gmloop_live_reload_wait_for_patch"
     ];
@@ -183,9 +182,7 @@ void test("read-side object and room inspection MCP schemas expose required look
         ["gmloop_object_event_list", ["object"]],
         ["gmloop_object_event_inspect", ["object", "event"]],
         ["gmloop_room_layer_list", ["room"]],
-        ["gmloop_room_layer_inspect", ["room", "layer"]],
-        ["gmloop_room_camera_list", ["room"]],
-        ["gmloop_room_camera_inspect", ["room", "camera_id"]]
+        ["gmloop_room_camera_list", ["room"]]
     ]);
 
     for (const [toolName, requiredArguments] of requiredArgumentsByTool) {
