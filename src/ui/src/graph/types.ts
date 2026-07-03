@@ -394,6 +394,7 @@ export type GraphVisualizationMcpToolCatalogEntry = Readonly<{
     description: string;
     fields: ReadonlyArray<GraphVisualizationMcpToolCatalogField>;
     toolName: string;
+    internal?: boolean;
 }>;
 
 export type GraphVisualizationDocumentationCatalogs = Readonly<{

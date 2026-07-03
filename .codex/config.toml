@@ -13,6 +13,7 @@ command = "gmloop"
 args = ["mcp"]
 enabled = true
 default_tools_approval_mode = "approve"
+env = { GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS = true }
 
 [mcp_servers.playwright]
 command = "npx"
@@ -31,6 +32,7 @@ args = [
 ]
 enabled = true
 default_tools_approval_mode = "approve"
+env = { GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS = true }
 
 [mcp_servers.lsp]
 command = "pnpm"

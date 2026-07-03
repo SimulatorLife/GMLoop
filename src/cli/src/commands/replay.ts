@@ -54,7 +54,9 @@ function printReplayPayload(payload: unknown): void {
 }
 
 function addReplaySharedOptions(command: Command): Command {
-    return command.addOption(createPathOption()).option("--json", "Emit JSON output.");
+    return command
+        .addOption(createPathOption())
+        .option("--json", "Emit machine-readable execution results in JSON format.");
 }
 
 function resolveReplayProjectRoot(options: ReplayOptions): Promise<string> {
@@ -350,14 +352,16 @@ async function runReplayAssertAction(options: ReplayOptions): Promise<void> {
 
 export function createReplayCommand(): Command {
     const command = applyStandardCommandOptions(new Command("replay")).description(
-        "Record and replay AI interactions."
+        "Manage deterministic execution traces of AI agent interactions. Replay tools allow recording, running, comparing, and validating interaction sequences for testing, replication, and regression analysis."
     );
 
     const record = addReplaySharedOptions(
         applyStandardCommandOptions(new Command("record"))
-            .description("Record a replay trace.")
-            .option("--name <name>", "Replay scenario name.")
-            .option("--input <value>", "Replay input payload.")
+            .description(
+                "Record a new interaction trace artifact by capturing an input payload, scenario name, and generated steps. Saved trace artifacts can be used to replicate behaviors or compare outcomes during development."
+            )
+            .option("--name <name>", "Name of the replay scenario to record.")
+            .option("--input <value>", "Input payload or instructions starting the replay scenario.")
     );
     record.action(async function replayRecordAction() {
         await runReplayRecordAction(this.opts<ReplayOptions>());
@@ -365,8 +369,13 @@ export function createReplayCommand(): Command {
 
     const run = addReplaySharedOptions(
         applyStandardCommandOptions(new Command("run"))
-            .description("Run a replay trace.")
-            .option("--id <id>", "Replay artifact id.")
+            .description(
+                "Execute and summarize a recorded interaction trace to verify that the steps and output payload match expected results. Uses the latest trace or a specified artifact ID."
+            )
+            .option(
+                "--id <id>",
+                "ID of the recorded replay artifact to execute. If omitted, the latest recorded artifact will be run."
+            )
     );
     run.action(async function replayRunAction() {
         await runReplayRunAction(this.opts<ReplayOptions>());
@@ -374,9 +383,17 @@ export function createReplayCommand(): Command {
 
     const compare = addReplaySharedOptions(
         applyStandardCommandOptions(new Command("compare"))
-            .description("Compare replay outputs.")
-            .option("--baseline <id>", "Baseline replay artifact id.")
-            .option("--candidate <id>", "Candidate replay artifact id.")
+            .description(
+                "Compare two recorded trace artifacts (a baseline and a candidate) to detect structural differences, event count discrepancies, or payload drift between agent runs."
+            )
+            .option(
+                "--baseline <id>",
+                "ID of the baseline replay artifact. Defaults to the second-to-last recorded artifact."
+            )
+            .option(
+                "--candidate <id>",
+                "ID of the candidate replay artifact. Defaults to the latest recorded artifact."
+            )
     );
     compare.action(async function replayCompareAction() {
         await runReplayCompareAction(this.opts<ReplayOptions>());
@@ -384,8 +401,13 @@ export function createReplayCommand(): Command {
 
     const assertCommand = addReplaySharedOptions(
         applyStandardCommandOptions(new Command("assert"))
-            .description("Assert replay expectations.")
-            .option("--id <id>", "Replay artifact id.")
+            .description(
+                "Validate the structural integrity and constraints of a recorded trace artifact (such as deterministic event flow and minimum step counts) for use in automated test suites."
+            )
+            .option(
+                "--id <id>",
+                "ID of the recorded replay artifact to assert against. If omitted, the latest recorded artifact will be asserted."
+            )
     );
     assertCommand.action(async function replayAssertAction() {
         await runReplayAssertAction(this.opts<ReplayOptions>());

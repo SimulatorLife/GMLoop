@@ -186,6 +186,22 @@
       "excludeTools": [
         "browser_run_code_unsafe"
       ]
+    },
+    "gmloop": {
+      "command": "gmloop",
+      "args": ["mcp"],
+      "trust": true,
+      "env": {
+        "GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS": true
+      }
+    },
+    "gm-cli": {
+      "command": "gmloop",
+      "args": ["gm-cli", "mcp"],
+      "trust": true,
+      "env": {
+        "GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS": true
+      }
     }
   }
 }

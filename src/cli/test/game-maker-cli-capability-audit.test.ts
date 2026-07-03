@@ -29,6 +29,7 @@ function createMcpEntry(commandDisplayName: string): McpToolCatalogEntry {
         commandPath,
         description: `${commandDisplayName} tool`,
         fields: [],
+        internal: false,
         toolName: `gmloop_${commandPath.join("_")}`
     };
 }

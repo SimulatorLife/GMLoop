@@ -72,13 +72,22 @@ function createDocumentationCatalogs(): GraphVisualizationDocumentationCatalogs 
                         valueType: "string"
                     }
                 ],
+                internal: false,
                 toolName: "project_status"
             },
             {
                 commandDisplayName: "manual read",
                 description: "Read GameMaker manual entries.",
                 fields: [],
+                internal: false,
                 toolName: "manual_read"
+            },
+            {
+                commandDisplayName: "replay record",
+                description: "Record a replay scenario.",
+                fields: [],
+                internal: true,
+                toolName: "replay_record"
             }
         ],
         workspaceRules: {
@@ -510,4 +519,41 @@ void test("GmDocsPanel renders the MCP tools subview and tool metadata when sele
     assert.match(rendered, /Project path to inspect\./u);
     assert.match(rendered, /manual read/u);
     assert.match(rendered, /Read GameMaker manual entries\./u);
+    // By default, the internal tools should be hidden
+    assert.doesNotMatch(rendered, /replay record/u);
+    assert.doesNotMatch(rendered, /replay_record/u);
+});
+
+void test("GmDocsPanel toggles internal MCP tools visibility", () => {
+    const panel = new TestableGmDocsPanel();
+    panel.model = {
+        autoGamePipeline: null,
+        data: {
+            edges: [],
+            generatedAt: "2026-01-01T00:00:00.000Z",
+            graphs: [],
+            nodes: [],
+            projectRoot: "/tmp/project"
+        },
+        documentationCatalogs: createDocumentationCatalogs(),
+        isServerMode: false,
+        lastFixRun: null,
+        loadedTarget: null,
+        liveReload: null,
+        mcpServerStatus: "not-started",
+        projectConfigurationCatalog: null,
+        startupState: null,
+        title: "Docs MCP View"
+    };
+    panel.state = createDocsPanelState("mcp");
+
+    // Enable internal tools toggle
+    panel.showInternalMcpTools = true;
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /project status/u);
+    assert.match(rendered, /replay record/u);
+    assert.match(rendered, /replay_record/u);
+    assert.match(rendered, /<gm-badge[^>]*\.label=internal/u);
 });

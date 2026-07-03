@@ -416,3 +416,25 @@ void test("room instance add/update/delete MCP tool schemas include mutation arg
         assert.equal(field.required, true);
     }
 });
+
+void test("replay commands are excluded from MCP catalog by default but exposed when GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS=true", () => {
+    // 1. By default, it should be excluded
+    const mcpCatalogDefault = getMcpToolCatalogEntries();
+    const defaultReplayEntry = mcpCatalogDefault.find((entry) => entry.toolName.startsWith("gmloop_replay"));
+    assert.equal(defaultReplayEntry, undefined, "Replay tools should be excluded from MCP by default");
+
+    // 2. When GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS=true, it should be exposed
+    const originalEnv = process.env.GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS;
+    process.env.GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS = "true";
+    try {
+        const mcpCatalogInternal = getMcpToolCatalogEntries();
+        const internalReplayEntry = mcpCatalogInternal.find((entry) => entry.toolName === "gmloop_replay_record");
+        assert.ok(internalReplayEntry, "Replay tools should be exposed when GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS=true");
+    } finally {
+        if (originalEnv === undefined) {
+            delete process.env.GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS;
+        } else {
+            process.env.GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS = originalEnv;
+        }
+    }
+});

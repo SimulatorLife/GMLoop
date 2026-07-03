@@ -15,6 +15,24 @@
       "args": [
         "@playwright/mcp@latest"
       ]
+    },
+    "gmloop": {
+      "type": "stdio",
+      "command": "gmloop",
+      "tools": ["*"],
+      "args": ["mcp"],
+      "env": {
+        "GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS": true
+      }
+    },
+    "gm-cli": {
+      "type": "stdio",
+      "command": "gmloop",
+      "tools": ["*"],
+      "args": ["gm-cli", "mcp"],
+      "env": {
+        "GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS": true
+      }
     }
   }
 }

@@ -201,25 +201,15 @@ pnpm run cli -- mcp
 This command is intended to be launched by an MCP host process, not from the
 in-process CLI test/capture runner.
 
-### `project inspect` / `project validate` - Auto-Game Readiness
+### `project info` / `project setup` - Project Metadata and Setup
 
-`project inspect` reports the project root, `.yyp` manifest, `gmloop.json`
-status, installed Auto-Game agent-pack status, project skills, resource
-inventory, semantic graph summary, and configured official `gm-cli` /
-ResourceTool MCP availability.
+`project info` reports read-only project metadata: the project root, `.yyp` manifest, `gmloop.json` status, installed Auto-Game agent-pack status, project skills, resource inventory, semantic graph summary, and configured companion-tool MCP availability.
 
-`configuredOfficialMcp` means a ResourceTool MCP server definition was found
-in project or local MCP config files and could be probed. It does not reflect
-MCP tools injected directly by the current agent host process.
-
-`project validate` emits deterministic evidence records for GMLoop-owned
-readiness checks: config, graph, resource inventory, agent pack, parser status,
-persisted test results, runner state, and official companion-tool availability.
-It does not run generic official `gm-cli` build or ResourceTool mutations.
+`project setup` initializes and verifies GMLoop-owned readiness checks: config, graph, resource inventory, agent pack, parser status, and companion-tool availability.
 
 ```bash
-gmloop project inspect --path path/to/Game.yyp --json
-gmloop project validate --path path/to/Game.yyp --json
+gmloop project info --path path/to/Game.yyp --json
+gmloop project setup --path path/to/Game.yyp --json
 ```
 
 ### Official `gm-cli`
@@ -765,7 +755,7 @@ pnpm run cli -- live-reload status --status-host 127.0.0.1 --status-port 18000
 - `--format <format>` - Output format: `pretty` (default) or `json`
 - `--endpoint <endpoint>` - Endpoint to query: `status` (default), `health`, `ping`, or `ready`
 
-Agents can also use `live-reload discover`, `live-reload attach`, and `live-reload wait-for-patch` by project path. Through MCP these appear as `gmloop_live_reload_discover`, `gmloop_live_reload_attach`, and `gmloop_live_reload_wait_for_patch`.
+Agents can also use `live-reload status` (for discovery/health checks) and `live-reload wait-for-patch` by project path. Through MCP these appear as `gmloop_live_reload_status` and `gmloop_live_reload_wait_for_patch`.
 
 **Example Output:**
 

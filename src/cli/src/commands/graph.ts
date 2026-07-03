@@ -2569,7 +2569,7 @@ function createDocumentationCatalogs() {
             name: "gmloop-mcp",
             version: "0.0.1"
         }),
-        mcpTools: getMcpToolCatalogEntries(),
+        mcpTools: getMcpToolCatalogEntries({ includeInternal: true }),
         workspaceRules: Object.freeze({
             formatOptions: Format.projectFormatOptionCatalog.map((entry) =>
                 Object.freeze({

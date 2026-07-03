@@ -338,6 +338,33 @@
     font-size: var(--gm-text-sm);
 }
 
+.docs-subpage-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    margin-bottom: var(--gm-space-md);
+}
+
+.docs-toggle-label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gm-space-sm);
+    cursor: pointer;
+    user-select: none;
+    font-size: var(--gm-text-sm);
+    color: var(--gm-text-subdued);
+    transition: var(--gm-transition);
+}
+
+.docs-toggle-label:hover {
+    color: var(--gm-text);
+}
+
+.docs-toggle-label input[type="checkbox"] {
+    cursor: pointer;
+    margin: 0;
+}
+
 @media (max-width: 1100px) {
     .docs-layout {
         grid-template-areas:

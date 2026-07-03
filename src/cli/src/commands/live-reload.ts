@@ -24,7 +24,8 @@ import {
 import {
     discoverLiveReloadSessionByPath,
     type LiveReloadRegisteredSession,
-    resolveLiveReloadProjectIdentity} from "../modules/live-reload/session-registry.js";
+    resolveLiveReloadProjectIdentity
+} from "../modules/live-reload/session-registry.js";
 import { startRuntimeStaticServer } from "../modules/runtime/server.js";
 import {
     DEFAULT_RUNTIME_PACKAGE,

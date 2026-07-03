@@ -51,12 +51,15 @@ const DOCS_VIEW_CONTENT_IDS: Readonly<Record<GraphVisualizationUiDocsView, strin
 export class GmDocsPanel extends LightDomLitElement {
     public static properties = {
         model: { attribute: false },
-        state: { attribute: false }
+        state: { attribute: false },
+        showInternalMcpTools: { type: Boolean, state: true }
     };
 
     public accessor model: GraphVisualizationUiModel | null = null;
 
     public accessor state: GraphVisualizationUiState | null = null;
+
+    public accessor showInternalMcpTools = false;
 
     #onDismissErrorBanner = (): void => {
         this.dispatchEvent(
@@ -200,7 +203,10 @@ export class GmDocsPanel extends LightDomLitElement {
         return html`
             <article class="docs-reference-entry">
                 <div class="docs-entry-main">
-                    <h3>${entry.commandDisplayName}</h3>
+                    <div class="docs-entry-heading">
+                        <h3>${entry.commandDisplayName}</h3>
+                        ${entry.internal ? html`<gm-badge .label=${"internal"} tone="muted"></gm-badge>` : null}
+                    </div>
                     <p>${entry.description}</p>
                 </div>
                 <div class="docs-usage-shell">
@@ -294,7 +300,10 @@ export class GmDocsPanel extends LightDomLitElement {
         const docsPanelContent = createGraphVisualizationDocsPanelContent(this.model.documentationCatalogs);
         const searchQuery = normalizeCatalogSearchQuery(this.state.searchQuery);
         const cliSearchResult = searchCliEntries(docsPanelContent.cliEntries, searchQuery);
-        const mcpSearchResult = searchMcpEntries(docsPanelContent.mcpEntries, searchQuery);
+        const filteredMcpEntries = this.showInternalMcpTools
+            ? docsPanelContent.mcpEntries
+            : docsPanelContent.mcpEntries.filter((entry) => !entry.internal);
+        const mcpSearchResult = searchMcpEntries(filteredMcpEntries, searchQuery);
         const lintingSearchResult = searchCatalogEntries(docsPanelContent.lintingEntries, searchQuery);
         const formattingSearchResult = searchCatalogEntries(docsPanelContent.formattingEntries, searchQuery);
         const codemodsSearchResult = searchCatalogEntries(docsPanelContent.codemodsEntries, searchQuery);
@@ -338,8 +347,26 @@ export class GmDocsPanel extends LightDomLitElement {
                             role="tabpanel"
                             aria-labelledby="docs-view-mcp"
                         >
+                            ${docsPanelContent.mcpEntries.some((e) => e.internal)
+                                ? html`<div class="docs-subpage-toolbar">
+                                      <label class="docs-toggle-label" for="mcp-toggle-internal">
+                                          <input
+                                              id="mcp-toggle-internal"
+                                              type="checkbox"
+                                              .checked=${this.showInternalMcpTools}
+                                              @change=${(event: Event) => {
+                                                  const target = event.target;
+                                                  if (target instanceof HTMLInputElement) {
+                                                      this.showInternalMcpTools = target.checked;
+                                                  }
+                                              }}
+                                          />
+                                          <span>Show internal tools (for reference only)</span>
+                                      </label>
+                                  </div>`
+                                : null}
                             <div id="mcp-content" class="docs-reference-list">
-                                ${docsPanelContent.mcpEntries.length === 0
+                                ${filteredMcpEntries.length === 0
                                     ? html`<p class="catalog-empty">No tools are available right now.</p>`
                                     : mcpSearchResult.entries.length === 0
                                       ? html`<p class="catalog-empty">

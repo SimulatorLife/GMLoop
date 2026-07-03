@@ -24,6 +24,7 @@ export const MCP_TOOL_DENY_LIST: ReadonlyArray<ReadonlyArray<string>> = Object.f
     Object.freeze(["ui"]),
     Object.freeze(["profile"]),
     Object.freeze(["test"]),
+    Object.freeze(["replay"]),
     // Low-level live-reload or file watching commands
     Object.freeze(["watch"]),
     Object.freeze(["live-reload", "prepare"]),
@@ -63,6 +64,10 @@ export function isCommandExcludedFromMcpTools(command: Command): boolean {
     const commandWithMetadata = command as CommandWithMcpToolMetadata;
     if (commandWithMetadata[MCP_TOOL_EXCLUDED_SYMBOL] === true) {
         return true;
+    }
+
+    if (process.env.GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS === "true") {
+        return false;
     }
 
     const commandPath = getCommandPath(command);

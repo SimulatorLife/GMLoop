@@ -17,6 +17,7 @@ export type McpToolCatalogEntry = Readonly<{
     description: string;
     fields: ReadonlyArray<McpToolCatalogField>;
     toolName: string;
+    internal: boolean;
 }>;
 
 function normalizeMcpToolName(commandPath: ReadonlyArray<string>): string {
@@ -78,19 +79,21 @@ function normalizeSchemaFieldName(name: string): string {
  * Derive the public MCP tool catalog directly from the CLI command catalog.
  */
 export function createMcpToolCatalogEntries(
-    cliCatalog: ReadonlyArray<CliCatalogEntry>
+    cliCatalog: ReadonlyArray<CliCatalogEntry>,
+    options?: { includeInternal?: boolean }
 ): ReadonlyArray<McpToolCatalogEntry> {
+    const filtered = options?.includeInternal ? cliCatalog : cliCatalog.filter((entry) => !entry.excludeFromMcp);
+
     return Object.freeze(
-        cliCatalog
-            .filter((entry) => !entry.excludeFromMcp)
-            .map((entry) =>
-                Object.freeze({
-                    commandDisplayName: entry.displayName,
-                    commandPath: entry.commandPath,
-                    description: entry.description,
-                    fields: createMcpCatalogFields(entry),
-                    toolName: normalizeMcpToolName(entry.commandPath)
-                })
-            )
+        filtered.map((entry) =>
+            Object.freeze({
+                commandDisplayName: entry.displayName,
+                commandPath: entry.commandPath,
+                description: entry.description,
+                fields: createMcpCatalogFields(entry),
+                internal: entry.excludeFromMcp,
+                toolName: normalizeMcpToolName(entry.commandPath)
+            })
+        )
     );
 }

@@ -265,8 +265,8 @@ export function getCliCommandCatalog(): ReadonlyArray<CliCatalogEntry> {
     return Object.freeze(createCliCommandCatalog(program));
 }
 
-export function getMcpToolCatalogEntries(): ReadonlyArray<McpToolCatalogEntry> {
-    return createMcpToolCatalogEntries(getCliCommandCatalog());
+export function getMcpToolCatalogEntries(options?: { includeInternal?: boolean }): ReadonlyArray<McpToolCatalogEntry> {
+    return createMcpToolCatalogEntries(getCliCommandCatalog(), options);
 }
 
 export const __test__ = Object.freeze({
