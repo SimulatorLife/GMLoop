@@ -262,20 +262,35 @@ export class GmLiveReloadPanel extends LightDomLitElement {
         return html`
             <gm-card class="live-reload-panel-card" .heading=${"Connection Details"}>
                 <dl class="live-reload-detail-list">
-                    <div>
-                        <dt>Status</dt>
-                        <dd><code>${resolveEndpointLabel(endpoints?.statusUrl)}</code></dd>
-                    </div>
-                    <div>
-                        <dt>WebSocket</dt>
-                        <dd><code>${resolveEndpointLabel(endpoints?.websocketUrl)}</code></dd>
-                    </div>
-                    <div>
-                        <dt>Runtime</dt>
-                        <dd><code>${resolveEndpointLabel(endpoints?.runtimeUrl)}</code></dd>
-                    </div>
+                    ${this.#renderEndpointDetail("Status", endpoints?.statusUrl)}
+                    ${this.#renderEndpointDetail("WebSocket", endpoints?.websocketUrl)}
+                    ${this.#renderEndpointDetail("Runtime", endpoints?.runtimeUrl)}
                 </dl>
             </gm-card>
+        `;
+    }
+
+    #renderEndpointDetail(label: string, value: string | null | undefined) {
+        const endpointLabel = resolveEndpointLabel(value);
+
+        return html`
+            <div>
+                <dt>${label}</dt>
+                <dd>
+                    <span class="live-reload-endpoint-value"><code>${endpointLabel}</code></span>
+                    ${value
+                        ? html`
+                              <gm-copy-button
+                                  class="live-reload-endpoint-copy"
+                                  .value=${value}
+                                  accessibleLabel=${`Copy ${label.toLowerCase()} endpoint to clipboard`}
+                                  label="Copy"
+                                  hideLabel
+                              ></gm-copy-button>
+                          `
+                        : null}
+                </dd>
+            </div>
         `;
     }
 

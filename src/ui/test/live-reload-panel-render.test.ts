@@ -157,6 +157,46 @@ void test("GmLiveReloadPanel renders configured live-reload dashboard sections",
     assert.match(rendered, /ws:\/\/127\.0\.0\.1:17890/u);
 });
 
+void test("GmLiveReloadPanel offers accessible copy controls for configured endpoints", () => {
+    const panel = new TestableGmLiveReloadPanel();
+    panel.model = createMockModel(createStatusSnapshot());
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /class="live-reload-endpoint-copy"/u);
+    assert.match(rendered, /accessibleLabel=Copy status endpoint to clipboard/u);
+    assert.match(rendered, /accessibleLabel=Copy websocket endpoint to clipboard/u);
+    assert.match(rendered, /accessibleLabel=Copy runtime endpoint to clipboard/u);
+    assert.match(rendered, /label="Copy"/u);
+    assert.match(rendered, /hideLabel/u);
+});
+
+void test("GmLiveReloadPanel omits endpoint copy controls when endpoint values are not configured", () => {
+    const panel = new TestableGmLiveReloadPanel();
+    const model = createMockModel(createStatusSnapshot());
+    panel.model = {
+        ...model,
+        liveReload:
+            model.liveReload === null
+                ? null
+                : {
+                      ...model.liveReload,
+                      endpoints: {
+                          runtimeUrl: null,
+                          statusUrl: null,
+                          websocketUrl: null
+                      }
+                  }
+    };
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.equal(countOccurrences(rendered, "Not configured"), 3);
+    assert.doesNotMatch(rendered, /live-reload-endpoint-copy/u);
+});
+
 void test("GmLiveReloadPanel renders single inactive setup state when host does not provide live-reload config", () => {
     const panel = new TestableGmLiveReloadPanel();
     panel.model = {
