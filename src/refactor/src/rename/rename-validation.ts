@@ -21,6 +21,7 @@ import {
     parseSymbolIdParts,
     tryNormalizeIdentifierName
 } from "./index.js";
+import { loadRefactorReservedIdentifierNames } from "./reserved-identifiers.js";
 
 type MaybePromise<T> = Promise<T> | T;
 type RenameConflictContext = {
@@ -181,35 +182,6 @@ function checkShadowingConflicts(
 }
 
 /**
- * Builds the complete set of reserved identifiers by combining Core language
- * reservations with semantic keyword providers.
- * @param keywordProvider - Provider for semantic reserved names (null if not available)
- * @returns Set of all reserved identifiers (lowercase)
- */
-function buildReservedKeywordSet(
-    keywordProvider: Partial<KeywordProvider> | null,
-    context: RenameConflictContext
-): MaybePromise<ReadonlySet<string> | Set<string>> {
-    const defaultReservedNames = Core.loadReservedGmlBindingIdentifierNames("ordinary-binding");
-    if (context.symbolKind === "enum-member") {
-        return Core.loadReservedGmlBindingIdentifierNames("enum-member");
-    }
-
-    if (!Core.hasMethods(keywordProvider, "getReservedKeywords")) {
-        return defaultReservedNames;
-    }
-
-    const semanticReserved = keywordProvider.getReservedKeywords() ?? [];
-    if (!isPromiseLike(semanticReserved)) {
-        return new Set([...defaultReservedNames, ...semanticReserved]);
-    }
-
-    return Promise.resolve(semanticReserved).then((resolvedKeywords) => {
-        return new Set([...defaultReservedNames, ...(resolvedKeywords ?? [])]);
-    });
-}
-
-/**
  * Detect conflicts that would arise from renaming a symbol.
  * Checks for reserved identifiers and shadowing conflicts.
  *
@@ -249,8 +221,10 @@ export async function detectRenameConflicts(
     }
 
     // Check if new name conflicts with reserved language identifiers.
-    const reservedKeywords = buildReservedKeywordSet(keywordProvider, resolvedContext);
-    const resolvedReservedKeywords = isPromiseLike(reservedKeywords) ? await reservedKeywords : reservedKeywords;
+    const resolvedReservedKeywords = await loadRefactorReservedIdentifierNames(
+        resolvedContext.symbolKind === "enum-member" ? "enum-member" : "ordinary-binding",
+        keywordProvider
+    );
     if (resolvedReservedKeywords.has(normalizedNewName)) {
         conflicts.push({
             type: ConflictType.RESERVED,

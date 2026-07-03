@@ -10,6 +10,7 @@ import {
     detectCrossRenameNameConfusion,
     detectDuplicateTargetNames
 } from "../../rename/rename-validation.js";
+import { loadRefactorReservedIdentifierNames } from "../../rename/reserved-identifiers.js";
 import type {
     ApplyWorkspaceEditOptions,
     BatchRenamePlanSummary,
@@ -31,14 +32,6 @@ import type {
 import { type WorkspaceEdit, WorkspaceEdit as WorkspaceEditClass } from "../../workspace-edit.js";
 import { createPathSelectionMatcher, resolveProjectPath } from "./path-selection.js";
 
-const RESERVED_LOCAL_RENAME_CATEGORIES = new Set([
-    "globalVariable",
-    "instanceVariable",
-    "localVariable",
-    "loopIndexVariable",
-    "staticVariable"
-]);
-
 const DEFINITELY_LOCAL_NAMING_CATEGORIES = new Set<NamingCategory>([
     "localVariable",
     "argument",
@@ -52,15 +45,21 @@ const SCRIPT_CALLABLE_NAMING_CATEGORIES = new Set<NamingCategory>([
     "structDeclaration"
 ]);
 
-function isReservedLocalRenameTarget(target: LocalNamingConventionTarget, suggestedName: string): boolean {
+function isReservedLocalRenameTarget(parameters: {
+    target: LocalNamingConventionTarget;
+    suggestedName: string;
+    reservedOrdinaryNames: ReadonlySet<string>;
+}): boolean {
+    const { target, suggestedName, reservedOrdinaryNames } = parameters;
+    if (reservedOrdinaryNames.has(suggestedName)) {
+        return true;
+    }
+
     if (target.category === "argument" || target.category === "catchArgument") {
         return Core.isReservedGmlBindingIdentifierName(suggestedName, "argument-binding");
     }
 
-    return (
-        RESERVED_LOCAL_RENAME_CATEGORIES.has(target.category) &&
-        Core.isReservedGmlBindingIdentifierName(suggestedName, "ordinary-binding")
-    );
+    return false;
 }
 
 function appendWorkspaceEdits(destination: WorkspaceEdit, source: WorkspaceEdit): void {
@@ -321,6 +320,7 @@ function processLocalNamingConventionRename(parameters: {
     duplicateScopedDeclarations: Map<string, Set<string>>;
     hasDuplicateScopedDeclarations: boolean;
     globalAssetNames?: ReadonlySet<string>;
+    reservedOrdinaryNames: ReadonlySet<string>;
 }): number {
     const { target, suggestedName } = parameters;
     const needsScopeKey = parameters.hasDuplicateScopedDeclarations || parameters.localScopeNames.size > 0;
@@ -382,16 +382,7 @@ function processLocalNamingConventionRename(parameters: {
     }
 
     normalizedSuggestedName ??= suggestedName.toLowerCase();
-    const isLocalCategory =
-        target.category === "localVariable" ||
-        target.category === "argument" ||
-        target.category === "catchArgument" ||
-        target.category === "loopIndexVariable" ||
-        target.category === "staticVariable";
-    const isGlobalCollision = isLocalCategory
-        ? parameters.globalAssetNames?.has(normalizedSuggestedName)
-        : normalizedSuggestedName !== target.name.toLowerCase() &&
-          parameters.globalAssetNames?.has(normalizedSuggestedName);
+    const isGlobalCollision = parameters.globalAssetNames?.has(normalizedSuggestedName);
 
     if (isGlobalCollision) {
         parameters.warnings.push(
@@ -410,7 +401,13 @@ function processLocalNamingConventionRename(parameters: {
         return 0;
     }
 
-    if (isReservedLocalRenameTarget(target, normalizedSuggestedName)) {
+    if (
+        isReservedLocalRenameTarget({
+            target,
+            suggestedName: normalizedSuggestedName,
+            reservedOrdinaryNames: parameters.reservedOrdinaryNames
+        })
+    ) {
         parameters.warnings.push(
             `Skipping local rename '${target.name}' -> '${suggestedName}' in ${target.path} because '${suggestedName}' is a reserved GameMaker identifier.`
         );
@@ -934,6 +931,7 @@ export async function planNamingConventionCodemod(
     const namingTargetProvider = {
         listNamingConventionTargets: semantic.listNamingConventionTargets.bind(semantic)
     };
+    const reservedOrdinaryNames = await loadRefactorReservedIdentifierNames("ordinary-binding", semantic);
     const queriedTargetsResult = await listNamingConventionTargetsResilient({
         semantic: namingTargetProvider,
         queryPaths,
@@ -1043,7 +1041,8 @@ export async function planNamingConventionCodemod(
             macroDependencyNamesByFile,
             duplicateScopedDeclarations,
             hasDuplicateScopedDeclarations,
-            globalAssetNames
+            globalAssetNames,
+            reservedOrdinaryNames
         });
     }
 

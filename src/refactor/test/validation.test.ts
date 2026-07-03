@@ -383,6 +383,14 @@ void describe("batchValidateScopeConflicts", () => {
 });
 
 void describe("detectRenameConflicts", () => {
+    void test("flags supplemental reserved identifiers even without semantic keyword providers", async () => {
+        const conflicts = await detectRenameConflicts("old_name", "poisson_disk_sample", [], null, null);
+
+        assert.equal(conflicts.length, 1);
+        assert.equal(conflicts[0].type, ConflictType.RESERVED);
+        assert.ok(conflicts[0].message.includes("reserved GameMaker identifier"));
+    });
+
     void test("deduplicates shadow conflicts per file in the same scope", async () => {
         const occurrences: Array<SymbolOccurrence> = [
             { path: "scripts/player.gml", start: 0, end: 5, scopeId: "scope-1" },

@@ -157,3 +157,109 @@ void test("namingConvention skips local variable rename if it conflicts with a g
     const hasConflictWarning = plan.warnings.some((w) => w.includes("conflicts with a global asset/resource name"));
     assert.equal(hasConflictWarning, true, "Should have a warning about collision with global asset name");
 });
+
+void test("namingConvention blocks reserved built-in names for local variable-category targets", async () => {
+    const projectRoot = "/project";
+    const targets: Array<NamingConventionTarget> = [
+        {
+            category: "variable",
+            name: "Choose",
+            occurrences: [
+                {
+                    path: "scripts/foo/foo.gml",
+                    start: 12,
+                    end: 18,
+                    scopeId: "scope-function",
+                    kind: "definition"
+                }
+            ],
+            path: "scripts/foo/foo.gml",
+            scopeId: "scope-function",
+            symbolId: null
+        }
+    ];
+
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => targets,
+        validateEdits: async () => ({ errors: [], warnings: [] })
+    };
+
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const plan = await engine.planNamingConventionCodemod({
+        projectRoot,
+        targetPaths: [projectRoot],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        variable: { caseStyle: "lower_snake" }
+                    }
+                }
+            }
+        }
+    });
+
+    assert.equal(plan.localRenameCount, 0);
+    assert.equal(
+        plan.warnings.some(
+            (warning) =>
+                warning.includes("reserved GameMaker identifier") &&
+                warning.includes("'Choose'") &&
+                warning.includes("'choose'")
+        ),
+        true
+    );
+});
+
+void test("namingConvention blocks reserved top-level names from semantic keyword providers", async () => {
+    const projectRoot = "/project";
+    const targets: Array<NamingConventionTarget> = [
+        {
+            category: "scriptResourceName",
+            name: "PoissonDiskSample",
+            occurrences: [
+                {
+                    path: "scripts/PoissonDiskSample/PoissonDiskSample.yy",
+                    start: 0,
+                    end: 0,
+                    scopeId: "scope-global",
+                    kind: "definition"
+                }
+            ],
+            path: "scripts/PoissonDiskSample/PoissonDiskSample.yy",
+            scopeId: "scope-global",
+            symbolId: "gml/scripts/PoissonDiskSample"
+        }
+    ];
+
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => targets,
+        hasSymbol: async () => true,
+        getSymbolOccurrences: async () => [],
+        getReservedKeywords: async () => ["poisson_disk_sample"],
+        validateEdits: async () => ({ errors: [], warnings: [] })
+    };
+
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const plan = await engine.planNamingConventionCodemod({
+        projectRoot,
+        targetPaths: [projectRoot],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        scriptResourceName: { caseStyle: "lower_snake" }
+                    }
+                }
+            }
+        }
+    });
+
+    assert.equal(plan.topLevelRenameRequests.length, 0);
+    assert.equal(
+        plan.warnings.some(
+            (warning) => warning.includes("reserved GameMaker identifier") && warning.includes("poisson_disk_sample")
+        ),
+        true
+    );
+});
