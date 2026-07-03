@@ -112,8 +112,11 @@ function injectBootstrapPayload(
 ): string {
     const documentTitle = renderGraphVisualizationDocumentTitle(options.title);
     return html
-        .replace("<title>GMLoop Graph Visualization</title>", `<title>GMLoop Graph Index - ${documentTitle}</title>`)
-        .replace("</head>", `${renderBootstrapScript(data, options)}\n</head>`);
+        .replace(
+            "<title>GMLoop Graph Visualization</title>",
+            () => `<title>GMLoop Graph Index - ${documentTitle}</title>`
+        )
+        .replace("</head>", () => `${renderBootstrapScript(data, options)}\n</head>`);
 }
 
 async function createViteWebBundle(outDirectory: string): Promise<void> {
