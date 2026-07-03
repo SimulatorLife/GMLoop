@@ -50,10 +50,19 @@ export { frameRoomCamera, inspectRoomCamera, listRoomCameras, updateRoomCamera }
 export type {
     AddRoomInstanceRequest,
     DeleteRoomInstanceRequest,
+    InspectRoomInstanceRequest,
+    ListRoomInstancesRequest,
+    RoomInstanceInspectionResult,
     RoomInstanceMutationResult,
     UpdateRoomInstanceRequest
 } from "./room-instance-operations.js";
-export { addRoomInstance, deleteRoomInstance, updateRoomInstance } from "./room-instance-operations.js";
+export {
+    addRoomInstance,
+    deleteRoomInstance,
+    inspectRoomInstance,
+    listRoomInstances,
+    updateRoomInstance
+} from "./room-instance-operations.js";
 export type {
     CreateRoomLayerRequest,
     DeleteRoomLayerRequest,

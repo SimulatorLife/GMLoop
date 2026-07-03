@@ -74,6 +74,23 @@ export interface DeleteRoomInstanceRequest {
 }
 
 /**
+ * Parameters for inspecting one GameMaker room instance.
+ */
+export interface InspectRoomInstanceRequest {
+    instanceId: string;
+    projectRoot: string;
+    roomName: string;
+}
+
+/**
+ * Parameters for listing GameMaker room instances.
+ */
+export interface ListRoomInstancesRequest {
+    projectRoot: string;
+    roomName: string;
+}
+
+/**
  * Summary returned after a room instance mutation.
  */
 export interface RoomInstanceMutationResult {
@@ -88,6 +105,20 @@ export interface RoomInstanceMutationResult {
     roomPath: string;
     warnings: Array<string>;
     writtenPaths: Array<string>;
+    x: number;
+    y: number;
+}
+
+/**
+ * Read-only summary of an object instance placed in a GameMaker room.
+ */
+export interface RoomInstanceInspectionResult {
+    instanceId: string;
+    layerName: string;
+    objectName: string;
+    objectPath: string;
+    roomName: string;
+    roomPath: string;
     x: number;
     y: number;
 }
@@ -213,6 +244,28 @@ function readRoomInstanceObjectReference(instance: Record<string, unknown>, inst
     return Object.freeze({ name, path: resourcePath });
 }
 
+function summarizeRoomInstance(
+    context: RoomInstanceMutationContext,
+    instance: Record<string, unknown>
+): RoomInstanceInspectionResult {
+    const instanceId = getRoomInstanceName(instance);
+    if (instanceId === null) {
+        throw new TypeError(`Room '${context.roomReference.name}' contains an instance without a stable name.`);
+    }
+
+    const objectReference = readRoomInstanceObjectReference(instance, instanceId);
+    return {
+        instanceId,
+        layerName: Core.getNonEmptyString(context.instanceLayer.name) ?? "Instances",
+        objectName: objectReference.name,
+        objectPath: objectReference.path,
+        roomName: context.roomReference.name,
+        roomPath: context.roomReference.path,
+        x: readRoomInstanceCoordinate(instance, "x"),
+        y: readRoomInstanceCoordinate(instance, "y")
+    };
+}
+
 async function resolveRoomInstanceMutationContext(
     projectRootInput: string,
     roomName: string
@@ -273,6 +326,33 @@ export async function addRoomInstance(request: AddRoomInstanceRequest): Promise<
         x: request.x,
         y: request.y
     };
+}
+
+/**
+ * List object instances from the first instance layer in a GameMaker room.
+ *
+ * @param request - Room instance listing request.
+ * @returns Stable summaries of room instances in layer order.
+ */
+export async function listRoomInstances(
+    request: ListRoomInstancesRequest
+): Promise<Array<RoomInstanceInspectionResult>> {
+    const context = await resolveRoomInstanceMutationContext(request.projectRoot, request.roomName);
+    return context.instanceLayer.instances
+        .filter((instance): instance is Record<string, unknown> => Core.isObjectLike(instance))
+        .map((instance) => summarizeRoomInstance(context, instance));
+}
+
+/**
+ * Inspect one object instance from the first instance layer in a GameMaker room.
+ *
+ * @param request - Room instance inspection request.
+ * @returns Stable summary of the requested room instance.
+ */
+export async function inspectRoomInstance(request: InspectRoomInstanceRequest): Promise<RoomInstanceInspectionResult> {
+    const context = await resolveRoomInstanceMutationContext(request.projectRoot, request.roomName);
+    const located = locateRoomInstance(context.instanceLayer, context.roomReference.name, request.instanceId);
+    return summarizeRoomInstance(context, located.instance);
 }
 
 /**
