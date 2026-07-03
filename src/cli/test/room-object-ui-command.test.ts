@@ -1110,6 +1110,62 @@ void test("room instance add/update/delete mutate room metadata through CLI writ
         assert.equal(writePayload.payload.x, 56);
         assert.equal(writePayload.payload.y, 78);
 
+        const listResult = await runCliTestCommand({
+            argv: ["room", "instance", "list", "rm_main", "--path", projectRoot, "--json"]
+        });
+        assert.equal(listResult.exitCode, 0);
+        const listPayload = JSON.parse(listResult.stdout) as {
+            command: string;
+            payload: {
+                instances: Array<{
+                    instanceId: string;
+                    layerName: string;
+                    objectName: string;
+                    objectPath: string;
+                    roomName: string;
+                    roomPath: string;
+                    x: number;
+                    y: number;
+                }>;
+            };
+        };
+        assert.equal(listPayload.command, "room instance list");
+        assert.deepEqual(listPayload.payload.instances, [
+            {
+                instanceId: writePayload.payload.instanceId,
+                layerName: "Instances",
+                objectName: "obj_player",
+                objectPath: "objects/obj_player/obj_player.yy",
+                roomName: "rm_main",
+                roomPath: "rooms/rm_main/rm_main.yy",
+                x: 56,
+                y: 78
+            }
+        ]);
+
+        const inspectResult = await runCliTestCommand({
+            argv: [
+                "room",
+                "instance",
+                "inspect",
+                "rm_main",
+                writePayload.payload.instanceId,
+                "--path",
+                projectRoot,
+                "--json"
+            ]
+        });
+        assert.equal(inspectResult.exitCode, 0);
+        const inspectPayload = JSON.parse(inspectResult.stdout) as {
+            command: string;
+            payload: { instanceId: string; objectName: string; x: number; y: number };
+        };
+        assert.equal(inspectPayload.command, "room instance inspect");
+        assert.equal(inspectPayload.payload.instanceId, writePayload.payload.instanceId);
+        assert.equal(inspectPayload.payload.objectName, "obj_player");
+        assert.equal(inspectPayload.payload.x, 56);
+        assert.equal(inspectPayload.payload.y, 78);
+
         const updateResult = await runCliTestCommand({
             argv: [
                 "room",
