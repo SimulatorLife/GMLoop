@@ -1,10 +1,12 @@
 import { Refactor } from "@gmloop/refactor";
+import { Semantic } from "@gmloop/semantic";
 import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { createConfigOption, createPathOption, createWriteOption } from "../cli-core/shared-command-options.js";
 import {
     ensureProjectGraphIndex,
+    filterGraphIndexResultsByKind,
     printProjectPayload,
     type SharedProjectContextOptions
 } from "../workflow/project-root.js";
@@ -13,6 +15,16 @@ type ScriptMutationOptions = SharedProjectContextOptions &
     Readonly<{
         write?: boolean;
     }>;
+
+function addScriptSharedOptions(command: Command): Command {
+    return command
+        .addOption(createPathOption())
+        .addOption(createConfigOption())
+        .option("--database-path <path>", "Graph index database path override.")
+        .option("--toolset-root <path>", "Toolset project root path override.")
+        .option("--force", "Rebuild graph index before query.")
+        .option("--json", "Emit JSON output.");
+}
 
 function printScriptPayload(payload: unknown): void {
     printProjectPayload(payload);
@@ -66,12 +78,22 @@ export function createScriptCommand(): Command {
         "Inspect and mutate script resources."
     );
 
-    const list = applyStandardCommandOptions(new Command("list")).description("List script resources.");
-    list.addOption(createPathOption()).addOption(createConfigOption());
+    const list = addScriptSharedOptions(
+        applyStandardCommandOptions(new Command("list")).description("List script resources.")
+    );
     list.action(async function scriptListAction() {
         const options = this.opts<SharedProjectContextOptions>();
         const context = await ensureProjectGraphIndex(options);
-        const payload = context.projectConfig;
+        const payload = filterGraphIndexResultsByKind(
+            Semantic.searchGraphIndex({
+                databasePath: options.databasePath,
+                projectConfig: context.projectConfig,
+                projectRoot: context.projectRoot,
+                query: "",
+                toolsetRoot: options.toolsetRoot
+            }).results,
+            "script"
+        );
         printScriptPayload({ command: "script list", ok: true, payload });
     });
 
