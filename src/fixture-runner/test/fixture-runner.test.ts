@@ -80,6 +80,33 @@ void test("loadFixtureProjectConfig rejects invalid fixture assertion values", a
     }
 });
 
+void test("loadFixtureProjectConfig rejects unsafe expected text file names", async () => {
+    const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-config-invalid-expected-text-"));
+
+    try {
+        for (const [caseId, expectedTextFile] of [
+            ["parent-path", "../expected.txt"],
+            ["nested-path", "nested/expected.txt"],
+            ["protected-gml", "expected.gml"],
+            ["alternate-gml", "expected.current.gml"]
+        ]) {
+            const configPath = path.join(rootPath, `${caseId}.json`);
+            await writeFile(
+                configPath,
+                `${JSON.stringify({ fixture: { kind: "format", expectedTextFile } }, null, 2)}\n`,
+                "utf8"
+            );
+
+            await assert.rejects(
+                FixtureRunner.loadFixtureProjectConfig(configPath),
+                /gmloop\.json fixture config\.expectedTextFile must name a non-GML file in the fixture case directory/u
+            );
+        }
+    } finally {
+        await rm(rootPath, { recursive: true, force: true });
+    }
+});
+
 void test("discoverFixtureCases normalizes directory-per-case fixtures", async () => {
     const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-discovery-"));
     await createTextFixtureCase(
