@@ -99,6 +99,109 @@ void test("agent pack exposes every packaged template and skill for read-only pr
     assert.match(resources[2]?.content ?? "", /\.gmloop\//u);
 });
 
+void test("agent integration discovery classifies Qwen CLI setup and manual provider configs", async () => {
+    const fixture = await createGameProjectFixture();
+    try {
+        await mkdir(path.join(fixture.projectRoot, ".qwen"), { recursive: true });
+        await mkdir(path.join(fixture.projectRoot, ".codex"), { recursive: true });
+        await writeFile(path.join(fixture.projectRoot, ".qwen", "settings.json"), "{}\n", "utf8");
+        await writeFile(path.join(fixture.projectRoot, ".codex", "config.toml"), "\n", "utf8");
+        const commandRunner: AgentPack.AgentCliCommandRunner = async (command, args) => {
+            if (args.length === 1 && args[0] === "--version") {
+                if (command === "qwen") {
+                    return { exitCode: 0, stderr: "", stdout: "qwen 1.2.3\n" };
+                }
+                if (command === "codex") {
+                    return { exitCode: 0, stderr: "", stdout: "codex 0.42.0\n" };
+                }
+            }
+            return { exitCode: -1, stderr: "", stdout: "" };
+        };
+
+        const targets = await AgentPack.discoverAgentIntegrationTargets(fixture.projectRoot, commandRunner);
+        const qwen = targets.find((target) => target.id === "qwen");
+        const codex = targets.find((target) => target.id === "codex");
+        const gemini = targets.find((target) => target.id === "gemini");
+
+        assert.equal(qwen?.status, "cli-configurable");
+        assert.equal(qwen?.selectedByDefault, true);
+        assert.equal(qwen?.cliVersion, "qwen 1.2.3");
+        assert.deepEqual(qwen?.configPaths, [".qwen/settings.json"]);
+        assert.equal(codex?.status, "manual-required");
+        assert.equal(codex?.selectedByDefault, false);
+        assert.deepEqual(codex?.configPaths, [".codex/config.toml"]);
+        assert.equal(gemini?.status, "unavailable");
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("agent integration setup configures only selected CLI-owned Qwen MCP servers", async () => {
+    const fixture = await createGameProjectFixture();
+    try {
+        await mkdir(path.join(fixture.projectRoot, ".qwen"), { recursive: true });
+        await writeFile(path.join(fixture.projectRoot, ".qwen", "settings.json"), "{}\n", "utf8");
+        const calls = new Array<Readonly<{ args: ReadonlyArray<string>; command: string; cwd: string }>>();
+        const commandRunner: AgentPack.AgentCliCommandRunner = async (command, args, options) => {
+            calls.push({ args, command, cwd: options.cwd });
+            if (args.length === 1 && args[0] === "--version") {
+                return command === "qwen"
+                    ? { exitCode: 0, stderr: "", stdout: "qwen 1.2.3\n" }
+                    : { exitCode: -1, stderr: "", stdout: "" };
+            }
+            return { exitCode: 0, stderr: "", stdout: "" };
+        };
+
+        const result = await AgentPack.configureSelectedAgentIntegrations(
+            fixture.projectRoot,
+            ["detected"],
+            commandRunner
+        );
+        const setupCalls = calls.filter((call) => call.args[0] === "mcp");
+
+        assert.deepEqual(result.setup.configured, ["qwen"]);
+        assert.deepEqual(result.setup.failed, []);
+        assert.deepEqual(
+            setupCalls.map((call) => call.command),
+            ["qwen", "qwen", "qwen", "qwen"]
+        );
+        assert.deepEqual(
+            setupCalls.map((call) => call.args),
+            [
+                ["mcp", "add", "--scope", "project", "--trust", "gmloop", "gmloop", "mcp"],
+                ["mcp", "add", "--scope", "project", "--trust", "lsp", "pnpm", "exec", "lsp-mcp-server"],
+                [
+                    "mcp",
+                    "add",
+                    "--scope",
+                    "project",
+                    "--trust",
+                    "--exclude-tools",
+                    "browser_run_code_unsafe",
+                    "playwright",
+                    "npx",
+                    "-y",
+                    "@playwright/mcp@latest"
+                ],
+                ["mcp", "add", "--scope", "project", "--trust", "gm-cli", "gmloop", "gm-cli", "mcp"]
+            ]
+        );
+        assert.equal(
+            setupCalls.every((call) => call.cwd === fixture.projectRoot),
+            true
+        );
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("agent target selection parser rejects ambiguous or unsupported selections", () => {
+    assert.deepEqual(AgentPack.parseAgentConfigTargetSelections("qwen,codex"), ["qwen", "codex"]);
+    assert.deepEqual(AgentPack.parseAgentConfigTargetSelections("detected"), ["detected"]);
+    assert.throws(() => AgentPack.parseAgentConfigTargetSelections("detected,qwen"), /cannot be combined/u);
+    assert.throws(() => AgentPack.parseAgentConfigTargetSelections("claude"), /must be one of/u);
+});
+
 void test("agent pack initialization installs skills, project guidance, and a version receipt", async () => {
     const fixture = await createGameProjectFixture();
     try {

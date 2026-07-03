@@ -192,7 +192,7 @@ approval/permission system, memory store, or background task queue. External
 agent coordinators own those concerns; the UI remains vendor-neutral and
 coordinator-neutral.
 
-When the opened project has no recorded agent-pack installation and no skills, the empty state offers **Initialize Auto-Game Agent Pack**. If project skills exist without an installation receipt, it reports **Setup Incomplete** and offers **Complete Auto-Game Setup** because GMLoop cannot infer their package version or safely treat the full pack as current. When the installed version is older than GMLoop's available package version, it offers **Update Auto-Game Agent Pack**. A default-checked **Update Project .gitignore** option controls whether initialization merges GMLoop's generated/cache paths into the project-root ignore file. The host materializes standard skills and applicable guidance such as `AGENTS.md`, preserves project-authored or modified files, reports conflicts and server failures, and returns refreshed project skill state after success.
+When the opened project has no recorded agent-pack installation and no skills, the empty state offers **Initialize Auto-Game Agent Pack**. If project skills exist without an installation receipt, it reports **Setup Incomplete** and offers **Complete Auto-Game Setup** because GMLoop cannot infer their package version or safely treat the full pack as current. When the installed version is older than GMLoop's available package version, it offers **Update Auto-Game Agent Pack**. A default-checked **Update Project .gitignore** option controls whether initialization merges GMLoop's generated/cache paths into the project-root ignore file. The same setup area lists detected Codex, Gemini/Antigravity, and Qwen integration targets. Only CLI-configurable detected targets are selectable by default; manual-required or unavailable targets remain visible but disabled with provider-owned setup guidance. The host materializes standard skills and applicable guidance such as `AGENTS.md`, invokes supported provider CLIs for selected MCP setup, preserves project-authored or modified files, reports conflicts and server failures, and returns refreshed project skill state after success.
 
 The AI Skills card also exposes keyboard-native previews for the packaged `AGENTS.md`, `.gitignore`, and every file in the packaged skill directories. These previews always show the read-only package source before synchronization; they do not imply that the resource is installed and do not substitute project-authored or project-modified content.
 
@@ -209,7 +209,7 @@ Observability is driven by host-provided state. Dispatched events for skill conf
 - `onInitializeAutoGameAgentPack`
 - `onSetAutoGameSkillEnabled`
 
-`onInitializeAutoGameAgentPack` receives `{ includeGitIgnore: boolean }`, matching the initialization checkbox.
+`onInitializeAutoGameAgentPack` receives `{ agentTargets: readonly ("codex" | "gemini" | "qwen")[], includeGitIgnore: boolean }`, matching the selected provider CLI targets and initialization checkbox.
 
 ## Live Reload Surface
 
@@ -285,9 +285,9 @@ New top-level UI additions should:
 - **FEAT**: In the UI's "Fix" page/tab (also probably the CLI output since they should be the same), it is unclear if/when GMLoop is rebuilding/updating the semantic-index. It just shows `[1/3 Refactor Codemods]... [namingConvention] running...` for a long time but we want some more visibility into when the semantic index is being updated, since that is a critical part of the process and can take a long time for larger projects. We should add some explicit log/status messages to indicate when the semantic index is being created/rebuilt/updated, and ideally also show progress updates for that step if possible (e.g. "Updating semantic index... [n%]").
 - **FEAT**: In the UI's "Fix" page/tab we should have a way/button to stop/cancel an in-flight fix workflow, in case the user accidentally starts a fix workflow or realizes they need to change their fix configuration before starting the workflow
 - **BUG**: On the UI's "Docs" page, "CLI" tab, some of the commands include `--path` even though that option does not seem to be supported by the CLI for that command. Ex. The page includes the command:
-  ```
-  generate-feather-metadata
-  Generate feather-metadata.json from the GameMaker manual.
-  gmloop generate-feather-metadata --path /Users/henrykirk/GMLoop/vendor/3DSpider
-  ```
-  But if copied and run in the terminal, it fails with error: `error: unknown option '--path'`.
+    ```
+    generate-feather-metadata
+    Generate feather-metadata.json from the GameMaker manual.
+    gmloop generate-feather-metadata --path /Users/henrykirk/GMLoop/vendor/3DSpider
+    ```
+    But if copied and run in the terminal, it fails with error: `error: unknown option '--path'`.

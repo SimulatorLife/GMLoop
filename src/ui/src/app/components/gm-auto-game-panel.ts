@@ -1,6 +1,7 @@
 import { html, nothing } from "lit";
 
 import type {
+    GraphVisualizationAutoGameAgentConfig,
     GraphVisualizationAutoGameAgentPackResource,
     GraphVisualizationAutoGamePipelineEvent,
     GraphVisualizationAutoGamePipelineLlmOutput,
@@ -59,7 +60,8 @@ export class GmAutoGamePanel extends LightDomLitElement {
     public static properties = {
         model: { attribute: false },
         state: { attribute: false },
-        includeGitIgnore: { state: true }
+        includeGitIgnore: { state: true },
+        selectedAgentTargets: { state: true }
     };
 
     public accessor model: GraphVisualizationUiModel | null = null;
@@ -67,6 +69,10 @@ export class GmAutoGamePanel extends LightDomLitElement {
     public accessor state: GraphVisualizationUiState | null = null;
 
     private accessor includeGitIgnore = true;
+
+    private accessor selectedAgentTargets: ReadonlyArray<GraphVisualizationAutoGameAgentConfig["id"]> = [];
+
+    #hasUserSelectedAgentTargets = false;
 
     #onDismissErrorBanner = (): void => {
         this.dispatchEvent(
@@ -219,9 +225,123 @@ export class GmAutoGamePanel extends LightDomLitElement {
         `;
     }
 
+    #getAgentConfigBadgeTone(status: GraphVisualizationAutoGameAgentConfig["status"]): GmBadgeTone {
+        if (status === "cli-configurable") {
+            return "success";
+        }
+        if (status === "manual-required") {
+            return "warning";
+        }
+        return "muted";
+    }
+
+    #getAgentConfigBadgeLabel(status: GraphVisualizationAutoGameAgentConfig["status"]): string {
+        if (status === "cli-configurable") {
+            return "CLI Setup";
+        }
+        if (status === "manual-required") {
+            return "Manual";
+        }
+        return "Unavailable";
+    }
+
+    #setAgentTargetSelected(agentId: GraphVisualizationAutoGameAgentConfig["id"], selected: boolean): void {
+        const selectedTargets = new Set(this.selectedAgentTargets);
+        this.#hasUserSelectedAgentTargets = true;
+        if (selected) {
+            selectedTargets.add(agentId);
+        } else {
+            selectedTargets.delete(agentId);
+        }
+        this.selectedAgentTargets = Object.freeze([...selectedTargets].sort());
+    }
+
+    #getSelectedAgentTargets(
+        agentConfigs: ReadonlyArray<GraphVisualizationAutoGameAgentConfig>
+    ): ReadonlyArray<GraphVisualizationAutoGameAgentConfig["id"]> {
+        if (this.#hasUserSelectedAgentTargets) {
+            return this.selectedAgentTargets;
+        }
+        return Object.freeze(
+            agentConfigs.filter((agentConfig) => agentConfig.selectedByDefault).map((agentConfig) => agentConfig.id)
+        );
+    }
+
+    #renderAgentConfigTarget(agentConfig: GraphVisualizationAutoGameAgentConfig, isSkillMutationPending: boolean) {
+        const isSelectable = agentConfig.status === "cli-configurable";
+        const checked = this.#getSelectedAgentTargets(
+            this.model?.autoGamePipeline?.agentPack.agentConfigs ?? []
+        ).includes(agentConfig.id);
+        return html`
+            <li class=${`auto-game-agent-config auto-game-agent-config--${agentConfig.status}`}>
+                <div class="auto-game-agent-config__header">
+                    <label class="auto-game-agent-config__select">
+                        <input
+                            type="checkbox"
+                            .checked=${checked}
+                            ?disabled=${!isSelectable || isSkillMutationPending}
+                            aria-label=${`${checked ? "Exclude" : "Include"} ${agentConfig.label} MCP setup`}
+                            @change=${(event: Event) => {
+                                this.#setAgentTargetSelected(
+                                    agentConfig.id,
+                                    (event.target as HTMLInputElement).checked
+                                );
+                            }}
+                        />
+                        <span>
+                            <strong>${agentConfig.label}</strong>
+                            <small
+                                >${agentConfig.cliInstalled
+                                    ? (agentConfig.cliVersion ?? agentConfig.cliName)
+                                    : "CLI not detected"}</small
+                            >
+                        </span>
+                    </label>
+                    <gm-badge
+                        .label=${this.#getAgentConfigBadgeLabel(agentConfig.status)}
+                        .tone=${this.#getAgentConfigBadgeTone(agentConfig.status)}
+                    ></gm-badge>
+                </div>
+                <p>${agentConfig.statusDetail}</p>
+                ${agentConfig.configPaths.length > 0
+                    ? html`<code class="auto-game-item-meta">${agentConfig.configPaths.join(", ")}</code>`
+                    : nothing}
+                ${agentConfig.status === "manual-required"
+                    ? html`<ul class="auto-game-agent-config__manual">
+                          ${agentConfig.manualInstructions.map((instruction) => html`<li>${instruction}</li>`)}
+                      </ul>`
+                    : nothing}
+            </li>
+        `;
+    }
+
+    #renderAgentConfigTargets(
+        agentConfigs: ReadonlyArray<GraphVisualizationAutoGameAgentConfig>,
+        isSkillMutationPending: boolean
+    ) {
+        if (agentConfigs.length === 0) {
+            return nothing;
+        }
+
+        return html`
+            <div class="auto-game-agent-configs">
+                <div class="auto-game-agent-configs__heading">
+                    <strong>Agent MCP Setup</strong>
+                    <small>GMLoop only uses provider CLI commands for automatic setup.</small>
+                </div>
+                <ul class="auto-game-agent-config-list">
+                    ${agentConfigs.map((agentConfig) =>
+                        this.#renderAgentConfigTarget(agentConfig, isSkillMutationPending)
+                    )}
+                </ul>
+            </div>
+        `;
+    }
+
     #renderAiSkills() {
         const skills = this.model?.autoGamePipeline?.skills ?? [];
         const agentPack = this.model?.autoGamePipeline?.agentPack;
+        const agentConfigs = agentPack?.agentConfigs ?? [];
         const resources = agentPack?.resources ?? [];
         const shouldOfferAgentPackAction = agentPack !== undefined;
         const hasUntrackedProjectSkills = agentPack?.status === "not-installed" && skills.length > 0;
@@ -331,6 +451,7 @@ export class GmAutoGamePanel extends LightDomLitElement {
                                       </small>
                                   </span>
                               </label>
+                              ${this.#renderAgentConfigTargets(agentConfigs, isSkillMutationPending)}
                               <button
                                   id="initialize-auto-game-agent-pack"
                                   class="gm-btn ${agentPack?.status === "current" ? "" : "gm-btn--primary"}"
@@ -346,7 +467,10 @@ export class GmAutoGamePanel extends LightDomLitElement {
                                               {
                                                   bubbles: true,
                                                   composed: true,
-                                                  detail: { includeGitIgnore: this.includeGitIgnore }
+                                                  detail: {
+                                                      agentTargets: this.#getSelectedAgentTargets(agentConfigs),
+                                                      includeGitIgnore: this.includeGitIgnore
+                                                  }
                                               }
                                           )
                                       );

@@ -28,6 +28,15 @@ with `.gmloop/`, `.gmcache/`, `node_modules/`, `.playwright-mcp/`, and
 equivalent patterns are not duplicated. Pass `--no-gitignore` to leave
 `.gitignore` untouched.
 
+Agent MCP integration setup is CLI-owned by each provider. GMLoop detects
+Codex, Gemini/Antigravity, and Qwen project config state for reporting, but it
+does not edit third-party agent config files directly. Automatic setup is
+limited to providers with verified project-scoped CLI support; v1 configures
+Qwen through `qwen mcp add --scope project`. Use `--agents detected` (default),
+`--agents qwen`, `--agents all`, or `--agents none` to control which provider
+CLI setup attempts run. Codex and Gemini/Antigravity are reported as manual
+until their CLIs expose verified project-scoped MCP setup.
+
 The CLI consumes the standalone package and does not own a duplicate skill
 collection. For GMLoop maintainers, the agent-pack's `skills/` directory is the
 sole packaged-collection source. Drop a standard `gmloop-<name>/SKILL.md` directory
@@ -37,6 +46,7 @@ registry, manifest, name list, or skill-specific loading code is required.
 ```bash
 gmloop agent-pack init --path path/to/Game.yyp
 gmloop agent-pack init --path path/to/Game.yyp --no-gitignore
+gmloop agent-pack init --path path/to/Game.yyp --agents qwen
 ```
 
 The target must resolve to a GameMaker project root containing a `.yyp` file.

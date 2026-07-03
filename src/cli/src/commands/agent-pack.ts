@@ -6,6 +6,7 @@ import * as AgentPack from "../modules/auto-game-agent-pack/index.js";
 import { discoverProjectRoot, printProjectPayload } from "../workflow/project-root.js";
 
 type AgentPackInitOptions = Readonly<{
+    agents?: string;
     gitignore?: boolean;
     path?: string;
 }>;
@@ -14,6 +15,7 @@ type AgentPackInitOptions = Readonly<{
 export async function runAgentPackInit(options: AgentPackInitOptions): Promise<void> {
     const projectRoot = await discoverProjectRoot({ explicitProjectPath: options.path });
     const result = await AgentPack.initializeAgentPack(projectRoot, {
+        agentTargets: AgentPack.parseAgentConfigTargetSelections(options.agents ?? "detected"),
         includeGitIgnore: options.gitignore !== false
     });
     printProjectPayload({
@@ -21,6 +23,8 @@ export async function runAgentPackInit(options: AgentPackInitOptions): Promise<v
         ok: true,
         payload: {
             added: result.added,
+            agentConfigs: result.agentConfigs,
+            agentSetup: result.agentSetup,
             changed: result.changed,
             conflicts: result.conflicts,
             removed: result.removed,
@@ -40,6 +44,11 @@ export function createAgentPackCommand(): Command {
     const init = applyStandardCommandOptions(new Command("init"))
         .description("Initialize or update packaged Auto-Game skills and project guidance.")
         .addOption(createPathOption())
+        .option(
+            "--agents <selection>",
+            "Configure agent MCP integrations through provider CLIs: detected, all, none, or comma-separated codex,gemini,qwen.",
+            "detected"
+        )
         .option("--no-gitignore", "Do not create or update the project-root .gitignore.");
     init.action(async function agentPackInitAction() {
         await runAgentPackInit(this.opts<AgentPackInitOptions>());

@@ -96,6 +96,48 @@ function createMockState(overrides?: Partial<GraphVisualizationUiState>): GraphV
     };
 }
 
+const SAMPLE_AGENT_CONFIGS = Object.freeze([
+    {
+        cliInstalled: true,
+        cliName: "qwen",
+        cliVersion: "1.0.0",
+        configDetected: true,
+        configPaths: [".qwen/settings.json"],
+        id: "qwen" as const,
+        label: "Qwen Code",
+        manualInstructions: [],
+        selectedByDefault: true,
+        status: "cli-configurable" as const,
+        statusDetail: "Project-scoped MCP setup is available through the provider CLI."
+    },
+    {
+        cliInstalled: true,
+        cliName: "codex",
+        cliVersion: "0.42.0",
+        configDetected: true,
+        configPaths: [".codex/config.toml"],
+        id: "codex" as const,
+        label: "Codex",
+        manualInstructions: ["Configure project MCP servers manually."],
+        selectedByDefault: false,
+        status: "manual-required" as const,
+        statusDetail: "GMLoop will not edit this provider config directly; manual setup is required."
+    },
+    {
+        cliInstalled: false,
+        cliName: "gemini",
+        cliVersion: null,
+        configDetected: false,
+        configPaths: [],
+        id: "gemini" as const,
+        label: "Gemini / Antigravity",
+        manualInstructions: ["Install Gemini CLI before configuring MCP servers."],
+        selectedByDefault: false,
+        status: "unavailable" as const,
+        statusDetail: "No supported project config or provider CLI was detected."
+    }
+]);
+
 void test("GmAutoGamePanel renders empty pipeline slots and MCP bridge metadata", () => {
     const panel = new TestableGmAutoGamePanel();
     panel.model = createMockModel({ isServerMode: false });
@@ -134,6 +176,7 @@ void test("GmAutoGamePanel renders host-provided pipeline details", () => {
                 }
             ],
             agentPack: {
+                agentConfigs: [],
                 availableVersion: "0.0.1",
                 conflicts: [],
                 installedVersion: "0.0.1",
@@ -233,6 +276,7 @@ void test("GmAutoGamePanel offers initialization for an empty loaded GameMaker p
         autoGamePipeline: {
             actions: [],
             agentPack: {
+                agentConfigs: [],
                 availableVersion: "0.0.1",
                 conflicts: [],
                 installedVersion: null,
@@ -264,12 +308,57 @@ void test("GmAutoGamePanel offers initialization for an empty loaded GameMaker p
     assert.match(rendered, /id="initialize-auto-game-agent-pack"[\s\S]*\?disabled=false/u);
 });
 
+void test("GmAutoGamePanel renders CLI-configurable and manual agent MCP setup targets", () => {
+    const panel = new TestableGmAutoGamePanel();
+    panel.model = createMockModel({
+        autoGamePipeline: {
+            actions: [],
+            agentPack: {
+                agentConfigs: SAMPLE_AGENT_CONFIGS,
+                availableVersion: "0.0.1",
+                conflicts: [],
+                installedVersion: null,
+                resources: [],
+                status: "not-installed"
+            },
+            events: [],
+            llmOutputs: [],
+            skills: [],
+            status: "idle",
+            statusText: "No project-scoped Auto-Game skills are installed."
+        },
+        loadedTarget: {
+            activePath: "/tmp/test/Test.yyp",
+            projectRoot: "/tmp/test",
+            selectedPaths: ["/tmp/test/Test.yyp"],
+            source: "cli-path"
+        }
+    });
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /Agent MCP Setup/u);
+    assert.match(rendered, /GMLoop only uses provider CLI commands for automatic setup\./u);
+    assert.match(rendered, /Qwen Code/u);
+    assert.match(rendered, /\.checked=true[\s\S]*aria-label=Exclude Qwen Code MCP setup/u);
+    assert.match(rendered, /\.label=CLI Setup[\s\S]*\.tone=success/u);
+    assert.match(rendered, /Codex/u);
+    assert.match(rendered, /\?disabled=true[\s\S]*aria-label=Include Codex MCP setup/u);
+    assert.match(rendered, /Configure project MCP servers manually\./u);
+    assert.match(rendered, /\.label=Manual[\s\S]*\.tone=warning/u);
+    assert.match(rendered, /Gemini \/ Antigravity/u);
+    assert.match(rendered, /\?disabled=true[\s\S]*aria-label=Include Gemini \/ Antigravity MCP setup/u);
+    assert.match(rendered, /\.label=Unavailable[\s\S]*\.tone=muted/u);
+});
+
 void test("GmAutoGamePanel disables initialization and shows the shared spinner while it is pending", () => {
     const panel = new TestableGmAutoGamePanel();
     panel.model = createMockModel({
         autoGamePipeline: {
             actions: [],
             agentPack: {
+                agentConfigs: [],
                 availableVersion: "0.0.2",
                 conflicts: [],
                 installedVersion: null,
@@ -306,6 +395,7 @@ void test("GmAutoGamePanel presents detected skills without a receipt as incompl
         autoGamePipeline: {
             actions: [],
             agentPack: {
+                agentConfigs: [],
                 availableVersion: "0.0.1",
                 conflicts: [],
                 installedVersion: null,
@@ -357,6 +447,7 @@ void test("GmAutoGamePanel offers an agent-pack update while retaining discovere
         autoGamePipeline: {
             actions: [],
             agentPack: {
+                agentConfigs: [],
                 availableVersion: "0.0.2",
                 conflicts: [],
                 installedVersion: "0.0.1",
@@ -401,6 +492,7 @@ void test("GmAutoGamePanel offers a re-sync option when the agent-pack is up to 
         autoGamePipeline: {
             actions: [],
             agentPack: {
+                agentConfigs: [],
                 availableVersion: "0.0.1",
                 conflicts: [],
                 installedVersion: "0.0.1",
@@ -436,6 +528,7 @@ void test("GmAutoGamePanel presents preserved agent-pack conflicts as an actiona
         autoGamePipeline: {
             actions: [],
             agentPack: {
+                agentConfigs: [],
                 availableVersion: "0.0.2",
                 conflicts: ["skills/game-design/SKILL.md"],
                 installedVersion: "0.0.1",
@@ -489,7 +582,10 @@ void test("GmAutoGamePanel renders inactive page class when not on Auto-Game pag
 void test("GmAppShell routes agent-pack initialization and skill toggles through host callbacks", async () => {
     const shell = new TestableGmAppShell();
     let initialized = 0;
-    let initializationOptions: Readonly<{ includeGitIgnore: boolean }> | null = null;
+    let initializationOptions: Readonly<{
+        agentTargets: ReadonlyArray<"codex" | "gemini" | "qwen">;
+        includeGitIgnore: boolean;
+    }> | null = null;
     let toggled: Readonly<{ enabled: boolean; name: string }> | null = null;
     shell.model = createMockModel({
         loadedTarget: {
@@ -519,7 +615,7 @@ void test("GmAppShell routes agent-pack initialization and skill toggles through
     shell.dispatchEvent(
         new CustomEvent(GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK, {
             bubbles: true,
-            detail: { includeGitIgnore: false }
+            detail: { agentTargets: ["qwen"], includeGitIgnore: false }
         })
     );
     await Promise.resolve();
@@ -533,7 +629,7 @@ void test("GmAppShell routes agent-pack initialization and skill toggles through
     shell.disconnectedCallback();
 
     assert.equal(initialized, 1);
-    assert.deepEqual(initializationOptions, { includeGitIgnore: false });
+    assert.deepEqual(initializationOptions, { agentTargets: ["qwen"], includeGitIgnore: false });
     assert.deepEqual(toggled, { enabled: false, name: "game-design" });
 });
 
@@ -571,7 +667,7 @@ void test("GmAppShell rejects duplicate agent-pack initialization events while t
     const initializeEvent = () =>
         new CustomEvent(GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK, {
             bubbles: true,
-            detail: { includeGitIgnore: true }
+            detail: { agentTargets: ["qwen"], includeGitIgnore: true }
         });
     shell.dispatchEvent(initializeEvent());
     shell.dispatchEvent(initializeEvent());
@@ -592,6 +688,7 @@ void test("GmAutoGamePanel renders agent-pack resources even when no project is 
         autoGamePipeline: {
             actions: [],
             agentPack: {
+                agentConfigs: [],
                 availableVersion: "0.0.1",
                 conflicts: [],
                 installedVersion: null,

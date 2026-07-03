@@ -201,11 +201,11 @@ function buildReservedKeywordSet(
 
     const semanticReserved = keywordProvider.getReservedKeywords() ?? [];
     if (!isPromiseLike(semanticReserved)) {
-        return new Set([...defaultReservedNames, ...semanticReserved.map((keyword) => keyword.toLowerCase())]);
+        return new Set([...defaultReservedNames, ...semanticReserved]);
     }
 
     return Promise.resolve(semanticReserved).then((resolvedKeywords) => {
-        return new Set([...defaultReservedNames, ...(resolvedKeywords ?? []).map((keyword) => keyword.toLowerCase())]);
+        return new Set([...defaultReservedNames, ...(resolvedKeywords ?? [])]);
     });
 }
 
@@ -251,7 +251,7 @@ export async function detectRenameConflicts(
     // Check if new name conflicts with reserved language identifiers.
     const reservedKeywords = buildReservedKeywordSet(keywordProvider, resolvedContext);
     const resolvedReservedKeywords = isPromiseLike(reservedKeywords) ? await reservedKeywords : reservedKeywords;
-    if (resolvedReservedKeywords.has(normalizedNewName.toLowerCase())) {
+    if (resolvedReservedKeywords.has(normalizedNewName)) {
         conflicts.push({
             type: ConflictType.RESERVED,
             message: `'${normalizedNewName}' is a reserved GameMaker identifier and cannot be used as an identifier`

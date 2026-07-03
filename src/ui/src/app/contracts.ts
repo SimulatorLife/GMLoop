@@ -73,6 +73,7 @@ export type GraphVisualizationUiCallbacks = Readonly<{
 
 /** Options selected when initializing or updating project-scoped Auto-Game resources. */
 export type GraphVisualizationAgentPackInitializationOptions = Readonly<{
+    agentTargets: ReadonlyArray<"codex" | "gemini" | "qwen">;
     includeGitIgnore: boolean;
 }>;
 

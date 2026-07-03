@@ -4,6 +4,15 @@ import { access, lstat, mkdir, readdir, readFile, rm, stat, writeFile } from "no
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+    type AgentCliCommandRunner,
+    type AgentConfigTargetSelection,
+    type AgentIntegrationSetupSummary,
+    type AgentIntegrationTarget,
+    configureSelectedAgentIntegrations,
+    discoverAgentIntegrationTargets
+} from "./agent-integrations.js";
+
 const AGENT_PACK_NAME = "@gmloop/agent-pack";
 const AGENT_PACK_ROOT = path.dirname(fileURLToPath(import.meta.resolve(`${AGENT_PACK_NAME}/package.json`)));
 const AGENT_PACK_SKILLS_ROOT = path.join(AGENT_PACK_ROOT, "skills");
@@ -22,6 +31,7 @@ export type AgentPackProjectStatusKind = "current" | "not-installed" | "update-a
 
 /** Version and conflict state for the agent pack in one GameMaker project. */
 export type AgentPackProjectStatus = Readonly<{
+    agentConfigs: ReadonlyArray<AgentIntegrationTarget>;
     availableVersion: string;
     conflicts: ReadonlyArray<string>;
     installedVersion: string | null;
@@ -31,6 +41,8 @@ export type AgentPackProjectStatus = Readonly<{
 /** Deterministic result of materializing the agent pack into a project. */
 export type AgentPackInitializationResult = Readonly<{
     added: ReadonlyArray<string>;
+    agentConfigs: ReadonlyArray<AgentIntegrationTarget>;
+    agentSetup: AgentIntegrationSetupSummary;
     availableVersion: string;
     changed: boolean;
     conflicts: ReadonlyArray<string>;
@@ -42,6 +54,8 @@ export type AgentPackInitializationResult = Readonly<{
 
 /** Options controlling optional project hygiene during agent-pack initialization. */
 export type AgentPackInitializationOptions = Readonly<{
+    agentTargets?: ReadonlyArray<AgentConfigTargetSelection>;
+    commandRunner?: AgentCliCommandRunner;
     includeGitIgnore: boolean;
 }>;
 
@@ -483,10 +497,14 @@ export async function assertGameMakerProjectRoot(projectRoot: string): Promise<s
 /** Read whether a project needs agent-pack initialization or an update. */
 export async function readAgentPackProjectStatus(projectRoot: string): Promise<AgentPackProjectStatus> {
     const resolvedProjectRoot = await assertGameMakerProjectRoot(projectRoot);
-    const availableVersion = await readAgentPackVersion();
+    const [availableVersion, agentConfigs] = await Promise.all([
+        readAgentPackVersion(),
+        discoverAgentIntegrationTargets(resolvedProjectRoot)
+    ]);
     const receipt = await readAgentPackReceipt(resolvedProjectRoot);
     if (receipt === null) {
         return Object.freeze({
+            agentConfigs,
             availableVersion,
             conflicts: Object.freeze([]),
             installedVersion: null,
@@ -494,6 +512,7 @@ export async function readAgentPackProjectStatus(projectRoot: string): Promise<A
         });
     }
     return Object.freeze({
+        agentConfigs,
         availableVersion,
         conflicts: receipt.conflicts,
         installedVersion: receipt.version,
@@ -507,6 +526,7 @@ export async function initializeAgentPack(
     options: AgentPackInitializationOptions = DEFAULT_AGENT_PACK_INITIALIZATION_OPTIONS
 ): Promise<AgentPackInitializationResult> {
     const resolvedProjectRoot = await assertGameMakerProjectRoot(projectRoot);
+    const agentTargets = options.agentTargets ?? ["detected"];
     const availableVersion = await readAgentPackVersion();
     const previousReceipt = await readAgentPackReceipt(resolvedProjectRoot);
     const packagedFiles = await readPackagedProjectFiles();
@@ -552,14 +572,22 @@ export async function initializeAgentPack(
     const receiptPath = path.join(resolvedProjectRoot, PROJECT_RECEIPT_RELATIVE_PATH);
     await mkdir(path.dirname(receiptPath), { recursive: true });
     await writeFile(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, "utf8");
+    const agentIntegrationResult = await configureSelectedAgentIntegrations(
+        resolvedProjectRoot,
+        agentTargets,
+        options.commandRunner
+    );
 
     return Object.freeze({
         added: Object.freeze(added),
+        agentConfigs: agentIntegrationResult.targets,
+        agentSetup: agentIntegrationResult.setup,
         availableVersion,
         changed:
             added.length > 0 ||
             removed.length > 0 ||
             updated.length > 0 ||
+            agentIntegrationResult.setup.configured.length > 0 ||
             !agentPackReceiptsMatch(previousReceipt, receipt),
         conflicts: Object.freeze(sortedConflicts),
         projectRoot: resolvedProjectRoot,

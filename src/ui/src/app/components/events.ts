@@ -32,5 +32,8 @@ export type GraphUiSaveConfigDetail = Readonly<{ config: Readonly<Record<string,
 export type GraphUiSetSearchQueryDetail = Readonly<{ searchQuery: string }>;
 export type GraphUiClearPageErrorDetail = Readonly<{ page: GraphVisualizationUiPage }>;
 export type GraphUiTriggerFixDetail = Readonly<{ workflow: GraphVisualizationProjectWorkflow }>;
-export type GraphUiInitializeAutoGameAgentPackDetail = Readonly<{ includeGitIgnore: boolean }>;
+export type GraphUiInitializeAutoGameAgentPackDetail = Readonly<{
+    agentTargets: ReadonlyArray<"codex" | "gemini" | "qwen">;
+    includeGitIgnore: boolean;
+}>;
 export type GraphUiSetAutoGameSkillEnabledDetail = Readonly<{ enabled: boolean; name: string }>;

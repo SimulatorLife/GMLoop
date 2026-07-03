@@ -1588,6 +1588,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             activeAutoGamePipeline = createAutoGamePipelineModel(
                 [],
                 {
+                    agentConfigs: Object.freeze([]),
                     availableVersion,
                     conflicts: Object.freeze([]),
                     installedVersion: null,
@@ -2134,11 +2135,14 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             saveConfig: ({ config }) => {
                 return writeActiveProjectConfig(config);
             },
-            initializeAutoGameAgentPack: async ({ includeGitIgnore }) => {
+            initializeAutoGameAgentPack: async ({ agentTargets, includeGitIgnore }) => {
                 if (!activeContext) {
                     throw new Error("Open a GameMaker project before initializing the Auto-Game agent pack.");
                 }
-                const result = await AgentPack.initializeAgentPack(activeContext.projectRoot, { includeGitIgnore });
+                const result = await AgentPack.initializeAgentPack(activeContext.projectRoot, {
+                    agentTargets,
+                    includeGitIgnore
+                });
                 await refreshActiveVisualizationArtifacts(activeContext);
                 markServeRevisionChanged();
                 return Object.freeze({ changed: result.changed });

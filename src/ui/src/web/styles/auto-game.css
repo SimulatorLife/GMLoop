@@ -34,6 +34,8 @@
 .auto-game-item-heading,
 .auto-game-skill-item__header,
 .auto-game-skill-item__identity,
+.auto-game-agent-config__header,
+.auto-game-agent-config__select,
 .auto-game-llm-item__header {
   display: flex;
   align-items: flex-start;
@@ -67,7 +69,8 @@
 .auto-game-feed-list,
 .auto-game-skill-list,
 .auto-game-llm-list,
-.auto-game-resource-list {
+.auto-game-resource-list,
+.auto-game-agent-config-list {
   display: flex;
   flex-direction: column;
 }
@@ -81,14 +84,16 @@
 .auto-game-feed-list,
 .auto-game-skill-list,
 .auto-game-llm-list,
-.auto-game-resource-list {
+.auto-game-resource-list,
+.auto-game-agent-config-list {
   gap: var(--gm-space-sm);
 }
 
 .auto-game-action-list,
 .auto-game-feed-list,
 .auto-game-skill-list,
-.auto-game-llm-list {
+.auto-game-llm-list,
+.auto-game-agent-config-list {
   margin: 0;
   padding: 0;
   list-style: none;
@@ -273,6 +278,7 @@
 .auto-game-action__label,
 .auto-game-feed-item strong,
 .auto-game-skill-item strong,
+.auto-game-agent-config strong,
 .auto-game-llm-item strong {
   color: var(--gm-text);
   font-size: var(--gm-text-sm);
@@ -281,7 +287,8 @@
 
 .auto-game-action__description,
 .auto-game-feed-item p,
-.auto-game-skill-item p {
+.auto-game-skill-item p,
+.auto-game-agent-config p {
   margin: 0;
   color: var(--gm-text-secondary);
   font-size: var(--gm-text-sm);
@@ -291,6 +298,7 @@
 
 .auto-game-feed-item,
 .auto-game-skill-item,
+.auto-game-agent-config,
 .auto-game-llm-item {
   display: flex;
   flex-direction: column;
@@ -302,7 +310,8 @@
 }
 
 .auto-game-feed-item--success,
-.auto-game-skill-item--available {
+.auto-game-skill-item--available,
+.auto-game-agent-config--cli-configurable {
   border-color: var(--gm-success-border);
 }
 
@@ -311,7 +320,8 @@
   border-color: var(--gm-error-border);
 }
 
-.auto-game-feed-item--blocked {
+.auto-game-feed-item--blocked,
+.auto-game-agent-config--manual-required {
   border-color: var(--gm-warning-border);
 }
 
@@ -469,6 +479,73 @@
   line-height: var(--gm-leading-normal);
 }
 
+.auto-game-agent-configs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-sm);
+  width: 100%;
+}
+
+.auto-game-agent-configs__heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-xs);
+}
+
+.auto-game-agent-configs__heading strong {
+  color: var(--gm-text);
+  font-size: var(--gm-text-sm);
+}
+
+.auto-game-agent-configs__heading small,
+.auto-game-agent-config small {
+  color: var(--gm-text-subdued);
+  font-size: var(--gm-text-xs);
+  line-height: var(--gm-leading-normal);
+}
+
+.auto-game-agent-config__header {
+  align-items: center;
+}
+
+.auto-game-agent-config__select {
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: flex-start;
+  justify-content: flex-start;
+  cursor: pointer;
+}
+
+.auto-game-agent-config__select input {
+  width: var(--gm-icon-lg);
+  height: var(--gm-icon-lg);
+  margin: 0;
+  accent-color: var(--gm-success-dot);
+}
+
+.auto-game-agent-config__select span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--gm-space-xs);
+}
+
+.auto-game-agent-config__select:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.auto-game-agent-config__manual {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-xs);
+  margin: 0;
+  padding-inline-start: var(--gm-space-xl);
+  color: var(--gm-text-secondary);
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-normal);
+}
+
 .auto-game-skill-empty--skills:last-child {
   margin-bottom: 0;
 }
@@ -518,6 +595,7 @@
 @media (max-width: 560px) {
   .auto-game-card__heading,
   .auto-game-skill-item__header,
+  .auto-game-agent-config__header,
   .auto-game-field-heading,
   .auto-game-resource-section__heading {
     align-items: flex-start;

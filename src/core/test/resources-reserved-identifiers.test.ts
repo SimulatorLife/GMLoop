@@ -87,7 +87,8 @@ void test("ordinary binding reservation includes metadata identifiers and id fal
     const names = loadReservedGmlBindingIdentifierNames("ordinary-binding");
 
     assert.deepEqual(toSortedArray(names), ["draw_sprite", "id", "if", "x"]);
-    assert.equal(isReservedGmlBindingIdentifierName("ID", "ordinary-binding"), true);
+    assert.equal(isReservedGmlBindingIdentifierName("id", "ordinary-binding"), true);
+    assert.equal(isReservedGmlBindingIdentifierName("ID", "ordinary-binding"), false);
     assert.equal(isReservedGmlBindingIdentifierName("player_id", "ordinary-binding"), false);
 
     cleanup();
@@ -144,6 +145,7 @@ void test("enum member reservation includes keywords and literals without reserv
 
     assert.deepEqual(toSortedArray(names), ["if", "self"]);
     assert.equal(isReservedGmlBindingIdentifierName("if", "enum-member"), true);
+    assert.equal(isReservedGmlBindingIdentifierName("IF", "enum-member"), false);
     assert.equal(isReservedGmlBindingIdentifierName("x", "enum-member"), false);
     assert.equal(isReservedGmlBindingIdentifierName("draw_sprite", "enum-member"), false);
 
@@ -154,8 +156,11 @@ void test("bundled metadata reserves expected binding identifiers by context", (
     resetReservedIdentifierMetadataLoader();
 
     assert.equal(isReservedGmlBindingIdentifierName("id", "ordinary-binding"), true);
+    assert.equal(isReservedGmlBindingIdentifierName("ID", "ordinary-binding"), false);
     assert.equal(isReservedGmlBindingIdentifierName("if", "ordinary-binding"), true);
+    assert.equal(isReservedGmlBindingIdentifierName("IF", "ordinary-binding"), false);
     assert.equal(isReservedGmlBindingIdentifierName("self", "argument-binding"), true);
+    assert.equal(isReservedGmlBindingIdentifierName("SELF", "argument-binding"), false);
     assert.equal(isReservedGmlBindingIdentifierName("other", "argument-binding"), true);
     assert.equal(isReservedGmlBindingIdentifierName("global", "argument-binding"), true);
     assert.equal(isReservedGmlBindingIdentifierName("x", "argument-binding"), false);

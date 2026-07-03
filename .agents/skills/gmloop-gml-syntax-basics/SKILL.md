@@ -8,6 +8,8 @@ Correctly interpret, generate, refactor, lint, format, and reason about GameMake
 
 GML is syntactically similar to JavaScript ES3, but differs significantly in semantics, runtime behavior, data structures, syntax rules, and language features.
 
+GameMaker Language (GML) is fully case-sensitive in modern versions (GMS2/2.3+).
+
 Treat GML as a JavaScript-like language with the following important differences and extensions.
 
 ## Editing GameMaker project files

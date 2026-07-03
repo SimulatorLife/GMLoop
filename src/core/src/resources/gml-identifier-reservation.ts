@@ -29,7 +29,7 @@ function normalizeReservationName(name: string): string {
         throw new TypeError("GML binding identifier names must be strings.");
     }
 
-    return name.toLowerCase();
+    return name;
 }
 
 function getNormalizedIdentifierEntries() {
@@ -38,7 +38,7 @@ function getNormalizedIdentifierEntries() {
 
 function addManualIdentifierNames(names: Set<string>, manualNames: ReadonlyArray<string>): void {
     for (const name of manualNames) {
-        names.add(name.toLowerCase());
+        names.add(name);
     }
 }
 
@@ -52,7 +52,7 @@ function loadArgumentBindingReservedIdentifierNames(): ReadonlySet<string> {
     const names = new Set<string>();
 
     for (const { name } of getNormalizedIdentifierEntries()) {
-        const normalizedName = name.toLowerCase();
+        const normalizedName = name;
         if (ARGUMENT_BINDING_RESERVED_IDENTIFIER_NAMES.has(normalizedName)) {
             names.add(normalizedName);
         }
@@ -67,7 +67,7 @@ function loadEnumMemberReservedIdentifierNames(): ReadonlySet<string> {
 
     for (const { name, type } of getNormalizedIdentifierEntries()) {
         if (ENUM_MEMBER_RESERVED_IDENTIFIER_TYPES.has(type.toLowerCase())) {
-            names.add(name.toLowerCase());
+            names.add(name);
         }
     }
 

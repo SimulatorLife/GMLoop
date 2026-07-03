@@ -142,6 +142,10 @@ void test("agent-pack init exposes the standard project path option", () => {
         init.options.some((option) => option.long === "--no-gitignore"),
         true
     );
+    assert.equal(
+        init.options.some((option) => option.long === "--agents"),
+        true
+    );
 });
 
 void test("agent-pack is recognized as an explicit universal CLI command", () => {
@@ -158,7 +162,12 @@ void test("agent-pack init accepts an explicit yyp path and reports deterministi
         assert.equal(output.length, 1);
         const payload = JSON.parse(output[0] ?? "") as {
             command: string;
-            payload: { added: Array<string>; conflicts: Array<string>; version: string };
+            payload: {
+                added: Array<string>;
+                agentSetup: { configured: Array<string>; manualRequired: Array<string>; unavailable: Array<string> };
+                conflicts: Array<string>;
+                version: string;
+            };
             projectRoot: string;
         };
         assert.equal(payload.command, "agent-pack init");
@@ -168,6 +177,7 @@ void test("agent-pack init accepts an explicit yyp path and reports deterministi
             packagedSkillNames.map((name) => `.agents/skills/${name}/SKILL.md`)
         );
         assert.deepEqual(payload.payload.conflicts, []);
+        assert.deepEqual(payload.payload.agentSetup.configured, []);
         assert.equal(payload.payload.version, await AgentPack.readAgentPackVersion());
         assert.equal(payload.payload.added.includes(".gitignore"), true);
     } finally {

@@ -73,7 +73,7 @@ type GraphVisualizationServerSaveConfig = (
     input: Readonly<{ config: Readonly<Record<string, unknown>> }>
 ) => Promise<GraphVisualizationServerRegenerationResult>;
 type GraphVisualizationServerInitializeAutoGameAgentPack = (
-    input: Readonly<{ includeGitIgnore: boolean }>
+    input: Readonly<{ agentTargets: ReadonlyArray<"codex" | "gemini" | "qwen">; includeGitIgnore: boolean }>
 ) => Promise<GraphVisualizationServerRegenerationResult>;
 type GraphVisualizationServerSetAutoGameSkillEnabled = (
     input: Readonly<{ enabled: boolean; name: string }>
@@ -475,7 +475,20 @@ async function handleInitializeAutoGameAgentPackRequest(
             }
             includeGitIgnore = parsedBody.includeGitIgnore;
         }
-        const result = await initializeAutoGameAgentPack({ includeGitIgnore });
+        let agentTargets: ReadonlyArray<"codex" | "gemini" | "qwen"> = Object.freeze([]);
+        if (parsedBody !== null && parsedBody.agentTargets !== undefined) {
+            if (
+                !Array.isArray(parsedBody.agentTargets) ||
+                parsedBody.agentTargets.some(
+                    (agentTarget) => agentTarget !== "codex" && agentTarget !== "gemini" && agentTarget !== "qwen"
+                )
+            ) {
+                writeInvalidJsonPayloadResponse(response);
+                return;
+            }
+            agentTargets = Object.freeze([...parsedBody.agentTargets]);
+        }
+        const result = await initializeAutoGameAgentPack({ agentTargets, includeGitIgnore });
         writeJsonResponse(response, 200, { changed: result.changed, ok: true });
     } catch (error: unknown) {
         writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });

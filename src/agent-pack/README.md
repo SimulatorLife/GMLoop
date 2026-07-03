@@ -20,6 +20,13 @@ gmloop agent-pack init --path path/to/Game.yyp
 
 This materializes skills under `<game-project>/.agents/skills/`, adds project guidance as `AGENTS.md` when that path is not project-owned, and writes `.gmloop/agent-pack.json` solely for package version and file provenance. By default it also creates or extends the project-root `.gitignore` with `.gmloop/`, `.gmcache/`, `node_modules/`, `.playwright-mcp/`, and `.agents/skills/**/gmloop-*`; pass `--no-gitignore` to leave that file untouched. Existing ignore rules are preserved and equivalent entries are not duplicated. The guidance defines a vendor-neutral autonomous development lifecycle for orienting, choosing a player-visible outcome, implementing a bounded slice, validating and playing it, responding to evidence, and recording the next iteration. Updates replace only files that still match their previously installed package content. Project-authored or modified files are preserved and reported as conflicts.
 
+Initialization can also ask supported agent CLIs to add GMLoop's companion MCP
+servers to the project. GMLoop does not edit third-party agent config files
+directly and does not record provider config hashes in `.gmloop/agent-pack.json`.
+For v1, automatic MCP setup is limited to Qwen via `qwen mcp add --scope
+project`; Codex and Gemini/Antigravity are detected and reported with manual
+setup guidance until their CLIs expose verified project-scoped MCP setup.
+
 The `skills/` directory is the collection inventory. Every GMLoop-provided packaged skill directory must start with `gmloop-`. Adding or removing a standard `gmloop-<name>/SKILL.md` directory requires no registry, hard-coded list, or skill-specific loader.
 
 ## Sharing Skills With GMLoop Development
@@ -62,6 +69,7 @@ long-running workflow state. Pack content must remain vendor-neutral and must
 not require a particular coordinator or agent framework.
 
 ## References
+
 - [repomix](https://github.com/yamadashy/repomix)
 - [fastcontext](https://github.com/microsoft/fastcontext)
 - [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)

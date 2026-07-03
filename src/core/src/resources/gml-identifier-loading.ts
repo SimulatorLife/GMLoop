@@ -409,7 +409,7 @@ export function loadReservedIdentifierNames({ disallowedTypes }: { disallowedTyp
 
         const normalizedName = getNonEmptyString(name);
         if (normalizedName) {
-            names.add(normalizedName.toLowerCase());
+            names.add(normalizedName);
         }
     }
 

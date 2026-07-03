@@ -182,10 +182,26 @@ export type GraphVisualizationAutoGameAgentPackResource = Readonly<{
     targetPath: string;
 }>;
 
+/** Agent integration target rendered by the Auto-Game setup page. */
+export type GraphVisualizationAutoGameAgentConfig = Readonly<{
+    cliInstalled: boolean;
+    cliName: string;
+    cliVersion: string | null;
+    configDetected: boolean;
+    configPaths: ReadonlyArray<string>;
+    id: "codex" | "gemini" | "qwen";
+    label: string;
+    manualInstructions: ReadonlyArray<string>;
+    selectedByDefault: boolean;
+    status: "cli-configurable" | "manual-required" | "unavailable";
+    statusDetail: string;
+}>;
+
 /**
  * Installation and update state for the GMLoop Auto-Game agent pack.
  */
 export type GraphVisualizationAutoGameAgentPack = Readonly<{
+    agentConfigs: ReadonlyArray<GraphVisualizationAutoGameAgentConfig>;
     availableVersion: string;
     conflicts: ReadonlyArray<string>;
     installedVersion: string | null;
