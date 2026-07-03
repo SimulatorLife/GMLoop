@@ -12,6 +12,7 @@ import {
     searchCliEntries,
     searchMcpEntries
 } from "./docs-search.js";
+import { EventBusManager } from "./event-bus-mixin.js";
 import {
     GRAPH_UI_EVENT_CONFIG_DRAFT_CHANGED,
     GRAPH_UI_EVENT_CYCLE_LABEL_MODE,
@@ -36,6 +37,7 @@ import {
     resolveKeyboardShortcutTarget,
     type ToolbarKeyboardShortcutAction
 } from "./keyboard-shortcut-policy.js";
+import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 import { renderProcessButtonContent } from "./primitives/gm-button.js";
 import type { GmStatusChipStatus } from "./primitives/gm-status-chip.js";
@@ -227,6 +229,23 @@ function resolveConfigStatusSummary(model: GraphVisualizationUiModel): string {
 
 /**
  * Graph surface toolbar controls and contextual page headings.
+ *
+ * Lifecycle wiring is delegated to injected collaborators so this class
+ * does not deepen the `LightDomLitElement` subclass with
+ * `connectedCallback` / `disconnectedCallback` overrides. Two distinct
+ * event sources are managed by separate `EventBusManager` instances and
+ * registered with a single `LifecycleParticipantsController`:
+ *
+ * - The local `keydown` listener is registered against the host element so
+ *   toolbar keyboard shortcuts only fire when the toolbar is on screen.
+ * - The global `GRAPH_UI_EVENT_CONFIG_DRAFT_CHANGED` listener is registered
+ *   against `globalThis` so the toolbar can refresh its save-state badge
+ *   even when the config panel is the active surface.
+ *
+ * The `LifecycleParticipantsController` ensures both buses connect in
+ * declaration order and disconnect in reverse order, mirroring the
+ * previously hand-rolled `connectedCallback` / `disconnectedCallback`
+ * overrides.
  */
 export class GmGraphToolbar extends LightDomLitElement {
     public static properties = {
@@ -237,6 +256,16 @@ export class GmGraphToolbar extends LightDomLitElement {
     public accessor model: GraphVisualizationUiModel | null = null;
 
     public accessor state: GraphVisualizationUiState | null = null;
+
+    public constructor() {
+        super();
+        new LifecycleParticipantsController(this, [
+            new EventBusManager(this, [{ event: "keydown", handler: this.#onKeyDown }]),
+            new EventBusManager(globalThis, [
+                { event: GRAPH_UI_EVENT_CONFIG_DRAFT_CHANGED, handler: this.#onConfigDraftChanged }
+            ])
+        ]);
+    }
 
     #canUseGraphControls(): boolean {
         return this.model !== null && hasLoadedGraphIndex(this.model);
@@ -299,18 +328,6 @@ export class GmGraphToolbar extends LightDomLitElement {
     #onConfigDraftChanged = (): void => {
         this.requestUpdate();
     };
-
-    public connectedCallback(): void {
-        super.connectedCallback();
-        this.addEventListener("keydown", this.#onKeyDown);
-        globalThis.addEventListener(GRAPH_UI_EVENT_CONFIG_DRAFT_CHANGED, this.#onConfigDraftChanged);
-    }
-
-    public disconnectedCallback(): void {
-        globalThis.removeEventListener(GRAPH_UI_EVENT_CONFIG_DRAFT_CHANGED, this.#onConfigDraftChanged);
-        super.disconnectedCallback();
-        this.removeEventListener("keydown", this.#onKeyDown);
-    }
 
     #emitSearchQuery(searchQuery: string): void {
         if (this.state?.activePage === "graph" && !this.#canUseGraphControls()) {
