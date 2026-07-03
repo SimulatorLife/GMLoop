@@ -2363,7 +2363,7 @@ void test("refactor codemod --write does not rename plain functions in mixed mul
     }
 });
 
-void test("refactor codemod --write renames unique constructor static member calls across files", async () => {
+void test("refactor codemod --write renames receiver-resolved constructor static member calls across files", async () => {
     const projectRoot = await createSyntheticProject({
         refactor: {
             codemods: {
@@ -2397,7 +2397,16 @@ void test("refactor codemod --write renames unique constructor static member cal
         await writeScriptResource(
             projectRoot,
             "movement",
-            ["function movement(pos, prev_pos) {", "    return pos.Sub(prev_pos);", "}", ""].join("\n")
+            [
+                "function MovementSystem() constructor {",
+                "    self.pos = new Vector2(4, 8);",
+                "",
+                "    static move = function(prev_pos) {",
+                "        return pos.Sub(prev_pos);",
+                "    };",
+                "}",
+                ""
+            ].join("\n")
         );
 
         const result = await runCliTestCommand({
@@ -2419,7 +2428,7 @@ void test("refactor codemod --write renames unique constructor static member cal
     }
 });
 
-void test("refactor codemod --write renames unique constructor static member bare calls inside constructors and with blocks", async () => {
+void test("refactor codemod --write skips constructor static member renames with unresolved bare calls", async () => {
     const projectRoot = await createSyntheticProject({
         refactor: {
             codemods: {
@@ -2480,11 +2489,9 @@ void test("refactor codemod --write renames unique constructor static member bar
         );
         const initializeSource = await readFile(path.join(projectRoot, "scripts/initialize/initialize.gml"), "utf8");
 
-        assert.match(stateSource, /static reset = function\(\) \{/);
-        assert.match(stateSource, /\n {4}reset\(\);\n/u);
-        assert.doesNotMatch(stateSource, /\n {4}Reset\(\);\n/u);
-        assert.match(initializeSource, /with \(_generatorState\) \{\n {8}reset\(\);\n {4}\}/u);
-        assert.doesNotMatch(initializeSource, /\bReset\(\);/);
+        assert.match(stateSource, /static Reset = function\(\) \{/);
+        assert.match(stateSource, /\n {4}Reset\(\);\n/u);
+        assert.match(initializeSource, /with \(_generatorState\) \{\n {8}Reset\(\);\n {4}\}/u);
 
         await assertProjectGmlFilesParse(projectRoot);
     } finally {

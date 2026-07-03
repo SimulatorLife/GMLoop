@@ -74,6 +74,7 @@ type SemanticFileRecord = {
 
 type SemanticIdentifierCollections = {
     enumMembers?: Record<string, SemanticIdentifierEntry>;
+    constructorStaticMembers?: Record<string, SemanticIdentifierEntry>;
     enums?: Record<string, SemanticIdentifierEntry>;
     globalVariables?: Record<string, SemanticIdentifierEntry>;
     instanceVariables?: Record<string, SemanticIdentifierEntry>;
@@ -352,24 +353,6 @@ function isIdentifierTokenAt(sourceText: string, startIndex: number, identifierN
         isIdentifierBoundary(sourceText[startIndex - 1]) &&
         isIdentifierBoundary(sourceText[endIndex])
     );
-}
-
-function findIdentifierEndIndex(sourceText: string, startIndex: number): number {
-    let cursor = startIndex;
-    while (cursor < sourceText.length && /[A-Za-z0-9_]/u.test(sourceText[cursor] ?? "")) {
-        cursor += 1;
-    }
-
-    return cursor;
-}
-
-function isCallExpressionCalleeAt(sourceText: string, endIndex: number): boolean {
-    let cursor = endIndex;
-    while (cursor < sourceText.length && /\s/u.test(sourceText[cursor] ?? "")) {
-        cursor += 1;
-    }
-
-    return sourceText[cursor] === "(";
 }
 
 function escapeRegExpLiteral(value: string): string {
@@ -652,8 +635,6 @@ export class GmlSemanticBridge {
     private readonly sourceTextByPath = new Map<string, string | null>();
     private readonly diskIdentifierOccurrenceIndexesByFilePath = new Map<string, GmlIdentifierOccurrenceIndex | null>();
     private diskOccurrencesBySymbolName: Map<string, Array<SymbolOccurrence>> | null = null;
-    private constructorStaticMemberNameCounts: Map<string, number> | null = null;
-    private sourceBackedDottedCallOccurrencesByName: Map<string, Array<SymbolOccurrence>> | null = null;
     private constructorRuntimeTypeReferencesByExactName: Map<
         string,
         Array<Pick<SymbolOccurrence, "end" | "path" | "start">>
@@ -710,8 +691,6 @@ export class GmlSemanticBridge {
         this.diskOccurrencesBySymbolName = null;
         this.localReferenceOccurrencesByFilePath.clear();
         this.localNamingCategoryResolver.clear();
-        this.constructorStaticMemberNameCounts = null;
-        this.sourceBackedDottedCallOccurrencesByName = null;
         this.constructorRuntimeTypeReferencesByExactName = null;
         this.enumNames = null;
         this.macroBodyReferencesByExactName = null;
@@ -930,6 +909,7 @@ export class GmlSemanticBridge {
             "globalVariables",
             "enums",
             "enumMembers",
+            "constructorStaticMembers",
             "instanceVariables"
         ];
 
@@ -3089,14 +3069,12 @@ export class GmlSemanticBridge {
                         : "argument"
                     : this.resolveLocalNamingConventionCategory(filePath, declaration, sourceText);
                 indexedReferenceOccurrences ??= this.getLocalReferenceOccurrences(filePath, fileRecord);
-                const occurrences = this.collectLocalOccurrences(
-                    filePath,
-                    declaration,
-                    sourceText,
-                    indexedReferenceOccurrences,
+                const isConstructorStaticMember =
                     category === "staticVariable" &&
-                        this.isConstructorStaticMemberDeclaration(filePath, declaration, sourceText)
-                );
+                    this.isConstructorStaticMemberDeclaration(filePath, declaration, sourceText);
+                const occurrences = isConstructorStaticMember
+                    ? this.collectConstructorStaticMemberOccurrences(filePath, declaration, sourceText)
+                    : this.collectLocalOccurrences(filePath, declaration, sourceText, indexedReferenceOccurrences);
 
                 if (occurrences.length === 0) {
                     continue;
@@ -3508,8 +3486,7 @@ export class GmlSemanticBridge {
         filePath: string,
         declaration: any,
         sourceText: string | null,
-        indexedReferenceOccurrences: LocalReferenceIndex,
-        includeConstructorStaticMemberReferences = false
+        indexedReferenceOccurrences: LocalReferenceIndex
     ): Array<SymbolOccurrence> {
         const declarationStartIndex = declaration?.start?.index ?? null;
         const declarationScopeId = declaration?.scopeId ?? null;
@@ -3531,15 +3508,126 @@ export class GmlSemanticBridge {
         const referenceKey = this.createLocalReferenceKey(declarationName, declarationScopeId, declarationStartIndex);
         occurrences.push(...(indexedReferenceOccurrences.get(referenceKey) ?? []));
 
-        if (!includeConstructorStaticMemberReferences || declarationName.length === 0) {
-            return occurrences;
-        }
-
-        if (!this.tryCollectUnresolvedConstructorStaticMemberOccurrences(declarationName, occurrences)) {
-            return [];
-        }
-
         return this.deduplicateOccurrences(occurrences);
+    }
+
+    private collectConstructorStaticMemberOccurrences(
+        filePath: string,
+        declaration: any,
+        sourceText: string | null
+    ): Array<SymbolOccurrence> {
+        const entry = this.findConstructorStaticMemberEntryForDeclaration(filePath, declaration);
+        if (entry !== null) {
+            const occurrences = this.collectEntryOccurrences(entry);
+            return this.hasUnresolvedConstructorStaticMemberReferencesOutsideEntry(entry, occurrences)
+                ? []
+                : occurrences;
+        }
+
+        const declarationOccurrence = createIdentifierTokenOccurrence({
+            sourceText,
+            filePath,
+            name: typeof declaration.name === "string" ? declaration.name : "",
+            startIndex: declaration?.start?.index ?? null,
+            endIndex: resolveOccurrenceEndIndex(declaration.end?.index),
+            scopeId: declaration.scopeId,
+            kind: "definition"
+        });
+
+        return declarationOccurrence === null ? [] : [declarationOccurrence];
+    }
+
+    private hasUnresolvedConstructorStaticMemberReferencesOutsideEntry(
+        entry: SemanticIdentifierEntry,
+        occurrences: ReadonlyArray<SymbolOccurrence>
+    ): boolean {
+        if (!Core.isNonEmptyString(entry.name)) {
+            return false;
+        }
+
+        const semanticOccurrenceKeys = new Set(
+            occurrences
+                .filter((occurrence) => occurrence.kind === "reference")
+                .map((occurrence) => `${occurrence.path}:${occurrence.start}:${occurrence.end}`)
+        );
+
+        for (const unresolvedReference of this.getIndexes().unresolvedReferencesByExactName.get(entry.name) ?? []) {
+            const start = readSemanticLocationIndex(unresolvedReference.reference.start);
+            const end = readExclusiveSemanticLocationIndex(unresolvedReference.reference.end);
+            if (start === null || end === null || end <= start) {
+                continue;
+            }
+
+            if (semanticOccurrenceKeys.has(`${unresolvedReference.filePath}:${start}:${end}`)) {
+                continue;
+            }
+
+            const classifications = Core.asArray(unresolvedReference.reference.classifications);
+            if (
+                classifications.includes("property") ||
+                this.isBareCallReferenceSourceMatch(unresolvedReference.filePath, start, end)
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private isBareCallReferenceSourceMatch(filePath: string, startIndex: number, endIndex: number): boolean {
+        const sourceText = this.readProjectSourceText(filePath);
+        if (sourceText === null || startIndex < 0 || endIndex <= startIndex || endIndex > sourceText.length) {
+            return false;
+        }
+
+        let previousCursor = startIndex - 1;
+        while (previousCursor >= 0 && /\s/u.test(sourceText[previousCursor] ?? "")) {
+            previousCursor -= 1;
+        }
+
+        if (previousCursor >= 0 && sourceText[previousCursor] === ".") {
+            return false;
+        }
+
+        let nextCursor = endIndex;
+        while (nextCursor < sourceText.length && /\s/u.test(sourceText[nextCursor] ?? "")) {
+            nextCursor += 1;
+        }
+
+        return sourceText[nextCursor] === "(";
+    }
+
+    private findConstructorStaticMemberEntryForDeclaration(
+        filePath: string,
+        declaration: any
+    ): SemanticIdentifierEntry | null {
+        const declarationStart = readSemanticLocationIndex(declaration?.start);
+        const declarationEnd = readExclusiveSemanticLocationIndex(declaration?.end);
+        const declarationName = typeof declaration?.name === "string" ? declaration.name : null;
+        if (declarationStart === null || declarationEnd === null || declarationName === null) {
+            return null;
+        }
+
+        for (const entry of Object.values(this.identifiers.constructorStaticMembers ?? {})) {
+            if (entry.name !== declarationName) {
+                continue;
+            }
+
+            for (const entryDeclaration of entry.declarations ?? []) {
+                const entryFilePath = typeof entryDeclaration.filePath === "string" ? entryDeclaration.filePath : "";
+                if (entryFilePath !== filePath) {
+                    continue;
+                }
+
+                const entryStart = readSemanticLocationIndex(entryDeclaration.start);
+                const entryEnd = readExclusiveSemanticLocationIndex(entryDeclaration.end);
+                if (entryStart === declarationStart && entryEnd === declarationEnd) {
+                    return entry;
+                }
+            }
+        }
+
+        return null;
     }
 
     private createLocalReferenceKey(name: string, scopeId: string | null, startIndex: number | null): string {
@@ -3965,165 +4053,6 @@ export class GmlSemanticBridge {
         }
     }
 
-    private tryCollectUnresolvedConstructorStaticMemberOccurrences(
-        symbolName: string,
-        occurrences: Array<SymbolOccurrence>
-    ): boolean {
-        const collected: Array<SymbolOccurrence> = [];
-
-        for (const unresolvedReference of this.getIndexes().unresolvedReferencesByExactName.get(symbolName) ?? []) {
-            const classifications = Core.asArray(unresolvedReference.reference.classifications);
-            const start = readSemanticLocationIndex(unresolvedReference.reference.start);
-            const end = readExclusiveSemanticLocationIndex(unresolvedReference.reference.end);
-
-            if (start === null || end === null || end <= start) {
-                continue;
-            }
-
-            const isPropertyReference = classifications.includes("property");
-            const isBareCallReference = this.isConstructorStaticMemberBareCallReferenceSourceMatch(
-                unresolvedReference.filePath,
-                start,
-                end
-            );
-            if (!isPropertyReference && !isBareCallReference) {
-                continue;
-            }
-
-            collected.push({
-                path: unresolvedReference.filePath,
-                start,
-                end,
-                scopeId:
-                    typeof unresolvedReference.reference.scopeId === "string"
-                        ? unresolvedReference.reference.scopeId
-                        : undefined,
-                kind: "reference"
-            });
-        }
-
-        this.collectSourceBackedConstructorStaticMemberDottedOccurrences(symbolName, collected);
-
-        if (collected.length > 0 && (this.getConstructorStaticMemberNameCounts().get(symbolName) ?? 0) !== 1) {
-            return false;
-        }
-
-        occurrences.push(...collected);
-        return true;
-    }
-
-    private collectSourceBackedConstructorStaticMemberDottedOccurrences(
-        symbolName: string,
-        occurrences: Array<SymbolOccurrence>
-    ): void {
-        if (!Core.isNonEmptyString(symbolName)) {
-            return;
-        }
-
-        occurrences.push(...(this.getSourceBackedDottedCallOccurrencesByName().get(symbolName) ?? []));
-    }
-
-    private getSourceBackedDottedCallOccurrencesByName(): Map<string, Array<SymbolOccurrence>> {
-        const existingIndex = this.sourceBackedDottedCallOccurrencesByName;
-        if (existingIndex !== null) {
-            return existingIndex;
-        }
-
-        const dottedCallOccurrencesByName = new Map<string, Array<SymbolOccurrence>>();
-        for (const filePath of Object.keys(this.projectIndex.files ?? {})) {
-            if (!filePath.endsWith(".gml")) {
-                continue;
-            }
-
-            const sourceText = this.readProjectSourceText(filePath);
-            if (sourceText === null) {
-                continue;
-            }
-
-            this.collectDottedIdentifierOccurrencesFromSource({
-                filePath,
-                sourceText,
-                occurrencesByName: dottedCallOccurrencesByName
-            });
-        }
-
-        this.sourceBackedDottedCallOccurrencesByName = dottedCallOccurrencesByName;
-        return dottedCallOccurrencesByName;
-    }
-
-    private collectDottedIdentifierOccurrencesFromSource(parameters: {
-        filePath: string;
-        sourceText: string;
-        occurrencesByName: Map<string, Array<SymbolOccurrence>>;
-    }): void {
-        const scanState = Core.createStringCommentScanState();
-        const sourceLength = parameters.sourceText.length;
-        let index = 0;
-
-        while (index < sourceLength) {
-            const scannedIndex = Core.advanceStringCommentScan(
-                parameters.sourceText,
-                sourceLength,
-                index,
-                scanState,
-                true
-            );
-            if (scannedIndex !== index) {
-                index = scannedIndex;
-                continue;
-            }
-
-            if (
-                isIdentifierBoundary(parameters.sourceText[index - 1]) &&
-                /[A-Za-z_]/u.test(parameters.sourceText[index] ?? "") &&
-                this.readDottedReferenceOwnerName(parameters.filePath, index) !== null &&
-                isCallExpressionCalleeAt(parameters.sourceText, findIdentifierEndIndex(parameters.sourceText, index))
-            ) {
-                const end = findIdentifierEndIndex(parameters.sourceText, index);
-                const name = parameters.sourceText.slice(index, end);
-                const occurrences = parameters.occurrencesByName.get(name) ?? [];
-                occurrences.push({
-                    path: parameters.filePath,
-                    start: index,
-                    end,
-                    kind: "reference"
-                });
-                parameters.occurrencesByName.set(name, occurrences);
-                index = end;
-                continue;
-            }
-
-            index += 1;
-        }
-    }
-
-    private isConstructorStaticMemberBareCallReferenceSourceMatch(
-        filePath: string,
-        startIndex: number,
-        endIndex: number
-    ): boolean {
-        const sourceText = this.readProjectSourceText(filePath);
-        if (sourceText === null || startIndex < 0 || endIndex <= startIndex || endIndex > sourceText.length) {
-            return false;
-        }
-
-        let previousCursor = startIndex - 1;
-        while (previousCursor >= 0 && /\s/u.test(sourceText[previousCursor] ?? "")) {
-            previousCursor -= 1;
-        }
-
-        if (previousCursor >= 0 && sourceText[previousCursor] === ".") {
-            return false;
-        }
-
-        let nextCursor = endIndex;
-        while (nextCursor < sourceText.length && /\s/u.test(sourceText[nextCursor] ?? "")) {
-            nextCursor += 1;
-        }
-
-        return sourceText[nextCursor] === "(";
-    }
-
     private resolveEnumMemberReferenceRange(parameters: {
         filePath: string;
         startIndex: number;
@@ -4281,42 +4210,6 @@ export class GmlSemanticBridge {
         }
 
         return true;
-    }
-
-    private getConstructorStaticMemberNameCounts(): Map<string, number> {
-        const existingCounts = this.constructorStaticMemberNameCounts;
-        if (existingCounts) {
-            return existingCounts;
-        }
-
-        const counts = new Map<string, number>();
-        for (const [filePath, fileRecord] of Object.entries(
-            (this.projectIndex.files ?? {}) as Record<string, SemanticFileRecord>
-        )) {
-            const sourceText = this.readProjectSourceText(filePath);
-            for (const declaration of fileRecord.declarations ?? []) {
-                const startIndex = readSemanticLocationIndex(declaration.start);
-                if (typeof declaration.name !== "string" || startIndex === null) {
-                    continue;
-                }
-
-                if (
-                    !this.localNamingCategoryResolver.isConstructorStaticMember(
-                        filePath,
-                        sourceText,
-                        declaration.name,
-                        startIndex
-                    )
-                ) {
-                    continue;
-                }
-
-                counts.set(declaration.name, (counts.get(declaration.name) ?? 0) + 1);
-            }
-        }
-
-        this.constructorStaticMemberNameCounts = counts;
-        return counts;
     }
 
     private getEnumNames(): ReadonlySet<string> {

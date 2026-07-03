@@ -6,6 +6,7 @@ import { loadBuiltInIdentifiers } from "../symbols/built-in-identifiers.js";
 import { createProjectIndexAbortGuard, PROJECT_INDEX_BUILD_ABORT_MESSAGE } from "./abort-guard.js";
 import { getDefaultProjectIndexCacheMaxSize, loadProjectIndexCache, saveProjectIndexCache } from "./cache.js";
 import { clampConcurrency } from "./concurrency.js";
+import { collectConstructorStaticMemberAnalysis } from "./constructor-static-members.js";
 import { createProjectIndexCoordinator as createProjectIndexCoordinatorCore } from "./coordinator.js";
 import { type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
 import { resolveProjectIndexParser } from "./gml-parser-facade.js";
@@ -40,6 +41,7 @@ const IDENTIFIER_COLLECTION_NAMES = Object.freeze({
     macros: "macros",
     enums: "enums",
     enumMembers: "enumMembers",
+    constructorStaticMembers: "constructorStaticMembers",
     globalVariables: "globalVariables",
     instanceVariables: "instanceVariables",
     localVariables: "localVariables",
@@ -258,6 +260,7 @@ function createIdentifierCollections() {
         macros: new Map(),
         enums: new Map(),
         enumMembers: new Map(),
+        constructorStaticMembers: new Map(),
         globalVariables: new Map(),
         instanceVariables: new Map(),
         localVariables: new Map(),
@@ -839,6 +842,92 @@ function registerEnumMemberOccurrence({
         identifierRecord,
         filePath,
         role: validatedRole,
+        identifierSink
+    });
+}
+function createConstructorStaticMemberKey(constructorName, memberName) {
+    if (!constructorName || !memberName) {
+        return null;
+    }
+
+    return `${constructorName}.${memberName}`;
+}
+function registerConstructorStaticMemberDeclaration({
+    identifierCollections,
+    identifierRecord,
+    filePath,
+    constructorName,
+    memberName,
+    identifierSink
+}) {
+    const key = createConstructorStaticMemberKey(constructorName, memberName);
+    if (!identifierCollections || !key || !identifierRecord?.name) {
+        return;
+    }
+
+    const identifierId = buildIdentifierId("constructor-static-member", key);
+    ensureIdentifierEntryWithRole({
+        collection: identifierCollections.constructorStaticMembers,
+        key,
+        collectionName: IDENTIFIER_COLLECTION_NAMES.constructorStaticMembers,
+        identifierId,
+        initializer: () => ({
+            key,
+            name: memberName,
+            constructorName,
+            displayName: key,
+            filePath: filePath ?? null
+        }),
+        metadata: {
+            identifierId,
+            name: memberName,
+            displayName: key
+        },
+        identifierRecord,
+        filePath,
+        role: IdentifierRole.DECLARATION,
+        identifierSink
+    });
+}
+function registerConstructorStaticMemberReference({
+    identifierCollections,
+    identifierRecord,
+    filePath,
+    constructorName,
+    memberName,
+    identifierSink
+}) {
+    const key = createConstructorStaticMemberKey(constructorName, memberName);
+    if (!identifierCollections || !key || !identifierRecord?.name) {
+        return;
+    }
+
+    const entry = identifierCollections.constructorStaticMembers.get(key);
+    if (!entry || !Array.isArray(entry.declarations) || entry.declarations.length === 0) {
+        return;
+    }
+
+    const declaration = entry.declarations[0];
+    const classifications = [...Core.asArray(identifierRecord.classifications)];
+    Core.pushUnique(classifications, "constructor-static-member");
+
+    const referenceRecord = {
+        ...identifierRecord,
+        declaration: {
+            scopeId: declaration.scopeId ?? null,
+            start: Core.cloneLocation(declaration.start),
+            end: Core.cloneLocation(declaration.end)
+        },
+        classifications
+    };
+
+    recordIdentifierCollectionRole({
+        entry,
+        identifierRecord: referenceRecord,
+        filePath,
+        role: IdentifierRole.REFERENCE,
+        collectionName: IDENTIFIER_COLLECTION_NAMES.constructorStaticMembers,
+        collectionKey: key,
         identifierSink
     });
 }
@@ -1773,6 +1862,54 @@ function analyseGmlAst({
         });
     });
 }
+function analyseConstructorStaticMemberOccurrences({
+    ast,
+    filePath,
+    identifierCollections,
+    pendingConstructorStaticMemberReferences,
+    identifierSink
+}) {
+    if (!identifierCollections) {
+        return;
+    }
+
+    const analysis = collectConstructorStaticMemberAnalysis(ast);
+    for (const declaration of analysis.declarations) {
+        registerConstructorStaticMemberDeclaration({
+            identifierCollections,
+            identifierRecord: createIdentifierRecord(declaration.memberIdentifier),
+            filePath,
+            constructorName: declaration.constructorName,
+            memberName: declaration.memberName,
+            identifierSink
+        });
+    }
+
+    for (const reference of analysis.references) {
+        pendingConstructorStaticMemberReferences.push({
+            filePath,
+            constructorName: reference.constructorName,
+            memberName: reference.memberName,
+            identifierRecord: createIdentifierRecord(reference.memberIdentifier)
+        });
+    }
+}
+function registerPendingConstructorStaticMemberReferences({
+    identifierCollections,
+    pendingConstructorStaticMemberReferences,
+    identifierSink
+}) {
+    for (const reference of pendingConstructorStaticMemberReferences) {
+        registerConstructorStaticMemberReference({
+            identifierCollections,
+            identifierRecord: reference.identifierRecord,
+            filePath: reference.filePath,
+            constructorName: reference.constructorName,
+            memberName: reference.memberName,
+            identifierSink
+        });
+    }
+}
 function cloneAssetReference(reference) {
     return {
         fromResourcePath: reference.fromResourcePath,
@@ -1904,7 +2041,8 @@ async function processProjectGmlFile({
     relationships,
     builtInNames,
     projectRoot,
-    identifierSink
+    identifierSink,
+    pendingConstructorStaticMemberReferences
 }) {
     ensureNotAborted();
     metrics.counters.increment("files.gmlProcessed");
@@ -1948,6 +2086,15 @@ async function processProjectGmlFile({
             identifierSink
         })
     );
+    metrics.timers.timeSync("gml.constructorStaticMembers", () =>
+        analyseConstructorStaticMemberOccurrences({
+            ast,
+            filePath: file.relativePath,
+            identifierCollections,
+            pendingConstructorStaticMemberReferences,
+            identifierSink
+        })
+    );
 }
 /**
  * Centralize the mutable collections used while aggregating project index
@@ -1982,7 +2129,8 @@ function createProjectIndexAggregationState(resourceAnalysis) {
         scopeMap,
         filesMap,
         relationships,
-        identifierCollections
+        identifierCollections,
+        constructorStaticMemberReferences: []
     };
 }
 
@@ -2198,6 +2346,28 @@ function createProjectIndexResultSnapshot({
                 fallbackRecords: entry.references
             })
         })),
+        constructorStaticMembers: mapToObject(identifierCollections.constructorStaticMembers, (entry) => ({
+            identifierId: entry.identifierId ?? buildIdentifierId("constructor-static-member", entry.key ?? ""),
+            key: entry.key,
+            name: entry.name ?? null,
+            constructorName: entry.constructorName ?? null,
+            displayName: entry.displayName ?? entry.key ?? null,
+            filePath: entry.filePath ?? null,
+            declarations: resolveIdentifierRoleRecords({
+                identifierSink,
+                collection: IDENTIFIER_COLLECTION_NAMES.constructorStaticMembers,
+                key: entry.key,
+                role: "declarations",
+                fallbackRecords: entry.declarations
+            }),
+            references: resolveIdentifierRoleRecords({
+                identifierSink,
+                collection: IDENTIFIER_COLLECTION_NAMES.constructorStaticMembers,
+                key: entry.key,
+                role: "references",
+                fallbackRecords: entry.references
+            })
+        })),
         globalVariables: mapToObject(identifierCollections.globalVariables, (entry) => ({
             identifierId: entry.identifierId ?? buildIdentifierId("global", entry.name ?? ""),
             name: entry.name,
@@ -2394,6 +2564,7 @@ async function processProjectGmlFilesForIndex({
     projectRoot,
     signal,
     identifierSink,
+    constructorStaticMemberReferences,
     onProgress
 }) {
     let processed = 0;
@@ -2415,7 +2586,8 @@ async function processProjectGmlFilesForIndex({
                 relationships,
                 builtInNames,
                 projectRoot,
-                identifierSink
+                identifierSink,
+                pendingConstructorStaticMemberReferences: constructorStaticMemberReferences
             });
             processed += 1;
             if (onProgress) {
@@ -2494,7 +2666,7 @@ export async function buildProjectIndex(projectRoot, fsFacade = Core.defaultFsFa
     });
     recordMemoryHighWater();
 
-    const { scopeMap, filesMap, relationships, identifierCollections } =
+    const { scopeMap, filesMap, relationships, identifierCollections, constructorStaticMemberReferences } =
         createProjectIndexAggregationState(resourceAnalysis);
 
     const { gmlConcurrency, parseProjectSource } = configureGmlProcessing({
@@ -2519,9 +2691,16 @@ export async function buildProjectIndex(projectRoot, fsFacade = Core.defaultFsFa
             projectRoot: resolvedRoot,
             signal,
             identifierSink,
+            constructorStaticMemberReferences,
             onProgress: options?.onProgress
         });
         recordMemoryHighWater();
+
+        registerPendingConstructorStaticMemberReferences({
+            identifierCollections,
+            pendingConstructorStaticMemberReferences: constructorStaticMemberReferences,
+            identifierSink
+        });
 
         recordScriptCallMetricsAndReferences({
             relationships,

@@ -74,3 +74,6 @@ not require a particular coordinator or agent framework.
 - [fastcontext](https://github.com/microsoft/fastcontext)
 - [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)
 - [mcp-server-qdrant](https://github.com/qdrant/mcp-server-qdrant)
+
+## TODO
+- Add/register `agent-pack` into the workspace boundaries defined in `eslint.config.js` with appropriate dependencies and dependents.

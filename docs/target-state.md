@@ -167,6 +167,8 @@ Use the Sourcegraph Code Intelligence Protocol (SCIP) as the single canonical re
 - **Deterministic symbol naming**: Use a URI-like scheme such as `gml/<kind>/<qualified-name>` (for example, `gml/script/scr_damage_enemy`).
 - **Minimal hot-reload queries**: Read definition occurrences for a file, collect reference occurrences for dependents, and recompile only the affected symbols.
 
+Constructor static members are semantic facts, not refactor heuristics. The semantic project index owns direct receiver resolution for constructor-owned fields such as `self.timer = new TimerMultiplier()` and member accesses such as `timer.get_multiplier()` or `self.timer.set_multiplier(...)`. Refactor/codemod flows must consume those resolved occurrences and skip unresolved or ambiguous same-name property/bare-call references rather than guessing from raw source text.
+
 ### 4.4 Storage Strategy: Canonical Model vs Execution Backend
 
 SCIP remains the canonical symbol model. Storage and execution, however, should use a hybrid bounded-memory architecture rather than a single always-in-memory or always-SQL design.

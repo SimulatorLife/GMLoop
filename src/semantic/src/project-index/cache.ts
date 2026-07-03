@@ -8,7 +8,7 @@ import { evaluateProjectIndexCacheSizePolicy, normalizeProjectIndexCacheMaxSizeB
 import { isProjectManifestPath, PROJECT_INDEX_CACHE_MAX_SIZE_BASELINE } from "./constants.js";
 import { type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
 
-export const PROJECT_INDEX_CACHE_SCHEMA_VERSION = 2;
+export const PROJECT_INDEX_CACHE_SCHEMA_VERSION = 3;
 export const PROJECT_INDEX_CACHE_DIRECTORY = ".gmloop";
 export const PROJECT_INDEX_CACHE_FILENAME = "project-index-cache.json";
 export const PROJECT_INDEX_CACHE_MAX_SIZE_ENV_VAR = "GML_PROJECT_INDEX_CACHE_MAX_SIZE";

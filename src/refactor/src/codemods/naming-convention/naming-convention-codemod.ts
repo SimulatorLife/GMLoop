@@ -51,12 +51,12 @@ function isReservedLocalRenameTarget(parameters: {
     reservedOrdinaryNames: ReadonlySet<string>;
 }): boolean {
     const { target, suggestedName, reservedOrdinaryNames } = parameters;
-    if (reservedOrdinaryNames.has(suggestedName)) {
-        return true;
-    }
-
     if (target.category === "argument" || target.category === "catchArgument") {
         return Core.isReservedGmlBindingIdentifierName(suggestedName, "argument-binding");
+    }
+
+    if (reservedOrdinaryNames.has(suggestedName)) {
+        return true;
     }
 
     return false;
@@ -120,12 +120,16 @@ function createEmptyScopeDataCollectionResult(): ScopeDataCollectionResult {
 
 function requestedCategoriesMayContainLocalTargets(requestedCategories: ReadonlyArray<NamingCategory>): boolean {
     for (const category of requestedCategories) {
-        if (DEFINITELY_LOCAL_NAMING_CATEGORIES.has(category)) {
+        if (DEFINITELY_LOCAL_NAMING_CATEGORIES.has(category) || SCRIPT_CALLABLE_NAMING_CATEGORIES.has(category)) {
             return true;
         }
     }
 
     return false;
+}
+
+function isOccurrenceBackedLocalNamingTarget(target: NamingConventionTarget): boolean {
+    return target.symbolId === null && target.occurrences.length > 0;
 }
 
 function collectSelectedTargets(parameters: {
@@ -148,7 +152,7 @@ function collectSelectedTargets(parameters: {
 
         return {
             selectedTargets: queriedTargets,
-            hasLocalNamingTargets: queriedTargets.some((target) => target.symbolId === null)
+            hasLocalNamingTargets: queriedTargets.some((target) => isOccurrenceBackedLocalNamingTarget(target))
         };
     }
 
@@ -161,7 +165,7 @@ function collectSelectedTargets(parameters: {
         }
 
         selectedTargets.push(target);
-        if (!trackLocalTargets || hasLocalNamingTargets || target.symbolId !== null) {
+        if (!trackLocalTargets || hasLocalNamingTargets || !isOccurrenceBackedLocalNamingTarget(target)) {
             continue;
         }
 
@@ -747,6 +751,9 @@ function expandNamingDiscoveryCategories(requestedCategories: ReadonlyArray<Nami
         expandedCategories.add("function");
         expandedCategories.add("structDeclaration");
     }
+    if (expandedCategories.has("structDeclaration")) {
+        expandedCategories.add("constructorFunction");
+    }
 
     return [...expandedCategories];
 }
@@ -1044,6 +1051,10 @@ export async function planNamingConventionCodemod(
                     }
                 }
             }
+            continue;
+        }
+
+        if (!isOccurrenceBackedLocalNamingTarget(target)) {
             continue;
         }
 

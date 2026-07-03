@@ -2708,8 +2708,8 @@ void describe("GmlSemanticBridge tests", () => {
         }
     });
 
-    void it("listNamingConventionTargets supplements constructor static member references from dotted source calls", async () => {
-        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-static-member-source-"));
+    void it("listNamingConventionTargets uses semantic receiver resolution for constructor static members", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-static-member-semantic-"));
         const timerFilePath = "scripts/Timer/Timer.gml";
         const curveFilePath = "scripts/CurveHandlerTimed/CurveHandlerTimed.gml";
         const timerSource = [
@@ -2728,7 +2728,7 @@ void describe("GmlSemanticBridge tests", () => {
             "",
             "    static set_curve_config = function(speed_multiplier) {",
             "        if (speed_multiplier != timer.get_multiplier()) {",
-            "            timer.get_multiplier();",
+            "            self.timer.get_multiplier();",
             "        }",
             "    };",
             "}",
@@ -2738,6 +2738,18 @@ void describe("GmlSemanticBridge tests", () => {
         try {
             fs.mkdirSync(path.join(tmpRoot, "scripts", "Timer"), { recursive: true });
             fs.mkdirSync(path.join(tmpRoot, "scripts", "CurveHandlerTimed"), { recursive: true });
+            fs.writeFileSync(
+                path.join(tmpRoot, "MyGame.yyp"),
+                `${JSON.stringify({ name: "MyGame", resourceType: "GMProject" }, null, 2)}\n`
+            );
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "Timer", "Timer.yy"),
+                `${JSON.stringify({ name: "Timer", resourceType: "GMScript" }, null, 2)}\n`
+            );
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "CurveHandlerTimed", "CurveHandlerTimed.yy"),
+                `${JSON.stringify({ name: "CurveHandlerTimed", resourceType: "GMScript" }, null, 2)}\n`
+            );
             fs.writeFileSync(path.join(tmpRoot, timerFilePath), timerSource, "utf8");
             fs.writeFileSync(path.join(tmpRoot, curveFilePath), curveSource, "utf8");
 
@@ -2745,29 +2757,8 @@ void describe("GmlSemanticBridge tests", () => {
             const firstCallStart = findNthIndex(curveSource, "get_multiplier", 1);
             const secondCallStart = findNthIndex(curveSource, "get_multiplier", 2);
 
-            const mockProjectIndex = {
-                identifiers: {},
-                files: {
-                    [timerFilePath]: {
-                        declarations: [
-                            {
-                                name: "get_multiplier",
-                                scopeId: "scope:timer",
-                                classifications: ["variable"],
-                                start: { index: declarationStart },
-                                end: { index: declarationStart + "get_multiplier".length - 1 }
-                            }
-                        ],
-                        references: []
-                    },
-                    [curveFilePath]: {
-                        declarations: [],
-                        references: []
-                    }
-                }
-            };
-
-            const bridge = new GmlSemanticBridge(mockProjectIndex, tmpRoot);
+            const projectIndex = await Semantic.buildProjectIndex(tmpRoot);
+            const bridge = new GmlSemanticBridge(projectIndex, tmpRoot);
             const targets = await bridge.listNamingConventionTargets([timerFilePath], ["staticVariable"]);
             const target = targets.find(
                 (candidate) => candidate.category === "staticVariable" && candidate.name === "get_multiplier"
@@ -3302,7 +3293,7 @@ void describe("GmlSemanticBridge tests", () => {
         }
     });
 
-    void it("listNamingConventionTargets includes unresolved dotted references for unique constructor static members", async () => {
+    void it("listNamingConventionTargets leaves unknown receiver dotted calls unresolved", async () => {
         const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-struct-static-member-"));
 
         try {
@@ -3343,29 +3334,13 @@ void describe("GmlSemanticBridge tests", () => {
             const targets = await bridge.listNamingConventionTargets();
             const subTarget = targets.find((target) => target.category === "staticVariable" && target.name === "Sub");
 
-            assert.ok(subTarget);
-            assert.deepEqual(
-                subTarget?.occurrences.map((occurrence) => ({
-                    kind: occurrence.kind,
-                    path: occurrence.path
-                })),
-                [
-                    {
-                        kind: Refactor.OccurrenceKind.DEFINITION,
-                        path: "scripts/vec/vec.gml"
-                    },
-                    {
-                        kind: Refactor.OccurrenceKind.REFERENCE,
-                        path: "scripts/move_step/move_step.gml"
-                    }
-                ]
-            );
+            assert.equal(subTarget, undefined);
         } finally {
             fs.rmSync(tmpRoot, { recursive: true, force: true });
         }
     });
 
-    void it("listNamingConventionTargets includes unresolved bare calls for unique constructor static members", async () => {
+    void it("listNamingConventionTargets leaves bare constructor static calls unresolved", async () => {
         const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-static-member-bare-call-"));
 
         try {
@@ -3418,31 +3393,13 @@ void describe("GmlSemanticBridge tests", () => {
                 (target) => target.category === "staticVariable" && target.name === "Reset"
             );
 
-            assert.ok(resetTarget);
-            // Sort by kind then path to ensure stable comparison regardless of traversal order.
-            const sortedOccurrences = resetTarget.occurrences
-                .map((occurrence) => ({ kind: occurrence.kind, path: occurrence.path }))
-                .sort((a, b) => `${a.kind}\0${a.path}`.localeCompare(`${b.kind}\0${b.path}`));
-            assert.deepEqual(sortedOccurrences, [
-                {
-                    kind: Refactor.OccurrenceKind.DEFINITION,
-                    path: "scripts/generator_state/generator_state.gml"
-                },
-                {
-                    kind: Refactor.OccurrenceKind.REFERENCE,
-                    path: "scripts/generator_state/generator_state.gml"
-                },
-                {
-                    kind: Refactor.OccurrenceKind.REFERENCE,
-                    path: "scripts/initialize/initialize.gml"
-                }
-            ]);
+            assert.equal(resetTarget, undefined);
         } finally {
             fs.rmSync(tmpRoot, { recursive: true, force: true });
         }
     });
 
-    void it("listNamingConventionTargets excludes ambiguous constructor static members with unresolved references", async () => {
+    void it("listNamingConventionTargets does not attach ambiguous unknown receiver references", async () => {
         const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-static-member-ambiguous-"));
 
         try {
@@ -3487,11 +3444,7 @@ void describe("GmlSemanticBridge tests", () => {
                 (target) => target.category === "staticVariable" && target.name === "Add"
             );
 
-            assert.strictEqual(
-                addTargets.length,
-                0,
-                "Should abort yielding static variable targets for ambiguous occurrences"
-            );
+            assert.strictEqual(addTargets.length, 0);
         } finally {
             fs.rmSync(tmpRoot, { recursive: true, force: true });
         }
