@@ -54,6 +54,7 @@ jobs:
         stdbuf -oL -eL pnpm --silent dlx @qwen-code/qwen-code@latest \
           --yolo \
           --debug \
+          --experimental-lsp \
           --output-format=stream-json \
           --prompt "" < "${AGENT_PROMPT_FILE}" 2>&1 | tee "$RUNNER_TEMP/agent-stream.jsonl"
         agent_status="${PIPESTATUS[0]}"

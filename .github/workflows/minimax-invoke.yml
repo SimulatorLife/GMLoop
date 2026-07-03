@@ -36,6 +36,7 @@ jobs:
         stdbuf -oL -eL pnpm --silent dlx @qwen-code/qwen-code@latest \
           --approval-mode=yolo \
           --model=MiniMax-M3 \
+          --experimental-lsp \
           --output-format=stream-json \
           --prompt "" < "${AGENT_PROMPT_FILE}" \
           2>&1 | tee "$RUNNER_TEMP/agent-stream.jsonl"

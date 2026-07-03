@@ -1,7 +1,7 @@
 {
   "$version": 4,
   "model": {
-    "name": "qwen3:1.7b",
+    "name": "MiniMax-M3",
     "skipLoopDetection": true,
     "skipStartupContext": true,
     "maxSessionTurns": 900,
