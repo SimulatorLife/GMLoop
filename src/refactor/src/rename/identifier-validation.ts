@@ -1,6 +1,6 @@
 /**
  * Validation utilities for refactoring operations.
- * This module provides identifier validation and reserved keyword checking.
+ * This module provides identifier validation helpers.
  */
 
 import { Core } from "@gmloop/core";

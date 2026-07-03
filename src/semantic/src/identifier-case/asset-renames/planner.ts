@@ -16,8 +16,6 @@ import {
 } from "../planning-helpers.js";
 import { createAssetRenameExecutor } from "./executor.js";
 
-const RESERVED_IDENTIFIER_NAMES = Core.loadReservedIdentifierNames();
-
 type AssetReferenceMutation = {
     filePath?: string;
     propertyPath?: string;
@@ -150,11 +148,7 @@ function isReservedIdentifierName(name) {
         return false;
     }
 
-    if (RESERVED_IDENTIFIER_NAMES.size === 0) {
-        return false;
-    }
-
-    return RESERVED_IDENTIFIER_NAMES.has(normalizedName);
+    return Core.isReservedGmlBindingIdentifierName(normalizedName, "ordinary-binding");
 }
 
 function buildAssetConflictSuggestions(identifierName) {

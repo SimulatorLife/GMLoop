@@ -631,14 +631,14 @@ export async function checkHotReloadSafety(
     const occurrences = await SymbolQueries.gatherSymbolOccurrences(symbolName, semantic);
     const conflicts = await detectRenameConflicts(symbolName, newName, occurrences, semantic, semantic);
 
-    // Guard: reserved keyword conflicts are blocking
+    // Guard: reserved GameMaker identifier conflicts are blocking.
     if (conflicts.some((c) => c.type === ConflictType.RESERVED)) {
         return {
             safe: false,
-            reason: "Cannot rename to a reserved keyword",
+            reason: "Cannot rename to a reserved GameMaker identifier",
             requiresRestart: true,
             canAutoFix: false,
-            suggestions: ["Choose a different name that isn't a reserved keyword"]
+            suggestions: ["Choose a different name that isn't a reserved GameMaker identifier"]
         };
     }
 

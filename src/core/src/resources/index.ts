@@ -13,24 +13,26 @@ export type {
     DeprecatedIdentifierDiagnosticOwner,
     DeprecatedIdentifierLegacyUsage,
     DeprecatedIdentifierMetadataEntry,
-    DeprecatedIdentifierReplacementKind,
-    GmlBindingIdentifierContext
+    DeprecatedIdentifierReplacementKind
 } from "./gml-identifier-loading.js";
 export {
     clearIdentifierMetadataCache,
     getGmlIdentifierMetadataPath,
     getGmlIdentifierMetadataUrl,
     getIdentifierMetadata,
-    isReservedGmlBindingIdentifierName,
     loadBundledIdentifierMetadata,
     loadDeprecatedIdentifierEntries,
     loadManualFunctionNames,
-    loadReservedGmlBindingIdentifierNames,
     loadReservedIdentifierNames,
     normalizeIdentifierMetadataEntries,
     resetReservedIdentifierMetadataLoader,
     setReservedIdentifierMetadataLoader
 } from "./gml-identifier-loading.js";
+export type { GmlBindingIdentifierContext } from "./gml-identifier-reservation.js";
+export {
+    isReservedGmlBindingIdentifierName,
+    loadReservedGmlBindingIdentifierNames
+} from "./gml-identifier-reservation.js";
 export type { ProjectMetadataSchemaName } from "./project-metadata.js";
 export {
     applyProjectMetadataStringMutations,

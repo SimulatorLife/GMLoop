@@ -1,6 +1,6 @@
 ---
 name: doubt-driven-development
-description: Apply adversarial verification during any meaningful code change before the approach hardens. Use for medium or larger changes where regressions, hidden coupling, ownership mistakes, or invalid assumptions are plausible. Skip only trivial mechanical edits.
+description: Apply adversarial verification during any meaningful code change before the approach hardens. Use for medium or larger changes where regressions, hidden coupling, ownership mistakes, or invalid assumptions are plausible. Skip only for trivial mechanical edits.
 ---
 
 # Doubt-Driven Development
@@ -29,13 +29,14 @@ Skip for trivial mechanical edits, such as renames, comment changes, formatting-
 ## Core Loop
 
 1. **Frame the Change**: identify the bug, feature, refactor, or design pressure being addressed. State the smallest useful outcome.
-2. **Find the Existing Owner**: check whether an existing system, helper, workspace, or pattern should handle this before adding anything new.
-3. **State the Risky Assumption**: name the assumption most likely to be wrong, such as ownership, abstraction level, edge-case behavior, or test coverage.
-4. **Try to Disprove the Approach**: look for counterexamples, boundary violations, hidden coupling, duplicated paths, and cases where existing tests would pass but behavior would still be wrong.
-5. **Make the Smallest Correct Change**: implement only what survives the adversarial check. Prefer improving an existing path over creating a parallel one.
-6. **Prove the Behavior**: add or update focused tests for the real invariant, then run targeted validation.
-7. **Check System Fit**: verify that the final change did not add unnecessary state, configuration, ownership confusion, or cross-workspace compensation.
-8. **Run Full Validation**: run required build(s), linting, and test commands before considering the change complete.
+2. **Inspect Current Repo State**: verify relevant files, existing systems, tests, imports, and patterns from the actual repository. Do not rely on memory, prior assumptions, or stale summaries.
+3. **Find the Existing Owner**: check whether an existing system, helper, workspace, or pattern should handle this before adding anything new.
+4. **State the Risky Assumption**: name the assumption most likely to be wrong, such as ownership, abstraction level, edge-case behavior, or test coverage.
+5. **Try to Disprove the Approach**: look for counterexamples, boundary violations, hidden coupling, duplicated paths, and cases where existing tests would pass but behavior would still be wrong.
+6. **Make the Smallest Correct Change**: implement only what survives the adversarial check. Prefer improving an existing path over creating a parallel one.
+7. **Prove the Behavior**: add or update focused tests for the real invariant, then run targeted validation.
+8. **Check System Fit**: verify that the final change did not add unnecessary state, configuration, ownership confusion, or cross-workspace compensation.
+9. **Run Full Validation**: run required build(s), linting, and test commands before considering the change complete.
 
 ## Before Implementing
 
@@ -78,17 +79,20 @@ For each non-trivial decision, challenge:
 
 ## Evidence Requirements
 
-Doubt is incomplete without executable evidence.
+Doubt is incomplete without evidence from the current repo state.
 
-Run:
+Before changing code, inspect the actual files, tests, imports, and existing patterns involved. Do not rely on memory, prior conversations, old summaries, or assumed architecture when the repository can be checked directly.
 
-```bash
-pnpm run build:ts
-pnpm run lint:quiet
-pnpm run test
-```
+Use targeted validation while iterating, then run full validation before completion.
 
-Use targeted tests while iterating, then run full validation before completion.
+Validation should include the relevant checks for the current project, such as:
+
+* The smallest test, fixture, or reproduction that proves the changed behavior
+* Build, typecheck, lint, formatting, or test commands required by the repo
+* The actual affected surface, such as the UI, CLI, plugin command, generated output, or runtime workflow
+* Any before/after comparison needed to prove the change did not regress surrounding behavior
+
+Do not treat passing tests as complete evidence if the changed behavior is normally exercised through a UI, CLI, editor integration, generated artifact, or other runtime path.
 
 ## Evidence may include:
 
@@ -104,6 +108,7 @@ Do not count intuition, reviewer agreement, or passing unrelated tests as eviden
 ## Red Flags
 
 - Treating confidence as proof
+- Relying on memory instead of inspecting the current repo state
 - Accepting reviewer feedback / assumptions without checking artifacts or code
 - Repeating cycles without changing artifact/contract
 - Skipping adding tests for behavior-affecting edits
@@ -135,6 +140,9 @@ Do not count intuition, reviewer agreement, or passing unrelated tests as eviden
 * Preserves an old boundary that should be simplified
 * Moves behavior without proving the new owner is better
 * Couples behavior to a fixture, filename, or test shape instead of the real invariant
+* Relies on stale memory of the codebase instead of the current files, tests, and dependency graph
+* Adds a new helper, utility, or abstraction before checking whether an existing one should be improved
+* Adds a new file when the behavior belongs with existing co-owned or closely related logic
 
 ## Completion Criteria
 

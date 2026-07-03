@@ -507,7 +507,7 @@ void test("analyzeRenameImpact provides comprehensive summary", async () => {
     assert.equal(result.summary.hotReloadRequired, true);
 });
 
-void test("analyzeRenameImpact detects reserved keyword conflicts", async () => {
+void test("analyzeRenameImpact detects reserved GameMaker identifier conflicts", async () => {
     const mockSemantic = {
         hasSymbol: () => true,
         getSymbolOccurrences: () => [{ path: "test.gml", start: 0, end: 10, scopeId: "scope-1" }]

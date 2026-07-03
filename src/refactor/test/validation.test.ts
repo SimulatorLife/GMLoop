@@ -67,9 +67,9 @@ void describe("validateRenameStructure", () => {
         assert.ok(errors.some((e) => e.includes("Invalid") || e.includes("identifier") || e.includes("valid")));
     });
 
-    void test("allows reserved keywords (semantic check happens later)", async () => {
+    void test("allows reserved GameMaker identifiers (semantic check happens later)", async () => {
         // validateRenameStructure only checks syntax, not semantics
-        // Reserved keyword checking is done by detectRenameConflicts
+        // Reserved GameMaker identifier checking is done by detectRenameConflicts
         const errors = await validateRenameStructure("gml/script/scr_test", "if", null);
         assert.deepEqual(errors, []);
     });

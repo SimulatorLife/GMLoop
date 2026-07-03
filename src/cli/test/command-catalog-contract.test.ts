@@ -295,6 +295,35 @@ void test("room repair MCP tool schema includes room argument and write option",
     assert.equal(writeField.valueType, "boolean");
 });
 
+void test("room instance list/inspect MCP tool schemas include required lookup arguments", () => {
+    const mcpCatalog = getMcpToolCatalogEntries();
+    const listEntry = mcpCatalog.find((candidate) => candidate.toolName === "gmloop_room_instance_list");
+    assert.ok(listEntry);
+
+    const listRoomField = listEntry.fields.find((candidate) => candidate.attributeName === "room");
+    assert.ok(listRoomField);
+    assert.equal(listRoomField.kind, "argument");
+    assert.equal(listRoomField.required, true);
+    assert.equal(
+        listEntry.fields.some((candidate) => candidate.attributeName === "write"),
+        false
+    );
+
+    const inspectEntry = mcpCatalog.find((candidate) => candidate.toolName === "gmloop_room_instance_inspect");
+    assert.ok(inspectEntry);
+
+    for (const requiredArgument of ["room", "instance_id"]) {
+        const field = inspectEntry.fields.find((candidate) => candidate.attributeName === requiredArgument);
+        assert.ok(field, `Missing required inspect argument field: ${requiredArgument}`);
+        assert.equal(field.kind, "argument");
+        assert.equal(field.required, true);
+    }
+    assert.equal(
+        inspectEntry.fields.some((candidate) => candidate.attributeName === "write"),
+        false
+    );
+});
+
 void test("room instance add/update/delete MCP tool schemas include mutation arguments and write option", () => {
     const mcpCatalog = getMcpToolCatalogEntries();
     const addEntry = mcpCatalog.find((candidate) => candidate.toolName === "gmloop_room_instance_add");

@@ -96,7 +96,7 @@ export interface DependencyAnalyzer {
 /**
  * Language keyword information.
  *
- * Provides access to reserved keywords for the language without
+ * Provides access to reserved language names without
  * coupling to symbol resolution or other semantic operations.
  */
 export interface KeywordProvider {

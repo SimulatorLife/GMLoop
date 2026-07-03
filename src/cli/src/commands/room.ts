@@ -1,6 +1,7 @@
 import {
     Refactor,
     type RoomCameraMutationResult,
+    type RoomInstanceInspectionResult,
     type RoomInstanceMutationResult,
     type RoomLayerMutationResult,
     type RoomRepairResult
@@ -98,6 +99,19 @@ function toRoomInstanceMutationPayload(result: RoomInstanceMutationResult) {
         roomPath: result.roomPath,
         warnings: result.warnings,
         writtenPaths: result.writtenPaths,
+        x: result.x,
+        y: result.y
+    };
+}
+
+function toRoomInstanceInspectionPayload(result: RoomInstanceInspectionResult) {
+    return {
+        instanceId: result.instanceId,
+        layerName: result.layerName,
+        objectName: result.objectName,
+        objectPath: result.objectPath,
+        roomName: result.roomName,
+        roomPath: result.roomPath,
         x: result.x,
         y: result.y
     };
@@ -364,6 +378,42 @@ async function runRoomInstanceDeleteAction(
     });
 
     printRoomPayload({ command: "room instance delete", ok: true, payload: toRoomInstanceMutationPayload(result) });
+}
+
+async function runRoomInstanceListAction(roomName: string, options: RoomMutationOptions): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const instances = await Refactor.listRoomInstances({
+        projectRoot: context.projectRoot,
+        roomName
+    });
+
+    printRoomPayload({
+        command: "room instance list",
+        ok: true,
+        payload: {
+            instances: instances.map(toRoomInstanceInspectionPayload),
+            room: roomName
+        }
+    });
+}
+
+async function runRoomInstanceInspectAction(
+    roomName: string,
+    instanceId: string,
+    options: RoomMutationOptions
+): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const instance = await Refactor.inspectRoomInstance({
+        instanceId,
+        projectRoot: context.projectRoot,
+        roomName
+    });
+
+    printRoomPayload({
+        command: "room instance inspect",
+        ok: true,
+        payload: toRoomInstanceInspectionPayload(instance)
+    });
 }
 
 function emitRoomUnavailableLeaf(
@@ -737,6 +787,28 @@ export function createRoomCommand(): Command {
     });
 
     const instance = applyStandardCommandOptions(new Command("instance")).description("Room instance operations.");
+    const instanceList = addRoomSharedOptions(
+        applyStandardCommandOptions(new Command("list")).description("List room instances.")
+    ).argument("<room>", "Room name");
+    instanceList.action(async function roomInstanceListAction(roomName: string) {
+        try {
+            await runRoomInstanceListAction(roomName, this.opts<RoomMutationOptions>());
+        } catch (error) {
+            handleCliError(error);
+        }
+    });
+    const instanceInspect = addRoomSharedOptions(
+        applyStandardCommandOptions(new Command("inspect")).description("Inspect room instance.")
+    )
+        .argument("<room>", "Room name")
+        .argument("<instance-id>", "Room instance id");
+    instanceInspect.action(async function roomInstanceInspectAction(roomName: string, instanceId: string) {
+        try {
+            await runRoomInstanceInspectAction(roomName, instanceId, this.opts<RoomMutationOptions>());
+        } catch (error) {
+            handleCliError(error);
+        }
+    });
     const instanceAdd = addRoomSharedOptions(
         applyStandardCommandOptions(new Command("add")).description("Add room instance.")
     )
@@ -793,6 +865,8 @@ export function createRoomCommand(): Command {
         const options = this.opts<RoomMutationOptions>();
         return runRoomInstanceDeleteAction(roomName, instanceId, options);
     });
+    instance.addCommand(instanceList);
+    instance.addCommand(instanceInspect);
     instance.addCommand(instanceAdd);
     instance.addCommand(instanceUpdate);
     instance.addCommand(instanceDelete);

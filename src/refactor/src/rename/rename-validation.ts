@@ -181,9 +181,10 @@ function checkShadowingConflicts(
 }
 
 /**
- * Builds the complete set of reserved keywords by combining defaults with semantic keywords.
- * @param keywordProvider - Provider for semantic reserved keywords (null if not available)
- * @returns Set of all reserved keywords (lowercase)
+ * Builds the complete set of reserved identifiers by combining Core language
+ * reservations with semantic keyword providers.
+ * @param keywordProvider - Provider for semantic reserved names (null if not available)
+ * @returns Set of all reserved identifiers (lowercase)
  */
 function buildReservedKeywordSet(
     keywordProvider: Partial<KeywordProvider> | null,
@@ -210,13 +211,13 @@ function buildReservedKeywordSet(
 
 /**
  * Detect conflicts that would arise from renaming a symbol.
- * Checks for reserved keywords and shadowing conflicts.
+ * Checks for reserved identifiers and shadowing conflicts.
  *
  * @param oldName - Original symbol name
  * @param newName - Proposed new name
  * @param occurrences - All occurrences of the symbol
  * @param resolver - Symbol resolver for scope-aware checks (null if not available)
- * @param keywordProvider - Keyword provider for reserved keyword checks (null if not available)
+ * @param keywordProvider - Keyword provider for reserved identifier checks (null if not available)
  * @returns Array of detected conflicts
  */
 export async function detectRenameConflicts(
@@ -247,13 +248,13 @@ export async function detectRenameConflicts(
         conflicts.push(...(isPromiseLike(shadowConflicts) ? await shadowConflicts : shadowConflicts));
     }
 
-    // Check if new name conflicts with reserved keywords
+    // Check if new name conflicts with reserved language identifiers.
     const reservedKeywords = buildReservedKeywordSet(keywordProvider, resolvedContext);
     const resolvedReservedKeywords = isPromiseLike(reservedKeywords) ? await reservedKeywords : reservedKeywords;
     if (resolvedReservedKeywords.has(normalizedNewName.toLowerCase())) {
         conflicts.push({
             type: ConflictType.RESERVED,
-            message: `'${normalizedNewName}' is a reserved keyword and cannot be used as an identifier`
+            message: `'${normalizedNewName}' is a reserved GameMaker identifier and cannot be used as an identifier`
         });
     }
 
