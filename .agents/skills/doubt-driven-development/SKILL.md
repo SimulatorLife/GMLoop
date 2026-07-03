@@ -138,7 +138,9 @@ Do not count intuition, reviewer agreement, or passing unrelated tests as eviden
 
 ## Completion Criteria
 
-- Non-trivial claims were explicit
-- At least one adversarial pass challenged each non-trivial artifact
-- Findings were resolved, accepted as explicit trade-offs, or disproven with evidence
-- Build, lint, and relevant tests validate the final state
+* The change solves the real problem, not only the observed symptom
+* The behavior is owned by the right system, helper, or workspace
+* No unnecessary new system, state, configuration, or parallel path was added
+* Focused tests or fixtures prove the important behavior and edge cases
+* Any remaining risks are explicit trade-offs, not hidden assumptions
+* Build, lint, and relevant tests validate the final state
