@@ -103,7 +103,11 @@ function traverseAstNode(root: unknown, visit: (node: AstNodeRecord) => void): v
     }
 }
 
+<<<<<<< HEAD
 function traverseBodySkippingNestedScopes(root: unknown, visit: (node: AstNodeRecord) => void): void {
+=======
+function traverseConstructorOwnedBodyNode(root: unknown, visit: (node: AstNodeRecord) => void): void {
+>>>>>>> 6e5c97d90 (Implemented the receiver-resolved constructor static rename path and tightened the refactor pipeline around semantic occurrences)
     if (!isAstNodeRecord(root)) {
         return;
     }
@@ -139,7 +143,11 @@ function traverseBodySkippingNestedScopes(root: unknown, visit: (node: AstNodeRe
 function collectStaticMemberDeclarations(constructorNode: AstNodeRecord, constructorName: string) {
     const declarations: Array<ConstructorStaticMemberDeclarationRecord> = [];
 
+<<<<<<< HEAD
     traverseBodySkippingNestedScopes(constructorNode.body, (node) => {
+=======
+    traverseConstructorOwnedBodyNode(constructorNode.body, (node) => {
+>>>>>>> 6e5c97d90 (Implemented the receiver-resolved constructor static rename path and tightened the refactor pipeline around semantic occurrences)
         if (node.type !== "VariableDeclaration" || node.kind !== "static" || !Array.isArray(node.declarations)) {
             return;
         }
@@ -188,7 +196,11 @@ function readNewExpressionConstructorName(node: unknown): string | null {
 function collectReceiverTypes(constructorNode: AstNodeRecord): Map<string, string> {
     const receiverTypes = new Map<string, string>();
 
+<<<<<<< HEAD
     traverseBodySkippingNestedScopes(constructorNode.body, (node) => {
+=======
+    traverseConstructorOwnedBodyNode(constructorNode.body, (node) => {
+>>>>>>> 6e5c97d90 (Implemented the receiver-resolved constructor static rename path and tightened the refactor pipeline around semantic occurrences)
         if (node.type !== "AssignmentExpression" || node.operator !== "=") {
             return;
         }
@@ -215,7 +227,11 @@ function collectShadowedNames(functionNode: AstNodeRecord): Set<string> {
         }
     }
 
+<<<<<<< HEAD
     traverseBodySkippingNestedScopes(functionNode.body, (node) => {
+=======
+    traverseConstructorOwnedBodyNode(functionNode.body, (node) => {
+>>>>>>> 6e5c97d90 (Implemented the receiver-resolved constructor static rename path and tightened the refactor pipeline around semantic occurrences)
         if (node.type !== "VariableDeclarator") {
             return;
         }
@@ -232,7 +248,11 @@ function collectShadowedNames(functionNode: AstNodeRecord): Set<string> {
 function collectStaticFunctionNodes(constructorNode: AstNodeRecord): Array<AstNodeRecord> {
     const staticFunctionNodes: Array<AstNodeRecord> = [];
 
+<<<<<<< HEAD
     traverseBodySkippingNestedScopes(constructorNode.body, (node) => {
+=======
+    traverseConstructorOwnedBodyNode(constructorNode.body, (node) => {
+>>>>>>> 6e5c97d90 (Implemented the receiver-resolved constructor static rename path and tightened the refactor pipeline around semantic occurrences)
         if (node.type !== "VariableDeclaration" || node.kind !== "static" || !Array.isArray(node.declarations)) {
             return;
         }
@@ -277,7 +297,11 @@ function collectStaticFunctionReferences(
 
     for (const functionNode of collectStaticFunctionNodes(constructorNode)) {
         const shadowedNames = collectShadowedNames(functionNode);
+<<<<<<< HEAD
         traverseBodySkippingNestedScopes(functionNode.body, (node) => {
+=======
+        traverseConstructorOwnedBodyNode(functionNode.body, (node) => {
+>>>>>>> 6e5c97d90 (Implemented the receiver-resolved constructor static rename path and tightened the refactor pipeline around semantic occurrences)
             if (node.type !== "MemberDotExpression" || !isAstNodeRecord(node.property)) {
                 return;
             }

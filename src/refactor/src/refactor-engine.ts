@@ -186,6 +186,24 @@ function semanticSupportsBatchWorkspaceOverlay(
     return Core.hasMethods(semantic, ["clearWorkspaceOverlay", "stageWorkspaceEdit"]);
 }
 
+async function shouldUseBatchWorkspaceOverlay(
+    semantic: PartialSemanticAnalyzer | null,
+    renames: ReadonlyArray<RenameRequest>
+): Promise<boolean> {
+    if (!semanticSupportsBatchWorkspaceOverlay(semantic)) {
+        return false;
+    }
+
+    if (
+        Core.hasMethods(semantic, "canPlanRenameBatchWithoutWorkspaceOverlay") &&
+        (await semantic.canPlanRenameBatchWithoutWorkspaceOverlay(renames))
+    ) {
+        return false;
+    }
+
+    return true;
+}
+
 function isMacroRenameCollisionSubject(symbolKind: string | null): boolean {
     return symbolKind === "enum-member";
 }
@@ -709,21 +727,54 @@ export class RefactorEngine {
             };
         }
 
-        // Validate each rename request individually
-        await Core.runSequentially(renames, async (rename) => {
+        // Validate each rename request individually with bounded concurrency,
+        // then aggregate in request order so diagnostics remain deterministic.
+        const validatedRenames = await Core.runInParallelWithLimit(
+            renames,
+            async (rename) => {
+                if (!rename || typeof rename !== "object") {
+                    return {
+                        rename,
+                        error: "Each rename must be a valid request object",
+                        validation: null
+                    };
+                }
+
+                const { symbolId } = rename;
+                if (!symbolId || typeof symbolId !== "string") {
+                    return {
+                        rename,
+                        error: "Each rename must have a valid symbolId string property",
+                        validation: null
+                    };
+                }
+
+                return {
+                    rename,
+                    error: null,
+                    validation: await this.validateRenameRequest(rename, options)
+                };
+            },
+            64
+        );
+
+        for (const { rename, error, validation } of validatedRenames) {
             if (!rename || typeof rename !== "object") {
-                errors.push("Each rename must be a valid request object");
-                return;
+                errors.push(error ?? "Each rename must be a valid request object");
+                continue;
             }
 
             const { symbolId } = rename;
             if (!symbolId || typeof symbolId !== "string") {
-                errors.push("Each rename must have a valid symbolId string property");
-                return;
+                errors.push(error ?? "Each rename must have a valid symbolId string property");
+                continue;
             }
 
-            // Validate individual rename request
-            const validation = await this.validateRenameRequest(rename, options);
+            if (validation === null) {
+                errors.push(error ?? `Rename validation failed for '${symbolId}'`);
+                continue;
+            }
+
             renameValidations.set(symbolId, validation);
 
             if (!validation.valid) {
@@ -733,7 +784,7 @@ export class RefactorEngine {
             if (validation.warnings.length > 0) {
                 warnings.push(...validation.warnings.map((w) => `${symbolId}: ${w}`));
             }
-        });
+        }
 
         // Detect duplicate symbol IDs in the batch. Renaming the same symbol more
         // than once creates ambiguous intent and would generate conflicting edits.
@@ -851,6 +902,24 @@ export class RefactorEngine {
         // Populate a workspace with text edits for all occurrence spans, then
         // merge any extra structural edits (file renames, metadata rewrites) that
         // the semantic provider supplies for this symbol rename.
+        const workspace = new WorkspaceEdit();
+        populateWorkspaceWithOccurrenceEdits(workspace, occurrences, normalizedNewName);
+        await mergeAdditionalSymbolEditsFromSemantic(workspace, this.semantic, symbolId, normalizedNewName);
+
+        return dropRedundantTextEditsForMetadataRewrites(workspace);
+    }
+
+    private async planValidatedRenameWithoutRechecking(request: RenameRequest): Promise<WorkspaceEdit> {
+        assertRenameRequest(request, "planValidatedRenameWithoutRechecking");
+        const { symbolId, newName } = request;
+        const normalizedNewName = assertValidIdentifierName(newName);
+        const symbolName = extractSymbolName(symbolId);
+
+        if (symbolName === normalizedNewName) {
+            throw new Error(`The new name '${normalizedNewName}' matches the existing identifier`);
+        }
+
+        const occurrences = await this.gatherSymbolOccurrences(symbolName, symbolId);
         const workspace = new WorkspaceEdit();
         populateWorkspaceWithOccurrenceEdits(workspace, occurrences, normalizedNewName);
         await mergeAdditionalSymbolEditsFromSemantic(workspace, this.semantic, symbolId, normalizedNewName);
@@ -1089,7 +1158,10 @@ export class RefactorEngine {
      * @param {Array<{symbolId: string, newName: string}>} renames - Array of rename operations
      * @returns {Promise<WorkspaceEdit>} Combined workspace edit for all renames
      */
-    private async planValidatedBatchRename(renames: Array<RenameRequest>): Promise<{
+    private async planValidatedBatchRename(
+        renames: Array<RenameRequest>,
+        batchValidation?: BatchRenameValidation
+    ): Promise<{
         validation: ValidationSummary;
         workspace: WorkspaceEdit;
     }> {
@@ -1138,28 +1210,42 @@ export class RefactorEngine {
         let merged = new WorkspaceEdit();
         const metadataEditsByPath = new Map<string, string>();
         const semantic = this.semantic;
-        const supportsBatchWorkspaceOverlay = semanticSupportsBatchWorkspaceOverlay(semantic);
+        const useBatchWorkspaceOverlay = await shouldUseBatchWorkspaceOverlay(semantic, renames);
+        const planRenameWithReusableValidation = async (rename: RenameRequest): Promise<WorkspaceEdit> => {
+            const reusableValidation = batchValidation?.renameValidations.get(rename.symbolId);
+            if (reusableValidation?.valid === true) {
+                return await this.planValidatedRenameWithoutRechecking(rename);
+            }
 
-        if (supportsBatchWorkspaceOverlay) {
+            return await this.planRename(rename);
+        };
+
+        if (useBatchWorkspaceOverlay) {
             await semantic.clearWorkspaceOverlay();
-        }
 
-        try {
-            await Core.runSequentially(renames, async (rename) => {
-                const workspace = await this.planRename(rename);
-                accumulateRenameWorkspace(merged, workspace, metadataEditsByPath);
+            try {
+                await Core.runSequentially(renames, async (rename) => {
+                    const workspace = await planRenameWithReusableValidation(rename);
+                    accumulateRenameWorkspace(merged, workspace, metadataEditsByPath);
 
-                if (supportsBatchWorkspaceOverlay) {
                     await (semantic as any).stageWorkspaceEdit(workspace);
                     // Metadata overlays affect subsequent metadata planning, but
                     // they do not mutate the semantic source index itself. Keep
                     // the semantic query cache warm so large batch codemods can
                     // reuse symbol existence and occurrence lookups.
-                }
-            });
-        } finally {
-            if (supportsBatchWorkspaceOverlay) {
+                });
+            } finally {
                 await semantic.clearWorkspaceOverlay();
+            }
+        } else {
+            const plannedWorkspaces = await Core.runInParallelWithLimit(
+                renames,
+                async (rename) => await planRenameWithReusableValidation(rename),
+                64
+            );
+
+            for (const workspace of plannedWorkspaces) {
+                accumulateRenameWorkspace(merged, workspace, metadataEditsByPath);
             }
         }
 
@@ -1825,7 +1911,7 @@ export class RefactorEngine {
         let planningSucceeded = false;
 
         try {
-            const preparedBatchRename = await this.planValidatedBatchRename(renames);
+            const preparedBatchRename = await this.planValidatedBatchRename(renames, batchValidation);
             workspace = preparedBatchRename.workspace;
             validation = preparedBatchRename.validation;
             planningSucceeded = true;

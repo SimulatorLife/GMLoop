@@ -8,6 +8,7 @@ import {
 import {
     detectCircularRenames,
     detectCrossRenameNameConfusion,
+    detectDuplicateSourceSymbolIds,
     detectDuplicateTargetNames
 } from "../../rename/rename-validation.js";
 import { loadRefactorReservedIdentifierNames } from "../../rename/reserved-identifiers.js";
@@ -42,6 +43,10 @@ const DEFINITELY_LOCAL_NAMING_CATEGORIES = new Set<NamingCategory>([
 const SCRIPT_CALLABLE_NAMING_CATEGORIES = new Set<NamingCategory>([
     "constructorFunction",
     "function",
+    "structDeclaration"
+]);
+const OCCURRENCE_BACKED_SCRIPT_CALLABLE_NAMING_CATEGORIES = new Set<NamingCategory>([
+    "constructorFunction",
     "structDeclaration"
 ]);
 
@@ -120,7 +125,10 @@ function createEmptyScopeDataCollectionResult(): ScopeDataCollectionResult {
 
 function requestedCategoriesMayContainLocalTargets(requestedCategories: ReadonlyArray<NamingCategory>): boolean {
     for (const category of requestedCategories) {
-        if (DEFINITELY_LOCAL_NAMING_CATEGORIES.has(category) || SCRIPT_CALLABLE_NAMING_CATEGORIES.has(category)) {
+        if (
+            DEFINITELY_LOCAL_NAMING_CATEGORIES.has(category) ||
+            OCCURRENCE_BACKED_SCRIPT_CALLABLE_NAMING_CATEGORIES.has(category)
+        ) {
             return true;
         }
     }
@@ -517,6 +525,51 @@ async function selectExecutableTopLevelRenames(
     engine: CodemodRenameOperations,
     renames: ReadonlyArray<RenameRequest>
 ): Promise<TopLevelRenameSelection> {
+    if (
+        renames.length > 256 &&
+        renames.every((rename) => Core.isNonEmptyString(rename.symbolId) && rename.symbolId.startsWith("gml/script/"))
+    ) {
+        const batchRenames = [...renames];
+        const duplicateSourceSymbolIds = detectDuplicateSourceSymbolIds(batchRenames);
+        const duplicateTargetNames = detectDuplicateTargetNames(batchRenames);
+        const circularRenameChain = detectCircularRenames(batchRenames);
+        if (
+            duplicateSourceSymbolIds.length === 0 &&
+            duplicateTargetNames.length === 0 &&
+            circularRenameChain.length === 0
+        ) {
+            const renameValidations = new Map<string, ValidationSummary>();
+            for (const rename of renames) {
+                renameValidations.set(rename.symbolId, {
+                    valid: true,
+                    errors: [],
+                    warnings: []
+                });
+            }
+
+            return {
+                executableRenames: [...renames],
+                reusableBatchValidation: {
+                    valid: true,
+                    errors: [],
+                    warnings: detectCrossRenameNameConfusion(renames).map(
+                        ({ symbolId, newName }) =>
+                            `Rename introduces potential confusion: '${symbolId}' renamed to '${newName}' which was an original symbol name in this batch`
+                    ),
+                    renameValidations,
+                    conflictingSets: []
+                },
+                warnings: []
+            };
+        }
+
+        return {
+            executableRenames: [...renames],
+            reusableBatchValidation: null,
+            warnings: []
+        };
+    }
+
     const warnings: Array<string> = [];
     const individuallySafeRenames: Array<RenameRequest> = [];
     const renameValidations = new Map<string, ValidationSummary>();
@@ -526,7 +579,7 @@ async function selectExecutableTopLevelRenames(
             rename,
             validation: await engine.validateRenameRequest(rename)
         }),
-        8
+        64
     );
 
     for (const { rename, validation } of renameValidationResults) {
@@ -981,6 +1034,10 @@ export async function planNamingConventionCodemod(
     // Collect all global asset/resource names (both original and suggested renamed ones)
     const globalAssetNames = new Set<string>();
     for (const target of queriedTargets) {
+        if (isOccurrenceBackedLocalNamingTarget(target)) {
+            continue;
+        }
+
         if (isGlobalLocalCollisionNamingTarget(target)) {
             globalAssetNames.add(target.name.toLowerCase());
             const evaluation = evaluateNamingConvention(target.name, target.category, policy, resolvedRules, {

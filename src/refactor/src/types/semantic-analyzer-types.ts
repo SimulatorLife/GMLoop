@@ -1,6 +1,6 @@
 import type { MaybePromise, NamingCategory, OccurrenceKindValue, Range } from "../types.js";
 import type { WorkspaceEdit } from "../workspace-edit.js";
-import type { NamingConventionTarget } from "./refactor-engine-types.js";
+import type { NamingConventionTarget, RenameRequest } from "./refactor-engine-types.js";
 
 export interface AstNode {
     type?: string;
@@ -158,6 +158,7 @@ export interface EditValidator {
  * stale on-disk snapshot.
  */
 export interface BatchWorkspaceOverlay {
+    canPlanRenameBatchWithoutWorkspaceOverlay?(renames: ReadonlyArray<RenameRequest>): MaybePromise<boolean>;
     clearWorkspaceOverlay(): MaybePromise<void>;
     stageWorkspaceEdit(workspace: WorkspaceEdit): MaybePromise<void>;
 }
