@@ -813,7 +813,7 @@ void test("getBatchScopeMetadata returns empty map for empty input", () => {
 void test("getBatchScopeMetadata is faster than individual getScopeMetadata calls for large sets", () => {
     const tracker = new ScopeTracker({ enabled: true });
     const scopes = [];
-    const scopeCount = 100;
+    const scopeCount = 5000;
 
     for (let i = 0; i < scopeCount; i++) {
         scopes.push(tracker.enterScope("function", { name: `func${i}`, path: `/test/file${i}.gml` }));
@@ -841,10 +841,9 @@ void test("getBatchScopeMetadata is faster than individual getScopeMetadata call
     assert.strictEqual(batchResult.size, scopeCount);
     assert.strictEqual(individualResults.size, scopeCount);
 
-    // This is a microbenchmark over tiny in-memory lookups, so runtime variance
-    // can occasionally outweigh the algorithmic advantage of the batch path on
-    // shared CI hardware. Keep the assertion focused on avoiding pathological
-    // regressions rather than demanding a strict wall-clock win on every run.
+    // This is still an in-memory microbenchmark, so keep the assertion focused
+    // on avoiding pathological regressions rather than demanding a strict
+    // wall-clock win on every run.
     assert.ok(
         batchTime <= Math.max(individualTime * 5, 1),
         `Batch time (${batchTime}ms) should stay within a small constant factor of individual time (${individualTime}ms)`

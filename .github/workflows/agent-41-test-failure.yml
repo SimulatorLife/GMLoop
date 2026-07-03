@@ -105,15 +105,15 @@ jobs:
         error, or the smallest related failure cluster with a shared root cause, then
         explain the cause. Decide whether any failing test is still a valid expectation
         for its workspace. If the test is outdated or no longer applicable, move or
-        update it with a clear justification. Otherwise, fix the implementation and
-        only adjust tests when that is truly necessary. If a golden fixture encodes
-        multiple formatting rules, choose one regression to address, implement the
-        necessary production fix or feature for that specific case, leave the rest
-        untouched, and document any remaining gaps. Never modify the existing golden
-        files (*.gml). Work sequentially and strategically, making one targeted change
-        at a time and re-running the failing validation command after each change to
-        confirm progress and prevent regressions. If your fix targets only part of a
-        failing test, add a new focused test (unit or integration) that explicitly
+        update it with a clear justification; only adjust tests when the test is truly, 
+        explainably wrong/invalid. Otherwise, fix the implementation using a test-driven
+        development (TDD) approach. If a golden fixture encodes multiple rules, choose one 
+        regression to address, implement the necessary production fix or feature for that 
+        specific case, leave the rest untouched, and document any remaining gaps. Never 
+        modify the existing golden files (*.gml). Work sequentially and strategically, 
+        making one targeted change at a time and re-running the failing validation command 
+        throughout to confirm progress and catch regressions. If your fix targets only 
+        part of a failing test, add a new focused test (unit or integration) that explicitly
         demonstrates the corrected behavior, but continue until the full validation
         surface passes. Do not relax performance requirements to make performance
         tests pass.

@@ -112,6 +112,17 @@ export class ScopeTracker implements ScipExportView {
     private lookupCacheDepth: number;
     private lookupCacheMaxEntries: number;
 
+    private createScopeDetails(scope: Scope): ScopeDetails {
+        return {
+            scopeId: scope.id,
+            scopeKind: scope.kind,
+            name: scope.metadata.name,
+            path: scope.metadata.path,
+            start: scope.metadata.start ? Core.cloneLocation(scope.metadata.start) : undefined,
+            end: scope.metadata.end ? Core.cloneLocation(scope.metadata.end) : undefined
+        };
+    }
+
     private collectSymbolOccurrencesForName(
         name: string | null | undefined,
         {
@@ -1717,14 +1728,7 @@ export class ScopeTracker implements ScipExportView {
             return null;
         }
 
-        return {
-            scopeId: scope.id,
-            scopeKind: scope.kind,
-            name: scope.metadata.name,
-            path: scope.metadata.path,
-            start: scope.metadata.start ? Core.cloneLocation(scope.metadata.start) : undefined,
-            end: scope.metadata.end ? Core.cloneLocation(scope.metadata.end) : undefined
-        };
+        return this.createScopeDetails(scope);
     }
 
     public getScopesByPath(path: string | null | undefined): ScopeDetails[] {
@@ -2319,14 +2323,7 @@ export class ScopeTracker implements ScipExportView {
                 continue;
             }
 
-            results.set(scopeId, {
-                scopeId: scope.id,
-                scopeKind: scope.kind,
-                name: scope.metadata.name,
-                path: scope.metadata.path,
-                start: scope.metadata.start ? Core.cloneLocation(scope.metadata.start) : undefined,
-                end: scope.metadata.end ? Core.cloneLocation(scope.metadata.end) : undefined
-            });
+            results.set(scopeId, this.createScopeDetails(scope));
         }
 
         return results;
