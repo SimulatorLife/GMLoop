@@ -10,6 +10,8 @@ Responsibilities:
 - reject legacy flat-fixture files such as `options.json`, `fixed.gml`, `*.input.gml`, and `*.output.gml`
 - run workspace-owned adapters
 - compare outputs through runner-owned comparison modes configured in `fixture.comparison`
+- compare transform fixtures against `fixture.expectedTextFile` when a current
+  non-GML expectation must live next to a protected legacy `expected.gml`
 - collect time, memory, and CPU metrics
 - emit per-fixture memory summaries (`totalHeapUsedDeltaBytes`, `totalMaxRssDeltaBytes`, `peakStageHeapUsedDeltaBytes`)
 - enforce canonical fixture stage order: `load -> refactor -> lint -> format -> compare -> total`

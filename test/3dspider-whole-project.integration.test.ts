@@ -20,6 +20,8 @@ const VENDOR_3DSPIDER_PROJECT_PATH = path.join(REPO_ROOT, "vendor", "3DSpider");
 const CLI_ENTRYPOINT_PATH = path.join(REPO_ROOT, "src", "cli", "dist", "index.js");
 const COMMAND_TIMEOUT_MS = 120_000;
 const WATCH_TIMEOUT_MS = 60_000;
+const SPIDER_OBJECT_RESOURCE_NAME = "oSpider";
+const INVERSE_KINEMATICS_SCRIPT_RESOURCE_NAME = "InverseKinematics";
 
 type CliRunResult = Readonly<{
     stdout: string;
@@ -332,22 +334,29 @@ void test("3DSpider resource CLI tools inspect the real whole project", async ()
         assert.equal(listPayload.ok, true);
         assert.ok(Array.isArray(listPayload.payload), "Resource list payload must be an array.");
 
-        const spiderSearch = await runCliCommand(["resource", "find", "oSpider", "--json", "--path", projectRoot]);
-        assertResourceSearchIncludes(spiderSearch.stdout, "oSpider");
-        const inverseKinematicsSearch = await runCliCommand([
+        const spiderSearch = await runCliCommand([
             "resource",
             "find",
-            "InverseKinematics",
+            SPIDER_OBJECT_RESOURCE_NAME,
             "--json",
             "--path",
             projectRoot
         ]);
-        assertResourceSearchIncludes(inverseKinematicsSearch.stdout, "InverseKinematics");
+        assertResourceSearchIncludes(spiderSearch.stdout, SPIDER_OBJECT_RESOURCE_NAME);
+        const inverseKinematicsSearch = await runCliCommand([
+            "resource",
+            "find",
+            INVERSE_KINEMATICS_SCRIPT_RESOURCE_NAME,
+            "--json",
+            "--path",
+            projectRoot
+        ]);
+        assertResourceSearchIncludes(inverseKinematicsSearch.stdout, INVERSE_KINEMATICS_SCRIPT_RESOURCE_NAME);
 
         const inspectResult = await runCliCommand([
             "resource",
             "inspect",
-            "oSpider",
+            SPIDER_OBJECT_RESOURCE_NAME,
             "--json",
             "--path",
             projectRoot
@@ -355,7 +364,14 @@ void test("3DSpider resource CLI tools inspect the real whole project", async ()
         const inspectPayload = FixtureRunner.assertJsonCliPayload(inspectResult.stdout);
         assert.equal(inspectPayload.ok, true);
 
-        const depsResult = await runCliCommand(["resource", "deps", "oSpider", "--json", "--path", projectRoot]);
+        const depsResult = await runCliCommand([
+            "resource",
+            "deps",
+            SPIDER_OBJECT_RESOURCE_NAME,
+            "--json",
+            "--path",
+            projectRoot
+        ]);
         const depsPayload = FixtureRunner.assertJsonCliPayload(depsResult.stdout);
         assert.equal(depsPayload.ok, true);
 

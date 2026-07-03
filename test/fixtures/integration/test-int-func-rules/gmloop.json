@@ -13,6 +13,7 @@
   "fixture": {
     "kind": "integration",
     "assertion": "transform",
-    "comparison": "exact"
+    "comparison": "exact",
+    "expectedTextFile": "expected.current.txt"
   }
 }

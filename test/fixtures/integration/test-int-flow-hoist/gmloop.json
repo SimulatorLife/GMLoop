@@ -5,6 +5,7 @@
     "gml/normalize-doc-comments": "error",
     "gml/normalize-doc-param-separators": "error",
     "gml/prefer-hoistable-loop-accessors": "error",
+    "gml/prefer-direct-boolean-return": "error",
     "gml/optimize-logical-flow": "error",
     "gml/normalize-directives": "error",
     "gml/optimize-math-expressions": "error"

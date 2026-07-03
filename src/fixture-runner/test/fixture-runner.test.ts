@@ -192,6 +192,48 @@ void test("discoverFixtureCases assigns fixture paths by kind", async () => {
     }
 });
 
+void test("discoverFixtureCases supports non-GML expected text files for transform fixtures", async () => {
+    const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-expected-text-"));
+    const casePath = path.join(rootPath, "format-transform");
+    await mkdir(casePath, { recursive: true });
+    await writeFile(
+        path.join(casePath, "gmloop.json"),
+        `${JSON.stringify({ fixture: { kind: "format", expectedTextFile: "expected.current.txt" } }, null, 2)}\n`,
+        "utf8"
+    );
+    await writeFile(path.join(casePath, "input.gml"), "input\n", "utf8");
+    await writeFile(path.join(casePath, "expected.current.txt"), "output\n", "utf8");
+
+    try {
+        const fixtureCases = await FixtureRunner.discoverFixtureCases(rootPath);
+        assert.equal(fixtureCases.length, 1);
+        assert.equal(fixtureCases[0]?.assertion, "transform");
+        assert.equal(fixtureCases[0]?.expectedFilePath, path.join(casePath, "expected.current.txt"));
+
+        const result = await FixtureRunner.runFixtureSuite({
+            fixtureRoot: rootPath,
+            adapter: {
+                workspaceName: "format",
+                suiteName: "format fixtures",
+                supports(kind) {
+                    return kind === "format";
+                },
+                async run({ runProfiledStage }) {
+                    return await runProfiledStage("format", async () => ({
+                        resultKind: "text",
+                        outputText: "output\n",
+                        changed: true
+                    }));
+                }
+            }
+        });
+
+        assert.deepEqual(result.failures, []);
+    } finally {
+        await rm(rootPath, { recursive: true, force: true });
+    }
+});
+
 void test("discoverFixtureCases supports external project fixture descriptors", async () => {
     const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-external-project-discovery-"));
     const casePath = path.join(rootPath, "real-project");

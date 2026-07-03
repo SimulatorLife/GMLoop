@@ -4,11 +4,13 @@
   "lintRules": {
     "gml/normalize-doc-comments": "error",
     "gml/normalize-doc-param-separators": "error",
+    "gml/prefer-direct-boolean-return": "error",
     "gml/optimize-logical-flow": "error"
   },
   "fixture": {
     "kind": "integration",
     "assertion": "transform",
-    "comparison": "exact"
+    "comparison": "exact",
+    "expectedTextFile": "expected.current.txt"
   }
 }
