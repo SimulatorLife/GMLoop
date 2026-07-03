@@ -16,7 +16,7 @@ This is an in-flight method, not only final review.
 Use for decisions that:
 
 - Change control flow or invariants
-- Cross workspace boundaries (`core`/`parser`/`plugin`)
+- Cross workspace boundaries (`core`/`parser`/`format`/`semantic`/`refactor`)
 - Affect AST shape, node typing, or traversal semantics
 - Alter formatter behavior in ways that may shift output broadly
 - Could create hard-to-revert regressions

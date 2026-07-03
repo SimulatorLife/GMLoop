@@ -3,7 +3,12 @@ import test from "node:test";
 
 import { Parser } from "@gmloop/parser";
 
-import { type BatchRenamePlanSummary, type PartialSemanticAnalyzer, Refactor } from "../index.js";
+import {
+    type BatchRenamePlanSummary,
+    type NamingConventionTarget,
+    type PartialSemanticAnalyzer,
+    Refactor
+} from "../index.js";
 import type { StorageBackend, StorageBackendStats } from "../src/backends/index.js";
 import type { CodemodExecutionTelemetry } from "../src/types.js";
 
@@ -1835,44 +1840,52 @@ void test("executeConfiguredCodemods skips exclusive-prefix variable renames whe
 
 void test("executeConfiguredCodemods skips argument renames to reserved built-in identifiers", async () => {
     const sourceText = [
-        "function CurveHandlerTimed(curve_id, duration_seconds = 1) constructor {",
-        "    self.curve_struct = animcurve_get(curve_id);",
-        "    static set_curve_config = function(curve_id, speed_multiplier) {",
-        "        if (!is_undefined(curve_id)) {",
-        "            self.curve_struct = animcurve_get(curve_id);",
+        "function CurveHandlerTimed(arg_id, arg_self, arg_other, arg_global) constructor {",
+        "    self.curve_struct = animcurve_get(arg_id);",
+        "    static set_curve_config = function(arg_id, speed_multiplier) {",
+        "        if (!is_undefined(arg_self) and arg_other != arg_global) {",
+        "            self.curve_struct = animcurve_get(arg_id);",
         "        }",
         "    }",
         "}",
         ""
     ].join("\n");
-    const firstCurveIdOccurrence = sourceText.indexOf("curve_id");
-    const secondCurveIdOccurrence = sourceText.indexOf("curve_id", firstCurveIdOccurrence + 1);
+
+    function createArgumentTarget(name: string): NamingConventionTarget {
+        const firstOccurrence = sourceText.indexOf(name);
+        const secondOccurrence = sourceText.indexOf(name, firstOccurrence + name.length);
+
+        return {
+            name,
+            category: "argument",
+            path: "scripts/CurveHandlerTimed/CurveHandlerTimed.gml",
+            scopeId: "scope:CurveHandlerTimed",
+            symbolId: null,
+            occurrences: [
+                {
+                    path: "scripts/CurveHandlerTimed/CurveHandlerTimed.gml",
+                    start: firstOccurrence,
+                    end: firstOccurrence + name.length,
+                    kind: Refactor.OccurrenceKind.DEFINITION,
+                    scopeId: "scope:CurveHandlerTimed"
+                },
+                {
+                    path: "scripts/CurveHandlerTimed/CurveHandlerTimed.gml",
+                    start: secondOccurrence,
+                    end: secondOccurrence + name.length,
+                    kind: Refactor.OccurrenceKind.REFERENCE,
+                    scopeId: "scope:CurveHandlerTimed"
+                }
+            ]
+        };
+    }
 
     const semantic: PartialSemanticAnalyzer = {
         listNamingConventionTargets: async () => [
-            {
-                name: "curve_id",
-                category: "argument",
-                path: "scripts/CurveHandlerTimed/CurveHandlerTimed.gml",
-                scopeId: "scope:CurveHandlerTimed",
-                symbolId: null,
-                occurrences: [
-                    {
-                        path: "scripts/CurveHandlerTimed/CurveHandlerTimed.gml",
-                        start: firstCurveIdOccurrence,
-                        end: firstCurveIdOccurrence + "curve_id".length,
-                        kind: Refactor.OccurrenceKind.DEFINITION,
-                        scopeId: "scope:CurveHandlerTimed"
-                    },
-                    {
-                        path: "scripts/CurveHandlerTimed/CurveHandlerTimed.gml",
-                        start: secondCurveIdOccurrence,
-                        end: secondCurveIdOccurrence + "curve_id".length,
-                        kind: Refactor.OccurrenceKind.REFERENCE,
-                        scopeId: "scope:CurveHandlerTimed"
-                    }
-                ]
-            }
+            createArgumentTarget("arg_id"),
+            createArgumentTarget("arg_self"),
+            createArgumentTarget("arg_other"),
+            createArgumentTarget("arg_global")
         ]
     };
 
@@ -1885,7 +1898,7 @@ void test("executeConfiguredCodemods skips argument renames to reserved built-in
             codemods: {
                 namingConvention: {
                     rules: {
-                        argument: { bannedPrefixes: ["curve_"], caseStyle: "camel" }
+                        argument: { bannedPrefixes: ["arg_"], caseStyle: "camel" }
                     }
                 }
             }
@@ -1895,14 +1908,22 @@ void test("executeConfiguredCodemods skips argument renames to reserved built-in
 
     assert.equal(result.summaries[0]?.id, "namingConvention");
     assert.equal(result.summaries[0]?.changed, false);
-    assert.ok(
-        result.summaries[0]?.warnings.some(
-            (warning) =>
-                warning.includes("curve_id") &&
-                warning.includes("id") &&
-                warning.includes("reserved GameMaker identifier")
-        )
-    );
+    for (const [sourceName, reservedName] of [
+        ["arg_id", "id"],
+        ["arg_self", "self"],
+        ["arg_other", "other"],
+        ["arg_global", "global"]
+    ] as const) {
+        assert.ok(
+            result.summaries[0]?.warnings.some(
+                (warning) =>
+                    warning.includes(sourceName) &&
+                    warning.includes(reservedName) &&
+                    warning.includes("reserved GameMaker identifier")
+            ),
+            `expected ${sourceName} -> ${reservedName} to be skipped as reserved`
+        );
+    }
     assert.equal(result.appliedFiles.get("scripts/CurveHandlerTimed/CurveHandlerTimed.gml"), undefined);
 });
 

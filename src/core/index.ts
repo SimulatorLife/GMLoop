@@ -13,6 +13,7 @@ export type {
     FsFacade,
     GameMakerAstLocation,
     GameMakerAstNode,
+    GmlBindingIdentifierContext,
     GmloopProjectConfig,
     LiteralNode,
     MutableDocCommentLines,

@@ -21,7 +21,7 @@ Concrete graph-index, retrieval, and visualization target-state details now live
 - **Formatter (`/format`)**: Layout-only printing, indentation, wrapping, spacing, semicolon layout, print-width wrapping, and logical-operator style rendering. Must not synthesize or normalize semantic content. Lexical canonicalization is permitted, but syntactic and semantic rewriting is not. **The formatter never repairs invalid syntax and only formats valid AST.**
 - **Linter (`/lint`)**: Semantic and content rewrites, synthetic tag generation, legacy prefix or tag normalization, default placeholder comment cleanup, and local single-file diagnostics and autofix rewrites. **Lint rule autofixes are responsible for fixing valid-but-forbidden syntax (e.g., style violations or deprecated patterns that are still syntactically valid).**
 - **Refactor (`/refactor`)**: Codemod and migration transforms, explicit rename or refactor transactions, cross-file edits, metadata edits, impact analysis, hot-reload validation, project-wide identifier indexing, rename safety, hoist-name generation, and all other project-aware functionality. **Codemod/fixer commands are responsible for repairing non-parsable source text to restore parsability.**
-- **Core (`/core`)**: Shared doc-comment helpers, AST metadata utilities, and normalization primitives.
+- **Core (`/core`)**: Shared doc-comment helpers, AST metadata utilities, static GameMaker language metadata, and normalization primitives.
 - **CLI (`/cli`)**: Provides the canonical command surface, path resolution, structured output, and GMLoop workflow coordination. It may integrate with `gm-cli` where a GMLoop workflow needs official tool output, but it should not become a wholesale proxy for `gm-cli` or duplicate ResourceTool's MCP surface.
 - **CLI Watcher (`/cli`)**: Monitors the filesystem, coordinates the transpilation pipeline, emits telemetry, and manages the WebSocket server.
 - **Transpiler (`/transpiler`)**: Parses GML via ANTLR4, converts GML AST to JavaScript, and generates patch objects.
@@ -37,6 +37,18 @@ For GameMaker lifecycle operations, the design order is:
 2. If the official MCP surface already serves the agent workflow directly, document that agents should use it alongside GMLoop.
 3. Add a GMLoop CLI/MCP capability only when it contributes GMLoop-owned value: semantic graph context, validation evidence, lint/format/refactor orchestration, hot-reload integration, deterministic fixture behavior, or a missing high-level operation.
 4. When a GMLoop workflow consumes `gm-cli` output internally, keep that integration narrow and typed; do not mirror the full official tool surface.
+
+### 2.1.2 Identifier Reservation Boundary
+
+Core may expose static GameMaker language facts, such as metadata-backed identifier inventories and context-specific checks for whether a name is unavailable in a language binding position. These APIs must stay syntax/language-level only: they may accept a generic binding context such as ordinary binding, argument binding, or enum member binding, and return whether the candidate identifier is reserved by GameMaker language rules.
+
+Core must not own rename behavior, codemod categories, Feather diagnostics, symbol ids, scope lookup, project-aware collision analysis, retry/skip policy, or user-facing conflict messages. Those remain in the downstream owners:
+
+1. **Semantic** owns identifier meaning: scopes, symbol resolution, project indexes, occurrence classification, and graph facts.
+2. **Refactor** owns rename decisions: mapping codemod or rename target kinds to language binding contexts, detecting conflicts, planning edits, retrying candidate names, skipping unsafe changes, and reporting warnings/errors.
+3. **Lint** owns only local diagnostics/fixes and must not import project-aware rename planning to answer reserved-name questions.
+
+Boundary test: if an API needs an AST node, symbol id, scope id, project path, semantic provider, codemod category, Feather diagnostic, or rename request to answer correctly, it does not belong in Core. If it only classifies a candidate name against static GameMaker language metadata, Core is the correct owner.
 
 ### 2.2 Doc-Comment Ownership
 

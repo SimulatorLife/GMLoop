@@ -5,7 +5,6 @@ import {
     NAMING_CATEGORY_PARENTS,
     resolveNamingConventionRules
 } from "../../naming-convention-policy.js";
-import { DEFAULT_RESERVED_KEYWORDS } from "../../rename/index.js";
 import {
     detectCircularRenames,
     detectCrossRenameNameConfusion,
@@ -39,9 +38,7 @@ const RESERVED_LOCAL_RENAME_CATEGORIES = new Set([
     "loopIndexVariable",
     "staticVariable"
 ]);
-const RESERVED_ARGUMENT_RENAME_TARGETS = new Set(["id", "self", "other", "global"]);
 
-const RESERVED_LOCAL_IDENTIFIER_TYPES = new Set(["property", "symbol", "variable"]);
 const DEFINITELY_LOCAL_NAMING_CATEGORIES = new Set<NamingCategory>([
     "localVariable",
     "argument",
@@ -55,38 +52,14 @@ const SCRIPT_CALLABLE_NAMING_CATEGORIES = new Set<NamingCategory>([
     "structDeclaration"
 ]);
 
-let cachedReservedLocalIdentifierNames: ReadonlySet<string> | null = null;
-
-function getReservedLocalIdentifierNames(): ReadonlySet<string> {
-    if (cachedReservedLocalIdentifierNames !== null) {
-        return cachedReservedLocalIdentifierNames;
-    }
-
-    const reservedNames = new Set(Array.from(DEFAULT_RESERVED_KEYWORDS, (keyword) => keyword.toLowerCase()));
-    reservedNames.add("id");
-    const identifierEntries = Core.normalizeIdentifierMetadataEntries(Core.getIdentifierMetadata());
-
-    for (const { name, type } of identifierEntries) {
-        if (!RESERVED_LOCAL_IDENTIFIER_TYPES.has(type.toLowerCase())) {
-            continue;
-        }
-
-        reservedNames.add(name.toLowerCase());
-    }
-
-    cachedReservedLocalIdentifierNames = reservedNames;
-    return cachedReservedLocalIdentifierNames;
-}
-
 function isReservedLocalRenameTarget(target: LocalNamingConventionTarget, suggestedName: string): boolean {
-    const normalizedSuggestedName = suggestedName.toLowerCase();
     if (target.category === "argument" || target.category === "catchArgument") {
-        return RESERVED_ARGUMENT_RENAME_TARGETS.has(normalizedSuggestedName);
+        return Core.isReservedGmlBindingIdentifierName(suggestedName, "argument-binding");
     }
 
     return (
         RESERVED_LOCAL_RENAME_CATEGORIES.has(target.category) &&
-        getReservedLocalIdentifierNames().has(normalizedSuggestedName)
+        Core.isReservedGmlBindingIdentifierName(suggestedName, "ordinary-binding")
     );
 }
 

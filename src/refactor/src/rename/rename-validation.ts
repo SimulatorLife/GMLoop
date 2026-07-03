@@ -17,8 +17,6 @@ import {
 } from "../types.js";
 import {
     assertValidIdentifierName,
-    DEFAULT_RESERVED_KEYWORDS,
-    ENUM_MEMBER_RESERVED_KEYWORDS,
     extractSymbolName,
     parseSymbolIdParts,
     tryNormalizeIdentifierName
@@ -191,24 +189,22 @@ function buildReservedKeywordSet(
     keywordProvider: Partial<KeywordProvider> | null,
     context: RenameConflictContext
 ): MaybePromise<ReadonlySet<string> | Set<string>> {
+    const defaultReservedNames = Core.loadReservedGmlBindingIdentifierNames("ordinary-binding");
     if (context.symbolKind === "enum-member") {
-        return ENUM_MEMBER_RESERVED_KEYWORDS;
+        return Core.loadReservedGmlBindingIdentifierNames("enum-member");
     }
 
     if (!Core.hasMethods(keywordProvider, "getReservedKeywords")) {
-        return DEFAULT_RESERVED_KEYWORDS;
+        return defaultReservedNames;
     }
 
     const semanticReserved = keywordProvider.getReservedKeywords() ?? [];
     if (!isPromiseLike(semanticReserved)) {
-        return new Set([...DEFAULT_RESERVED_KEYWORDS, ...semanticReserved.map((keyword) => keyword.toLowerCase())]);
+        return new Set([...defaultReservedNames, ...semanticReserved.map((keyword) => keyword.toLowerCase())]);
     }
 
     return Promise.resolve(semanticReserved).then((resolvedKeywords) => {
-        return new Set([
-            ...DEFAULT_RESERVED_KEYWORDS,
-            ...(resolvedKeywords ?? []).map((keyword) => keyword.toLowerCase())
-        ]);
+        return new Set([...defaultReservedNames, ...(resolvedKeywords ?? []).map((keyword) => keyword.toLowerCase())]);
     });
 }
 

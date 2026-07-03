@@ -126,25 +126,3 @@ export function parseSymbolIdParts(
 
     return { segments, symbolKind, symbolName };
 }
-
-/**
- * Default set of GML reserved keywords.
- * These are keywords that cannot be used as identifiers.
- * Frozen to prevent accidental modification and ensure immutability.
- */
-export const DEFAULT_RESERVED_KEYWORDS: ReadonlySet<string> = Object.freeze(
-    Core.loadReservedIdentifierNames({ disallowedTypes: [] })
-);
-
-/**
- * Language-level names that should remain unavailable even for qualified enum
- * members. Built-in functions, variables, and constants are intentionally
- * excluded because enum members are referenced through their enum owner.
- */
-export const ENUM_MEMBER_RESERVED_KEYWORDS: ReadonlySet<string> = Object.freeze(
-    new Set(
-        Core.normalizeIdentifierMetadataEntries(Core.getIdentifierMetadata())
-            .filter(({ type }) => type === "keyword" || type === "literal")
-            .map(({ name }) => name.toLowerCase())
-    )
-);

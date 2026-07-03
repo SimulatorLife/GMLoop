@@ -1,8 +1,6 @@
 export {
     assertRenameRequest,
     assertValidIdentifierName,
-    DEFAULT_RESERVED_KEYWORDS,
-    ENUM_MEMBER_RESERVED_KEYWORDS,
     extractSymbolName,
     parseSymbolIdParts,
     tryNormalizeIdentifierName

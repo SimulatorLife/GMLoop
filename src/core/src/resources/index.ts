@@ -13,16 +13,19 @@ export type {
     DeprecatedIdentifierDiagnosticOwner,
     DeprecatedIdentifierLegacyUsage,
     DeprecatedIdentifierMetadataEntry,
-    DeprecatedIdentifierReplacementKind
+    DeprecatedIdentifierReplacementKind,
+    GmlBindingIdentifierContext
 } from "./gml-identifier-loading.js";
 export {
     clearIdentifierMetadataCache,
     getGmlIdentifierMetadataPath,
     getGmlIdentifierMetadataUrl,
     getIdentifierMetadata,
+    isReservedGmlBindingIdentifierName,
     loadBundledIdentifierMetadata,
     loadDeprecatedIdentifierEntries,
     loadManualFunctionNames,
+    loadReservedGmlBindingIdentifierNames,
     loadReservedIdentifierNames,
     normalizeIdentifierMetadataEntries,
     resetReservedIdentifierMetadataLoader,

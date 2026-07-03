@@ -69,7 +69,8 @@ export type {
     DeprecatedIdentifierDiagnosticOwner,
     DeprecatedIdentifierLegacyUsage,
     DeprecatedIdentifierMetadataEntry,
-    DeprecatedIdentifierReplacementKind
+    DeprecatedIdentifierReplacementKind,
+    GmlBindingIdentifierContext
 } from "./resources/gml-identifier-loading.js";
 export type { ProjectMetadataSchemaName } from "./resources/project-metadata.js";
 export type { StringCommentScanState } from "./text/source-text.js";

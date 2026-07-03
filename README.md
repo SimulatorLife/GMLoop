@@ -140,10 +140,10 @@ pnpm run cli -- transpile --write --path /absolute/path/to/MyGame
 | `@gmloop/lint` | `src/lint/` | ESLint v9 language plugin + lint rules |
 | `@gmloop/refactor` | `src/refactor/` | Cross-file refactor planning/application |
 | `@gmloop/parser` | `src/parser/` | GML parsing (ANTLR + AST construction) |
-| `@gmloop/semantic` | `src/semantic/` | Project indexing and semantic analysis |
+| `@gmloop/semantic` | `src/semantic/` | Project indexing, symbol resolution, and semantic analysis |
 | `@gmloop/transpiler` | `src/transpiler/` | GML -> JavaScript emission |
 | `@gmloop/runtime-wrapper` | `src/runtime-wrapper/` | HTML5 runtime hot-reload bridge |
-| `@gmloop/core` | `src/core/` | Shared AST/types/helpers |
+| `@gmloop/core` | `src/core/` | Shared AST/types/helpers and static GameMaker language metadata |
 | `@gmloop/fixture-runner` | `src/fixture-runner/` | Shared fixture discovery, execution, assertion, and profiling framework used by format/lint/refactor/integration suites |
 | `@gmloop/cli` | `src/cli/` | Unified command-line entrypoints |
 | `@gmloop/mcp` | `src/mcp/` | MCP server surface for AI tooling integrations |
