@@ -103,40 +103,7 @@ function traverseAstNode(root: unknown, visit: (node: AstNodeRecord) => void): v
     }
 }
 
-function traverseConstructorBodyNode(root: unknown, visit: (node: AstNodeRecord) => void): void {
-    if (!isAstNodeRecord(root)) {
-        return;
-    }
-
-    const stack = [root];
-    const seen = new WeakSet<object>();
-
-    while (stack.length > 0) {
-        const node = stack.pop();
-        if (node === undefined || seen.has(node)) {
-            continue;
-        }
-
-        seen.add(node);
-        visit(node);
-
-        if (
-            node !== root &&
-            (node.type === "FunctionDeclaration" ||
-                node.type === "ConstructorDeclaration" ||
-                node.type === "StructDeclaration")
-        ) {
-            continue;
-        }
-
-        const children = readNodeChildren(node);
-        for (let index = children.length - 1; index >= 0; index -= 1) {
-            stack.push(children[index]);
-        }
-    }
-}
-
-function traverseStaticFunctionBodyNode(root: unknown, visit: (node: AstNodeRecord) => void): void {
+function traverseBodySkippingNestedScopes(root: unknown, visit: (node: AstNodeRecord) => void): void {
     if (!isAstNodeRecord(root)) {
         return;
     }
@@ -172,7 +139,7 @@ function traverseStaticFunctionBodyNode(root: unknown, visit: (node: AstNodeReco
 function collectStaticMemberDeclarations(constructorNode: AstNodeRecord, constructorName: string) {
     const declarations: Array<ConstructorStaticMemberDeclarationRecord> = [];
 
-    traverseConstructorBodyNode(constructorNode.body, (node) => {
+    traverseBodySkippingNestedScopes(constructorNode.body, (node) => {
         if (node.type !== "VariableDeclaration" || node.kind !== "static" || !Array.isArray(node.declarations)) {
             return;
         }
@@ -221,7 +188,7 @@ function readNewExpressionConstructorName(node: unknown): string | null {
 function collectReceiverTypes(constructorNode: AstNodeRecord): Map<string, string> {
     const receiverTypes = new Map<string, string>();
 
-    traverseConstructorBodyNode(constructorNode.body, (node) => {
+    traverseBodySkippingNestedScopes(constructorNode.body, (node) => {
         if (node.type !== "AssignmentExpression" || node.operator !== "=") {
             return;
         }
@@ -248,7 +215,7 @@ function collectShadowedNames(functionNode: AstNodeRecord): Set<string> {
         }
     }
 
-    traverseStaticFunctionBodyNode(functionNode.body, (node) => {
+    traverseBodySkippingNestedScopes(functionNode.body, (node) => {
         if (node.type !== "VariableDeclarator") {
             return;
         }
@@ -265,7 +232,7 @@ function collectShadowedNames(functionNode: AstNodeRecord): Set<string> {
 function collectStaticFunctionNodes(constructorNode: AstNodeRecord): Array<AstNodeRecord> {
     const staticFunctionNodes: Array<AstNodeRecord> = [];
 
-    traverseConstructorBodyNode(constructorNode.body, (node) => {
+    traverseBodySkippingNestedScopes(constructorNode.body, (node) => {
         if (node.type !== "VariableDeclaration" || node.kind !== "static" || !Array.isArray(node.declarations)) {
             return;
         }
@@ -310,7 +277,7 @@ function collectStaticFunctionReferences(
 
     for (const functionNode of collectStaticFunctionNodes(constructorNode)) {
         const shadowedNames = collectShadowedNames(functionNode);
-        traverseStaticFunctionBodyNode(functionNode.body, (node) => {
+        traverseBodySkippingNestedScopes(functionNode.body, (node) => {
             if (node.type !== "MemberDotExpression" || !isAstNodeRecord(node.property)) {
                 return;
             }
