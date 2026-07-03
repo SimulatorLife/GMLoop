@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { constants, type Dirent } from "node:fs";
-import { access, lstat, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, lstat, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -101,6 +101,22 @@ async function readDirectoryEntries(directoryPath: string): Promise<ReadonlyArra
         return await readdir(directoryPath, { withFileTypes: true });
     } catch {
         return [];
+    }
+}
+
+async function isDirectoryOrDirectorySymlink(parentPath: string, entry: Dirent): Promise<boolean> {
+    if (entry.isDirectory()) {
+        return true;
+    }
+    if (!entry.isSymbolicLink()) {
+        return false;
+    }
+
+    try {
+        const entryStats = await stat(path.join(parentPath, entry.name));
+        return entryStats.isDirectory();
+    } catch {
+        return false;
     }
 }
 
@@ -236,7 +252,7 @@ async function collectFilesRecursively(directoryPath: string): Promise<ReadonlyA
     const nestedPaths = await Promise.all(
         entries.map(async (entry) => {
             const entryPath = path.join(directoryPath, entry.name);
-            if (entry.isDirectory()) {
+            if (await isDirectoryOrDirectorySymlink(directoryPath, entry)) {
                 const childPaths = await collectFilesRecursively(entryPath);
                 return childPaths.map((nestedPath) => path.join(entry.name, nestedPath));
             }
@@ -414,8 +430,16 @@ export async function readAgentPackVersion(): Promise<string> {
 /** Discover packaged skill directory names in deterministic order. */
 export async function discoverPackagedSkillNames(): Promise<ReadonlyArray<string>> {
     const entries = await readdir(AGENT_PACK_SKILLS_ROOT, { withFileTypes: true });
-    const skillNames = entries
-        .filter((entry) => entry.isDirectory())
+    const skillEntries = await Promise.all(
+        entries.map(async (entry) =>
+            Object.freeze({
+                isSkillDirectory: await isDirectoryOrDirectorySymlink(AGENT_PACK_SKILLS_ROOT, entry),
+                name: entry.name
+            })
+        )
+    );
+    const skillNames = skillEntries
+        .filter((entry) => entry.isSkillDirectory)
         .map((entry) => entry.name)
         .sort();
     const invalidSkillNames = skillNames.filter((skillName) => !skillName.startsWith(GMLOOP_SKILL_NAME_PREFIX));
@@ -432,14 +456,14 @@ export async function readAgentPackResourcePreviews(): Promise<ReadonlyArray<Age
     const sources = await readAgentPackResourceSources();
     return Object.freeze(
         await Promise.all(
-            sources.map(async (source) =>
-                Object.freeze({
+            sources.map(async (source) => {
+                return Object.freeze({
                     content: await readFile(source.sourcePath, "utf8"),
                     kind: source.kind,
                     packagePath: source.packagePath,
                     targetPath: source.targetPath
-                })
-            )
+                });
+            })
         )
     );
 }

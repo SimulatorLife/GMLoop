@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -34,6 +34,24 @@ function hashText(source: string): string {
     return createHash("sha256").update(source).digest("hex");
 }
 
+void test("agent pack discovery treats shared skill symlinks as packaged skill directories", async () => {
+    const sharedSkillNames = ["gmloop-gml-syntax-basics"];
+    const symlinkStats = await Promise.all(
+        sharedSkillNames.map((name) => lstat(path.join("src", "agent-pack", "skills", name)))
+    );
+    assert.equal(
+        symlinkStats.every((stats) => stats.isSymbolicLink()),
+        true
+    );
+
+    const names = await AgentPack.discoverPackagedSkillNames();
+    for (const sharedSkillName of sharedSkillNames) {
+        assert.ok(names.includes(sharedSkillName));
+        const source = await readFile(path.join("src", "agent-pack", "skills", sharedSkillName, "SKILL.md"), "utf8");
+        assert.match(source, new RegExp(String.raw`^---\n[\s\S]*?^name: ${sharedSkillName}$`, "mu"));
+    }
+});
+
 void test("agent pack exposes a deterministic raw skill collection", async () => {
     const names = await AgentPack.discoverPackagedSkillNames();
     assert.ok(names.length > 0);
@@ -43,6 +61,16 @@ void test("agent pack exposes a deterministic raw skill collection", async () =>
         names.every((name) => name.startsWith("gmloop-")),
         true
     );
+    assert.ok(names.includes("gmloop-doubt-driven-development"));
+    assert.ok(names.includes("gmloop-gml-syntax-basics"));
+});
+
+void test("agent pack skill sources declare frontmatter names matching their packaged directories", async () => {
+    const names = await AgentPack.discoverPackagedSkillNames();
+    for (const name of names) {
+        const source = await readFile(path.join("src", "agent-pack", "skills", name, "SKILL.md"), "utf8");
+        assert.match(source, new RegExp(String.raw`^---\n[\s\S]*?^name: ${name}$`, "mu"));
+    }
 });
 
 void test("agent pack exposes every packaged template and skill for read-only preview", async () => {
@@ -84,7 +112,7 @@ void test("agent pack initialization installs skills, project guidance, and a ve
             names.map((name) => readFile(path.join(fixture.projectRoot, ".agents", "skills", name, "SKILL.md"), "utf8"))
         );
         for (const [index, source] of installedSkillSources.entries()) {
-            assert.match(source, new RegExp(String.raw`^---\nname: ${names[index] ?? ""}\n`, "u"));
+            assert.match(source, new RegExp(String.raw`^---\n[\s\S]*?^name: ${names[index] ?? ""}$`, "mu"));
         }
         const toolingSkillSource = installedSkillSources[names.indexOf("gmloop-tooling")];
         assert.ok(toolingSkillSource);
