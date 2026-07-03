@@ -2118,6 +2118,65 @@ void test("refactor codemod --write renames enum members that collide with built
     }
 });
 
+void test("refactor codemod --write skips enum-member renames that would collide with macro expansion names", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        enumMember: {
+                            caseStyle: "upper_snake"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        await writeScriptResource(projectRoot, "group_debug_functions", '#macro UNKNOWN "unknown"\n');
+        await writeScriptResource(
+            projectRoot,
+            "aicontroller",
+            [
+                "function AIController() constructor {",
+                "    enum eTargetIntention {",
+                "        attack_target,",
+                "        evade,",
+                "        move_to,",
+                "        follow,",
+                "        interact_target,",
+                "        unknown",
+                "    }",
+                "",
+                "    targeting = { intention: eTargetIntention.unknown };",
+                "    if (targeting.intention == eTargetIntention.unknown) {",
+                "        targeting.intention = eTargetIntention.move_to;",
+                "    }",
+                "}",
+                ""
+            ].join("\n")
+        );
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+        assert.match(result.stdout, /gml\/enum-member\/eTargetIntention\/unknown/);
+        assert.match(result.stdout, /conflicts with macro 'gml\/macro\/UNKNOWN'/);
+
+        const aiSource = await readFile(path.join(projectRoot, "scripts/aicontroller/aicontroller.gml"), "utf8");
+        assert.match(aiSource, /unknown/);
+        assert.doesNotMatch(aiSource, /eTargetIntention\.UNKNOWN/);
+        assert.match(aiSource, /eTargetIntention\.MOVE_TO/);
+        await assertProjectGmlFilesParse(projectRoot);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
 void test("refactor codemod --write updates constructor inheritance references when renaming struct declarations", async () => {
     const projectRoot = await createSyntheticProject({
         refactor: {

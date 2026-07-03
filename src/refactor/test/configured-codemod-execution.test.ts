@@ -1833,6 +1833,151 @@ void test("executeConfiguredCodemods skips exclusive-prefix variable renames whe
     });
 });
 
+void test("executeConfiguredCodemods skips argument renames to reserved built-in identifiers", async () => {
+    const sourceText = [
+        "function CurveHandlerTimed(curve_id, duration_seconds = 1) constructor {",
+        "    self.curve_struct = animcurve_get(curve_id);",
+        "    static set_curve_config = function(curve_id, speed_multiplier) {",
+        "        if (!is_undefined(curve_id)) {",
+        "            self.curve_struct = animcurve_get(curve_id);",
+        "        }",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+    const firstCurveIdOccurrence = sourceText.indexOf("curve_id");
+    const secondCurveIdOccurrence = sourceText.indexOf("curve_id", firstCurveIdOccurrence + 1);
+
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => [
+            {
+                name: "curve_id",
+                category: "argument",
+                path: "scripts/CurveHandlerTimed/CurveHandlerTimed.gml",
+                scopeId: "scope:CurveHandlerTimed",
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "scripts/CurveHandlerTimed/CurveHandlerTimed.gml",
+                        start: firstCurveIdOccurrence,
+                        end: firstCurveIdOccurrence + "curve_id".length,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: "scope:CurveHandlerTimed"
+                    },
+                    {
+                        path: "scripts/CurveHandlerTimed/CurveHandlerTimed.gml",
+                        start: secondCurveIdOccurrence,
+                        end: secondCurveIdOccurrence + "curve_id".length,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:CurveHandlerTimed"
+                    }
+                ]
+            }
+        ]
+    };
+
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["scripts/CurveHandlerTimed/CurveHandlerTimed.gml"],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        argument: { bannedPrefixes: ["curve_"], caseStyle: "camel" }
+                    }
+                }
+            }
+        },
+        readFile: async () => sourceText
+    });
+
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(result.summaries[0]?.changed, false);
+    assert.ok(
+        result.summaries[0]?.warnings.some(
+            (warning) =>
+                warning.includes("curve_id") &&
+                warning.includes("id") &&
+                warning.includes("reserved GameMaker identifier")
+        )
+    );
+    assert.equal(result.appliedFiles.get("scripts/CurveHandlerTimed/CurveHandlerTimed.gml"), undefined);
+});
+
+void test("executeConfiguredCodemods skips catch-argument renames to reserved built-in identifiers", async () => {
+    const sourceText = [
+        "function load_config() {",
+        "    try {",
+        "        return buffer_load(path);",
+        "    } catch (error_id) {",
+        "        show_debug_message(error_id);",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+    const firstErrorIdOccurrence = sourceText.indexOf("error_id");
+    const secondErrorIdOccurrence = sourceText.lastIndexOf("error_id");
+
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => [
+            {
+                name: "error_id",
+                category: "catchArgument",
+                path: "scripts/load_config/load_config.gml",
+                scopeId: "scope:load_config:catch",
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "scripts/load_config/load_config.gml",
+                        start: firstErrorIdOccurrence,
+                        end: firstErrorIdOccurrence + "error_id".length,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: "scope:load_config:catch"
+                    },
+                    {
+                        path: "scripts/load_config/load_config.gml",
+                        start: secondErrorIdOccurrence,
+                        end: secondErrorIdOccurrence + "error_id".length,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:load_config:catch"
+                    }
+                ]
+            }
+        ]
+    };
+
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["scripts/load_config/load_config.gml"],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        catchArgument: { bannedPrefixes: ["error_"], caseStyle: "camel" }
+                    }
+                }
+            }
+        },
+        readFile: async () => sourceText
+    });
+
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(result.summaries[0]?.changed, false);
+    assert.ok(
+        result.summaries[0]?.warnings.some(
+            (warning) =>
+                warning.includes("error_id") &&
+                warning.includes("id") &&
+                warning.includes("reserved GameMaker identifier")
+        )
+    );
+    assert.equal(result.appliedFiles.get("scripts/load_config/load_config.gml"), undefined);
+});
+
 void test("executeConfiguredCodemods skips local renames that referenced macro expansions depend on", async () => {
     const sourceText = [
         "function cm_triangle(collider) {",

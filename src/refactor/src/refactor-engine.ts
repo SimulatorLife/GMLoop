@@ -186,6 +186,10 @@ function semanticSupportsBatchWorkspaceOverlay(
     return Core.hasMethods(semantic, ["clearWorkspaceOverlay", "stageWorkspaceEdit"]);
 }
 
+function isMacroRenameCollisionSubject(symbolKind: string | null): boolean {
+    return symbolKind === "enum-member";
+}
+
 function dropRedundantTextEditsForMetadataRewrites(workspace: WorkspaceEdit): WorkspaceEdit {
     const { metadataEdits, fileRenames } = getWorkspaceArrays(workspace);
     if (metadataEdits.length === 0) {
@@ -555,6 +559,18 @@ export class RefactorEngine {
             warnings.push("No semantic analyzer available - cannot verify symbol existence");
         }
 
+        const symbolKind = parseSymbolIdParts(symbolId)?.symbolKind ?? null;
+
+        if (isMacroRenameCollisionSubject(symbolKind) && Core.hasMethods(this.semantic, "hasSymbol")) {
+            const macroSymbolId = `gml/macro/${normalizedNewName}`;
+            if (await this.validateSymbolExists(macroSymbolId)) {
+                errors.push(
+                    `The new name '${normalizedNewName}' conflicts with macro '${macroSymbolId}'. GameMaker macros expand in qualified member access and local expressions, so this rename would emit invalid or behavior-changing GML.`
+                );
+                return { valid: false, errors, warnings };
+            }
+        }
+
         // Extract the symbol's base name from its fully-qualified ID.
         // Symbol IDs follow the pattern "gml/{kind}/{name}" where {name} is the
         // last path component (e.g., "gml/script/scr_foo" → "scr_foo").
@@ -580,7 +596,7 @@ export class RefactorEngine {
             occurrences,
             this.semantic,
             this.semantic,
-            { symbolKind: parseSymbolIdParts(symbolId)?.symbolKind ?? null }
+            { symbolKind }
         );
 
         for (const conflict of conflicts) {

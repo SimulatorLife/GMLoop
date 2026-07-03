@@ -39,6 +39,7 @@ const RESERVED_LOCAL_RENAME_CATEGORIES = new Set([
     "loopIndexVariable",
     "staticVariable"
 ]);
+const RESERVED_ARGUMENT_RENAME_TARGETS = new Set(["id", "self", "other", "global"]);
 
 const RESERVED_LOCAL_IDENTIFIER_TYPES = new Set(["property", "symbol", "variable"]);
 const DEFINITELY_LOCAL_NAMING_CATEGORIES = new Set<NamingCategory>([
@@ -62,6 +63,7 @@ function getReservedLocalIdentifierNames(): ReadonlySet<string> {
     }
 
     const reservedNames = new Set(Array.from(DEFAULT_RESERVED_KEYWORDS, (keyword) => keyword.toLowerCase()));
+    reservedNames.add("id");
     const identifierEntries = Core.normalizeIdentifierMetadataEntries(Core.getIdentifierMetadata());
 
     for (const { name, type } of identifierEntries) {
@@ -74,6 +76,18 @@ function getReservedLocalIdentifierNames(): ReadonlySet<string> {
 
     cachedReservedLocalIdentifierNames = reservedNames;
     return cachedReservedLocalIdentifierNames;
+}
+
+function isReservedLocalRenameTarget(target: LocalNamingConventionTarget, suggestedName: string): boolean {
+    const normalizedSuggestedName = suggestedName.toLowerCase();
+    if (target.category === "argument" || target.category === "catchArgument") {
+        return RESERVED_ARGUMENT_RENAME_TARGETS.has(normalizedSuggestedName);
+    }
+
+    return (
+        RESERVED_LOCAL_RENAME_CATEGORIES.has(target.category) &&
+        getReservedLocalIdentifierNames().has(normalizedSuggestedName)
+    );
 }
 
 function appendWorkspaceEdits(destination: WorkspaceEdit, source: WorkspaceEdit): void {
@@ -393,10 +407,7 @@ function processLocalNamingConventionRename(parameters: {
         }
     }
 
-    if (
-        RESERVED_LOCAL_RENAME_CATEGORIES.has(target.category) &&
-        getReservedLocalIdentifierNames().has(normalizedSuggestedName ?? suggestedName.toLowerCase())
-    ) {
+    if (isReservedLocalRenameTarget(target, normalizedSuggestedName ?? suggestedName)) {
         parameters.warnings.push(
             `Skipping local rename '${target.name}' -> '${suggestedName}' in ${target.path} because '${suggestedName}' is a reserved GameMaker identifier.`
         );
