@@ -45,6 +45,10 @@ must stay CLI-derived.
     - Expect agents to use `gm-cli` / ResourceTool MCP directly when that tool is the right operation.
     - Expose a GMLoop command only when the CLI layer adds GMLoop-owned context, validation, hot-reload, refactor, or evidence behavior.
     - Do not register separate MCP tools that call ResourceTool directly unless they are read-only resources or explicitly remain under the `gmloop gm-cli` integration surface.
+- Developer-only and internal toolchain commands are excluded from the MCP catalog:
+    - Exclude visual GUI commands (`gmloop_graph_visualize`), low-level direct compilation commands (`gmloop_transpile`), and stats reporting (`gmloop_collect_stats`).
+    - Exclude build-time artifact/metadata generators (`gmloop_generate_*`), visual dashboard setup/scaffolding (`gmloop_ui_*`), GMLoop core profiling (`gmloop_profile_*`), and toolchain testing/case management (`gmloop_test_*`).
+    - Exclusions are maintained in a central deny-list inside `src/cli/src/cli-core/mcp-command-exclusion.ts`.
 
 ### MCP Tool Behavior
 

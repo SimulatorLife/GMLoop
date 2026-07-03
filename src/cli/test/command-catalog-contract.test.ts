@@ -63,6 +63,54 @@ void test("official gm-cli integration helpers and ResourceTool mirrors are excl
     assert.equal(toolNames.has("gmloop_resource_move"), false);
 });
 
+void test("developer-only and internal toolchain commands are excluded from MCP catalog", () => {
+    const mcpCatalog = getMcpToolCatalogEntries();
+    const toolNames = new Set(mcpCatalog.map((entry) => entry.toolName));
+
+    // Excluded exact commands
+    assert.equal(toolNames.has("gmloop_graph_visualize"), false);
+    assert.equal(toolNames.has("gmloop_transpile"), false);
+    assert.equal(toolNames.has("gmloop_collect_stats"), false);
+
+    // Excluded prefix/wildcard command categories
+    assert.equal(toolNames.has("gmloop_generate_feather_metadata"), false);
+    assert.equal(toolNames.has("gmloop_generate_gml_identifiers"), false);
+    assert.equal(toolNames.has("gmloop_generate_quality_report"), false);
+
+    assert.equal(toolNames.has("gmloop_ui_inspect"), false);
+    assert.equal(toolNames.has("gmloop_ui_validate"), false);
+    assert.equal(toolNames.has("gmloop_ui_preview"), false);
+    assert.equal(toolNames.has("gmloop_ui_scaffold"), false);
+
+    assert.equal(toolNames.has("gmloop_profile_start"), false);
+    assert.equal(toolNames.has("gmloop_profile_stop"), false);
+    assert.equal(toolNames.has("gmloop_profile_snapshot"), false);
+    assert.equal(toolNames.has("gmloop_profile_compare"), false);
+    assert.equal(toolNames.has("gmloop_profile_report"), false);
+
+    assert.equal(toolNames.has("gmloop_test_run"), false);
+    assert.equal(toolNames.has("gmloop_test_list"), false);
+    assert.equal(toolNames.has("gmloop_test_results"), false);
+    assert.equal(toolNames.has("gmloop_test_case_create"), false);
+    assert.equal(toolNames.has("gmloop_test_case_update"), false);
+
+    // Ensure no commands under these prefix namespace categories leak
+    for (const toolName of toolNames) {
+        assert.ok(!toolName.startsWith("gmloop_ui_"), `Leaked UI command: ${toolName}`);
+        assert.ok(!toolName.startsWith("gmloop_profile_"), `Leaked Profile command: ${toolName}`);
+        assert.ok(!toolName.startsWith("gmloop_test_"), `Leaked Test command: ${toolName}`);
+        assert.ok(!toolName.startsWith("gmloop_generate_"), `Leaked Generate command: ${toolName}`);
+    }
+
+    // Standard game development / agent-facing commands must remain included
+    assert.equal(toolNames.has("gmloop_format"), true);
+    assert.equal(toolNames.has("gmloop_lint"), true);
+    assert.equal(toolNames.has("gmloop_refactor"), true);
+    assert.equal(toolNames.has("gmloop_graph_index"), true);
+    assert.equal(toolNames.has("gmloop_graph_search"), true);
+    assert.equal(toolNames.has("gmloop_graph_doctor"), true);
+});
+
 void test("object event update MCP tool schema includes write mode option", () => {
     const mcpCatalog = getMcpToolCatalogEntries();
     const entry = mcpCatalog.find((candidate) => candidate.toolName === "gmloop_object_event_update");
@@ -369,31 +417,5 @@ void test("room instance add/update/delete MCP tool schemas include mutation arg
         assert.ok(field, `Missing required delete argument field: ${requiredArgument}`);
         assert.equal(field.kind, "argument");
         assert.equal(field.required, true);
-    }
-});
-
-void test("test case create/update MCP tool schema includes mutation arguments and write mode option", () => {
-    const mcpCatalog = getMcpToolCatalogEntries();
-
-    for (const toolName of ["gmloop_test_case_create", "gmloop_test_case_update"] as const) {
-        const entry = mcpCatalog.find((candidate) => candidate.toolName === toolName);
-        assert.ok(entry, `Missing MCP tool: ${toolName}`);
-
-        const writeField = entry.fields.find((field) => field.attributeName === "write");
-        assert.ok(writeField);
-        assert.equal(writeField.kind, "option");
-        assert.equal(writeField.valueType, "boolean");
-
-        const expectedField = entry.fields.find((field) => field.attributeName === "expected");
-        assert.ok(expectedField);
-        assert.equal(expectedField.kind, "option");
-        assert.equal(expectedField.required, false);
-
-        for (const requiredArgument of ["target", "name"]) {
-            const field = entry.fields.find((candidate) => candidate.attributeName === requiredArgument);
-            assert.ok(field, `Missing required argument field '${requiredArgument}' on ${toolName}`);
-            assert.equal(field.kind, "argument");
-            assert.equal(field.required, true);
-        }
     }
 });
