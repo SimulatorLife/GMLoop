@@ -176,6 +176,20 @@ function resolveDocsStatusSummary(model: GraphVisualizationUiModel, state: Graph
  * Return true when toolbar keyboard shortcuts should yield to native text entry.
  */
 export function isToolbarKeyboardShortcutTextEntryTarget(target: EventTarget | null): boolean {
+    if (target && "tagName" in target && typeof target.tagName === "string") {
+        const tagName = target.tagName.toUpperCase();
+        if (tagName === "TEXTAREA" || tagName === "SELECT") {
+            return true;
+        }
+
+        if (tagName === "INPUT") {
+            const inputType = ((target as any).type || "text").toLowerCase();
+            return !["button", "checkbox", "color", "file", "image", "radio", "range", "reset", "submit"].includes(
+                inputType
+            );
+        }
+    }
+
     if (typeof Element !== "undefined" && target instanceof Element) {
         if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) {
             return true;

@@ -180,3 +180,15 @@ void test("isToolbarKeyboardShortcutTextEntryTarget returns false for non-text c
         restoreGlobalConstructor("HTMLSelectElement", originalSelect);
     }
 });
+
+void test("isToolbarKeyboardShortcutTextEntryTarget returns true for targets with text-entry tagNames even without instanceof checks", () => {
+    const dummyTargetInput = { tagName: "INPUT", type: "search" } as unknown as EventTarget;
+    const dummyTargetTextArea = { tagName: "TEXTAREA" } as unknown as EventTarget;
+    const dummyTargetSelect = { tagName: "SELECT" } as unknown as EventTarget;
+    const dummyTargetButtonInput = { tagName: "INPUT", type: "button" } as unknown as EventTarget;
+
+    assert.equal(isToolbarKeyboardShortcutTextEntryTarget(dummyTargetInput), true);
+    assert.equal(isToolbarKeyboardShortcutTextEntryTarget(dummyTargetTextArea), true);
+    assert.equal(isToolbarKeyboardShortcutTextEntryTarget(dummyTargetSelect), true);
+    assert.equal(isToolbarKeyboardShortcutTextEntryTarget(dummyTargetButtonInput), false);
+});
