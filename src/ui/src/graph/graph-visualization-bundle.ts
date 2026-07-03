@@ -36,10 +36,6 @@ function resolveUiWorkspaceRoot(): string {
     throw new Error("Could not locate the @gmloop/ui workspace source root for graph visualization bundling.");
 }
 
-function resolveViteExecutablePath(workspaceRoot: string): string {
-    return path.join(workspaceRoot, "node_modules", ".bin", process.platform === "win32" ? "vite.cmd" : "vite");
-}
-
 function createGraphVisualizationBundleFile(
     relativePath: string,
     contentType: string,
@@ -122,12 +118,21 @@ function injectBootstrapPayload(
 
 async function createViteWebBundle(outDirectory: string): Promise<void> {
     const workspaceRoot = resolveUiWorkspaceRoot();
-    const viteExecutablePath = resolveViteExecutablePath(workspaceRoot);
 
     await new Promise<void>((resolve, reject) => {
         execFile(
-            viteExecutablePath,
-            ["build", "--config", path.join(workspaceRoot, "vite.config.ts"), "--outDir", outDirectory],
+            process.platform === "win32" ? "pnpm.cmd" : "pnpm",
+            [
+                "--filter",
+                "@gmloop/ui",
+                "exec",
+                "vite",
+                "build",
+                "--config",
+                path.join(workspaceRoot, "vite.config.ts"),
+                "--outDir",
+                outDirectory
+            ],
             {
                 cwd: workspaceRoot,
                 env: {
