@@ -1069,6 +1069,14 @@ export class GmlSemanticBridge {
         for (const [filePath, fileRecord] of Object.entries(this.projectIndex.files ?? {})) {
             const typedFileRecord = fileRecord as SemanticFileRecord;
 
+            // Index local declarations for scope-aware lookups
+            for (const declaration of typedFileRecord.declarations ?? []) {
+                if (declaration && typeof declaration.name === "string") {
+                    const declarationScopeId = typeof declaration.scopeId === "string" ? declaration.scopeId : null;
+                    appendLookupEntry(declaration.name, declarationScopeId);
+                }
+            }
+
             for (const reference of typedFileRecord.references ?? []) {
                 if (!Core.isObjectLike(reference) || Core.isObjectLike(reference.declaration)) {
                     continue;

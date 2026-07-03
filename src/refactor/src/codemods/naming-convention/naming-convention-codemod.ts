@@ -320,6 +320,7 @@ function processLocalNamingConventionRename(parameters: {
     macroDependencyNamesByFile: MacroDependencyNamesByFile | null;
     duplicateScopedDeclarations: Map<string, Set<string>>;
     hasDuplicateScopedDeclarations: boolean;
+    globalAssetNames?: ReadonlySet<string>;
 }): number {
     const { target, suggestedName } = parameters;
     const needsScopeKey = parameters.hasDuplicateScopedDeclarations || parameters.localScopeNames.size > 0;
@@ -380,7 +381,36 @@ function processLocalNamingConventionRename(parameters: {
         }
     }
 
-    if (isReservedLocalRenameTarget(target, normalizedSuggestedName ?? suggestedName)) {
+    normalizedSuggestedName ??= suggestedName.toLowerCase();
+    const isLocalCategory =
+        target.category === "localVariable" ||
+        target.category === "argument" ||
+        target.category === "catchArgument" ||
+        target.category === "loopIndexVariable" ||
+        target.category === "staticVariable";
+    const isGlobalCollision = isLocalCategory
+        ? parameters.globalAssetNames?.has(normalizedSuggestedName)
+        : normalizedSuggestedName !== target.name.toLowerCase() &&
+          parameters.globalAssetNames?.has(normalizedSuggestedName);
+
+    if (isGlobalCollision) {
+        parameters.warnings.push(
+            `Skipping local rename '${target.name}' -> '${suggestedName}' in ${target.path} because '${suggestedName}' conflicts with a global asset/resource name.`
+        );
+        if (scopeKey !== null && declarationKey !== null) {
+            const ensuredScopeDecisions = ensureScopeRenameDecisions(
+                parameters.localDeclarationRenameDecisions,
+                scopeKey
+            );
+            ensuredScopeDecisions.set(declarationKey, {
+                shouldApply: false,
+                suggestedName
+            });
+        }
+        return 0;
+    }
+
+    if (isReservedLocalRenameTarget(target, normalizedSuggestedName)) {
         parameters.warnings.push(
             `Skipping local rename '${target.name}' -> '${suggestedName}' in ${target.path} because '${suggestedName}' is a reserved GameMaker identifier.`
         );
@@ -922,6 +952,25 @@ export async function planNamingConventionCodemod(
             ? collectMacroDependencyNamesByFile(await semantic.listMacroExpansionDependencies(selectedFilePaths))
             : null;
 
+    // Collect all global asset/resource names (both original and suggested renamed ones)
+    const globalAssetNames = new Set<string>();
+    for (const target of queriedTargets) {
+        if (
+            target.symbolId !== null ||
+            target.category.endsWith("ResourceName") ||
+            target.category === "constructorFunction" ||
+            target.category === "function"
+        ) {
+            globalAssetNames.add(target.name.toLowerCase());
+            const evaluation = evaluateNamingConvention(target.name, target.category, policy, resolvedRules, {
+                includeMessage: false
+            });
+            if (evaluation.suggestedName && evaluation.suggestedName !== target.name) {
+                globalAssetNames.add(evaluation.suggestedName.toLowerCase());
+            }
+        }
+    }
+
     // Skip local-scope collection entirely when the current run only contains
     // top-level symbols. This is the dominant `refactor codemod --write` path on
     // large projects and avoids an otherwise redundant full scan of selectedTargets.
@@ -993,7 +1042,8 @@ export async function planNamingConventionCodemod(
             localDeclarationRenameDecisions,
             macroDependencyNamesByFile,
             duplicateScopedDeclarations,
-            hasDuplicateScopedDeclarations
+            hasDuplicateScopedDeclarations,
+            globalAssetNames
         });
     }
 

@@ -105,7 +105,41 @@
       "Bash(python *)",
       "Bash(python3 *)",
       "Bash(perl *)",
-      "Bash(ruby *)"
+      "Bash(ruby *)",
+
+      "Read(/dist/**)",
+      "Read(/**/dist/**)",
+      "Edit(/dist/**)",
+      "Edit(/**/dist/**)",
+
+      "Read(/node_modules/**)",
+      "Read(/**/node_modules/**)",
+      "Edit(/node_modules/**)",
+      "Edit(/**/node_modules/**)",
+
+      "Read(/.pnpm-store/**)",
+      "Read(/**/.pnpm-store/**)",
+      "Edit(/.pnpm-store/**)",
+      "Edit(/**/.pnpm-store/**)",
+
+      "Read(/*.gml)",
+      "Read(/**/*.gml)",
+      "Edit(/*.gml)",
+      "Edit(/**/*.gml)",
+
+      "Edit(/*.yy)",
+      "Edit(/**/*.yy)",
+      "Edit(/*.yyp)",
+      "Edit(/**/*.yyp)",
+
+      "Edit(/src/parser/.antlr/**)",
+      "Edit(resources/**)",
+      "Edit(/src/parser/generated/**)",
+
+      "Read(resources/antlr/**)",
+      "Edit(vendor/**)",
+      "Read(scripts/**)",
+      "Edit(scripts/**)"
     ]
   },
   "general": {
