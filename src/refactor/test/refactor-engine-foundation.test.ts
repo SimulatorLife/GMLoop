@@ -213,7 +213,7 @@ void test("planRename checks symbol existence with semantic analyzer", async () 
     );
 });
 
-void test("planRename detects reserved keyword conflicts", async () => {
+void test("planRename detects reserved GameMaker identifier conflicts", async () => {
     const mockSemantic = {
         hasSymbol: () => true,
         getSymbolOccurrences: () => [{ path: "test.gml", start: 0, end: 10, scopeId: "scope-1" }]
@@ -227,7 +227,7 @@ void test("planRename detects reserved keyword conflicts", async () => {
                 newName: "if"
             }),
         {
-            message: /reserved keyword/
+            message: /reserved GameMaker identifier/
         }
     );
 });

@@ -229,7 +229,7 @@ void test("verifyPostEditIntegrity detects conflicts with existing symbols", asy
     assert.ok(result.warnings.some((w) => w.includes("already exists") && w.includes("other.gml")));
 });
 
-void test("verifyPostEditIntegrity detects reserved keyword conflicts", async () => {
+void test("verifyPostEditIntegrity detects reserved GameMaker identifier conflicts", async () => {
     const mockSemantic: PartialSemanticAnalyzer = {
         getReservedKeywords: async () => ["if", "else", "for", "while"]
     };
@@ -245,7 +245,7 @@ void test("verifyPostEditIntegrity detects reserved keyword conflicts", async ()
     });
 
     assert.equal(result.valid, false);
-    assert.ok(result.errors.some((e) => e.includes("reserved keyword") && e.includes("if")));
+    assert.ok(result.errors.some((e) => e.includes("reserved GameMaker identifier") && e.includes("if")));
 });
 
 void test("verifyPostEditIntegrity validates parse correctness", async () => {
@@ -387,7 +387,7 @@ void test("validateRenameRequest detects same name", async () => {
     assert.ok(result.errors.some((e) => e.includes("matches the existing identifier")));
 });
 
-void test("validateRenameRequest detects reserved keywords", async () => {
+void test("validateRenameRequest detects reserved GameMaker identifiers", async () => {
     const mockSemantic: PartialSemanticAnalyzer = {
         hasSymbol: async () => true,
         getSymbolOccurrences: async () => [{ path: "test.gml", start: 0, end: 5, scopeId: "scope-1" }],
@@ -401,7 +401,7 @@ void test("validateRenameRequest detects reserved keywords", async () => {
     });
 
     assert.equal(result.valid, false);
-    assert.ok(result.errors.some((e) => e.includes("reserved keyword")));
+    assert.ok(result.errors.some((e) => e.includes("reserved GameMaker identifier")));
 });
 
 void test("validateRenameRequest surfaces cross-file conflicts", async () => {

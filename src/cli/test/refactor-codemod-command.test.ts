@@ -2105,7 +2105,7 @@ void test("refactor codemod --write renames enum members that collide with built
 
         assert.match(emitterSource, /NONE, STREAM, RETIRED, DYNAMIC/);
         assert.match(emitterSource, /eSpartEmitterType\.DYNAMIC/);
-        assert.doesNotMatch(result.stdout, /gml\/enum-member\/Dynamic.+reserved keyword/);
+        assert.doesNotMatch(result.stdout, /gml\/enum-member\/Dynamic.+reserved GameMaker identifier/);
         assert.match(transitionSource, /IN = eTransitionState\.IN/);
         assert.match(transitionSource, /OUT = eTransitionState\.OUT/);
         assert.match(transitionSource, /PARTWAY_IN = eTransitionState\.PARTWAY_IN/);

@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-    isReservedGmlBindingIdentifierName,
-    loadReservedGmlBindingIdentifierNames,
     loadReservedIdentifierNames,
     resetReservedIdentifierMetadataLoader,
     setReservedIdentifierMetadataLoader
 } from "../src/resources/gml-identifier-loading.js";
+import {
+    isReservedGmlBindingIdentifierName,
+    loadReservedGmlBindingIdentifierNames
+} from "../src/resources/gml-identifier-reservation.js";
 
 function toSortedArray(values: Iterable<unknown>) {
     return Array.from(values).sort();
@@ -146,4 +148,30 @@ void test("enum member reservation includes keywords and literals without reserv
     assert.equal(isReservedGmlBindingIdentifierName("draw_sprite", "enum-member"), false);
 
     cleanup();
+});
+
+void test("bundled metadata reserves expected binding identifiers by context", () => {
+    resetReservedIdentifierMetadataLoader();
+
+    assert.equal(isReservedGmlBindingIdentifierName("id", "ordinary-binding"), true);
+    assert.equal(isReservedGmlBindingIdentifierName("if", "ordinary-binding"), true);
+    assert.equal(isReservedGmlBindingIdentifierName("self", "argument-binding"), true);
+    assert.equal(isReservedGmlBindingIdentifierName("other", "argument-binding"), true);
+    assert.equal(isReservedGmlBindingIdentifierName("global", "argument-binding"), true);
+    assert.equal(isReservedGmlBindingIdentifierName("x", "argument-binding"), false);
+    assert.equal(isReservedGmlBindingIdentifierName("if", "enum-member"), true);
+    assert.equal(isReservedGmlBindingIdentifierName("draw_sprite", "enum-member"), false);
+});
+
+void test("binding reservation rejects invalid runtime inputs", () => {
+    const invalidName = null as unknown as string;
+
+    assert.throws(
+        () => loadReservedGmlBindingIdentifierNames("function-name" as never),
+        /Unknown GML binding identifier context/
+    );
+    assert.throws(
+        () => isReservedGmlBindingIdentifierName(invalidName, "ordinary-binding"),
+        /GML binding identifier names must be strings/
+    );
 });

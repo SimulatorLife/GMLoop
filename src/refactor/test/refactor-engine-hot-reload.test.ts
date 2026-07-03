@@ -691,7 +691,7 @@ void test("checkHotReloadSafety rejects same-name renames", async () => {
     assert.equal(result.requiresRestart, false);
 });
 
-void test("checkHotReloadSafety rejects reserved keywords", async () => {
+void test("checkHotReloadSafety rejects reserved GameMaker identifiers", async () => {
     const mockSemantic = {
         hasSymbol: () => true,
         getSymbolOccurrences: (name) => [{ path: "test.gml", start: 0, end: name.length, scopeId: "scope-1" }],
@@ -705,7 +705,7 @@ void test("checkHotReloadSafety rejects reserved keywords", async () => {
     });
 
     assert.equal(result.safe, false);
-    assert.ok(result.reason.includes("reserved keyword"));
+    assert.ok(result.reason.includes("reserved GameMaker identifier"));
     assert.equal(result.requiresRestart, true);
     assert.equal(result.canAutoFix, false);
 });

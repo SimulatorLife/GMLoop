@@ -829,7 +829,7 @@ export class RefactorEngine {
         // the rename operation can update all references simultaneously.
         const occurrences = await this.gatherSymbolOccurrences(symbolName, symbolId);
 
-        // Detect potential conflicts (shadowing, reserved keywords, etc.) before
+        // Detect potential conflicts (shadowing, reserved identifiers, etc.) before
         // applying edits. If conflicts exist, we abort the rename to prevent
         // introducing scope errors or breaking existing code.
         if (!hasReusableValidation) {
@@ -2223,7 +2223,7 @@ export class RefactorEngine {
                 }
             }
 
-            // Test for potential rename conflicts (shadowing, reserved keywords) that
+            // Test for potential rename conflicts (shadowing, reserved identifiers) that
             // would break the code if applied. We collect all conflicts across all
             // renames in the batch so the user can see the complete picture before
             // deciding whether to proceed or adjust the new names.
@@ -2475,15 +2475,15 @@ export class RefactorEngine {
             }
         }
 
-        // Use semantic analyzer to check for reserved keyword violations
+        // Use semantic analyzer to check for reserved language identifier violations.
         if (Core.hasMethods(this.semantic, "getReservedKeywords")) {
             try {
                 const keywords = await this.semantic.getReservedKeywords();
                 if (keywords.includes(newName.toLowerCase())) {
-                    errors.push(`New name '${newName}' conflicts with reserved keyword`);
+                    errors.push(`New name '${newName}' conflicts with reserved GameMaker identifier`);
                 }
             } catch (error) {
-                warnings.push(`Could not verify reserved keywords: ${Core.getErrorMessage(error)}`);
+                warnings.push(`Could not verify reserved GameMaker identifiers: ${Core.getErrorMessage(error)}`);
             }
         }
 
@@ -2550,7 +2550,7 @@ export class RefactorEngine {
         });
 
         // Pass semantic analyzer twice: once as SymbolResolver for scope lookups,
-        // once as KeywordProvider for reserved keyword checks. The SemanticAnalyzer
+        // once as KeywordProvider for reserved-name checks. The SemanticAnalyzer
         // interface supports both roles through optional method implementations.
         return await detectRenameConflicts(oldName, newName, occurrences, this.semantic, this.semantic, {
             symbolKind: parseSymbolIdParts(request.symbolId ?? "")?.symbolKind ?? null

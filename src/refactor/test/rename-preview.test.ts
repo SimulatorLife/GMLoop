@@ -146,7 +146,7 @@ void describe("formatRenamePlanReport", () => {
             workspace: new WorkspaceEdit(),
             validation: {
                 valid: false,
-                errors: ["Symbol not found", "Reserved keyword conflict"],
+                errors: ["Symbol not found", "Reserved GameMaker identifier conflict"],
                 warnings: []
             },
             hotReload: null,
@@ -166,7 +166,7 @@ void describe("formatRenamePlanReport", () => {
                 conflicts: [
                     {
                         type: ConflictType.RESERVED,
-                        message: "'if' is a reserved keyword",
+                        message: "'if' is a reserved GameMaker identifier",
                         severity: "error"
                     }
                 ],
@@ -179,9 +179,9 @@ void describe("formatRenamePlanReport", () => {
         assert.ok(report.includes("Status: INVALID"));
         assert.ok(report.includes("Validation Errors:"));
         assert.ok(report.includes("Symbol not found"));
-        assert.ok(report.includes("Reserved keyword conflict"));
+        assert.ok(report.includes("Reserved GameMaker identifier conflict"));
         assert.ok(report.includes("Conflicts:"));
-        assert.ok(report.includes("'if' is a reserved keyword"));
+        assert.ok(report.includes("'if' is a reserved GameMaker identifier"));
     });
 
     void it("formats plan with warnings", () => {
@@ -507,7 +507,7 @@ void describe("formatBatchRenamePlanReport", () => {
                         conflicts: [
                             {
                                 type: ConflictType.RESERVED,
-                                message: "Reserved keyword"
+                                message: "Reserved GameMaker identifier"
                             }
                         ],
                         warnings: [
@@ -525,7 +525,7 @@ void describe("formatBatchRenamePlanReport", () => {
         const report = formatBatchRenamePlanReport(plan);
 
         assert.ok(report.includes("Conflicts: 1"));
-        assert.ok(report.includes("Reserved keyword"));
+        assert.ok(report.includes("Reserved GameMaker identifier"));
         assert.ok(report.includes("Warnings: 1"));
         assert.ok(report.includes("Large impact"));
     });
