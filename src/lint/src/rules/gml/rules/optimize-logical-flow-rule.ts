@@ -5,7 +5,16 @@ import { gmlRuleAutofixServices } from "../gml-rule-services.js";
 import type { GmlRuleDefinition } from "../index.js";
 import { createMeta, resolveLocFromIndex } from "../rule-base-helpers.js";
 import { applyLogicalNormalizationWithChangeMetadata } from "../transforms/logical-expression-traversal-normalization.js";
-import { optimizeLogicalFlowPolicy } from "./optimize-logical-flow-policy.js";
+import {
+    evaluateCanDirectBooleanReturnBenefitFromNormalization,
+    evaluateCanIfStatementBenefitFromNormalization,
+    evaluateCanLogicalExpressionBenefitFromNormalization,
+    evaluateCanUnaryExpressionBenefitFromNormalization,
+    evaluateHasLogicalNormalizationSignal,
+    evaluateIsElsePrefixedIfAtIndex,
+    evaluateIsIfNodeInElseIfChain,
+    evaluateUnsafeCommentSyntax
+} from "./optimize-logical-flow-policy.js";
 
 /**
  * Normalize whitespace for structural expression comparisons.
@@ -15,17 +24,6 @@ function normalizeWhitespaceForComparison(value: string): string {
 }
 
 type SourceTextRange = Readonly<{ start: number; end: number }>;
-
-const {
-    evaluateHasLogicalNormalizationSignal,
-    evaluateIsElsePrefixedIfAtIndex,
-    evaluateIsIfNodeInElseIfChain,
-    evaluateCanDirectBooleanReturnBenefitFromNormalization,
-    evaluateCanIfStatementBenefitFromNormalization,
-    evaluateCanUnaryExpressionBenefitFromNormalization,
-    evaluateCanLogicalExpressionBenefitFromNormalization,
-    evaluateUnsafeCommentSyntax
-} = optimizeLogicalFlowPolicy;
 
 function getNodeRange(node: unknown): SourceTextRange | null {
     const nodeStart = Core.getNodeStartIndex(node);
