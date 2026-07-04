@@ -1,4 +1,23 @@
 {
+  "editor.detectIndentation": false,
+  "editor.formatOnSave": true,
+  "editor.formatOnPaste": true,
+  "[json]": {
+    "editor.insertSpaces": true,
+    "editor.tabSize": 2
+  },
+  "[jsonc]": {
+    "editor.insertSpaces": true,
+    "editor.tabSize": 2
+  },
+  "[yaml]": {
+    "editor.insertSpaces": true,
+    "editor.tabSize": 2
+  },
+  "[typescript]": {
+    "editor.insertSpaces": true,
+    "editor.tabSize": 4
+  },
   "github.copilot.chat.mcp.enabled": true,
   "github.copilot.chat.mcp.servers": {
     "gmloop-mcp": {
@@ -10,8 +29,13 @@
     "lsp": {
       "type": "stdio",
       "command": "pnpm",
-      "tools": ["*"],
-      "args": ["exec", "lsp-mcp-server"]
+      "tools": [
+        "*"
+      ],
+      "args": [
+        "exec",
+        "lsp-mcp-server"
+      ]
     },
     "playwright": {
       "type": "stdio",
