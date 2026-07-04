@@ -5,7 +5,12 @@ import { gmlRuleAutofixServices } from "../gml-rule-services.js";
 import type { GmlRuleDefinition } from "../index.js";
 import { createMeta, resolveLocFromIndex } from "../rule-base-helpers.js";
 import { applyLogicalNormalizationWithChangeMetadata } from "../transforms/logical-expression-traversal-normalization.js";
-import { optimizeLogicalFlowPolicy } from "./optimize-logical-flow-policy.js";
+import {
+    evaluateCanDirectBooleanReturnBenefitFromNormalization,
+    evaluateIsElsePrefixedIfAtIndex,
+    evaluateIsIfNodeInElseIfChain,
+    evaluateUnsafeCommentSyntax
+} from "./optimize-logical-flow-policy.js";
 
 type SourceTextRange = Readonly<{ start: number; end: number }>;
 type ReturnStatementNode = Readonly<{ type: "ReturnStatement"; argument: unknown }> & Record<string, unknown>;
@@ -16,13 +21,6 @@ type IfStatementNode = Readonly<{
     alternate?: unknown;
     parent?: unknown;
 }>;
-
-const {
-    evaluateCanDirectBooleanReturnBenefitFromNormalization,
-    evaluateIsElsePrefixedIfAtIndex,
-    evaluateIsIfNodeInElseIfChain,
-    evaluateUnsafeCommentSyntax
-} = optimizeLogicalFlowPolicy;
 
 function getNodeRange(node: unknown): SourceTextRange | null {
     const nodeStart = Core.getNodeStartIndex(node);
