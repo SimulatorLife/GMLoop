@@ -486,6 +486,7 @@ type TopLevelRenameSelection = {
     executableRenames: Array<RenameRequest>;
     reusableBatchValidation: BatchRenameValidation | null;
     warnings: Array<string>;
+    errors: Array<string>;
 };
 
 type MacroDependencyNamesByFile = Map<string, Map<string, Set<string>>>;
@@ -559,18 +560,21 @@ async function selectExecutableTopLevelRenames(
                     renameValidations,
                     conflictingSets: []
                 },
-                warnings: []
+                warnings: [],
+                errors: []
             };
         }
 
         return {
             executableRenames: [...renames],
             reusableBatchValidation: null,
-            warnings: []
+            warnings: [],
+            errors: []
         };
     }
 
     const warnings: Array<string> = [];
+    const errors: Array<string> = [];
     const individuallySafeRenames: Array<RenameRequest> = [];
     const renameValidations = new Map<string, ValidationSummary>();
     const renameValidationResults = await Core.runInParallelWithLimit(
@@ -587,7 +591,7 @@ async function selectExecutableTopLevelRenames(
         warnings.push(...validation.warnings.map((warning) => `${rename.symbolId}: ${warning}`));
 
         if (!validation.valid) {
-            warnings.push(formatTopLevelRenameSkipWarning(rename, validation.errors.join("; ")));
+            errors.push(formatTopLevelRenameSkipWarning(rename, validation.errors.join("; ")));
             continue;
         }
 
@@ -644,7 +648,8 @@ async function selectExecutableTopLevelRenames(
                       conflictingSets: []
                   }
                 : null,
-        warnings
+        warnings,
+        errors
     };
 }
 
@@ -1132,6 +1137,7 @@ export async function planNamingConventionCodemod(
 
     const topLevelRenameSelection = await selectExecutableTopLevelRenames(engine, topLevelRenames);
     warnings.push(...topLevelRenameSelection.warnings);
+    errors.push(...topLevelRenameSelection.errors);
 
     let topLevelRenamePlan: NamingConventionCodemodPlan["topLevelRenamePlan"] = null;
     let executableTopLevelRenames = topLevelRenameSelection.executableRenames;
@@ -1145,9 +1151,7 @@ export async function planNamingConventionCodemod(
 
             const topLevelPlanErrors = collectBatchPlanErrors(preparedTopLevelRenamePlan);
             if (topLevelPlanErrors.length > 0) {
-                warnings.push(
-                    `Skipping ${executableTopLevelRenames.length} top-level naming rename(s) because batch planning failed: ${topLevelPlanErrors.join("; ")}`
-                );
+                errors.push(...topLevelPlanErrors);
                 executableTopLevelRenames = [];
             } else {
                 topLevelRenamePlan = preparedTopLevelRenamePlan;
@@ -1156,9 +1160,7 @@ export async function planNamingConventionCodemod(
                 workspace = mergedWorkspace;
             }
         } catch (error) {
-            warnings.push(
-                `Skipping ${executableTopLevelRenames.length} top-level naming rename(s) because batch planning failed: ${Core.getErrorMessage(error)}`
-            );
+            errors.push(`Batch planning failed: ${Core.getErrorMessage(error)}`);
             executableTopLevelRenames = [];
         }
     }

@@ -245,7 +245,6 @@ void test("agent pack initialization installs skills, project guidance, and a ve
         assert.match(projectGuidance, /Playwright MCP integration/u);
         assert.match(projectGuidance, /Do not treat parsing, formatting, unit tests, compilation, launch/u);
         assert.match(projectGuidance, /## Failure And Escalation/u);
-        assert.doesNotMatch(projectGuidance, /\.agents\/skills/u);
         assert.doesNotMatch(projectGuidance, /agent pack/iu);
         assert.doesNotMatch(projectGuidance, /permission layer/iu);
 

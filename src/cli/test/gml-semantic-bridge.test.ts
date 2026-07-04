@@ -3334,7 +3334,10 @@ void describe("GmlSemanticBridge tests", () => {
             const targets = await bridge.listNamingConventionTargets();
             const subTarget = targets.find((target) => target.category === "staticVariable" && target.name === "Sub");
 
-            assert.equal(subTarget, undefined);
+            assert.ok(subTarget !== undefined);
+            const gaps = bridge.checkSemanticGaps("Sub");
+            assert.ok(gaps.length > 0);
+            assert.match(gaps[0].message, /Unresolved same-name property access 'Sub'/);
         } finally {
             fs.rmSync(tmpRoot, { recursive: true, force: true });
         }
@@ -3393,7 +3396,10 @@ void describe("GmlSemanticBridge tests", () => {
                 (target) => target.category === "staticVariable" && target.name === "Reset"
             );
 
-            assert.equal(resetTarget, undefined);
+            assert.ok(resetTarget !== undefined);
+            const gaps = bridge.checkSemanticGaps("Reset");
+            assert.ok(gaps.length > 0);
+            assert.match(gaps[0].message, /Unresolved same-name bare call 'Reset'/);
         } finally {
             fs.rmSync(tmpRoot, { recursive: true, force: true });
         }
@@ -3444,7 +3450,10 @@ void describe("GmlSemanticBridge tests", () => {
                 (target) => target.category === "staticVariable" && target.name === "Add"
             );
 
-            assert.strictEqual(addTargets.length, 0);
+            assert.strictEqual(addTargets.length, 2);
+            const gaps = bridge.checkSemanticGaps("Add");
+            assert.ok(gaps.length > 0);
+            assert.match(gaps[0].message, /Unresolved same-name property access 'Add'/);
         } finally {
             fs.rmSync(tmpRoot, { recursive: true, force: true });
         }

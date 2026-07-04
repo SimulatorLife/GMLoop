@@ -232,6 +232,27 @@ export async function detectRenameConflicts(
         });
     }
 
+    if (resolvedReservedKeywords.has(oldName.toLowerCase())) {
+        conflicts.push({
+            type: ConflictType.RESERVED,
+            message: `'${oldName}' is a reserved/built-in GameMaker identifier and cannot be renamed`
+        });
+    }
+
+    // Check for unresolved same-name references (semantic gaps)
+    if (resolver && typeof (resolver as any).checkSemanticGaps === "function") {
+        const gaps = await (resolver as any).checkSemanticGaps(oldName);
+        if (Array.isArray(gaps)) {
+            for (const gap of gaps) {
+                conflicts.push({
+                    type: ConflictType.SEMANTIC_GAP,
+                    message: gap.message,
+                    path: gap.path
+                });
+            }
+        }
+    }
+
     return conflicts;
 }
 

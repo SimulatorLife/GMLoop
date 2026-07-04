@@ -631,14 +631,18 @@ export async function checkHotReloadSafety(
     const occurrences = await SymbolQueries.gatherSymbolOccurrences(symbolName, semantic);
     const conflicts = await detectRenameConflicts(symbolName, newName, occurrences, semantic, semantic);
 
-    // Guard: reserved GameMaker identifier conflicts are blocking.
-    if (conflicts.some((c) => c.type === ConflictType.RESERVED)) {
+    if (conflicts.some((c) => c.type === ConflictType.RESERVED || c.type === ConflictType.SEMANTIC_GAP)) {
+        const hasSemanticGap = conflicts.some((c) => c.type === ConflictType.SEMANTIC_GAP);
         return {
             safe: false,
-            reason: "Cannot rename to a reserved GameMaker identifier",
+            reason: hasSemanticGap
+                ? "Cannot rename due to unresolved or ambiguous same-name references (semantic gap)"
+                : "Cannot rename to a reserved GameMaker identifier",
             requiresRestart: true,
             canAutoFix: false,
-            suggestions: ["Choose a different name that isn't a reserved GameMaker identifier"]
+            suggestions: hasSemanticGap
+                ? ["Resolve all unresolved same-name property/bare-call references first"]
+                : ["Choose a different name that isn't a reserved GameMaker identifier"]
         };
     }
 

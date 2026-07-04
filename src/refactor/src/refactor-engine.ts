@@ -618,7 +618,11 @@ export class RefactorEngine {
         );
 
         for (const conflict of conflicts) {
-            if (conflict.type === ConflictType.RESERVED || conflict.type === ConflictType.SHADOW) {
+            if (
+                conflict.type === ConflictType.RESERVED ||
+                conflict.type === ConflictType.SHADOW ||
+                conflict.type === ConflictType.SEMANTIC_GAP
+            ) {
                 errors.push(conflict.message);
             } else {
                 warnings.push(conflict.message);

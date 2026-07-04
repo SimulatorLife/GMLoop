@@ -488,7 +488,8 @@ export const ConflictType = Object.freeze({
     MISSING_SYMBOL: "missing_symbol",
     LARGE_RENAME: "large_rename",
     MANY_DEPENDENTS: "many_dependents",
-    ANALYSIS_ERROR: "analysis_error"
+    ANALYSIS_ERROR: "analysis_error",
+    SEMANTIC_GAP: "semantic_gap"
 } as const);
 
 export type ConflictTypeValue = (typeof ConflictType)[keyof typeof ConflictType];

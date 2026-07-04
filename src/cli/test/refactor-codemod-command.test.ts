@@ -2482,7 +2482,9 @@ void test("refactor codemod --write skips constructor static member renames with
             cwd: projectRoot
         });
 
-        assert.equal(result.exitCode, 0);
+        assert.notEqual(result.exitCode, 0);
+        assert.match(result.stdout + result.stderr, /Unresolved same-name bare call 'Reset'/);
+
         const stateSource = await readFile(
             path.join(projectRoot, "scripts/generator_state/generator_state.gml"),
             "utf8"
@@ -2491,7 +2493,7 @@ void test("refactor codemod --write skips constructor static member renames with
 
         assert.match(stateSource, /static Reset = function\(\) \{/);
         assert.match(stateSource, /\n {4}Reset\(\);\n/u);
-        assert.match(initializeSource, /with \(_generatorState\) \{\n {8}Reset\(\);\n {4}\}/u);
+        assert.match(initializeSource, /with \(_generator_state\) \{\n {8}Reset\(\);\n {4}\}/u);
 
         await assertProjectGmlFilesParse(projectRoot);
     } finally {

@@ -652,6 +652,8 @@ export class GmlSemanticBridge {
         Array<Pick<SymbolOccurrence, "end" | "path" | "start">>
     > | null = null;
     private enumNames: ReadonlySet<string> | null = null;
+    private scriptNames: ReadonlySet<string> | null = null;
+    private macroNames: ReadonlySet<string> | null = null;
     private indexes: SemanticBridgeIndexes | null = null;
     private projectMetadataReferenceIndex: ProjectMetadataReferenceIndex | null = null;
     private macroBodyReferencesByExactName: Map<
@@ -705,6 +707,8 @@ export class GmlSemanticBridge {
         this.localNamingCategoryResolver.clear();
         this.constructorRuntimeTypeReferencesByExactName = null;
         this.enumNames = null;
+        this.scriptNames = null;
+        this.macroNames = null;
         this.macroBodyReferencesByExactName = null;
         this.scriptResourceIndexes = null;
         this.clearWorkspaceOverlay();
@@ -1231,6 +1235,48 @@ export class GmlSemanticBridge {
         }
 
         return this.deduplicateOccurrences(this.normalizeSourceBackedGmlOccurrences(symbolName, occurrences));
+    }
+
+    checkSemanticGaps(symbolName: string): Array<{ message: string; path?: string }> {
+        const indexes = this.getIndexes();
+        const isGlobalSymbol =
+            this.findResourceByName(symbolName) !== null ||
+            this.getEnumNames().has(symbolName) ||
+            this.getMacroNames().has(symbolName) ||
+            this.getScriptNames().has(symbolName);
+
+        if (isGlobalSymbol) {
+            return [];
+        }
+
+        const gaps: Array<{ message: string; path?: string }> = [];
+        const unresolved = indexes.unresolvedReferencesByExactName.get(symbolName) ?? [];
+
+        for (const unresolvedReference of unresolved) {
+            const start = readSemanticLocationIndex(unresolvedReference.reference.start);
+            const end = readExclusiveSemanticLocationIndex(unresolvedReference.reference.end);
+            if (start === null || end === null || end <= start) {
+                continue;
+            }
+
+            const classifications = Core.asArray(unresolvedReference.reference.classifications);
+            const isProperty = classifications.includes("property");
+            const isBareCall = this.isBareCallReferenceSourceMatch(unresolvedReference.filePath, start, end);
+
+            if (isProperty && this.isKnownEnumMemberReference(unresolvedReference.filePath, start)) {
+                continue;
+            }
+
+            if (isProperty || isBareCall) {
+                const typeLabel = isProperty ? "property access" : "bare call";
+                gaps.push({
+                    message: `Unresolved same-name ${typeLabel} '${symbolName}' in ${unresolvedReference.filePath} at position ${start}-${end}`,
+                    path: unresolvedReference.filePath
+                });
+            }
+        }
+
+        return gaps;
     }
 
     private collectMacroBodyReferenceOccurrences(symbolName: string, occurrences: Array<SymbolOccurrence>): void {
@@ -3554,10 +3600,7 @@ export class GmlSemanticBridge {
     ): Array<SymbolOccurrence> {
         const entry = this.findConstructorStaticMemberEntryForDeclaration(filePath, declaration);
         if (entry !== null) {
-            const occurrences = this.collectEntryOccurrences(entry);
-            return this.hasUnresolvedConstructorStaticMemberReferencesOutsideEntry(entry, occurrences)
-                ? []
-                : occurrences;
+            return this.collectEntryOccurrences(entry);
         }
 
         const declarationOccurrence = createIdentifierTokenOccurrence({
@@ -4260,6 +4303,52 @@ export class GmlSemanticBridge {
 
         this.enumNames = enumNames;
         return enumNames;
+    }
+
+    private getScriptNames(): ReadonlySet<string> {
+        const cachedScriptNames = this.scriptNames;
+        if (cachedScriptNames !== null) {
+            return cachedScriptNames;
+        }
+
+        const scriptNames = new Set<string>();
+        for (const entry of Object.values(this.identifiers.scripts ?? {})) {
+            if (typeof entry?.name === "string") {
+                scriptNames.add(entry.name);
+            }
+            if (Array.isArray(entry?.declarations)) {
+                for (const decl of entry.declarations) {
+                    const classifications = Core.asArray(decl.classifications);
+                    if ((
+                        classifications.includes("script") ||
+                        classifications.includes("constructor") ||
+                        classifications.includes("function")
+                    ) && typeof decl.name === "string") {
+                            scriptNames.add(decl.name);
+                        }
+                }
+            }
+        }
+
+        this.scriptNames = scriptNames;
+        return scriptNames;
+    }
+
+    private getMacroNames(): ReadonlySet<string> {
+        const cachedMacroNames = this.macroNames;
+        if (cachedMacroNames !== null) {
+            return cachedMacroNames;
+        }
+
+        const macroNames = new Set<string>();
+        for (const entry of Object.values(this.identifiers.macros ?? {})) {
+            if (typeof entry?.name === "string") {
+                macroNames.add(entry.name);
+            }
+        }
+
+        this.macroNames = macroNames;
+        return macroNames;
     }
 
     private findResourceByName(name: string, caseInsensitive = false): any {
