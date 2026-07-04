@@ -4319,13 +4319,14 @@ export class GmlSemanticBridge {
             if (Array.isArray(entry?.declarations)) {
                 for (const decl of entry.declarations) {
                     const classifications = Core.asArray(decl.classifications);
-                    if ((
-                        classifications.includes("script") ||
-                        classifications.includes("constructor") ||
-                        classifications.includes("function")
-                    ) && typeof decl.name === "string") {
-                            scriptNames.add(decl.name);
-                        }
+                    if (
+                        (classifications.includes("script") ||
+                            classifications.includes("constructor") ||
+                            classifications.includes("function")) &&
+                        typeof decl.name === "string"
+                    ) {
+                        scriptNames.add(decl.name);
+                    }
                 }
             }
         }

@@ -326,6 +326,7 @@ function processLocalNamingConventionRename(parameters: {
     suggestedName: string;
     workspace: WorkspaceEdit;
     warnings: Array<string>;
+    errors: Array<string>;
     localScopeNames: Map<string, Map<string, number>>;
     localDeclarationRenameDecisions: LocalDeclarationRenameDecisionByScope;
     macroDependencyNamesByFile: MacroDependencyNamesByFile | null;
@@ -333,6 +334,7 @@ function processLocalNamingConventionRename(parameters: {
     hasDuplicateScopedDeclarations: boolean;
     globalAssetNames?: ReadonlySet<string>;
     reservedOrdinaryNames: ReadonlySet<string>;
+    semanticGapChecker: SemanticGapChecker;
 }): number {
     const { target, suggestedName } = parameters;
     const needsScopeKey = parameters.hasDuplicateScopedDeclarations || parameters.localScopeNames.size > 0;
@@ -461,6 +463,45 @@ function processLocalNamingConventionRename(parameters: {
         return 0;
     }
 
+    // Block the rename when semantic analysis cannot prove the rename is safe.
+    // Unresolved same-name property accesses and bare calls indicate that the
+    // semantic index does not have enough information to decide whether renaming
+    // the declaration is correct (e.g., a bare call inside `with`, an unknown
+    // receiver type, or an implicit `self` access on a typed receiver). Rather
+    // than silently skipping the rename, surface the gap as a hard error so the
+    // caller can resolve the underlying semantic project-index gap before
+    // continuing. The renames block is applied atomically, so a single gap
+    // blocks the entire codemod run and prevents mixed old/new identifiers from
+    // being written to disk.
+    //
+    // Implicit instance variable targets (category `instanceVariable`) are an
+    // exception: the implicit-instance-variable collector already widens the
+    // rename to every same-name reference inside the owning object directory
+    // (and its inherited descendants), so the unresolved dotted property
+    // accesses that `checkSemanticGaps` reports are part of the rename's
+    // already-collected occurrence set. Re-flagging them as gaps would block
+    // valid renames without any safety benefit, so we skip the gap check for
+    // that category and rely on the collector's coverage instead.
+    if (target.category !== "instanceVariable") {
+        const semanticGaps = parameters.semanticGapChecker(target.name);
+        if (semanticGaps.length > 0) {
+            for (const gap of semanticGaps) {
+                parameters.errors.push(gap.message);
+            }
+            if (scopeKey !== null && declarationKey !== null) {
+                const ensuredScopeDecisions = ensureScopeRenameDecisions(
+                    parameters.localDeclarationRenameDecisions,
+                    scopeKey
+                );
+                ensuredScopeDecisions.set(declarationKey, {
+                    shouldApply: false,
+                    suggestedName
+                });
+            }
+            return 0;
+        }
+    }
+
     for (const occurrence of target.occurrences) {
         parameters.workspace.addEdit(occurrence.path, occurrence.start, occurrence.end, suggestedName);
     }
@@ -488,6 +529,9 @@ type TopLevelRenameSelection = {
     warnings: Array<string>;
     errors: Array<string>;
 };
+
+type SemanticGap = Readonly<{ message: string; path?: string }>;
+type SemanticGapChecker = (symbolName: string) => ReadonlyArray<SemanticGap>;
 
 type MacroDependencyNamesByFile = Map<string, Map<string, Set<string>>>;
 type LocalDeclarationRenameDecision = {
@@ -591,7 +635,12 @@ async function selectExecutableTopLevelRenames(
         warnings.push(...validation.warnings.map((warning) => `${rename.symbolId}: ${warning}`));
 
         if (!validation.valid) {
-            errors.push(formatTopLevelRenameSkipWarning(rename, validation.errors.join("; ")));
+            // Top-level renames can fail validation for many reasons (reserved identifiers,
+            // shadowing, semantic gaps, etc.). Each failure corresponds to one skipped
+            // rename rather than a codemod-wide failure, so surface them as warnings.
+            // Hard-blocking concerns (such as missing built-in index information) are
+            // surfaced through `errors` separately and prevent the codemod from running.
+            warnings.push(formatTopLevelRenameSkipWarning(rename, validation.errors.join("; ")));
             continue;
         }
 
@@ -1000,6 +1049,29 @@ export async function planNamingConventionCodemod(
     const topLevelRenames: Array<{ symbolId: string; newName: string }> = [];
     const seenTopLevelRenames = new Set<string>();
     let localRenameCount = 0;
+
+    // Cache semantic-gap lookups so we never call the semantic bridge more than
+    // once per symbol name within a single naming-convention run. Without this,
+    // a target that appears in many declarations would re-run the same index
+    // query and amplify the cost of large batches.
+    const cachedSemanticGaps = new Map<string, ReadonlyArray<SemanticGap>>();
+    const semanticGapChecker: SemanticGapChecker = (symbolName: string): ReadonlyArray<SemanticGap> => {
+        if (typeof (semantic as { checkSemanticGaps?: unknown } | null)?.checkSemanticGaps !== "function") {
+            return [];
+        }
+        const cached = cachedSemanticGaps.get(symbolName);
+        if (cached !== undefined) {
+            return cached;
+        }
+        const result = (
+            semantic as unknown as {
+                checkSemanticGaps(name: string): ReadonlyArray<SemanticGap>;
+            }
+        ).checkSemanticGaps(symbolName);
+        const normalized = Array.isArray(result) ? result : [];
+        cachedSemanticGaps.set(symbolName, normalized);
+        return normalized;
+    };
     const isSelectedTargetPath = createPathSelectionMatcher(parameters.projectRoot, parameters.targetPaths, []);
     const selectedWholeProject =
         includesWholeProjectSelection(parameters.projectRoot, parameters.targetPaths) && !tracksLocalTargets;
@@ -1125,13 +1197,15 @@ export async function planNamingConventionCodemod(
             suggestedName: evaluation.suggestedName,
             workspace,
             warnings,
+            errors,
             localScopeNames,
             localDeclarationRenameDecisions,
             macroDependencyNamesByFile,
             duplicateScopedDeclarations,
             hasDuplicateScopedDeclarations,
             globalAssetNames,
-            reservedOrdinaryNames
+            reservedOrdinaryNames,
+            semanticGapChecker
         });
     }
 

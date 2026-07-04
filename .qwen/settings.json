@@ -3,11 +3,8 @@
   "model": {
     "name": "MiniMax-M3",
     "skipLoopDetection": true,
-    "skipStartupContext": true,
-    "maxSessionTurns": 900,
-    "chatCompression": {
-      "contextPercentageThreshold": 0.5
-    }
+    "skipStartupContext": false,
+    "maxSessionTurns": 900
   },
   "tools": {
     "approvalMode": "yolo"
@@ -18,38 +15,43 @@
     }
   },
   "modelProviders": {
-    "openai": [
-      {
-        "id": "qwen3:1.7b",
-        "name": "Qwen3 1.7B via Ollama",
-        "envKey": "OPENAI_API_KEY",
-        "baseUrl": "http://127.0.0.1:11434/v1",
-        "generationConfig": {
-          "timeout": 900000,
-          "maxRetries": 2,
-          "contextWindowSize": 32768,
-          "samplingParams": {
-            "max_tokens": 1536
+    "openai": {
+      "protocol": "openai",
+      "models": [
+        {
+          "id": "qwen3:1.7b",
+          "name": "Qwen3 1.7B via Ollama",
+          "envKey": "OPENAI_API_KEY",
+          "baseUrl": "http://127.0.0.1:11434/v1",
+          "generationConfig": {
+            "timeout": 900000,
+            "maxRetries": 2,
+            "contextWindowSize": 32768,
+            "samplingParams": {
+              "max_tokens": 1536
+            }
+          }
+        },
+        {
+          "id": "MiniMax-M3",
+          "envKey": "OPENAI_API_KEY",
+          "baseUrl": "https://api.minimax.io/v1",
+          "generationConfig": {
+            "timeout": 300000,
+            "enableCacheControl": true,
+            "contextWindowSize": 524288,
+            "maxRetries": 3,
+            "samplingParams": {
+              "top_p": 0.9,
+              "temperature": 0.2
+            },
+            "extra_body": {
+              "reasoning_split": true
+            }
           }
         }
-      },
-      {
-        "id": "MiniMax-M3",
-        "envKey": "OPENAI_API_KEY",
-        "baseUrl": "https://api.minimax.io/v1",
-        "generationConfig": {
-          "timeout": 900000,
-          "enableCacheControl": true,
-          "contextWindowSize": 524288,
-          "maxRetries": 3,
-          "samplingParams": {
-            "top_p": 0.9,
-            "temperature": 0.2,
-            "max_tokens": 4096
-          }
-        }
-      }
-    ]
+      ]
+    }
   },
   "permissions": {
     "allow": [
@@ -58,8 +60,8 @@
       "Write",
       "Grep",
       "ListFiles",
-      "Agent",
       "Glob",
+
       "Bash(pwd)",
       "Bash(ls *)",
       "Bash(mv *)",
@@ -86,7 +88,10 @@
     "deny": [
       "web_search",
       "WebFetch",
+
       "ask_user_question",
+      "Agent",
+
       "Bash(git checkout*)",
       "Bash(git switch*)",
       "Bash(git restore*)",
@@ -145,13 +150,14 @@
   "general": {
     "enableAutoUpdate": true,
     "checkpointing": {
-      "enabled": false
+      "enabled": true
     }
   },
   "privacy": {
     "usageStatisticsEnabled": false
   },
   "context": {
+    "autoCompactThreshold": 0.5,
     "fileName": [
       "AGENTS.md",
       "docs/README.md"
