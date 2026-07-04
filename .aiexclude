@@ -1,9 +1,6 @@
-.aiderignore
 .qwenignore
 .geminiignore
 .aiexclude
-
-.aider.conf.yml
 
 .qwen/
 .gemini/

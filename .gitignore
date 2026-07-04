@@ -205,6 +205,5 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
-.aider*
 
 .agents/skills/repomix-reference-gmloop/

@@ -23,7 +23,6 @@
 			".qwen/**": "deny",
 			"opencode.jsonc": "deny",
 			".editorconfig": "deny",
-			".aider.conf.yml": "deny",
 			".nvmrc": "deny",
 			"pnpm-lock.yaml": "deny",
 			".gitmodules": "deny",

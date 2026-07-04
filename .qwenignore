@@ -1,5 +1,4 @@
 .gitattributes
-.aiderignore
 
 scripts/
 reports/
@@ -7,8 +6,6 @@ vendor/
 resources/
 docs/
 
-.aider.conf.yml
-.aiderignore
 .qwenignore
 AGENTS.md
 GEMINI.md

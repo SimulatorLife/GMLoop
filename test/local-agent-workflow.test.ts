@@ -81,51 +81,6 @@ function getRequiredChildWorkflowCommand(source: string, inputName: string): str
     return source.slice(start, end);
 }
 
-function getRequiredAiderCommand(source: string): string {
-    const commandStartIndex = source.indexOf("stdbuf -oL -eL aider \\");
-    assert.notEqual(commandStartIndex, -1, "Aider workflow must invoke aider with explicit CLI flags.");
-
-    const commandTail = source.slice(commandStartIndex);
-    const commandLines = commandTail.split("\n");
-    const capturedCommandLines: string[] = [];
-
-    for (const line of commandLines) {
-        if (capturedCommandLines.length > 0 && line.includes("| tee ")) {
-            capturedCommandLines.push(line);
-            break;
-        }
-        if (capturedCommandLines.length > 0 || line.includes("stdbuf -oL -eL aider")) {
-            capturedCommandLines.push(line);
-        }
-    }
-
-    assert.ok(capturedCommandLines.length > 0, "Aider workflow command block must not be empty.");
-
-    return capturedCommandLines.join("\n");
-}
-
-function assertAiderCommandIncludesRequiredFlags(commandSource: string): void {
-    const commandLines = commandSource
-        .split("\n")
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0);
-    const requiredFlags = [
-        "--yes-always",
-        "--no-browser",
-        "--subtree-only",
-        "--no-auto-commits",
-        "--no-dirty-commits",
-        "--message"
-    ];
-
-    for (const requiredFlag of requiredFlags) {
-        assert.ok(
-            commandLines.some((line) => line.includes(requiredFlag)),
-            `Aider command must include ${requiredFlag}.`
-        );
-    }
-}
-
 function assertWorkflowDispatchesToReusableAgent(source: string, agentName: string): void {
     assert.match(
         source,
@@ -176,45 +131,6 @@ void test("qwen invoke uses checked-in settings for local model selection", asyn
     );
 });
 
-void test("aider invoke is the single local-only Aider workflow", async () => {
-    const source = await readWorkflowSource("aider-invoke.yml");
-    const parentSource = await readWorkflowSource("agent-invoke.yml");
-    const workflowFileNames = await readdir(path.resolve(process.cwd(), ".github/workflows"));
-    const sharedPrompt = getRequiredSharedAgentPrompt(parentSource);
-    const setupCommand = getRequiredChildWorkflowCommand(source, "agent_setup_command");
-    const agentCommand = getRequiredChildWorkflowCommand(source, "agent_command");
-    const aiderCommand = getRequiredAiderCommand(source);
-
-    assert.match(source, /name: '▶️ Aider Invoke'/u);
-    assertWorkflowDispatchesToReusableAgent(source, "aider");
-    assert.doesNotMatch(source, /max_agent_retries:/u);
-    assert.doesNotMatch(source, /agent_cli:/u);
-    assert.match(setupCommand, /pull_aider_configured_model\(\)/u);
-    assert.match(setupCommand, /\.aider\.conf\.yml/u);
-    assert.match(setupCommand, /ollama_model="\$\{configured_model#openai\/\}"/u);
-    assert.match(setupCommand, /ollama pull "\$\{ollama_model\}"/u);
-    assert.doesNotMatch(agentCommand, /ollama pull/u);
-    assert.doesNotMatch(agentCommand, /command -v aider/u);
-    assert.doesNotMatch(agentCommand, /pip install --user aider-chat/u);
-    assert.doesNotMatch(agentCommand, /HOME\/\.local\/bin/u);
-    assert.doesNotMatch(agentCommand, /Could not install Aider CLI/u);
-    assertPromptEnforcesCommandGroundedEditLoop(sharedPrompt);
-    assert.match(agentCommand, /--message-file "\$\{AGENT_PROMPT_FILE\}"/u);
-    assert.doesNotMatch(source, /AIDER_TASK_MESSAGE_FILE/u);
-    assert.doesNotMatch(source, /--message "\$\(cat/u);
-    assert.ok(
-        source.lastIndexOf("agent_setup_command") < source.indexOf("agent_command"),
-        "Aider must pull the configured local model before invoking the CLI."
-    );
-    assertAiderCommandIncludesRequiredFlags(aiderCommand);
-    assert.match(source, /aider_status="\$\{PIPESTATUS\[0\]\}"/u);
-    assert.doesNotMatch(source, /Aider completed without producing local file changes/u);
-    assert.doesNotMatch(source, /OPENAI_API_TYPE/u);
-    assert.doesNotMatch(source, /@aider-local/u);
-    assert.doesNotMatch(source, /--model/u);
-    assert.ok(!workflowFileNames.includes("aider-local-code-tasks.yml"));
-});
-
 void test("agent invoke validates local OpenAI-compatible endpoint without loading models", async () => {
     const source = await readWorkflowSource("agent-invoke.yml");
 
@@ -223,7 +139,6 @@ void test("agent invoke validates local OpenAI-compatible endpoint without loadi
     assert.doesNotMatch(source, /agent_cli:/u);
     assert.doesNotMatch(source, /inputs\.agent_cli/u);
     assert.doesNotMatch(source, /\.qwen\/settings\.json/u);
-    assert.doesNotMatch(source, /\.aider\.conf\.yml/u);
     assert.doesNotMatch(source, /LOCAL_MODEL/u);
     assert.doesNotMatch(source, /ollama pull/u);
     assert.doesNotMatch(source, /chat\/completions/u);
@@ -235,20 +150,6 @@ void test("agent invoke validates local OpenAI-compatible endpoint without loadi
     assert.doesNotMatch(source, /\.data \| type == "array"/u);
     assert.ok(source.includes('echo "OPENAI_BASE_URL=${OPENAI_BASE_URL}" >> "$GITHUB_ENV"'));
     assert.ok(source.includes('echo "OPENAI_API_KEY=${OPENAI_API_KEY}" >> "$GITHUB_ENV"'));
-});
-
-void test("agent invoke exports OpenAI API type for every child agent", async () => {
-    const parentSource = await readWorkflowSource("agent-invoke.yml");
-    const aiderSource = await readWorkflowSource("aider-invoke.yml");
-
-    assert.match(
-        parentSource,
-        /env:\n\s+OPENAI_API_TYPE: openai\n\s+OPENAI_BASE_URL: \$\{\{ inputs\.openai_base_url \}\}/u
-    );
-    assert.match(parentSource, /OPENAI_API_KEY: \$\{\{ secrets\.OPENAI_API_KEY \|\| 'ollama' \}\}/u);
-    assert.doesNotMatch(parentSource, /NODE_OPTIONS: --max-old-space-size/u);
-    assert.doesNotMatch(aiderSource, /export OPENAI_API_TYPE=/u);
-    assert.doesNotMatch(aiderSource, /--set-env OPENAI_API_TYPE=openai/u);
 });
 
 void test("agent invoke streams custom command output while preserving exit status", async () => {
@@ -376,7 +277,7 @@ void test("agent invoke closes only empty PRs on expected agent branches after r
     assert.match(source, /if \[ "\$\{changed_files\}" != "0" \]; then/u);
     assert.match(
         source,
-        /codex\/task-\*\|copilot\/task-\*\|gemini\/task-\*\|qwen\/task-\*\|qwen-local\/task-\*\|aider\/task-\*/u
+        /codex\/task-\*\|copilot\/task-\*\|gemini\/task-\*\|qwen\/task-\*\|qwen-local\/task-\*/u
     );
     assert.match(
         source,
