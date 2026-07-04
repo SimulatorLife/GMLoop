@@ -21,6 +21,18 @@
 
 ----
 
+## Agent loop prevention
+
+- Do not repeat the same tool call with the same arguments after it returns the same result.
+- After two failed attempts at the same fix, think and explain the blocker instead of trying a third similar edit.
+- After each validation failure, identify one new fact learned before running validation again.
+- Do not rerun the same validation command unless at least one relevant file changed or a new hypothesis is being tested.
+- Prefer a smaller failing test or focused command before rerunning the full suite.
+- If blocked by missing context, report the exact missing fact and the safest next action.
+- End with one of these states: fixed, partially fixed, blocked, or needs human decision.
+
+----
+
 ## Code Style & Quality
 - Keep individual source files under ~1000 lines of executable code (excluding comments, blank lines, and imports) by splitting or moving functionality into additional files as needed, organizing related pieces into sub-directories when appropriate and exposing them through a clear, shared interface so the structure remains coherent and discoverable.
 - When fixing lint/test errors/failures, your goal is **NOT** simply to perform minimal fixes that merely silence type/lint/test errors. Instead, you must drive the codebase toward a well-architected, fully typed, de-duplicated, clean, DRY and maintainable design; fix the underlying issues *properly*. You *may* introduce short-term breakage if doing so enables a clearer, more correct, and more coherent long-term structure. Structural correctness overrides temporary stability.

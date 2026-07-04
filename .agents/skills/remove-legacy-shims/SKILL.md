@@ -68,13 +68,7 @@ rg "return\s+[A-Za-z0-9_$.]+\(.*\);" src
 
 - Add or update tests where behavior/entry points changed.
 - Ensure tests do not rely on deprecated names or compatibility paths.
-- Run the repository validation commands unless the change is documentation-only:
-
-```bash
-pnpm run build:ts
-pnpm run lint:quiet
-pnpm run test
-```
+- Run the repository's validation command(s) unless the change is documentation-only.
 
 ## Checklist
 
