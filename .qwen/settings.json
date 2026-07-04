@@ -4,10 +4,15 @@
     "name": "MiniMax-M3",
     "skipLoopDetection": true,
     "skipStartupContext": false,
-    "maxSessionTurns": 900
+    "maxSessionTurns": 900,
+    "enableOpenAILogging": true,
+    "openAILoggingDir": ".qwen/openai-logs"
   },
   "tools": {
-    "approvalMode": "yolo"
+    "approvalMode": "yolo",
+    "computerUse": {
+      "enabled": false
+    }
   },
   "security": {
     "auth": {
@@ -15,43 +20,44 @@
     }
   },
   "modelProviders": {
-    "openai": {
-      "protocol": "openai",
-      "models": [
-        {
-          "id": "qwen3:1.7b",
-          "name": "Qwen3 1.7B via Ollama",
-          "envKey": "OPENAI_API_KEY",
-          "baseUrl": "http://127.0.0.1:11434/v1",
-          "generationConfig": {
-            "timeout": 900000,
-            "maxRetries": 2,
-            "contextWindowSize": 32768,
-            "samplingParams": {
-              "max_tokens": 1536
-            }
+    "openai": [
+      {
+        "id": "qwen3:1.7b",
+        "name": "Qwen3 1.7B via Ollama",
+        "envKey": "OPENAI_API_KEY",
+        "baseUrl": "http://127.0.0.1:11434/v1",
+        "generationConfig": {
+          "timeout": 900000,
+          "maxRetries": 2,
+          "contextWindowSize": 32768,
+          "samplingParams": {
+            "max_tokens": 1536
           }
-        },
-        {
-          "id": "MiniMax-M3",
-          "envKey": "OPENAI_API_KEY",
-          "baseUrl": "https://api.minimax.io/v1",
-          "generationConfig": {
-            "timeout": 300000,
-            "enableCacheControl": true,
-            "contextWindowSize": 524288,
-            "maxRetries": 3,
-            "samplingParams": {
-              "top_p": 0.9,
-              "temperature": 0.2
-            },
-            "extra_body": {
-              "reasoning_split": true
+        }
+      },
+      {
+        "id": "MiniMax-M3",
+        "envKey": "OPENAI_API_KEY",
+        "baseUrl": "https://api.minimax.io/v1",
+        "generationConfig": {
+          "timeout": 300000,
+          "enableCacheControl": true,
+          "contextWindowSize": 524288,
+          "maxRetries": 3,
+          "samplingParams": {
+            "top_p": 0.9,
+            "temperature": 0.2
+          },
+          "extra_body": {
+            "enable_thinking": true,
+            "reasoning_split": false,
+            "thinking": {
+              "type": "adaptive"
             }
           }
         }
-      ]
-    }
+      }
+    ]
   },
   "permissions": {
     "allow": [
@@ -61,7 +67,6 @@
       "Grep",
       "ListFiles",
       "Glob",
-
       "Bash(pwd)",
       "Bash(ls *)",
       "Bash(mv *)",
@@ -88,10 +93,8 @@
     "deny": [
       "web_search",
       "WebFetch",
-
       "ask_user_question",
       "Agent",
-
       "Bash(git checkout*)",
       "Bash(git switch*)",
       "Bash(git restore*)",
@@ -111,36 +114,29 @@
       "Bash(python3 *)",
       "Bash(perl *)",
       "Bash(ruby *)",
-
       "Read(/dist/**)",
       "Read(/**/dist/**)",
       "Edit(/dist/**)",
       "Edit(/**/dist/**)",
-
       "Read(/node_modules/**)",
       "Read(/**/node_modules/**)",
       "Edit(/node_modules/**)",
       "Edit(/**/node_modules/**)",
-
       "Read(/.pnpm-store/**)",
       "Read(/**/.pnpm-store/**)",
       "Edit(/.pnpm-store/**)",
       "Edit(/**/.pnpm-store/**)",
-
       "Read(/*.gml)",
       "Read(/**/*.gml)",
       "Edit(/*.gml)",
       "Edit(/**/*.gml)",
-
       "Edit(/*.yy)",
       "Edit(/**/*.yy)",
       "Edit(/*.yyp)",
       "Edit(/**/*.yyp)",
-
       "Edit(/src/parser/.antlr/**)",
       "Edit(resources/**)",
       "Edit(/src/parser/generated/**)",
-
       "Read(resources/antlr/**)",
       "Edit(vendor/**)",
       "Read(scripts/**)",
@@ -157,7 +153,7 @@
     "usageStatisticsEnabled": false
   },
   "context": {
-    "autoCompactThreshold": 0.5,
+    "autoCompactThreshold": 0.6,
     "fileName": [
       "AGENTS.md",
       "docs/README.md"
@@ -177,7 +173,10 @@
   "mcpServers": {
     "lsp": {
       "command": "pnpm",
-      "args": ["exec", "lsp-mcp-server"],
+      "args": [
+        "exec",
+        "lsp-mcp-server"
+      ],
       "timeout": 600000,
       "trust": true
     },
@@ -195,7 +194,9 @@
     },
     "gmloop": {
       "command": "gmloop",
-      "args": ["mcp"],
+      "args": [
+        "mcp"
+      ],
       "trust": true,
       "env": {
         "GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS": true
@@ -203,7 +204,10 @@
     },
     "gm-cli": {
       "command": "gmloop",
-      "args": ["gm-cli", "mcp"],
+      "args": [
+        "gm-cli",
+        "mcp"
+      ],
       "trust": true,
       "env": {
         "GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS": true

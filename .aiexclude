@@ -11,6 +11,8 @@
 .gmloop/
 .playwright-mcp/
 .gmcache/
+cache/
+**/cache/
 
 scripts/
 vendor/
