@@ -1,9 +1,8 @@
 import type { Logger } from "../runtime/logger.js";
 import type { PatchApplicator } from "../runtime/types.js";
 import { getHighResolutionTime } from "../timing.js";
+import { evaluatePatchQueueAdmission } from "./patch-queue-admission-policy.js";
 import type { PatchQueueMetrics, PatchQueueState, WebSocketClientState, WebSocketConnectionMetrics } from "./types.js";
-
-const QUEUE_COMPACTION_THRESHOLD_MULTIPLIER = 2;
 
 /**
  * Create a fresh connection-metrics snapshot for a websocket client.
@@ -55,6 +54,68 @@ export function createPatchQueueState(): PatchQueueState {
 }
 
 /**
+ * Apply the admission policy decision produced by
+ * {@link evaluatePatchQueueAdmission} to a queue array and its head cursor.
+ *
+ * This helper is the single bridge between the pure policy evaluator and the
+ * mechanism's side effects. Both queue admission sites
+ * (`enqueuePendingPatchUntilRuntimeReady` and
+ * `enqueuePatchForDeferredFlush`) call this helper instead of inlining their
+ * own threshold math, so the policy and the mutation that enacts it cannot
+ * drift apart.
+ *
+ * The helper deliberately reads the head cursor through a getter and writes
+ * it through a setter so the caller can keep the cursor in whatever storage
+ * shape it owns (a plain field, a `PatchQueueState`, the websocket state
+ * itself). On a `"drop-oldest"` decision the helper:
+ *
+ *   1. invokes the setter with the policy's `newHeadIndex`, and
+ *   2. if the policy reports `compactUnderlyingArray`, replaces the queue
+ *      array with a compacted slice and resets the head cursor to `0` by
+ *      invoking the setter a second time.
+ *
+ * The return value tells the caller whether a drop actually happened so it
+ * can update derived counters such as `totalDropped`. `"admitted"` covers
+ * the "queue has room" path and the duplicate-replaced path (which never
+ * reaches the helper).
+ *
+ * @param queue The queue array to mutate in place when compaction is required.
+ * @param readHead Function returning the current head cursor.
+ * @param writeHead Function that updates the head cursor.
+ * @param maxSize The configured queue ceiling used to evaluate the decision.
+ * @returns `"dropped"` when the oldest live entry was evicted, `"admitted"`
+ *          otherwise.
+ */
+function applyAdmissionDecision(
+    queue: Array<unknown>,
+    readHead: () => number,
+    writeHead: (newHead: number) => void,
+    maxSize: number
+): "admitted" | "dropped" {
+    const headIndex = readHead();
+    const effectiveSize = queue.length - headIndex;
+
+    const decision = evaluatePatchQueueAdmission({
+        effectiveSize,
+        headIndex,
+        maxSize
+    });
+
+    if (decision.action === "admit") {
+        return "admitted";
+    }
+
+    writeHead(decision.newHeadIndex);
+
+    if (decision.compactUnderlyingArray) {
+        queue.splice(0, decision.newHeadIndex);
+        writeHead(0);
+    }
+
+    return "dropped";
+}
+
+/**
  * Record the arrival of an incoming patch payload on the websocket client.
  *
  * @param state The mutable client state to update.
@@ -83,16 +144,14 @@ export function enqueuePendingPatchUntilRuntimeReady(
         return;
     }
 
-    const effectivePendingCount = state.pendingPatches.length - state.pendingPatchHead;
-    if (effectivePendingCount >= maxPendingPatches) {
-        state.pendingPatchHead += 1;
-
-        const compactionThreshold = maxPendingPatches * QUEUE_COMPACTION_THRESHOLD_MULTIPLIER;
-        if (state.pendingPatchHead >= compactionThreshold) {
-            state.pendingPatches = state.pendingPatches.slice(state.pendingPatchHead);
-            state.pendingPatchHead = 0;
-        }
-    }
+    applyAdmissionDecision(
+        state.pendingPatches,
+        () => state.pendingPatchHead,
+        (newHead) => {
+            state.pendingPatchHead = newHead;
+        },
+        maxPendingPatches
+    );
 
     state.pendingPatches.push(patch);
 }
@@ -127,17 +186,17 @@ export function enqueuePatchForDeferredFlush(
         queueMetrics.totalDeduplicated += 1;
     }
 
-    const effectiveQueueSize = queueState.queue.length - queueState.queueHead;
+    const admissionResult = applyAdmissionDecision(
+        queueState.queue,
+        () => queueState.queueHead,
+        (newHead) => {
+            queueState.queueHead = newHead;
+        },
+        maxQueueSize
+    );
 
-    if (effectiveQueueSize >= maxQueueSize) {
-        queueState.queueHead += 1;
+    if (admissionResult === "dropped") {
         queueMetrics.totalDropped += 1;
-
-        const compactionThreshold = maxQueueSize * QUEUE_COMPACTION_THRESHOLD_MULTIPLIER;
-        if (queueState.queueHead >= compactionThreshold) {
-            queueState.queue = queueState.queue.slice(queueState.queueHead);
-            queueState.queueHead = 0;
-        }
     }
 
     queueState.queue.push(patch);
