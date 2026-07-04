@@ -9,7 +9,11 @@
     "openTelemetry": false,
   },
   // Default model
-  "model": "openai/gpt-5.4",
+  // "model": "minimax/MiniMax-M3",
+  // "small_model": "minimax/MiniMax-M3",
+  "model": "openai-compatible/MiniMax-M3",
+  "small_model": "openai-compatible/MiniMax-M3",
+  "default_agent": "code",
   "permission": {
     "*": {
       "*": "allow",
@@ -17,78 +21,84 @@
       "**/dist/**": "deny",
       "node_modules/**": "deny",
       "**/node_modules/**": "deny",
+      ".pnpm-store/**": "deny",
+      "**/.pnpm-store/**": "deny",
+      ".gmloop/**": "deny",
+      "**/.gmloop/**": "deny",
       ".git/**": "deny",
       ".codex/**": "deny",
-      ".gmloop/**": "deny",
       ".qwen/**": "deny",
-      "opencode.jsonc": "deny",
-      ".editorconfig": "deny",
-      ".nvmrc": "deny",
-      "pnpm-lock.yaml": "deny",
-      ".gitmodules": "deny",
+      ".kilo/**": "deny",
+      ".kilocode/**": "deny",
+      ".gemini/**": "deny",
       ".vscode/**": "deny",
       ".husky/**": "deny",
-      ".pnpm-store/**": "deny",
       ".github/**": "deny",
-      ".gemini/**": "deny",
-      ".prettier*": "deny",
+      ".editorconfig": "deny",
+      ".nvmrc": "deny",
+      ".gitmodules": "deny",
       ".aiexclude": "deny",
+      ".prettier*": "deny",
+      "opencode.jsonc": "deny",
+      "pnpm-lock.yaml": "deny",
       "scripts/**": "deny",
-      "**/*.js": "deny",
-      "resources/antlr/**": "deny"
+      "resources/antlr/**": "deny",
+      "**/*.js": "deny"
     },
     "edit": {
       "vendor/**": "deny",
       "AGENTS.md": "deny",
       "eslint.config.js": "deny",
-      "**/*.gml": "deny",
-      "resources/**": "deny",
       ".agents/**": "deny",
-      "src/parser/generated/**": "deny"
+      "resources/**": "deny",
+      "src/parser/generated/**": "deny",
+      "src/parser/.antlr/**": "deny",
+      "**/*.gml": "deny",
+      "**/*.yy": "deny",
+      "**/*.yyp": "deny"
     },
     "grep": "allow",
-    "glob": "allow"
+    "glob": "allow",
+    "list": "allow",
+    "lsp": "allow",
+    "skill": "allow",
+    "webfetch": "deny",
+    "websearch": "deny",
+    "question": "deny",
+    "task": "deny", // Task tool is used to spawn subagents (val. is overwritten for 'code' agent)
   },
   "provider": {
-    "openai": {
-      "models": {
-        "gpt-5.4": {
-          "name": "GPT-5.4",
-          "tool_call": true,
-          "reasoning": true
-        }
-      },
+    "openai-compatible": {
       "options": {
-        "reasoningEffort": "medium",
-        "baseURL": "https://api.openai.com/v1",
-        "apiKey": "{env:OPENAI_API_KEY}"
-      }
-    },
-    "minimax": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "MiniMax",
-      "options": {
-        "reasoningEffort": "low",
-        "textVerbosity": "low",
-        "baseURL": "https://api.minimax.io/v1",
         "apiKey": "{env:MINIMAX_API_KEY}",
+        "baseURL": "https://api.minimax.io/v1",
         "timeout": 300000,
         "chunkTimeout": 60000
       },
       "models": {
         "MiniMax-M3": {
+          "id": "MiniMax-M3",
           "name": "MiniMax M3",
+          "tool_call": true,
+          "reasoning": true,
+          "temperature": true,
           "limit": {
-            "context": 104800,
-            "output": 4096
+            "context": 524288,
+            "input": 500000,
+            "output": 8192
+          },
+          "options": {
+            "thinking": {
+              "type": "adaptive"
+            },
+            "reasoning_split": false
           }
         }
       }
     }
   },
   "instructions": [
-    "AGENTS.md",
-    ".agents/skills/**/*.md"
+    "AGENTS.md"
   ],
   "mcp": {
     "gmloop": {
@@ -106,15 +116,19 @@
     "code": {
       "description": "Default GMLoop implementation agent. Attacks each task from multiple angles using subagents, then integrates the best result.",
       "mode": "primary",
-      "model": "openai/gpt-5.4",
+      "model": "openai-compatible/MiniMax-M3",
       "prompt": "You are the orchestration coding agent for GMLoop. For any and all edits, exploration, test-running, etc. you must invoke the Task tool with 5 parallel gmloop-code-worker subagents to delegate the work. Use the subagents to attack the problem from multiple angles and split the work. Give each subagent a small explicit assignment, scoped area to work within, and ask each to return concise findings, relevant files, recommended changes, risks, and a summary of any/all changes it made. After all subagents return, synthesize their findings, reconcile divergent/duplicate changes, choose the best plan or reconcile conflicts, run relevant validation, and summarize what changed. Preserve GMLoop conventions, prefer existing abstractions, avoid unrelated rewrites, and keep changes scoped. Aim to maintain a swarm of around 5 subagents working in parallel. You cannot write, so you MUST delegate to subagents for all file edits.",
       "permission": {
         "edit": "deny",
         "bash": {
-          "*": "deny"
+          "*": "deny",
+          "git status*": "allow",
+          "git diff*": "allow",
+          "rg *": "allow",
+          "pnpm test*": "allow"
         },
         "task": {
-          "*": "deny",
+          // Can only spawn gmloop-code-worker subagents
           "gmloop-code-worker": "allow"
         }
       }
@@ -122,11 +136,11 @@
     "gmloop-code-worker": {
       "description": "General-purpose GMLoop coding subagent. Use multiple instances of this agent to analyze or implement different aspects of the same task in isolation.",
       "mode": "subagent",
-      "model": "minimax/MiniMax-M3",
-      "prompt": "You are a quick, focused GMLoop code worker running as an isolated subagent to do a single specific task. Complete only the specific assignment given by the parent and then stop. Inspect only relevant files, use existing abstractions, preserve repo conventions, and avoid all unrelated work. Return concise findings, relevant files, recommended changes, risks, and validation suggestions as applicable based on the assignment. If asked to edit, keep changes narrow and summarize exactly what changed. Do not spawn additional subagents.",
+      "model": "openai-compatible/MiniMax-M3",
+      "prompt": "{file:./.agents/prompts/gmloop-code-worker.txt}",
       "steps": 30,
       "hidden": true,
-      "temperature": 0.1,
+      "temperature": 0.9,
       "permission": {
         "task": {
           "*": "deny"
@@ -134,5 +148,15 @@
       }
     }
   },
-  "snapshot": false
+  "snapshot": true,
+  "tool_output": {
+    "max_lines": 1000,
+    "max_bytes": 32768
+  },
+  "compaction": {
+    "auto": true,
+    "prune": true,
+    "tail_turns": 2,
+    "reserved": 8192
+  },
 }
