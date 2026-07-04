@@ -8,7 +8,8 @@ This repository is the source monorepo for various GameMaker Language tools, inc
 - a **gml** to **js** transpiler ([`@gmloop/transpiler`](src/transpiler))
 - HTML5-runtime live reloading ([`@gmloop/runtime-wrapper`](src/runtime-wrapper))
 - a standalone Auto-Game Agent Skills and project-guidance package ([`@gmloop/agent-pack`](src/agent-pack))
-- [parser](src/parser), [semantic analysis](src/semantic), and [CLI](src/cli) workspaces
+- an LSP language server for editors and `lsp-mcp-server` bridges ([`@gmloop/lsp`](src/lsp))
+- [parser](src/parser), [semantic analysis](src/semantic), [CLI](src/cli), and [MCP](src/mcp) workspaces
 
 ## Table of contents
 
@@ -132,6 +133,26 @@ pnpm run cli -- transpile --path /absolute/path/to/MyGame/scripts/scr_demo/scr_d
 pnpm run cli -- transpile --write --path /absolute/path/to/MyGame
 ```
 
+### Language server from a local clone
+
+`@gmloop/lsp` exposes GML code intelligence through a standard Language
+Server Protocol server that speaks JSON-RPC over stdio. The workspace
+builds the `gmloop-lsp` binary and is consumed by editor integrations
+and by `lsp-mcp-server` bridges — the language server is not wrapped by
+the `gmloop` CLI:
+
+```bash
+# build the LSP workspace and run its test suite once
+pnpm --filter @gmloop/lsp run build:types
+pnpm run test:lsp
+
+# run the language server over stdio (launched by an editor or MCP bridge)
+pnpm --filter @gmloop/lsp exec gmloop-lsp
+```
+
+For bridge configuration (`.lsp-mcp.json`, editor wiring) see
+[`docs/gml-lsp.md`](docs/gml-lsp.md) and [`src/lsp/README.md`](src/lsp/README.md).
+
 ## Architecture overview
 
 | Workspace | Path | Responsibility |
@@ -139,6 +160,7 @@ pnpm run cli -- transpile --write --path /absolute/path/to/MyGame
 | `@gmloop/format` | `src/format/` | Formatter-only Prettier plugin surface |
 | `@gmloop/lint` | `src/lint/` | ESLint v9 language plugin + lint rules |
 | `@gmloop/refactor` | `src/refactor/` | Cross-file refactor planning/application |
+| `@gmloop/lsp` | `src/lsp/` | LSP language server bridge for editors and `lsp-mcp-server` |
 | `@gmloop/parser` | `src/parser/` | GML parsing (ANTLR + AST construction) |
 | `@gmloop/semantic` | `src/semantic/` | Project indexing, symbol resolution, and semantic analysis |
 | `@gmloop/transpiler` | `src/transpiler/` | GML -> JavaScript emission |
@@ -405,6 +427,7 @@ Start here for deeper context and plans:
 - [`src/lint/README.md`](src/lint/README.md) (ESLint language plugin + rules)
 - [`src/runtime-wrapper/README.md`](src/runtime-wrapper/README.md) (HTML5 hot-reload bridge)
 - [`src/mcp/README.md`](src/mcp/README.md) (MCP server surface for AI tooling)
+- [`src/lsp/README.md`](src/lsp/README.md) (LSP language server surface) and [`docs/gml-lsp.md`](docs/gml-lsp.md) (LSP usage notes)
 - [`src/fixture-runner/README.md`](src/fixture-runner/README.md) (shared fixture discovery, execution, and profiling framework)
 - [GitHub Releases](https://github.com/SimulatorLife/GMLoop/releases) (project changelog and release notes)
 

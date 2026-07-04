@@ -87,13 +87,12 @@ then return here for deeper context.
 - [Stitch parser assessment](stitch-parser-assessment.md) — Comparative
   evaluation of the Stitch (`bscotch/stitch`) Chevrotain-based GML parser and
   project model, plus the decision notes for keeping the ANTLR-based pipeline.
-- [Project-index parsing flattening audit (2026-06-04)](architectural-audit-2026-06-04.md) —
-  Recent architectural audit of the semantic project-index parser-error
-  formatting seam, including the rationale for flattening the helper layout
-  under `src/semantic/src/project-index/`.
 - [Feather Data Plan](feather-data-plan.md) — Describes the scraping pipeline
   that collects built-in Feather debugger metadata and how the generated files
   are versioned.
+- [GML Language Server overview](gml-lsp.md) — How GMLoop exposes parser,
+  lint, format, and semantic facts through a stdio Language Server, and how
+  to wire it via `lsp-mcp-server` and `.lsp-mcp.json`.
 - [Architecture overview](../README.md#architecture-overview) — High-level map
   of the workspace packages, where generated assets live, and which scripts
   refresh them.
