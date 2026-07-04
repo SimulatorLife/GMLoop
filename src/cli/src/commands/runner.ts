@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
-import { Command, Argument } from "commander";
+import { Argument, Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { handleCliError } from "../cli-core/errors.js";
@@ -306,23 +306,29 @@ export function createRunnerCommand(): Command {
         await runRunnerCommandAction(async () => {
             const options = this.opts<RunnerOptions>();
             switch (action) {
-                case "start":
+                case "start": {
                     await runRunnerStartAction(options);
                     break;
-                case "stop":
+                }
+                case "stop": {
                     await runRunnerStopAction(options);
                     break;
-                case "restart":
+                }
+                case "restart": {
                     await runRunnerRestartAction(options);
                     break;
-                case "pause":
+                }
+                case "pause": {
                     await runRunnerPauseAction(options);
                     break;
-                case "resume":
+                }
+                case "resume": {
                     await runRunnerResumeAction(options);
                     break;
-                default:
+                }
+                default: {
                     throw new Error(`Unsupported lifecycle action: ${action}`);
+                }
             }
         });
     });

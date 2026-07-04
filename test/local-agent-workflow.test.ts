@@ -40,67 +40,12 @@ async function readAllWorkflowSources(): Promise<string> {
     return workflowSources.join("\n");
 }
 
-function getRequiredSharedAgentPrompt(source: string): string {
-    const heredocMatch =
-        /cat > "\$\{AGENT_PROMPT_FILE\}" <<PROMPT\n(?<prompt>[\s\S]*?)\n\s*PROMPT\n\s*export AGENT_PROMPT_FILE/u.exec(
-            source
-        );
-    if (heredocMatch?.groups?.prompt) {
-        return heredocMatch.groups.prompt;
-    }
-
-    const writerMatch =
-        /write_agent_prompt_file\(\) \{\n(?<promptWriter>[\s\S]*?)\n\s*export AGENT_PROMPT_FILE\n\s*\}/u.exec(source);
-
-    assert.ok(
-        writerMatch?.groups?.promptWriter,
-        "Parent workflow must materialize a shared AGENT_PROMPT_FILE for child agents."
-    );
-
-    return writerMatch.groups.promptWriter;
-}
-
 function getRequiredWorkflowInputBlock(source: string, inputName: string): string {
     const match = new RegExp(String.raw`\n {6}${inputName}:\n(?<block>(?: {8}.+\n)+)`, "u").exec(source);
 
     assert.ok(match?.groups?.block, `Workflow must define ${inputName}.`);
 
     return match.groups.block;
-}
-
-function getRequiredChildWorkflowCommand(source: string, inputName: string): string {
-    const start = source.indexOf(`      ${inputName}: |`);
-
-    assert.notEqual(start, -1, `Child workflow must define ${inputName}.`);
-
-    const nextInput = /\n {6}[a-z_]+: /gu;
-    nextInput.lastIndex = start + 1;
-    const nextMatch = nextInput.exec(source);
-    const end = nextMatch?.index ?? source.length;
-
-    return source.slice(start, end);
-}
-
-function assertWorkflowDispatchesToReusableAgent(source: string, agentName: string): void {
-    assert.match(
-        source,
-        new RegExp(String.raw`contains\(github\.event\.comment\.body \|\| '', '@${agentName}'\)`, "u")
-    );
-    assert.match(source, /uses: \.\/\.github\/workflows\/agent-invoke\.yml/u);
-    assert.match(source, new RegExp(String.raw`agent: ${agentName}`, "u"));
-}
-
-function assertPromptEnforcesCommandGroundedEditLoop(prompt: string): void {
-    assert.match(prompt, /Repository root:/u);
-    assert.match(prompt, /User task from PR comment:/u);
-    assert.match(prompt, /pnpm run lint/u);
-    assert.match(prompt, /pnpm run build:ts/u);
-    assert.match(prompt, /pnpm run lint:quiet/u);
-    assert.match(prompt, /command output/u);
-    assert.match(prompt, /diff|worktree/u);
-    assert.match(prompt, /golden .*\.gml|\.gml fixtures/u);
-    assert.match(prompt, /generated files/u);
-    assert.match(prompt, /dist files/u);
 }
 
 void test("qwen invoke uses checked-in settings for local model selection", async () => {
@@ -275,10 +220,7 @@ void test("agent invoke closes only empty PRs on expected agent branches after r
     assert.match(source, /\.changed_files/u);
     assert.match(source, /if \[ "\$\{pr_state\}" != "open" \]; then/u);
     assert.match(source, /if \[ "\$\{changed_files\}" != "0" \]; then/u);
-    assert.match(
-        source,
-        /codex\/task-\*\|copilot\/task-\*\|gemini\/task-\*\|qwen\/task-\*\|qwen-local\/task-\*/u
-    );
+    assert.match(source, /codex\/task-\*\|copilot\/task-\*\|gemini\/task-\*\|qwen\/task-\*\|qwen-local\/task-\*/u);
     assert.match(
         source,
         /main\|master\|develop\|development\|trunk\|production\|release\|feature\/\*\|bugfix\/\*\|hotfix\/\*/u
