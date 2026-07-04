@@ -36,29 +36,6 @@ function addSharedOptions(command: Command): Command {
         .option("--json", "Emit JSON output.");
 }
 
-function resolveNodeIdFromQuery(
-    nameOrId: string,
-    options: ResourceCommandSharedOptions,
-    context: Awaited<ReturnType<typeof ensureProjectGraphIndex>>
-): string {
-    if (nameOrId.includes("::")) {
-        return nameOrId;
-    }
-    const search = Semantic.searchGraphIndex({
-        databasePath: options.databasePath,
-        limit: 1,
-        projectConfig: context.projectConfig,
-        projectRoot: context.projectRoot,
-        query: nameOrId,
-        toolsetRoot: options.toolsetRoot
-    });
-    const nodeId = search.results[0]?.id;
-    if (!nodeId) {
-        throw new Error(`Could not resolve resource '${nameOrId}'.`);
-    }
-    return nodeId;
-}
-
 /**
  * Create the graph-backed resource inspection command suite.
  */
