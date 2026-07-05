@@ -53,6 +53,30 @@ function resolveRuntimeScopeStore(state: RuntimeProjectState, options: RuntimeOp
     return created;
 }
 
+/**
+ * Parse a string supplied via a CLI flag (e.g. `--value`) into the closest
+ * primitive that the runtime state store can persist unchanged.
+ *
+ * The parser deliberately restricts its output to shapes that
+ * {@link isSerializableRuntimeValue} accepts (primitives and arrays of
+ * primitives). Anything parsed by `JSON.parse` that does not pass that
+ * contract — most notably plain objects — is treated as malformed input and
+ * the function returns the trimmed raw string instead.
+ *
+ * This guard exists because the previous implementation handed through
+ * any JSON shape returned by `JSON.parse`, which silently leaked plain
+ * objects downstream. Those objects then ran through
+ * {@link sanitizeRuntimeValue} and were rewritten to `null` for storage,
+ * producing a confusing mismatch between the value echoed in the CLI
+ * payload (the original object) and the value actually persisted on disk
+ * (the sanitised `null`). Rejecting non-serializable JSON early here keeps
+ * the printed and stored values aligned and surfaces the malformed input
+ * to callers as a plain string.
+ *
+ * @param value - Raw flag value exactly as supplied by the user.
+ * @returns A primitive, an array of primitives, or the trimmed input string
+ *          when the value cannot be coerced to a serializable shape.
+ */
 function parseRuntimeValue(value: string): unknown {
     const trimmed = value.trim();
     if (trimmed.length === 0) {
@@ -75,10 +99,16 @@ function parseRuntimeValue(value: string): unknown {
     }
 
     try {
-        return JSON.parse(trimmed);
+        const parsed = JSON.parse(trimmed) as unknown;
+        if (isSerializableRuntimeValue(parsed)) {
+            return parsed;
+        }
     } catch {
-        return value;
+        // Either the payload was not valid JSON or it parsed to a shape the
+        // runtime state store cannot round-trip. Both cases fall back to the
+        // trimmed input string below.
     }
+    return trimmed;
 }
 
 /**
