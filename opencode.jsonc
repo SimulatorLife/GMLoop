@@ -6,14 +6,14 @@
     ]
   },
   "experimental": {
-    "openTelemetry": false,
+    "openTelemetry": false
   },
-  // Default model
-  // "model": "minimax/MiniMax-M3",
-  // "small_model": "minimax/MiniMax-M3",
   "model": "openai-compatible/MiniMax-M3",
   "small_model": "openai-compatible/MiniMax-M3",
   "default_agent": "code",
+  "enabled_providers": [
+    "openai-compatible"
+  ],
   "permission": {
     "*": {
       "*": "allow",
@@ -65,7 +65,9 @@
     "webfetch": "deny",
     "websearch": "deny",
     "question": "deny",
-    "task": "deny", // Task tool is used to spawn subagents (val. is overwritten for 'code' agent)
+    // Task tool is used to spawn subagents. It is denied globally and explicitly
+    // re-enabled only for the primary code/orchestrator agent below.
+    "task": "deny"
   },
   "provider": {
     "openai-compatible": {
@@ -100,6 +102,24 @@
   "instructions": [
     "AGENTS.md"
   ],
+  "lsp": {
+    "gmloop": {
+      "command": [
+        "pnpm",
+        "exec",
+        "lsp-mcp-server"
+      ],
+      "extensions": [
+        ".gml",
+        ".yy",
+        ".yyp",
+        ".ts"
+      ],
+      "env": {
+        "GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS": "true"
+      }
+    }
+  },
   "mcp": {
     "gmloop": {
       "type": "local",
@@ -109,41 +129,135 @@
         "@gmloop/mcp",
         "start"
       ],
-      "enabled": true
+      "environment": {
+        "GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS": "true"
+      },
+      "enabled": true,
+      "timeout": 600000
+    },
+    "playwright": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@playwright/mcp@latest"
+      ],
+      "enabled": true,
+      "timeout": 600000
     }
   },
   "agent": {
     "code": {
-      "description": "Default GMLoop implementation agent. Attacks each task from multiple angles using subagents, then integrates the best result.",
+      "description": "Main GMLoop orchestration agent. Splits work across focused GMLoop subagents, coordinates the overall goal, and integrates the final result.",
       "mode": "primary",
-      "model": "openai-compatible/MiniMax-M3",
-      "prompt": "You are the orchestration coding agent for GMLoop. For any and all edits, exploration, test-running, etc. you must invoke the Task tool with 5 parallel gmloop-code-worker subagents to delegate the work. Use the subagents to attack the problem from multiple angles and split the work. Give each subagent a small explicit assignment, scoped area to work within, and ask each to return concise findings, relevant files, recommended changes, risks, and a summary of any/all changes it made. After all subagents return, synthesize their findings, reconcile divergent/duplicate changes, choose the best plan or reconcile conflicts, run relevant validation, and summarize what changed. Preserve GMLoop conventions, prefer existing abstractions, avoid unrelated rewrites, and keep changes scoped. Aim to maintain a swarm of around 5 subagents working in parallel. You cannot write, so you MUST delegate to subagents for all file edits.",
+      "prompt": "{file:./.agents/prompts/gmloop-orchestrator.txt}",
+      "permission": {
+        "edit": "deny",
+        "bash": "deny",
+        "task": {
+          "*": "deny",
+          "gmloop-coder": "allow",
+          "gmloop-explorer": "allow",
+          "gmloop-validator": "allow"
+        }
+      }
+    },
+    "gmloop-explorer": {
+      "description": "Read-only GMLoop exploration subagent. Use to find relevant files, inspect code, search symbols, query LSP, and understand current behavior before edits.",
+      "mode": "subagent",
+      "prompt": "{file:./.agents/prompts/gmloop-explorer.txt}",
+      "steps": 16,
+      "hidden": true,
+      "temperature": 0.1,
+      "top_p": 0.8,
       "permission": {
         "edit": "deny",
         "bash": {
           "*": "deny",
+          "pwd": "allow",
+          "ls *": "allow",
+          "rg *": "allow",
+          "cat *": "allow",
+          "head *": "allow",
+          "tail *": "allow",
+          "find *": "allow",
+          "sed -n *": "allow",
+          "jq *": "allow",
           "git status*": "allow",
           "git diff*": "allow",
-          "rg *": "allow",
-          "pnpm test*": "allow"
-        },
-        "task": {
-          // Can only spawn gmloop-code-worker subagents
-          "gmloop-code-worker": "allow"
+          "git log*": "allow",
+          "git show*": "allow",
+          "git rev-parse *": "allow",
+          "git ls-files *": "allow"
         }
       }
     },
-    "gmloop-code-worker": {
-      "description": "General-purpose GMLoop coding subagent. Use multiple instances of this agent to analyze or implement different aspects of the same task in isolation.",
+    "gmloop-coder": {
+      "description": "Focused GMLoop coding subagent. Use for narrow implementation edits after the relevant files, expected behavior, and validation target are known.",
       "mode": "subagent",
-      "model": "openai-compatible/MiniMax-M3",
-      "prompt": "{file:./.agents/prompts/gmloop-code-worker.txt}",
-      "steps": 30,
+      "prompt": "{file:./.agents/prompts/gmloop-coder.txt}",
+      "steps": 24,
       "hidden": true,
-      "temperature": 0.9,
+      "temperature": 0.1,
+      "top_p": 0.8,
       "permission": {
-        "task": {
-          "*": "deny"
+        "bash": {
+          "*": "deny",
+          "pwd": "allow",
+          "ls *": "allow",
+          "rg *": "allow",
+          "cat *": "allow",
+          "head *": "allow",
+          "tail *": "allow",
+          "sed -n *": "allow",
+          "jq *": "allow",
+          "git status*": "allow",
+          "git diff*": "allow",
+          "git rev-parse *": "allow",
+          "git ls-files *": "allow"
+        }
+      }
+    },
+    "gmloop-validator": {
+      "description": "Validation-only GMLoop subagent. Use to run focused tests, lint, typecheck, build, CLI checks, Playwright checks, and report failures without editing files.",
+      "mode": "subagent",
+      "prompt": "{file:./.agents/prompts/gmloop-validator.txt}",
+      "steps": 18,
+      "hidden": true,
+      "temperature": 0.1,
+      "top_p": 0.8,
+      "permission": {
+        "edit": "deny",
+        "bash": {
+          "*": "deny",
+          "pwd": "allow",
+          "ls *": "allow",
+          "rg *": "allow",
+          "cat *": "allow",
+          "head *": "allow",
+          "tail *": "allow",
+          "sed -n *": "allow",
+          "jq *": "allow",
+          "git status*": "allow",
+          "git diff*": "allow",
+          "git log*": "allow",
+          "git show*": "allow",
+          "git rev-parse *": "allow",
+          "git ls-files *": "allow",
+          "pnpm check*": "allow",
+          "pnpm test*": "allow",
+          "pnpm lint*": "allow",
+          "pnpm typecheck*": "allow",
+          "pnpm build*": "allow",
+          "pnpm exec *": "allow",
+          "pnpm run check*": "allow",
+          "pnpm run test*": "allow",
+          "pnpm run lint*": "allow",
+          "pnpm run typecheck*": "allow",
+          "pnpm run build*": "allow",
+          "pnpm run test:format*": "allow",
+          "pnpm run test:lint*": "allow",
+          "pnpm run test:cli*": "allow"
         }
       }
     }
@@ -158,5 +272,5 @@
     "prune": true,
     "tail_turns": 2,
     "reserved": 8192
-  },
+  }
 }
