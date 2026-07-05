@@ -228,6 +228,7 @@
       "top_p": 0.8,
       "permission": {
         "edit": "deny",
+        "background_process": "deny",
         "bash": {
           "*": "deny",
           "pwd": "allow",
@@ -255,9 +256,8 @@
           "pnpm run lint*": "allow",
           "pnpm run typecheck*": "allow",
           "pnpm run build*": "allow",
-          "pnpm run test:format*": "allow",
-          "pnpm run test:lint*": "allow",
-          "pnpm run test:cli*": "allow"
+          "pnpm install": "allow",
+          "node --test*": "allow"
         }
       }
     }
