@@ -146,7 +146,6 @@
       "mode": "primary",
       "prompt": "{file:./.agents/prompts/gmloop-orchestrator.txt}",
       "permission": {
-        "edit": "deny",
         "bash": "deny",
         "task": {
           "*": "deny",
@@ -160,15 +159,16 @@
       "description": "Read-only GMLoop exploration subagent. Use to find relevant files, inspect code, search symbols, query LSP, and understand current behavior before edits.",
       "mode": "subagent",
       "prompt": "{file:./.agents/prompts/gmloop-explorer.txt}",
-      "steps": 16,
+      "steps": 30,
       "hidden": true,
-      "temperature": 0.1,
+      "temperature": 0.2,
       "top_p": 0.8,
       "permission": {
         "edit": "deny",
         "bash": {
           "*": "deny",
           "pwd": "allow",
+          "cd *": "allow",
           "ls *": "allow",
           "rg *": "allow",
           "cat *": "allow",
@@ -190,14 +190,20 @@
       "description": "Focused GMLoop coding subagent. Use for narrow implementation edits after the relevant files, expected behavior, and validation target are known.",
       "mode": "subagent",
       "prompt": "{file:./.agents/prompts/gmloop-coder.txt}",
-      "steps": 24,
+      "steps": 30,
       "hidden": true,
-      "temperature": 0.1,
-      "top_p": 0.8,
+      "temperature": 0.3,
+      "top_p": 0.9,
       "permission": {
+        "task": "deny",
+        "edit": {
+          "*": "deny",
+          "**/*.ts": "allow"
+        },
         "bash": {
           "*": "deny",
           "pwd": "allow",
+          "cd": "allow",
           "ls *": "allow",
           "rg *": "allow",
           "cat *": "allow",
@@ -216,10 +222,10 @@
       "description": "Validation-only GMLoop subagent. Use to run focused tests, lint, typecheck, build, CLI checks, Playwright checks, and report failures without editing files.",
       "mode": "subagent",
       "prompt": "{file:./.agents/prompts/gmloop-validator.txt}",
-      "steps": 18,
+      "steps": 30,
       "hidden": true,
-      "temperature": 0.1,
-      "top_p": 0.8,
+      "temperature": 0.2,
+      "top_p": 0.9,
       "permission": {
         "edit": "deny",
         "background_process": "deny",
@@ -251,6 +257,8 @@
           "pnpm run typecheck*": "allow",
           "pnpm run build*": "allow",
           "pnpm install": "allow",
+          "pnpm --filter *": "allow",
+          "pnpm -F *": "allow",
           "node --test*": "allow"
         }
       }
