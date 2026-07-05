@@ -110,42 +110,36 @@
         "lsp-mcp-server"
       ],
       "extensions": [
-        ".gml",
-        ".yy",
-        ".yyp",
         ".ts"
-      ],
-      "env": {
-        "GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS": "true"
-      }
+      ]
     }
   },
-  "mcp": {
-    "gmloop": {
-      "type": "local",
-      "command": [
-        "pnpm",
-        "--filter",
-        "@gmloop/mcp",
-        "start"
-      ],
-      "environment": {
-        "GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS": "true"
-      },
-      "enabled": true,
-      "timeout": 600000
-    },
-    "playwright": {
-      "type": "local",
-      "command": [
-        "npx",
-        "-y",
-        "@playwright/mcp@latest"
-      ],
-      "enabled": true,
-      "timeout": 600000
-    }
-  },
+  // "mcp": {
+  // "gmloop": {
+  //   "type": "local",
+  //   "command": [
+  //     "pnpm",
+  //     "--filter",
+  //     "@gmloop/mcp",
+  //     "start"
+  //   ],
+  //   "environment": {
+  //     "GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS": "true"
+  //   },
+  //   "enabled": true,
+  //   "timeout": 600000
+  // },
+  // "playwright": {
+  //   "type": "local",
+  //   "command": [
+  //     "npx",
+  //     "-y",
+  //     "@playwright/mcp@latest"
+  //   ],
+  //   "enabled": true,
+  //   "timeout": 600000
+  // }
+  // },
   "agent": {
     "code": {
       "description": "Main GMLoop orchestration agent. Splits work across focused GMLoop subagents, coordinates the overall goal, and integrates the final result.",
