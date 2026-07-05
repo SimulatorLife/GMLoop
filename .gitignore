@@ -63,6 +63,7 @@ src/**/*.js
 !.agents/
 !.agents/**/
 !.agents/skills/**/SKILL.md
+!.agents/prompts/**/*.txt
 
 # GitHub App credentials
 gha-creds-*.json
