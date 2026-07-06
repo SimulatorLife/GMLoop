@@ -7,6 +7,13 @@ export { writeFileArtifact, writeJsonArtifact } from "./fs-artifacts.js";
 export * from "./package-resolution.js";
 export { pathExists, pathExistsSync } from "./path-exists.js";
 export * from "./repo-root.js";
+export {
+    createThrottledCounterLogger,
+    type ThrottledCounterLogger,
+    type ThrottledCounterLoggerClock,
+    type ThrottledCounterLoggerOptions,
+    type ThrottledCounterLoggerSink
+} from "./throttled-counter-logger.js";
 export * as Timing from "./timing/verbose-timing.js";
 export * from "./timing/verbose-timing.js";
 export * from "./workspace-paths.js";

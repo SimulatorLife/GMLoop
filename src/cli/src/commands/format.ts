@@ -69,6 +69,7 @@ import {
     resolveSkippedDirectorySampleLimit,
     resolveUnsupportedExtensionSampleLimit
 } from "../runtime-options/sample-limits.js";
+import { createThrottledCounterLogger } from "../shared/throttled-counter-logger.js";
 import {
     calculateElapsedNanoseconds,
     formatElapsedNanosecondsAsMilliseconds,
@@ -685,9 +686,13 @@ let inMemorySnapshotCount = 0;
 // Track processed files for periodic cache cleanup.
 let processedFileCount = 0;
 
-// Track GML files for progress reporting.
-let processedGmlFilesCount = 0;
-let lastLogTime = 0;
+// Track GML files for progress reporting. The counter itself is exposed via
+// `getCount()` so `finalizeFormattingRun` can still surface the final total
+// without re-introducing a parallel bookkeeping variable.
+const formatProgressReporter = createThrottledCounterLogger({
+    intervalMs: 1000,
+    formatMessage: (count) => `[format] Checking GML files... (${count} processed)`
+});
 
 function ensureRevertSnapshotDirectory() {
     if (revertSnapshotDirectory) {
@@ -892,8 +897,7 @@ async function resetFormattingSession(onParseError: ParseErrorActionValue) {
     clearFormattingCache();
     inMemorySnapshotCount = 0;
     processedFileCount = 0;
-    processedGmlFilesCount = 0;
-    lastLogTime = 0;
+    formatProgressReporter.reset();
 }
 
 /**
@@ -1489,12 +1493,7 @@ async function formatSingleFile(filePath, activeIgnorePaths = []) {
         encounteredFormattableFile = true;
         timedFormattableFileCount += 1;
 
-        processedGmlFilesCount += 1;
-        const now = Date.now();
-        if (now - lastLogTime > 1000) {
-            console.log(`[format] Checking GML files... (${processedGmlFilesCount} processed)`);
-            lastLogTime = now;
-        }
+        formatProgressReporter.tick();
 
         const data = await readTextFile(filePath);
         const cacheKey = createFormattingCacheKey(data, formattingOptions);
@@ -1669,6 +1668,7 @@ async function formatResolvedTarget({ targetPath, targetIsDirectory, projectRoot
  * @param {{ targetPath: string, targetIsDirectory: boolean }} params
  */
 function finalizeFormattingRun({ targetPath, targetIsDirectory, targetPathProvided }) {
+    const processedGmlFilesCount = formatProgressReporter.getCount();
     if (processedGmlFilesCount > 0) {
         console.log(`[format] Checking GML files... (${processedGmlFilesCount} processed)`);
     }
