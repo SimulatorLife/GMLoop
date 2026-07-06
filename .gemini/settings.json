@@ -31,11 +31,12 @@
   },
   "general": {
     "plan": {
-      "enabled": false
+      "enabled": true
     },
+    "enableAutoUpdate": true,
     "previewFeatures": false,
     "checkpointing": {
-      "enabled": false
+      "enabled": true
     },
     "retryFetchErrors": true,
     "sessionRetention": {
@@ -54,11 +55,14 @@
     "truncateToolOutputThreshold": 4000,
     "disableLLMCorrection": true
   },
-  "useWriteTodos": false,
+  "useWriteTodos": true,
   "mcpServers": {
     "lsp": {
       "command": "pnpm",
-      "args": ["exec", "lsp-mcp-server"],
+      "args": [
+        "exec",
+        "lsp-mcp-server"
+      ],
       "timeout": 600000,
       "env": {
         "LSP_LOG_LEVEL": "debug"
@@ -77,14 +81,19 @@
     },
     "gmloop": {
       "command": "gmloop",
-      "args": ["mcp"],
+      "args": [
+        "mcp"
+      ],
       "env": {
         "GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS": true
       }
     },
     "gm-cli": {
       "command": "gmloop",
-      "args": ["gm-cli", "mcp"],
+      "args": [
+        "gm-cli",
+        "mcp"
+      ],
       "env": {
         "GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS": true
       }

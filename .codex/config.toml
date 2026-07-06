@@ -8,6 +8,9 @@ personality = "pragmatic"
 sandbox_mode = "workspace-write"
 background_terminal_max_timeout = 600000
 
+[shell_environment_policy.set]
+NODE_OPTIONS = "--disable-warning=ExperimentalWarning"
+
 [mcp_servers.gmloop]
 command = "gmloop"
 args = ["mcp"]

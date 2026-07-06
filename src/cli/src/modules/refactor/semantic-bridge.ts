@@ -1267,6 +1267,10 @@ export class GmlSemanticBridge {
                 continue;
             }
 
+            if (this.isResolvedConstructorStaticMemberReference(symbolName, unresolvedReference.filePath, start, end)) {
+                continue;
+            }
+
             if (isProperty || isBareCall) {
                 const typeLabel = isProperty ? "property access" : "bare call";
                 gaps.push({
@@ -2356,6 +2360,10 @@ export class GmlSemanticBridge {
                 classifications.includes("property") &&
                 this.isKnownEnumMemberReference(unresolvedReference.filePath, start)
             ) {
+                continue;
+            }
+
+            if (this.isResolvedConstructorStaticMemberReference(symbolName, unresolvedReference.filePath, start, end)) {
                 continue;
             }
 
@@ -4181,6 +4189,59 @@ export class GmlSemanticBridge {
         }
 
         return this.getEnumNames().has(ownerName);
+    }
+
+    /**
+     * Determine whether an unresolved same-name reference is already recorded
+     * as a resolved constructor static member reference in the semantic index.
+     *
+     * The semantic project index records constructor static member references
+     * through receiver-type analysis (e.g. `pos.Sub` resolves to `Vector2.Sub`
+     * when `self.pos = new Vector2(...)`). These references also appear in the
+     * unresolved file-level reference list because the general file-reference
+     * resolution does not yet model constructor receiver types. The bridge must
+     * consult the constructor static member collection so that a project-wide
+     * rename is not blocked by an unresolved reference that is in fact
+     * semantically resolved through constructor-owned receiver facts.
+     */
+    private isResolvedConstructorStaticMemberReference(
+        symbolName: string,
+        filePath: string,
+        startIndex: number,
+        endIndex: number
+    ): boolean {
+        if (!Core.isNonEmptyString(symbolName)) {
+            return false;
+        }
+
+        const constructorStaticMembers = this.identifiers.constructorStaticMembers ?? {};
+        for (const entry of Object.values(constructorStaticMembers)) {
+            if (!entry || typeof entry !== "object") {
+                continue;
+            }
+
+            if (entry.name !== symbolName) {
+                continue;
+            }
+
+            for (const reference of entry.references ?? []) {
+                if (typeof reference?.filePath !== "string" || reference.filePath !== filePath) {
+                    continue;
+                }
+
+                const referenceStart = readSemanticLocationIndex(reference.start);
+                const referenceEnd = readExclusiveSemanticLocationIndex(reference.end);
+                if (referenceStart === null || referenceEnd === null) {
+                    continue;
+                }
+
+                if (referenceStart === startIndex && referenceEnd === endIndex) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private readDottedReferenceOwnerName(filePath: string, startIndex: number): string | null {

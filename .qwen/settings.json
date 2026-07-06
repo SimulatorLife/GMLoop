@@ -6,7 +6,8 @@
     "skipStartupContext": false,
     "maxSessionTurns": 900,
     "enableOpenAILogging": true,
-    "openAILoggingDir": ".qwen/openai-logs"
+    "openAILoggingDir": ".qwen/openai-logs",
+    "maxSubagentDepth": 1
   },
   "tools": {
     "approvalMode": "yolo",
@@ -67,8 +68,11 @@
       "Grep",
       "ListFiles",
       "Glob",
+      "Skill",
       "Bash(pwd)",
       "Bash(ls *)",
+      "Bash(cd *)",
+      "Bash(mkdir *)",
       "Bash(mv *)",
       "Bash(cp *)",
       "Bash(rg *)",
