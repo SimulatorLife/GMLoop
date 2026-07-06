@@ -10,7 +10,7 @@
   },
   "model": "openai-compatible/MiniMax-M3",
   "small_model": "openai-compatible/MiniMax-M3",
-  "default_agent": "code",
+  "default_agent": "gmloop-orchestrator",
   "enabled_providers": [
     "openai-compatible"
   ],
@@ -93,7 +93,7 @@
             "thinking": {
               "type": "adaptive"
             },
-            "reasoning_split": false
+            "reasoning_split": true
           }
         }
       }
@@ -141,7 +141,7 @@
   // }
   // },
   "agent": {
-    "code": {
+    "gmloop-orchestrator": {
       "description": "Main GMLoop orchestration agent. Splits work across focused GMLoop subagents, coordinates the overall goal, and integrates the final result.",
       "mode": "primary",
       "prompt": "{file:./.agents/prompts/gmloop-orchestrator.txt}",
@@ -198,7 +198,14 @@
         "task": "deny",
         "edit": {
           "*": "deny",
-          "**/*.ts": "allow"
+          "docs/**": "allow",
+          "**/*.ts": "allow",
+          "**/*.test.ts": "allow",
+          "**/test/**/*.json": "allow",
+          "**/src/**/*.json": "allow",
+          "**/src/**/*.md": "allow",
+          "**/src/**/*.css": "allow",
+          "**/src/**/*.html": "allow"
         },
         "bash": {
           "*": "deny",
@@ -208,6 +215,7 @@
           "rg *": "allow",
           "cat *": "allow",
           "head *": "allow",
+          "mkdir *": "allow",
           "tail *": "allow",
           "sed -n *": "allow",
           "jq *": "allow",
