@@ -118,16 +118,16 @@ void test("namingConvention top-level validation uses fast path and bypasses ind
     const count = 300;
     const listTargets = async () =>
         Array.from({ length: count }, (_, index) => {
-            const currentName = `demo_script_${index}`;
+            const currentName = `demo_sprite_${index}`;
             return {
-                category: "scriptResourceName" as const,
+                category: "spriteResourceName" as const,
                 name: currentName,
-                path: `scripts/${currentName}/${currentName}.gml`,
+                path: `sprites/${currentName}/${currentName}.yy`,
                 scopeId: null,
-                symbolId: `gml/scripts/${currentName}`,
+                symbolId: `gml/sprites/${currentName}`,
                 occurrences: [
                     {
-                        path: `scripts/${currentName}/${currentName}.gml`,
+                        path: `sprites/${currentName}/${currentName}.yy`,
                         start: 9,
                         end: 9 + currentName.length
                     }
@@ -144,17 +144,17 @@ void test("namingConvention top-level validation uses fast path and bypasses ind
             codemods: {
                 namingConvention: {
                     rules: {
-                        scriptResourceName: {
+                        spriteResourceName: {
                             caseStyle: "camel"
                         }
                     }
                 }
             }
         },
-        targetPaths: ["/tmp/project/scripts"],
+        targetPaths: ["/tmp/project/sprites"],
         gmlFilePaths: Array.from(
             { length: count },
-            (_, index) => `scripts/demo_script_${index}/demo_script_${index}.gml`
+            (_, index) => `sprites/demo_sprite_${index}/demo_sprite_${index}.yy`
         ),
         includeTopLevelPlan: false,
         includeViolations: false

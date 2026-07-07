@@ -586,9 +586,28 @@ async function selectExecutableTopLevelRenames(
         const fastPathRenames: Array<RenameRequest> = [];
         const slowPathRenames: Array<RenameRequest> = [];
 
+        const fastPathableKinds = new Set([
+            "objects",
+            "sprites",
+            "sounds",
+            "rooms",
+            "paths",
+            "curves",
+            "sequences",
+            "shaders",
+            "fonts",
+            "timelines",
+            "tilesets",
+            "particlesystems",
+            "notes",
+            "extensions",
+            "resource"
+        ]);
+
         for (const rename of renames) {
             const id = rename.symbolId;
-            if (Core.isNonEmptyString(id) && id.startsWith("gml/") && !id.startsWith("gml/var/")) {
+            const kind = id.startsWith("gml/") ? id.split("/")[1] : null;
+            if (Core.isNonEmptyString(id) && kind && fastPathableKinds.has(kind)) {
                 fastPathRenames.push(rename);
             } else {
                 slowPathRenames.push(rename);

@@ -399,23 +399,23 @@ void test("namingConvention partitions large rename batches (> 256) into fast-pa
     const projectRoot = "/project";
     const targets: Array<NamingConventionTarget> = [];
 
-    // Create 290 fast-pathable script renames (violating naming convention by being PascalCase)
+    // Create 290 fast-pathable sprite renames (violating naming convention by being PascalCase)
     for (let i = 0; i < 290; i++) {
         targets.push({
-            category: "scriptResourceName",
-            name: `ScriptFunc${i}`,
+            category: "spriteResourceName",
+            name: `SpriteFunc${i}`,
             occurrences: [
                 {
-                    path: `scripts/ScriptFunc${i}/ScriptFunc${i}.yy`,
+                    path: `sprites/SpriteFunc${i}/SpriteFunc${i}.yy`,
                     start: 0,
                     end: 0,
                     scopeId: "scope-global",
                     kind: "definition"
                 }
             ],
-            path: `scripts/ScriptFunc${i}/ScriptFunc${i}.yy`,
+            path: `sprites/SpriteFunc${i}/SpriteFunc${i}.yy`,
             scopeId: "scope-global",
-            symbolId: `gml/scripts/ScriptFunc${i}`
+            symbolId: `gml/sprites/SpriteFunc${i}`
         });
     }
 
@@ -472,7 +472,7 @@ void test("namingConvention partitions large rename batches (> 256) into fast-pa
             codemods: {
                 namingConvention: {
                     rules: {
-                        scriptResourceName: { caseStyle: "lower_snake" },
+                        spriteResourceName: { caseStyle: "lower_snake" },
                         variable: { caseStyle: "lower_snake" }
                     }
                 }
@@ -487,4 +487,73 @@ void test("namingConvention partitions large rename batches (> 256) into fast-pa
         10,
         "validateRenameRequest should only be called for the 10 slow-path variable renames"
     );
+});
+
+void test("namingConvention skips script resource rename if it conflicts globally with a variable, even with empty occurrences", async () => {
+    const projectRoot = "/project";
+    const targets: Array<NamingConventionTarget> = [
+        {
+            category: "scriptResourceName",
+            name: "Scaler",
+            occurrences: [
+                {
+                    path: "scripts/Scaler/Scaler.yy",
+                    start: 0,
+                    end: 0,
+                    scopeId: "scope-global",
+                    kind: "definition"
+                }
+            ],
+            path: "scripts/Scaler/Scaler.yy",
+            scopeId: "scope-global",
+            symbolId: "gml/scripts/Scaler"
+        }
+    ];
+
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => targets,
+        getSymbolOccurrences: async () => [
+            {
+                path: "scripts/Scaler/Scaler.yy",
+                start: 0,
+                end: 0,
+                scopeId: "scope-global"
+            }
+        ],
+        hasSymbol: async () => true,
+        // Mock global lookup to find a variable named "scaler" in the project
+        lookup: async (name: string, scopeId?: string) => {
+            if (name === "scaler") {
+                return { name: "scaler" };
+            }
+            return null;
+        },
+        getFileSymbols: async () => [],
+        getReservedKeywords: async () => [],
+        validateEdits: async () => ({ errors: [], warnings: [] })
+    };
+
+    const engine = new Refactor.RefactorEngine({ semantic });
+
+    const plan = await engine.planNamingConventionCodemod({
+        projectRoot,
+        targetPaths: [projectRoot],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        scriptResourceName: { caseStyle: "lower_snake" }
+                    }
+                }
+            }
+        }
+    });
+
+    const scalerRename = plan.topLevelRenameRequests.find((r) => r.symbolId === "gml/scripts/Scaler");
+    assert.equal(scalerRename, undefined, "Script Scaler rename should be skipped due to global variable collision");
+
+    const hasConflictWarning = plan.warnings.some(
+        (w) => w.includes("conflict with existing symbol") || w.includes("shadow")
+    );
+    assert.equal(hasConflictWarning, true, "Should have a warning about global collision");
 });

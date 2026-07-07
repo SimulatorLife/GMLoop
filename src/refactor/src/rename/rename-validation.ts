@@ -34,6 +34,33 @@ type RenameConflictContext = {
  */
 const GLOBAL_SCOPE_KEY = "__global__";
 
+/**
+ * Symbol kinds that reside in the global namespace in GameMaker, making them
+ * potential collision/shadowing targets for variable renames.
+ */
+const GLOBAL_SYMBOL_KINDS = new Set([
+    "script",
+    "scripts",
+    "objects",
+    "sprites",
+    "sounds",
+    "rooms",
+    "paths",
+    "curves",
+    "sequences",
+    "shaders",
+    "fonts",
+    "timelines",
+    "tilesets",
+    "particlesystems",
+    "notes",
+    "extensions",
+    "resource",
+    "macro",
+    "enum",
+    "enum-member"
+]);
+
 function isPromiseLike<T>(value: MaybePromise<T>): value is Promise<T> {
     return typeof (value as { then?: unknown })?.then === "function";
 }
@@ -218,6 +245,18 @@ export async function detectRenameConflicts(
     if (Core.hasMethods(resolver, "lookup")) {
         const shadowConflicts = checkShadowingConflicts(oldName, normalizedNewName, occurrences, resolver);
         conflicts.push(...(isPromiseLike(shadowConflicts) ? await shadowConflicts : shadowConflicts));
+
+        // Check for global shadowing conflicts where renaming a global asset/symbol
+        // would conflict with an existing symbol (e.g. variable) anywhere in the project.
+        if (resolvedContext.symbolKind && GLOBAL_SYMBOL_KINDS.has(resolvedContext.symbolKind)) {
+            const existing = await resolver.lookup(normalizedNewName);
+            if (existing) {
+                conflicts.push({
+                    type: ConflictType.SHADOW,
+                    message: `Renaming global symbol '${oldName}' to '${newName}' would conflict with existing symbol '${existing.name}'`
+                });
+            }
+        }
     }
 
     // Check if new name conflicts with reserved language identifiers.
