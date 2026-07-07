@@ -1198,4 +1198,4 @@ Provides ANTLR-based GML parsing used by the transpiler.
     - Stores patches in runtime context for future streaming
 
 ## TODO
-- **FEAT**: If/when the UI is running and at the same time a "fix" command (e.g. refactor/format/lint-fix/etc.) is run via the CLI for that same, opened-project (ex. `pnpm run cli -- refactor codemod --path /Users/henrykirk/Desktop/CannonFatherSource/cannonfather --only namingConvention`), the UI's "Fix" page/tab should show the progress of that command in real-time, the same way as if it were started via the UI.
+- **FEAT**: If/when the UI is running and at the same time a "fix" command (e.g. refactor/format/lint-fix/etc.) is run via the CLI for that same, currently-opened-project (ex. `pnpm run cli -- refactor codemod --path /Users/henrykirk/Desktop/CannonFatherSource/cannonfather --only namingConvention`), the UI's "Fix" page/tab should show the progress of that command in real-time, the same way as if it were started via the UI.
