@@ -292,7 +292,7 @@ void test("namingConvention does not block local variable renames due to unresol
         getFileSymbols: async () => [],
         getReservedKeywords: async () => [],
         validateEdits: async () => ({ errors: [], warnings: [] }),
-        checkSemanticGaps: (name: string, kind?: string | null) => {
+        checkSemanticGaps: (_name: string, _kind?: string | null) => {
             // Mock an unresolved property access on R
             return [
                 {
@@ -441,7 +441,7 @@ void test("namingConvention partitions large rename batches (> 256) into fast-pa
 
     const semantic: any = {
         listNamingConventionTargets: async () => targets,
-        getSymbolOccurrences: async (name: string, symbolId?: string | null) => {
+        getSymbolOccurrences: async (_name: string, symbolId?: string | null) => {
             const target = targets.find((t) => t.symbolId === symbolId);
             return target ? target.occurrences : [];
         },
@@ -482,5 +482,9 @@ void test("namingConvention partitions large rename batches (> 256) into fast-pa
 
     assert.equal(plan.errors.length, 0);
     assert.equal(plan.topLevelRenameRequests.length, 300);
-    assert.equal(validateCallCount, 10, "validateRenameRequest should only be called for the 10 slow-path variable renames");
+    assert.equal(
+        validateCallCount,
+        10,
+        "validateRenameRequest should only be called for the 10 slow-path variable renames"
+    );
 });

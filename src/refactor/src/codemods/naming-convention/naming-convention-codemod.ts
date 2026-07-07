@@ -492,7 +492,13 @@ function processLocalNamingConventionRename(parameters: {
         const semanticGaps = parameters.semanticGapChecker(target.name);
         if (semanticGaps.length > 0) {
             for (const gap of semanticGaps) {
-                parameters.errors.push(gap.message);
+                if (target.category === "staticVariable") {
+                    parameters.warnings.push(
+                        `Skipping static variable rename '${target.name}' -> '${suggestedName}' in ${target.path} due to: ${gap.message}`
+                    );
+                } else {
+                    parameters.errors.push(gap.message);
+                }
             }
             if (scopeKey !== null && declarationKey !== null) {
                 const ensuredScopeDecisions = ensureScopeRenameDecisions(
