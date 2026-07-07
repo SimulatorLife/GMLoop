@@ -80,6 +80,8 @@ type SemanticIdentifierCollections = {
     instanceVariables?: Record<string, SemanticIdentifierEntry>;
     macros?: Record<string, SemanticIdentifierEntry>;
     scripts?: Record<string, SemanticIdentifierEntry>;
+    localVariables?: Record<string, SemanticIdentifierEntry>;
+    structVariables?: Record<string, SemanticIdentifierEntry>;
 };
 
 type SemanticScopeRecord = {
@@ -936,7 +938,9 @@ export class GmlSemanticBridge {
             "enums",
             "enumMembers",
             "constructorStaticMembers",
-            "instanceVariables"
+            "instanceVariables",
+            "localVariables",
+            "structVariables"
         ];
 
         const appendRelatedEntry = (name: string, entry: SemanticIdentifierEntry): void => {
