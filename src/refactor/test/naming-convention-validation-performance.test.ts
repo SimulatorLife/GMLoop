@@ -113,3 +113,63 @@ void test("namingConvention top-level validation uses bounded parallelism for la
         `Expected ${RENAME_COUNT} delayed validations to finish under ${PARALLEL_VALIDATION_THRESHOLD_MS}ms, received ${durationMs.toFixed(2)}ms.`
     );
 });
+
+void test("namingConvention top-level validation uses fast path and bypasses individual validation for large resource batches", async () => {
+    const count = 300;
+    const listTargets = async () =>
+        Array.from({ length: count }, (_, index) => {
+            const currentName = `demo_script_${index}`;
+            return {
+                category: "scriptResourceName" as const,
+                name: currentName,
+                path: `scripts/${currentName}/${currentName}.gml`,
+                scopeId: null,
+                symbolId: `gml/scripts/${currentName}`,
+                occurrences: [
+                    {
+                        path: `scripts/${currentName}/${currentName}.gml`,
+                        start: 9,
+                        end: 9 + currentName.length
+                    }
+                ]
+            };
+        });
+
+    const engine = new ValidationDelayEngine(listTargets);
+
+    const startTime = performance.now();
+    const plan = await planNamingConventionCodemod(engine, {
+        projectRoot: "/tmp/project",
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        scriptResourceName: {
+                            caseStyle: "camel"
+                        }
+                    }
+                }
+            }
+        },
+        targetPaths: ["/tmp/project/scripts"],
+        gmlFilePaths: Array.from(
+            { length: count },
+            (_, index) => `scripts/demo_script_${index}/demo_script_${index}.gml`
+        ),
+        includeTopLevelPlan: false,
+        includeViolations: false
+    });
+    const durationMs = performance.now() - startTime;
+
+    assert.equal(plan.errors.length, 0);
+    assert.equal(plan.topLevelRenameRequests.length, count);
+    assert.equal(
+        engine.maxConcurrentValidations,
+        0,
+        `Expected naming-convention validation to use fast path and bypass validateRenameRequest; max concurrency was ${engine.maxConcurrentValidations}.`
+    );
+    assert.ok(
+        durationMs <= 100,
+        `Expected fast-path batch validation to finish under 100ms, received ${durationMs.toFixed(2)}ms.`
+    );
+});

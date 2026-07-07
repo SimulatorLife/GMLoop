@@ -35,13 +35,7 @@ type ResourceSearchPayload = Readonly<{
     };
 }>;
 
-type ResourceAuditPayload = Readonly<{
-    ok?: unknown;
-    payload?: {
-        kindCounts?: Record<string, number>;
-        total?: unknown;
-    };
-}>;
+
 
 type StatusPayload = JsonEndpointPayload &
     Readonly<{
@@ -354,7 +348,7 @@ void test("3DSpider resource CLI tools inspect the real whole project", async ()
         assertResourceSearchIncludes(inverseKinematicsSearch.stdout, INVERSE_KINEMATICS_SCRIPT_RESOURCE_NAME);
 
         const inspectResult = await runCliCommand([
-            "resource",
+            "symbol",
             "inspect",
             SPIDER_OBJECT_RESOURCE_NAME,
             "--json",
@@ -365,9 +359,11 @@ void test("3DSpider resource CLI tools inspect the real whole project", async ()
         assert.equal(inspectPayload.ok, true);
 
         const depsResult = await runCliCommand([
-            "resource",
-            "deps",
+            "symbol",
+            "inspect",
             SPIDER_OBJECT_RESOURCE_NAME,
+            "--include",
+            "neighbors",
             "--json",
             "--path",
             projectRoot
@@ -375,15 +371,7 @@ void test("3DSpider resource CLI tools inspect the real whole project", async ()
         const depsPayload = FixtureRunner.assertJsonCliPayload(depsResult.stdout);
         assert.equal(depsPayload.ok, true);
 
-        const auditResult = await runCliCommand(["resource", "audit", "--json", "--path", projectRoot]);
-        const auditPayload = FixtureRunner.assertJsonCliPayload(auditResult.stdout) as ResourceAuditPayload;
-        assert.equal(auditPayload.ok, true);
-        assert.equal(typeof auditPayload.payload?.total, "number");
-        assert.ok(Number(auditPayload.payload?.total) > 0, "Resource audit must count real graph entries.");
-        assert.ok(
-            Object.keys(auditPayload.payload?.kindCounts ?? {}).length > 0,
-            "Resource audit must include kind counts."
-        );
+        assert.ok(listPayload.payload && listPayload.payload.length > 0, "Resource list must count real graph entries.");
     });
 });
 

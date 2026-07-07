@@ -572,7 +572,10 @@ async function selectExecutableTopLevelRenames(
 ): Promise<TopLevelRenameSelection> {
     if (
         renames.length > 256 &&
-        renames.every((rename) => Core.isNonEmptyString(rename.symbolId) && rename.symbolId.startsWith("gml/script/"))
+        renames.every((rename) => {
+            const id = rename.symbolId;
+            return Core.isNonEmptyString(id) && id.startsWith("gml/") && !id.startsWith("gml/var/");
+        })
     ) {
         const batchRenames = [...renames];
         const duplicateSourceSymbolIds = detectDuplicateSourceSymbolIds(batchRenames);
