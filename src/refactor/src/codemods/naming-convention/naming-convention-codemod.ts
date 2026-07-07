@@ -40,6 +40,12 @@ const DEFINITELY_LOCAL_NAMING_CATEGORIES = new Set<NamingCategory>([
     "loopIndexVariable",
     "staticVariable"
 ]);
+const LEXICAL_LOCAL_NAMING_CATEGORIES = new Set<NamingCategory>([
+    "localVariable",
+    "argument",
+    "catchArgument",
+    "loopIndexVariable"
+]);
 const SCRIPT_CALLABLE_NAMING_CATEGORIES = new Set<NamingCategory>([
     "constructorFunction",
     "function",
@@ -482,7 +488,7 @@ function processLocalNamingConventionRename(parameters: {
     // already-collected occurrence set. Re-flagging them as gaps would block
     // valid renames without any safety benefit, so we skip the gap check for
     // that category and rely on the collector's coverage instead.
-    if (target.category !== "instanceVariable") {
+    if (target.category !== "instanceVariable" && !LEXICAL_LOCAL_NAMING_CATEGORIES.has(target.category)) {
         const semanticGaps = parameters.semanticGapChecker(target.name);
         if (semanticGaps.length > 0) {
             for (const gap of semanticGaps) {
@@ -570,24 +576,34 @@ async function selectExecutableTopLevelRenames(
     engine: CodemodRenameOperations,
     renames: ReadonlyArray<RenameRequest>
 ): Promise<TopLevelRenameSelection> {
-    if (
-        renames.length > 256 &&
-        renames.every((rename) => {
+    if (renames.length > 256) {
+        const fastPathRenames: Array<RenameRequest> = [];
+        const slowPathRenames: Array<RenameRequest> = [];
+
+        for (const rename of renames) {
             const id = rename.symbolId;
-            return Core.isNonEmptyString(id) && id.startsWith("gml/") && !id.startsWith("gml/var/");
-        })
-    ) {
-        const batchRenames = [...renames];
-        const duplicateSourceSymbolIds = detectDuplicateSourceSymbolIds(batchRenames);
-        const duplicateTargetNames = detectDuplicateTargetNames(batchRenames);
-        const circularRenameChain = detectCircularRenames(batchRenames);
+            if (Core.isNonEmptyString(id) && id.startsWith("gml/") && !id.startsWith("gml/var/")) {
+                fastPathRenames.push(rename);
+            } else {
+                slowPathRenames.push(rename);
+            }
+        }
+
+        const duplicateSourceSymbolIds = detectDuplicateSourceSymbolIds(fastPathRenames);
+        const duplicateTargetNames = detectDuplicateTargetNames(fastPathRenames);
+        const circularRenameChain = detectCircularRenames(fastPathRenames);
+
         if (
             duplicateSourceSymbolIds.length === 0 &&
             duplicateTargetNames.length === 0 &&
             circularRenameChain.length === 0
         ) {
+            const warnings: Array<string> = [];
+            const errors: Array<string> = [];
+            const individuallySafeRenames: Array<RenameRequest> = [...fastPathRenames];
             const renameValidations = new Map<string, ValidationSummary>();
-            for (const rename of renames) {
+
+            for (const rename of fastPathRenames) {
                 renameValidations.set(rename.symbolId, {
                     valid: true,
                     errors: [],
@@ -595,15 +611,76 @@ async function selectExecutableTopLevelRenames(
                 });
             }
 
+            const renameValidationResults = await Core.runInParallelWithLimit(
+                slowPathRenames,
+                async (rename) => ({
+                    rename,
+                    validation: await engine.validateRenameRequest(rename)
+                }),
+                64
+            );
+
+            for (const { rename, validation } of renameValidationResults) {
+                renameValidations.set(rename.symbolId, validation);
+                warnings.push(...validation.warnings.map((warning) => `${rename.symbolId}: ${warning}`));
+
+                if (!validation.valid) {
+                    warnings.push(formatTopLevelRenameSkipWarning(rename, validation.errors.join("; ")));
+                    continue;
+                }
+
+                individuallySafeRenames.push(rename);
+            }
+
+            const blockedSymbolIds = new Set<string>();
+            for (const duplicateTarget of detectDuplicateTargetNames(individuallySafeRenames)) {
+                for (const symbolId of duplicateTarget.symbolIds) {
+                    blockedSymbolIds.add(symbolId);
+                    warnings.push(
+                        formatTopLevelRenameSkipWarning(
+                            individuallySafeRenames.find((rename) => rename.symbolId === symbolId) ?? {
+                                symbolId,
+                                newName: duplicateTarget.newName
+                            },
+                            `another naming-convention rename in the same run also targets '${duplicateTarget.newName}'`
+                        )
+                    );
+                }
+            }
+
+            const fullCircularChain = detectCircularRenames(individuallySafeRenames);
+            if (fullCircularChain.length > 0) {
+                const cycleSymbolIds = new Set(fullCircularChain);
+                const cyclePreview = fullCircularChain.join(" -> ");
+                for (const rename of individuallySafeRenames) {
+                    if (cycleSymbolIds.has(rename.symbolId)) {
+                        blockedSymbolIds.add(rename.symbolId);
+                        warnings.push(
+                            formatTopLevelRenameSkipWarning(
+                                rename,
+                                `the rename participates in a circular naming-convention batch (${cyclePreview})`
+                            )
+                        );
+                    }
+                }
+            }
+
+            const executableRenames = individuallySafeRenames.filter(
+                (rename) => !blockedSymbolIds.has(rename.symbolId)
+            );
+
             return {
-                executableRenames: [...renames],
+                executableRenames,
                 reusableBatchValidation: {
-                    valid: true,
-                    errors: [],
-                    warnings: detectCrossRenameNameConfusion(renames).map(
-                        ({ symbolId, newName }) =>
-                            `Rename introduces potential confusion: '${symbolId}' renamed to '${newName}' which was an original symbol name in this batch`
-                    ),
+                    valid: errors.length === 0,
+                    errors,
+                    warnings: [
+                        ...warnings,
+                        ...detectCrossRenameNameConfusion(executableRenames).map(
+                            ({ symbolId, newName }) =>
+                                `Rename introduces potential confusion: '${symbolId}' renamed to '${newName}' which was an original symbol name in this batch`
+                        )
+                    ],
                     renameValidations,
                     conflictingSets: []
                 },
@@ -611,13 +688,6 @@ async function selectExecutableTopLevelRenames(
                 errors: []
             };
         }
-
-        return {
-            executableRenames: [...renames],
-            reusableBatchValidation: null,
-            warnings: [],
-            errors: []
-        };
     }
 
     const warnings: Array<string> = [];

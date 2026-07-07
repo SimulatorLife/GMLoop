@@ -263,3 +263,224 @@ void test("namingConvention blocks reserved top-level names from semantic keywor
         true
     );
 });
+
+void test("namingConvention does not block local variable renames due to unresolved property accesses in other scopes/files", async () => {
+    const projectRoot = "/project";
+    const targets: Array<NamingConventionTarget> = [
+        {
+            category: "localVariable",
+            name: "R",
+            occurrences: [
+                {
+                    path: "scripts/ColmeshCollider/ColmeshCollider.gml",
+                    start: 10,
+                    end: 11,
+                    scopeId: "scope-func-1",
+                    kind: "definition"
+                }
+            ],
+            path: "scripts/ColmeshCollider/ColmeshCollider.gml",
+            scopeId: "scope-func-1",
+            symbolId: null
+        }
+    ];
+
+    const semantic: any = {
+        listNamingConventionTargets: async () => targets,
+        getSymbolOccurrences: async () => [],
+        hasSymbol: async () => true,
+        getFileSymbols: async () => [],
+        getReservedKeywords: async () => [],
+        validateEdits: async () => ({ errors: [], warnings: [] }),
+        checkSemanticGaps: (name: string, kind?: string | null) => {
+            // Mock an unresolved property access on R
+            return [
+                {
+                    message:
+                        "Unresolved same-name property access 'R' in scripts/ColmeshShape/ColmeshShape.gml at position 100-101",
+                    path: "scripts/ColmeshShape/ColmeshShape.gml"
+                }
+            ];
+        }
+    };
+
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const plan = await engine.planNamingConventionCodemod({
+        projectRoot,
+        targetPaths: [projectRoot],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        variable: { caseStyle: "lower_snake" }
+                    }
+                }
+            }
+        }
+    });
+
+    // The local variable R should be successfully planned to be renamed to r
+    assert.equal(plan.errors.length, 0, "Should have no errors");
+    assert.equal(plan.warnings.length, 0, "Should have no warnings");
+});
+
+void test("namingConvention does not block enum member renames due to unresolved property accesses", async () => {
+    const projectRoot = "/project";
+    const targets: Array<NamingConventionTarget> = [
+        {
+            category: "enumMember",
+            name: "bounds",
+            occurrences: [
+                {
+                    path: "scripts/Clock/Clock.gml",
+                    start: 10,
+                    end: 16,
+                    scopeId: "scope-global",
+                    kind: "definition"
+                }
+            ],
+            path: "scripts/Clock/Clock.gml",
+            scopeId: "scope-global",
+            symbolId: "gml/enum-member/eGrassMode/bounds"
+        }
+    ];
+
+    const semantic: any = {
+        listNamingConventionTargets: async () => targets,
+        getSymbolOccurrences: async () => [
+            {
+                path: "scripts/Clock/Clock.gml",
+                start: 10,
+                end: 16,
+                scopeId: "scope-global",
+                kind: "definition"
+            }
+        ],
+        hasSymbol: async (symbolId: string) => symbolId === "gml/enum-member/eGrassMode/bounds",
+        getFileSymbols: async () => [],
+        getReservedKeywords: async () => [],
+        validateEdits: async () => ({ errors: [], warnings: [] }),
+        checkSemanticGaps: (name: string, kind?: string | null) => {
+            // Mock checkSemanticGaps. In a real resolver, this returns unresolved same-name references.
+            // If the caller passes the correct symbolKind, we skip property access checks.
+            if (kind === "enum-member") {
+                return [];
+            }
+            return [
+                {
+                    message: "Unresolved same-name property access 'bounds' in scripts/Clock/Clock.gml",
+                    path: "scripts/Clock/Clock.gml"
+                }
+            ];
+        }
+    };
+
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const plan = await engine.planNamingConventionCodemod({
+        projectRoot,
+        targetPaths: [projectRoot],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        enumMember: { caseStyle: "upper_snake" }
+                    }
+                }
+            }
+        }
+    });
+
+    assert.equal(plan.topLevelRenameRequests.length, 1);
+    assert.equal(plan.topLevelRenameRequests[0].newName, "BOUNDS");
+    assert.equal(plan.errors.length, 0);
+});
+
+void test("namingConvention partitions large rename batches (> 256) into fast-path and slow-path", async () => {
+    const projectRoot = "/project";
+    const targets: Array<NamingConventionTarget> = [];
+
+    // Create 290 fast-pathable script renames (violating naming convention by being PascalCase)
+    for (let i = 0; i < 290; i++) {
+        targets.push({
+            category: "scriptResourceName",
+            name: `ScriptFunc${i}`,
+            occurrences: [
+                {
+                    path: `scripts/ScriptFunc${i}/ScriptFunc${i}.yy`,
+                    start: 0,
+                    end: 0,
+                    scopeId: "scope-global",
+                    kind: "definition"
+                }
+            ],
+            path: `scripts/ScriptFunc${i}/ScriptFunc${i}.yy`,
+            scopeId: "scope-global",
+            symbolId: `gml/scripts/ScriptFunc${i}`
+        });
+    }
+
+    // Create 10 slow-pathable global variable renames (violating naming convention by being CamelCase)
+    for (let i = 0; i < 10; i++) {
+        targets.push({
+            category: "globalVariable",
+            name: `GlobalVar${i}`,
+            occurrences: [
+                {
+                    path: "scripts/globals/globals.gml",
+                    start: i * 20,
+                    end: i * 20 + 8,
+                    scopeId: "scope-global",
+                    kind: "definition"
+                }
+            ],
+            path: "scripts/globals/globals.gml",
+            scopeId: "scope-global",
+            symbolId: `gml/var/GlobalVar${i}`
+        });
+    }
+
+    const semantic: any = {
+        listNamingConventionTargets: async () => targets,
+        getSymbolOccurrences: async (name: string, symbolId?: string | null) => {
+            const target = targets.find((t) => t.symbolId === symbolId);
+            return target ? target.occurrences : [];
+        },
+        hasSymbol: async (symbolId: string) => {
+            // Return true for original symbolIds to simulate existence, false for new names to avoid conflicts
+            return targets.some((t) => t.symbolId === symbolId);
+        },
+        getFileSymbols: async () => [],
+        getReservedKeywords: async () => [],
+        validateEdits: async () => ({ errors: [], warnings: [] }),
+        checkSemanticGaps: () => []
+    };
+
+    const engine = new Refactor.RefactorEngine({ semantic });
+
+    // Track how many times validateRenameRequest is called on the engine
+    let validateCallCount = 0;
+    const originalValidate = engine.validateRenameRequest.bind(engine);
+    engine.validateRenameRequest = async (request) => {
+        validateCallCount++;
+        return originalValidate(request);
+    };
+
+    const plan = await engine.planNamingConventionCodemod({
+        projectRoot,
+        targetPaths: [projectRoot],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        scriptResourceName: { caseStyle: "lower_snake" },
+                        variable: { caseStyle: "lower_snake" }
+                    }
+                }
+            }
+        }
+    });
+
+    assert.equal(plan.errors.length, 0);
+    assert.equal(plan.topLevelRenameRequests.length, 300);
+    assert.equal(validateCallCount, 10, "validateRenameRequest should only be called for the 10 slow-path variable renames");
+});

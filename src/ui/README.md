@@ -291,3 +291,4 @@ New top-level UI additions should:
     gmloop generate-feather-metadata --path /Users/henrykirk/GMLoop/vendor/3DSpider
     ```
     But if copied and run in the terminal, it fails with error: `error: unknown option '--path'`.
+- **BUG**: The expand/collapse toggle-symbol-arrow on the "Config" page does not change direction when the config section is expanded/collapsed. It should point down when expanded and point right when collapsed (currently fixed in down position). We should also just have one reusable collapse-panel component shared across the UI for all collapsible sections, instead of having each section implement its own expand/collapse behavior.

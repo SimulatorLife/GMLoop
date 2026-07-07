@@ -199,11 +199,13 @@ async function getOrBuildProjectIndex(
         sourceMtimes
     });
 
+    const startIndexLoad = Date.now();
     const ready = await coordinator.ensureReady({
         ...descriptor,
         projectRoot
     });
-    console.log(`[refactor] Semantic project index loaded (source: ${ready.source}).`);
+    const indexDuration = ((Date.now() - startIndexLoad) / 1000).toFixed(2);
+    console.log(`[refactor] Semantic project index loaded (source: ${ready.source}, took ${indexDuration}s).`);
     return { projectIndex: ready.projectIndex, coordinator };
 }
 
@@ -654,6 +656,7 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
         const resolvePath = (filePath: string) => path.resolve(projectRoot, filePath);
         let currentCodemodId: string | null = null;
         let lastProgressLogTime = 0;
+        let codemodStartTime = 0;
         let hasPendingSemanticIndexRefresh = shouldDeferInitialSemanticIndexBuild;
         const result = await engine.executeConfiguredCodemods({
             projectRoot,
@@ -668,6 +671,7 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
             onBeforeCodemod: (codemodId) => {
                 currentCodemodId = codemodId;
                 lastProgressLogTime = 0;
+                codemodStartTime = Date.now();
                 console.log(`\n[${codemodId}] running...`);
             },
             onProgress: (progress) => {
@@ -680,6 +684,7 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
                 }
             },
             onAfterCodemod: async (summary, context) => {
+                const codemodDuration = ((Date.now() - codemodStartTime) / 1000).toFixed(2);
                 const completedCodemodId = remainingSelectedCodemodIds.shift();
                 if (completedCodemodId !== summary.id) {
                     throw new Error(
@@ -691,7 +696,7 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
                 }
 
                 // Print status immediately (live output!)
-                console.log(`[${summary.id}] ${summary.changed ? "changed" : "no changes"}`);
+                console.log(`[${summary.id}] ${summary.changed ? "changed" : "no changes"} (took ${codemodDuration}s)`);
                 if (summary.changedFiles.length > 0) {
                     console.log(`Changed files: ${summary.changedFiles.length}`);
                 }

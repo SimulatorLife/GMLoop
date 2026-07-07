@@ -241,7 +241,7 @@ export async function detectRenameConflicts(
 
     // Check for unresolved same-name references (semantic gaps)
     if (resolver && typeof (resolver as any).checkSemanticGaps === "function") {
-        const gaps = await (resolver as any).checkSemanticGaps(oldName);
+        const gaps = await (resolver as any).checkSemanticGaps(oldName, resolvedContext.symbolKind);
         if (Array.isArray(gaps)) {
             for (const gap of gaps) {
                 conflicts.push({

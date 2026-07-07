@@ -1237,7 +1237,7 @@ export class GmlSemanticBridge {
         return this.deduplicateOccurrences(this.normalizeSourceBackedGmlOccurrences(symbolName, occurrences));
     }
 
-    checkSemanticGaps(symbolName: string): Array<{ message: string; path?: string }> {
+    checkSemanticGaps(symbolName: string, symbolKind?: string | null): Array<{ message: string; path?: string }> {
         const indexes = this.getIndexes();
         const isGlobalSymbol =
             this.findResourceByName(symbolName) !== null ||
@@ -1248,6 +1248,42 @@ export class GmlSemanticBridge {
         if (isGlobalSymbol) {
             return [];
         }
+
+        const NON_PROPERTY_SYMBOL_KINDS = new Set([
+            "script",
+            "scripts",
+            "object",
+            "objects",
+            "sprite",
+            "sprites",
+            "sound",
+            "sounds",
+            "room",
+            "rooms",
+            "path",
+            "paths",
+            "curve",
+            "curves",
+            "sequence",
+            "sequences",
+            "shader",
+            "shaders",
+            "font",
+            "fonts",
+            "timeline",
+            "timelines",
+            "tileset",
+            "tilesets",
+            "particlesystem",
+            "particlesystems",
+            "note",
+            "notes",
+            "extension",
+            "extensions",
+            "macro",
+            "enum",
+            "enum-member"
+        ]);
 
         const gaps: Array<{ message: string; path?: string }> = [];
         const unresolved = indexes.unresolvedReferencesByExactName.get(symbolName) ?? [];
@@ -1268,6 +1304,10 @@ export class GmlSemanticBridge {
             }
 
             if (this.isResolvedConstructorStaticMemberReference(symbolName, unresolvedReference.filePath, start, end)) {
+                continue;
+            }
+
+            if (isProperty && symbolKind && NON_PROPERTY_SYMBOL_KINDS.has(symbolKind)) {
                 continue;
             }
 
