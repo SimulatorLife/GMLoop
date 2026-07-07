@@ -522,7 +522,7 @@ void test("namingConvention skips script resource rename if it conflicts globall
         ],
         hasSymbol: async () => true,
         // Mock global lookup to find a variable named "scaler" in the project
-        lookup: async (name: string, scopeId?: string) => {
+        lookup: async (name: string, _scopeId?: string) => {
             if (name === "scaler") {
                 return { name: "scaler" };
             }
