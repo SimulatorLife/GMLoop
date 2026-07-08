@@ -49,6 +49,18 @@ then return here for deeper context.
 - [Fixture-runner reference](../src/fixture-runner/README.md) — Shared fixture
   discovery, execution, assertion, and profiling framework used by
   format, lint, refactor, and integration suites.
+- [Lint workspace reference](../src/lint/README.md) — ESLint v9 language plugin,
+  rule bundle, and `--write` content rewrites.
+- [Semantic workspace reference](../src/semantic/README.md) — Project
+  indexing, symbol resolution, and the dual-root graph index.
+- [Refactor workspace reference](../src/refactor/README.md) — Cross-file
+  rename transactions, codemod execution, and metadata migration.
+- [LSP workspace reference](../src/lsp/README.md) — Language Server Protocol
+  adapter over the parser/lint/format/semantic/refactor workspaces.
+- [Transpiler workspace reference](../src/transpiler/README.md) — GML
+  to JavaScript emission used by the hot-reload patch pipeline.
+- [UI workspace reference](../src/ui/README.md) — Cross-project UI surfaces
+  for graph, docs, fix, live-reload, and playground workflows.
 
 ## Contributor workflow
 
@@ -114,3 +126,7 @@ retries, memory, budgets, queues, and durable workflow state.
   selection, cadence filtering, and manual override behaviour. This is CI
   infrastructure for maintaining GMLoop, not a GMLoop product capability or
   an Auto-Game orchestration layer.
+- [CLI and MCP tool surface simplification](simplify_gmloop_cli_mcp_tool_surface_revised.md) —
+  Decision record for collapsing duplicate read, validation, inspection, and
+  lifecycle tools into a smaller set of owner-oriented commands, and letting
+  MCP follow the simplified CLI tree.
