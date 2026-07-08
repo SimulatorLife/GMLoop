@@ -2,7 +2,7 @@ import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import type { GmlRuleDefinition } from "../index.js";
-import { createMeta } from "../rule-base-helpers.js";
+import { createMeta, resolveLocFromIndex } from "../rule-base-helpers.js";
 
 const LOGICAL_NOT_ALIAS = "not";
 const WHITESPACE_PATTERN = /\s/u;
@@ -24,37 +24,6 @@ function createOperatorAliasesByCanonical(): ReadonlyMap<string, ReadonlyArray<s
             Object.freeze(aliases.toSorted((left, right) => right.length - left.length))
         ])
     );
-}
-
-function resolveReportLocation(context: Rule.RuleContext, index: number): { line: number; column: number } {
-    const sourceCodeWithLocator = context.sourceCode as Rule.RuleContext["sourceCode"] & {
-        getLocFromIndex?: (index: number) => { line: number; column: number };
-    };
-
-    if (typeof sourceCodeWithLocator.getLocFromIndex === "function") {
-        const located = sourceCodeWithLocator.getLocFromIndex(index);
-        if (
-            typeof located?.line === "number" &&
-            Number.isFinite(located.line) &&
-            typeof located.column === "number" &&
-            Number.isFinite(located.column)
-        ) {
-            return located;
-        }
-    }
-
-    const sourceText = context.sourceCode.text;
-    const clampedIndex = Core.clamp(index, 0, sourceText.length);
-    let line = 1;
-    let lineStart = 0;
-    for (let cursor = 0; cursor < clampedIndex; cursor += 1) {
-        if (sourceText[cursor] === "\n") {
-            line += 1;
-            lineStart = cursor + 1;
-        }
-    }
-
-    return { line, column: clampedIndex - lineStart };
 }
 
 function isDirectiveLineAtIndex(sourceText: string, index: number): boolean {
@@ -192,7 +161,7 @@ function reportOperatorAliasIfNeeded(
         originalOperatorText === originalOperatorText.toUpperCase() && originalOperatorText !== canonical;
 
     context.report({
-        loc: resolveReportLocation(context, operatorStart),
+        loc: resolveLocFromIndex(context, context.sourceCode.text, operatorStart),
         messageId: definition.messageId,
         fix: isUnparseable ? null : (fixer) => fixer.replaceTextRange([operatorStart, operatorEnd], canonical)
     });
@@ -237,7 +206,7 @@ export function createNormalizeOperatorAliasesRule(definition: GmlRuleDefinition
                             Core.isLogicalNotOperatorAliasAt(sourceText, index)
                         ) {
                             context.report({
-                                loc: resolveReportLocation(context, index),
+                                loc: resolveLocFromIndex(context, sourceText, index),
                                 messageId: definition.messageId
                             });
                             index += LOGICAL_NOT_ALIAS.length;
