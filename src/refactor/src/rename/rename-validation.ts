@@ -264,14 +264,14 @@ export async function detectRenameConflicts(
         resolvedContext.symbolKind === "enum-member" ? "enum-member" : "ordinary-binding",
         keywordProvider
     );
-    if (resolvedReservedKeywords.has(normalizedNewName.toLowerCase())) {
+    if (resolvedReservedKeywords.has(normalizedNewName)) {
         conflicts.push({
             type: ConflictType.RESERVED,
             message: `'${normalizedNewName}' is a reserved GameMaker identifier and cannot be used as an identifier`
         });
     }
 
-    if (resolvedReservedKeywords.has(oldName.toLowerCase())) {
+    if (resolvedReservedKeywords.has(oldName)) {
         conflicts.push({
             type: ConflictType.RESERVED,
             message: `'${oldName}' is a reserved/built-in GameMaker identifier and cannot be renamed`

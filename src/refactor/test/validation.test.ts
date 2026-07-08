@@ -407,6 +407,21 @@ void describe("detectRenameConflicts", () => {
         assert.equal(conflicts[0].type, ConflictType.SHADOW);
         assert.equal(conflicts[0].path, "scripts/player.gml");
     });
+
+    void test("applies case-sensitive checks to reserved keywords", async () => {
+        // Lowercase "lerp" is a reserved function name in GML and should trigger a conflict
+        const lowercaseConflicts = await detectRenameConflicts("old_name", "lerp", [], null, null);
+        assert.equal(lowercaseConflicts.length, 1, "lowercase 'lerp' should trigger a RESERVED conflict");
+        assert.equal(lowercaseConflicts[0].type, ConflictType.RESERVED);
+
+        // Uppercase "LERP" does not conflict with the built-in lowercase "lerp" function and should not trigger a conflict
+        const uppercaseConflicts = await detectRenameConflicts("old_name", "LERP", [], null, null);
+        assert.equal(uppercaseConflicts.length, 0, "uppercase 'LERP' should not trigger a conflict");
+
+        // Custom symbol with name "Lerp" (capital L) is not a reserved built-in keyword and should be allowed to be renamed
+        const oldNameConflicts = await detectRenameConflicts("Lerp", "new_name", [], null, null);
+        assert.equal(oldNameConflicts.length, 0, "renaming symbol 'Lerp' should not trigger a conflict");
+    });
 });
 
 // ---------------------------------------------------------------------------

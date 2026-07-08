@@ -19,7 +19,7 @@ const SUPPLEMENTAL_ORDINARY_RESERVED_IDENTIFIER_NAMES: ReadonlyArray<string> = O
 
 function addNormalizedNames(destination: Set<string>, names: Iterable<string>): void {
     for (const name of names) {
-        destination.add(name.toLowerCase());
+        destination.add(name);
     }
 }
 

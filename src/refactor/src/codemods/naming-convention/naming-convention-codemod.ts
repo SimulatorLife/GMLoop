@@ -304,7 +304,7 @@ function collectScopeDataFromTargets(
             }
 
             declarations.add(declarationKey);
-            incrementScopedCount(names, target.name.toLowerCase());
+            incrementScopedCount(names, target.name);
             localScopeNames.set(scopeKey, names);
             localScopeDeclarations.set(scopeKey, declarations);
         }
@@ -375,8 +375,8 @@ function processLocalNamingConventionRename(parameters: {
     const existingNames = scopeKey === null ? undefined : parameters.localScopeNames.get(scopeKey);
 
     if (existingNames !== undefined) {
-        normalizedSuggestedName = suggestedName.toLowerCase();
-        normalizedIdentifierName = target.name.toLowerCase();
+        normalizedSuggestedName = suggestedName;
+        normalizedIdentifierName = target.name;
         const existingSuggestedNameCount = existingNames.get(normalizedSuggestedName) ?? 0;
         const isCaseOnlyRename = normalizedSuggestedName === normalizedIdentifierName;
         const hasSameScopeNameConflict = isCaseOnlyRename
@@ -450,7 +450,7 @@ function processLocalNamingConventionRename(parameters: {
             : findDependentMacroNames(
                   parameters.macroDependencyNamesByFile,
                   target.path,
-                  normalizedIdentifierName ?? target.name.toLowerCase()
+                  normalizedIdentifierName ?? target.name
               );
     if (dependentMacroNames.length > 0) {
         parameters.warnings.push(
@@ -526,8 +526,8 @@ function processLocalNamingConventionRename(parameters: {
         });
     }
     if (existingNames !== undefined) {
-        normalizedSuggestedName ??= suggestedName.toLowerCase();
-        normalizedIdentifierName ??= target.name.toLowerCase();
+        normalizedSuggestedName ??= suggestedName;
+        normalizedIdentifierName ??= target.name;
         decrementScopedNameCount(existingNames, normalizedIdentifierName);
         incrementScopedCount(existingNames, normalizedSuggestedName);
         parameters.localScopeNames.set(scopeKey, existingNames);
@@ -819,7 +819,7 @@ function collectMacroDependencyNamesByFile(
         const normalizedReferencedNames = dependencyNames.get(dependency.macroName) ?? new Set<string>();
 
         for (const referencedName of dependency.referencedNames) {
-            normalizedReferencedNames.add(referencedName.toLowerCase());
+            normalizedReferencedNames.add(referencedName);
         }
 
         dependencyNames.set(dependency.macroName, normalizedReferencedNames);
