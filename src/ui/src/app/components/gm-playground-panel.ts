@@ -117,7 +117,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         const formatOptions = this.#resolveFormatOptionsForModel(model);
         for (const option of formatOptions) {
             if (!this.#enabledFormatOptions.has(option.name)) {
-                this.#enabledFormatOptions.set(option.name, true);
+                this.#enabledFormatOptions.set(option.name, false);
             }
         }
     }
@@ -126,7 +126,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         const lintRules = this.#resolveLintRulesForModel(model);
         for (const rule of lintRules) {
             if (!this.#enabledLintRules.has(rule.ruleId)) {
-                this.#enabledLintRules.set(rule.ruleId, true);
+                this.#enabledLintRules.set(rule.ruleId, false);
             }
         }
     }
@@ -135,7 +135,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         const codemods = this.#resolveCodemodsForModel(model);
         for (const codemod of codemods) {
             if (!this.#enabledCodemods.has(codemod.id)) {
-                this.#enabledCodemods.set(codemod.id, true);
+                this.#enabledCodemods.set(codemod.id, false);
             }
         }
     }
@@ -870,6 +870,11 @@ ${unsafeHTML(highlightGml(this.#sessionController.input))}</pre
     public setFixturesForTest(fixtures: ReadonlyArray<PlaygroundFixture>): void {
         this.#fixtures = fixtures;
         this.requestUpdate();
+    }
+
+    /** @internal */
+    public syncEnabledStateFromModelForTest(): void {
+        this.#onModelChange();
     }
 
     /** @internal */
