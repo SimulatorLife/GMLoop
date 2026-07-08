@@ -420,6 +420,11 @@ export class GmlToJsEmitter {
         if (ast.operator === "div") {
             return `Math.trunc(${left} / ${right})`;
         }
+        // Special case: GML `xor` / `^^` is logical XOR.
+        // There is no logical XOR operator in JavaScript; lower to boolean inequality.
+        if (ast.operator === "xor" || ast.operator === "^^") {
+            return `(!(${left}) !== !(${right}))`;
+        }
         const op = mapBinaryOperator(ast.operator);
         return `(${left} ${op} ${right})`;
     }

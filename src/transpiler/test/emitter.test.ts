@@ -1991,3 +1991,29 @@ void test("GmlToJsEmitter folds ternary expressions with constant boolean condit
 
     assert.match(result, /^result = expensive\(\);$/, "Should emit only the selected ternary branch");
 });
+
+void test("GmlToJsEmitter handles logical XOR (^^ and xor) correctly", () => {
+    // 1. Runtime transpilation of logical XOR (not bitwise)
+    const source1 = "var res = a ^^ b;";
+    const parser1 = new Parser.GMLParser(source1, {});
+    const ast1 = parser1.parse();
+    const result1 = Transpiler.emitJavaScript(ast1);
+    assert.ok(result1.includes("!(a) !== !(b)"), "Should transpile ^^ to logical inequality on negated values");
+
+    const source2 = "var res = a xor b;";
+    const parser2 = new Parser.GMLParser(source2, {});
+    const ast2 = parser2.parse();
+    const result2 = Transpiler.emitJavaScript(ast2);
+    assert.ok(result2.includes("!(a) !== !(b)"), "Should transpile xor to logical inequality on negated values");
+
+    // 2. Constant folding of logical XOR
+    const sourceFold1 = "var res = true ^^ false;";
+    const parserFold1 = new Parser.GMLParser(sourceFold1, {});
+    const resultFold1 = Transpiler.emitJavaScript(parserFold1.parse());
+    assert.strictEqual(resultFold1.trim(), "var res = true;", "Should fold true ^^ false to true");
+
+    const sourceFold2 = "var res = true xor true;";
+    const parserFold2 = new Parser.GMLParser(sourceFold2, {});
+    const resultFold2 = Transpiler.emitJavaScript(parserFold2.parse());
+    assert.strictEqual(resultFold2.trim(), "var res = false;", "Should fold true xor true to false");
+});

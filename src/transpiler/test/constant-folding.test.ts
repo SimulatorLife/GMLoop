@@ -326,9 +326,14 @@ void test("constant folding: bitwise OR", () => {
     assert.strictEqual(tryFoldConstantExpression(ast), 14);
 });
 
-void test("constant folding: bitwise XOR (^) and GML xor share implementation", () => {
+void test("constant folding: bitwise XOR (^)", () => {
     assert.strictEqual(tryFoldConstantExpression(binary("^", 12, 10)), 6);
-    assert.strictEqual(tryFoldConstantExpression(binary("xor", 12, 10)), 6);
+});
+
+void test("constant folding: logical XOR (xor and ^^)", () => {
+    assert.strictEqual(tryFoldConstantExpression(binary("xor", true, false)), true);
+    assert.strictEqual(tryFoldConstantExpression(binary("^^", true, true)), false);
+    assert.strictEqual(tryFoldConstantExpression(binary("xor", 12, 10)), null); // Cannot fold non-booleans
 });
 
 void test("constant folding: left shift", () => {

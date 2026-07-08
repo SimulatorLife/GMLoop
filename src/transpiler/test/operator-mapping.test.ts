@@ -22,8 +22,9 @@ void describe("mapBinaryOperator", () => {
         assert.strictEqual(mapBinaryOperator("or"), "||");
     });
 
-    void it("maps GML xor operator to JavaScript ^", () => {
-        assert.strictEqual(mapBinaryOperator("xor"), "^");
+    void it("passes xor and ^^ through unchanged (handled as special cases in emitter)", () => {
+        assert.strictEqual(mapBinaryOperator("xor"), "xor");
+        assert.strictEqual(mapBinaryOperator("^^"), "^^");
     });
 
     void it("maps == to === for strict equality", () => {
