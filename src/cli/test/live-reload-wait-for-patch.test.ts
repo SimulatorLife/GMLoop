@@ -232,3 +232,59 @@ void test("live-reload wait-for-patch fails with connection_failed structured JS
         await rm(projectRoot, { recursive: true, force: true });
     }
 });
+
+void test("live-reload wait-for-patch tolerates transient fetch failures during polling", async () => {
+    const port = 60_996;
+    const projectRoot = await createTempSessionProject(port);
+
+    // The discovery check (first request) must succeed so the registry survives.
+    // Subsequent poll requests are flaky: first returns 500, then recovers with patch-2.
+    const responses = [
+        { status: 200, body: JSON.stringify({ patches: [{ patchId: "patch-1" }], lastPatchId: "patch-1" }) },
+        { status: 500, body: "boom" },
+        { status: 200, body: JSON.stringify({ patches: [{ patchId: "patch-2" }], lastPatchId: "patch-2" }) }
+    ];
+    const state = { index: 0 };
+
+    const server = createServer((req, res) => {
+        if (req.url === "/status") {
+            const next = responses[state.index] ?? responses.at(-1);
+            state.index += 1;
+            res.writeHead(next.status, { "Content-Type": "application/json" });
+            res.end(next.body);
+            return;
+        }
+        res.writeHead(404);
+        res.end();
+    });
+
+    await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
+
+    try {
+        const result = await runCliTestCommand({
+            argv: [
+                "live-reload",
+                "wait-for-patch",
+                "--since-patch-id",
+                "patch-1",
+                "--path",
+                projectRoot,
+                "--poll-interval-ms",
+                "50",
+                "--timeout-ms",
+                "1500"
+            ]
+        });
+        if (result.exitCode !== 0) {
+            console.log("WAIT-FOR-PATCH STDOUT:", result.stdout);
+            console.log("WAIT-FOR-PATCH STDERR:", result.stderr);
+        }
+        assert.equal(result.exitCode, 0);
+        const payload = JSON.parse(result.stdout) as { ok: boolean; payload: { lastPatchId: string } };
+        assert.equal(payload.ok, true);
+        assert.equal(payload.payload.lastPatchId, "patch-2");
+    } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});

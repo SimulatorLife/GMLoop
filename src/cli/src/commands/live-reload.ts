@@ -313,12 +313,6 @@ function readLastPatchId(statusPayload: unknown): string | null {
     return typeof lastPatchId === "string" && lastPatchId.length > 0 ? lastPatchId : null;
 }
 
-async function delayLiveReloadPatchPoll(pollIntervalMs: number): Promise<void> {
-    await new Promise((resolve) => {
-        setTimeout(resolve, pollIntervalMs);
-    });
-}
-
 async function pollLiveReloadStatusForPatch(
     parameters: Readonly<{
         deadline: number;
@@ -331,15 +325,35 @@ async function pollLiveReloadStatusForPatch(
         return null;
     }
 
-    const rawStatusPayload = await fetchLiveReloadStatusPayload(parameters.session);
-    const statusPayload = Core.isObjectLike(rawStatusPayload) ? (rawStatusPayload as Record<string, unknown>) : {};
-    const lastPatchId = readLastPatchId(statusPayload);
-    if (lastPatchId !== null && lastPatchId !== parameters.sincePatchId) {
-        return statusPayload;
+    let statusPayload: Record<string, unknown> | null = null;
+    try {
+        const rawStatusPayload = await fetchLiveReloadStatusPayload(parameters.session);
+        if (Core.isObjectLike(rawStatusPayload)) {
+            statusPayload = rawStatusPayload as Record<string, unknown>;
+        }
+    } catch {
+        // Tolerate transient connection blips; the deadline check below
+        // resolves the wait deterministically.
     }
 
-    await delayLiveReloadPatchPoll(parameters.pollIntervalMs);
+    const lastPatchId = statusPayload === null ? null : readLastPatchId(statusPayload);
+    if (lastPatchId !== null && lastPatchId !== parameters.sincePatchId) {
+        return statusPayload ?? {};
+    }
+
+    const remainingMs = parameters.deadline - Date.now();
+    if (remainingMs <= 0) {
+        return null;
+    }
+
+    await delayLiveReloadPatchPoll(Math.min(parameters.pollIntervalMs, remainingMs));
     return await pollLiveReloadStatusForPatch(parameters);
+}
+
+function delayLiveReloadPatchPoll(pollIntervalMs: number): Promise<void> {
+    return new Promise((resolve) => {
+        setTimeout(resolve, pollIntervalMs);
+    });
 }
 
 export async function runLiveReloadWaitForPatchCommand(
