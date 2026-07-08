@@ -1140,4 +1140,23 @@ switch (x) {
             assert.equal(ast.type, "Program");
         }
     });
+
+    void it("parses logical 'not' / 'NOT' before various expression start characters", () => {
+        const sources = [
+            "if (not 1) {}",
+            "if (NOT 0.5) {}",
+            "if (not .5) {}",
+            "if (not $FF) {}",
+            "if (NOT 0x10) {}",
+            "if (NOT !value) {}",
+            "if (not ~value) {}",
+            'if (not "hello") {}',
+            "if (not [1, 2]) {}",
+            "if (not {a: 1}) {}"
+        ];
+
+        for (const source of sources) {
+            assert.doesNotThrow(() => GMLParser.parse(source), `Failed to parse: ${source}`);
+        }
+    });
 });

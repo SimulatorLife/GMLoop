@@ -96,7 +96,12 @@ single `.yy`/`.yyp` update instead of conflicting duplicate rewrites, and write
 mode avoids stale rename offsets by applying the merged workspace atomically.
 Case-style rewrites preserve allowed leading and trailing underscore affixes, so
 `lower_snake` policy does not silently strip names like `__input_error` unless
-the policy explicitly bans those affixes. Object-event assignment-backed fields
+the policy explicitly bans those affixes. Conflict checking and reserved keyword
+validation are case-sensitive because GameMaker Language is case-sensitive, so
+renaming custom identifiers to target names that differ in casing from reserved
+keywords or existing variables (e.g. custom macro `LERP` vs built-in `lerp`,
+or same-scope `myVar` vs `MY_VAR`) is fully permitted and does not trigger conflicts.
+Object-event assignment-backed fields
 that the semantic index only reports as unresolved references are still treated
 as instance-variable naming targets when they are introduced through instance
 assignments, so project-wide variable policy can rename identifiers like

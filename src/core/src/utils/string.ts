@@ -779,6 +779,19 @@ export function isIdentifierStartCharacter(character: unknown): boolean {
  * Determine whether a logical NOT alias ("not" or "NOT", etc.) is present at the
  * given index and acts as a unary negation operator.
  *
+ * NOTE: GML does not support "not" as a built-in/reserved logical operator; only
+ * "!" is valid. Because "not" is not a reserved keyword, users are allowed to define
+ * variables or identifiers named "not" (e.g. `var not = 0;`).
+ *
+ * To tolerate legacy/invalid GML and successfully parse it (allowing linter auto-fixes),
+ * the parser preprocessor rewrites logical "not" usages to "!".
+ *
+ * This function resolves the variable/operator ambiguity by checking if the word "not"
+ * is followed by a token that can start a GML expression (like digits, strings, hex,
+ * array/struct literals, negation/tilde, or parenthesized expressions separated by space),
+ * while excluding binary operators and punctuation (such as `+`, `-`, `=`, `==`, `;`, `)`)
+ * that can only follow a variable.
+ *
  * @param {string} sourceText GML source text.
  * @param {number} startIndex Index where the alias starts.
  * @returns {boolean} `true` when the alias is a logical NOT operator.
@@ -832,6 +845,10 @@ export function isLogicalNotOperatorAliasAt(sourceText: string, startIndex: numb
     }
 
     const nextTokenStart = sourceText[operandIndex];
+    if (!nextTokenStart) {
+        return false;
+    }
+
     if (nextTokenStart === "(") {
         // If '(' is immediately adjacent to 'not' (no whitespace), it is a function call
         if (operandIndex === aliasEnd) {
@@ -839,5 +856,46 @@ export function isLogicalNotOperatorAliasAt(sourceText: string, startIndex: numb
         }
         return true;
     }
-    return isIdentifierStartCharacter(nextTokenStart);
+
+    if (isIdentifierStartCharacter(nextTokenStart)) {
+        return true;
+    }
+
+    const code = nextTokenStart.charCodeAt(0);
+    const isDigit = code >= 48 && code <= 57;
+
+    // Expression start symbols: digits, strings, hex, unary negation/not, and struct braces
+    if (
+        isDigit ||
+        nextTokenStart === '"' ||
+        nextTokenStart === "$" ||
+        nextTokenStart === "!" ||
+        nextTokenStart === "~" ||
+        nextTokenStart === "{"
+    ) {
+        return true;
+    }
+
+    if (nextTokenStart === "[") {
+        // If '[' is immediately adjacent to 'not' (no whitespace), it is an array index access
+        if (operandIndex === aliasEnd) {
+            return false;
+        }
+        return true;
+    }
+
+    if (nextTokenStart === ".") {
+        // Handle float literals like `.5` vs member access `not.field`.
+        // A float literal requires preceding whitespace and a digit following the dot.
+        if (operandIndex > aliasEnd) {
+            const nextChar = sourceText[operandIndex + 1];
+            if (nextChar) {
+                const nextCode = nextChar.charCodeAt(0);
+                return nextCode >= 48 && nextCode <= 57;
+            }
+        }
+        return false;
+    }
+
+    return false;
 }

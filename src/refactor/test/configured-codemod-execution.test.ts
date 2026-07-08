@@ -3278,3 +3278,74 @@ void test("executeConfiguredCodemods renames enum member references across diffe
         "func_run(eTestResultType.CONSOLE, false);\n"
     );
 });
+
+void test("executeConfiguredCodemods permits same-scope renames to targets that differ only in case from other identifiers in GML", async () => {
+    const sourceText =
+        "function test_scope() {\n    var myVar = 1;\n    var MY_VAR = 2;\n    return myVar + MY_VAR;\n}\n";
+    const myVarDefinitionStart = sourceText.indexOf("myVar");
+    const myVarReferenceStart = sourceText.indexOf("myVar +");
+
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => [
+            {
+                name: "myVar",
+                category: "localVariable",
+                path: "scripts/test_scope.gml",
+                scopeId: "scope:function:test_scope",
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "scripts/test_scope.gml",
+                        start: myVarDefinitionStart,
+                        end: myVarDefinitionStart + 5,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: "scope:function:test_scope"
+                    },
+                    {
+                        path: "scripts/test_scope.gml",
+                        start: myVarReferenceStart,
+                        end: myVarReferenceStart + 5,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:function:test_scope"
+                    }
+                ]
+            }
+        ]
+    };
+
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const fileContents = new Map<string, string>([["scripts/test_scope.gml", sourceText]]);
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["scripts/test_scope.gml"],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        localVariable: { caseStyle: "lower_snake" }
+                    }
+                }
+            }
+        },
+        readFile: async (filePath) => fileContents.get(filePath) ?? "",
+        writeFile: async (filePath, content) => {
+            fileContents.set(filePath, content);
+        },
+        dryRun: false
+    });
+
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(result.summaries[0]?.changed, true);
+    // Should have zero warnings because "my_var" does not collide with "MY_VAR" case-sensitively
+    assert.equal(
+        result.summaries[0]?.warnings.some((warning) => warning.includes("already exists in the same scope")),
+        false,
+        "should not warn about same-scope collision when target name differs in case"
+    );
+
+    const finalText = fileContents.get("scripts/test_scope.gml");
+    assert.match(finalText ?? "", /var my_var = 1;/);
+    assert.match(finalText ?? "", /var MY_VAR = 2;/);
+});

@@ -236,6 +236,22 @@ void test("isLogicalNotOperatorAliasAt detects not as an operator vs identifier"
     assert.strictEqual(isLogicalNotOperatorAliasAt("obj.not = 1;", 4), false);
     assert.strictEqual(isLogicalNotOperatorAliasAt("if (not) {", 4), false);
     assert.strictEqual(isLogicalNotOperatorAliasAt("if not_active {", 3), false);
+
+    // Literal and unary expression starts
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not 1", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not 0.5", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not .5", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not $FF", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not 0x10", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not !value", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not ~value", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt('not "hello"', 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not [1, 2]", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not {a: 1}", 0), true);
+
+    // Boundaries and adjacencies
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not.field", 0), false);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not[0]", 0), false);
 });
 
 void test("assertNonEmptyString returns the validated value", () => {
