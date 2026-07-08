@@ -4848,4 +4848,77 @@ void describe("GmlSemanticBridge tests", () => {
             "instanceVariables masking a macro/enum should be excluded"
         );
     });
+
+    void it("namingConvention skips renaming a script resource if its lowercase name conflicts with an instance variable defined in a constructor", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-conflict-shadowing-"));
+        const relativeFilePath = "scripts/ZModels/ZModels.gml";
+        const absoluteFilePath = path.join(tmpRoot, relativeFilePath);
+        const sourceText = ["function ZModelSphere() constructor {", "    quaternion = new Quaternion();", "}"].join(
+            "\n"
+        );
+
+        fs.mkdirSync(path.dirname(absoluteFilePath), { recursive: true });
+        fs.writeFileSync(absoluteFilePath, sourceText, "utf8");
+
+        const yyFilePath = path.join(tmpRoot, "scripts/Quaternion/Quaternion.yy");
+        fs.mkdirSync(path.dirname(yyFilePath), { recursive: true });
+        fs.writeFileSync(
+            yyFilePath,
+            JSON.stringify({
+                resourceType: "GMScript",
+                name: "Quaternion"
+            }),
+            "utf8"
+        );
+
+        const zmodelsYyPath = path.join(tmpRoot, "scripts/ZModels/ZModels.yy");
+        fs.writeFileSync(
+            zmodelsYyPath,
+            JSON.stringify({
+                resourceType: "GMScript",
+                name: "ZModels"
+            }),
+            "utf8"
+        );
+
+        // Build the semantic project index
+        const projectIndex = await Semantic.buildProjectIndex(tmpRoot);
+
+        // Verify quaternion instance variable is registered
+        const identifiers = projectIndex.identifiers || {};
+        assert.ok(identifiers.instanceVariables, "Should have instanceVariables in index");
+        const hasQuaternionVar = Object.values(identifiers.instanceVariables).some(
+            (entry: any) => entry.name === "quaternion"
+        );
+        assert.ok(hasQuaternionVar, "quaternion should be registered as an instance variable");
+
+        // Plan the naming convention codemod
+        const semantic = new GmlSemanticBridge(projectIndex, tmpRoot);
+        const engine = new Refactor.RefactorEngine({ semantic });
+        const plan = await engine.planNamingConventionCodemod({
+            projectRoot: tmpRoot,
+            targetPaths: [tmpRoot],
+            config: {
+                codemods: {
+                    namingConvention: {
+                        rules: {
+                            scriptResourceName: { caseStyle: "lower_snake" }
+                        }
+                    }
+                }
+            }
+        });
+
+        // The script resource Quaternion should NOT be renamed to quaternion because of collision
+        const quaternionRename = plan.topLevelRenameRequests.find((r) => r.symbolId === "gml/scripts/Quaternion");
+        assert.equal(quaternionRename, undefined, "Quaternion rename should be skipped due to shadowing conflict");
+
+        const hasConflictWarning = plan.warnings.some(
+            (w) => w.includes("conflict with existing symbol") || w.includes("shadow") || w.includes("planning failed")
+        );
+        assert.equal(hasConflictWarning, true, "Should have a warning about shadowing conflict");
+
+        // Clean up
+        fs.rmSync(tmpRoot, { recursive: true, force: true });
+    });
 });

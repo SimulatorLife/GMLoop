@@ -601,7 +601,8 @@ async function selectExecutableTopLevelRenames(
             "particlesystems",
             "notes",
             "extensions",
-            "resource"
+            "resource",
+            "script"
         ]);
 
         for (const rename of renames) {

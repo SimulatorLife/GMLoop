@@ -1683,6 +1683,46 @@ function handleConstructorParentScriptCall({
         scriptNameToScopeId
     });
 }
+function buildSafeParentMap(root) {
+    const parentMap = new Map();
+    const visit = (node, parent) => {
+        if (!node || typeof node !== "object") {
+            return;
+        }
+        if (parent) {
+            parentMap.set(node, parent);
+        }
+        for (const key of Object.keys(node)) {
+            if (key === "parent" && node.type === "ConstructorDeclaration") {
+                visit(node[key], node);
+                continue;
+            }
+            if (key === "parent" || key === "enclosingNode" || key === "precedingNode" || key === "followingNode") {
+                continue;
+            }
+            const val = node[key];
+            if (Array.isArray(val)) {
+                for (const child of val) {
+                    visit(child, node);
+                }
+            } else {
+                visit(val, node);
+            }
+        }
+    };
+    visit(root, null);
+    return parentMap;
+}
+function isInsideConstructor(node, parentMap) {
+    let curr = node;
+    while (curr) {
+        if (curr.type === "ConstructorDeclaration" || curr.type === "StructDeclaration") {
+            return true;
+        }
+        curr = parentMap?.get(curr) ?? null;
+    }
+    return false;
+}
 function handleObjectEventAssignmentNode({
     node,
     scopeDescriptor,
@@ -1691,12 +1731,13 @@ function handleObjectEventAssignmentNode({
     fileRecord,
     scopeRecord,
     metrics,
-    identifierSink
+    identifierSink,
+    parentMap
 }) {
     if (
         node?.type !== "AssignmentExpression" ||
         node.left?.type !== "Identifier" ||
-        scopeDescriptor?.kind !== "objectEvent"
+        (scopeDescriptor?.kind !== "objectEvent" && !isInsideConstructor(node, parentMap))
     ) {
         return;
     }
@@ -1793,6 +1834,7 @@ function analyseGmlAst({
     structVariableDeclarationScopeIds = new Set(),
     identifierSink
 }) {
+    const parentMap = buildSafeParentMap(ast);
     const enumLookup = createEnumLookup(ast, fileRecord?.filePath ?? null);
     traverseAst(ast, (node) => {
         handleFunctionLikeDeclarationNode({
@@ -1858,7 +1900,8 @@ function analyseGmlAst({
             fileRecord,
             scopeRecord,
             metrics,
-            identifierSink
+            identifierSink,
+            parentMap
         });
     });
 }
