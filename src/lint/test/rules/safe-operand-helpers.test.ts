@@ -5,7 +5,7 @@ import {
     areAllSafeOperands,
     isSafeOperand,
     isSafeReciprocalCancellationOperand
-} from "../../../../src/rules/gml/math/index.js";
+} from "../../src/rules/gml/math/index.js";
 
 void describe("isSafeOperand", () => {
     void it("returns true for Identifier", () => {

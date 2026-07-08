@@ -15,7 +15,7 @@ import {
     promoteLeadingDocCommentTextToDescription,
     reorderDescriptionLinesToTop,
     resolveParameterName
-} from "../../../../src/doc-comment/index.js";
+} from "../../src/doc-comment/index.js";
 
 void test("transform doc-comment helpers remain reachable through the lint doc-comment barrel", () => {
     const expectedFunctions = [
