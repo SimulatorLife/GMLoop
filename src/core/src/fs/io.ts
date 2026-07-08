@@ -269,13 +269,24 @@ export async function safeStat(filePath: string): Promise<Stats | null> {
 
 /**
  * Read directory entries with `withFileTypes: true`, returning an empty array
- * when the directory does not exist or is inaccessible.
+ * when the directory does not exist. Errors other than ENOENT/ENOTDIR are
+ * re-thrown so callers can distinguish benign "missing directory" cases from
+ * permission or I/O failures.
+ *
+ * Routes through the same {@link runDirectoryReadWithMissingFallback} helper
+ * as {@link safeReaddir} and {@link safeReaddirDirent} so all canonical "safe"
+ * directory reads share identical fallback semantics. Historically this
+ * helper used a bare `.catch(() => [])` which silently absorbed permission
+ * and I/O errors; it now mirrors the documented project-wide pattern.
  *
  * @param {string} directoryPath Path to the directory to read.
  * @returns {Promise<Dirent[]>} Directory entries when accessible, otherwise an empty array.
+ * @throws {NodeJS.ErrnoException} When the read fails for a reason other than
+ *         the directory being missing (`ENOENT`) or replaced by a non-directory
+ *         entry (`ENOTDIR`).
  */
-export async function safeReaddirWithFileTypes(directoryPath: string): Promise<Dirent[]> {
-    return await fsPromises.readdir(directoryPath, { withFileTypes: true }).catch(() => []);
+export function safeReaddirWithFileTypes(directoryPath: string): Promise<Dirent[]> {
+    return runDirectoryReadWithMissingFallback(() => fsPromises.readdir(directoryPath, { withFileTypes: true }));
 }
 
 /**
