@@ -414,6 +414,76 @@ void test("playground panel syncs format options from project configuration cata
     assert.match(rendered, /0\/2 enabled/u);
 });
 
+/**
+ * Regression: the model-change sync must register each option in the internal
+ * state map without flipping it on. The playground previously auto-enabled every
+ * option when the model loaded, which made single-option toggles look like they
+ * flipped the entire rule set and made it impossible to start from a clean
+ * baseline. The expected behaviour is the same `0/X enabled` count whether the
+ * sync has run or not — the sync only seeds the map with `false` entries.
+ */
+void test("playground panel model sync does not auto-enable format lint or codemod options", () => {
+    const panel = new TestableGmPlaygroundPanel();
+    panel.model = {
+        ...createMockModel(),
+        documentationCatalogs: {
+            cliCommands: [],
+            mcpServer: { name: "gmloop-mcp", version: "0.0.1" },
+            mcpTools: [],
+            workspaceRules: {
+                formatOptions: [
+                    {
+                        defaultValue: 100,
+                        description: "Preferred maximum line width.",
+                        name: "printWidth"
+                    },
+                    {
+                        defaultValue: true,
+                        description: "Use trailing commas.",
+                        name: "trailingComma"
+                    }
+                ],
+                lintRules: [
+                    {
+                        description: "Report legacy globalvar declarations that require a project-aware migration.",
+                        fixable: null,
+                        ruleId: "gml/no-globalvar"
+                    }
+                ],
+                refactorCodemods: [
+                    {
+                        description: "Expand scientific notation.",
+                        id: "scientificNotation",
+                        requiresSemanticProjectIndex: false
+                    }
+                ]
+            }
+        },
+        projectConfigurationCatalog: createEmptyProjectConfigurationCatalog()
+    };
+    panel.state = createMockState();
+    panel.setExpandedSectionsForTest(true, true, true);
+
+    // Drive the same path Lit's ReactiveController would take when the model
+    // changes during a normal update cycle.
+    panel.syncEnabledStateFromModelForTest();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    // Each section's enabled counter must still report zero enabled entries —
+    // the sync only populates the internal map, it does not turn options on.
+    const formatCountMatch = /(\d+\/\d+) enabled/u.exec(rendered);
+    assert.notEqual(formatCountMatch, null);
+    assert.equal(formatCountMatch?.[0]?.startsWith("0/"), true);
+
+    // No checkbox in any section should appear checked after a model sync,
+    // because the sync only seeds the map with `false`.
+    assert.doesNotMatch(rendered, /type="checkbox"\s+checked[^>]*>.*printWidth/u);
+    assert.doesNotMatch(rendered, /type="checkbox"\s+checked[^>]*>.*trailingComma/u);
+    assert.doesNotMatch(rendered, /type="checkbox"\s+checked[^>]*>.*gml\/no-globalvar/u);
+    assert.doesNotMatch(rendered, /type="checkbox"\s+checked[^>]*>.*scientificNotation/u);
+});
+
 void test("playground panel output does not have leading whitespace nodes", () => {
     const panel = new TestableGmPlaygroundPanel();
     panel.model = createMockModel();
