@@ -6,6 +6,8 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { Core } from "@gmloop/core";
+
 import { writeGameMakerCliActiveProjectState } from "../src/commands/game-maker-cli.js";
 import { __graphCommandTest__, createGraphCommand } from "../src/commands/graph.js";
 
@@ -1352,4 +1354,127 @@ void test("awaitGraphVisualizationLiveReloadStartup rejects when child process s
         { polls: 0, timeouts: 0 },
         "Expected both the pending poll timer and the startup timeout to be cleared on the child-stopped exit path."
     );
+});
+
+void test("graph visualize feather metadata watcher only calls onChanged if content hash changes", async () => {
+    let watchListener: (event: string) => void = () => {};
+    let closeCount = 0;
+    const fakeWatcher = {
+        close() {
+            closeCount++;
+        },
+        on(eventName: string, listener: () => void) {
+            void eventName;
+            void listener;
+            return fakeWatcher;
+        }
+    } as unknown as FSWatcher;
+
+    const watchFactory = (_path: string, listener?: WatchListener<string>): FSWatcher => {
+        if (listener) {
+            watchListener = listener as any;
+        }
+        return fakeWatcher;
+    };
+
+    let readCount = 0;
+    const fileContents = [
+        "initial content", // initial load
+        "initial content", // first change (same content)
+        "different content", // second change (different content)
+        "different content" // third change (same content)
+    ];
+
+    const readFileFn = async (_path: string, _options: "utf8"): Promise<string> => {
+        const content = fileContents[readCount];
+        readCount = Math.min(readCount + 1, fileContents.length - 1);
+        return content;
+    };
+
+    let changedCount = 0;
+    let resolveChanged: (() => void) | null = null;
+
+    const watcher = __graphCommandTest__.startGraphVisualizationFeatherMetadataWatcher({
+        featherMetadataPath: "feather-metadata.json",
+        onChanged: () => {
+            changedCount++;
+            if (resolveChanged) {
+                resolveChanged();
+            }
+        },
+        onError: (err) => {
+            assert.fail(`Should not trigger error: ${Core.getErrorMessage(err)}`);
+        },
+        watchFactory,
+        readFileFn
+    });
+
+    // Wait for the initialization promise to finish
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Initially readCount is 1 (read once on initialization), changedCount is 0
+    assert.equal(changedCount, 0);
+
+    // Fire watch callback - content is still "initial content"
+    watchListener("change");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(changedCount, 0); // content hash did not change
+
+    // Fire watch callback - content is now "different content"
+    const changedPromise = new Promise<void>((resolve) => {
+        resolveChanged = resolve;
+    });
+    watchListener("change");
+    await changedPromise;
+    assert.equal(changedCount, 1); // content hash changed, onChanged called!
+
+    // Fire watch callback - content is still "different content"
+    watchListener("change");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(changedCount, 1); // content hash did not change
+
+    // Close watcher
+    watcher.close();
+    assert.equal(closeCount, 1);
+});
+
+void test("graph visualize feather metadata watcher routes errors to onError", async () => {
+    let errorListener: ((err: Error) => void) | null = null;
+    const fakeWatcher = {
+        close() {},
+        on(eventName: string, listener: (err: Error) => void) {
+            if (eventName === "error") {
+                errorListener = listener;
+            }
+            return fakeWatcher;
+        }
+    } as unknown as FSWatcher;
+
+    const watchFactory = (_path: string, _listener?: WatchListener<string>): FSWatcher => {
+        return fakeWatcher;
+    };
+
+    const errors: Array<unknown> = [];
+    const watcher = __graphCommandTest__.startGraphVisualizationFeatherMetadataWatcher({
+        featherMetadataPath: "feather-metadata.json",
+        onChanged: () => {},
+        onError: (err) => {
+            errors.push(err);
+        },
+        watchFactory,
+        readFileFn: async () => {
+            throw new Error("synthetic read error");
+        }
+    });
+
+    // Wait for init (errors during initial read are ignored)
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.deepEqual(errors, []);
+
+    // Trigger synthetic watcher error
+    errorListener?.(new Error("synthetic watcher error"));
+    assert.equal(errors.length, 1);
+    assert.match((errors[0] as Error).message, /synthetic watcher error/);
+
+    watcher.close();
 });

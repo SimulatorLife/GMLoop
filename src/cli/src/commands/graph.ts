@@ -1,4 +1,5 @@
 import { type ChildProcessWithoutNullStreams, execFile, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, type FSWatcher, watch, type WatchListener, type WatchOptions } from "node:fs";
 import { access, constants, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import net from "node:net";
@@ -857,6 +858,86 @@ function startGraphVisualizationUiSourceWatcher({
     });
 
     return watcher;
+}
+
+export interface GraphVisualizationFeatherMetadataWatcher {
+    close: () => void;
+}
+
+export type GraphVisualizationFeatherMetadataWatchFactory = (
+    path: string,
+    listener?: WatchListener<string>
+) => FSWatcher;
+
+function startGraphVisualizationFeatherMetadataWatcher({
+    featherMetadataPath,
+    onChanged,
+    onError,
+    watchFactory = watch,
+    readFileFn = readFile
+}: Readonly<{
+    featherMetadataPath: string;
+    onChanged: () => void | Promise<void>;
+    onError: (error: unknown) => void;
+    watchFactory?: GraphVisualizationFeatherMetadataWatchFactory;
+    readFileFn?: (path: string, options: "utf8") => Promise<string>;
+}>): GraphVisualizationFeatherMetadataWatcher {
+    let watcher: FSWatcher | null = null;
+    let stopped = false;
+    let lastFeatherMetadataHash = "";
+
+    void (async () => {
+        if (stopped) {
+            return;
+        }
+        try {
+            const content = await readFileFn(featherMetadataPath, "utf8");
+            lastFeatherMetadataHash = createHash("sha256").update(content).digest("hex");
+        } catch {
+            // Ignore initial read error
+        }
+
+        if (stopped) {
+            return;
+        }
+
+        try {
+            watcher = watchFactory(featherMetadataPath, (eventType) => {
+                if (eventType === "change" && !stopped) {
+                    void (async () => {
+                        try {
+                            const content = await readFileFn(featherMetadataPath, "utf8");
+                            const currentHash = createHash("sha256").update(content).digest("hex");
+                            if (currentHash === lastFeatherMetadataHash) {
+                                return;
+                            }
+                            lastFeatherMetadataHash = currentHash;
+                            if (!stopped) {
+                                await onChanged();
+                            }
+                        } catch (error) {
+                            onError(error);
+                        }
+                    })();
+                }
+            });
+            watcher.on("error", (error) => {
+                onError(error);
+            });
+        } catch (error) {
+            onError(error);
+        }
+    })();
+
+    return {
+        close: () => {
+            stopped = true;
+            if (watcher) {
+                watcher.close();
+                watcher = null;
+            }
+        }
+    };
 }
 
 function startGraphVisualizationActiveProjectStateWatcher({
@@ -1814,30 +1895,28 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
     async function runServeVisualizationMode(): Promise<void> {
         const repoRoot = findRepoRootSync(path.dirname(fileURLToPath(import.meta.url)));
         const featherMetadataPath = path.resolve(repoRoot, "resources/feather-metadata.json");
-        let featherMetadataWatcher: FSWatcher | null = null;
+        let featherMetadataWatcher: GraphVisualizationFeatherMetadataWatcher | null = null;
         if (existsSync(featherMetadataPath)) {
-            try {
-                featherMetadataWatcher = watch(featherMetadataPath, (eventType) => {
-                    if (eventType === "change") {
-                        Core.clearFeatherMetadataCache();
-                        void (async () => {
-                            try {
-                                await refreshActiveVisualizationArtifacts(activeContext);
-                                markServeRevisionChanged();
-                                console.log("[graph visualize] feather-metadata.json changed. Reloading UI...");
-                            } catch (error) {
-                                console.error(
-                                    `[graph visualize] Failed to refresh catalog on metadata change: ${Core.getErrorMessage(error)}`
-                                );
-                            }
-                        })();
+            featherMetadataWatcher = startGraphVisualizationFeatherMetadataWatcher({
+                featherMetadataPath,
+                onChanged: async () => {
+                    Core.clearFeatherMetadataCache();
+                    try {
+                        await refreshActiveVisualizationArtifacts(activeContext);
+                        markServeRevisionChanged();
+                        console.log("[graph visualize] feather-metadata.json changed. Reloading UI...");
+                    } catch (error) {
+                        console.error(
+                            `[graph visualize] Failed to refresh catalog on metadata change: ${Core.getErrorMessage(error)}`
+                        );
                     }
-                });
-            } catch (error) {
-                console.error(
-                    `[graph visualize] Failed to watch feather-metadata.json: ${Core.getErrorMessage(error)}`
-                );
-            }
+                },
+                onError: (error) => {
+                    console.error(
+                        `[graph visualize] Failed to watch feather-metadata.json: ${Core.getErrorMessage(error)}`
+                    );
+                }
+            });
         }
         let uiWatchRebuildInProgress = false;
         let uiWatchRebuildPending = false;
@@ -2555,6 +2634,7 @@ export const __graphCommandTest__ = Object.freeze({
     resolveGraphVisualizationUiSourceWatchRoot,
     resolveGraphVisualizationServeStartupState,
     startGraphVisualizationActiveProjectStateWatcher,
+    startGraphVisualizationFeatherMetadataWatcher,
     startGraphVisualizationUiSourceWatcher,
     streamProcessOutputByLine
 });

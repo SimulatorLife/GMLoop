@@ -166,7 +166,11 @@ function buildLoopLengthHoistEdits(sourceText: string, ast: unknown): ReadonlyAr
  * @returns The transformed source and edit list.
  */
 export function applyLoopLengthHoistingCodemod(sourceText: string): LoopLengthHoistingResult {
-    if (!Core.isNonEmptyString(sourceText) || !sourceText.includes(ARRAY_LENGTH_CALL_TEXT)) {
+    if (
+        !Core.isNonEmptyString(sourceText) ||
+        !sourceText.includes(ARRAY_LENGTH_CALL_TEXT) ||
+        !sourceText.includes("for")
+    ) {
         return createUnchangedResult(sourceText);
     }
 

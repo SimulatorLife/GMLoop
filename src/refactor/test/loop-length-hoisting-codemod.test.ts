@@ -55,3 +55,20 @@ void test("loopLengthHoisting returns unchanged text without parsing when no arr
     assert.equal(result.outputText, sourceText);
     assert.equal(result.appliedEdits.length, 0);
 });
+
+void test("loopLengthHoisting returns unchanged text without parsing when no for keyword exists", () => {
+    const sourceText = [
+        "function demo(items) {",
+        "    if (array_length(items) > 0) {",
+        "        return items[0];",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = applyLoopLengthHoistingCodemod(sourceText);
+
+    assert.equal(result.changed, false);
+    assert.equal(result.outputText, sourceText);
+    assert.equal(result.appliedEdits.length, 0);
+});
