@@ -1,0 +1,77 @@
+{
+  "name": "@gmloop/vscode",
+  "displayName": "GMLoop",
+  "description": "VSCode language client for GMLoop's GameMaker Language server.",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/src/extension.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "language-configuration.json",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.5.0",
+    "vscode": "^1.92.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:gml"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "gml",
+        "aliases": [
+          "GameMaker Language",
+          "GML"
+        ],
+        "extensions": [
+          ".gml"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "configuration": {
+      "title": "GMLoop",
+      "properties": {
+        "gmloop.serverPath": {
+          "type": "string",
+          "default": "gmloop",
+          "description": "Path or command name for the GMLoop CLI executable. The extension appends the fixed 'lsp' argument."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "gmloop.restartLanguageServer",
+        "title": "GMLoop: Restart Language Server"
+      },
+      {
+        "command": "gmloop.showLanguageServerOutput",
+        "title": "GMLoop: Show Language Server Output"
+      }
+    ]
+  },
+  "scripts": {
+    "build:types": "tsc -b tsconfig.json",
+    "clean:types": "rm -rf dist",
+    "test": "pnpm run build:types && node --test-force-exit --test --test-timeout=120000 dist/test/*.test.js"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/vscode": "^1.92.0",
+    "typescript": "catalog:"
+  }
+}

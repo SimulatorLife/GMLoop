@@ -13,6 +13,7 @@ packages:
     - src/refactor
     - src/fixture-runner
     - src/mcp
+    - src/vscode
 
 catalog:
     "@eslint/compat": "^2"

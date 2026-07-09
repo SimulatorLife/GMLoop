@@ -158,7 +158,8 @@ export type {
     UpdateObjectEventRequest,
     UpdateRoomCameraRequest,
     UpdateRoomInstanceRequest,
-    UpdateRoomLayerRequest} from "./project-resources/index.js";
+    UpdateRoomLayerRequest
+} from "./project-resources/index.js";
 export * as ProjectResources from "./project-resources/index.js";
 export {
     addObjectEvent,
@@ -188,7 +189,8 @@ export {
     updateObjectEvent,
     updateRoomCamera,
     updateRoomInstance,
-    updateRoomLayer} from "./project-resources/index.js";
+    updateRoomLayer
+} from "./project-resources/index.js";
 export {
     isProjectResourceKind,
     parseProjectResourceKind,

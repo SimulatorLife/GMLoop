@@ -21,6 +21,22 @@ gmloop lsp
 
 The server explicitly wires standard input and standard output (`process.stdin` / `process.stdout`) to speak JSON-RPC over stdio by default, without requiring any command-line flags. It targets `.gml` files only.
 
+## VSCode Usage
+
+GMLoop provides a first-party VSCode extension package in `src/vscode`. The extension registers `.gml` files as the `gml` language and starts the existing stdio server with:
+
+```sh
+gmloop lsp
+```
+
+The extension contributes:
+
+- `gmloop.serverPath` - path or command name for the GMLoop CLI executable. It defaults to `gmloop`; the extension always appends the fixed `lsp` argument.
+- `GMLoop: Restart Language Server`
+- `GMLoop: Show Language Server Output`
+
+For semantic navigation features such as definitions, references, workspace symbols, and rename, open a folder that contains or is nested under a GameMaker `.yyp` project so the semantic project root can be discovered.
+
 ## Using With `lsp-mcp-server`
 
 `lsp-mcp-server` is an MCP bridge. It should launch `gmloop-lsp` as the language server instead of GMLoop duplicating LSP tools inside the GMLoop MCP server.

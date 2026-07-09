@@ -34,6 +34,8 @@ External tools may launch or configure the server, but they must not change its 
 
 Tool-specific setup belongs outside the language server.
 
+VSCode integration lives in the separate `@gmloop/vscode` workspace. That extension registers `.gml` files with VSCode and launches this server through `gmloop lsp`; this workspace remains the editor-agnostic LSP server implementation.
+
 ## Quality Bar
 
 A feature is complete only when it:

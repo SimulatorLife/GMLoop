@@ -154,6 +154,7 @@
     "@gmloop/semantic": "workspace:*",
     "@gmloop/transpiler": "workspace:*",
     "@gmloop/ui": "workspace:*",
+    "@gmloop/vscode": "workspace:*",
     "@types/node": "catalog:",
     "c8": "^9",
     "eslint": "catalog:",

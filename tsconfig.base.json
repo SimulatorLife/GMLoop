@@ -16,7 +16,8 @@
       "@gmloop/refactor": ["./src/refactor/index.ts"],
       "@gmloop/runtime-wrapper": ["./src/runtime-wrapper/index.ts"],
       "@gmloop/mcp": ["./src/mcp/index.ts"],
-      "@gmloop/cli": ["./src/cli/index.ts"]
+      "@gmloop/cli": ["./src/cli/index.ts"],
+      "@gmloop/vscode": ["./src/vscode/index.ts"]
     },
     "lib": ["ES2023"],
     "moduleDetection": "force",

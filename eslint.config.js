@@ -82,7 +82,8 @@ const publicWorkspaceTypes = [
     "fixture-runner",
     "refactor",
     "runtime-wrapper",
-    "mcp"
+    "mcp",
+    "vscode"
 ];
 
 function workspaceEntryPointTypes(...types) {
@@ -247,7 +248,8 @@ const tsConfig = defineConfig({
             { type: "refactor", pattern: "src/refactor/**" },
             { type: "runtime-wrapper", pattern: "src/runtime-wrapper/**" },
             { type: "cli", pattern: "src/cli/**" },
-            { type: "mcp", pattern: "src/mcp/**" }
+            { type: "mcp", pattern: "src/mcp/**" },
+            { type: "vscode", pattern: "src/vscode/**" }
         ]
     },
 
@@ -618,6 +620,10 @@ const tsConfig = defineConfig({
                     {
                         from: { type: "mcp" },
                         allow: workspaceEntryPointTypes("core", "cli", "mcp")
+                    },
+                    {
+                        from: { type: "vscode" },
+                        allow: workspaceEntryPointTypes("vscode")
                     },
                     {
                         from: { type: "lsp" },
