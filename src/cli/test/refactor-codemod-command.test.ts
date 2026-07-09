@@ -2501,6 +2501,90 @@ void test("refactor codemod --write skips constructor static member renames with
     }
 });
 
+void test("refactor codemod --write skips Colmesh-style ambiguous constructor static member renames", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        staticVariable: {
+                            caseStyle: "camel"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        await writeScriptResource(
+            projectRoot,
+            "Colmesh",
+            [
+                "function Colmesh() constructor {",
+                "    static get_shape = function(shape) {",
+                "        return shape;",
+                "    };",
+                "",
+                "    static add_shape = function(shape) {",
+                "        return get_shape(shape).get_min_max();",
+                "    };",
+                "}",
+                ""
+            ].join("\n")
+        );
+        await writeScriptResource(
+            projectRoot,
+            "ColmeshShape",
+            [
+                "function ColmeshShape() constructor {",
+                "    static get_min_max = function() {",
+                "        return [0, 0, 0, 1, 1, 1];",
+                "    };",
+                "}",
+                ""
+            ].join("\n")
+        );
+        await writeScriptResource(
+            projectRoot,
+            "ColmeshDynamic",
+            [
+                "function ColmeshDynamic(shape) constructor {",
+                "    static get_min_max = function() {",
+                "        return shape.get_min_max();",
+                "    };",
+                "}",
+                ""
+            ].join("\n")
+        );
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+        assert.match(result.stdout + result.stderr, /Unresolved same-name property access 'get_min_max'/);
+
+        const colmeshSource = await readFile(path.join(projectRoot, "scripts/Colmesh/Colmesh.gml"), "utf8");
+        const shapeSource = await readFile(path.join(projectRoot, "scripts/ColmeshShape/ColmeshShape.gml"), "utf8");
+        const dynamicSource = await readFile(
+            path.join(projectRoot, "scripts/ColmeshDynamic/ColmeshDynamic.gml"),
+            "utf8"
+        );
+
+        assert.match(colmeshSource, /get_shape\(shape\)\.get_min_max\(\)/);
+        assert.match(shapeSource, /static get_min_max = function\(\) \{/);
+        assert.match(dynamicSource, /static get_min_max = function\(\) \{/);
+        assert.match(dynamicSource, /shape\.get_min_max\(\)/);
+        assert.doesNotMatch(`${colmeshSource}\n${shapeSource}\n${dynamicSource}`, /getMinMax/);
+
+        await assertProjectGmlFilesParse(projectRoot);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
 void test("refactor codemod --write lets multi-function scripts rename the resource and same-name callable independently", async () => {
     const projectRoot = await createSyntheticProject({
         refactor: {

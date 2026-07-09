@@ -55,4 +55,7 @@ void test("project navigation separates definitions and references with exclusiv
 
     const occurrenceAtCall = findNavigationSymbolAtPosition(index, "/tmp/game/scripts/source/source.gml", 25);
     assert.equal(occurrenceAtCall?.symbolId, symbolId);
+
+    const occurrenceAtExclusiveEnd = findNavigationSymbolAtPosition(index, "/tmp/game/scripts/source/source.gml", 30);
+    assert.equal(occurrenceAtExclusiveEnd, null);
 });

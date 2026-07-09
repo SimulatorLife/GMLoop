@@ -3343,6 +3343,192 @@ void describe("GmlSemanticBridge tests", () => {
         }
     });
 
+    void it("checkSemanticGaps reports function-return receiver constructor static member calls", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-static-return-receiver-"));
+        const colmeshFilePath = "scripts/Colmesh/Colmesh.gml";
+        const shapeFilePath = "scripts/ColmeshShape/ColmeshShape.gml";
+
+        try {
+            const colmeshSource = [
+                "function Colmesh() constructor {",
+                "    static get_shape = function(shape) {",
+                "        return shape;",
+                "    };",
+                "",
+                "    static add_shape = function(shape) {",
+                "        return get_shape(shape).get_min_max();",
+                "    };",
+                "}",
+                ""
+            ].join("\n");
+            const shapeSource = [
+                "function ColmeshShape() constructor {",
+                "    static get_min_max = function() {",
+                "        return [0, 0, 0, 1, 1, 1];",
+                "    };",
+                "}",
+                ""
+            ].join("\n");
+
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "Colmesh"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "ColmeshShape"), { recursive: true });
+            fs.writeFileSync(
+                path.join(tmpRoot, "MyGame.yyp"),
+                `${JSON.stringify({ name: "MyGame", resourceType: "GMProject" }, null, 2)}\n`
+            );
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "Colmesh", "Colmesh.yy"),
+                `${JSON.stringify({ name: "Colmesh", resourceType: "GMScript" }, null, 2)}\n`
+            );
+            fs.writeFileSync(path.join(tmpRoot, colmeshFilePath), colmeshSource);
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "ColmeshShape", "ColmeshShape.yy"),
+                `${JSON.stringify({ name: "ColmeshShape", resourceType: "GMScript" }, null, 2)}\n`
+            );
+            fs.writeFileSync(path.join(tmpRoot, shapeFilePath), shapeSource);
+
+            const projectIndex = await Semantic.buildProjectIndex(tmpRoot);
+            const bridge = new GmlSemanticBridge(projectIndex, tmpRoot);
+            const targets = await bridge.listNamingConventionTargets();
+
+            assert.ok(targets.some((target) => target.category === "staticVariable" && target.name === "get_min_max"));
+            assert.ok(
+                bridge
+                    .checkSemanticGaps("get_min_max")
+                    .some(
+                        (gap) =>
+                            gap.path === colmeshFilePath &&
+                            /Unresolved same-name property access 'get_min_max'/.test(gap.message)
+                    )
+            );
+        } finally {
+            fs.rmSync(tmpRoot, { recursive: true, force: true });
+        }
+    });
+
+    void it("checkSemanticGaps reports dynamic shape receiver constructor static member calls", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-static-dynamic-receiver-"));
+        const dynamicFilePath = "scripts/ColmeshDynamic/ColmeshDynamic.gml";
+        const shapeFilePath = "scripts/ColmeshShape/ColmeshShape.gml";
+
+        try {
+            const dynamicSource = [
+                "function ColmeshDynamic(shape) constructor {",
+                "    static get_min_max = function() {",
+                "        return shape.get_min_max();",
+                "    };",
+                "}",
+                ""
+            ].join("\n");
+            const shapeSource = [
+                "function ColmeshShape() constructor {",
+                "    static get_min_max = function() {",
+                "        return [0, 0, 0, 1, 1, 1];",
+                "    };",
+                "}",
+                ""
+            ].join("\n");
+
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "ColmeshDynamic"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "ColmeshShape"), { recursive: true });
+            fs.writeFileSync(
+                path.join(tmpRoot, "MyGame.yyp"),
+                `${JSON.stringify({ name: "MyGame", resourceType: "GMProject" }, null, 2)}\n`
+            );
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "ColmeshDynamic", "ColmeshDynamic.yy"),
+                `${JSON.stringify({ name: "ColmeshDynamic", resourceType: "GMScript" }, null, 2)}\n`
+            );
+            fs.writeFileSync(path.join(tmpRoot, dynamicFilePath), dynamicSource);
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "ColmeshShape", "ColmeshShape.yy"),
+                `${JSON.stringify({ name: "ColmeshShape", resourceType: "GMScript" }, null, 2)}\n`
+            );
+            fs.writeFileSync(path.join(tmpRoot, shapeFilePath), shapeSource);
+
+            const projectIndex = await Semantic.buildProjectIndex(tmpRoot);
+            const bridge = new GmlSemanticBridge(projectIndex, tmpRoot);
+            const targets = await bridge.listNamingConventionTargets();
+
+            assert.ok(targets.some((target) => target.category === "staticVariable" && target.name === "get_min_max"));
+            assert.ok(
+                bridge
+                    .checkSemanticGaps("get_min_max")
+                    .some(
+                        (gap) =>
+                            gap.path === dynamicFilePath &&
+                            /Unresolved same-name property access 'get_min_max'/.test(gap.message)
+                    )
+            );
+        } finally {
+            fs.rmSync(tmpRoot, { recursive: true, force: true });
+        }
+    });
+
+    void it("listNamingConventionTargets excludes constructor static declarations from generic instance targets", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-static-generic-owner-"));
+        const filePath = "scripts/ColmeshShape/ColmeshShape.gml";
+        const sourceText = [
+            "function ColmeshShape() constructor {",
+            "    static get_min_max = function() {",
+            "        return [0, 0, 0, 1, 1, 1];",
+            "    };",
+            "}",
+            ""
+        ].join("\n");
+
+        try {
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "ColmeshShape"), { recursive: true });
+            fs.writeFileSync(path.join(tmpRoot, filePath), sourceText);
+
+            const declarationStart = sourceText.indexOf("get_min_max");
+            const declarationEnd = declarationStart + "get_min_max".length - 1;
+            const declaration = {
+                filePath,
+                name: "get_min_max",
+                scopeId: "scope:ColmeshShape",
+                start: { index: declarationStart },
+                end: { index: declarationEnd }
+            };
+            const mockProjectIndex = {
+                identifiers: {
+                    constructorStaticMembers: {
+                        "static:ColmeshShape.get_min_max": {
+                            identifierId: "static:ColmeshShape.get_min_max",
+                            name: "get_min_max",
+                            declarations: [declaration],
+                            references: []
+                        }
+                    },
+                    instanceVariables: {
+                        "var:get_min_max": {
+                            identifierId: "var:get_min_max",
+                            name: "get_min_max",
+                            declarations: [declaration],
+                            references: []
+                        }
+                    }
+                },
+                resources: {},
+                files: {
+                    [filePath]: {
+                        references: []
+                    }
+                },
+                scopes: {}
+            };
+
+            const bridge = new GmlSemanticBridge(mockProjectIndex, tmpRoot);
+            const targets = await bridge.listNamingConventionTargets([filePath], ["instanceVariable"]);
+
+            assert.ok(
+                !targets.some((target) => target.category === "instanceVariable" && target.name === "get_min_max")
+            );
+        } finally {
+            fs.rmSync(tmpRoot, { recursive: true, force: true });
+        }
+    });
+
     void it("listNamingConventionTargets leaves bare constructor static calls unresolved", async () => {
         const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-static-member-bare-call-"));
 

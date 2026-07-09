@@ -292,3 +292,4 @@ New top-level UI additions should:
     ```
     But if copied and run in the terminal, it fails with error: `error: unknown option '--path'`.
 - **BUG**: The expand/collapse toggle-symbol-arrow on the "Config" page does not change direction when the config section is expanded/collapsed. It should point down when expanded and point right when collapsed (currently fixed in down position). We should also just have one reusable collapse-panel component shared across the UI for all collapsible sections, instead of having each section implement its own expand/collapse behavior.
+- **BUG**: The nodes in the UI's graph-index visualization are *extremely* close together/overlapping making it impossible to read for large projects. We need some minimum spacing between nodes (Poisson disk sampling or something?). And/or way to 'collapse' certain node types into their parent node when zoomed out, and then expand them when zoomed in - like how Prezi works

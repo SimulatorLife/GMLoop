@@ -44,6 +44,7 @@ export type GmlSemanticIndex = Readonly<{
         includeDefinitions: boolean
     ): Promise<Location[]>;
     hover(document: GmlTextDocument, offset: number, identifierName: string): Promise<Hover | null>;
+    invalidateForDocument(document: GmlTextDocument): void;
     listDocumentSymbols(document: GmlTextDocument): Promise<DocumentSymbol[]>;
     planRename(
         document: GmlTextDocument,
@@ -258,13 +259,39 @@ async function buildSemanticIndexForDocument(
     };
 }
 
+function isDocumentWithinProjectRoot(document: GmlTextDocument, projectRoot: string): boolean {
+    const relativePath = path.relative(path.resolve(projectRoot), path.resolve(document.filePath));
+    return relativePath.length === 0 || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
+}
+
 /**
  * Create the semantic project-index query facade used by the LSP server.
  */
 export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemanticIndex {
     const cachedStates = new Map<string, NavigationState>();
     const inFlightBuilds = new Map<string, Promise<NavigationState | null>>();
+    const rootVersions = new Map<string, number>();
     const fsFacade = createLspFsFacade(documents);
+
+    function readRootVersion(projectRoot: string): number {
+        return rootVersions.get(projectRoot) ?? 0;
+    }
+
+    function invalidateRoot(projectRoot: string): void {
+        const resolvedRoot = path.resolve(projectRoot);
+        rootVersions.set(resolvedRoot, readRootVersion(resolvedRoot) + 1);
+        cachedStates.delete(resolvedRoot);
+        inFlightBuilds.delete(resolvedRoot);
+    }
+
+    function invalidateKnownDocumentRoots(document: GmlTextDocument): void {
+        const knownRoots = new Set([...cachedStates.keys(), ...inFlightBuilds.keys()]);
+        for (const projectRoot of knownRoots) {
+            if (isDocumentWithinProjectRoot(document, projectRoot)) {
+                invalidateRoot(projectRoot);
+            }
+        }
+    }
 
     async function ensureIndex(document: GmlTextDocument): Promise<NavigationState | null> {
         const projectRoot = await Semantic.findProjectRoot({ filepath: document.filePath });
@@ -280,9 +307,10 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
 
         let inFlight = inFlightBuilds.get(resolvedRoot);
         if (inFlight === undefined) {
+            const buildVersion = readRootVersion(resolvedRoot);
             const buildPromise = (async () => {
                 const state = await buildSemanticIndexForDocument(document, fsFacade);
-                if (state) {
+                if (state && readRootVersion(resolvedRoot) === buildVersion) {
                     cachedStates.set(resolvedRoot, state);
                 }
                 return state;
@@ -304,9 +332,10 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         }
 
         const resolvedRoot = path.resolve(projectRoot);
+        const buildVersion = readRootVersion(resolvedRoot);
         const inFlight = buildSemanticIndexForDocument(document, fsFacade)
             .then((state) => {
-                if (state) {
+                if (state && readRootVersion(resolvedRoot) === buildVersion) {
                     cachedStates.set(resolvedRoot, state);
                 }
                 return state;
@@ -321,6 +350,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
     return {
         buildForDocument: ensureIndex,
         refreshForDocument: refreshIndex,
+        invalidateForDocument: invalidateKnownDocumentRoots,
         async findDefinition(document, offset, identifierName) {
             const state = await ensureIndex(document);
             if (!state) {

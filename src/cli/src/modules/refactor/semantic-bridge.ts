@@ -210,6 +210,14 @@ type IndexedUnresolvedFileReference = {
     filePath: string;
     reference: Record<string, unknown>;
 };
+type SemanticGapReferenceCandidate = {
+    filePath: string;
+    isBareCall: boolean;
+    isProperty: boolean;
+    reference: Record<string, unknown> | null;
+    start: number;
+    end: number;
+};
 type ScriptCallableDeclaration = Record<string, unknown> & {
     filePath: string;
     name: string;
@@ -1242,7 +1250,6 @@ export class GmlSemanticBridge {
     }
 
     checkSemanticGaps(symbolName: string, symbolKind?: string | null): Array<{ message: string; path?: string }> {
-        const indexes = this.getIndexes();
         const isGlobalSymbol =
             this.findResourceByName(symbolName) !== null ||
             this.getEnumNames().has(symbolName) ||
@@ -1290,41 +1297,204 @@ export class GmlSemanticBridge {
         ]);
 
         const gaps: Array<{ message: string; path?: string }> = [];
-        const unresolved = indexes.unresolvedReferencesByExactName.get(symbolName) ?? [];
+        const candidates = this.collectSemanticGapReferenceCandidates(symbolName);
 
-        for (const unresolvedReference of unresolved) {
-            const start = readSemanticLocationIndex(unresolvedReference.reference.start);
-            const end = readExclusiveSemanticLocationIndex(unresolvedReference.reference.end);
-            if (start === null || end === null || end <= start) {
+        for (const candidate of candidates) {
+            if (candidate.isProperty && this.isKnownEnumMemberReference(candidate.filePath, candidate.start)) {
                 continue;
             }
 
-            const classifications = Core.asArray(unresolvedReference.reference.classifications);
-            const isProperty = classifications.includes("property");
-            const isBareCall = this.isBareCallReferenceSourceMatch(unresolvedReference.filePath, start, end);
-
-            if (isProperty && this.isKnownEnumMemberReference(unresolvedReference.filePath, start)) {
+            if (
+                this.isResolvedConstructorStaticMemberReference(
+                    symbolName,
+                    candidate.filePath,
+                    candidate.start,
+                    candidate.end
+                )
+            ) {
                 continue;
             }
 
-            if (this.isResolvedConstructorStaticMemberReference(symbolName, unresolvedReference.filePath, start, end)) {
+            if (candidate.isProperty && symbolKind && NON_PROPERTY_SYMBOL_KINDS.has(symbolKind)) {
                 continue;
             }
 
-            if (isProperty && symbolKind && NON_PROPERTY_SYMBOL_KINDS.has(symbolKind)) {
-                continue;
-            }
-
-            if (isProperty || isBareCall) {
-                const typeLabel = isProperty ? "property access" : "bare call";
+            if (candidate.isProperty || candidate.isBareCall) {
+                const typeLabel = candidate.isProperty ? "property access" : "bare call";
                 gaps.push({
-                    message: `Unresolved same-name ${typeLabel} '${symbolName}' in ${unresolvedReference.filePath} at position ${start}-${end}`,
-                    path: unresolvedReference.filePath
+                    message: `Unresolved same-name ${typeLabel} '${symbolName}' in ${candidate.filePath} at position ${candidate.start}-${candidate.end}`,
+                    path: candidate.filePath
                 });
             }
         }
 
         return gaps;
+    }
+
+    private collectSemanticGapReferenceCandidates(symbolName: string): Array<SemanticGapReferenceCandidate> {
+        const candidatesByKey = new Map<string, SemanticGapReferenceCandidate>();
+        const addCandidate = (candidate: SemanticGapReferenceCandidate): void => {
+            const key = `${candidate.filePath}:${candidate.start}:${candidate.end}`;
+            const existingCandidate = candidatesByKey.get(key);
+            if (existingCandidate === undefined) {
+                candidatesByKey.set(key, candidate);
+                return;
+            }
+
+            existingCandidate.isBareCall ||= candidate.isBareCall;
+            existingCandidate.isProperty ||= candidate.isProperty;
+            existingCandidate.reference ??= candidate.reference;
+        };
+
+        for (const candidate of this.collectIndexedSemanticGapReferenceCandidates(symbolName)) {
+            addCandidate(candidate);
+        }
+
+        for (const candidate of this.collectSourceSemanticGapReferenceCandidates(symbolName)) {
+            addCandidate(candidate);
+        }
+
+        return [...candidatesByKey.values()].sort(
+            (left, right) =>
+                left.filePath.localeCompare(right.filePath) || left.start - right.start || left.end - right.end
+        );
+    }
+
+    private collectIndexedSemanticGapReferenceCandidates(symbolName: string): Array<SemanticGapReferenceCandidate> {
+        const candidates: Array<SemanticGapReferenceCandidate> = [];
+
+        for (const unresolvedReference of this.getIndexes().unresolvedReferencesByExactName.get(symbolName) ?? []) {
+            const candidate = this.createIndexedSemanticGapReferenceCandidate(
+                symbolName,
+                unresolvedReference.filePath,
+                unresolvedReference.reference
+            );
+            if (candidate !== null) {
+                candidates.push(candidate);
+            }
+        }
+
+        for (const [filePath, fileRecord] of Object.entries(this.projectIndex.files ?? {})) {
+            const typedFileRecord = fileRecord as SemanticFileRecord;
+            for (const reference of typedFileRecord.references ?? []) {
+                if (!Core.isObjectLike(reference)) {
+                    continue;
+                }
+
+                const referenceName = typeof reference.name === "string" ? reference.name : null;
+                const targetName = typeof reference.targetName === "string" ? reference.targetName : null;
+                if (referenceName !== symbolName && targetName !== symbolName) {
+                    continue;
+                }
+
+                const candidate = this.createIndexedSemanticGapReferenceCandidate(symbolName, filePath, reference);
+                if (candidate !== null) {
+                    candidates.push(candidate);
+                }
+            }
+        }
+
+        return candidates;
+    }
+
+    private createIndexedSemanticGapReferenceCandidate(
+        symbolName: string,
+        filePath: string,
+        reference: Record<string, unknown>
+    ): SemanticGapReferenceCandidate | null {
+        const start = readSemanticLocationIndex(reference.start);
+        const end = readExclusiveSemanticLocationIndex(reference.end);
+        if (start === null || end === null || end <= start) {
+            return null;
+        }
+
+        const sourceText = this.readProjectSourceText(filePath);
+        if (sourceText !== null && (end > sourceText.length || !isIdentifierTokenAt(sourceText, start, symbolName))) {
+            return null;
+        }
+
+        const classifications = Core.asArray(reference.classifications);
+        const isProperty = classifications.includes("property") || this.isPropertyReferenceSourceMatch(filePath, start);
+        const isBareCall = this.isBareCallReferenceSourceMatch(filePath, start, end);
+
+        if (!isProperty && !isBareCall) {
+            return null;
+        }
+
+        return {
+            filePath,
+            isBareCall,
+            isProperty,
+            reference,
+            start,
+            end
+        };
+    }
+
+    private collectSourceSemanticGapReferenceCandidates(symbolName: string): Array<SemanticGapReferenceCandidate> {
+        const candidates: Array<SemanticGapReferenceCandidate> = [];
+
+        for (const filePath of Object.keys(this.projectIndex.files ?? {})) {
+            const sourceText = this.readProjectSourceText(filePath);
+            if (sourceText === null) {
+                continue;
+            }
+
+            this.collectSourceSemanticGapReferenceCandidatesFromFile({
+                candidates,
+                filePath,
+                sourceText,
+                symbolName
+            });
+        }
+
+        return candidates;
+    }
+
+    private collectSourceSemanticGapReferenceCandidatesFromFile(parameters: {
+        candidates: Array<SemanticGapReferenceCandidate>;
+        filePath: string;
+        sourceText: string;
+        symbolName: string;
+    }): void {
+        const scanState = Core.createStringCommentScanState();
+        const sourceLength = parameters.sourceText.length;
+        let index = 0;
+
+        while (index < sourceLength) {
+            const scannedIndex = Core.advanceStringCommentScan(
+                parameters.sourceText,
+                sourceLength,
+                index,
+                scanState,
+                true
+            );
+            if (scannedIndex !== index) {
+                index = scannedIndex;
+                continue;
+            }
+
+            if (!isIdentifierTokenAt(parameters.sourceText, index, parameters.symbolName)) {
+                index += 1;
+                continue;
+            }
+
+            const end = index + parameters.symbolName.length;
+            const isProperty = this.isPropertyReferenceSourceMatch(parameters.filePath, index);
+            const isBareCall = this.isBareCallReferenceSourceMatch(parameters.filePath, index, end);
+            if (isProperty || isBareCall) {
+                parameters.candidates.push({
+                    filePath: parameters.filePath,
+                    isBareCall,
+                    isProperty,
+                    reference: null,
+                    start: index,
+                    end
+                });
+            }
+
+            index = end;
+        }
     }
 
     private collectMacroBodyReferenceOccurrences(symbolName: string, occurrences: Array<SymbolOccurrence>): void {
@@ -3012,6 +3182,42 @@ export class GmlSemanticBridge {
         }
     }
 
+    private isConstructorStaticMemberIdentifierEntry(entry: SemanticIdentifierEntry): boolean {
+        for (const declaration of entry.declarations ?? []) {
+            const filePath = typeof declaration.filePath === "string" ? declaration.filePath : null;
+            const start = readSemanticLocationIndex(declaration.start);
+            const end = readExclusiveSemanticLocationIndex(declaration.end);
+            if (
+                filePath !== null &&
+                start !== null &&
+                end !== null &&
+                this.isConstructorStaticMemberDeclarationRange(filePath, start, end)
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private isConstructorStaticMemberDeclarationRange(filePath: string, start: number, end: number): boolean {
+        for (const entry of Object.values(this.identifiers.constructorStaticMembers ?? {})) {
+            for (const declaration of entry.declarations ?? []) {
+                if (typeof declaration.filePath !== "string" || declaration.filePath !== filePath) {
+                    continue;
+                }
+
+                const declarationStart = readSemanticLocationIndex(declaration.start);
+                const declarationEnd = readExclusiveSemanticLocationIndex(declaration.end);
+                if (declarationStart === start && declarationEnd === end) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     private collectGlobalAndInstanceNamingTargets(
         shouldIncludePath: NamingTargetPathPredicate,
         pushTarget: NamingTargetSink
@@ -3048,7 +3254,8 @@ export class GmlSemanticBridge {
             if (
                 !shouldIncludePath(declarationFilePath) ||
                 typeof entryName !== "string" ||
-                knownShadowableNames.has(entryName)
+                knownShadowableNames.has(entryName) ||
+                this.isConstructorStaticMemberIdentifierEntry(entry)
             ) {
                 continue;
             }
@@ -3069,7 +3276,8 @@ export class GmlSemanticBridge {
             if (
                 !shouldIncludePath(declarationFilePath) ||
                 typeof entryName !== "string" ||
-                knownShadowableNames.has(entryName)
+                knownShadowableNames.has(entryName) ||
+                this.isConstructorStaticMemberIdentifierEntry(entry)
             ) {
                 continue;
             }
@@ -3133,6 +3341,8 @@ export class GmlSemanticBridge {
 
         for (const target of collectImplicitInstanceVariableTargets({
             files: (this.projectIndex.files ?? {}) as Record<string, SemanticFileRecord>,
+            isProtectedOccurrenceRange: (filePath, start, end) =>
+                this.isConstructorStaticMemberDeclarationRange(filePath, start, end),
             knownEnumNames,
             knownNamesByObjectDirectory,
             knownResourceNames,
@@ -3726,6 +3936,20 @@ export class GmlSemanticBridge {
         }
 
         return sourceText[nextCursor] === "(";
+    }
+
+    private isPropertyReferenceSourceMatch(filePath: string, startIndex: number): boolean {
+        const sourceText = this.readProjectSourceText(filePath);
+        if (sourceText === null || startIndex <= 0 || startIndex > sourceText.length) {
+            return false;
+        }
+
+        let previousCursor = startIndex - 1;
+        while (previousCursor >= 0 && /\s/u.test(sourceText[previousCursor] ?? "")) {
+            previousCursor -= 1;
+        }
+
+        return previousCursor >= 0 && sourceText[previousCursor] === ".";
     }
 
     private findConstructorStaticMemberEntryForDeclaration(

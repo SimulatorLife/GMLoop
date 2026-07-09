@@ -26,6 +26,7 @@ type BridgeNamingConventionTarget = {
 
 type ImplicitInstanceVariableCollectorParameters = {
     files: Record<string, SemanticFileRecord>;
+    isProtectedOccurrenceRange?: (filePath: string, start: number, end: number) => boolean;
     knownEnumNames: Set<string>;
     knownNamesByObjectDirectory: Map<string, Set<string>>;
     knownResourceNames: Set<string>;
@@ -229,6 +230,10 @@ export function collectImplicitInstanceVariableTargets(
 
             const candidate = buildCandidateOccurrence(filePath, reference, source);
             if (candidate === null) {
+                continue;
+            }
+
+            if (parameters.isProtectedOccurrenceRange?.(filePath, candidate.start, candidate.end) === true) {
                 continue;
             }
 

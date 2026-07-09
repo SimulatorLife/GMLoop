@@ -85,3 +85,42 @@ void test("semantic index resolves definitions, references, hover, and cross-fil
         await fixture.cleanup();
     }
 });
+
+void test("semantic index invalidates cached project facts for unsaved document edits", async () => {
+    const fixture = await createTwoScriptProject();
+
+    try {
+        const store = Lsp.createGmlDocumentStore();
+        const document = store.open({
+            uri: Lsp.filePathToUri(fixture.sourcePath),
+            languageId: "gml",
+            version: 1,
+            text: fixture.sourceText
+        });
+        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+
+        await semanticIndex.buildForDocument(document);
+        const beforeEdit = await semanticIndex.searchCompletions(document, "new_unsaved_symbol");
+        assert.equal(
+            beforeEdit.some((completion) => completion.label === "new_unsaved_symbol"),
+            false
+        );
+
+        const updatedDocument = store.update(document.uri, 2, [
+            {
+                text: `${fixture.sourceText}\nfunction new_unsaved_symbol() {\n    return 2;\n}\n`
+            }
+        ]);
+        assert.ok(updatedDocument);
+
+        semanticIndex.invalidateForDocument(updatedDocument);
+        const afterEdit = await semanticIndex.searchCompletions(updatedDocument, "new_unsaved_symbol");
+
+        assert.equal(
+            afterEdit.some((completion) => completion.label === "new_unsaved_symbol"),
+            true
+        );
+    } finally {
+        await fixture.cleanup();
+    }
+});

@@ -54,7 +54,11 @@ export type GmlNavigationSymbol = Readonly<{
  * Typed semantic navigation view over a GameMaker project index.
  */
 export type GmlProjectNavigationIndex = Readonly<{
+    definitionsByFilePath: ReadonlyMap<string, ReadonlyArray<GmlNavigationOccurrence>>;
+    occurrencesByFilePath: ReadonlyMap<string, ReadonlyArray<GmlNavigationOccurrence>>;
     projectRoot: string;
+    symbolIdsByName: ReadonlyMap<string, ReadonlyArray<string>>;
+    symbolsById: ReadonlyMap<string, GmlNavigationSymbol>;
     symbols: ReadonlyArray<GmlNavigationSymbol>;
 }>;
 
@@ -321,11 +325,75 @@ function mergeScriptCallReferences(
 }
 
 function isOffsetInRange(offset: number, range: GmlNavigationRange): boolean {
-    return offset >= range.start && offset <= range.end;
+    return offset >= range.start && offset < range.end;
 }
 
-function isFilePathEqual(left: string, right: string): boolean {
-    return path.resolve(left) === path.resolve(right);
+function normalizeFilePathKey(filePath: string): string {
+    return path.resolve(filePath);
+}
+
+function sortOccurrencesByLocation(
+    occurrences: ReadonlyArray<GmlNavigationOccurrence>
+): ReadonlyArray<GmlNavigationOccurrence> {
+    return [...occurrences].toSorted(compareOccurrencesByLocation);
+}
+
+function createNavigationIndexMaps(
+    symbols: ReadonlyArray<GmlNavigationSymbol>
+): Pick<
+    GmlProjectNavigationIndex,
+    "definitionsByFilePath" | "occurrencesByFilePath" | "symbolIdsByName" | "symbolsById"
+> {
+    const symbolsById = new Map<string, GmlNavigationSymbol>();
+    const symbolIdsByName = new Map<string, string[]>();
+    const definitionsByFilePath = new Map<string, GmlNavigationOccurrence[]>();
+    const occurrencesByFilePath = new Map<string, GmlNavigationOccurrence[]>();
+
+    for (const symbol of symbols) {
+        symbolsById.set(symbol.symbolId, symbol);
+
+        for (const name of [symbol.name, symbol.displayName]) {
+            const ids = Core.getOrCreateMapEntry(symbolIdsByName, name, () => []);
+            if (!ids.includes(symbol.symbolId)) {
+                ids.push(symbol.symbolId);
+            }
+        }
+
+        for (const definition of symbol.definitions) {
+            const definitions = Core.getOrCreateMapEntry(
+                definitionsByFilePath,
+                normalizeFilePathKey(definition.location.filePath),
+                () => []
+            );
+            definitions.push(definition);
+        }
+
+        for (const occurrence of listAllOccurrences(symbol)) {
+            const occurrences = Core.getOrCreateMapEntry(
+                occurrencesByFilePath,
+                normalizeFilePathKey(occurrence.location.filePath),
+                () => []
+            );
+            occurrences.push(occurrence);
+        }
+    }
+
+    return {
+        symbolsById,
+        symbolIdsByName: new Map([...symbolIdsByName.entries()].map(([name, ids]) => [name, ids.toSorted()])),
+        definitionsByFilePath: new Map(
+            [...definitionsByFilePath.entries()].map(([filePath, occurrences]) => [
+                filePath,
+                sortOccurrencesByLocation(occurrences)
+            ])
+        ),
+        occurrencesByFilePath: new Map(
+            [...occurrencesByFilePath.entries()].map(([filePath, occurrences]) => [
+                filePath,
+                sortOccurrencesByLocation(occurrences)
+            ])
+        )
+    };
 }
 
 /**
@@ -336,7 +404,11 @@ export function createProjectNavigationIndex(projectIndex: unknown): GmlProjectN
     if (!source) {
         return {
             projectRoot: "",
-            symbols: []
+            symbols: [],
+            symbolsById: new Map(),
+            symbolIdsByName: new Map(),
+            definitionsByFilePath: new Map(),
+            occurrencesByFilePath: new Map()
         };
     }
 
@@ -353,9 +425,12 @@ export function createProjectNavigationIndex(projectIndex: unknown): GmlProjectN
 
     const mergedSymbols = mergeScriptCallReferences(source.projectRoot, symbols, source.relationships);
 
+    const sortedSymbols = mergedSymbols.toSorted(compareSymbols);
+
     return {
         projectRoot: source.projectRoot,
-        symbols: mergedSymbols.toSorted(compareSymbols)
+        symbols: sortedSymbols,
+        ...createNavigationIndexMaps(sortedSymbols)
     };
 }
 
@@ -379,12 +454,8 @@ export function findNavigationSymbolAtPosition(
     filePath: string,
     offset: number
 ): GmlNavigationOccurrence | null {
-    const matches = index.symbols.flatMap((symbol) =>
-        listAllOccurrences(symbol).filter(
-            (occurrence) =>
-                isFilePathEqual(occurrence.location.filePath, filePath) &&
-                isOffsetInRange(offset, occurrence.location.range)
-        )
+    const matches = (index.occurrencesByFilePath.get(normalizeFilePathKey(filePath)) ?? []).filter((occurrence) =>
+        isOffsetInRange(offset, occurrence.location.range)
     );
 
     return (
@@ -401,14 +472,14 @@ export function findNavigationSymbolAtPosition(
  * Resolve a project symbol ID by display/name text.
  */
 export function resolveNavigationSymbolId(index: GmlProjectNavigationIndex, name: string): string | null {
-    return index.symbols.find((symbol) => symbol.name === name || symbol.displayName === name)?.symbolId ?? null;
+    return index.symbolIdsByName.get(name)?.[0] ?? null;
 }
 
 /**
  * Return true when a project navigation index contains a symbol.
  */
 export function hasNavigationSymbol(index: GmlProjectNavigationIndex, symbolId: string): boolean {
-    return index.symbols.some((symbol) => symbol.symbolId === symbolId);
+    return index.symbolsById.has(symbolId);
 }
 
 /**
@@ -418,7 +489,7 @@ export function findNavigationDefinitions(
     index: GmlProjectNavigationIndex,
     symbolId: string
 ): ReadonlyArray<GmlNavigationOccurrence> {
-    return index.symbols.find((symbol) => symbol.symbolId === symbolId)?.definitions ?? [];
+    return index.symbolsById.get(symbolId)?.definitions ?? [];
 }
 
 /**
@@ -429,7 +500,7 @@ export function findNavigationReferences(
     symbolId: string,
     includeDefinitions: boolean
 ): ReadonlyArray<GmlNavigationOccurrence> {
-    const symbol = index.symbols.find((candidate) => candidate.symbolId === symbolId);
+    const symbol = index.symbolsById.get(symbolId);
     if (!symbol) {
         return [];
     }
@@ -446,10 +517,7 @@ export function listNavigationDocumentSymbols(
     index: GmlProjectNavigationIndex,
     filePath: string
 ): ReadonlyArray<GmlNavigationOccurrence> {
-    return index.symbols
-        .flatMap((symbol) => symbol.definitions)
-        .filter((occurrence) => isFilePathEqual(occurrence.location.filePath, filePath))
-        .toSorted(compareOccurrencesByLocation);
+    return index.definitionsByFilePath.get(normalizeFilePathKey(filePath)) ?? [];
 }
 
 /**
@@ -468,7 +536,7 @@ export function searchNavigationWorkspaceSymbols(
  * Return semantic hover facts for a symbol ID.
  */
 export function getNavigationHoverFacts(index: GmlProjectNavigationIndex, symbolId: string): GmlHoverFacts | null {
-    const symbol = index.symbols.find((candidate) => candidate.symbolId === symbolId);
+    const symbol = index.symbolsById.get(symbolId);
     return symbol
         ? {
               displayName: symbol.displayName,
