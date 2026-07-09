@@ -3,6 +3,7 @@
   "allowInlineControlFlowBlocks": false,
   "logicalOperatorsStyle": "keywords",
   "lintRules": {
+    "gml/remove-doc-function-tags": "error",
     "gml/normalize-doc-comments": "error",
     "gml/normalize-doc-param-separators": "error",
     "gml/normalize-operator-aliases": "error",

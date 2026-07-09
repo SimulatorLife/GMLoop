@@ -126,6 +126,11 @@ const expectedRules = Object.freeze([
         schema: [{ type: "object", additionalProperties: false, properties: {} }]
     },
     {
+        shortName: "remove-doc-function-tags",
+        messageId: "removeDocFunctionTags",
+        schema: [{ type: "object", additionalProperties: false, properties: {} }]
+    },
+    {
         shortName: "normalize-doc-comments",
         messageId: "normalizeDocComments",
         schema: [{ type: "object", additionalProperties: false, properties: {} }]

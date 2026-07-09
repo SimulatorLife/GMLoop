@@ -35,6 +35,7 @@ void test("normalizeLintRulesConfig supports lintRuleset preset names", () => {
     });
 
     assert.equal(rules["gml/no-scientific-notation"], "error");
+    assert.equal(rules["gml/remove-doc-function-tags"], "warn");
     assert.equal(rules["gml/normalize-doc-returns"], "warn");
     assert.equal(rules["gml/normalize-doc-param-defaults"], "warn");
     assert.equal(rules["gml/normalize-doc-param-undefined-defaults"], "warn");
@@ -49,6 +50,7 @@ void test("normalizeLintRulesConfig supports the all ruleset", () => {
     });
 
     assert.equal(rules["gml/no-scientific-notation"], "error");
+    assert.equal(rules["gml/remove-doc-function-tags"], "warn");
     assert.equal(rules["gml/normalize-doc-returns"], "warn");
     assert.equal(rules["gml/normalize-doc-param-defaults"], "warn");
     assert.equal(rules["gml/normalize-doc-param-undefined-defaults"], "warn");

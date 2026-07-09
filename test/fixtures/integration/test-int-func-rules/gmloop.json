@@ -2,6 +2,7 @@
   "allowInlineControlFlowBlocks": false,
   "printWidth": 95,
   "lintRules": {
+    "gml/remove-doc-function-tags": "error",
     "gml/normalize-doc-comments": "error",
     "gml/normalize-doc-param-separators": "error",
     "gml/require-argument-separators": "error",

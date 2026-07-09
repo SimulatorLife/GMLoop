@@ -1,5 +1,6 @@
 {
   "lintRules": {
+    "gml/remove-doc-function-tags": "error",
     "gml/normalize-doc-comments": "error",
     "gml/normalize-doc-returns": "error",
     "gml/normalize-doc-param-undefined-defaults": "error",

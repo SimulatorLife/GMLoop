@@ -52,7 +52,8 @@ Boundary test: if an API needs an AST node, symbol id, scope id, project path, s
 
 ### 2.2 Doc-Comment Ownership
 
-- **Lint (`gml/normalize-doc-comments`)** owns legacy prefix or tag normalization, promotion of plain comments into doc-comment form (for example, `// description ...` to `/// @description ...` or `/// @desc ...`), `@description` promotion and cleanup (including removal of empty `/// @description` or `/// @desc` at top-of-file or function doc blocks), and function-doc tag synthesis. Function docs should be normalized to `/// @desc`, whereas top-of-file description comments must use the full `/// @description`.
+- **Lint (`gml/normalize-doc-comments`)** owns legacy prefix and doc-tag alias normalization, promotion of plain comments into doc-comment form (for example, `// description ...` to `/// @description ...` or `/// @desc ...`), `@description` promotion and cleanup (including removal of empty `/// @description` or `/// @desc` at top-of-file or function doc blocks), and function-doc tag synthesis. Function docs should be normalized to `/// @desc`, whereas top-of-file description comments must use the full `/// @description`.
+- **Lint (`gml/remove-doc-function-tags`)** owns removal of legacy `/// @function ...` marker lines from documentation blocks.
 - **Lint (`gml/normalize-doc-returns`)** owns conversion of legacy return description lines into canonical `@returns` metadata, such as rewriting `Returns: Boolean, indicating success` to `@returns {Boolean} Indicating success`.
 - **Lint (`gml/normalize-doc-param-defaults`)** owns optional `@param` default cleanup when default text cannot be represented safely on one doc-comment line, such as collapsing synthesized multiline default expressions to default-free optional parameter docs.
 - **Lint (`gml/normalize-doc-param-separators`)** owns `@param` description separator normalization (for example, `name - description` to `name description`).

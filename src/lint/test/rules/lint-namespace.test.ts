@@ -46,6 +46,7 @@ void test("ruleIds contract keeps canonical ids with PascalCase keys", () => {
         "gml/no-boolean-literal-comparisons"
     );
     assertEquals((ruleIds as Record<string, string>).GmlRemoveDefaultComments, "gml/remove-default-comments");
+    assertEquals((ruleIds as Record<string, string>).GmlRemoveDocFunctionTags, "gml/remove-doc-function-tags");
     assertEquals((ruleIds as Record<string, string>).GmlNormalizeDocReturns, "gml/normalize-doc-returns");
     assertEquals((ruleIds as Record<string, string>).GmlNormalizeDocParamDefaults, "gml/normalize-doc-param-defaults");
     assertEquals(
@@ -102,6 +103,7 @@ void test("config arrays are readonly FlatConfig[] values and share the pinned f
     assertEquals(recommendedGml.rules["gml/prefer-increment-decrement-operators"], "warn");
     assertEquals(recommendedGml.rules["gml/prefer-loop-invariant-expressions"], "warn");
     assertEquals(recommendedGml.rules["gml/remove-default-comments"], "warn");
+    assertEquals(recommendedGml.rules["gml/remove-doc-function-tags"], "warn");
     assertEquals(recommendedGml.rules["gml/normalize-doc-returns"], "warn");
     assertEquals(recommendedGml.rules["gml/normalize-doc-param-defaults"], "warn");
     assertEquals(recommendedGml.rules["gml/normalize-doc-param-separators"], "warn");

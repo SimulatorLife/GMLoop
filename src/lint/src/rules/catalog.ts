@@ -166,6 +166,13 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         messageId: "removeDefaultComments"
     },
     {
+        description: "Remove legacy @function marker lines from GML documentation comments.",
+        mapKey: "GmlRemoveDocFunctionTags",
+        shortName: "remove-doc-function-tags",
+        fullId: "gml/remove-doc-function-tags",
+        messageId: "removeDocFunctionTags"
+    },
+    {
         description: "Normalize triple-slash function documentation tags into GMLoop's canonical doc-comment shape.",
         mapKey: "GmlNormalizeDocComments",
         shortName: "normalize-doc-comments",

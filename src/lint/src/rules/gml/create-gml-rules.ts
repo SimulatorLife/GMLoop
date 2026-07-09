@@ -32,6 +32,7 @@ import { createPreferLoopInvariantExpressionsRule } from "./rules/prefer-loop-in
 import { createPreferStringInterpolationRule } from "./rules/prefer-string-interpolation-rule.js";
 import { createPreferStructLiteralAssignmentsRule } from "./rules/prefer-struct-literal-assignments-rule.js";
 import { createRemoveDefaultCommentsRule } from "./rules/remove-default-comments-rule.js";
+import { createRemoveDocFunctionTagsRule } from "./rules/remove-doc-function-tags-rule.js";
 import { createRequireArgumentSeparatorsRule } from "./rules/require-argument-separators-rule.js";
 import { createRequireControlFlowBracesRule } from "./rules/require-control-flow-braces-rule.js";
 import {
@@ -61,6 +62,7 @@ const gmlRuleFactoriesByShortName = Object.freeze(
         ["no-scientific-notation", createNoScientificNotationRule],
         ["no-unnecessary-string-interpolation", createNoUnnecessaryStringInterpolationRule],
         ["remove-default-comments", createRemoveDefaultCommentsRule],
+        ["remove-doc-function-tags", createRemoveDocFunctionTagsRule],
         ["normalize-doc-comments", createNormalizeDocCommentsRule],
         ["normalize-doc-returns", createNormalizeDocReturnsRule],
         ["normalize-doc-param-defaults", createNormalizeDocParamDefaultsRule],

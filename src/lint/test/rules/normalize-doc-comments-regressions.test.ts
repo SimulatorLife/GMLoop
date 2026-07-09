@@ -103,7 +103,7 @@ void test("normalize-doc-comments does not synthesize @returns for inherited con
     assertEquals(result.output, expected);
 });
 
-void test("normalize-doc-comments removes legacy constructor placeholders and stale optional param defaults", () => {
+void test("normalize-doc-comments preserves function tags while removing constructor placeholders and stale optional param defaults", () => {
     const input = [
         "/// @funct GrandchildConfig",
         "/// @desc GrandchildConfig",
@@ -116,6 +116,7 @@ void test("normalize-doc-comments removes legacy constructor placeholders and st
     ].join("\n");
 
     const expected = [
+        "/// @function GrandchildConfig",
         "/// @param bar",
         "function GrandchildConfig(_bar) : BaseConfig(_bar) constructor {",
         "    bar = _bar;",

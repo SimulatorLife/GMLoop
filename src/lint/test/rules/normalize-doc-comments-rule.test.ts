@@ -182,7 +182,7 @@ void test("normalize-doc-comments synthesizes tags for static function variable 
     assert.doesNotMatch(output, /^\/\/\/ @returns \{undefined\}/m);
 });
 
-void test("normalize-doc-comments removes legacy @function and normalizes default-param docs", () => {
+void test("normalize-doc-comments preserves legacy @function while normalizing default-param docs", () => {
     const input = [
         "/// @function update_ground_dist",
         "/// @description Updates ground_dist each step",
@@ -194,7 +194,7 @@ void test("normalize-doc-comments removes legacy @function and normalizes defaul
     ].join("\n");
     const output = runNormalizeDocCommentsRule(input);
 
-    assert.doesNotMatch(output, /^\/\/\/ @function /m);
+    assert.match(output, /^\/\/\/ @function update_ground_dist$/m);
     assert.match(output, /^\/\/\/ @desc Updates ground_dist each step$/m);
     assert.match(output, /^\/\/\/ @param \[ray_len=128\]$/m);
     assert.match(output, /^\/\/\/ @returns \{undefined\}$/m);

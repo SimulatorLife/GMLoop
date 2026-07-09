@@ -1149,15 +1149,13 @@ function processDocBlock(blockLines: Array<string>): Array<string> {
         .filter((line) => !emptyDescriptionPattern.test(line))
         .map((line) => normalizeDocCommentPrefixLine(line))
         // canonicalize any alias tags such as @arg/@argument/@params/@desc, and
-        // remove legacy @function markers entirely. this ensures downstream
-        // logic can assume only the canonical forms remain.
+        // normalize the block before downstream synthesis inspects known tags.
         .map((line) => applyJsDocTagAliasLine(line))
         .map((line) => (hasOverrideTag ? line : normalizeReturnDocLineType(line)))
         .map((line) => normalizeDocParamLineParameterName(line))
         .map((line) => normalizeParamDescriptionSpacing(line))
         .filter((line) => !emptyDescriptionPattern.test(line))
-        .filter((line) => line.trimStart() !== "///")
-        .filter((line): line is string => !/^\s*\/\/\/\s*@function\b/.test(line));
+        .filter((line) => line.trimStart() !== "///");
 
     const promotedBlock = promoteLeadingDocCommentTextToDescription(normalizedBlock, [], true);
 
