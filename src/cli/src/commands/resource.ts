@@ -112,13 +112,13 @@ export function createResourceCommand(): Command {
             const height = Number.parseInt(options.height, 10);
             const checkerSize = Number.parseInt(options.checkerSize, 10);
 
-            if (isNaN(width) || width <= 0) {
+            if (Number.isNaN(width) || width <= 0) {
                 throw new Error(`Invalid width: "${options.width}". Must be a positive integer.`);
             }
-            if (isNaN(height) || height <= 0) {
+            if (Number.isNaN(height) || height <= 0) {
                 throw new Error(`Invalid height: "${options.height}". Must be a positive integer.`);
             }
-            if (isNaN(checkerSize) || checkerSize <= 0) {
+            if (Number.isNaN(checkerSize) || checkerSize <= 0) {
                 throw new Error(`Invalid checker size: "${options.checkerSize}". Must be a positive integer.`);
             }
 
