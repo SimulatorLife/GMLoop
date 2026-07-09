@@ -126,6 +126,7 @@ export type {
     AddProjectResourceRequest,
     AddRoomInstanceRequest,
     CreateRoomLayerRequest,
+    CreateSolidColorPngRequest,
     DeleteObjectEventRequest,
     DeleteRoomInstanceRequest,
     DeleteRoomLayerRequest,
@@ -144,6 +145,7 @@ export type {
     RenameProjectResourceRequest,
     ReorderRoomLayerRequest,
     RepairRoomRequest,
+    RgbaColor,
     RoomCameraInspectionResult,
     RoomCameraMutationResult,
     RoomInstanceInspectionResult,
@@ -156,14 +158,14 @@ export type {
     UpdateObjectEventRequest,
     UpdateRoomCameraRequest,
     UpdateRoomInstanceRequest,
-    UpdateRoomLayerRequest
-} from "./project-resources/index.js";
+    UpdateRoomLayerRequest} from "./project-resources/index.js";
 export * as ProjectResources from "./project-resources/index.js";
 export {
     addObjectEvent,
     addProjectResource,
     addRoomInstance,
     createRoomLayer,
+    createSolidColorPng,
     deleteObjectEvent,
     deleteRoomInstance,
     deleteRoomLayer,
@@ -178,6 +180,7 @@ export {
     listRoomInstances,
     listRoomLayers,
     moveProjectResource,
+    parseColor,
     removeProjectResource,
     renameProjectResource,
     reorderRoomLayer,
@@ -185,8 +188,7 @@ export {
     updateObjectEvent,
     updateRoomCamera,
     updateRoomInstance,
-    updateRoomLayer
-} from "./project-resources/index.js";
+    updateRoomLayer} from "./project-resources/index.js";
 export {
     isProjectResourceKind,
     parseProjectResourceKind,

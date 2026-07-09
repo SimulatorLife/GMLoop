@@ -110,6 +110,7 @@ Built-in `gml/*` rule short names:
 - `remove-default-comments`
 - `remove-doc-function-tags`
 - `normalize-banner-comments`
+- `normalize-doc-comment-tags`
 - `normalize-doc-comments`
 - `normalize-doc-returns`
 - `normalize-doc-param-defaults`
@@ -164,11 +165,13 @@ fix instead of the broader `optimize-logical-flow` rule.
 
 `remove-default-comments` removes default GameMaker placeholder and migration-banner comments. If an object event file contains only those placeholder comments, the rule replaces them with `// Intentionally empty: overrides inherited/default object event behavior.` instead of making the file empty. Comment-only object events can be intentional in GameMaker because the event file can override inherited or default event behavior, such as disabling an automatic draw event.
 
-`remove-doc-function-tags` removes legacy `/// @function ...` marker lines from documentation blocks while preserving neighboring doc metadata such as `@param`, `@returns`, `@override`, and custom tags.
+`remove-doc-function-tags` removes legacy function marker lines such as `/// @function ...`, `/// @func ...`, `/// @funct ...`, and `/// @method ...` from documentation blocks while preserving neighboring doc metadata such as `@param`, `@returns`, `@override`, and custom tags.
 
 `normalize-banner-comments` canonicalizes decorative banner comments (line and block forms) and rewrites method-list `///` banner lines (outside of function declarations) to plain `//` comments.
 
-`normalize-doc-comments` canonicalizes doc tags/content within a single file. It synthesizes missing tags for declaration/assignment-style function docs. Constructors, including for inherited constructors (`function X(...) : Parent(...) constructor`). For struct/object literal property functions, the rule synthesizes docs, including `@returns`. Canonical ordering keeps non-param metadata tags before the param block, but preserves custom tags interleaved between `@param` lines when intentionally authored that way.
+`normalize-doc-comment-tags` canonicalizes documentation comment markers and focused tag aliases, such as `// @param value` to `/// @param value`, `// / Summary` to `/// Summary`, `//// @func` to escaped `/// / @func`, `@arg`/`@argument`/`@params` to `@param`, `@return` to `@returns`, and `@private` to `@ignore`. It does not synthesize function docs or rewrite legacy function marker tags.
+
+`normalize-doc-comments` canonicalizes function documentation blocks within a single file. It promotes leading doc text into descriptions and synthesizes missing tags for declaration/assignment-style function docs. When it rewrites a touched function-doc block, it consumes the same focused tag-alias canonicalization as `normalize-doc-comment-tags` so broad function-doc fixes do not reintroduce stale aliases. Constructors, including for inherited constructors (`function X(...) : Parent(...) constructor`). For struct/object literal property functions, the rule synthesizes docs, including `@returns`. Canonical ordering keeps non-param metadata tags before the param block, but preserves custom tags interleaved between `@param` lines when intentionally authored that way.
 
 `normalize-doc-returns` converts legacy return description lines into canonical `@returns` metadata (for example, `Returns: Boolean, indicating success` to `@returns {Boolean} Indicating success`).
 

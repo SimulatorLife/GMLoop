@@ -16,8 +16,8 @@ function runNormalizeDocCommentsRule(code: string): string {
 
 void test("normalize-doc-comments promotes leading summary lines into @description", () => {
     const input = [
-        "// / Leading summary",
-        "// / Additional note",
+        "/// Leading summary",
+        "/// Additional note",
         "/// @param value - the input",
         "function demo(value) {",
         "    return value;",
@@ -66,12 +66,6 @@ void test("normalize-doc-comments preserves non-empty @description content", () 
     assert.match(output, /@description Initialize the sky background/);
 });
 
-void test("normalize-doc-comments canonicalizes legacy // @tag comments", () => {
-    const input = ["// @description legacy style", "function demo() {}"].join("\n");
-    const output = runNormalizeDocCommentsRule(input);
-    assert.match(output, /^\/\/\/ @desc legacy style/m);
-});
-
 void test("normalize-doc-comments synthesizes missing doc tags for undocumented functions", () => {
     const input = ["function synth_me(_a, b = 1) {", "    return _a + b;", "}"].join("\n");
     const output = runNormalizeDocCommentsRule(input);
@@ -99,10 +93,10 @@ void test("normalize-doc-comments appends missing @param and @returns tags to ex
     assert.match(output, /^\/\/\/ @returns \{undefined\}/m);
 });
 
-void test("normalize-doc-comments treats @arg and @argument as documented parameters", () => {
+void test("normalize-doc-comments treats canonical @param tags as documented parameters", () => {
     const input = [
-        "/// @arg alpha",
-        "/// @argument beta",
+        "/// @param alpha",
+        "/// @param beta",
         "function enrich_me(alpha, beta) {",
         "    return alpha + beta;",
         "}"
@@ -111,17 +105,15 @@ void test("normalize-doc-comments treats @arg and @argument as documented parame
 
     assert.match(output, /^\/\/\/ @param alpha$/m);
     assert.match(output, /^\/\/\/ @param beta$/m);
-    assert.doesNotMatch(output, /^\/\/\/ @arg alpha$/m);
-    assert.doesNotMatch(output, /^\/\/\/ @argument beta$/m);
     assert.match(output, /^\/\/\/ @returns \{undefined\}/m);
 });
 
-void test("normalize-doc-comments canonicalizes doc tag aliases via Core replacements", () => {
+void test("normalize-doc-comments consumes canonical doc tags from normalize-doc-comment-tags", () => {
     const input = [
-        "/// @desc Computes a score",
-        "/// @arg alpha - first input",
-        "/// @params beta",
-        "/// @return {real}",
+        "/// @description Computes a score",
+        "/// @param alpha - first input",
+        "/// @param beta",
+        "/// @returns {real}",
         "function compute(alpha, beta) {",
         "    return alpha + beta;",
         "}"
@@ -133,18 +125,14 @@ void test("normalize-doc-comments canonicalizes doc tag aliases via Core replace
     assert.match(output, /^\/\/\/ @param beta$/m);
     assert.match(output, /^\/\/\/ @returns \{real\}$/m);
     assert.doesNotMatch(output, /^\/\/\/ @description\b/m);
-    assert.doesNotMatch(output, /^\/\/\/ @arg\b/m);
-    assert.doesNotMatch(output, /^\/\/\/ @params\b/m);
-    assert.doesNotMatch(output, /^\/\/\/ @return\b/m);
     assert.doesNotMatch(output, /^\/\/\/ @returns \{undefined\}$/m);
 });
 
-void test("normalize-doc-comments treats @return as an existing returns tag", () => {
-    const input = ["/// @return {real}", "function enrich_me(alpha) {", "    return alpha;", "}"].join("\n");
+void test("normalize-doc-comments treats @returns as an existing returns tag", () => {
+    const input = ["/// @returns {real}", "function enrich_me(alpha) {", "    return alpha;", "}"].join("\n");
     const output = runNormalizeDocCommentsRule(input);
 
     assert.match(output, /^\/\/\/ @returns \{real\}$/m);
-    assert.doesNotMatch(output, /^\/\/\/ @return \{real\}$/m);
     assert.doesNotMatch(output, /^\/\/\/ @returns \{undefined\}$/m);
 });
 
@@ -182,7 +170,7 @@ void test("normalize-doc-comments synthesizes tags for static function variable 
     assert.doesNotMatch(output, /^\/\/\/ @returns \{undefined\}/m);
 });
 
-void test("normalize-doc-comments preserves legacy @function while normalizing default-param docs", () => {
+void test("normalize-doc-comments does not preserve legacy @function while normalizing default-param docs", () => {
     const input = [
         "/// @function update_ground_dist",
         "/// @description Updates ground_dist each step",
@@ -194,7 +182,7 @@ void test("normalize-doc-comments preserves legacy @function while normalizing d
     ].join("\n");
     const output = runNormalizeDocCommentsRule(input);
 
-    assert.match(output, /^\/\/\/ @function update_ground_dist$/m);
+    assert.doesNotMatch(output, /^\/\/\/ @function update_ground_dist$/m);
     assert.match(output, /^\/\/\/ @desc Updates ground_dist each step$/m);
     assert.match(output, /^\/\/\/ @param \[ray_len=128\]$/m);
     assert.match(output, /^\/\/\/ @returns \{undefined\}$/m);
@@ -295,10 +283,10 @@ void test("normalize-doc-comments keeps operator comments that start with // / u
     assert.doesNotMatch(output, /\/\/\/ =/u);
 });
 
-void test("normalize-doc-comments preserves non-typed @returns payload while cleaning malformed // / docs", () => {
+void test("normalize-doc-comments preserves non-typed @returns payload after doc markers are canonical", () => {
     const input = [
-        "// / Parse one row",
-        "// /",
+        "/// Parse one row",
+        "///",
         "/// @returns Parsed row object",
         "function parse_row(_row) {",
         "    return _row;",

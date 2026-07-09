@@ -13,6 +13,7 @@ import { createNoUnnecessaryStringInterpolationRule } from "./rules/no-unnecessa
 import { createNormalizeBannerCommentsRule } from "./rules/normalize-banner-comments-rule.js";
 import { createNormalizeBlockKeywordAliasesRule } from "./rules/normalize-block-keyword-aliases-rule.js";
 import { createNormalizeDirectivesRule } from "./rules/normalize-directives-rule.js";
+import { createNormalizeDocCommentTagsRule } from "./rules/normalize-doc-comment-tags-rule.js";
 import { createNormalizeDocCommentsRule } from "./rules/normalize-doc-comments-rule.js";
 import { createNormalizeDocParamDefaultsRule } from "./rules/normalize-doc-param-defaults-rule.js";
 import { createNormalizeDocParamSeparatorsRule } from "./rules/normalize-doc-param-separators-rule.js";
@@ -64,6 +65,7 @@ const gmlRuleFactoriesByShortName = Object.freeze(
         ["no-unnecessary-string-interpolation", createNoUnnecessaryStringInterpolationRule],
         ["remove-default-comments", createRemoveDefaultCommentsRule],
         ["remove-doc-function-tags", createRemoveDocFunctionTagsRule],
+        ["normalize-doc-comment-tags", createNormalizeDocCommentTagsRule],
         ["normalize-doc-comments", createNormalizeDocCommentsRule],
         ["normalize-doc-returns", createNormalizeDocReturnsRule],
         ["normalize-doc-param-defaults", createNormalizeDocParamDefaultsRule],

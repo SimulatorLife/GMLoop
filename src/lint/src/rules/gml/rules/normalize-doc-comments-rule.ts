@@ -16,40 +16,31 @@ const { normalizeDocParamName, promoteLeadingDocCommentTextToDescription, resolv
     gmlRuleDocCommentServices;
 
 const { applyJsDocTagAliasReplacements, getNodeStartIndex } = Core;
+const DOC_FUNCTION_TAG_LINE_PATTERN = /^\s*\/\/\/\s*@(?:func|funct|function|method)\b.*$/u;
 
 function normalizeDocCommentPrefixLine(line: string): string {
-    // support the "// /" notation used by some fixtures code
-    // but avoid matching "// //" which is just a normal comment starting with two
-    // slashes. we only want the single-slash variant.
-    const docSlashMatch = /^(\s*)\/\/\s*\/(?!\/)(.*)$/u.exec(line);
-    if (docSlashMatch) {
-        const content = docSlashMatch[2].trim();
+    const spacedSlashDocMatch = /^(\s*)\/\/\s*\/(?!\/)(.*)$/u.exec(line);
+    if (spacedSlashDocMatch) {
+        const content = spacedSlashDocMatch[2].trim();
         if (/^[=+\-*/%<>!&|^]/u.test(content)) {
             return line;
         }
-        if (content.length === 0) {
-            return `${docSlashMatch[1]}///`;
-        }
-        return `${docSlashMatch[1]}/// ${content}`;
+
+        return content.length === 0 ? `${spacedSlashDocMatch[1]}///` : `${spacedSlashDocMatch[1]}/// ${content}`;
     }
 
-    const tripleSlashMatch = /^(\s*)\/\/\/\s*@(.*)$/u.exec(line);
+    const doubleSlashTagMatch = /^(\s*)\/\/\s*@(.*)$/u.exec(line);
+    if (doubleSlashTagMatch) {
+        return `${doubleSlashTagMatch[1]}/// @${doubleSlashTagMatch[2].trim()}`;
+    }
+
+    const tripleSlashMatch = /^(\s*)\/\/\/\s*(.*)$/u.exec(line);
     if (tripleSlashMatch) {
-        return `${tripleSlashMatch[1]}/// @${tripleSlashMatch[2].trim()}`;
-    }
-
-    const doubleSlashAtMatch = /^(\s*)\/\/\s*@(.*)$/u.exec(line);
-    if (doubleSlashAtMatch) {
-        return `${doubleSlashAtMatch[1]}/// @${doubleSlashAtMatch[2].trim()}`;
-    }
-
-    const tripleSlashNoAtMatch = /^(\s*)\/\/\/\s*(.*)$/u.exec(line);
-    if (tripleSlashNoAtMatch) {
-        const content = tripleSlashNoAtMatch[2].trim();
-        if (content.length === 0) {
-            return `${tripleSlashNoAtMatch[1]}///`;
+        const content = tripleSlashMatch[2].trim();
+        if (content.startsWith("/")) {
+            return `${tripleSlashMatch[1]}/// ${content}`;
         }
-        return `${tripleSlashNoAtMatch[1]}/// ${content}`;
+        return content.length === 0 ? `${tripleSlashMatch[1]}///` : `${tripleSlashMatch[1]}/// ${content}`;
     }
 
     return line;
@@ -1148,9 +1139,8 @@ function processDocBlock(blockLines: Array<string>): Array<string> {
     const normalizedBlock = blockLines
         .filter((line) => !emptyDescriptionPattern.test(line))
         .map((line) => normalizeDocCommentPrefixLine(line))
-        // canonicalize any alias tags such as @arg/@argument/@params/@desc, and
-        // normalize the block before downstream synthesis inspects known tags.
         .map((line) => applyJsDocTagAliasLine(line))
+        .filter((line) => !DOC_FUNCTION_TAG_LINE_PATTERN.test(line))
         .map((line) => (hasOverrideTag ? line : normalizeReturnDocLineType(line)))
         .map((line) => normalizeDocParamLineParameterName(line))
         .map((line) => normalizeParamDescriptionSpacing(line))
@@ -1562,7 +1552,6 @@ export function createNormalizeDocCommentsRule(definition: GmlRuleDefinition): R
                     let pendingDocBlock: Array<string> = [];
                     let pendingGapLinesAfterDocBlock: Array<string> = [];
                     for (const [lineIndex, line] of lines.entries()) {
-                        // accumulate any doc-like lines until we hit actual code
                         if (
                             /^\s*\/\/\//u.test(line) ||
                             /^\s*\/\/\s*@/u.test(line) ||

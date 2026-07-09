@@ -991,6 +991,28 @@ pnpm run cli -- symbol neighbors project::gml/script/scr_player --depth 2
 pnpm run cli -- symbol usages project::gml/script/scr_player
 ```
 
+### `resource` - Inspect and Generate Project Resources
+
+Inspects indexed project resources or generates standalone resource assets (e.g. placeholder images).
+
+```bash
+# List all indexed project resources
+pnpm run cli -- resource list --path path/to/project
+
+# Search for resources matching a query
+pnpm run cli -- resource find scr_player --path path/to/project
+
+# Generate a solid color PNG image of given dimensions (useful for creating placeholder images)
+pnpm run cli -- resource create-image tmp/placeholder.png --width 64 --height 64 --color "#ff0000" --json
+```
+
+**Options for `create-image`:**
+
+- `--width <number>` - Width of the image in pixels (default: `64`)
+- `--height <number>` - Height of the image in pixels (default: `64`)
+- `--color <color>` - Color of the image (supports CSS color names like `red`, `transparent`, or hex codes like `#FF0000` or `#FF000080` for alpha transparency) (default: `red`)
+- `--json` - Emit machine-readable JSON output describing the generated file
+
 ## Architecture
 
 The CLI package serves as the orchestration layer for the hot-reload development pipeline:

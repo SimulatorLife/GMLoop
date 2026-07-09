@@ -23,6 +23,10 @@ Prefer the narrowest structured operation that owns the change. Keep resource cr
 > [!IMPORTANT]
 > Do not use resource metadata operations to write or modify GML gameplay logic code. All GML scripting inside object events or scripts belongs to `gmloop-gml-gameplay` and `gmloop-tooling`.
 
+> [!TIP]
+> To generate placeholder sprite frame/layer image assets for the game, use the `gmloop_resource_create_image` MCP tool (or the `gmloop resource create-image` CLI command). This lets you generate solid-color PNG files at specific dimensions and colors directly.
+
+
 Preserve stable resource names and identifiers unless the task explicitly requires a rename. When renaming, use the project-wide refactor transaction so references and metadata change together.
 
 Do not hand-edit `.yyp`, `.yy`, or resource ordering as generic JSON. Do not copy opaque resource metadata from another project without resolving its dependencies.

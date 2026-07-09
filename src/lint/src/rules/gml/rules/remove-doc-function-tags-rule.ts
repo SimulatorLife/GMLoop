@@ -1,38 +1,38 @@
-import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import type { GmlRuleDefinition } from "../index.js";
-import { createMeta, reportFullTextRewrite } from "../rule-base-helpers.js";
+import { collectSourceLines, createMeta, resolveLocFromIndex } from "../rule-base-helpers.js";
 
-const DOC_FUNCTION_TAG_LINE_PATTERN = /^\s*\/\/\/\s*@function\b.*$/u;
+const DOC_FUNCTION_TAG_LINE_PATTERN = /^\s*\/\/\/\s*@(?:func|funct|function|method)\b.*$/u;
 
-function removeDocFunctionTagLines(sourceText: string): string {
-    const lineBreakSpans = Core.getLineBreakSpans(sourceText);
-    let rewrittenText = "";
-    let lineStartIndex = 0;
-
-    for (const lineBreakSpan of lineBreakSpans) {
-        const lineText = sourceText.slice(lineStartIndex, lineBreakSpan.index);
-        const lineBreakText = sourceText.slice(lineBreakSpan.index, lineBreakSpan.index + lineBreakSpan.length);
-        if (!DOC_FUNCTION_TAG_LINE_PATTERN.test(lineText)) {
-            rewrittenText += `${lineText}${lineBreakText}`;
+function reportDocFunctionTagLineFixes(context: Rule.RuleContext, definition: GmlRuleDefinition): void {
+    const sourceText = context.sourceCode.text;
+    for (const line of collectSourceLines(sourceText)) {
+        if (!DOC_FUNCTION_TAG_LINE_PATTERN.test(line.text)) {
+            continue;
         }
-        lineStartIndex = lineBreakSpan.index + lineBreakSpan.length;
-    }
 
-    const finalLineText = sourceText.slice(lineStartIndex);
-    if (!DOC_FUNCTION_TAG_LINE_PATTERN.test(finalLineText)) {
-        rewrittenText += finalLineText;
-    }
+        let endOffset = line.startOffset + line.text.length;
+        if (sourceText.slice(endOffset, endOffset + 2) === "\r\n") {
+            endOffset += 2;
+        } else if (sourceText[endOffset] === "\n" || sourceText[endOffset] === "\r") {
+            endOffset += 1;
+        }
 
-    return rewrittenText;
+        context.report({
+            loc: resolveLocFromIndex(context, sourceText, line.startOffset),
+            messageId: definition.messageId,
+            fix: (fixer) => fixer.replaceTextRange([line.startOffset, endOffset], "")
+        });
+    }
 }
 
 /**
  * Creates the `gml/remove-doc-function-tags` rule.
  *
- * Removes legacy `/// @function ...` marker lines from documentation blocks
- * without changing neighboring doc-comment metadata.
+ * Removes legacy `/// @function ...` / `/// @func ...` /
+ * `/// @funct ...` / `/// @method ...` marker lines from documentation
+ * blocks without changing neighboring doc-comment metadata.
  */
 export function createRemoveDocFunctionTagsRule(definition: GmlRuleDefinition): Rule.RuleModule {
     return Object.freeze({
@@ -40,9 +40,7 @@ export function createRemoveDocFunctionTagsRule(definition: GmlRuleDefinition): 
         create(context) {
             return Object.freeze({
                 Program() {
-                    const sourceText = context.sourceCode.text;
-                    const rewrittenText = removeDocFunctionTagLines(sourceText);
-                    reportFullTextRewrite(context, definition.messageId, sourceText, rewrittenText);
+                    reportDocFunctionTagLineFixes(context, definition);
                 }
             });
         }

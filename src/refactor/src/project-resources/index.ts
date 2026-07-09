@@ -1,3 +1,5 @@
+export type { CreateSolidColorPngRequest, RgbaColor } from "./create-image.js";
+export { createSolidColorPng, parseColor } from "./create-image.js";
 export type {
     AddObjectEventRequest,
     DeleteObjectEventRequest,

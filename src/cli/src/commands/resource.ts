@@ -1,3 +1,7 @@
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
+
+import { Refactor } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import { Command } from "commander";
 
@@ -82,6 +86,69 @@ export function createResourceCommand(): Command {
         });
     });
 
+    const createImageCommand = applyStandardCommandOptions(new Command("create-image"))
+        .description("Create a PNG image of given dimensions and color/pattern.")
+        .argument("<output>", "Path to save the generated PNG image.")
+        .option("--width <number>", "Width of the image in pixels.", "64")
+        .option("--height <number>", "Height of the image in pixels.", "64")
+        .option("--color <color>", "Primary color (name or hex, e.g. 'red', '#FF0000').", "red")
+        .option("--color2 <color>", "Secondary color (only for checkerboard pattern).", "white")
+        .option("--pattern <pattern>", "Image pattern: solid or checkerboard.", "solid")
+        .option("--checker-size <number>", "Checkerboard square size in pixels.", "8")
+        .option("--json", "Emit JSON output.");
+
+    createImageCommand.action(async function resourceCreateImageAction(outputPath: string) {
+        await runResourceCommandAction(async () => {
+            const options = this.opts<{
+                width: string;
+                height: string;
+                color: string;
+                color2: string;
+                pattern: "solid" | "checkerboard";
+                checkerSize: string;
+            }>();
+
+            const width = Number.parseInt(options.width, 10);
+            const height = Number.parseInt(options.height, 10);
+            const checkerSize = Number.parseInt(options.checkerSize, 10);
+
+            if (isNaN(width) || width <= 0) {
+                throw new Error(`Invalid width: "${options.width}". Must be a positive integer.`);
+            }
+            if (isNaN(height) || height <= 0) {
+                throw new Error(`Invalid height: "${options.height}". Must be a positive integer.`);
+            }
+            if (isNaN(checkerSize) || checkerSize <= 0) {
+                throw new Error(`Invalid checker size: "${options.checkerSize}". Must be a positive integer.`);
+            }
+
+            const imageBuffer = Refactor.createSolidColorPng({
+                width,
+                height,
+                color: options.color,
+                color2: options.color2,
+                pattern: options.pattern,
+                checkerSize
+            });
+
+            await writeFile(outputPath, imageBuffer);
+
+            printProjectPayload({
+                command: "resource create-image",
+                ok: true,
+                payload: {
+                    outputPath: path.resolve(outputPath),
+                    width,
+                    height,
+                    color: options.color,
+                    color2: options.color2,
+                    pattern: options.pattern,
+                    checkerSize
+                }
+            });
+        });
+    });
+
     command.addHelpText(
         "after",
         [
@@ -89,12 +156,15 @@ export function createResourceCommand(): Command {
             "Examples:",
             "  pnpm dlx gmloop resource list --path path/to/project",
             "  pnpm dlx gmloop resource find scr_player --path path/to/project",
+            "  pnpm dlx gmloop resource create-image tmp/placeholder.png --width 32 --height 32 --color '#ff0000'",
+            "  pnpm dlx gmloop resource create-image tmp/checker.png --width 64 --height 64 --pattern checkerboard --color gray --color2 white",
             '  pnpm dlx @gamemaker/gm-cli@latest resourcetool eval "resource list"'
         ].join("\n")
     );
 
     command.addCommand(listCommand);
     command.addCommand(findCommand);
+    command.addCommand(createImageCommand);
 
     return command;
 }
