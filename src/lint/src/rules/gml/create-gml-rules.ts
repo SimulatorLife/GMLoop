@@ -11,6 +11,7 @@ import { createNoScientificNotationRule } from "./rules/no-scientific-notation-r
 import { createNoUnaryPlusOnIdentifierRule } from "./rules/no-unary-plus-on-identifier-rule.js";
 import { createNoUnnecessaryStringInterpolationRule } from "./rules/no-unnecessary-string-interpolation-rule.js";
 import { createNormalizeBannerCommentsRule } from "./rules/normalize-banner-comments-rule.js";
+import { createNormalizeBlockKeywordAliasesRule } from "./rules/normalize-block-keyword-aliases-rule.js";
 import { createNormalizeDirectivesRule } from "./rules/normalize-directives-rule.js";
 import { createNormalizeDocCommentsRule } from "./rules/normalize-doc-comments-rule.js";
 import { createNormalizeDocParamDefaultsRule } from "./rules/normalize-doc-param-defaults-rule.js";
@@ -70,6 +71,7 @@ const gmlRuleFactoriesByShortName = Object.freeze(
         ["normalize-doc-param-undefined-defaults", createNormalizeDocParamUndefinedDefaultsRule],
         ["normalize-banner-comments", createNormalizeBannerCommentsRule],
         ["normalize-directives", createNormalizeDirectivesRule],
+        ["normalize-block-keyword-aliases", createNormalizeBlockKeywordAliasesRule],
         ["require-control-flow-braces", createRequireControlFlowBracesRule],
         ["require-region-pairs", createRequireRegionPairsRule],
         ["require-zwrite-enabled-reset", createRequireZwriteEnabledResetRule],

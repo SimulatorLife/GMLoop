@@ -223,6 +223,13 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         messageId: "normalizeDirectives"
     },
     {
+        description: "Normalize Pascal-style block keywords (begin, end) to standard curly braces ({, }).",
+        mapKey: "GmlNormalizeBlockKeywordAliases",
+        shortName: "normalize-block-keyword-aliases",
+        fullId: "gml/normalize-block-keyword-aliases",
+        messageId: "normalizeBlockKeywordAliases"
+    },
+    {
         description: "Require braces around control-flow bodies so nested statements remain unambiguous.",
         mapKey: "GmlRequireControlFlowBraces",
         shortName: "require-control-flow-braces",

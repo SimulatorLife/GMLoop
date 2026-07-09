@@ -38,6 +38,7 @@ const RECOMMENDED_RULES: Readonly<Record<string, LintRuleLevel>> = Object.freeze
     "gml/normalize-doc-param-undefined-defaults": "warn",
     "gml/normalize-banner-comments": "warn",
     "gml/normalize-directives": "warn",
+    "gml/normalize-block-keyword-aliases": "warn",
     "gml/require-control-flow-braces": "warn",
     "gml/require-region-pairs": "error",
     "gml/require-zwrite-enabled-reset": "warn",

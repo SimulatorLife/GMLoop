@@ -166,6 +166,11 @@ const expectedRules = Object.freeze([
         schema: [{ type: "object", additionalProperties: false, properties: {} }]
     },
     {
+        shortName: "normalize-block-keyword-aliases",
+        messageId: "normalizeBlockKeywordAliases",
+        schema: [{ type: "object", additionalProperties: false, properties: {} }]
+    },
+    {
         shortName: "require-control-flow-braces",
         messageId: "requireControlFlowBraces",
         schema: [{ type: "object", additionalProperties: false, properties: {} }]

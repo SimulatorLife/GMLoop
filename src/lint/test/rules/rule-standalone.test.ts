@@ -1060,6 +1060,11 @@ void test("full-file rewrite rules report the first changed source location", ()
         },
         {
             ruleName: "normalize-directives",
+            input: ["var keep = 1;", "#define LEGACY_MACRO 1234", ""].join("\n"),
+            expectedLoc: { line: 2, column: 1 }
+        },
+        {
+            ruleName: "normalize-block-keyword-aliases",
             input: ["var keep = 1;", "begin;", "    nested += 1;", "end;", ""].join("\n"),
             expectedLoc: { line: 2, column: 0 }
         },

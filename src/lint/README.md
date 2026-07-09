@@ -116,6 +116,7 @@ Built-in `gml/*` rule short names:
 - `normalize-doc-param-separators`
 - `normalize-doc-param-undefined-defaults`
 - `normalize-directives`
+- `normalize-block-keyword-aliases`
 - `require-control-flow-braces`
 - `require-region-pairs`
 - `no-assignment-in-condition`

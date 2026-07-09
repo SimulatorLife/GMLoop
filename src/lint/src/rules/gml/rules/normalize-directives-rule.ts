@@ -122,36 +122,6 @@ function normalizeCommentedDirectiveLine(line: string): string {
     return line;
 }
 
-function normalizeLegacyBlockKeywordLine(line: string): string | null {
-    const beginBlockMatch = /^(\s*)begin\s*(?:;\s*)?(\/\/.*)?$/u.exec(line);
-    if (beginBlockMatch) {
-        const indentation = beginBlockMatch[1] ?? "";
-        const commentText = beginBlockMatch[2] ?? "";
-        return commentText.trim().length === 0 ? "" : appendTrailingLineComment(`${indentation}{`, commentText);
-    }
-
-    const endBlockMatch = /^(\s*)end\s*(?:;\s*)?(\/\/.*)?$/u.exec(line);
-    if (endBlockMatch) {
-        const indentation = endBlockMatch[1] ?? "";
-        const commentText = endBlockMatch[2] ?? "";
-        return commentText.trim().length === 0 ? null : appendTrailingLineComment(`${indentation}}`, commentText);
-    }
-
-    const inlineBeginMatch = /^(\s*)(.+?)\s+begin\s*(?:;\s*)?(\/\/.*)?$/u.exec(line);
-    if (!inlineBeginMatch) {
-        return line;
-    }
-
-    const indentation = inlineBeginMatch[1] ?? "";
-    const header = inlineBeginMatch[2]?.trimEnd() ?? "";
-    const commentText = inlineBeginMatch[3] ?? "";
-    if (header.length === 0 || header.startsWith("#") || header.startsWith("//") || header.endsWith("{")) {
-        return line;
-    }
-
-    return appendTrailingLineComment(`${indentation}${header} {`, commentText);
-}
-
 export function createNormalizeDirectivesRule(definition: GmlRuleDefinition): Rule.RuleModule {
     return Object.freeze({
         meta: createMeta(definition),
@@ -165,10 +135,6 @@ export function createNormalizeDirectivesRule(definition: GmlRuleDefinition): Ru
                             return normalized;
                         }
                         normalized = normalizeCommentedDirectiveLine(normalized);
-                        normalized = normalizeLegacyBlockKeywordLine(normalized);
-                        if (normalized === null) {
-                            return normalized;
-                        }
 
                         const isLastLine = index === sourceLines.length - 1;
                         if (isLastLine && normalized.endsWith("\n")) {
