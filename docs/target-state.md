@@ -195,11 +195,13 @@ To minimize Language Server startup and first-hover latencies on large GameMaker
   - On the initial project load or first hover/definition check, GMLoop triggers a fast `definitionsOnly` compilation pass.
   - This pass skips traversing, processing, and recording all reference/usage occurrences of identifiers (which typically account for ~95% of the identifier nodes in GameMaker projects), as well as script calls.
   - It parses all definitions, constructors, structs, methods, enums, macros, parameters, return types, and doc-comments.
-  - This pass is extremely fast (executing 10x to 20x faster) and immediately cache-stores the state so hovers and basic "Go to Definition" navigations respond instantly.
+  - This pass is extremely fast (executing at least 20x faster) and immediately cache-stores the state so hovers and basic "Go to Definition" navigations respond instantly.
+  - This first tier also prioritizes open files and focused files, so the user can start working immediately while the background indexing continues.
 - **Tier 2: Background Full Indexing Pass**:
   - As soon as the lightweight index resolves, GMLoop kicks off a full, deep index build (`definitionsOnly: false`) asynchronously in the background.
   - This background build processes references and relational mappings without blocking the active LSP session or hover/definition queries.
   - When the full background build completes, it mutates/upgrades the cached navigation state object in-place. This preserves the original object reference in the cache (avoiding eviction or identity issues) while seamlessly upgrading the index to support advanced reference-dependent features like "Find All References" and "Rename Symbol".
+  - This tier-2 pass does not re-create the entire index from scratch; it only adds the missing reference and usage information to the existing definitions-only index, so it avoids unnecessary reprocessing of already-known definitions and their metadata.
 
 ## 5. Semantic Index & Codemod Streaming Architecture
 

@@ -62,3 +62,6 @@ gmloop lsp
 ```
 
 To ensure seamless integration with LSP/MCP clients (such as `lsp-mcp-server`) and editor extensions, the server does not require command-line options like `--stdio`. Instead, it defaults to standard I/O (stdio) transport internally by explicitly wiring `process.stdin` and `process.stdout` into the LSP connection.
+
+## TODO
+- **BUG/FEAT**: When hovering over a built-in function, the hover tooltip is empty. It should show the function signature, params, return type, and description from the Manual (probably via the `gml-identifiers.json` file).

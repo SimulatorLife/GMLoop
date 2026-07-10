@@ -1,4 +1,17 @@
 {
+  "search.exclude": {
+    "tmp/": true,
+    "**/package-lock.json": true,
+    "**/pnpm-lock.yaml": true,
+    "**/node_modules": true,
+    "node_modules": true,
+    "**/dist": true,
+    "dist": true,
+    "**/build": true,
+    ".pnpm-store/": true,
+    ".eslintcache/": true,
+    "**/playwright*": true
+  },
   "editor.detectIndentation": false,
   "editor.formatOnSave": true,
   "editor.formatOnPaste": true,

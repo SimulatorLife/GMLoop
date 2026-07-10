@@ -215,3 +215,6 @@ GMLoop: Restart Language Server
 ```
 
 Use this after rebuilding GMLoop or changing `gmloop.serverPath`.
+
+## TODO
+- **FEAT**: Add gml syntax highlighting to the extension. Use/reference these as/if applicable: https://github.com/bscotch/stitch/tree/develop/packages/vscode/languages. The GMLoop UI should use the same syntax highlighting as the VSCode extension (the UI already has a syntax highlighter, so that may be able to be used/migrated as a starting point).

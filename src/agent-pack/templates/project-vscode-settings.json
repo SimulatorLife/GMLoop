@@ -1,3 +1,13 @@
 {
-  "gmloop.serverPath": "gmloop"
+  "gmloop.serverPath": "gmloop",
+  "search.exclude": {
+    "tmp/": true,
+    "**/node_modules": true,
+    "node_modules": true,
+    ".gmloop/": true,
+    ".agents/skills/gmloop-*": true,
+    ".gmcache/": true,
+    ".cache/": true,
+    "**/playwright*": true
+  }
 }
