@@ -1,3 +1,6 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
+
 import * as vscode from "vscode";
 import { LanguageClient, type LanguageClientOptions, type ServerOptions } from "vscode-languageclient/node.js";
 
@@ -23,9 +26,28 @@ function createServerOptions(): ServerOptions {
         .get<unknown>(GMLOOP_SERVER_PATH_SETTING);
     const serverCommand = resolveGmloopLanguageServerExecutableOptions(configuredServerPath);
 
+    let command = serverCommand.command;
+    let args: string[] = [...serverCommand.args];
+
+    if (command === "gmloop" && vscode.workspace.workspaceFolders) {
+        for (const folder of vscode.workspace.workspaceFolders) {
+            const monorepoCliPath = path.join(folder.uri.fsPath, "src/cli/dist/index.js");
+            if (existsSync(monorepoCliPath)) {
+                command = "node";
+                args = [monorepoCliPath, "lsp"];
+                break;
+            }
+            const localBinPath = path.join(folder.uri.fsPath, "node_modules", ".bin", "gmloop");
+            if (existsSync(localBinPath)) {
+                command = localBinPath;
+                break;
+            }
+        }
+    }
+
     return {
-        command: serverCommand.command,
-        args: [...serverCommand.args]
+        command,
+        args
     };
 }
 
