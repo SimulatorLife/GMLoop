@@ -57,6 +57,93 @@ export type GmlSemanticIndex = Readonly<{
     searchWorkspaceSymbols(document: GmlTextDocument, query: string): Promise<WorkspaceSymbol[]>;
 }>;
 
+function extractGmlDocComment(sourceText: string, startIndex: number): string {
+    const beforeDeclaration = sourceText.slice(0, startIndex);
+    const lines = beforeDeclaration.split(/\r?\n/u);
+    const commentLines: string[] = [];
+
+    const startIdx = lines.length - 2;
+    for (let index = startIdx; index >= 0; index -= 1) {
+        const line = lines[index]?.trim() ?? "";
+        if (line.length === 0) {
+            if (commentLines.length === 0) {
+                continue;
+            }
+            break;
+        }
+
+        if (!line.startsWith("///")) {
+            break;
+        }
+
+        const cleanLine = line.slice(3).replace(/^\s/u, "");
+        commentLines.unshift(cleanLine);
+    }
+
+    return commentLines.join("\n").trim();
+}
+
+function formatGmlDocComment(rawComment: string): string {
+    if (!rawComment) {
+        return "";
+    }
+
+    const lines = rawComment.split("\n");
+    const descriptions: string[] = [];
+    const parameters: string[] = [];
+    let returnsInfo = "";
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.length === 0) {
+            continue;
+        }
+
+        if (trimmed.startsWith("@desc") || trimmed.startsWith("@description")) {
+            const desc = trimmed.replace(/^@(desc|description)\s+/u, "");
+            descriptions.push(desc);
+        } else if (trimmed.startsWith("@param")) {
+            const paramMatch = /@param(?:\s+\{([^}]+)\})?\s+(\w+)(?:\s+(.*))?/u.exec(trimmed);
+            if (paramMatch) {
+                const [, type, name, desc] = paramMatch;
+                parameters.push(`* \`${name}\`${type ? ` (\`${type}\`)` : ""}${desc ? ` — ${desc}` : ""}`);
+            } else {
+                const cleanParam = trimmed.replace(/^@param\s+/u, "");
+                parameters.push(`* ${cleanParam}`);
+            }
+        } else if (trimmed.startsWith("@return")) {
+            const returnMatch = /@returns?(?:\s+\{([^}]+)\})?(?:\s+(.*))?/u.exec(trimmed);
+            if (returnMatch) {
+                const [, type, desc] = returnMatch;
+                returnsInfo = `*Returns*${type ? ` \`${type}\`` : ""}${desc ? ` — ${desc}` : ""}`;
+            } else {
+                const cleanReturn = trimmed.replace(/^@returns?\s+/u, "");
+                returnsInfo = `*Returns* — ${cleanReturn}`;
+            }
+        } else if (trimmed.startsWith("@")) {
+            descriptions.push(`*${trimmed}*`);
+        } else {
+            descriptions.push(trimmed);
+        }
+    }
+
+    const sections: string[] = [];
+
+    if (descriptions.length > 0) {
+        sections.push(descriptions.join("\n\n"));
+    }
+
+    if (parameters.length > 0) {
+        sections.push(`**Parameters:**\n${parameters.join("\n")}`);
+    }
+
+    if (returnsInfo) {
+        sections.push(returnsInfo);
+    }
+
+    return sections.join("\n\n");
+}
+
 async function readDocumentForLocation(
     openedDocument: GmlTextDocument,
     location: NavigationOccurrence["location"]
@@ -93,16 +180,90 @@ async function symbolToWorkspaceSymbol(
     };
 }
 
+function isOffsetInCommentOrString(sourceText: string, offset: number): boolean {
+    let inStringDouble = false;
+    let inStringSingle = false;
+    let inCommentSingle = false;
+    let inCommentBlock = false;
+
+    for (let i = 0; i < offset; i++) {
+        const char = sourceText[i];
+        const nextChar = sourceText[i + 1];
+
+        if (inCommentSingle) {
+            if (char === "\n" || char === "\r") {
+                inCommentSingle = false;
+            }
+            continue;
+        }
+
+        if (inCommentBlock) {
+            if (char === "*" && nextChar === "/") {
+                inCommentBlock = false;
+                i++; // Skip the slash
+            }
+            continue;
+        }
+
+        if (inStringDouble) {
+            if (char === '"' && sourceText[i - 1] !== "\\") {
+                inStringDouble = false;
+            }
+            continue;
+        }
+
+        if (inStringSingle) {
+            if (char === "'" && sourceText[i - 1] !== "\\") {
+                inStringSingle = false;
+            }
+            continue;
+        }
+
+        if (char === "/" && nextChar === "/") {
+            inCommentSingle = true;
+            i++; // Skip the second slash
+        } else if (char === "/" && nextChar === "*") {
+            inCommentBlock = true;
+            i++; // Skip the asterisk
+        } else if (char === '"') {
+            inStringDouble = true;
+        } else if (char === "'") {
+            inStringSingle = true;
+        }
+    }
+
+    return inCommentSingle || inCommentBlock || inStringDouble || inStringSingle;
+}
+
 function findSymbolId(
     index: NavigationIndex,
     document: GmlTextDocument,
     offset: number,
     identifierName: string
 ): string | null {
-    return (
-        Semantic.findNavigationSymbolAtPosition(index, document.filePath, offset)?.symbolId ??
-        Semantic.resolveNavigationSymbolId(index, identifierName)
-    );
+    if (isOffsetInCommentOrString(document.sourceText, offset)) {
+        return null;
+    }
+
+    const exactSymbolId = Semantic.findNavigationSymbolAtPosition(index, document.filePath, offset)?.symbolId;
+    if (exactSymbolId) {
+        return exactSymbolId;
+    }
+
+    const resolvedSymbolId = Semantic.resolveNavigationSymbolId(index, identifierName);
+    if (resolvedSymbolId) {
+        const symbol = index.symbolsById.get(resolvedSymbolId);
+        if (symbol && (
+                symbol.kind === "localVariable" ||
+                symbol.kind === "instanceVariable" ||
+                symbol.kind === "structVariable"
+            )) {
+                return null;
+            }
+        return resolvedSymbolId;
+    }
+
+    return null;
 }
 
 function createRefactorSemanticProvider(index: NavigationIndex) {
@@ -249,9 +410,7 @@ async function buildSemanticIndexForDocument(
         return null;
     }
 
-    const index = await Semantic.buildProjectNavigationIndex(projectRoot, fsFacade, {
-        concurrency: { gml: 1, gmlParsing: 1 }
-    });
+    const index = await Semantic.buildProjectNavigationIndex(projectRoot, fsFacade);
 
     return {
         projectRoot,
@@ -387,10 +546,38 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
             const symbolId = findSymbolId(state.index, document, offset, identifierName);
             const facts = symbolId ? Semantic.getNavigationHoverFacts(state.index, symbolId) : null;
             if (facts) {
+                const symbol = state.index.symbolsById.get(symbolId);
+                let definitionInfo = "";
+                let docComment = "";
+
+                if (symbol && symbol.definitions.length > 0) {
+                    const def = symbol.definitions[0];
+                    if (def && def.location.filePath) {
+                        const relativePath = path.relative(state.projectRoot, def.location.filePath);
+                        definitionInfo = `*defined in [${relativePath}](file://${def.location.filePath})*`;
+
+                        try {
+                            const sourceText = await fsFacade.readFile(def.location.filePath, "utf8");
+                            const rawComment = extractGmlDocComment(sourceText, def.location.range.start);
+                            docComment = formatGmlDocComment(rawComment);
+                        } catch {
+                            // Ignore read errors
+                        }
+                    }
+                }
+
+                let markdownValue = `\`${facts.displayName}\`\n\n${facts.kind} - ${facts.symbolId}`;
+                if (definitionInfo) {
+                    markdownValue += `\n\n${definitionInfo}`;
+                }
+                if (docComment) {
+                    markdownValue += `\n\n---\n\n${docComment}`;
+                }
+
                 return {
                     contents: {
                         kind: "markdown",
-                        value: `\`${facts.displayName}\`\n\n${facts.kind} - ${facts.symbolId}`
+                        value: markdownValue
                     },
                     range: offsetsToRange(document, offset, offset + identifierName.length)
                 };
@@ -412,7 +599,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                 const type = typeof info.type === "string" ? info.type : "unknown";
                 let markdown = `\`${identifierName}\`\n\nBuilt-in ${type}`;
                 if (typeof info.manualPath === "string" && info.manualPath.length > 0) {
-                    const manualUrl = `https://manual.gamemaker.io/monthly/en-US/#t=${encodeURIComponent(info.manualPath)}`;
+                    const manualUrl = `https://manual.gamemaker.io/monthly/en-US/index.htm#t=${encodeURIComponent(info.manualPath)}`;
                     markdown += `\n\n[Open GameMaker Manual Page](${manualUrl})`;
                 }
                 return {

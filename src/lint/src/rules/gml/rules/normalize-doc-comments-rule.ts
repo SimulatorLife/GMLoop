@@ -1131,7 +1131,7 @@ function processDocBlock(blockLines: Array<string>): Array<string> {
         return [];
     }
 
-    const emptyDescriptionPattern = /^(\s*)\/\/\/\s*@description\s*$/u;
+    const emptyDescriptionPattern = /^(\s*)\/\/\/\s*@(description|desc)\s*$/u;
     const hasOverrideTag = blockLines
         .map((line) => normalizeDocCommentPrefixLine(line))
         .map((line) => applyJsDocTagAliasLine(line))

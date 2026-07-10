@@ -191,7 +191,7 @@ export function createGm1062Rule(entry: FeatherManifestEntry): Rule.RuleModule {
     return createFullTextRewriteRule(entry, (sourceText) => {
         let rewritten = sourceText;
         rewritten = rewritten.replaceAll(/^\s*\/\/\/\s*@function\b[^\n]*\n?/gm, "");
-        rewritten = rewritten.replaceAll(/^([ \t]*\/\/\/\s*)@desc\b/gm, "$1@description");
+        rewritten = rewritten.replaceAll(/^([ \t]*\/\/\/\s*)@description\b/gm, "$1@desc");
         rewritten = rewritten.replaceAll(
             /^([ \t]*\/\/\/\s*@param\s*)\{([^}]*)\}(\s+)([A-Za-z_][A-Za-z0-9_]*)(.*)$/gm,
             (_fullMatch, prefix: string, typeText: string, spacing: string, parameterName: string, suffix: string) => {
@@ -214,10 +214,10 @@ export function createGm1062Rule(entry: FeatherManifestEntry): Rule.RuleModule {
                     .split(/\r\n|\n/u)
                     .filter((line) => line.length > 0);
                 const descriptionLines = docLines
-                    .filter((line) => /^\s*\/\/\/\s*@description\b/u.test(line))
+                    .filter((line) => /^\s*\/\/\/\s*@(?:description|desc)\b/u.test(line))
                     .map((line) => {
-                        const descriptionText = line.replace(/^\s*\/\/\/\s*@description\b\s*/u, "").trim();
-                        return `${indentation}/// @description${descriptionText.length > 0 ? ` ${descriptionText}` : ""}`;
+                        const descriptionText = line.replace(/^\s*\/\/\/\s*@(?:description|desc)\b\s*/u, "").trim();
+                        return `${indentation}/// @desc${descriptionText.length > 0 ? ` ${descriptionText}` : ""}`;
                     });
                 const parameterLines = docLines
                     .filter((line) => /^\s*\/\/\/\s*@param\b/u.test(line))

@@ -45,7 +45,7 @@
       "legacyUsage": "call"
     },
     "achievement_achievement_info": {
-      "type": "function",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -285,7 +285,7 @@
       "legacyUsage": "call"
     },
     "achievement_our_info": {
-      "type": "function",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -299,7 +299,7 @@
       "legacyUsage": "call"
     },
     "achievement_pic_loaded": {
-      "type": "function",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -448,7 +448,7 @@
       "deprecated": false
     },
     "achievement_type_achievement_challenge": {
-      "type": "function",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -464,7 +464,7 @@
       "legacyUsage": "call"
     },
     "achievement_type_score_challenge": {
-      "type": "function",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -2608,7 +2608,7 @@
       "legacyUsage": "call"
     },
     "alarm": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -3616,7 +3616,7 @@
       "legacyUsage": "identifier"
     },
     "async_load": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -4514,7 +4514,7 @@
       "legacyUsage": "call"
     },
     "audio_new_system": {
-      "type": "function",
+      "type": "literal",
       "sources": [
         "manual:Obsolete_Functions.htm",
         "manual:gml.js:LITERALS"
@@ -4529,7 +4529,7 @@
       "legacyUsage": "call"
     },
     "audio_old_system": {
-      "type": "function",
+      "type": "literal",
       "sources": [
         "manual:Obsolete_Functions.htm",
         "manual:gml.js:LITERALS"
@@ -5114,7 +5114,7 @@
       "deprecated": false
     },
     "background_colour": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:Obsolete_Functions.htm",
         "manual:gml.js:SYMBOLS"
@@ -5543,7 +5543,7 @@
       "deprecated": false
     },
     "background_showcolour": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:Obsolete_Functions.htm",
         "manual:gml.js:SYMBOLS"
@@ -5702,7 +5702,7 @@
       "legacyUsage": "identifier"
     },
     "bbox_bottom": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -5715,7 +5715,7 @@
       "legacyUsage": "identifier"
     },
     "bbox_left": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -5728,7 +5728,7 @@
       "legacyUsage": "identifier"
     },
     "bbox_right": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -5741,7 +5741,7 @@
       "legacyUsage": "identifier"
     },
     "bbox_top": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -11462,7 +11462,7 @@
       "legacyUsage": "identifier"
     },
     "depth": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -11923,7 +11923,7 @@
       "legacyUsage": "identifier"
     },
     "direction": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -15904,7 +15904,7 @@
       "deprecated": false
     },
     "ev_alarm": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -16016,7 +16016,7 @@
       "legacyUsage": "identifier"
     },
     "ev_animation_end": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -16128,7 +16128,7 @@
       "legacyUsage": "identifier"
     },
     "ev_boundary": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -16248,7 +16248,7 @@
       "deprecated": false
     },
     "ev_close_button": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -16360,7 +16360,7 @@
       "legacyUsage": "identifier"
     },
     "ev_collision": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -16472,7 +16472,7 @@
       "legacyUsage": "identifier"
     },
     "ev_create": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -16584,7 +16584,7 @@
       "legacyUsage": "identifier"
     },
     "ev_destroy": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -16696,7 +16696,7 @@
       "legacyUsage": "identifier"
     },
     "ev_draw": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -16808,7 +16808,7 @@
       "legacyUsage": "identifier"
     },
     "ev_draw_begin": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -16920,7 +16920,7 @@
       "legacyUsage": "identifier"
     },
     "ev_draw_end": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -17032,7 +17032,7 @@
       "legacyUsage": "identifier"
     },
     "ev_draw_post": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -17144,7 +17144,7 @@
       "legacyUsage": "identifier"
     },
     "ev_draw_pre": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -17256,7 +17256,7 @@
       "legacyUsage": "identifier"
     },
     "ev_end_of_path": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -17368,7 +17368,7 @@
       "legacyUsage": "identifier"
     },
     "ev_game_end": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -17480,7 +17480,7 @@
       "legacyUsage": "identifier"
     },
     "ev_game_start": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -17592,7 +17592,7 @@
       "legacyUsage": "identifier"
     },
     "ev_gesture": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -17704,7 +17704,7 @@
       "legacyUsage": "identifier"
     },
     "ev_gesture_double_tap": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -17816,7 +17816,7 @@
       "legacyUsage": "identifier"
     },
     "ev_gesture_drag_end": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -17928,7 +17928,7 @@
       "legacyUsage": "identifier"
     },
     "ev_gesture_drag_start": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -18040,7 +18040,7 @@
       "legacyUsage": "identifier"
     },
     "ev_gesture_dragging": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -18152,7 +18152,7 @@
       "legacyUsage": "identifier"
     },
     "ev_gesture_flick": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -18264,7 +18264,7 @@
       "legacyUsage": "identifier"
     },
     "ev_gesture_pinch_end": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -18376,7 +18376,7 @@
       "legacyUsage": "identifier"
     },
     "ev_gesture_pinch_in": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -18488,7 +18488,7 @@
       "legacyUsage": "identifier"
     },
     "ev_gesture_pinch_out": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -18600,7 +18600,7 @@
       "legacyUsage": "identifier"
     },
     "ev_gesture_pinch_start": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -18712,7 +18712,7 @@
       "legacyUsage": "identifier"
     },
     "ev_gesture_rotate_end": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -18824,7 +18824,7 @@
       "legacyUsage": "identifier"
     },
     "ev_gesture_rotate_start": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -18936,7 +18936,7 @@
       "legacyUsage": "identifier"
     },
     "ev_gesture_rotating": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -19048,7 +19048,7 @@
       "legacyUsage": "identifier"
     },
     "ev_gesture_tap": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -19160,7 +19160,7 @@
       "legacyUsage": "identifier"
     },
     "ev_global_gesture_double_tap": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -19272,7 +19272,7 @@
       "legacyUsage": "identifier"
     },
     "ev_global_gesture_drag_end": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -19384,7 +19384,7 @@
       "legacyUsage": "identifier"
     },
     "ev_global_gesture_drag_start": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -19496,7 +19496,7 @@
       "legacyUsage": "identifier"
     },
     "ev_global_gesture_dragging": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -19608,7 +19608,7 @@
       "legacyUsage": "identifier"
     },
     "ev_global_gesture_flick": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -19720,7 +19720,7 @@
       "legacyUsage": "identifier"
     },
     "ev_global_gesture_pinch_end": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -19832,7 +19832,7 @@
       "legacyUsage": "identifier"
     },
     "ev_global_gesture_pinch_in": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -19944,7 +19944,7 @@
       "legacyUsage": "identifier"
     },
     "ev_global_gesture_pinch_out": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -20056,7 +20056,7 @@
       "legacyUsage": "identifier"
     },
     "ev_global_gesture_pinch_start": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -20168,7 +20168,7 @@
       "legacyUsage": "identifier"
     },
     "ev_global_gesture_rotate_end": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -20280,7 +20280,7 @@
       "legacyUsage": "identifier"
     },
     "ev_global_gesture_rotate_start": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -20392,7 +20392,7 @@
       "legacyUsage": "identifier"
     },
     "ev_global_gesture_rotating": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -20504,7 +20504,7 @@
       "legacyUsage": "identifier"
     },
     "ev_global_gesture_tap": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -20616,7 +20616,7 @@
       "legacyUsage": "identifier"
     },
     "ev_global_left_button": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -20728,7 +20728,7 @@
       "legacyUsage": "identifier"
     },
     "ev_global_left_press": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -20840,7 +20840,7 @@
       "legacyUsage": "identifier"
     },
     "ev_global_left_release": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -20952,7 +20952,7 @@
       "legacyUsage": "identifier"
     },
     "ev_global_middle_button": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -21064,7 +21064,7 @@
       "legacyUsage": "identifier"
     },
     "ev_global_middle_press": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -21176,7 +21176,7 @@
       "legacyUsage": "identifier"
     },
     "ev_global_middle_release": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -21288,7 +21288,7 @@
       "legacyUsage": "identifier"
     },
     "ev_global_right_button": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -21400,7 +21400,7 @@
       "legacyUsage": "identifier"
     },
     "ev_global_right_press": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -21512,7 +21512,7 @@
       "legacyUsage": "identifier"
     },
     "ev_global_right_release": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -21624,7 +21624,7 @@
       "legacyUsage": "identifier"
     },
     "ev_gui": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -21736,7 +21736,7 @@
       "legacyUsage": "identifier"
     },
     "ev_gui_begin": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -21848,7 +21848,7 @@
       "legacyUsage": "identifier"
     },
     "ev_gui_end": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -22152,7 +22152,7 @@
       "deprecated": false
     },
     "ev_keyboard": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -22264,7 +22264,7 @@
       "legacyUsage": "identifier"
     },
     "ev_keypress": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -22376,7 +22376,7 @@
       "legacyUsage": "identifier"
     },
     "ev_keyrelease": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -22488,7 +22488,7 @@
       "legacyUsage": "identifier"
     },
     "ev_left_button": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -22600,7 +22600,7 @@
       "legacyUsage": "identifier"
     },
     "ev_left_press": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -22712,7 +22712,7 @@
       "legacyUsage": "identifier"
     },
     "ev_left_release": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -22824,7 +22824,7 @@
       "legacyUsage": "identifier"
     },
     "ev_middle_button": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -22936,7 +22936,7 @@
       "legacyUsage": "identifier"
     },
     "ev_middle_press": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -23048,7 +23048,7 @@
       "legacyUsage": "identifier"
     },
     "ev_middle_release": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -23160,7 +23160,7 @@
       "legacyUsage": "identifier"
     },
     "ev_mouse": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -23272,7 +23272,7 @@
       "legacyUsage": "identifier"
     },
     "ev_mouse_enter": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -23384,7 +23384,7 @@
       "legacyUsage": "identifier"
     },
     "ev_mouse_leave": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -23496,7 +23496,7 @@
       "legacyUsage": "identifier"
     },
     "ev_mouse_wheel_down": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -23608,7 +23608,7 @@
       "legacyUsage": "identifier"
     },
     "ev_mouse_wheel_up": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -23720,7 +23720,7 @@
       "legacyUsage": "identifier"
     },
     "ev_no_button": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -23832,7 +23832,7 @@
       "legacyUsage": "identifier"
     },
     "ev_no_more_health": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -23944,7 +23944,7 @@
       "legacyUsage": "identifier"
     },
     "ev_no_more_lives": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -24056,7 +24056,7 @@
       "legacyUsage": "identifier"
     },
     "ev_other": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -24168,7 +24168,7 @@
       "legacyUsage": "identifier"
     },
     "ev_outside": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -24280,7 +24280,7 @@
       "legacyUsage": "identifier"
     },
     "ev_right_button": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -24392,7 +24392,7 @@
       "legacyUsage": "identifier"
     },
     "ev_right_press": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -24504,7 +24504,7 @@
       "legacyUsage": "identifier"
     },
     "ev_right_release": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -24616,7 +24616,7 @@
       "legacyUsage": "identifier"
     },
     "ev_room_end": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -24728,7 +24728,7 @@
       "legacyUsage": "identifier"
     },
     "ev_room_start": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -24840,7 +24840,7 @@
       "legacyUsage": "identifier"
     },
     "ev_step": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -24952,7 +24952,7 @@
       "legacyUsage": "identifier"
     },
     "ev_step_begin": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -25064,7 +25064,7 @@
       "legacyUsage": "identifier"
     },
     "ev_step_end": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -25176,7 +25176,7 @@
       "legacyUsage": "identifier"
     },
     "ev_step_normal": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -25288,7 +25288,7 @@
       "legacyUsage": "identifier"
     },
     "ev_trigger": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -25400,7 +25400,7 @@
       "legacyUsage": "identifier"
     },
     "ev_user0": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -25512,7 +25512,7 @@
       "legacyUsage": "identifier"
     },
     "ev_user1": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -25624,7 +25624,7 @@
       "legacyUsage": "identifier"
     },
     "ev_user10": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -25736,7 +25736,7 @@
       "legacyUsage": "identifier"
     },
     "ev_user11": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -25848,7 +25848,7 @@
       "legacyUsage": "identifier"
     },
     "ev_user12": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -25960,7 +25960,7 @@
       "legacyUsage": "identifier"
     },
     "ev_user13": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -26072,7 +26072,7 @@
       "legacyUsage": "identifier"
     },
     "ev_user14": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -26184,7 +26184,7 @@
       "legacyUsage": "identifier"
     },
     "ev_user15": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -26296,7 +26296,7 @@
       "legacyUsage": "identifier"
     },
     "ev_user2": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -26408,7 +26408,7 @@
       "legacyUsage": "identifier"
     },
     "ev_user3": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -26520,7 +26520,7 @@
       "legacyUsage": "identifier"
     },
     "ev_user4": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -26632,7 +26632,7 @@
       "legacyUsage": "identifier"
     },
     "ev_user5": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -26744,7 +26744,7 @@
       "legacyUsage": "identifier"
     },
     "ev_user6": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -26856,7 +26856,7 @@
       "legacyUsage": "identifier"
     },
     "ev_user7": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -26968,7 +26968,7 @@
       "legacyUsage": "identifier"
     },
     "ev_user8": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -27080,7 +27080,7 @@
       "legacyUsage": "identifier"
     },
     "ev_user9": {
-      "type": "event",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -27220,7 +27220,7 @@
       "legacyUsage": "identifier"
     },
     "event_number": {
-      "type": "event",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -27231,7 +27231,7 @@
       "legacyUsage": "identifier"
     },
     "event_object": {
-      "type": "event",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -27363,7 +27363,7 @@
       "legacyUsage": "identifier"
     },
     "event_type": {
-      "type": "event",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -27890,7 +27890,7 @@
       "legacyUsage": "call"
     },
     "false": {
-      "type": "enum",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -28746,7 +28746,7 @@
       "legacyUsage": "call"
     },
     "friction": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -31378,7 +31378,7 @@
       "legacyUsage": "identifier"
     },
     "gravity": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -31391,7 +31391,7 @@
       "legacyUsage": "identifier"
     },
     "gravity_direction": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -31543,7 +31543,7 @@
       "legacyUsage": "identifier"
     },
     "hspeed": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -31716,7 +31716,7 @@
       "legacyUsage": "call"
     },
     "iap_data": {
-      "type": "function",
+      "type": "symbol",
       "sources": [
         "manual:Obsolete_Functions.htm",
         "manual:gml.js:SYMBOLS"
@@ -32191,7 +32191,7 @@
       "legacyUsage": "identifier"
     },
     "id": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -32242,7 +32242,7 @@
       "legacyUsage": "identifier"
     },
     "image_alpha": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -32255,7 +32255,7 @@
       "legacyUsage": "identifier"
     },
     "image_angle": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -32268,7 +32268,7 @@
       "legacyUsage": "identifier"
     },
     "image_blend": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -32281,7 +32281,7 @@
       "legacyUsage": "identifier"
     },
     "image_index": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -32294,7 +32294,7 @@
       "legacyUsage": "identifier"
     },
     "image_number": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -32307,7 +32307,7 @@
       "legacyUsage": "identifier"
     },
     "image_speed": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -32320,7 +32320,7 @@
       "legacyUsage": "identifier"
     },
     "image_xscale": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -32333,7 +32333,7 @@
       "legacyUsage": "identifier"
     },
     "image_yscale": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -33495,7 +33495,7 @@
       "legacyUsage": "identifier"
     },
     "layer": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -35103,7 +35103,7 @@
       "legacyUsage": "identifier"
     },
     "mask_index": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -36763,7 +36763,7 @@
       "legacyUsage": "identifier"
     },
     "object_index": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -38872,7 +38872,7 @@
       "legacyUsage": "identifier"
     },
     "persistent": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -38885,7 +38885,7 @@
       "legacyUsage": "identifier"
     },
     "phy_active": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -38898,7 +38898,7 @@
       "legacyUsage": "identifier"
     },
     "phy_angular_damping": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -38909,7 +38909,7 @@
       "legacyUsage": "identifier"
     },
     "phy_angular_velocity": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -38922,7 +38922,7 @@
       "legacyUsage": "identifier"
     },
     "phy_bullet": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -38935,7 +38935,7 @@
       "legacyUsage": "identifier"
     },
     "phy_col_normal_x": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -38948,7 +38948,7 @@
       "legacyUsage": "identifier"
     },
     "phy_col_normal_y": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -38961,7 +38961,7 @@
       "legacyUsage": "identifier"
     },
     "phy_collision_points": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -38974,7 +38974,7 @@
       "legacyUsage": "identifier"
     },
     "phy_collision_x": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -38987,7 +38987,7 @@
       "legacyUsage": "identifier"
     },
     "phy_collision_y": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -39000,7 +39000,7 @@
       "legacyUsage": "identifier"
     },
     "phy_com_x": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -39013,7 +39013,7 @@
       "legacyUsage": "identifier"
     },
     "phy_com_y": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -39166,7 +39166,7 @@
       "legacyUsage": "identifier"
     },
     "phy_dynamic": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -39180,7 +39180,7 @@
       "legacyUsage": "identifier"
     },
     "phy_fixed_rotation": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -39193,7 +39193,7 @@
       "legacyUsage": "identifier"
     },
     "phy_inertia": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -39207,7 +39207,7 @@
       "legacyUsage": "identifier"
     },
     "phy_joint_anchor_1_x": {
-      "type": "constant",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -39243,7 +39243,7 @@
       "legacyUsage": "identifier"
     },
     "phy_joint_anchor_1_y": {
-      "type": "constant",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -39279,7 +39279,7 @@
       "legacyUsage": "identifier"
     },
     "phy_joint_anchor_2_x": {
-      "type": "constant",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -39323,7 +39323,7 @@
       "deprecated": false
     },
     "phy_joint_angle": {
-      "type": "constant",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -39359,7 +39359,7 @@
       "legacyUsage": "identifier"
     },
     "phy_joint_angle_limits": {
-      "type": "constant",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -39395,7 +39395,7 @@
       "legacyUsage": "identifier"
     },
     "phy_joint_damping_ratio": {
-      "type": "constant",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -39431,7 +39431,7 @@
       "legacyUsage": "identifier"
     },
     "phy_joint_frequency": {
-      "type": "constant",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -39467,7 +39467,7 @@
       "legacyUsage": "identifier"
     },
     "phy_joint_length_1": {
-      "type": "constant",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -39503,7 +39503,7 @@
       "legacyUsage": "identifier"
     },
     "phy_joint_length_2": {
-      "type": "constant",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -39539,7 +39539,7 @@
       "legacyUsage": "identifier"
     },
     "phy_joint_lower_angle_limit": {
-      "type": "constant",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -39575,7 +39575,7 @@
       "legacyUsage": "identifier"
     },
     "phy_joint_max_force": {
-      "type": "constant",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -39611,7 +39611,7 @@
       "legacyUsage": "identifier"
     },
     "phy_joint_max_length": {
-      "type": "constant",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -39647,7 +39647,7 @@
       "legacyUsage": "identifier"
     },
     "phy_joint_max_motor_force": {
-      "type": "constant",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -39683,7 +39683,7 @@
       "legacyUsage": "identifier"
     },
     "phy_joint_max_motor_torque": {
-      "type": "constant",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -39719,7 +39719,7 @@
       "legacyUsage": "identifier"
     },
     "phy_joint_max_torque": {
-      "type": "constant",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -39755,7 +39755,7 @@
       "legacyUsage": "identifier"
     },
     "phy_joint_motor_force": {
-      "type": "constant",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -39791,7 +39791,7 @@
       "legacyUsage": "identifier"
     },
     "phy_joint_motor_speed": {
-      "type": "constant",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -39827,7 +39827,7 @@
       "legacyUsage": "identifier"
     },
     "phy_joint_motor_torque": {
-      "type": "constant",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -39863,7 +39863,7 @@
       "legacyUsage": "identifier"
     },
     "phy_joint_reaction_force_x": {
-      "type": "constant",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -39899,7 +39899,7 @@
       "legacyUsage": "identifier"
     },
     "phy_joint_reaction_force_y": {
-      "type": "constant",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -39935,7 +39935,7 @@
       "legacyUsage": "identifier"
     },
     "phy_joint_reaction_torque": {
-      "type": "constant",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -39971,7 +39971,7 @@
       "legacyUsage": "identifier"
     },
     "phy_joint_speed": {
-      "type": "constant",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -40007,7 +40007,7 @@
       "legacyUsage": "identifier"
     },
     "phy_joint_translation": {
-      "type": "constant",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -40043,7 +40043,7 @@
       "legacyUsage": "identifier"
     },
     "phy_joint_upper_angle_limit": {
-      "type": "constant",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -40079,7 +40079,7 @@
       "legacyUsage": "identifier"
     },
     "phy_kinematic": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -40093,7 +40093,7 @@
       "legacyUsage": "identifier"
     },
     "phy_linear_damping": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -40106,7 +40106,7 @@
       "legacyUsage": "identifier"
     },
     "phy_linear_velocity_x": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -40119,7 +40119,7 @@
       "legacyUsage": "identifier"
     },
     "phy_linear_velocity_y": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -40132,7 +40132,7 @@
       "legacyUsage": "identifier"
     },
     "phy_mass": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -40504,7 +40504,7 @@
       "legacyUsage": "identifier"
     },
     "phy_position_x": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -40517,7 +40517,7 @@
       "legacyUsage": "identifier"
     },
     "phy_position_xprevious": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -40530,7 +40530,7 @@
       "legacyUsage": "identifier"
     },
     "phy_position_y": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -40543,7 +40543,7 @@
       "legacyUsage": "identifier"
     },
     "phy_position_yprevious": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -40556,7 +40556,7 @@
       "legacyUsage": "identifier"
     },
     "phy_rotation": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -40569,7 +40569,7 @@
       "legacyUsage": "identifier"
     },
     "phy_sleeping": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -40584,7 +40584,7 @@
       "legacyUsage": "identifier"
     },
     "phy_speed": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -40597,7 +40597,7 @@
       "legacyUsage": "identifier"
     },
     "phy_speed_x": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -40610,7 +40610,7 @@
       "legacyUsage": "identifier"
     },
     "phy_speed_y": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -42181,7 +42181,7 @@
       "legacyUsage": "identifier"
     },
     "pointer_invalid": {
-      "type": "enum",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -42206,7 +42206,7 @@
       "legacyUsage": "identifier"
     },
     "pointer_null": {
-      "type": "enum",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -44657,7 +44657,7 @@
       "legacyUsage": "identifier"
     },
     "solid": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -44895,7 +44895,7 @@
       "legacyUsage": "call"
     },
     "speed": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -45224,7 +45224,7 @@
       "legacyUsage": "identifier"
     },
     "sprite_height": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -45237,7 +45237,7 @@
       "legacyUsage": "identifier"
     },
     "sprite_index": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -45383,7 +45383,7 @@
       "legacyUsage": "identifier"
     },
     "sprite_width": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -45396,7 +45396,7 @@
       "legacyUsage": "identifier"
     },
     "sprite_xoffset": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -45409,7 +45409,7 @@
       "legacyUsage": "identifier"
     },
     "sprite_yoffset": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -48445,7 +48445,7 @@
       "legacyUsage": "identifier"
     },
     "timeline_index": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -48458,7 +48458,7 @@
       "legacyUsage": "identifier"
     },
     "timeline_loop": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -48501,7 +48501,7 @@
       "legacyUsage": "identifier"
     },
     "timeline_position": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -48514,7 +48514,7 @@
       "legacyUsage": "identifier"
     },
     "timeline_running": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -48537,7 +48537,7 @@
       "legacyUsage": "identifier"
     },
     "timeline_speed": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -48624,7 +48624,7 @@
       "legacyUsage": "call"
     },
     "true": {
-      "type": "enum",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -50192,7 +50192,7 @@
       "legacyUsage": "identifier"
     },
     "undefined": {
-      "type": "enum",
+      "type": "literal",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:LITERALS"
@@ -50329,7 +50329,7 @@
       "legacyUsage": "call"
     },
     "var": {
-      "type": "variable",
+      "type": "keyword",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:KEYWORDS"
@@ -51469,7 +51469,7 @@
       "deprecated": false
     },
     "view_angle": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:Obsolete_Functions.htm",
         "manual:gml.js:SYMBOLS"
@@ -51607,7 +51607,7 @@
       "legacyUsage": "identifier"
     },
     "view_hborder": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:Obsolete_Functions.htm",
         "manual:gml.js:SYMBOLS"
@@ -51635,7 +51635,7 @@
       "legacyUsage": "identifier"
     },
     "view_hspeed": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:Obsolete_Functions.htm",
         "manual:gml.js:SYMBOLS"
@@ -51650,7 +51650,7 @@
       "legacyUsage": "identifier"
     },
     "view_hview": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:Obsolete_Functions.htm",
         "manual:gml.js:SYMBOLS"
@@ -51665,7 +51665,7 @@
       "legacyUsage": "identifier"
     },
     "view_object": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:Obsolete_Functions.htm",
         "manual:gml.js:SYMBOLS"
@@ -51777,7 +51777,7 @@
       "legacyUsage": "identifier"
     },
     "view_vborder": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:Obsolete_Functions.htm",
         "manual:gml.js:SYMBOLS"
@@ -51805,7 +51805,7 @@
       "legacyUsage": "identifier"
     },
     "view_vspeed": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:Obsolete_Functions.htm",
         "manual:gml.js:SYMBOLS"
@@ -51833,7 +51833,7 @@
       "legacyUsage": "identifier"
     },
     "view_wview": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:Obsolete_Functions.htm",
         "manual:gml.js:SYMBOLS"
@@ -51861,7 +51861,7 @@
       "legacyUsage": "identifier"
     },
     "view_xview": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:Obsolete_Functions.htm",
         "manual:gml.js:SYMBOLS"
@@ -51889,7 +51889,7 @@
       "legacyUsage": "identifier"
     },
     "view_yview": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:Obsolete_Functions.htm",
         "manual:gml.js:SYMBOLS"
@@ -51952,7 +51952,7 @@
       "legacyUsage": "identifier"
     },
     "visible": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -55878,7 +55878,7 @@
       "legacyUsage": "identifier"
     },
     "vspeed": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -56413,7 +56413,7 @@
       "legacyUsage": "identifier"
     },
     "x": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -56578,7 +56578,7 @@
       "legacyUsage": "identifier"
     },
     "xprevious": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -56591,7 +56591,7 @@
       "legacyUsage": "identifier"
     },
     "xstart": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -56604,7 +56604,7 @@
       "legacyUsage": "identifier"
     },
     "y": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -56617,7 +56617,7 @@
       "legacyUsage": "identifier"
     },
     "yprevious": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"
@@ -56630,7 +56630,7 @@
       "legacyUsage": "identifier"
     },
     "ystart": {
-      "type": "variable",
+      "type": "symbol",
       "sources": [
         "manual:ZeusDocs_keywords.json",
         "manual:gml.js:SYMBOLS"

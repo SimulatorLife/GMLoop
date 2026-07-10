@@ -17,7 +17,13 @@ async function createTwoScriptProject(): Promise<{
     const sourcePath = path.join(projectRoot, "scripts/source/source.gml");
     const targetPath = path.join(projectRoot, "scripts/target/target.gml");
     const sourceText = ["function source() {", "    target();", "}"].join("\n");
-    const targetText = ["function target() {", "    return 1;", "}"].join("\n");
+    const targetText = [
+        "/// @desc target script description",
+        "/// @param {real} x argument",
+        "function target() {",
+        "    return 1;",
+        "}"
+    ].join("\n");
 
     await fs.mkdir(path.dirname(sourcePath), { recursive: true });
     await fs.mkdir(path.dirname(targetPath), { recursive: true });
@@ -60,7 +66,7 @@ void test("semantic index resolves definitions, references, hover, and cross-fil
 
         const definition = await semanticIndex.findDefinition(document, offset, "target");
         assert.equal(definition?.uri, Lsp.filePathToUri(fixture.targetPath));
-        assert.deepEqual(definition?.range.start, { line: 0, character: 9 });
+        assert.deepEqual(definition?.range.start, { line: 2, character: 9 });
 
         const referencesOnly = await semanticIndex.findReferences(document, offset, "target", false);
         assert.deepEqual(
@@ -72,10 +78,13 @@ void test("semantic index resolves definitions, references, hover, and cross-fil
         assert.equal(allReferences.length, 2);
 
         const hover = await semanticIndex.hover(document, offset, "target");
-        assert.match(
-            typeof hover?.contents === "object" && "value" in hover.contents ? hover.contents.value : "",
-            /target/
-        );
+        const hoverText = typeof hover?.contents === "object" && "value" in hover.contents ? hover.contents.value : "";
+        assert.match(hoverText, /target/);
+        assert.match(hoverText, /defined in/);
+        assert.match(hoverText, /scripts\/target\/target\.gml/);
+        assert.match(hoverText, /target script description/);
+        assert.match(hoverText, /Parameters:/);
+        assert.match(hoverText, /\* `x` \(`real`\) — argument/);
 
         const renameEdit = await semanticIndex.planRename(document, offset, "target", "renamed_target");
         assert.ok(renameEdit?.changes);
@@ -122,5 +131,65 @@ void test("semantic index invalidates cached project facts for unsaved document 
         );
     } finally {
         await fixture.cleanup();
+    }
+});
+
+void test("semantic index hover handles comment/string guards and ignores scope-dependent fallback", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gmloop-lsp-regression-"));
+    const sourcePath = path.join(projectRoot, "scripts/source/source.gml");
+
+    const sourceText = [
+        "function A() {",
+        "    var desc = 42;",
+        "}",
+        "",
+        "function B() {",
+        "    /// @desc some comment",
+        '    var str = "desc";',
+        "}"
+    ].join("\n");
+
+    try {
+        await fs.mkdir(path.dirname(sourcePath), { recursive: true });
+        await fs.writeFile(
+            path.join(projectRoot, "Game.yyp"),
+            JSON.stringify({ name: "Game", resourceType: "GMProject" })
+        );
+        await fs.writeFile(
+            path.join(projectRoot, "scripts/source/source.yy"),
+            JSON.stringify({ name: "source", resourceType: "GMScript" })
+        );
+        await fs.writeFile(sourcePath, sourceText);
+
+        const store = Lsp.createGmlDocumentStore();
+        const document = store.open({
+            uri: Lsp.filePathToUri(sourcePath),
+            languageId: "gml",
+            version: 1,
+            text: sourceText
+        });
+        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+
+        const offsetLocalVar = sourceText.indexOf("var desc =") + 4;
+        const hoverLocal = await semanticIndex.hover(document, offsetLocalVar, "desc");
+        assert.ok(hoverLocal, "Should hover local variable in its own scope");
+        const hoverLocalText =
+            typeof hoverLocal?.contents === "object" && "value" in hoverLocal.contents ? hoverLocal.contents.value : "";
+        assert.match(hoverLocalText, /desc/);
+        assert.match(hoverLocalText, /localVariable/);
+
+        const offsetComment = sourceText.indexOf("@desc");
+        const hoverComment = await semanticIndex.hover(document, offsetComment, "desc");
+        assert.equal(hoverComment, null, "Should not hover inside comment");
+
+        const offsetString = sourceText.indexOf('"desc"') + 1;
+        const hoverString = await semanticIndex.hover(document, offsetString, "desc");
+        assert.equal(hoverString, null, "Should not hover inside string");
+
+        const offsetInB = sourceText.indexOf("var str =") + 2;
+        const hoverInB = await semanticIndex.hover(document, offsetInB, "desc");
+        assert.equal(hoverInB, null, "Should not fall back to local variable from another function");
+    } finally {
+        await fs.rm(projectRoot, { recursive: true, force: true });
     }
 });

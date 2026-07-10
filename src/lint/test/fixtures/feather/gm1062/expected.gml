@@ -1,4 +1,4 @@
-/// @description This is the description for this function. The description JSDoc tag must come before the param tags.
+/// @desc This is the description for this function. The description JSDoc tag must come before the param tags.
 /// @param {string,array<string>} param1 This is parameter 1
 /// @param {string,array<string>} param2 This is parameter 2
 /// @param {Id.Instance} param3 This is parameter 3

@@ -24,6 +24,7 @@ import {
     createGmlDocumentStore,
     type GmlTextDocument,
     isGmlDocumentPath,
+    offsetsToRange,
     offsetToPosition,
     positionToOffset
 } from "../documents/index.js";
@@ -372,20 +373,37 @@ export function createGmlLanguageServer(
             return [];
         }
 
-        const edit = await createLintFixWorkspaceEdit(document, lintFixRunner);
-        if (!edit) {
-            return [];
+        const actions: any[] = [];
+
+        // 1. Generate individual quick fixes for diagnostics that have fix metadata attached
+        for (const diagnostic of context.diagnostics) {
+            const data = diagnostic.data;
+            if (data && data.fix) {
+                const range = offsetsToRange(document, data.fix.range[0], data.fix.range[1]);
+                const edit = createSingleDocumentWorkspaceEdit(document, [TextEdit.replace(range, data.fix.text)]);
+
+                actions.push({
+                    title: `Fix this: ${diagnostic.message}`,
+                    kind: CodeActionKind.QuickFix,
+                    diagnostics: [diagnostic],
+                    edit,
+                    isPreferred: true
+                });
+            }
         }
 
-        return [
-            {
-                title: "Apply GMLoop lint fixes",
+        // 2. Generate global quick fix to apply all fixable rule violations in the document
+        const globalEdit = await createLintFixWorkspaceEdit(document, lintFixRunner);
+        if (globalEdit) {
+            actions.push({
+                title: "Apply all GMLoop lint fixes",
                 kind: CodeActionKind.QuickFix,
                 diagnostics: context.diagnostics,
-                edit,
-                isPreferred: true
-            }
-        ];
+                edit: globalEdit
+            });
+        }
+
+        return actions;
     });
 
     connection.onDocumentHighlight(async ({ textDocument, position }): Promise<DocumentHighlight[]> => {

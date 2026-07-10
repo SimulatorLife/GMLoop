@@ -94,10 +94,30 @@ void test("LSP: built-in functions appear in completions and hover", async () =>
             typeof hover?.contents === "object" && "value" in hover.contents ? hover.contents.value : "",
             /gamemaker\.io/
         );
+        assert.match(
+            typeof hover?.contents === "object" && "value" in hover.contents ? hover.contents.value : "",
+            /monthly\/en-US\/index\.htm#t=/
+        );
 
         // Hover Case-insensitive
         const hoverUpper = await semanticIndex.hover(document, 0, "SHOW_DEBUG_MESSAGE");
         assert.ok(hoverUpper, "Should return hover result for SHOW_DEBUG_MESSAGE case-insensitively");
+
+        // Built-in literal type regression test
+        const hoverUndefined = await semanticIndex.hover(document, 0, "undefined");
+        assert.ok(hoverUndefined);
+        const undefinedHoverText =
+            typeof hoverUndefined?.contents === "object" && "value" in hoverUndefined.contents
+                ? hoverUndefined.contents.value
+                : "";
+        assert.match(undefinedHoverText, /Built-in literal/);
+
+        // Built-in keyword type regression test
+        const hoverVar = await semanticIndex.hover(document, 0, "var");
+        assert.ok(hoverVar);
+        const varHoverText =
+            typeof hoverVar?.contents === "object" && "value" in hoverVar.contents ? hoverVar.contents.value : "";
+        assert.match(varHoverText, /Built-in keyword/);
     } finally {
         await proj.cleanup();
     }
@@ -177,7 +197,9 @@ void test("LSP: server handlers return correct folding ranges and selection rang
         onPrepareRename: () => {},
         onRenameRequest: () => {},
         onCompletion: () => {},
-        onCodeAction: () => {},
+        onCodeAction: (fn: any) => {
+            mockConnection.codeAction = fn;
+        },
         onDocumentHighlight: (fn: any) => {
             mockConnection.documentHighlight = fn;
         },
@@ -222,6 +244,37 @@ void test("LSP: server handlers return correct folding ranges and selection rang
     assert.equal(selections.length, 1);
     assert.ok(selections[0].range);
     assert.deepEqual(selections[0].range.start, { line: 2, character: 4 });
+
+    // 3. Test code actions (quick fixes)
+    assert.ok(mockConnection.codeAction, "Should register code action handler");
+    const diagnosticWithFix = {
+        range: {
+            start: { line: 1, character: 0 },
+            end: { line: 1, character: 10 }
+        },
+        message: "Normalize doc-comment markers",
+        severity: 2,
+        code: "normalize-doc-comment-tags",
+        source: "gmloop-lint",
+        data: {
+            fix: {
+                range: [15, 25],
+                text: "fixedText"
+            }
+        }
+    };
+
+    const actions = await mockConnection.codeAction({
+        textDocument: { uri },
+        context: {
+            diagnostics: [diagnosticWithFix]
+        }
+    });
+
+    assert.ok(Array.isArray(actions), "Code actions response should be an array");
+    const localFix = actions.find((a: any) => a.title.startsWith("Fix this:"));
+    assert.ok(localFix, "Should generate a targeted local quick fix");
+    assert.ok(localFix.edit, "Local fix should contain a workspace edit");
 });
 
 void test("LSP: server defaults to stdio connection transport explicitly", () => {

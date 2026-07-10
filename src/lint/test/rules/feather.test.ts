@@ -268,7 +268,7 @@ const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
         ruleName: "gm1062",
         assertOutput: (output) => {
             assertEquals(output.includes("/// @function"), false);
-            assertEquals(output.includes("/// @description This is the description"), true);
+            assertEquals(output.includes("/// @desc This is the description"), true);
             assertEquals(output.includes("/// @returns {undefined}"), true);
         }
     },

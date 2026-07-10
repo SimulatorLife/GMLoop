@@ -55,7 +55,7 @@ export function eslintMessageToDiagnostic(message: Linter.LintMessage): Diagnost
     const endLine = Math.max(startLine, (message.endLine ?? message.line) - 1);
     const endCharacter = Math.max(startCharacter + 1, (message.endColumn ?? message.column + 1) - 1);
 
-    return Diagnostic.create(
+    const diagnostic = Diagnostic.create(
         {
             start: { line: startLine, character: startCharacter },
             end: { line: endLine, character: endCharacter }
@@ -65,6 +65,14 @@ export function eslintMessageToDiagnostic(message: Linter.LintMessage): Diagnost
         message.ruleId ?? "lint",
         "gmloop-lint"
     );
+
+    if (message.fix) {
+        diagnostic.data = {
+            fix: message.fix
+        };
+    }
+
+    return diagnostic;
 }
 
 /**

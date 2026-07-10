@@ -12,7 +12,6 @@ const JSDOC_REPLACEMENTS = {
     "@return": "@returns",
     "@output": "@returns",
     "@outputs": "@returns",
-    "@desc": "@description",
     "@arg": "@param",
     "@argument": "@param",
     "@params": "@param",

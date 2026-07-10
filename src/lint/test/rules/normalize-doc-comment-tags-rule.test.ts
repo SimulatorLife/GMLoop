@@ -25,7 +25,7 @@ void test("normalize-doc-comment-tags canonicalizes doc tag aliases", () => {
     ].join("\n");
 
     const expected = [
-        "/// @description Computes a score",
+        "/// @desc Computes a score",
         "/// @param alpha - first input",
         "/// @param beta",
         "/// @ignore",

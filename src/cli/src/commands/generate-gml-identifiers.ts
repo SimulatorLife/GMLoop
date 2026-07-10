@@ -512,7 +512,15 @@ function mergeEntry(map: Map<string, IdentifierMapEntry>, identifier: string, da
     const incomingType = data.type ?? "unknown";
     const incomingTypePriority = TYPE_PRIORITY.get(incomingType) ?? 0;
     const currentTypePriority = TYPE_PRIORITY.get(current.type) ?? 0;
-    if (incomingTypePriority > currentTypePriority) {
+
+    const isCoreType = (t: string) => t === "keyword" || t === "literal" || t === "symbol";
+
+    if (isCoreType(current.type)) {
+        // Current is already a core type, keep it.
+    } else if (isCoreType(incomingType)) {
+        // Incoming is a core type, it wins.
+        current.type = incomingType;
+    } else if (incomingTypePriority > currentTypePriority) {
         current.type = incomingType;
     }
 }

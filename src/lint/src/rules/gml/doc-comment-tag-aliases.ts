@@ -3,7 +3,6 @@ const DOC_COMMENT_TAG_ALIAS_REPLACEMENTS = Object.freeze(
         ["arg", "param"],
         ["argument", "param"],
         ["params", "param"],
-        ["desc", "description"],
         ["exception", "throws"],
         ["hidden", "ignore"],
         ["hide", "ignore"],
