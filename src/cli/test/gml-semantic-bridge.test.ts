@@ -2329,10 +2329,25 @@ void describe("GmlSemanticBridge tests", () => {
                     name: "pth_enemy_route",
                     resourceType: "GMPath"
                 },
+                "sounds/snd_hit/snd_hit.yy": {
+                    path: "sounds/snd_hit/snd_hit.yy",
+                    name: "snd_hit",
+                    resourceType: "GMSound"
+                },
+                "sounds/snd_legacy/snd_legacy.yy": {
+                    path: "sounds/snd_legacy/snd_legacy.yy",
+                    name: "snd_legacy",
+                    resourceType: "GMAudio"
+                },
                 "animcurves/curve_attack_arc/curve_attack_arc.yy": {
                     path: "animcurves/curve_attack_arc/curve_attack_arc.yy",
                     name: "curve_attack_arc",
                     resourceType: "GMAnimCurve"
+                },
+                "animcurves/curve_legacy/curve_legacy.yy": {
+                    path: "animcurves/curve_legacy/curve_legacy.yy",
+                    name: "curve_legacy",
+                    resourceType: "GMAnimationCurve"
                 },
                 "sequences/seq_intro/seq_intro.yy": {
                     path: "sequences/seq_intro/seq_intro.yy",
@@ -2353,6 +2368,11 @@ void describe("GmlSemanticBridge tests", () => {
                     path: "notes/note_design/note_design.yy",
                     name: "note_design",
                     resourceType: "GMNote"
+                },
+                "notes/note_legacy/note_legacy.yy": {
+                    path: "notes/note_legacy/note_legacy.yy",
+                    name: "note_legacy",
+                    resourceType: "GMNotes"
                 },
                 "extensions/ext_physics/ext_physics.yy": {
                     path: "extensions/ext_physics/ext_physics.yy",
@@ -2503,10 +2523,15 @@ void describe("GmlSemanticBridge tests", () => {
         assert.ok(
             targets.some((target) => target.category === "pathResourceName" && target.name === "pth_enemy_route")
         );
+        assert.ok(targets.some((target) => target.category === "audioResourceName" && target.name === "snd_hit"));
+        assert.ok(targets.some((target) => target.category === "audioResourceName" && target.name === "snd_legacy"));
         assert.ok(
             targets.some(
                 (target) => target.category === "animationCurveResourceName" && target.name === "curve_attack_arc"
             )
+        );
+        assert.ok(
+            targets.some((target) => target.category === "animationCurveResourceName" && target.name === "curve_legacy")
         );
         assert.ok(targets.some((target) => target.category === "sequenceResourceName" && target.name === "seq_intro"));
         assert.ok(targets.some((target) => target.category === "tilesetResourceName" && target.name === "tile_world"));
@@ -2514,6 +2539,7 @@ void describe("GmlSemanticBridge tests", () => {
             targets.some((target) => target.category === "particleSystemResourceName" && target.name === "part_trail")
         );
         assert.ok(targets.some((target) => target.category === "noteResourceName" && target.name === "note_design"));
+        assert.ok(targets.some((target) => target.category === "noteResourceName" && target.name === "note_legacy"));
         assert.ok(
             targets.some((target) => target.category === "extensionResourceName" && target.name === "ext_physics")
         );

@@ -15,6 +15,7 @@ import {
     createSyntheticResourceEntry as makeSyntheticResourceEntry,
     generateIdentifierEntryScipId,
     generateResourceScipId,
+    mapResourceTypeToScipKind,
     matchesSymbolIdSet
 } from "./bridge-scip-id-generators.js";
 import { listConstructorRuntimeTypeReferenceRecords } from "./constructor-runtime-type-references.js";
@@ -3730,9 +3731,9 @@ export class GmlSemanticBridge {
     private getResourceNamingCategory(
         resource: SemanticResourceRecord | null | undefined
     ): BridgeNamingConventionTarget["category"] | null {
-        const resourceType = resource?.resourceType;
-        switch (resourceType) {
-            case "GMScript": {
+        const resourceKind = mapResourceTypeToScipKind(resource?.resourceType);
+        switch (resourceKind) {
+            case "scripts": {
                 const declarationCategory = this.getScriptResourceDeclarationNamingCategory(
                     resource?.path,
                     resource?.name
@@ -3742,51 +3743,46 @@ export class GmlSemanticBridge {
                 }
                 return "scriptResourceName";
             }
-            case "GMObject": {
+            case "objects": {
                 return "objectResourceName";
             }
-            case "GMRoom": {
+            case "rooms": {
                 return "roomResourceName";
             }
-            case "GMSprite": {
+            case "sprites": {
                 return "spriteResourceName";
             }
-            case "GMAudio": {
+            case "sounds": {
                 return "audioResourceName";
             }
-            case "GMSound": {
-                return "audioResourceName";
-            }
-            case "GMTimeline": {
+            case "timelines": {
                 return "timelineResourceName";
             }
-            case "GMShader": {
+            case "shaders": {
                 return "shaderResourceName";
             }
-            case "GMFont": {
+            case "fonts": {
                 return "fontResourceName";
             }
-            case "GMPath": {
+            case "paths": {
                 return "pathResourceName";
             }
-            case "GMAnimCurve":
-            case "GMAnimationCurve": {
+            case "curves": {
                 return "animationCurveResourceName";
             }
-            case "GMSequence": {
+            case "sequences": {
                 return "sequenceResourceName";
             }
-            case "GMTileSet": {
+            case "tilesets": {
                 return "tilesetResourceName";
             }
-            case "GMParticleSystem": {
+            case "particlesystems": {
                 return "particleSystemResourceName";
             }
-            case "GMNote":
-            case "GMNotes": {
+            case "notes": {
                 return "noteResourceName";
             }
-            case "GMExtension": {
+            case "extensions": {
                 return "extensionResourceName";
             }
             default: {
