@@ -282,6 +282,10 @@ void test("extractGraphById collapses the 3-segment chain into a single call", (
 
     // Empty graphs array returns null.
     assert.equal(extractGraphById({ payload: { graphs: [] } }, "project"), null);
+
+    // Absent envelope or payload returns null instead of throwing.
+    assert.equal(extractGraphById(null, "project"), null);
+    assert.equal(extractGraphById({ payload: null }, "project"), null);
 });
 
 void test("parseCliJsonStdout returns the parsed payload for valid JSON", () => {

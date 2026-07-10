@@ -79,7 +79,7 @@ export function extractGraphById(
     envelope: CliGraphEnvelope<GraphOverviewEnvelope>,
     graphId: string
 ): (GraphOverviewEnvelope["graphs"][number] & { graphId: string }) | null {
-    return envelope.payload.graphs?.find((entry) => entry.graphId === graphId) ?? null;
+    return envelope?.payload?.graphs?.find((entry) => entry.graphId === graphId) ?? null;
 }
 
 function createToolInputSchema(entry: CliCatalogEntry): z.ZodObject<Record<string, z.ZodTypeAny>> {
