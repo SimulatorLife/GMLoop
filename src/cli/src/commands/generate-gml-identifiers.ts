@@ -448,6 +448,10 @@ function normalizeDeprecatedReplacementKind(
     return typeof replacement === "string" && replacement.length > 0 ? DIRECT_RENAME_REPLACEMENT_KIND : "none";
 }
 
+function isCoreIdentifierType(type: string): boolean {
+    return type === "keyword" || type === "literal" || type === "symbol";
+}
+
 function getReplacementPriority(replacementKind: DeprecatedReplacementKind | undefined): number {
     return REPLACEMENT_PRIORITY.get(replacementKind ?? "none") ?? 0;
 }
@@ -521,10 +525,6 @@ function mergeEntry(map: Map<string, IdentifierMapEntry>, identifier: string, da
     } else if (incomingTypePriority > currentTypePriority) {
         current.type = incomingType;
     }
-}
-
-function isCoreIdentifierType(type) {
-    return type === "keyword" || type === "literal" || type === "symbol";
 }
 
 function normalizeIdentifier(name) {

@@ -193,15 +193,16 @@ To minimize Language Server startup and first-hover latencies on large GameMaker
 
 - **Tier 1: Lightweight Definitions-Only Pass**:
   - On the initial project load or first hover/definition check, GMLoop triggers a fast `definitionsOnly` compilation pass.
-  - This pass skips traversing, processing, and recording all reference/usage occurrences of identifiers (which typically account for ~95% of the identifier nodes in GameMaker projects), as well as script calls.
-  - It parses all definitions, constructors, structs, methods, enums, macros, parameters, return types, and doc-comments.
-  - This pass is extremely fast (executing at least 20x faster) and immediately cache-stores the state so hovers and basic "Go to Definition" navigations respond instantly.
-  - This first tier also prioritizes open files and focused files, so the user can start working immediately while the background indexing continues.
+  - This pass parses and traverses each project file, but skips processing and recording reference/usage occurrences and script-call relationships.
+  - It parses all definitions, constructors, structs, functions, methods, enums, macros, and doc-comments (parameters, return types, and descriptions).
+  - The completed lightweight snapshot is cached immediately so hover, document/workspace symbols, completion, and basic "Go to Definition" requests do not wait for reference indexing.
+  - Open files are placed first in the Tier-1 processing queue. The current snapshot boundary remains project-wide: individual file results are not published before the Tier-1 build completes.
 - **Tier 2: Background Full Indexing Pass**:
   - As soon as the lightweight index resolves, GMLoop kicks off a full, deep index build (`definitionsOnly: false`) asynchronously in the background.
   - This background build processes references and relational mappings without blocking the active LSP session or hover/definition queries.
-  - When the full background build completes, it mutates/upgrades the cached navigation state object in-place. This preserves the original object reference in the cache (avoiding eviction or identity issues) while seamlessly upgrading the index to support advanced reference-dependent features like "Find All References" and "Rename Symbol".
-  - This tier-2 pass does not re-create the entire index from scratch; it only adds the missing reference and usage information to the existing definitions-only index, so it avoids unnecessary reprocessing of already-known definitions and their metadata.
+  - Reference-dependent requests such as "Find All References" and rename await the shared full-build promise; they must never time out into a partial lightweight result.
+  - When the full background build completes, it upgrades the cached navigation state object in place by replacing its index snapshot and clearing its lightweight marker. This preserves the cached state object's identity for existing consumers.
+  - The current Tier-2 implementation builds a complete replacement snapshot. Incrementally adding only missing reference and relationship records, and publishing per-file Tier-1 results, remain future optimizations that require explicit snapshot-consistency and invalidation designs plus benchmarks.
 
 ## 5. Semantic Index & Codemod Streaming Architecture
 

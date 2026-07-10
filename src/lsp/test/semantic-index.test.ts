@@ -270,7 +270,7 @@ void test("semantic index double-pass approach exposes fast hover initially, and
         await fs.writeFile(bPath, "/// @desc test function b\nfunction b() {}");
 
         const store = Lsp.createGmlDocumentStore();
-        store.open({
+        const docA = store.open({
             uri: Lsp.filePathToUri(aPath),
             languageId: "gml",
             version: 1,
@@ -304,7 +304,8 @@ void test("semantic index double-pass approach exposes fast hover initially, and
         assert.ok(defRes.uri.includes("b.gml"), "findDefinition should point to b.gml");
 
         // 4. findReferences transparently waits for the full build and returns complete data
-        const refs = await semanticIndex.findReferences(docB, offsetValB, "b", false);
+        const offsetValA = 15; // offset of "b" in "function a() { b(); }"
+        const refs = await semanticIndex.findReferences(docA, offsetValA, "b", false);
         assert.ok(refs.length > 0, "findReferences should return cross-file references after full build");
         const refUris = refs.map((r) => r.uri);
         assert.ok(refUris.includes(Lsp.filePathToUri(aPath)), "References should include usage in a.gml");

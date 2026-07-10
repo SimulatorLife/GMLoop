@@ -32,29 +32,6 @@ type NavigationState = {
     lightweight?: boolean;
 };
 
-function waitForBackgroundIndexPoll(): Promise<void> {
-    return new Promise((resolve) => {
-        setTimeout(resolve, 10);
-    });
-}
-
-async function waitForFullNavigationState(
-    cachedStates: ReadonlyMap<string, NavigationState>,
-    resolvedRoot: string,
-    attemptsRemaining: number
-): Promise<NavigationState | null> {
-    const current = cachedStates.get(resolvedRoot);
-    if (current && !current.lightweight) {
-        return current;
-    }
-    if (attemptsRemaining <= 0) {
-        return null;
-    }
-
-    await waitForBackgroundIndexPoll();
-    return await waitForFullNavigationState(cachedStates, resolvedRoot, attemptsRemaining - 1);
-}
-
 /**
  * Query facade used by the LSP layer to consume semantic navigation facts.
  */
@@ -458,7 +435,7 @@ function isDocumentWithinProjectRoot(document: GmlTextDocument, projectRoot: str
 export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemanticIndex {
     const cachedStates = new Map<string, NavigationState>();
     const inFlightBuilds = new Map<string, Promise<NavigationState | null>>();
-    const backgroundFullBuilds = new Set<string>();
+    const backgroundFullBuilds = new Map<string, Promise<NavigationState | null>>();
     const rootVersions = new Map<string, number>();
     const fsFacade = createLspFsFacade(documents);
 
@@ -483,16 +460,19 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         }
     }
 
-    function triggerBackgroundFullBuild(document: GmlTextDocument, resolvedRoot: string) {
-        if (backgroundFullBuilds.has(resolvedRoot)) {
-            return;
+    function triggerBackgroundFullBuild(
+        document: GmlTextDocument,
+        resolvedRoot: string
+    ): Promise<NavigationState | null> {
+        const existingBuild = backgroundFullBuilds.get(resolvedRoot);
+        if (existingBuild !== undefined) {
+            return existingBuild;
         }
-        backgroundFullBuilds.add(resolvedRoot);
 
         const buildVersion = readRootVersion(resolvedRoot);
         const priorityFiles = documents.list().map((doc) => doc.filePath);
 
-        void buildSemanticIndexForDocument(document, fsFacade, priorityFiles, false)
+        const fullBuild = buildSemanticIndexForDocument(document, fsFacade, priorityFiles, false)
             .then((fullState) => {
                 if (fullState && readRootVersion(resolvedRoot) === buildVersion) {
                     const currentState = cachedStates.get(resolvedRoot);
@@ -502,15 +482,18 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                     } else {
                         cachedStates.set(resolvedRoot, fullState);
                     }
+                    return cachedStates.get(resolvedRoot) ?? fullState;
                 }
-                return undefined;
+                return null;
             })
-            .catch(() => {
-                return undefined;
-            })
+            .catch(() => null)
             .finally(() => {
-                backgroundFullBuilds.delete(resolvedRoot);
+                if (backgroundFullBuilds.get(resolvedRoot) === fullBuild) {
+                    backgroundFullBuilds.delete(resolvedRoot);
+                }
             });
+        backgroundFullBuilds.set(resolvedRoot, fullBuild);
+        return fullBuild;
     }
 
     async function ensureIndex(document: GmlTextDocument): Promise<NavigationState | null> {
@@ -526,7 +509,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         }
 
         if (currentState && currentState.lightweight) {
-            triggerBackgroundFullBuild(document, resolvedRoot);
+            void triggerBackgroundFullBuild(document, resolvedRoot);
             return currentState;
         }
 
@@ -538,7 +521,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                 const state = await buildSemanticIndexForDocument(document, fsFacade, priorityFiles, true);
                 if (state && readRootVersion(resolvedRoot) === buildVersion) {
                     cachedStates.set(resolvedRoot, state);
-                    triggerBackgroundFullBuild(document, resolvedRoot);
+                    void triggerBackgroundFullBuild(document, resolvedRoot);
                 }
                 return state;
             })();
@@ -590,12 +573,8 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         }
         const resolvedRoot = path.resolve(projectRoot);
 
-        // Wait for the background full build to complete.
-        return (
-            (await waitForFullNavigationState(cachedStates, resolvedRoot, 100)) ??
-            cachedStates.get(resolvedRoot) ??
-            state
-        );
+        const fullState = await triggerBackgroundFullBuild(document, resolvedRoot);
+        return fullState && !fullState.lightweight ? fullState : null;
     }
 
     return {
