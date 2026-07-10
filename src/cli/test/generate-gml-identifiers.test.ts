@@ -209,7 +209,7 @@ void describe("generate-gml-identifiers", () => {
 
         void it("upgrades type when incoming priority is higher", () => {
             const existingEntry = {
-                type: "literal",
+                type: "variable",
                 sources: new Set<string>(),
                 tags: new Set<string>(),
                 deprecated: false
@@ -227,8 +227,32 @@ void describe("generate-gml-identifiers", () => {
                 deprecated: false
             };
             const map = Object.freeze(new Map([["foo", existingEntry]]));
-            mergeEntry(map, "foo", { type: "literal" });
+            mergeEntry(map, "foo", { type: "variable" });
             assert.equal(existingEntry.type, "function");
+        });
+
+        void it("keeps an existing core language type authoritative", () => {
+            const existingEntry = {
+                type: "literal",
+                sources: new Set<string>(),
+                tags: new Set<string>(),
+                deprecated: false
+            };
+            const map = Object.freeze(new Map([["foo", existingEntry]]));
+            mergeEntry(map, "foo", { type: "function" });
+            assert.equal(existingEntry.type, "literal");
+        });
+
+        void it("upgrades an ordinary type to an incoming core language type", () => {
+            const existingEntry = {
+                type: "function",
+                sources: new Set<string>(),
+                tags: new Set<string>(),
+                deprecated: false
+            };
+            const map = Object.freeze(new Map([["foo", existingEntry]]));
+            mergeEntry(map, "foo", { type: "literal" });
+            assert.equal(existingEntry.type, "literal");
         });
 
         void it("sets type to 'unknown' when neither incoming nor current has a defined type", () => {

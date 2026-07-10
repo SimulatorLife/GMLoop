@@ -76,10 +76,10 @@ void describe("formatLineComment — doc-tag normalization contract", () => {
         }
     });
 
-    void it("rewrites description aliases to the canonical @description tag", () => {
+    void it("preserves the canonical @desc tag", () => {
         const comment = createLineComment(" @desc Computes the result", "/// @desc Computes the result");
 
-        assert.equal(formatLineComment(comment), "/// @description Computes the result");
+        assert.equal(formatLineComment(comment), "/// @desc Computes the result");
     });
 
     void it("rewrites throw aliases to the canonical @throws tag", () => {

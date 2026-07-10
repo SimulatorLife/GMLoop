@@ -35,7 +35,12 @@ async function createTempSessionProject(port: number): Promise<string> {
     return projectRoot;
 }
 
-function startStatusServer(port: number, initialPatches: Array<{ patchId: string }> = []) {
+function startStatusServer(
+    port: number,
+    initialPatches: Array<{ patchId: string }> = [],
+    onStatusRequest: ((requestCount: number) => void) | null = null
+) {
+    let statusRequestCount = 0;
     const state = {
         patches: [...initialPatches],
         scanComplete: true,
@@ -45,6 +50,7 @@ function startStatusServer(port: number, initialPatches: Array<{ patchId: string
 
     const server = createServer((req, res) => {
         if (req.url === "/status") {
+            statusRequestCount += 1;
             const lastPatch = state.patches.at(-1);
             const responseData = {
                 ...state,
@@ -52,6 +58,7 @@ function startStatusServer(port: number, initialPatches: Array<{ patchId: string
             };
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify(responseData));
+            onStatusRequest?.(statusRequestCount);
             return;
         }
         res.writeHead(404);
@@ -140,15 +147,12 @@ void test("live-reload wait-for-patch polls and resolves when a new patch is pro
 void test("live-reload wait-for-patch infers since-patch-id if omitted", async () => {
     const port = 60_993;
     const projectRoot = await createTempSessionProject(port);
-    const server = startStatusServer(port, [{ patchId: "patch-1" }]);
+    const server = startStatusServer(port, [{ patchId: "patch-1" }], (requestCount) => {
+        if (requestCount === 2) {
+            server.state.patches.push({ patchId: "patch-2" });
+        }
+    });
     await server.listen();
-
-    // After 150ms, append a new patch to status response.
-    // The wait-for-patch command will infer patch-1 as the baseline because
-    // it fetches status once at start. So patch-2 is recognized as the new patch!
-    const timer = setTimeout(() => {
-        server.state.patches.push({ patchId: "patch-2" });
-    }, 150);
 
     try {
         const result = await runCliTestCommand({
@@ -169,7 +173,6 @@ void test("live-reload wait-for-patch infers since-patch-id if omitted", async (
         assert.equal(payload.payload.patches.length, 2);
         assert.equal(payload.payload.patches[1]?.patchId, "patch-2");
     } finally {
-        clearTimeout(timer);
         await server.close();
         await rm(projectRoot, { recursive: true, force: true });
     }
