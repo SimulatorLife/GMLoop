@@ -17,7 +17,7 @@
   .page-toolbar {
     margin: var(--gm-space-lg) var(--gm-space-lg) 0;
     padding: var(--gm-space-lg);
-    border-radius: 18px;
+    border-radius: var(--gm-radius-lg);
   }
 
   main {
@@ -27,7 +27,7 @@
   .loaded-target-stack {
     min-width: 0;
     grid-template-columns: 1fr;
-    border-radius: 18px;
+    border-radius: var(--gm-radius-lg);
   }
 
   #search {

@@ -383,8 +383,8 @@ void test("page styles keep every top-level page on the shared lighter content b
         "../../src/app/components/gm-playground-panel.ts"
     ].map((sourcePath) => readFileSync(new URL(sourcePath, import.meta.url), "utf8"));
 
-    assert.match(graphSource, /#graph-page\s*\{[\s\S]*background:\s*var\(--gm-bg-light\);/u);
-    assert.match(playgroundSource, /#playground-page\s*\{[\s\S]*background:\s*var\(--gm-bg-light\);/u);
+    assert.match(graphSource, /#graph-page\s*\{[\s\S]*background:\s*var\(--gm-bg-muted\);/u);
+    assert.match(playgroundSource, /#playground-page\s*\{[\s\S]*background:\s*var\(--gm-bg-muted\);/u);
     assert.doesNotMatch(graphSource, /background:\s*linear-gradient\(180deg,\s*rgba\(8,\s*14,\s*24/u);
     assert.doesNotMatch(playgroundSource, /background:\s*linear-gradient\(180deg,\s*rgba\(8,\s*14,\s*24/u);
     assert.equal(

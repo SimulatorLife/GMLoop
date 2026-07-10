@@ -6,7 +6,7 @@
   padding: var(--gm-space-lg) var(--gm-space-xl);
   margin: var(--gm-space-lg) var(--gm-space-xl) 0;
   border: 1px solid var(--gm-border);
-  border-radius: 20px;
+  border-radius: var(--gm-radius-xl);
   background: linear-gradient(180deg, var(--gm-surface-elevated), var(--gm-surface-elevated-strong));
   box-shadow: var(--gm-shadow);
 }
@@ -57,13 +57,13 @@
 
 .toolbar-title strong {
   color: var(--gm-text);
-  font-size: 15px;
+  font-size: var(--gm-text-lg);
 }
 
 .toolbar-title span {
   color: var(--gm-text-subdued);
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-normal);
 }
 
 .toolbar-controls {
@@ -93,30 +93,31 @@
   width: 100%;
   padding: var(--gm-space-sm) var(--gm-space-md);
   border: 1px solid var(--gm-border);
-  border-radius: 14px;
+  border-radius: var(--gm-radius-md);
   background: var(--gm-surface-inset);
   color: var(--gm-text);
-  font-size: 13px;
+  font-size: var(--gm-text-sm);
 }
 
 #search::placeholder {
-  color: #adbbd0ad;
+  color: var(--gm-text-subdued);
+  opacity: 0.68;
 }
 
 .pending-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 20px;
-  height: 20px;
+  min-width: var(--gm-icon-lg);
+  height: var(--gm-icon-lg);
   padding: 0 var(--gm-space-xs);
-  border-radius: 999px;
+  border-radius: var(--gm-radius-full);
   background: var(--gm-border-accent-subtle);
   border: 1px solid var(--gm-border-accent-medium);
   color: var(--gm-accent);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
+  font-size: var(--gm-text-xs);
+  font-weight: var(--gm-weight-bold);
+  line-height: var(--gm-leading-none);
   animation: pending-badge-pulse 1.5s ease-in-out infinite;
 }
 

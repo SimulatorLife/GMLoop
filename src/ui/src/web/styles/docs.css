@@ -19,7 +19,7 @@
 .docs-sidebar-heading {
     color: var(--gm-text-subdued);
     font-size: var(--gm-text-xs);
-    font-weight: 800;
+    font-weight: var(--gm-weight-extrabold);
     letter-spacing: 0;
     text-transform: uppercase;
 }
@@ -47,7 +47,7 @@
     color: var(--gm-text-secondary);
     font: inherit;
     font-size: var(--gm-text-sm);
-    font-weight: 800;
+    font-weight: var(--gm-weight-extrabold);
     text-align: left;
     cursor: pointer;
     touch-action: manipulation;
@@ -56,7 +56,7 @@
 
 .docs-nav-button:hover,
 .docs-nav-button:focus-visible {
-    border-color: var(--gm-border-accent);
+    border-color: var(--gm-border);
     background: var(--gm-bg-hover);
     color: var(--gm-text);
 }
@@ -114,7 +114,7 @@
     min-width: 0;
     min-height: var(--gm-height-md);
     padding: var(--gm-space-sm) var(--gm-space-md);
-    border: 1px solid var(--gm-border-accent);
+    border: 1px solid var(--gm-border);
     border-radius: var(--gm-radius-md);
     background: var(--gm-bg-inset);
     color: var(--gm-text);
@@ -128,12 +128,12 @@
 .docs-search-clear {
     min-height: var(--gm-height-md);
     padding: 0 var(--gm-space-md);
-    border: 1px solid var(--gm-border-accent);
+    border: 1px solid var(--gm-border);
     border-radius: var(--gm-radius-md);
     background: var(--gm-surface-active);
     color: var(--gm-text);
     font: inherit;
-    font-weight: 800;
+    font-weight: var(--gm-weight-extrabold);
     cursor: pointer;
     touch-action: manipulation;
 }
@@ -275,7 +275,7 @@
     padding: var(--gm-space-sm) var(--gm-space-md);
     color: var(--gm-text-secondary);
     font-size: var(--gm-text-sm);
-    font-weight: 800;
+    font-weight: var(--gm-weight-extrabold);
     cursor: pointer;
 }
 

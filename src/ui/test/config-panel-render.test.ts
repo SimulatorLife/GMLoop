@@ -312,7 +312,7 @@ void test("config severity selector uses severity-colored active states", () => 
 
     assert.match(
         source,
-        /\.config-rule-level-selector\s*>\s*\.config-rule-level-error\[aria-pressed="true"\]\s*\{[\s\S]*background:\s*var\(--gm-severity-error-bg\);/u
+        /\.config-rule-level-selector\s*>\s*\.config-rule-level-error\[aria-pressed="true"\]\s*\{[\s\S]*background:\s*var\(--gm-error-surface\);/u
     );
     assert.match(
         source,

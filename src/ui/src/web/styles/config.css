@@ -121,15 +121,15 @@
 .config-inline-field select,
 .config-filter-field input,
 .config-filter-field select {
-  min-height: 38px;
+  min-height: var(--gm-height-md);
   padding: var(--gm-space-sm) var(--gm-space-sm);
 }
 
 .config-field input[type="checkbox"],
 .config-toggle-label input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
-  min-height: 18px;
+  width: var(--gm-icon-md);
+  height: var(--gm-icon-md);
+  min-height: var(--gm-icon-md);
 }
 
 .config-filter-row {
@@ -145,7 +145,7 @@
 .config-json-field span {
   color: var(--gm-text-subdued);
   font-size: var(--gm-text-xs);
-  font-weight: 800;
+  font-weight: var(--gm-weight-extrabold);
   text-transform: uppercase;
 }
 
@@ -168,7 +168,7 @@
 .config-rule-table-header {
   color: var(--gm-text-subdued);
   font-size: var(--gm-text-xs);
-  font-weight: 800;
+  font-weight: var(--gm-weight-extrabold);
   text-transform: uppercase;
 }
 
@@ -202,9 +202,9 @@
 }
 
 .config-rule-fixable-badge .gm-badge {
-  padding: 2px var(--gm-space-xs);
-  font-size: 10px;
-  line-height: 1;
+  padding: var(--gm-space-2xs) var(--gm-space-xs);
+  font-size: var(--gm-text-xs);
+  line-height: var(--gm-leading-none);
 }
 
 .config-badge-row {
@@ -220,8 +220,8 @@
 }
 
 .config-rule-level-selector > .config-rule-level-error[aria-pressed="true"] {
-  background: var(--gm-severity-error-bg);
-  color: var(--gm-severity-error-text);
+  background: var(--gm-error-surface);
+  color: var(--gm-error-text);
 }
 
 .config-rule-level-selector > .config-rule-level-warn[aria-pressed="true"] {

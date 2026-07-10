@@ -131,15 +131,15 @@
   display: block;
   color: var(--gm-text-subdued);
   font-size: var(--gm-text-sm);
-  line-height: 1.35;
+  line-height: var(--gm-leading-normal);
 }
 
 .live-reload-metric-item strong {
   display: block;
   margin: var(--gm-space-sm) 0 var(--gm-space-xs);
   color: var(--gm-text);
-  font-size: var(--gm-text-2xl);
-  line-height: 1;
+  font-size: var(--gm-text-xl);
+  line-height: var(--gm-leading-none);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
@@ -179,7 +179,7 @@
   background: var(--gm-surface-accent-subtle);
   color: var(--gm-text);
   font-size: var(--gm-text-sm);
-  font-weight: 800;
+  font-weight: var(--gm-weight-extrabold);
 }
 
 .live-reload-pipeline-index {

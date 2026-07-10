@@ -326,7 +326,7 @@ void test("graph visualization css asset preserves core visual affordances", asy
         .map((entry) => decodeBytes(entry.bytes))
         .join("\n");
 
-    assert.match(css, /font-size:\s*15px/u);
+    assert.match(css, /font-size:\s*var\(--gm-text-lg\)/u);
     assert.match(css, /#tooltip/u);
     assert.match(css, /#tooltip\{[^}]*top:20px;[^}]*left:20px/u);
     assert.match(css, /\.link/u);

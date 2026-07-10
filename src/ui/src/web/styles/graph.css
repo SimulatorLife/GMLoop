@@ -5,7 +5,7 @@
   border: 1px solid var(--gm-border);
   border-radius: var(--gm-radius-xl);
   overflow: hidden;
-  background: var(--gm-bg-light);
+  background: var(--gm-bg-muted);
   box-shadow: var(--gm-shadow);
 }
 
@@ -26,7 +26,7 @@
   color: var(--gm-text);
   text-align: center;
   box-shadow: var(--gm-shadow);
-  backdrop-filter: blur(16px);
+  backdrop-filter: var(--gm-blur-md);
 }
 
 .graph-empty-state p {
@@ -40,7 +40,7 @@
   align-items: center;
   margin-bottom: var(--gm-space-md);
   color: var(--gm-text-secondary);
-  font-size: 13px;
+  font-size: var(--gm-text-sm);
 }
 
 .graph-empty-state-spinner {
@@ -60,15 +60,15 @@
   display: grid;
   place-items: center;
   background: var(--gm-bg-overlay);
-  backdrop-filter: blur(6px);
+  backdrop-filter: var(--gm-blur-sm);
 }
 
 .loading-indicator {
   display: inline-flex;
   gap: var(--gm-space-md);
   padding: var(--gm-space-md) var(--gm-space-lg);
-  border: 1px solid var(--gm-border-accent);
-  border-radius: 999px;
+  border: 1px solid var(--gm-border);
+  border-radius: var(--gm-radius-full);
   background: var(--gm-surface-overlay);
   color: var(--gm-text);
   box-shadow: var(--gm-shadow-sm);
@@ -79,7 +79,7 @@
   height: 18px;
   border: 2px solid var(--gm-spinner-track-light);
   border-top-color: var(--gm-accent);
-  border-radius: 999px;
+  border-radius: var(--gm-radius-full);
   animation: graph-button-spin 0.82s linear infinite;
 }
 
@@ -126,7 +126,7 @@ svg:active {
 }
 
 text {
-  font-size: 11px;
+  font-size: var(--gm-text-xs);
   pointer-events: none;
   fill: var(--gm-graph-text);
   text-shadow:
@@ -155,14 +155,14 @@ text {
   user-select: text;
   z-index: 20;
   padding: var(--gm-space-md);
-  border-radius: 16px;
+  border-radius: var(--gm-radius-lg);
   border: 1px solid var(--gm-border-strong);
   background: var(--gm-surface-overlay);
   color: var(--gm-text);
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-relaxed);
   box-shadow: var(--gm-shadow-overlay);
-  backdrop-filter: blur(14px);
+  backdrop-filter: var(--gm-blur-md);
 }
 
 #tooltip.visible {
@@ -172,7 +172,7 @@ text {
 #tooltip h3 {
   margin: 0 0 var(--gm-space-xs);
   color: var(--gm-text);
-  font-size: 15px;
+  font-size: var(--gm-text-lg);
   overflow-wrap: anywhere;
 }
 
@@ -188,8 +188,8 @@ text {
   border-radius: var(--gm-radius-sm);
   background: var(--gm-surface-inset);
   color: var(--gm-text-secondary);
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-normal);
   white-space: pre-wrap;
 }
 
@@ -200,8 +200,8 @@ text {
   overflow: auto;
   margin: 0;
   padding: var(--gm-space-lg) var(--gm-space-xl) var(--gm-space-xl);
-  font-size: 13px;
-  line-height: 1.55;
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-relaxed);
   color: var(--gm-text-secondary);
   background: var(--gm-surface-elevated);
 }
@@ -242,20 +242,20 @@ text {
   max-height: 72%;
   overflow-y: auto;
   padding: var(--gm-space-md);
-  border-radius: 18px;
+  border-radius: var(--gm-radius-lg);
   border: 1px solid var(--gm-border);
   background: var(--gm-surface-overlay-translucent);
   color: var(--gm-text);
-  font-size: 13px;
+  font-size: var(--gm-text-sm);
   box-shadow: var(--gm-shadow-sm);
-  backdrop-filter: blur(14px);
+  backdrop-filter: var(--gm-blur-md);
 }
 
 .legend-swatch {
-  width: 11px;
-  height: 11px;
+  width: var(--gm-text-xs);
+  height: var(--gm-text-xs);
   flex: 0 0 auto;
-  border-radius: 999px;
+  border-radius: var(--gm-radius-full);
   box-shadow: 0 0 0 1px var(--gm-border-subtle);
 }
 
@@ -277,8 +277,8 @@ text {
   align-items: center;
   margin-top: var(--gm-space-xs);
   cursor: pointer;
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-normal);
 }
 
 .child-filter-item {

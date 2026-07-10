@@ -822,6 +822,14 @@ void test("getBatchScopeMetadata is faster than individual getScopeMetadata call
 
     const scopeIds = scopes.map((s) => s.id);
 
+    // Warm both call paths symmetrically so the measurement compares steady-state
+    // retrieval rather than charging runtime compilation only to the batch path.
+    const warmupScopeIds = scopeIds.slice(0, 100);
+    tracker.getBatchScopeMetadata(warmupScopeIds);
+    for (const scopeId of warmupScopeIds) {
+        tracker.getScopeMetadata(scopeId);
+    }
+
     // Batch retrieval
     const batchStart = performance.now();
     const batchResult = tracker.getBatchScopeMetadata(scopeIds);

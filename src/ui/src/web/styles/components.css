@@ -15,7 +15,7 @@
 .gm-card__heading {
   margin: 0 0 var(--gm-space-md);
   font-size: var(--gm-text-lg);
-  font-weight: 700;
+  font-weight: var(--gm-weight-bold);
   color: var(--gm-text);
   line-height: var(--gm-leading-tight);
 }
@@ -42,8 +42,8 @@
   background: var(--gm-surface-muted);
   color: var(--gm-text-secondary);
   font-size: var(--gm-text-xs);
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-weight: var(--gm-weight-bold);
+  letter-spacing: var(--gm-letter-spacing-wide);
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -83,7 +83,7 @@
   background: var(--gm-bg-muted);
   color: var(--gm-text-secondary);
   font-size: var(--gm-text-sm);
-  font-weight: 800;
+  font-weight: var(--gm-weight-extrabold);
   white-space: nowrap;
 }
 
@@ -139,8 +139,8 @@ gm-status-chip {
   background: var(--gm-bg-muted);
   color: var(--gm-text-secondary);
   font-size: var(--gm-text-sm);
-  font-weight: 800;
-  line-height: 1;
+  font-weight: var(--gm-weight-extrabold);
+  line-height: var(--gm-leading-none);
   white-space: nowrap;
 }
 
@@ -222,7 +222,7 @@ button:not([class]) {
   color: var(--gm-text-interactive);
   font-family: inherit;
   font-size: var(--gm-text-sm);
-  font-weight: 700;
+  font-weight: var(--gm-weight-bold);
   cursor: pointer;
   transition:
     background var(--gm-transition),
@@ -299,7 +299,7 @@ button:not([class]):disabled {
   background: var(--gm-surface-muted);
   color: var(--gm-text-secondary);
   font-size: var(--gm-text-sm);
-  font-weight: 700;
+  font-weight: var(--gm-weight-bold);
   cursor: pointer;
   transition:
     background var(--gm-transition),
@@ -342,7 +342,7 @@ button:not([class]):disabled {
   background: transparent;
   color: var(--gm-text-secondary);
   font-size: var(--gm-text-sm);
-  font-weight: 700;
+  font-weight: var(--gm-weight-bold);
   cursor: pointer;
   transition:
     background var(--gm-transition),
@@ -353,7 +353,7 @@ button:not([class]):disabled {
 
 .gm-btn--nav:hover:not(:disabled) {
   background: var(--gm-bg-hover);
-  border-color: var(--gm-border-muted);
+  border-color: var(--gm-border-subtle);
   color: var(--gm-text);
   transform: translateY(-1px);
 }
@@ -493,7 +493,7 @@ textarea {
   flex: 1 1 auto;
   min-height: var(--gm-height-xl);
   padding: var(--gm-space-sm) var(--gm-space-lg);
-  border: 1px solid var(--gm-border-accent);
+  border: 1px solid var(--gm-border);
   border-radius: var(--gm-radius-md);
   background: var(--gm-surface-inset);
   color: var(--gm-text);
@@ -526,7 +526,7 @@ select {
   min-height: var(--gm-height-xl);
   width: 100%;
   padding: 0 var(--gm-space-sm);
-  border: 1px solid var(--gm-border-accent);
+  border: 1px solid var(--gm-border);
   border-radius: var(--gm-radius-sm);
   background: var(--gm-surface-overlay);
   color: var(--gm-text);
@@ -676,8 +676,8 @@ select:focus-visible {
 
 .gm-hero__title-row h2 {
   margin: 0;
-  font-size: var(--gm-text-2xl);
-  font-weight: 700;
+  font-size: var(--gm-text-xl);
+  font-weight: var(--gm-weight-bold);
   color: var(--gm-text);
   line-height: var(--gm-leading-tight);
 }
@@ -716,8 +716,8 @@ select:focus-visible {
 
 .gm-title-block h2 {
   margin: 0 0 var(--gm-space-sm);
-  font-size: var(--gm-text-2xl);
-  font-weight: 700;
+  font-size: var(--gm-text-xl);
+  font-weight: var(--gm-weight-bold);
   color: var(--gm-text);
   line-height: var(--gm-leading-tight);
 }
@@ -732,10 +732,10 @@ select:focus-visible {
 /* ─── View selector ─────────────────────────────────────── */
 .gm-view-selector {
   display: flex;
-  background: var(--gm-bg-light);
+  background: var(--gm-bg-muted);
   gap: var(--gm-space-xs);
   padding: var(--gm-space-xs);
-  border: 1px solid var(--gm-border-muted);
+  border: 1px solid var(--gm-border-subtle);
   border-radius: var(--gm-radius-md);
 }
 
@@ -763,11 +763,11 @@ select:focus-visible {
 
 .gm-view-option {
   padding: var(--gm-space-xs) var(--gm-space-md);
-  border-radius: 9px;
+  border-radius: var(--gm-radius-sm);
   border: none;
   background: transparent;
   font-size: var(--gm-text-sm);
-  font-weight: 600;
+  font-weight: var(--gm-weight-semibold);
   color: var(--gm-text-subdued);
   cursor: pointer;
   transition: background var(--gm-transition), color var(--gm-transition);
@@ -810,20 +810,20 @@ select:focus-visible {
   align-items: center;
   gap: var(--gm-space-sm);
   font-size: var(--gm-text-sm);
-  font-weight: 700;
+  font-weight: var(--gm-weight-bold);
   color: var(--gm-text);
 }
 
 .gm-filter-reset {
   min-height: var(--gm-height-xl);
   padding: 0 var(--gm-space-md);
-  border: 1px solid var(--gm-border-accent);
+  border: 1px solid var(--gm-border);
   border-radius: var(--gm-radius-sm);
   background: var(--gm-surface-brand-subtle);
   color: var(--gm-text);
   font: inherit;
   font-size: var(--gm-text-sm);
-  font-weight: 700;
+  font-weight: var(--gm-weight-bold);
   cursor: pointer;
 }
 
@@ -891,7 +891,7 @@ select:focus-visible {
 
 .gm-search__label {
   font-size: var(--gm-text-sm);
-  font-weight: 700;
+  font-weight: var(--gm-weight-bold);
   color: var(--gm-text);
 }
 
@@ -916,13 +916,13 @@ select:focus-visible {
 .gm-search__clear {
   min-height: var(--gm-height-xl);
   padding: 0 var(--gm-space-lg);
-  border: 1px solid var(--gm-border-accent);
+  border: 1px solid var(--gm-border);
   border-radius: var(--gm-radius-md);
   background: var(--gm-surface-active);
   color: var(--gm-text);
   font: inherit;
   font-size: var(--gm-text-sm);
-  font-weight: 700;
+  font-weight: var(--gm-weight-bold);
   cursor: pointer;
   touch-action: manipulation;
   white-space: nowrap;
@@ -959,7 +959,7 @@ select:focus-visible {
   padding: var(--gm-space-sm) var(--gm-space-md);
   border-radius: var(--gm-radius-md);
   background: var(--gm-bg-muted);
-  border: 1px solid var(--gm-border-muted);
+  border: 1px solid var(--gm-border-subtle);
   font-size: var(--gm-text-sm);
   color: var(--gm-text-secondary);
   cursor: pointer;

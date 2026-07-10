@@ -38,11 +38,11 @@ main {
   left: -9999px;
   z-index: 9999;
   padding: var(--gm-space-md) var(--gm-space-lg);
-  border-radius: 0 0 14px 14px;
+  border-radius: 0 0 var(--gm-radius-md) var(--gm-radius-md);
   background: var(--gm-accent-strong);
-  color: #04101d;
+  color: var(--gm-action-primary-text);
   font-size: var(--gm-text-lg);
-  font-weight: 800;
+  font-weight: var(--gm-weight-extrabold);
   text-decoration: none;
 }
 

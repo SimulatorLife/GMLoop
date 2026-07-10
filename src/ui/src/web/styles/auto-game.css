@@ -226,7 +226,7 @@
 .auto-game-field-heading label {
   color: var(--gm-text);
   font-size: var(--gm-text-sm);
-  font-weight: 700;
+  font-weight: var(--gm-weight-bold);
 }
 
 .auto-game-field-heading span {
@@ -347,7 +347,7 @@
   min-height: var(--gm-height-xl);
   color: var(--gm-text-secondary);
   font-size: var(--gm-text-xs);
-  font-weight: 700;
+  font-weight: var(--gm-weight-bold);
   cursor: pointer;
 }
 

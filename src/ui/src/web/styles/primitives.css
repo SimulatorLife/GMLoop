@@ -43,13 +43,13 @@ gm-copy-button {
   gap: var(--gm-space-control-gap-tight);
   min-height: var(--gm-height-xl);
   padding: 0 var(--gm-space-md);
-  border: 1px solid var(--gm-border-accent);
+  border: 1px solid var(--gm-border);
   border-radius: var(--gm-radius-md);
   background: var(--gm-surface-active);
   color: var(--gm-text);
   font: inherit;
   font-size: var(--gm-text-sm);
-  font-weight: 700;
+  font-weight: var(--gm-weight-bold);
   cursor: pointer;
   touch-action: manipulation;
   white-space: nowrap;
