@@ -96,6 +96,7 @@ export interface RuntimeWrapperOptions {
     onChange?: RegistryChangeListener;
     maxUndoStackSize?: number;
     maxErrorHistorySize?: number;
+    maxPatchHistorySize?: number;
 }
 
 export interface RuntimeWrapperState {
@@ -107,6 +108,7 @@ export interface RuntimeWrapperState {
         validateBeforeApply: boolean;
         maxUndoStackSize: number;
         maxErrorHistorySize: number;
+        maxPatchHistorySize: number;
     };
 }
 

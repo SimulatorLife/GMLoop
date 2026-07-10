@@ -20,7 +20,11 @@ export type {
 } from "./logger.js";
 export { createChangeEventLogger, createLogger, LogLevels, parseLogLevel } from "./logger.js";
 export { testPatchInShadow } from "./patch-utils.js";
-export { DEFAULT_MAX_ERROR_HISTORY_SIZE, DEFAULT_MAX_UNDO_STACK_SIZE } from "./runtime-defaults.js";
+export {
+    DEFAULT_MAX_ERROR_HISTORY_SIZE,
+    DEFAULT_MAX_PATCH_HISTORY_SIZE,
+    DEFAULT_MAX_UNDO_STACK_SIZE
+} from "./runtime-defaults.js";
 export { createRuntimeWrapper } from "./runtime-wrapper.js";
 export { installScriptCallAdapter } from "./script-call-adapter.js";
 export type {

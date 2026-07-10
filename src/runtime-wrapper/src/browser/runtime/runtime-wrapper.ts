@@ -21,7 +21,11 @@ import {
     validatePatch,
     validatePatchDependencies
 } from "./patch-utils.js";
-import { DEFAULT_MAX_ERROR_HISTORY_SIZE, DEFAULT_MAX_UNDO_STACK_SIZE } from "./runtime-defaults.js";
+import {
+    DEFAULT_MAX_ERROR_HISTORY_SIZE,
+    DEFAULT_MAX_PATCH_HISTORY_SIZE,
+    DEFAULT_MAX_UNDO_STACK_SIZE
+} from "./runtime-defaults.js";
 import type {
     ApplyPatchResult,
     BatchApplyResult,
@@ -47,7 +51,8 @@ export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): Runti
         options: {
             validateBeforeApply: options.validateBeforeApply ?? false,
             maxUndoStackSize: options.maxUndoStackSize ?? DEFAULT_MAX_UNDO_STACK_SIZE,
-            maxErrorHistorySize: options.maxErrorHistorySize ?? DEFAULT_MAX_ERROR_HISTORY_SIZE
+            maxErrorHistorySize: options.maxErrorHistorySize ?? DEFAULT_MAX_ERROR_HISTORY_SIZE,
+            maxPatchHistorySize: options.maxPatchHistorySize ?? DEFAULT_MAX_PATCH_HISTORY_SIZE
         }
     };
 
@@ -79,6 +84,10 @@ export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): Runti
 
     function trimErrorHistory(): void {
         trimArrayToMaxSize(state.errorHistory, state.options.maxErrorHistorySize);
+    }
+
+    function trimPatchHistory(): void {
+        trimArrayToMaxSize(state.patchHistory, state.options.maxPatchHistorySize);
     }
 
     /**
@@ -134,6 +143,7 @@ export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): Runti
             action: "apply",
             durationMs
         });
+        trimPatchHistory();
     }
 
     /**
@@ -148,6 +158,7 @@ export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): Runti
             action: "rollback",
             error: errorMessage
         });
+        trimPatchHistory();
     }
 
     /**
@@ -169,6 +180,7 @@ export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): Runti
             action: "apply",
             durationMs
         });
+        trimPatchHistory();
 
         if (onPatchApplied) {
             onPatchApplied(patch, state.registry.version);
@@ -363,6 +375,7 @@ export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): Runti
             timestamp: Date.now(),
             action: "undo"
         });
+        trimPatchHistory();
 
         if (onChange) {
             onChange({
@@ -449,6 +462,7 @@ export function createRuntimeWrapper(options: RuntimeWrapperOptions = {}): Runti
                 action: "rollback",
                 error: message
             });
+            trimPatchHistory();
 
             if (onChange) {
                 onChange({
