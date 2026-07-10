@@ -14,7 +14,7 @@ import {
     RUNTIME_WRAPPER_ASSET_MANIFEST_FILE_NAME
 } from "./config.js";
 
-const { cloneObjectEntries, parseJsonWithContext } = Core;
+const { areNumbersApproximatelyEqual, cloneObjectEntries, parseJsonWithContext } = Core;
 
 interface RuntimeWrapperAssetManifestEntry {
     relativePath: string;
@@ -105,6 +105,32 @@ async function readRuntimeWrapperAssetManifest(manifestPath: string): Promise<Ru
     return parseRuntimeWrapperAssetManifest(manifestContents);
 }
 
+/**
+ * Compare two runtime wrapper asset manifests for equality.
+ *
+ * Manifest entries carry an `fs.stat()`-derived `mtimeMs`, which is a
+ * floating-point number whose precision depends on the underlying
+ * filesystem (Linux ext4 reports nanosecond precision, macOS APFS
+ * historically reported microsecond precision, and FAT-family volumes
+ * truncate to whole seconds). When the source tree is built on one
+ * platform and the persisted manifest is later compared against a fresh
+ * `fs.stat()` taken on a different surface — or after a `fs.cp` round
+ * trip that pins sub-millisecond rounding — the two `mtimeMs` values
+ * can drift by a few microseconds despite pointing at the same file.
+ *
+ * Strict `===` comparison falsely flagged those manifests as "changed",
+ * which forced `syncLiveReloadAssets` to recopy the entire runtime
+ * wrapper asset tree on every invocation in affected environments,
+ * triggering redundant hot-reload bootstrap work and re-injection of
+ * file-watcher events that downstream tooling treats as noise.
+ *
+ * `relativePath` and `size` remain compared with strict equality —
+ * `size` is an integer number of bytes and paths are canonical strings,
+ * so any drift in either field reflects a genuine change to the asset.
+ * Only `mtimeMs` tolerates a floating-point epsilon via
+ * {@link Core.areNumbersApproximatelyEqual}, mirroring the policy used
+ * by the semantic project-index cache validator.
+ */
 function areRuntimeWrapperAssetManifestsEqual(
     left: RuntimeWrapperAssetManifest,
     right: RuntimeWrapperAssetManifest
@@ -118,7 +144,7 @@ function areRuntimeWrapperAssetManifestsEqual(
         return (
             entry.relativePath === candidate.relativePath &&
             entry.size === candidate.size &&
-            entry.mtimeMs === candidate.mtimeMs
+            areNumbersApproximatelyEqual(entry.mtimeMs, candidate.mtimeMs)
         );
     });
 }
@@ -291,6 +317,7 @@ export const __test__ = Object.freeze({
     DEFAULT_RUNTIME_WRAPPER_DIST_ROOT,
     HOT_RELOAD_ASSET_MANIFEST_VERSION,
     LIVE_RELOAD_BOOTSTRAP_CONFIG_RELATIVE_PATH,
+    areRuntimeWrapperAssetManifestsEqual,
     parseRuntimeWrapperAssetManifest,
     collectRuntimeWrapperAssetManifestEntries,
     renderLiveReloadBootstrapConfigModule

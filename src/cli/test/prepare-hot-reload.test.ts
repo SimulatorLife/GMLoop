@@ -15,7 +15,7 @@ import {
 import { prepareLiveReload } from "../src/modules/live-reload/session.js";
 
 const HOT_RELOAD_ASSET_MANIFEST = path.join(".gml-hot-reload", "runtime-wrapper-assets.manifest.json");
-const { parseRuntimeWrapperAssetManifest } = liveReloadAssetTest;
+const { areRuntimeWrapperAssetManifestsEqual, parseRuntimeWrapperAssetManifest } = liveReloadAssetTest;
 
 async function createTempDir(prefix: string): Promise<string> {
     return fs.mkdtemp(path.join(os.tmpdir(), prefix));
@@ -290,6 +290,101 @@ void describe("runtime wrapper asset manifest parsing", () => {
         assert.deepEqual(parsed.entries, manifestPayload.entries);
     });
 });
+
+void describe("areRuntimeWrapperAssetManifestsEqual", () => {
+    // The tolerance window of `Core.areNumbersApproximatelyEqual` scales with the
+    // magnitude of the inputs (`EPSILON * max(1, |a|, |b|) * 4`). For an mtime
+    // value of ~1.7e12 (typical post-2024 milliseconds since epoch), the
+    // resulting window is on the order of a few microseconds — wide enough to
+    // mask filesystem-precision drift that previously forced redundant asset
+    // recopies, but narrow enough that genuine mtime changes still register.
+    const SAMPLE_MTIME_MS = 1_720_451_123_456;
+    // 1 nanosecond of drift is far inside the tolerance window for
+    // `SAMPLE_MTIME_MS` (the epsilon window is ~1.5µs at this magnitude).
+    // Strict `===` would treat this as unequal; the regression asserts that
+    // the new tolerance-aware comparison absorbs it, which is the failure
+    // mode the original strict-equality check suffered from after `fs.cp`
+    // round trips or cross-filesystem `fs.stat()` comparisons.
+    const NANOSECOND_DRIFT_MS = 1e-6;
+
+    void it("treats manifests with byte-identical mtimes as equal", () => {
+        const left = createManifest(SAMPLE_MTIME_MS);
+        const right = createManifest(SAMPLE_MTIME_MS);
+
+        assert.equal(areRuntimeWrapperAssetManifestsEqual(left, right), true);
+    });
+
+    void it("treats sub-microsecond mtime drift as equal (regression)", () => {
+        const left = createManifest(SAMPLE_MTIME_MS);
+        const right = createManifest(SAMPLE_MTIME_MS + NANOSECOND_DRIFT_MS);
+
+        assert.equal(
+            areRuntimeWrapperAssetManifestsEqual(left, right),
+            true,
+            "nanosecond-level mtime drift must not flip an asset manifest to 'changed'"
+        );
+    });
+
+    void it("detects mtime changes that exceed the tolerance window", () => {
+        // A 1 millisecond shift on an mtime of ~1.7e12 is several orders of
+        // magnitude larger than the epsilon window (~1.5µs at this magnitude),
+        // so the helper must still report the manifests as unequal — otherwise
+        // we would silently skip recopying assets that legitimately changed.
+        const left = createManifest(SAMPLE_MTIME_MS);
+        const right = createManifest(SAMPLE_MTIME_MS + 1);
+
+        assert.equal(areRuntimeWrapperAssetManifestsEqual(left, right), false);
+    });
+
+    void it("rejects manifests whose entry count differs", () => {
+        const left = createManifest(SAMPLE_MTIME_MS);
+        const right = { version: 3, entries: [] };
+
+        assert.equal(areRuntimeWrapperAssetManifestsEqual(left, right), false);
+    });
+
+    void it("rejects manifests whose version differs", () => {
+        const left = createManifest(SAMPLE_MTIME_MS);
+        const right = { version: 2, entries: [...left.entries] };
+
+        assert.equal(areRuntimeWrapperAssetManifestsEqual(left, right), false);
+    });
+
+    void it("detects size changes while ignoring harmless mtime drift", () => {
+        // `size` is an integer byte count from `fs.stat`, so any difference
+        // reflects real content change and must short-circuit the comparison.
+        // The unchanged mtime confirms the drift-tolerance path is still
+        // engaged for unrelated entries within the same manifest.
+        const left = createManifest(SAMPLE_MTIME_MS);
+        const right = { version: 3, entries: [{ ...left.entries[0], size: 8192 }] };
+
+        assert.equal(areRuntimeWrapperAssetManifestsEqual(left, right), false);
+    });
+
+    void it("detects path changes while ignoring harmless mtime drift", () => {
+        const left = createManifest(SAMPLE_MTIME_MS);
+        const right = {
+            version: 3,
+            entries: [{ ...left.entries[0], relativePath: "src/browser/runtime/index.js" }]
+        };
+
+        assert.equal(areRuntimeWrapperAssetManifestsEqual(left, right), false);
+    });
+});
+
+// Build a single-entry manifest with the given mtime so each test can mutate
+// just the field under test. `size` and `relativePath` are kept stable because
+// the comparison must keep their strict-equality semantics (size is an
+// integer byte count; relativePath is a canonical string).
+function createManifest(mtimeMs: number): {
+    version: number;
+    entries: Array<{ relativePath: string; size: number; mtimeMs: number }>;
+} {
+    return {
+        version: 3,
+        entries: [{ relativePath: "src/browser/index.js", size: 4096, mtimeMs }]
+    };
+}
 
 void describe("live-reload prepare command", () => {
     void it("exposes defaults for temp root and websocket port", () => {
