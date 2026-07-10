@@ -37,24 +37,10 @@ export function mapBinaryOperator(operatorToken: string): string {
 }
 
 /**
- * Maps GML unary operators to their JavaScript equivalents.
- *
- * Most unary operators are the same in both languages, but GML's `not`
- * operator must be converted to JavaScript's `!`.
- *
- * @param operatorToken - The GML unary operator to map
- * @returns The equivalent JavaScript operator
- *
- * @example
- * ```typescript
- * mapUnaryOperator("not") // → "!"
- * mapUnaryOperator("-")   // → "-" (passthrough)
- * mapUnaryOperator("~")   // → "~" (passthrough)
- * ```
+ * Most unary operators are the same in both languages.
+ * Both GML and JavaScript do **not** support `not`
+ * as a built-in logical operator, only `!`.
  */
-export function mapUnaryOperator(operatorToken: string): string {
-    return operatorToken === "not" ? "!" : operatorToken;
-}
 
 const BINARY_OPERATOR_MAPPINGS: Readonly<Record<string, string>> = Object.freeze({
     mod: "%",

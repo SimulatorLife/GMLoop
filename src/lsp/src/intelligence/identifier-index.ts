@@ -496,6 +496,16 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         abortActiveBuild(resolvedRoot);
     }
 
+    function saveIndexCacheToDisk(resolvedRoot: string, index: NavigationIndex): void {
+        void Semantic.saveProjectIndexCache(
+            {
+                projectRoot: resolvedRoot,
+                projectIndex: index.rawIndex
+            },
+            fsFacade as any
+        ).catch(() => {});
+    }
+
     function invalidateKnownDocumentRoots(document: GmlTextDocument): void {
         const resolvedUri = document.uri;
         documentVersions.set(resolvedUri, readDocumentVersion(resolvedUri) + 1);
@@ -555,13 +565,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                     }
                     staleStates.delete(resolvedRoot);
 
-                    void Semantic.saveProjectIndexCache(
-                        {
-                            projectRoot: resolvedRoot,
-                            projectIndex: fullState.index.rawIndex
-                        },
-                        fsFacade as any
-                    ).catch(() => {});
+                    saveIndexCacheToDisk(resolvedRoot, fullState.index);
 
                     return cachedStates.get(resolvedRoot) ?? fullState;
                 }
@@ -816,13 +820,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                     cachedStates.set(resolvedRoot, state);
                     staleStates.delete(resolvedRoot);
 
-                    void Semantic.saveProjectIndexCache(
-                        {
-                            projectRoot: resolvedRoot,
-                            projectIndex: state.index.rawIndex
-                        },
-                        fsFacade as any
-                    ).catch(() => {});
+                    saveIndexCacheToDisk(resolvedRoot, state.index);
 
                     return state;
                 }

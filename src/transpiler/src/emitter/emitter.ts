@@ -62,7 +62,7 @@ import { lowerEnumDeclaration } from "./enum-lowering.js";
 import { escapeTemplateText, stringifyStructKey } from "./js-string-utils.js";
 import { normalizeGmlNumericLiteral } from "./literal-normalization.js";
 import { collectGlobalVarNames } from "./local-variable-collector.js";
-import { mapBinaryOperator, mapUnaryOperator } from "./operator-mapping.js";
+import { mapBinaryOperator } from "./operator-mapping.js";
 import { ensureStatementTerminated } from "./statement-termination-policy.js";
 import { StringBuilder } from "./string-builder.js";
 import {
@@ -443,7 +443,7 @@ export class GmlToJsEmitter {
         }
         // Fall back to runtime evaluation
         const operand = this.visit(ast.argument);
-        const op = mapUnaryOperator(ast.operator);
+        const op = ast.operator;
         if (isLiteralNode(ast.argument)) {
             return `${op}${operand}`;
         }

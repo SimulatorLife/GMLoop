@@ -171,7 +171,7 @@ export function createNormalizeOperatorAliasesRule(definition: GmlRuleDefinition
     return Object.freeze({
         meta: createMeta(definition, {
             messageText:
-                "Use canonical GML operators (e.g. `&&`, `||`, `!`) instead of legacy operator aliases (e.g. `and`, `or`, `not`)."
+                "Use symbol GML operators (e.g. `&&`, `||`, `^^`) instead of operator aliases (e.g. `and`, `or`, `xor`)."
         }),
         create(context) {
             const declaredMacroNames = collectDeclaredMacroNames(context.sourceCode.text);

@@ -31,7 +31,7 @@ import { findPreviousNonWhitespaceIndex } from "../rule-base-helpers.js";
 export type LogicalFlowSignalPatterns = Readonly<{
     /**
      * Matches any character or keyword that signals logical syntax
-     * (e.g., `&&`, `||`, `!`, `and`, `or`, `not`).
+     * (e.g., `&&`, `||`, `^^`, `and`, `or`, `xor`).
      */
     logicalNormalizationSignal: RegExp;
     /**
@@ -44,11 +44,11 @@ export type LogicalFlowSignalPatterns = Readonly<{
 /**
  * Default signal patterns for logical-flow candidate detection.  The set of
  * recognised operators is the GML canonical logical vocabulary: the C-style
- * symbolic forms (`&&`, `||`, `!`) plus their keyword aliases (`and`, `or`,
- * `not`) and the boolean literals (`true`, `false`).
+ * symbolic forms (`&&`, `||`, `^^`) plus their keyword aliases (`and`, `or`,
+ * `xor`) and the boolean literals (`true`, `false`).
  */
 export const DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS: LogicalFlowSignalPatterns = Object.freeze({
-    logicalNormalizationSignal: /&&|\|\||!|\b(?:and|or|not|true|false)\b/u,
+    logicalNormalizationSignal: /&&|\|\||\^\^|\b(?:and|or|xor|true|false)\b/u,
     commentSequence: /\/\/|\/\*/u
 });
 

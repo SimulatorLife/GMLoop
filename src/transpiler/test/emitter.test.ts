@@ -137,7 +137,7 @@ void test("GmlToJsEmitter emits escaped literals for folded strings with control
     assert.equal(result, String.raw`value = "line\nnext\t\"quoted\"";`);
 });
 
-// Individual operator-mapping assertions (mapBinaryOperator / mapUnaryOperator) are
+// Individual operator-mapping assertions (mapBinaryOperator) are
 // exhaustively covered by operator-mapping.test.ts, which tests every GML→JS mapping
 // including edge cases, unknown operators, and all unary operators. Only the integration
 // test below — which exercises the full emitter pipeline — is kept here.

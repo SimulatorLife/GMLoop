@@ -106,22 +106,6 @@ type SemanticProjectIndex = {
     files?: Record<string, unknown>;
 };
 
-async function buildProjectIndexWithParseTolerance(
-    projectRoot: string,
-    fsFacade: typeof Core.defaultFsFacade | undefined,
-    verbose: boolean
-): Promise<Awaited<ReturnType<typeof buildProjectIndex>>> {
-    const baseParser = Semantic.getDefaultProjectIndexParser();
-    const tolerantParser = Semantic.createTolerantProjectIndexParser(baseParser, (filePath, errorMessage) => {
-        console.warn(`Warning: Skipping parse-invalid file during refactor indexing: ${filePath} (${errorMessage})`);
-    });
-
-    return await buildProjectIndex(projectRoot, fsFacade, {
-        logger: verbose ? console : undefined,
-        parseGml: tolerantParser
-    });
-}
-
 async function getOrBuildProjectIndex(
     projectRoot: string,
     verbose: boolean,
@@ -719,23 +703,76 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
                     if (verbose) {
                         console.log(`Rebuilding project index after codemod ${summary.id}...`);
                     }
-                    const updatedProjectIndex = await buildProjectIndexWithParseTolerance(
-                        projectRoot,
-                        {
-                            ...Core.defaultFsFacade,
-                            readFile: async (filePath) => {
-                                const content = await context.readFile(filePath);
-                                return content ?? (await readFile(resolvePath(filePath), "utf8"));
-                            }
-                        },
-                        verbose
+
+                    const baseParser = Semantic.getDefaultProjectIndexParser();
+                    const tolerantParser = Semantic.createTolerantProjectIndexParser(
+                        baseParser,
+                        (filePath, errorMessage) => {
+                            console.warn(
+                                `Warning: Skipping parse-invalid file during refactor indexing: ${filePath} (${errorMessage})`
+                            );
+                        }
                     );
 
-                    // Access the underlying GmlSemanticBridge and update it directly
+                    const customFsFacade = {
+                        ...Core.defaultFsFacade,
+                        readFile: async (filePath: string) => {
+                            try {
+                                const content = await context.readFile(filePath);
+                                if (content !== undefined && content !== null) {
+                                    return content;
+                                }
+                            } catch {
+                                // Ignore and fall through
+                            }
+                            try {
+                                return await readFile(path.resolve(projectRoot, filePath), "utf8");
+                            } catch {
+                                return "";
+                            }
+                        }
+                    };
+
                     const semanticBridge = engine.semantic as GmlSemanticBridge;
-                    if (semanticBridge && typeof semanticBridge.updateProjectIndex === "function") {
-                        semanticBridge.updateProjectIndex(updatedProjectIndex);
+                    const initialProjectIndex = (semanticBridge as any).projectIndex;
+                    let currentProjectIndex: any;
+
+                    if (
+                        initialProjectIndex &&
+                        initialProjectIndex.files &&
+                        Object.keys(initialProjectIndex.files).length > 0
+                    ) {
+                        currentProjectIndex = await summary.changedFiles.reduce(async (promiseChain, changedFile) => {
+                            const previousIndex = await promiseChain;
+                            const absPath = path.resolve(projectRoot, changedFile);
+                            return await Semantic.buildProjectIndex(projectRoot, customFsFacade, {
+                                logger: verbose ? console : undefined,
+                                parseGml: tolerantParser,
+                                incremental: {
+                                    existingIndex: previousIndex,
+                                    changedFile: absPath
+                                }
+                            });
+                        }, Promise.resolve(initialProjectIndex));
+                    } else {
+                        currentProjectIndex = await Semantic.buildProjectIndex(projectRoot, customFsFacade, {
+                            logger: verbose ? console : undefined,
+                            parseGml: tolerantParser
+                        });
                     }
+
+                    if (semanticBridge && typeof semanticBridge.updateProjectIndex === "function") {
+                        semanticBridge.updateProjectIndex(currentProjectIndex);
+                    }
+
+                    // Save the updated index back to the `.gmloop/project-index-cache.json` disk cache
+                    void Semantic.saveProjectIndexCache(
+                        {
+                            projectRoot,
+                            projectIndex: currentProjectIndex
+                        },
+                        Core.defaultFsFacade as any
+                    ).catch(() => {});
                 }
             }
         });
@@ -749,6 +786,17 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
         if (dryRun) {
             console.log("\n[DRY RUN] No files were modified.");
         } else {
+            // Save the final updated index back to the `.gmloop/project-index-cache.json` disk cache
+            const semanticBridge = engine.semantic as GmlSemanticBridge;
+            if (semanticBridge && (semanticBridge as any).projectIndex) {
+                await Semantic.saveProjectIndexCache(
+                    {
+                        projectRoot,
+                        projectIndex: (semanticBridge as any).projectIndex
+                    },
+                    Core.defaultFsFacade as any
+                ).catch(() => {});
+            }
             console.log("\nSuccess! Configured codemods applied.");
         }
     } finally {
