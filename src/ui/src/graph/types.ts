@@ -397,8 +397,25 @@ export type GraphVisualizationMcpToolCatalogEntry = Readonly<{
     internal?: boolean;
 }>;
 
+export type GraphVisualizationLspToolCatalogField = Readonly<{
+    description: string;
+    name: string;
+    required: boolean;
+    type: string;
+    default?: unknown;
+    choices?: ReadonlyArray<string>;
+}>;
+
+export type GraphVisualizationLspToolCatalogEntry = Readonly<{
+    description: string;
+    displayName: string;
+    fields: ReadonlyArray<GraphVisualizationLspToolCatalogField>;
+    name: string;
+}>;
+
 export type GraphVisualizationDocumentationCatalogs = Readonly<{
     cliCommands: ReadonlyArray<GraphVisualizationCliCatalogEntry>;
+    lspTools?: ReadonlyArray<GraphVisualizationLspToolCatalogEntry>;
     mcpServer: Readonly<{
         name: string;
         version: string;

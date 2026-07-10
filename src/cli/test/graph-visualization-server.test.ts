@@ -770,6 +770,7 @@ void test("graph visualization server initializes and toggles project Auto-Game 
     let initializationInput: Readonly<{
         agentTargets: ReadonlyArray<"codex" | "gemini" | "qwen">;
         includeGitIgnore: boolean;
+        includeVSCode: boolean;
     }> | null = null;
     let toggleInput: Readonly<{ enabled: boolean; name: string }> | null = null;
     await withGraphVisualizationServer(
@@ -793,20 +794,24 @@ void test("graph visualization server initializes and toggles project Auto-Game 
         },
         async (handle) => {
             const initResponse = await fetch(`${handle.url}/api/auto-game/agent-pack/init`, {
-                body: JSON.stringify({ agentTargets: ["qwen"], includeGitIgnore: false }),
+                body: JSON.stringify({ agentTargets: ["qwen"], includeGitIgnore: false, includeVSCode: true }),
                 headers: { "Content-Type": "application/json" },
                 method: "POST"
             });
             assert.equal(initResponse.status, 200);
             assert.equal(initialized, 1);
-            assert.deepEqual(initializationInput, { agentTargets: ["qwen"], includeGitIgnore: false });
+            assert.deepEqual(initializationInput, {
+                agentTargets: ["qwen"],
+                includeGitIgnore: false,
+                includeVSCode: true
+            });
 
             const defaultInitResponse = await fetch(`${handle.url}/api/auto-game/agent-pack/init`, {
                 method: "POST"
             });
             assert.equal(defaultInitResponse.status, 200);
             assert.equal(initialized, 2);
-            assert.deepEqual(initializationInput, { agentTargets: [], includeGitIgnore: true });
+            assert.deepEqual(initializationInput, { agentTargets: [], includeGitIgnore: true, includeVSCode: false });
 
             const invalidInitResponse = await fetch(`${handle.url}/api/auto-game/agent-pack/init`, {
                 body: JSON.stringify({ includeGitIgnore: "yes" }),
@@ -814,6 +819,14 @@ void test("graph visualization server initializes and toggles project Auto-Game 
                 method: "POST"
             });
             assert.equal(invalidInitResponse.status, 400);
+            assert.equal(initialized, 2);
+
+            const invalidVSCodeInitResponse = await fetch(`${handle.url}/api/auto-game/agent-pack/init`, {
+                body: JSON.stringify({ includeVSCode: "yes" }),
+                headers: { "Content-Type": "application/json" },
+                method: "POST"
+            });
+            assert.equal(invalidVSCodeInitResponse.status, 400);
             assert.equal(initialized, 2);
 
             const invalidAgentTargetResponse = await fetch(`${handle.url}/api/auto-game/agent-pack/init`, {

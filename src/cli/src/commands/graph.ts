@@ -1,10 +1,11 @@
 import { type ChildProcessWithoutNullStreams, execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, type FSWatcher, watch, type WatchListener, type WatchOptions } from "node:fs";
+import { existsSync, type FSWatcher, readFileSync, watch, type WatchListener, type WatchOptions } from "node:fs";
 import { access, constants, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import vm from "node:vm";
 
 import { Core } from "@gmloop/core";
 import { Format } from "@gmloop/format";
@@ -2214,13 +2215,14 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             saveConfig: ({ config }) => {
                 return writeActiveProjectConfig(config);
             },
-            initializeAutoGameAgentPack: async ({ agentTargets, includeGitIgnore }) => {
+            initializeAutoGameAgentPack: async ({ agentTargets, includeGitIgnore, includeVSCode }) => {
                 if (!activeContext) {
                     throw new Error("Open a GameMaker project before initializing the Auto-Game agent pack.");
                 }
                 const result = await AgentPack.initializeAgentPack(activeContext.projectRoot, {
                     agentTargets,
-                    includeGitIgnore
+                    includeGitIgnore,
+                    includeVSCode
                 });
                 await refreshActiveVisualizationArtifacts(activeContext);
                 markServeRevisionChanged();
@@ -2638,13 +2640,51 @@ export const __graphCommandTest__ = Object.freeze({
     startGraphVisualizationUiSourceWatcher,
     streamProcessOutputByLine
 });
+function loadLspToolsCatalogEntries() {
+    try {
+        const resolvedPath = fileURLToPath(import.meta.resolve("lsp-mcp-server"));
+        const code = readFileSync(resolvedPath, "utf8");
+        const match = code.match(/const TOOLS\s*=\s*(\[[\s\S]*?\]);\s*const toolHandlers/);
+        if (!match) {
+            return [];
+        }
+        const toolsString = match[1];
+        const rawTools = vm.runInNewContext(toolsString) as ReadonlyArray<any>;
+
+        return rawTools.map((rawTool) => {
+            const properties = rawTool.inputSchema?.properties ?? {};
+            const requiredFields = new Set<string>(rawTool.inputSchema?.required);
+            const fields = Object.entries(properties).map(([fieldName, prop]: [string, any]) => {
+                return Object.freeze({
+                    choices: Array.isArray(prop.enum) ? Object.freeze(prop.enum.map(String)) : undefined,
+                    default: prop.default,
+                    description: prop.description ?? "",
+                    name: fieldName,
+                    required: requiredFields.has(fieldName),
+                    type: prop.type ?? "string"
+                });
+            });
+            return Object.freeze({
+                description: rawTool.description ?? "",
+                displayName: rawTool.annotations?.title ?? rawTool.name,
+                fields: Object.freeze(fields),
+                name: rawTool.name
+            });
+        });
+    } catch {
+        return [];
+    }
+}
+
 function createDocumentationCatalogs() {
     const cliCommands = getCliCommandCatalog();
     const lintCatalogEntryById = new Map(listLintRuleCatalogEntries().map((entry) => [entry.ruleId, entry] as const));
     const semanticIndexCodemodIdSet = new Set(Refactor.listSemanticProjectIndexDependentCodemodIds());
+    const lspTools = loadLspToolsCatalogEntries();
 
     return Object.freeze({
         cliCommands,
+        lspTools,
         mcpServer: Object.freeze({
             name: "gmloop-mcp",
             version: "0.0.1"

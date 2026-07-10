@@ -143,6 +143,10 @@ void test("agent-pack init exposes the standard project path option", () => {
         true
     );
     assert.equal(
+        init.options.some((option) => option.long === "--vscode"),
+        true
+    );
+    assert.equal(
         init.options.some((option) => option.long === "--agents"),
         true
     );
@@ -166,6 +170,7 @@ void test("agent-pack init accepts an explicit yyp path and reports deterministi
                 added: Array<string>;
                 agentSetup: { configured: Array<string>; manualRequired: Array<string>; unavailable: Array<string> };
                 conflicts: Array<string>;
+                vscodeSetup: { enabled: boolean };
                 version: string;
             };
             projectRoot: string;
@@ -178,6 +183,7 @@ void test("agent-pack init accepts an explicit yyp path and reports deterministi
         );
         assert.deepEqual(payload.payload.conflicts, []);
         assert.deepEqual(payload.payload.agentSetup.configured, []);
+        assert.equal(payload.payload.vscodeSetup.enabled, false);
         assert.equal(payload.payload.version, await AgentPack.readAgentPackVersion());
         assert.equal(payload.payload.added.includes(".gitignore"), true);
     } finally {

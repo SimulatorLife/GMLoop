@@ -10,7 +10,8 @@ import {
     type AgentIntegrationSetupSummary,
     type AgentIntegrationTarget,
     configureSelectedAgentIntegrations,
-    discoverAgentIntegrationTargets
+    discoverAgentIntegrationTargets,
+    runAgentCliCommand
 } from "./agent-integrations.js";
 
 const AGENT_PACK_NAME = "@gmloop/agent-pack";
@@ -19,11 +20,20 @@ const AGENT_PACK_SKILLS_ROOT = path.join(AGENT_PACK_ROOT, "skills");
 const PROJECT_GUIDANCE_TEMPLATE_PATH = path.join(AGENT_PACK_ROOT, "templates", "project-agents.md");
 const PROJECT_GITIGNORE_TEMPLATE_PATH = path.join(AGENT_PACK_ROOT, "templates", "project-gitignore");
 const PROJECT_LSP_MCP_TEMPLATE_PATH = path.join(AGENT_PACK_ROOT, "templates", "project-lsp-mcp.json");
+const PROJECT_VSCODE_SETTINGS_TEMPLATE_PATH = path.join(AGENT_PACK_ROOT, "templates", "project-vscode-settings.json");
+const PROJECT_VSCODE_EXTENSIONS_TEMPLATE_PATH = path.join(
+    AGENT_PACK_ROOT,
+    "templates",
+    "project-vscode-extensions.json"
+);
 const PROJECT_RECEIPT_RELATIVE_PATH = ".gmloop/agent-pack.json";
 const PROJECT_SKILLS_RELATIVE_PATH = ".agents/skills";
 const PROJECT_GITIGNORE_RELATIVE_PATH = ".gitignore";
+const PROJECT_VSCODE_SETTINGS_RELATIVE_PATH = ".vscode/settings.json";
+const PROJECT_VSCODE_EXTENSIONS_RELATIVE_PATH = ".vscode/extensions.json";
 const PROJECT_GITIGNORE_SECTION_HEADING = "# GMLoop generated files";
 const GMLOOP_SKILL_NAME_PREFIX = "gmloop-";
+const GMLOOP_VSCODE_EXTENSION_ID = "gmloop.gmloop";
 const SYNCHRONIZATION_MANAGED_FILE = "managed-file" as const;
 
 /** Installation state for the agent pack in one GameMaker project. */
@@ -50,6 +60,16 @@ export type AgentPackInitializationResult = Readonly<{
     removed: ReadonlyArray<string>;
     unchanged: ReadonlyArray<string>;
     updated: ReadonlyArray<string>;
+    vscodeSetup: AgentPackVSCodeSetupSummary;
+}>;
+
+/** Result of optional VSCode project setup and extension installation. */
+export type AgentPackVSCodeSetupSummary = Readonly<{
+    enabled: boolean;
+    extensionInstall: Readonly<{
+        detail: string;
+        status: "failed" | "installed" | "skipped";
+    }>;
 }>;
 
 /** Options controlling optional project hygiene during agent-pack initialization. */
@@ -57,6 +77,7 @@ export type AgentPackInitializationOptions = Readonly<{
     agentTargets?: ReadonlyArray<AgentConfigTargetSelection>;
     commandRunner?: AgentCliCommandRunner;
     includeGitIgnore: boolean;
+    includeVSCode?: boolean;
 }>;
 
 /** Read-only packaged resource displayed by agent-pack consumers. */
@@ -295,6 +316,20 @@ async function readAgentPackResourceSources(): Promise<ReadonlyArray<AgentPackRe
         },
         {
             kind: "template",
+            packagePath: "templates/project-vscode-settings.json",
+            sourcePath: PROJECT_VSCODE_SETTINGS_TEMPLATE_PATH,
+            synchronization: "merge",
+            targetPath: PROJECT_VSCODE_SETTINGS_RELATIVE_PATH
+        },
+        {
+            kind: "template",
+            packagePath: "templates/project-vscode-extensions.json",
+            sourcePath: PROJECT_VSCODE_EXTENSIONS_TEMPLATE_PATH,
+            synchronization: "merge",
+            targetPath: PROJECT_VSCODE_EXTENSIONS_RELATIVE_PATH
+        },
+        {
+            kind: "template",
             packagePath: "templates/project-gitignore",
             sourcePath: PROJECT_GITIGNORE_TEMPLATE_PATH,
             synchronization: "merge",
@@ -334,6 +369,142 @@ async function writeProjectFile(projectRoot: string, packagedFile: PackagedProje
     const targetPath = resolveProjectFilePath(projectRoot, packagedFile.targetRelativePath);
     await mkdir(path.dirname(targetPath), { recursive: true });
     await writeFile(targetPath, packagedFile.contents);
+}
+
+function parseJsonObject(source: string, sourcePath: string): Record<string, unknown> {
+    const parsed: unknown = JSON.parse(source);
+    if (!isRecord(parsed)) {
+        throw new Error(`Expected a JSON object in ${sourcePath}`);
+    }
+    return { ...parsed };
+}
+
+async function mergeJsonObjectProjectFile(
+    projectRoot: string,
+    targetRelativePath: string,
+    templatePath: string
+): Promise<ProjectFileDisposition> {
+    const targetPath = resolveProjectFilePath(projectRoot, targetRelativePath);
+    const packagedObject = parseJsonObject(await readFile(templatePath, "utf8"), templatePath);
+    if (!(await pathExists(targetPath))) {
+        await mkdir(path.dirname(targetPath), { recursive: true });
+        await writeFile(targetPath, `${JSON.stringify(packagedObject, null, 2)}\n`, "utf8");
+        return Object.freeze({ kind: "added", targetRelativePath });
+    }
+
+    let existingObject: Record<string, unknown>;
+    try {
+        existingObject = parseJsonObject(await readFile(targetPath, "utf8"), targetPath);
+    } catch {
+        return Object.freeze({ kind: "conflict", targetRelativePath });
+    }
+    let changed = false;
+    for (const [key, value] of Object.entries(packagedObject)) {
+        if (existingObject[key] === undefined) {
+            existingObject[key] = value;
+            changed = true;
+        }
+    }
+
+    if (!changed) {
+        return Object.freeze({ kind: "unchanged", targetRelativePath });
+    }
+
+    await writeFile(targetPath, `${JSON.stringify(existingObject, null, 2)}\n`, "utf8");
+    return Object.freeze({ kind: "updated", targetRelativePath });
+}
+
+function normalizeStringArray(value: unknown): ReadonlyArray<string> {
+    return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+}
+
+async function mergeVSCodeExtensionsProjectFile(projectRoot: string): Promise<ProjectFileDisposition> {
+    const targetPath = resolveProjectFilePath(projectRoot, PROJECT_VSCODE_EXTENSIONS_RELATIVE_PATH);
+    const packagedObject = parseJsonObject(
+        await readFile(PROJECT_VSCODE_EXTENSIONS_TEMPLATE_PATH, "utf8"),
+        PROJECT_VSCODE_EXTENSIONS_TEMPLATE_PATH
+    );
+    const packagedRecommendations = normalizeStringArray(packagedObject.recommendations);
+
+    if (!(await pathExists(targetPath))) {
+        await mkdir(path.dirname(targetPath), { recursive: true });
+        await writeFile(
+            targetPath,
+            `${JSON.stringify({ recommendations: packagedRecommendations }, null, 2)}\n`,
+            "utf8"
+        );
+        return Object.freeze({ kind: "added", targetRelativePath: PROJECT_VSCODE_EXTENSIONS_RELATIVE_PATH });
+    }
+
+    let existingObject: Record<string, unknown>;
+    try {
+        existingObject = parseJsonObject(await readFile(targetPath, "utf8"), targetPath);
+    } catch {
+        return Object.freeze({ kind: "conflict", targetRelativePath: PROJECT_VSCODE_EXTENSIONS_RELATIVE_PATH });
+    }
+    const recommendations = normalizeStringArray(existingObject.recommendations);
+    const mergedRecommendations = [...recommendations];
+    for (const recommendation of packagedRecommendations) {
+        if (!mergedRecommendations.includes(recommendation)) {
+            mergedRecommendations.push(recommendation);
+        }
+    }
+
+    if (mergedRecommendations.length === recommendations.length) {
+        return Object.freeze({ kind: "unchanged", targetRelativePath: PROJECT_VSCODE_EXTENSIONS_RELATIVE_PATH });
+    }
+
+    await writeFile(
+        targetPath,
+        `${JSON.stringify({ ...existingObject, recommendations: mergedRecommendations }, null, 2)}\n`,
+        "utf8"
+    );
+    return Object.freeze({ kind: "updated", targetRelativePath: PROJECT_VSCODE_EXTENSIONS_RELATIVE_PATH });
+}
+
+async function setupProjectVSCodeFiles(projectRoot: string): Promise<ReadonlyArray<ProjectFileDisposition>> {
+    return Object.freeze([
+        await mergeJsonObjectProjectFile(
+            projectRoot,
+            PROJECT_VSCODE_SETTINGS_RELATIVE_PATH,
+            PROJECT_VSCODE_SETTINGS_TEMPLATE_PATH
+        ),
+        await mergeVSCodeExtensionsProjectFile(projectRoot)
+    ]);
+}
+
+async function installVSCodeExtension(
+    projectRoot: string,
+    commandRunner: AgentCliCommandRunner
+): Promise<AgentPackVSCodeSetupSummary["extensionInstall"]> {
+    const result = await commandRunner("code", ["--install-extension", GMLOOP_VSCODE_EXTENSION_ID], {
+        cwd: projectRoot
+    });
+    if (result.exitCode === 0) {
+        return Object.freeze({
+            detail: `Installed VSCode extension '${GMLOOP_VSCODE_EXTENSION_ID}'.`,
+            status: "installed"
+        });
+    }
+
+    const details = [result.stderr.trim(), result.stdout.trim()].filter((line) => line.length > 0).join("\n");
+    return Object.freeze({
+        detail:
+            details.length > 0
+                ? details
+                : `Unable to install VSCode extension '${GMLOOP_VSCODE_EXTENSION_ID}' with the 'code' CLI.`,
+        status: "failed"
+    });
+}
+
+function createSkippedVSCodeSetupSummary(): AgentPackVSCodeSetupSummary {
+    return Object.freeze({
+        enabled: false,
+        extensionInstall: Object.freeze({
+            detail: "VSCode setup was not requested.",
+            status: "skipped"
+        })
+    });
 }
 
 function normalizeGitIgnoreDirectoryPattern(line: string): string | null {
@@ -547,9 +718,22 @@ export async function initializeAgentPack(
     const gitIgnoreDisposition = options.includeGitIgnore
         ? await synchronizeProjectGitIgnore(resolvedProjectRoot)
         : null;
+    const vscodeFileDispositions =
+        options.includeVSCode === true ? await setupProjectVSCodeFiles(resolvedProjectRoot) : [];
+    const vscodeSetup: AgentPackVSCodeSetupSummary =
+        options.includeVSCode === true
+            ? Object.freeze({
+                  enabled: true,
+                  extensionInstall: await installVSCodeExtension(
+                      resolvedProjectRoot,
+                      options.commandRunner ?? runAgentCliCommand
+                  )
+              })
+            : createSkippedVSCodeSetupSummary();
     const dispositions = [
         ...synchronizedFiles,
         ...obsoleteFiles.filter((result) => result !== null),
+        ...vscodeFileDispositions,
         ...(gitIgnoreDisposition === null ? [] : [gitIgnoreDisposition])
     ];
     const pathsForDisposition = (kind: ProjectFileDisposition["kind"]): ReadonlyArray<string> =>
@@ -588,12 +772,14 @@ export async function initializeAgentPack(
             removed.length > 0 ||
             updated.length > 0 ||
             agentIntegrationResult.setup.configured.length > 0 ||
+            vscodeSetup.extensionInstall.status === "installed" ||
             !agentPackReceiptsMatch(previousReceipt, receipt),
         conflicts: Object.freeze(sortedConflicts),
         projectRoot: resolvedProjectRoot,
         removed: Object.freeze(removed),
         unchanged: Object.freeze(unchanged),
-        updated: Object.freeze(updated)
+        updated: Object.freeze(updated),
+        vscodeSetup
     });
 }
 

@@ -322,9 +322,9 @@ export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
             },
             onStartLiveReload: () => startLiveReloadFromServer(),
             onStopLiveReload: () => stopLiveReloadFromServer(),
-            onInitializeAutoGameAgentPack: async ({ agentTargets, includeGitIgnore }) => {
+            onInitializeAutoGameAgentPack: async ({ agentTargets, includeGitIgnore, includeVSCode }) => {
                 const response = await fetch("/api/auto-game/agent-pack/init", {
-                    body: JSON.stringify({ agentTargets, includeGitIgnore }),
+                    body: JSON.stringify({ agentTargets, includeGitIgnore, includeVSCode }),
                     headers: { "Content-Type": "application/json" },
                     method: "POST"
                 });

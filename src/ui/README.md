@@ -209,7 +209,7 @@ Observability is driven by host-provided state. Dispatched events for skill conf
 - `onInitializeAutoGameAgentPack`
 - `onSetAutoGameSkillEnabled`
 
-`onInitializeAutoGameAgentPack` receives `{ agentTargets: readonly ("codex" | "gemini" | "qwen")[], includeGitIgnore: boolean }`, matching the selected provider CLI targets and initialization checkbox.
+`onInitializeAutoGameAgentPack` receives `{ agentTargets: readonly ("codex" | "gemini" | "qwen")[], includeGitIgnore: boolean, includeVSCode: boolean }`, matching the selected provider CLI targets and initialization checkboxes.
 
 ## Live Reload Surface
 

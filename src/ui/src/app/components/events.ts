@@ -35,5 +35,6 @@ export type GraphUiTriggerFixDetail = Readonly<{ workflow: GraphVisualizationPro
 export type GraphUiInitializeAutoGameAgentPackDetail = Readonly<{
     agentTargets: ReadonlyArray<"codex" | "gemini" | "qwen">;
     includeGitIgnore: boolean;
+    includeVSCode: boolean;
 }>;
 export type GraphUiSetAutoGameSkillEnabledDetail = Readonly<{ enabled: boolean; name: string }>;

@@ -80,8 +80,8 @@ void test("agent pack exposes every packaged template and skill for read-only pr
     ]);
 
     assert.deepEqual(
-        resources.slice(0, 3).map((resource) => resource.targetPath),
-        ["AGENTS.md", ".lsp-mcp.json", ".gitignore"]
+        resources.slice(0, 5).map((resource) => resource.targetPath),
+        ["AGENTS.md", ".lsp-mcp.json", ".vscode/settings.json", ".vscode/extensions.json", ".gitignore"]
     );
     assert.deepEqual(
         resources.filter((resource) => resource.kind === "skill").map((resource) => resource.targetPath),
@@ -95,8 +95,12 @@ void test("agent pack exposes every packaged template and skill for read-only pr
     assert.match(resources[0]?.content ?? "", /# Autonomous Game Development Guidance/u);
     assert.equal(resources[1]?.packagePath, "templates/project-lsp-mcp.json");
     assert.match(resources[1]?.content ?? "", /gmloop/u);
-    assert.equal(resources[2]?.packagePath, "templates/project-gitignore");
-    assert.match(resources[2]?.content ?? "", /\.gmloop\//u);
+    assert.equal(resources[2]?.packagePath, "templates/project-vscode-settings.json");
+    assert.match(resources[2]?.content ?? "", /gmloop\.serverPath/u);
+    assert.equal(resources[3]?.packagePath, "templates/project-vscode-extensions.json");
+    assert.match(resources[3]?.content ?? "", /gmloop\.gmloop/u);
+    assert.equal(resources[4]?.packagePath, "templates/project-gitignore");
+    assert.match(resources[4]?.content ?? "", /\.gmloop\//u);
 });
 
 void test("agent integration discovery classifies Qwen CLI setup and manual provider configs", async () => {
@@ -293,6 +297,126 @@ void test("agent pack initialization leaves gitignore untouched when disabled", 
         assert.equal(result.added.includes(".gitignore"), false);
         assert.equal(result.updated.includes(".gitignore"), false);
         assert.equal(result.unchanged.includes(".gitignore"), false);
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("agent pack initialization sets up VSCode project files and installs extension when enabled", async () => {
+    const fixture = await createGameProjectFixture();
+    const calls = new Array<Readonly<{ args: ReadonlyArray<string>; command: string; cwd: string }>>();
+    const commandRunner: AgentPack.AgentCliCommandRunner = async (command, args, options) => {
+        calls.push({ args, command, cwd: options.cwd });
+        if (command === "code") {
+            return { exitCode: 0, stderr: "", stdout: "installed\n" };
+        }
+        return { exitCode: -1, stderr: "", stdout: "" };
+    };
+
+    try {
+        const result = await AgentPack.initializeAgentPack(fixture.projectRoot, {
+            agentTargets: ["none"],
+            commandRunner,
+            includeGitIgnore: false,
+            includeVSCode: true
+        });
+
+        assert.ok(result.added.includes(".vscode/settings.json"));
+        assert.ok(result.added.includes(".vscode/extensions.json"));
+        assert.deepEqual(result.vscodeSetup, {
+            enabled: true,
+            extensionInstall: {
+                detail: "Installed VSCode extension 'gmloop.gmloop'.",
+                status: "installed"
+            }
+        });
+        assert.deepEqual(
+            calls.filter((call) => call.command === "code").map((call) => call.args),
+            [["--install-extension", "gmloop.gmloop"]]
+        );
+        assert.equal(
+            calls.filter((call) => call.command === "code").every((call) => call.cwd === fixture.projectRoot),
+            true
+        );
+        assert.deepEqual(
+            JSON.parse(await readFile(path.join(fixture.projectRoot, ".vscode", "settings.json"), "utf8")),
+            { "gmloop.serverPath": "gmloop" }
+        );
+        assert.deepEqual(
+            JSON.parse(await readFile(path.join(fixture.projectRoot, ".vscode", "extensions.json"), "utf8")),
+            { recommendations: ["gmloop.gmloop"] }
+        );
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("agent pack initialization merges VSCode project files without replacing project settings", async () => {
+    const fixture = await createGameProjectFixture();
+    const commandRunner: AgentPack.AgentCliCommandRunner = async () => ({ exitCode: -1, stderr: "", stdout: "" });
+
+    try {
+        await mkdir(path.join(fixture.projectRoot, ".vscode"), { recursive: true });
+        await writeFile(
+            path.join(fixture.projectRoot, ".vscode", "settings.json"),
+            `${JSON.stringify({ "editor.tabSize": 4 }, null, 2)}\n`,
+            "utf8"
+        );
+        await writeFile(
+            path.join(fixture.projectRoot, ".vscode", "extensions.json"),
+            `${JSON.stringify({ recommendations: ["example.existing"] }, null, 2)}\n`,
+            "utf8"
+        );
+
+        const result = await AgentPack.initializeAgentPack(fixture.projectRoot, {
+            agentTargets: ["none"],
+            commandRunner,
+            includeGitIgnore: false,
+            includeVSCode: true
+        });
+
+        assert.ok(result.updated.includes(".vscode/settings.json"));
+        assert.ok(result.updated.includes(".vscode/extensions.json"));
+        assert.equal(result.vscodeSetup.extensionInstall.status, "failed");
+        assert.deepEqual(
+            JSON.parse(await readFile(path.join(fixture.projectRoot, ".vscode", "settings.json"), "utf8")),
+            { "editor.tabSize": 4, "gmloop.serverPath": "gmloop" }
+        );
+        assert.deepEqual(
+            JSON.parse(await readFile(path.join(fixture.projectRoot, ".vscode", "extensions.json"), "utf8")),
+            { recommendations: ["example.existing", "gmloop.gmloop"] }
+        );
+
+        const second = await AgentPack.initializeAgentPack(fixture.projectRoot, {
+            agentTargets: ["none"],
+            commandRunner,
+            includeGitIgnore: false,
+            includeVSCode: true
+        });
+        assert.ok(second.unchanged.includes(".vscode/settings.json"));
+        assert.ok(second.unchanged.includes(".vscode/extensions.json"));
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("agent pack initialization reports VSCode settings conflicts without overwriting invalid project files", async () => {
+    const fixture = await createGameProjectFixture();
+    const commandRunner: AgentPack.AgentCliCommandRunner = async () => ({ exitCode: -1, stderr: "", stdout: "" });
+
+    try {
+        await mkdir(path.join(fixture.projectRoot, ".vscode"), { recursive: true });
+        await writeFile(path.join(fixture.projectRoot, ".vscode", "settings.json"), "{", "utf8");
+
+        const result = await AgentPack.initializeAgentPack(fixture.projectRoot, {
+            agentTargets: ["none"],
+            commandRunner,
+            includeGitIgnore: false,
+            includeVSCode: true
+        });
+
+        assert.ok(result.conflicts.includes(".vscode/settings.json"));
+        assert.equal(await readFile(path.join(fixture.projectRoot, ".vscode", "settings.json"), "utf8"), "{");
     } finally {
         await fixture.cleanup();
     }

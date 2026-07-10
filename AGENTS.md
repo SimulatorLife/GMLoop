@@ -311,3 +311,18 @@ Turning one fixed if/else into a generic framework leads to abstraction creep. A
 * Do **NOT** expose internal toggles as runtime configuration (env vars, CLI flags, etc.).
 Developer-facing switches should stay private. End users should never see or need to set them; use internal hooks or parameters instead.
 * Do **NOT** implement autodetection for formats the tool already controls. For example, if the system already mandates `.gml` and UTF-8, there is no value in guessing encoding or line endings. Keep expectations strict and predictable.
+
+----
+
+## Division of Responsibilities between LSP and GMLoop MCP Tools
+When navigating or modifying the codebase, follow this clear separation of tool responsibilities to avoid duplication and redundant work:
+
+* **LSP Tools (`lsp_*`)**: Use exclusively for **read-focused, in-file code intelligence and navigation**.
+  - Always prefer `lsp_goto_definition` to locate declarations rather than text search.
+  - Always prefer `lsp_find_references` to trace symbol usages rather than text search.
+  - Always prefer `lsp_workspace_symbols` to search symbols by name.
+  - Use `lsp_hover` for documentation/types, and `lsp_diagnostics` for local file diagnostics.
+* **GMLoop Tools (`gmloop_*`)**: Use exclusively for **write-focused workflows and project management**.
+  - Use `gmloop_format`, `gmloop_lint`, and `gmloop_refactor` for formatting, globally applying linting rules/fixes, and executing codemods.
+  - Use `gmloop_symbol_inspect` only when inspecting GameMaker config assets (such as rooms, sprites, objects, sounds) or when traversing deep relationship paths (relationships at depth > 1) which the LSP cannot resolve.
+  - Use `gmloop_watch` or `gmloop_live_reload` for dev server and hot-reload tasks.

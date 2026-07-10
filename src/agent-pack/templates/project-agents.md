@@ -71,3 +71,15 @@ Do not treat parsing, formatting, unit tests, compilation, launch, and gameplay 
 When work fails, capture the shortest reproduction and identify whether the owning layer is design, GML syntax, gameplay state, resource structure, room setup, tooling, build, or runtime. Test one falsifiable hypothesis at a time and keep regression coverage for confirmed defects.
 
 Continue autonomously through ordinary implementation choices and recoverable failures. Ask for input only when progress requires unavailable product intent, credentials, external assets, a destructive decision, or a choice with materially different player outcomes that the project cannot resolve. Explain the blocking decision and the evidence already gathered.
+
+## Tool Usage: GMLoop LSP vs GMLoop MCP Tools
+When navigating, inspecting, or modifying GML files, follow this clear division of responsibilities:
+- **LSP Tools (`lsp_*`)**: Use exclusively for **read-focused, in-file code intelligence and navigation**.
+  - Always prefer `lsp_goto_definition` to locate declarations (variables, functions, macros) rather than text search.
+  - Always prefer `lsp_find_references` to trace symbol usages rather than text search.
+  - Always prefer `lsp_workspace_symbols` to search symbols by name.
+  - Use `lsp_hover` for documentation/types, and `lsp_diagnostics` for local file diagnostics.
+- **GMLoop Tools (`gmloop_*`)**: Use exclusively for **write-focused workflows and project management**.
+  - Use `gmloop_format`, `gmloop_lint`, and `gmloop_refactor` for formatting, globally applying linting rules/fixes, and executing codemods.
+  - Use `gmloop_symbol_inspect` only when inspecting GameMaker config assets (such as rooms, sprites, objects, sounds) or when traversing deep relationship paths (depth > 1) which the LSP cannot resolve.
+  - Use `gmloop_watch` or `gmloop_live_reload` for dev server and hot-reload tasks.

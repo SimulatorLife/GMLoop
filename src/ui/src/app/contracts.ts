@@ -75,6 +75,7 @@ export type GraphVisualizationUiCallbacks = Readonly<{
 export type GraphVisualizationAgentPackInitializationOptions = Readonly<{
     agentTargets: ReadonlyArray<"codex" | "gemini" | "qwen">;
     includeGitIgnore: boolean;
+    includeVSCode: boolean;
 }>;
 
 /**

@@ -53,6 +53,7 @@
     "build:gml-identifiers:compiled": "pnpm run cli:compiled -- generate-gml-identifiers --quiet",
     "build:feather-metadata": "pnpm run ensure:cli && pnpm run build:feather-metadata:compiled",
     "build:feather-metadata:compiled": "pnpm run cli:compiled -- generate-feather-metadata --quiet",
+    "package:vscode": "pnpm --filter @gmloop/vscode run package:vsix",
     "rebuild": "pnpm run clean:ts && pnpm run build",
     "rebuild:ts": "pnpm run clean:ts && pnpm run build:ts",
     "lint": "eslint . --cache --report-unused-disable-directives --stats",

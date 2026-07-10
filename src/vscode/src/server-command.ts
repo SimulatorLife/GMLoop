@@ -15,6 +15,14 @@ export type GmloopLanguageServerCommand = Readonly<{
 }>;
 
 /**
+ * Executable server options passed to VSCode's language client.
+ */
+export type GmloopLanguageServerExecutableOptions = Readonly<{
+    args: readonly [typeof GMLOOP_LSP_ARGUMENT];
+    command: string;
+}>;
+
+/**
  * Resolve the configured GMLoop CLI path into the fixed language-server command.
  */
 export function resolveGmloopLanguageServerCommand(configuredServerPath: unknown): GmloopLanguageServerCommand {
@@ -26,5 +34,20 @@ export function resolveGmloopLanguageServerCommand(configuredServerPath: unknown
     return Object.freeze({
         command,
         args: GMLOOP_LSP_ARGUMENTS
+    });
+}
+
+/**
+ * Resolve executable options for VSCode's language client without adding transport flags.
+ */
+export function resolveGmloopLanguageServerExecutableOptions(
+    configuredServerPath: unknown
+): GmloopLanguageServerExecutableOptions {
+    const serverCommand = resolveGmloopLanguageServerCommand(configuredServerPath);
+    const args: readonly [typeof GMLOOP_LSP_ARGUMENT] = [GMLOOP_LSP_ARGUMENT];
+
+    return Object.freeze({
+        command: serverCommand.command,
+        args
     });
 }

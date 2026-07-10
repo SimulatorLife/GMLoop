@@ -1,6 +1,10 @@
 import { html } from "lit";
 
-import type { GraphVisualizationCliCatalogEntry, GraphVisualizationMcpToolCatalogEntry } from "../../graph/types.js";
+import type {
+    GraphVisualizationCliCatalogEntry,
+    GraphVisualizationLspToolCatalogEntry,
+    GraphVisualizationMcpToolCatalogEntry
+} from "../../graph/types.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiDocsView, GraphVisualizationUiState } from "../state/types.js";
 import {
@@ -12,6 +16,7 @@ import {
     normalizeCatalogSearchQuery,
     searchCatalogEntries,
     searchCliEntries,
+    searchLspEntries,
     searchMcpEntries
 } from "./docs-search.js";
 import {
@@ -23,6 +28,7 @@ import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 const DOCS_VIEW_LABELS: Readonly<Record<GraphVisualizationUiDocsView, string>> = Object.freeze({
     cli: "CLI",
+    lsp: "LSP",
     codemods: "Codemods",
     formatting: "Formatting",
     linting: "Linting",
@@ -31,6 +37,7 @@ const DOCS_VIEW_LABELS: Readonly<Record<GraphVisualizationUiDocsView, string>> =
 
 const DOCS_VIEW_ORDER: ReadonlyArray<GraphVisualizationUiDocsView> = Object.freeze([
     "cli",
+    "lsp",
     "mcp",
     "linting",
     "formatting",
@@ -39,11 +46,14 @@ const DOCS_VIEW_ORDER: ReadonlyArray<GraphVisualizationUiDocsView> = Object.free
 
 const DOCS_VIEW_CONTENT_IDS: Readonly<Record<GraphVisualizationUiDocsView, string>> = Object.freeze({
     cli: "cli-page",
+    lsp: "lsp-page",
     codemods: "codemods-page",
     formatting: "formatting-page",
     linting: "linting-page",
     mcp: "docs-mcp-page"
 });
+const DOCS_SUBPAGE_CLASS = "docs-subpage";
+const DOCS_HIDDEN_SUBPAGE_CLASS = "docs-subpage hidden";
 
 /**
  * Docs surface for CLI, MCP, linting, formatting, and codemods catalog entries.
@@ -138,6 +148,7 @@ export class GmDocsPanel extends LightDomLitElement {
                 <div class="docs-sidebar-heading">Reference</div>
                 <div class="docs-nav" role="tablist" aria-label="Documentation view selector">
                     ${this.#renderViewButton(parameters.activeDocsView, "cli", parameters.counts.cli)}
+                    ${this.#renderViewButton(parameters.activeDocsView, "lsp", parameters.counts.lsp)}
                     ${this.#renderViewButton(parameters.activeDocsView, "mcp", parameters.counts.mcp)}
                     ${this.#renderViewButton(parameters.activeDocsView, "linting", parameters.counts.linting)}
                     ${this.#renderViewButton(parameters.activeDocsView, "formatting", parameters.counts.formatting)}
@@ -237,6 +248,62 @@ export class GmDocsPanel extends LightDomLitElement {
         `;
     }
 
+    #renderLspEntry(entry: GraphVisualizationLspToolCatalogEntry) {
+        return html`
+            <article class="docs-reference-entry">
+                <div class="docs-entry-main">
+                    <div class="docs-entry-heading">
+                        <h3>${entry.displayName}</h3>
+                    </div>
+                    <p>${entry.description}</p>
+                </div>
+                <div class="docs-usage-shell">
+                    <code class="docs-usage">${entry.name}</code>
+                    <gm-copy-button
+                        class="docs-usage-copy-button"
+                        .value=${entry.name}
+                        accessibleLabel=${`Copy ${entry.displayName} tool name`}
+                        label="Copy"
+                        ?hideLabel=${true}
+                    ></gm-copy-button>
+                </div>
+                ${entry.fields.length > 0
+                    ? html`<details class="docs-detail-container">
+                          <summary>Fields</summary>
+                          <dl class="docs-detail-list">
+                              ${entry.fields.map(
+                                  (fieldValue) =>
+                                      html`<div class="docs-detail-row">
+                                          <dt>
+                                              <code>${fieldValue.name}</code>${fieldValue.required
+                                                  ? html` <span class="docs-field-required" title="Required">*</span>`
+                                                  : null}
+                                          </dt>
+                                          <dd>
+                                              ${fieldValue.description}
+                                              ${fieldValue.choices && fieldValue.choices.length > 0
+                                                  ? html`<div class="docs-field-choices">
+                                                        Choices:
+                                                        ${fieldValue.choices
+                                                            .map((c) => html`<code>${c}</code>`)
+                                                            .reduce((acc, x) => html`${acc}, ${x}`)}
+                                                    </div>`
+                                                  : null}
+                                              ${fieldValue.default === undefined
+                                                  ? null
+                                                  : html`<div class="docs-field-default">
+                                                        Default: <code>${JSON.stringify(fieldValue.default)}</code>
+                                                    </div>`}
+                                          </dd>
+                                      </div>`
+                              )}
+                          </dl>
+                      </details>`
+                    : null}
+            </article>
+        `;
+    }
+
     #renderCatalogEntry(entry: GraphVisualizationDocsPanelCatalogEntry) {
         return html`
             <article class="docs-reference-entry">
@@ -272,7 +339,8 @@ export class GmDocsPanel extends LightDomLitElement {
         subpageId: string;
     }) {
         const { activeDocsView, emptyMessage, entries, contentId, searchQuery, subpageId } = parameters;
-        const className = this.state?.activeDocsView === activeDocsView ? "docs-subpage" : "docs-subpage hidden";
+        const className =
+            this.state?.activeDocsView === activeDocsView ? DOCS_SUBPAGE_CLASS : DOCS_HIDDEN_SUBPAGE_CLASS;
         const searchResult = searchCatalogEntries(entries, searchQuery);
 
         return html`
@@ -300,6 +368,7 @@ export class GmDocsPanel extends LightDomLitElement {
         const docsPanelContent = createGraphVisualizationDocsPanelContent(this.model.documentationCatalogs);
         const searchQuery = normalizeCatalogSearchQuery(this.state.searchQuery);
         const cliSearchResult = searchCliEntries(docsPanelContent.cliEntries, searchQuery);
+        const lspSearchResult = searchLspEntries(docsPanelContent.lspEntries, searchQuery);
         const filteredMcpEntries = this.showInternalMcpTools
             ? docsPanelContent.mcpEntries
             : docsPanelContent.mcpEntries.filter((entry) => !entry.internal);
@@ -309,6 +378,7 @@ export class GmDocsPanel extends LightDomLitElement {
         const codemodsSearchResult = searchCatalogEntries(docsPanelContent.codemodsEntries, searchQuery);
         const counts: Readonly<Record<GraphVisualizationUiDocsView, number>> = {
             cli: cliSearchResult.totalCount,
+            lsp: lspSearchResult.totalCount,
             codemods: codemodsSearchResult.totalCount,
             formatting: formattingSearchResult.totalCount,
             linting: lintingSearchResult.totalCount,
@@ -342,8 +412,28 @@ export class GmDocsPanel extends LightDomLitElement {
                             </div>
                         </div>
                         <div
+                            id="lsp-page"
+                            class=${this.state.activeDocsView === "lsp"
+                                ? DOCS_SUBPAGE_CLASS
+                                : DOCS_HIDDEN_SUBPAGE_CLASS}
+                            role="tabpanel"
+                            aria-labelledby="docs-view-lsp"
+                        >
+                            <div id="lsp-content" class="docs-reference-list">
+                                ${docsPanelContent.lspEntries.length === 0
+                                    ? html`<p class="catalog-empty">No LSP tools are available right now.</p>`
+                                    : lspSearchResult.entries.length === 0
+                                      ? html`<p class="catalog-empty">
+                                            ${createNoSearchResultsMessage(searchQuery, "lsp")}
+                                        </p>`
+                                      : lspSearchResult.entries.map((entry) => this.#renderLspEntry(entry))}
+                            </div>
+                        </div>
+                        <div
                             id="docs-mcp-page"
-                            class=${this.state.activeDocsView === "mcp" ? "docs-subpage" : "docs-subpage hidden"}
+                            class=${this.state.activeDocsView === "mcp"
+                                ? DOCS_SUBPAGE_CLASS
+                                : DOCS_HIDDEN_SUBPAGE_CLASS}
                             role="tabpanel"
                             aria-labelledby="docs-view-mcp"
                         >

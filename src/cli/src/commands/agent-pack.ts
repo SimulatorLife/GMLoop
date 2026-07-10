@@ -9,6 +9,7 @@ type AgentPackInitOptions = Readonly<{
     agents?: string;
     gitignore?: boolean;
     path?: string;
+    vscode?: boolean;
 }>;
 
 /** Initialize or update the Auto-Game agent pack in one GameMaker project. */
@@ -16,7 +17,8 @@ export async function runAgentPackInit(options: AgentPackInitOptions): Promise<v
     const projectRoot = await discoverProjectRoot({ explicitProjectPath: options.path });
     const result = await AgentPack.initializeAgentPack(projectRoot, {
         agentTargets: AgentPack.parseAgentConfigTargetSelections(options.agents ?? "detected"),
-        includeGitIgnore: options.gitignore !== false
+        includeGitIgnore: options.gitignore !== false,
+        includeVSCode: options.vscode === true
     });
     printProjectPayload({
         command: "agent-pack init",
@@ -30,6 +32,7 @@ export async function runAgentPackInit(options: AgentPackInitOptions): Promise<v
             removed: result.removed,
             unchanged: result.unchanged,
             updated: result.updated,
+            vscodeSetup: result.vscodeSetup,
             version: result.availableVersion
         },
         projectRoot: result.projectRoot
@@ -49,7 +52,11 @@ export function createAgentPackCommand(): Command {
             "Configure agent MCP integrations through provider CLIs: detected, all, none, or comma-separated codex,gemini,qwen.",
             "detected"
         )
-        .option("--no-gitignore", "Do not create or update the project-root .gitignore.");
+        .option("--no-gitignore", "Do not create or update the project-root .gitignore.")
+        .option(
+            "--vscode",
+            "Create or update project VSCode settings and attempt to install the GMLoop VSCode extension."
+        );
     init.action(async function agentPackInitAction() {
         await runAgentPackInit(this.opts<AgentPackInitOptions>());
     });

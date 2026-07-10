@@ -585,6 +585,7 @@ void test("GmAppShell routes agent-pack initialization and skill toggles through
     let initializationOptions: Readonly<{
         agentTargets: ReadonlyArray<"codex" | "gemini" | "qwen">;
         includeGitIgnore: boolean;
+        includeVSCode: boolean;
     }> | null = null;
     let toggled: Readonly<{ enabled: boolean; name: string }> | null = null;
     shell.model = createMockModel({
@@ -615,7 +616,7 @@ void test("GmAppShell routes agent-pack initialization and skill toggles through
     shell.dispatchEvent(
         new CustomEvent(GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK, {
             bubbles: true,
-            detail: { agentTargets: ["qwen"], includeGitIgnore: false }
+            detail: { agentTargets: ["qwen"], includeGitIgnore: false, includeVSCode: true }
         })
     );
     await Promise.resolve();
@@ -629,7 +630,7 @@ void test("GmAppShell routes agent-pack initialization and skill toggles through
     shell.disconnectedCallback();
 
     assert.equal(initialized, 1);
-    assert.deepEqual(initializationOptions, { agentTargets: ["qwen"], includeGitIgnore: false });
+    assert.deepEqual(initializationOptions, { agentTargets: ["qwen"], includeGitIgnore: false, includeVSCode: true });
     assert.deepEqual(toggled, { enabled: false, name: "game-design" });
 });
 
@@ -667,7 +668,7 @@ void test("GmAppShell rejects duplicate agent-pack initialization events while t
     const initializeEvent = () =>
         new CustomEvent(GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK, {
             bubbles: true,
-            detail: { agentTargets: ["qwen"], includeGitIgnore: true }
+            detail: { agentTargets: ["qwen"], includeGitIgnore: true, includeVSCode: false }
         });
     shell.dispatchEvent(initializeEvent());
     shell.dispatchEvent(initializeEvent());

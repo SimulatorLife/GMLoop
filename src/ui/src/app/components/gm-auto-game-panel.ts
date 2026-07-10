@@ -61,6 +61,7 @@ export class GmAutoGamePanel extends LightDomLitElement {
         model: { attribute: false },
         state: { attribute: false },
         includeGitIgnore: { state: true },
+        includeVSCode: { state: true },
         selectedAgentTargets: { state: true }
     };
 
@@ -69,6 +70,8 @@ export class GmAutoGamePanel extends LightDomLitElement {
     public accessor state: GraphVisualizationUiState | null = null;
 
     private accessor includeGitIgnore = true;
+
+    private accessor includeVSCode = false;
 
     private accessor selectedAgentTargets: ReadonlyArray<GraphVisualizationAutoGameAgentConfig["id"]> = [];
 
@@ -451,6 +454,22 @@ export class GmAutoGamePanel extends LightDomLitElement {
                                       </small>
                                   </span>
                               </label>
+                              <label class="auto-game-initialize-option">
+                                  <input
+                                      type="checkbox"
+                                      .checked=${this.includeVSCode}
+                                      ?disabled=${isSkillMutationPending}
+                                      @change=${(event: Event) => {
+                                          this.includeVSCode = (event.target as HTMLInputElement).checked;
+                                      }}
+                                  />
+                                  <span>
+                                      <strong>Set Up VSCode</strong>
+                                      <small>
+                                          Add project VSCode LSP settings and try to install the GMLoop extension.
+                                      </small>
+                                  </span>
+                              </label>
                               ${this.#renderAgentConfigTargets(agentConfigs, isSkillMutationPending)}
                               <button
                                   id="initialize-auto-game-agent-pack"
@@ -469,7 +488,8 @@ export class GmAutoGamePanel extends LightDomLitElement {
                                                   composed: true,
                                                   detail: {
                                                       agentTargets: this.#getSelectedAgentTargets(agentConfigs),
-                                                      includeGitIgnore: this.includeGitIgnore
+                                                      includeGitIgnore: this.includeGitIgnore,
+                                                      includeVSCode: this.includeVSCode
                                                   }
                                               }
                                           )

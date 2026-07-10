@@ -1,12 +1,7 @@
 import * as vscode from "vscode";
-import {
-    LanguageClient,
-    type LanguageClientOptions,
-    type ServerOptions,
-    TransportKind
-} from "vscode-languageclient/node.js";
+import { LanguageClient, type LanguageClientOptions, type ServerOptions } from "vscode-languageclient/node.js";
 
-import { resolveGmloopLanguageServerCommand } from "./server-command.js";
+import { resolveGmloopLanguageServerExecutableOptions } from "./server-command.js";
 
 const GMLOOP_CONFIGURATION_SECTION = "gmloop";
 const GMLOOP_SERVER_PATH_SETTING = "serverPath";
@@ -26,12 +21,11 @@ function createServerOptions(): ServerOptions {
     const configuredServerPath = vscode.workspace
         .getConfiguration(GMLOOP_CONFIGURATION_SECTION)
         .get<unknown>(GMLOOP_SERVER_PATH_SETTING);
-    const serverCommand = resolveGmloopLanguageServerCommand(configuredServerPath);
+    const serverCommand = resolveGmloopLanguageServerExecutableOptions(configuredServerPath);
 
     return {
         command: serverCommand.command,
-        args: [...serverCommand.args],
-        transport: TransportKind.stdio
+        args: [...serverCommand.args]
     };
 }
 

@@ -90,6 +90,38 @@ function createDocumentationCatalogs(): GraphVisualizationDocumentationCatalogs 
                 toolName: "replay_record"
             }
         ],
+        lspTools: [
+            {
+                description: "Find where a function, class, or variable is defined.",
+                displayName: "Go to Definition",
+                fields: [
+                    {
+                        choices: [],
+                        default: undefined,
+                        description: "Absolute path to the source file",
+                        name: "file_path",
+                        required: true,
+                        type: "string"
+                    }
+                ],
+                name: "lsp_goto_definition"
+            },
+            {
+                description: "Get compiler errors, warnings, and hints.",
+                displayName: "Get Diagnostics",
+                fields: [
+                    {
+                        choices: ["all", "error", "warning"],
+                        default: "all",
+                        description: "Severity filter",
+                        name: "severity_filter",
+                        required: false,
+                        type: "string"
+                    }
+                ],
+                name: "lsp_diagnostics"
+            }
+        ],
         workspaceRules: {
             formatOptions: [
                 {
@@ -556,4 +588,44 @@ void test("GmDocsPanel toggles internal MCP tools visibility", () => {
     assert.match(rendered, /replay record/u);
     assert.match(rendered, /replay_record/u);
     assert.match(rendered, /<gm-badge[^>]*\.label=internal/u);
+});
+
+void test("GmDocsPanel renders the LSP tools subview and tool metadata when selected", () => {
+    const panel = new TestableGmDocsPanel();
+    panel.model = {
+        autoGamePipeline: null,
+        data: {
+            edges: [],
+            generatedAt: "2026-01-01T00:00:00.000Z",
+            graphs: [],
+            nodes: [],
+            projectRoot: "/tmp/project"
+        },
+        documentationCatalogs: createDocumentationCatalogs(),
+        isServerMode: false,
+        lastFixRun: null,
+        loadedTarget: null,
+        liveReload: null,
+        mcpServerStatus: "not-started",
+        projectConfigurationCatalog: null,
+        startupState: null,
+        title: "Docs LSP View"
+    };
+    panel.state = createDocsPanelState("lsp");
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /id="docs-page"[\s\S]*class=page content-page docs-page active/u);
+    assert.match(rendered, /Go to Definition/u);
+    assert.match(rendered, /lsp_goto_definition/u);
+    assert.match(rendered, /accessibleLabel=Copy Go to Definition tool name/u);
+    assert.match(rendered, /label="Copy"/u);
+    assert.match(rendered, /<details class="docs-detail-container">[\s\S]*<summary>Fields<\/summary>/u);
+    assert.match(rendered, /Find where a function, class, or variable is defined\./u);
+    assert.match(rendered, /file_path/u);
+    assert.match(rendered, /Absolute path to the source file/u);
+    assert.match(rendered, /Get Diagnostics/u);
+    assert.match(rendered, /lsp_diagnostics/u);
+    assert.match(rendered, /Choices:[\s\S]*all[\s\S]*error[\s\S]*warning/u);
+    assert.match(rendered, /Default:[\s\S]*"all"/u);
 });

@@ -1,4 +1,8 @@
-import type { GraphVisualizationCliCatalogEntry, GraphVisualizationMcpToolCatalogEntry } from "../../graph/types.js";
+import type {
+    GraphVisualizationCliCatalogEntry,
+    GraphVisualizationLspToolCatalogEntry,
+    GraphVisualizationMcpToolCatalogEntry
+} from "../../graph/types.js";
 import type { GraphVisualizationUiDocsView } from "../state/types.js";
 import type { GraphVisualizationDocsPanelCatalogEntry } from "./docs-panel-content.js";
 
@@ -63,6 +67,26 @@ export function searchMcpEntries(
     return { entries: filteredEntries, totalCount: filteredEntries.length };
 }
 
+export function searchLspEntries(
+    entries: ReadonlyArray<GraphVisualizationLspToolCatalogEntry>,
+    query: string
+): CatalogSearchResult<GraphVisualizationLspToolCatalogEntry> {
+    if (query.length === 0) {
+        return { entries, totalCount: entries.length };
+    }
+
+    const filteredEntries = entries.filter((entry) =>
+        fieldsMatchSearchQuery(query, [
+            entry.displayName,
+            entry.name,
+            entry.description,
+            ...entry.fields.flatMap((fieldValue) => [fieldValue.description, fieldValue.name])
+        ])
+    );
+
+    return { entries: filteredEntries, totalCount: filteredEntries.length };
+}
+
 export function searchCatalogEntries(
     entries: ReadonlyArray<GraphVisualizationDocsPanelCatalogEntry>,
     query: string
@@ -97,6 +121,9 @@ function createItemLabel(activeDocsView: GraphVisualizationUiDocsView, totalCoun
         return totalCount === 1 ? "command" : "commands";
     }
     if (activeDocsView === "mcp") {
+        return totalCount === 1 ? "tool" : "tools";
+    }
+    if (activeDocsView === "lsp") {
         return totalCount === 1 ? "tool" : "tools";
     }
     if (activeDocsView === "linting") {

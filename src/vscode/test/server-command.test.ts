@@ -27,3 +27,13 @@ void test("VSCode command resolution falls back when the configured server path 
         args: ["lsp"]
     });
 });
+
+void test("VSCode executable options do not request a transport flag", () => {
+    const options = VscodeExtension.resolveGmloopLanguageServerExecutableOptions("gmloop");
+
+    assert.deepEqual(options, {
+        command: "gmloop",
+        args: ["lsp"]
+    });
+    assert.equal("transport" in options, false);
+});

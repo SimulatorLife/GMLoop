@@ -31,6 +31,18 @@ Treat `gmloop.json` as the project-root configuration shared by GMLoop workspace
 
 Inspect the current configuration catalog or relevant help before adding keys. Preserve unrelated sections, use the UI/configuration capability when available, and do not copy a stale exhaustive example over project-owned settings. Do not modify `gmloop.json` unless explicitly asked to do so by the user.
 
+## GMLoop LSP vs GMLoop MCP Tools
+When navigating, inspecting, or modifying GML files, follow this clear division of responsibilities:
+- **LSP Tools (`lsp_*`)**: Use exclusively for **read-focused, in-file code intelligence and navigation**.
+  - Always prefer `lsp_goto_definition` to locate declarations (variables, functions, macros) rather than text search.
+  - Always prefer `lsp_find_references` to trace symbol usages rather than text search.
+  - Always prefer `lsp_workspace_symbols` to search symbols by name.
+  - Use `lsp_hover` for documentation/types, and `lsp_diagnostics` for local file diagnostics.
+- **GMLoop Tools (`gmloop_*`)**: Use exclusively for **write-focused workflows and project management**.
+  - Use `gmloop_format`, `gmloop_lint`, and `gmloop_refactor` for formatting, globally applying linting rules/fixes, and executing codemods.
+  - Use `gmloop_symbol_inspect` only when inspecting GameMaker config assets (such as rooms, sprites, objects, sounds) or when traversing deep relationship paths (depth > 1) which the LSP cannot resolve.
+  - Use `gmloop_watch` or `gmloop_live_reload` for dev server and hot-reload tasks.
+
 ## Apply A Source Change
 
 Use this order for each bounded change:

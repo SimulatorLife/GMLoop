@@ -64,6 +64,7 @@
   "scripts": {
     "build:types": "tsc -b tsconfig.json",
     "clean:types": "rm -rf dist",
+    "package:vsix": "pnpm run build:types && node dist/src/build-vsix-package.js",
     "test": "pnpm run build:types && node --test-force-exit --test --test-timeout=120000 dist/test/*.test.js"
   },
   "dependencies": {
@@ -72,6 +73,7 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "@types/vscode": "^1.92.0",
+    "@vscode/vsce": "^3.9.2",
     "typescript": "catalog:"
   }
 }
