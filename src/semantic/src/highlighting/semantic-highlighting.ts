@@ -1,9 +1,10 @@
+import { Parser } from "@gmloop/parser";
+
 import {
     getGmlSymbolKindForBuiltInType,
     getGmlSymbolKindSpecificity,
-    normalizeGmlSemanticSymbolKind,
-    type GmlSemanticSymbolKind
-} from "../symbols/taxonomy.js";
+    type GmlSemanticSymbolKind,
+    normalizeGmlSemanticSymbolKind} from "../symbols/taxonomy.js";
 
 /** Semantic categories exposed to editor protocol adapters. */
 export type GmlSemanticHighlightKind =
@@ -57,59 +58,7 @@ export type CollectGmlSemanticHighlightsParameters = Readonly<{
     sourceText: string;
 }>;
 
-type IdentifierRange = Readonly<{ end: number; name: string; start: number }>;
-
-const IDENTIFIER_PATTERN = /[$_\p{L}][$_\p{L}\p{Mn}\p{Nd}\p{Pc}]*/uy;
-
-function scanIdentifiers(sourceText: string): IdentifierRange[] {
-    const identifiers: IdentifierRange[] = [];
-    let offset = 0;
-    while (offset < sourceText.length) {
-        if (sourceText.startsWith("//", offset)) {
-            const lineEnd = sourceText.indexOf("\n", offset + 2);
-            offset = lineEnd === -1 ? sourceText.length : lineEnd;
-            continue;
-        }
-        if (sourceText.startsWith("/*", offset)) {
-            const commentEnd = sourceText.indexOf("*/", offset + 2);
-            offset = commentEnd === -1 ? sourceText.length : commentEnd + 2;
-            continue;
-        }
-        const character = sourceText[offset];
-        const isStringStart =
-            character === '"' ||
-            character === "'" ||
-            ((character === "$" || character === "@") &&
-                (sourceText[offset + 1] === '"' || sourceText[offset + 1] === "'"));
-        if (isStringStart) {
-            const quoteOffset = character === '"' || character === "'" ? offset : offset + 1;
-            const quote = sourceText[quoteOffset];
-            const verbatim = character === "@";
-            offset = quoteOffset + 1;
-            while (offset < sourceText.length) {
-                if (sourceText[offset] === quote) {
-                    if (verbatim && sourceText[offset + 1] === quote) {
-                        offset += 2;
-                        continue;
-                    }
-                    offset += 1;
-                    break;
-                }
-                offset += !verbatim && sourceText[offset] === "\\" ? 2 : 1;
-            }
-            continue;
-        }
-        IDENTIFIER_PATTERN.lastIndex = offset;
-        const match = IDENTIFIER_PATTERN.exec(sourceText);
-        if (match !== null) {
-            identifiers.push({ start: offset, end: IDENTIFIER_PATTERN.lastIndex, name: match[0] });
-            offset = IDENTIFIER_PATTERN.lastIndex;
-            continue;
-        }
-        offset += 1;
-    }
-    return identifiers;
-}
+type IdentifierRange = ReturnType<typeof Parser.tokenizeGmlIdentifierRanges>[number];
 
 function mapNavigationKind(kind: GmlSemanticSymbolKind): GmlSemanticHighlightKind | null {
     const kinds: Readonly<Record<string, GmlSemanticHighlightKind>> = {
@@ -162,7 +111,7 @@ export function collectGmlSemanticHighlights(
     parameters: CollectGmlSemanticHighlightsParameters
 ): GmlSemanticHighlightToken[] {
     const tokensByStart = new Map<number, GmlSemanticHighlightToken>();
-    const identifiers = scanIdentifiers(parameters.sourceText);
+    const identifiers = Parser.tokenizeGmlIdentifierRanges(parameters.sourceText);
     const identifiersByStart = new Map(identifiers.map((identifier) => [identifier.start, identifier]));
     const navigationKindPriorityByStart = new Map<number, number>();
     for (const identifier of identifiers) {

@@ -97,10 +97,7 @@ void test("syntax-only catalog entries do not override TextMate keyword scopes",
         projectIdentifiers: [],
         occurrences: []
     });
-    assert.deepEqual(
-        tokens.map((token) => token.start),
-        [3]
-    );
+    assert.deepEqual(tokens, []);
 });
 
 void test("project resources receive object, room, and generic resource categories", () => {

@@ -12,12 +12,30 @@ import {
 void test("identifier collections have one canonical semantic taxonomy", () => {
     assert.deepEqual(
         [
-            "constructorStaticMembers", "enumMembers", "enums", "functions", "globalVariables",
-            "instanceVariables", "localVariables", "macros", "scripts", "structVariables", "structs"
+            "constructorStaticMembers",
+            "enumMembers",
+            "enums",
+            "functions",
+            "globalVariables",
+            "instanceVariables",
+            "localVariables",
+            "macros",
+            "scripts",
+            "structVariables",
+            "structs"
         ].map(getGmlSymbolKindForIdentifierCollection),
         [
-            "constructorStaticMember", "enumMember", "enum", "function", "globalVariable",
-            "instanceVariable", "localVariable", "macro", "script", "structVariable", "struct"
+            "constructorStaticMember",
+            "enumMember",
+            "enum",
+            "function",
+            "globalVariable",
+            "instanceVariable",
+            "localVariable",
+            "macro",
+            "script",
+            "structVariable",
+            "struct"
         ]
     );
     assert.equal(getGmlSymbolKindForIdentifierCollection("futureCollection"), "unresolved");

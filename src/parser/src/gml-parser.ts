@@ -97,6 +97,31 @@ function shouldUseSllPredictionMode(sourceText: string, maxSourceLength: number)
     return sourceText.length <= maxSourceLength;
 }
 
+/** A source-preserving identifier token emitted by the GML lexer. */
+export type GmlIdentifierTokenRange = Readonly<{
+    end: number;
+    name: string;
+    start: number;
+}>;
+
+/** Tokenize identifier ranges without invoking the parser or requiring valid complete GML. */
+export function tokenizeGmlIdentifierRanges(sourceText: string): GmlIdentifierTokenRange[] {
+    const lexer = new GameMakerLanguageLexer(new antlr4.InputStream(sourceText));
+    lexer.removeErrorListeners();
+    lexer.strictMode = false;
+    const tokenStream = new antlr4.CommonTokenStream(lexer);
+    const lexerTokenStream = tokenStream as unknown as {
+        fill(): void;
+        tokens: Array<{ start: number; stop: number; type: number }>;
+    };
+    lexerTokenStream.fill();
+    const tokens = lexerTokenStream.tokens;
+    return tokens.flatMap((token) => {
+        if (token.type !== GameMakerLanguageLexer.Identifier || token.start < 0 || token.stop < token.start) return [];
+        return [{ start: token.start, end: token.stop + 1, name: sourceText.slice(token.start, token.stop + 1) }];
+    });
+}
+
 /**
  * Parser for GameMaker Language (GML) source code.
  *
