@@ -77,6 +77,7 @@ export function createLspCommand(): Command {
     return excludeCommandFromMcpTools(
         applyStandardCommandOptions(new Command("lsp"))
             .description("Start the GMLoop GML language server (LSP).")
+            .option("--stdio", "Start the LSP server over stdio (default).")
             .addHelpText("after", () =>
                 [
                     "",

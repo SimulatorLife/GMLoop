@@ -21,3 +21,13 @@ void test("lsp command refuses captured CLI execution contexts", async () => {
     assert.equal(result.exitCode, 1);
     assert.match(result.stderr, /cannot run inside captured CLI execution contexts/u);
 });
+
+void test("lsp command accepts --stdio option", async () => {
+    const result = await runCliTestCommand({
+        argv: ["lsp", "--stdio"]
+    });
+
+    assert.equal(result.exitCode, 1);
+    assert.match(result.stderr, /cannot run inside captured CLI execution contexts/u);
+    assert.doesNotMatch(result.stderr, /unknown option/u);
+});
