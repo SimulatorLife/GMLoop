@@ -658,6 +658,23 @@ function normalizeIdentifierCollectionKind(collectionName: string): GraphNodeKin
         case "structVariable": {
             return "struct_variable";
         }
+        // The remaining `GmlSemanticSymbolKind` variants (`object`,
+        // `resource`, `room`, `variable`, `constant`, `callable`,
+        // `member`, `unresolved`) are not produced by
+        // `getGmlSymbolKindForIdentifierCollection` for the identifier
+        // collections this helper resolves, but listing them explicitly
+        // keeps the switch exhaustive so future variants surface as a
+        // compile-time review item rather than silently falling through.
+        case "object":
+        case "resource":
+        case "room":
+        case "variable":
+        case "constant":
+        case "callable":
+        case "member":
+        case "unresolved": {
+            return null;
+        }
         default: {
             return null;
         }
