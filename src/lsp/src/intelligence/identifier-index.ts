@@ -549,6 +549,33 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         return await inFlight;
     }
 
+    async function ensureFullIndex(document: GmlTextDocument): Promise<NavigationState | null> {
+        const state = await ensureIndex(document);
+        if (!state) {
+            return null;
+        }
+        if (!state.lightweight) {
+            return state;
+        }
+
+        const projectRoot = await Semantic.findProjectRoot({ filepath: document.filePath });
+        if (!projectRoot) {
+            return state;
+        }
+        const resolvedRoot = path.resolve(projectRoot);
+
+        // Wait for the background full build to complete
+        for (let i = 0; i < 100; i++) {
+            const current = cachedStates.get(resolvedRoot);
+            if (current && !current.lightweight) {
+                return current;
+            }
+            await new Promise((r) => setTimeout(r, 10));
+        }
+
+        return cachedStates.get(resolvedRoot) ?? state;
+    }
+
     return {
         buildForDocument: ensureIndex,
         refreshForDocument: refreshIndex,
@@ -564,7 +591,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
             return definition ? await occurrenceToLspLocation(document, definition) : null;
         },
         async findReferences(document, offset, identifierName, includeDefinitions) {
-            const state = await ensureIndex(document);
+            const state = await ensureFullIndex(document);
             if (!state) {
                 return [];
             }
@@ -714,7 +741,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
             return [...projectSymbols, ...matchingBuiltIns];
         },
         async planRename(document, offset, identifierName, newName) {
-            const state = await ensureIndex(document);
+            const state = await ensureFullIndex(document);
             if (!state) {
                 return null;
             }

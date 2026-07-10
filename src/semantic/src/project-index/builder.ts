@@ -1865,36 +1865,38 @@ function analyseGmlAst({
         if (identifierHandled) {
             return;
         }
-        handleCallExpressionNode({
-            node,
-            builtInNames,
-            fileRecord,
-            scopeRecord,
-            relationships,
-            scriptNameToScopeId,
-            scriptNameToResourcePath,
-            metrics
-        });
-        handleNewExpressionScriptCall({
-            node,
-            builtInNames,
-            fileRecord,
-            scopeRecord,
-            relationships,
-            scriptNameToScopeId,
-            scriptNameToResourcePath,
-            metrics
-        });
-        handleConstructorParentScriptCall({
-            node,
-            builtInNames,
-            fileRecord,
-            scopeRecord,
-            relationships,
-            scriptNameToScopeId,
-            scriptNameToResourcePath,
-            metrics
-        });
+        if (!definitionsOnly) {
+            handleCallExpressionNode({
+                node,
+                builtInNames,
+                fileRecord,
+                scopeRecord,
+                relationships,
+                scriptNameToScopeId,
+                scriptNameToResourcePath,
+                metrics
+            });
+            handleNewExpressionScriptCall({
+                node,
+                builtInNames,
+                fileRecord,
+                scopeRecord,
+                relationships,
+                scriptNameToScopeId,
+                scriptNameToResourcePath,
+                metrics
+            });
+            handleConstructorParentScriptCall({
+                node,
+                builtInNames,
+                fileRecord,
+                scopeRecord,
+                relationships,
+                scriptNameToScopeId,
+                scriptNameToResourcePath,
+                metrics
+            });
+        }
         handleObjectEventAssignmentNode({
             node,
             scopeDescriptor,

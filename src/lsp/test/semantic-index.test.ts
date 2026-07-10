@@ -242,3 +242,79 @@ test("semantic index prioritizes open files in indexing queue", async () => {
         await fs.rm(projectRoot, { recursive: true, force: true });
     }
 });
+
+test("semantic index double-pass approach exposes fast hover initially, and full info after background upgrade", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gmloop-lsp-doublepass-"));
+    try {
+        await fs.writeFile(
+            path.join(projectRoot, "Game.yyp"),
+            JSON.stringify({ name: "Game", resourceType: "GMProject" })
+        );
+
+        const aPath = path.join(projectRoot, "scripts/a/a.gml");
+        const bPath = path.join(projectRoot, "scripts/b/b.gml");
+
+        await fs.mkdir(path.dirname(aPath), { recursive: true });
+        await fs.mkdir(path.dirname(bPath), { recursive: true });
+
+        await fs.writeFile(
+            path.join(projectRoot, "scripts/a/a.yy"),
+            JSON.stringify({ name: "a", resourceType: "GMScript" })
+        );
+        await fs.writeFile(
+            path.join(projectRoot, "scripts/b/b.yy"),
+            JSON.stringify({ name: "b", resourceType: "GMScript" })
+        );
+
+        await fs.writeFile(aPath, "function a() { b(); }");
+        await fs.writeFile(bPath, "/// @desc test function b\nfunction b() {}");
+
+        const store = Lsp.createGmlDocumentStore();
+        store.open({
+            uri: Lsp.filePathToUri(aPath),
+            languageId: "gml",
+            version: 1,
+            text: "function a() { b(); }"
+        });
+        const docB = store.open({
+            uri: Lsp.filePathToUri(bPath),
+            languageId: "gml",
+            version: 1,
+            text: "/// @desc test function b\nfunction b() {}"
+        });
+
+        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+
+        // 1. Initial buildForDocument returns a lightweight state
+        const state1 = await semanticIndex.buildForDocument(docB);
+        assert.ok(state1);
+        assert.equal(state1.lightweight, true, "Initial build should be lightweight (definitionsOnly)");
+
+        // 2. Hover is immediately available on the lightweight index — does not block
+        const offsetValB = docB.sourceText.lastIndexOf("function b") + 9;
+        const hoverRes = await semanticIndex.hover(docB, offsetValB, "b");
+        assert.ok(hoverRes, "Hover should return on lightweight index without waiting for full build");
+        const hoverText =
+            typeof hoverRes.contents === "object" && "value" in hoverRes.contents ? hoverRes.contents.value : "";
+        assert.match(hoverText, /test function b/, "Hover should show doc-comment from lightweight pass");
+
+        // 3. findDefinition is immediately available on the lightweight index
+        const defRes = await semanticIndex.findDefinition(docB, offsetValB, "b");
+        assert.ok(defRes, "findDefinition should return on lightweight index");
+        assert.ok(defRes.uri.includes("b.gml"), "findDefinition should point to b.gml");
+
+        // 4. findReferences transparently waits for the full build and returns complete data
+        const offsetValA = 15; // offset of "b" in "function a() { b(); }"
+        const refs = await semanticIndex.findReferences(docB, offsetValB, "b", false);
+        assert.ok(refs.length > 0, "findReferences should return cross-file references after full build");
+        const refUris = refs.map((r) => r.uri);
+        assert.ok(refUris.includes(Lsp.filePathToUri(aPath)), "References should include usage in a.gml");
+
+        // 5. After findReferences returns, the state should now be fully upgraded
+        const finalState = await semanticIndex.buildForDocument(docB);
+        assert.ok(finalState);
+        assert.equal(finalState.lightweight, false, "State should be fully upgraded after findReferences completed");
+    } finally {
+        await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+});
