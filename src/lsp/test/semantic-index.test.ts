@@ -194,7 +194,7 @@ void test("semantic index hover handles comment/string guards and ignores scope-
     }
 });
 
-test("semantic index prioritizes open files in indexing queue", async () => {
+void test("semantic index prioritizes open files in indexing queue", async () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gmloop-lsp-prioritize-"));
     try {
         await fs.writeFile(
@@ -243,7 +243,7 @@ test("semantic index prioritizes open files in indexing queue", async () => {
     }
 });
 
-test("semantic index double-pass approach exposes fast hover initially, and full info after background upgrade", async () => {
+void test("semantic index double-pass approach exposes fast hover initially, and full info after background upgrade", async () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gmloop-lsp-doublepass-"));
     try {
         await fs.writeFile(
@@ -304,7 +304,6 @@ test("semantic index double-pass approach exposes fast hover initially, and full
         assert.ok(defRes.uri.includes("b.gml"), "findDefinition should point to b.gml");
 
         // 4. findReferences transparently waits for the full build and returns complete data
-        const offsetValA = 15; // offset of "b" in "function a() { b(); }"
         const refs = await semanticIndex.findReferences(docB, offsetValB, "b", false);
         assert.ok(refs.length > 0, "findReferences should return cross-file references after full build");
         const refUris = refs.map((r) => r.uri);

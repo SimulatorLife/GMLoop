@@ -486,6 +486,39 @@ void test("getPatchHistory tracks multiple patches in order", () => {
     assert.ok(history[0].timestamp <= history[1].timestamp);
 });
 
+void test("patch history is bounded by default to avoid retaining obsolete diagnostics", () => {
+    const wrapper = RuntimeWrapper.createRuntimeWrapper();
+
+    for (let i = 0; i < RuntimeWrapper.DEFAULT_MAX_PATCH_HISTORY_SIZE + 75; i++) {
+        wrapper.applyPatch({
+            kind: "script",
+            id: `script:history_bound_${i}`,
+            js_body: `return ${i};`
+        });
+    }
+
+    const history = wrapper.getPatchHistory();
+    assert.strictEqual(history.length, RuntimeWrapper.DEFAULT_MAX_PATCH_HISTORY_SIZE);
+    assert.strictEqual(history[0].patch.id, "script:history_bound_75");
+    assert.strictEqual(history.at(-1)?.patch.id, "script:history_bound_574");
+});
+
+void test("maxPatchHistorySize zero allows explicitly unbounded diagnostic history", () => {
+    const wrapper = RuntimeWrapper.createRuntimeWrapper({
+        maxPatchHistorySize: 0
+    });
+
+    for (let i = 0; i < RuntimeWrapper.DEFAULT_MAX_PATCH_HISTORY_SIZE + 25; i++) {
+        wrapper.applyPatch({
+            kind: "script",
+            id: `script:history_unbounded_${i}`,
+            js_body: `return ${i};`
+        });
+    }
+
+    assert.strictEqual(wrapper.getPatchHistory().length, RuntimeWrapper.DEFAULT_MAX_PATCH_HISTORY_SIZE + 25);
+});
+
 void test("getPatchHistory tracks undo operations", () => {
     const wrapper = RuntimeWrapper.createRuntimeWrapper();
 

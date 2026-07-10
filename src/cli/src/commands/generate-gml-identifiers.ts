@@ -513,16 +513,18 @@ function mergeEntry(map: Map<string, IdentifierMapEntry>, identifier: string, da
     const incomingTypePriority = TYPE_PRIORITY.get(incomingType) ?? 0;
     const currentTypePriority = TYPE_PRIORITY.get(current.type) ?? 0;
 
-    const isCoreType = (t: string) => t === "keyword" || t === "literal" || t === "symbol";
-
-    if (isCoreType(current.type)) {
+    if (isCoreIdentifierType(current.type)) {
         // Current is already a core type, keep it.
-    } else if (isCoreType(incomingType)) {
+    } else if (isCoreIdentifierType(incomingType)) {
         // Incoming is a core type, it wins.
         current.type = incomingType;
     } else if (incomingTypePriority > currentTypePriority) {
         current.type = incomingType;
     }
+}
+
+function isCoreIdentifierType(type) {
+    return type === "keyword" || type === "literal" || type === "symbol";
 }
 
 function normalizeIdentifier(name) {

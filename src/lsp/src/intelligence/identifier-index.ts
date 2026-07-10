@@ -32,6 +32,29 @@ type NavigationState = {
     lightweight?: boolean;
 };
 
+function waitForBackgroundIndexPoll(): Promise<void> {
+    return new Promise((resolve) => {
+        setTimeout(resolve, 10);
+    });
+}
+
+async function waitForFullNavigationState(
+    cachedStates: ReadonlyMap<string, NavigationState>,
+    resolvedRoot: string,
+    attemptsRemaining: number
+): Promise<NavigationState | null> {
+    const current = cachedStates.get(resolvedRoot);
+    if (current && !current.lightweight) {
+        return current;
+    }
+    if (attemptsRemaining <= 0) {
+        return null;
+    }
+
+    await waitForBackgroundIndexPoll();
+    return await waitForFullNavigationState(cachedStates, resolvedRoot, attemptsRemaining - 1);
+}
+
 /**
  * Query facade used by the LSP layer to consume semantic navigation facts.
  */
@@ -469,7 +492,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         const buildVersion = readRootVersion(resolvedRoot);
         const priorityFiles = documents.list().map((doc) => doc.filePath);
 
-        buildSemanticIndexForDocument(document, fsFacade, priorityFiles, false)
+        void buildSemanticIndexForDocument(document, fsFacade, priorityFiles, false)
             .then((fullState) => {
                 if (fullState && readRootVersion(resolvedRoot) === buildVersion) {
                     const currentState = cachedStates.get(resolvedRoot);
@@ -480,8 +503,11 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                         cachedStates.set(resolvedRoot, fullState);
                     }
                 }
+                return undefined;
             })
-            .catch(() => {})
+            .catch(() => {
+                return undefined;
+            })
             .finally(() => {
                 backgroundFullBuilds.delete(resolvedRoot);
             });
@@ -564,16 +590,12 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         }
         const resolvedRoot = path.resolve(projectRoot);
 
-        // Wait for the background full build to complete
-        for (let i = 0; i < 100; i++) {
-            const current = cachedStates.get(resolvedRoot);
-            if (current && !current.lightweight) {
-                return current;
-            }
-            await new Promise((r) => setTimeout(r, 10));
-        }
-
-        return cachedStates.get(resolvedRoot) ?? state;
+        // Wait for the background full build to complete.
+        return (
+            (await waitForFullNavigationState(cachedStates, resolvedRoot, 100)) ??
+            cachedStates.get(resolvedRoot) ??
+            state
+        );
     }
 
     return {

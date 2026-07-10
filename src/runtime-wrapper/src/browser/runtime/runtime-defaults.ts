@@ -54,3 +54,19 @@ export const DEFAULT_MAX_UNDO_STACK_SIZE = 50;
  *   (set to `0` for unbounded, which is not recommended for long sessions).
  */
 export const DEFAULT_MAX_ERROR_HISTORY_SIZE = 100;
+
+/**
+ * Default maximum number of patch history records retained by the runtime
+ * wrapper.
+ *
+ * Patch history powers diagnostics and aggregate stats, but live-reload
+ * sessions can apply thousands of patches while a developer repeatedly saves
+ * files. Retaining every historical entry keeps obsolete metadata objects and
+ * per-entry strings alive even though diagnostics only need recent activity.
+ *
+ * 500 entries preserves a generous recent timeline while bounding steady-state
+ * memory. A value of `0` remains available via
+ * {@link RuntimeWrapperOptions.maxPatchHistorySize} for explicitly unbounded
+ * diagnostic sessions.
+ */
+export const DEFAULT_MAX_PATCH_HISTORY_SIZE = 500;
