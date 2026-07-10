@@ -31,7 +31,12 @@ import {
 import { createGmlSemanticIndex } from "../intelligence/index.js";
 import { eslintMessageToDiagnostic, parserErrorToDiagnostic } from "../protocol/diagnostics.js";
 import { createSingleDocumentWorkspaceEdit, createWholeDocumentTextEdit } from "../protocol/edits.js";
-import { createGmlFoldingRanges, createGmlSelectionRanges } from "../protocol/index.js";
+import {
+    createGmlFoldingRanges,
+    createGmlSelectionRanges,
+    encodeGmlSemanticTokens,
+    GML_SEMANTIC_TOKEN_LEGEND
+} from "../protocol/index.js";
 
 /**
  * Stable identity used by LSP clients when they connect to GMLoop's GML server.
@@ -196,12 +201,27 @@ export function createGmlLanguageServer(
                 },
                 documentHighlightProvider: true,
                 foldingRangeProvider: true,
-                selectionRangeProvider: true
+                selectionRangeProvider: true,
+                semanticTokensProvider: {
+                    legend: GML_SEMANTIC_TOKEN_LEGEND,
+                    full: true
+                }
             }
         })
     );
 
     connection.onInitialized(() => {
+        // Pre-load/warm the cached built-in metadata asynchronously so first hover/completion is instant
+        setTimeout(() => {
+            try {
+                semanticIndex.preload();
+            } catch (error) {
+                connection.console.warn(
+                    `Unable to pre-load bundled identifier metadata: ${Core.getErrorMessageOrFallback(error)}`
+                );
+            }
+        }, 0);
+
         void connection.client.register(DidChangeConfigurationNotification.type).catch((error: unknown) => {
             connection.console.warn(
                 `Unable to register configuration change notifications: ${Core.getErrorMessageOrFallback(error)}`
@@ -312,6 +332,13 @@ export function createGmlLanguageServer(
     connection.onDocumentSymbol(async ({ textDocument }) => {
         const document = documents.get(textDocument.uri);
         return document ? await semanticIndex.listDocumentSymbols(document) : [];
+    });
+
+    connection.languages.semanticTokens.on(async ({ textDocument }) => {
+        const document = documents.get(textDocument.uri);
+        return document
+            ? encodeGmlSemanticTokens(document, await semanticIndex.listSemanticHighlights(document))
+            : { data: [] };
     });
 
     connection.onWorkspaceSymbol(async ({ query }): Promise<WorkspaceSymbol[]> => {

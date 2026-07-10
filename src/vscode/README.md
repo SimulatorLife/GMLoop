@@ -11,6 +11,21 @@ This workspace contains the first-party VSCode client for GMLoop's GameMaker Lan
 gmloop lsp
 ```
 
+## Syntax And Semantic Highlighting
+
+GMLoop combines a TextMate grammar with semantic tokens from the language server. The grammar colors syntax
+immediately, including declarations, constructor types and parameters, enums, macros, member calls, JSDoc, and
+Unicode identifiers. Once the server has analyzed the document, semantic tokens distinguish built-ins, functions,
+constructors, parameters, local/global/instance variables, properties, enums, macros, and project resources.
+
+Standalone `.gml` files receive declaration and bundled GameMaker built-in highlighting. Opening a folder containing
+a `.yyp` project adds project-aware definition/reference and resource classification. Unsaved document text is used
+when semantic tokens are recomputed.
+
+To inspect the scope and semantic token applied at the cursor, run VSCode's `Developer: Inspect Editor Tokens and
+Scopes` command. Color choices remain controlled by the active VSCode theme; GMLoop contributes standard TextMate
+scopes and standard LSP semantic token types rather than installing a custom theme.
+
 ## Prerequisites
 
 - Node.js `>=22.5.0`

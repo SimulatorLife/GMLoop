@@ -182,7 +182,9 @@ void test("LSP: project cache uses Map-based cache to avoid eviction on multi-ro
 
 void test("LSP: server handlers return correct folding ranges and selection ranges", async () => {
     const mockConnection: any = {
-        onInitialize: () => {},
+        onInitialize: (fn: any) => {
+            mockConnection.initialize = fn;
+        },
         onInitialized: () => {},
         onDidOpenTextDocument: () => {},
         onDidChangeTextDocument: () => {},
@@ -209,12 +211,26 @@ void test("LSP: server handlers return correct folding ranges and selection rang
         onSelectionRanges: (fn: any) => {
             mockConnection.selectionRanges = fn;
         },
+        languages: {
+            semanticTokens: {
+                on: (fn: any) => {
+                    mockConnection.semanticTokens = fn;
+                }
+            }
+        },
         console: { warn: () => {} },
         client: { register: async () => {} }
     };
 
     const server = Lsp.createGmlLanguageServer(mockConnection);
     const docStore = server.documents;
+
+    const initializeResult = mockConnection.initialize();
+    assert.deepEqual(initializeResult.capabilities.semanticTokensProvider, {
+        legend: Lsp.GML_SEMANTIC_TOKEN_LEGEND,
+        full: true
+    });
+    assert.ok(mockConnection.semanticTokens, "Should register semantic token handler");
 
     const uri = Lsp.filePathToUri("/tmp/test-file.gml");
     docStore.open({

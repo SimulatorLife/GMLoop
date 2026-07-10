@@ -57,6 +57,7 @@ export type GmlProjectNavigationIndex = Readonly<{
     definitionsByFilePath: ReadonlyMap<string, ReadonlyArray<GmlNavigationOccurrence>>;
     occurrencesByFilePath: ReadonlyMap<string, ReadonlyArray<GmlNavigationOccurrence>>;
     projectRoot: string;
+    resourceKindsByName: ReadonlyMap<string, string>;
     symbolIdsByName: ReadonlyMap<string, ReadonlyArray<string>>;
     symbolsById: ReadonlyMap<string, GmlNavigationSymbol>;
     symbols: ReadonlyArray<GmlNavigationSymbol>;
@@ -75,6 +76,7 @@ type ProjectIndexSource = Readonly<{
     identifiers: Record<string, unknown>;
     projectRoot: string;
     relationships: Record<string, unknown>;
+    resources: Record<string, unknown>;
 }>;
 
 type LocationRecord = Readonly<{
@@ -231,6 +233,7 @@ function normalizeProjectIndexSource(projectIndex: unknown): ProjectIndexSource 
     const projectRoot = readString(source.projectRoot);
     const identifiers = asRecord(source.identifiers);
     const relationships = asRecord(source.relationships);
+    const resources = asRecord(source.resources);
 
     if (projectRoot === null) {
         return null;
@@ -239,7 +242,8 @@ function normalizeProjectIndexSource(projectIndex: unknown): ProjectIndexSource 
     return {
         projectRoot,
         identifiers,
-        relationships
+        relationships,
+        resources
     };
 }
 
@@ -404,6 +408,7 @@ export function createProjectNavigationIndex(projectIndex: unknown): GmlProjectN
     if (!source) {
         return {
             projectRoot: "",
+            resourceKindsByName: new Map(),
             symbols: [],
             symbolsById: new Map(),
             symbolIdsByName: new Map(),
@@ -413,6 +418,16 @@ export function createProjectNavigationIndex(projectIndex: unknown): GmlProjectN
     }
 
     const symbols: GmlNavigationSymbol[] = [];
+    const resourceKindsByName = new Map<string, string>();
+    for (const [resourceKey, rawResource] of Object.entries(source.resources)) {
+        const resource = asRecord(rawResource);
+        const name = readString(resource.name) ?? resourceKey;
+        const resourceType = readString(resource.resourceType);
+        resourceKindsByName.set(
+            name,
+            resourceType === "GMObject" ? "object" : resourceType === "GMRoom" ? "room" : "resource"
+        );
+    }
     for (const [collectionName, rawCollection] of Object.entries(source.identifiers)) {
         const collection = asRecord(rawCollection);
         for (const [entryKey, rawEntry] of Object.entries(collection)) {
@@ -429,6 +444,7 @@ export function createProjectNavigationIndex(projectIndex: unknown): GmlProjectN
 
     return {
         projectRoot: source.projectRoot,
+        resourceKindsByName,
         symbols: sortedSymbols,
         ...createNavigationIndexMaps(sortedSymbols)
     };

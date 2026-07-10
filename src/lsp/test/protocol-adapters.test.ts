@@ -40,3 +40,30 @@ void test("parser errors become LSP diagnostics", () => {
     assert.equal(diagnostic.source, "gmloop-parser");
     assert.deepEqual(diagnostic.range.start, { line: 0, character: 4 });
 });
+
+void test("semantic token adapter uses a stable legend and UTF-16 positions", () => {
+    const document = Lsp.createGmlDocumentStore().open({
+        uri: Lsp.filePathToUri("/tmp/tokens.gml"),
+        languageId: "gml",
+        version: 1,
+        text: "😀 abs(value)"
+    });
+    const encoded = Lsp.encodeGmlSemanticTokens(document, [
+        { start: 3, end: 6, kind: "function", modifiers: ["defaultLibrary"] },
+        { start: 7, end: 12, kind: "parameter", modifiers: ["declaration", "definition"] }
+    ]);
+
+    assert.deepEqual(Lsp.GML_SEMANTIC_TOKEN_LEGEND.tokenTypes, [
+        "function",
+        "method",
+        "class",
+        "parameter",
+        "variable",
+        "property",
+        "enum",
+        "enumMember",
+        "macro",
+        "namespace"
+    ]);
+    assert.deepEqual(encoded.data, [0, 3, 3, 0, 32, 0, 4, 5, 3, 3]);
+});

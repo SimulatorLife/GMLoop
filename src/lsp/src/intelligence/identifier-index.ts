@@ -47,12 +47,16 @@ export type GmlSemanticIndex = Readonly<{
     hover(document: GmlTextDocument, offset: number, identifierName: string): Promise<Hover | null>;
     invalidateForDocument(document: GmlTextDocument): void;
     listDocumentSymbols(document: GmlTextDocument): Promise<DocumentSymbol[]>;
+    listSemanticHighlights(
+        document: GmlTextDocument
+    ): Promise<ReturnType<typeof Semantic.collectGmlSemanticHighlights>>;
     planRename(
         document: GmlTextDocument,
         offset: number,
         identifierName: string,
         newName: string
     ): Promise<WorkspaceEdit | null>;
+    preload(): void;
     refreshForDocument(document: GmlTextDocument): Promise<NavigationState | null>;
     searchCompletions(document: GmlTextDocument, query: string): Promise<CompletionItem[]>;
     searchWorkspaceSymbols(document: GmlTextDocument, query: string): Promise<WorkspaceSymbol[]>;
@@ -434,6 +438,7 @@ function isDocumentWithinProjectRoot(document: GmlTextDocument, projectRoot: str
  */
 export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemanticIndex {
     const cachedStates = new Map<string, NavigationState>();
+    const staleStates = new Map<string, NavigationState>();
     const inFlightBuilds = new Map<string, Promise<NavigationState | null>>();
     const backgroundFullBuilds = new Map<string, Promise<NavigationState | null>>();
     const rootVersions = new Map<string, number>();
@@ -446,6 +451,10 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
     function invalidateRoot(projectRoot: string): void {
         const resolvedRoot = path.resolve(projectRoot);
         rootVersions.set(resolvedRoot, readRootVersion(resolvedRoot) + 1);
+        const current = cachedStates.get(resolvedRoot);
+        if (current) {
+            staleStates.set(resolvedRoot, current);
+        }
         cachedStates.delete(resolvedRoot);
         inFlightBuilds.delete(resolvedRoot);
         backgroundFullBuilds.delete(resolvedRoot);
@@ -482,6 +491,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                     } else {
                         cachedStates.set(resolvedRoot, fullState);
                     }
+                    staleStates.delete(resolvedRoot);
                     return cachedStates.get(resolvedRoot) ?? fullState;
                 }
                 return null;
@@ -496,7 +506,32 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         return fullBuild;
     }
 
-    async function ensureIndex(document: GmlTextDocument): Promise<NavigationState | null> {
+    function triggerBuildInBackground(document: GmlTextDocument, resolvedRoot: string): void {
+        let inFlight = inFlightBuilds.get(resolvedRoot);
+        if (inFlight === undefined) {
+            const buildVersion = readRootVersion(resolvedRoot);
+            const buildPromise = (async () => {
+                const priorityFiles = documents.list().map((doc) => doc.filePath);
+                const state = await buildSemanticIndexForDocument(document, fsFacade, priorityFiles, true);
+                if (state && readRootVersion(resolvedRoot) === buildVersion) {
+                    cachedStates.set(resolvedRoot, state);
+                    staleStates.delete(resolvedRoot);
+                    void triggerBackgroundFullBuild(document, resolvedRoot);
+                }
+                return state;
+            })();
+
+            inFlight = buildPromise.finally(() => {
+                inFlightBuilds.delete(resolvedRoot);
+            });
+            inFlightBuilds.set(resolvedRoot, inFlight);
+        }
+    }
+
+    async function ensureIndex(
+        document: GmlTextDocument,
+        options?: { allowStale?: boolean }
+    ): Promise<NavigationState | null> {
         const projectRoot = await Semantic.findProjectRoot({ filepath: document.filePath });
         if (!projectRoot) {
             return null;
@@ -513,6 +548,12 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
             return currentState;
         }
 
+        const staleState = staleStates.get(resolvedRoot);
+        if (staleState && options?.allowStale) {
+            triggerBuildInBackground(document, resolvedRoot);
+            return staleState;
+        }
+
         let inFlight = inFlightBuilds.get(resolvedRoot);
         if (inFlight === undefined) {
             const buildVersion = readRootVersion(resolvedRoot);
@@ -521,6 +562,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                 const state = await buildSemanticIndexForDocument(document, fsFacade, priorityFiles, true);
                 if (state && readRootVersion(resolvedRoot) === buildVersion) {
                     cachedStates.set(resolvedRoot, state);
+                    staleStates.delete(resolvedRoot);
                     void triggerBackgroundFullBuild(document, resolvedRoot);
                 }
                 return state;
@@ -548,6 +590,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
             .then((state) => {
                 if (state && readRootVersion(resolvedRoot) === buildVersion) {
                     cachedStates.set(resolvedRoot, state);
+                    staleStates.delete(resolvedRoot);
                 }
                 return state;
             })
@@ -581,6 +624,13 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         buildForDocument: ensureIndex,
         refreshForDocument: refreshIndex,
         invalidateForDocument: invalidateKnownDocumentRoots,
+        preload() {
+            try {
+                getBuiltInsMetadata();
+            } catch {
+                // Ignore pre-load errors
+            }
+        },
         async findDefinition(document, offset, identifierName) {
             const state = await ensureIndex(document);
             if (!state) {
@@ -609,7 +659,41 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
             );
         },
         async hover(document, offset, identifierName) {
-            const state = await ensureIndex(document);
+            if (isOffsetInCommentOrString(document.sourceText, offset)) {
+                return null;
+            }
+
+            // First check if it is a built-in identifier. Since built-in metadata is bundled,
+            // we can return hover info for built-ins instantly without waiting for the full or
+            // lightweight project semantic index to compile/build, avoiding the "Loading..." lag.
+            const builtIns = getBuiltInsMetadata();
+            let builtIn = builtIns[identifierName];
+            if (!builtIn) {
+                const nameLower = identifierName.toLowerCase();
+                const matchedKey = Object.keys(builtIns).find((k) => k.toLowerCase() === nameLower);
+                if (matchedKey) {
+                    builtIn = builtIns[matchedKey];
+                }
+            }
+
+            if (Core.isObjectLike(builtIn)) {
+                const info = builtIn as Record<string, unknown>;
+                const type = typeof info.type === "string" ? info.type : "unknown";
+                let markdown = `\`${identifierName}\`\n\nBuilt-in ${type}`;
+                if (typeof info.manualPath === "string" && info.manualPath.length > 0) {
+                    const manualUrl = `https://manual.gamemaker.io/monthly/en-US/index.htm#t=${encodeURIComponent(info.manualPath)}`;
+                    markdown += `\n\n[Open GameMaker Manual Page](${manualUrl})`;
+                }
+                return {
+                    contents: {
+                        kind: "markdown",
+                        value: markdown
+                    },
+                    range: offsetsToRange(document, offset, offset + identifierName.length)
+                };
+            }
+
+            const state = await ensureIndex(document, { allowStale: true });
             if (!state) {
                 return null;
             }
@@ -654,34 +738,6 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                 };
             }
 
-            // Fallback: check if built-in
-            const builtIns = getBuiltInsMetadata();
-            let builtIn = builtIns[identifierName];
-            if (!builtIn) {
-                const nameLower = identifierName.toLowerCase();
-                const matchedKey = Object.keys(builtIns).find((k) => k.toLowerCase() === nameLower);
-                if (matchedKey) {
-                    builtIn = builtIns[matchedKey];
-                }
-            }
-
-            if (Core.isObjectLike(builtIn)) {
-                const info = builtIn as Record<string, unknown>;
-                const type = typeof info.type === "string" ? info.type : "unknown";
-                let markdown = `\`${identifierName}\`\n\nBuilt-in ${type}`;
-                if (typeof info.manualPath === "string" && info.manualPath.length > 0) {
-                    const manualUrl = `https://manual.gamemaker.io/monthly/en-US/index.htm#t=${encodeURIComponent(info.manualPath)}`;
-                    markdown += `\n\n[Open GameMaker Manual Page](${manualUrl})`;
-                }
-                return {
-                    contents: {
-                        kind: "markdown",
-                        value: markdown
-                    },
-                    range: offsetsToRange(document, offset, offset + identifierName.length)
-                };
-            }
-
             return null;
         },
         async listDocumentSymbols(document) {
@@ -696,6 +752,29 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                 range: offsetsToRange(document, occurrence.location.range.start, occurrence.location.range.end),
                 selectionRange: offsetsToRange(document, occurrence.location.range.start, occurrence.location.range.end)
             }));
+        },
+        async listSemanticHighlights(document) {
+            const state = await ensureIndex(document, { allowStale: true });
+            const occurrences = state?.index.occurrencesByFilePath.get(path.resolve(document.filePath)) ?? [];
+            const builtIns = Object.entries(getBuiltInsMetadata()).flatMap(([name, descriptor]) => {
+                if (!Core.isObjectLike(descriptor)) return [];
+                const entry = descriptor as Record<string, unknown>;
+                if (typeof entry.type !== "string") return [];
+                return [{ name, type: entry.type, deprecated: entry.deprecated === true }];
+            });
+            return Semantic.collectGmlSemanticHighlights({
+                sourceText: document.sourceText,
+                builtIns,
+                projectIdentifiers: state
+                    ? [...state.index.resourceKindsByName].map(([name, kind]) => ({ name, kind }))
+                    : [],
+                occurrences: occurrences.map((occurrence) => ({
+                    start: occurrence.location.range.start,
+                    end: occurrence.location.range.end,
+                    kind: occurrence.kind,
+                    role: occurrence.role
+                }))
+            });
         },
         async searchWorkspaceSymbols(document, query) {
             const state = await ensureIndex(document);

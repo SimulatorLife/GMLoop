@@ -29,19 +29,42 @@ void test("GML TextMate grammar is valid and exposes the registered source scope
         "accessors",
         "comments",
         "constants",
+        "constructorDeclarations",
         "directives",
+        "enumDeclarations",
         "functionCalls",
         "functionDeclarations",
         "identifiers",
+        "jsdoc",
         "keywords",
+        "memberCalls",
         "numbers",
         "properties",
         "strings",
         "symbolOperators",
         "templateStrings",
+        "variableDeclarations",
         "verbatimStrings",
         "wordOperators"
     ]);
+});
+
+void test("TextMate grammar scopes declarations, types, enums, macros, JSDoc, and Unicode identifiers", async () => {
+    const grammarSource = await readFile(new URL("syntaxes/gml.tmLanguage.json", WORKSPACE_ROOT_URL), "utf8");
+    for (const scope of [
+        "variable.other.readwrite.gml",
+        "variable.parameter.gml",
+        "entity.name.type.gml",
+        "entity.other.inherited-class.gml",
+        "entity.name.enum.gml",
+        "variable.other.enummember.gml",
+        "entity.name.constant.gml",
+        "entity.name.function.member.gml",
+        "storage.type.class.jsdoc.gml"
+    ]) {
+        assert.ok(grammarSource.includes(scope), `TextMate grammar must include ${scope}`);
+    }
+    assert.match(grammarSource, /\\\\p\{L\}/u, "identifier patterns must preserve Unicode letters");
 });
 
 void test("TextMate grammar contains the shared JSON language inventory and scopes", async () => {

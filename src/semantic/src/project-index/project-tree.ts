@@ -133,32 +133,42 @@ async function processDirectoryEntries({
     ensureNotAborted,
     metrics
 }) {
-    await Core.runSequentially(entries, async (entry) => {
-        ensureNotAborted();
-        const descriptor = createDirectoryEntryDescriptor(directoryContext, entry, projectRoot);
-        if (Core.isDirectoryExcludedBySegments(descriptor.absolutePath, PROJECT_TREE_EXCLUDED_DIRECTORY_SEGMENTS, [])) {
-            metrics?.counters?.increment("io.skippedExcludedDirectories");
-            return;
-        }
+    await Core.runInParallelWithLimit(
+        entries,
+        async (entry) => {
+            ensureNotAborted();
+            const descriptor = createDirectoryEntryDescriptor(directoryContext, entry, projectRoot);
+            if (
+                Core.isDirectoryExcludedBySegments(
+                    descriptor.absolutePath,
+                    PROJECT_TREE_EXCLUDED_DIRECTORY_SEGMENTS,
+                    []
+                )
+            ) {
+                metrics?.counters?.increment("io.skippedExcludedDirectories");
+                return;
+            }
 
-        const stats = await resolveEntryStats({
-            absolutePath: descriptor.absolutePath,
-            fsFacade,
-            ensureNotAborted,
-            metrics
-        });
+            const stats = await resolveEntryStats({
+                absolutePath: descriptor.absolutePath,
+                fsFacade,
+                ensureNotAborted,
+                metrics
+            });
 
-        if (!stats) {
-            return;
-        }
+            if (!stats) {
+                return;
+            }
 
-        if (isDirectoryStat(stats)) {
-            traversal.enqueue(descriptor.relativePath);
-            return;
-        }
+            if (isDirectoryStat(stats)) {
+                traversal.enqueue(descriptor.relativePath);
+                return;
+            }
 
-        collector.register(descriptor.relativePosix, descriptor.absolutePath, stats?.mtimeMs ?? null);
-    });
+            collector.register(descriptor.relativePosix, descriptor.absolutePath, stats?.mtimeMs ?? null);
+        },
+        32
+    );
 }
 
 export async function scanProjectTree(

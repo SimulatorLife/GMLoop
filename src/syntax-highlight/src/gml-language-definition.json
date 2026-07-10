@@ -19,6 +19,8 @@
     "builtin-constant": "constant.language.gml",
     "comment": "comment.gml",
     "directive": "keyword.control.directive.gml",
+    "enum-member": "variable.other.enummember.gml",
+    "enum-name": "entity.name.enum.gml",
     "function-name": "entity.name.function.gml",
     "identifier": "variable.other.gml",
     "keyword": "keyword.control.gml",
@@ -27,6 +29,9 @@
     "plain": "source.gml",
     "property-access": "variable.other.property.gml",
     "punctuation": "punctuation.gml",
-    "string": "string.quoted.gml"
+    "string": "string.quoted.gml",
+    "type-name": "entity.name.type.gml",
+    "variable-declaration": "variable.other.readwrite.gml",
+    "variable-parameter": "variable.parameter.gml"
   }
 }
