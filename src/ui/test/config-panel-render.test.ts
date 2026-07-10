@@ -53,6 +53,12 @@ function createMockModel(): GraphVisualizationUiModel {
                         name: "printWidth",
                         source: "configured",
                         value: 100
+                    },
+                    {
+                        description: "Indent with tabs instead of spaces.",
+                        name: "useTabs",
+                        source: "default",
+                        value: false
                     }
                 ]
             },
@@ -202,6 +208,8 @@ void test("config panel defaults to rendered view and exposes configuration deta
     assert.doesNotMatch(rendered, /Project Root:?/iu);
     assert.doesNotMatch(rendered, /<dt>File<\/dt>/u);
     assert.match(rendered, /id="config-format-heading"[\s\S]*Format/u);
+    assert.match(rendered, /id=config-format-useTabs/u);
+    assert.match(rendered, /Indent with tabs instead of spaces\./u);
     assert.match(rendered, /id="config-lint-heading"[\s\S]*Lint/u);
     assert.match(rendered, /id="config-refactor-heading"[\s\S]*Refactor/u);
     assert.doesNotMatch(rendered, /id="config-tool-metadata-heading"/u);

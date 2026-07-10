@@ -39,7 +39,8 @@ const FORMAT_BUILDER_OPTION_NAMES = new Set([
     "logicalOperatorsStyle",
     "printWidth",
     "semi",
-    "tabWidth"
+    "tabWidth",
+    "useTabs"
 ]);
 
 function serializeConfigurationValue(value: unknown): string {

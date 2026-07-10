@@ -37,6 +37,7 @@ import {
     encodeGmlSemanticTokens,
     GML_SEMANTIC_TOKEN_LEGEND
 } from "../protocol/index.js";
+import { resolveDocumentFormatOptions } from "./document-format-options.js";
 
 /**
  * Stable identity used by LSP clients when they connect to GMLoop's GML server.
@@ -295,103 +296,151 @@ export function createGmlLanguageServer(
             return [];
         }
 
-        const formatted = await Format.format(document.sourceText, {
-            tabWidth: options?.tabSize,
-            useTabs: options?.insertSpaces === false
+        const formatOptions = await resolveDocumentFormatOptions(document.filePath, {
+            insertSpaces: options.insertSpaces,
+            tabSize: options.tabSize
         });
+        const formatted = await Format.format(document.sourceText, formatOptions);
         return [createWholeDocumentTextEdit(document, formatted)];
     });
 
     connection.onDefinition(async ({ textDocument, position }): Promise<Location[]> => {
-        const document = documents.get(textDocument.uri);
-        if (!document) {
+        try {
+            const document = documents.get(textDocument.uri);
+            if (!document) {
+                return [];
+            }
+
+            const offset = positionToOffset(document, position);
+            const word = readWordAtPosition(document, offset);
+            if (!word) {
+                return [];
+            }
+
+            const definition = await semanticIndex.findDefinition(document, offset, word.name);
+            return definition ? [definition] : [];
+        } catch (error) {
+            connection.console.error(`Error in onDefinition: ${Core.getErrorMessageOrFallback(error)}`);
             return [];
         }
-
-        const offset = positionToOffset(document, position);
-        const word = readWordAtPosition(document, offset);
-        if (!word) {
-            return [];
-        }
-
-        const definition = await semanticIndex.findDefinition(document, offset, word.name);
-        return definition ? [definition] : [];
     });
 
     connection.onReferences(async ({ textDocument, position, context }): Promise<Location[]> => {
-        const document = documents.get(textDocument.uri);
-        if (!document) {
+        try {
+            const document = documents.get(textDocument.uri);
+            if (!document) {
+                return [];
+            }
+
+            const offset = positionToOffset(document, position);
+            const word = readWordAtPosition(document, offset);
+            return word
+                ? await semanticIndex.findReferences(document, offset, word.name, context.includeDeclaration)
+                : [];
+        } catch (error) {
+            connection.console.error(`Error in onReferences: ${Core.getErrorMessageOrFallback(error)}`);
             return [];
         }
-
-        const offset = positionToOffset(document, position);
-        const word = readWordAtPosition(document, offset);
-        return word ? await semanticIndex.findReferences(document, offset, word.name, context.includeDeclaration) : [];
     });
 
     connection.onDocumentSymbol(async ({ textDocument }) => {
-        const document = documents.get(textDocument.uri);
-        return document ? await semanticIndex.listDocumentSymbols(document) : [];
+        try {
+            const document = documents.get(textDocument.uri);
+            return document ? await semanticIndex.listDocumentSymbols(document) : [];
+        } catch (error) {
+            connection.console.error(`Error in onDocumentSymbol: ${Core.getErrorMessageOrFallback(error)}`);
+            return [];
+        }
     });
 
     connection.languages.semanticTokens.on(async ({ textDocument }) => {
-        const document = documents.get(textDocument.uri);
-        return document
-            ? encodeGmlSemanticTokens(document, await semanticIndex.listSemanticHighlights(document))
-            : { data: [] };
+        try {
+            const document = documents.get(textDocument.uri);
+            return document
+                ? encodeGmlSemanticTokens(document, await semanticIndex.listSemanticHighlights(document))
+                : { data: [] };
+        } catch (error) {
+            connection.console.error(`Error in semanticTokens.on: ${Core.getErrorMessageOrFallback(error)}`);
+            return { data: [] };
+        }
     });
 
     connection.onWorkspaceSymbol(async ({ query }): Promise<WorkspaceSymbol[]> => {
-        const document = documents.list().find((candidate) => isGmlDocumentPath(candidate.filePath));
-        return document ? await semanticIndex.searchWorkspaceSymbols(document, query) : [];
+        try {
+            const document = documents.list().find((candidate) => isGmlDocumentPath(candidate.filePath));
+            return document ? await semanticIndex.searchWorkspaceSymbols(document, query) : [];
+        } catch (error) {
+            connection.console.error(`Error in onWorkspaceSymbol: ${Core.getErrorMessageOrFallback(error)}`);
+            return [];
+        }
     });
 
     connection.onHover(async ({ textDocument, position }) => {
-        const document = documents.get(textDocument.uri);
-        if (!document) {
+        try {
+            const document = documents.get(textDocument.uri);
+            if (!document) {
+                return null;
+            }
+
+            const offset = positionToOffset(document, position);
+            const word = readWordAtPosition(document, offset);
+            if (!word) {
+                return null;
+            }
+
+            return await semanticIndex.hover(document, offset, word.name);
+        } catch (error) {
+            connection.console.error(`Error in onHover: ${Core.getErrorMessageOrFallback(error)}`);
             return null;
         }
-
-        const offset = positionToOffset(document, position);
-        const word = readWordAtPosition(document, offset);
-        if (!word) {
-            return null;
-        }
-
-        return await semanticIndex.hover(document, offset, word.name);
     });
 
     connection.onPrepareRename(({ textDocument, position }) => {
-        const document = documents.get(textDocument.uri);
-        if (!document) {
+        try {
+            const document = documents.get(textDocument.uri);
+            if (!document) {
+                return null;
+            }
+
+            return readWordAtPosition(document, positionToOffset(document, position))?.range ?? null;
+        } catch (error) {
+            connection.console.error(`Error in onPrepareRename: ${Core.getErrorMessageOrFallback(error)}`);
             return null;
         }
-
-        return readWordAtPosition(document, positionToOffset(document, position))?.range ?? null;
     });
 
     connection.onRenameRequest(async ({ textDocument, position, newName }) => {
-        const document = documents.get(textDocument.uri);
-        if (!document) {
+        try {
+            const document = documents.get(textDocument.uri);
+            if (!document) {
+                return null;
+            }
+
+            const word = readWordAtPosition(document, positionToOffset(document, position));
+            if (!word) {
+                return null;
+            }
+
+            return await semanticIndex.planRename(document, positionToOffset(document, position), word.name, newName);
+        } catch (error) {
+            connection.console.error(`Error in onRenameRequest: ${Core.getErrorMessageOrFallback(error)}`);
             return null;
         }
-
-        const word = readWordAtPosition(document, positionToOffset(document, position));
-        if (!word) {
-            return null;
-        }
-
-        return await semanticIndex.planRename(document, positionToOffset(document, position), word.name, newName);
     });
 
     connection.onCompletion(async ({ textDocument, position }) => {
-        const document = documents.get(textDocument.uri);
-        if (!document) {
+        try {
+            const document = documents.get(textDocument.uri);
+            if (!document) {
+                return [];
+            }
+
+            const prefix = readWordAtPosition(document, positionToOffset(document, position))?.name ?? "";
+            return await semanticIndex.searchCompletions(document, prefix);
+        } catch (error) {
+            connection.console.error(`Error in onCompletion: ${Core.getErrorMessageOrFallback(error)}`);
             return [];
         }
-
-        const prefix = readWordAtPosition(document, positionToOffset(document, position))?.name ?? "";
-        return await semanticIndex.searchCompletions(document, prefix);
     });
 
     connection.onCodeAction(async ({ textDocument, context }) => {

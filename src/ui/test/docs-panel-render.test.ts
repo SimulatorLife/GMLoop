@@ -133,6 +133,11 @@ function createDocumentationCatalogs(): GraphVisualizationDocumentationCatalogs 
                     defaultValue: "always",
                     description: "Trailing comma strategy.",
                     name: "trailingComma"
+                },
+                {
+                    defaultValue: false,
+                    description: "Indent with tabs instead of spaces.",
+                    name: "useTabs"
                 }
             ],
             lintRules: [
@@ -248,6 +253,8 @@ void test("GmDocsPanel renders the Formatting subview and option entries", () =>
     assert.match(rendered, /id=codemods-page[\s\S]*?class=docs-subpage hidden[\s\S]*role="tabpanel"/u);
     assert.match(rendered, /printWidth/u);
     assert.match(rendered, /trailingComma/u);
+    assert.match(rendered, /useTabs/u);
+    assert.match(rendered, /Indent with tabs instead of spaces\./u);
 });
 
 void test("GmDocsPanel renders the Codemods subview and refactor entries", () => {

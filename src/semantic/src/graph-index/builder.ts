@@ -15,6 +15,7 @@ import {
     getDefaultProjectIndexParser,
     scanProjectTree
 } from "../project-index/index.js";
+import { getGmlSymbolKindForIdentifierCollection } from "../symbols/taxonomy.js";
 import { resolveGraphIndexConfig } from "./config.js";
 import {
     GRAPH_INDEX_SCHEMA_VERSION,
@@ -625,39 +626,40 @@ function resolveProjectRootNodeId(context: ProjectionContext): string | null {
 }
 
 function normalizeIdentifierCollectionKind(collectionName: string): GraphNodeKind | null {
-    switch (collectionName) {
-        case "scripts": {
+    switch (getGmlSymbolKindForIdentifierCollection(collectionName)) {
+        case "script": {
             return "script";
         }
-        case "functions": {
+        case "function":
+        case "constructorStaticMember": {
             return "function";
         }
-        case "structs": {
+        case "struct": {
             return "struct";
         }
-        case "macros": {
+        case "macro": {
             return "macro";
         }
-        case "enums": {
+        case "enum": {
             return "enum";
         }
-        case "enumMembers": {
+        case "enumMember": {
             return "enum_member";
         }
-        case "globalVariables": {
+        case "globalVariable": {
             return "global_variable";
         }
-        case "instanceVariables": {
+        case "instanceVariable": {
             return "instance_variable";
         }
-        case "localVariables": {
+        case "localVariable": {
             return "local_variable";
         }
-        case "structVariables": {
+        case "structVariable": {
             return "struct_variable";
         }
         default: {
-            return "script";
+            return null;
         }
     }
 }

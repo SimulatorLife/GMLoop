@@ -3,6 +3,7 @@ import path from "node:path";
 import { Core } from "@gmloop/core";
 
 import { buildProjectIndex, type ProjectIndexFsFacade } from "../project-index/index.js";
+import { getGmlSymbolKindForIdentifierCollection, type GmlSemanticSymbolKind } from "../symbols/taxonomy.js";
 
 /**
  * Role assigned to an indexed symbol occurrence.
@@ -30,7 +31,7 @@ export type GmlNavigationLocation = Readonly<{
  */
 export type GmlNavigationOccurrence = Readonly<{
     displayName: string;
-    kind: string;
+    kind: GmlSemanticSymbolKind;
     location: GmlNavigationLocation;
     name: string;
     role: GmlNavigationOccurrenceRole;
@@ -44,7 +45,7 @@ export type GmlNavigationOccurrence = Readonly<{
 export type GmlNavigationSymbol = Readonly<{
     definitions: ReadonlyArray<GmlNavigationOccurrence>;
     displayName: string;
-    kind: string;
+    kind: GmlSemanticSymbolKind;
     name: string;
     references: ReadonlyArray<GmlNavigationOccurrence>;
     symbolId: string;
@@ -57,7 +58,7 @@ export type GmlProjectNavigationIndex = Readonly<{
     definitionsByFilePath: ReadonlyMap<string, ReadonlyArray<GmlNavigationOccurrence>>;
     occurrencesByFilePath: ReadonlyMap<string, ReadonlyArray<GmlNavigationOccurrence>>;
     projectRoot: string;
-    resourceKindsByName: ReadonlyMap<string, string>;
+    resourceKindsByName: ReadonlyMap<string, GmlSemanticSymbolKind>;
     symbolIdsByName: ReadonlyMap<string, ReadonlyArray<string>>;
     symbolsById: ReadonlyMap<string, GmlNavigationSymbol>;
     symbols: ReadonlyArray<GmlNavigationSymbol>;
@@ -68,7 +69,7 @@ export type GmlProjectNavigationIndex = Readonly<{
  */
 export type GmlHoverFacts = Readonly<{
     displayName: string;
-    kind: string;
+    kind: GmlSemanticSymbolKind;
     symbolId: string;
 }>;
 
@@ -82,20 +83,6 @@ type ProjectIndexSource = Readonly<{
 type LocationRecord = Readonly<{
     index?: unknown;
 }>;
-
-const IDENTIFIER_COLLECTION_KINDS: Readonly<Record<string, string>> = Object.freeze({
-    constructorStaticMembers: "constructorStaticMember",
-    enumMembers: "enumMember",
-    enums: "enum",
-    functions: "function",
-    globalVariables: "globalVariable",
-    instanceVariables: "instanceVariable",
-    localVariables: "localVariable",
-    macros: "macro",
-    scripts: "script",
-    structVariables: "structVariable",
-    structs: "struct"
-});
 
 function asRecord(value: unknown): Record<string, unknown> {
     return Core.isObjectLike(value) ? (value as Record<string, unknown>) : {};
@@ -157,7 +144,7 @@ function readOccurrenceLocation(
 function readOccurrences(parameters: {
     displayName: string;
     entryFilePath: string | null;
-    kind: string;
+    kind: GmlSemanticSymbolKind;
     name: string;
     projectRoot: string;
     rawOccurrences: unknown;
@@ -199,7 +186,7 @@ function normalizeIdentifierEntry(
     const entry = asRecord(rawEntry);
     const name = readString(entry.name) ?? readString(entry.displayName) ?? entryKey;
     const displayName = readString(entry.displayName) ?? name;
-    const kind = IDENTIFIER_COLLECTION_KINDS[collectionName] ?? "variable";
+    const kind = getGmlSymbolKindForIdentifierCollection(collectionName);
     const symbolId = readString(entry.identifierId) ?? `${kind}:${entryKey}`;
     const entryFilePath = readString(entry.filePath) ?? readString(entry.resourcePath);
     const scopeId = readString(entry.scopeId);
@@ -419,7 +406,7 @@ export function createProjectNavigationIndex(projectIndex: unknown): GmlProjectN
     }
 
     const symbols: GmlNavigationSymbol[] = [];
-    const resourceKindsByName = new Map<string, string>();
+    const resourceKindsByName = new Map<string, GmlSemanticSymbolKind>();
     for (const [resourceKey, rawResource] of Object.entries(source.resources)) {
         const resource = asRecord(rawResource);
         const name = readString(resource.name) ?? resourceKey;

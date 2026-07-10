@@ -105,7 +105,7 @@
     "constructorDeclarations": {
       "patterns": [
         {
-          "begin": "\\b(function)\\s+([$_\\p{L}][$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}]*)\\s*(\\()(?=[^)]*\\)\\s*(?::\\s*[$_\\p{L}][$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}]*\\s*)?constructor\\b)",
+          "begin": "\\b(function)\\s+([$_\\p{L}][$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}]*)\\s*(\\()(?=[^)]*\\)\\s*(?::\\s*[$_\\p{L}][$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}]*\\s*(?:\\(\\s*\\))?\\s*)?constructor\\b)",
           "beginCaptures": {
             "1": { "name": "keyword.control.gml" },
             "2": { "name": "entity.name.type.gml" },
@@ -120,7 +120,7 @@
           ]
         },
         {
-          "match": "(:)\\s*([$_\\p{L}][$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}]*)(?=\\s*constructor\\b)",
+          "match": "(:)\\s*([$_\\p{L}][$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}]*)(?:\\(\\s*\\))?(?=\\s*constructor\\b)",
           "captures": {
             "1": { "name": "punctuation.separator.inheritance.gml" },
             "2": { "name": "entity.other.inherited-class.gml" }

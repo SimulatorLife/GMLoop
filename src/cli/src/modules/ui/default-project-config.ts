@@ -53,6 +53,7 @@ export function createDefaultGmloopProjectConfig(): Readonly<Record<string, unkn
             })
         }),
         semi: true,
-        tabWidth: 4
+        tabWidth: 4,
+        useTabs: false
     });
 }

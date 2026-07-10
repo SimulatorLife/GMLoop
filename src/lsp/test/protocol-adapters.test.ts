@@ -67,3 +67,10 @@ void test("semantic token adapter uses a stable legend and UTF-16 positions", ()
     ]);
     assert.deepEqual(encoded.data, [0, 3, 3, 0, 32, 0, 4, 5, 3, 3]);
 });
+
+void test("LSP symbol and completion adapters share canonical semantic kinds", () => {
+    assert.equal(Lsp.gmlSymbolKindToLspSymbolKind("constructorStaticMember"), 6);
+    assert.equal(Lsp.gmlSymbolKindToCompletionItemKind("constructorStaticMember"), 2);
+    assert.equal(Lsp.gmlSymbolKindToLspSymbolKind("futureKind"), 15);
+    assert.equal(Lsp.gmlSymbolKindToCompletionItemKind("futureKind"), 1);
+});

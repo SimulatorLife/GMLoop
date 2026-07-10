@@ -1,3 +1,10 @@
+import {
+    getGmlSymbolKindForBuiltInType,
+    getGmlSymbolKindSpecificity,
+    normalizeGmlSemanticSymbolKind,
+    type GmlSemanticSymbolKind
+} from "../symbols/taxonomy.js";
+
 /** Semantic categories exposed to editor protocol adapters. */
 export type GmlSemanticHighlightKind =
     | "class"
@@ -31,7 +38,7 @@ export type GmlSemanticHighlightToken = Readonly<{
 /** Project occurrence facts consumed by semantic highlighting. */
 export type GmlSemanticHighlightOccurrence = Readonly<{
     end: number;
-    kind: string;
+    kind: GmlSemanticSymbolKind;
     role: "definition" | "reference";
     start: number;
 }>;
@@ -46,7 +53,7 @@ export type GmlBuiltInHighlightIdentifier = Readonly<{
 export type CollectGmlSemanticHighlightsParameters = Readonly<{
     builtIns: ReadonlyArray<GmlBuiltInHighlightIdentifier>;
     occurrences: ReadonlyArray<GmlSemanticHighlightOccurrence>;
-    projectIdentifiers: ReadonlyArray<Readonly<{ kind: string; name: string }>>;
+    projectIdentifiers: ReadonlyArray<Readonly<{ kind: GmlSemanticSymbolKind; name: string }>>;
     sourceText: string;
 }>;
 
@@ -104,10 +111,11 @@ function scanIdentifiers(sourceText: string): IdentifierRange[] {
     return identifiers;
 }
 
-function mapNavigationKind(kind: string): GmlSemanticHighlightKind {
+function mapNavigationKind(kind: GmlSemanticSymbolKind): GmlSemanticHighlightKind | null {
     const kinds: Readonly<Record<string, GmlSemanticHighlightKind>> = {
         callable: "function",
-        constructorStaticMember: "property",
+        constant: "variable",
+        constructorStaticMember: "method",
         enum: "enum",
         enumMember: "enumMember",
         function: "function",
@@ -118,20 +126,13 @@ function mapNavigationKind(kind: string): GmlSemanticHighlightKind {
         member: "property",
         object: "class",
         room: "namespace",
+        resource: "namespace",
         script: "function",
         struct: "class",
         structVariable: "property",
         variable: "variable"
     };
-    return kinds[kind] ?? "namespace";
-}
-
-function mapBuiltInKind(type: string): GmlSemanticHighlightKind | null {
-    if (type === "accessor" || type === "keyword") return null;
-    if (type === "function") return "function";
-    if (type === "enum") return "enum";
-    if (type === "property") return "property";
-    return "variable";
+    return kinds[kind] ?? null;
 }
 
 function classifyDeclaration(sourceText: string, identifier: IdentifierRange): GmlSemanticHighlightToken | null {
@@ -163,6 +164,7 @@ export function collectGmlSemanticHighlights(
     const tokensByStart = new Map<number, GmlSemanticHighlightToken>();
     const identifiers = scanIdentifiers(parameters.sourceText);
     const identifiersByStart = new Map(identifiers.map((identifier) => [identifier.start, identifier]));
+    const navigationKindPriorityByStart = new Map<number, number>();
     for (const identifier of identifiers) {
         const declaration = classifyDeclaration(parameters.sourceText, identifier);
         if (declaration !== null) {
@@ -171,10 +173,15 @@ export function collectGmlSemanticHighlights(
     }
     for (const occurrence of parameters.occurrences) {
         if (!identifiersByStart.has(occurrence.start)) continue;
+        const priority = getGmlSymbolKindSpecificity(occurrence.kind);
+        if (priority < (navigationKindPriorityByStart.get(occurrence.start) ?? 0)) continue;
+        navigationKindPriorityByStart.set(occurrence.start, priority);
+        const highlightKind = mapNavigationKind(occurrence.kind);
+        if (highlightKind === null) continue;
         tokensByStart.set(occurrence.start, {
             start: occurrence.start,
             end: occurrence.end,
-            kind: mapNavigationKind(occurrence.kind),
+            kind: highlightKind,
             modifiers: [
                 ...(occurrence.role === "definition" ? (["declaration", "definition"] as const) : []),
                 ...(occurrence.kind === "constructorStaticMember" ? (["static"] as const) : [])
@@ -186,14 +193,18 @@ export function collectGmlSemanticHighlights(
         if (tokensByStart.has(identifier.start)) continue;
         const projectKind = projectIdentifiers.get(identifier.name);
         if (projectKind === undefined) continue;
-        tokensByStart.set(identifier.start, { ...identifier, kind: mapNavigationKind(projectKind), modifiers: [] });
+        const highlightKind = mapNavigationKind(normalizeGmlSemanticSymbolKind(projectKind));
+        if (highlightKind === null) continue;
+        tokensByStart.set(identifier.start, { ...identifier, kind: highlightKind, modifiers: [] });
     }
     const builtIns = new Map(parameters.builtIns.map((entry) => [entry.name, entry]));
     for (const identifier of identifiers) {
         if (tokensByStart.has(identifier.start)) continue;
         const builtIn = builtIns.get(identifier.name);
         if (builtIn === undefined) continue;
-        const kind = mapBuiltInKind(builtIn.type);
+        const semanticKind = getGmlSymbolKindForBuiltInType(builtIn.type);
+        if (semanticKind === null) continue;
+        const kind = mapNavigationKind(semanticKind);
         if (kind === null) continue;
         const modifiers: GmlSemanticHighlightModifier[] = ["defaultLibrary"];
         if (builtIn.type !== "function") modifiers.push("readonly");

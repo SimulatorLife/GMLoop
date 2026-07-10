@@ -52,8 +52,23 @@ void test("instance and constructor-static members use property tokens and stati
     });
     assert.equal(tokens[0]?.kind, "property");
     assert.deepEqual(tokens[0]?.modifiers, []);
-    assert.equal(tokens[1]?.kind, "property");
+    assert.equal(tokens[1]?.kind, "method");
     assert.deepEqual(tokens[1]?.modifiers, ["declaration", "definition", "static"]);
+});
+
+void test("specific constructor-static occurrences win over duplicate struct-variable facts", () => {
+    const sourceText = "add_sounds";
+    const tokens = Semantic.collectGmlSemanticHighlights({
+        sourceText,
+        builtIns: [],
+        projectIdentifiers: [],
+        occurrences: [
+            { start: 0, end: 10, kind: "constructorStaticMember", role: "definition" },
+            { start: 0, end: 10, kind: "structVariable", role: "definition" }
+        ]
+    });
+    assert.equal(tokens[0]?.kind, "method");
+    assert.deepEqual(tokens[0]?.modifiers, ["declaration", "definition", "static"]);
 });
 
 void test("semantic highlighting orders tokens and carries built-in deprecation", () => {

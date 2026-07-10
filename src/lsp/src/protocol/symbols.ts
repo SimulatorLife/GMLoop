@@ -1,49 +1,42 @@
+import { Semantic } from "@gmloop/semantic";
 import { CompletionItemKind, SymbolKind } from "vscode-languageserver/node.js";
 
-const SYMBOL_KINDS_BY_GML_KIND: Readonly<Record<string, SymbolKind>> = Object.freeze({
-    callable: SymbolKind.Function,
-    constructorStaticMember: SymbolKind.Property,
-    constant: SymbolKind.Constant,
-    enum: SymbolKind.Enum,
-    enumMember: SymbolKind.EnumMember,
-    function: SymbolKind.Function,
-    globalVariable: SymbolKind.Variable,
-    instanceVariable: SymbolKind.Variable,
-    localVariable: SymbolKind.Variable,
-    macro: SymbolKind.Constant,
-    member: SymbolKind.EnumMember,
-    object: SymbolKind.Object,
-    room: SymbolKind.Namespace,
-    script: SymbolKind.Function,
-    variable: SymbolKind.Variable
-});
+type GmlSemanticSymbolKind = Parameters<typeof Semantic.getGmlSymbolKindSpecificity>[0];
 
-const COMPLETION_KINDS_BY_GML_KIND: Readonly<Record<string, CompletionItemKind>> = Object.freeze({
-    callable: CompletionItemKind.Function,
-    constructorStaticMember: CompletionItemKind.Property,
-    constant: CompletionItemKind.Constant,
-    enum: CompletionItemKind.Enum,
-    enumMember: CompletionItemKind.EnumMember,
-    function: CompletionItemKind.Function,
-    globalVariable: CompletionItemKind.Variable,
-    instanceVariable: CompletionItemKind.Variable,
-    localVariable: CompletionItemKind.Variable,
-    macro: CompletionItemKind.Constant,
-    member: CompletionItemKind.EnumMember,
-    script: CompletionItemKind.Function,
-    variable: CompletionItemKind.Variable
+type LspSymbolPresentation = Readonly<{ completion: CompletionItemKind; symbol: SymbolKind }>;
+
+const LSP_PRESENTATION_BY_GML_KIND: Readonly<Record<GmlSemanticSymbolKind, LspSymbolPresentation>> = Object.freeze({
+    callable: { symbol: SymbolKind.Function, completion: CompletionItemKind.Function },
+    constant: { symbol: SymbolKind.Constant, completion: CompletionItemKind.Constant },
+    constructorStaticMember: { symbol: SymbolKind.Method, completion: CompletionItemKind.Method },
+    enum: { symbol: SymbolKind.Enum, completion: CompletionItemKind.Enum },
+    enumMember: { symbol: SymbolKind.EnumMember, completion: CompletionItemKind.EnumMember },
+    function: { symbol: SymbolKind.Function, completion: CompletionItemKind.Function },
+    globalVariable: { symbol: SymbolKind.Variable, completion: CompletionItemKind.Variable },
+    instanceVariable: { symbol: SymbolKind.Property, completion: CompletionItemKind.Property },
+    localVariable: { symbol: SymbolKind.Variable, completion: CompletionItemKind.Variable },
+    macro: { symbol: SymbolKind.Constant, completion: CompletionItemKind.Constant },
+    member: { symbol: SymbolKind.Property, completion: CompletionItemKind.Property },
+    object: { symbol: SymbolKind.Object, completion: CompletionItemKind.Class },
+    resource: { symbol: SymbolKind.Namespace, completion: CompletionItemKind.Reference },
+    room: { symbol: SymbolKind.Namespace, completion: CompletionItemKind.Reference },
+    script: { symbol: SymbolKind.Function, completion: CompletionItemKind.Function },
+    struct: { symbol: SymbolKind.Struct, completion: CompletionItemKind.Struct },
+    structVariable: { symbol: SymbolKind.Property, completion: CompletionItemKind.Property },
+    unresolved: { symbol: SymbolKind.String, completion: CompletionItemKind.Text },
+    variable: { symbol: SymbolKind.Variable, completion: CompletionItemKind.Variable }
 });
 
 /**
  * Map GMLoop symbol categories into LSP symbol kinds.
  */
 export function gmlSymbolKindToLspSymbolKind(kind: string): SymbolKind {
-    return SYMBOL_KINDS_BY_GML_KIND[kind] ?? SymbolKind.String;
+    return LSP_PRESENTATION_BY_GML_KIND[Semantic.normalizeGmlSemanticSymbolKind(kind)].symbol;
 }
 
 /**
  * Map GMLoop symbol categories into LSP completion kinds.
  */
 export function gmlSymbolKindToCompletionItemKind(kind: string): CompletionItemKind {
-    return COMPLETION_KINDS_BY_GML_KIND[kind] ?? CompletionItemKind.Text;
+    return LSP_PRESENTATION_BY_GML_KIND[Semantic.normalizeGmlSemanticSymbolKind(kind)].completion;
 }
