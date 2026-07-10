@@ -96,7 +96,7 @@ void test("LSP: built-in functions appear in completions and hover", async () =>
         );
         assert.match(
             typeof hover?.contents === "object" && "value" in hover.contents ? hover.contents.value : "",
-            /monthly\/en-US\/index\.htm#t=/
+            /monthly\/en\/#t=/
         );
 
         // Hover Case-insensitive

@@ -2,6 +2,7 @@ import { CompletionItemKind, SymbolKind } from "vscode-languageserver/node.js";
 
 const SYMBOL_KINDS_BY_GML_KIND: Readonly<Record<string, SymbolKind>> = Object.freeze({
     callable: SymbolKind.Function,
+    constructorStaticMember: SymbolKind.Property,
     constant: SymbolKind.Constant,
     enum: SymbolKind.Enum,
     enumMember: SymbolKind.EnumMember,
@@ -19,6 +20,7 @@ const SYMBOL_KINDS_BY_GML_KIND: Readonly<Record<string, SymbolKind>> = Object.fr
 
 const COMPLETION_KINDS_BY_GML_KIND: Readonly<Record<string, CompletionItemKind>> = Object.freeze({
     callable: CompletionItemKind.Function,
+    constructorStaticMember: CompletionItemKind.Property,
     constant: CompletionItemKind.Constant,
     enum: CompletionItemKind.Enum,
     enumMember: CompletionItemKind.EnumMember,

@@ -107,6 +107,7 @@ function scanIdentifiers(sourceText: string): IdentifierRange[] {
 function mapNavigationKind(kind: string): GmlSemanticHighlightKind {
     const kinds: Readonly<Record<string, GmlSemanticHighlightKind>> = {
         callable: "function",
+        constructorStaticMember: "property",
         enum: "enum",
         enumMember: "enumMember",
         function: "function",
@@ -174,7 +175,10 @@ export function collectGmlSemanticHighlights(
             start: occurrence.start,
             end: occurrence.end,
             kind: mapNavigationKind(occurrence.kind),
-            modifiers: occurrence.role === "definition" ? ["declaration", "definition"] : []
+            modifiers: [
+                ...(occurrence.role === "definition" ? (["declaration", "definition"] as const) : []),
+                ...(occurrence.kind === "constructorStaticMember" ? (["static"] as const) : [])
+            ]
         });
     }
     const projectIdentifiers = new Map(parameters.projectIdentifiers.map((entry) => [entry.name, entry.kind]));

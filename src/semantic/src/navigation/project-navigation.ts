@@ -84,6 +84,7 @@ type LocationRecord = Readonly<{
 }>;
 
 const IDENTIFIER_COLLECTION_KINDS: Readonly<Record<string, string>> = Object.freeze({
+    constructorStaticMembers: "constructorStaticMember",
     enumMembers: "enumMember",
     enums: "enum",
     functions: "function",

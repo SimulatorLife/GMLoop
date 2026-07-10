@@ -680,9 +680,8 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                 const info = builtIn as Record<string, unknown>;
                 const type = typeof info.type === "string" ? info.type : "unknown";
                 let markdown = `\`${identifierName}\`\n\nBuilt-in ${type}`;
-                if (typeof info.manualPath === "string" && info.manualPath.length > 0) {
-                    const manualUrl = `https://manual.gamemaker.io/monthly/en-US/index.htm#t=${encodeURIComponent(info.manualPath)}`;
-                    markdown += `\n\n[Open GameMaker Manual Page](${manualUrl})`;
+                if (typeof info.manualUrl === "string" && info.manualUrl.length > 0) {
+                    markdown += `\n\n[Open GameMaker Manual Page](${info.manualUrl})`;
                 }
                 return {
                     contents: {

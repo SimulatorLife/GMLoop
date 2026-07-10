@@ -11,7 +11,9 @@ const {
     collectManualArrayIdentifiers,
     assertManualIdentifierArray,
     extractDeprecatedReplacementFromManualHtml,
-    parseObsoleteIdentifierTableEntries
+    parseObsoleteIdentifierTableEntries,
+    resolveCanonicalManualPath,
+    createCanonicalManualUrl
 } = __test__;
 
 const SAMPLE_SOURCE = `
@@ -22,6 +24,43 @@ const KEYWORDS = [
 `;
 
 void describe("generate-gml-identifiers", () => {
+    void describe("resolveCanonicalManualPath", () => {
+        void it("replaces legacy metadata paths with unique current manual pages", () => {
+            const pages = new Map([
+                ["is_undefined", "GameMaker_Language/GML_Reference/Variable_Functions/is_undefined.htm"]
+            ]);
+            assert.equal(
+                resolveCanonicalManualPath("is_undefined", "3_Scripting/Checking_Data_Types/is_undefined", pages),
+                "GameMaker_Language/GML_Reference/Variable_Functions/is_undefined.htm"
+            );
+        });
+
+        void it("keeps the existing path when the current manual page is ambiguous or absent", () => {
+            assert.equal(
+                resolveCanonicalManualPath("shared", "legacy/shared", new Map([["shared", null]])),
+                "legacy/shared"
+            );
+        });
+    });
+
+    void describe("createCanonicalManualUrl", () => {
+        void it("writes exact current manual URLs into identifier metadata", () => {
+            assert.equal(
+                createCanonicalManualUrl(
+                    "is_undefined",
+                    "GameMaker_Language/GML_Reference/Variable_Functions/is_undefined.htm"
+                ),
+                "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FVariable_Functions%2Fis_undefined.htm&rhsearch=is_undefined&rhhlterm=is_undefined"
+            );
+        });
+
+        void it("writes searchable index URLs when no unique current page exists", () => {
+            assert.equal(
+                createCanonicalManualUrl("legacy_name", "3_Scripting/Legacy/legacy_name"),
+                "https://manual.gamemaker.io/monthly/en/#t=Content.htm&rhsearch=legacy_name&rhhlterm=legacy_name"
+            );
+        });
+    });
     void describe("applyFirstWin", () => {
         void it("returns incoming when incoming is defined", () => {
             assert.equal(applyFirstWin("incoming", "current"), "incoming");

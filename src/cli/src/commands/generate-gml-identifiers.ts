@@ -836,6 +836,33 @@ async function collectManualHtmlBasenames(
     return basenames;
 }
 
+function resolveCanonicalManualPath(
+    identifier: string,
+    currentPath: string | undefined,
+    manualBasenames: ReadonlyMap<string, string | null>
+): string | undefined {
+    const canonicalPath = manualBasenames.get(identifier);
+    return canonicalPath === null || canonicalPath === undefined ? currentPath : canonicalPath;
+}
+
+function createCanonicalManualUrl(identifier: string, manualPath: string): string {
+    const targetPath = manualPath.endsWith(".htm") ? manualPath : "Content.htm";
+    const fragment = new URLSearchParams({ t: targetPath, rhsearch: identifier, rhhlterm: identifier });
+    return `https://manual.gamemaker.io/monthly/en/#${fragment.toString()}`;
+}
+
+async function canonicalizeIdentifierManualPaths(
+    identifierMap: Map<string, IdentifierMapEntry>,
+    manualRoot: string
+): Promise<Map<string, string | null>> {
+    const manualContentsPath = path.join(manualRoot, "Manual", "contents");
+    const manualBasenames = await collectManualHtmlBasenames(manualContentsPath);
+    for (const [identifier, entry] of identifierMap) {
+        entry.manualPath = resolveCanonicalManualPath(identifier, entry.manualPath, manualBasenames);
+    }
+    return manualBasenames;
+}
+
 function extractDeprecatedReplacementFromManualHtml(html: string): ManualDeprecatedReplacement | null {
     const directReplacementMatch = /replaced by\s+(?:<span[^>]*>\s*)?<a[^>]*>([A-Za-z_][A-Za-z0-9_]*)\(\)<\/a>/iu.exec(
         html
@@ -947,10 +974,10 @@ function mergeObsoleteIdentifierEntries(
 
 async function mergeDeprecatedReplacementMetadataFromManualPages(
     identifierMap: Map<string, IdentifierMapEntry>,
-    manualRoot: string
+    manualRoot: string,
+    manualBasenames: ReadonlyMap<string, string | null>
 ) {
     const manualContentsPath = path.join(manualRoot, "Manual", "contents");
-    const manualBasenames = await collectManualHtmlBasenames(manualContentsPath);
     const pageCache = new Map<string, string>();
     const unresolvedDeprecatedEntries = Array.from(identifierMap.entries()).reduce<
         Array<{
@@ -1157,7 +1184,8 @@ async function buildIdentifierArtifact({ payloads, manualSource, manualCommitHas
         verbose,
         formatMessage: (duration) => `  Resolving deprecated replacement metadata completed in ${duration}.`
     });
-    await mergeDeprecatedReplacementMetadataFromManualPages(identifierMap, manualSource.root);
+    const manualBasenames = await canonicalizeIdentifierManualPaths(identifierMap, manualSource.root);
+    await mergeDeprecatedReplacementMetadataFromManualPages(identifierMap, manualSource.root, manualBasenames);
     logReplacementMetadataCompletion();
 
     return createIdentifierArtifactPayload({
@@ -1188,6 +1216,7 @@ function sortIdentifierEntries(identifierMap) {
                 sources: data.sources ? [...data.sources].toSorted() : [],
                 tags: data.tags ? [...data.tags].toSorted() : [],
                 ...(data.manualPath ? { manualPath: data.manualPath } : {}),
+                ...(data.manualPath ? { manualUrl: createCanonicalManualUrl(identifier, data.manualPath) } : {}),
                 deprecated: data.deprecated,
                 ...(data.replacement ? { replacement: data.replacement } : {}),
                 ...(data.replacementKind && data.replacementKind !== "none"
@@ -1298,7 +1327,9 @@ export const __test__ = Object.freeze({
     collectManualArrayIdentifiers,
     assertManualIdentifierArray,
     extractDeprecatedReplacementFromManualHtml,
-    parseObsoleteIdentifierTableEntries
+    parseObsoleteIdentifierTableEntries,
+    resolveCanonicalManualPath,
+    createCanonicalManualUrl
 });
 
 if (isMainModule(import.meta.url)) {

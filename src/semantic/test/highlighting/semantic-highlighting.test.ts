@@ -39,6 +39,23 @@ void test("project occurrences override built-ins and retain definition/referenc
     assert.deepEqual(byStart.get(referenceStart)?.modifiers, []);
 });
 
+void test("instance and constructor-static members use property tokens and static modifiers", () => {
+    const sourceText = "instance_value static_value";
+    const tokens = Semantic.collectGmlSemanticHighlights({
+        sourceText,
+        builtIns: [],
+        projectIdentifiers: [],
+        occurrences: [
+            { start: 0, end: 14, kind: "instanceVariable", role: "reference" },
+            { start: 15, end: 27, kind: "constructorStaticMember", role: "definition" }
+        ]
+    });
+    assert.equal(tokens[0]?.kind, "property");
+    assert.deepEqual(tokens[0]?.modifiers, []);
+    assert.equal(tokens[1]?.kind, "property");
+    assert.deepEqual(tokens[1]?.modifiers, ["declaration", "definition", "static"]);
+});
+
 void test("semantic highlighting orders tokens and carries built-in deprecation", () => {
     const sourceText = "old_api room_name";
     const tokens = Semantic.collectGmlSemanticHighlights({
