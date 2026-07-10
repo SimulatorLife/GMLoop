@@ -3,6 +3,14 @@ import { test } from "node:test";
 import { assertEquals } from "../assertions.js";
 import { lintWithRule } from "./lint-rule-test-harness.js";
 
+void test("normalize-doc-comments removes canonical placeholder descriptions equal to a function name", () => {
+    const input = ["/// @desc child_struct", "/// @param value", "function child_struct(value) {}", ""].join("\n");
+    const expected = ["/// @param value", "/// @returns {undefined}", "function child_struct(value) {}", ""].join("\n");
+
+    const result = lintWithRule("normalize-doc-comments", input, {});
+    assertEquals(result.output, expected);
+});
+
 void test("normalize-doc-comments preserves non-return tag ordering while reordering @param lines", () => {
     const input = [
         "/// @description Updates movement for the active player.",

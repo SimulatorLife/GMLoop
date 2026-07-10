@@ -435,6 +435,11 @@
   font-weight: 600;
 }
 
+.gml-directive {
+  color: var(--gm-syntax-keyword);
+  font-weight: 600;
+}
+
 .gml-function-name {
   color: var(--gm-syntax-function);
 }
@@ -462,6 +467,10 @@
 
 .gml-property-access {
   color: var(--gm-syntax-property);
+}
+
+.gml-identifier {
+  color: var(--gm-text);
 }
 
 .gml-builtin-constant {

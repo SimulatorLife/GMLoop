@@ -15,6 +15,20 @@ type AgentPackReceiptFixture = Readonly<{
     version: string;
 }>;
 
+const EXPECTED_VSCODE_SETTINGS = Object.freeze({
+    "gmloop.serverPath": "gmloop",
+    "search.exclude": Object.freeze({
+        "tmp/": true,
+        "**/node_modules": true,
+        node_modules: true,
+        ".gmloop/": true,
+        ".agents/skills/gmloop-*": true,
+        ".gmcache/": true,
+        ".cache/": true,
+        "**/playwright*": true
+    })
+});
+
 async function createGameProjectFixture(): Promise<Readonly<{ cleanup: () => Promise<void>; projectRoot: string }>> {
     const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-agent-pack-"));
     await writeFile(path.join(projectRoot, "Fixture.yyp"), '{"resourceType":"GMProject"}\n', "utf8");
@@ -229,7 +243,9 @@ void test("agent pack initialization installs skills, project guidance, and a ve
         assert.match(toolingSkillSource, /refactor\.codemods/u);
         assert.match(toolingSkillSource, /syntax-recovery or recovery-capable codemod workflow/u);
         assert.match(toolingSkillSource, /semantic rename transaction/u);
-        assert.doesNotMatch(toolingSkillSource, /gmloop_[a-z]/u);
+        assert.match(toolingSkillSource, /gmloop_format/u);
+        assert.match(toolingSkillSource, /gmloop_lint/u);
+        assert.match(toolingSkillSource, /gmloop_refactor/u);
         assert.ok(result.added.includes("AGENTS.md"));
         assert.ok(result.added.includes(".lsp-mcp.json"));
         assert.ok(result.added.includes(".gitignore"));
@@ -340,7 +356,7 @@ void test("agent pack initialization sets up VSCode project files and installs e
         );
         assert.deepEqual(
             JSON.parse(await readFile(path.join(fixture.projectRoot, ".vscode", "settings.json"), "utf8")),
-            { "gmloop.serverPath": "gmloop" }
+            EXPECTED_VSCODE_SETTINGS
         );
         assert.deepEqual(
             JSON.parse(await readFile(path.join(fixture.projectRoot, ".vscode", "extensions.json"), "utf8")),
@@ -380,7 +396,7 @@ void test("agent pack initialization merges VSCode project files without replaci
         assert.equal(result.vscodeSetup.extensionInstall.status, "failed");
         assert.deepEqual(
             JSON.parse(await readFile(path.join(fixture.projectRoot, ".vscode", "settings.json"), "utf8")),
-            { "editor.tabSize": 4, "gmloop.serverPath": "gmloop" }
+            { "editor.tabSize": 4, ...EXPECTED_VSCODE_SETTINGS }
         );
         assert.deepEqual(
             JSON.parse(await readFile(path.join(fixture.projectRoot, ".vscode", "extensions.json"), "utf8")),

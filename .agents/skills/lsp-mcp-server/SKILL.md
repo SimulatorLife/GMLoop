@@ -5,7 +5,7 @@ description: Use whenever code navigation, analysis, refactoring, or diagnostics
 
 # lsp-mcp-server — How to use it well
 
-This MCP server exposes a Language Server (LSP) to you as 29 tools. LSP servers maintain a real semantic model of the codebase: they know that `User` in file A is the same class imported under an alias in file B, that `db.query` returns `Promise<Row[]>`, and that renaming a private method touches 17 call sites in 9 files. **Plain text search cannot give you any of that.**
+This MCP server exposes a Language Server (LSP) to you as ~30 tools. LSP servers maintain a real semantic model of the codebase: they know that `User` in file A is the same class imported under an alias in file B, that `db.query` returns `Promise<Row[]>`, and that renaming a private method touches 17 call sites in 9 files. **Plain text search cannot give you any of that.**
 
 ## Hard rules
 

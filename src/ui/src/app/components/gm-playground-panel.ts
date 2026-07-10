@@ -1,3 +1,4 @@
+import { SyntaxHighlight } from "@gmloop/syntax-highlight";
 import { diffLines } from "diff";
 import { html } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
@@ -5,7 +6,6 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import { getUiErrorMessage } from "../error-message.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
-import { highlightGml } from "../syntax-highlight-gml.js";
 import { EventBusManager } from "./event-bus-mixin.js";
 import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
@@ -177,7 +177,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                 lines.pop();
             }
             return lines.map((line) => {
-                const highlighted = unsafeHTML(highlightGml(line));
+                const highlighted = unsafeHTML(SyntaxHighlight.highlightGml(line));
                 if (change.added) {
                     return html`<div class="diff-line diff-added"><span class="diff-sign">+</span>${highlighted}</div>`;
                 }
@@ -828,7 +828,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                             </div>
                             <div class="playground-input-surface">
                                 <pre class="playground-input-highlight" aria-hidden="true">
-${unsafeHTML(highlightGml(this.#sessionController.input))}</pre
+${unsafeHTML(SyntaxHighlight.highlightGml(this.#sessionController.input))}</pre
                                 >
                                 <textarea
                                     class="playground-input"
@@ -855,7 +855,7 @@ ${unsafeHTML(highlightGml(this.#sessionController.input))}</pre
                             ${this.#renderOutput(
                                 this.#error,
                                 this.#viewMode,
-                                highlightGml(this.#gmlOutput),
+                                SyntaxHighlight.highlightGml(this.#gmlOutput),
                                 this.#astJson
                             )}
                         </div>

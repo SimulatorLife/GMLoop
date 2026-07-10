@@ -368,7 +368,7 @@ export function promoteLeadingDocCommentTextToDescription(
             break;
         }
 
-        const isTaggedLine = /^\/\/\/\s*@/i.test(trimmed) || /^\/\/\s*\/\s*@/i.test(trimmed);
+        const isTaggedLine = /^\/\/\/\s*(?:@|\/\s*@)/i.test(trimmed) || /^\/\/\s*\/\s*@/i.test(trimmed);
         if (isTaggedLine) {
             break;
         }

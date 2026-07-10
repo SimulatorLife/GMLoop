@@ -1,5 +1,10 @@
 # GMLoop VSCode Extension
 
+The extension registers `.gml` files with GMLoop's shared syntax-highlighting inventory and a `source.gml`
+TextMate grammar. Its editor configuration for comments, accessors, strings, regions, indentation, and word
+boundaries is adapted from [Stitch's GML language support](https://github.com/bscotch/stitch/tree/develop/packages/vscode/languages),
+with GMLoop's ANTLR lexer grammar treated as the authoritative syntax contract.
+
 This workspace contains the first-party VSCode client for GMLoop's GameMaker Language server. It registers `.gml` files as the `gml` language and starts the existing GMLoop LSP server with:
 
 ```sh

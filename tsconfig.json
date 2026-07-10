@@ -15,6 +15,7 @@
     { "path": "./src/refactor" },
     { "path": "./src/mcp" },
     { "path": "./src/vscode" },
+    { "path": "./src/syntax-highlight" },
     { "path": "./test" }
   ]
 }

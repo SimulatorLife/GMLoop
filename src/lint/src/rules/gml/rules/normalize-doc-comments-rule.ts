@@ -977,7 +977,7 @@ function synthesizeFunctionDocCommentBlock(
     for (let i = block.length - 1; i >= 0; i--) {
         if (
             name.length > 0 &&
-            new RegExp(String.raw`^\s*///\s*@description\s+${Core.escapeRegExp(name)}\s*$`).test(block[i])
+            new RegExp(String.raw`^\s*///\s*@(desc|description)\s+${Core.escapeRegExp(name)}\s*$`).test(block[i])
         ) {
             block.splice(i, 1);
         }

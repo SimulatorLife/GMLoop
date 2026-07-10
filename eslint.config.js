@@ -83,7 +83,8 @@ const publicWorkspaceTypes = [
     "refactor",
     "runtime-wrapper",
     "mcp",
-    "vscode"
+    "vscode",
+    "syntax-highlight"
 ];
 
 function workspaceEntryPointTypes(...types) {
@@ -249,7 +250,8 @@ const tsConfig = defineConfig({
             { type: "runtime-wrapper", pattern: "src/runtime-wrapper/**" },
             { type: "cli", pattern: "src/cli/**" },
             { type: "mcp", pattern: "src/mcp/**" },
-            { type: "vscode", pattern: "src/vscode/**" }
+            { type: "vscode", pattern: "src/vscode/**" },
+            { type: "syntax-highlight", pattern: "src/syntax-highlight/**" }
         ]
     },
 
@@ -572,7 +574,11 @@ const tsConfig = defineConfig({
                     },
                     {
                         from: { type: "ui" },
-                        allow: workspaceEntryPointTypes("core", "ui")
+                        allow: workspaceEntryPointTypes(
+                            "core",
+                            "syntax-highlight",
+                            "ui"
+                        )
                     },
                     {
                         from: { type: "fixture-runner" },
@@ -624,6 +630,10 @@ const tsConfig = defineConfig({
                     {
                         from: { type: "vscode" },
                         allow: workspaceEntryPointTypes("vscode")
+                    },
+                    {
+                        from: { type: "syntax-highlight" },
+                        allow: workspaceEntryPointTypes("syntax-highlight")
                     },
                     {
                         from: { type: "lsp" },

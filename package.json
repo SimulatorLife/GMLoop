@@ -156,6 +156,7 @@
     "@gmloop/transpiler": "workspace:*",
     "@gmloop/ui": "workspace:*",
     "@gmloop/vscode": "workspace:*",
+    "@gmloop/syntax-highlight": "workspace:*",
     "@types/node": "catalog:",
     "c8": "^9",
     "eslint": "catalog:",

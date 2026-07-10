@@ -675,7 +675,7 @@ The hot-reload system bypasses the static nature of the GameMaker HTML5 runner b
 - UI uses a single global stylesheet entrypoint for the application shell.
 - Component and surface styling is authored in dedicated standalone `.css` files and composed through that global stylesheet entrypoint.
 - Inline style strings and template-embedded standalone CSS blocks are not permitted for primary UI styling.
-- Design tokens (colors, spacing, typography, elevation, motion timings) are centralized and reused across components.
+- **All visual styling values** must be defined as global CSS custom properties (CSS variables) in the shared design-token stylesheet and consumed exclusively through those variables across all component and surface stylesheets. This applies to every category of styling value: colors, font-weights, text-sizes (font-size), line-heights, spacing (margins, paddings, gaps, layout offsets), border-radii, shadows, transitions, component heights, icon sizes, and font families. Do not use hardcoded literal values (pixel values, hex colors, rgb/rgba values, raw font-weight numbers, raw font-size values, etc.) in component or page CSS files. If a needed token does not exist in the shared stylesheet, add it there first, then reference the new variable. This keeps the visual system DRY, globally consistent, and easy to adjust.
 
 ### 7.4 Live / Hot Reload Workflow
 

@@ -17,10 +17,12 @@
       "@gmloop/runtime-wrapper": ["../runtime-wrapper/index.ts"],
       "@gmloop/semantic": ["../semantic/index.ts"],
       "@gmloop/transpiler": ["../transpiler/index.ts"],
-      "@gmloop/ui": ["./index.ts"]
+      "@gmloop/ui": ["./index.ts"],
+      "@gmloop/syntax-highlight": ["../syntax-highlight/index.ts"]
     }
   },
   "references": [
+    { "path": "../syntax-highlight" },
     { "path": "../core" },
     { "path": "../parser" },
     { "path": "../format" },

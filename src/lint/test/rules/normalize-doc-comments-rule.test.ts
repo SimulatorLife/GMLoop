@@ -66,6 +66,14 @@ void test("normalize-doc-comments preserves non-empty @description content", () 
     assert.match(output, /@description Initialize the sky background/);
 });
 
+void test("normalize-doc-comments preserves escaped legacy function markers", () => {
+    const input = ["/// / @func freeze()", "/// @returns {undefined}", "function freeze() {}"].join("\n");
+    const output = runNormalizeDocCommentsRule(input);
+
+    assert.match(output, /^\/\/\/ \/ @func freeze\(\)$/m);
+    assert.doesNotMatch(output, /^\/\/\/ @desc @func freeze\(\)$/m);
+});
+
 void test("normalize-doc-comments synthesizes missing doc tags for undocumented functions", () => {
     const input = ["function synth_me(_a, b = 1) {", "    return _a + b;", "}"].join("\n");
     const output = runNormalizeDocCommentsRule(input);

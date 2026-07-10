@@ -14,6 +14,7 @@ packages:
   - src/fixture-runner
   - src/mcp
   - src/vscode
+  - src/syntax-highlight
 
 catalog:
   "@eslint/compat": "^2"
