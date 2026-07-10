@@ -30,7 +30,8 @@ async function createProject(projectName: string): Promise<{
         projectRoot,
         scriptPath,
         async cleanup() {
-            await fs.rm(projectRoot, { recursive: true, force: true });
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            await fs.rm(projectRoot, { recursive: true, force: true }).catch(() => {});
         }
     };
 }

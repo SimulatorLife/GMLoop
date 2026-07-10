@@ -204,6 +204,19 @@ To minimize Language Server startup and first-hover latencies on large GameMaker
   - When the full background build completes, it upgrades the cached navigation state object in place by replacing its index snapshot and clearing its lightweight marker. This preserves the cached state object's identity for existing consumers.
   - The current Tier-2 implementation builds a complete replacement snapshot. Incrementally adding only missing reference and relationship records, and publishing per-file Tier-1 results, remain future optimizations that require explicit snapshot-consistency and invalidation designs plus benchmarks.
 
+### 4.6 Unified Index Caching and Scoped Incremental Re-indexing
+
+To ensure maximum performance and resource efficiency across all developer touchpoints, GMLoop enforces a unified index cache boundary and a scoped, incremental re-indexing lifecycle:
+
+- **Unified Shared Cache**:
+  - All tools and execution contexts that depend on project indexing or semantic facts (including VS Code via the LSP, VSCode syntax highlighting, CLI tools, semantic-based refactors, the graph-index visualization, and project-wide codemods) must share and consume a single, unified source of truth stored under the workspace configuration directory.
+  - Loading a project or invoking any semantic command must result in a zero-cold-start experience by instantly restoring the cached project-wide symbols, scopes, and relationships.
+  - Automatic and on-completion serialization guarantees that the shared index cache is kept synchronized with active editor buffers and physical file changes.
+- **Scoped Invalidation and Re-indexing**:
+  - Code edits must never trigger a full scan or full-project parse. Invalidation is strictly scoped to the files that actually changed.
+  - The re-indexing pipeline is scoped to the changed files and their immediate downstream dependency graph. All unrelated files, symbols, and occurrences must remain untouched and preserved.
+  - Fine-grained updates are applied incrementally at the file and symbol level, parsing and analyzing only the changes and merging them back into the shared index structure without indexing overhead.
+
 ## 5. Semantic Index & Codemod Streaming Architecture
 
 ### 5.1 Problem Statement

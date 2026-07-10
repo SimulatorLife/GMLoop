@@ -243,7 +243,6 @@ export function createGmlLanguageServer(
         if (!document) {
             return;
         }
-        semanticIndex.invalidateForDocument(document);
 
         const existingTimer = pendingDiagnostics.get(textDocument.uri);
         if (existingTimer) {
@@ -255,6 +254,7 @@ export function createGmlLanguageServer(
             runNotificationTask(connection, async () => {
                 const doc = documents.get(textDocument.uri);
                 if (doc && doc.version === textDocument.version) {
+                    semanticIndex.invalidateForDocument(doc);
                     await publishDiagnostics(doc);
                     await semanticIndex.refreshForDocument(doc);
                 }

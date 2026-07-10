@@ -2146,6 +2146,180 @@ async function processProjectGmlFile({
         })
     );
 }
+
+function reconstructResourceAnalysis(existingIndex: any): {
+    resourcesMap: Map<string, any>;
+    assetReferences: any[];
+    gmlScopeMap: Map<string, any>;
+} {
+    const resourcesMap = new Map<string, any>();
+    if (existingIndex && existingIndex.resources) {
+        for (const [key, value] of Object.entries(existingIndex.resources)) {
+            const val = value as any;
+            resourcesMap.set(key, {
+                path: val.path,
+                name: val.name,
+                resourceType: val.resourceType,
+                scopes: new Set(val.scopes || []),
+                gmlFiles: new Set(val.gmlFiles || []),
+                assetReferences: val.assetReferences || [],
+                layers: val.layers
+            });
+        }
+    }
+    const assetReferences = existingIndex?.relationships?.assetReferences || [];
+
+    const gmlScopeMap = new Map<string, any>();
+    if (existingIndex && existingIndex.scopes) {
+        for (const [key, value] of Object.entries(existingIndex.scopes)) {
+            const val = value as any;
+            if (val.kind === "file" && key.startsWith("file:")) {
+                const gmlRelativePath = key.slice(5);
+                gmlScopeMap.set(gmlRelativePath, {
+                    id: val.id,
+                    kind: val.kind,
+                    name: val.name,
+                    displayName: val.displayName,
+                    resourcePath: val.resourcePath,
+                    event: val.event ? { ...val.event } : null,
+                    gmlFile: gmlRelativePath
+                });
+            }
+        }
+    }
+
+    return {
+        resourcesMap,
+        assetReferences,
+        gmlScopeMap
+    };
+}
+
+function createProjectIndexAggregationStateFromExisting(existingIndex: any, resourceAnalysis: any) {
+    const scopeMap = new Map<string, any>();
+    if (existingIndex && existingIndex.scopes) {
+        for (const [key, value] of Object.entries(existingIndex.scopes)) {
+            const val = value as any;
+            scopeMap.set(key, {
+                id: val.id,
+                kind: val.kind,
+                name: val.name,
+                displayName: val.displayName,
+                resourcePath: val.resourcePath,
+                event: val.event,
+                filePaths: [...(val.filePaths || [])],
+                declarations: [...(val.declarations || [])],
+                references: [...(val.references || [])],
+                ignoredIdentifiers: [...(val.ignoredIdentifiers || [])],
+                scriptCalls: [...(val.scriptCalls || [])]
+            });
+        }
+    }
+
+    const filesMap = new Map<string, any>();
+    if (existingIndex && existingIndex.files) {
+        for (const [key, value] of Object.entries(existingIndex.files)) {
+            const val = value as any;
+            filesMap.set(key, {
+                filePath: val.filePath,
+                scopeId: val.scopeId,
+                declarations: [...(val.declarations || [])],
+                references: [...(val.references || [])],
+                ignoredIdentifiers: [...(val.ignoredIdentifiers || [])],
+                scriptCalls: [...(val.scriptCalls || [])]
+            });
+        }
+    }
+
+    const relationships = {
+        scriptCalls: [...(existingIndex?.relationships?.scriptCalls || [])],
+        assetReferences: (resourceAnalysis.assetReferences || []).map((reference: any) =>
+            cloneAssetReference(reference)
+        )
+    };
+
+    const identifierCollections = createIdentifierCollections();
+    if (existingIndex && existingIndex.identifiers) {
+        for (const key of Object.keys(identifierCollections)) {
+            const map = (identifierCollections as any)[key];
+            const existingMap = existingIndex.identifiers[key];
+            if (existingMap) {
+                for (const [itemKey, itemVal] of Object.entries(existingMap)) {
+                    const val = itemVal as any;
+                    map.set(itemKey, {
+                        identifierId: val.identifierId,
+                        id: val.id,
+                        key: val.key,
+                        name: val.name,
+                        displayName: val.displayName,
+                        filePath: val.filePath,
+                        resourcePath: val.resourcePath,
+                        declarationKinds: [...(val.declarationKinds || [])],
+                        declarations: [...(val.declarations || [])],
+                        references: [...(val.references || [])]
+                    });
+                }
+            }
+        }
+    }
+
+    return {
+        scopeMap,
+        filesMap,
+        relationships,
+        identifierCollections,
+        constructorStaticMemberReferences: [] as any[]
+    };
+}
+
+function removeFileFromAggregationState(
+    relativeChangedPath: string,
+    scopeMap: Map<string, any>,
+    filesMap: Map<string, any>,
+    identifierCollections: any,
+    relationships: any
+): void {
+    // 1. Delete file record
+    filesMap.delete(relativeChangedPath);
+
+    // 2. Delete scope records
+    for (const [scopeId, scopeRecord] of scopeMap.entries()) {
+        if (
+            scopeId.startsWith(`file:${relativeChangedPath}`) ||
+            (scopeRecord.filePaths && scopeRecord.filePaths.includes(relativeChangedPath))
+        ) {
+            if (scopeId !== "global" && scopeId !== "project") {
+                scopeMap.delete(scopeId);
+            } else {
+                scopeRecord.filePaths = scopeRecord.filePaths.filter((p: string) => p !== relativeChangedPath);
+                scopeRecord.declarations = scopeRecord.declarations.filter(
+                    (d: any) => d.filePath !== relativeChangedPath
+                );
+                scopeRecord.references = scopeRecord.references.filter((r: any) => r.filePath !== relativeChangedPath);
+            }
+        }
+    }
+
+    // 3. Filter occurrences in identifier collections
+    for (const collectionVal of Object.values(identifierCollections)) {
+        const collection = collectionVal as Map<string, any>;
+        for (const [key, entry] of collection.entries()) {
+            entry.declarations = entry.declarations.filter((d: any) => d.filePath !== relativeChangedPath);
+            entry.references = entry.references.filter((r: any) => r.filePath !== relativeChangedPath);
+            if (entry.declarations.length === 0 && entry.references.length === 0) {
+                collection.delete(key);
+            }
+        }
+    }
+
+    // 4. Filter script calls in relationships
+    if (relationships && Array.isArray(relationships.scriptCalls)) {
+        relationships.scriptCalls = relationships.scriptCalls.filter(
+            (call: any) => call.from?.filePath !== relativeChangedPath
+        );
+    }
+}
+
 /**
  * Centralize the mutable collections used while aggregating project index
  * details. Keeping the map initialisation and relationship bookkeeping here
@@ -2697,53 +2871,95 @@ export async function buildProjectIndex(projectRoot, fsFacade = Core.defaultFsFa
     });
     recordMemoryHighWater();
 
-    const { yyFiles, gmlFiles } = await discoverProjectFilesForIndex({
-        projectRoot: resolvedRoot,
-        fsFacade,
-        metrics,
-        signal,
-        ensureNotAborted,
-        logger
-    });
-    recordMemoryHighWater();
+    let resourceAnalysis: any;
+    let scopeMap: Map<string, any>;
+    let filesMap: Map<string, any>;
+    let relationships: any;
+    let identifierCollections: any;
+    const constructorStaticMemberReferences: any[] = [];
+    let orderedGmlFiles: any[];
 
-    const resourceAnalysis = await analyseProjectResourcesForIndex({
-        projectRoot: resolvedRoot,
-        yyFiles,
-        fsFacade,
-        metrics,
-        signal,
-        ensureNotAborted,
-        logger
-    });
-    recordMemoryHighWater();
+    if (options?.incremental) {
+        const { existingIndex, changedFile } = options.incremental;
+        const relativeChangedPath = path.relative(resolvedRoot, path.resolve(changedFile));
 
-    const { scopeMap, filesMap, relationships, identifierCollections, constructorStaticMemberReferences } =
-        createProjectIndexAggregationState(resourceAnalysis);
+        resourceAnalysis = reconstructResourceAnalysis(existingIndex);
+        const state = createProjectIndexAggregationStateFromExisting(existingIndex, resourceAnalysis);
+        scopeMap = state.scopeMap;
+        filesMap = state.filesMap;
+        relationships = state.relationships;
+        identifierCollections = state.identifierCollections;
+
+        removeFileFromAggregationState(relativeChangedPath, scopeMap, filesMap, identifierCollections, relationships);
+
+        let fileResourcePath = `scripts/${path.basename(changedFile, ".gml")}/${path.basename(changedFile)}`;
+        for (const [resPath, resRecord] of resourceAnalysis.resourcesMap.entries()) {
+            if (resRecord.gmlFiles.has(relativeChangedPath)) {
+                fileResourcePath = resPath;
+                break;
+            }
+        }
+
+        orderedGmlFiles = [
+            {
+                absolutePath: path.resolve(changedFile),
+                relativePath: relativeChangedPath,
+                name: path.basename(changedFile, ".gml"),
+                resourcePath: fileResourcePath
+            }
+        ];
+    } else {
+        const { yyFiles, gmlFiles } = await discoverProjectFilesForIndex({
+            projectRoot: resolvedRoot,
+            fsFacade,
+            metrics,
+            signal,
+            ensureNotAborted,
+            logger
+        });
+        recordMemoryHighWater();
+
+        resourceAnalysis = await analyseProjectResourcesForIndex({
+            projectRoot: resolvedRoot,
+            yyFiles,
+            fsFacade,
+            metrics,
+            signal,
+            ensureNotAborted,
+            logger
+        });
+        recordMemoryHighWater();
+
+        const state = createProjectIndexAggregationState(resourceAnalysis);
+        scopeMap = state.scopeMap;
+        filesMap = state.filesMap;
+        relationships = state.relationships;
+        identifierCollections = state.identifierCollections;
+
+        orderedGmlFiles = gmlFiles;
+        if (options?.priorityFiles) {
+            const prioritySet = new Set(
+                (Array.isArray(options.priorityFiles) ? options.priorityFiles : [options.priorityFiles]).map((f) =>
+                    path.resolve(f)
+                )
+            );
+            const priorities: any[] = [];
+            const others: any[] = [];
+            for (const file of gmlFiles) {
+                if (prioritySet.has(path.resolve(file.absolutePath))) {
+                    priorities.push(file);
+                } else {
+                    others.push(file);
+                }
+            }
+            orderedGmlFiles = [...priorities, ...others];
+        }
+    }
 
     const { gmlConcurrency, parseProjectSource } = configureGmlProcessing({
         options,
         metrics
     });
-
-    let orderedGmlFiles = gmlFiles;
-    if (options?.priorityFiles) {
-        const prioritySet = new Set(
-            (Array.isArray(options.priorityFiles) ? options.priorityFiles : [options.priorityFiles]).map((f) =>
-                path.resolve(f)
-            )
-        );
-        const priorities: any[] = [];
-        const others: any[] = [];
-        for (const file of gmlFiles) {
-            if (prioritySet.has(path.resolve(file.absolutePath))) {
-                priorities.push(file);
-            } else {
-                others.push(file);
-            }
-        }
-        orderedGmlFiles = [...priorities, ...others];
-    }
 
     const definitionsOnly = options?.definitionsOnly === true;
 

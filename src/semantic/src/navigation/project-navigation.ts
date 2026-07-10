@@ -62,6 +62,7 @@ export type GmlProjectNavigationIndex = Readonly<{
     symbolIdsByName: ReadonlyMap<string, ReadonlyArray<string>>;
     symbolsById: ReadonlyMap<string, GmlNavigationSymbol>;
     symbols: ReadonlyArray<GmlNavigationSymbol>;
+    rawIndex?: unknown;
 }>;
 
 /**
@@ -447,7 +448,9 @@ export async function buildProjectNavigationIndex(
     options?: Record<string, unknown>
 ): Promise<GmlProjectNavigationIndex> {
     const projectIndex = await buildProjectIndex(projectRoot, fsFacade, options);
-    return createProjectNavigationIndex(projectIndex);
+    const navIndex = createProjectNavigationIndex(projectIndex);
+    (navIndex as any).rawIndex = projectIndex;
+    return navIndex;
 }
 
 /**

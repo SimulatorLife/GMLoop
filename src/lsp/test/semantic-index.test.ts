@@ -6,6 +6,11 @@ import { test } from "node:test";
 
 import { Lsp } from "@gmloop/lsp";
 
+async function cleanupProjectDir(projectRoot: string) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await fs.rm(projectRoot, { recursive: true, force: true }).catch(() => {});
+}
+
 async function createTwoScriptProject(): Promise<{
     cleanup(): Promise<void>;
     projectRoot: string;
@@ -45,7 +50,7 @@ async function createTwoScriptProject(): Promise<{
         targetPath,
         sourceText,
         async cleanup() {
-            await fs.rm(projectRoot, { recursive: true, force: true });
+            await cleanupProjectDir(projectRoot);
         }
     };
 }
@@ -190,7 +195,7 @@ void test("semantic index hover handles comment/string guards and ignores scope-
         const hoverInB = await semanticIndex.hover(document, offsetInB, "desc");
         assert.equal(hoverInB, null, "Should not fall back to local variable from another function");
     } finally {
-        await fs.rm(projectRoot, { recursive: true, force: true });
+        await cleanupProjectDir(projectRoot);
     }
 });
 
@@ -239,7 +244,7 @@ void test("semantic index prioritizes open files in indexing queue", async () =>
         const hoverRes = await semanticIndex.hover(docB, 0, "b");
         assert.ok(hoverRes === null || hoverRes !== undefined);
     } finally {
-        await fs.rm(projectRoot, { recursive: true, force: true });
+        await cleanupProjectDir(projectRoot);
     }
 });
 
@@ -315,6 +320,187 @@ void test("semantic index double-pass approach exposes fast hover initially, and
         assert.ok(finalState);
         assert.equal(finalState.lightweight, false, "State should be fully upgraded after findReferences completed");
     } finally {
-        await fs.rm(projectRoot, { recursive: true, force: true });
+        await cleanupProjectDir(projectRoot);
+    }
+});
+
+void test("semantic index aborts and cancels in-flight builds on invalidation", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gmloop-lsp-abort-"));
+    try {
+        await fs.writeFile(
+            path.join(projectRoot, "Game.yyp"),
+            JSON.stringify({ name: "Game", resourceType: "GMProject" })
+        );
+
+        const aPath = path.join(projectRoot, "scripts/a/a.gml");
+        await fs.mkdir(path.dirname(aPath), { recursive: true });
+        await fs.writeFile(
+            path.join(projectRoot, "scripts/a/a.yy"),
+            JSON.stringify({ name: "a", resourceType: "GMScript" })
+        );
+        await fs.writeFile(aPath, "function a() { return 1; }");
+
+        const store = Lsp.createGmlDocumentStore();
+        const doc = store.open({
+            uri: Lsp.filePathToUri(aPath),
+            languageId: "gml",
+            version: 1,
+            text: "function a() { return 1; }"
+        });
+
+        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+
+        // Start a build and immediately invalidate it
+        const buildPromise = semanticIndex.buildForDocument(doc);
+        semanticIndex.invalidateForDocument(doc);
+
+        const state = await buildPromise;
+        // The build should have been aborted and resolved to null
+        assert.equal(state, null, "Build should be aborted and return null when invalidated");
+    } finally {
+        await cleanupProjectDir(projectRoot);
+    }
+});
+
+void test("semantic index performs incremental updates on document refresh", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gmloop-lsp-incremental-"));
+    try {
+        await fs.writeFile(
+            path.join(projectRoot, "Game.yyp"),
+            JSON.stringify({ name: "Game", resourceType: "GMProject" })
+        );
+
+        const aPath = path.join(projectRoot, "scripts/a/a.gml");
+        await fs.mkdir(path.dirname(aPath), { recursive: true });
+        await fs.writeFile(
+            path.join(projectRoot, "scripts/a/a.yy"),
+            JSON.stringify({ name: "a", resourceType: "GMScript" })
+        );
+        await fs.writeFile(aPath, "function a_func() { return 1; }");
+
+        const bPath = path.join(projectRoot, "scripts/b/b.gml");
+        await fs.mkdir(path.dirname(bPath), { recursive: true });
+        await fs.writeFile(
+            path.join(projectRoot, "scripts/b/b.yy"),
+            JSON.stringify({ name: "b", resourceType: "GMScript" })
+        );
+        await fs.writeFile(bPath, "function b_func() { return 2; }");
+
+        const store = Lsp.createGmlDocumentStore();
+        const docA = store.open({
+            uri: Lsp.filePathToUri(aPath),
+            languageId: "gml",
+            version: 1,
+            text: "function a_func() { return 1; }"
+        });
+        store.open({
+            uri: Lsp.filePathToUri(bPath),
+            languageId: "gml",
+            version: 1,
+            text: "function b_func() { return 2; }"
+        });
+
+        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+
+        // 1. Initial cold build
+        const state = await semanticIndex.buildForDocument(docA);
+        assert.ok(state);
+        // Force upgrade to full index
+        await semanticIndex.findReferences(docA, 9, "a_func", false);
+
+        // Verify initial state has both functions
+        const comps1 = await semanticIndex.searchCompletions(docA, "a_func");
+        assert.ok(comps1.some((c) => c.label === "a_func"));
+        const compsB1 = await semanticIndex.searchCompletions(docA, "b_func");
+        assert.ok(compsB1.some((c) => c.label === "b_func"));
+
+        // 2. Perform an incremental update to a.gml
+        const updatedDocA = store.update(docA.uri, 2, [
+            {
+                text: "function new_func() { return 3; }"
+            }
+        ]);
+        assert.ok(updatedDocA);
+
+        semanticIndex.invalidateForDocument(updatedDocA);
+        await semanticIndex.refreshForDocument(updatedDocA);
+
+        // Verify new_func exists, a_func is gone, and b_func is STILL there
+        const comps2 = await semanticIndex.searchCompletions(updatedDocA, "new_func");
+        assert.ok(
+            comps2.some((c) => c.label === "new_func"),
+            "new_func should exist after incremental update"
+        );
+
+        const comps3 = await semanticIndex.searchCompletions(updatedDocA, "a_func");
+        assert.ok(!comps3.some((c) => c.label === "a_func"), "a_func should be removed after incremental update");
+
+        const comps4 = await semanticIndex.searchCompletions(updatedDocA, "b_func");
+        assert.ok(
+            comps4.some((c) => c.label === "b_func"),
+            "b_func from unrelated file should be preserved"
+        );
+    } finally {
+        await cleanupProjectDir(projectRoot);
+    }
+});
+
+void test("semantic index loads cache from disk on startup and saves updates to disk", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gmloop-lsp-cache-"));
+    try {
+        await fs.writeFile(
+            path.join(projectRoot, "Game.yyp"),
+            JSON.stringify({ name: "Game", resourceType: "GMProject" })
+        );
+
+        const aPath = path.join(projectRoot, "scripts/a/a.gml");
+        await fs.mkdir(path.dirname(aPath), { recursive: true });
+        await fs.writeFile(
+            path.join(projectRoot, "scripts/a/a.yy"),
+            JSON.stringify({ name: "a", resourceType: "GMScript" })
+        );
+        await fs.writeFile(aPath, "function cache_func() { return 1; }");
+
+        const store = Lsp.createGmlDocumentStore();
+        const doc = store.open({
+            uri: Lsp.filePathToUri(aPath),
+            languageId: "gml",
+            version: 1,
+            text: "function cache_func() { return 1; }"
+        });
+
+        // 1. First semantic index instance builds and saves to disk cache
+        const index1 = Lsp.createGmlSemanticIndex(store);
+        const state1 = await index1.buildForDocument(doc);
+        assert.ok(state1);
+
+        // Wait for background build to complete so it writes to disk cache
+        await index1.findReferences(doc, 9, "cache_func", false);
+
+        // Wait a brief moment for the background cache save to finish writing to disk
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        // Verify the cache directory and file exist
+        const cacheDir = path.join(projectRoot, ".gmloop");
+        const cacheFilePath = path.join(cacheDir, "project-index-cache.json");
+        const fileExists = await fs
+            .stat(cacheFilePath)
+            .then(() => true)
+            .catch(() => false);
+        assert.ok(fileExists, "Cache file should be saved to disk under .gmloop/project-index-cache.json");
+
+        // 2. Start a second semantic index instance (simulating VS Code reload)
+        const index2 = Lsp.createGmlSemanticIndex(store);
+        const state2 = await index2.buildForDocument(doc);
+        assert.ok(state2, "Should load cached state from disk on startup");
+        assert.equal(state2.lightweight, false, "Loaded cached state should be full (not lightweight)");
+
+        const comps = await index2.searchCompletions(doc, "cache_func");
+        assert.ok(
+            comps.some((c) => c.label === "cache_func"),
+            "Completions should be available immediately from disk cache"
+        );
+    } finally {
+        await cleanupProjectDir(projectRoot);
     }
 });

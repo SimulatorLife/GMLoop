@@ -405,20 +405,41 @@ function getBuiltInsMetadata(): Record<string, unknown> {
     return builtInsMetadata;
 }
 
+const projectRootCache = new Map<string, string | null>();
+
+async function getProjectRoot(filepath: string): Promise<string | null> {
+    const resolvedPath = path.resolve(filepath);
+    let root = projectRootCache.get(resolvedPath);
+    if (root === undefined) {
+        root = await Semantic.findProjectRoot({ filepath: resolvedPath });
+        projectRootCache.set(resolvedPath, root);
+    }
+    return root;
+}
+
 async function buildSemanticIndexForDocument(
     document: GmlTextDocument,
     fsFacade: FsFacade = Core.defaultFsFacade,
     priorityFiles?: ReadonlyArray<string>,
-    definitionsOnly?: boolean
+    definitionsOnly?: boolean,
+    signal?: AbortSignal,
+    existingIndex?: any
 ): Promise<NavigationState | null> {
-    const projectRoot = await Semantic.findProjectRoot({ filepath: document.filePath });
+    const projectRoot = await getProjectRoot(document.filePath);
     if (!projectRoot) {
         return null;
     }
 
     const index = await Semantic.buildProjectNavigationIndex(projectRoot, fsFacade, {
         priorityFiles,
-        definitionsOnly
+        definitionsOnly,
+        signal,
+        incremental: existingIndex
+            ? {
+                  existingIndex,
+                  changedFile: document.filePath
+              }
+            : undefined
     });
 
     return {
@@ -442,10 +463,24 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
     const inFlightBuilds = new Map<string, Promise<NavigationState | null>>();
     const backgroundFullBuilds = new Map<string, Promise<NavigationState | null>>();
     const rootVersions = new Map<string, number>();
+    const abortControllers = new Map<string, AbortController>();
+    const documentVersions = new Map<string, number>();
     const fsFacade = createLspFsFacade(documents);
 
     function readRootVersion(projectRoot: string): number {
         return rootVersions.get(projectRoot) ?? 0;
+    }
+
+    function readDocumentVersion(uri: string): number {
+        return documentVersions.get(uri) ?? 0;
+    }
+
+    function abortActiveBuild(projectRoot: string): void {
+        const controller = abortControllers.get(projectRoot);
+        if (controller) {
+            controller.abort();
+            abortControllers.delete(projectRoot);
+        }
     }
 
     function invalidateRoot(projectRoot: string): void {
@@ -458,9 +493,12 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         cachedStates.delete(resolvedRoot);
         inFlightBuilds.delete(resolvedRoot);
         backgroundFullBuilds.delete(resolvedRoot);
+        abortActiveBuild(resolvedRoot);
     }
 
     function invalidateKnownDocumentRoots(document: GmlTextDocument): void {
+        const resolvedUri = document.uri;
+        documentVersions.set(resolvedUri, readDocumentVersion(resolvedUri) + 1);
         const knownRoots = new Set([...cachedStates.keys(), ...inFlightBuilds.keys()]);
         for (const projectRoot of knownRoots) {
             if (isDocumentWithinProjectRoot(document, projectRoot)) {
@@ -478,12 +516,36 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
             return existingBuild;
         }
 
+        const resolvedUri = document.uri;
+        const startDocVersion = readDocumentVersion(resolvedUri);
         const buildVersion = readRootVersion(resolvedRoot);
         const priorityFiles = documents.list().map((doc) => doc.filePath);
 
-        const fullBuild = buildSemanticIndexForDocument(document, fsFacade, priorityFiles, false)
-            .then((fullState) => {
-                if (fullState && readRootVersion(resolvedRoot) === buildVersion) {
+        abortActiveBuild(resolvedRoot);
+        const controller = new AbortController();
+        abortControllers.set(resolvedRoot, controller);
+
+        const fullBuild = (async () => {
+            try {
+                const currentDoc = documents.get(document.uri);
+                if (currentDoc && currentDoc.version !== document.version) {
+                    return null;
+                }
+                if (readDocumentVersion(resolvedUri) !== startDocVersion) {
+                    return null;
+                }
+                const fullState = await buildSemanticIndexForDocument(
+                    document,
+                    fsFacade,
+                    priorityFiles,
+                    false,
+                    controller.signal
+                );
+                if (
+                    fullState &&
+                    readRootVersion(resolvedRoot) === buildVersion &&
+                    readDocumentVersion(resolvedUri) === startDocVersion
+                ) {
                     const currentState = cachedStates.get(resolvedRoot);
                     if (currentState && currentState.lightweight) {
                         currentState.index = fullState.index;
@@ -492,36 +554,93 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                         cachedStates.set(resolvedRoot, fullState);
                     }
                     staleStates.delete(resolvedRoot);
+
+                    void Semantic.saveProjectIndexCache(
+                        {
+                            projectRoot: resolvedRoot,
+                            projectIndex: fullState.index.rawIndex
+                        },
+                        fsFacade as any
+                    ).catch(() => {});
+
                     return cachedStates.get(resolvedRoot) ?? fullState;
                 }
                 return null;
-            })
-            .catch(() => null)
-            .finally(() => {
-                if (backgroundFullBuilds.get(resolvedRoot) === fullBuild) {
-                    backgroundFullBuilds.delete(resolvedRoot);
+            } catch (error) {
+                if (Core.isAbortError(error)) {
+                    return null;
                 }
-            });
-        backgroundFullBuilds.set(resolvedRoot, fullBuild);
-        return fullBuild;
+                console.error(
+                    `Error in GMLoop background project index build: ${Core.getErrorMessageOrFallback(error)}`
+                );
+                return null;
+            }
+        })();
+
+        const finalBuild = fullBuild.finally(() => {
+            if (abortControllers.get(resolvedRoot) === controller) {
+                abortControllers.delete(resolvedRoot);
+            }
+            if (backgroundFullBuilds.get(resolvedRoot) === finalBuild) {
+                backgroundFullBuilds.delete(resolvedRoot);
+            }
+        });
+        backgroundFullBuilds.set(resolvedRoot, finalBuild);
+        return finalBuild;
     }
 
     function triggerBuildInBackground(document: GmlTextDocument, resolvedRoot: string): void {
         let inFlight = inFlightBuilds.get(resolvedRoot);
         if (inFlight === undefined) {
+            const resolvedUri = document.uri;
+            const startDocVersion = readDocumentVersion(resolvedUri);
             const buildVersion = readRootVersion(resolvedRoot);
+            abortActiveBuild(resolvedRoot);
+            const controller = new AbortController();
+            abortControllers.set(resolvedRoot, controller);
+
             const buildPromise = (async () => {
                 const priorityFiles = documents.list().map((doc) => doc.filePath);
-                const state = await buildSemanticIndexForDocument(document, fsFacade, priorityFiles, true);
-                if (state && readRootVersion(resolvedRoot) === buildVersion) {
-                    cachedStates.set(resolvedRoot, state);
-                    staleStates.delete(resolvedRoot);
-                    void triggerBackgroundFullBuild(document, resolvedRoot);
+                try {
+                    const currentDoc = documents.get(document.uri);
+                    if (currentDoc && currentDoc.version !== document.version) {
+                        return null;
+                    }
+                    if (readDocumentVersion(resolvedUri) !== startDocVersion) {
+                        return null;
+                    }
+                    const existingState = cachedStates.get(resolvedRoot) ?? staleStates.get(resolvedRoot);
+                    const state = await buildSemanticIndexForDocument(
+                        document,
+                        fsFacade,
+                        priorityFiles,
+                        true,
+                        controller.signal,
+                        existingState?.index?.rawIndex
+                    );
+                    if (
+                        state &&
+                        readRootVersion(resolvedRoot) === buildVersion &&
+                        readDocumentVersion(resolvedUri) === startDocVersion
+                    ) {
+                        cachedStates.set(resolvedRoot, state);
+                        staleStates.delete(resolvedRoot);
+                        void triggerBackgroundFullBuild(document, resolvedRoot);
+                        return state;
+                    }
+                    return null;
+                } catch (error) {
+                    if (Core.isAbortError(error)) {
+                        return null;
+                    }
+                    throw error;
                 }
-                return state;
             })();
 
             inFlight = buildPromise.finally(() => {
+                if (abortControllers.get(resolvedRoot) === controller) {
+                    abortControllers.delete(resolvedRoot);
+                }
                 inFlightBuilds.delete(resolvedRoot);
             });
             inFlightBuilds.set(resolvedRoot, inFlight);
@@ -532,13 +651,49 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         document: GmlTextDocument,
         options?: { allowStale?: boolean }
     ): Promise<NavigationState | null> {
-        const projectRoot = await Semantic.findProjectRoot({ filepath: document.filePath });
+        const resolvedUri = document.uri;
+        const startDocVersion = readDocumentVersion(resolvedUri);
+        const projectRoot = await getProjectRoot(document.filePath);
         if (!projectRoot) {
             return null;
         }
 
+        const currentDoc = documents.get(document.uri);
+        if (currentDoc && currentDoc.version !== document.version) {
+            return null;
+        }
+
+        if (readDocumentVersion(resolvedUri) !== startDocVersion) {
+            return null;
+        }
+
         const resolvedRoot = path.resolve(projectRoot);
-        const currentState = cachedStates.get(resolvedRoot);
+        let currentState = cachedStates.get(resolvedRoot);
+        const staleState = staleStates.get(resolvedRoot);
+
+        if (!currentState && !staleState) {
+            try {
+                const cacheResult = await Semantic.loadProjectIndexCache(
+                    { projectRoot: resolvedRoot },
+                    fsFacade as any
+                );
+                if (cacheResult.status === "hit" && cacheResult.projectIndex) {
+                    const navIndex = Semantic.createProjectNavigationIndex(cacheResult.projectIndex);
+                    (navIndex as any).rawIndex = cacheResult.projectIndex;
+                    const loadedState = {
+                        projectRoot: resolvedRoot,
+                        index: navIndex,
+                        lightweight: false
+                    };
+                    cachedStates.set(resolvedRoot, loadedState);
+                    currentState = loadedState;
+                    void refreshIndex(document);
+                }
+            } catch {
+                // Ignore load error and fall back to cold build
+            }
+        }
+
         if (currentState && !currentState.lightweight) {
             return currentState;
         }
@@ -547,8 +702,6 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
             void triggerBackgroundFullBuild(document, resolvedRoot);
             return currentState;
         }
-
-        const staleState = staleStates.get(resolvedRoot);
         if (staleState && options?.allowStale) {
             triggerBuildInBackground(document, resolvedRoot);
             return staleState;
@@ -557,18 +710,52 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         let inFlight = inFlightBuilds.get(resolvedRoot);
         if (inFlight === undefined) {
             const buildVersion = readRootVersion(resolvedRoot);
+            abortActiveBuild(resolvedRoot);
+            const controller = new AbortController();
+            abortControllers.set(resolvedRoot, controller);
+
             const buildPromise = (async () => {
                 const priorityFiles = documents.list().map((doc) => doc.filePath);
-                const state = await buildSemanticIndexForDocument(document, fsFacade, priorityFiles, true);
-                if (state && readRootVersion(resolvedRoot) === buildVersion) {
-                    cachedStates.set(resolvedRoot, state);
-                    staleStates.delete(resolvedRoot);
-                    void triggerBackgroundFullBuild(document, resolvedRoot);
+                try {
+                    const innerCurrentDoc = documents.get(document.uri);
+                    if (innerCurrentDoc && innerCurrentDoc.version !== document.version) {
+                        return null;
+                    }
+                    if (readDocumentVersion(resolvedUri) !== startDocVersion) {
+                        return null;
+                    }
+                    const existingState = cachedStates.get(resolvedRoot) ?? staleStates.get(resolvedRoot);
+                    const state = await buildSemanticIndexForDocument(
+                        document,
+                        fsFacade,
+                        priorityFiles,
+                        true,
+                        controller.signal,
+                        existingState?.index?.rawIndex
+                    );
+                    if (
+                        state &&
+                        readRootVersion(resolvedRoot) === buildVersion &&
+                        readDocumentVersion(resolvedUri) === startDocVersion
+                    ) {
+                        cachedStates.set(resolvedRoot, state);
+                        staleStates.delete(resolvedRoot);
+                        void triggerBackgroundFullBuild(document, resolvedRoot);
+                        return state;
+                    }
+                    return null;
+                } catch (error) {
+                    if (Core.isAbortError(error)) {
+                        return null;
+                    }
+                    throw error;
                 }
-                return state;
             })();
 
             inFlight = buildPromise.finally(() => {
+                if (abortControllers.get(resolvedRoot) === controller) {
+                    abortControllers.delete(resolvedRoot);
+                }
                 inFlightBuilds.delete(resolvedRoot);
             });
             inFlightBuilds.set(resolvedRoot, inFlight);
@@ -578,27 +765,84 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
     }
 
     async function refreshIndex(document: GmlTextDocument): Promise<NavigationState | null> {
-        const projectRoot = await Semantic.findProjectRoot({ filepath: document.filePath });
+        const resolvedUri = document.uri;
+        const startDocVersion = readDocumentVersion(resolvedUri);
+        const projectRoot = await getProjectRoot(document.filePath);
         if (!projectRoot) {
+            return null;
+        }
+
+        const currentDoc = documents.get(document.uri);
+        if (currentDoc && currentDoc.version !== document.version) {
+            return null;
+        }
+
+        if (readDocumentVersion(resolvedUri) !== startDocVersion) {
             return null;
         }
 
         const resolvedRoot = path.resolve(projectRoot);
         const buildVersion = readRootVersion(resolvedRoot);
         const priorityFiles = documents.list().map((doc) => doc.filePath);
-        const inFlight = buildSemanticIndexForDocument(document, fsFacade, priorityFiles, false)
-            .then((state) => {
-                if (state && readRootVersion(resolvedRoot) === buildVersion) {
+
+        abortActiveBuild(resolvedRoot);
+        const controller = new AbortController();
+        abortControllers.set(resolvedRoot, controller);
+
+        const inFlight = (async () => {
+            try {
+                const innerCurrentDoc = documents.get(document.uri);
+                if (innerCurrentDoc && innerCurrentDoc.version !== document.version) {
+                    return null;
+                }
+                if (readDocumentVersion(resolvedUri) !== startDocVersion) {
+                    return null;
+                }
+                const existingState = cachedStates.get(resolvedRoot) ?? staleStates.get(resolvedRoot);
+                const canIncremental = existingState && !existingState.lightweight;
+                const state = await buildSemanticIndexForDocument(
+                    document,
+                    fsFacade,
+                    priorityFiles,
+                    false,
+                    controller.signal,
+                    canIncremental ? existingState.index.rawIndex : undefined
+                );
+                if (
+                    state &&
+                    readRootVersion(resolvedRoot) === buildVersion &&
+                    readDocumentVersion(resolvedUri) === startDocVersion
+                ) {
                     cachedStates.set(resolvedRoot, state);
                     staleStates.delete(resolvedRoot);
+
+                    void Semantic.saveProjectIndexCache(
+                        {
+                            projectRoot: resolvedRoot,
+                            projectIndex: state.index.rawIndex
+                        },
+                        fsFacade as any
+                    ).catch(() => {});
+
+                    return state;
                 }
-                return state;
-            })
-            .finally(() => {
-                inFlightBuilds.delete(resolvedRoot);
-            });
-        inFlightBuilds.set(resolvedRoot, inFlight);
-        return await inFlight;
+                return null;
+            } catch (error) {
+                if (Core.isAbortError(error)) {
+                    return null;
+                }
+                throw error;
+            }
+        })();
+
+        const finalInFlight = inFlight.finally(() => {
+            if (abortControllers.get(resolvedRoot) === controller) {
+                abortControllers.delete(resolvedRoot);
+            }
+            inFlightBuilds.delete(resolvedRoot);
+        });
+        inFlightBuilds.set(resolvedRoot, finalInFlight);
+        return await finalInFlight;
     }
 
     async function ensureFullIndex(document: GmlTextDocument): Promise<NavigationState | null> {
@@ -610,7 +854,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
             return state;
         }
 
-        const projectRoot = await Semantic.findProjectRoot({ filepath: document.filePath });
+        const projectRoot = await getProjectRoot(document.filePath);
         if (!projectRoot) {
             return state;
         }

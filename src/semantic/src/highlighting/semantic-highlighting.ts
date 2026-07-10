@@ -4,7 +4,8 @@ import {
     getGmlSymbolKindForBuiltInType,
     getGmlSymbolKindSpecificity,
     type GmlSemanticSymbolKind,
-    normalizeGmlSemanticSymbolKind} from "../symbols/taxonomy.js";
+    normalizeGmlSemanticSymbolKind
+} from "../symbols/taxonomy.js";
 
 /** Semantic categories exposed to editor protocol adapters. */
 export type GmlSemanticHighlightKind =
