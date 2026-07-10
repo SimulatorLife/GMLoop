@@ -347,7 +347,7 @@ export function hasInlineCommentBetween(
     const leftEnd = getNodeEndIndex(left);
     const rightStart = getNodeStartIndex(right);
 
-    if (leftEnd == undefined || rightStart == undefined || rightStart <= leftEnd || rightStart > sourceText.length) {
+    if (leftEnd == null || rightStart == null || rightStart <= leftEnd || rightStart > sourceText.length) {
         return false;
     }
 
