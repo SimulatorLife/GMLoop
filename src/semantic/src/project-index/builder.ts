@@ -1451,7 +1451,8 @@ function handleIdentifierNode({
     scopeDescriptor,
     metrics,
     structVariableDeclarationScopeIds,
-    identifierSink
+    identifierSink,
+    definitionsOnly = false
 }) {
     if (node?.type !== "Identifier" || !Array.isArray(node.classifications)) {
         return false;
@@ -1483,7 +1484,7 @@ function handleIdentifierNode({
             identifierSink
         });
     }
-    if (isReference) {
+    if (isReference && !definitionsOnly) {
         metrics?.counters?.increment("identifiers.references");
         fileRecord.references.push(identifierRecord);
         scopeRecord.references.push(identifierRecord);
@@ -1832,7 +1833,8 @@ function analyseGmlAst({
     sourceContents = "",
     lineOffsets = null,
     structVariableDeclarationScopeIds = new Set(),
-    identifierSink
+    identifierSink,
+    definitionsOnly = false
 }) {
     const parentMap = buildSafeParentMap(ast);
     const enumLookup = createEnumLookup(ast, fileRecord?.filePath ?? null);
@@ -1857,7 +1859,8 @@ function analyseGmlAst({
             scopeDescriptor,
             metrics,
             structVariableDeclarationScopeIds,
-            identifierSink
+            identifierSink,
+            definitionsOnly
         });
         if (identifierHandled) {
             return;
@@ -2085,7 +2088,8 @@ async function processProjectGmlFile({
     builtInNames,
     projectRoot,
     identifierSink,
-    pendingConstructorStaticMemberReferences
+    pendingConstructorStaticMemberReferences,
+    definitionsOnly = false
 }) {
     ensureNotAborted();
     metrics.counters.increment("files.gmlProcessed");
@@ -2126,7 +2130,8 @@ async function processProjectGmlFile({
             sourceContents: contents,
             lineOffsets,
             structVariableDeclarationScopeIds,
-            identifierSink
+            identifierSink,
+            definitionsOnly
         })
     );
     metrics.timers.timeSync("gml.constructorStaticMembers", () =>
@@ -2608,7 +2613,8 @@ async function processProjectGmlFilesForIndex({
     signal,
     identifierSink,
     constructorStaticMemberReferences,
-    onProgress
+    onProgress,
+    definitionsOnly = false
 }) {
     let processed = 0;
     const total = gmlFiles.length;
@@ -2630,7 +2636,8 @@ async function processProjectGmlFilesForIndex({
                 builtInNames,
                 projectRoot,
                 identifierSink,
-                pendingConstructorStaticMemberReferences: constructorStaticMemberReferences
+                pendingConstructorStaticMemberReferences: constructorStaticMemberReferences,
+                definitionsOnly
             });
             processed += 1;
             if (onProgress) {
@@ -2717,9 +2724,30 @@ export async function buildProjectIndex(projectRoot, fsFacade = Core.defaultFsFa
         metrics
     });
 
+    let orderedGmlFiles = gmlFiles;
+    if (options?.priorityFiles) {
+        const prioritySet = new Set(
+            (Array.isArray(options.priorityFiles) ? options.priorityFiles : [options.priorityFiles]).map((f) =>
+                path.resolve(f)
+            )
+        );
+        const priorities: any[] = [];
+        const others: any[] = [];
+        for (const file of gmlFiles) {
+            if (prioritySet.has(path.resolve(file.absolutePath))) {
+                priorities.push(file);
+            } else {
+                others.push(file);
+            }
+        }
+        orderedGmlFiles = [...priorities, ...others];
+    }
+
+    const definitionsOnly = options?.definitionsOnly === true;
+
     try {
         await processProjectGmlFilesForIndex({
-            gmlFiles,
+            gmlFiles: orderedGmlFiles,
             gmlConcurrency,
             parseProjectSource,
             fsFacade,
@@ -2735,7 +2763,8 @@ export async function buildProjectIndex(projectRoot, fsFacade = Core.defaultFsFa
             signal,
             identifierSink,
             constructorStaticMemberReferences,
-            onProgress: options?.onProgress
+            onProgress: options?.onProgress,
+            definitionsOnly
         });
         recordMemoryHighWater();
 
@@ -2745,12 +2774,14 @@ export async function buildProjectIndex(projectRoot, fsFacade = Core.defaultFsFa
             identifierSink
         });
 
-        recordScriptCallMetricsAndReferences({
-            relationships,
-            metrics,
-            identifierCollections,
-            identifierSink
-        });
+        if (!definitionsOnly) {
+            recordScriptCallMetricsAndReferences({
+                relationships,
+                metrics,
+                identifierCollections,
+                identifierSink
+            });
+        }
 
         const projectIndexPayload = createProjectIndexResultSnapshot({
             projectRoot: resolvedRoot,

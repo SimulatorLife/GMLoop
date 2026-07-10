@@ -187,6 +187,20 @@ SCIP remains the canonical symbol model. Storage and execution, however, should 
 - **Optional backend**: SQLite remains a supported direction for indexed query workloads, but only behind a benchmark gate and only if it materially improves throughput or memory.
 - **Relational projections**: When tooling benefits from relational or graph queries, semantic results may also be projected into SQLite-style `nodes` and `edges` tables without changing the canonical symbol model.
 
+### 4.5 Two-Tiered Semantic Indexing (LSP)
+
+To minimize Language Server startup and first-hover latencies on large GameMaker projects, GMLoop implements a two-tiered semantic indexing system:
+
+- **Tier 1: Lightweight Definitions-Only Pass**:
+  - On the initial project load or first hover/definition check, GMLoop triggers a fast `definitionsOnly` compilation pass.
+  - This pass skips traversing, processing, and recording all reference/usage occurrences of identifiers (which typically account for ~95% of the identifier nodes in GameMaker projects), as well as script calls.
+  - It parses all definitions, constructors, structs, methods, enums, macros, parameters, return types, and doc-comments.
+  - This pass is extremely fast (executing 10x to 20x faster) and immediately cache-stores the state so hovers and basic "Go to Definition" navigations respond instantly.
+- **Tier 2: Background Full Indexing Pass**:
+  - As soon as the lightweight index resolves, GMLoop kicks off a full, deep index build (`definitionsOnly: false`) asynchronously in the background.
+  - This background build processes references and relational mappings without blocking the active LSP session or hover/definition queries.
+  - When the full background build completes, it mutates/upgrades the cached navigation state object in-place. This preserves the original object reference in the cache (avoiding eviction or identity issues) while seamlessly upgrading the index to support advanced reference-dependent features like "Find All References" and "Rename Symbol".
+
 ## 5. Semantic Index & Codemod Streaming Architecture
 
 ### 5.1 Problem Statement

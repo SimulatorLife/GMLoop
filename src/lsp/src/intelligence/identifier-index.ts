@@ -26,10 +26,11 @@ import { gmlSymbolKindToCompletionItemKind, gmlSymbolKindToLspSymbolKind } from 
 type NavigationIndex = Awaited<ReturnType<typeof Semantic.buildProjectNavigationIndex>>;
 type NavigationOccurrence = NonNullable<ReturnType<typeof Semantic.findNavigationSymbolAtPosition>>;
 type NavigationSymbol = ReturnType<typeof Semantic.searchNavigationWorkspaceSymbols>[number];
-type NavigationState = Readonly<{
+type NavigationState = {
     index: NavigationIndex;
     projectRoot: string;
-}>;
+    lightweight?: boolean;
+};
 
 /**
  * Query facade used by the LSP layer to consume semantic navigation facts.
@@ -253,13 +254,12 @@ function findSymbolId(
     const resolvedSymbolId = Semantic.resolveNavigationSymbolId(index, identifierName);
     if (resolvedSymbolId) {
         const symbol = index.symbolsById.get(resolvedSymbolId);
-        if (symbol && (
-                symbol.kind === "localVariable" ||
-                symbol.kind === "instanceVariable" ||
-                symbol.kind === "structVariable"
-            )) {
-                return null;
-            }
+        if (
+            symbol &&
+            (symbol.kind === "localVariable" || symbol.kind === "instanceVariable" || symbol.kind === "structVariable")
+        ) {
+            return null;
+        }
         return resolvedSymbolId;
     }
 
@@ -403,18 +403,24 @@ function getBuiltInsMetadata(): Record<string, unknown> {
 
 async function buildSemanticIndexForDocument(
     document: GmlTextDocument,
-    fsFacade: FsFacade = Core.defaultFsFacade
+    fsFacade: FsFacade = Core.defaultFsFacade,
+    priorityFiles?: ReadonlyArray<string>,
+    definitionsOnly?: boolean
 ): Promise<NavigationState | null> {
     const projectRoot = await Semantic.findProjectRoot({ filepath: document.filePath });
     if (!projectRoot) {
         return null;
     }
 
-    const index = await Semantic.buildProjectNavigationIndex(projectRoot, fsFacade);
+    const index = await Semantic.buildProjectNavigationIndex(projectRoot, fsFacade, {
+        priorityFiles,
+        definitionsOnly
+    });
 
     return {
         projectRoot,
-        index
+        index,
+        lightweight: definitionsOnly
     };
 }
 
@@ -429,6 +435,7 @@ function isDocumentWithinProjectRoot(document: GmlTextDocument, projectRoot: str
 export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemanticIndex {
     const cachedStates = new Map<string, NavigationState>();
     const inFlightBuilds = new Map<string, Promise<NavigationState | null>>();
+    const backgroundFullBuilds = new Set<string>();
     const rootVersions = new Map<string, number>();
     const fsFacade = createLspFsFacade(documents);
 
@@ -441,6 +448,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         rootVersions.set(resolvedRoot, readRootVersion(resolvedRoot) + 1);
         cachedStates.delete(resolvedRoot);
         inFlightBuilds.delete(resolvedRoot);
+        backgroundFullBuilds.delete(resolvedRoot);
     }
 
     function invalidateKnownDocumentRoots(document: GmlTextDocument): void {
@@ -452,6 +460,33 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         }
     }
 
+    function triggerBackgroundFullBuild(document: GmlTextDocument, resolvedRoot: string) {
+        if (backgroundFullBuilds.has(resolvedRoot)) {
+            return;
+        }
+        backgroundFullBuilds.add(resolvedRoot);
+
+        const buildVersion = readRootVersion(resolvedRoot);
+        const priorityFiles = documents.list().map((doc) => doc.filePath);
+
+        buildSemanticIndexForDocument(document, fsFacade, priorityFiles, false)
+            .then((fullState) => {
+                if (fullState && readRootVersion(resolvedRoot) === buildVersion) {
+                    const currentState = cachedStates.get(resolvedRoot);
+                    if (currentState && currentState.lightweight) {
+                        currentState.index = fullState.index;
+                        currentState.lightweight = false;
+                    } else {
+                        cachedStates.set(resolvedRoot, fullState);
+                    }
+                }
+            })
+            .catch(() => {})
+            .finally(() => {
+                backgroundFullBuilds.delete(resolvedRoot);
+            });
+    }
+
     async function ensureIndex(document: GmlTextDocument): Promise<NavigationState | null> {
         const projectRoot = await Semantic.findProjectRoot({ filepath: document.filePath });
         if (!projectRoot) {
@@ -460,7 +495,12 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
 
         const resolvedRoot = path.resolve(projectRoot);
         const currentState = cachedStates.get(resolvedRoot);
-        if (currentState) {
+        if (currentState && !currentState.lightweight) {
+            return currentState;
+        }
+
+        if (currentState && currentState.lightweight) {
+            triggerBackgroundFullBuild(document, resolvedRoot);
             return currentState;
         }
 
@@ -468,9 +508,11 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         if (inFlight === undefined) {
             const buildVersion = readRootVersion(resolvedRoot);
             const buildPromise = (async () => {
-                const state = await buildSemanticIndexForDocument(document, fsFacade);
+                const priorityFiles = documents.list().map((doc) => doc.filePath);
+                const state = await buildSemanticIndexForDocument(document, fsFacade, priorityFiles, true);
                 if (state && readRootVersion(resolvedRoot) === buildVersion) {
                     cachedStates.set(resolvedRoot, state);
+                    triggerBackgroundFullBuild(document, resolvedRoot);
                 }
                 return state;
             })();
@@ -492,7 +534,8 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
 
         const resolvedRoot = path.resolve(projectRoot);
         const buildVersion = readRootVersion(resolvedRoot);
-        const inFlight = buildSemanticIndexForDocument(document, fsFacade)
+        const priorityFiles = documents.list().map((doc) => doc.filePath);
+        const inFlight = buildSemanticIndexForDocument(document, fsFacade, priorityFiles, false)
             .then((state) => {
                 if (state && readRootVersion(resolvedRoot) === buildVersion) {
                     cachedStates.set(resolvedRoot, state);

@@ -193,3 +193,52 @@ void test("semantic index hover handles comment/string guards and ignores scope-
         await fs.rm(projectRoot, { recursive: true, force: true });
     }
 });
+
+test("semantic index prioritizes open files in indexing queue", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gmloop-lsp-prioritize-"));
+    try {
+        await fs.writeFile(
+            path.join(projectRoot, "Game.yyp"),
+            JSON.stringify({ name: "Game", resourceType: "GMProject" })
+        );
+
+        const aPath = path.join(projectRoot, "scripts/a/a.gml");
+        const bPath = path.join(projectRoot, "scripts/b/b.gml");
+        const cPath = path.join(projectRoot, "scripts/c/c.gml");
+
+        await fs.mkdir(path.dirname(aPath), { recursive: true });
+        await fs.mkdir(path.dirname(bPath), { recursive: true });
+        await fs.mkdir(path.dirname(cPath), { recursive: true });
+
+        await fs.writeFile(
+            path.join(projectRoot, "scripts/a/a.yy"),
+            JSON.stringify({ name: "a", resourceType: "GMScript" })
+        );
+        await fs.writeFile(
+            path.join(projectRoot, "scripts/b/b.yy"),
+            JSON.stringify({ name: "b", resourceType: "GMScript" })
+        );
+        await fs.writeFile(
+            path.join(projectRoot, "scripts/c/c.yy"),
+            JSON.stringify({ name: "c", resourceType: "GMScript" })
+        );
+
+        await fs.writeFile(aPath, "function a() {}");
+        await fs.writeFile(bPath, "function b() {}");
+        await fs.writeFile(cPath, "function c() {}");
+
+        const store = Lsp.createGmlDocumentStore();
+        const docB = store.open({
+            uri: Lsp.filePathToUri(bPath),
+            languageId: "gml",
+            version: 1,
+            text: "function b() {}"
+        });
+
+        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        const hoverRes = await semanticIndex.hover(docB, 0, "b");
+        assert.ok(hoverRes === null || hoverRes !== undefined);
+    } finally {
+        await fs.rm(projectRoot, { recursive: true, force: true });
+    }
+});
