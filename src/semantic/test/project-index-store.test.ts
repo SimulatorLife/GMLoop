@@ -74,3 +74,44 @@ void test("semantic index store compacts legacy aggregate rows on open", async (
         migratedStore.close();
     }
 });
+
+void test("semantic index store persists file hashes and immediate reverse dependencies", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-store-dependencies-"));
+    const store = openSemanticIndexStore(projectRoot);
+    try {
+        store.writeIndex(
+            {
+                projectRoot,
+                files: {
+                    "scripts/a/a.gml": { contentHash: "hash-a", filePath: "scripts/a/a.gml" },
+                    "scripts/b/b.gml": { contentHash: "hash-b", filePath: "scripts/b/b.gml" }
+                },
+                scopes: {
+                    "script:a": { filePaths: ["scripts/a/a.gml"] },
+                    "script:b": { filePaths: ["scripts/b/b.gml"] }
+                },
+                relationships: {
+                    scriptCalls: [
+                        {
+                            from: { filePath: "scripts/b/b.gml" },
+                            target: { scopeId: "script:a" }
+                        }
+                    ]
+                }
+            },
+            "full"
+        );
+
+        assert.deepEqual(
+            store.readFileContentHashes(),
+            new Map([
+                ["scripts/a/a.gml", "hash-a"],
+                ["scripts/b/b.gml", "hash-b"]
+            ])
+        );
+        assert.deepEqual(store.findImmediateDownstreamFiles("scripts/a/a.gml"), ["scripts/b/b.gml"]);
+        assert.deepEqual(store.findImmediateDownstreamFiles("scripts/b/b.gml"), []);
+    } finally {
+        store.close();
+    }
+});

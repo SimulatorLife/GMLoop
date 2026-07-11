@@ -359,6 +359,25 @@ function findIdentifierLocation({ source, name, searchStart, searchEnd, lineOffs
     }
     return null;
 }
+
+function extractDeclarationDocumentation(source: string, declarationStart: number): string {
+    const lines = source.slice(0, declarationStart).split(/\r?\n/u);
+    const documentationLines: string[] = [];
+    for (let lineIndex = lines.length - 2; lineIndex >= 0; lineIndex -= 1) {
+        const line = lines[lineIndex]?.trim() ?? "";
+        if (line.length === 0) {
+            if (documentationLines.length === 0) {
+                continue;
+            }
+            break;
+        }
+        if (!line.startsWith("///")) {
+            break;
+        }
+        documentationLines.unshift(line.slice(3).trimStart());
+    }
+    return documentationLines.join("\n");
+}
 function removeSyntheticScriptDeclarations(collection, { name, scopeId }) {
     if (!Array.isArray(collection)) {
         return;
@@ -419,7 +438,8 @@ function createFunctionLikeIdentifierRecord({ node, scopeRecord, fileRecord, cla
         },
         isBuiltIn: false,
         isSynthetic: false,
-        filePath: fileRecord.filePath
+        filePath: fileRecord.filePath,
+        documentation: extractDeclarationDocumentation(source, location.start.index)
     };
 }
 function createEnumLookup(ast, filePath) {
@@ -572,6 +592,9 @@ function registerFunctionLikeSymbolDeclaration({
         displayName: declarationRecord.name,
         scopeId: declarationRecord.scopeId ?? null
     });
+    if (typeof declarationRecord.documentation === "string" && declarationRecord.documentation.length > 0) {
+        entry.documentation = declarationRecord.documentation;
+    }
 
     recordIdentifierCollectionRole({
         entry,
@@ -624,6 +647,9 @@ function registerScriptDeclaration({ identifierCollections, descriptor, declarat
         displayName: descriptor?.displayName ?? null,
         resourcePath: descriptor?.resourcePath ?? null
     });
+    if (typeof declarationRecord?.documentation === "string" && declarationRecord.documentation.length > 0) {
+        entry.documentation = declarationRecord.documentation;
+    }
     if (!declarationRecord) {
         return;
     }
@@ -2460,6 +2486,7 @@ function createProjectIndexResultSnapshot({
         filesMap,
         (record) => ({
             filePath: record.filePath,
+            contentHash: record.contentHash ?? null,
             scopeId: record.scopeId,
             ...cloneEntryCollections(record, "declarations", "references", "ignoredIdentifiers", "scriptCalls")
         }),
@@ -2471,6 +2498,7 @@ function createProjectIndexResultSnapshot({
             id: entry.id,
             name: entry.name ?? null,
             displayName: entry.displayName ?? entry.name ?? entry.id,
+            documentation: entry.documentation ?? "",
             resourcePath: entry.resourcePath ?? null,
             declarationKinds: [...Core.asArray(entry.declarationKinds)],
             declarations: resolveIdentifierRoleRecords({
@@ -2505,6 +2533,7 @@ function createProjectIndexResultSnapshot({
             key: entry.key,
             name: entry.name ?? null,
             displayName: entry.displayName ?? entry.name ?? entry.key,
+            documentation: entry.documentation ?? "",
             filePath: entry.filePath ?? null,
             scopeId: entry.scopeId ?? null,
             declarations: resolveIdentifierRoleRecords({
@@ -2527,6 +2556,7 @@ function createProjectIndexResultSnapshot({
             key: entry.key,
             name: entry.name ?? null,
             displayName: entry.displayName ?? entry.name ?? entry.key,
+            documentation: entry.documentation ?? "",
             filePath: entry.filePath ?? null,
             scopeId: entry.scopeId ?? null,
             declarations: resolveIdentifierRoleRecords({

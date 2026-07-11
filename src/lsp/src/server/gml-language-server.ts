@@ -288,7 +288,7 @@ export function createGmlLanguageServer(
             runNotificationTask(connection, async () => {
                 const currentDocument = documents.get(textDocument.uri);
                 if (currentDocument && currentDocument.version === textDocument.version) {
-                    await semanticIndex.refreshForDocument(currentDocument);
+                    await semanticIndex.refreshForFilePath(currentDocument.filePath);
                     requestSemanticTokenRefresh(connection);
                 }
             });
@@ -322,7 +322,7 @@ export function createGmlLanguageServer(
         runNotificationTask(connection, async () => {
             const document = documents.get(textDocument.uri);
             if (document) {
-                await semanticIndex.refreshForDocument(document);
+                await semanticIndex.refreshForFilePath(document.filePath);
                 await publishDiagnostics(document);
                 requestSemanticTokenRefresh(connection);
             }

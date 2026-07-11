@@ -79,10 +79,11 @@ function collectFileDependencies(index: Record<string, unknown>): ReadonlyArray<
     const scopes = Core.isObjectLike(index.scopes) ? (index.scopes as Record<string, unknown>) : {};
     const filesByScopeId = new Map<string, ReadonlyArray<string>>();
     for (const [scopeId, rawScope] of Object.entries(scopes)) {
-        if (!Core.isObjectLike(rawScope) || !Array.isArray(rawScope.filePaths)) {
+        const scope = Core.isObjectLike(rawScope) ? (rawScope as Record<string, unknown>) : null;
+        if (!scope || !Array.isArray(scope.filePaths)) {
             continue;
         }
-        const filePaths = rawScope.filePaths.filter((filePath): filePath is string => typeof filePath === "string");
+        const filePaths = scope.filePaths.filter((filePath): filePath is string => typeof filePath === "string");
         if (filePaths.length > 0) {
             filesByScopeId.set(scopeId, filePaths);
         }

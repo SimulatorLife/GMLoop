@@ -65,3 +65,4 @@ To ensure seamless integration with LSP/MCP clients (such as `lsp-mcp-server`) a
 
 ## TODO
 - **BUG/FEAT**: When hovering over a built-in function, the hover tooltip is empty. It should show the function signature, params, return type, and description from the Manual (probably via the `gml-identifiers.json` file).
+- **FEAT**: For the LSP/VSCode extension, hovering over a user-defined gml enum should show the full enum with all its members and values in the tooltip.

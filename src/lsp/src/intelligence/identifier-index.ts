@@ -68,32 +68,6 @@ export type GmlSemanticIndex = Readonly<{
     searchWorkspaceSymbols(document: GmlTextDocument, query: string): Promise<WorkspaceSymbol[]>;
 }>;
 
-function extractGmlDocComment(sourceText: string, startIndex: number): string {
-    const beforeDeclaration = sourceText.slice(0, startIndex);
-    const lines = beforeDeclaration.split(/\r?\n/u);
-    const commentLines: string[] = [];
-
-    const startIdx = lines.length - 2;
-    for (let index = startIdx; index >= 0; index -= 1) {
-        const line = lines[index]?.trim() ?? "";
-        if (line.length === 0) {
-            if (commentLines.length === 0) {
-                continue;
-            }
-            break;
-        }
-
-        if (!line.startsWith("///")) {
-            break;
-        }
-
-        const cleanLine = line.slice(3).replace(/^\s/u, "");
-        commentLines.unshift(cleanLine);
-    }
-
-    return commentLines.join("\n").trim();
-}
-
 function formatGmlDocComment(rawComment: string): string {
     if (!rawComment) {
         return "";
@@ -960,13 +934,14 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         return await finalInFlight;
     }
 
-    async function refreshImmediateDownstreamFiles(
-        projectRoot: string,
-        changedFilePath: string
-    ): Promise<void> {
+    async function refreshImmediateDownstreamFiles(projectRoot: string, changedFilePath: string): Promise<void> {
         const changedRelativePath = path.relative(projectRoot, changedFilePath);
         const downstreamFiles = getSemanticStore(projectRoot).findImmediateDownstreamFiles(changedRelativePath);
-        for (const downstreamRelativePath of downstreamFiles) {
+        const refreshNext = async (index: number): Promise<void> => {
+            const downstreamRelativePath = downstreamFiles[index];
+            if (!downstreamRelativePath) {
+                return;
+            }
             const downstreamFilePath = path.join(projectRoot, downstreamRelativePath);
             const openedDocument = documents
                 .list()
@@ -980,7 +955,9 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                     await fs.readFile(downstreamFilePath, "utf8")
                 );
             await refreshIndex(document);
-        }
+            await refreshNext(index + 1);
+        };
+        await refreshNext(0);
     }
 
     async function ensureFullIndex(document: GmlTextDocument): Promise<NavigationState | null> {
@@ -1130,15 +1107,8 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                     if (def && def.location.filePath) {
                         const relativePath = path.relative(state.projectRoot, def.location.filePath);
                         definitionInfo = `*defined in [${relativePath}](file://${def.location.filePath})*`;
-
-                        try {
-                            const sourceText = await fsFacade.readFile(def.location.filePath, "utf8");
-                            const rawComment = extractGmlDocComment(sourceText, def.location.range.start);
-                            docComment = formatGmlDocComment(rawComment);
-                        } catch {
-                            // Ignore read errors
-                        }
                     }
+                    docComment = formatGmlDocComment(symbol.documentation);
                 }
 
                 let markdownValue = `\`${facts.displayName}\`\n\n${facts.kind} - ${facts.symbolId}`;

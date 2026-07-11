@@ -43,6 +43,7 @@ export type GmlNavigationOccurrence = Readonly<{
  * Symbol entry with declarations and references separated for editor-style queries.
  */
 export type GmlNavigationSymbol = Readonly<{
+    documentation: string;
     definitions: ReadonlyArray<GmlNavigationOccurrence>;
     displayName: string;
     kind: GmlSemanticSymbolKind;
@@ -191,6 +192,7 @@ function normalizeIdentifierEntry(
     const symbolId = readString(entry.identifierId) ?? `${kind}:${entryKey}`;
     const entryFilePath = readString(entry.filePath) ?? readString(entry.resourcePath);
     const scopeId = readString(entry.scopeId);
+    const documentation = readString(entry.documentation) ?? "";
     const common = { projectRoot, entryFilePath, symbolId, name, displayName, kind, scopeId };
     const definitions = readOccurrences({
         ...common,
@@ -212,6 +214,7 @@ function normalizeIdentifierEntry(
         name,
         displayName,
         kind,
+        documentation,
         definitions,
         references
     };
