@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
@@ -1328,6 +1329,7 @@ function ensureScopeRecord(scopeMap, descriptor) {
 function ensureFileRecord(filesMap, relativePath, scopeId) {
     return Core.getOrCreateMapEntry(filesMap, relativePath, () => ({
         filePath: relativePath,
+        contentHash: null,
         scopeId,
         declarations: [],
         references: [],
@@ -2138,6 +2140,7 @@ async function processProjectGmlFile({
         identifierCollections,
         identifierSink
     });
+    fileRecord.contentHash = createHash("sha256").update(contents).digest("hex");
     const ast = parseProjectGmlSource({
         contents,
         file,
@@ -2252,6 +2255,7 @@ function createProjectIndexAggregationStateFromExisting(existingIndex: any, reso
             const val = value as any;
             filesMap.set(key, {
                 filePath: val.filePath,
+                contentHash: val.contentHash ?? null,
                 scopeId: val.scopeId,
                 declarations: [...(val.declarations || [])],
                 references: [...(val.references || [])],

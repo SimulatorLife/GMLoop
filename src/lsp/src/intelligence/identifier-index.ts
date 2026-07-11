@@ -20,6 +20,7 @@ import {
     filePathToUri,
     type GmlDocumentStore,
     type GmlTextDocument,
+    isGmlDocumentPath,
     offsetsToRange
 } from "../documents/index.js";
 import { gmlSymbolKindToCompletionItemKind, gmlSymbolKindToLspSymbolKind } from "../protocol/index.js";
@@ -39,6 +40,7 @@ type SemanticIndexStore = ReturnType<typeof Semantic.openSemanticIndexStore>;
  */
 export type GmlSemanticIndex = Readonly<{
     buildForDocument(document: GmlTextDocument): Promise<NavigationState | null>;
+    dispose(): Promise<void>;
     findDefinition(document: GmlTextDocument, offset: number, identifierName: string): Promise<Location | null>;
     findReferences(
         document: GmlTextDocument,
@@ -48,6 +50,7 @@ export type GmlSemanticIndex = Readonly<{
     ): Promise<Location[]>;
     hover(document: GmlTextDocument, offset: number, identifierName: string): Promise<Hover | null>;
     invalidateForDocument(document: GmlTextDocument): void;
+    invalidateForFilePath(filePath: string): Promise<void>;
     listDocumentSymbols(document: GmlTextDocument): Promise<DocumentSymbol[]>;
     listSemanticHighlights(
         document: GmlTextDocument
@@ -60,6 +63,7 @@ export type GmlSemanticIndex = Readonly<{
     ): Promise<WorkspaceEdit | null>;
     preload(): void;
     refreshForDocument(document: GmlTextDocument): Promise<NavigationState | null>;
+    refreshForFilePath(filePath: string): Promise<NavigationState | null>;
     searchCompletions(document: GmlTextDocument, query: string): Promise<CompletionItem[]>;
     searchWorkspaceSymbols(document: GmlTextDocument, query: string): Promise<WorkspaceSymbol[]>;
 }>;
@@ -374,7 +378,7 @@ function createLspFsFacade(documents: GmlDocumentStore, baseFs: FsFacade = Core.
             const resolvedPath = path.resolve(filePath);
             const openDoc = documents.list().find((doc) => path.resolve(doc.filePath) === resolvedPath);
             if (openDoc) {
-                let baseStats: { mtimeMs?: number } = { mtimeMs: Date.now() };
+                let baseStats: { mtimeMs?: number } = { mtimeMs: 0 };
                 try {
                     baseStats = await baseFs.stat(filePath);
                 } catch {
@@ -461,6 +465,7 @@ async function buildSemanticIndexForDocument(
 function buildSemanticIndexInWorker(
     projectRoot: string,
     priorityFiles: ReadonlyArray<string>,
+    openDocuments: ReadonlyArray<GmlTextDocument>,
     signal?: AbortSignal
 ): Promise<NavigationState | null> {
     return new Promise((resolve, reject) => {
@@ -494,7 +499,15 @@ function buildSemanticIndexInWorker(
             if (code !== 0) finish(() => reject(new Error(`Project index worker exited with code ${String(code)}.`)));
         });
         signal?.addEventListener("abort", abort, { once: true });
-        worker.postMessage({ definitionsOnly: false, priorityFiles, projectRoot });
+        worker.postMessage({
+            definitionsOnly: false,
+            openDocuments: openDocuments.map((document) => ({
+                filePath: path.resolve(document.filePath),
+                sourceText: document.sourceText
+            })),
+            priorityFiles,
+            projectRoot
+        });
     });
 }
 
@@ -515,6 +528,8 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
     const abortControllers = new Map<string, AbortController>();
     const semanticStores = new Map<string, SemanticIndexStore>();
     const documentVersions = new Map<string, number>();
+    const pendingCacheWrites = new Map<string, Promise<void>>();
+    const persistedTiers = new Map<string, "definitions" | "full">();
     const fsFacade = createLspFsFacade(documents);
 
     function readRootVersion(projectRoot: string): number {
@@ -557,10 +572,33 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
     }
 
     function saveIndexCacheToDisk(resolvedRoot: string, index: NavigationIndex, lightweight: boolean): void {
-        getSemanticStore(resolvedRoot).writeIndex(
-            index.rawIndex as Record<string, unknown>,
-            lightweight ? "definitions" : "full"
-        );
+        const tier = lightweight ? "definitions" : "full";
+        const previousTier = persistedTiers.get(resolvedRoot);
+        if (tier === "definitions" && previousTier === "full") {
+            return;
+        }
+
+        const previousWrite = pendingCacheWrites.get(resolvedRoot) ?? Promise.resolve();
+        const write = previousWrite
+            .catch(() => {
+                // A failed earlier write must not permanently block later snapshots.
+                return undefined;
+            })
+            .then(() => {
+                getSemanticStore(resolvedRoot).writeIndex(index.rawIndex as Record<string, unknown>, tier);
+                persistedTiers.set(resolvedRoot, tier);
+                return undefined;
+            })
+            .catch((error: unknown) => {
+                console.error(`Failed to persist semantic index for ${resolvedRoot}:`, error);
+                return undefined;
+            });
+        pendingCacheWrites.set(resolvedRoot, write);
+        void write.finally(() => {
+            if (pendingCacheWrites.get(resolvedRoot) === write) {
+                pendingCacheWrites.delete(resolvedRoot);
+            }
+        });
     }
 
     function invalidateKnownDocumentRoots(document: GmlTextDocument): void {
@@ -571,6 +609,13 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
             if (isDocumentWithinProjectRoot(document, projectRoot)) {
                 invalidateRoot(projectRoot);
             }
+        }
+    }
+
+    async function invalidateKnownFileRoots(filePath: string): Promise<void> {
+        const projectRoot = await getProjectRoot(filePath);
+        if (projectRoot) {
+            invalidateRoot(projectRoot);
         }
     }
 
@@ -610,7 +655,12 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                 if (readDocumentVersion(resolvedUri) !== startDocVersion) {
                     return null;
                 }
-                const fullState = await buildSemanticIndexInWorker(resolvedRoot, priorityFiles, controller.signal);
+                const fullState = await buildSemanticIndexInWorker(
+                    resolvedRoot,
+                    priorityFiles,
+                    documents.list(),
+                    controller.signal
+                );
                 if (
                     fullState &&
                     readRootVersion(resolvedRoot) === buildVersion &&
@@ -750,10 +800,11 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                         lightweight: cachedState.tier === "definitions"
                     };
                     cachedStates.set(resolvedRoot, loadedState);
+                    persistedTiers.set(resolvedRoot, cachedState.tier);
                     currentState = loadedState;
                 }
-            } catch {
-                // Ignore load error and fall back to cold build
+            } catch (error) {
+                console.error(`Failed to restore semantic index for ${resolvedRoot}:`, error);
             }
         }
 
@@ -877,7 +928,13 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                     readRootVersion(resolvedRoot) === buildVersion &&
                     readDocumentVersion(resolvedUri) === startDocVersion
                 ) {
-                    cachedStates.set(resolvedRoot, state);
+                    const currentState = cachedStates.get(resolvedRoot);
+                    if (currentState) {
+                        currentState.index = state.index;
+                        currentState.lightweight = false;
+                    } else {
+                        cachedStates.set(resolvedRoot, state);
+                    }
                     staleStates.delete(resolvedRoot);
 
                     saveIndexCacheToDisk(resolvedRoot, state.index, false);
@@ -903,6 +960,29 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         return await finalInFlight;
     }
 
+    async function refreshImmediateDownstreamFiles(
+        projectRoot: string,
+        changedFilePath: string
+    ): Promise<void> {
+        const changedRelativePath = path.relative(projectRoot, changedFilePath);
+        const downstreamFiles = getSemanticStore(projectRoot).findImmediateDownstreamFiles(changedRelativePath);
+        for (const downstreamRelativePath of downstreamFiles) {
+            const downstreamFilePath = path.join(projectRoot, downstreamRelativePath);
+            const openedDocument = documents
+                .list()
+                .find((document) => path.resolve(document.filePath) === path.resolve(downstreamFilePath));
+            const document =
+                openedDocument ??
+                createGmlTextDocument(
+                    filePathToUri(downstreamFilePath),
+                    "gml",
+                    0,
+                    await fs.readFile(downstreamFilePath, "utf8")
+                );
+            await refreshIndex(document);
+        }
+    }
+
     async function ensureFullIndex(document: GmlTextDocument): Promise<NavigationState | null> {
         const state = await ensureIndex(document);
         if (!state) {
@@ -923,9 +1003,52 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
     }
 
     return {
+        async dispose() {
+            for (const controller of abortControllers.values()) {
+                controller.abort();
+            }
+            abortControllers.clear();
+            await Promise.all(pendingCacheWrites.values());
+            for (const store of semanticStores.values()) {
+                store.close();
+            }
+            semanticStores.clear();
+            pendingCacheWrites.clear();
+        },
         buildForDocument: ensureIndex,
         refreshForDocument: refreshIndex,
         invalidateForDocument: invalidateKnownDocumentRoots,
+        invalidateForFilePath: invalidateKnownFileRoots,
+        async refreshForFilePath(filePath) {
+            if (!isGmlDocumentPath(filePath)) {
+                await invalidateKnownFileRoots(filePath);
+                return null;
+            }
+
+            const resolvedPath = path.resolve(filePath);
+            const openedDocument = documents
+                .list()
+                .find((document) => path.resolve(document.filePath) === resolvedPath);
+            if (openedDocument) {
+                invalidateKnownDocumentRoots(openedDocument);
+                const state = await refreshIndex(openedDocument);
+                const projectRoot = await getProjectRoot(resolvedPath);
+                if (state && projectRoot) {
+                    await refreshImmediateDownstreamFiles(path.resolve(projectRoot), resolvedPath);
+                }
+                return state;
+            }
+
+            const sourceText = await fs.readFile(resolvedPath, "utf8");
+            const document = createGmlTextDocument(filePathToUri(resolvedPath), "gml", 0, sourceText);
+            await invalidateKnownFileRoots(resolvedPath);
+            const state = await refreshIndex(document);
+            const projectRoot = await getProjectRoot(resolvedPath);
+            if (state && projectRoot) {
+                await refreshImmediateDownstreamFiles(path.resolve(projectRoot), resolvedPath);
+            }
+            return state;
+        },
         preload() {
             try {
                 getBuiltInsMetadata();

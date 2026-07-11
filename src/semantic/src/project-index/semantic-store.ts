@@ -11,6 +11,11 @@ type SemanticRecordRow = Readonly<{
     record_kind: string;
 }>;
 
+type SemanticFileHashRow = Readonly<{
+    content_hash: string | null;
+    file_path: string;
+}>;
+
 export type SemanticStoreState = Readonly<{
     generation: number;
     projectRoot: string;
@@ -21,7 +26,9 @@ export type SemanticStoreState = Readonly<{
 export type SemanticIndexStore = Readonly<{
     close: () => void;
     readIndex: () => Record<string, unknown> | null;
+    readFileContentHashes: () => ReadonlyMap<string, string>;
     readState: () => SemanticStoreState | null;
+    findImmediateDownstreamFiles: (filePath: string) => ReadonlyArray<string>;
     writeIndex: (
         index: Record<string, unknown>,
         tier: "definitions" | "full",
@@ -35,6 +42,80 @@ function parseRecordPayload(payload: string): unknown {
     } catch {
         return null;
     }
+}
+
+function readRecordString(value: unknown, key: string): string | null {
+    if (!Core.isObjectLike(value)) {
+        return null;
+    }
+    const candidate = (value as Record<string, unknown>)[key];
+    return typeof candidate === "string" && candidate.length > 0 ? candidate : null;
+}
+
+function readFileContentHashes(database: GraphDatabase, projectRoot: string): ReadonlyMap<string, string> {
+    const rows = database
+        .prepare(
+            "SELECT file_path, content_hash FROM semantic_records WHERE project_root = ? AND record_kind = 'files' AND content_hash IS NOT NULL ORDER BY file_path"
+        )
+        .all(projectRoot) as unknown as ReadonlyArray<SemanticFileHashRow>;
+    return new Map(rows.flatMap((row) => (row.content_hash ? [[row.file_path, row.content_hash] as const] : [])));
+}
+
+function findImmediateDownstreamFiles(
+    database: GraphDatabase,
+    projectRoot: string,
+    filePath: string
+): ReadonlyArray<string> {
+    return (
+        database
+            .prepare(
+                "SELECT downstream_file FROM semantic_dependencies WHERE project_root = ? AND source_file = ? ORDER BY downstream_file"
+            )
+            .all(projectRoot, filePath) as unknown as ReadonlyArray<{ downstream_file: string }>
+    ).map((row) => row.downstream_file);
+}
+
+function collectFileDependencies(index: Record<string, unknown>): ReadonlyArray<readonly [string, string]> {
+    const scopes = Core.isObjectLike(index.scopes) ? (index.scopes as Record<string, unknown>) : {};
+    const filesByScopeId = new Map<string, ReadonlyArray<string>>();
+    for (const [scopeId, rawScope] of Object.entries(scopes)) {
+        if (!Core.isObjectLike(rawScope) || !Array.isArray(rawScope.filePaths)) {
+            continue;
+        }
+        const filePaths = rawScope.filePaths.filter((filePath): filePath is string => typeof filePath === "string");
+        if (filePaths.length > 0) {
+            filesByScopeId.set(scopeId, filePaths);
+        }
+    }
+    const relationships = Core.isObjectLike(index.relationships)
+        ? (index.relationships as Record<string, unknown>)
+        : {};
+    const scriptCalls = Array.isArray(relationships.scriptCalls) ? relationships.scriptCalls : [];
+    const dependencies = new Set<string>();
+    for (const rawCall of scriptCalls) {
+        if (!Core.isObjectLike(rawCall)) {
+            continue;
+        }
+        const from = Core.isObjectLike(rawCall.from) ? rawCall.from : {};
+        const target = Core.isObjectLike(rawCall.target) ? rawCall.target : {};
+        const downstreamFile = readRecordString(from, "filePath");
+        const targetScopeId = readRecordString(target, "scopeId");
+        if (!downstreamFile || !targetScopeId) {
+            continue;
+        }
+        for (const sourceFile of filesByScopeId.get(targetScopeId) ?? []) {
+            if (sourceFile !== downstreamFile) {
+                dependencies.add(`${sourceFile}\u0000${downstreamFile}`);
+            }
+        }
+    }
+    return [...dependencies]
+        .map((dependency) => dependency.split("\u0000") as [string, string])
+        .toSorted(([leftSource, leftDownstream], [rightSource, rightDownstream]) =>
+            leftSource === rightSource
+                ? leftDownstream.localeCompare(rightDownstream)
+                : leftSource.localeCompare(rightSource)
+        );
 }
 
 /** Compact pre-normalized aggregate rows into the canonical one-fact-per-row layout. */
@@ -159,6 +240,9 @@ function writeIndex(
     sourceSignature = ""
 ): SemanticStoreState {
     const previous = readState(database, projectRoot);
+    if (previous?.tier === "full" && tier === "definitions") {
+        return previous;
+    }
     const generation = (previous?.generation ?? 0) + 1;
     const updatedAt = new Date().toISOString();
 
@@ -169,11 +253,26 @@ function writeIndex(
             )
             .run(projectRoot, generation, tier, sourceSignature, updatedAt);
         database.prepare("DELETE FROM semantic_records WHERE project_root = ?").run(projectRoot);
+        database.prepare("DELETE FROM semantic_dependencies WHERE project_root = ?").run(projectRoot);
 
         const insert = database.prepare(
             "INSERT INTO semantic_records(project_root, record_kind, record_key, file_path, content_hash, payload, generation) VALUES (?, ?, ?, ?, ?, ?, ?)"
         );
         for (const [recordKind, value] of Object.entries(index)) {
+            if (recordKind === "files" && Core.isObjectLike(value)) {
+                for (const [filePath, fileRecord] of Object.entries(value as Record<string, unknown>)) {
+                    insert.run(
+                        projectRoot,
+                        recordKind,
+                        filePath,
+                        filePath,
+                        readRecordString(fileRecord, "contentHash"),
+                        JSON.stringify(fileRecord),
+                        generation
+                    );
+                }
+                continue;
+            }
             if (recordKind === "identifiers" && Core.isObjectLike(value)) {
                 for (const [collectionName, collectionValue] of Object.entries(value as Record<string, unknown>)) {
                     if (!Core.isObjectLike(collectionValue)) {
@@ -184,7 +283,7 @@ function writeIndex(
                             projectRoot,
                             "identifiers",
                             `${collectionName}:${entryKey}`,
-                            null,
+                            readRecordString(entryValue, "filePath"),
                             null,
                             JSON.stringify(entryValue),
                             generation
@@ -201,7 +300,9 @@ function writeIndex(
                             projectRoot,
                             "relationship",
                             String(callIndex),
-                            null,
+                            Core.isObjectLike(call) && Core.isObjectLike(call.from)
+                                ? readRecordString(call.from, "filePath")
+                                : null,
                             null,
                             JSON.stringify(call),
                             generation
@@ -218,6 +319,12 @@ function writeIndex(
                 insert.run(projectRoot, recordKind, recordKey, null, null, JSON.stringify(recordValue), generation);
             }
         }
+        const insertDependency = database.prepare(
+            "INSERT INTO semantic_dependencies(project_root, source_file, downstream_file) VALUES (?, ?, ?)"
+        );
+        for (const [sourceFile, downstreamFile] of collectFileDependencies(index)) {
+            insertDependency.run(projectRoot, sourceFile, downstreamFile);
+        }
     });
 
     return Object.freeze({ generation, projectRoot, sourceSignature, tier });
@@ -230,6 +337,8 @@ export function openSemanticIndexStore(projectRoot: string): SemanticIndexStore 
     migrateAggregateRecords(database, resolvedRoot);
     return {
         close: () => database.close(),
+        findImmediateDownstreamFiles: (filePath) => findImmediateDownstreamFiles(database, resolvedRoot, filePath),
+        readFileContentHashes: () => readFileContentHashes(database, resolvedRoot),
         readIndex: () => readIndex(database, resolvedRoot),
         readState: () => readState(database, resolvedRoot),
         writeIndex: (index, tier, sourceSignature) => writeIndex(database, resolvedRoot, index, tier, sourceSignature)
