@@ -482,12 +482,12 @@ void test("semantic index loads cache from disk on startup and saves updates to 
 
         // Verify the cache directory and file exist
         const cacheDir = path.join(projectRoot, ".gmloop");
-        const cacheFilePath = path.join(cacheDir, "project-index-cache.json");
+        const cacheFilePath = path.join(cacheDir, "graph-index.sqlite");
         const fileExists = await fs
             .stat(cacheFilePath)
             .then(() => true)
             .catch(() => false);
-        assert.ok(fileExists, "Cache file should be saved to disk under .gmloop/project-index-cache.json");
+        assert.ok(fileExists, "Semantic index should be saved to the unified .gmloop/graph-index.sqlite store");
 
         // 2. Start a second semantic index instance (simulating VS Code reload)
         const index2 = Lsp.createGmlSemanticIndex(store);

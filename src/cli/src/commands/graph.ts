@@ -1415,23 +1415,12 @@ async function ensureGraphIndexForQuery(
     options: GraphCommandSharedOptions,
     context: GraphResolutionContext
 ): Promise<void> {
-    if (options.force === true) {
-        await ensureGraphIndex(options, context);
-        return;
-    }
-
-    const config = Semantic.resolveGraphIndexConfig({
-        databasePath: options.databasePath,
-        projectConfig: context.projectConfig,
-        projectRoot: context.projectRoot,
-        toolsetRoot: options.toolsetRoot
-    });
-
-    try {
-        await access(config.databasePath, constants.R_OK);
-    } catch {
-        await ensureGraphIndex(options, context);
-    }
+    // Graph tables are a projection of the canonical semantic store. Reconcile
+    // the projection on every query so visualization, search, and LSP facts
+    // always share the same persisted project snapshot. The semantic builder
+    // restores from SQLite and only parses sources when that snapshot is absent
+    // or stale, so this does not reintroduce a second source-of-truth scan.
+    await ensureGraphIndex(options, context);
 }
 
 function createGraphEnvelope<TPayload>(

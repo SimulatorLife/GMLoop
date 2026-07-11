@@ -765,14 +765,12 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
                         semanticBridge.updateProjectIndex(currentProjectIndex);
                     }
 
-                    // Save the updated index back to the `.gmloop/project-index-cache.json` disk cache
-                    void Semantic.saveProjectIndexCache(
-                        {
-                            projectRoot,
-                            projectIndex: currentProjectIndex
-                        },
-                        Core.defaultFsFacade as any
-                    ).catch(() => {});
+                    const store = Semantic.openSemanticIndexStore(projectRoot);
+                    try {
+                        store.writeIndex(currentProjectIndex as Record<string, unknown>, "full");
+                    } finally {
+                        store.close();
+                    }
                 }
             }
         });
@@ -786,16 +784,14 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
         if (dryRun) {
             console.log("\n[DRY RUN] No files were modified.");
         } else {
-            // Save the final updated index back to the `.gmloop/project-index-cache.json` disk cache
             const semanticBridge = engine.semantic as GmlSemanticBridge;
             if (semanticBridge && (semanticBridge as any).projectIndex) {
-                await Semantic.saveProjectIndexCache(
-                    {
-                        projectRoot,
-                        projectIndex: (semanticBridge as any).projectIndex
-                    },
-                    Core.defaultFsFacade as any
-                ).catch(() => {});
+                const store = Semantic.openSemanticIndexStore(projectRoot);
+                try {
+                    store.writeIndex((semanticBridge as any).projectIndex as Record<string, unknown>, "full");
+                } finally {
+                    store.close();
+                }
             }
             console.log("\nSuccess! Configured codemods applied.");
         }

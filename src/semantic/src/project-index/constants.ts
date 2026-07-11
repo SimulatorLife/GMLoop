@@ -2,7 +2,6 @@ import { Core } from "@gmloop/core";
 
 export const PROJECT_MANIFEST_EXTENSION = ".yyp";
 
-export const PROJECT_INDEX_CACHE_MAX_SIZE_BASELINE = 128 * 1024 * 1024; // 128 MiB
 export const PROJECT_INDEX_GML_CONCURRENCY_BASELINE = 4;
 export const PROJECT_INDEX_GML_MAX_CONCURRENCY_BASELINE = 16;
 

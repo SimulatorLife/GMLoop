@@ -4,7 +4,6 @@ import { Core } from "@gmloop/core";
 
 import { loadBuiltInIdentifiers } from "../symbols/built-in-identifiers.js";
 import { createProjectIndexAbortGuard, PROJECT_INDEX_BUILD_ABORT_MESSAGE } from "./abort-guard.js";
-import { getDefaultProjectIndexCacheMaxSize, loadProjectIndexCache, saveProjectIndexCache } from "./cache.js";
 import { clampConcurrency } from "./concurrency.js";
 import { collectConstructorStaticMemberAnalysis } from "./constructor-static-members.js";
 import { createProjectIndexCoordinator as createProjectIndexCoordinatorCore } from "./coordinator.js";
@@ -16,6 +15,7 @@ import { createProjectIndexMetrics, finalizeProjectIndexMetrics } from "./metric
 import { logProjectIndexDebug, type ProjectIndexLogger } from "./project-index-logger.js";
 import { scanProjectTree } from "./project-tree.js";
 import { analyseResourceFiles, createFileScopeDescriptor } from "./resource-analysis.js";
+import { getSemanticIndexDatabasePath, openSemanticIndexStore } from "./semantic-store.js";
 
 type BuildProjectIndexFunction = (
     projectRoot: string,
@@ -25,11 +25,9 @@ type BuildProjectIndexFunction = (
 
 type ProjectIndexCoordinatorOptions = {
     fsFacade?: ProjectIndexFsFacade | null;
-    loadCache?: typeof loadProjectIndexCache;
-    saveCache?: typeof saveProjectIndexCache;
+    loadCache?: typeof loadSemanticStoreIndex;
+    saveCache?: typeof saveSemanticStoreIndex;
     buildIndex?: BuildProjectIndexFunction;
-    cacheMaxSizeBytes?: number | null;
-    getDefaultCacheMaxSize?: typeof getDefaultProjectIndexCacheMaxSize;
 };
 
 const IDENTIFIER_DECLARATION_LOCATION_KEYS = Symbol("identifierDeclarationLocationKeys");
@@ -61,20 +59,47 @@ function cloneEntryCollections(entry, ...keys) {
 export function createProjectIndexCoordinator(options: ProjectIndexCoordinatorOptions = {}) {
     const {
         fsFacade = Core.defaultFsFacade,
-        loadCache = loadProjectIndexCache,
-        saveCache = saveProjectIndexCache,
-        buildIndex = buildProjectIndex,
-        cacheMaxSizeBytes,
-        getDefaultCacheMaxSize = getDefaultProjectIndexCacheMaxSize
+        loadCache = loadSemanticStoreIndex,
+        saveCache = saveSemanticStoreIndex,
+        buildIndex = buildProjectIndex
     } = options;
     return createProjectIndexCoordinatorCore({
         fsFacade,
         loadCache,
         saveCache,
-        buildIndex,
-        cacheMaxSizeBytes,
-        getDefaultCacheMaxSize
+        buildIndex
     });
+}
+
+function loadSemanticStoreIndex(descriptor: { projectRoot: string }) {
+    const store = openSemanticIndexStore(descriptor.projectRoot);
+    try {
+        const projectIndex = store.readIndex();
+        return Promise.resolve(
+            projectIndex
+                ? { status: "hit", cacheFilePath: getSemanticIndexDatabasePath(descriptor.projectRoot), projectIndex }
+                : {
+                      status: "miss",
+                      cacheFilePath: getSemanticIndexDatabasePath(descriptor.projectRoot),
+                      reason: { type: "not-found" }
+                  }
+        );
+    } finally {
+        store.close();
+    }
+}
+
+function saveSemanticStoreIndex(descriptor: { projectRoot: string; projectIndex: Record<string, unknown> }) {
+    const store = openSemanticIndexStore(descriptor.projectRoot);
+    try {
+        store.writeIndex(descriptor.projectIndex, "full");
+        return Promise.resolve({
+            status: "written",
+            cacheFilePath: getSemanticIndexDatabasePath(descriptor.projectRoot)
+        });
+    } finally {
+        store.close();
+    }
 }
 function cloneIdentifierDeclaration(declaration) {
     if (!Core.isObjectLike(declaration)) {

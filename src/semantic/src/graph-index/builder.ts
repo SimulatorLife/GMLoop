@@ -10,9 +10,9 @@ import type { ProjectIndexCoordinatorInstance } from "../project-index/coordinat
 import {
     buildProjectIndex,
     createProjectIndexCoordinator,
-    createProjectIndexDescriptor,
     createTolerantProjectIndexParser,
     getDefaultProjectIndexParser,
+    openSemanticIndexStore,
     scanProjectTree
 } from "../project-index/index.js";
 import { getGmlSymbolKindForIdentifierCollection } from "../symbols/taxonomy.js";
@@ -2086,21 +2086,26 @@ function createTolerantProjectIndexCoordinator(): ProjectIndexCoordinatorInstanc
  */
 async function getOrBuildProjectIndex(projectRoot: string): Promise<ProjectIndexSnapshot> {
     const { manifestMtimes, sourceMtimes } = await collectProjectIndexMtimes(projectRoot);
-    const coordinator = createTolerantProjectIndexCoordinator();
-    try {
-        const descriptor = createProjectIndexDescriptor({
-            projectRoot,
-            manifestMtimes,
-            sourceMtimes
-        });
+    const sourceSignature = JSON.stringify({ manifestMtimes, sourceMtimes });
+    const store = openSemanticIndexStore(projectRoot);
+    const storedState = store.readState();
+    const storedIndex = store.readIndex();
+    if (storedIndex && storedState?.sourceSignature === sourceSignature) {
+        store.close();
+        return storedIndex;
+    }
 
-        const ready = await coordinator.ensureReady({
-            ...descriptor,
-            projectRoot
-        });
-        return ready.projectIndex as ProjectIndexSnapshot;
+    try {
+        const parser = createTolerantProjectIndexParser(getDefaultProjectIndexParser());
+        const index = (await buildProjectIndex(projectRoot, Core.defaultFsFacade, {
+            manifestMtimes,
+            sourceMtimes,
+            parseGml: parser
+        })) as ProjectIndexSnapshot;
+        store.writeIndex(index, "full", sourceSignature);
+        return index;
     } finally {
-        coordinator.dispose();
+        store.close();
     }
 }
 

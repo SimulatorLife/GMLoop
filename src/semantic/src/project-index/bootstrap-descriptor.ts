@@ -69,10 +69,6 @@ export function createProjectIndexBuildOptions({
 
 type ProjectIndexDescriptor = {
     projectRoot?: string | null;
-    cacheMaxSizeBytes?: number | null;
-    cacheFilePath?: string | null;
-    formatterVersion?: string | null;
-    pluginVersion?: string | null;
     buildOptions?: ProjectIndexBuildOptions | null;
     manifestMtimes?: Record<string, unknown> | null;
     sourceMtimes?: Record<string, unknown> | null;
@@ -80,31 +76,16 @@ type ProjectIndexDescriptor = {
 
 export function createProjectIndexDescriptor({
     projectRoot,
-    cacheMaxSizeBytes,
-    cacheFilePath = null,
-    formatterVersion,
-    pluginVersion,
     buildOptions,
     manifestMtimes,
     sourceMtimes
 }: ProjectIndexDescriptor = {}) {
     const descriptor: ProjectIndexDescriptor = {
         projectRoot,
-        cacheFilePath,
-        formatterVersion,
-        pluginVersion,
         buildOptions: Core.isObjectLike(buildOptions) ? buildOptions : undefined,
         manifestMtimes: Core.isObjectLike(manifestMtimes) ? manifestMtimes : undefined,
         sourceMtimes: Core.isObjectLike(sourceMtimes) ? sourceMtimes : undefined
     };
-
-    Core.withDefinedValue(
-        cacheMaxSizeBytes,
-        (value) => {
-            descriptor.cacheMaxSizeBytes = value;
-        },
-        () => {}
-    );
 
     return descriptor;
 }

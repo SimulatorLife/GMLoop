@@ -5,7 +5,7 @@ import {
     runGraphDatabaseTransaction
 } from "./sqlite-adapter.js";
 
-export const GRAPH_INDEX_SCHEMA_VERSION = 2;
+export const GRAPH_INDEX_SCHEMA_VERSION = 3;
 
 const TABLE_RESET_STATEMENTS = Object.freeze([
     "DELETE FROM index_state",
@@ -129,6 +129,53 @@ function createGraphIndexSchemaV2(database: GraphDatabase): void {
     `);
 }
 
+function createSemanticIndexSchemaV3(database: GraphDatabase): void {
+    database.exec(`
+        CREATE TABLE IF NOT EXISTS semantic_state (
+            project_root TEXT PRIMARY KEY,
+            generation INTEGER NOT NULL,
+            tier TEXT NOT NULL CHECK (tier IN ('definitions', 'full')),
+            source_signature TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS semantic_records (
+            project_root TEXT NOT NULL,
+            record_kind TEXT NOT NULL,
+            record_key TEXT NOT NULL,
+            file_path TEXT,
+            content_hash TEXT,
+            payload TEXT NOT NULL,
+            generation INTEGER NOT NULL,
+            PRIMARY KEY (project_root, record_kind, record_key),
+            FOREIGN KEY (project_root) REFERENCES semantic_state(project_root) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_semantic_records_file
+            ON semantic_records(project_root, file_path);
+        CREATE INDEX IF NOT EXISTS idx_semantic_records_generation
+            ON semantic_records(project_root, generation);
+
+        CREATE TABLE IF NOT EXISTS semantic_dependencies (
+            project_root TEXT NOT NULL,
+            source_file TEXT NOT NULL,
+            downstream_file TEXT NOT NULL,
+            PRIMARY KEY (project_root, source_file, downstream_file),
+            FOREIGN KEY (project_root) REFERENCES semantic_state(project_root) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_semantic_dependencies_downstream
+            ON semantic_dependencies(project_root, downstream_file);
+    `);
+}
+
+function ensureSemanticStateSignatureColumn(database: GraphDatabase): void {
+    try {
+        database.exec("ALTER TABLE semantic_state ADD COLUMN source_signature TEXT NOT NULL DEFAULT ''");
+    } catch {
+        // The column already exists on current databases.
+    }
+}
+
 function writeGraphIndexSchemaVersion(database: GraphDatabase): void {
     database
         .prepare("INSERT OR REPLACE INTO schema_meta(key, value) VALUES ('schema_version', ?)")
@@ -228,11 +275,25 @@ function ensureGraphIndexSchema(database: GraphDatabase): void {
     const schemaVersion = readGraphIndexSchemaVersion(database);
     if (schemaVersion === null) {
         createGraphIndexSchema(database);
+        createSemanticIndexSchemaV3(database);
+        ensureSemanticStateSignatureColumn(database);
+        writeGraphIndexSchemaVersion(database);
         return;
     }
 
     if (schemaVersion === 1) {
         migrateGraphIndexSchemaV1ToV2(database);
+        createSemanticIndexSchemaV3(database);
+        ensureSemanticStateSignatureColumn(database);
+        writeGraphIndexSchemaVersion(database);
+        return;
+    }
+
+    if (schemaVersion === 2) {
+        createGraphIndexSchemaV2(database);
+        createSemanticIndexSchemaV3(database);
+        ensureSemanticStateSignatureColumn(database);
+        writeGraphIndexSchemaVersion(database);
         return;
     }
 
@@ -243,6 +304,8 @@ function ensureGraphIndexSchema(database: GraphDatabase): void {
     }
 
     createGraphIndexSchemaV2(database);
+    createSemanticIndexSchemaV3(database);
+    ensureSemanticStateSignatureColumn(database);
     writeGraphIndexSchemaVersion(database);
 }
 

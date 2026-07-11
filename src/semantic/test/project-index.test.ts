@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { deriveCacheKey, findProjectRoot, PROJECT_MANIFEST_EXTENSION } from "../src/project-index/index.js";
+import { findProjectRoot } from "../src/project-index/index.js";
 import { __loadBuiltInIdentifiersForTests as loadBuiltInIdentifiersForTests } from "../src/symbols/built-in-identifiers.js";
 
 function createMockFs(entries) {
@@ -139,77 +139,6 @@ void test("findProjectRoot surfaces abort message before filesystem access", asy
     );
 
     assert.equal(readAttempted, false);
-});
-
-void test("deriveCacheKey changes when manifest mtime changes", async () => {
-    const projectRoot = path.resolve("/workspace/project");
-    const manifestName = `project${PROJECT_MANIFEST_EXTENSION}`;
-    const filePath = path.join(projectRoot, "scripts", "hero.gml");
-
-    const initialFs = createMockFs({
-        [projectRoot]: { type: "dir", entries: [manifestName, "scripts"] },
-        [path.join(projectRoot, manifestName)]: { type: "file", mtimeMs: 100 },
-        [path.join(projectRoot, "scripts")]: {
-            type: "dir",
-            entries: ["hero.gml"]
-        },
-        [filePath]: { type: "file", mtimeMs: 200 }
-    });
-
-    const updatedFs = createMockFs({
-        [projectRoot]: { type: "dir", entries: [manifestName, "scripts"] },
-        [path.join(projectRoot, manifestName)]: { type: "file", mtimeMs: 150 },
-        [path.join(projectRoot, "scripts")]: {
-            type: "dir",
-            entries: ["hero.gml"]
-        },
-        [filePath]: { type: "file", mtimeMs: 200 }
-    });
-
-    const firstKey = await deriveCacheKey({ filepath: filePath, projectRoot, formatterVersion: "1.0.0" }, initialFs);
-    const secondKey = await deriveCacheKey({ filepath: filePath, projectRoot, formatterVersion: "1.0.0" }, updatedFs);
-
-    assert.notEqual(firstKey, secondKey);
-});
-
-void test("deriveCacheKey is stable across manifest ordering", async () => {
-    const projectRoot = path.resolve("/workspace/project");
-    const filePath = path.join(projectRoot, "scripts", "hero.gml");
-    const manifestA = `main${PROJECT_MANIFEST_EXTENSION}`;
-    const manifestB = `tools${PROJECT_MANIFEST_EXTENSION}`;
-
-    const fsVariantA = createMockFs({
-        [projectRoot]: {
-            type: "dir",
-            entries: [manifestA, manifestB, "scripts"]
-        },
-        [path.join(projectRoot, manifestA)]: { type: "file", mtimeMs: 100 },
-        [path.join(projectRoot, manifestB)]: { type: "file", mtimeMs: 200 },
-        [path.join(projectRoot, "scripts")]: {
-            type: "dir",
-            entries: ["hero.gml"]
-        },
-        [filePath]: { type: "file", mtimeMs: 300 }
-    });
-
-    const fsVariantB = createMockFs({
-        [projectRoot]: {
-            type: "dir",
-            entries: [manifestB, manifestA, "scripts"]
-        },
-        [path.join(projectRoot, manifestA)]: { type: "file", mtimeMs: 100 },
-        [path.join(projectRoot, manifestB)]: { type: "file", mtimeMs: 200 },
-        [path.join(projectRoot, "scripts")]: {
-            type: "dir",
-            entries: ["hero.gml"]
-        },
-        [filePath]: { type: "file", mtimeMs: 300 }
-    });
-
-    const firstKey = await deriveCacheKey({ filepath: filePath, projectRoot, formatterVersion: "1.0.0" }, fsVariantA);
-    const secondKey = await deriveCacheKey({ filepath: filePath, projectRoot, formatterVersion: "1.0.0" }, fsVariantB);
-
-    assert.equal(firstKey, secondKey);
 });
 
 void test("loadBuiltInIdentifiers respects abort guard", async () => {

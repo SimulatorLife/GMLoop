@@ -9,7 +9,6 @@ import {
     IDENTIFIER_CASE_INHERIT_VALUE,
     IDENTIFIER_CASE_OPTION_STORE_MAX_ENTRIES_OPTION_NAME,
     IDENTIFIER_CASE_PRESERVE_OPTION_NAME,
-    IDENTIFIER_CASE_PROJECT_INDEX_CACHE_MAX_BYTES_OPTION_NAME,
     IDENTIFIER_CASE_PROJECT_INDEX_CONCURRENCY_OPTION_NAME,
     IDENTIFIER_CASE_SCOPE_NAMES,
     identifierCaseOptions,
@@ -104,13 +103,8 @@ void describe("gml identifier case option normalization", () => {
     });
 
     void it("applies consistent integer option metadata", () => {
-        const maxBytesOption = identifierCaseOptions[IDENTIFIER_CASE_PROJECT_INDEX_CACHE_MAX_BYTES_OPTION_NAME];
         const storeLimitOption = identifierCaseOptions[IDENTIFIER_CASE_OPTION_STORE_MAX_ENTRIES_OPTION_NAME];
         const concurrencyOption = identifierCaseOptions[IDENTIFIER_CASE_PROJECT_INDEX_CONCURRENCY_OPTION_NAME];
-
-        assert.strictEqual(maxBytesOption.type, "int");
-        assert.strictEqual(maxBytesOption.category, "gml");
-        assert.deepStrictEqual(maxBytesOption.range, { start: 0, end: Infinity });
 
         assert.strictEqual(storeLimitOption.type, "int");
         assert.strictEqual(storeLimitOption.category, "gml");

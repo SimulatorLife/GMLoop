@@ -6,10 +6,7 @@
 
 import { Core } from "@gmloop/core";
 
-import {
-    PROJECT_INDEX_CACHE_MAX_SIZE_BASELINE,
-    PROJECT_INDEX_GML_CONCURRENCY_BASELINE
-} from "../project-index/constants.js";
+import { PROJECT_INDEX_GML_CONCURRENCY_BASELINE } from "../project-index/constants.js";
 import { getIdentifierCaseStyleMetadata } from "./identifier-case-utils.js";
 import { DEFAULT_IDENTIFIER_CASE_OPTION_STORE_MAX_ENTRIES } from "./option-store-defaults.js";
 
@@ -77,8 +74,6 @@ export const IDENTIFIER_CASE_PRESERVE_OPTION_NAME = "gmlIdentifierCasePreserve";
 export const IDENTIFIER_CASE_ACKNOWLEDGE_ASSETS_OPTION_NAME = "gmlIdentifierCaseAcknowledgeAssetRenames";
 export const IDENTIFIER_CASE_DISCOVER_PROJECT_OPTION_NAME = "gmlIdentifierCaseDiscoverProject";
 export const IDENTIFIER_CASE_PROJECT_ROOT_OPTION_NAME = "gmlIdentifierCaseProjectRoot";
-const IDENTIFIER_CASE_PROJECT_INDEX_CACHE_MAX_BYTES_SUFFIX = ["Project", "Index", "Cache", "Max", "Bytes"].join("");
-export const IDENTIFIER_CASE_PROJECT_INDEX_CACHE_MAX_BYTES_OPTION_NAME = `${IDENTIFIER_CASE_BASE_OPTION_NAME}${IDENTIFIER_CASE_PROJECT_INDEX_CACHE_MAX_BYTES_SUFFIX}`;
 export const IDENTIFIER_CASE_OPTION_STORE_MAX_ENTRIES_OPTION_NAME = "gmlIdentifierCaseOptionStoreMaxEntries";
 export const IDENTIFIER_CASE_PROJECT_INDEX_CONCURRENCY_OPTION_NAME = "gmlIdentifierCaseProjectIndexConcurrency";
 
@@ -204,14 +199,6 @@ const baseIdentifierCaseOptions: Record<string, IdentifierCaseOptionConfig> = {
         default: "",
         description:
             "Overrides automatic discovery with an explicit GameMaker project root directory when building identifier indexes."
-    },
-    [IDENTIFIER_CASE_PROJECT_INDEX_CACHE_MAX_BYTES_OPTION_NAME]: {
-        ...createIdentifierCaseIntegerOptionConfig({
-            defaultValue: PROJECT_INDEX_CACHE_MAX_SIZE_BASELINE,
-            minValue: 0,
-            description:
-                "Maximum size in bytes for the project-index cache payload. Set to 0 to disable the limit when coordinating cache writes."
-        })
     }
 };
 

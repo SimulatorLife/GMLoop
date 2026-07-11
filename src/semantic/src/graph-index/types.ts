@@ -148,6 +148,8 @@ export type GraphContextBundle = Readonly<{
 
 /** Payload embedded in the visualization HTML as inline JSON. */
 export type GraphVisualizationData = Readonly<{
+    /** Semantic-store generation represented by this payload. */
+    generation?: number;
     generatedAt: string;
     graphs: ReadonlyArray<
         Readonly<{

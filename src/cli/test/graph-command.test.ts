@@ -438,7 +438,7 @@ void test("graph visualize builds a missing database before exporting an HTML+as
     }
 });
 
-void test("graph visualize reuses an existing graph index instead of rebuilding it implicitly", async () => {
+void test("graph visualize reconciles stale semantic records before exporting", async () => {
     const cliModule = await loadCliModule();
     const fixture = await createDualRootFixture();
 
@@ -476,8 +476,8 @@ void test("graph visualize reuses an existing graph index instead of rebuilding 
         const scriptAsset = assetNames.find((assetName) => assetName.endsWith(".js"));
         assert.ok(scriptAsset);
         const indexHtml = await fs.readFile(path.join(outputDirectory, "index.html"), "utf8");
-        assert.match(indexHtml, /return 42;/u);
-        assert.doesNotMatch(indexHtml, /return 999;/u);
+        assert.match(indexHtml, /return 999;/u);
+        assert.doesNotMatch(indexHtml, /return 42;/u);
     } finally {
         await fixture.cleanup();
     }

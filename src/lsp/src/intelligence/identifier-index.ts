@@ -31,6 +31,7 @@ type NavigationState = {
     projectRoot: string;
     lightweight?: boolean;
 };
+type SemanticIndexStore = ReturnType<typeof Semantic.openSemanticIndexStore>;
 
 /**
  * Query facade used by the LSP layer to consume semantic navigation facts.
@@ -464,6 +465,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
     const backgroundFullBuilds = new Map<string, Promise<NavigationState | null>>();
     const rootVersions = new Map<string, number>();
     const abortControllers = new Map<string, AbortController>();
+    const semanticStores = new Map<string, SemanticIndexStore>();
     const documentVersions = new Map<string, number>();
     const fsFacade = createLspFsFacade(documents);
 
@@ -496,14 +498,21 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         abortActiveBuild(resolvedRoot);
     }
 
-    function saveIndexCacheToDisk(resolvedRoot: string, index: NavigationIndex): void {
-        void Semantic.saveProjectIndexCache(
-            {
-                projectRoot: resolvedRoot,
-                projectIndex: index.rawIndex
-            },
-            fsFacade as any
-        ).catch(() => {});
+    function getSemanticStore(resolvedRoot: string): SemanticIndexStore {
+        const existing = semanticStores.get(resolvedRoot);
+        if (existing) {
+            return existing;
+        }
+        const store = Semantic.openSemanticIndexStore(resolvedRoot);
+        semanticStores.set(resolvedRoot, store);
+        return store;
+    }
+
+    function saveIndexCacheToDisk(resolvedRoot: string, index: NavigationIndex, lightweight: boolean): void {
+        getSemanticStore(resolvedRoot).writeIndex(
+            index.rawIndex as Record<string, unknown>,
+            lightweight ? "definitions" : "full"
+        );
     }
 
     function invalidateKnownDocumentRoots(document: GmlTextDocument): void {
@@ -565,7 +574,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                     }
                     staleStates.delete(resolvedRoot);
 
-                    saveIndexCacheToDisk(resolvedRoot, fullState.index);
+                    saveIndexCacheToDisk(resolvedRoot, fullState.index, false);
 
                     return cachedStates.get(resolvedRoot) ?? fullState;
                 }
@@ -629,6 +638,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                     ) {
                         cachedStates.set(resolvedRoot, state);
                         staleStates.delete(resolvedRoot);
+                        saveIndexCacheToDisk(resolvedRoot, state.index, true);
                         void triggerBackgroundFullBuild(document, resolvedRoot);
                         return state;
                     }
@@ -677,21 +687,19 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
 
         if (!currentState && !staleState) {
             try {
-                const cacheResult = await Semantic.loadProjectIndexCache(
-                    { projectRoot: resolvedRoot },
-                    fsFacade as any
-                );
-                if (cacheResult.status === "hit" && cacheResult.projectIndex) {
-                    const navIndex = Semantic.createProjectNavigationIndex(cacheResult.projectIndex);
-                    (navIndex as any).rawIndex = cacheResult.projectIndex;
+                const store = getSemanticStore(resolvedRoot);
+                const cachedProjectIndex = store.readIndex();
+                const cachedState = store.readState();
+                if (cachedProjectIndex && cachedState) {
+                    const navIndex = Semantic.createProjectNavigationIndex(cachedProjectIndex);
+                    (navIndex as any).rawIndex = cachedProjectIndex;
                     const loadedState = {
                         projectRoot: resolvedRoot,
                         index: navIndex,
-                        lightweight: false
+                        lightweight: cachedState.tier === "definitions"
                     };
                     cachedStates.set(resolvedRoot, loadedState);
                     currentState = loadedState;
-                    void refreshIndex(document);
                 }
             } catch {
                 // Ignore load error and fall back to cold build
@@ -744,6 +752,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                     ) {
                         cachedStates.set(resolvedRoot, state);
                         staleStates.delete(resolvedRoot);
+                        saveIndexCacheToDisk(resolvedRoot, state.index, true);
                         void triggerBackgroundFullBuild(document, resolvedRoot);
                         return state;
                     }
@@ -820,7 +829,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                     cachedStates.set(resolvedRoot, state);
                     staleStates.delete(resolvedRoot);
 
-                    saveIndexCacheToDisk(resolvedRoot, state.index);
+                    saveIndexCacheToDisk(resolvedRoot, state.index, false);
 
                     return state;
                 }
