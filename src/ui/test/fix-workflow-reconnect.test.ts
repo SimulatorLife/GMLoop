@@ -53,6 +53,14 @@ test.afterEach(() => {
     }
 });
 
+void test("GmAppShell delegates fix workflow reconnect without lifecycle overrides", () => {
+    const prototype = GmAppShell.prototype as unknown as Record<string, unknown>;
+    const hasOwn = Object.prototype.hasOwnProperty;
+
+    assert.equal(hasOwn.call(prototype, "connectedCallback"), false);
+    assert.equal(hasOwn.call(prototype, "disconnectedCallback"), false);
+});
+
 void test("GmAppShell reconnects to in-flight fix workflow on connection and polls until finished", async (t) => {
     let fetchCount = 0;
     const fetchCalls: string[] = [];
