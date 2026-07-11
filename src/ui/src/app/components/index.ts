@@ -2,6 +2,7 @@ export * from "./copy-clipboard.js";
 export * from "./copy-feedback-controller.js";
 export * from "./event-bus-mixin.js";
 export * from "./events.js";
+export * from "./fix-workflow-reconnect-participant.js";
 export * from "./gm-app-header.js";
 export * from "./gm-app-shell.js";
 export * from "./gm-auto-game-panel.js";

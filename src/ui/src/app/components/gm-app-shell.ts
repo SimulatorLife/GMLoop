@@ -47,6 +47,7 @@ import {
     type GraphUiSetConfigViewDetail,
     type GraphUiTriggerFixDetail
 } from "./events.js";
+import { FixWorkflowReconnectParticipant } from "./fix-workflow-reconnect-participant.js";
 import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
@@ -69,24 +70,11 @@ const PAGE_MAIN_SECTION_ID: Readonly<Record<GraphVisualizationUiPage, string>> =
     playground: "playground-page"
 });
 
-function resolveServerRelativeApiEndpoint(pathname: string): string | null {
-    if (globalThis.location === undefined) {
-        return null;
-    }
-
-    try {
-        return new URL(pathname, globalThis.location.href).toString();
-    } catch {
-        return null;
-    }
-}
-
 /**
  * Root app shell that composes header, toolbar, and graph/docs/config surfaces.
  *
- * Event subscriptions are managed by an injected `EventBusManager` collaborator,
- * which auto-registers listeners on `connectedCallback` and tears them down
- * in reverse order on `disconnectedCallback`.
+ * Event subscriptions and fix-workflow reconnect polling are managed by
+ * lifecycle collaborators registered with `LifecycleParticipantsController`.
  */
 export class GmAppShell extends LightDomLitElement {
     public static override properties = {
@@ -104,10 +92,10 @@ export class GmAppShell extends LightDomLitElement {
 
     /**
      * Manages the lifecycle of event listeners for UI interactions.
-     * Initialized in the constructor; connected on `connectedCallback`
-     * and torn down on `disconnectedCallback`.
      */
     #eventBus: EventBusManager;
+
+    #fixWorkflowReconnect: FixWorkflowReconnectParticipant;
 
     // ─── Private handlers (access #state and #store via closure) ───────────────
 
@@ -288,6 +276,30 @@ export class GmAppShell extends LightDomLitElement {
             { event: "dismiss", handler: this.#onDismissErrorBanner }
         ]);
 
+        this.#fixWorkflowReconnect = new FixWorkflowReconnectParticipant({
+            callbacks: {
+                canReconnect: () => this.model?.isServerMode === true && !this.#state.isFixPending,
+                onFinished: (workflow, status) => {
+                    this.#store.dispatch({ pending: false, type: FIX_PENDING_ACTION_TYPE, workflow });
+                    this.#store.dispatch({ status, type: FIX_STATUS_ACTION_TYPE });
+                },
+                onPollError: (error) => {
+                    console.error("Error polling reconnected fix workflow progress:", error);
+                },
+                onProgress: (logLines) => {
+                    this.#store.dispatch({ logLines, type: FIX_LOG_LINES_ACTION_TYPE });
+                },
+                onReconnectError: (error) => {
+                    console.error("Failed to reconnect to active fix workflow:", error);
+                },
+                onReconnectStarted: (workflow, logLines) => {
+                    this.#store.dispatch({ pending: true, type: FIX_PENDING_ACTION_TYPE, workflow });
+                    this.#store.dispatch({ logLines, type: FIX_LOG_LINES_ACTION_TYPE });
+                    this.#store.dispatch({ errorMessage: null, type: FIX_ERROR_ACTION_TYPE });
+                }
+            }
+        });
+
         // Subscribe to store and persist URL state on changes
         const unsubscribeStore = this.#store.subscribe((nextState) => {
             this.#state = nextState;
@@ -297,7 +309,8 @@ export class GmAppShell extends LightDomLitElement {
 
         new LifecycleParticipantsController(this, [
             createStoreUnsubscribeParticipant(unsubscribeStore),
-            this.#eventBus
+            this.#eventBus,
+            this.#fixWorkflowReconnect
         ]);
     }
 
@@ -454,100 +467,6 @@ export class GmAppShell extends LightDomLitElement {
             clearInterval(fixWorkflowProgressTimer);
             this.#store.dispatch({ pending: false, type: FIX_PENDING_ACTION_TYPE, workflow });
         }
-    }
-
-    #reconnectTimer: ReturnType<typeof setInterval> | null = null;
-
-    async #pollReconnectedFixWorkflowProgress(workflow: GraphVisualizationProjectWorkflow): Promise<void> {
-        const progressEndpoint = resolveServerRelativeApiEndpoint("/api/fix/progress");
-        if (progressEndpoint === null) {
-            return;
-        }
-
-        try {
-            const pollResponse = await fetch(progressEndpoint, {
-                cache: "no-store",
-                headers: { Accept: "application/json" }
-            });
-            if (!pollResponse.ok) {
-                return;
-            }
-            const pollProgress = (await pollResponse.json()) as {
-                isRunning: boolean;
-                logLines: string[];
-                workflow?: GraphVisualizationProjectWorkflow;
-                status?: string;
-            };
-
-            this.#store.dispatch({ logLines: pollProgress.logLines, type: FIX_LOG_LINES_ACTION_TYPE });
-
-            if (!pollProgress.isRunning) {
-                if (this.#reconnectTimer) {
-                    clearInterval(this.#reconnectTimer);
-                    this.#reconnectTimer = null;
-                }
-                this.#store.dispatch({ pending: false, type: FIX_PENDING_ACTION_TYPE, workflow });
-                this.#store.dispatch({
-                    status: pollProgress.status === "success" ? "success" : "error",
-                    type: FIX_STATUS_ACTION_TYPE
-                });
-            }
-        } catch (error) {
-            console.error("Error polling reconnected fix workflow progress:", error);
-        }
-    }
-
-    #reconnectToActiveFixWorkflow = async (): Promise<void> => {
-        if (!this.model?.isServerMode || this.#state.isFixPending) {
-            return;
-        }
-
-        const progressEndpoint = resolveServerRelativeApiEndpoint("/api/fix/progress");
-        if (progressEndpoint === null) {
-            return;
-        }
-
-        try {
-            const response = await fetch(progressEndpoint, {
-                cache: "no-store",
-                headers: { Accept: "application/json" }
-            });
-            if (!response.ok) {
-                return;
-            }
-            const progress = (await response.json()) as {
-                isRunning: boolean;
-                logLines: string[];
-                workflow?: GraphVisualizationProjectWorkflow;
-                status?: string;
-            };
-
-            if (progress.isRunning && progress.workflow) {
-                const workflow = progress.workflow;
-                this.#store.dispatch({ pending: true, type: FIX_PENDING_ACTION_TYPE, workflow });
-                this.#store.dispatch({ logLines: progress.logLines, type: FIX_LOG_LINES_ACTION_TYPE });
-                this.#store.dispatch({ errorMessage: null, type: FIX_ERROR_ACTION_TYPE });
-
-                this.#reconnectTimer = setInterval(() => {
-                    void this.#pollReconnectedFixWorkflowProgress(workflow);
-                }, 1000);
-            }
-        } catch (error) {
-            console.error("Failed to reconnect to active fix workflow:", error);
-        }
-    };
-
-    public override connectedCallback(): void {
-        super.connectedCallback();
-        void this.#reconnectToActiveFixWorkflow();
-    }
-
-    public override disconnectedCallback(): void {
-        if (this.#reconnectTimer) {
-            clearInterval(this.#reconnectTimer);
-            this.#reconnectTimer = null;
-        }
-        super.disconnectedCallback();
     }
 
     /** @internal */
