@@ -284,15 +284,33 @@ function mergeScriptCallReferences(
     }
 
     const referencesBySymbolId = new Map<string, GmlNavigationOccurrence[]>();
+    const scriptsByScopeId = new Map<string, GmlNavigationSymbol>();
+    const scriptsByName = new Map<string, GmlNavigationSymbol>();
+    for (const symbol of symbols) {
+        if (symbol.kind !== "script") {
+            continue;
+        }
+        scriptsByName.set(symbol.name, symbol);
+        for (const definition of symbol.definitions) {
+            const scopeId = definition.scopeId;
+            if (scopeId) {
+                scriptsByScopeId.set(scopeId, symbol);
+            }
+        }
+    }
     for (const rawScriptCall of scriptCalls) {
         const target = asRecord(asRecord(rawScriptCall).target);
         const targetScopeId = readString(target.scopeId);
         const targetName = readString(target.name);
-        const symbol = symbols.find(
-            (candidate) =>
-                (targetScopeId !== null && candidate.symbolId === `script:${targetScopeId}`) ||
-                (targetName !== null && candidate.kind === "script" && candidate.name === targetName)
-        );
+        let symbol: GmlNavigationSymbol | undefined;
+        if (targetScopeId === null) {
+            symbol = targetName === null ? undefined : scriptsByName.get(targetName);
+        } else {
+            symbol = scriptsByScopeId.get(targetScopeId);
+            if (symbol === undefined && targetName !== null) {
+                symbol = scriptsByName.get(targetName);
+            }
+        }
         if (!symbol) {
             continue;
         }
@@ -461,18 +479,39 @@ export function findNavigationSymbolAtPosition(
     filePath: string,
     offset: number
 ): GmlNavigationOccurrence | null {
-    const matches = (index.occurrencesByFilePath.get(normalizeFilePathKey(filePath)) ?? []).filter((occurrence) =>
-        isOffsetInRange(offset, occurrence.location.range)
-    );
+    const occurrences = index.occurrencesByFilePath.get(normalizeFilePathKey(filePath)) ?? [];
+    let low = 0;
+    let high = occurrences.length;
+    while (low < high) {
+        const middle = (low + high) >>> 1;
+        if (occurrences[middle].location.range.start <= offset) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
 
-    return (
-        matches.toSorted(
-            (left, right) =>
-                left.location.range.end -
-                left.location.range.start -
-                (right.location.range.end - right.location.range.start)
-        )[0] ?? null
-    );
+    let best: GmlNavigationOccurrence | null = null;
+    for (let indexAt = low - 1; indexAt >= 0; indexAt -= 1) {
+        const occurrence = occurrences[indexAt];
+        if (occurrence.location.range.start > offset) {
+            continue;
+        }
+        if (occurrence.location.range.end <= offset) {
+            break;
+        }
+        if (!isOffsetInRange(offset, occurrence.location.range)) {
+            continue;
+        }
+        if (
+            best === null ||
+            occurrence.location.range.end - occurrence.location.range.start <
+                best.location.range.end - best.location.range.start
+        ) {
+            best = occurrence;
+        }
+    }
+    return best;
 }
 
 /**

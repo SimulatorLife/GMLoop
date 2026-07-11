@@ -1477,7 +1477,8 @@ function handleIdentifierNode({
     metrics,
     structVariableDeclarationScopeIds,
     identifierSink,
-    definitionsOnly = false
+    definitionsOnly = false,
+    recordReferences = false
 }) {
     if (node?.type !== "Identifier" || !Array.isArray(node.classifications)) {
         return false;
@@ -1509,7 +1510,7 @@ function handleIdentifierNode({
             identifierSink
         });
     }
-    if (isReference && !definitionsOnly) {
+    if (isReference && (!definitionsOnly || recordReferences)) {
         metrics?.counters?.increment("identifiers.references");
         fileRecord.references.push(identifierRecord);
         scopeRecord.references.push(identifierRecord);
@@ -1859,7 +1860,8 @@ function analyseGmlAst({
     lineOffsets = null,
     structVariableDeclarationScopeIds = new Set(),
     identifierSink,
-    definitionsOnly = false
+    definitionsOnly = false,
+    recordReferences = false
 }) {
     const parentMap = buildSafeParentMap(ast);
     const enumLookup = createEnumLookup(ast, fileRecord?.filePath ?? null);
@@ -1885,7 +1887,8 @@ function analyseGmlAst({
             metrics,
             structVariableDeclarationScopeIds,
             identifierSink,
-            definitionsOnly
+            definitionsOnly,
+            recordReferences
         });
         if (identifierHandled) {
             return;
@@ -2116,7 +2119,8 @@ async function processProjectGmlFile({
     projectRoot,
     identifierSink,
     pendingConstructorStaticMemberReferences,
-    definitionsOnly = false
+    definitionsOnly = false,
+    recordReferences = false
 }) {
     ensureNotAborted();
     metrics.counters.increment("files.gmlProcessed");
@@ -2158,7 +2162,8 @@ async function processProjectGmlFile({
             lineOffsets,
             structVariableDeclarationScopeIds,
             identifierSink,
-            definitionsOnly
+            definitionsOnly,
+            recordReferences
         })
     );
     metrics.timers.timeSync("gml.constructorStaticMembers", () =>
@@ -2815,7 +2820,9 @@ async function processProjectGmlFilesForIndex({
     identifierSink,
     constructorStaticMemberReferences,
     onProgress,
-    definitionsOnly = false
+    definitionsOnly = false,
+    recordReferences = false,
+    priorityFiles = new Set()
 }) {
     let processed = 0;
     const total = gmlFiles.length;
@@ -2823,6 +2830,12 @@ async function processProjectGmlFilesForIndex({
         gmlFiles,
         gmlConcurrency,
         async (file) => {
+            // Parsing and AST traversal are synchronous CPU work. Yield before
+            // each file so LSP callers can service hover/tokens between files
+            // while Tier 1/Tier 2 continue in the background.
+            await new Promise<void>((resolve) => {
+                setImmediate(resolve);
+            });
             await processProjectGmlFile({
                 file,
                 fsFacade,
@@ -2838,7 +2851,9 @@ async function processProjectGmlFilesForIndex({
                 projectRoot,
                 identifierSink,
                 pendingConstructorStaticMemberReferences: constructorStaticMemberReferences,
-                definitionsOnly
+                definitionsOnly,
+                recordReferences:
+                    recordReferences || (definitionsOnly && priorityFiles.has(path.resolve(file.absolutePath)))
             });
             processed += 1;
             if (onProgress) {
@@ -2987,6 +3002,14 @@ export async function buildProjectIndex(projectRoot, fsFacade = Core.defaultFsFa
     });
 
     const definitionsOnly = options?.definitionsOnly === true;
+    const priorityFiles = new Set(
+        (options?.priorityFiles
+            ? Array.isArray(options.priorityFiles)
+                ? options.priorityFiles
+                : [options.priorityFiles]
+            : []
+        ).map((filePath) => path.resolve(filePath))
+    );
 
     try {
         await processProjectGmlFilesForIndex({
@@ -3007,7 +3030,8 @@ export async function buildProjectIndex(projectRoot, fsFacade = Core.defaultFsFa
             identifierSink,
             constructorStaticMemberReferences,
             onProgress: options?.onProgress,
-            definitionsOnly
+            definitionsOnly,
+            priorityFiles
         });
         recordMemoryHighWater();
 

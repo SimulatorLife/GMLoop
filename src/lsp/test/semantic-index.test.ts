@@ -128,6 +128,7 @@ void test("semantic index invalidates cached project facts for unsaved document 
         assert.ok(updatedDocument);
 
         semanticIndex.invalidateForDocument(updatedDocument);
+        await semanticIndex.refreshForDocument(updatedDocument);
         const afterEdit = await semanticIndex.searchCompletions(updatedDocument, "new_unsaved_symbol");
 
         assert.equal(

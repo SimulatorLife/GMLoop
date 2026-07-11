@@ -14,6 +14,7 @@ import {
     Location,
     ProposedFeatures,
     Range,
+    SemanticTokensRefreshRequest,
     TextDocumentSyncKind,
     TextEdit,
     WorkspaceEdit,
@@ -163,6 +164,12 @@ function runNotificationTask(connection: GmlLanguageServerConnection, task: () =
     });
 }
 
+function requestSemanticTokenRefresh(connection: GmlLanguageServerConnection): void {
+    void connection.sendRequest(SemanticTokensRefreshRequest.type).catch(() => {
+        // Clients may not advertise semantic-token refresh support.
+    });
+}
+
 /**
  * Create the GML language server and attach all protocol handlers to the connection.
  */
@@ -231,10 +238,15 @@ export function createGmlLanguageServer(
     });
 
     connection.onDidOpenTextDocument(({ textDocument }) => {
+        const document = documents.open(textDocument);
+        // Start semantic readiness first. Diagnostics are intentionally
+        // independent so parser/lint work cannot delay the first hover.
         runNotificationTask(connection, async () => {
-            const document = documents.open(textDocument);
-            await publishDiagnostics(document);
             await semanticIndex.buildForDocument(document);
+            requestSemanticTokenRefresh(connection);
+        });
+        runNotificationTask(connection, async () => {
+            await publishDiagnostics(document);
         });
     });
 
@@ -257,6 +269,7 @@ export function createGmlLanguageServer(
                     semanticIndex.invalidateForDocument(doc);
                     await publishDiagnostics(doc);
                     await semanticIndex.refreshForDocument(doc);
+                    requestSemanticTokenRefresh(connection);
                 }
             });
         }, 300);
@@ -275,6 +288,7 @@ export function createGmlLanguageServer(
             if (document) {
                 await semanticIndex.refreshForDocument(document);
                 await publishDiagnostics(document);
+                requestSemanticTokenRefresh(connection);
             }
         });
     });
