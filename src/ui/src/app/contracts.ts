@@ -2,10 +2,12 @@ import type {
     GraphVisualizationAutoGamePipelineModel,
     GraphVisualizationData,
     GraphVisualizationDocumentationCatalogs,
+    GraphVisualizationEdgeRecord,
     GraphVisualizationLastFixRun,
     GraphVisualizationLiveReloadModel,
     GraphVisualizationLoadedTarget,
     GraphVisualizationMcpServerStatus,
+    GraphVisualizationNodeRecord,
     GraphVisualizationProjectConfigurationCatalog,
     GraphVisualizationProjectWorkflow,
     GraphVisualizationRenderOptions,
@@ -119,17 +121,35 @@ export function createNoopGraphVisualizationUiCallbacks(): GraphVisualizationUiC
 }
 
 /**
+ * Return graph nodes from the UI model without forcing components to traverse the nested data payload.
+ */
+export function readGraphVisualizationNodes(
+    model: GraphVisualizationUiModel
+): ReadonlyArray<GraphVisualizationNodeRecord> {
+    return model.data.nodes;
+}
+
+/**
+ * Return graph edges from the UI model without forcing components to traverse the nested data payload.
+ */
+export function readGraphVisualizationEdges(
+    model: GraphVisualizationUiModel
+): ReadonlyArray<GraphVisualizationEdgeRecord> {
+    return model.data.edges;
+}
+
+/**
  * Return whether the current UI model includes graph data that can be explored.
  */
 export function hasLoadedGraphIndex(model: GraphVisualizationUiModel): boolean {
-    return model.data.nodes.length > 0;
+    return readGraphVisualizationNodes(model).length > 0;
 }
 
 /**
  * Return whether the current UI model includes graph edges that can be visualised.
  */
 export function hasGraphEdges(model: GraphVisualizationUiModel): boolean {
-    return model.data.edges.length > 0;
+    return readGraphVisualizationEdges(model).length > 0;
 }
 
 /**
