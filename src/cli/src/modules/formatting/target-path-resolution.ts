@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -7,6 +6,7 @@ import { Core } from "@gmloop/core";
 
 import { CliUsageError } from "../../cli-core/errors.js";
 import { CLI_COMMAND_NAMES } from "../../shared/command-names.js";
+import { pathExistsSync } from "../../shared/path-exists.js";
 import { formatPathForDisplay } from "../../workflow/display-path.js";
 
 const MAX_COMMAND_LENGTH_DIFFERENCE = 2;
@@ -228,25 +228,17 @@ export function resolveTargetPathFromInput(
         const resolvedRawTarget = path.resolve(process.cwd(), rawTargetPathInput);
 
         if (resolvedRawTarget !== resolvedNormalizedTarget) {
-            if (safeExistsSync(resolvedRawTarget)) {
+            if (pathExistsSync(resolvedRawTarget)) {
                 return resolvedRawTarget;
             }
 
-            if (safeExistsSync(resolvedNormalizedTarget)) {
+            if (pathExistsSync(resolvedNormalizedTarget)) {
                 return resolvedNormalizedTarget;
             }
         }
     }
 
     return resolvedNormalizedTarget;
-}
-
-function safeExistsSync(candidatePath: string): boolean {
-    try {
-        return existsSync(candidatePath);
-    } catch {
-        return false;
-    }
 }
 
 /**
