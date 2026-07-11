@@ -12,6 +12,8 @@ import type {
     BatchRenamePlanSummary,
     BatchRenameValidation,
     HotReloadCascadeResult,
+    RenameImpactAnalysis,
+    RenameImpactSummary,
     RenamePlanSummary,
     SymbolOccurrence
 } from "./types.js";
@@ -219,6 +221,77 @@ export function buildBatchHotReloadReport(plan: BatchRenamePlanSummary): BatchHo
 }
 
 /**
+ * Structured view of a single rename impact summary.
+ *
+ * Exists to break the Law-of-Demeter violation where callers reach
+ * through `analysis.summary.*` chains (for example
+ * `plan.analysis.summary.totalOccurrences` or
+ * `analysis.summary.affectedFiles`) to read impact metrics inside the
+ * rename preview formatters. Promoting the summary to a facaded
+ * projection gives every formatter and downstream helper a single
+ * immediate neighbour to talk to instead of walking three to four
+ * segments deep, and preserves the existing field shape so the
+ * formatter output stays byte-for-byte equivalent.
+ *
+ * The type deliberately mirrors the entire `RenameImpactSummary` surface
+ * — the formatters surface nine fields today (symbol id, old/new names,
+ * affected files, occurrence counts, definition/reference counts, hot
+ * reload flag, dependent symbols), and the facade keeps every one of
+ * them rather than hiding any. That keeps the refactor tightly scoped
+ * and prevents silent drift if a future field is added to the
+ * underlying summary without updating the formatter.
+ */
+export type RenameImpactReport = Readonly<RenameImpactSummary>;
+
+/**
+ * Build a structured view of a rename impact summary.
+ *
+ * Returns the summary attached to a `RenameImpactAnalysis` as a named,
+ * read-only projection. The helper exists for the same reason as the
+ * sibling facade helpers (`buildHotReloadReport`,
+ * `buildBatchValidationReport`, `buildCascadeReport`,
+ * `buildBatchHotReloadReport`): callers should not have to repeat
+ * `analysis.summary.X` four-segment walks across formatters and CLI
+ * integrations. The adapter performs no validation work of its own —
+ * `summary` is a required field on `RenameImpactAnalysis`, so the
+ * absent case cannot occur — it just renames the relationship so the
+ * call site speaks a single neighbour's name.
+ *
+ * The returned value is `Readonly<RenameImpactSummary>`: every input
+ * field is copied into the projection so that subsequent mutations of
+ * the underlying analysis (e.g., when the engine stages additional
+ * occurrences after the report is rendered) cannot retroactively
+ * change the formatter's captured snapshot.
+ *
+ * @param analysis - Rename impact analysis whose summary should be exposed
+ * @returns Structured view of the analysis's `RenameImpactSummary`
+ *
+ * @example
+ * const impact = buildRenameImpactReport(plan.analysis);
+ * console.log(`${impact.oldName} → ${impact.newName}`);
+ * console.log(`${impact.totalOccurrences} occurrences across ${impact.affectedFiles.length} files`);
+ *
+ * @example
+ * for (const [, analysis] of plan.impactAnalyses) {
+ *     const impact = buildRenameImpactReport(analysis);
+ *     lines.push(`${impact.oldName} → ${impact.newName}: ${impact.totalOccurrences} occurrences`);
+ * }
+ */
+export function buildRenameImpactReport(analysis: RenameImpactAnalysis): RenameImpactReport {
+    return {
+        symbolId: analysis.summary.symbolId,
+        oldName: analysis.summary.oldName,
+        newName: analysis.summary.newName,
+        affectedFiles: analysis.summary.affectedFiles,
+        totalOccurrences: analysis.summary.totalOccurrences,
+        definitionCount: analysis.summary.definitionCount,
+        referenceCount: analysis.summary.referenceCount,
+        hotReloadRequired: analysis.summary.hotReloadRequired,
+        dependentSymbols: analysis.summary.dependentSymbols
+    };
+}
+
+/**
  * Preview entry for a single file in a rename operation.
  * Contains the file path and the edits that will be applied to it.
  */
@@ -353,16 +426,23 @@ export function generateRenamePreview(workspace: WorkspaceEdit, oldName: string,
  * //   Requires Restart: No
  */
 export function formatRenamePlanReport(plan: RenamePlanSummary): string {
+    // Talk to the plan's sub-objects through their dedicated facade helpers
+    // so this function only ever addresses one immediate neighbour at a
+    // time. `buildRenameImpactReport` collapses the
+    // `plan.analysis.summary.*` four-segment walk into a single
+    // `impact.field` access, mirroring how `buildHotReloadReport`
+    // smooths the `plan.hotReload.*` chain.
+    const impact = buildRenameImpactReport(plan.analysis);
     const title = "Rename Plan Report";
-    const lines: Array<string> = [title, "=".repeat(title.length), ""];
 
-    // Extract the impact summary to avoid repeated deep-navigation through plan.analysis.summary.*
-    const impactSummary = plan.analysis.summary;
-    lines.push(
-        `Symbol: ${impactSummary.oldName} → ${impactSummary.newName}`,
+    const lines: Array<string> = [
+        title,
+        "=".repeat(title.length),
+        "",
+        `Symbol: ${impact.oldName} → ${impact.newName}`,
         `Status: ${plan.validation.valid ? "VALID" : "INVALID"}`,
         ""
-    );
+    ];
 
     if (!plan.validation.valid) {
         lines.push("Validation Errors:");
@@ -382,12 +462,12 @@ export function formatRenamePlanReport(plan: RenamePlanSummary): string {
 
     lines.push(
         "Impact Summary:",
-        `  Total Occurrences: ${impactSummary.totalOccurrences}`,
-        `  Definitions: ${impactSummary.definitionCount}`,
-        `  References: ${impactSummary.referenceCount}`,
-        `  Affected Files: ${impactSummary.affectedFiles.length}`,
-        `  Hot Reload Required: ${impactSummary.hotReloadRequired ? "Yes" : "No"}`,
-        `  Dependent Symbols: ${impactSummary.dependentSymbols.length}`,
+        `  Total Occurrences: ${impact.totalOccurrences}`,
+        `  Definitions: ${impact.definitionCount}`,
+        `  References: ${impact.referenceCount}`,
+        `  Affected Files: ${impact.affectedFiles.length}`,
+        `  Hot Reload Required: ${impact.hotReloadRequired ? "Yes" : "No"}`,
+        `  Dependent Symbols: ${impact.dependentSymbols.length}`,
         ""
     );
 
@@ -505,12 +585,17 @@ export function formatBatchRenamePlanReport(plan: BatchRenamePlanSummary): strin
 
     lines.push("Per-Symbol Impact:");
     for (const [symbolId, analysis] of plan.impactAnalyses) {
-        const summary = analysis.summary;
+        // `buildRenameImpactReport` collapses the
+        // `analysis.summary.*` four-segment walk into a single
+        // `impact.field` access, matching the per-symbol contract of
+        // `formatRenamePlanReport` and keeping the two formatters
+        // symmetric at the immediate-neighbour boundary.
+        const impact = buildRenameImpactReport(analysis);
         lines.push(
-            `  ${summary.oldName} → ${summary.newName} (${symbolId})`,
-            `    Occurrences: ${summary.totalOccurrences} (${summary.definitionCount} def, ${summary.referenceCount} ref)`,
-            `    Affected Files: ${summary.affectedFiles.length}`,
-            `    Dependent Symbols: ${summary.dependentSymbols.length}`
+            `  ${impact.oldName} → ${impact.newName} (${symbolId})`,
+            `    Occurrences: ${impact.totalOccurrences} (${impact.definitionCount} def, ${impact.referenceCount} ref)`,
+            `    Affected Files: ${impact.affectedFiles.length}`,
+            `    Dependent Symbols: ${impact.dependentSymbols.length}`
         );
 
         if (analysis.conflicts.length > 0) {

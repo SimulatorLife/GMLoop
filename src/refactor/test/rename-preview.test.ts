@@ -10,6 +10,7 @@ import {
     buildBatchValidationReport,
     buildCascadeReport,
     buildHotReloadReport,
+    buildRenameImpactReport,
     formatBatchRenamePlanReport,
     formatOccurrencePreview,
     formatRenamePlanReport,
@@ -19,6 +20,7 @@ import {
     type BatchRenamePlanSummary,
     ConflictType,
     OccurrenceKind,
+    type RenameImpactAnalysis,
     type RenamePlanSummary,
     type SymbolOccurrence
 } from "../src/types.js";
@@ -857,5 +859,103 @@ void describe("buildBatchHotReloadReport", () => {
         assert.equal(report.valid, false);
         assert.deepEqual(report.errors, ["Hot reload blocked"]);
         assert.deepEqual(report.warnings, ["Restart required"]);
+    });
+});
+
+void describe("buildRenameImpactReport", () => {
+    void it("exposes every summary field without callers reaching into analysis.summary", () => {
+        const analysis: RenameImpactAnalysis = {
+            valid: true,
+            summary: {
+                symbolId: "gml/script/scr_player",
+                oldName: "scr_player",
+                newName: "scr_hero",
+                affectedFiles: ["scripts/player.gml", "scripts/enemy.gml"],
+                totalOccurrences: 7,
+                definitionCount: 1,
+                referenceCount: 6,
+                hotReloadRequired: true,
+                dependentSymbols: ["gml/script/scr_helper"]
+            },
+            conflicts: [],
+            warnings: []
+        };
+
+        const report = buildRenameImpactReport(analysis);
+
+        assert.equal(report.symbolId, "gml/script/scr_player");
+        assert.equal(report.oldName, "scr_player");
+        assert.equal(report.newName, "scr_hero");
+        assert.deepEqual(report.affectedFiles, ["scripts/player.gml", "scripts/enemy.gml"]);
+        assert.equal(report.totalOccurrences, 7);
+        assert.equal(report.definitionCount, 1);
+        assert.equal(report.referenceCount, 6);
+        assert.equal(report.hotReloadRequired, true);
+        assert.deepEqual(report.dependentSymbols, ["gml/script/scr_helper"]);
+    });
+
+    void it("preserves empty summary fields verbatim", () => {
+        const analysis: RenameImpactAnalysis = {
+            valid: true,
+            summary: {
+                symbolId: "gml/script/scr_empty",
+                oldName: "scr_empty",
+                newName: "scr_empty_new",
+                affectedFiles: [],
+                totalOccurrences: 0,
+                definitionCount: 0,
+                referenceCount: 0,
+                hotReloadRequired: false,
+                dependentSymbols: []
+            },
+            conflicts: [],
+            warnings: []
+        };
+
+        const report = buildRenameImpactReport(analysis);
+
+        assert.equal(report.affectedFiles.length, 0);
+        assert.equal(report.totalOccurrences, 0);
+        assert.equal(report.definitionCount, 0);
+        assert.equal(report.referenceCount, 0);
+        assert.equal(report.hotReloadRequired, false);
+        assert.equal(report.dependentSymbols.length, 0);
+    });
+
+    void it("captures primitive summary fields by value at the moment of construction", () => {
+        const summary = {
+            symbolId: "gml/script/scr_player",
+            oldName: "scr_player",
+            newName: "scr_player_initial",
+            affectedFiles: ["scripts/player.gml"],
+            totalOccurrences: 3,
+            definitionCount: 1,
+            referenceCount: 2,
+            hotReloadRequired: false,
+            dependentSymbols: []
+        };
+        const analysis: RenameImpactAnalysis = {
+            valid: true,
+            summary,
+            conflicts: [],
+            warnings: []
+        };
+
+        const report = buildRenameImpactReport(analysis);
+
+        // Mutate the source after construction. The facade is a fresh
+        // object, so the string and number primitive fields it copied
+        // remain at the values captured at construction time (live
+        // aliasing only applies to the nested array fields, which
+        // remain shared by reference — that matches the existing
+        // sibling facade helpers, e.g. `buildBatchValidationReport`).
+        summary.newName = "scr_player_mutated";
+        summary.totalOccurrences = 999;
+
+        assert.equal(report.newName, "scr_player_initial");
+        assert.equal(report.totalOccurrences, 3);
+        // The array field stays bound to the same array reference,
+        // mirroring the contract of the sibling facade helpers.
+        assert.equal(report.affectedFiles, summary.affectedFiles);
     });
 });
