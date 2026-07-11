@@ -3,6 +3,8 @@ import { parentPort } from "node:worker_threads";
 import { Core, type FsFacade } from "@gmloop/core";
 import { Semantic } from "@gmloop/semantic";
 
+import { normalizeWorkerErrorPayload } from "./error-normalization.js";
+
 type OpenDocumentOverlay = Readonly<{
     filePath: string;
     sourceText: string;
@@ -45,11 +47,6 @@ async function buildWorkerIndex(request: WorkerRequest): Promise<void> {
         );
         parentPort?.postMessage({ rawIndex: index.rawIndex });
     } catch (error) {
-        parentPort?.postMessage({
-            error:
-                error instanceof Error
-                    ? { message: error.message, name: error.name, stack: error.stack }
-                    : String(error)
-        });
+        parentPort?.postMessage({ error: normalizeWorkerErrorPayload(error) });
     }
 }

@@ -24,6 +24,7 @@ import {
     offsetsToRange
 } from "../documents/index.js";
 import { gmlSymbolKindToCompletionItemKind, gmlSymbolKindToLspSymbolKind } from "../protocol/index.js";
+import { coerceToError } from "./error-normalization.js";
 
 type NavigationIndex = Awaited<ReturnType<typeof Semantic.buildProjectNavigationIndex>>;
 type NavigationOccurrence = NonNullable<ReturnType<typeof Semantic.findNavigationSymbolAtPosition>>;
@@ -466,9 +467,7 @@ function buildSemanticIndexInWorker(
             (index as { rawIndex?: unknown }).rawIndex = message.rawIndex;
             finish(() => resolve({ projectRoot, index, lightweight: false }));
         });
-        worker.on("error", (error) =>
-            finish(() => reject(error instanceof Error ? error : new Error(Core.getErrorMessageOrFallback(error))))
-        );
+        worker.on("error", (error) => finish(() => reject(coerceToError(error))));
         worker.on("exit", (code) => {
             if (code !== 0) finish(() => reject(new Error(`Project index worker exited with code ${String(code)}.`)));
         });
