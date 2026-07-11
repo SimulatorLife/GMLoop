@@ -56,3 +56,68 @@ Formatter doc-comment boundary guarantees:
 - The formatter does not remove default/placeholder comments (for example, GameMaker migration banners or editor placeholder comments); this is lint-owned via `gml/remove-default-comments`.
 
 See the durable split contract and examples in [`docs/target-state.md`](../../docs/target-state.md).
+
+## TODO
+
+- **BUG**: The formatter is incorrectly adding double-blank lines in some cases, for example between `gml_pragma("forceinline");` and `// Check if are still on a valid...` in this snippet:
+  ```gml
+      if (can_pathfind) {
+        path = new PathHandler();
+        last_known_pos = new Vector3(0, 0, 0); // last known position of AI owner - used to save position for reference in pathfinding time source
+        ts_path = time_source_create(
+            time_source_game,
+            irandom_range(240, 260),
+            time_source_units_frames,
+            function () {
+                gml_pragma("forceinline");
+
+
+                // Check if are still on a valid path, if so we can skip generating a new one
+                var curr_sight_rad = sight_radius.get();
+                var curr_dist_to_pt = path.distance_to_next_point(last_known_pos.x, last_known_pos.y);
+                if (curr_dist_to_pt <= curr_sight_rad) { exit; }
+
+                var coords;
+                switch (state) {
+                    case eAiState.WANDER_PATH:
+                        // Pick random direction, then try to find free coordinates in that direction
+                        var rand_dir_wander = irandom(359);
+                        var curr_half_sght_rad = curr_sight_rad * 0.5;
+                        coords = new Vector3(
+                            last_known_pos.x + lengthdir_x(curr_half_sght_rad, rand_dir_wander), last_known_pos.y +
+                            lengthdir_y(curr_half_sght_rad, rand_dir_wander), last_known_pos.z
+                        );
+                        break;
+                    case eAiState.MOVE_TO_PATH:
+                    case eAiState.FOLLOW_PATH:
+                        // Path generation is the same for these states, difference is in steering
+                        coords = targeting.get_last_known_position();
+                        break;
+                    default:
+                        time_source_stop(ts_path);
+                        exit;
+                }
+
+                if (is_undefined(coords)) {
+                    LOG.warn("Failed to find a free position to pathfind to");
+                } else if (
+                    !global.mp_controller.make_path(
+                        last_known_pos.x,
+                        last_known_pos.y,
+                        last_known_pos.z,
+                        coords.x,
+                        coords.y,
+                        coords.z,
+                        path
+                    )
+                ) {
+                    LOG.warn("Failed to make a path to room position");
+                } else {
+                    LOG.trace("Generated a path");
+                }
+            },
+            [],
+            -1
+        );
+    }
+  ```
