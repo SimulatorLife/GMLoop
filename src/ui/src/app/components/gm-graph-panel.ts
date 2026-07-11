@@ -14,7 +14,12 @@ import {
 } from "../../graph/graph-layout.js";
 import { EDGE_LINE_VISUAL_STYLES, NODE_VISUAL_STYLES } from "../../graph/graph-visualization-style-metadata.js";
 import type { GraphVisualizationEdgeType, GraphVisualizationNodeKind } from "../../graph/types.js";
-import { type GraphVisualizationUiModel, hasGraphEdges, hasLoadedGraphIndex } from "../contracts.js";
+import {
+    type GraphVisualizationUiModel,
+    hasLoadedGraphIndex,
+    readGraphVisualizationEdges,
+    readGraphVisualizationNodes
+} from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { EventBusManager } from "./event-bus-mixin.js";
 import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, GRAPH_UI_EVENT_RESET_DEFAULTS } from "./events.js";
@@ -170,18 +175,21 @@ export class GmGraphPanel extends LightDomLitElement {
         }
 
         if (!this.#initializedFiltersForModel || force) {
-            if (hasLoadedGraphIndex(this.model) || force) {
+            const graphNodes = readGraphVisualizationNodes(this.model);
+            const graphEdges = readGraphVisualizationEdges(this.model);
+
+            if (graphNodes.length > 0 || force) {
                 this.#enabledNodeKinds.clear();
-                for (const kind of listGraphNodeKinds(this.model.data.nodes)) {
+                for (const kind of listGraphNodeKinds(graphNodes)) {
                     if (!DEFAULT_DISABLED_NODE_KINDS.has(kind)) {
                         this.#enabledNodeKinds.add(kind);
                     }
                 }
                 this.#initializedFiltersForModel = true;
             }
-            if (hasGraphEdges(this.model) || force) {
+            if (graphEdges.length > 0 || force) {
                 this.#enabledEdgeTypes.clear();
-                for (const type of listGraphEdgeTypes(this.model.data.edges)) {
+                for (const type of listGraphEdgeTypes(graphEdges)) {
                     this.#enabledEdgeTypes.add(type);
                 }
             }
@@ -419,13 +427,15 @@ export class GmGraphPanel extends LightDomLitElement {
 
         this.#syncFilterDefaults();
 
+        const graphNodes = readGraphVisualizationNodes(this.model);
+        const graphEdges = readGraphVisualizationEdges(this.model);
         const modelChanged = this.#cachedModel !== this.model;
         if (modelChanged) {
             this.#cachedModel = this.model;
             this.layoutCalculationCount++;
-            this.#cachedLayout = createGraphLayout(this.model.data.nodes, this.model.data.edges);
-            this.#cachedNodeItems = listGraphNodeKindLegendItems(this.model.data.nodes);
-            this.#cachedEdgeTypes = listGraphEdgeTypes(this.model.data.edges);
+            this.#cachedLayout = createGraphLayout(graphNodes, graphEdges);
+            this.#cachedNodeItems = listGraphNodeKindLegendItems(graphNodes);
+            this.#cachedEdgeTypes = listGraphEdgeTypes(graphEdges);
             this.#cachedVisibleLayout = null;
         }
 
@@ -439,7 +449,7 @@ export class GmGraphPanel extends LightDomLitElement {
             this.filterCalculationCount++;
             this.#cachedVisibleLayout = filterGraphLayoutForDisplay({
                 enabledEdgeTypes: this.#enabledEdgeTypes,
-                enabledNodeKinds: resolveEffectiveGraphNodeKinds(this.model.data.nodes, this.#enabledNodeKinds),
+                enabledNodeKinds: resolveEffectiveGraphNodeKinds(graphNodes, this.#enabledNodeKinds),
                 layout: this.#cachedLayout,
                 matchesNode: (node) => this.#matchesSearch(node)
             });
