@@ -503,11 +503,39 @@ export class GmAppShell extends LightDomLitElement {
     }
 }
 
+/**
+ * Adapt a pre-registered store unsubscribe into a {@link LifecycleParticipant}
+ * so the existing `LifecycleParticipantsController` wiring continues to work
+ * without changing the order in which the host connects/disconnects.
+ *
+ * The `unsubscribe` callback must be captured eagerly during
+ * `GmAppShell`'s constructor — the store subscription is what drives
+ * `requestUpdate()` after every dispatched state change, so it has to be
+ * live before any host-rendered children (and before `hostConnected`
+ * fires) can observe the initial store state. Registering the
+ * subscription inside `connect()` would mean the very first
+ * `requestUpdate()` after construction never reaches Lit, leaving the
+ * UI blank until something else triggered a render. Conversely,
+ * deleting the `connect()` method would violate the
+ * `LifecycleParticipant` contract enforced by
+ * `./lifecycle-participants-controller.ts` and crash the controller's
+ * for-loop on `hostConnected`. `disconnect()` is the only side that
+ * performs real work and is nulled after the first call so that the
+ * controller's reverse-order disconnect (or a defensive second call
+ * during teardown) is always safe.
+ */
 function createStoreUnsubscribeParticipant(unsubscribe: () => void) {
     let cleanup: (() => void) | null = unsubscribe;
     return Object.freeze({
         connect(): void {
-            // No-op: store subscription is created in the constructor; this participant only handles cleanup.
+            // Intentionally empty: see the JSDoc above. The store
+            // subscription is set up in the `GmAppShell` constructor
+            // (so it is live for the initial render) and this
+            // participant exists solely to honour the
+            // `LifecycleParticipant` contract and to release that
+            // subscription on disconnect. Moving the `subscribe()`
+            // call here would break the initial render; removing this
+            // method would break the controller's `for` loop.
         },
         disconnect(): void {
             cleanup?.();
