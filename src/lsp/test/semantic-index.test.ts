@@ -325,6 +325,50 @@ void test("semantic index double-pass approach exposes fast hover initially, and
     }
 });
 
+void test("semantic index full worker preserves unsaved open-buffer facts", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gmloop-lsp-worker-overlay-"));
+    try {
+        await fs.writeFile(
+            path.join(projectRoot, "Game.yyp"),
+            JSON.stringify({ name: "Game", resourceType: "GMProject" })
+        );
+        const scriptPath = path.join(projectRoot, "scripts/example/example.gml");
+        await fs.mkdir(path.dirname(scriptPath), { recursive: true });
+        await fs.writeFile(
+            path.join(projectRoot, "scripts/example/example.yy"),
+            JSON.stringify({ name: "example", resourceType: "GMScript" })
+        );
+        await fs.writeFile(scriptPath, "function disk_symbol() { return 1; }");
+
+        const store = Lsp.createGmlDocumentStore();
+        const document = store.open({
+            uri: Lsp.filePathToUri(scriptPath),
+            languageId: "gml",
+            version: 7,
+            text: "function unsaved_symbol() { return 2; }"
+        });
+        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+
+        const initialState = await semanticIndex.buildForDocument(document);
+        assert.ok(initialState);
+        assert.equal(initialState.lightweight, true);
+
+        await semanticIndex.findReferences(document, 9, "unsaved_symbol", true);
+        const completions = await semanticIndex.searchCompletions(document, "unsaved_symbol");
+        assert.ok(
+            completions.some((completion) => completion.label === "unsaved_symbol"),
+            "Tier 2 must not replace open-buffer facts with the on-disk source"
+        );
+        assert.ok(
+            !completions.some((completion) => completion.label === "disk_symbol"),
+            "Tier 2 must not expose stale on-disk symbols for an unsaved document"
+        );
+        await semanticIndex.dispose();
+    } finally {
+        await cleanupProjectDir(projectRoot);
+    }
+});
+
 void test("semantic index aborts and cancels in-flight builds on invalidation", async () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gmloop-lsp-abort-"));
     try {

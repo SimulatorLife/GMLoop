@@ -33,6 +33,11 @@ void test("semantic index store persists records and generation state in SQLite"
         const second = store.writeIndex({ projectRoot, files: {} }, "full");
         assert.equal(second.generation, 2);
         assert.equal(store.readState()?.tier, "full");
+
+        const definitionsAfterFull = store.writeIndex({ projectRoot, files: { stale: {} } }, "definitions");
+        assert.equal(definitionsAfterFull.generation, 2);
+        assert.equal(definitionsAfterFull.tier, "full");
+        assert.deepEqual(store.readIndex()?.files, {});
     } finally {
         store.close();
     }

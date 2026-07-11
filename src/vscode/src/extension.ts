@@ -14,6 +14,7 @@ const GMLOOP_CLIENT_NAME = "GMLoop GML Language Server";
 
 let languageClient: LanguageClient | null = null;
 let languageServerOutput: vscode.OutputChannel | null = null;
+let projectFileWatcher: vscode.FileSystemWatcher | null = null;
 
 function getLanguageServerOutputChannel(): vscode.OutputChannel {
     languageServerOutput ??= vscode.window.createOutputChannel(GMLOOP_CLIENT_NAME);
@@ -57,7 +58,8 @@ function createClientOptions(outputChannel: vscode.OutputChannel): LanguageClien
         outputChannel,
         revealOutputChannelOn: 4,
         synchronize: {
-            configurationSection: GMLOOP_CONFIGURATION_SECTION
+            configurationSection: GMLOOP_CONFIGURATION_SECTION,
+            fileEvents: projectFileWatcher ?? undefined
         }
     };
 }
@@ -106,7 +108,9 @@ async function restartLanguageClient(): Promise<void> {
  * Activate the GMLoop VSCode extension and start the GML language server.
  */
 export function activate(context: vscode.ExtensionContext): void {
+    projectFileWatcher ??= vscode.workspace.createFileSystemWatcher("**/*.{gml,yy,yyp}");
     context.subscriptions.push(
+        projectFileWatcher,
         vscode.commands.registerCommand("gmloop.restartLanguageServer", restartLanguageClient),
         vscode.commands.registerCommand("gmloop.showLanguageServerOutput", () => {
             getLanguageServerOutputChannel().show();
@@ -128,4 +132,6 @@ export function activate(context: vscode.ExtensionContext): void {
  */
 export async function deactivate(): Promise<void> {
     await stopLanguageClient();
+    projectFileWatcher?.dispose();
+    projectFileWatcher = null;
 }

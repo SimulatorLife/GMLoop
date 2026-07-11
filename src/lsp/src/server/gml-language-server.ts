@@ -10,6 +10,7 @@ import {
     DidChangeConfigurationNotification,
     DocumentHighlight,
     DocumentHighlightKind,
+    FileChangeType,
     InitializeResult,
     Location,
     ProposedFeatures,
@@ -27,7 +28,8 @@ import {
     isGmlDocumentPath,
     offsetsToRange,
     offsetToPosition,
-    positionToOffset
+    positionToOffset,
+    uriToFilePath
 } from "../documents/index.js";
 import { createGmlSemanticIndex } from "../intelligence/index.js";
 import { eslintMessageToDiagnostic, parserErrorToDiagnostic } from "../protocol/diagnostics.js";
@@ -181,6 +183,21 @@ export function createGmlLanguageServer(
     const lintRunner = createLintRunner(false);
     const lintFixRunner = createLintRunner(true);
     const pendingDiagnostics = new Map<string, NodeJS.Timeout>();
+    const pendingSemanticRefreshes = new Map<string, NodeJS.Timeout>();
+
+    if (typeof connection.onShutdown === "function") {
+        connection.onShutdown(() => {
+            for (const timeout of pendingDiagnostics.values()) {
+                clearTimeout(timeout);
+            }
+            pendingDiagnostics.clear();
+            for (const timeout of pendingSemanticRefreshes.values()) {
+                clearTimeout(timeout);
+            }
+            pendingSemanticRefreshes.clear();
+            void semanticIndex.dispose();
+        });
+    }
 
     async function publishDiagnostics(document: GmlTextDocument): Promise<void> {
         const diagnostics = await collectDiagnostics(document, lintRunner);
@@ -261,15 +278,29 @@ export function createGmlLanguageServer(
             clearTimeout(existingTimer);
         }
 
+        semanticIndex.invalidateForDocument(document);
+        const existingSemanticTimer = pendingSemanticRefreshes.get(textDocument.uri);
+        if (existingSemanticTimer) {
+            clearTimeout(existingSemanticTimer);
+        }
+        const semanticTimer = setTimeout(() => {
+            pendingSemanticRefreshes.delete(textDocument.uri);
+            runNotificationTask(connection, async () => {
+                const currentDocument = documents.get(textDocument.uri);
+                if (currentDocument && currentDocument.version === textDocument.version) {
+                    await semanticIndex.refreshForDocument(currentDocument);
+                    requestSemanticTokenRefresh(connection);
+                }
+            });
+        }, 50);
+        pendingSemanticRefreshes.set(textDocument.uri, semanticTimer);
+
         const timer = setTimeout(() => {
             pendingDiagnostics.delete(textDocument.uri);
             runNotificationTask(connection, async () => {
                 const doc = documents.get(textDocument.uri);
                 if (doc && doc.version === textDocument.version) {
-                    semanticIndex.invalidateForDocument(doc);
                     await publishDiagnostics(doc);
-                    await semanticIndex.refreshForDocument(doc);
-                    requestSemanticTokenRefresh(connection);
                 }
             });
         }, 300);
@@ -281,6 +312,11 @@ export function createGmlLanguageServer(
         if (existingTimer) {
             clearTimeout(existingTimer);
             pendingDiagnostics.delete(textDocument.uri);
+        }
+        const semanticTimer = pendingSemanticRefreshes.get(textDocument.uri);
+        if (semanticTimer) {
+            clearTimeout(semanticTimer);
+            pendingSemanticRefreshes.delete(textDocument.uri);
         }
 
         runNotificationTask(connection, async () => {
@@ -299,10 +335,33 @@ export function createGmlLanguageServer(
             clearTimeout(existingTimer);
             pendingDiagnostics.delete(textDocument.uri);
         }
+        const semanticTimer = pendingSemanticRefreshes.get(textDocument.uri);
+        if (semanticTimer) {
+            clearTimeout(semanticTimer);
+            pendingSemanticRefreshes.delete(textDocument.uri);
+        }
 
         documents.close(textDocument.uri);
         void connection.sendDiagnostics({ uri: textDocument.uri, diagnostics: [] });
     });
+
+    if ("onDidChangeWatchedFiles" in connection) {
+        connection.onDidChangeWatchedFiles(({ changes }) => {
+            runNotificationTask(connection, async () => {
+                await Promise.all(
+                    changes.map(async (change) => {
+                        const filePath = uriToFilePath(change.uri);
+                        if (change.type === FileChangeType.Deleted || !isGmlDocumentPath(filePath)) {
+                            await semanticIndex.invalidateForFilePath(filePath);
+                        } else {
+                            await semanticIndex.refreshForFilePath(filePath);
+                        }
+                    })
+                );
+                requestSemanticTokenRefresh(connection);
+            });
+        });
+    }
 
     connection.onDocumentFormatting(async ({ textDocument, options }): Promise<TextEdit[]> => {
         const document = documents.get(textDocument.uri);
