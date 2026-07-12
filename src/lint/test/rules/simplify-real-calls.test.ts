@@ -187,6 +187,34 @@ void describe("gml/simplify-real-calls", () => {
         assert.strictEqual(messages.length, 0);
     });
 
+    // GML does not parse scientific notation natively — the
+    // `gml/no-scientific-notation` rule explicitly flags `1e-3`-style tokens
+    // as invalid. Reporting `real("1e-3")` and rewriting it to `1e-3` would
+    // therefore replace valid code with source that fails to compile, so the
+    // rule must stay silent on exponent-shaped inputs.
+    void it("does not report real() when the argument uses scientific notation", () => {
+        const scientificLiteralCases = [
+            { source: 'var x = real("1e10");', literalValue: '"1e10"' },
+            { source: 'var x = real("-1.5e-3");', literalValue: '"-1.5e-3"' },
+            { source: 'var x = real("+1E5");', literalValue: '"+1E5"' },
+            { source: "var x = real('.5e2');", literalValue: "'.5e2'" }
+        ] as const;
+
+        for (const testCase of scientificLiteralCases) {
+            const node = buildRealCallNode("real", testCase.literalValue, 8);
+            const { context, messages } = createContext(testCase.source);
+
+            const visitor = rule.create(context as any);
+            visitor.Program?.({ type: "Program", body: [node] } as any);
+
+            assert.strictEqual(
+                messages.length,
+                0,
+                `real(${testCase.literalValue}) should not be reported because the replacement would be invalid GML`
+            );
+        }
+    });
+
     void it("is included in the recommended config", () => {
         const recommended = Lint.configs.recommended;
         const allRules = recommended.flatMap((config) => Object.keys(config.rules ?? {}));
