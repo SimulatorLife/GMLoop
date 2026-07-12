@@ -1,6 +1,8 @@
-/*
- * This module defines the logical operators style option for the formatter, which controls whether the formatter
- * outputs logical operators as keywords (e.g. `and`, `or`) or symbols (e.g. `&&`, `||`). The module provides an
+/**
+ * Logical operators style option for the formatter.
+ *
+ * Controls whether the formatter outputs logical operators as keywords
+ * (e.g. `and`, `or`) or symbols (e.g. `&&`, `||`). The module provides an
  * enumerated set of supported styles.
  */
 import { Core } from "@gmloop/core";
