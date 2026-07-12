@@ -105,6 +105,7 @@ export class GmlToJsEmitter {
      */
     private readonly scriptRefs: Set<string>;
     private emitDepth: number;
+    private repeatLoopCounter: number;
     private readonly visitNode = (node: GmlNode): string => this.visit(node);
 
     constructor(semantic: IdentifierAnalyzer & CallTargetAnalyzer, options: Partial<EmitOptions> = {}) {
@@ -114,6 +115,7 @@ export class GmlToJsEmitter {
         this.initializedGlobalVars = new Set();
         this.scriptRefs = new Set();
         this.emitDepth = 0;
+        this.repeatLoopCounter = 0;
     }
 
     /**
@@ -162,6 +164,7 @@ export class GmlToJsEmitter {
             this.globalVars.clear();
             this.initializedGlobalVars.clear();
             this.scriptRefs.clear();
+            this.repeatLoopCounter = 0;
         }
         this.emitDepth += 1;
         try {
@@ -635,9 +638,16 @@ export class GmlToJsEmitter {
     }
 
     private visitRepeatStatement(ast: RepeatStatementNode): string {
+        const counterName = this.nextRepeatCounterName();
         const testExpr = wrapConditional(ast.test, this.visitNode, true) || "0";
         const body = wrapConditionalBody(ast.body, this.visitNode);
-        return `for (let __repeat_count = ${testExpr}; __repeat_count > 0; __repeat_count--)${body}`;
+        return `for (let ${counterName} = ${testExpr}; ${counterName} > 0; ${counterName}--)${body}`;
+    }
+
+    private nextRepeatCounterName(): string {
+        const counterName = `__repeat_count_${this.repeatLoopCounter}`;
+        this.repeatLoopCounter += 1;
+        return counterName;
     }
 
     private visitSwitchStatement(ast: SwitchStatementNode): string {
