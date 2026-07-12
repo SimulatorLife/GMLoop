@@ -273,15 +273,11 @@ void test("constant folding: inequality for well-separated floats", () => {
     assert.strictEqual(tryFoldConstantExpression(ast), true);
 });
 
-void test("constant folding: strict equality (===) for identical floats", () => {
-    const ast = binary("===", 42, 42);
-    assert.strictEqual(tryFoldConstantExpression(ast), true);
-});
-
-void test("constant folding: strict inequality (!==) for identical floats", () => {
-    const ast = binary("!==", 42, 42);
-    assert.strictEqual(tryFoldConstantExpression(ast), false);
-});
+// Note: the strict equality (`===`) and strict inequality (`!==`) cases for
+// identical floats are intentionally covered once in the comparison operators
+// section above ("strict equality for identical floats" / "strict inequality
+// for identical floats"); this epsilon-tolerant section focuses on lossy
+// floating-point behavior and does not duplicate those assertions here.
 
 void test("constant folding: epsilon equality near zero", () => {
     // Relative epsilon with scale floor of 1 means numbers smaller than
