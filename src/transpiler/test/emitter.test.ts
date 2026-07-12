@@ -774,9 +774,28 @@ void test("Transpiler.emitJavaScript handles nested repeat statements", () => {
     const parser = new Parser.GMLParser(source, {});
     const ast = parser.parse();
     const result = Transpiler.emitJavaScript(ast);
-    assert.ok(result.includes("for"), "Should include for loops");
-    assert.ok(result.includes("x"), "Should include outer count");
-    assert.ok(result.includes("y"), "Should include inner count");
+
+    assert.equal(
+        result,
+        [
+            "for (let __repeat_count_0 = x; __repeat_count_0 > 0; __repeat_count_0--) {",
+            "for (let __repeat_count_1 = y; __repeat_count_1 > 0; __repeat_count_1--) {",
+            "z += 1;",
+            "}",
+            "}"
+        ].join("\n")
+    );
+});
+
+void test("Transpiler.emitJavaScript resets repeat counter names between emissions", () => {
+    const firstParser = new Parser.GMLParser("repeat (a) { x += 1; }", {});
+    const secondParser = new Parser.GMLParser("repeat (b) { y += 1; }", {});
+
+    const first = Transpiler.emitJavaScript(firstParser.parse());
+    const second = Transpiler.emitJavaScript(secondParser.parse());
+
+    assert.ok(first.includes("let __repeat_count_0 = a"));
+    assert.ok(second.includes("let __repeat_count_0 = b"));
 });
 
 void test("Transpiler.emitJavaScript handles repeat with break", () => {
