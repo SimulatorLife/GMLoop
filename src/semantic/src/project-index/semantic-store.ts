@@ -78,11 +78,6 @@ export type SemanticIndexStore = Readonly<{
     ) => SemanticPublishResult;
     findImmediateDownstreamFiles: (filePath: string) => ReadonlyArray<string>;
     findUnresolvedDependents: (identifierNames: ReadonlyArray<string>) => ReadonlyArray<string>;
-    writeIndex: (
-        index: Record<string, unknown>,
-        tier: "definitions" | "full",
-        sourceSignature?: string
-    ) => SemanticStoreState;
 }>;
 
 function parseRecordPayload(payload: string): unknown {
@@ -294,17 +289,20 @@ function readProjectHead(database: GraphDatabase, projectRoot: string): Semantic
 function readActiveSlots(database: GraphDatabase, projectRoot: string): SemanticActiveSlots {
     const definitions = readStateForTier(database, projectRoot, "definitions");
     const full = readStateForTier(database, projectRoot, "full");
-    const newest =
-        definitions === null || (full !== null && full.generation > definitions.generation) ? full : definitions;
+    // Definitions are the authoritative navigation boundary whenever they
+    // exist. A full slot is usable for reference operations only when it was
+    // derived from that exact source revision; generation ordering alone is
+    // insufficient because the slots publish independently.
+    const definitionsCapable = definitions ?? full;
     return Object.freeze({
         definitions,
         full,
         hasMatchingFull:
             full !== null &&
-            newest !== null &&
+            definitionsCapable !== null &&
             full.sourceSignature.length > 0 &&
-            full.sourceSignature === newest.sourceSignature,
-        newestDefinitionsRevision: newest?.sourceSignature || null
+            full.sourceSignature === definitionsCapable.sourceSignature,
+        newestDefinitionsRevision: definitionsCapable?.sourceSignature || null
     });
 }
 
@@ -373,26 +371,6 @@ function readIndexForTier(
         target[row.record_key] = parsedPayload;
     }
     return result;
-}
-
-function writeIndex(
-    database: GraphDatabase,
-    projectRoot: string,
-    index: Record<string, unknown>,
-    tier: "definitions" | "full",
-    sourceSignature = ""
-): SemanticStoreState {
-    const result = publishIndex(database, projectRoot, {
-        expectedHeadGeneration: null,
-        index,
-        manifest: null,
-        sourceRevision: sourceSignature,
-        tier
-    });
-    if (result.state === null) {
-        throw new Error("Unconditional semantic publication was unexpectedly superseded.");
-    }
-    return result.state;
 }
 
 function publishIndex(
@@ -642,8 +620,7 @@ export function openSemanticIndexStore(projectRoot: string): SemanticIndexStore 
         readIndexForTier: (tier) => readIndexForTier(database, resolvedRoot, tier),
         readProjectHead: () => readProjectHead(database, resolvedRoot),
         readStateForTier: (tier) => readStateForTier(database, resolvedRoot, tier),
-        publishIndex: (request) => publishIndex(database, resolvedRoot, request),
-        writeIndex: (index, tier, sourceSignature) => writeIndex(database, resolvedRoot, index, tier, sourceSignature)
+        publishIndex: (request) => publishIndex(database, resolvedRoot, request)
     };
 }
 

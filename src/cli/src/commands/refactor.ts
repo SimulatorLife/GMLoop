@@ -43,6 +43,25 @@ const {
     normalizeRefactorProjectConfig
 } = Refactor;
 type RegisteredCodemodId = ReturnType<typeof listRegisteredCodemods>[number]["id"];
+
+async function publishSemanticProjectIndex(projectRoot: string, projectIndex: Record<string, unknown>): Promise<void> {
+    const manifest = await Semantic.buildSemanticFileManifest(projectRoot, Core.defaultFsFacade);
+    const store = Semantic.openSemanticIndexStore(projectRoot);
+    try {
+        const publication = store.publishIndex({
+            expectedHeadGeneration: store.readProjectHead().generation,
+            index: projectIndex,
+            manifest,
+            sourceRevision: manifest.sourceRevision,
+            tier: "full"
+        });
+        if (publication.status === "superseded") {
+            throw new Error(`Semantic refactor publication was superseded for ${projectRoot}.`);
+        }
+    } finally {
+        store.close();
+    }
+}
 type LoadedGmloopProjectConfig = Awaited<ReturnType<typeof Core.loadGmloopProjectConfig>> & {
     refactor?: ReturnType<typeof normalizeRefactorProjectConfig>;
 };
@@ -763,12 +782,7 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
                         semanticBridge.updateProjectIndex(currentProjectIndex);
                     }
 
-                    const store = Semantic.openSemanticIndexStore(projectRoot);
-                    try {
-                        store.writeIndex(currentProjectIndex as Record<string, unknown>, "full");
-                    } finally {
-                        store.close();
-                    }
+                    await publishSemanticProjectIndex(projectRoot, currentProjectIndex as Record<string, unknown>);
                 }
             }
         });
@@ -784,12 +798,10 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
         } else {
             const semanticBridge = engine.semantic as GmlSemanticBridge;
             if (semanticBridge && (semanticBridge as any).projectIndex) {
-                const store = Semantic.openSemanticIndexStore(projectRoot);
-                try {
-                    store.writeIndex((semanticBridge as any).projectIndex as Record<string, unknown>, "full");
-                } finally {
-                    store.close();
-                }
+                await publishSemanticProjectIndex(
+                    projectRoot,
+                    (semanticBridge as any).projectIndex as Record<string, unknown>
+                );
             }
             console.log("\nSuccess! Configured codemods applied.");
         }

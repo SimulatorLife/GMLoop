@@ -1,4 +1,5 @@
 import { Core } from "@gmloop/core";
+import type { ParserOptions } from "@gmloop/parser";
 import * as Parser from "@gmloop/parser";
 
 import { SemanticScopeCoordinator } from "../scopes/identifier-scope.js";
@@ -51,37 +52,17 @@ function resolveParserNamespace(): ParserNamespace {
     throw new Error("Parser namespace is not initialized; call setProjectIndexParserNamespace first.");
 }
 
-function parseProjectIndexSource(sourceText: string, context = {}) {
+function parseProjectIndexSource(sourceText: string, context: Record<string, unknown> = {}) {
     const parserApi = resolveParserNamespace();
 
     try {
-        // WORKAROUND: Keep the parser call behind a single `as any` boundary while
-        // ParserOptions is being unified across workspaces.
-        //
-        // CONTEXT: The ParserOptions interface is evolving across multiple packages
-        // (parser, semantic, format) as the parser is being rebuilt. During this
-        // transition, the options object may have fields that exist at runtime but
-        // don't match the compile-time type definitions in all workspaces.
-        //
-        // SOLUTION: We cast the options to 'any' and pass the runtime values we need
-        // (getComments, getLocations, etc.) from this one adapter instead of leaking
-        // ad-hoc casts across semantic callers. Centralizing the mismatch here keeps
-        // the parser/semantic boundary auditable and aligned with the workspace
-        // ownership rules in docs/target-state.md (see "2. Workspace Ownership
-        // Boundaries"), so future cleanup can remove one seam instead of many.
-        //
-        // WHAT WOULD BREAK: Removing this cast before the parser rebuild is complete
-        // would force every parser call site in semantic to add duplicate unsafe
-        // casts, and TypeScript compilation would fail in whichever workspace first
-        // sees the temporary type drift.
-        //
-        // LONG-TERM FIX: Once the parser package is stable and all packages share a
-        // consistent ParserOptions type, remove this cast and use the properly-typed
-        // options object directly.
-        return parserApi.GMLParser.parse(sourceText, {
-            getComments: false,
+        const parserOptions: Partial<ParserOptions> = {
+            // Semantic documentation is an AST fact. Keeping comments through the
+            // parser attachment pass prevents hover from reopening declaration files.
+            getComments: true,
             getLocations: true,
             simplifyLocations: false,
+            attachFunctionDocComments: true,
             astFormat: "gml",
             asJSON: false,
             scopeTrackerOptions: {
@@ -89,7 +70,8 @@ function parseProjectIndexSource(sourceText: string, context = {}) {
                 getIdentifierMetadata: true,
                 createScopeTracker: createProjectIndexScopeCoordinator
             }
-        });
+        };
+        return parserApi.GMLParser.parse(sourceText, parserOptions);
     } catch (error) {
         if (Core.isSyntaxErrorWithLocation(error)) {
             throw formatProjectIndexSyntaxError(error, sourceText, context);

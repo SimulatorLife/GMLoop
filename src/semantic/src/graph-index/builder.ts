@@ -2072,7 +2072,16 @@ async function getOrBuildProjectIndex(projectRoot: string): Promise<ProjectIndex
         const index = (await buildProjectIndex(projectRoot, Core.defaultFsFacade, {
             parseGml: parser
         })) as ProjectIndexSnapshot;
-        store.writeIndex(index, "full", sourceSignature);
+        const publication = store.publishIndex({
+            expectedHeadGeneration: store.readProjectHead().generation,
+            index,
+            manifest,
+            sourceRevision: sourceSignature,
+            tier: "full"
+        });
+        if (publication.status === "superseded") {
+            throw new Error(`Semantic graph-index publication was superseded for ${projectRoot}.`);
+        }
         return index;
     } finally {
         store.close();

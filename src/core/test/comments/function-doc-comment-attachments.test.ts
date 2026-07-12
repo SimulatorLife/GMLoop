@@ -52,6 +52,33 @@ void test("Core.normalizeFunctionDocCommentAttachments attaches reachable functi
     assert.equal(comment._gmlAttachedDocComment, true);
 });
 
+void test("Core.normalizeFunctionDocCommentAttachments attaches structured documentation tags without @function", () => {
+    const sourceText = [
+        "/// @desc Calculates the damage.",
+        "/// @param {real} value Damage input.",
+        "function demo(value) {}",
+        ""
+    ].join("\n");
+    const functionStartIndex = sourceText.indexOf("function demo");
+    const { functionNode, rootNode } = createDocCommentFixture(functionStartIndex);
+    const descriptionComment: CommentLike = {
+        type: "CommentLine",
+        value: "/// @desc Calculates the damage.",
+        start: { index: 0 },
+        end: { index: sourceText.indexOf("\n") }
+    };
+    const parameterComment: CommentLike = {
+        type: "CommentLine",
+        value: "/// @param {real} value Damage input.",
+        start: { index: sourceText.indexOf("/// @param") },
+        end: { index: sourceText.indexOf("\nfunction") }
+    };
+
+    Core.normalizeFunctionDocCommentAttachments(rootNode, [descriptionComment, parameterComment], sourceText);
+
+    assert.deepStrictEqual(functionNode.docComments, [descriptionComment, parameterComment]);
+});
+
 void test("Core.normalizeFunctionDocCommentAttachments does not cross non-comment code when finding a target", () => {
     const { comment, functionNode, rootNode } = createDocCommentFixture(31);
     const sourceText = ["/// @function demo()", "var blocker = 1;", "function demo() {}", ""].join("\n");

@@ -10,11 +10,30 @@ import { openGraphIndexDatabase } from "../src/graph-index/database.js";
 import { buildSemanticFileManifest } from "../src/project-index/semantic-manifest.js";
 import { getSemanticIndexDatabasePath, openSemanticIndexStore } from "../src/project-index/semantic-store.js";
 
+function publishSnapshot(
+    store: ReturnType<typeof openSemanticIndexStore>,
+    index: Record<string, unknown>,
+    tier: "definitions" | "full",
+    sourceRevision: string
+) {
+    const publication = store.publishIndex({
+        expectedHeadGeneration: store.readProjectHead().generation,
+        index,
+        manifest: null,
+        sourceRevision,
+        tier
+    });
+    assert.equal(publication.status, "published");
+    assert.ok(publication.state);
+    return publication.state;
+}
+
 void test("semantic index store persists records and generation state in SQLite", async () => {
     const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-store-"));
     const store = openSemanticIndexStore(projectRoot);
     try {
-        const first = store.writeIndex(
+        const first = publishSnapshot(
+            store,
             {
                 projectRoot,
                 files: {
@@ -22,7 +41,8 @@ void test("semantic index store persists records and generation state in SQLite"
                 },
                 identifiers: { functions: { main: { displayName: "main" } } }
             },
-            "definitions"
+            "definitions",
+            "revision-definitions-1"
         );
         assert.equal(first.generation, 1);
         assert.equal(first.tier, "definitions");
@@ -33,11 +53,16 @@ void test("semantic index store persists records and generation state in SQLite"
         });
         assert.equal(store.readStateForTier("definitions")?.generation, 1);
 
-        const second = store.writeIndex({ projectRoot, files: {} }, "full");
+        const second = publishSnapshot(store, { projectRoot, files: {} }, "full", "revision-full-1");
         assert.equal(second.generation, 2);
         assert.equal(store.readStateForTier("full")?.tier, "full");
 
-        const definitionsAfterFull = store.writeIndex({ projectRoot, files: { current: {} } }, "definitions");
+        const definitionsAfterFull = publishSnapshot(
+            store,
+            { projectRoot, files: { current: {} } },
+            "definitions",
+            "revision-definitions-2"
+        );
         assert.equal(definitionsAfterFull.generation, 3);
         assert.equal(definitionsAfterFull.tier, "definitions");
         assert.deepEqual(store.readIndexForTier("full")?.files, {});
@@ -48,7 +73,7 @@ void test("semantic index store persists records and generation state in SQLite"
             definitions: definitionsAfterFull,
             full: second,
             hasMatchingFull: false,
-            newestDefinitionsRevision: null
+            newestDefinitionsRevision: "revision-definitions-2"
         });
     } finally {
         store.close();
@@ -83,6 +108,25 @@ void test("semantic index store rejects stale generation publications without ch
         assert.equal(store.readStateForTier("full")?.sourceSignature, "revision-full");
         assert.equal(store.readActiveSlots().hasMatchingFull, true);
         assert.equal(store.readActiveSlots().newestDefinitionsRevision, "revision-full");
+    } finally {
+        store.close();
+    }
+});
+
+void test("semantic active slots keep definitions authoritative when a newer full slot has another revision", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-store-slot-revision-"));
+    const store = openSemanticIndexStore(projectRoot);
+    try {
+        const definitions = publishSnapshot(store, { files: {}, projectRoot }, "definitions", "revision-definitions");
+        publishSnapshot(store, { files: {}, projectRoot }, "full", "revision-definitions");
+        const mismatchedFull = publishSnapshot(store, { files: {}, projectRoot }, "full", "revision-full-other");
+
+        assert.deepEqual(store.readActiveSlots(), {
+            definitions,
+            full: mismatchedFull,
+            hasMatchingFull: false,
+            newestDefinitionsRevision: "revision-definitions"
+        });
     } finally {
         store.close();
     }
@@ -131,13 +175,15 @@ void test("semantic index store restores a matching navigation projection and fa
     const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-store-projection-"));
     const databasePath = getSemanticIndexDatabasePath(projectRoot);
     const store = openSemanticIndexStore(projectRoot);
-    store.writeIndex(
+    publishSnapshot(
+        store,
         {
             files: { "scripts/main.gml": { contentHash: "main-hash", filePath: "scripts/main.gml" } },
             identifiers: { functions: { main: { displayName: "main", filePath: "scripts/main.gml" } } },
             projectRoot
         },
-        "definitions"
+        "definitions",
+        "projection-revision"
     );
     store.close();
 
@@ -249,7 +295,8 @@ void test("semantic index store persists file hashes and immediate reverse depen
     const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-store-dependencies-"));
     const store = openSemanticIndexStore(projectRoot);
     try {
-        store.writeIndex(
+        publishSnapshot(
+            store,
             {
                 projectRoot,
                 files: {
@@ -283,7 +330,8 @@ void test("semantic index store persists file hashes and immediate reverse depen
                     ]
                 }
             },
-            "full"
+            "full",
+            "dependency-revision"
         );
 
         assert.deepEqual(

@@ -509,7 +509,10 @@ function isDocumentWithinProjectRoot(document: GmlTextDocument, projectRoot: str
 /**
  * Create the semantic project-index query facade used by the LSP server.
  */
-export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemanticIndex {
+export function createGmlSemanticIndex(
+    documents: GmlDocumentStore,
+    onSemanticGenerationPublished: (() => void) | null = null
+): GmlSemanticIndex {
     const cachedStates = new Map<string, NavigationState>();
     const staleStates = new Map<string, NavigationState>();
     const inFlightBuilds = new Map<string, Promise<NavigationState | null>>();
@@ -595,9 +598,15 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                 sourceText: openDocument.sourceText
             }));
             const currentManifest = await Semantic.buildSemanticFileManifest(resolvedRoot, fsFacade, overlays);
-            if (Semantic.reconcileSemanticManifests(previousManifest, currentManifest).requiresBuild) {
-                invalidateRoot(resolvedRoot);
-                await refreshIndex(document, [document.filePath], true);
+            const reconciliationResult = Semantic.reconcileSemanticManifests(previousManifest, currentManifest);
+            if (reconciliationResult.requiresBuild) {
+                // Reuse the watched-file batch path so a restarted session applies
+                // every detected disk and overlay change as one impacted set. The
+                // previous implementation refreshed only the opening document and
+                // forced a project rebuild, leaving closed-session edits stale.
+                await refreshForFilePaths(
+                    reconciliationResult.changedFiles.map((change) => path.resolve(resolvedRoot, change.relativePath))
+                );
             }
         })()
             .catch((error: unknown) => {
@@ -738,6 +747,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                     staleStates.delete(resolvedRoot);
 
                     saveIndexCacheToDisk(resolvedRoot, fullState.index, false, buildVersion);
+                    onSemanticGenerationPublished?.();
 
                     return cachedStates.get(resolvedRoot) ?? fullState;
                 }
@@ -802,6 +812,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                         cachedStates.set(resolvedRoot, state);
                         staleStates.delete(resolvedRoot);
                         saveIndexCacheToDisk(resolvedRoot, state.index, true, buildVersion);
+                        onSemanticGenerationPublished?.();
                         void triggerBackgroundFullBuild(document, resolvedRoot);
                         return state;
                     }
@@ -851,12 +862,10 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         if (!currentState && !staleState) {
             try {
                 const store = getSemanticStore(resolvedRoot);
-                const definitionsState = store.readStateForTier("definitions");
-                const fullState = store.readStateForTier("full");
-                const useDefinitions =
-                    definitionsState !== null &&
-                    (fullState === null || definitionsState.generation > fullState.generation);
-                const cachedState = useDefinitions ? definitionsState : fullState;
+                const activeSlots = store.readActiveSlots();
+                const cachedState = activeSlots.hasMatchingFull
+                    ? activeSlots.full
+                    : (activeSlots.definitions ?? activeSlots.full);
                 const cachedProjectIndex = cachedState ? store.readIndexForTier(cachedState.tier) : null;
                 if (cachedProjectIndex && cachedState) {
                     const navIndex = Semantic.createProjectNavigationIndex(cachedProjectIndex);
@@ -922,6 +931,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                         cachedStates.set(resolvedRoot, state);
                         staleStates.delete(resolvedRoot);
                         saveIndexCacheToDisk(resolvedRoot, state.index, true, buildVersion);
+                        onSemanticGenerationPublished?.();
                         void triggerBackgroundFullBuild(document, resolvedRoot);
                         return state;
                     }
@@ -1010,6 +1020,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                     staleStates.delete(resolvedRoot);
 
                     saveIndexCacheToDisk(resolvedRoot, state.index, false, buildVersion);
+                    onSemanticGenerationPublished?.();
 
                     return state;
                 }

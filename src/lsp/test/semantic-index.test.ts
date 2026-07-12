@@ -11,6 +11,16 @@ async function cleanupProjectDir(projectRoot: string) {
     await fs.rm(projectRoot, { recursive: true, force: true }).catch(() => {});
 }
 
+async function waitForCondition(predicate: () => boolean | Promise<boolean>, timeoutMs = 1000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (!(await predicate())) {
+        if (Date.now() >= deadline) {
+            throw new Error("Timed out waiting for asynchronous semantic refresh.");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+}
+
 async function createTwoScriptProject(): Promise<{
     cleanup(): Promise<void>;
     projectRoot: string;
@@ -316,12 +326,16 @@ void test("semantic index double-pass approach exposes fast hover initially, and
             text: "/// @desc test function b\nfunction b() {}"
         });
 
-        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        let publishedGenerationCount = 0;
+        const semanticIndex = Lsp.createGmlSemanticIndex(store, () => {
+            publishedGenerationCount += 1;
+        });
 
         // 1. Initial buildForDocument returns a lightweight state
         const state1 = await semanticIndex.buildForDocument(docB);
         assert.ok(state1);
         assert.equal(state1.lightweight, true, "Initial build should be lightweight (definitionsOnly)");
+        assert.equal(publishedGenerationCount, 1, "Tier 1 should publish a semantic generation");
 
         // 2. Hover is immediately available on the lightweight index — does not block
         const offsetValB = docB.sourceText.lastIndexOf("function b") + 9;
@@ -347,6 +361,7 @@ void test("semantic index double-pass approach exposes fast hover initially, and
         const finalState = await semanticIndex.buildForDocument(docB);
         assert.ok(finalState);
         assert.equal(finalState.lightweight, false, "State should be fully upgraded after findReferences completed");
+        assert.equal(publishedGenerationCount, 2, "Tier 2 should publish a semantic generation");
     } finally {
         await cleanupProjectDir(projectRoot);
     }
@@ -574,5 +589,56 @@ void test("semantic index loads cache from disk on startup and saves updates to 
         );
     } finally {
         await cleanupProjectDir(projectRoot);
+    }
+});
+
+void test("semantic index reconciles closed-session disk edits through one restarted manifest refresh", async () => {
+    const fixture = await createTwoScriptProject();
+    try {
+        const firstStore = Lsp.createGmlDocumentStore();
+        const firstDocument = firstStore.open({
+            uri: Lsp.filePathToUri(fixture.sourcePath),
+            languageId: "gml",
+            version: 1,
+            text: fixture.sourceText
+        });
+        const firstIndex = Lsp.createGmlSemanticIndex(firstStore);
+        await firstIndex.findReferences(firstDocument, fixture.sourceText.indexOf("target();"), "target", false);
+        await firstIndex.dispose();
+
+        const changedSource = ["function source() {", "    restarted_target();", "}", ""].join("\n");
+        await fs.writeFile(fixture.sourcePath, changedSource);
+        await fs.writeFile(
+            fixture.targetPath,
+            ["/// @desc updated target", "function restarted_target() {", "    return 2;", "}", ""].join("\n")
+        );
+
+        const restartedStore = Lsp.createGmlDocumentStore();
+        const restartedDocument = restartedStore.open({
+            uri: Lsp.filePathToUri(fixture.sourcePath),
+            languageId: "gml",
+            version: 1,
+            text: changedSource
+        });
+        const restartedIndex = Lsp.createGmlSemanticIndex(restartedStore);
+
+        const restoredState = await restartedIndex.buildForDocument(restartedDocument);
+        assert.ok(restoredState, "The persisted snapshot should remain immediately usable during reconciliation.");
+
+        await waitForCondition(() =>
+            restartedIndex
+                .searchCompletions(restartedDocument, "restarted_target")
+                .then((items) => items.some((item) => item.label === "restarted_target"))
+        );
+
+        const definition = await restartedIndex.findDefinition(
+            restartedDocument,
+            changedSource.indexOf("restarted_target();"),
+            "restarted_target"
+        );
+        assert.equal(definition?.uri, Lsp.filePathToUri(fixture.targetPath));
+        await restartedIndex.dispose();
+    } finally {
+        await fixture.cleanup();
     }
 });

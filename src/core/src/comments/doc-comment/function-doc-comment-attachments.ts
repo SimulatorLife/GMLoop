@@ -28,7 +28,7 @@ function isFunctionDocTagComment(comment: unknown): comment is CommentNodeWithAt
         return false;
     }
 
-    return /@(?:function|func)\b/i.test(commentNode.value);
+    return /@(?:function|func|desc|description|param|return|returns|deprecated|example|see)\b/i.test(commentNode.value);
 }
 
 function isFunctionLikeInitializer(initializer: unknown): boolean {
@@ -206,7 +206,7 @@ function attachFunctionDocCommentToTarget(comment: CommentNodeWithAttachmentFlag
 }
 
 /**
- * Attach legacy `@function` / `@func` line comments to the nearest reachable
+ * Attach function documentation tag line comments to the nearest reachable
  * function-like AST node without mutating the comment text itself.
  *
  * This is a shared AST normalization primitive used by parser-adjacent

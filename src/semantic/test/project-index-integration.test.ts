@@ -8,12 +8,14 @@ import { createTempProjectWorkspace, recordValues } from "./test-project-helpers
 type IdentifierIndexEntry = {
     name?: string;
     declarations?: Array<{ name?: string }>;
+    documentation?: string;
     references?: Array<{ filePath?: string }>;
 };
 
 type IdentifierCollections = {
     enums: Record<string, IdentifierIndexEntry>;
     enumMembers: Record<string, IdentifierIndexEntry>;
+    functions: Record<string, IdentifierIndexEntry>;
     globalVariables: Record<string, IdentifierIndexEntry>;
     instanceVariables: Record<string, IdentifierIndexEntry>;
     macros: Record<string, IdentifierIndexEntry>;
@@ -240,6 +242,42 @@ void test("buildProjectIndex collects symbols and relationships across project f
         );
         assert.ok(spriteReference, "expected sprite asset reference to be recorded");
         assert.equal(spriteReference.fromResourcePath, "objects/obj_enemy/obj_enemy.yy");
+    } finally {
+        await cleanup();
+    }
+});
+
+void test("buildProjectIndex consumes parser-attached documentation without declaration source rescanning", async () => {
+    const { projectRoot, writeProjectFile, cleanup } = await createTempProjectWorkspace("gml-project-documentation-");
+
+    try {
+        await writeProjectFile("MyGame.yyp", JSON.stringify({ name: "MyGame", resourceType: "GMProject" }));
+        await writeProjectFile(
+            "scripts/documented/documented.gml",
+            [
+                "/// @desc Computes the documented value.",
+                "/// @param {real} value Input value.",
+                "/// @returns {real} Computed value.",
+                "function documented(value) {",
+                "    return value;",
+                "}",
+                ""
+            ].join("\n")
+        );
+
+        const index = (await buildProjectIndex(projectRoot)) as ProjectIndexSnapshot;
+        const documentation = Object.values(index.identifiers.functions).find(
+            (entry) => entry.name === "documented"
+        )?.documentation;
+
+        assert.equal(
+            documentation,
+            [
+                "@desc Computes the documented value.",
+                "@param {real} value Input value.",
+                "@returns {real} Computed value."
+            ].join("\n")
+        );
     } finally {
         await cleanup();
     }

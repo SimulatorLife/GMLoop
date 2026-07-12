@@ -178,7 +178,9 @@ export function createGmlLanguageServer(
     connection = createConnection(ProposedFeatures.all, process.stdin, process.stdout)
 ) {
     const documents = createGmlDocumentStore();
-    const semanticIndex = createGmlSemanticIndex(documents);
+    const semanticIndex = createGmlSemanticIndex(documents, () => {
+        requestSemanticTokenRefresh(connection);
+    });
     const lintRunner = createLintRunner(false);
     const lintFixRunner = createLintRunner(true);
     const pendingDiagnostics = new Map<string, NodeJS.Timeout>();

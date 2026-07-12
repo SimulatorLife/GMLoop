@@ -16,6 +16,7 @@ import { createProjectIndexMetrics, finalizeProjectIndexMetrics } from "./metric
 import { logProjectIndexDebug, type ProjectIndexLogger } from "./project-index-logger.js";
 import { scanProjectTree } from "./project-tree.js";
 import { analyseResourceFiles, createFileScopeDescriptor } from "./resource-analysis.js";
+import { buildSemanticFileManifest } from "./semantic-manifest.js";
 import { getSemanticIndexDatabasePath, openSemanticIndexStore } from "./semantic-store.js";
 
 type BuildProjectIndexFunction = (
@@ -90,14 +91,24 @@ function loadSemanticStoreIndex(descriptor: { projectRoot: string }) {
     }
 }
 
-function saveSemanticStoreIndex(descriptor: { projectRoot: string; projectIndex: Record<string, unknown> }) {
+async function saveSemanticStoreIndex(descriptor: { projectRoot: string; projectIndex: Record<string, unknown> }) {
+    const manifest = await buildSemanticFileManifest(descriptor.projectRoot, Core.defaultFsFacade);
     const store = openSemanticIndexStore(descriptor.projectRoot);
     try {
-        store.writeIndex(descriptor.projectIndex, "full");
-        return Promise.resolve({
+        const publication = store.publishIndex({
+            expectedHeadGeneration: store.readProjectHead().generation,
+            index: descriptor.projectIndex,
+            manifest,
+            sourceRevision: manifest.sourceRevision,
+            tier: "full"
+        });
+        if (publication.status === "superseded") {
+            throw new Error(`Semantic coordinator publication was superseded for ${descriptor.projectRoot}.`);
+        }
+        return {
             status: "written",
             cacheFilePath: getSemanticIndexDatabasePath(descriptor.projectRoot)
-        });
+        };
     } finally {
         store.close();
     }
@@ -360,23 +371,25 @@ function findIdentifierLocation({ source, name, searchStart, searchEnd, lineOffs
     return null;
 }
 
-function extractDeclarationDocumentation(source: string, declarationStart: number): string {
-    const lines = source.slice(0, declarationStart).split(/\r?\n/u);
-    const documentationLines: string[] = [];
-    for (let lineIndex = lines.length - 2; lineIndex >= 0; lineIndex -= 1) {
-        const line = lines[lineIndex]?.trim() ?? "";
-        if (line.length === 0) {
-            if (documentationLines.length === 0) {
-                continue;
-            }
-            break;
-        }
-        if (!line.startsWith("///")) {
-            break;
-        }
-        documentationLines.unshift(line.slice(3).trimStart());
+function extractAttachedDeclarationDocumentation(node: unknown): string {
+    if (!Core.isObjectLike(node)) {
+        return "";
     }
-    return documentationLines.join("\n");
+    const docComments = Object.getOwnPropertyDescriptor(node, "docComments")?.value;
+    if (!Array.isArray(docComments)) {
+        return "";
+    }
+    const lines = docComments.flatMap((comment) => {
+        if (!Core.isObjectLike(comment) || typeof comment.value !== "string") {
+            return [];
+        }
+        return [comment.value.replace(/^\/\s?/u, "").trim()];
+    });
+    return lines.join("\n");
+}
+
+function extractDeclarationDocumentation(node: unknown): string {
+    return extractAttachedDeclarationDocumentation(node);
 }
 function removeSyntheticScriptDeclarations(collection, { name, scopeId }) {
     if (!Array.isArray(collection)) {
@@ -439,7 +452,7 @@ function createFunctionLikeIdentifierRecord({ node, scopeRecord, fileRecord, cla
         isBuiltIn: false,
         isSynthetic: false,
         filePath: fileRecord.filePath,
-        documentation: extractDeclarationDocumentation(source, location.start.index)
+        documentation: extractDeclarationDocumentation(node)
     };
 }
 function createEnumLookup(ast, filePath) {
@@ -2210,8 +2223,12 @@ function reconstructResourceAnalysis(existingIndex: any): {
     resourcesMap: Map<string, any>;
     assetReferences: any[];
     gmlScopeMap: Map<string, any>;
+    scriptNameToResourcePath: Map<string, string>;
+    scriptNameToScopeId: Map<string, string>;
 } {
     const resourcesMap = new Map<string, any>();
+    const scriptNameToScopeId = new Map<string, string>();
+    const scriptNameToResourcePath = new Map<string, string>();
     if (existingIndex && existingIndex.resources) {
         for (const [key, value] of Object.entries(existingIndex.resources)) {
             const val = value as any;
@@ -2224,16 +2241,30 @@ function reconstructResourceAnalysis(existingIndex: any): {
                 assetReferences: val.assetReferences || [],
                 layers: val.layers
             });
+            if (val.resourceType === "GMScript" && typeof val.name === "string" && typeof val.path === "string") {
+                const scopeId = Array.isArray(val.scopes)
+                    ? val.scopes.find(
+                          (candidate: unknown): candidate is string =>
+                              typeof candidate === "string" && candidate.startsWith("scope:script:")
+                      )
+                    : undefined;
+                if (scopeId) {
+                    scriptNameToScopeId.set(val.name, scopeId);
+                }
+                scriptNameToResourcePath.set(val.name, val.path);
+            }
         }
     }
     const assetReferences = existingIndex?.relationships?.assetReferences || [];
 
     const gmlScopeMap = new Map<string, any>();
     if (existingIndex && existingIndex.scopes) {
-        for (const [key, value] of Object.entries(existingIndex.scopes)) {
+        for (const [_key, value] of Object.entries(existingIndex.scopes)) {
             const val = value as any;
-            if (val.kind === "file" && key.startsWith("file:")) {
-                const gmlRelativePath = key.slice(5);
+            const filePaths = Array.isArray(val.filePaths)
+                ? val.filePaths.filter((filePath: unknown): filePath is string => typeof filePath === "string")
+                : [];
+            for (const gmlRelativePath of filePaths) {
                 gmlScopeMap.set(gmlRelativePath, {
                     id: val.id,
                     kind: val.kind,
@@ -2250,7 +2281,9 @@ function reconstructResourceAnalysis(existingIndex: any): {
     return {
         resourcesMap,
         assetReferences,
-        gmlScopeMap
+        gmlScopeMap,
+        scriptNameToResourcePath,
+        scriptNameToScopeId
     };
 }
 
