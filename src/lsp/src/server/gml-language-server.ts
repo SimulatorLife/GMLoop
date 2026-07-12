@@ -354,16 +354,7 @@ export function createGmlLanguageServer(
     if ("onDidChangeWatchedFiles" in connection) {
         connection.onDidChangeWatchedFiles(({ changes }) => {
             runNotificationTask(connection, async () => {
-                await Promise.all(
-                    changes.map(async (change) => {
-                        const filePath = uriToFilePath(change.uri);
-                        if (isGmlDocumentPath(filePath)) {
-                            await semanticIndex.refreshForFilePath(filePath);
-                        } else {
-                            await semanticIndex.invalidateForFilePath(filePath);
-                        }
-                    })
-                );
+                await semanticIndex.refreshForFilePaths(changes.map((change) => uriToFilePath(change.uri)));
                 requestSemanticTokenRefresh(connection);
             });
         });

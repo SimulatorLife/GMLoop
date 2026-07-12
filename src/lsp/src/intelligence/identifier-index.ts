@@ -65,6 +65,7 @@ export type GmlSemanticIndex = Readonly<{
     preload(): void;
     refreshForDocument(document: GmlTextDocument): Promise<NavigationState | null>;
     refreshForFilePath(filePath: string): Promise<NavigationState | null>;
+    refreshForFilePaths(filePaths: ReadonlyArray<string>): Promise<void>;
     searchCompletions(document: GmlTextDocument, query: string): Promise<CompletionItem[]>;
     searchWorkspaceSymbols(document: GmlTextDocument, query: string): Promise<WorkspaceSymbol[]>;
 }>;
@@ -596,7 +597,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
             const currentManifest = await Semantic.buildSemanticFileManifest(resolvedRoot, fsFacade, overlays);
             if (Semantic.reconcileSemanticManifests(previousManifest, currentManifest).requiresBuild) {
                 invalidateRoot(resolvedRoot);
-                triggerBuildInBackground(document, resolvedRoot);
+                await refreshIndex(document, [document.filePath], true);
             }
         })()
             .catch((error: unknown) => {
@@ -1052,6 +1053,89 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         return fullState && !fullState.lightweight ? fullState : null;
     }
 
+    function collectDeclaredNames(
+        index: NavigationIndex,
+        projectRoot: string,
+        filePaths: ReadonlySet<string>
+    ): ReadonlyArray<string> {
+        const rawIndex = index.rawIndex;
+        const rawIndexRecord = Core.isObjectLike(rawIndex) ? (rawIndex as Record<string, unknown>) : {};
+        const rawFiles = Core.isObjectLike(rawIndexRecord.files)
+            ? (rawIndexRecord.files as Record<string, unknown>)
+            : {};
+        const names = new Set<string>();
+        for (const [relativePath, rawFile] of Object.entries(rawFiles)) {
+            if (!filePaths.has(path.resolve(projectRoot, relativePath)) || !Core.isObjectLike(rawFile)) {
+                continue;
+            }
+            const fileRecord = rawFile as Record<string, unknown>;
+            const declarations = Array.isArray(fileRecord.declarations) ? fileRecord.declarations : [];
+            for (const declaration of declarations) {
+                if (!Core.isObjectLike(declaration)) {
+                    continue;
+                }
+                const name = declaration.name;
+                if (typeof name === "string" && name.length > 0) {
+                    names.add(name);
+                }
+            }
+        }
+        return [...names].toSorted((left, right) => left.localeCompare(right));
+    }
+
+    async function refreshForFilePaths(filePaths: ReadonlyArray<string>): Promise<void> {
+        const rootsByFilePath = await Promise.all(
+            filePaths.map(async (filePath) => ({
+                filePath: path.resolve(filePath),
+                projectRoot: await getProjectRoot(filePath)
+            }))
+        );
+        const pathsByProjectRoot = new Map<string, Array<string>>();
+        for (const entry of rootsByFilePath) {
+            if (!entry.projectRoot) {
+                continue;
+            }
+            const resolvedRoot = path.resolve(entry.projectRoot);
+            const paths = pathsByProjectRoot.get(resolvedRoot) ?? [];
+            paths.push(entry.filePath);
+            pathsByProjectRoot.set(resolvedRoot, paths);
+        }
+
+        await [...pathsByProjectRoot.entries()].reduce(async (previous, [projectRoot, changedPaths]) => {
+            await previous;
+            const gmlPaths = changedPaths.filter((changedPath) => isGmlDocumentPath(changedPath));
+            const metadataChanged = gmlPaths.length !== changedPaths.length;
+            const anchorDocument = documents
+                .list()
+                .find((document) => isDocumentWithinProjectRoot(document, projectRoot));
+            if (!anchorDocument) {
+                await Promise.all(changedPaths.map(async (changedPath) => await invalidateKnownFileRoots(changedPath)));
+                return;
+            }
+            const impactedPaths = new Set(gmlPaths);
+            for (const changedPath of gmlPaths) {
+                const relativePath = path.relative(projectRoot, changedPath);
+                for (const downstreamPath of getSemanticStore(projectRoot).findImmediateDownstreamFiles(relativePath)) {
+                    impactedPaths.add(path.join(projectRoot, downstreamPath));
+                }
+            }
+            invalidateRoot(projectRoot);
+            const initialState = await refreshIndex(anchorDocument, [...impactedPaths], metadataChanged);
+            if (metadataChanged || initialState === null || gmlPaths.length === 0) {
+                return;
+            }
+            const unresolvedPaths = getSemanticStore(projectRoot).findUnresolvedDependents(
+                collectDeclaredNames(initialState.index, projectRoot, new Set(gmlPaths))
+            );
+            const unresolvedAbsolutePaths = unresolvedPaths
+                .map((relativePath) => path.join(projectRoot, relativePath))
+                .filter((unresolvedPath) => !impactedPaths.has(unresolvedPath));
+            if (unresolvedAbsolutePaths.length > 0) {
+                await refreshIndex(anchorDocument, unresolvedAbsolutePaths);
+            }
+        }, Promise.resolve());
+    }
+
     return {
         async dispose() {
             for (const controller of abortControllers.values()) {
@@ -1070,6 +1154,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         },
         buildForDocument: ensureIndex,
         refreshForDocument: refreshIndex,
+        refreshForFilePaths,
         invalidateForDocument: invalidateKnownDocumentRoots,
         invalidateForFilePath: invalidateKnownFileRoots,
         async refreshForFilePath(filePath) {

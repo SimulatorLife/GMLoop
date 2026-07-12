@@ -256,6 +256,17 @@ function createSemanticIndexSchemaV5(database: GraphDatabase): void {
         );
         CREATE INDEX IF NOT EXISTS idx_semantic_generation_history_project
             ON semantic_generation_history(project_root, generation DESC);
+        CREATE TABLE IF NOT EXISTS semantic_unresolved_references (
+            project_root TEXT NOT NULL,
+            tier TEXT NOT NULL,
+            identifier_name TEXT NOT NULL,
+            owner_file TEXT NOT NULL,
+            updated_generation INTEGER NOT NULL,
+            PRIMARY KEY (project_root, tier, identifier_name, owner_file),
+            FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_semantic_unresolved_references_name
+            ON semantic_unresolved_references(project_root, tier, identifier_name);
     `);
 }
 

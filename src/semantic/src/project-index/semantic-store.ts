@@ -77,6 +77,7 @@ export type SemanticIndexStore = Readonly<{
         }>
     ) => SemanticPublishResult;
     findImmediateDownstreamFiles: (filePath: string) => ReadonlyArray<string>;
+    findUnresolvedDependents: (identifierNames: ReadonlyArray<string>) => ReadonlyArray<string>;
     writeIndex: (
         index: Record<string, unknown>,
         tier: "definitions" | "full",
@@ -157,7 +158,31 @@ function findImmediateDownstreamFiles(
     ).map((row) => row.downstream_file);
 }
 
-function collectFileDependencies(index: Record<string, unknown>): ReadonlyArray<readonly [string, string]> {
+function findUnresolvedDependents(
+    database: GraphDatabase,
+    projectRoot: string,
+    identifierNames: ReadonlyArray<string>
+): ReadonlyArray<string> {
+    const names = [...new Set(identifierNames.filter((name) => name.length > 0))];
+    if (names.length === 0) {
+        return [];
+    }
+    const placeholders = names.map(() => "?").join(", ");
+    const rows = database
+        .prepare(
+            `SELECT DISTINCT owner_file FROM semantic_unresolved_references WHERE project_root = ? AND tier = 'full' AND identifier_name IN (${placeholders}) ORDER BY owner_file`
+        )
+        .all(projectRoot, ...names) as unknown as ReadonlyArray<{ owner_file: string }>;
+    return rows.map((row) => row.owner_file);
+}
+
+type SemanticDependency = Readonly<{
+    downstreamFile: string;
+    kind: "resolved-symbol-reference" | "script-call";
+    sourceFile: string;
+}>;
+
+function collectFileDependencies(index: Record<string, unknown>): ReadonlyArray<SemanticDependency> {
     const scopes = Core.isObjectLike(index.scopes) ? (index.scopes as Record<string, unknown>) : {};
     const filesByScopeId = new Map<string, ReadonlyArray<string>>();
     for (const [scopeId, rawScope] of Object.entries(scopes)) {
@@ -174,7 +199,44 @@ function collectFileDependencies(index: Record<string, unknown>): ReadonlyArray<
         ? (index.relationships as Record<string, unknown>)
         : {};
     const scriptCalls = Array.isArray(relationships.scriptCalls) ? relationships.scriptCalls : [];
-    const dependencies = new Set<string>();
+    const dependencies = new Map<string, SemanticDependency>();
+    const registerDependency = (sourceFile: string, downstreamFile: string, kind: SemanticDependency["kind"]): void => {
+        if (sourceFile === downstreamFile) {
+            return;
+        }
+        dependencies.set(
+            `${kind}\u0000${sourceFile}\u0000${downstreamFile}`,
+            Object.freeze({ downstreamFile, kind, sourceFile })
+        );
+    };
+
+    const identifiers = Core.isObjectLike(index.identifiers) ? (index.identifiers as Record<string, unknown>) : {};
+    for (const collection of Object.values(identifiers)) {
+        if (!Core.isObjectLike(collection)) {
+            continue;
+        }
+        for (const rawEntry of Object.values(collection as Record<string, unknown>)) {
+            if (!Core.isObjectLike(rawEntry)) {
+                continue;
+            }
+            const entry = rawEntry as Record<string, unknown>;
+            const declarations = Array.isArray(entry.declarations) ? entry.declarations : [];
+            const references = Array.isArray(entry.references) ? entry.references : [];
+            const declarationFiles = declarations.flatMap((declaration) => {
+                const filePath = readRecordString(declaration, "filePath");
+                return filePath ? [filePath] : [];
+            });
+            for (const reference of references) {
+                const referenceFile = readRecordString(reference, "filePath");
+                if (!referenceFile) {
+                    continue;
+                }
+                for (const declarationFile of declarationFiles) {
+                    registerDependency(declarationFile, referenceFile, "resolved-symbol-reference");
+                }
+            }
+        }
+    }
     for (const rawCall of scriptCalls) {
         if (!Core.isObjectLike(rawCall)) {
             continue;
@@ -187,18 +249,16 @@ function collectFileDependencies(index: Record<string, unknown>): ReadonlyArray<
             continue;
         }
         for (const sourceFile of filesByScopeId.get(targetScopeId) ?? []) {
-            if (sourceFile !== downstreamFile) {
-                dependencies.add(`${sourceFile}\u0000${downstreamFile}`);
-            }
+            registerDependency(sourceFile, downstreamFile, "script-call");
         }
     }
-    return [...dependencies]
-        .map((dependency) => dependency.split("\u0000") as [string, string])
-        .toSorted(([leftSource, leftDownstream], [rightSource, rightDownstream]) =>
-            leftSource === rightSource
-                ? leftDownstream.localeCompare(rightDownstream)
-                : leftSource.localeCompare(rightSource)
-        );
+    return [...dependencies.values()].toSorted((left, right) =>
+        left.sourceFile === right.sourceFile
+            ? left.downstreamFile === right.downstreamFile
+                ? left.kind.localeCompare(right.kind)
+                : left.downstreamFile.localeCompare(right.downstreamFile)
+            : left.sourceFile.localeCompare(right.sourceFile)
+    );
 }
 
 function createStorePath(projectRoot: string): string {
@@ -377,6 +437,9 @@ function publishIndex(
         database
             .prepare("DELETE FROM semantic_files WHERE project_root = ? AND tier = ?")
             .run(projectRoot, request.tier);
+        database
+            .prepare("DELETE FROM semantic_unresolved_references WHERE project_root = ? AND tier = ?")
+            .run(projectRoot, request.tier);
 
         const insert = database.prepare(
             "INSERT INTO semantic_slot_records(project_root, tier, record_kind, record_key, file_path, content_hash, payload, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
@@ -477,10 +540,37 @@ function publishIndex(
             }
         }
         const insertDependency = database.prepare(
-            "INSERT INTO semantic_slot_dependencies(project_root, tier, source_file, downstream_file, dependency_kind, symbol_id, updated_generation) VALUES (?, ?, ?, ?, 'script-call', NULL, ?)"
+            "INSERT INTO semantic_slot_dependencies(project_root, tier, source_file, downstream_file, dependency_kind, symbol_id, updated_generation) VALUES (?, ?, ?, ?, ?, NULL, ?)"
         );
-        for (const [sourceFile, downstreamFile] of collectFileDependencies(request.index)) {
-            insertDependency.run(projectRoot, request.tier, sourceFile, downstreamFile, generation);
+        for (const dependency of collectFileDependencies(request.index)) {
+            insertDependency.run(
+                projectRoot,
+                request.tier,
+                dependency.sourceFile,
+                dependency.downstreamFile,
+                dependency.kind,
+                generation
+            );
+        }
+        if (request.tier === "full" && Core.isObjectLike(request.index.files)) {
+            const insertUnresolved = database.prepare(
+                "INSERT INTO semantic_unresolved_references(project_root, tier, identifier_name, owner_file, updated_generation) VALUES (?, ?, ?, ?, ?)"
+            );
+            for (const [filePath, rawFile] of Object.entries(request.index.files as Record<string, unknown>)) {
+                if (!Core.isObjectLike(rawFile)) {
+                    continue;
+                }
+                const fileRecord = rawFile as Record<string, unknown>;
+                const ignoredIdentifiers = Array.isArray(fileRecord.ignoredIdentifiers)
+                    ? fileRecord.ignoredIdentifiers
+                    : [];
+                for (const ignoredIdentifier of ignoredIdentifiers) {
+                    const identifierName = readRecordString(ignoredIdentifier, "name");
+                    if (identifierName) {
+                        insertUnresolved.run(projectRoot, request.tier, identifierName, filePath, generation);
+                    }
+                }
+            }
         }
         if (request.manifest !== null) {
             const insertManifestFile = database.prepare(
@@ -544,6 +634,8 @@ export function openSemanticIndexStore(projectRoot: string): SemanticIndexStore 
     return {
         close: () => database.close(),
         findImmediateDownstreamFiles: (filePath) => findImmediateDownstreamFiles(database, resolvedRoot, filePath),
+        findUnresolvedDependents: (identifierNames) =>
+            findUnresolvedDependents(database, resolvedRoot, identifierNames),
         readActiveSlots: () => readActiveSlots(database, resolvedRoot),
         readManifestForTier: (tier) => readManifestForTier(database, resolvedRoot, tier),
         readFileContentHashes: () => readFileContentHashes(database, resolvedRoot),

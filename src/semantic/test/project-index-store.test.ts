@@ -254,7 +254,21 @@ void test("semantic index store persists file hashes and immediate reverse depen
                 projectRoot,
                 files: {
                     "scripts/a/a.gml": { contentHash: "hash-a", filePath: "scripts/a/a.gml" },
-                    "scripts/b/b.gml": { contentHash: "hash-b", filePath: "scripts/b/b.gml" }
+                    "scripts/b/b.gml": { contentHash: "hash-b", filePath: "scripts/b/b.gml" },
+                    "scripts/c/c.gml": { contentHash: "hash-c", filePath: "scripts/c/c.gml" },
+                    "scripts/d/d.gml": {
+                        contentHash: "hash-d",
+                        filePath: "scripts/d/d.gml",
+                        ignoredIdentifiers: [{ name: "newly_defined" }]
+                    }
+                },
+                identifiers: {
+                    functions: {
+                        "function:resolved": {
+                            declarations: [{ filePath: "scripts/c/c.gml" }],
+                            references: [{ filePath: "scripts/d/d.gml" }]
+                        }
+                    }
                 },
                 scopes: {
                     "script:a": { filePaths: ["scripts/a/a.gml"] },
@@ -276,10 +290,14 @@ void test("semantic index store persists file hashes and immediate reverse depen
             store.readFileContentHashes(),
             new Map([
                 ["scripts/a/a.gml", "hash-a"],
-                ["scripts/b/b.gml", "hash-b"]
+                ["scripts/b/b.gml", "hash-b"],
+                ["scripts/c/c.gml", "hash-c"],
+                ["scripts/d/d.gml", "hash-d"]
             ])
         );
         assert.deepEqual(store.findImmediateDownstreamFiles("scripts/a/a.gml"), ["scripts/b/b.gml"]);
+        assert.deepEqual(store.findImmediateDownstreamFiles("scripts/c/c.gml"), ["scripts/d/d.gml"]);
+        assert.deepEqual(store.findUnresolvedDependents(["newly_defined"]), ["scripts/d/d.gml"]);
         assert.deepEqual(store.findImmediateDownstreamFiles("scripts/b/b.gml"), []);
     } finally {
         store.close();
