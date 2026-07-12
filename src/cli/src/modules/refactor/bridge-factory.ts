@@ -11,8 +11,8 @@
  * can pass them as options instead.
  */
 
-import type { PartialSemanticAnalyzer } from "@gmloop/refactor";
 import type * as Refactor from "@gmloop/refactor";
+import type { PartialSemanticAnalyzer } from "@gmloop/refactor";
 
 import { createGmlParserAdapter, createGmlTranspilerAdapter } from "./bridge-dependencies.js";
 import type { ParserAdapterFactory, TranspilerAdapterFactory } from "./bridge-types.js";

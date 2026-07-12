@@ -158,7 +158,7 @@
     "@gmloop/vscode": "workspace:*",
     "@gmloop/syntax-highlight": "workspace:*",
     "@types/node": "catalog:",
-    "c8": "^9",
+    "c8": "^11",
     "eslint": "catalog:",
     "eslint-config-prettier": "^10",
     "eslint-import-resolver-typescript": "^4",
@@ -168,14 +168,14 @@
     "eslint-plugin-import-x": "^4",
     "eslint-plugin-no-secrets": "^2",
     "eslint-plugin-promise": "^7",
-    "eslint-plugin-regexp": "^2",
+    "eslint-plugin-regexp": "^3",
     "eslint-plugin-security": "^4",
-    "eslint-plugin-simple-import-sort": "^12",
+    "eslint-plugin-simple-import-sort": "^13",
     "eslint-plugin-sonarjs": "^3",
     "eslint-plugin-unicorn": "^62",
     "eslint-plugin-unused-imports": "^4",
-    "eslint-plugin-yml": "^1",
-    "globals": "^16",
+    "eslint-plugin-yml": "^3",
+    "globals": "^17",
     "husky": "^9",
     "jscpd": "^4.2.3",
     "lsp-mcp-server": "^1.1.20",
@@ -184,7 +184,7 @@
     "typescript-eslint": "^8",
     "typescript-language-server": "^5.3.0",
     "ws": "catalog:",
-    "yaml-eslint-parser": "^1"
+    "yaml-eslint-parser": "^2"
   },
   "packageManager": "pnpm@11.7.0"
 }

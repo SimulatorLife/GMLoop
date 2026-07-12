@@ -35,7 +35,7 @@
     "@gmloop/ui": "workspace:*",
     "eslint": "catalog:",
     "ws": "catalog:",
-    "commander": "^14.0.3",
+    "commander": "^15",
     "fast-xml-parser": "^5.8.0",
     "gray-matter": "^4.0.3",
     "linkedom": "^0.18.12"
