@@ -762,8 +762,13 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         if (!currentState && !staleState) {
             try {
                 const store = getSemanticStore(resolvedRoot);
-                const cachedProjectIndex = store.readIndex();
-                const cachedState = store.readState();
+                const definitionsState = store.readStateForTier("definitions");
+                const fullState = store.readStateForTier("full");
+                const useDefinitions =
+                    definitionsState !== null &&
+                    (fullState === null || definitionsState.generation > fullState.generation);
+                const cachedState = useDefinitions ? definitionsState : fullState;
+                const cachedProjectIndex = cachedState ? store.readIndexForTier(cachedState.tier) : null;
                 if (cachedProjectIndex && cachedState) {
                     const navIndex = Semantic.createProjectNavigationIndex(cachedProjectIndex);
                     (navIndex as any).rawIndex = cachedProjectIndex;

@@ -23,11 +23,34 @@ export type SemanticStoreState = Readonly<{
     tier: "definitions" | "full";
 }>;
 
+/** Monotonic project-wide semantic publication boundary. */
+export type SemanticProjectHead = Readonly<{
+    generation: number;
+    projectRoot: string;
+}>;
+
+/** Result of a generation-guarded semantic publication attempt. */
+export type SemanticPublishResult = Readonly<{
+    state: SemanticStoreState | null;
+    status: "published" | "superseded";
+}>;
+
 export type SemanticIndexStore = Readonly<{
     close: () => void;
     readIndex: () => Record<string, unknown> | null;
     readFileContentHashes: () => ReadonlyMap<string, string>;
     readState: () => SemanticStoreState | null;
+    readIndexForTier: (tier: "definitions" | "full") => Record<string, unknown> | null;
+    readStateForTier: (tier: "definitions" | "full") => SemanticStoreState | null;
+    readProjectHead: () => SemanticProjectHead;
+    publishIndex: (
+        request: Readonly<{
+            expectedHeadGeneration: number;
+            index: Record<string, unknown>;
+            sourceRevision: string;
+            tier: "definitions" | "full";
+        }>
+    ) => SemanticPublishResult;
     findImmediateDownstreamFiles: (filePath: string) => ReadonlyArray<string>;
     writeIndex: (
         index: Record<string, unknown>,
@@ -55,7 +78,7 @@ function readRecordString(value: unknown, key: string): string | null {
 function readFileContentHashes(database: GraphDatabase, projectRoot: string): ReadonlyMap<string, string> {
     const rows = database
         .prepare(
-            "SELECT file_path, content_hash FROM semantic_records WHERE project_root = ? AND record_kind = 'files' AND content_hash IS NOT NULL ORDER BY file_path"
+            "SELECT file_path, content_hash FROM semantic_slot_records WHERE project_root = ? AND tier = 'full' AND record_kind = 'files' AND content_hash IS NOT NULL ORDER BY file_path"
         )
         .all(projectRoot) as unknown as ReadonlyArray<SemanticFileHashRow>;
     return new Map(rows.flatMap((row) => (row.content_hash ? [[row.file_path, row.content_hash] as const] : [])));
@@ -69,7 +92,7 @@ function findImmediateDownstreamFiles(
     return (
         database
             .prepare(
-                "SELECT downstream_file FROM semantic_dependencies WHERE project_root = ? AND source_file = ? ORDER BY downstream_file"
+                "SELECT downstream_file FROM semantic_slot_dependencies WHERE project_root = ? AND tier = 'full' AND source_file = ? ORDER BY downstream_file"
             )
             .all(projectRoot, filePath) as unknown as ReadonlyArray<{ downstream_file: string }>
     ).map((row) => row.downstream_file);
@@ -119,84 +142,55 @@ function collectFileDependencies(index: Record<string, unknown>): ReadonlyArray<
         );
 }
 
-/** Compact pre-normalized aggregate rows into the canonical one-fact-per-row layout. */
-function migrateAggregateRecords(database: GraphDatabase, projectRoot: string): void {
-    const rows = database
-        .prepare(
-            "SELECT record_kind, record_key, payload, generation FROM semantic_records WHERE project_root = ? AND record_kind IN ('identifiers', 'relationships')"
-        )
-        .all(projectRoot) as unknown as ReadonlyArray<SemanticRecordRow & { generation: number }>;
-    const identifierRows = rows.filter((row) => row.record_kind === "identifiers" && !row.record_key.includes(":"));
-    const relationshipRows = rows.filter((row) => row.record_kind === "relationships");
-    if (identifierRows.length === 0 && relationshipRows.length === 0) return;
-
-    runGraphDatabaseTransaction(database, () => {
-        const insert = database.prepare(
-            "INSERT OR REPLACE INTO semantic_records(project_root, record_kind, record_key, file_path, content_hash, payload, generation) VALUES (?, ?, ?, NULL, NULL, ?, ?)"
-        );
-        for (const row of identifierRows) {
-            const value = parseRecordPayload(row.payload);
-            if (!Core.isObjectLike(value)) continue;
-            for (const [collectionName, collectionValue] of Object.entries(value)) {
-                if (!Core.isObjectLike(collectionValue)) continue;
-                for (const [entryKey, entryValue] of Object.entries(collectionValue)) {
-                    insert.run(
-                        projectRoot,
-                        "identifiers",
-                        `${collectionName}:${entryKey}`,
-                        JSON.stringify(entryValue),
-                        row.generation
-                    );
-                }
-            }
-        }
-        for (const row of relationshipRows) {
-            const value = parseRecordPayload(row.payload);
-            if (!Core.isObjectLike(value)) continue;
-            const calls = (value as Record<string, unknown>).scriptCalls;
-            if (!Array.isArray(calls)) continue;
-            for (const [callIndex, call] of calls.entries()) {
-                insert.run(projectRoot, "relationship", String(callIndex), JSON.stringify(call), row.generation);
-            }
-        }
-        database
-            .prepare(
-                "DELETE FROM semantic_records WHERE project_root = ? AND (record_kind = 'relationships' OR (record_kind = 'identifiers' AND instr(record_key, ':') = 0))"
-            )
-            .run(projectRoot);
-    });
-}
-
 function createStorePath(projectRoot: string): string {
     return path.join(path.resolve(projectRoot), ".gmloop", "graph-index.sqlite");
 }
 
-function readState(database: GraphDatabase, projectRoot: string): SemanticStoreState | null {
+function readStateForTier(
+    database: GraphDatabase,
+    projectRoot: string,
+    tier: "definitions" | "full"
+): SemanticStoreState | null {
     const row = database
-        .prepare("SELECT generation, tier, source_signature FROM semantic_state WHERE project_root = ?")
-        .get(projectRoot) as { generation?: number; source_signature?: string; tier?: string } | undefined;
+        .prepare("SELECT generation, tier, source_revision FROM semantic_slots WHERE project_root = ? AND tier = ?")
+        .get(projectRoot, tier) as { generation?: number; source_revision?: string; tier?: string } | undefined;
     if (!row || (row.tier !== "definitions" && row.tier !== "full") || typeof row.generation !== "number") {
         return null;
     }
     return Object.freeze({
         generation: row.generation,
         projectRoot,
-        sourceSignature: row.source_signature ?? "",
+        sourceSignature: row.source_revision ?? "",
         tier: row.tier
     });
 }
 
-function readIndex(database: GraphDatabase, projectRoot: string): Record<string, unknown> | null {
-    const state = readState(database, projectRoot);
+function readState(database: GraphDatabase, projectRoot: string): SemanticStoreState | null {
+    return readStateForTier(database, projectRoot, "full") ?? readStateForTier(database, projectRoot, "definitions");
+}
+
+function readProjectHead(database: GraphDatabase, projectRoot: string): SemanticProjectHead {
+    const row = database
+        .prepare("SELECT head_generation FROM semantic_projects WHERE project_root = ?")
+        .get(projectRoot) as { head_generation?: number } | undefined;
+    return Object.freeze({ generation: row?.head_generation ?? 0, projectRoot });
+}
+
+function readIndexForTier(
+    database: GraphDatabase,
+    projectRoot: string,
+    tier: "definitions" | "full"
+): Record<string, unknown> | null {
+    const state = readStateForTier(database, projectRoot, tier);
     if (!state) {
         return null;
     }
 
     const rows = database
         .prepare(
-            "SELECT record_kind, record_key, payload FROM semantic_records WHERE project_root = ? ORDER BY record_kind, record_key"
+            "SELECT record_kind, record_key, payload FROM semantic_slot_records WHERE project_root = ? AND tier = ? ORDER BY record_kind, record_key"
         )
-        .all(projectRoot) as unknown as ReadonlyArray<SemanticRecordRow>;
+        .all(projectRoot, state.tier) as unknown as ReadonlyArray<SemanticRecordRow>;
     const result: Record<string, unknown> = {};
     for (const row of rows) {
         const parsedPayload = parseRecordPayload(row.payload);
@@ -233,6 +227,10 @@ function readIndex(database: GraphDatabase, projectRoot: string): Record<string,
     return result;
 }
 
+function readIndex(database: GraphDatabase, projectRoot: string): Record<string, unknown> | null {
+    return readIndexForTier(database, projectRoot, "full") ?? readIndexForTier(database, projectRoot, "definitions");
+}
+
 function writeIndex(
     database: GraphDatabase,
     projectRoot: string,
@@ -240,30 +238,39 @@ function writeIndex(
     tier: "definitions" | "full",
     sourceSignature = ""
 ): SemanticStoreState {
-    const previous = readState(database, projectRoot);
-    if (previous?.tier === "full" && tier === "definitions") {
-        return previous;
-    }
-    const generation = (previous?.generation ?? 0) + 1;
+    const head = database
+        .prepare("SELECT head_generation FROM semantic_projects WHERE project_root = ?")
+        .get(projectRoot) as { head_generation?: number } | undefined;
+    const generation = (head?.head_generation ?? 0) + 1;
     const updatedAt = new Date().toISOString();
 
     runGraphDatabaseTransaction(database, () => {
         database
             .prepare(
-                "INSERT OR REPLACE INTO semantic_state(project_root, generation, tier, source_signature, updated_at) VALUES (?, ?, ?, ?, ?)"
+                "INSERT INTO semantic_projects(project_root, head_generation, updated_at) VALUES (?, ?, ?) ON CONFLICT(project_root) DO UPDATE SET head_generation = excluded.head_generation, updated_at = excluded.updated_at"
             )
-            .run(projectRoot, generation, tier, sourceSignature, updatedAt);
-        database.prepare("DELETE FROM semantic_records WHERE project_root = ?").run(projectRoot);
-        database.prepare("DELETE FROM semantic_dependencies WHERE project_root = ?").run(projectRoot);
+            .run(projectRoot, generation, updatedAt);
+        database
+            .prepare(
+                "INSERT INTO semantic_slots(project_root, tier, generation, source_revision, base_generation, updated_at) VALUES (?, ?, ?, ?, NULL, ?) ON CONFLICT(project_root, tier) DO UPDATE SET generation = excluded.generation, source_revision = excluded.source_revision, base_generation = excluded.base_generation, updated_at = excluded.updated_at"
+            )
+            .run(projectRoot, tier, generation, sourceSignature, updatedAt);
+        database
+            .prepare("DELETE FROM semantic_slot_records WHERE project_root = ? AND tier = ?")
+            .run(projectRoot, tier);
+        database
+            .prepare("DELETE FROM semantic_slot_dependencies WHERE project_root = ? AND tier = ?")
+            .run(projectRoot, tier);
 
         const insert = database.prepare(
-            "INSERT INTO semantic_records(project_root, record_kind, record_key, file_path, content_hash, payload, generation) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO semantic_slot_records(project_root, tier, record_kind, record_key, file_path, content_hash, payload, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         );
         for (const [recordKind, value] of Object.entries(index)) {
             if (recordKind === "files" && Core.isObjectLike(value)) {
                 for (const [filePath, fileRecord] of Object.entries(value as Record<string, unknown>)) {
                     insert.run(
                         projectRoot,
+                        tier,
                         recordKind,
                         filePath,
                         filePath,
@@ -282,6 +289,7 @@ function writeIndex(
                     for (const [entryKey, entryValue] of Object.entries(collectionValue as Record<string, unknown>)) {
                         insert.run(
                             projectRoot,
+                            tier,
                             "identifiers",
                             `${collectionName}:${entryKey}`,
                             readRecordString(entryValue, "filePath"),
@@ -299,6 +307,7 @@ function writeIndex(
                     for (const [callIndex, call] of scriptCalls.entries()) {
                         insert.run(
                             projectRoot,
+                            tier,
                             "relationship",
                             String(callIndex),
                             Core.isObjectLike(call) && Core.isObjectLike(call.from)
@@ -313,18 +322,27 @@ function writeIndex(
                 continue;
             }
             if (!Core.isObjectLike(value)) {
-                insert.run(projectRoot, recordKind, "__value__", null, null, JSON.stringify(value), generation);
+                insert.run(projectRoot, tier, recordKind, "__value__", null, null, JSON.stringify(value), generation);
                 continue;
             }
             for (const [recordKey, recordValue] of Object.entries(value as Record<string, unknown>)) {
-                insert.run(projectRoot, recordKind, recordKey, null, null, JSON.stringify(recordValue), generation);
+                insert.run(
+                    projectRoot,
+                    tier,
+                    recordKind,
+                    recordKey,
+                    null,
+                    null,
+                    JSON.stringify(recordValue),
+                    generation
+                );
             }
         }
         const insertDependency = database.prepare(
-            "INSERT INTO semantic_dependencies(project_root, source_file, downstream_file) VALUES (?, ?, ?)"
+            "INSERT INTO semantic_slot_dependencies(project_root, tier, source_file, downstream_file, dependency_kind, symbol_id, updated_generation) VALUES (?, ?, ?, ?, 'script-call', NULL, ?)"
         );
         for (const [sourceFile, downstreamFile] of collectFileDependencies(index)) {
-            insertDependency.run(projectRoot, sourceFile, downstreamFile);
+            insertDependency.run(projectRoot, tier, sourceFile, downstreamFile, generation);
         }
     });
 
@@ -335,13 +353,14 @@ function writeIndex(
 export function openSemanticIndexStore(projectRoot: string): SemanticIndexStore {
     const resolvedRoot = path.resolve(projectRoot);
     const database = openGraphIndexDatabase(createStorePath(resolvedRoot));
-    migrateAggregateRecords(database, resolvedRoot);
     return {
         close: () => database.close(),
         findImmediateDownstreamFiles: (filePath) => findImmediateDownstreamFiles(database, resolvedRoot, filePath),
         readFileContentHashes: () => readFileContentHashes(database, resolvedRoot),
         readIndex: () => readIndex(database, resolvedRoot),
+        readIndexForTier: (tier) => readIndexForTier(database, resolvedRoot, tier),
         readState: () => readState(database, resolvedRoot),
+        readStateForTier: (tier) => readStateForTier(database, resolvedRoot, tier),
         writeIndex: (index, tier, sourceSignature) => writeIndex(database, resolvedRoot, index, tier, sourceSignature)
     };
 }

@@ -5,7 +5,7 @@ import {
     runGraphDatabaseTransaction
 } from "./sqlite-adapter.js";
 
-export const GRAPH_INDEX_SCHEMA_VERSION = 3;
+export const GRAPH_INDEX_SCHEMA_VERSION = 4;
 
 const TABLE_RESET_STATEMENTS = Object.freeze([
     "DELETE FROM index_state",
@@ -168,6 +168,85 @@ function createSemanticIndexSchemaV3(database: GraphDatabase): void {
     `);
 }
 
+function createSemanticIndexSchemaV4(database: GraphDatabase): void {
+    database.exec(`
+        CREATE TABLE IF NOT EXISTS semantic_projects (
+            project_root TEXT PRIMARY KEY,
+            head_generation INTEGER NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS semantic_slots (
+            project_root TEXT NOT NULL,
+            tier TEXT NOT NULL CHECK (tier IN ('definitions', 'full')),
+            generation INTEGER NOT NULL,
+            source_revision TEXT NOT NULL,
+            base_generation INTEGER,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (project_root, tier),
+            FOREIGN KEY (project_root) REFERENCES semantic_projects(project_root) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS semantic_slot_records (
+            project_root TEXT NOT NULL,
+            tier TEXT NOT NULL,
+            record_kind TEXT NOT NULL,
+            record_key TEXT NOT NULL,
+            file_path TEXT,
+            content_hash TEXT,
+            payload TEXT NOT NULL,
+            updated_generation INTEGER NOT NULL,
+            PRIMARY KEY (project_root, tier, record_kind, record_key),
+            FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_semantic_slot_records_file
+            ON semantic_slot_records(project_root, tier, file_path);
+        CREATE TABLE IF NOT EXISTS semantic_slot_dependencies (
+            project_root TEXT NOT NULL,
+            tier TEXT NOT NULL,
+            source_file TEXT NOT NULL,
+            downstream_file TEXT NOT NULL,
+            dependency_kind TEXT NOT NULL,
+            symbol_id TEXT,
+            updated_generation INTEGER NOT NULL,
+            PRIMARY KEY (project_root, tier, source_file, downstream_file, dependency_kind, symbol_id),
+            FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_semantic_slot_dependencies_source
+            ON semantic_slot_dependencies(project_root, tier, source_file);
+        CREATE TABLE IF NOT EXISTS semantic_navigation_projection (
+            project_root TEXT NOT NULL,
+            tier TEXT NOT NULL,
+            generation INTEGER NOT NULL,
+            payload TEXT NOT NULL,
+            PRIMARY KEY (project_root, tier),
+            FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
+        );
+    `);
+}
+
+function migrateSemanticIndexSchemaV3ToV4(database: GraphDatabase): void {
+    runGraphDatabaseTransaction(database, () => {
+        database.exec("ALTER TABLE semantic_state RENAME TO semantic_state_v3");
+        database.exec("ALTER TABLE semantic_records RENAME TO semantic_records_v3");
+        database.exec("ALTER TABLE semantic_dependencies RENAME TO semantic_dependencies_v3");
+        createSemanticIndexSchemaV4(database);
+        database.exec(`
+            INSERT INTO semantic_projects(project_root, head_generation, updated_at)
+            SELECT project_root, generation, updated_at FROM semantic_state_v3;
+            INSERT INTO semantic_slots(project_root, tier, generation, source_revision, base_generation, updated_at)
+            SELECT project_root, tier, generation, source_signature, NULL, updated_at FROM semantic_state_v3;
+            INSERT INTO semantic_slot_records(project_root, tier, record_kind, record_key, file_path, content_hash, payload, updated_generation)
+            SELECT records.project_root, state.tier, records.record_kind, records.record_key, records.file_path, records.content_hash, records.payload, records.generation
+            FROM semantic_records_v3 records JOIN semantic_state_v3 state ON state.project_root = records.project_root;
+            INSERT INTO semantic_slot_dependencies(project_root, tier, source_file, downstream_file, dependency_kind, symbol_id, updated_generation)
+            SELECT dependencies.project_root, state.tier, dependencies.source_file, dependencies.downstream_file, 'script-call', NULL, state.generation
+            FROM semantic_dependencies_v3 dependencies JOIN semantic_state_v3 state ON state.project_root = dependencies.project_root;
+        `);
+        database.exec("DROP TABLE semantic_dependencies_v3");
+        database.exec("DROP TABLE semantic_records_v3");
+        database.exec("DROP TABLE semantic_state_v3");
+    });
+}
+
 function ensureSemanticStateSignatureColumn(database: GraphDatabase): void {
     try {
         database.exec("ALTER TABLE semantic_state ADD COLUMN source_signature TEXT NOT NULL DEFAULT ''");
@@ -275,16 +354,14 @@ function ensureGraphIndexSchema(database: GraphDatabase): void {
     const schemaVersion = readGraphIndexSchemaVersion(database);
     if (schemaVersion === null) {
         createGraphIndexSchema(database);
-        createSemanticIndexSchemaV3(database);
-        ensureSemanticStateSignatureColumn(database);
+        createSemanticIndexSchemaV4(database);
         writeGraphIndexSchemaVersion(database);
         return;
     }
 
     if (schemaVersion === 1) {
         migrateGraphIndexSchemaV1ToV2(database);
-        createSemanticIndexSchemaV3(database);
-        ensureSemanticStateSignatureColumn(database);
+        createSemanticIndexSchemaV4(database);
         writeGraphIndexSchemaVersion(database);
         return;
     }
@@ -293,6 +370,14 @@ function ensureGraphIndexSchema(database: GraphDatabase): void {
         createGraphIndexSchemaV2(database);
         createSemanticIndexSchemaV3(database);
         ensureSemanticStateSignatureColumn(database);
+        migrateSemanticIndexSchemaV3ToV4(database);
+        writeGraphIndexSchemaVersion(database);
+        return;
+    }
+
+    if (schemaVersion === 3) {
+        createGraphIndexSchemaV2(database);
+        migrateSemanticIndexSchemaV3ToV4(database);
         writeGraphIndexSchemaVersion(database);
         return;
     }
@@ -304,8 +389,7 @@ function ensureGraphIndexSchema(database: GraphDatabase): void {
     }
 
     createGraphIndexSchemaV2(database);
-    createSemanticIndexSchemaV3(database);
-    ensureSemanticStateSignatureColumn(database);
+    createSemanticIndexSchemaV4(database);
     writeGraphIndexSchemaVersion(database);
 }
 
