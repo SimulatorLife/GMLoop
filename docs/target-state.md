@@ -138,12 +138,6 @@ Use a two-tier workflow: format only when parse succeeds, and run lint in two ph
 10. Fixture goldens may compose multiple canonical rules in `gmloop.json` to preserve output. Do not assign a fixer to the wrong Feather rule, exclude a fixture, or modify a `.gml` golden merely to hide an ownership mismatch. If no domain-correct composition can reproduce the golden, stop for clarification unless the user has explicitly authorized a report-only/unchanged expectation update.
 11. Recommended, all, and Feather presets must stay deduplicated and use canonical owning IDs. When ownership migrates, presets and docs must move to the new IDs in the same change.
 
-### 3.6 Implementation Status & Audit Findings (Snapshot 2026-02-17)
-
-- Formatter and linter split migration is largely complete at runtime.
-- Remaining work includes isolating dormant migrated semantic transform modules from formatter workspace exports and continuing to push any project-aware edit planning into `/refactor` rather than `/lint`.
-- Any existing functionality in the `format` workspace that goes beyond pure layout formatting should be identified and migrated into the `lint` or `core` workspaces.
-
 ## 4. Semantic Analysis, Symbol Indexing, and Storage
 
 ### 4.1 Semantic Analysis Requirements
@@ -177,17 +171,7 @@ If there is any remaining uncertainty or unresolved reference, that indicates a 
 
 Attempts to rename to or from reserved/built-in GameMaker identifiers will be strictly rejected.
 
-### 4.4 Storage Strategy: Canonical Model vs Execution Backend
-
-SCIP remains the canonical symbol model. Storage and execution, however, should use a hybrid bounded-memory architecture rather than a single always-in-memory or always-SQL design.
-
-- **Canonical model**: Symbol definitions and references are represented in SCIP-shaped data.
-- **Execution backend**: Large semantic-index and codemod payloads use bounded-memory processing with spill-to-disk backends.
-- **Default backend**: Temp-file chunking is the default implementation because it reduces memory quickly with lower implementation risk.
-- **Optional backend**: SQLite remains a supported direction for indexed query workloads, but only behind a benchmark gate and only if it materially improves throughput or memory.
-- **Relational projections**: When tooling benefits from relational or graph queries, semantic results may also be projected into SQLite-style `nodes` and `edges` tables without changing the canonical symbol model.
-
-### 4.5 Two-Tiered Semantic Indexing (LSP)
+### 4.4 Two-Tiered Semantic Indexing (LSP)
 
 To minimize Language Server startup and first-hover latencies on large GameMaker projects, GMLoop implements a two-tiered semantic indexing system:
 
@@ -204,7 +188,7 @@ To minimize Language Server startup and first-hover latencies on large GameMaker
   - When the full background build completes, it upgrades the cached navigation state object in place by replacing its index snapshot and clearing its lightweight marker. This preserves the cached state object's identity for existing consumers.
   - The current Tier-2 implementation builds a complete replacement snapshot. Incrementally adding only missing reference and relationship records, and publishing per-file Tier-1 results, remain future optimizations that require explicit snapshot-consistency and invalidation designs plus benchmarks.
 
-### 4.6 Unified Index Caching and Scoped Incremental Re-indexing
+### 4.5 Unified Index Caching and Scoped Incremental Re-indexing
 
 To ensure maximum performance and resource efficiency across all developer touchpoints, GMLoop enforces a unified index cache boundary and a scoped, incremental re-indexing lifecycle:
 
@@ -236,7 +220,7 @@ This plan targets structural memory reduction, not heap-size scaling.
 #### 5.2.1 Goals
 
 1. Reduce peak RSS and heap by avoiding full-project in-memory aggregates where possible.
-2. Improve throughput on large projects by using bounded-memory streaming and chunked processing.
+2. Improve throughput on large projects (e.g. bounded-memory streaming, chunked processing).
 3. Preserve codemod correctness checks that need whole-plan visibility.
 4. Keep resulting codemodded GML semantically equivalent to current behavior.
 5. Keep the architecture deterministic at the output level while allowing internal processing-order differences.

@@ -742,18 +742,16 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
                         initialProjectIndex.files &&
                         Object.keys(initialProjectIndex.files).length > 0
                     ) {
-                        currentProjectIndex = await summary.changedFiles.reduce(async (promiseChain, changedFile) => {
-                            const previousIndex = await promiseChain;
-                            const absPath = path.resolve(projectRoot, changedFile);
-                            return await Semantic.buildProjectIndex(projectRoot, customFsFacade, {
-                                logger: verbose ? console : undefined,
-                                parseGml: tolerantParser,
-                                incremental: {
-                                    existingIndex: previousIndex,
-                                    changedFile: absPath
-                                }
-                            });
-                        }, Promise.resolve(initialProjectIndex));
+                        currentProjectIndex = await Semantic.buildProjectIndex(projectRoot, customFsFacade, {
+                            logger: verbose ? console : undefined,
+                            parseGml: tolerantParser,
+                            incremental: {
+                                changedFiles: summary.changedFiles.map((changedFile) =>
+                                    path.resolve(projectRoot, changedFile)
+                                ),
+                                existingIndex: initialProjectIndex
+                            }
+                        });
                     } else {
                         currentProjectIndex = await Semantic.buildProjectIndex(projectRoot, customFsFacade, {
                             logger: verbose ? console : undefined,

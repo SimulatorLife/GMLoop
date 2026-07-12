@@ -2952,8 +2952,14 @@ export async function buildProjectIndex(projectRoot, fsFacade = Core.defaultFsFa
     let orderedGmlFiles: any[];
 
     if (options?.incremental) {
-        const { existingIndex, changedFile } = options.incremental;
-        const relativeChangedPath = path.relative(resolvedRoot, path.resolve(changedFile));
+        const { existingIndex, changedFiles } = options.incremental;
+        const uniqueChangedFiles = [
+            ...new Set(
+                (Array.isArray(changedFiles) ? changedFiles : [])
+                    .filter((changedFile): changedFile is string => typeof changedFile === "string")
+                    .map((changedFile) => path.resolve(changedFile))
+            )
+        ];
 
         resourceAnalysis = reconstructResourceAnalysis(existingIndex);
         const state = createProjectIndexAggregationStateFromExisting(existingIndex, resourceAnalysis);
@@ -2962,24 +2968,45 @@ export async function buildProjectIndex(projectRoot, fsFacade = Core.defaultFsFa
         relationships = state.relationships;
         identifierCollections = state.identifierCollections;
 
-        removeFileFromAggregationState(relativeChangedPath, scopeMap, filesMap, identifierCollections, relationships);
-
-        let fileResourcePath = `scripts/${path.basename(changedFile, ".gml")}/${path.basename(changedFile)}`;
-        for (const [resPath, resRecord] of resourceAnalysis.resourcesMap.entries()) {
-            if (resRecord.gmlFiles.has(relativeChangedPath)) {
-                fileResourcePath = resPath;
-                break;
+        const changedFileDescriptors = uniqueChangedFiles.map((changedFile) => {
+            const relativeChangedPath = path.relative(resolvedRoot, changedFile);
+            removeFileFromAggregationState(
+                relativeChangedPath,
+                scopeMap,
+                filesMap,
+                identifierCollections,
+                relationships
+            );
+            let fileResourcePath = `scripts/${path.basename(changedFile, ".gml")}/${path.basename(changedFile)}`;
+            for (const [resPath, resRecord] of resourceAnalysis.resourcesMap.entries()) {
+                if (resRecord.gmlFiles.has(relativeChangedPath)) {
+                    fileResourcePath = resPath;
+                    break;
+                }
             }
-        }
-
-        orderedGmlFiles = [
-            {
-                absolutePath: path.resolve(changedFile),
+            return {
+                absolutePath: changedFile,
                 relativePath: relativeChangedPath,
                 name: path.basename(changedFile, ".gml"),
                 resourcePath: fileResourcePath
-            }
-        ];
+            };
+        });
+        const changedPathExistence = await Promise.all(
+            changedFileDescriptors.map(async (descriptor) => {
+                const stats = await runWithMissingPathFallback(
+                    () => fsFacade.stat(descriptor.absolutePath),
+                    () => null
+                );
+                const exists = stats !== null && (typeof stats.isFile !== "function" || stats.isFile());
+                return exists ? descriptor.absolutePath : null;
+            })
+        );
+        const existingChangedPaths = new Set(
+            changedPathExistence.flatMap((filePath) => (filePath === null ? [] : [filePath]))
+        );
+        orderedGmlFiles = changedFileDescriptors.filter((descriptor) =>
+            existingChangedPaths.has(descriptor.absolutePath)
+        );
     } else {
         const { yyFiles, gmlFiles } = await discoverProjectFilesForIndex({
             projectRoot: resolvedRoot,

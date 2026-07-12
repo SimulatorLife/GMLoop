@@ -426,7 +426,8 @@ async function buildSemanticIndexForDocument(
     priorityFiles?: ReadonlyArray<string>,
     definitionsOnly?: boolean,
     signal?: AbortSignal,
-    existingIndex?: any
+    existingIndex?: any,
+    changedFiles: ReadonlyArray<string> = [document.filePath]
 ): Promise<NavigationState | null> {
     const projectRoot = await getProjectRoot(document.filePath);
     if (!projectRoot) {
@@ -440,7 +441,7 @@ async function buildSemanticIndexForDocument(
         incremental: existingIndex
             ? {
                   existingIndex,
-                  changedFile: document.filePath
+                  changedFiles
               }
             : undefined
     });
@@ -933,7 +934,10 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         return await inFlight;
     }
 
-    async function refreshIndex(document: GmlTextDocument): Promise<NavigationState | null> {
+    async function refreshIndex(
+        document: GmlTextDocument,
+        changedFiles: ReadonlyArray<string> = [document.filePath]
+    ): Promise<NavigationState | null> {
         const resolvedUri = document.uri;
         const startDocVersion = readDocumentVersion(resolvedUri);
         const projectRoot = await getProjectRoot(document.filePath);
@@ -975,7 +979,8 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                     priorityFiles,
                     false,
                     controller.signal,
-                    canIncremental ? existingState.index.rawIndex : undefined
+                    canIncremental ? existingState.index.rawIndex : undefined,
+                    changedFiles
                 );
                 if (
                     state &&
@@ -1012,32 +1017,6 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         });
         inFlightBuilds.set(resolvedRoot, finalInFlight);
         return await finalInFlight;
-    }
-
-    async function refreshImmediateDownstreamFiles(projectRoot: string, changedFilePath: string): Promise<void> {
-        const changedRelativePath = path.relative(projectRoot, changedFilePath);
-        const downstreamFiles = getSemanticStore(projectRoot).findImmediateDownstreamFiles(changedRelativePath);
-        const refreshNext = async (index: number): Promise<void> => {
-            const downstreamRelativePath = downstreamFiles[index];
-            if (!downstreamRelativePath) {
-                return;
-            }
-            const downstreamFilePath = path.join(projectRoot, downstreamRelativePath);
-            const openedDocument = documents
-                .list()
-                .find((document) => path.resolve(document.filePath) === path.resolve(downstreamFilePath));
-            const document =
-                openedDocument ??
-                createGmlTextDocument(
-                    filePathToUri(downstreamFilePath),
-                    "gml",
-                    0,
-                    await fs.readFile(downstreamFilePath, "utf8")
-                );
-            await refreshIndex(document);
-            await refreshNext(index + 1);
-        };
-        await refreshNext(0);
     }
 
     async function ensureFullIndex(document: GmlTextDocument): Promise<NavigationState | null> {
@@ -1086,28 +1065,35 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
             }
 
             const resolvedPath = path.resolve(filePath);
+            const projectRoot = await getProjectRoot(resolvedPath);
+            const resolvedRoot = projectRoot ? path.resolve(projectRoot) : null;
+            const changedFiles = resolvedRoot
+                ? [
+                      resolvedPath,
+                      ...getSemanticStore(resolvedRoot)
+                          .findImmediateDownstreamFiles(path.relative(resolvedRoot, resolvedPath))
+                          .map((relativePath) => path.join(resolvedRoot, relativePath))
+                  ]
+                : [resolvedPath];
             const openedDocument = documents
                 .list()
                 .find((document) => path.resolve(document.filePath) === resolvedPath);
             if (openedDocument) {
                 invalidateKnownDocumentRoots(openedDocument);
-                const state = await refreshIndex(openedDocument);
-                const projectRoot = await getProjectRoot(resolvedPath);
-                if (state && projectRoot) {
-                    await refreshImmediateDownstreamFiles(path.resolve(projectRoot), resolvedPath);
-                }
-                return state;
+                return await refreshIndex(openedDocument, changedFiles);
             }
 
-            const sourceText = await fs.readFile(resolvedPath, "utf8");
+            let sourceText = "";
+            try {
+                sourceText = await fs.readFile(resolvedPath, "utf8");
+            } catch (error) {
+                if (!Core.isErrorWithCode(error, "ENOENT")) {
+                    throw error;
+                }
+            }
             const document = createGmlTextDocument(filePathToUri(resolvedPath), "gml", 0, sourceText);
             await invalidateKnownFileRoots(resolvedPath);
-            const state = await refreshIndex(document);
-            const projectRoot = await getProjectRoot(resolvedPath);
-            if (state && projectRoot) {
-                await refreshImmediateDownstreamFiles(path.resolve(projectRoot), resolvedPath);
-            }
-            return state;
+            return await refreshIndex(document, changedFiles);
         },
         preload() {
             try {

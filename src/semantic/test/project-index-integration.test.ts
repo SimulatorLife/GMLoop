@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { unlink } from "node:fs/promises";
 import test from "node:test";
 
 import { buildProjectIndex } from "../src/project-index/index.js";
@@ -270,6 +271,31 @@ void test("definitions-only indexing never records references or script-call rel
         assert.deepEqual(index.relationships.scriptCalls, []);
         assert.deepEqual(index.files["scripts/consumer/consumer.gml"]?.scriptCalls, []);
         assert.deepEqual(index.identifiers.scripts["scope:script:source"]?.references, []);
+    } finally {
+        await cleanup();
+    }
+});
+
+void test("batched incremental indexing removes deleted file facts without parsing the deleted path", async () => {
+    const { projectRoot, writeProjectFile, cleanup } = await createTempProjectWorkspace("gml-incremental-delete-");
+    try {
+        await writeProjectFile("Game.yyp", JSON.stringify({ name: "Game", resourceType: "GMProject" }));
+        await writeProjectFile(
+            "scripts/removed/removed.yy",
+            JSON.stringify({ name: "removed", resourceType: "GMScript" })
+        );
+        const removedPath = await writeProjectFile("scripts/removed/removed.gml", "function removed() { return 1; }\n");
+        await writeProjectFile("scripts/kept/kept.yy", JSON.stringify({ name: "kept", resourceType: "GMScript" }));
+        await writeProjectFile("scripts/kept/kept.gml", "function kept() { return 2; }\n");
+        const initial = await buildProjectIndex(projectRoot);
+
+        await unlink(removedPath);
+        const updated = (await buildProjectIndex(projectRoot, undefined, {
+            incremental: { changedFiles: [removedPath], existingIndex: initial }
+        })) as ProjectIndexSnapshot;
+
+        assert.equal(updated.files["scripts/removed/removed.gml"], undefined);
+        assert.ok(updated.files["scripts/kept/kept.gml"]);
     } finally {
         await cleanup();
     }

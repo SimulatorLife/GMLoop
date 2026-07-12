@@ -10,7 +10,6 @@ import {
     DidChangeConfigurationNotification,
     DocumentHighlight,
     DocumentHighlightKind,
-    FileChangeType,
     InitializeResult,
     Location,
     ProposedFeatures,
@@ -358,10 +357,10 @@ export function createGmlLanguageServer(
                 await Promise.all(
                     changes.map(async (change) => {
                         const filePath = uriToFilePath(change.uri);
-                        if (change.type === FileChangeType.Deleted || !isGmlDocumentPath(filePath)) {
-                            await semanticIndex.invalidateForFilePath(filePath);
-                        } else {
+                        if (isGmlDocumentPath(filePath)) {
                             await semanticIndex.refreshForFilePath(filePath);
+                        } else {
+                            await semanticIndex.invalidateForFilePath(filePath);
                         }
                     })
                 );
