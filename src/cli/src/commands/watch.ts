@@ -545,10 +545,12 @@ async function performInitialScan(
             // file that was already processed during startup, cutting initial scan overhead
             // roughly in half for typical GML projects.
             const cached = takeInitialFileData(fileDataCache, fullPath);
-            const content = cached?.content ?? (await readFile(fullPath, "utf8"));
-            const cachedAst = cached?.ast;
+            const currentStats = await stat(fullPath);
+            const canUseCachedFileData = cached !== undefined && cached.mtimeMs === currentStats.mtimeMs;
+            const content = canUseCachedFileData ? cached.content : await readFile(fullPath, "utf8");
+            const cachedAst = canUseCachedFileData ? cached.ast : undefined;
             const lines = countSourceLines(content);
-            await updateFileSnapshot(runtimeContext, fullPath);
+            runtimeContext.fileSnapshots.set(fullPath, currentStats.mtimeMs);
 
             // Store the initial content hash so that change events immediately after
             // startup are skipped if the file content has not actually changed.
@@ -565,8 +567,8 @@ async function performInitialScan(
                 verbose: false,
                 quiet: true,
                 cachedAst,
-                cachedSymbols: cached?.symbols,
-                cachedReferences: cached?.references,
+                cachedSymbols: canUseCachedFileData ? cached.symbols : undefined,
+                cachedReferences: canUseCachedFileData ? cached.references : undefined,
                 deliverRuntimePatch: false
             });
 
@@ -1876,6 +1878,7 @@ async function addScriptNamesFromFile(
 
     try {
         const content = await readFile(filePath, "utf8");
+        const { mtimeMs } = await stat(filePath);
         // Use the dependency-inverted parser adapter seam rather than
         // `new Parser.GMLParser(...)` so tests/embedders can swap in a stub
         // parser without monkey-patching the @gmloop/parser namespace.
@@ -1885,7 +1888,7 @@ async function addScriptNamesFromFile(
         const symbols = extractSymbolsFromAst(ast, filePath);
         const references = extractReferencesFromAst(ast);
         registerScriptNamesFromSymbols(symbols, scriptNames);
-        fileDataCache.set(filePath, { content, ast, symbols, references });
+        fileDataCache.set(filePath, { content, ast, mtimeMs, symbols, references });
     } catch {
         // Ignore parse errors; fallback to file-name based script
     }
