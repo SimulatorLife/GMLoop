@@ -24,54 +24,172 @@ void test("semantic index store persists records and generation state in SQLite"
         assert.equal(first.generation, 1);
         assert.equal(first.tier, "definitions");
 
-        const restored = store.readIndex();
+        const restored = store.readIndexForTier("definitions");
         assert.deepEqual(restored?.files, {
             "scripts/main.gml": { filePath: "scripts/main.gml", declarations: [] }
         });
-        assert.equal(store.readState()?.generation, 1);
+        assert.equal(store.readStateForTier("definitions")?.generation, 1);
 
         const second = store.writeIndex({ projectRoot, files: {} }, "full");
         assert.equal(second.generation, 2);
-        assert.equal(store.readState()?.tier, "full");
+        assert.equal(store.readStateForTier("full")?.tier, "full");
 
-        const definitionsAfterFull = store.writeIndex({ projectRoot, files: { stale: {} } }, "definitions");
-        assert.equal(definitionsAfterFull.generation, 2);
-        assert.equal(definitionsAfterFull.tier, "full");
-        assert.deepEqual(store.readIndex()?.files, {});
+        const definitionsAfterFull = store.writeIndex({ projectRoot, files: { current: {} } }, "definitions");
+        assert.equal(definitionsAfterFull.generation, 3);
+        assert.equal(definitionsAfterFull.tier, "definitions");
+        assert.deepEqual(store.readIndexForTier("full")?.files, {});
+        assert.deepEqual(store.readIndexForTier("definitions")?.files, { current: {} });
+        assert.equal(store.readStateForTier("full")?.generation, 2);
+        assert.equal(store.readStateForTier("definitions")?.generation, 3);
     } finally {
         store.close();
     }
 });
 
-void test("semantic index store compacts legacy aggregate rows on open", async () => {
-    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-store-migration-"));
-    const initialStore = openSemanticIndexStore(projectRoot);
-    initialStore.writeIndex({ projectRoot, identifiers: { functions: { main: { displayName: "main" } } } }, "full");
-    initialStore.close();
-
-    const database = openGraphIndexDatabase(getSemanticIndexDatabasePath(projectRoot));
-    database.prepare("DELETE FROM semantic_records WHERE project_root = ?").run(projectRoot);
-    database
-        .prepare(
-            "INSERT INTO semantic_records(project_root, record_kind, record_key, file_path, content_hash, payload, generation) VALUES (?, 'identifiers', '__value__', NULL, NULL, ?, 1)"
-        )
-        .run(projectRoot, JSON.stringify({ functions: { main: { displayName: "main" } } }));
-    database
-        .prepare(
-            "INSERT INTO semantic_records(project_root, record_kind, record_key, file_path, content_hash, payload, generation) VALUES (?, 'relationships', '__value__', NULL, NULL, ?, 1)"
-        )
-        .run(projectRoot, JSON.stringify({ scriptCalls: [{ from: "main", to: "other" }] }));
-    database.close();
-
-    const migratedStore = openSemanticIndexStore(projectRoot);
+void test("semantic index store rejects stale generation publications without changing either slot", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-store-cas-"));
+    const store = openSemanticIndexStore(projectRoot);
     try {
-        const restored = migratedStore.readIndex();
-        assert.deepEqual((restored?.identifiers as Record<string, unknown>).functions, {
-            main: { displayName: "main" }
+        const initialHead = store.readProjectHead();
+        const fullPublication = store.publishIndex({
+            expectedHeadGeneration: initialHead.generation,
+            index: { files: { "scripts/main.gml": { filePath: "scripts/main.gml" } }, projectRoot },
+            sourceRevision: "revision-full",
+            tier: "full"
         });
-        assert.deepEqual(restored?.relationships, { scriptCalls: [{ from: "main", to: "other" }] });
+        assert.equal(fullPublication.status, "published");
+        assert.equal(fullPublication.state?.generation, 1);
+
+        const staleDefinitionsPublication = store.publishIndex({
+            expectedHeadGeneration: initialHead.generation,
+            index: { files: { "scripts/main.gml": { filePath: "scripts/main.gml" } }, projectRoot },
+            sourceRevision: "revision-definitions",
+            tier: "definitions"
+        });
+        assert.deepEqual(staleDefinitionsPublication, { state: null, status: "superseded" });
+        assert.equal(store.readProjectHead().generation, 1);
+        assert.equal(store.readStateForTier("definitions"), null);
+        assert.equal(store.readStateForTier("full")?.sourceSignature, "revision-full");
     } finally {
-        migratedStore.close();
+        store.close();
+    }
+});
+
+void test("semantic index store restores a matching navigation projection and falls back when it is corrupt", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-store-projection-"));
+    const databasePath = getSemanticIndexDatabasePath(projectRoot);
+    const store = openSemanticIndexStore(projectRoot);
+    store.writeIndex(
+        {
+            files: { "scripts/main.gml": { contentHash: "main-hash", filePath: "scripts/main.gml" } },
+            identifiers: { functions: { main: { displayName: "main", filePath: "scripts/main.gml" } } },
+            projectRoot
+        },
+        "definitions"
+    );
+    store.close();
+
+    const database = openGraphIndexDatabase(databasePath);
+    try {
+        const projection = database
+            .prepare(
+                "SELECT generation, payload FROM semantic_navigation_projection WHERE project_root = ? AND tier = 'definitions'"
+            )
+            .get(projectRoot) as { generation: number; payload: string } | undefined;
+        assert.equal(projection?.generation, 1);
+        assert.deepEqual(JSON.parse(projection?.payload ?? "null"), {
+            files: { "scripts/main.gml": { contentHash: "main-hash", filePath: "scripts/main.gml" } },
+            identifiers: { functions: { main: { displayName: "main", filePath: "scripts/main.gml" } } },
+            projectRoot
+        });
+        database
+            .prepare(
+                "UPDATE semantic_navigation_projection SET payload = 'not-json' WHERE project_root = ? AND tier = 'definitions'"
+            )
+            .run(projectRoot);
+    } finally {
+        database.close();
+    }
+
+    const restoredStore = openSemanticIndexStore(projectRoot);
+    try {
+        assert.deepEqual(restoredStore.readIndexForTier("definitions"), {
+            files: { "scripts/main.gml": { contentHash: "main-hash", filePath: "scripts/main.gml" } },
+            identifiers: { functions: { main: { displayName: "main", filePath: "scripts/main.gml" } } },
+            projectRoot
+        });
+    } finally {
+        restoredStore.close();
+    }
+});
+
+void test("semantic index store migrates a v3 semantic snapshot into its independent slot", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-store-v3-migration-"));
+    const databasePath = getSemanticIndexDatabasePath(projectRoot);
+    const database = openGraphIndexDatabase(databasePath);
+    try {
+        database.exec(`
+            DROP TABLE semantic_navigation_projection;
+            DROP TABLE semantic_slot_dependencies;
+            DROP TABLE semantic_slot_records;
+            DROP TABLE semantic_slots;
+            DROP TABLE semantic_projects;
+            CREATE TABLE semantic_state (
+                project_root TEXT PRIMARY KEY,
+                generation INTEGER NOT NULL,
+                tier TEXT NOT NULL,
+                source_signature TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE semantic_records (
+                project_root TEXT NOT NULL,
+                record_kind TEXT NOT NULL,
+                record_key TEXT NOT NULL,
+                file_path TEXT,
+                content_hash TEXT,
+                payload TEXT NOT NULL,
+                generation INTEGER NOT NULL,
+                PRIMARY KEY (project_root, record_kind, record_key)
+            );
+            CREATE TABLE semantic_dependencies (
+                project_root TEXT NOT NULL,
+                source_file TEXT NOT NULL,
+                downstream_file TEXT NOT NULL,
+                PRIMARY KEY (project_root, source_file, downstream_file)
+            );
+        `);
+        database.prepare("UPDATE schema_meta SET value = '3' WHERE key = 'schema_version'").run();
+        database
+            .prepare(
+                "INSERT INTO semantic_state(project_root, generation, tier, source_signature, updated_at) VALUES (?, ?, 'full', ?, ?)"
+            )
+            .run(projectRoot, 7, "v3-source", new Date().toISOString());
+        database
+            .prepare(
+                "INSERT INTO semantic_records(project_root, record_kind, record_key, file_path, content_hash, payload, generation) VALUES (?, 'files', 'scripts/main.gml', 'scripts/main.gml', 'hash-main', ?, 7)"
+            )
+            .run(projectRoot, JSON.stringify({ contentHash: "hash-main", filePath: "scripts/main.gml" }));
+        database
+            .prepare("INSERT INTO semantic_dependencies(project_root, source_file, downstream_file) VALUES (?, ?, ?)")
+            .run(projectRoot, "scripts/main.gml", "scripts/use-main.gml");
+    } finally {
+        database.close();
+    }
+
+    const store = openSemanticIndexStore(projectRoot);
+    try {
+        assert.deepEqual(store.readProjectHead(), { generation: 7, projectRoot });
+        assert.deepEqual(store.readStateForTier("full"), {
+            generation: 7,
+            projectRoot,
+            sourceSignature: "v3-source",
+            tier: "full"
+        });
+        assert.equal(store.readStateForTier("definitions"), null);
+        assert.deepEqual(store.readFileContentHashes(), new Map([["scripts/main.gml", "hash-main"]]));
+        assert.deepEqual(store.findImmediateDownstreamFiles("scripts/main.gml"), ["scripts/use-main.gml"]);
+    } finally {
+        store.close();
     }
 });
 

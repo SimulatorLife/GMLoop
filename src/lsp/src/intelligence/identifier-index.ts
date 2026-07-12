@@ -502,7 +502,6 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
     const semanticStores = new Map<string, SemanticIndexStore>();
     const documentVersions = new Map<string, number>();
     const pendingCacheWrites = new Map<string, Promise<void>>();
-    const persistedTiers = new Map<string, "definitions" | "full">();
     const fsFacade = createLspFsFacade(documents);
 
     function readRootVersion(projectRoot: string): number {
@@ -546,10 +545,6 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
 
     function saveIndexCacheToDisk(resolvedRoot: string, index: NavigationIndex, lightweight: boolean): void {
         const tier = lightweight ? "definitions" : "full";
-        const previousTier = persistedTiers.get(resolvedRoot);
-        if (tier === "definitions" && previousTier === "full") {
-            return;
-        }
 
         const previousWrite = pendingCacheWrites.get(resolvedRoot) ?? Promise.resolve();
         const write = previousWrite
@@ -559,7 +554,6 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
             })
             .then(() => {
                 getSemanticStore(resolvedRoot).writeIndex(index.rawIndex as Record<string, unknown>, tier);
-                persistedTiers.set(resolvedRoot, tier);
                 return undefined;
             })
             .catch((error: unknown) => {
@@ -778,7 +772,6 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                         lightweight: cachedState.tier === "definitions"
                     };
                     cachedStates.set(resolvedRoot, loadedState);
-                    persistedTiers.set(resolvedRoot, cachedState.tier);
                     currentState = loadedState;
                 }
             } catch (error) {

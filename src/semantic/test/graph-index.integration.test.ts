@@ -387,7 +387,7 @@ void test("openExistingGraphIndexDatabase migrates a v1 database to the current 
             const schemaVersion = migrated
                 .prepare("SELECT value FROM schema_meta WHERE key = 'schema_version'")
                 .get() as { value: string } | undefined;
-            assert.equal(schemaVersion?.value, "3");
+            assert.equal(schemaVersion?.value, "4");
             const nodeCount = migrated.prepare("SELECT COUNT(*) AS count FROM nodes").get() as { count: number };
             assert.equal(nodeCount.count, 1);
             const foreignKeys = migrated.prepare("PRAGMA foreign_keys").get() as { foreign_keys: number };

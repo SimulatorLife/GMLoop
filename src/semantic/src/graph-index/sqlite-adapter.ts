@@ -64,6 +64,24 @@ export function runGraphDatabaseTransaction(database: GraphDatabase, operation: 
 }
 
 /**
+ * Run an exclusive write-intent transaction against the graph database.
+ *
+ * `BEGIN IMMEDIATE` obtains the writer reservation before callers inspect a
+ * compare-and-swap value. This prevents separate processes from reading the
+ * same project head and both attempting to publish a semantic generation.
+ */
+export function runGraphDatabaseImmediateTransaction(database: GraphDatabase, operation: () => void): void {
+    database.exec("BEGIN IMMEDIATE");
+    try {
+        operation();
+        database.exec("COMMIT");
+    } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+    }
+}
+
+/**
  * Run lightweight maintenance passes after graph writes.
  */
 export function optimizeGraphDatabase(database: GraphDatabase): void {

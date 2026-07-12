@@ -2088,8 +2088,8 @@ async function getOrBuildProjectIndex(projectRoot: string): Promise<ProjectIndex
     const { manifestMtimes, sourceMtimes } = await collectProjectIndexMtimes(projectRoot);
     const sourceSignature = JSON.stringify({ manifestMtimes, sourceMtimes });
     const store = openSemanticIndexStore(projectRoot);
-    const storedState = store.readState();
-    const storedIndex = store.readIndex();
+    const storedState = store.readStateForTier("full");
+    const storedIndex = store.readIndexForTier("full");
     if (storedIndex && storedState?.sourceSignature === sourceSignature) {
         store.close();
         return storedIndex;

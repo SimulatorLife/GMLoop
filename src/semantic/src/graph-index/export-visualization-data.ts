@@ -6,8 +6,8 @@ import type { GraphEdgeType, GraphIndexScope, GraphNodeKind, GraphVisualizationD
  * Excludes large fields like vectors to minimize the payload size.
  */
 export function exportGraphVisualizationData(database: GraphDatabase, projectRoot: string): GraphVisualizationData {
-    const semanticState = database
-        .prepare("SELECT generation FROM semantic_state WHERE project_root = ?")
+    const semanticProject = database
+        .prepare("SELECT head_generation AS generation FROM semantic_projects WHERE project_root = ?")
         .get(projectRoot) as { generation?: number } | undefined;
     // 1. Fetch graphs
     const graphsResult = database
@@ -131,7 +131,7 @@ export function exportGraphVisualizationData(database: GraphDatabase, projectRoo
     return {
         edges,
         generatedAt: new Date().toISOString(),
-        generation: semanticState?.generation,
+        generation: semanticProject?.generation,
         graphs,
         nodes,
         projectRoot

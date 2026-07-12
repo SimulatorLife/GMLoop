@@ -30,6 +30,7 @@ export {
     openExistingGraphDatabase,
     openGraphDatabase,
     optimizeGraphDatabase,
+    runGraphDatabaseImmediateTransaction,
     runGraphDatabaseTransaction
 } from "./sqlite-adapter.js";
 export {

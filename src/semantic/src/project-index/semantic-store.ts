@@ -3,12 +3,17 @@ import path from "node:path";
 import { Core } from "@gmloop/core";
 
 import { openGraphIndexDatabase } from "../graph-index/database.js";
-import { type GraphDatabase, runGraphDatabaseTransaction } from "../graph-index/sqlite-adapter.js";
+import { type GraphDatabase, runGraphDatabaseImmediateTransaction } from "../graph-index/sqlite-adapter.js";
 
 type SemanticRecordRow = Readonly<{
     payload: string;
     record_key: string;
     record_kind: string;
+}>;
+
+type SemanticNavigationProjectionRow = Readonly<{
+    generation: number;
+    payload: string;
 }>;
 
 type SemanticFileHashRow = Readonly<{
@@ -37,9 +42,7 @@ export type SemanticPublishResult = Readonly<{
 
 export type SemanticIndexStore = Readonly<{
     close: () => void;
-    readIndex: () => Record<string, unknown> | null;
     readFileContentHashes: () => ReadonlyMap<string, string>;
-    readState: () => SemanticStoreState | null;
     readIndexForTier: (tier: "definitions" | "full") => Record<string, unknown> | null;
     readStateForTier: (tier: "definitions" | "full") => SemanticStoreState | null;
     readProjectHead: () => SemanticProjectHead;
@@ -165,10 +168,6 @@ function readStateForTier(
     });
 }
 
-function readState(database: GraphDatabase, projectRoot: string): SemanticStoreState | null {
-    return readStateForTier(database, projectRoot, "full") ?? readStateForTier(database, projectRoot, "definitions");
-}
-
 function readProjectHead(database: GraphDatabase, projectRoot: string): SemanticProjectHead {
     const row = database
         .prepare("SELECT head_generation FROM semantic_projects WHERE project_root = ?")
@@ -186,6 +185,18 @@ function readIndexForTier(
         return null;
     }
 
+    const projection = database
+        .prepare(
+            "SELECT generation, payload FROM semantic_navigation_projection WHERE project_root = ? AND tier = ? AND generation = ?"
+        )
+        .get(projectRoot, state.tier, state.generation) as SemanticNavigationProjectionRow | undefined;
+    if (projection) {
+        const projectedIndex = parseRecordPayload(projection.payload);
+        if (Core.isObjectLike(projectedIndex)) {
+            return projectedIndex as Record<string, unknown>;
+        }
+    }
+
     const rows = database
         .prepare(
             "SELECT record_kind, record_key, payload FROM semantic_slot_records WHERE project_root = ? AND tier = ? ORDER BY record_kind, record_key"
@@ -194,6 +205,10 @@ function readIndexForTier(
     const result: Record<string, unknown> = {};
     for (const row of rows) {
         const parsedPayload = parseRecordPayload(row.payload);
+        if (row.record_kind === "files" && row.record_key === "__value__") {
+            result.files = parsedPayload;
+            continue;
+        }
         if (row.record_kind === "identifiers") {
             const separator = row.record_key.indexOf(":");
             if (separator > 0) {
@@ -227,10 +242,6 @@ function readIndexForTier(
     return result;
 }
 
-function readIndex(database: GraphDatabase, projectRoot: string): Record<string, unknown> | null {
-    return readIndexForTier(database, projectRoot, "full") ?? readIndexForTier(database, projectRoot, "definitions");
-}
-
 function writeIndex(
     database: GraphDatabase,
     projectRoot: string,
@@ -238,13 +249,40 @@ function writeIndex(
     tier: "definitions" | "full",
     sourceSignature = ""
 ): SemanticStoreState {
-    const head = database
-        .prepare("SELECT head_generation FROM semantic_projects WHERE project_root = ?")
-        .get(projectRoot) as { head_generation?: number } | undefined;
-    const generation = (head?.head_generation ?? 0) + 1;
+    const result = publishIndex(database, projectRoot, {
+        expectedHeadGeneration: null,
+        index,
+        sourceRevision: sourceSignature,
+        tier
+    });
+    if (result.state === null) {
+        throw new Error("Unconditional semantic publication was unexpectedly superseded.");
+    }
+    return result.state;
+}
+
+function publishIndex(
+    database: GraphDatabase,
+    projectRoot: string,
+    request: Readonly<{
+        expectedHeadGeneration: number | null;
+        index: Record<string, unknown>;
+        sourceRevision: string;
+        tier: "definitions" | "full";
+    }>
+): SemanticPublishResult {
+    let publishedState: SemanticStoreState | null = null;
     const updatedAt = new Date().toISOString();
 
-    runGraphDatabaseTransaction(database, () => {
+    runGraphDatabaseImmediateTransaction(database, () => {
+        const head = database
+            .prepare("SELECT head_generation FROM semantic_projects WHERE project_root = ?")
+            .get(projectRoot) as { head_generation?: number } | undefined;
+        const currentHeadGeneration = head?.head_generation ?? 0;
+        if (request.expectedHeadGeneration !== null && currentHeadGeneration !== request.expectedHeadGeneration) {
+            return;
+        }
+        const generation = currentHeadGeneration + 1;
         database
             .prepare(
                 "INSERT INTO semantic_projects(project_root, head_generation, updated_at) VALUES (?, ?, ?) ON CONFLICT(project_root) DO UPDATE SET head_generation = excluded.head_generation, updated_at = excluded.updated_at"
@@ -254,23 +292,36 @@ function writeIndex(
             .prepare(
                 "INSERT INTO semantic_slots(project_root, tier, generation, source_revision, base_generation, updated_at) VALUES (?, ?, ?, ?, NULL, ?) ON CONFLICT(project_root, tier) DO UPDATE SET generation = excluded.generation, source_revision = excluded.source_revision, base_generation = excluded.base_generation, updated_at = excluded.updated_at"
             )
-            .run(projectRoot, tier, generation, sourceSignature, updatedAt);
+            .run(projectRoot, request.tier, generation, request.sourceRevision, updatedAt);
         database
             .prepare("DELETE FROM semantic_slot_records WHERE project_root = ? AND tier = ?")
-            .run(projectRoot, tier);
+            .run(projectRoot, request.tier);
         database
             .prepare("DELETE FROM semantic_slot_dependencies WHERE project_root = ? AND tier = ?")
-            .run(projectRoot, tier);
+            .run(projectRoot, request.tier);
 
         const insert = database.prepare(
             "INSERT INTO semantic_slot_records(project_root, tier, record_kind, record_key, file_path, content_hash, payload, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         );
-        for (const [recordKind, value] of Object.entries(index)) {
+        for (const [recordKind, value] of Object.entries(request.index)) {
             if (recordKind === "files" && Core.isObjectLike(value)) {
+                if (Object.keys(value).length === 0) {
+                    insert.run(
+                        projectRoot,
+                        request.tier,
+                        recordKind,
+                        "__value__",
+                        null,
+                        null,
+                        JSON.stringify(value),
+                        generation
+                    );
+                    continue;
+                }
                 for (const [filePath, fileRecord] of Object.entries(value as Record<string, unknown>)) {
                     insert.run(
                         projectRoot,
-                        tier,
+                        request.tier,
                         recordKind,
                         filePath,
                         filePath,
@@ -289,7 +340,7 @@ function writeIndex(
                     for (const [entryKey, entryValue] of Object.entries(collectionValue as Record<string, unknown>)) {
                         insert.run(
                             projectRoot,
-                            tier,
+                            request.tier,
                             "identifiers",
                             `${collectionName}:${entryKey}`,
                             readRecordString(entryValue, "filePath"),
@@ -307,7 +358,7 @@ function writeIndex(
                     for (const [callIndex, call] of scriptCalls.entries()) {
                         insert.run(
                             projectRoot,
-                            tier,
+                            request.tier,
                             "relationship",
                             String(callIndex),
                             Core.isObjectLike(call) && Core.isObjectLike(call.from)
@@ -322,13 +373,22 @@ function writeIndex(
                 continue;
             }
             if (!Core.isObjectLike(value)) {
-                insert.run(projectRoot, tier, recordKind, "__value__", null, null, JSON.stringify(value), generation);
+                insert.run(
+                    projectRoot,
+                    request.tier,
+                    recordKind,
+                    "__value__",
+                    null,
+                    null,
+                    JSON.stringify(value),
+                    generation
+                );
                 continue;
             }
             for (const [recordKey, recordValue] of Object.entries(value as Record<string, unknown>)) {
                 insert.run(
                     projectRoot,
-                    tier,
+                    request.tier,
                     recordKind,
                     recordKey,
                     null,
@@ -341,12 +401,26 @@ function writeIndex(
         const insertDependency = database.prepare(
             "INSERT INTO semantic_slot_dependencies(project_root, tier, source_file, downstream_file, dependency_kind, symbol_id, updated_generation) VALUES (?, ?, ?, ?, 'script-call', NULL, ?)"
         );
-        for (const [sourceFile, downstreamFile] of collectFileDependencies(index)) {
-            insertDependency.run(projectRoot, tier, sourceFile, downstreamFile, generation);
+        for (const [sourceFile, downstreamFile] of collectFileDependencies(request.index)) {
+            insertDependency.run(projectRoot, request.tier, sourceFile, downstreamFile, generation);
         }
+        database
+            .prepare(
+                "INSERT INTO semantic_navigation_projection(project_root, tier, generation, payload) VALUES (?, ?, ?, ?) ON CONFLICT(project_root, tier) DO UPDATE SET generation = excluded.generation, payload = excluded.payload"
+            )
+            .run(projectRoot, request.tier, generation, JSON.stringify(request.index));
+        publishedState = Object.freeze({
+            generation,
+            projectRoot,
+            sourceSignature: request.sourceRevision,
+            tier: request.tier
+        });
     });
 
-    return Object.freeze({ generation, projectRoot, sourceSignature, tier });
+    return Object.freeze({
+        state: publishedState,
+        status: publishedState === null ? "superseded" : "published"
+    });
 }
 
 /** Open the canonical project semantic store shared by LSP, CLI, and graph tooling. */
@@ -357,10 +431,10 @@ export function openSemanticIndexStore(projectRoot: string): SemanticIndexStore 
         close: () => database.close(),
         findImmediateDownstreamFiles: (filePath) => findImmediateDownstreamFiles(database, resolvedRoot, filePath),
         readFileContentHashes: () => readFileContentHashes(database, resolvedRoot),
-        readIndex: () => readIndex(database, resolvedRoot),
         readIndexForTier: (tier) => readIndexForTier(database, resolvedRoot, tier),
-        readState: () => readState(database, resolvedRoot),
+        readProjectHead: () => readProjectHead(database, resolvedRoot),
         readStateForTier: (tier) => readStateForTier(database, resolvedRoot, tier),
+        publishIndex: (request) => publishIndex(database, resolvedRoot, request),
         writeIndex: (index, tier, sourceSignature) => writeIndex(database, resolvedRoot, index, tier, sourceSignature)
     };
 }

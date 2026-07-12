@@ -75,7 +75,7 @@ export function createProjectIndexCoordinator(options: ProjectIndexCoordinatorOp
 function loadSemanticStoreIndex(descriptor: { projectRoot: string }) {
     const store = openSemanticIndexStore(descriptor.projectRoot);
     try {
-        const projectIndex = store.readIndex();
+        const projectIndex = store.readIndexForTier("full");
         return Promise.resolve(
             projectIndex
                 ? { status: "hit", cacheFilePath: getSemanticIndexDatabasePath(descriptor.projectRoot), projectIndex }
