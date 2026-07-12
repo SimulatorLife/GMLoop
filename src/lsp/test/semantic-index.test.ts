@@ -140,6 +140,33 @@ void test("semantic index invalidates cached project facts for unsaved document 
     }
 });
 
+void test("semantic index refreshes project facts after an external resource metadata change", async () => {
+    const fixture = await createTwoScriptProject();
+    try {
+        const store = Lsp.createGmlDocumentStore();
+        const document = store.open({
+            uri: Lsp.filePathToUri(fixture.sourcePath),
+            languageId: "gml",
+            version: 1,
+            text: fixture.sourceText
+        });
+        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        await semanticIndex.buildForDocument(document);
+
+        const resourcePath = path.join(fixture.projectRoot, "scripts", "external", "external.yy");
+        const sourcePath = path.join(fixture.projectRoot, "scripts", "external", "external.gml");
+        await fs.mkdir(path.dirname(resourcePath), { recursive: true });
+        await fs.writeFile(resourcePath, JSON.stringify({ name: "external", resourceType: "GMScript" }));
+        await fs.writeFile(sourcePath, "function external_added() { return 1; }\n");
+
+        await semanticIndex.refreshForFilePath(resourcePath);
+        const completions = await semanticIndex.searchCompletions(document, "external_added");
+        assert.ok(completions.some((completion) => completion.label === "external_added"));
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
 void test("semantic index hover handles comment/string guards and ignores scope-dependent fallback", async () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gmloop-lsp-regression-"));
     const sourcePath = path.join(projectRoot, "scripts/source/source.gml");

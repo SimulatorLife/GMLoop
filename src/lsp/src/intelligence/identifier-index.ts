@@ -608,7 +608,12 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         manifestReconciliations.set(resolvedRoot, reconciliation);
     }
 
-    function saveIndexCacheToDisk(resolvedRoot: string, index: NavigationIndex, lightweight: boolean): void {
+    function saveIndexCacheToDisk(
+        resolvedRoot: string,
+        index: NavigationIndex,
+        lightweight: boolean,
+        expectedRootVersion: number
+    ): void {
         const tier = lightweight ? "definitions" : "full";
 
         const previousWrite = pendingCacheWrites.get(resolvedRoot) ?? Promise.resolve();
@@ -618,6 +623,9 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                 return undefined;
             })
             .then(async () => {
+                if (readRootVersion(resolvedRoot) !== expectedRootVersion) {
+                    return undefined;
+                }
                 const overlays = documents.list().map((document) => ({
                     absolutePath: document.filePath,
                     contentHash: Semantic.createSemanticContentHash(document.sourceText),
@@ -625,6 +633,9 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                     sourceText: document.sourceText
                 }));
                 const manifest = await Semantic.buildSemanticFileManifest(resolvedRoot, fsFacade, overlays);
+                if (readRootVersion(resolvedRoot) !== expectedRootVersion) {
+                    return undefined;
+                }
                 const store = getSemanticStore(resolvedRoot);
                 const publication = store.publishIndex({
                     expectedHeadGeneration: store.readProjectHead().generation,
@@ -725,7 +736,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                     }
                     staleStates.delete(resolvedRoot);
 
-                    saveIndexCacheToDisk(resolvedRoot, fullState.index, false);
+                    saveIndexCacheToDisk(resolvedRoot, fullState.index, false, buildVersion);
 
                     return cachedStates.get(resolvedRoot) ?? fullState;
                 }
@@ -789,7 +800,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                     ) {
                         cachedStates.set(resolvedRoot, state);
                         staleStates.delete(resolvedRoot);
-                        saveIndexCacheToDisk(resolvedRoot, state.index, true);
+                        saveIndexCacheToDisk(resolvedRoot, state.index, true, buildVersion);
                         void triggerBackgroundFullBuild(document, resolvedRoot);
                         return state;
                     }
@@ -909,7 +920,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                     ) {
                         cachedStates.set(resolvedRoot, state);
                         staleStates.delete(resolvedRoot);
-                        saveIndexCacheToDisk(resolvedRoot, state.index, true);
+                        saveIndexCacheToDisk(resolvedRoot, state.index, true, buildVersion);
                         void triggerBackgroundFullBuild(document, resolvedRoot);
                         return state;
                     }
@@ -936,7 +947,8 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
 
     async function refreshIndex(
         document: GmlTextDocument,
-        changedFiles: ReadonlyArray<string> = [document.filePath]
+        changedFiles: ReadonlyArray<string> = [document.filePath],
+        forceFullRebuild = false
     ): Promise<NavigationState | null> {
         const resolvedUri = document.uri;
         const startDocVersion = readDocumentVersion(resolvedUri);
@@ -972,7 +984,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                     return null;
                 }
                 const existingState = cachedStates.get(resolvedRoot) ?? staleStates.get(resolvedRoot);
-                const canIncremental = existingState && !existingState.lightweight;
+                const canIncremental = existingState && !existingState.lightweight && !forceFullRebuild;
                 const state = await buildSemanticIndexForDocument(
                     document,
                     fsFacade,
@@ -996,7 +1008,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                     }
                     staleStates.delete(resolvedRoot);
 
-                    saveIndexCacheToDisk(resolvedRoot, state.index, false);
+                    saveIndexCacheToDisk(resolvedRoot, state.index, false, buildVersion);
 
                     return state;
                 }
@@ -1024,15 +1036,17 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         if (!state) {
             return null;
         }
-        if (!state.lightweight) {
-            return state;
-        }
 
         const projectRoot = await getProjectRoot(document.filePath);
         if (!projectRoot) {
             return state;
         }
         const resolvedRoot = path.resolve(projectRoot);
+
+        const activeSlots = getSemanticStore(resolvedRoot).readActiveSlots();
+        if (!state.lightweight && (activeSlots.definitions === null || activeSlots.hasMatchingFull)) {
+            return state;
+        }
 
         const fullState = await triggerBackgroundFullBuild(document, resolvedRoot);
         return fullState && !fullState.lightweight ? fullState : null;
@@ -1060,8 +1074,20 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         invalidateForFilePath: invalidateKnownFileRoots,
         async refreshForFilePath(filePath) {
             if (!isGmlDocumentPath(filePath)) {
-                await invalidateKnownFileRoots(filePath);
-                return null;
+                const projectRoot = await getProjectRoot(filePath);
+                if (!projectRoot) {
+                    return null;
+                }
+                const resolvedRoot = path.resolve(projectRoot);
+                const anchorDocument = documents
+                    .list()
+                    .find((document) => isDocumentWithinProjectRoot(document, resolvedRoot));
+                if (!anchorDocument) {
+                    await invalidateKnownFileRoots(filePath);
+                    return null;
+                }
+                invalidateRoot(resolvedRoot);
+                return await refreshIndex(anchorDocument, [anchorDocument.filePath], true);
             }
 
             const resolvedPath = path.resolve(filePath);

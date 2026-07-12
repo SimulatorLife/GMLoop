@@ -506,6 +506,23 @@ function publishIndex(
                 "INSERT INTO semantic_navigation_projection(project_root, tier, generation, payload) VALUES (?, ?, ?, ?) ON CONFLICT(project_root, tier) DO UPDATE SET generation = excluded.generation, payload = excluded.payload"
             )
             .run(projectRoot, request.tier, generation, JSON.stringify(request.index));
+        database
+            .prepare(
+                "INSERT INTO semantic_generation_history(project_root, generation, tier, source_revision, reason, affected_file_count, published_at, result) VALUES (?, ?, ?, ?, 'publication', ?, ?, 'published')"
+            )
+            .run(
+                projectRoot,
+                generation,
+                request.tier,
+                request.sourceRevision,
+                request.manifest?.entries.size ?? 0,
+                updatedAt
+            );
+        database
+            .prepare(
+                "DELETE FROM semantic_generation_history WHERE project_root = ? AND generation NOT IN (SELECT generation FROM semantic_generation_history WHERE project_root = ? ORDER BY generation DESC LIMIT 32)"
+            )
+            .run(projectRoot, projectRoot);
         publishedState = Object.freeze({
             generation,
             projectRoot,

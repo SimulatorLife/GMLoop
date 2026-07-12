@@ -106,6 +106,22 @@ void test("semantic index store persists and restores the generation-bound manif
         });
         assert.equal(publication.status, "published");
         assert.deepEqual(store.readManifestForTier("definitions"), manifest);
+        const database = openGraphIndexDatabase(getSemanticIndexDatabasePath(projectRoot));
+        try {
+            const history = database
+                .prepare(
+                    "SELECT tier, source_revision, affected_file_count, result FROM semantic_generation_history WHERE project_root = ?"
+                )
+                .get(projectRoot) as
+                | { affected_file_count: number; result: string; source_revision: string; tier: string }
+                | undefined;
+            assert.equal(history?.affected_file_count, manifest.entries.size);
+            assert.equal(history?.result, "published");
+            assert.equal(history?.source_revision, manifest.sourceRevision);
+            assert.equal(history?.tier, "definitions");
+        } finally {
+            database.close();
+        }
     } finally {
         store.close();
     }
