@@ -107,17 +107,34 @@ void test("collectFormatCommandOptions sets apply mode when --write is provided"
     assert.strictEqual(result.dryRunMode, false);
 });
 
-void test("collectFormatCommandOptions honours ignored directory samples alias", () => {
+void test("collectFormatCommandOptions reads --ignored-directory-sample-limit option", () => {
     const command = createStubCommand({
         opts: () => ({
-            ignoredDirectorySampleLimit: 5,
+            ignoredDirectorySampleLimit: 7
+        })
+    });
+
+    const result = collectFormatCommandOptions(command, DEFAULTS);
+
+    assert.strictEqual(result.skippedDirectorySampleLimit, 7);
+});
+
+void test("collectFormatCommandOptions ignores the retired --ignored-directory-samples alias", () => {
+    // The `ignoredDirectorySamples` option was a backwards-compatibility alias
+    // for `--ignored-directory-sample-limit`. The alias has been removed in
+    // favour of the canonical long-term flag; the collector must continue to
+    // ignore it so legacy callers fall back to the documented default rather
+    // than opting into an unsupported override path. Reintroducing the alias
+    // would silently change resolution behaviour for existing flag names.
+    const command = createStubCommand({
+        opts: () => ({
             ignoredDirectorySamples: 2
         })
     });
 
     const result = collectFormatCommandOptions(command, DEFAULTS);
 
-    assert.strictEqual(result.skippedDirectorySampleLimit, 2);
+    assert.strictEqual(result.skippedDirectorySampleLimit, undefined);
 });
 
 void test("collectFormatCommandOptions sets log level to debug when verbose is true", () => {

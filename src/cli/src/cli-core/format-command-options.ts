@@ -46,9 +46,8 @@ type CommandOptionsRecord = Record<string, unknown>;
 
 function resolveFormatCommandSampleLimits(options: CommandOptionsRecord): FormatCommandSampleLimits {
     const source = options ?? {};
-    const skipped = source.ignoredDirectorySamples ?? source.ignoredDirectorySampleLimit ?? undefined;
     return {
-        skippedDirectorySampleLimit: skipped as number | undefined,
+        skippedDirectorySampleLimit: (source.ignoredDirectorySampleLimit as number | undefined) ?? undefined,
         ignoredFileSampleLimit: (source.ignoredFileSampleLimit as number | undefined) ?? undefined,
         unsupportedExtensionSampleLimit: (source.unsupportedExtensionSampleLimit as number | undefined) ?? undefined
     };
