@@ -424,20 +424,13 @@ function configureConsoleMethods(logLevel: string): void {
 configureConsoleMethods(process.env.PRETTIER_PLUGIN_GML_LOG_LEVEL ?? DEFAULT_PRETTIER_LOG_LEVEL);
 
 export function createFormatCommand({ name = "gmloop" } = {}) {
-    const { option: skippedDirectorySampleLimitOption, parseLimit: parseSkippedDirectoryLimit } =
-        createConfiguredSampleLimitOption({
-            flag: "--ignored-directory-sample-limit <count>",
-            description: (defaultLimit) =>
-                `Max ignored directories shown in summary. Default: ${defaultLimit}, use 0 to hide`,
-            getDefaultLimit: getDefaultSkippedDirectorySampleLimit,
-            resolveLimit: resolveSkippedDirectorySampleLimit
-        });
-    const skippedDirectorySamplesAliasOption = new Option(
-        "--ignored-directory-samples <count>",
-        "Alias for --ignored-directory-sample-limit <count>"
-    )
-        .argParser(wrapInvalidArgumentResolver(parseSkippedDirectoryLimit))
-        .hideHelp();
+    const { option: skippedDirectorySampleLimitOption } = createConfiguredSampleLimitOption({
+        flag: "--ignored-directory-sample-limit <count>",
+        description: (defaultLimit) =>
+            `Max ignored directories shown in summary. Default: ${defaultLimit}, use 0 to hide`,
+        getDefaultLimit: getDefaultSkippedDirectorySampleLimit,
+        resolveLimit: resolveSkippedDirectorySampleLimit
+    });
 
     const { option: ignoredFileSampleLimitOption } = createConfiguredSampleLimitOption({
         flag: "--ignored-file-sample-limit <count>",
@@ -465,7 +458,6 @@ export function createFormatCommand({ name = "gmloop" } = {}) {
         .addOption(createWriteOption())
         .addOption(createListOption())
         .addOption(skippedDirectorySampleLimitOption)
-        .addOption(skippedDirectorySamplesAliasOption)
         .addOption(ignoredFileSampleLimitOption)
         .addOption(unsupportedExtensionSampleLimitOption)
         .option(
