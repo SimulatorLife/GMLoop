@@ -2,7 +2,7 @@ import type { Rule } from "eslint";
 
 import { gmlRuleDocCommentServices } from "../gml-rule-services.js";
 import type { GmlRuleDefinition } from "../index.js";
-import { createMeta, reportLineTextFixes } from "../rule-base-helpers.js";
+import { createMeta, reportLineTextFixes, rewriteSourceLines } from "../rule-base-helpers.js";
 
 const { convertLegacyReturnsDescriptionLineToMetadata } = gmlRuleDocCommentServices;
 
@@ -14,11 +14,7 @@ const { convertLegacyReturnsDescriptionLineToMetadata } = gmlRuleDocCommentServi
  * @returns Source text with legacy return descriptions converted.
  */
 export function sanitizeLegacyDocReturnDescriptions(text: string): string {
-    const lineEnding = text.includes("\r\n") ? "\r\n" : "\n";
-    return text
-        .split(/\r?\n/u)
-        .map((line) => convertLegacyReturnsDescriptionLineToMetadata(line))
-        .join(lineEnding);
+    return rewriteSourceLines(text, (line) => convertLegacyReturnsDescriptionLineToMetadata(line));
 }
 
 /**

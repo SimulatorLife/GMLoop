@@ -1,7 +1,7 @@
 import type { Rule } from "eslint";
 
 import type { GmlRuleDefinition } from "../index.js";
-import { createMeta, reportLineTextFixes } from "../rule-base-helpers.js";
+import { createMeta, reportLineTextFixes, rewriteSourceLines } from "../rule-base-helpers.js";
 
 const undefinedOptionalDefaultPattern =
     /^(\s*\/\/\/\s*@param(?:\s+\{[^}\r\n]+\})?\s+)\[([A-Za-z0-9_]+)\s*=\s*undefined\](.*)$/u;
@@ -22,11 +22,7 @@ function normalizeUndefinedOptionalDefaultLine(line: string): string {
  * @returns Source text with `[name=undefined]` doc params rewritten to `[name]`.
  */
 export function sanitizeDocCommentUndefinedOptionalParamDefaults(text: string): string {
-    const lineEnding = text.includes("\r\n") ? "\r\n" : "\n";
-    return text
-        .split(/\r?\n/u)
-        .map((line) => normalizeUndefinedOptionalDefaultLine(line))
-        .join(lineEnding);
+    return rewriteSourceLines(text, (line) => normalizeUndefinedOptionalDefaultLine(line));
 }
 
 /**
