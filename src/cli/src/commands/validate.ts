@@ -1,4 +1,5 @@
 import { lstat } from "node:fs/promises";
+import path from "node:path";
 
 import { Core } from "@gmloop/core";
 import * as ParserWorkspace from "@gmloop/parser";
@@ -20,6 +21,29 @@ type ValidateSharedOptions = Readonly<{
     toolsetRoot?: string;
 }>;
 
+type ValidateScope = "file" | "project" | "resource" | "room";
+
+async function runValidateAction(
+    scope: ValidateScope,
+    options: ValidateSharedOptions,
+    action: () => Promise<void>
+): Promise<void> {
+    try {
+        await action();
+    } catch (error) {
+        if (options.json !== true) {
+            throw error;
+        }
+
+        printProjectPayload({
+            error: { message: Core.getErrorMessage(error) },
+            ok: false,
+            scope
+        });
+        process.exitCode = 1;
+    }
+}
+
 async function runValidateFileAction(targetPath: string, options: ValidateSharedOptions): Promise<void> {
     const sourceText = await Core.readTextFile(targetPath);
     const ast = ParserWorkspace.Parser.GMLParser.parse(sourceText);
@@ -40,6 +64,7 @@ async function runValidateFileAction(targetPath: string, options: ValidateShared
 
 async function runValidateProjectAction(options: ValidateSharedOptions): Promise<void> {
     const context = await resolveCommandProjectContext(options);
+    await requireGameMakerProjectRoot(context.projectRoot);
     const graphIndex = await Semantic.buildGraphIndex({
         databasePath: options.databasePath,
         projectConfig: context.projectConfig,
@@ -127,6 +152,23 @@ async function requireReadableFilePath(filePath: string): Promise<void> {
     }
 }
 
+async function requireGameMakerProjectRoot(projectRoot: string): Promise<void> {
+    const projectRootStats = await lstat(projectRoot).catch(() => {
+        throw new Error(`GameMaker project directory does not exist: ${projectRoot}`);
+    });
+
+    if (!projectRootStats.isDirectory()) {
+        throw new Error(`Expected GameMaker project directory, received non-directory target: ${projectRoot}`);
+    }
+
+    const discoveredProjectRoot = await Semantic.findProjectRoot({
+        filepath: path.join(projectRoot, "gmloop.json")
+    });
+    if (!discoveredProjectRoot || path.resolve(discoveredProjectRoot) !== path.resolve(projectRoot)) {
+        throw new Error(`Could not find a .yyp manifest in GameMaker project directory: ${projectRoot}`);
+    }
+}
+
 export function createValidateCommand(): Command {
     const command = applyStandardCommandOptions(new Command("validate")).description(
         "Validate file/project/room/resource targets for parser and graph integrity."
@@ -138,8 +180,11 @@ export function createValidateCommand(): Command {
             .argument("<target>", "Path to a .gml file.")
     );
     file.action(async function validateFileAction(targetPath: string) {
-        await requireReadableFilePath(targetPath);
-        await runValidateFileAction(targetPath, this.opts<ValidateSharedOptions>());
+        const options = this.opts<ValidateSharedOptions>();
+        await runValidateAction("file", options, async () => {
+            await requireReadableFilePath(targetPath);
+            await runValidateFileAction(targetPath, options);
+        });
     });
 
     const project = addValidateSharedOptions(
@@ -148,7 +193,8 @@ export function createValidateCommand(): Command {
         )
     );
     project.action(async function validateProjectAction() {
-        await runValidateProjectAction(this.opts<ValidateSharedOptions>());
+        const options = this.opts<ValidateSharedOptions>();
+        await runValidateAction("project", options, () => runValidateProjectAction(options));
     });
 
     const room = addValidateSharedOptions(
@@ -157,7 +203,8 @@ export function createValidateCommand(): Command {
             .argument("<room>", "Room name or graph identifier.")
     );
     room.action(async function validateRoomAction(roomNameOrId: string) {
-        await runValidateRoomAction(roomNameOrId, this.opts<ValidateSharedOptions>());
+        const options = this.opts<ValidateSharedOptions>();
+        await runValidateAction("room", options, () => runValidateRoomAction(roomNameOrId, options));
     });
 
     const resource = addValidateSharedOptions(
@@ -166,7 +213,8 @@ export function createValidateCommand(): Command {
             .argument("<resource>", "Resource name or graph identifier.")
     );
     resource.action(async function validateResourceAction(resourceNameOrId: string) {
-        await runValidateResourceAction(resourceNameOrId, this.opts<ValidateSharedOptions>());
+        const options = this.opts<ValidateSharedOptions>();
+        await runValidateAction("resource", options, () => runValidateResourceAction(resourceNameOrId, options));
     });
 
     command.addCommand(file);
