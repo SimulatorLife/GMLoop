@@ -9,6 +9,7 @@ void describe("watch command initial file cache", () => {
         const cachedEntry = {
             content: "function player() { return 1; }",
             ast: { type: "Program" },
+            mtimeMs: 10,
             symbols: ["gml_Script_player"],
             references: []
         };
@@ -28,6 +29,7 @@ void describe("watch command initial file cache", () => {
                 {
                     content: "function other() { return 2; }",
                     ast: { type: "Program" },
+                    mtimeMs: 10,
                     symbols: ["gml_Script_other"],
                     references: []
                 }
@@ -47,6 +49,7 @@ void describe("watch command initial file cache", () => {
                 {
                     content: "function leftover() { return 3; }",
                     ast: { type: "Program" },
+                    mtimeMs: 10,
                     symbols: ["gml_Script_leftover"],
                     references: []
                 }
