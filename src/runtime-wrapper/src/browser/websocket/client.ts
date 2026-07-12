@@ -14,7 +14,6 @@ import { getHighResolutionTime } from "../timing.js";
 import {
     createInitialConnectionMetrics,
     createPatchQueueState,
-    deduplicatePatchesById,
     enqueuePatchForDeferredFlush,
     enqueuePendingPatchUntilRuntimeReady,
     flushQueuedPatches as flushQueuedPatchBatch,
@@ -214,12 +213,11 @@ export function createWebSocketClient({
                 state.pendingPatchHead === 0
                     ? state.pendingPatches
                     : state.pendingPatches.slice(state.pendingPatchHead);
-            const { patches: deduplicatedPending } = deduplicatePatchesById(pending);
 
             state.pendingPatches = [];
             state.pendingPatchHead = 0;
 
-            for (const patch of deduplicatedPending) {
+            for (const patch of pending) {
                 if (state.patchQueue) {
                     recordPatchReceived(state);
                     enqueuePatch(patch);

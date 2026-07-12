@@ -268,6 +268,20 @@ void test("pending runtime-readiness queue replaces duplicates before enforcing 
     assert.strictEqual(state.pendingPatchHead, 0);
 });
 
+void test("pending runtime-readiness queue keeps live window duplicate-free after drops", () => {
+    const state = createPendingPatchState();
+
+    enqueuePendingPatchUntilRuntimeReady(state, { kind: "script", id: "script:dropped", js_body: "return 1;" }, 2);
+    enqueuePendingPatchUntilRuntimeReady(state, { kind: "script", id: "script:kept", js_body: "return 2;" }, 2);
+    enqueuePendingPatchUntilRuntimeReady(state, { kind: "script", id: "script:newest", js_body: "return 3;" }, 2);
+    enqueuePendingPatchUntilRuntimeReady(state, { kind: "script", id: "script:kept", js_body: "return 20;" }, 2);
+
+    assert.deepStrictEqual(state.pendingPatches.slice(state.pendingPatchHead), [
+        { kind: "script", id: "script:kept", js_body: "return 20;" },
+        { kind: "script", id: "script:newest", js_body: "return 3;" }
+    ]);
+});
+
 void test("patch queue tracks patches received without double-counting on flush", async () => {
     const { client, ws, restoreRuntimeGlobals } = await createConnectedPatchQueueClient({
         patchQueue: {
