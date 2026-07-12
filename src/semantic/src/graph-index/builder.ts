@@ -9,11 +9,11 @@ import { isProjectManifestPath } from "../project-index/constants.js";
 import type { ProjectIndexCoordinatorInstance } from "../project-index/coordinator.js";
 import {
     buildProjectIndex,
+    buildSemanticFileManifest,
     createProjectIndexCoordinator,
     createTolerantProjectIndexParser,
     getDefaultProjectIndexParser,
-    openSemanticIndexStore,
-    scanProjectTree
+    openSemanticIndexStore
 } from "../project-index/index.js";
 import { getGmlSymbolKindForIdentifierCollection } from "../symbols/taxonomy.js";
 import { resolveGraphIndexConfig } from "./config.js";
@@ -2026,34 +2026,6 @@ function readGraphDatabaseIntegrityStatus(database: GraphDatabase): GraphDatabas
 }
 
 /**
- * Scan the project tree and aggregate manifest and source mtimes used by the
- * project index's change-detection descriptor.
- *
- * Single responsibility: produce the filesystem-state input the project index
- * build pipeline consumes. Any change to how the project tree is scanned or how
- * file mtimes are aggregated for invalidation lives here.
- */
-async function collectProjectIndexMtimes(projectRoot: string): Promise<{
-    manifestMtimes: Record<string, number>;
-    sourceMtimes: Record<string, number>;
-}> {
-    const { yyFiles, gmlFiles } = await scanProjectTree(projectRoot);
-    const manifestMtimes: Record<string, number> = {};
-    const sourceMtimes: Record<string, number> = {};
-    for (const file of yyFiles) {
-        if (file.mtimeMs !== null) {
-            manifestMtimes[file.relativePath] = file.mtimeMs;
-        }
-    }
-    for (const file of gmlFiles) {
-        if (file.mtimeMs !== null) {
-            sourceMtimes[file.relativePath] = file.mtimeMs;
-        }
-    }
-    return { manifestMtimes, sourceMtimes };
-}
-
-/**
  * Create a project index coordinator whose build path tolerates malformed GML
  * files so a single syntax-invalid source does not fail the whole index build.
  *
@@ -2085,8 +2057,8 @@ function createTolerantProjectIndexCoordinator(): ProjectIndexCoordinatorInstanc
  * three-step orchestration plus resource cleanup.
  */
 async function getOrBuildProjectIndex(projectRoot: string): Promise<ProjectIndexSnapshot> {
-    const { manifestMtimes, sourceMtimes } = await collectProjectIndexMtimes(projectRoot);
-    const sourceSignature = JSON.stringify({ manifestMtimes, sourceMtimes });
+    const manifest = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade);
+    const sourceSignature = manifest.sourceRevision;
     const store = openSemanticIndexStore(projectRoot);
     const storedState = store.readStateForTier("full");
     const storedIndex = store.readIndexForTier("full");
@@ -2098,8 +2070,6 @@ async function getOrBuildProjectIndex(projectRoot: string): Promise<ProjectIndex
     try {
         const parser = createTolerantProjectIndexParser(getDefaultProjectIndexParser());
         const index = (await buildProjectIndex(projectRoot, Core.defaultFsFacade, {
-            manifestMtimes,
-            sourceMtimes,
             parseGml: parser
         })) as ProjectIndexSnapshot;
         store.writeIndex(index, "full", sourceSignature);
@@ -2543,7 +2513,6 @@ export function doctorGraphIndex(options: GraphIndexBuildOptions): GraphDoctorRe
 }
 
 export const __graphIndexBuilderTest__ = Object.freeze({
-    collectProjectIndexMtimes,
     createSafeFtsQuery,
     createTolerantProjectIndexCoordinator,
     resolveScipSymbol

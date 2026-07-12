@@ -186,5 +186,5 @@
     "ws": "catalog:",
     "yaml-eslint-parser": "^1"
   },
-  "packageManager": "pnpm@11.5.0"
+  "packageManager": "pnpm@11.12.0"
 }

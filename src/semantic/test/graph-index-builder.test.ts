@@ -7,56 +7,6 @@ import test from "node:test";
 import { __graphIndexBuilderTest__, searchGraphIndex } from "../src/graph-index/builder.js";
 import { openGraphIndexDatabase } from "../src/graph-index/database.js";
 
-void test("collectProjectIndexMtimes separates manifest and source files by category", async () => {
-    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "graph-index-mtimes-"));
-
-    try {
-        const manifestRelativePath = "project.yyp";
-        const manifestAbsolutePath = path.join(projectRoot, manifestRelativePath);
-        const resourceRelativePath = "scripts/player/player.yy";
-        const resourceAbsolutePath = path.join(projectRoot, resourceRelativePath);
-        const sourceRelativePath = "scripts/player/player.gml";
-        const sourceAbsolutePath = path.join(projectRoot, sourceRelativePath);
-
-        await fs.mkdir(path.dirname(resourceAbsolutePath), { recursive: true });
-        await fs.writeFile(manifestAbsolutePath, "{}", "utf8");
-        await fs.writeFile(resourceAbsolutePath, "{}", "utf8");
-        await fs.writeFile(sourceAbsolutePath, "/// @description", "utf8");
-
-        const { manifestMtimes, sourceMtimes } = await __graphIndexBuilderTest__.collectProjectIndexMtimes(projectRoot);
-
-        assert.ok(
-            manifestMtimes[manifestRelativePath] !== undefined,
-            "Project manifest mtime must be reported under manifestMtimes."
-        );
-        assert.ok(
-            manifestMtimes[resourceRelativePath] !== undefined,
-            "Resource metadata (.yy) mtime must be reported under manifestMtimes."
-        );
-        assert.strictEqual(
-            manifestMtimes[sourceRelativePath],
-            undefined,
-            "GML source files must not appear under manifestMtimes."
-        );
-        assert.ok(
-            sourceMtimes[sourceRelativePath] !== undefined,
-            "GML source mtime must be reported under sourceMtimes."
-        );
-        assert.strictEqual(
-            sourceMtimes[manifestRelativePath],
-            undefined,
-            "Manifest files must not appear under sourceMtimes."
-        );
-        assert.strictEqual(
-            sourceMtimes[resourceRelativePath],
-            undefined,
-            "Resource metadata (.yy) files must not appear under sourceMtimes."
-        );
-    } finally {
-        await fs.rm(projectRoot, { recursive: true, force: true });
-    }
-});
-
 void test("createTolerantProjectIndexCoordinator exposes a coordinator with the expected shape", () => {
     const coordinator = __graphIndexBuilderTest__.createTolerantProjectIndexCoordinator();
 

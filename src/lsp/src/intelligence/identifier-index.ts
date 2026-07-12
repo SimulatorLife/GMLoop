@@ -581,8 +581,24 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                 // A failed earlier write must not permanently block later snapshots.
                 return undefined;
             })
-            .then(() => {
-                getSemanticStore(resolvedRoot).writeIndex(index.rawIndex as Record<string, unknown>, tier);
+            .then(async () => {
+                const overlays = documents.list().map((document) => ({
+                    absolutePath: document.filePath,
+                    contentHash: Semantic.createSemanticContentHash(document.sourceText),
+                    documentVersion: document.version,
+                    sourceText: document.sourceText
+                }));
+                const manifest = await Semantic.buildSemanticFileManifest(resolvedRoot, fsFacade, overlays);
+                const store = getSemanticStore(resolvedRoot);
+                const publication = store.publishIndex({
+                    expectedHeadGeneration: store.readProjectHead().generation,
+                    index: index.rawIndex as Record<string, unknown>,
+                    sourceRevision: manifest.sourceRevision,
+                    tier
+                });
+                if (publication.status === "superseded") {
+                    throw new Error(`Semantic cache publication was superseded for ${resolvedRoot}.`);
+                }
                 return undefined;
             })
             .catch((error: unknown) => {
