@@ -243,3 +243,19 @@ Performance-sensitive autofix rules also have dedicated regression coverage unde
 
 - Add an ESLint auto-fix rule that detects simple numeric accumulation loops like `alpha += index` over a fixed range and replaces them with the equivalent arithmetic-series expression. Example: `for index = 0..9` can become `alpha += count * (count - 1) * 0.5`, avoiding unnecessary runtime iteration.
 - Continue splitting the remaining multi-purpose `optimize-logical-flow` behaviors into focused rules; direct boolean return passthroughs and boolean literal comparisons now live in focused rules.
+- **BUG**: Auto-fix for hoisting loop-values can result in breaks/changes in behavior like this:
+    ```
+    -    while (--i >= 0) array[i] = argument[i];
+    +    var cached_value = argument[i];
+    +    while (--i >= 0) { array[i] = cached_value; }
+    ```
+- **BUG**: Auto-fix for doc-comments can produce invalid/duplicate params, ex.:
+    ```gml
+    -/// @function scr_timeline_play
+    -/// @param {Resource.GMTimeline} timeline_to_play - A timeline asset index
+    +/// @param {Resource.GMTimeline} timeline_to_play A timeline asset index
+    /// @param {Function} *func_callback - A function to call after the timeline has completed
+    +/// @param func_callback
+    /// @returns {obj} timeline_controller
+    function scr_timeline_play(timeline_to_play, func_callback) { /* ... */ }
+    ```
