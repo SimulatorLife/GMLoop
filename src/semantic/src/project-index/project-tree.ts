@@ -10,7 +10,13 @@ import {
     resolveProjectFileCategory
 } from "./project-file-categories.js";
 
-const PROJECT_TREE_EXCLUDED_DIRECTORY_SEGMENTS = new Set<string>([".git", ".gmcache", "cache", "node_modules"]);
+const PROJECT_TREE_EXCLUDED_DIRECTORY_SEGMENTS = new Set<string>([
+    ".git",
+    ".gmcache",
+    ".gmloop",
+    "cache",
+    "node_modules"
+]);
 
 function createProjectTreeRecord(absolutePath, relativePosix, mtimeMs = null) {
     return {

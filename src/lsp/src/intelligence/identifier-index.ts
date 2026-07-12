@@ -166,68 +166,83 @@ async function symbolToWorkspaceSymbol(
     };
 }
 
-function isOffsetInCommentOrString(sourceText: string, offset: number): boolean {
-    let inStringDouble = false;
-    let inStringSingle = false;
-    let inCommentSingle = false;
-    let inCommentBlock = false;
+type LexicalRange = Readonly<{ end: number; start: number }>;
 
-    for (let i = 0; i < offset; i++) {
-        const char = sourceText[i];
-        const nextChar = sourceText[i + 1];
+function isEscaped(sourceText: string, offset: number): boolean {
+    let slashCount = 0;
+    for (let index = offset - 1; index >= 0 && sourceText[index] === "\\"; index -= 1) {
+        slashCount += 1;
+    }
+    return slashCount % 2 === 1;
+}
 
-        if (inCommentSingle) {
-            if (char === "\n" || char === "\r") {
-                inCommentSingle = false;
+function collectIgnoredLexicalRanges(sourceText: string): ReadonlyArray<LexicalRange> {
+    const ranges: LexicalRange[] = [];
+    let index = 0;
+    while (index < sourceText.length) {
+        const current = sourceText[index];
+        const next = sourceText[index + 1];
+        const start = index;
+        if (current === "/" && next === "/") {
+            index += 2;
+            while (index < sourceText.length && sourceText[index] !== "\n" && sourceText[index] !== "\r") {
+                index += 1;
             }
+            ranges.push(Object.freeze({ end: index, start }));
             continue;
         }
-
-        if (inCommentBlock) {
-            if (char === "*" && nextChar === "/") {
-                inCommentBlock = false;
-                i++; // Skip the slash
+        if (current === "/" && next === "*") {
+            index += 2;
+            while (index < sourceText.length && (sourceText[index] !== "*" || sourceText[index + 1] !== "/")) {
+                index += 1;
             }
+            index = Math.min(sourceText.length, index + 2);
+            ranges.push(Object.freeze({ end: index, start }));
             continue;
         }
-
-        if (inStringDouble) {
-            if (char === '"' && sourceText[i - 1] !== "\\") {
-                inStringDouble = false;
+        if (current === '"' || current === "'") {
+            const quote = current;
+            index += 1;
+            while (index < sourceText.length && (sourceText[index] !== quote || isEscaped(sourceText, index))) {
+                index += 1;
             }
+            index = Math.min(sourceText.length, index + 1);
+            ranges.push(Object.freeze({ end: index, start }));
             continue;
         }
+        index += 1;
+    }
+    return ranges;
+}
 
-        if (inStringSingle) {
-            if (char === "'" && sourceText[i - 1] !== "\\") {
-                inStringSingle = false;
-            }
-            continue;
+function isOffsetInLexicalRanges(ranges: ReadonlyArray<LexicalRange>, offset: number): boolean {
+    let lower = 0;
+    let upper = ranges.length - 1;
+    while (lower <= upper) {
+        const middle = lower + Math.floor((upper - lower) / 2);
+        const range = ranges[middle];
+        if (!range) {
+            return false;
         }
-
-        if (char === "/" && nextChar === "/") {
-            inCommentSingle = true;
-            i++; // Skip the second slash
-        } else if (char === "/" && nextChar === "*") {
-            inCommentBlock = true;
-            i++; // Skip the asterisk
-        } else if (char === '"') {
-            inStringDouble = true;
-        } else if (char === "'") {
-            inStringSingle = true;
+        if (offset < range.start) {
+            upper = middle - 1;
+        } else if (offset >= range.end) {
+            lower = middle + 1;
+        } else {
+            return true;
         }
     }
-
-    return inCommentSingle || inCommentBlock || inStringDouble || inStringSingle;
+    return false;
 }
 
 function findSymbolId(
     index: NavigationIndex,
     document: GmlTextDocument,
     offset: number,
-    identifierName: string
+    identifierName: string,
+    isIgnoredOffset: (document: GmlTextDocument, offset: number) => boolean
 ): string | null {
-    if (isOffsetInCommentOrString(document.sourceText, offset)) {
+    if (isIgnoredOffset(document, offset)) {
         return null;
     }
 
@@ -502,7 +517,21 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
     const semanticStores = new Map<string, SemanticIndexStore>();
     const documentVersions = new Map<string, number>();
     const pendingCacheWrites = new Map<string, Promise<void>>();
+    const lexicalRangesByDocument = new Map<
+        string,
+        Readonly<{ ranges: ReadonlyArray<LexicalRange>; version: number }>
+    >();
     const fsFacade = createLspFsFacade(documents);
+
+    function isIgnoredOffset(document: GmlTextDocument, offset: number): boolean {
+        const cached = lexicalRangesByDocument.get(document.uri);
+        if (cached && cached.version === document.version) {
+            return isOffsetInLexicalRanges(cached.ranges, offset);
+        }
+        const ranges = collectIgnoredLexicalRanges(document.sourceText);
+        lexicalRangesByDocument.set(document.uri, Object.freeze({ ranges, version: document.version }));
+        return isOffsetInLexicalRanges(ranges, offset);
+    }
 
     function readRootVersion(projectRoot: string): number {
         return rootVersions.get(projectRoot) ?? 0;
@@ -571,6 +600,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
     function invalidateKnownDocumentRoots(document: GmlTextDocument): void {
         const resolvedUri = document.uri;
         documentVersions.set(resolvedUri, readDocumentVersion(resolvedUri) + 1);
+        lexicalRangesByDocument.delete(resolvedUri);
         const knownRoots = new Set([...cachedStates.keys(), ...inFlightBuilds.keys()]);
         for (const projectRoot of knownRoots) {
             if (isDocumentWithinProjectRoot(document, projectRoot)) {
@@ -988,6 +1018,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
             }
             semanticStores.clear();
             pendingCacheWrites.clear();
+            lexicalRangesByDocument.clear();
         },
         buildForDocument: ensureIndex,
         refreshForDocument: refreshIndex,
@@ -1036,7 +1067,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                 return null;
             }
 
-            const symbolId = findSymbolId(state.index, document, offset, identifierName);
+            const symbolId = findSymbolId(state.index, document, offset, identifierName, isIgnoredOffset);
             const definition = symbolId ? (Semantic.findNavigationDefinitions(state.index, symbolId)[0] ?? null) : null;
             return definition ? await occurrenceToLspLocation(document, definition) : null;
         },
@@ -1046,7 +1077,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                 return [];
             }
 
-            const symbolId = findSymbolId(state.index, document, offset, identifierName);
+            const symbolId = findSymbolId(state.index, document, offset, identifierName, isIgnoredOffset);
             if (!symbolId) {
                 return [];
             }
@@ -1058,7 +1089,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
             );
         },
         async hover(document, offset, identifierName) {
-            if (isOffsetInCommentOrString(document.sourceText, offset)) {
+            if (isIgnoredOffset(document, offset)) {
                 return null;
             }
 
@@ -1092,7 +1123,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                 return null;
             }
 
-            const symbolId = findSymbolId(state.index, document, offset, identifierName);
+            const symbolId = findSymbolId(state.index, document, offset, identifierName, isIgnoredOffset);
             const facts = symbolId ? Semantic.getNavigationHoverFacts(state.index, symbolId) : null;
             if (facts) {
                 const symbol = state.index.symbolsById.get(symbolId);
@@ -1231,7 +1262,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                 return null;
             }
 
-            const symbolId = findSymbolId(state.index, document, offset, identifierName);
+            const symbolId = findSymbolId(state.index, document, offset, identifierName, isIgnoredOffset);
             if (!symbolId) {
                 return null;
             }

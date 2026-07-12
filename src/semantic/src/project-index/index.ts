@@ -17,5 +17,6 @@ export * from "./project-index-logger.js";
 export * from "./project-root.js";
 export * from "./project-tree.js";
 export * from "./resource-analysis.js";
+export * from "./semantic-manifest.js";
 export * from "./semantic-store.js";
 export * from "./syntax-error-formatter.js";

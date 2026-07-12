@@ -243,3 +243,34 @@ void test("buildProjectIndex collects symbols and relationships across project f
         await cleanup();
     }
 });
+
+void test("definitions-only indexing never records references or script-call relationships for priority files", async () => {
+    const { projectRoot, writeProjectFile, cleanup } = await createTempProjectWorkspace("gml-definitions-only-");
+    try {
+        await writeProjectFile("Game.yyp", JSON.stringify({ name: "Game", resourceType: "GMProject" }));
+        await writeProjectFile(
+            "scripts/source/source.yy",
+            JSON.stringify({ name: "source", resourceType: "GMScript" })
+        );
+        await writeProjectFile("scripts/source/source.gml", "function source() { return 1; }\n");
+        await writeProjectFile(
+            "scripts/consumer/consumer.yy",
+            JSON.stringify({ name: "consumer", resourceType: "GMScript" })
+        );
+        const consumerPath = await writeProjectFile(
+            "scripts/consumer/consumer.gml",
+            "function consumer() { return source(); }\n"
+        );
+
+        const index = (await buildProjectIndex(projectRoot, undefined, {
+            definitionsOnly: true,
+            priorityFiles: [consumerPath]
+        })) as ProjectIndexSnapshot;
+
+        assert.deepEqual(index.relationships.scriptCalls, []);
+        assert.deepEqual(index.files["scripts/consumer/consumer.gml"]?.scriptCalls, []);
+        assert.deepEqual(index.identifiers.scripts["scope:script:source"]?.references, []);
+    } finally {
+        await cleanup();
+    }
+});

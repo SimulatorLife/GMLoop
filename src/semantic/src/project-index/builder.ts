@@ -2855,8 +2855,7 @@ async function processProjectGmlFilesForIndex({
     constructorStaticMemberReferences,
     onProgress,
     definitionsOnly = false,
-    recordReferences = false,
-    priorityFiles = new Set()
+    recordReferences = false
 }) {
     let processed = 0;
     const total = gmlFiles.length;
@@ -2886,8 +2885,7 @@ async function processProjectGmlFilesForIndex({
                 identifierSink,
                 pendingConstructorStaticMemberReferences: constructorStaticMemberReferences,
                 definitionsOnly,
-                recordReferences:
-                    recordReferences || (definitionsOnly && priorityFiles.has(path.resolve(file.absolutePath)))
+                recordReferences
             });
             processed += 1;
             if (onProgress) {
@@ -3036,15 +3034,6 @@ export async function buildProjectIndex(projectRoot, fsFacade = Core.defaultFsFa
     });
 
     const definitionsOnly = options?.definitionsOnly === true;
-    const priorityFiles = new Set(
-        (options?.priorityFiles
-            ? Array.isArray(options.priorityFiles)
-                ? options.priorityFiles
-                : [options.priorityFiles]
-            : []
-        ).map((filePath) => path.resolve(filePath))
-    );
-
     try {
         await processProjectGmlFilesForIndex({
             gmlFiles: orderedGmlFiles,
@@ -3064,8 +3053,7 @@ export async function buildProjectIndex(projectRoot, fsFacade = Core.defaultFsFa
             identifierSink,
             constructorStaticMemberReferences,
             onProgress: options?.onProgress,
-            definitionsOnly,
-            priorityFiles
+            definitionsOnly
         });
         recordMemoryHighWater();
 

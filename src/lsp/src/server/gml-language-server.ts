@@ -186,7 +186,7 @@ export function createGmlLanguageServer(
     const pendingSemanticRefreshes = new Map<string, NodeJS.Timeout>();
 
     if (typeof connection.onShutdown === "function") {
-        connection.onShutdown(() => {
+        connection.onShutdown(async () => {
             for (const timeout of pendingDiagnostics.values()) {
                 clearTimeout(timeout);
             }
@@ -195,7 +195,7 @@ export function createGmlLanguageServer(
                 clearTimeout(timeout);
             }
             pendingSemanticRefreshes.clear();
-            void semanticIndex.dispose();
+            await semanticIndex.dispose();
         });
     }
 
@@ -341,8 +341,15 @@ export function createGmlLanguageServer(
             pendingSemanticRefreshes.delete(textDocument.uri);
         }
 
+        const closingDocument = documents.get(textDocument.uri);
         documents.close(textDocument.uri);
         void connection.sendDiagnostics({ uri: textDocument.uri, diagnostics: [] });
+        if (closingDocument) {
+            runNotificationTask(connection, async () => {
+                await semanticIndex.refreshForFilePath(closingDocument.filePath);
+                requestSemanticTokenRefresh(connection);
+            });
+        }
     });
 
     if ("onDidChangeWatchedFiles" in connection) {

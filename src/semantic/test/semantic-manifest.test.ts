@@ -1,0 +1,59 @@
+import assert from "node:assert/strict";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+
+import { Core } from "@gmloop/core";
+
+import { buildSemanticFileManifest, createSemanticContentHash } from "../src/project-index/semantic-manifest.js";
+
+void test("semantic manifest hashes GML, resources, and the project manifest deterministically", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-manifest-"));
+    await mkdir(path.join(projectRoot, "scripts", "main"), { recursive: true });
+    await mkdir(path.join(projectRoot, "objects", "obj_player"), { recursive: true });
+    await writeFile(path.join(projectRoot, "game.yyp"), '{"resources":[]}', "utf8");
+    await writeFile(path.join(projectRoot, "scripts", "main", "main.gml"), "return 1;", "utf8");
+    await writeFile(
+        path.join(projectRoot, "objects", "obj_player", "obj_player.yy"),
+        '{"resourceType":"GMObject"}',
+        "utf8"
+    );
+
+    const first = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade);
+    const second = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade);
+
+    assert.equal(first.sourceRevision, second.sourceRevision);
+    assert.deepEqual(
+        [...first.entries.keys()],
+        ["game.yyp", "objects/obj_player/obj_player.yy", "scripts/main/main.gml"]
+    );
+    assert.equal(first.entries.get("game.yyp")?.fileKind, "projectManifest");
+    assert.equal(first.entries.get("objects/obj_player/obj_player.yy")?.fileKind, "resourceMetadata");
+    assert.equal(first.entries.get("scripts/main/main.gml")?.fileKind, "gml");
+});
+
+void test("semantic manifest gives an open buffer precedence over disk contents", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-manifest-overlay-"));
+    const sourcePath = path.join(projectRoot, "main.gml");
+    await writeFile(sourcePath, "return 1;", "utf8");
+
+    const manifest = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade, [
+        {
+            absolutePath: sourcePath,
+            contentHash: createSemanticContentHash("return 2;"),
+            documentVersion: 9,
+            sourceText: "return 2;"
+        }
+    ]);
+
+    assert.deepEqual(manifest.entries.get("main.gml"), {
+        contentHash: createSemanticContentHash("return 2;"),
+        fileKind: "gml",
+        mtimeMs: manifest.entries.get("main.gml")?.mtimeMs ?? null,
+        relativePath: "main.gml",
+        sizeBytes: Buffer.byteLength("return 2;", "utf8"),
+        sourceOrigin: "openBuffer",
+        sourceVersion: 9
+    });
+});
