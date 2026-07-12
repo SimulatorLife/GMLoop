@@ -13,6 +13,8 @@
  * - delimited-list.ts         – comma-separated list, argument list, and element
  *                               printing utilities (printCommaSeparatedList,
  *                               buildCallArgumentsDocs, printElements, etc.)
+ * - call-argument-layout.ts   – CallExpression / NewExpression argument layout,
+ *                               classification, and forced-struct-break cache
  *
  * Contributors should continue placing new domain-specific helpers in the appropriate
  * sub-module rather than growing this file further.
@@ -28,11 +30,10 @@ import {
     ObjectWrapOption,
     resolveObjectWrapOption
 } from "../options/index.js";
+import { buildCallLikeArgumentDocs, hasForcedStructArgumentBreak } from "./call-argument-layout.js";
 import { NUMBER_TYPE, OBJECT_TYPE, STRING_TYPE, UNDEFINED_TYPE } from "./constants.js";
 import {
-    buildCallArgumentsDocs,
     buildFunctionParameterDocs,
-    countLeadingSimpleCallArguments,
     joinDeclaratorPartsWithCommas,
     printCommaSeparatedList,
     shouldAllowTrailingComma
@@ -51,7 +52,6 @@ import {
 } from "./expression-print-utils.js";
 import { safeGetParentNode } from "./path-utils.js";
 import {
-    breakParent,
     concat,
     conditionalGroup,
     group,
@@ -69,29 +69,7 @@ import { isLastStatement, optionalSemicolon } from "./semicolons.js";
 import { buildClauseGroup, printSingleClauseStatement } from "./single-clause-statement.js";
 import { shouldAddNewlinesAroundStatement } from "./statement-spacing-policy.js";
 import { handleIntermediateTrailingSpacing, handleTerminalTrailingSpacing } from "./statement-traversal-spacing.js";
-import { isComplexArgumentNode, isInLValueChain } from "./type-guards.js";
-
-// Module-level cache keyed on struct argument AST nodes.
-// See clearStructArgumentBreakCache for the memory-management rationale.
-let forcedStructArgumentBreaks = new WeakMap();
-
-/**
- * Reset the struct-argument-break cache to an empty WeakMap.
- *
- * Standard WeakMaps have no `clear()` method, so the only way to release
- * the entries without relying on GC is to replace the reference with a
- * fresh instance.  This is safe because every call to `printCallExpressionNode`
- * and `printNewExpressionNode` reads the current value of
- * `forcedStructArgumentBreaks` via the variable binding, not via closure.
- *
- * After this function runs the previous WeakMap is eligible for GC (it has
- * no outgoing references), and the new empty instance immediately starts
- * collecting new entries for the next format cycle.  This cuts steady-state
- * heap usage for repeated format calls from O(N entries) to O(1) per cycle.
- */
-export function clearStructArgumentBreakCache(): void {
-    forcedStructArgumentBreaks = new WeakMap();
-}
+import { isInLValueChain } from "./type-guards.js";
 
 function applyLogicalOperatorsStyle(operator, style) {
     const coreStyle = style === LogicalOperatorsStyle.KEYWORDS ? "keyword" : "symbol";
@@ -543,7 +521,7 @@ function printStructExpressionNode(node, path, options, print) {
         return concat(printEmptyBlock(path, options));
     }
 
-    const shouldForceBreakStruct = forcedStructArgumentBreaks.has(node);
+    const shouldForceBreakStruct = hasForcedStructArgumentBreak(node);
     const objectWrapOption = resolveObjectWrapOption(options);
     const shouldPreserveStructWrap =
         objectWrapOption === ObjectWrapOption.PRESERVE && structLiteralHasLeadingLineBreak(node, options);
@@ -1131,201 +1109,6 @@ function shouldPrintBlockAlternateAsElseIf(node) {
     return onlyStatement?.type === Core.IF_STATEMENT;
 }
 
-function shouldForceBreakStructArgument(argument, options, previousArgument) {
-    if (!argument || argument.type !== "StructExpression") {
-        return false;
-    }
-
-    if (Core.hasComment(argument)) {
-        return true;
-    }
-
-    if (hasLineBreakBetweenArguments(previousArgument, argument, options)) {
-        return true;
-    }
-
-    const properties = Core.asArray(argument.properties);
-    if (properties.length === 0) {
-        return false;
-    }
-
-    if (properties.some((property) => Core.hasComment(property) || (property as any)?._hasTrailingInlineComment)) {
-        return true;
-    }
-
-    return false;
-}
-
-// Argument node kinds that trigger the callback/struct layout path.
-const CALLBACK_OR_STRUCT_ARGUMENT_TYPES = new Set([
-    Core.FUNCTION_DECLARATION,
-    Core.FUNCTION_EXPRESSION,
-    Core.CONSTRUCTOR_DECLARATION,
-    Core.STRUCT_EXPRESSION
-]);
-
-// Argument node kinds that count as a "callback" for layout purposes.
-const CALLBACK_ARGUMENT_TYPES = new Set([
-    Core.FUNCTION_DECLARATION,
-    Core.FUNCTION_EXPRESSION,
-    Core.CONSTRUCTOR_DECLARATION
-]);
-
-type CallLikeArgumentClassification = {
-    callbackArguments: unknown[];
-    structArguments: unknown[];
-    structArgumentsToBreak: unknown[];
-};
-
-/**
- * Classifies call/new arguments into the buckets the layout pipeline
- * needs: callback-bearing arguments, struct arguments, and structs that
- * must force a line break before them. The walk is intentionally a single
- * pass so the hot formatting path does not pay for two or three
- * `node.arguments.filter(...)` passes.
- */
-function classifyCallLikeArguments(node, options) {
-    const callbackArguments: unknown[] = [];
-    const structArguments: unknown[] = [];
-    const structArgumentsToBreak: unknown[] = [];
-    const args = node?.arguments ?? [];
-
-    for (let i = 0; i < args.length; i += 1) {
-        const arg = args[i];
-        const argType = arg?.type;
-
-        if (CALLBACK_ARGUMENT_TYPES.has(argType)) {
-            callbackArguments.push(arg);
-            continue;
-        }
-
-        if (argType === Core.STRUCT_EXPRESSION) {
-            structArguments.push(arg);
-            const previousArgument = i > 0 ? args[i - 1] : null;
-            if (shouldForceBreakStructArgument(arg, options, previousArgument)) {
-                structArgumentsToBreak.push(arg);
-            }
-        }
-    }
-
-    return { callbackArguments, structArguments, structArgumentsToBreak } satisfies CallLikeArgumentClassification;
-}
-
-/**
- * Lays out the `(...)` argument list for a `CallExpression` or
- * `NewExpression`, returning an array of Prettier docs to splice after the
- * callee. Both printers share the same categorisation + layout decision
- * tree, so the work lives here to avoid the ~70 lines of near-identical
- * code that used to live in each printer.
- *
- * @param node - The `CallExpression` / `NewExpression` AST node.
- * @param path - Prettier AstPath for the node.
- * @param options - Prettier options for the active run.
- * @param print - Recursive print callback from Prettier.
- * @param options.forceInline - Force a single-line `()` even when the
- *   layout would otherwise break. Used by call expressions in l-value
- *   chains (e.g. `foo().bar`) so the chain stays on one visual line.
- * @returns The argument-list docs (including the surrounding parens).
- */
-function buildCallLikeArgumentDocs(node, path, options, print, { forceInline = false } = {}) {
-    if (node.arguments.length === 0) {
-        return [printEmptyParens(path, options)];
-    }
-
-    const args = node.arguments;
-    const { callbackArguments, structArguments, structArgumentsToBreak } = classifyCallLikeArguments(node, options);
-
-    structArgumentsToBreak.forEach((argument: object) => {
-        forcedStructArgumentBreaks.set(argument, true);
-    });
-
-    const simplePrefixLength = countLeadingSimpleCallArguments(node);
-    const shouldFavorInlineArguments =
-        callbackArguments.length === 0 &&
-        structArguments.length === 0 &&
-        args.length <= 3 &&
-        args.every((argument) => !isComplexArgumentNode(argument));
-    const effectiveElementsPerLineLimit = shouldFavorInlineArguments ? args.length : Infinity;
-
-    const shouldForceCallbackBreaks = callbackArguments.length > 0 && simplePrefixLength <= 1;
-    const shouldForceBreakArguments =
-        callbackArguments.length > 1 || structArgumentsToBreak.length > 0 || shouldForceCallbackBreaks;
-
-    const shouldUseCallbackLayout =
-        CALLBACK_OR_STRUCT_ARGUMENT_TYPES.has(args[0]?.type) ||
-        CALLBACK_OR_STRUCT_ARGUMENT_TYPES.has(args.at(-1)?.type);
-    const shouldIncludeInlineVariant = shouldUseCallbackLayout && !shouldForceBreakArguments && simplePrefixLength > 1;
-    const hasCallbackArguments = callbackArguments.length > 0;
-
-    const { inlineDoc, multilineDoc } = buildCallArgumentsDocs(path, print, options, {
-        forceBreak: shouldForceBreakArguments,
-        maxElementsPerLine: effectiveElementsPerLineLimit,
-        includeInlineVariant: shouldIncludeInlineVariant,
-        hasCallbackArguments,
-        forceInline
-    });
-
-    if (!shouldUseCallbackLayout) {
-        return shouldForceBreakArguments ? [concat([breakParent, multilineDoc])] : [multilineDoc];
-    }
-
-    const shouldPreferInlineCallbackLayout =
-        inlineDoc &&
-        hasCallbackArguments &&
-        simplePrefixLength > 1 &&
-        shouldIncludeInlineVariant &&
-        willBreak(inlineDoc);
-
-    if (shouldForceBreakArguments) {
-        return [concat([breakParent, multilineDoc])];
-    }
-    if (shouldPreferInlineCallbackLayout) {
-        return [inlineDoc];
-    }
-    if (inlineDoc) {
-        return [conditionalGroup([inlineDoc, multilineDoc])];
-    }
-    return [multilineDoc];
-}
-
-function hasLineBreakBetweenArguments(previousArgument, argument, options) {
-    if (!previousArgument || !argument) {
-        return false;
-    }
-
-    const originalText = Core.getOriginalTextFromOptions(options);
-    if (typeof originalText !== STRING_TYPE) {
-        return false;
-    }
-
-    const previousArgumentEnd = Core.getNodeEndIndex(previousArgument);
-    const argumentStart = Core.getNodeStartIndex(argument);
-
-    if (
-        !Number.isFinite(previousArgumentEnd) ||
-        !Number.isFinite(argumentStart) ||
-        argumentStart <= previousArgumentEnd
-    ) {
-        return false;
-    }
-
-    // Scan the gap between the two arguments for LF (0x0a) or CR (0x0d).
-    // Character-code comparison avoids string allocation from
-    // String.fromCharCode and regex compilation overhead.
-    // Micro-benchmark (10 M calls, gap size = 8 chars with LF at position 4):
-    //   regex test(/\n|\r/):  ~680 ms
-    //   charCodeAt loop:       ~280 ms
-    // ~59% speedup on this hot struct-argument formatting path.
-    for (let cursor = previousArgumentEnd; cursor < argumentStart; cursor++) {
-        const charCode = originalText.charCodeAt(cursor);
-        if (charCode === 10 || charCode === 13) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 function buildStructPropertyCommentSuffix(path, options) {
     const node = path && typeof path.getValue === "function" ? path.getValue() : null;
     const comments = Core.asArray(node?._structTrailingComments);
@@ -1770,3 +1553,5 @@ function buildIfAlternateDoc(path, options, print, node) {
 
     return printInBlock(path, options, print, "alternate");
 }
+
+export { clearStructArgumentBreakCache } from "./call-argument-layout.js";
