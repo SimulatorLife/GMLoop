@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { Core } from "@gmloop/core";
+
 import { openGraphIndexDatabase } from "../src/graph-index/database.js";
+import { buildSemanticFileManifest } from "../src/project-index/semantic-manifest.js";
 import { getSemanticIndexDatabasePath, openSemanticIndexStore } from "../src/project-index/semantic-store.js";
 
 void test("semantic index store persists records and generation state in SQLite", async () => {
@@ -41,6 +44,12 @@ void test("semantic index store persists records and generation state in SQLite"
         assert.deepEqual(store.readIndexForTier("definitions")?.files, { current: {} });
         assert.equal(store.readStateForTier("full")?.generation, 2);
         assert.equal(store.readStateForTier("definitions")?.generation, 3);
+        assert.deepEqual(store.readActiveSlots(), {
+            definitions: definitionsAfterFull,
+            full: second,
+            hasMatchingFull: false,
+            newestDefinitionsRevision: null
+        });
     } finally {
         store.close();
     }
@@ -54,6 +63,7 @@ void test("semantic index store rejects stale generation publications without ch
         const fullPublication = store.publishIndex({
             expectedHeadGeneration: initialHead.generation,
             index: { files: { "scripts/main.gml": { filePath: "scripts/main.gml" } }, projectRoot },
+            manifest: null,
             sourceRevision: "revision-full",
             tier: "full"
         });
@@ -63,6 +73,7 @@ void test("semantic index store rejects stale generation publications without ch
         const staleDefinitionsPublication = store.publishIndex({
             expectedHeadGeneration: initialHead.generation,
             index: { files: { "scripts/main.gml": { filePath: "scripts/main.gml" } }, projectRoot },
+            manifest: null,
             sourceRevision: "revision-definitions",
             tier: "definitions"
         });
@@ -70,6 +81,31 @@ void test("semantic index store rejects stale generation publications without ch
         assert.equal(store.readProjectHead().generation, 1);
         assert.equal(store.readStateForTier("definitions"), null);
         assert.equal(store.readStateForTier("full")?.sourceSignature, "revision-full");
+        assert.equal(store.readActiveSlots().hasMatchingFull, true);
+        assert.equal(store.readActiveSlots().newestDefinitionsRevision, "revision-full");
+    } finally {
+        store.close();
+    }
+});
+
+void test("semantic index store persists and restores the generation-bound manifest", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-store-manifest-"));
+    await writeFile(path.join(projectRoot, "main.gml"), "return 1;", "utf8");
+    const manifest = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade);
+    const store = openSemanticIndexStore(projectRoot);
+    try {
+        const publication = store.publishIndex({
+            expectedHeadGeneration: 0,
+            index: {
+                files: { "main.gml": { contentHash: manifest.entries.get("main.gml")?.contentHash } },
+                projectRoot
+            },
+            manifest,
+            sourceRevision: manifest.sourceRevision,
+            tier: "definitions"
+        });
+        assert.equal(publication.status, "published");
+        assert.deepEqual(store.readManifestForTier("definitions"), manifest);
     } finally {
         store.close();
     }

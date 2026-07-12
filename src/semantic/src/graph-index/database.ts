@@ -5,7 +5,7 @@ import {
     runGraphDatabaseTransaction
 } from "./sqlite-adapter.js";
 
-export const GRAPH_INDEX_SCHEMA_VERSION = 4;
+export const GRAPH_INDEX_SCHEMA_VERSION = 5;
 
 const TABLE_RESET_STATEMENTS = Object.freeze([
     "DELETE FROM index_state",
@@ -223,6 +223,28 @@ function createSemanticIndexSchemaV4(database: GraphDatabase): void {
     `);
 }
 
+function createSemanticIndexSchemaV5(database: GraphDatabase): void {
+    createSemanticIndexSchemaV4(database);
+    database.exec(`
+        CREATE TABLE IF NOT EXISTS semantic_files (
+            project_root TEXT NOT NULL,
+            tier TEXT NOT NULL,
+            relative_path TEXT NOT NULL,
+            file_kind TEXT NOT NULL CHECK (file_kind IN ('gml', 'projectManifest', 'resourceMetadata')),
+            content_hash TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL,
+            mtime_ms INTEGER,
+            source_origin TEXT NOT NULL CHECK (source_origin IN ('disk', 'openBuffer')),
+            source_version INTEGER,
+            updated_generation INTEGER NOT NULL,
+            PRIMARY KEY (project_root, tier, relative_path),
+            FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_semantic_files_generation
+            ON semantic_files(project_root, tier, updated_generation);
+    `);
+}
+
 function migrateSemanticIndexSchemaV3ToV4(database: GraphDatabase): void {
     runGraphDatabaseTransaction(database, () => {
         database.exec("ALTER TABLE semantic_state RENAME TO semantic_state_v3");
@@ -244,6 +266,22 @@ function migrateSemanticIndexSchemaV3ToV4(database: GraphDatabase): void {
         database.exec("DROP TABLE semantic_dependencies_v3");
         database.exec("DROP TABLE semantic_records_v3");
         database.exec("DROP TABLE semantic_state_v3");
+    });
+}
+
+function migrateSemanticIndexSchemaV4ToV5(database: GraphDatabase): void {
+    runGraphDatabaseTransaction(database, () => {
+        createSemanticIndexSchemaV5(database);
+        database.exec(`
+            INSERT OR IGNORE INTO semantic_files(
+                project_root, tier, relative_path, file_kind, content_hash, size_bytes, mtime_ms,
+                source_origin, source_version, updated_generation
+            )
+            SELECT
+                project_root, tier, file_path, 'gml', content_hash, 0, NULL, 'disk', NULL, updated_generation
+            FROM semantic_slot_records
+            WHERE record_kind = 'files' AND file_path IS NOT NULL AND content_hash IS NOT NULL;
+        `);
     });
 }
 
@@ -354,14 +392,14 @@ function ensureGraphIndexSchema(database: GraphDatabase): void {
     const schemaVersion = readGraphIndexSchemaVersion(database);
     if (schemaVersion === null) {
         createGraphIndexSchema(database);
-        createSemanticIndexSchemaV4(database);
+        createSemanticIndexSchemaV5(database);
         writeGraphIndexSchemaVersion(database);
         return;
     }
 
     if (schemaVersion === 1) {
         migrateGraphIndexSchemaV1ToV2(database);
-        createSemanticIndexSchemaV4(database);
+        createSemanticIndexSchemaV5(database);
         writeGraphIndexSchemaVersion(database);
         return;
     }
@@ -371,6 +409,7 @@ function ensureGraphIndexSchema(database: GraphDatabase): void {
         createSemanticIndexSchemaV3(database);
         ensureSemanticStateSignatureColumn(database);
         migrateSemanticIndexSchemaV3ToV4(database);
+        migrateSemanticIndexSchemaV4ToV5(database);
         writeGraphIndexSchemaVersion(database);
         return;
     }
@@ -378,6 +417,14 @@ function ensureGraphIndexSchema(database: GraphDatabase): void {
     if (schemaVersion === 3) {
         createGraphIndexSchemaV2(database);
         migrateSemanticIndexSchemaV3ToV4(database);
+        migrateSemanticIndexSchemaV4ToV5(database);
+        writeGraphIndexSchemaVersion(database);
+        return;
+    }
+
+    if (schemaVersion === 4) {
+        createGraphIndexSchemaV2(database);
+        migrateSemanticIndexSchemaV4ToV5(database);
         writeGraphIndexSchemaVersion(database);
         return;
     }
@@ -389,7 +436,7 @@ function ensureGraphIndexSchema(database: GraphDatabase): void {
     }
 
     createGraphIndexSchemaV2(database);
-    createSemanticIndexSchemaV4(database);
+    createSemanticIndexSchemaV5(database);
     writeGraphIndexSchemaVersion(database);
 }
 

@@ -45,6 +45,26 @@ export type SemanticFileManifest = Readonly<{
     sourceRevision: SemanticSourceRevision;
 }>;
 
+/** Kind of physical or overlay-backed source change. */
+export type SemanticFileChangeKind = "added" | "deleted" | "metadataChanged" | "modified";
+
+/** One manifest-level semantic source change. */
+export type SemanticFileChange = Readonly<{
+    current: SemanticFileManifestEntry | null;
+    kind: SemanticFileChangeKind;
+    previous: SemanticFileManifestEntry | null;
+    relativePath: string;
+}>;
+
+/** Result of comparing an active semantic manifest with current project inputs. */
+export type SemanticManifestReconciliation = Readonly<{
+    changedFiles: ReadonlyArray<SemanticFileChange>;
+    currentRevision: SemanticSourceRevision;
+    previousRevision: SemanticSourceRevision | null;
+    requiresBuild: boolean;
+    unchangedCount: number;
+}>;
+
 type ProjectTreeFile = Readonly<{
     absolutePath: string;
     mtimeMs: number | null;
@@ -160,4 +180,51 @@ export async function buildSemanticFileManifest(
 /** Create a SHA-256 content hash for an open-buffer overlay. */
 export function createSemanticContentHash(sourceText: string): string {
     return createContentHash(sourceText);
+}
+
+/** Compare persisted semantic inputs with a newly scanned canonical manifest. */
+export function reconcileSemanticManifests(
+    previous: SemanticFileManifest | null,
+    current: SemanticFileManifest
+): SemanticManifestReconciliation {
+    if (previous?.sourceRevision === current.sourceRevision) {
+        return Object.freeze({
+            changedFiles: [],
+            currentRevision: current.sourceRevision,
+            previousRevision: previous.sourceRevision,
+            requiresBuild: false,
+            unchangedCount: current.entries.size
+        });
+    }
+
+    const paths = new Set([...(previous?.entries.keys() ?? []), ...current.entries.keys()]);
+    const changedFiles: SemanticFileChange[] = [];
+    let unchangedCount = 0;
+    for (const relativePath of [...paths].toSorted((left, right) => left.localeCompare(right))) {
+        const previousEntry = previous?.entries.get(relativePath) ?? null;
+        const currentEntry = current.entries.get(relativePath) ?? null;
+        if (
+            previousEntry?.contentHash === currentEntry?.contentHash &&
+            previousEntry.fileKind === currentEntry.fileKind
+        ) {
+            unchangedCount += 1;
+            continue;
+        }
+        const kind: SemanticFileChangeKind =
+            previousEntry === null
+                ? "added"
+                : currentEntry === null
+                  ? "deleted"
+                  : previousEntry.fileKind !== currentEntry.fileKind || previousEntry.fileKind !== "gml"
+                    ? "metadataChanged"
+                    : "modified";
+        changedFiles.push(Object.freeze({ current: currentEntry, kind, previous: previousEntry, relativePath }));
+    }
+    return Object.freeze({
+        changedFiles,
+        currentRevision: current.sourceRevision,
+        previousRevision: previous?.sourceRevision ?? null,
+        requiresBuild: changedFiles.length > 0,
+        unchangedCount
+    });
 }

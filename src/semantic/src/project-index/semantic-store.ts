@@ -4,6 +4,7 @@ import { Core } from "@gmloop/core";
 
 import { openGraphIndexDatabase } from "../graph-index/database.js";
 import { type GraphDatabase, runGraphDatabaseImmediateTransaction } from "../graph-index/sqlite-adapter.js";
+import type { SemanticFileManifest, SemanticFileManifestEntry } from "./semantic-manifest.js";
 
 type SemanticRecordRow = Readonly<{
     payload: string;
@@ -19,6 +20,16 @@ type SemanticNavigationProjectionRow = Readonly<{
 type SemanticFileHashRow = Readonly<{
     content_hash: string | null;
     file_path: string;
+}>;
+
+type SemanticManifestRow = Readonly<{
+    content_hash: string;
+    file_kind: "gml" | "projectManifest" | "resourceMetadata";
+    mtime_ms: number | null;
+    relative_path: string;
+    size_bytes: number;
+    source_origin: "disk" | "openBuffer";
+    source_version: number | null;
 }>;
 
 export type SemanticStoreState = Readonly<{
@@ -40,9 +51,19 @@ export type SemanticPublishResult = Readonly<{
     status: "published" | "superseded";
 }>;
 
+/** Active tier descriptors and whether a full slot matches the newest facts. */
+export type SemanticActiveSlots = Readonly<{
+    definitions: SemanticStoreState | null;
+    full: SemanticStoreState | null;
+    hasMatchingFull: boolean;
+    newestDefinitionsRevision: string | null;
+}>;
+
 export type SemanticIndexStore = Readonly<{
     close: () => void;
     readFileContentHashes: () => ReadonlyMap<string, string>;
+    readActiveSlots: () => SemanticActiveSlots;
+    readManifestForTier: (tier: "definitions" | "full") => SemanticFileManifest | null;
     readIndexForTier: (tier: "definitions" | "full") => Record<string, unknown> | null;
     readStateForTier: (tier: "definitions" | "full") => SemanticStoreState | null;
     readProjectHead: () => SemanticProjectHead;
@@ -50,6 +71,7 @@ export type SemanticIndexStore = Readonly<{
         request: Readonly<{
             expectedHeadGeneration: number;
             index: Record<string, unknown>;
+            manifest: SemanticFileManifest | null;
             sourceRevision: string;
             tier: "definitions" | "full";
         }>
@@ -85,6 +107,40 @@ function readFileContentHashes(database: GraphDatabase, projectRoot: string): Re
         )
         .all(projectRoot) as unknown as ReadonlyArray<SemanticFileHashRow>;
     return new Map(rows.flatMap((row) => (row.content_hash ? [[row.file_path, row.content_hash] as const] : [])));
+}
+
+function readManifestForTier(
+    database: GraphDatabase,
+    projectRoot: string,
+    tier: "definitions" | "full"
+): SemanticFileManifest | null {
+    const state = readStateForTier(database, projectRoot, tier);
+    if (state === null || state.sourceSignature.length === 0) {
+        return null;
+    }
+    const rows = database
+        .prepare(
+            "SELECT relative_path, file_kind, content_hash, size_bytes, mtime_ms, source_origin, source_version FROM semantic_files WHERE project_root = ? AND tier = ? ORDER BY relative_path"
+        )
+        .all(projectRoot, tier) as unknown as ReadonlyArray<SemanticManifestRow>;
+    if (rows.length === 0) {
+        return null;
+    }
+    const entries = new Map<string, SemanticFileManifestEntry>(
+        rows.map((row) => [
+            row.relative_path,
+            Object.freeze({
+                contentHash: row.content_hash,
+                fileKind: row.file_kind,
+                mtimeMs: row.mtime_ms,
+                relativePath: row.relative_path,
+                sizeBytes: row.size_bytes,
+                sourceOrigin: row.source_origin,
+                sourceVersion: row.source_version
+            })
+        ])
+    );
+    return Object.freeze({ entries, sourceRevision: state.sourceSignature as SemanticFileManifest["sourceRevision"] });
 }
 
 function findImmediateDownstreamFiles(
@@ -175,6 +231,23 @@ function readProjectHead(database: GraphDatabase, projectRoot: string): Semantic
     return Object.freeze({ generation: row?.head_generation ?? 0, projectRoot });
 }
 
+function readActiveSlots(database: GraphDatabase, projectRoot: string): SemanticActiveSlots {
+    const definitions = readStateForTier(database, projectRoot, "definitions");
+    const full = readStateForTier(database, projectRoot, "full");
+    const newest =
+        definitions === null || (full !== null && full.generation > definitions.generation) ? full : definitions;
+    return Object.freeze({
+        definitions,
+        full,
+        hasMatchingFull:
+            full !== null &&
+            newest !== null &&
+            full.sourceSignature.length > 0 &&
+            full.sourceSignature === newest.sourceSignature,
+        newestDefinitionsRevision: newest?.sourceSignature || null
+    });
+}
+
 function readIndexForTier(
     database: GraphDatabase,
     projectRoot: string,
@@ -252,6 +325,7 @@ function writeIndex(
     const result = publishIndex(database, projectRoot, {
         expectedHeadGeneration: null,
         index,
+        manifest: null,
         sourceRevision: sourceSignature,
         tier
     });
@@ -267,6 +341,7 @@ function publishIndex(
     request: Readonly<{
         expectedHeadGeneration: number | null;
         index: Record<string, unknown>;
+        manifest: SemanticFileManifest | null;
         sourceRevision: string;
         tier: "definitions" | "full";
     }>
@@ -298,6 +373,9 @@ function publishIndex(
             .run(projectRoot, request.tier);
         database
             .prepare("DELETE FROM semantic_slot_dependencies WHERE project_root = ? AND tier = ?")
+            .run(projectRoot, request.tier);
+        database
+            .prepare("DELETE FROM semantic_files WHERE project_root = ? AND tier = ?")
             .run(projectRoot, request.tier);
 
         const insert = database.prepare(
@@ -404,6 +482,25 @@ function publishIndex(
         for (const [sourceFile, downstreamFile] of collectFileDependencies(request.index)) {
             insertDependency.run(projectRoot, request.tier, sourceFile, downstreamFile, generation);
         }
+        if (request.manifest !== null) {
+            const insertManifestFile = database.prepare(
+                "INSERT INTO semantic_files(project_root, tier, relative_path, file_kind, content_hash, size_bytes, mtime_ms, source_origin, source_version, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            );
+            for (const entry of request.manifest.entries.values()) {
+                insertManifestFile.run(
+                    projectRoot,
+                    request.tier,
+                    entry.relativePath,
+                    entry.fileKind,
+                    entry.contentHash,
+                    entry.sizeBytes,
+                    entry.mtimeMs,
+                    entry.sourceOrigin,
+                    entry.sourceVersion,
+                    generation
+                );
+            }
+        }
         database
             .prepare(
                 "INSERT INTO semantic_navigation_projection(project_root, tier, generation, payload) VALUES (?, ?, ?, ?) ON CONFLICT(project_root, tier) DO UPDATE SET generation = excluded.generation, payload = excluded.payload"
@@ -430,6 +527,8 @@ export function openSemanticIndexStore(projectRoot: string): SemanticIndexStore 
     return {
         close: () => database.close(),
         findImmediateDownstreamFiles: (filePath) => findImmediateDownstreamFiles(database, resolvedRoot, filePath),
+        readActiveSlots: () => readActiveSlots(database, resolvedRoot),
+        readManifestForTier: (tier) => readManifestForTier(database, resolvedRoot, tier),
         readFileContentHashes: () => readFileContentHashes(database, resolvedRoot),
         readIndexForTier: (tier) => readIndexForTier(database, resolvedRoot, tier),
         readProjectHead: () => readProjectHead(database, resolvedRoot),

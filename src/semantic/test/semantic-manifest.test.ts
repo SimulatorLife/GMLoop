@@ -6,7 +6,11 @@ import test from "node:test";
 
 import { Core } from "@gmloop/core";
 
-import { buildSemanticFileManifest, createSemanticContentHash } from "../src/project-index/semantic-manifest.js";
+import {
+    buildSemanticFileManifest,
+    createSemanticContentHash,
+    reconcileSemanticManifests
+} from "../src/project-index/semantic-manifest.js";
 
 void test("semantic manifest hashes GML, resources, and the project manifest deterministically", async () => {
     const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-manifest-"));
@@ -56,4 +60,28 @@ void test("semantic manifest gives an open buffer precedence over disk contents"
         sourceOrigin: "openBuffer",
         sourceVersion: 9
     });
+});
+
+void test("semantic manifest reconciliation identifies scoped source and metadata changes", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-manifest-reconcile-"));
+    await mkdir(path.join(projectRoot, "scripts", "main"), { recursive: true });
+    await writeFile(path.join(projectRoot, "game.yyp"), "{}", "utf8");
+    await writeFile(path.join(projectRoot, "scripts", "main", "main.gml"), "return 1;", "utf8");
+    const previous = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade);
+
+    await writeFile(path.join(projectRoot, "game.yyp"), '{"resources":[]}', "utf8");
+    await writeFile(path.join(projectRoot, "scripts", "main", "main.gml"), "return 2;", "utf8");
+    await writeFile(path.join(projectRoot, "scripts", "added.gml"), "return 3;", "utf8");
+    const current = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade);
+    const reconciliation = reconcileSemanticManifests(previous, current);
+
+    assert.equal(reconciliation.requiresBuild, true);
+    assert.deepEqual(
+        reconciliation.changedFiles.map((change) => [change.relativePath, change.kind]),
+        [
+            ["game.yyp", "metadataChanged"],
+            ["scripts/added.gml", "added"],
+            ["scripts/main/main.gml", "modified"]
+        ]
+    );
 });

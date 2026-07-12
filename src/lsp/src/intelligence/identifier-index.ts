@@ -521,6 +521,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         string,
         Readonly<{ ranges: ReadonlyArray<LexicalRange>; version: number }>
     >();
+    const manifestReconciliations = new Map<string, Promise<void>>();
     const fsFacade = createLspFsFacade(documents);
 
     function isIgnoredOffset(document: GmlTextDocument, offset: number): boolean {
@@ -572,6 +573,40 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
         return store;
     }
 
+    function reconcileRestoredManifest(
+        document: GmlTextDocument,
+        resolvedRoot: string,
+        tier: "definitions" | "full"
+    ): void {
+        if (manifestReconciliations.has(resolvedRoot)) {
+            return;
+        }
+        const reconciliation = (async () => {
+            const previousManifest = getSemanticStore(resolvedRoot).readManifestForTier(tier);
+            if (previousManifest === null) {
+                return;
+            }
+            const overlays = documents.list().map((openDocument) => ({
+                absolutePath: openDocument.filePath,
+                contentHash: Semantic.createSemanticContentHash(openDocument.sourceText),
+                documentVersion: openDocument.version,
+                sourceText: openDocument.sourceText
+            }));
+            const currentManifest = await Semantic.buildSemanticFileManifest(resolvedRoot, fsFacade, overlays);
+            if (Semantic.reconcileSemanticManifests(previousManifest, currentManifest).requiresBuild) {
+                invalidateRoot(resolvedRoot);
+                triggerBuildInBackground(document, resolvedRoot);
+            }
+        })()
+            .catch((error: unknown) => {
+                console.error(`Failed to reconcile semantic manifest for ${resolvedRoot}:`, error);
+            })
+            .finally(() => {
+                manifestReconciliations.delete(resolvedRoot);
+            });
+        manifestReconciliations.set(resolvedRoot, reconciliation);
+    }
+
     function saveIndexCacheToDisk(resolvedRoot: string, index: NavigationIndex, lightweight: boolean): void {
         const tier = lightweight ? "definitions" : "full";
 
@@ -593,6 +628,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                 const publication = store.publishIndex({
                     expectedHeadGeneration: store.readProjectHead().generation,
                     index: index.rawIndex as Record<string, unknown>,
+                    manifest,
                     sourceRevision: manifest.sourceRevision,
                     tier
                 });
@@ -819,6 +855,7 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
                     };
                     cachedStates.set(resolvedRoot, loadedState);
                     currentState = loadedState;
+                    reconcileRestoredManifest(document, resolvedRoot, cachedState.tier);
                 }
             } catch (error) {
                 console.error(`Failed to restore semantic index for ${resolvedRoot}:`, error);
@@ -1029,12 +1066,14 @@ export function createGmlSemanticIndex(documents: GmlDocumentStore): GmlSemantic
             }
             abortControllers.clear();
             await Promise.all(pendingCacheWrites.values());
+            await Promise.all(manifestReconciliations.values());
             for (const store of semanticStores.values()) {
                 store.close();
             }
             semanticStores.clear();
             pendingCacheWrites.clear();
             lexicalRangesByDocument.clear();
+            manifestReconciliations.clear();
         },
         buildForDocument: ensureIndex,
         refreshForDocument: refreshIndex,
