@@ -1,14 +1,18 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 
+import { runWatchCommand } from "../src/commands/watch.js";
 import { createStatusUrl, createWebSocketUrl } from "../src/modules/live-reload/config.js";
 import {
     discoverLiveReloadSessionByPath,
     LIVE_RELOAD_SESSION_REGISTRY_RELATIVE_PATH,
+    type LiveReloadRegisteredSession,
     readLiveReloadSessionRegistry,
+    removeLiveReloadSessionRegistry,
     resolveLiveReloadProjectIdentity,
     writeLiveReloadSessionRegistry
 } from "../src/modules/live-reload/session-registry.js";
@@ -72,7 +76,88 @@ void test("live-reload session registry round-trips endpoint metadata", async ()
         assert.equal(session?.statusUrl, "http://127.0.0.1:50001/status");
         assert.equal(session?.websocketUrl, "ws://127.0.0.1:50002");
         assert.equal(session?.startSource, "ui");
+        assert.deepEqual(await readdir(path.join(projectRoot, ".gmloop")), ["live-reload-session.json"]);
     } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("live-reload registry cleanup does not remove a replacement session", async () => {
+    const projectRoot = await createTemporaryGameMakerProject();
+    const baseSession = {
+        lastHeartbeatAt: 123,
+        processId: 456,
+        projectRoot,
+        runtimeUrl: null,
+        startSource: "ui" as const,
+        status: "running" as const,
+        statusHost: "127.0.0.1",
+        statusPort: 50_001,
+        statusUrl: createStatusUrl("127.0.0.1", 50_001),
+        watchedRoot: projectRoot,
+        websocketHost: "127.0.0.1",
+        websocketPort: 50_002,
+        websocketUrl: createWebSocketUrl("127.0.0.1", 50_002),
+        yypPath: path.join(projectRoot, "Game.yyp")
+    };
+
+    try {
+        await writeLiveReloadSessionRegistry(baseSession);
+        const replacement = {
+            ...baseSession,
+            lastHeartbeatAt: 789,
+            processId: 999,
+            statusPort: 50_003,
+            statusUrl: createStatusUrl("127.0.0.1", 50_003)
+        };
+        await writeLiveReloadSessionRegistry(replacement);
+
+        assert.equal(await removeLiveReloadSessionRegistry(projectRoot, baseSession), false);
+        const retainedSession = await readLiveReloadSessionRegistry(
+            path.join(projectRoot, LIVE_RELOAD_SESSION_REGISTRY_RELATIVE_PATH)
+        );
+        assert.equal(retainedSession?.processId, 999);
+        assert.equal(await removeLiveReloadSessionRegistry(projectRoot, replacement), true);
+        assert.equal(
+            await readLiveReloadSessionRegistry(path.join(projectRoot, LIVE_RELOAD_SESSION_REGISTRY_RELATIVE_PATH)),
+            null
+        );
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("live-reload watcher cleanup removes its own registry entry", async () => {
+    const projectRoot = await createTemporaryGameMakerProject();
+    const abortController = new AbortController();
+    const registryPath = path.join(projectRoot, LIVE_RELOAD_SESSION_REGISTRY_RELATIVE_PATH);
+    const watchPromise = runWatchCommand(projectRoot, {
+        abortSignal: abortController.signal,
+        liveReloadSession: {
+            projectRoot,
+            startSource: "ui",
+            yypPath: path.join(projectRoot, "Game.yyp")
+        },
+        quiet: true,
+        runtimeServer: false,
+        statusPort: 0,
+        websocketPort: 0
+    });
+
+    try {
+        let session: LiveReloadRegisteredSession | null = null;
+        for (let attempt = 0; attempt < 100 && session === null; attempt += 1) {
+            session = await readLiveReloadSessionRegistry(registryPath);
+            if (session === null) await delay(20);
+        }
+        assert.notEqual(session, null, "watcher should register its live-reload session");
+
+        abortController.abort();
+        await watchPromise;
+        assert.equal(await readLiveReloadSessionRegistry(registryPath), null);
+    } finally {
+        abortController.abort();
+        await watchPromise.catch(() => undefined);
         await rm(projectRoot, { recursive: true, force: true });
     }
 });
