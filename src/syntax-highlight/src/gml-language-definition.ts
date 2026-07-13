@@ -35,8 +35,3 @@ export const GML_SYMBOL_OPERATORS: readonly string[] = Object.freeze(languageDef
 
 /** GML preprocessor directives recognized by the parser lexer. */
 export const GML_DIRECTIVES: readonly string[] = Object.freeze(languageDefinition.directives);
-
-/** TextMate scopes used by the generated/static VS Code grammar for each shared category. */
-export const GML_TEXTMATE_SCOPE_BY_TOKEN_TYPE: Readonly<Record<GmlTokenType, string>> = Object.freeze(
-    languageDefinition.textMateScopes
-);
