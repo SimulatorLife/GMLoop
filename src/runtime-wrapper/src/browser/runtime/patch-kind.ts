@@ -3,7 +3,7 @@ import type { PatchKind } from "./types.js";
 /**
  * Registry collection keys keyed by runtime patch kind.
  */
-export type RegistryCollectionKey = "scripts" | "events" | "closures";
+export type RegistryCollectionKey = "scripts" | "events" | "closures" | "resources";
 
 type PatchKindMetadata = Readonly<{
     registryCollectionKey: RegistryCollectionKey;
@@ -13,7 +13,8 @@ type PatchKindMetadata = Readonly<{
 const PATCH_KIND_METADATA: Readonly<Record<PatchKind, PatchKindMetadata>> = Object.freeze({
     script: Object.freeze({ registryCollectionKey: "scripts", displayName: "Script" }),
     event: Object.freeze({ registryCollectionKey: "events", displayName: "Event" }),
-    closure: Object.freeze({ registryCollectionKey: "closures", displayName: "Closure" })
+    closure: Object.freeze({ registryCollectionKey: "closures", displayName: "Closure" }),
+    resource: Object.freeze({ registryCollectionKey: "resources", displayName: "Resource" })
 });
 
 const PATCH_KINDS: ReadonlyArray<PatchKind> = Object.freeze(Object.keys(PATCH_KIND_METADATA) as Array<PatchKind>);

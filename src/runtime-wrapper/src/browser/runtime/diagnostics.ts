@@ -12,6 +12,7 @@ import type {
     PatchStats,
     RegistryHealthCheck,
     RegistryHealthIssue,
+    ResourcePatch,
     RuntimeFunction,
     RuntimeRegistrySnapshot,
     RuntimeWrapperState
@@ -26,9 +27,9 @@ const PATCH_KINDS = getSupportedPatchKinds();
 export function getRegistryCollectionForPatchKind(
     registry: RuntimeWrapperState["registry"],
     kind: PatchKind
-): Record<string, RuntimeFunction> {
+): Record<string, RuntimeFunction> | Record<string, ResourcePatch> {
     const metadata = getPatchKindMetadata(kind);
-    return registry[metadata.registryCollectionKey];
+    return registry[metadata.registryCollectionKey] ?? Object.create(null);
 }
 
 /**
@@ -53,11 +54,16 @@ export function hasRegistryEntry(registry: RuntimeWrapperState["registry"], kind
  */
 export function getRegistryEntry(
     registry: RuntimeWrapperState["registry"],
-    kind: PatchKind,
+    kind: Exclude<PatchKind, "resource">,
     id: string
 ): RuntimeFunction | undefined {
-    const collection = getRegistryCollectionForPatchKind(registry, kind);
-    return collection[id];
+    if (kind === "script") {
+        return registry.scripts[id];
+    }
+    if (kind === "event") {
+        return registry.events[id];
+    }
+    return registry.closures[id];
 }
 
 /**
@@ -115,6 +121,9 @@ export function computePatchStats(patchHistory: ReadonlyArray<PatchHistoryEntry>
                 stats.closurePatches++;
                 break;
             }
+            case "resource": {
+                break;
+            }
             // No default
         }
     }
@@ -157,6 +166,9 @@ export function computeRegistryHealthCheck(registry: RuntimeWrapperState["regist
     for (const kind of PATCH_KINDS) {
         const displayName = getPatchKindDisplayName(kind);
         const collection = getRegistryCollectionForPatchKind(registry, kind);
+        if (kind === "resource") {
+            continue;
+        }
         for (const [id, fn] of Object.entries(collection)) {
             if (typeof fn !== "function") {
                 issues.push({
@@ -285,7 +297,8 @@ export function computeErrorAnalytics(
     const errorsByKind: Record<PatchKind, number> = {
         script: 0,
         event: 0,
-        closure: 0
+        closure: 0,
+        resource: 0
     };
 
     const patchErrorCounts = new Map<string, number>();

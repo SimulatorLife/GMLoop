@@ -79,6 +79,7 @@ import {
     processTranspileResult,
     removeDeletedCachedPatchSources
 } from "./watch/dependency-updates.js";
+import { handleResourceFileChange, primeRoomResource } from "./watch/resource-change-handler.js";
 import {
     clearInitialFileDataCache,
     computeHotReloadLatencyStats,
@@ -324,6 +325,7 @@ interface RuntimeContext
     /** UTF-16 code-unit length of each file's last-transpiled source text.
      * Used as a low-cost pre-check to avoid hashing when content length changed. */
     fileContentLengths: Map<string, number>;
+    roomResources: Map<string, Record<string, unknown>>;
     transientEmptyFileReadRetryCount: number;
     transientEmptyFileReadRetryDelayMs: number;
 }
@@ -866,12 +868,13 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
 
     const normalizedPath = await validateTargetPath(targetPath);
 
-    const extensionMatcher = createExtensionMatcher(options.extensions ?? [".gml"]);
+    const extensionMatcher = createExtensionMatcher(options.extensions ?? [".gml", ".yy"]);
+    const gmlExtensionMatcher = createExtensionMatcher([".gml"]);
     const extensionSet = extensionMatcher.extensions;
 
     const { scriptNames, fileDataCache } = await collectScriptNames(
         normalizedPath,
-        extensionMatcher,
+        gmlExtensionMatcher,
         maxConcurrentDirs
     );
 
@@ -918,6 +921,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         fileSnapshots: new Map(),
         fileContentHashes: new Map(),
         fileContentLengths: new Map(),
+        roomResources: new Map(),
         dependencyTracker,
         transientEmptyFileReadRetryCount,
         transientEmptyFileReadRetryDelayMs
@@ -926,6 +930,13 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
     let websocketServerController: PatchWebSocketServer | null = null;
     let statusServerController: StatusServerHandle | null = null;
     let runtimeServerController: RuntimeStaticServerInstance | null = null;
+
+    const watchedFiles = await collectWatchedFilePaths(normalizedPath, extensionMatcher, maxConcurrentDirs);
+    await Core.runInParallelWithLimit(
+        watchedFiles.filter((filePath) => path.extname(filePath).toLowerCase() === ".yy"),
+        (filePath) => primeRoomResource(filePath, runtimeContext, runtimeContext.roomResources),
+        maxConcurrentDirs
+    );
 
     if (shouldServeRuntime) {
         const runtimeSource = await runtimeResolver({
@@ -1382,7 +1393,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
 
             // Perform initial scan after the watcher is established so test harnesses
             // and callers can trigger events immediately without waiting for the scan.
-            initialScanPromise = runInitialWatchScan(initialScanOptions);
+            initialScanPromise = runInitialWatchScan({ ...initialScanOptions, extensionMatcher: gmlExtensionMatcher });
             void initialScanPromise.catch(handleWatcherError);
         } catch (error) {
             handleWatcherError(error);
@@ -1414,6 +1425,18 @@ async function handleFileChange(
         fileChangeDetectedAt
     }: FileChangeOptions = {}
 ): Promise<void> {
+    if (path.extname(filePath).toLowerCase() === ".yy") {
+        if (runtimeContext) {
+            await handleResourceFileChange(filePath, runtimeContext, runtimeContext.roomResources, {
+                verbose,
+                quiet,
+                fileStats,
+                abortSignal
+            });
+        }
+        return;
+    }
+
     if (verbose && runtimeContext?.root && !runtimeContext.noticeLogged) {
         console.log(`Runtime target: ${runtimeContext.root}`);
         runtimeContext.noticeLogged = true;

@@ -16,6 +16,7 @@ import type {
     EventPatch,
     Patch,
     PatchSnapshot,
+    ResourcePatch,
     RuntimeFunction,
     RuntimeRegistry,
     RuntimeRegistryOverrides,
@@ -42,6 +43,11 @@ type RuntimeBindingGlobals = {
     g_RunRoom?: {
         m_Active?: {
             pool?: Array<unknown>;
+        };
+        m_Layers?: {
+            length?: number;
+            pool?: Array<unknown>;
+            Get?: (index: number) => unknown;
         };
     };
     g_pObjectManager?: {
@@ -77,6 +83,31 @@ type RuntimeBindingApplication = Readonly<{
     objectRuntime: { objectName: string; eventName: string } | null;
     patchBody: string;
 }>;
+
+type BackgroundLayerPropertyTarget = readonly ["layer" | "background", string];
+
+function mapBackgroundLayerProperty(
+    target: BackgroundLayerPropertyTarget[0],
+    runtimePropertyName: string
+): BackgroundLayerPropertyTarget {
+    return [target, runtimePropertyName];
+}
+
+const BACKGROUND_LAYER_PROPERTY_MAPPINGS: Readonly<Record<string, ReadonlyArray<BackgroundLayerPropertyTarget>>> =
+    Object.freeze({
+        visible: Object.freeze([
+            mapBackgroundLayerProperty("layer", "m_visible"),
+            mapBackgroundLayerProperty("background", "visible")
+        ]),
+        hspeed: Object.freeze([mapBackgroundLayerProperty("layer", "m_hspeed")]),
+        vspeed: Object.freeze([mapBackgroundLayerProperty("layer", "m_vspeed")]),
+        x: Object.freeze([mapBackgroundLayerProperty("layer", "m_xoffset")]),
+        y: Object.freeze([mapBackgroundLayerProperty("layer", "m_yoffset")]),
+        htiled: Object.freeze([mapBackgroundLayerProperty("background", "htiled")]),
+        vtiled: Object.freeze([mapBackgroundLayerProperty("background", "vtiled")]),
+        stretch: Object.freeze([mapBackgroundLayerProperty("background", "stretch")]),
+        animationFPS: Object.freeze([mapBackgroundLayerProperty("background", "playbackspeed")])
+    });
 
 const EVENT_MAPPINGS: ReadonlyMap<string, EventMapping> = new Map([
     ["PreCreateEvent", { standard: "EVENT_PRE_CREATE", minified: "_qI" }],
@@ -1161,7 +1192,8 @@ export function createRegistry(overrides?: RuntimeRegistryOverrides): RuntimeReg
         version: overrides?.version ?? 0,
         scripts: overrides?.scripts ?? Object.create(null),
         events: overrides?.events ?? Object.create(null),
-        closures: overrides?.closures ?? Object.create(null)
+        closures: overrides?.closures ?? Object.create(null),
+        resources: overrides?.resources ?? Object.create(null)
     };
 }
 
@@ -1192,6 +1224,15 @@ export function validatePatch(patch: unknown): asserts patch is Patch {
     const idValue = candidate.id;
     if (!idValue || typeof idValue !== "string") {
         throw new TypeError("Patch must specify an 'id' string");
+    }
+
+    if (kind === "resource") {
+        if (candidate.resourceType !== "GMRoom" || typeof candidate.resourceName !== "string") {
+            throw new TypeError("Resource patch must specify a GMRoom resource name");
+        }
+        if (!Array.isArray(candidate.layerUpdates)) {
+            throw new TypeError("Resource patch must specify layer updates");
+        }
     }
 }
 
@@ -1394,7 +1435,7 @@ export function applyPatchInternal(
     };
 }
 
-function requirePatchBody(patch: Patch, label: string): string {
+function requirePatchBody(patch: ScriptPatch | EventPatch | ClosurePatch, label: string): string {
     const body = patch.js_body;
     if (!body || typeof body !== "string") {
         throw new TypeError(`${label} patch must have a 'js_body' string`);
@@ -1872,7 +1913,7 @@ function applyClosurePatch(registry: RuntimeRegistry, patch: ClosurePatch): Runt
 
 function updateRegistryCollection(
     registry: RuntimeRegistry,
-    key: RegistryCollectionKey,
+    key: Exclude<RegistryCollectionKey, "resources">,
     patchId: string,
     fn: RuntimeFunction
 ): RuntimeRegistry {
@@ -1881,6 +1922,91 @@ function updateRegistryCollection(
         [key]: {
             ...registry[key],
             [patchId]: fn
+        }
+    };
+}
+
+function getRuntimeLayers(globalScope: RuntimeBindingGlobals): Array<Record<string, unknown>> {
+    const layers = globalScope.g_RunRoom?.m_Layers;
+    if (!layers) {
+        return [];
+    }
+
+    if (Array.isArray(layers.pool)) {
+        return layers.pool.filter(isRecord);
+    }
+
+    if (typeof layers.Get !== "function" || typeof layers.length !== "number") {
+        return [];
+    }
+
+    const runtimeLayers: Array<Record<string, unknown>> = [];
+    for (let index = 0; index < layers.length; index += 1) {
+        const layer = layers.Get(index);
+        if (isRecord(layer)) {
+            runtimeLayers.push(layer);
+        }
+    }
+    return runtimeLayers;
+}
+
+function applyBackgroundColour(background: Record<string, unknown>, colour: unknown): void {
+    if (typeof colour !== "number") {
+        return;
+    }
+
+    const globalScope = globalThis as Record<string, unknown>;
+    const convertColour = globalScope.ConvertGMColour;
+    background.blend =
+        typeof convertColour === "function"
+            ? (convertColour as (value: number) => unknown)(colour)
+            : colour & 0x00_ff_ff_ff;
+    background.alpha = ((colour >>> 24) & 0xff) / 255;
+}
+
+function applyBackgroundLayerProperties(layer: Record<string, unknown>, patch: ResourcePatch): void {
+    for (const update of patch.layerUpdates) {
+        if (update.layerType !== "GMRBackgroundLayer" || layer.m_pName !== update.layerName) {
+            continue;
+        }
+
+        const background = layer.m_elements;
+        const elements = isRecord(background) && Array.isArray(background.pool) ? background.pool : [];
+        const backgroundElement = elements.find(
+            (element): element is Record<string, unknown> => isRecord(element) && isRecord(element.m_pBackground)
+        );
+        if (!backgroundElement || !isRecord(backgroundElement.m_pBackground)) {
+            continue;
+        }
+
+        const runtimeBackground = backgroundElement.m_pBackground;
+        for (const [propertyName, value] of Object.entries(update.properties)) {
+            if (propertyName === "colour") {
+                applyBackgroundColour(runtimeBackground, value);
+                continue;
+            }
+
+            for (const [target, runtimePropertyName] of BACKGROUND_LAYER_PROPERTY_MAPPINGS[propertyName] ?? []) {
+                const runtimeTarget = target === "layer" ? layer : runtimeBackground;
+                runtimeTarget[runtimePropertyName] = value;
+            }
+        }
+    }
+}
+
+function applyResourcePatch(registry: RuntimeRegistry, patch: ResourcePatch): RuntimeRegistry {
+    if (!areRuntimeBindingsSuppressed()) {
+        const globalScope = globalThis as RuntimeBindingGlobals;
+        for (const layer of getRuntimeLayers(globalScope)) {
+            applyBackgroundLayerProperties(layer, patch);
+        }
+    }
+
+    return {
+        ...registry,
+        resources: {
+            ...(registry.resources ?? Object.create(null)),
+            [patch.id]: patch
         }
     };
 }
@@ -1915,6 +2041,13 @@ const PATCH_KIND_HANDLERS: ReadonlyMap<string, PatchKindHandler> = new Map<strin
         {
             key: getPatchKindMetadata("closure").registryCollectionKey,
             apply: (registry, patch) => applyClosurePatch(registry, patch as ClosurePatch)
+        }
+    ],
+    [
+        "resource",
+        {
+            key: getPatchKindMetadata("resource").registryCollectionKey,
+            apply: (registry, patch) => applyResourcePatch(registry, patch as ResourcePatch)
         }
     ]
 ]);

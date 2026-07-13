@@ -1,6 +1,6 @@
 export type RuntimeFunction = (...args: Array<unknown>) => unknown;
 
-export type PatchKind = "script" | "event" | "closure";
+export type PatchKind = "script" | "event" | "closure" | "resource";
 
 export interface PatchMetadata {
     sourcePath?: string;
@@ -37,13 +37,27 @@ export interface ClosurePatch extends BasePatch {
     js_body: string;
 }
 
-export type Patch = ScriptPatch | EventPatch | ClosurePatch;
+export interface ResourceLayerUpdate {
+    layerName: string;
+    layerType: "GMRBackgroundLayer" | "GMRInstanceLayer";
+    properties: Record<string, unknown>;
+}
+
+export interface ResourcePatch extends BasePatch {
+    kind: "resource";
+    resourceType: "GMRoom";
+    resourceName: string;
+    layerUpdates: Array<ResourceLayerUpdate>;
+}
+
+export type Patch = ScriptPatch | EventPatch | ClosurePatch | ResourcePatch;
 
 export interface RuntimeRegistry {
     version: number;
     scripts: Record<string, RuntimeFunction>;
     events: Record<string, RuntimeFunction>;
     closures: Record<string, RuntimeFunction>;
+    resources?: Record<string, ResourcePatch>;
 }
 
 export interface RuntimeRegistryOverrides {
@@ -51,13 +65,14 @@ export interface RuntimeRegistryOverrides {
     scripts?: Record<string, RuntimeFunction>;
     events?: Record<string, RuntimeFunction>;
     closures?: Record<string, RuntimeFunction>;
+    resources?: Record<string, ResourcePatch>;
 }
 
 export interface PatchSnapshot {
     kind: PatchKind;
     id: string;
     version: number;
-    previous: RuntimeFunction | null;
+    previous: RuntimeFunction | ResourcePatch | null;
 }
 
 export type PatchAction = "apply" | "undo" | "rollback";

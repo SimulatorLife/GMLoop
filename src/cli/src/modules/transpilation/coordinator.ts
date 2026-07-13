@@ -38,6 +38,38 @@ export type RuntimeTranspilerPatch =
     | ReturnType<GmlTranspilerInstance["transpileScript"]>
     | ReturnType<GmlTranspilerInstance["transpileEvent"]>;
 
+export interface ResourceLayerUpdate {
+    layerName: string;
+    layerType: "GMRBackgroundLayer" | "GMRInstanceLayer";
+    properties: Record<string, unknown>;
+}
+
+export interface ResourcePatch {
+    kind: "resource";
+    id: string;
+    resourceType: "GMRoom";
+    resourceName: string;
+    layerUpdates: Array<ResourceLayerUpdate>;
+    metadata: { sourcePath: string; sourceHash: string; timestamp: number };
+}
+
+/** Creates a deterministic room resource patch for the live-reload protocol. */
+export function createResourcePatch(
+    filePath: string,
+    resourceName: string,
+    layerUpdates: Array<ResourceLayerUpdate>,
+    sourceHash: string
+): ResourcePatch {
+    return {
+        kind: "resource",
+        id: `resource/room/${resourceName}`,
+        resourceType: "GMRoom",
+        resourceName,
+        layerUpdates,
+        metadata: { sourcePath: filePath, sourceHash, timestamp: Date.now() }
+    };
+}
+
 export interface TranspilationMetrics {
     timestamp: number;
     filePath: string;

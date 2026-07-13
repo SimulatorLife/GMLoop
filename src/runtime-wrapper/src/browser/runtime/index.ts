@@ -51,6 +51,8 @@ export type {
     RegistryHealthIssue,
     RegistryMutator,
     RegistryReader,
+    ResourceLayerUpdate,
+    ResourcePatch,
     RuntimeFunction,
     RuntimeMetrics,
     RuntimePatchError,

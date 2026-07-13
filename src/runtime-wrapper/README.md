@@ -1516,3 +1516,6 @@ The same pattern is applied to other major interfaces in this module:
 
 - **`RuntimeWrapper`** extends `PatchApplicator`, `PatchUndoController`, `PatchHistoryReader`, `RegistryReader`, `RegistryMutator`, `RuntimeMetrics`, `RegistryDiagnostics`, and `ErrorAnalytics`
 - **`Logger`** extends `PatchLifecycleLogger`, `RegistryLifecycleLogger`, `WebSocketLogger`, `GeneralLogger`, and `LoggerConfiguration`
+
+## TODO
+- **BUG/FEAT** Updating a GameMaker room's background layer's properties like its color (ex. in `/Users/henrykirk/GMLoop/vendor/3DSpider/rooms/Room1/Room1.yy`) does not trigger a patch event/live-reload/update in the running game
