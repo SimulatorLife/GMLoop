@@ -1,6 +1,10 @@
 import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
 
 import { replaceNode } from "../math/index.js";
+import {
+    OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE,
+    type OptimizeLogicalFlowPolicy
+} from "./logical-expression-condensation-policy.js";
 
 const { isObjectLike, unwrapParenthesizedExpression } = Core;
 
@@ -14,9 +18,18 @@ export function applyLogicalNormalization(ast: MutableGameMakerAstNode): Mutable
 
 /**
  * Apply logical-expression normalization and surface whether any node changed.
+ *
+ * @param ast AST to normalize in place.
+ * @param policy Optional policy that controls the fixed-point loop bound. The
+ *   orchestrator's `maxTraversalIterations` cap is the only setting consulted
+ *   here — inner truth-table and simplification iteration limits live closer
+ *   to the condensation entry point. Defaults to
+ *   `OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE` so callers that never opt into a
+ *   custom policy keep the historical 10-pass ceiling.
  */
 export function applyLogicalNormalizationWithChangeMetadata(
-    ast: MutableGameMakerAstNode
+    ast: MutableGameMakerAstNode,
+    policy: OptimizeLogicalFlowPolicy = OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE
 ): Readonly<{ ast: MutableGameMakerAstNode; changed: boolean }> {
     if (!isObjectLike(ast)) {
         return Object.freeze({ ast, changed: false });
@@ -24,7 +37,7 @@ export function applyLogicalNormalizationWithChangeMetadata(
 
     // Repeatedly apply passes until no changes occur, or max limit reached
     let changedAtLeastOnce = false;
-    for (let iterations = 0; iterations < 10; iterations++) {
+    for (let iterations = 0; iterations < policy.maxTraversalIterations; iterations++) {
         if (!traverseAndSimplify(ast)) break;
         changedAtLeastOnce = true;
     }

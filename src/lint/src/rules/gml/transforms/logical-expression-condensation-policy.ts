@@ -67,6 +67,65 @@ export type SimplificationPolicy = Readonly<{
 }>;
 
 /**
+ * Combined policy for the `gml/optimize-logical-flow` lint rule.
+ *
+ * This bundles the truth-table cap and the simplification iteration limits so
+ * a rule can resolve a single `OptimizeLogicalFlowPolicy` value and thread it
+ * through every condensation entry point without callers having to assemble
+ * the individual `TruthTablePolicy` and `SimplificationPolicy` parts.
+ *
+ * `maxTraversalIterations` bounds the fixed-point loop in the orchestrator
+ * (`applyLogicalNormalizationWithChangeMetadata`); the other fields bound the
+ * inner stages described by the narrower policy types.
+ *
+ * @see TruthTablePolicy
+ * @see SimplificationPolicy
+ */
+export type OptimizeLogicalFlowPolicy = Readonly<
+    TruthTablePolicy &
+        SimplificationPolicy & {
+            /**
+             * Maximum passes for the orchestrator's fixed-point loop.
+             *
+             * Each pass walks the AST and tries every per-node simplification.
+             * The loop terminates as soon as a pass produces no changes, but a
+             * hard cap guards against pathological inputs where a rewrite
+             * never reaches a fixed point. 10 passes is sufficient in practice:
+             * the per-pass iteration limits above already cap the inner work
+             * each pass can perform, and changes propagate monotonically.
+             */
+            maxTraversalIterations: number;
+        }
+>;
+
+/**
+ * Resolved policy combining all condensation configuration values.
+ */
+export type ResolvedOptimizeLogicalFlowPolicy = Readonly<{
+    truthTable: TruthTablePolicy;
+    simplification: SimplificationPolicy;
+    traversal: Readonly<{ maxTraversalIterations: number }>;
+}>;
+
+/**
+ * Split a {@link OptimizeLogicalFlowPolicy} into its constituent narrower
+ * policy bags so internal helpers can consume just the slice they need
+ * (for example `applyLogicalNormalizationWithChangeMetadata` only needs the
+ * traversal cap, while `applyLogicalExpressionCondensation` only cares about
+ * the truth-table cap and indirectly about simplification iteration limits).
+ */
+export function resolveOptimizeLogicalFlowPolicy(policy: OptimizeLogicalFlowPolicy): ResolvedOptimizeLogicalFlowPolicy {
+    return Object.freeze({
+        truthTable: Object.freeze({ maxVariablesForTruthTable: policy.maxVariablesForTruthTable }),
+        simplification: Object.freeze({
+            maxSimplificationIterations: policy.maxSimplificationIterations,
+            maxPostProcessingIterations: policy.maxPostProcessingIterations
+        }),
+        traversal: Object.freeze({ maxTraversalIterations: policy.maxTraversalIterations })
+    });
+}
+
+/**
  * Baseline policy constants.
  *
  * These values represent the current calibrated defaults.  They are declared
@@ -83,6 +142,20 @@ export const TRUTH_TABLE_POLICY_BASELINE: TruthTablePolicy = Object.freeze({
 export const SIMPLIFICATION_POLICY_BASELINE: SimplificationPolicy = Object.freeze({
     maxSimplificationIterations: 50,
     maxPostProcessingIterations: 5
+});
+
+/**
+ * Baseline policy for the combined logical-flow optimization pipeline.
+ *
+ * Mirrors `TRUTH_TABLE_POLICY_BASELINE` and `SIMPLIFICATION_POLICY_BASELINE`
+ * while also pinning the orchestrator's traversal cap (10 passes). The
+ * default keeps the existing behaviour for callers that never opt into a
+ * custom policy.
+ */
+export const OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE: OptimizeLogicalFlowPolicy = Object.freeze({
+    ...TRUTH_TABLE_POLICY_BASELINE,
+    ...SIMPLIFICATION_POLICY_BASELINE,
+    maxTraversalIterations: 10
 });
 
 /**

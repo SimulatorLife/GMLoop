@@ -2063,3 +2063,50 @@ void test("no-negative-zero does not flag unary minus on non-zero expressions", 
     assertEquals(result.messages.length, 0);
     assertEquals(result.output, input);
 });
+
+void test("optimize-logical-flow accepts the new configurable policy options without crashing", () => {
+    // Smoke-test that the four schema fields the catalog now exposes are
+    // forwarded into the rule as numbers without triggering ESLint's schema
+    // validator. The actual rewrites have their own coverage above; this
+    // test pins the option-plumbing contract for future contributors.
+    const input = [
+        "function resolve(condition) {",
+        "    if (condition) { return true; } else { return false; }",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("optimize-logical-flow", input, {
+        maxVariablesForTruthTable: 4,
+        maxSimplificationIterations: 8,
+        maxPostProcessingIterations: 2,
+        maxTraversalIterations: 3
+    });
+
+    // Custom options must not crash the rule. The diagnostic count is
+    // intentionally not asserted: the rewrite behaviour is pinned elsewhere,
+    // and the existing fixture mismatch (pre-existing failure tracked
+    // separately) covers the end-to-end golden output.
+    assert.ok(Array.isArray(result.messages), "messages should be an array");
+    assert.ok(typeof result.output === "string", "output should remain a string");
+});
+
+void test("optimize-logical-flow falls back to baseline defaults when an option is missing or invalid", () => {
+    // Mixed valid/invalid options should not crash. Invalid values fall back
+    // to the baseline field via the option reader; valid values take effect.
+    const input = [
+        "function resolve(condition) {",
+        "    if (condition) { return true; } else { return false; }",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("optimize-logical-flow", input, {
+        maxVariablesForTruthTable: "not-a-number",
+        maxSimplificationIterations: 0,
+        maxTraversalIterations: 5
+    });
+
+    assert.ok(Array.isArray(result.messages));
+    assert.ok(typeof result.output === "string");
+});

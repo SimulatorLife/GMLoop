@@ -33,7 +33,7 @@ import {
     createBooleanVariable
 } from "./logical-expression-condensation-boolean.js";
 import { isObjectLike } from "./logical-expression-condensation-key.js";
-import { SIMPLIFICATION_POLICY_BASELINE } from "./logical-expression-condensation-policy.js";
+import { SIMPLIFICATION_POLICY_BASELINE, type SimplificationPolicy } from "./logical-expression-condensation-policy.js";
 import { buildExpressionFromImplicants, evaluateTruthTable } from "./logical-expression-condensation-truth.js";
 
 const { cloneAstNode, getOrCreateMapEntry, isNonEmptyArray } = Core;
@@ -65,8 +65,8 @@ function addCandidate(map, candidate) {
  * truth table collapses to a constant so we never end up emitting an empty
  * expression.
  */
-function generateSimplifiedCandidates(expression, context) {
-    const simplifiedBase = simplifyBooleanExpression(expression);
+function generateSimplifiedCandidates(expression, context, simplificationPolicy = SIMPLIFICATION_POLICY_BASELINE) {
+    const simplifiedBase = simplifyBooleanExpression(expression, simplificationPolicy);
     const truthTable = evaluateTruthTable(simplifiedBase, context.variables.length);
 
     if (truthTable.minterms.length === 0) {
@@ -80,26 +80,29 @@ function generateSimplifiedCandidates(expression, context) {
     const candidates = new Map();
 
     addCandidate(candidates, simplifiedBase);
-    addCandidate(candidates, factorBooleanExpression(simplifiedBase));
+    addCandidate(candidates, factorBooleanExpression(simplifiedBase, simplificationPolicy));
 
     const dnf = buildExpressionFromImplicants(truthTable.minterms, context.variables.length, false);
-    const simplifiedDnf = simplifyBooleanExpression(dnf);
-    const factoredDnf = factorBooleanExpression(simplifiedDnf);
+    const simplifiedDnf = simplifyBooleanExpression(dnf, simplificationPolicy);
+    const factoredDnf = factorBooleanExpression(simplifiedDnf, simplificationPolicy);
     addCandidate(candidates, factoredDnf);
 
     const cnf = buildExpressionFromImplicants(truthTable.maxterms, context.variables.length, true);
-    const simplifiedCnf = simplifyBooleanExpression(cnf);
-    const factoredCnf = factorBooleanExpression(simplifiedCnf);
+    const simplifiedCnf = simplifyBooleanExpression(cnf, simplificationPolicy);
+    const factoredCnf = factorBooleanExpression(simplifiedCnf, simplificationPolicy);
     addCandidate(candidates, factoredCnf);
 
     return [...candidates.values()];
 }
 
-function simplifyBooleanExpression(expression) {
+function simplifyBooleanExpression(
+    expression,
+    simplificationPolicy: SimplificationPolicy = SIMPLIFICATION_POLICY_BASELINE
+) {
     let current = normalizeBooleanExpression(expression);
     let iterations = 0;
 
-    while (iterations < SIMPLIFICATION_POLICY_BASELINE.maxSimplificationIterations) {
+    while (iterations < simplificationPolicy.maxSimplificationIterations) {
         const simplified = simplifyBooleanStep(current);
         const normalized = normalizeBooleanExpression(simplified);
         if (booleanExpressionKey(normalized) === booleanExpressionKey(current)) {
@@ -298,7 +301,10 @@ function applyComplementLaw(type, terms) {
     return terms;
 }
 
-function factorBooleanExpression(expression) {
+function factorBooleanExpression(
+    expression,
+    simplificationPolicy: SimplificationPolicy = SIMPLIFICATION_POLICY_BASELINE
+) {
     if (!isObjectLike(expression)) {
         return expression;
     }
@@ -307,10 +313,10 @@ function factorBooleanExpression(expression) {
         switch (expression.type) {
             case BOOLEAN_NODE_TYPES.AND:
             case BOOLEAN_NODE_TYPES.OR: {
-                return expression.terms.map((term) => factorBooleanExpression(term));
+                return expression.terms.map((term) => factorBooleanExpression(term, simplificationPolicy));
             }
             case BOOLEAN_NODE_TYPES.NOT: {
-                return [factorBooleanExpression(expression.argument)];
+                return [factorBooleanExpression(expression.argument, simplificationPolicy)];
             }
             default: {
                 return [];
@@ -325,8 +331,8 @@ function factorBooleanExpression(expression) {
                 : createBooleanOr(factoredChildren);
 
         if (rebuilt.type === BOOLEAN_NODE_TYPES.OR || rebuilt.type === BOOLEAN_NODE_TYPES.AND) {
-            const factored = factorAssociativeExpression(rebuilt);
-            return simplifyBooleanExpression(factored);
+            const factored = factorAssociativeExpression(rebuilt, simplificationPolicy);
+            return simplifyBooleanExpression(factored, simplificationPolicy);
         }
 
         return rebuilt;
@@ -348,7 +354,10 @@ function factorBooleanExpression(expression) {
  * When multiple candidate factors exist the one yielding the least-complex
  * result (fewest literals, then operators, then depth) is chosen.
  */
-function factorAssociativeExpression(expression) {
+function factorAssociativeExpression(
+    expression,
+    simplificationPolicy: SimplificationPolicy = SIMPLIFICATION_POLICY_BASELINE
+) {
     const isOr = expression.type === BOOLEAN_NODE_TYPES.OR;
     // subTermType: the operator of the sub-terms we will factor across.
     // For OR expressions we factor AND sub-terms; for AND expressions, OR sub-terms.
@@ -408,7 +417,7 @@ function factorAssociativeExpression(expression) {
                 ? createInner(factoredPair)
                 : createOuter([createInner(factoredPair), ...otherTerms]);
 
-        const simplifiedCandidate = simplifyBooleanExpression(candidate);
+        const simplifiedCandidate = simplifyBooleanExpression(candidate, simplificationPolicy);
         if (!best || compareExpressionComplexity(simplifiedCandidate, best) < 0) {
             best = simplifiedCandidate;
         }
@@ -524,11 +533,14 @@ function buildResidualTermsForKey(terms, involvedIndices, key, createResidualExp
     return { residualTerms, factorPosition };
 }
 
-function postProcessBooleanExpression(expression) {
+function postProcessBooleanExpression(
+    expression,
+    simplificationPolicy: SimplificationPolicy = SIMPLIFICATION_POLICY_BASELINE
+) {
     let current = expression;
     let iterations = 0;
 
-    while (iterations < SIMPLIFICATION_POLICY_BASELINE.maxPostProcessingIterations) {
+    while (iterations < simplificationPolicy.maxPostProcessingIterations) {
         const transformed = transformMixedReductionPattern(transformXorPattern(current));
         if (booleanExpressionKey(transformed) === booleanExpressionKey(current)) {
             return transformed;
