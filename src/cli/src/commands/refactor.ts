@@ -443,6 +443,8 @@ function createRefactorEngineForProject(
 ): InstanceType<typeof RefactorEngine> {
     const semanticBridge = includeSemanticBridge ? new GmlSemanticBridge(projectIndex ?? {}, projectRoot) : undefined;
 
+    recordRefactorSemanticBridge(semanticBridge ?? null);
+
     const bridges = createRefactorBridges({ semantic: semanticBridge }, projectRoot);
 
     return new RefactorEngine({
@@ -899,3 +901,44 @@ export async function runRefactorCommand(command: CommanderCommandLike): Promise
         throw new CliUsageError(`Refactor failed: ${message}`, { usage });
     }
 }
+
+/**
+ * Tracks the most recent {@link GmlSemanticBridge} that the refactor orchestrator
+ * created via `createRefactorEngineForProject`. Tests use this to confirm
+ * orchestrator-side index refreshes happened without scraping stdout log output.
+ */
+let lastRefactorSemanticBridge: GmlSemanticBridge | null = null;
+
+/**
+ * Reset and return the orchestrator's most recent semantic bridge. Exposed only
+ * via the test seam so production callers cannot depend on the slot.
+ */
+function resetLastRefactorSemanticBridge(): GmlSemanticBridge | null {
+    const previousBridge = lastRefactorSemanticBridge;
+    lastRefactorSemanticBridge = null;
+    return previousBridge;
+}
+
+function recordRefactorSemanticBridge(bridge: GmlSemanticBridge | null): void {
+    lastRefactorSemanticBridge = bridge;
+}
+
+export const __refactorTest__ = Object.freeze({
+    /**
+     * Consume the most recent refactor {@link GmlSemanticBridge}. Returns `null`
+     * when no codemod run produced a bridge since the last call. The slot is
+     * cleared on read so each `runCliTestCommand` invocation observes only its
+     * own orchestrator state.
+     */
+    consumeLastRefactorSemanticBridge(): GmlSemanticBridge | null {
+        return resetLastRefactorSemanticBridge();
+    },
+    /**
+     * Peek at the most recent refactor {@link GmlSemanticBridge} without clearing
+     * the slot. Useful for assertions that also want to inspect other bridge
+     * state during the same test.
+     */
+    peekLastRefactorSemanticBridge(): GmlSemanticBridge | null {
+        return lastRefactorSemanticBridge;
+    }
+});

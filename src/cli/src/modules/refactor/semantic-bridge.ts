@@ -666,6 +666,7 @@ export class GmlSemanticBridge {
     private scriptNames: ReadonlySet<string> | null = null;
     private macroNames: ReadonlySet<string> | null = null;
     private indexes: SemanticBridgeIndexes | null = null;
+    private projectIndexUpdateCount = 0;
     private projectMetadataReferenceIndex: ProjectMetadataReferenceIndex | null = null;
     private macroBodyReferencesByExactName: Map<
         string,
@@ -723,6 +724,17 @@ export class GmlSemanticBridge {
         this.macroBodyReferencesByExactName = null;
         this.scriptResourceIndexes = null;
         this.clearWorkspaceOverlay();
+        this.projectIndexUpdateCount += 1;
+    }
+
+    /**
+     * Number of times {@link GmlSemanticBridge.updateProjectIndex} has been invoked
+     * on this bridge. Exposed for test fixtures that need to confirm the refactor
+     * orchestrator re-publishes the semantic project index after non-semantic
+     * codemod passes without parsing stdout log output.
+     */
+    getProjectIndexUpdateCount(): number {
+        return this.projectIndexUpdateCount;
     }
 
     /**

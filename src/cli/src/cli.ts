@@ -37,6 +37,7 @@ import {
 import { createMcpToolCatalogEntries, type McpToolCatalogEntry } from "./cli-core/mcp-tool-catalog.js";
 import { resolveCliVersion } from "./cli-core/version.js";
 import { __formatTest__ } from "./commands/format.js";
+import { __refactorTest__ } from "./commands/refactor.js";
 import { __runtimeTestHelpers__ as __runtimeTest__, parseRuntimeValue } from "./commands/runtime.js";
 import { SKIP_CLI_RUN_ENV_VAR } from "./shared/skip-cli-run.js";
 
@@ -271,6 +272,7 @@ export function getMcpToolCatalogEntries(options?: { includeInternal?: boolean }
 
 export const __test__ = Object.freeze({
     ...__formatTest__,
+    ...__refactorTest__,
     ...__runtimeTest__,
     getMcpToolCatalogEntries,
     getCliCommandCatalog,

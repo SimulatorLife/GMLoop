@@ -6,7 +6,7 @@ import test from "node:test";
 
 import { Parser } from "@gmloop/parser";
 
-import { runCliTestCommand } from "../src/cli.js";
+import { __test__, runCliTestCommand } from "../src/cli.js";
 import {
     assertProjectGmlFilesParse,
     createSyntheticRefactorProject as createSyntheticProject,
@@ -2710,14 +2710,18 @@ void test("refactor codemod --write skips semantic project indexing when all sel
         );
 
         const result = await runCliTestCommand({
-            argv: ["refactor", "codemod", "--write", "--verbose"],
+            argv: ["refactor", "codemod", "--write"],
             cwd: projectRoot
         });
 
         assert.equal(result.exitCode, 0);
         assert.match(result.stdout, /\[globalvarToGlobal\] changed/);
         assert.match(result.stdout, /\[loopLengthHoisting\] changed/);
-        assert.doesNotMatch(result.stdout, /DEBUG: Starting buildProjectIndex/);
+        assert.equal(
+            __test__.consumeLastRefactorSemanticBridge(),
+            null,
+            "Expected no semantic bridge construction when no semantic-index-dependent codemods run"
+        );
     } finally {
         await rm(projectRoot, { recursive: true, force: true });
     }
@@ -2756,13 +2760,19 @@ void test("refactor codemod --write only rebuilds the project index between chan
         );
 
         const result = await runCliTestCommand({
-            argv: ["refactor", "codemod", "--write", "--verbose"],
+            argv: ["refactor", "codemod", "--write"],
             cwd: projectRoot
         });
 
         assert.equal(result.exitCode, 0);
-        assert.match(result.stdout, /Rebuilding project index after codemod loopLengthHoisting/);
-        assert.doesNotMatch(result.stdout, /Rebuilding project index after codemod namingConvention/);
+
+        const bridge = __test__.consumeLastRefactorSemanticBridge();
+        assert.ok(bridge, "Expected the refactor orchestrator to construct a semantic bridge");
+        assert.equal(
+            bridge.getProjectIndexUpdateCount(),
+            1,
+            "Expected exactly one semantic index refresh after the non-semantic codemod finished and before the semantic codemod ran"
+        );
     } finally {
         await rm(projectRoot, { recursive: true, force: true });
     }
@@ -2803,7 +2813,7 @@ void test("refactor codemod --write batches semantic index rebuild until all non
         );
 
         const result = await runCliTestCommand({
-            argv: ["refactor", "codemod", "--write", "--verbose"],
+            argv: ["refactor", "codemod", "--write"],
             cwd: projectRoot
         });
 
@@ -2812,9 +2822,13 @@ void test("refactor codemod --write batches semantic index rebuild until all non
         assert.match(result.stdout, /\[loopLengthHoisting\] changed/);
         assert.match(result.stdout, /\[namingConvention\] changed/);
 
-        const rebuildLines = result.stdout.match(/Rebuilding project index after codemod /g) ?? [];
-        assert.equal(rebuildLines.length, 1);
-        assert.match(result.stdout, /Rebuilding project index after codemod loopLengthHoisting/);
+        const bridge = __test__.consumeLastRefactorSemanticBridge();
+        assert.ok(bridge, "Expected the refactor orchestrator to construct a semantic bridge");
+        assert.equal(
+            bridge.getProjectIndexUpdateCount(),
+            1,
+            "Expected exactly one semantic index refresh after both non-semantic codemods finished and before the semantic codemod ran"
+        );
     } finally {
         await rm(projectRoot, { recursive: true, force: true });
     }
