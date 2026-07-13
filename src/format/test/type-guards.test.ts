@@ -64,6 +64,25 @@ void describe("hasLineBreak", () => {
     void it("returns true for PS (U+2029)", () => {
         assert.equal(hasLineBreak("\u2029"), true);
     });
+
+    void it("returns false for adjacent character codes around the ASCII line breaks", () => {
+        // Just below LF (10) and CR (13) must not be misclassified as line breaks,
+        // guarding the ASCII fast-path range filter.
+        assert.equal(hasLineBreak(String.fromCharCode(9)), false); // tab
+        assert.equal(hasLineBreak(String.fromCharCode(11)), false);
+        assert.equal(hasLineBreak(String.fromCharCode(12)), false);
+        assert.equal(hasLineBreak(String.fromCharCode(14)), false);
+    });
+
+    void it("returns false for codes between CR and the Unicode line separators", () => {
+        // The gap between ASCII line breaks (max 13) and Unicode separators (8232+)
+        // contains a huge range of printable ASCII and Basic Latin characters; none
+        // of those should ever be reported as line breaks.
+        assert.equal(hasLineBreak(String.fromCharCode(32)), false); // space
+        assert.equal(hasLineBreak(String.fromCharCode(126)), false); // ~
+        assert.equal(hasLineBreak(String.fromCharCode(8231)), false); // just before LS
+        assert.equal(hasLineBreak(String.fromCharCode(8234)), false); // just after PS
+    });
 });
 
 // ---------------------------------------------------------------------------
