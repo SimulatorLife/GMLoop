@@ -843,12 +843,18 @@ export function createGmlSemanticIndex(
                 if (readRootVersion(resolvedRoot) !== expectedRootVersion) {
                     return undefined;
                 }
+                const navigationProjection = index.rawIndex as Record<string, unknown>;
                 const publicationRequest = {
                     authoritative: false,
                     baseGeneration: store.readActiveSemanticSlots()[tier]?.generation ?? null,
                     expectedHeadGeneration: store.readSemanticProjectHead().generation,
-                    index: index.rawIndex as Record<string, unknown>,
                     manifest,
+                    navigationProjection,
+                    snapshot: Semantic.createSemanticSnapshotFromProjectIndex(
+                        navigationProjection,
+                        tier,
+                        manifest.sourceRevision
+                    ),
                     sourceRevision: manifest.sourceRevision,
                     tier
                 } as const;

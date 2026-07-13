@@ -72,8 +72,9 @@ export type SemanticSnapshotPublicationRequest = Readonly<{
     authoritative: boolean;
     baseGeneration: number | null;
     expectedHeadGeneration: number;
-    index: Record<string, unknown>;
     manifest: SemanticFileManifest | null;
+    navigationProjection: Readonly<Record<string, unknown>>;
+    snapshot: SemanticSnapshot;
     sourceRevision: string;
     tier: SemanticTier;
 }>;
@@ -613,8 +614,9 @@ function publishSemanticFacts(
         authoritative: boolean;
         affectedFiles: ReadonlyArray<string> | null;
         baseGeneration: number | null;
-        index: Record<string, unknown>;
         manifest: SemanticFileManifest | null;
+        navigationProjection: Readonly<Record<string, unknown>>;
+        snapshot: SemanticSnapshot;
         sourceRevision: string;
         tier: "definitions" | "full";
     }>
@@ -661,11 +663,10 @@ function publishSemanticFacts(
                 "INSERT INTO semantic_slots(project_root, tier, generation, source_revision, base_generation, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(project_root, tier) DO UPDATE SET generation = excluded.generation, source_revision = excluded.source_revision, base_generation = excluded.base_generation, updated_at = excluded.updated_at"
             )
             .run(projectRoot, request.tier, generation, request.sourceRevision, request.baseGeneration, updatedAt);
-        const snapshot = createSemanticSnapshotFromProjectIndex(
-            request.index,
-            request.tier,
-            request.sourceRevision as SemanticSourceRevision
-        );
+        const snapshot = request.snapshot;
+        if (snapshot.tier !== request.tier || snapshot.sourceRevision !== request.sourceRevision) {
+            return;
+        }
         const affectedFiles = createAffectedFileSet(projectRoot, request.affectedFiles);
         const affectedSymbolIds = new Set([
             ...readSymbolIdsDefinedByFiles(database, projectRoot, request.tier, affectedFiles),
@@ -890,7 +891,7 @@ function publishSemanticFacts(
             .prepare(
                 "INSERT INTO semantic_navigation_projection(project_root, tier, generation, payload) VALUES (?, ?, ?, ?) ON CONFLICT(project_root, tier) DO UPDATE SET generation = excluded.generation, payload = excluded.payload"
             )
-            .run(projectRoot, request.tier, generation, JSON.stringify(request.index));
+            .run(projectRoot, request.tier, generation, JSON.stringify(request.navigationProjection));
         database
             .prepare(
                 "INSERT INTO semantic_generation_history(project_root, generation, tier, source_revision, reason, affected_file_count, published_at, result) VALUES (?, ?, ?, ?, ?, ?, ?, 'published')"
@@ -960,14 +961,25 @@ export function publishSemanticTwoTierSnapshot(
     store: SemanticIndexStore,
     request: SemanticTwoTierPublicationRequest
 ): SemanticPublishResult {
+    const definitionsSnapshot = createSemanticSnapshotFromProjectIndex(
+        request.index,
+        "definitions",
+        request.sourceRevision as SemanticSourceRevision
+    );
+    const fullSnapshot = createSemanticSnapshotFromProjectIndex(
+        request.index,
+        "full",
+        request.sourceRevision as SemanticSourceRevision
+    );
     let activeSlots = store.readActiveSemanticSlots();
     if (activeSlots.definitions?.sourceSignature !== request.sourceRevision) {
         const definitionsPublication = store.publishSemanticSnapshot({
             authoritative: false,
             baseGeneration: activeSlots.definitions?.generation ?? null,
             expectedHeadGeneration: store.readSemanticProjectHead().generation,
-            index: request.index,
             manifest: request.manifest,
+            navigationProjection: request.index,
+            snapshot: definitionsSnapshot,
             sourceRevision: request.sourceRevision,
             tier: "definitions"
         });
@@ -980,8 +992,9 @@ export function publishSemanticTwoTierSnapshot(
         authoritative: false,
         baseGeneration: activeSlots.full?.generation ?? null,
         expectedHeadGeneration: store.readSemanticProjectHead().generation,
-        index: request.index,
         manifest: request.manifest,
+        navigationProjection: request.index,
+        snapshot: fullSnapshot,
         sourceRevision: request.sourceRevision,
         tier: "full"
     });

@@ -8,6 +8,7 @@ import { Core } from "@gmloop/core";
 
 import { openGraphIndexDatabase } from "../src/graph-index/database.js";
 import { buildSemanticFileManifest, type SemanticFileManifest } from "../src/project-index/semantic-manifest.js";
+import { createSemanticSnapshotFromProjectIndex } from "../src/project-index/semantic-snapshot-codec.js";
 import {
     getSemanticIndexDatabasePath,
     openSemanticIndexStore,
@@ -180,8 +181,9 @@ function publishSnapshot(
         authoritative: tier === "full" && store.readActiveSemanticSlots().definitions === null,
         baseGeneration: store.readActiveSemanticSlots()[tier]?.generation ?? null,
         expectedHeadGeneration: store.readSemanticProjectHead().generation,
-        index,
         manifest,
+        navigationProjection: index,
+        snapshot: createSemanticSnapshotFromProjectIndex(index, tier, manifest.sourceRevision),
         sourceRevision,
         tier
     } as const;

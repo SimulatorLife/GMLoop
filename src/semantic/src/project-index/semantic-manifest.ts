@@ -7,12 +7,9 @@ import { Core } from "@gmloop/core";
 import { isProjectManifestPath } from "./constants.js";
 import { type ProjectIndexFsFacade } from "./fs-facade.js";
 import { scanProjectTree } from "./project-tree.js";
+import type { SemanticSourceRevision } from "./semantic-snapshot.js";
 
-/** Semantic snapshot tier. */
-export type SemanticTier = "definitions" | "full";
-
-/** SHA-256 digest that identifies one complete semantic source inventory. */
-export type SemanticSourceRevision = string & { readonly __semanticSourceRevision: unique symbol };
+export type { SemanticSourceRevision, SemanticTier } from "./semantic-snapshot.js";
 
 /** Semantic manifest file classification. */
 export type SemanticFileKind = "gml" | "projectManifest" | "resourceMetadata";
