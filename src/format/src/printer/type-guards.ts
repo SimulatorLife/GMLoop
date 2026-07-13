@@ -21,7 +21,19 @@ const OBJECT_TYPE = "object";
 // Using a straight loop instead of a RegExp avoids regex machinery on each
 // invocation – no match objects, no lastIndex state, no compilation overhead.
 // Measured: ~40–50% faster for typical comment strings (see commit message).
-const CHAR_CODE_LINE_BREAKS = new Set([13, 10, 8232, 8233]); // CR LF LS PS
+//
+// MICRO-OPTIMIZATION: Direct integer equality is faster than Set#has for the
+// fixed four-code set, and the ASCII line breaks (LF, CR) dominate in practice
+// so we filter them through a single range comparison. The V8 JIT emits the
+// same branch as a Set lookup for tiny fixed sets, but skipping the Set#has
+// hash path removes a function call and an indirection per character, which
+// compounds across the thousands of comment strings processed when formatting
+// a single file.
+const CHAR_CODE_LF = 10; // \n
+const CHAR_CODE_CR = 13; // \r
+const CHAR_CODE_LS = 8232; // U+2028 LINE SEPARATOR
+const CHAR_CODE_PS = 8233; // U+2029 PARAGRAPH SEPARATOR
+const ASCII_LINE_BREAK_MAX = CHAR_CODE_CR;
 
 // Frozen set of node types considered simple call arguments for formatting purposes.
 // Reused across isComplexArgumentNode, isSimpleCallArgument, and isSimpleCallExpression.
@@ -467,6 +479,11 @@ export function expressionIsStringLike(node: any): boolean {
  * machinery overhead on every invocation. The four checked codes cover
  * all line break sequences: CR (\r), LF (\n), LS (\u2028), and PS (\u2029).
  *
+ * The character-code test is structured so that the ASCII branch
+ * (codes 0-13) is checked first, which short-circuits the dominant LF/CR
+ * cases for typical comment strings while skipping the heavier Unicode
+ * comparisons on every iteration.
+ *
  * @param text - The text string to check for line breaks.
  * @returns `true` if the text contains any line break character, `false` otherwise.
  */
@@ -476,7 +493,14 @@ export function hasLineBreak(text: any): boolean {
     }
     const len = text.length;
     for (let i = 0; i < len; i += 1) {
-        if (CHAR_CODE_LINE_BREAKS.has(text.charCodeAt(i))) {
+        const code = text.charCodeAt(i);
+        if (code <= ASCII_LINE_BREAK_MAX) {
+            if (code === CHAR_CODE_LF || code === CHAR_CODE_CR) {
+                return true;
+            }
+            continue;
+        }
+        if (code === CHAR_CODE_LS || code === CHAR_CODE_PS) {
             return true;
         }
     }
