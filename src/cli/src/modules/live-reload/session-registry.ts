@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -129,12 +130,40 @@ export async function readLiveReloadSessionRegistry(registryPath: string): Promi
 
 export async function writeLiveReloadSessionRegistry(session: LiveReloadRegisteredSession): Promise<void> {
     const registryPath = path.join(session.projectRoot, LIVE_RELOAD_SESSION_REGISTRY_RELATIVE_PATH);
+    const temporaryPath = `${registryPath}.${process.pid}.${randomUUID()}.tmp`;
     await fs.mkdir(path.dirname(registryPath), { recursive: true });
-    await fs.writeFile(registryPath, `${JSON.stringify(session, null, 2)}\n`, "utf8");
+    try {
+        await fs.writeFile(temporaryPath, `${JSON.stringify(session, null, 2)}\n`, {
+            encoding: "utf8",
+            flag: "wx"
+        });
+        await fs.rename(temporaryPath, registryPath);
+    } finally {
+        await fs.rm(temporaryPath, { force: true });
+    }
 }
 
-export async function removeLiveReloadSessionRegistry(projectRoot: string): Promise<void> {
-    await fs.rm(path.join(projectRoot, LIVE_RELOAD_SESSION_REGISTRY_RELATIVE_PATH), { force: true });
+function isSameRegisteredSession(current: LiveReloadRegisteredSession, expected: LiveReloadRegisteredSession): boolean {
+    return (
+        current.processId === expected.processId &&
+        current.statusUrl === expected.statusUrl &&
+        current.watchedRoot === expected.watchedRoot
+    );
+}
+
+export async function removeLiveReloadSessionRegistry(
+    projectRoot: string,
+    expected?: LiveReloadRegisteredSession
+): Promise<boolean> {
+    const registryPath = path.join(projectRoot, LIVE_RELOAD_SESSION_REGISTRY_RELATIVE_PATH);
+    if (expected !== undefined) {
+        const current = await readLiveReloadSessionRegistry(registryPath);
+        if (current === null || !isSameRegisteredSession(current, expected)) {
+            return false;
+        }
+    }
+    await fs.rm(registryPath, { force: true });
+    return true;
 }
 
 async function fetchJsonWithTimeout(url: string): Promise<unknown> {
@@ -185,7 +214,7 @@ export async function discoverLiveReloadSessionByPath(
 
     const alive = await isLiveReloadRegisteredSessionAlive(session, options.fetchStatus);
     if (!alive) {
-        await removeLiveReloadSessionRegistry(identity.projectRoot);
+        await removeLiveReloadSessionRegistry(identity.projectRoot, session);
         return Object.freeze({ alive: false, registryPath: identity.registryPath, session: null });
     }
 

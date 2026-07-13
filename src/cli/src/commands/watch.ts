@@ -27,6 +27,7 @@ import { createStatusUrl, createWebSocketUrl, DEFAULT_GM_TEMP_ROOT } from "../mo
 import { prepareLiveReload } from "../modules/live-reload/session.js";
 import {
     type LiveReloadRegisteredSession,
+    removeLiveReloadSessionRegistry,
     writeLiveReloadSessionRegistry
 } from "../modules/live-reload/session-registry.js";
 import {
@@ -784,9 +785,9 @@ async function writeLiveReloadSessionAfterStartup(
         statusServerController: StatusServerHandle | null;
         websocketServerController: PatchWebSocketServer | null;
     }>
-): Promise<void> {
+): Promise<LiveReloadRegisteredSession | null> {
     if (parameters.liveReloadSession === undefined || parameters.statusServerController === null) {
-        return;
+        return null;
     }
 
     const websocketUrl = parameters.websocketServerController?.url ?? "";
@@ -794,7 +795,7 @@ async function writeLiveReloadSessionAfterStartup(
     const websocketEndpoint = websocketUrl.length > 0 ? new URL(websocketUrl) : null;
     const statusEndpoint = new URL(statusUrl);
 
-    await writeLiveReloadSessionRegistry({
+    const session: LiveReloadRegisteredSession = {
         lastHeartbeatAt: Date.now(),
         processId: process.pid,
         projectRoot: parameters.liveReloadSession.projectRoot,
@@ -809,7 +810,9 @@ async function writeLiveReloadSessionAfterStartup(
         websocketPort: websocketEndpoint === null ? 0 : Number(websocketEndpoint.port),
         websocketUrl,
         yypPath: parameters.liveReloadSession.yypPath
-    });
+    };
+    await writeLiveReloadSessionRegistry(session);
+    return session;
 }
 
 /**
@@ -1082,7 +1085,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         websocketServerController
     });
 
-    await writeLiveReloadSessionAfterStartup({
+    const registeredLiveReloadSession = await writeLiveReloadSessionAfterStartup({
         liveReloadSession,
         normalizedPath,
         runtimeServerController,
@@ -1152,6 +1155,20 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
             runtimeContext.debouncedHandlers.clear();
 
             displayTranspilationStatistics(runtimeContext, verbose, quiet);
+
+            if (registeredLiveReloadSession !== null) {
+                try {
+                    await removeLiveReloadSessionRegistry(
+                        registeredLiveReloadSession.projectRoot,
+                        registeredLiveReloadSession
+                    );
+                } catch (error) {
+                    const message = getErrorMessage(error, {
+                        fallback: "Unknown live-reload registry cleanup error"
+                    });
+                    console.error(`Failed to remove live-reload session registry: ${message}`);
+                }
+            }
 
             if (runtimeServerController) {
                 try {
