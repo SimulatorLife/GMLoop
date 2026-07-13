@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { performance } from "node:perf_hooks";
 import test from "node:test";
 
-import { runCliTestCommand } from "../src/cli.js";
+import { __test__, runCliTestCommand } from "../src/cli.js";
 import { withSyntheticRefactorProject, writeScriptResource } from "./test-helpers/refactor-codemod-command-fixture.js";
 
 const IS_TEST_ENV =
@@ -49,20 +49,21 @@ void test("refactor codemod --write refreshes semantic index once for a multi-co
 
             const startTime = performance.now();
             const result = await runCliTestCommand({
-                argv: ["refactor", "codemod", "--write", "--verbose"],
+                argv: ["refactor", "codemod", "--write"],
                 cwd: projectRoot
             });
             const durationMs = performance.now() - startTime;
 
             assert.equal(result.exitCode, 0);
-            const rebuildLines = result.stdout.match(/Rebuilding project index after codemod /g) ?? [];
-            assert.equal(rebuildLines.length, 1, `Expected one semantic index refresh, saw ${rebuildLines.length}`);
-            const semanticIndexBuildLines = result.stdout.match(/DEBUG: Starting buildProjectIndex/g) ?? [];
+
+            const bridge = __test__.consumeLastRefactorSemanticBridge();
+            assert.ok(bridge, "Expected the refactor orchestrator to construct a semantic bridge");
             assert.equal(
-                semanticIndexBuildLines.length,
+                bridge.getProjectIndexUpdateCount(),
                 1,
-                `Expected one semantic index build for a mixed codemod batch, saw ${semanticIndexBuildLines.length}`
+                "Expected one semantic index refresh after the non-semantic codemods finished, before the semantic codemod ran"
             );
+
             assert.ok(
                 durationMs <= PERFORMANCE_THRESHOLD_MS,
                 `Expected refactor codemod --write runtime under ${PERFORMANCE_THRESHOLD_MS}ms, received ${durationMs.toFixed(2)}ms`
