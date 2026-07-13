@@ -2060,8 +2060,8 @@ async function getOrBuildProjectIndex(projectRoot: string): Promise<ProjectIndex
     const manifest = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade);
     const sourceSignature = manifest.sourceRevision;
     const store = openSemanticIndexStore(projectRoot);
-    const storedState = store.readStateForTier("full");
-    const storedIndex = store.readIndexForTier("full");
+    const storedState = store.readActiveSemanticSlots().full;
+    const storedIndex = store.readSemanticNavigationProjection("full");
     if (storedIndex && storedState?.sourceSignature === sourceSignature) {
         store.close();
         return storedIndex;
@@ -2074,8 +2074,8 @@ async function getOrBuildProjectIndex(projectRoot: string): Promise<ProjectIndex
         })) as ProjectIndexSnapshot;
         const publication = store.publishSemanticSnapshot({
             authoritative: true,
-            baseGeneration: store.readStateForTier("full")?.generation ?? null,
-            expectedHeadGeneration: store.readProjectHead().generation,
+            baseGeneration: store.readActiveSemanticSlots().full?.generation ?? null,
+            expectedHeadGeneration: store.readSemanticProjectHead().generation,
             index,
             manifest,
             sourceRevision: sourceSignature,

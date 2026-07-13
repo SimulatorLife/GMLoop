@@ -337,7 +337,7 @@ void test("batched incremental indexing removes deleted file facts without parsi
 
         await unlink(removedPath);
         const updated = (await buildProjectIndex(projectRoot, undefined, {
-            incremental: { changedFiles: [removedPath], existingIndex: initial }
+            incremental: { changes: [{ filePath: removedPath, kind: "deleted" }], existingIndex: initial }
         })) as ProjectIndexSnapshot;
 
         assert.equal(updated.files["scripts/removed/removed.gml"], undefined);

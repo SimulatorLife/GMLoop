@@ -77,7 +77,7 @@ export function createProjectIndexCoordinator(options: ProjectIndexCoordinatorOp
 function loadSemanticStoreIndex(descriptor: { projectRoot: string }) {
     const store = openSemanticIndexStore(descriptor.projectRoot);
     try {
-        const projectIndex = store.readIndexForTier("full");
+        const projectIndex = store.readSemanticNavigationProjection("full");
         return Promise.resolve(
             projectIndex
                 ? { status: "hit", cacheFilePath: getSemanticIndexDatabasePath(descriptor.projectRoot), projectIndex }
@@ -98,8 +98,8 @@ async function saveSemanticStoreIndex(descriptor: { projectRoot: string; project
     try {
         const publication = store.publishSemanticSnapshot({
             authoritative: true,
-            baseGeneration: store.readStateForTier("full")?.generation ?? null,
-            expectedHeadGeneration: store.readProjectHead().generation,
+            baseGeneration: store.readActiveSemanticSlots().full?.generation ?? null,
+            expectedHeadGeneration: store.readSemanticProjectHead().generation,
             index: descriptor.projectIndex,
             manifest,
             sourceRevision: manifest.sourceRevision,
@@ -2416,6 +2416,32 @@ function removeFileFromAggregationState(
     }
 }
 
+function removeChangedFilesFromAggregationState({
+    changedFiles,
+    resolvedRoot,
+    scopeMap,
+    filesMap,
+    identifierCollections,
+    relationships
+}: {
+    changedFiles: ReadonlyArray<ProjectIndexSemanticFileChange>;
+    resolvedRoot: string;
+    scopeMap: Map<string, any>;
+    filesMap: Map<string, any>;
+    identifierCollections: any;
+    relationships: any;
+}): void {
+    for (const change of changedFiles) {
+        removeFileFromAggregationState(
+            path.relative(resolvedRoot, change.filePath),
+            scopeMap,
+            filesMap,
+            identifierCollections,
+            relationships
+        );
+    }
+}
+
 /**
  * Centralize the mutable collections used while aggregating project index
  * details. Keeping the map initialisation and relationship bookkeeping here
@@ -2872,6 +2898,113 @@ function configureGmlProcessing({ options, metrics }) {
     const parseProjectSource = resolveProjectIndexParser(options);
     return { gmlConcurrency, parseProjectSource };
 }
+
+type ProjectIndexSemanticFileChange = Readonly<{
+    filePath: string;
+    kind: "added" | "deleted" | "metadataChanged" | "modified";
+}>;
+
+async function reconcileIncrementalResourceMetadata({
+    changes,
+    projectRoot,
+    resourceAnalysis,
+    fsFacade,
+    metrics,
+    signal,
+    ensureNotAborted,
+    logger
+}: {
+    changes: ReadonlyArray<ProjectIndexSemanticFileChange>;
+    projectRoot: string;
+    resourceAnalysis: ReturnType<typeof reconstructResourceAnalysis>;
+    fsFacade: ProjectIndexFsFacade;
+    metrics: ReturnType<typeof createProjectIndexMetrics>["recording"];
+    signal: Parameters<typeof Core.throwIfAborted>[0];
+    ensureNotAborted: () => void;
+    logger: ProjectIndexLogger;
+}): Promise<ReadonlyArray<ProjectIndexSemanticFileChange>> {
+    const gmlChangesByPath = new Map(
+        changes
+            .filter((change) => change.filePath.toLowerCase().endsWith(".gml"))
+            .map((change) => [path.resolve(change.filePath), change.kind] as const)
+    );
+    const changedMetadata = changes
+        .filter((change) => !change.filePath.toLowerCase().endsWith(".gml"))
+        .map((change) => ({ ...change, filePath: path.resolve(change.filePath) }));
+    for (const { filePath: changedMetadataFile } of changedMetadata) {
+        const relativeMetadataPath = path.relative(projectRoot, changedMetadataFile);
+        const previousResource = resourceAnalysis.resourcesMap.get(relativeMetadataPath);
+        for (const gmlFile of previousResource?.gmlFiles ?? []) {
+            const absoluteGmlPath = path.resolve(projectRoot, gmlFile);
+            if (!gmlChangesByPath.has(absoluteGmlPath)) {
+                gmlChangesByPath.set(absoluteGmlPath, "deleted");
+            }
+        }
+        if (previousResource?.name) {
+            resourceAnalysis.scriptNameToScopeId.delete(previousResource.name);
+            resourceAnalysis.scriptNameToResourcePath.delete(previousResource.name);
+        }
+        resourceAnalysis.resourcesMap.delete(relativeMetadataPath);
+        resourceAnalysis.assetReferences = resourceAnalysis.assetReferences.filter(
+            (reference) => reference.fromResourcePath !== relativeMetadataPath
+        );
+        for (const [gmlFile, descriptor] of resourceAnalysis.gmlScopeMap) {
+            if (descriptor.resourcePath === relativeMetadataPath) {
+                resourceAnalysis.gmlScopeMap.delete(gmlFile);
+            }
+        }
+    }
+    const metadataFileCandidates = await Promise.all(
+        changedMetadata.map(async ({ filePath: absolutePath, kind }) => {
+            if (kind === "deleted") {
+                return null;
+            }
+            const stats = await runWithMissingPathFallback(
+                () => fsFacade.stat(absolutePath),
+                () => null
+            );
+            return stats === null || (typeof stats.isFile === "function" && !stats.isFile())
+                ? null
+                : { absolutePath, relativePath: path.relative(projectRoot, absolutePath) };
+        })
+    );
+    const existingMetadataFiles = metadataFileCandidates.flatMap((file) => (file === null ? [] : [file]));
+    if (existingMetadataFiles.length > 0) {
+        const refreshedMetadata = await analyseProjectResourcesForIndex({
+            projectRoot,
+            yyFiles: existingMetadataFiles,
+            fsFacade,
+            metrics,
+            signal,
+            ensureNotAborted,
+            logger
+        });
+        for (const [resourcePath, resource] of refreshedMetadata.resourcesMap) {
+            resourceAnalysis.resourcesMap.set(resourcePath, {
+                ...resource,
+                scopes: new Set(resource.scopes),
+                gmlFiles: new Set(resource.gmlFiles)
+            });
+            for (const gmlFile of resource.gmlFiles) {
+                gmlChangesByPath.set(path.resolve(projectRoot, gmlFile), "modified");
+            }
+        }
+        resourceAnalysis.assetReferences.push(...refreshedMetadata.assetReferences);
+        for (const [gmlFile, descriptor] of refreshedMetadata.gmlScopeMap) {
+            resourceAnalysis.gmlScopeMap.set(gmlFile, descriptor);
+        }
+        for (const [scriptName, resourcePath] of refreshedMetadata.scriptNameToResourcePath) {
+            resourceAnalysis.scriptNameToResourcePath.set(scriptName, resourcePath);
+        }
+        for (const [scriptName, scopeId] of refreshedMetadata.scriptNameToScopeId) {
+            resourceAnalysis.scriptNameToScopeId.set(scriptName, scopeId);
+        }
+    }
+    return [...gmlChangesByPath]
+        .map(([filePath, kind]) => ({ filePath, kind }))
+        .toSorted((left, right) => left.filePath.localeCompare(right.filePath));
+}
+
 async function processProjectGmlFilesForIndex({
     gmlFiles,
     gmlConcurrency,
@@ -2988,117 +3121,65 @@ export async function buildProjectIndex(projectRoot, fsFacade = Core.defaultFsFa
     let orderedGmlFiles: any[];
 
     if (options?.incremental) {
-        const { existingIndex, changedFiles } = options.incremental;
-        const uniqueChangedFiles = [
-            ...new Set(
-                (Array.isArray(changedFiles) ? changedFiles : [])
-                    .filter((changedFile): changedFile is string => typeof changedFile === "string")
-                    .map((changedFile) => path.resolve(changedFile))
-            )
-        ];
+        const { existingIndex, changes } = options.incremental;
+        const changesByPath = new Map<string, ProjectIndexSemanticFileChange["kind"]>();
+        for (const change of changes as ReadonlyArray<ProjectIndexSemanticFileChange>) {
+            changesByPath.set(path.resolve(change.filePath), change.kind);
+        }
+        const uniqueChanges = [...changesByPath].map(([filePath, kind]) => ({ filePath, kind }));
 
         resourceAnalysis = reconstructResourceAnalysis(existingIndex);
-        const requestedGmlFiles = uniqueChangedFiles.filter((changedFile) =>
-            changedFile.toLowerCase().endsWith(".gml")
-        );
-        const changedMetadataFiles = uniqueChangedFiles.filter(
-            (changedFile) => !changedFile.toLowerCase().endsWith(".gml")
-        );
-        const metadataAffectedGmlFiles = new Set<string>();
-        for (const changedMetadataFile of changedMetadataFiles) {
-            const relativeMetadataPath = path.relative(resolvedRoot, changedMetadataFile);
-            const previousResource = resourceAnalysis.resourcesMap.get(relativeMetadataPath);
-            for (const gmlFile of previousResource?.gmlFiles ?? []) {
-                metadataAffectedGmlFiles.add(path.resolve(resolvedRoot, gmlFile));
-            }
-            if (previousResource?.name) {
-                resourceAnalysis.scriptNameToScopeId.delete(previousResource.name);
-                resourceAnalysis.scriptNameToResourcePath.delete(previousResource.name);
-            }
-            resourceAnalysis.resourcesMap.delete(relativeMetadataPath);
-            resourceAnalysis.assetReferences = resourceAnalysis.assetReferences.filter(
-                (reference) => reference.fromResourcePath !== relativeMetadataPath
-            );
-            for (const [gmlFile, descriptor] of resourceAnalysis.gmlScopeMap) {
-                if (descriptor.resourcePath === relativeMetadataPath) {
-                    resourceAnalysis.gmlScopeMap.delete(gmlFile);
-                }
-            }
-        }
-        const existingMetadataFiles = (
-            await Promise.all(
-                changedMetadataFiles.map(async (absolutePath) => {
-                    const stats = await runWithMissingPathFallback(
-                        () => fsFacade.stat(absolutePath),
-                        () => null
-                    );
-                    return stats === null || (typeof stats.isFile === "function" && !stats.isFile())
-                        ? null
-                        : { absolutePath, relativePath: path.relative(resolvedRoot, absolutePath) };
-                })
-            )
-        ).flatMap((file) => (file === null ? [] : [file]));
-        if (existingMetadataFiles.length > 0) {
-            const refreshedMetadata = await analyseProjectResourcesForIndex({
-                projectRoot: resolvedRoot,
-                yyFiles: existingMetadataFiles,
-                fsFacade,
-                metrics,
-                signal,
-                ensureNotAborted,
-                logger
-            });
-            for (const [resourcePath, resource] of refreshedMetadata.resourcesMap) {
-                resourceAnalysis.resourcesMap.set(resourcePath, {
-                    ...resource,
-                    scopes: new Set(resource.scopes),
-                    gmlFiles: new Set(resource.gmlFiles)
-                });
-                for (const gmlFile of resource.gmlFiles) {
-                    metadataAffectedGmlFiles.add(path.resolve(resolvedRoot, gmlFile));
-                }
-            }
-            resourceAnalysis.assetReferences.push(...refreshedMetadata.assetReferences);
-            for (const [gmlFile, descriptor] of refreshedMetadata.gmlScopeMap) {
-                resourceAnalysis.gmlScopeMap.set(gmlFile, descriptor);
-            }
-            for (const [scriptName, resourcePath] of refreshedMetadata.scriptNameToResourcePath) {
-                resourceAnalysis.scriptNameToResourcePath.set(scriptName, resourcePath);
-            }
-            for (const [scriptName, scopeId] of refreshedMetadata.scriptNameToScopeId) {
-                resourceAnalysis.scriptNameToScopeId.set(scriptName, scopeId);
-            }
-        }
-        const changedGmlFiles = [...new Set([...requestedGmlFiles, ...metadataAffectedGmlFiles])];
+        const changedGmlFiles = await reconcileIncrementalResourceMetadata({
+            changes: uniqueChanges,
+            projectRoot: resolvedRoot,
+            resourceAnalysis,
+            fsFacade,
+            metrics,
+            signal,
+            ensureNotAborted,
+            logger
+        });
         const state = createProjectIndexAggregationStateFromExisting(existingIndex, resourceAnalysis);
         scopeMap = state.scopeMap;
         filesMap = state.filesMap;
         relationships = state.relationships;
         identifierCollections = state.identifierCollections;
 
-        const changedFileDescriptors = changedGmlFiles.map((changedFile) => {
-            const relativeChangedPath = path.relative(resolvedRoot, changedFile);
-            removeFileFromAggregationState(
-                relativeChangedPath,
-                scopeMap,
-                filesMap,
-                identifierCollections,
-                relationships
-            );
-            let fileResourcePath = `scripts/${path.basename(changedFile, ".gml")}/${path.basename(changedFile)}`;
-            for (const [resPath, resRecord] of resourceAnalysis.resourcesMap.entries()) {
-                if (resRecord.gmlFiles.has(relativeChangedPath)) {
-                    fileResourcePath = resPath;
-                    break;
-                }
-            }
-            return {
-                absolutePath: changedFile,
-                relativePath: relativeChangedPath,
-                name: path.basename(changedFile, ".gml"),
-                resourcePath: fileResourcePath
-            };
+        removeChangedFilesFromAggregationState({
+            changedFiles: changedGmlFiles,
+            resolvedRoot,
+            scopeMap,
+            filesMap,
+            identifierCollections,
+            relationships
         });
+
+        const changedFileDescriptors = changedGmlFiles
+            .filter((change) => change.kind !== "deleted")
+            .map((change) => {
+                const changedFile = change.filePath;
+                const relativeChangedPath = path.relative(resolvedRoot, changedFile);
+                removeFileFromAggregationState(
+                    relativeChangedPath,
+                    scopeMap,
+                    filesMap,
+                    identifierCollections,
+                    relationships
+                );
+                let fileResourcePath = `scripts/${path.basename(changedFile, ".gml")}/${path.basename(changedFile)}`;
+                for (const [resPath, resRecord] of resourceAnalysis.resourcesMap.entries()) {
+                    if (resRecord.gmlFiles.has(relativeChangedPath)) {
+                        fileResourcePath = resPath;
+                        break;
+                    }
+                }
+                return {
+                    absolutePath: changedFile,
+                    relativePath: relativeChangedPath,
+                    name: path.basename(changedFile, ".gml"),
+                    resourcePath: fileResourcePath
+                };
+            });
         const changedPathExistence = await Promise.all(
             changedFileDescriptors.map(async (descriptor) => {
                 const stats = await runWithMissingPathFallback(
