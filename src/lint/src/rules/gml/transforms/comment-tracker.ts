@@ -74,7 +74,7 @@ export class CommentTracker {
     }
 
     hasBetween(left: number | undefined, right: number | undefined): boolean {
-        return this.getUnconsumedEntriesBetween(left, right).length > 0;
+        return this.getEntriesBetween(left, right).length > 0;
     }
 
     hasAfter(position: number | undefined): boolean {
@@ -121,6 +121,25 @@ export class CommentTracker {
         return takenComments;
     }
 
+    getEntriesBetween(left: number | undefined, right: number | undefined): Array<CommentTrackerEntry> {
+        if (!isValidCommentRange(left, right) || this.entries.length === 0) {
+            return [];
+        }
+
+        const matchingEntries: Array<CommentTrackerEntry> = [];
+        for (const entry of this.entries.slice(this.firstGreaterThan(left))) {
+            if (entry.index >= right) {
+                break;
+            }
+
+            if (!entry.consumed) {
+                matchingEntries.push(entry);
+            }
+        }
+
+        return matchingEntries;
+    }
+
     firstGreaterThan(target: number): number {
         let low = 0;
         let high = this.entries.length - 1;
@@ -133,10 +152,6 @@ export class CommentTracker {
             }
         }
         return low;
-    }
-
-    getEntriesBetween(left: number | undefined, right: number | undefined): Array<CommentTrackerEntry> {
-        return this.getUnconsumedEntriesBetween(left, right);
     }
 
     consumeEntries(entries: Array<CommentTrackerEntry | CommentLike | null | undefined>): void {
@@ -171,28 +186,6 @@ export class CommentTracker {
         }
 
         this.comments.length = writeIndex;
-    }
-
-    private getUnconsumedEntriesBetween(
-        left: number | undefined,
-        right: number | undefined
-    ): Array<CommentTrackerEntry> {
-        if (!isValidCommentRange(left, right) || this.entries.length === 0) {
-            return [];
-        }
-
-        const matchingEntries: Array<CommentTrackerEntry> = [];
-        for (const entry of this.entries.slice(this.firstGreaterThan(left))) {
-            if (entry.index >= right) {
-                break;
-            }
-
-            if (!entry.consumed) {
-                matchingEntries.push(entry);
-            }
-        }
-
-        return matchingEntries;
     }
 
     private findEntryForConsumedComment(entry: CommentTrackerEntry | CommentLike): CommentTrackerEntry | undefined {
