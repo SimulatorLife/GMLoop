@@ -16,6 +16,7 @@ import {
     openSemanticIndexStore,
     publishSemanticTwoTierSnapshot
 } from "../project-index/index.js";
+import { createSemanticSnapshotFromProjectIndex } from "../project-index/semantic-snapshot-codec.js";
 import { getGmlSymbolKindForIdentifierCollection } from "../symbols/taxonomy.js";
 import { resolveGraphIndexConfig } from "./config.js";
 import {
@@ -2074,8 +2075,10 @@ async function getOrBuildProjectIndex(projectRoot: string): Promise<ProjectIndex
             parseGml: parser
         })) as ProjectIndexSnapshot;
         const publication = publishSemanticTwoTierSnapshot(store, {
-            index,
+            definitionsSnapshot: createSemanticSnapshotFromProjectIndex(index, "definitions", manifest.sourceRevision),
+            fullSnapshot: createSemanticSnapshotFromProjectIndex(index, "full", manifest.sourceRevision),
             manifest,
+            navigationProjection: index,
             sourceRevision: sourceSignature
         });
         if (publication.status === "superseded") {

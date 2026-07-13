@@ -702,6 +702,11 @@ export class GmlSemanticBridge {
         this.readFile = readFile;
     }
 
+    /** Returns the current canonical project-index projection consumed by refactor queries. */
+    public getProjectIndex(): Record<string, unknown> {
+        return this.projectIndex;
+    }
+
     /**
      * Update the underlying project index in place. Useful after codemod passes
      * when the engine updates the project tree to evaluate the next sequence.

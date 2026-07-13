@@ -4,6 +4,7 @@ type AstNodeRecord = Record<string, unknown>;
 
 export type ConstructorStaticMemberDeclarationRecord = {
     constructorName: string;
+    declarationNode: AstNodeRecord;
     memberIdentifier: AstNodeRecord;
     memberName: string;
 };
@@ -156,6 +157,7 @@ function collectStaticMemberDeclarations(constructorNode: AstNodeRecord, constru
 
             declarations.push({
                 constructorName,
+                declarationNode: node,
                 memberName,
                 memberIdentifier: declaration.id
             });

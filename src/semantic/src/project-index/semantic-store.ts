@@ -17,7 +17,6 @@ import type {
     SemanticTier,
     SemanticUnresolvedReference
 } from "./semantic-snapshot.js";
-import { createSemanticSnapshotFromProjectIndex } from "./semantic-snapshot-codec.js";
 import {
     createEmptyGmlSymbolDocumentation,
     type GmlSymbolDocumentation,
@@ -85,8 +84,10 @@ export type SemanticIncrementPublicationRequest = SemanticSnapshotPublicationReq
 
 /** Complete project snapshot published through definitions and matching-full tiers. */
 export type SemanticTwoTierPublicationRequest = Readonly<{
-    index: Record<string, unknown>;
+    definitionsSnapshot: SemanticSnapshot;
+    fullSnapshot: SemanticSnapshot;
     manifest: SemanticFileManifest | null;
+    navigationProjection: Readonly<Record<string, unknown>>;
     sourceRevision: string;
 }>;
 
@@ -623,6 +624,11 @@ function publishSemanticFacts(
 ): SemanticPublishResult {
     let publishedState: SemanticStoreState | null = null;
     const updatedAt = new Date().toISOString();
+    const snapshot = request.snapshot;
+
+    if (snapshot.tier !== request.tier || snapshot.sourceRevision !== request.sourceRevision) {
+        return Object.freeze({ state: null, status: "superseded" });
+    }
 
     runGraphDatabaseImmediateTransaction(database, () => {
         const head = database
@@ -663,10 +669,6 @@ function publishSemanticFacts(
                 "INSERT INTO semantic_slots(project_root, tier, generation, source_revision, base_generation, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(project_root, tier) DO UPDATE SET generation = excluded.generation, source_revision = excluded.source_revision, base_generation = excluded.base_generation, updated_at = excluded.updated_at"
             )
             .run(projectRoot, request.tier, generation, request.sourceRevision, request.baseGeneration, updatedAt);
-        const snapshot = request.snapshot;
-        if (snapshot.tier !== request.tier || snapshot.sourceRevision !== request.sourceRevision) {
-            return;
-        }
         const affectedFiles = createAffectedFileSet(projectRoot, request.affectedFiles);
         const affectedSymbolIds = new Set([
             ...readSymbolIdsDefinedByFiles(database, projectRoot, request.tier, affectedFiles),
@@ -943,7 +945,8 @@ export function openSemanticIndexStore(projectRoot: string): SemanticIndexStore 
             return closePromise;
         },
         flush: flushSynchronousSemanticPublications,
-        findImmediateDownstreamFiles: (filePath) => findImmediateDownstreamFiles(database, resolvedRoot, filePath),
+        findImmediateDownstreamFiles: (filePath) =>
+            findImmediateDownstreamFiles(database, resolvedRoot, normalizeSemanticFilePath(resolvedRoot, filePath)),
         findUnresolvedDependents: (identifierNames) =>
             findUnresolvedDependents(database, resolvedRoot, identifierNames),
         readActiveSemanticSlots: () => readActiveSemanticSlots(database, resolvedRoot),
@@ -961,16 +964,6 @@ export function publishSemanticTwoTierSnapshot(
     store: SemanticIndexStore,
     request: SemanticTwoTierPublicationRequest
 ): SemanticPublishResult {
-    const definitionsSnapshot = createSemanticSnapshotFromProjectIndex(
-        request.index,
-        "definitions",
-        request.sourceRevision as SemanticSourceRevision
-    );
-    const fullSnapshot = createSemanticSnapshotFromProjectIndex(
-        request.index,
-        "full",
-        request.sourceRevision as SemanticSourceRevision
-    );
     let activeSlots = store.readActiveSemanticSlots();
     if (activeSlots.definitions?.sourceSignature !== request.sourceRevision) {
         const definitionsPublication = store.publishSemanticSnapshot({
@@ -978,8 +971,8 @@ export function publishSemanticTwoTierSnapshot(
             baseGeneration: activeSlots.definitions?.generation ?? null,
             expectedHeadGeneration: store.readSemanticProjectHead().generation,
             manifest: request.manifest,
-            navigationProjection: request.index,
-            snapshot: definitionsSnapshot,
+            navigationProjection: request.navigationProjection,
+            snapshot: request.definitionsSnapshot,
             sourceRevision: request.sourceRevision,
             tier: "definitions"
         });
@@ -993,8 +986,8 @@ export function publishSemanticTwoTierSnapshot(
         baseGeneration: activeSlots.full?.generation ?? null,
         expectedHeadGeneration: store.readSemanticProjectHead().generation,
         manifest: request.manifest,
-        navigationProjection: request.index,
-        snapshot: fullSnapshot,
+        navigationProjection: request.navigationProjection,
+        snapshot: request.fullSnapshot,
         sourceRevision: request.sourceRevision,
         tier: "full"
     });

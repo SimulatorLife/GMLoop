@@ -71,7 +71,7 @@ void test("LSP: built-in functions appear in completions and hover", async () =>
             uri: Lsp.filePathToUri(proj.scriptPath),
             languageId: "gml",
             version: 1,
-            text: "show_debug_message('hello');"
+            text: "enum eAIState { idle = 0, attack_target }\nshow_debug_message('hello');\nds_priority_create();"
         });
 
         const semanticIndex = Lsp.createGmlSemanticIndex(store);
@@ -85,7 +85,8 @@ void test("LSP: built-in functions appear in completions and hover", async () =>
         );
 
         // Hover
-        const hover = await semanticIndex.hover(document, 0, "show_debug_message");
+        const showDebugOffset = document.sourceText.indexOf("show_debug_message");
+        const hover = await semanticIndex.hover(document, showDebugOffset, "show_debug_message");
         assert.ok(hover, "Should return hover result for show_debug_message");
         assert.match(
             typeof hover?.contents === "object" && "value" in hover.contents ? hover.contents.value : "",
@@ -100,9 +101,31 @@ void test("LSP: built-in functions appear in completions and hover", async () =>
             /monthly\/en\/#t=/
         );
 
-        // Hover Case-insensitive
-        const hoverUpper = await semanticIndex.hover(document, 0, "SHOW_DEBUG_MESSAGE");
-        assert.ok(hoverUpper, "Should return hover result for SHOW_DEBUG_MESSAGE case-insensitively");
+        const enumMemberOffset = document.sourceText.indexOf("idle");
+        const enumMemberHover = await semanticIndex.hover(document, enumMemberOffset, "idle");
+        const enumMemberHoverText =
+            typeof enumMemberHover?.contents === "object" && "value" in enumMemberHover.contents
+                ? enumMemberHover.contents.value
+                : "";
+        assert.match(enumMemberHoverText, /enumMember/u);
+        assert.doesNotMatch(enumMemberHoverText, /Built-in function/u);
+        const enumHover = await semanticIndex.hover(document, document.sourceText.indexOf("eAIState"), "eAIState");
+        const enumHoverText =
+            typeof enumHover?.contents === "object" && "value" in enumHover.contents ? enumHover.contents.value : "";
+        assert.match(enumHoverText, /enum eAIState \{/u);
+        assert.match(enumHoverText, /idle = 0/u);
+        assert.match(enumHoverText, /attack_target = 1/u);
+
+        const priorityCreateOffset = document.sourceText.indexOf("ds_priority_create");
+        const priorityCreateHover = await semanticIndex.hover(document, priorityCreateOffset, "ds_priority_create");
+        const priorityCreateHoverText =
+            typeof priorityCreateHover?.contents === "object" && "value" in priorityCreateHover.contents
+                ? priorityCreateHover.contents.value
+                : "";
+        assert.match(priorityCreateHoverText, /ds_priority_create\(\)/u);
+        assert.match(priorityCreateHoverText, /Built-in function/u);
+        assert.match(priorityCreateHoverText, /creates a new priority queue/u);
+        assert.match(priorityCreateHoverText, /Returns.*DS Priority/su);
 
         // Built-in literal type regression test
         const hoverUndefined = await semanticIndex.hover(document, 0, "undefined");

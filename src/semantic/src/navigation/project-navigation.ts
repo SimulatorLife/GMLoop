@@ -8,7 +8,11 @@ import {
     createEmptyGmlSymbolDocumentation,
     type GmlSymbolDocumentation
 } from "../project-index/symbol-documentation.js";
-import { getGmlSymbolKindForIdentifierCollection, type GmlSemanticSymbolKind } from "../symbols/taxonomy.js";
+import {
+    getGmlSymbolKindForIdentifierCollection,
+    type GmlSemanticSymbolKind,
+    normalizeGmlSemanticSymbolKind
+} from "../symbols/taxonomy.js";
 
 /**
  * Role assigned to an indexed symbol occurrence.
@@ -79,6 +83,9 @@ export type GmlHoverFacts = Readonly<{
     kind: GmlSemanticSymbolKind;
     symbolId: string;
 }>;
+
+/** One enum member rendered in editor hover information. */
+export type GmlEnumHoverMember = Readonly<{ name: string; value: string | null }>;
 
 type ProjectIndexSource = Readonly<{
     identifiers: Record<string, unknown>;
@@ -237,7 +244,9 @@ function normalizeIdentifierEntry(
     const entry = asRecord(rawEntry);
     const name = readString(entry.name) ?? readString(entry.displayName) ?? entryKey;
     const displayName = readString(entry.displayName) ?? name;
-    const kind = getGmlSymbolKindForIdentifierCollection(collectionName);
+    const kind = normalizeGmlSemanticSymbolKind(
+        readString(entry.semanticKind) ?? getGmlSymbolKindForIdentifierCollection(collectionName)
+    );
     const symbolId = readString(entry.identifierId) ?? `${kind}:${entryKey}`;
     const entryFilePath = readString(entry.filePath) ?? readString(entry.resourcePath);
     const scopeId = readString(entry.scopeId);
@@ -758,4 +767,37 @@ export function getNavigationHoverFacts(index: GmlProjectNavigationIndex, symbol
               symbolId: symbol.symbolId
           }
         : null;
+}
+
+/** Return the complete ordered member list for an indexed enum symbol. */
+export function listNavigationEnumHoverMembers(
+    index: GmlProjectNavigationIndex,
+    symbolId: string
+): ReadonlyArray<GmlEnumHoverMember> {
+    if (index.symbolsById.get(symbolId)?.kind !== "enum") {
+        return [];
+    }
+    const identifiers = asRecord(asRecord(index.rawIndex).identifiers);
+    const enums = asRecord(identifiers.enums);
+    const enumEntry = Object.entries(enums).find(([, value]) => readString(asRecord(value).identifierId) === symbolId);
+    if (enumEntry === undefined) {
+        return [];
+    }
+    const enumKey = enumEntry[0];
+    return Object.values(asRecord(identifiers.enumMembers))
+        .flatMap((value) => {
+            const member = asRecord(value);
+            const name = readString(member.name);
+            if (readString(member.enumKey) !== enumKey || name === null) {
+                return [];
+            }
+            return [
+                {
+                    member: Object.freeze({ name, value: readString(member.value) }),
+                    order: readFiniteNumber(member.order) ?? 0
+                }
+            ];
+        })
+        .toSorted((left, right) => left.order - right.order || left.member.name.localeCompare(right.member.name))
+        .map(({ member }) => member);
 }

@@ -18,6 +18,7 @@ const LSP_PRESENTATION_BY_GML_KIND: Readonly<Record<GmlSemanticSymbolKind, LspSy
     macro: { symbol: SymbolKind.Constant, completion: CompletionItemKind.Constant },
     member: { symbol: SymbolKind.Property, completion: CompletionItemKind.Property },
     object: { symbol: SymbolKind.Object, completion: CompletionItemKind.Class },
+    parameter: { symbol: SymbolKind.Variable, completion: CompletionItemKind.Variable },
     resource: { symbol: SymbolKind.Namespace, completion: CompletionItemKind.Reference },
     room: { symbol: SymbolKind.Namespace, completion: CompletionItemKind.Reference },
     script: { symbol: SymbolKind.Function, completion: CompletionItemKind.Function },

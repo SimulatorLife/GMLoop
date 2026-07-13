@@ -75,6 +75,7 @@ function mapNavigationKind(kind: GmlSemanticSymbolKind): GmlSemanticHighlightKin
         macro: "macro",
         member: "property",
         object: "class",
+        parameter: "parameter",
         room: "namespace",
         resource: "namespace",
         script: "function",

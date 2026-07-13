@@ -43,23 +43,8 @@ const {
     normalizeRefactorProjectConfig
 } = Refactor;
 type RegisteredCodemodId = ReturnType<typeof listRegisteredCodemods>[number]["id"];
-
-async function publishSemanticProjectIndex(projectRoot: string, projectIndex: Record<string, unknown>): Promise<void> {
-    const manifest = await Semantic.buildSemanticFileManifest(projectRoot, Core.defaultFsFacade);
-    const store = Semantic.openSemanticIndexStore(projectRoot);
-    try {
-        const publication = Semantic.publishSemanticTwoTierSnapshot(store, {
-            index: projectIndex,
-            manifest,
-            sourceRevision: manifest.sourceRevision
-        });
-        if (publication.status === "superseded") {
-            throw new Error(`Semantic refactor publication was superseded for ${projectRoot}.`);
-        }
-    } finally {
-        await store.close();
-    }
-}
+type BuiltProjectIndex = Record<string, unknown>;
+type ProjectIndexCoordinator = ReturnType<typeof Semantic.createProjectIndexCoordinator>;
 type LoadedGmloopProjectConfig = Awaited<ReturnType<typeof Core.loadGmloopProjectConfig>> & {
     refactor?: ReturnType<typeof normalizeRefactorProjectConfig>;
 };
@@ -444,7 +429,7 @@ async function performRename(options: ValidatedRenameOptions): Promise<void> {
     }
 
     let targetSymbolId = symbolId;
-    let coordinator: any = null;
+    let coordinator: ProjectIndexCoordinator | null = null;
 
     try {
         if (verbose) {
@@ -613,8 +598,8 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
             .slice(0, firstSemanticCodemodIndex)
             .some((codemodId) => !semanticIndexDependentCodemodIds.has(codemodId));
 
-    let projectIndex: any = null;
-    let coordinator: any = null;
+    let projectIndex: BuiltProjectIndex | null = null;
+    let coordinator: ProjectIndexCoordinator | null = null;
 
     if (requiresSemanticProjectIndex && !shouldDeferInitialSemanticIndexBuild) {
         if (verbose) {
@@ -739,8 +724,13 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
                     };
 
                     const semanticBridge = engine.semantic as GmlSemanticBridge;
-                    const initialProjectIndex = (semanticBridge as any).projectIndex;
-                    let currentProjectIndex: any;
+                    const initialProjectIndex = semanticBridge.getProjectIndex();
+                    const impactedFiles = await Semantic.resolveSemanticImpactFilePaths(
+                        projectRoot,
+                        summary.changedFiles,
+                        []
+                    );
+                    let currentProjectIndex: BuiltProjectIndex;
 
                     if (
                         initialProjectIndex &&
@@ -751,7 +741,7 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
                             logger: verbose ? console : undefined,
                             parseGml: tolerantParser,
                             incremental: {
-                                changes: summary.changedFiles.map((changedFile) => ({
+                                changes: impactedFiles.map((changedFile) => ({
                                     filePath: path.resolve(projectRoot, changedFile),
                                     kind: "modified" as const
                                 })),
@@ -769,7 +759,12 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
                         semanticBridge.updateProjectIndex(currentProjectIndex);
                     }
 
-                    await publishSemanticProjectIndex(projectRoot, currentProjectIndex as Record<string, unknown>);
+                    await Semantic.publishBuiltProjectIndexIncrement(
+                        projectRoot,
+                        currentProjectIndex,
+                        impactedFiles,
+                        customFsFacade
+                    );
                 }
             }
         });
@@ -784,11 +779,19 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
             console.log("\n[DRY RUN] No files were modified.");
         } else {
             const semanticBridge = engine.semantic as GmlSemanticBridge;
-            if (semanticBridge && (semanticBridge as any).projectIndex) {
-                await publishSemanticProjectIndex(
-                    projectRoot,
-                    (semanticBridge as any).projectIndex as Record<string, unknown>
-                );
+            const changedFiles = [...new Set(result.summaries.flatMap((summary) => summary.changedFiles))];
+            if (semanticBridge && changedFiles.length > 0) {
+                const impactedFiles = await Semantic.resolveSemanticImpactFilePaths(projectRoot, changedFiles, []);
+                const refreshedProjectIndex = await Semantic.buildProjectIndex(projectRoot, Core.defaultFsFacade, {
+                    incremental: {
+                        changes: impactedFiles.map((changedFile) => ({
+                            filePath: path.resolve(projectRoot, changedFile),
+                            kind: "modified" as const
+                        })),
+                        existingIndex: semanticBridge.getProjectIndex()
+                    }
+                });
+                await Semantic.publishBuiltProjectIndexIncrement(projectRoot, refreshedProjectIndex, impactedFiles);
             }
             console.log("\nSuccess! Configured codemods applied.");
         }

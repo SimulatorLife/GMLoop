@@ -13,7 +13,8 @@ const {
     extractDeprecatedReplacementFromManualHtml,
     parseObsoleteIdentifierTableEntries,
     resolveCanonicalManualPath,
-    createCanonicalManualUrl
+    createCanonicalManualUrl,
+    extractManualHoverMetadata
 } = __test__;
 
 const SAMPLE_SOURCE = `
@@ -24,6 +25,19 @@ const KEYWORDS = [
 `;
 
 void describe("generate-gml-identifiers", () => {
+    void it("extracts callable hover metadata from a manual page", () => {
+        const hover = extractManualHoverMetadata(
+            "sample_call",
+            `<html><body><h1>sample_call</h1><p>Creates a sample value.</p><h4>Syntax:</h4><p class="code">sample_call(value)</p><table><tr><th>Argument</th><th>Type</th><th>Description</th></tr><tr><td>value</td><td>Real</td><td>The input value.</td></tr></table><h4>Returns:</h4><p class="code">String</p></body></html>`
+        );
+        assert.deepEqual(hover, {
+            description: "Creates a sample value.",
+            parameters: [{ description: "The input value.", name: "value", type: "Real" }],
+            returnType: "String",
+            signature: "sample_call(value)"
+        });
+    });
+
     void describe("resolveCanonicalManualPath", () => {
         void it("replaces legacy metadata paths with unique current manual pages", () => {
             const pages = new Map([

@@ -17,7 +17,8 @@ import { createProjectIndexMetrics, finalizeProjectIndexMetrics } from "./metric
 import { logProjectIndexDebug, type ProjectIndexLogger } from "./project-index-logger.js";
 import { scanProjectTree } from "./project-tree.js";
 import { analyseResourceFiles, createFileScopeDescriptor } from "./resource-analysis.js";
-import { buildSemanticFileManifest } from "./semantic-manifest.js";
+import { buildSemanticFileManifest, updateSemanticFileManifest } from "./semantic-manifest.js";
+import { createSemanticSnapshotFromProjectIndex } from "./semantic-snapshot-codec.js";
 import {
     getSemanticIndexDatabasePath,
     openSemanticIndexStore,
@@ -122,8 +123,18 @@ async function saveSemanticStoreIndex(descriptor: {
     const store = openSemanticIndexStore(descriptor.projectRoot);
     try {
         const publication = publishSemanticTwoTierSnapshot(store, {
-            index: descriptor.projectIndex,
+            definitionsSnapshot: createSemanticSnapshotFromProjectIndex(
+                descriptor.projectIndex,
+                "definitions",
+                manifest.sourceRevision
+            ),
+            fullSnapshot: createSemanticSnapshotFromProjectIndex(
+                descriptor.projectIndex,
+                "full",
+                manifest.sourceRevision
+            ),
             manifest,
+            navigationProjection: descriptor.projectIndex,
             sourceRevision: manifest.sourceRevision
         });
         if (publication.status === "superseded") {
@@ -528,9 +539,20 @@ function collectEnumDeclarationData(node: any, filePath: string | null) {
     };
 
     const memberEntries = [];
+    let previousValue: string | null = null;
     for (const member of Core.asArray(node.members)) {
         const memberEntry = buildEnumMemberEntry(member, enumKey, filePath);
         if (memberEntry) {
+            if (memberEntry.value === null) {
+                const previousNumber = previousValue === null ? null : Number(previousValue);
+                memberEntry.value =
+                    previousValue === null
+                        ? "0"
+                        : Number.isFinite(previousNumber)
+                          ? String(previousNumber + 1)
+                          : `(${previousValue}) + 1`;
+            }
+            previousValue = memberEntry.value;
             memberEntries.push(memberEntry);
         }
     }
@@ -558,7 +580,14 @@ function buildEnumMemberEntry(member: unknown, enumKey: string, filePath: string
         key: memberKey,
         name: memberIdentifier.name ?? null,
         enumKey,
-        filePath: filePath ?? null
+        filePath: filePath ?? null,
+        order:
+            typeof memberIdentifier.start === "number"
+                ? memberIdentifier.start
+                : typeof memberIdentifier.start?.index === "number"
+                  ? memberIdentifier.start.index
+                  : 0,
+        value: typeof memberNode.initializer === "string" ? memberNode.initializer : null
     };
 }
 function ensureScriptEntry(identifierCollections, descriptor) {
@@ -922,6 +951,8 @@ function registerEnumMemberOccurrence({
             enumName: memberInfo?.enumKey
                 ? (enumLookup?.enumDeclarations?.get(memberInfo.enumKey)?.name ?? null)
                 : null,
+            value: memberInfo?.value ?? null,
+            order: memberInfo?.order ?? 0,
             filePath: memberInfo?.filePath ?? filePath ?? null
         }),
         metadata: {
@@ -947,7 +978,8 @@ function registerConstructorStaticMemberDeclaration({
     filePath,
     constructorName,
     memberName,
-    identifierSink
+    identifierSink,
+    documentation
 }) {
     const key = createConstructorStaticMemberKey(constructorName, memberName);
     if (!identifierCollections || !key || !identifierRecord?.name) {
@@ -955,7 +987,7 @@ function registerConstructorStaticMemberDeclaration({
     }
 
     const identifierId = buildIdentifierId("constructor-static-member", key);
-    ensureIdentifierEntryWithRole({
+    const entry = ensureIdentifierEntryWithRole({
         collection: identifierCollections.constructorStaticMembers,
         key,
         collectionName: IDENTIFIER_COLLECTION_NAMES.constructorStaticMembers,
@@ -977,6 +1009,9 @@ function registerConstructorStaticMemberDeclaration({
         role: IdentifierRole.DECLARATION,
         identifierSink
     });
+    if (entry && documentation?.normalizedText.length > 0) {
+        entry.documentation = documentation;
+    }
 }
 function registerConstructorStaticMemberReference({
     identifierCollections,
@@ -1111,7 +1146,7 @@ function registerScopedVariableOccurrence({
     const declarationScopeId = getIdentifierDeclarationScopeId(identifierRecord);
     const identifierId = buildIdentifierId(kind, collectionKey);
 
-    ensureIdentifierEntryWithRole({
+    const entry = ensureIdentifierEntryWithRole({
         collection,
         key: collectionKey,
         collectionName,
@@ -1132,6 +1167,9 @@ function registerScopedVariableOccurrence({
         role: validatedRole,
         identifierSink
     });
+    if (entry && Core.asArray(identifierRecord.classifications).includes("parameter")) {
+        entry.semanticKind = "parameter";
+    }
 }
 function registerLocalVariableOccurrence({ identifierCollections, identifierRecord, filePath, role, identifierSink }) {
     registerScopedVariableOccurrence({
@@ -1190,7 +1228,7 @@ function shouldTreatAsScopedVariable(identifierRecord, role) {
 
     const validatedRole = assertValidIdentifierRole(role);
     const classifications = Core.asArray(identifierRecord?.classifications);
-    if (!classifications.includes("variable")) {
+    if (!classifications.includes("variable") && !classifications.includes("parameter")) {
         return false;
     }
 
@@ -2022,7 +2060,8 @@ function analyseConstructorStaticMemberOccurrences({
             filePath,
             constructorName: declaration.constructorName,
             memberName: declaration.memberName,
-            identifierSink
+            identifierSink,
+            documentation: extractDeclarationDocumentation(declaration.declarationNode)
         });
     }
 
@@ -2701,6 +2740,8 @@ function createProjectIndexResultSnapshot({
             name: entry.name ?? null,
             enumKey: entry.enumKey ?? null,
             enumName: entry.enumName ?? null,
+            value: entry.value ?? null,
+            order: entry.order ?? 0,
             filePath: entry.filePath ?? null,
             declarations: resolveIdentifierRoleRecords({
                 identifierSink,
@@ -2723,6 +2764,7 @@ function createProjectIndexResultSnapshot({
             name: entry.name ?? null,
             constructorName: entry.constructorName ?? null,
             displayName: entry.displayName ?? entry.key ?? null,
+            documentation: entry.documentation ?? parseGmlSymbolDocumentation(""),
             filePath: entry.filePath ?? null,
             declarations: resolveIdentifierRoleRecords({
                 identifierSink,
@@ -2784,6 +2826,7 @@ function createProjectIndexResultSnapshot({
             name: entry.name ?? null,
             scopeId: entry.scopeId ?? null,
             scopeKind: entry.scopeKind ?? null,
+            semanticKind: entry.semanticKind ?? "localVariable",
             declarations: resolveIdentifierRoleRecords({
                 identifierSink,
                 collection: IDENTIFIER_COLLECTION_NAMES.localVariables,
@@ -3357,5 +3400,141 @@ export async function buildProjectIndex(
         });
     } finally {
         identifierSink?.dispose();
+    }
+}
+
+/**
+ * Publishes a completed project index through the canonical definitions/full
+ * semantic slots using one manifest revision.
+ *
+ * Consumers that apply source edits call this semantic-owned boundary instead
+ * of opening or mutating the SQLite store directly.
+ */
+export async function publishBuiltProjectIndex(
+    projectRoot: string,
+    projectIndex: Awaited<ReturnType<typeof buildProjectIndex>>,
+    fsFacade: ProjectIndexFsFacade = Core.defaultFsFacade
+): Promise<void> {
+    const manifest = await buildSemanticFileManifest(projectRoot, fsFacade);
+    await saveSemanticStoreIndex({ manifest, projectIndex, projectRoot });
+}
+
+/**
+ * Resolves one deterministic scoped impact set from the persisted full-tier
+ * reverse-dependency graph. Directly changed files are ordered before their
+ * immediate dependents and no transitive expansion is performed.
+ */
+export async function resolveSemanticImpactFilePaths(
+    projectRoot: string,
+    changedFilePaths: ReadonlyArray<string>,
+    introducedIdentifierNames: ReadonlyArray<string>
+): Promise<ReadonlyArray<string>> {
+    const resolvedRoot = path.resolve(projectRoot);
+    const store = openSemanticIndexStore(resolvedRoot);
+    try {
+        const changedAbsolutePaths = [
+            ...new Set(changedFilePaths.map((filePath) => path.resolve(resolvedRoot, filePath)))
+        ];
+        changedAbsolutePaths.sort((left, right) => left.localeCompare(right));
+        const impactedPaths = new Set(changedAbsolutePaths);
+        for (const changedPath of changedAbsolutePaths) {
+            for (const dependentPath of store.findImmediateDownstreamFiles(changedPath)) {
+                impactedPaths.add(path.resolve(resolvedRoot, dependentPath));
+            }
+        }
+        for (const unresolvedPath of store.findUnresolvedDependents(introducedIdentifierNames)) {
+            impactedPaths.add(path.resolve(resolvedRoot, unresolvedPath));
+        }
+        const orderedPaths = [...impactedPaths].sort((left, right) => left.localeCompare(right));
+        const indegrees = new Map(orderedPaths.map((filePath) => [filePath, 0]));
+        const dependentsByOwner = new Map<string, Set<string>>();
+        for (const ownerPath of orderedPaths) {
+            for (const dependentPath of store.findImmediateDownstreamFiles(ownerPath)) {
+                const absoluteDependentPath = path.resolve(resolvedRoot, dependentPath);
+                if (!impactedPaths.has(absoluteDependentPath)) {
+                    continue;
+                }
+                const dependents = Core.getOrCreateMapEntry(dependentsByOwner, ownerPath, () => new Set<string>());
+                if (dependents.has(absoluteDependentPath)) {
+                    continue;
+                }
+                dependents.add(absoluteDependentPath);
+                indegrees.set(absoluteDependentPath, (indegrees.get(absoluteDependentPath) ?? 0) + 1);
+            }
+        }
+        const available = orderedPaths.filter((filePath) => indegrees.get(filePath) === 0);
+        const result: string[] = [];
+        while (available.length > 0) {
+            const ownerPath = available.shift();
+            if (ownerPath === undefined) {
+                break;
+            }
+            result.push(ownerPath);
+            for (const dependentPath of [...(dependentsByOwner.get(ownerPath) ?? [])].sort((left, right) =>
+                left.localeCompare(right)
+            )) {
+                const nextIndegree = (indegrees.get(dependentPath) ?? 0) - 1;
+                indegrees.set(dependentPath, nextIndegree);
+                if (nextIndegree === 0) {
+                    available.push(dependentPath);
+                    available.sort((left, right) => left.localeCompare(right));
+                }
+            }
+        }
+        const emittedPaths = new Set(result);
+        return Object.freeze([...result, ...orderedPaths.filter((filePath) => !emittedPaths.has(filePath))]);
+    } finally {
+        await store.close();
+    }
+}
+
+/**
+ * Publishes one complete changed-file batch without replacing unrelated
+ * normalized semantic rows.
+ */
+export async function publishBuiltProjectIndexIncrement(
+    projectRoot: string,
+    projectIndex: Awaited<ReturnType<typeof buildProjectIndex>>,
+    changedFilePaths: ReadonlyArray<string>,
+    fsFacade: ProjectIndexFsFacade = Core.defaultFsFacade
+): Promise<void> {
+    const store = openSemanticIndexStore(projectRoot);
+    try {
+        const baselineManifest = store.readSemanticManifest("definitions") ?? store.readSemanticManifest("full");
+        if (baselineManifest === null) {
+            await publishBuiltProjectIndex(projectRoot, projectIndex, fsFacade);
+            return;
+        }
+        const absoluteChangedFiles = changedFilePaths.map((filePath) => path.resolve(projectRoot, filePath));
+        const manifest = await updateSemanticFileManifest(
+            projectRoot,
+            baselineManifest,
+            fsFacade,
+            [],
+            absoluteChangedFiles
+        );
+        const publishTier = (tier: "definitions" | "full") => {
+            const currentSlots = store.readActiveSemanticSlots();
+            const request = {
+                affectedFiles: absoluteChangedFiles,
+                authoritative: false,
+                baseGeneration: currentSlots[tier]?.generation ?? null,
+                expectedHeadGeneration: store.readSemanticProjectHead().generation,
+                manifest,
+                navigationProjection: projectIndex,
+                snapshot: createSemanticSnapshotFromProjectIndex(projectIndex, tier, manifest.sourceRevision),
+                sourceRevision: manifest.sourceRevision,
+                tier
+            } as const;
+            return currentSlots[tier] === null
+                ? store.publishSemanticSnapshot(request)
+                : store.applySemanticIncrement(request);
+        };
+        const definitionsPublication = publishTier("definitions");
+        if (definitionsPublication.status === "superseded" || publishTier("full").status === "superseded") {
+            throw new Error(`Semantic incremental publication was superseded for ${projectRoot}.`);
+        }
+    } finally {
+        await store.close();
     }
 }

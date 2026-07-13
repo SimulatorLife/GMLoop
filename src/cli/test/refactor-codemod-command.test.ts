@@ -281,7 +281,7 @@ void test("refactor codemod --write renames constructor declarations and constru
             cwd: projectRoot
         });
 
-        assert.equal(result.exitCode, 0);
+        assert.equal(result.exitCode, 0, `${result.stderr}\n${result.stdout}`);
 
         const constructorSource = await readFile(
             path.join(projectRoot, "scripts/MPController/MPController.gml"),

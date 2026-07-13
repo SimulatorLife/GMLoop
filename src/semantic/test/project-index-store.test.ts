@@ -196,6 +196,18 @@ function publishSnapshot(
     return publication.state;
 }
 
+function createSemanticPublicationPayload(
+    index: Record<string, unknown>,
+    tier: "definitions" | "full",
+    sourceRevision: string
+) {
+    const brandedRevision = sourceRevision as SemanticFileManifest["sourceRevision"];
+    return {
+        navigationProjection: index,
+        snapshot: createSemanticSnapshotFromProjectIndex(index, tier, brandedRevision)
+    } as const;
+}
+
 void test("scoped publication preserves unrelated normalized rows and generations", async () => {
     const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-store-scoped-"));
     const store = openSemanticIndexStore(projectRoot);
@@ -480,7 +492,11 @@ void test("semantic index store rejects stale generation publications without ch
             authoritative: true,
             baseGeneration: null,
             expectedHeadGeneration: initialHead.generation,
-            index: { files: { "scripts/main.gml": { filePath: "scripts/main.gml" } }, projectRoot },
+            ...createSemanticPublicationPayload(
+                { files: { "scripts/main.gml": { filePath: "scripts/main.gml" } }, projectRoot },
+                "full",
+                "revision-full"
+            ),
             manifest: null,
             sourceRevision: "revision-full",
             tier: "full"
@@ -492,7 +508,11 @@ void test("semantic index store rejects stale generation publications without ch
             authoritative: false,
             baseGeneration: null,
             expectedHeadGeneration: initialHead.generation,
-            index: { files: { "scripts/main.gml": { filePath: "scripts/main.gml" } }, projectRoot },
+            ...createSemanticPublicationPayload(
+                { files: { "scripts/main.gml": { filePath: "scripts/main.gml" } }, projectRoot },
+                "definitions",
+                "revision-definitions"
+            ),
             manifest: null,
             sourceRevision: "revision-definitions",
             tier: "definitions"
@@ -508,6 +528,39 @@ void test("semantic index store rejects stale generation publications without ch
     }
 });
 
+void test("semantic index store rejects a mismatched typed snapshot without advancing generations", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-store-snapshot-boundary-"));
+    const store = openSemanticIndexStore(projectRoot);
+    try {
+        const index = { files: {}, projectRoot };
+        const rejected = store.publishSemanticSnapshot({
+            authoritative: false,
+            baseGeneration: null,
+            expectedHeadGeneration: 0,
+            manifest: null,
+            navigationProjection: index,
+            snapshot: createSemanticSnapshotFromProjectIndex(
+                index,
+                "full",
+                "revision-other" as SemanticFileManifest["sourceRevision"]
+            ),
+            sourceRevision: "revision-definitions",
+            tier: "definitions"
+        });
+
+        assert.deepEqual(rejected, { state: null, status: "superseded" });
+        assert.equal(store.readSemanticProjectHead().generation, 0);
+        assert.deepEqual(store.readActiveSemanticSlots(), {
+            definitions: null,
+            full: null,
+            hasMatchingFull: false,
+            newestDefinitionsRevision: null
+        });
+    } finally {
+        await store.close();
+    }
+});
+
 void test("semantic index store rejects a publication derived from an older slot generation", async () => {
     const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-store-base-generation-"));
     const store = openSemanticIndexStore(projectRoot);
@@ -518,7 +571,7 @@ void test("semantic index store rejects a publication derived from an older slot
             authoritative: false,
             baseGeneration: initial.generation,
             expectedHeadGeneration: store.readSemanticProjectHead().generation,
-            index: { files: {}, projectRoot },
+            ...createSemanticPublicationPayload({ files: {}, projectRoot }, "definitions", "revision-three"),
             manifest: null,
             sourceRevision: "revision-three",
             tier: "definitions"
@@ -557,7 +610,7 @@ void test("semantic index store rejects authoritative full publication when defi
             authoritative: true,
             baseGeneration: null,
             expectedHeadGeneration: definitions.generation,
-            index: { files: {}, projectRoot },
+            ...createSemanticPublicationPayload({ files: {}, projectRoot }, "full", "revision-current"),
             manifest: null,
             sourceRevision: "revision-current",
             tier: "full"
@@ -576,9 +629,20 @@ void test("two-tier publication advances stale definitions before publishing mat
     const store = openSemanticIndexStore(projectRoot);
     try {
         publishSnapshot(store, { files: {}, projectRoot }, "definitions", "revision-old");
+        const index = { files: { "scripts/current.gml": {} }, projectRoot };
         const publication = publishSemanticTwoTierSnapshot(store, {
-            index: { files: { "scripts/current.gml": {} }, projectRoot },
+            definitionsSnapshot: createSemanticSnapshotFromProjectIndex(
+                index,
+                "definitions",
+                "revision-current" as SemanticFileManifest["sourceRevision"]
+            ),
+            fullSnapshot: createSemanticSnapshotFromProjectIndex(
+                index,
+                "full",
+                "revision-current" as SemanticFileManifest["sourceRevision"]
+            ),
             manifest: null,
+            navigationProjection: index,
             sourceRevision: "revision-current"
         });
 
@@ -615,7 +679,7 @@ void test("semantic index store rejects a non-authoritative full publication wit
             authoritative: false,
             baseGeneration: null,
             expectedHeadGeneration: definitions.generation,
-            index: { files: {}, projectRoot },
+            ...createSemanticPublicationPayload({ files: {}, projectRoot }, "full", "revision-other"),
             manifest: null,
             sourceRevision: "revision-other",
             tier: "full"
@@ -639,10 +703,14 @@ void test("semantic index store persists and restores the generation-bound manif
             authoritative: false,
             baseGeneration: null,
             expectedHeadGeneration: 0,
-            index: {
-                files: { "main.gml": { contentHash: manifest.entries.get("main.gml")?.contentHash } },
-                projectRoot
-            },
+            ...createSemanticPublicationPayload(
+                {
+                    files: { "main.gml": { contentHash: manifest.entries.get("main.gml")?.contentHash } },
+                    projectRoot
+                },
+                "definitions",
+                manifest.sourceRevision
+            ),
             manifest,
             sourceRevision: manifest.sourceRevision,
             tier: "definitions"
@@ -816,6 +884,9 @@ void test("semantic index store persists file hashes and immediate reverse depen
             ])
         );
         assert.deepEqual(store.findImmediateDownstreamFiles("scripts/a/a.gml"), ["scripts/b/b.gml"]);
+        assert.deepEqual(store.findImmediateDownstreamFiles(path.join(projectRoot, "scripts/a/a.gml")), [
+            "scripts/b/b.gml"
+        ]);
         assert.deepEqual(store.findImmediateDownstreamFiles("scripts/c/c.gml"), ["scripts/d/d.gml"]);
         assert.deepEqual(store.findUnresolvedDependents(["newly_defined"]), ["scripts/d/d.gml"]);
         assert.deepEqual(store.findUnresolvedDependents(["show_debug_message"]), []);

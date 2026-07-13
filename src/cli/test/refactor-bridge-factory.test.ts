@@ -97,4 +97,14 @@ void describe("createRefactorBridges", () => {
         const semanticRoot = (semantic as unknown as { projectRoot: string }).projectRoot;
         assert.strictEqual(semanticRoot, customProjectRoot, "GmlSemanticBridge should receive the projectRoot");
     });
+
+    void it("exposes the current semantic projection without private-field casts", () => {
+        const initialIndex = { files: { "main.gml": { filePath: "main.gml" } } };
+        const updatedIndex = { files: { "other.gml": { filePath: "other.gml" } } };
+        const semantic = new GmlSemanticBridge(initialIndex, "/test/project/root");
+
+        assert.strictEqual(semantic.getProjectIndex(), initialIndex);
+        semantic.updateProjectIndex(updatedIndex);
+        assert.strictEqual(semantic.getProjectIndex(), updatedIndex);
+    });
 });

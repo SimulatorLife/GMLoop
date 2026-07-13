@@ -391,7 +391,6 @@ function createLspFsFacade(documents: GmlDocumentStore, baseFs: FsFacade = Core.
 }
 
 let builtInsMetadata: Record<string, unknown> | null = null;
-let builtInsMetadataByLowerName: Map<string, unknown> | null = null;
 
 function getBuiltInsMetadata(): Record<string, unknown> {
     if (builtInsMetadata === null) {
@@ -401,9 +400,6 @@ function getBuiltInsMetadata(): Record<string, unknown> {
                 Core.isObjectLike(payload) && Core.isObjectLike(payload.identifiers)
                     ? (payload.identifiers as Record<string, unknown>)
                     : {};
-            builtInsMetadataByLowerName = new Map(
-                Object.entries(builtInsMetadata).map(([name, descriptor]) => [name.toLowerCase(), descriptor])
-            );
         } catch {
             builtInsMetadata = {};
         }
@@ -1252,16 +1248,14 @@ export function createGmlSemanticIndex(
         for (const change of changes) {
             changesByPath.set(path.resolve(change.filePath), change.kind);
         }
-        for (const change of changes) {
-            const resolvedChangedFile = path.resolve(change.filePath);
-            const relativeChangedFile = path.relative(resolvedRoot, resolvedChangedFile);
-            for (const relativePath of getSemanticStore(resolvedRoot).findImmediateDownstreamFiles(
-                relativeChangedFile
-            )) {
-                const dependentPath = path.resolve(resolvedRoot, relativePath);
-                if (!changesByPath.has(dependentPath)) {
-                    changesByPath.set(dependentPath, "modified");
-                }
+        const resolvedImpactPaths = await Semantic.resolveSemanticImpactFilePaths(
+            resolvedRoot,
+            changes.map((change) => change.filePath),
+            []
+        );
+        for (const impactedPath of resolvedImpactPaths) {
+            if (!changesByPath.has(impactedPath)) {
+                changesByPath.set(impactedPath, "modified");
             }
         }
         const impactedChanges = [...changesByPath]
@@ -1340,12 +1334,13 @@ export function createGmlSemanticIndex(
                             .filter((symbol) => symbol.definitions.length > 0)
                             .map((symbol) => symbol.name)
                             .filter((name) => !previousDefinedSymbolNames.has(name));
-                        const unresolvedDependents = getSemanticStore(resolvedRoot)
-                            .findUnresolvedDependents(introducedNames)
-                            .map((relativePath) => path.resolve(resolvedRoot, relativePath));
                         fullImpactedFiles = [
-                            ...new Set([...impactedChanges.map((change) => change.filePath), ...unresolvedDependents])
-                        ].toSorted();
+                            ...(await Semantic.resolveSemanticImpactFilePaths(
+                                resolvedRoot,
+                                impactedChanges.map((change) => change.filePath),
+                                introducedNames
+                            ))
+                        ];
                         await (pendingCacheWrites.get(resolvedRoot) ?? Promise.resolve());
                     } else {
                         return null;
@@ -1438,51 +1433,6 @@ export function createGmlSemanticIndex(
         return fullState && !fullState.lightweight ? fullState : null;
     }
 
-    function orderImpactedFiles(projectRoot: string, impactedPaths: ReadonlySet<string>): ReadonlyArray<string> {
-        const orderedPaths = [...impactedPaths].toSorted((left, right) => left.localeCompare(right));
-        const pathSet = new Set(orderedPaths);
-        const dependentsByPath = new Map<string, Set<string>>();
-        const indegreeByPath = new Map(orderedPaths.map((filePath) => [filePath, 0]));
-        const store = getSemanticStore(projectRoot);
-        for (const sourcePath of orderedPaths) {
-            const sourceRelativePath = path.relative(projectRoot, sourcePath);
-            for (const downstreamRelativePath of store.findImmediateDownstreamFiles(sourceRelativePath)) {
-                const downstreamPath = path.join(projectRoot, downstreamRelativePath);
-                if (!pathSet.has(downstreamPath)) {
-                    continue;
-                }
-                const dependents = dependentsByPath.get(sourcePath) ?? new Set<string>();
-                if (dependents.has(downstreamPath)) {
-                    continue;
-                }
-                dependents.add(downstreamPath);
-                dependentsByPath.set(sourcePath, dependents);
-                indegreeByPath.set(downstreamPath, (indegreeByPath.get(downstreamPath) ?? 0) + 1);
-            }
-        }
-        const available = orderedPaths.filter((filePath) => indegreeByPath.get(filePath) === 0);
-        const result: string[] = [];
-        while (available.length > 0) {
-            const current = available.shift();
-            if (current === undefined) {
-                continue;
-            }
-            result.push(current);
-            for (const dependent of [...(dependentsByPath.get(current) ?? [])].toSorted((left, right) =>
-                left.localeCompare(right)
-            )) {
-                const nextIndegree = (indegreeByPath.get(dependent) ?? 0) - 1;
-                indegreeByPath.set(dependent, nextIndegree);
-                if (nextIndegree === 0) {
-                    available.push(dependent);
-                    available.sort((left, right) => left.localeCompare(right));
-                }
-            }
-        }
-        const emittedPaths = new Set(result);
-        return [...result, ...orderedPaths.filter((filePath) => !emittedPaths.has(filePath))];
-    }
-
     async function refreshForFileChanges(changes: ReadonlyArray<GmlSemanticFileChange>): Promise<void> {
         if (disposed) {
             return;
@@ -1533,9 +1483,10 @@ export function createGmlSemanticIndex(
                 return;
             }
             invalidateRoot(projectRoot);
-            const orderedPaths = orderImpactedFiles(
+            const orderedPaths = await Semantic.resolveSemanticImpactFilePaths(
                 projectRoot,
-                new Set(expandedChanges.map((change) => change.filePath))
+                expandedChanges.map((change) => change.filePath),
+                []
             );
             await refreshIndex(
                 anchorDocument,
@@ -1598,12 +1549,7 @@ export function createGmlSemanticIndex(
             const projectRoot = await getProjectRoot(resolvedPath);
             const resolvedRoot = projectRoot ? path.resolve(projectRoot) : null;
             const changedFiles = resolvedRoot
-                ? [
-                      resolvedPath,
-                      ...getSemanticStore(resolvedRoot)
-                          .findImmediateDownstreamFiles(path.relative(resolvedRoot, resolvedPath))
-                          .map((relativePath) => path.join(resolvedRoot, relativePath))
-                  ]
+                ? await Semantic.resolveSemanticImpactFilePaths(resolvedRoot, [resolvedPath], [])
                 : [resolvedPath];
             const openedDocument = documents
                 .list()
@@ -1689,31 +1635,6 @@ export function createGmlSemanticIndex(
                 return null;
             }
 
-            // First check if it is a built-in identifier. Since built-in metadata is bundled,
-            // we can return hover info for built-ins instantly without waiting for the full or
-            // lightweight project semantic index to compile/build, avoiding the "Loading..." lag.
-            const builtIns = getBuiltInsMetadata();
-            let builtIn = builtIns[identifierName];
-            if (!builtIn) {
-                builtIn = builtInsMetadataByLowerName?.get(identifierName.toLowerCase());
-            }
-
-            if (Core.isObjectLike(builtIn)) {
-                const info = builtIn as Record<string, unknown>;
-                const type = typeof info.type === "string" ? info.type : "unknown";
-                let markdown = `\`${identifierName}\`\n\nBuilt-in ${type}`;
-                if (typeof info.manualUrl === "string" && info.manualUrl.length > 0) {
-                    markdown += `\n\n[Open GameMaker Manual Page](${info.manualUrl})`;
-                }
-                return {
-                    contents: {
-                        kind: "markdown",
-                        value: markdown
-                    },
-                    range: offsetsToRange(document, offset, offset + identifierName.length)
-                };
-            }
-
             const state = await ensureIndex(document, { allowStale: true });
             if (!state) {
                 return null;
@@ -1749,12 +1670,59 @@ export function createGmlSemanticIndex(
                 if (docComment) {
                     markdownValue += `\n\n---\n\n${docComment}`;
                 }
+                if (facts.kind === "enum") {
+                    const members = Semantic.listNavigationEnumHoverMembers(state.index, facts.symbolId);
+                    if (members.length > 0) {
+                        markdownValue += `\n\n\`\`\`gml\nenum ${facts.displayName} {\n${members
+                            .map((member) => `    ${member.name}${member.value === null ? "" : ` = ${member.value}`}`)
+                            .join(",\n")}\n}\n\`\`\``;
+                    }
+                }
 
                 return {
                     contents: {
                         kind: "markdown",
                         value: markdownValue
                     },
+                    range: offsetsToRange(document, offset, offset + identifierName.length)
+                };
+            }
+
+            const builtIn = getBuiltInsMetadata()[identifierName];
+            if (Core.isObjectLike(builtIn)) {
+                const info = builtIn as Record<string, unknown>;
+                const hoverInfo = Core.isObjectLike(info.hover) ? (info.hover as Record<string, unknown>) : null;
+                const type = typeof info.type === "string" ? info.type : "unknown";
+                const signature =
+                    hoverInfo && typeof hoverInfo.signature === "string" ? hoverInfo.signature : identifierName;
+                let markdown = `\`${signature}\`\n\nBuilt-in ${type}`;
+                if (hoverInfo && typeof hoverInfo.description === "string" && hoverInfo.description.length > 0) {
+                    markdown += `\n\n${hoverInfo.description}`;
+                }
+                if (hoverInfo && Array.isArray(hoverInfo.parameters) && hoverInfo.parameters.length > 0) {
+                    const parameters = hoverInfo.parameters.flatMap((parameter) => {
+                        if (!Core.isObjectLike(parameter) || typeof parameter.name !== "string") {
+                            return [];
+                        }
+                        const parameterType = typeof parameter.type === "string" ? ` (\`${parameter.type}\`)` : "";
+                        const description =
+                            typeof parameter.description === "string" && parameter.description.length > 0
+                                ? ` — ${parameter.description}`
+                                : "";
+                        return [`* \`${parameter.name}\`${parameterType}${description}`];
+                    });
+                    if (parameters.length > 0) {
+                        markdown += `\n\n**Parameters:**\n${parameters.join("\n")}`;
+                    }
+                }
+                if (hoverInfo && typeof hoverInfo.returnType === "string" && hoverInfo.returnType.length > 0) {
+                    markdown += `\n\n*Returns* \`${hoverInfo.returnType}\``;
+                }
+                if (typeof info.manualUrl === "string" && info.manualUrl.length > 0) {
+                    markdown += `\n\n[Open GameMaker Manual Page](${info.manualUrl})`;
+                }
+                return {
+                    contents: { kind: "markdown", value: markdown },
                     range: offsetsToRange(document, offset, offset + identifierName.length)
                 };
             }

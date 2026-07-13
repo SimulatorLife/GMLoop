@@ -164,6 +164,14 @@ export interface BatchWorkspaceOverlay {
 }
 
 /**
+ * Allows a semantic adapter to read the refactor engine's current workspace
+ * overlay while a codemod batch is being planned and applied.
+ */
+export interface SemanticWorkspaceSourceProvider {
+    setReadFile(readFile: (filePath: string) => MaybePromise<string>): void;
+}
+
+/**
  * Complete semantic analyzer interface.
  *
  * Combines all role-focused interfaces for consumers that need full
@@ -196,5 +204,6 @@ export type PartialSemanticAnalyzer = Partial<SymbolResolver> &
     Partial<KeywordProvider> &
     Partial<EditValidator> &
     Partial<BatchWorkspaceOverlay> &
+    Partial<SemanticWorkspaceSourceProvider> &
     Partial<NamingConventionTargetProvider> &
     Partial<MacroExpansionDependencyProvider>;

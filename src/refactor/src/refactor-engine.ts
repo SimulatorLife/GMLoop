@@ -1690,10 +1690,7 @@ export class RefactorEngine {
         };
 
         try {
-            const semanticBridge = this.semantic as any;
-            if (semanticBridge && typeof semanticBridge.setReadFile === "function") {
-                semanticBridge.setReadFile(readThroughOverlay);
-            }
+            this.semantic?.setReadFile?.(readThroughOverlay);
 
             const result = await executeRegisteredCodemods(this, {
                 ...request,

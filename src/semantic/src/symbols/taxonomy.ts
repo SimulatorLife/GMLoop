@@ -12,6 +12,7 @@ export type GmlSemanticSymbolKind =
     | "macro"
     | "member"
     | "object"
+    | "parameter"
     | "resource"
     | "room"
     | "script"
@@ -92,6 +93,7 @@ export function isGmlSemanticSymbolKind(value: string): value is GmlSemanticSymb
         value === "macro" ||
         value === "member" ||
         value === "object" ||
+        value === "parameter" ||
         value === "resource" ||
         value === "room" ||
         value === "script" ||
