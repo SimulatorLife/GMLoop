@@ -82,8 +82,18 @@ export type SemanticSnapshotPublicationRequest = Readonly<{
 export type SemanticIncrementPublicationRequest = SemanticSnapshotPublicationRequest &
     Readonly<{ affectedFiles: ReadonlyArray<string> }>;
 
+/** Complete project snapshot published through definitions and matching-full tiers. */
+export type SemanticTwoTierPublicationRequest = Readonly<{
+    index: Record<string, unknown>;
+    manifest: SemanticFileManifest | null;
+    sourceRevision: string;
+}>;
+
 export type SemanticIndexStore = Readonly<{
-    close: () => void;
+    /** Flushes all accepted semantic publications. */
+    flush: () => Promise<void>;
+    /** Flushes accepted work and closes the SQLite connection. */
+    close: () => Promise<void>;
     /** Reads both active tier descriptors and their exact revision compatibility. */
     readActiveSemanticSlots: () => SemanticActiveSlots;
     /** Reads the persisted file manifest for one semantic tier. */
@@ -510,6 +520,12 @@ function createStorePath(projectRoot: string): string {
     return path.join(path.resolve(projectRoot), ".gmloop", "graph-index.sqlite");
 }
 
+function flushSynchronousSemanticPublications(): Promise<void> {
+    // SQLite publications are synchronous transactions. The promise preserves
+    // an awaitable lifecycle boundary without exposing that implementation.
+    return Promise.resolve();
+}
+
 function readSemanticSlotState(
     database: GraphDatabase,
     projectRoot: string,
@@ -621,13 +637,15 @@ function publishSemanticFacts(
         if (currentSlotGeneration !== request.baseGeneration) {
             return;
         }
-        if (request.tier === "full" && !request.authoritative) {
+        if (request.tier === "full") {
             const definitionsSlot = database
                 .prepare("SELECT source_revision FROM semantic_slots WHERE project_root = ? AND tier = 'definitions'")
                 .get(projectRoot) as { source_revision?: string } | undefined;
+            const definitionsRevision = definitionsSlot?.source_revision;
             if (
-                definitionsSlot?.source_revision !== undefined &&
-                definitionsSlot.source_revision !== request.sourceRevision
+                request.authoritative
+                    ? definitionsRevision !== undefined
+                    : definitionsRevision !== request.sourceRevision
             ) {
                 return;
             }
@@ -910,10 +928,20 @@ function publishSemanticFacts(
 export function openSemanticIndexStore(projectRoot: string): SemanticIndexStore {
     const resolvedRoot = path.resolve(projectRoot);
     const database = openGraphIndexDatabase(createStorePath(resolvedRoot));
+    let closePromise: Promise<void> | null = null;
+    const closeDatabase = (): Promise<void> =>
+        flushSynchronousSemanticPublications().then(() => {
+            database.close();
+            return undefined;
+        });
     return {
         applySemanticIncrement: (request) =>
             publishSemanticFacts(database, resolvedRoot, { ...request, affectedFiles: request.affectedFiles }),
-        close: () => database.close(),
+        close() {
+            closePromise ??= closeDatabase();
+            return closePromise;
+        },
+        flush: flushSynchronousSemanticPublications,
         findImmediateDownstreamFiles: (filePath) => findImmediateDownstreamFiles(database, resolvedRoot, filePath),
         findUnresolvedDependents: (identifierNames) =>
             findUnresolvedDependents(database, resolvedRoot, identifierNames),
@@ -925,6 +953,38 @@ export function openSemanticIndexStore(projectRoot: string): SemanticIndexStore 
         publishSemanticSnapshot: (request) =>
             publishSemanticFacts(database, resolvedRoot, { ...request, affectedFiles: null })
     };
+}
+
+/** Publishes definitions first when necessary, then a full snapshot for the exact same revision. */
+export function publishSemanticTwoTierSnapshot(
+    store: SemanticIndexStore,
+    request: SemanticTwoTierPublicationRequest
+): SemanticPublishResult {
+    let activeSlots = store.readActiveSemanticSlots();
+    if (activeSlots.definitions?.sourceSignature !== request.sourceRevision) {
+        const definitionsPublication = store.publishSemanticSnapshot({
+            authoritative: false,
+            baseGeneration: activeSlots.definitions?.generation ?? null,
+            expectedHeadGeneration: store.readSemanticProjectHead().generation,
+            index: request.index,
+            manifest: request.manifest,
+            sourceRevision: request.sourceRevision,
+            tier: "definitions"
+        });
+        if (definitionsPublication.status === "superseded") {
+            return definitionsPublication;
+        }
+        activeSlots = store.readActiveSemanticSlots();
+    }
+    return store.publishSemanticSnapshot({
+        authoritative: false,
+        baseGeneration: activeSlots.full?.generation ?? null,
+        expectedHeadGeneration: store.readSemanticProjectHead().generation,
+        index: request.index,
+        manifest: request.manifest,
+        sourceRevision: request.sourceRevision,
+        tier: "full"
+    });
 }
 
 /** Return the canonical database path for a project root. */

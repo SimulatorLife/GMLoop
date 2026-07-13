@@ -13,7 +13,13 @@ const initialDocuments = [
 
 void test("worker overlay boundary accepts an unchanged complete buffer set", () => {
     const boundary = createWorkerOverlayBoundary(initialDocuments);
-    assert.equal(isWorkerOverlayBoundaryCurrent(boundary, initialDocuments.map((document) => ({ ...document }))), true);
+    assert.equal(
+        isWorkerOverlayBoundaryCurrent(
+            boundary,
+            initialDocuments.map((document) => ({ ...document }))
+        ),
+        true
+    );
 });
 
 void test("worker overlay boundary rejects edits in any non-anchor buffer", () => {

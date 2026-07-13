@@ -465,6 +465,11 @@ function buildSemanticIndexInWorker(
             "message",
             (message: {
                 error?: unknown;
+                openDocumentBoundary?: ReadonlyArray<{
+                    contentHash: string;
+                    documentVersion: number;
+                    filePath: string;
+                }>;
                 rawIndex?: unknown;
                 semanticSnapshot?: ReturnType<typeof Semantic.createSemanticSnapshotFromProjectIndex>;
             }) => {
@@ -473,6 +478,18 @@ function buildSemanticIndexInWorker(
                     return;
                 }
                 if (!Core.isObjectLike(message.rawIndex) || message.semanticSnapshot === undefined) {
+                    finish(() => resolve(null));
+                    return;
+                }
+                if (
+                    message.openDocumentBoundary?.length !== overlayBoundary.size ||
+                    !message.openDocumentBoundary.every((entry) => {
+                        const boundary = overlayBoundary.get(path.resolve(entry.filePath));
+                        return (
+                            boundary?.contentHash === entry.contentHash && boundary.version === entry.documentVersion
+                        );
+                    })
+                ) {
                     finish(() => resolve(null));
                     return;
                 }
@@ -497,6 +514,8 @@ function buildSemanticIndexInWorker(
             definitionsOnly,
             incremental,
             openDocuments: openDocuments.map((document) => ({
+                contentHash: Semantic.createSemanticContentHash(document.sourceText),
+                documentVersion: document.version,
                 filePath: path.resolve(document.filePath),
                 sourceText: document.sourceText
             })),
@@ -525,6 +544,8 @@ export function createGmlSemanticIndex(
     const rootVersions = new Map<string, number>();
     const abortControllers = new Map<string, AbortController>();
     const semanticStores = new Map<string, SemanticIndexStore>();
+    const listProjectDocuments = (projectRoot: string): ReadonlyArray<GmlTextDocument> =>
+        documents.list().filter((document) => isDocumentWithinProjectRoot(document, projectRoot));
     const documentVersions = new Map<string, number>();
     const pendingCacheWrites = new Map<string, Promise<void>>();
     const lexicalRangesByDocument = new Map<
@@ -719,7 +740,7 @@ export function createGmlSemanticIndex(
             if (previousManifest === null) {
                 return;
             }
-            const overlays = documents.list().map((openDocument) => ({
+            const overlays = listProjectDocuments(resolvedRoot).map((openDocument) => ({
                 absolutePath: openDocument.filePath,
                 contentHash: Semantic.createSemanticContentHash(openDocument.sourceText),
                 documentVersion: openDocument.version,
@@ -774,7 +795,7 @@ export function createGmlSemanticIndex(
                 if (readRootVersion(resolvedRoot) !== expectedRootVersion) {
                     return undefined;
                 }
-                const overlays = documents.list().map((document) => ({
+                const overlays = listProjectDocuments(resolvedRoot).map((document) => ({
                     absolutePath: document.filePath,
                     contentHash: Semantic.createSemanticContentHash(document.sourceText),
                     documentVersion: document.version,
@@ -874,7 +895,7 @@ export function createGmlSemanticIndex(
         const resolvedUri = document.uri;
         const startDocVersion = readDocumentVersion(resolvedUri);
         const buildVersion = readRootVersion(resolvedRoot);
-        const priorityFiles = documents.list().map((doc) => doc.filePath);
+        const priorityFiles = listProjectDocuments(resolvedRoot).map((doc) => doc.filePath);
 
         abortActiveBuild(resolvedRoot);
         const controller = new AbortController();
@@ -892,9 +913,9 @@ export function createGmlSemanticIndex(
                 const fullState = await buildSemanticIndexInWorker(
                     resolvedRoot,
                     priorityFiles,
-                    documents.list(),
+                    listProjectDocuments(resolvedRoot),
                     false,
-                    () => documents.list(),
+                    () => listProjectDocuments(resolvedRoot),
                     controller.signal
                 );
                 if (
@@ -953,7 +974,7 @@ export function createGmlSemanticIndex(
             abortControllers.set(resolvedRoot, controller);
 
             const buildPromise = (async () => {
-                const priorityFiles = documents.list().map((doc) => doc.filePath);
+                const priorityFiles = listProjectDocuments(resolvedRoot).map((doc) => doc.filePath);
                 try {
                     const currentDoc = documents.get(document.uri);
                     if (currentDoc && currentDoc.version !== document.version) {
@@ -979,9 +1000,9 @@ export function createGmlSemanticIndex(
                         : await buildSemanticIndexInWorker(
                               resolvedRoot,
                               priorityFiles,
-                              documents.list(),
+                              listProjectDocuments(resolvedRoot),
                               true,
-                              () => documents.list(),
+                              () => listProjectDocuments(resolvedRoot),
                               controller.signal
                           );
                     if (
@@ -1092,7 +1113,7 @@ export function createGmlSemanticIndex(
             abortControllers.set(resolvedRoot, controller);
 
             const buildPromise = (async () => {
-                const priorityFiles = documents.list().map((doc) => doc.filePath);
+                const priorityFiles = listProjectDocuments(resolvedRoot).map((doc) => doc.filePath);
                 try {
                     const innerCurrentDoc = documents.get(document.uri);
                     if (innerCurrentDoc && innerCurrentDoc.version !== document.version) {
@@ -1114,9 +1135,9 @@ export function createGmlSemanticIndex(
                         : await buildSemanticIndexInWorker(
                               resolvedRoot,
                               priorityFiles,
-                              documents.list(),
+                              listProjectDocuments(resolvedRoot),
                               true,
-                              () => documents.list(),
+                              () => listProjectDocuments(resolvedRoot),
                               controller.signal
                           );
                     if (
@@ -1203,7 +1224,7 @@ export function createGmlSemanticIndex(
             .map(([filePath, kind]) => ({ filePath, kind }))
             .toSorted((left, right) => left.filePath.localeCompare(right.filePath));
         const buildVersion = readRootVersion(resolvedRoot);
-        const priorityFiles = documents.list().map((doc) => doc.filePath);
+        const priorityFiles = listProjectDocuments(resolvedRoot).map((doc) => doc.filePath);
 
         abortActiveBuild(resolvedRoot);
         const controller = new AbortController();
@@ -1237,9 +1258,9 @@ export function createGmlSemanticIndex(
                     const definitionsState = await buildSemanticIndexInWorker(
                         resolvedRoot,
                         priorityFiles,
-                        documents.list(),
+                        listProjectDocuments(resolvedRoot),
                         true,
-                        () => documents.list(),
+                        () => listProjectDocuments(resolvedRoot),
                         controller.signal,
                         { changes: impactedChanges, existingIndex: definitionsIncrementalIndex }
                     );
@@ -1283,9 +1304,9 @@ export function createGmlSemanticIndex(
                 const state = await buildSemanticIndexInWorker(
                     resolvedRoot,
                     priorityFiles,
-                    documents.list(),
+                    listProjectDocuments(resolvedRoot),
                     false,
-                    () => documents.list(),
+                    () => listProjectDocuments(resolvedRoot),
                     controller.signal,
                     canIncremental
                         ? {
@@ -1484,9 +1505,7 @@ export function createGmlSemanticIndex(
             await Promise.allSettled([...inFlightBuilds.values(), ...backgroundFullBuilds.values()]);
             await Promise.allSettled(manifestReconciliations.values());
             await Promise.allSettled(pendingCacheWrites.values());
-            for (const store of semanticStores.values()) {
-                store.close();
-            }
+            await Promise.all([...semanticStores.values()].map(async (store) => await store.close()));
             semanticStores.clear();
             pendingCacheWrites.clear();
             lexicalRangesByDocument.clear();

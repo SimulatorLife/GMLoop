@@ -17,7 +17,11 @@ import { logProjectIndexDebug, type ProjectIndexLogger } from "./project-index-l
 import { scanProjectTree } from "./project-tree.js";
 import { analyseResourceFiles, createFileScopeDescriptor } from "./resource-analysis.js";
 import { buildSemanticFileManifest } from "./semantic-manifest.js";
-import { getSemanticIndexDatabasePath, openSemanticIndexStore } from "./semantic-store.js";
+import {
+    getSemanticIndexDatabasePath,
+    openSemanticIndexStore,
+    publishSemanticTwoTierSnapshot
+} from "./semantic-store.js";
 import { parseGmlSymbolDocumentation } from "./symbol-documentation.js";
 
 type BuildProjectIndexFunction = (
@@ -74,21 +78,19 @@ export function createProjectIndexCoordinator(options: ProjectIndexCoordinatorOp
     });
 }
 
-function loadSemanticStoreIndex(descriptor: { projectRoot: string }) {
+async function loadSemanticStoreIndex(descriptor: { projectRoot: string }) {
     const store = openSemanticIndexStore(descriptor.projectRoot);
     try {
         const projectIndex = store.readSemanticNavigationProjection("full");
-        return Promise.resolve(
-            projectIndex
-                ? { status: "hit", cacheFilePath: getSemanticIndexDatabasePath(descriptor.projectRoot), projectIndex }
-                : {
-                      status: "miss",
-                      cacheFilePath: getSemanticIndexDatabasePath(descriptor.projectRoot),
-                      reason: { type: "not-found" }
-                  }
-        );
+        return projectIndex
+            ? { status: "hit", cacheFilePath: getSemanticIndexDatabasePath(descriptor.projectRoot), projectIndex }
+            : {
+                  status: "miss",
+                  cacheFilePath: getSemanticIndexDatabasePath(descriptor.projectRoot),
+                  reason: { type: "not-found" }
+              };
     } finally {
-        store.close();
+        await store.close();
     }
 }
 
@@ -96,14 +98,10 @@ async function saveSemanticStoreIndex(descriptor: { projectRoot: string; project
     const manifest = await buildSemanticFileManifest(descriptor.projectRoot, Core.defaultFsFacade);
     const store = openSemanticIndexStore(descriptor.projectRoot);
     try {
-        const publication = store.publishSemanticSnapshot({
-            authoritative: true,
-            baseGeneration: store.readActiveSemanticSlots().full?.generation ?? null,
-            expectedHeadGeneration: store.readSemanticProjectHead().generation,
+        const publication = publishSemanticTwoTierSnapshot(store, {
             index: descriptor.projectIndex,
             manifest,
-            sourceRevision: manifest.sourceRevision,
-            tier: "full"
+            sourceRevision: manifest.sourceRevision
         });
         if (publication.status === "superseded") {
             throw new Error(`Semantic coordinator publication was superseded for ${descriptor.projectRoot}.`);
@@ -113,7 +111,7 @@ async function saveSemanticStoreIndex(descriptor: { projectRoot: string; project
             cacheFilePath: getSemanticIndexDatabasePath(descriptor.projectRoot)
         };
     } finally {
-        store.close();
+        await store.close();
     }
 }
 function cloneIdentifierDeclaration(declaration) {

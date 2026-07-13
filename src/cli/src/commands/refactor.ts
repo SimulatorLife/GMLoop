@@ -48,20 +48,16 @@ async function publishSemanticProjectIndex(projectRoot: string, projectIndex: Re
     const manifest = await Semantic.buildSemanticFileManifest(projectRoot, Core.defaultFsFacade);
     const store = Semantic.openSemanticIndexStore(projectRoot);
     try {
-        const publication = store.publishSemanticSnapshot({
-            authoritative: true,
-            baseGeneration: store.readActiveSemanticSlots().full?.generation ?? null,
-            expectedHeadGeneration: store.readSemanticProjectHead().generation,
+        const publication = Semantic.publishSemanticTwoTierSnapshot(store, {
             index: projectIndex,
             manifest,
-            sourceRevision: manifest.sourceRevision,
-            tier: "full"
+            sourceRevision: manifest.sourceRevision
         });
         if (publication.status === "superseded") {
             throw new Error(`Semantic refactor publication was superseded for ${projectRoot}.`);
         }
     } finally {
-        store.close();
+        await store.close();
     }
 }
 type LoadedGmloopProjectConfig = Awaited<ReturnType<typeof Core.loadGmloopProjectConfig>> & {

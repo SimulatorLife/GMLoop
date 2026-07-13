@@ -8,7 +8,11 @@ import { Core } from "@gmloop/core";
 
 import { openGraphIndexDatabase } from "../src/graph-index/database.js";
 import { buildSemanticFileManifest, type SemanticFileManifest } from "../src/project-index/semantic-manifest.js";
-import { getSemanticIndexDatabasePath, openSemanticIndexStore } from "../src/project-index/semantic-store.js";
+import {
+    getSemanticIndexDatabasePath,
+    openSemanticIndexStore,
+    publishSemanticTwoTierSnapshot
+} from "../src/project-index/semantic-store.js";
 
 void test("semantic store creates the normalized v6 tables without legacy record tables", async () => {
     const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-store-v6-schema-"));
@@ -64,7 +68,23 @@ void test("semantic store exposes only canonical generation and projection read 
             assert.equal(removedApi in store, false, `${removedApi} must not remain as a compatibility API`);
         }
     } finally {
-        store.close();
+        await store.close();
+    }
+});
+
+void test("semantic store flush and close lifecycle is awaitable and idempotent", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-store-close-"));
+    const store = openSemanticIndexStore(projectRoot);
+    publishSnapshot(store, { files: {}, projectRoot }, "definitions", "close-revision");
+
+    await store.flush();
+    await Promise.all([store.close(), store.close()]);
+
+    const reopenedStore = openSemanticIndexStore(projectRoot);
+    try {
+        assert.equal(reopenedStore.readActiveSemanticSlots().definitions?.sourceSignature, "close-revision");
+    } finally {
+        await reopenedStore.close();
     }
 });
 
@@ -124,7 +144,7 @@ void test("definitions publication persists structured symbols without reference
             database.close();
         }
     } finally {
-        store.close();
+        await store.close();
     }
 });
 
@@ -157,7 +177,7 @@ function publishSnapshot(
         sourceRevision: sourceRevision as SemanticFileManifest["sourceRevision"]
     });
     const publicationRequest = {
-        authoritative: tier === "full" && sourceRevision !== "revision-definitions",
+        authoritative: tier === "full" && store.readActiveSemanticSlots().definitions === null,
         baseGeneration: store.readActiveSemanticSlots()[tier]?.generation ?? null,
         expectedHeadGeneration: store.readSemanticProjectHead().generation,
         index,
@@ -292,7 +312,7 @@ void test("scoped publication preserves unrelated normalized rows and generation
             afterDeleteDatabase.close();
         }
     } finally {
-        store.close();
+        await store.close();
     }
 });
 
@@ -346,7 +366,7 @@ void test("scoped deletion preserves a canonical symbol still defined by an unaf
             ["scripts/b.gml"]
         );
     } finally {
-        store.close();
+        await store.close();
     }
 });
 
@@ -393,7 +413,7 @@ void test("scoped publication preserves unaffected ownership of a shared scope",
             database.close();
         }
     } finally {
-        store.close();
+        await store.close();
     }
 });
 
@@ -422,7 +442,7 @@ void test("semantic index store persists records and generation state in SQLite"
         });
         assert.equal(store.readActiveSemanticSlots().definitions?.generation, 1);
 
-        const second = publishSnapshot(store, { projectRoot, files: {} }, "full", "revision-full-1");
+        const second = publishSnapshot(store, { projectRoot, files: {} }, "full", "revision-definitions-1");
         assert.equal(second.generation, 2);
         assert.equal(store.readActiveSemanticSlots().full?.tier, "full");
 
@@ -445,7 +465,7 @@ void test("semantic index store persists records and generation state in SQLite"
             newestDefinitionsRevision: "revision-definitions-2"
         });
     } finally {
-        store.close();
+        await store.close();
     }
 });
 
@@ -482,7 +502,7 @@ void test("semantic index store rejects stale generation publications without ch
         assert.equal(store.readActiveSemanticSlots().hasMatchingFull, true);
         assert.equal(store.readActiveSemanticSlots().newestDefinitionsRevision, "revision-full");
     } finally {
-        store.close();
+        await store.close();
     }
 });
 
@@ -505,25 +525,82 @@ void test("semantic index store rejects a publication derived from an older slot
         assert.deepEqual(rejected, { state: null, status: "superseded" });
         assert.equal(store.readActiveSemanticSlots().definitions?.generation, advanced.generation);
     } finally {
-        store.close();
+        await store.close();
     }
 });
 
-void test("semantic active slots keep definitions authoritative when a newer full slot has another revision", async () => {
+void test("semantic active slots keep newer definitions authoritative over an older full revision", async () => {
     const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-store-slot-revision-"));
     const store = openSemanticIndexStore(projectRoot);
     try {
+        const olderFull = publishSnapshot(store, { files: {}, projectRoot }, "full", "revision-full-old");
         const definitions = publishSnapshot(store, { files: {}, projectRoot }, "definitions", "revision-definitions");
-        publishSnapshot(store, { files: {}, projectRoot }, "full", "revision-definitions");
-        const mismatchedFull = publishSnapshot(store, { files: {}, projectRoot }, "full", "revision-full-other");
         assert.deepEqual(store.readActiveSemanticSlots(), {
             definitions,
-            full: mismatchedFull,
+            full: olderFull,
             hasMatchingFull: false,
             newestDefinitionsRevision: "revision-definitions"
         });
     } finally {
-        store.close();
+        await store.close();
+    }
+});
+
+void test("semantic index store rejects authoritative full publication when definitions exist", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-store-authoritative-full-gate-"));
+    const store = openSemanticIndexStore(projectRoot);
+    try {
+        const definitions = publishSnapshot(store, { files: {}, projectRoot }, "definitions", "revision-current");
+        const rejected = store.publishSemanticSnapshot({
+            authoritative: true,
+            baseGeneration: null,
+            expectedHeadGeneration: definitions.generation,
+            index: { files: {}, projectRoot },
+            manifest: null,
+            sourceRevision: "revision-current",
+            tier: "full"
+        });
+
+        assert.deepEqual(rejected, { state: null, status: "superseded" });
+        assert.equal(store.readSemanticProjectHead().generation, definitions.generation);
+        assert.equal(store.readActiveSemanticSlots().full, null);
+    } finally {
+        await store.close();
+    }
+});
+
+void test("two-tier publication advances stale definitions before publishing matching full facts", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-store-two-tier-publication-"));
+    const store = openSemanticIndexStore(projectRoot);
+    try {
+        publishSnapshot(store, { files: {}, projectRoot }, "definitions", "revision-old");
+        const publication = publishSemanticTwoTierSnapshot(store, {
+            index: { files: { "scripts/current.gml": {} }, projectRoot },
+            manifest: null,
+            sourceRevision: "revision-current"
+        });
+
+        assert.equal(publication.status, "published");
+        assert.deepEqual(store.readActiveSemanticSlots(), {
+            definitions: {
+                baseGeneration: 1,
+                generation: 2,
+                projectRoot,
+                sourceSignature: "revision-current",
+                tier: "definitions"
+            },
+            full: {
+                baseGeneration: null,
+                generation: 3,
+                projectRoot,
+                sourceSignature: "revision-current",
+                tier: "full"
+            },
+            hasMatchingFull: true,
+            newestDefinitionsRevision: "revision-current"
+        });
+    } finally {
+        await store.close();
     }
 });
 
@@ -534,7 +611,7 @@ void test("semantic index store rejects a non-authoritative full publication wit
         const definitions = publishSnapshot(store, { files: {}, projectRoot }, "definitions", "revision-definitions");
         const rejected = store.publishSemanticSnapshot({
             authoritative: false,
-            baseGeneration: definitions.generation,
+            baseGeneration: null,
             expectedHeadGeneration: definitions.generation,
             index: { files: {}, projectRoot },
             manifest: null,
@@ -546,7 +623,7 @@ void test("semantic index store rejects a non-authoritative full publication wit
         assert.equal(store.readSemanticProjectHead().generation, definitions.generation);
         assert.equal(store.readActiveSemanticSlots().full, null);
     } finally {
-        store.close();
+        await store.close();
     }
 });
 
@@ -587,7 +664,7 @@ void test("semantic index store persists and restores the generation-bound manif
             database.close();
         }
     } finally {
-        store.close();
+        await store.close();
     }
 });
 
@@ -605,7 +682,7 @@ void test("semantic index store rejects a corrupt navigation projection until no
         "definitions",
         "projection-revision"
     );
-    store.close();
+    await store.close();
 
     const database = openGraphIndexDatabase(databasePath);
     try {
@@ -633,7 +710,7 @@ void test("semantic index store rejects a corrupt navigation projection until no
     try {
         assert.equal(restoredStore.readSemanticNavigationProjection("definitions"), null);
     } finally {
-        restoredStore.close();
+        await restoredStore.close();
     }
 });
 
@@ -662,7 +739,7 @@ void test("semantic index store hard-resets pre-v6 derived cache data", async ()
         assert.equal(store.readSemanticManifest("full"), null);
         assert.deepEqual(store.findImmediateDownstreamFiles("scripts/main.gml"), []);
     } finally {
-        store.close();
+        await store.close();
     }
 });
 
@@ -749,6 +826,6 @@ void test("semantic index store persists file hashes and immediate reverse depen
             ["scriptCall"]
         );
     } finally {
-        store.close();
+        await store.close();
     }
 });

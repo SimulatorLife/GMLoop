@@ -6,6 +6,8 @@ import { Semantic } from "@gmloop/semantic";
 import { normalizeWorkerErrorPayload } from "./error-normalization.js";
 
 type OpenDocumentOverlay = Readonly<{
+    contentHash: string;
+    documentVersion: number;
     filePath: string;
     sourceText: string;
 }>;
@@ -60,7 +62,15 @@ async function buildWorkerIndex(request: WorkerRequest): Promise<void> {
             request.definitionsOnly ? "definitions" : "full",
             "" as Parameters<typeof Semantic.createSemanticSnapshotFromProjectIndex>[2]
         );
-        parentPort?.postMessage({ rawIndex, semanticSnapshot });
+        parentPort?.postMessage({
+            openDocumentBoundary: request.openDocuments.map((document) => ({
+                contentHash: document.contentHash,
+                documentVersion: document.documentVersion,
+                filePath: document.filePath
+            })),
+            rawIndex,
+            semanticSnapshot
+        });
     } catch (error) {
         parentPort?.postMessage({ error: normalizeWorkerErrorPayload(error) });
     }

@@ -162,6 +162,50 @@ void test("semantic index invalidates cached project facts for unsaved document 
     }
 });
 
+void test("semantic manifests and open-buffer overlays remain isolated across project roots", async () => {
+    const firstFixture = await createTwoScriptProject();
+    const secondFixture = await createTwoScriptProject();
+    try {
+        const store = Lsp.createGmlDocumentStore();
+        const firstSource = "function first_overlay() { target(); }";
+        const secondSource = "function second_overlay() { target(); }";
+        const firstDocument = store.open({
+            uri: Lsp.filePathToUri(firstFixture.sourcePath),
+            languageId: "gml",
+            version: 2,
+            text: firstSource
+        });
+        const secondDocument = store.open({
+            uri: Lsp.filePathToUri(secondFixture.sourcePath),
+            languageId: "gml",
+            version: 4,
+            text: secondSource
+        });
+        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+
+        await semanticIndex.buildForDocument(firstDocument);
+        await semanticIndex.buildForDocument(secondDocument);
+        await semanticIndex.findReferences(firstDocument, firstSource.indexOf("target"), "target", false);
+        await semanticIndex.findReferences(secondDocument, secondSource.indexOf("target"), "target", false);
+        await semanticIndex.dispose();
+
+        const firstStore = Semantic.openSemanticIndexStore(firstFixture.projectRoot);
+        const secondStore = Semantic.openSemanticIndexStore(secondFixture.projectRoot);
+        try {
+            const firstEntry = firstStore.readSemanticManifest("full")?.entries.get("scripts/source/source.gml");
+            const secondEntry = secondStore.readSemanticManifest("full")?.entries.get("scripts/source/source.gml");
+            assert.equal(firstEntry?.contentHash, Semantic.createSemanticContentHash(firstSource));
+            assert.equal(firstEntry?.sourceVersion, 2);
+            assert.equal(secondEntry?.contentHash, Semantic.createSemanticContentHash(secondSource));
+            assert.equal(secondEntry?.sourceVersion, 4);
+        } finally {
+            await Promise.all([firstStore.close(), secondStore.close()]);
+        }
+    } finally {
+        await Promise.all([firstFixture.cleanup(), secondFixture.cleanup()]);
+    }
+});
+
 void test("semantic index refreshes project facts after an external resource metadata change", async () => {
     const fixture = await createTwoScriptProject();
     try {
@@ -536,6 +580,73 @@ void test("semantic index full worker preserves unsaved open-buffer facts", asyn
     }
 });
 
+void test("closing an unsaved buffer restores disk-backed semantic facts and manifest metadata", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gmloop-lsp-close-overlay-"));
+    try {
+        await fs.writeFile(
+            path.join(projectRoot, "Game.yyp"),
+            JSON.stringify({ name: "Game", resourceType: "GMProject" })
+        );
+        const scriptPath = path.join(projectRoot, "scripts/example/example.gml");
+        await fs.mkdir(path.dirname(scriptPath), { recursive: true });
+        await fs.writeFile(
+            path.join(projectRoot, "scripts/example/example.yy"),
+            JSON.stringify({ name: "example", resourceType: "GMScript" })
+        );
+        const diskSource = "function disk_symbol() { return 1; }";
+        const overlaySource = "function overlay_symbol() { return 2; }";
+        await fs.writeFile(scriptPath, diskSource);
+
+        const documents = Lsp.createGmlDocumentStore();
+        const document = documents.open({
+            uri: Lsp.filePathToUri(scriptPath),
+            languageId: "gml",
+            version: 8,
+            text: overlaySource
+        });
+        const semanticIndex = Lsp.createGmlSemanticIndex(documents);
+        await semanticIndex.buildForDocument(document);
+        await semanticIndex.findReferences(document, 9, "overlay_symbol", true);
+        assert.equal(
+            (await semanticIndex.searchCompletions(document, "overlay_symbol")).some(
+                (completion) => completion.label === "overlay_symbol"
+            ),
+            true
+        );
+
+        documents.close(document.uri);
+        await semanticIndex.refreshForFilePath(scriptPath);
+        const diskDocument = Lsp.createGmlTextDocument(document.uri, "gml", 0, diskSource);
+        assert.equal(
+            (await semanticIndex.searchCompletions(diskDocument, "disk_symbol")).some(
+                (completion) => completion.label === "disk_symbol"
+            ),
+            true
+        );
+        assert.equal(
+            (await semanticIndex.searchCompletions(diskDocument, "overlay_symbol")).some(
+                (completion) => completion.label === "overlay_symbol"
+            ),
+            false
+        );
+        await semanticIndex.dispose();
+
+        const persistedStore = Semantic.openSemanticIndexStore(projectRoot);
+        try {
+            const manifestEntry = persistedStore
+                .readSemanticManifest("full")
+                ?.entries.get("scripts/example/example.gml");
+            assert.equal(manifestEntry?.contentHash, Semantic.createSemanticContentHash(diskSource));
+            assert.equal(manifestEntry?.sourceOrigin, "disk");
+            assert.equal(manifestEntry?.sourceVersion, null);
+        } finally {
+            await persistedStore.close();
+        }
+    } finally {
+        await cleanupProjectDir(projectRoot);
+    }
+});
+
 void test("semantic index aborts and cancels in-flight builds on invalidation", async () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gmloop-lsp-abort-"));
     try {
@@ -628,12 +739,12 @@ void test("semantic index performs incremental updates on document refresh", asy
             2,
             "Cold indexing should publish one definitions and one full generation"
         );
-        await waitForCondition(() => {
+        await waitForCondition(async () => {
             const persistedStore = Semantic.openSemanticIndexStore(projectRoot);
             try {
                 return persistedStore.findUnresolvedDependents(["new_func"]).includes("scripts/b/b.gml");
             } finally {
-                persistedStore.close();
+                await persistedStore.close();
             }
         });
 
@@ -706,7 +817,7 @@ void test("semantic index performs incremental updates on document refresh", asy
         });
         const persistedStore = Semantic.openSemanticIndexStore(projectRoot);
         const persistedSnapshot = persistedStore.readSemanticSnapshot("full");
-        persistedStore.close();
+        await persistedStore.close();
         const persistedNewFunction = persistedSnapshot?.symbols.find((symbol) => symbol.name === "new_func");
         assert.ok(persistedNewFunction, "The new function must exist in the matching full snapshot");
         assert.ok(

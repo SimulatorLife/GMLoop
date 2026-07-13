@@ -13,7 +13,8 @@ import {
     createProjectIndexCoordinator,
     createTolerantProjectIndexParser,
     getDefaultProjectIndexParser,
-    openSemanticIndexStore
+    openSemanticIndexStore,
+    publishSemanticTwoTierSnapshot
 } from "../project-index/index.js";
 import { getGmlSymbolKindForIdentifierCollection } from "../symbols/taxonomy.js";
 import { resolveGraphIndexConfig } from "./config.js";
@@ -2063,7 +2064,7 @@ async function getOrBuildProjectIndex(projectRoot: string): Promise<ProjectIndex
     const storedState = store.readActiveSemanticSlots().full;
     const storedIndex = store.readSemanticNavigationProjection("full");
     if (storedIndex && storedState?.sourceSignature === sourceSignature) {
-        store.close();
+        await store.close();
         return storedIndex;
     }
 
@@ -2072,21 +2073,17 @@ async function getOrBuildProjectIndex(projectRoot: string): Promise<ProjectIndex
         const index = (await buildProjectIndex(projectRoot, Core.defaultFsFacade, {
             parseGml: parser
         })) as ProjectIndexSnapshot;
-        const publication = store.publishSemanticSnapshot({
-            authoritative: true,
-            baseGeneration: store.readActiveSemanticSlots().full?.generation ?? null,
-            expectedHeadGeneration: store.readSemanticProjectHead().generation,
+        const publication = publishSemanticTwoTierSnapshot(store, {
             index,
             manifest,
-            sourceRevision: sourceSignature,
-            tier: "full"
+            sourceRevision: sourceSignature
         });
         if (publication.status === "superseded") {
             throw new Error(`Semantic graph-index publication was superseded for ${projectRoot}.`);
         }
         return index;
     } finally {
-        store.close();
+        await store.close();
     }
 }
 
