@@ -5,6 +5,7 @@ import { Core } from "@gmloop/core";
 
 import { loadBuiltInIdentifiers } from "../symbols/built-in-identifiers.js";
 import { createProjectIndexAbortGuard, PROJECT_INDEX_BUILD_ABORT_MESSAGE } from "./abort-guard.js";
+import type { ProjectIndexBuildOptions } from "./build-options.js";
 import { clampConcurrency } from "./concurrency.js";
 import { collectConstructorStaticMemberAnalysis } from "./constructor-static-members.js";
 import { createProjectIndexCoordinator as createProjectIndexCoordinatorCore } from "./coordinator.js";
@@ -27,8 +28,8 @@ import { parseGmlSymbolDocumentation } from "./symbol-documentation.js";
 type BuildProjectIndexFunction = (
     projectRoot: string,
     fsFacade?: ProjectIndexFsFacade,
-    options?: Record<string, unknown>
-) => Promise<unknown>;
+    options?: ProjectIndexBuildOptions
+) => Promise<Record<string, unknown>>;
 
 type ProjectIndexCoordinatorOptions = {
     fsFacade?: ProjectIndexFsFacade | null;
@@ -78,24 +79,46 @@ export function createProjectIndexCoordinator(options: ProjectIndexCoordinatorOp
     });
 }
 
-async function loadSemanticStoreIndex(descriptor: { projectRoot: string }) {
+async function loadSemanticStoreIndex(
+    descriptor: { projectRoot: string },
+    fsFacade: ProjectIndexFsFacade,
+    options: { signal: AbortSignal }
+) {
+    const manifest = await buildSemanticFileManifest(descriptor.projectRoot, fsFacade);
+    Core.throwIfAborted(options.signal, PROJECT_INDEX_BUILD_ABORT_MESSAGE);
     const store = openSemanticIndexStore(descriptor.projectRoot);
     try {
+        const activeSlots = store.readActiveSemanticSlots();
+        const storedManifest = store.readSemanticManifest("full");
         const projectIndex = store.readSemanticNavigationProjection("full");
-        return projectIndex
-            ? { status: "hit", cacheFilePath: getSemanticIndexDatabasePath(descriptor.projectRoot), projectIndex }
-            : {
-                  status: "miss",
+        const matchesCurrentRevision =
+            activeSlots.hasMatchingFull &&
+            storedManifest?.sourceRevision === manifest.sourceRevision &&
+            activeSlots.full?.sourceSignature === manifest.sourceRevision;
+        return projectIndex && matchesCurrentRevision
+            ? {
+                  status: "hit" as const,
                   cacheFilePath: getSemanticIndexDatabasePath(descriptor.projectRoot),
-                  reason: { type: "not-found" }
+                  manifest,
+                  projectIndex
+              }
+            : {
+                  status: "miss" as const,
+                  cacheFilePath: getSemanticIndexDatabasePath(descriptor.projectRoot),
+                  manifest,
+                  reason: { type: projectIndex ? ("revision-mismatch" as const) : ("not-found" as const) }
               };
     } finally {
         await store.close();
     }
 }
 
-async function saveSemanticStoreIndex(descriptor: { projectRoot: string; projectIndex: Record<string, unknown> }) {
-    const manifest = await buildSemanticFileManifest(descriptor.projectRoot, Core.defaultFsFacade);
+async function saveSemanticStoreIndex(descriptor: {
+    manifest: Awaited<ReturnType<typeof buildSemanticFileManifest>>;
+    projectRoot: string;
+    projectIndex: Record<string, unknown>;
+}) {
+    const { manifest } = descriptor;
     const store = openSemanticIndexStore(descriptor.projectRoot);
     try {
         const publication = publishSemanticTwoTierSnapshot(store, {
@@ -3071,7 +3094,11 @@ function finalizeProjectIndexResult({ metricsReporting, options, projectIndex })
     }
     return projectIndex;
 }
-export async function buildProjectIndex(projectRoot, fsFacade = Core.defaultFsFacade, options = {} as any) {
+export async function buildProjectIndex(
+    projectRoot: string,
+    fsFacade: ProjectIndexFsFacade = Core.defaultFsFacade,
+    options: ProjectIndexBuildOptions = {}
+) {
     if (!projectRoot) {
         throw new Error("projectRoot must be provided to buildProjectIndex");
     }

@@ -37,6 +37,25 @@ type NavigationState = {
     lightweight?: boolean;
 };
 type SemanticIndexStore = ReturnType<typeof Semantic.openSemanticIndexStore>;
+type WorkerBuildBoundary = Readonly<{
+    baseGeneration: number | null;
+    definitionsGeneration: number | null;
+    definitionsSourceRevision: string | null;
+    projectHeadGeneration: number;
+    projectVersion: number;
+    tier: "definitions" | "full";
+}>;
+
+function areWorkerBuildBoundariesEqual(left: WorkerBuildBoundary | undefined, right: WorkerBuildBoundary): boolean {
+    return (
+        left?.baseGeneration === right.baseGeneration &&
+        left.definitionsGeneration === right.definitionsGeneration &&
+        left.definitionsSourceRevision === right.definitionsSourceRevision &&
+        left.projectHeadGeneration === right.projectHeadGeneration &&
+        left.projectVersion === right.projectVersion &&
+        left.tier === right.tier
+    );
+}
 
 /** Physical or metadata inventory change applied to one semantic project. */
 export type GmlSemanticFileChange = Readonly<{
@@ -404,51 +423,23 @@ async function getProjectRoot(filepath: string): Promise<string | null> {
     return root;
 }
 
-async function buildSemanticIndexForDocument(
-    document: GmlTextDocument,
-    fsFacade: FsFacade = Core.defaultFsFacade,
-    priorityFiles?: ReadonlyArray<string>,
-    definitionsOnly?: boolean,
-    signal?: AbortSignal,
-    existingIndex?: any,
-    changes: ReadonlyArray<GmlSemanticFileChange> = [{ filePath: document.filePath, kind: "modified" }]
-): Promise<NavigationState | null> {
-    const projectRoot = await getProjectRoot(document.filePath);
-    if (!projectRoot) {
-        return null;
-    }
-
-    const index = await Semantic.buildProjectNavigationIndex(projectRoot, fsFacade, {
-        priorityFiles,
-        definitionsOnly,
-        signal,
-        incremental: existingIndex
-            ? {
-                  existingIndex,
-                  changes
-              }
-            : undefined
-    });
-
-    return {
-        projectRoot,
-        index,
-        lightweight: definitionsOnly
-    };
-}
-
 function buildSemanticIndexInWorker(
     projectRoot: string,
     priorityFiles: ReadonlyArray<string>,
     openDocuments: ReadonlyArray<GmlTextDocument>,
     definitionsOnly: boolean,
     readCurrentOpenDocuments: () => ReadonlyArray<GmlTextDocument>,
+    buildIdentity: Readonly<{
+        boundary: WorkerBuildBoundary;
+        isCurrent: (boundary: WorkerBuildBoundary) => boolean;
+    }>,
     signal?: AbortSignal,
     incremental: Readonly<{
         changes: ReadonlyArray<GmlSemanticFileChange>;
         existingIndex: Record<string, unknown>;
     }> | null = null
 ): Promise<NavigationState | null> {
+    const { boundary: buildBoundary, isCurrent: isBuildBoundaryCurrent } = buildIdentity;
     const overlayBoundary = createWorkerOverlayBoundary(openDocuments);
     return new Promise((resolve, reject) => {
         const worker = new Worker(new URL("project-index-worker.js", import.meta.url));
@@ -464,6 +455,7 @@ function buildSemanticIndexInWorker(
         worker.on(
             "message",
             (message: {
+                buildBoundary?: WorkerBuildBoundary;
                 error?: unknown;
                 openDocumentBoundary?: ReadonlyArray<{
                     contentHash: string;
@@ -478,6 +470,13 @@ function buildSemanticIndexInWorker(
                     return;
                 }
                 if (!Core.isObjectLike(message.rawIndex) || message.semanticSnapshot === undefined) {
+                    finish(() => resolve(null));
+                    return;
+                }
+                if (
+                    !areWorkerBuildBoundariesEqual(message.buildBoundary, buildBoundary) ||
+                    !isBuildBoundaryCurrent(buildBoundary)
+                ) {
                     finish(() => resolve(null));
                     return;
                 }
@@ -511,6 +510,7 @@ function buildSemanticIndexInWorker(
         });
         signal?.addEventListener("abort", abort, { once: true });
         worker.postMessage({
+            buildBoundary,
             definitionsOnly,
             incremental,
             openDocuments: openDocuments.map((document) => ({
@@ -604,6 +604,33 @@ export function createGmlSemanticIndex(
         const store = Semantic.openSemanticIndexStore(resolvedRoot);
         semanticStores.set(resolvedRoot, store);
         return store;
+    }
+
+    function createWorkerBuildBoundary(
+        resolvedRoot: string,
+        tier: "definitions" | "full",
+        projectVersion: number
+    ): WorkerBuildBoundary {
+        const activeSlots = getSemanticStore(resolvedRoot).readActiveSemanticSlots();
+        return Object.freeze({
+            baseGeneration: activeSlots[tier]?.generation ?? null,
+            definitionsGeneration: activeSlots.definitions?.generation ?? null,
+            definitionsSourceRevision: activeSlots.definitions?.sourceSignature ?? null,
+            projectHeadGeneration: getSemanticStore(resolvedRoot).readSemanticProjectHead().generation,
+            projectVersion,
+            tier
+        });
+    }
+
+    function isWorkerBuildBoundaryCurrent(resolvedRoot: string, boundary: WorkerBuildBoundary): boolean {
+        const activeSlots = getSemanticStore(resolvedRoot).readActiveSemanticSlots();
+        return (
+            readRootVersion(resolvedRoot) === boundary.projectVersion &&
+            getSemanticStore(resolvedRoot).readSemanticProjectHead().generation === boundary.projectHeadGeneration &&
+            (activeSlots[boundary.tier]?.generation ?? null) === boundary.baseGeneration &&
+            (activeSlots.definitions?.generation ?? null) === boundary.definitionsGeneration &&
+            (activeSlots.definitions?.sourceSignature ?? null) === boundary.definitionsSourceRevision
+        );
     }
 
     async function findMetadataAffectedFiles(
@@ -903,6 +930,7 @@ export function createGmlSemanticIndex(
 
         const fullBuild = (async () => {
             try {
+                await (pendingCacheWrites.get(resolvedRoot) ?? Promise.resolve());
                 const currentDoc = documents.get(document.uri);
                 if (currentDoc && currentDoc.version !== document.version) {
                     return null;
@@ -910,12 +938,17 @@ export function createGmlSemanticIndex(
                 if (readDocumentVersion(resolvedUri) !== startDocVersion) {
                     return null;
                 }
+                const workerBoundary = createWorkerBuildBoundary(resolvedRoot, "full", buildVersion);
                 const fullState = await buildSemanticIndexInWorker(
                     resolvedRoot,
                     priorityFiles,
                     listProjectDocuments(resolvedRoot),
                     false,
                     () => listProjectDocuments(resolvedRoot),
+                    {
+                        boundary: workerBoundary,
+                        isCurrent: (boundary) => isWorkerBuildBoundaryCurrent(resolvedRoot, boundary)
+                    },
                     controller.signal
                 );
                 if (
@@ -988,23 +1021,25 @@ export function createGmlSemanticIndex(
                         existingState?.index.rawIndex ??
                         getSemanticStore(resolvedRoot).readSemanticNavigationProjection("definitions") ??
                         undefined;
-                    const state = existingState
-                        ? await buildSemanticIndexForDocument(
-                              document,
-                              fsFacade,
-                              priorityFiles,
-                              true,
-                              controller.signal,
-                              existingRawIndex
-                          )
-                        : await buildSemanticIndexInWorker(
-                              resolvedRoot,
-                              priorityFiles,
-                              listProjectDocuments(resolvedRoot),
-                              true,
-                              () => listProjectDocuments(resolvedRoot),
-                              controller.signal
-                          );
+                    const workerBoundary = createWorkerBuildBoundary(resolvedRoot, "definitions", buildVersion);
+                    const state = await buildSemanticIndexInWorker(
+                        resolvedRoot,
+                        priorityFiles,
+                        listProjectDocuments(resolvedRoot),
+                        true,
+                        () => listProjectDocuments(resolvedRoot),
+                        {
+                            boundary: workerBoundary,
+                            isCurrent: (boundary) => isWorkerBuildBoundaryCurrent(resolvedRoot, boundary)
+                        },
+                        controller.signal,
+                        existingState && Core.isObjectLike(existingRawIndex)
+                            ? {
+                                  changes: [{ filePath: document.filePath, kind: "modified" }],
+                                  existingIndex: Object.fromEntries(Object.entries(existingRawIndex))
+                              }
+                            : null
+                    );
                     if (
                         state &&
                         !disposed &&
@@ -1123,23 +1158,26 @@ export function createGmlSemanticIndex(
                         return null;
                     }
                     const existingState = cachedStates.get(resolvedRoot) ?? staleStates.get(resolvedRoot);
-                    const state = existingState
-                        ? await buildSemanticIndexForDocument(
-                              document,
-                              fsFacade,
-                              priorityFiles,
-                              true,
-                              controller.signal,
-                              existingState.index.rawIndex
-                          )
-                        : await buildSemanticIndexInWorker(
-                              resolvedRoot,
-                              priorityFiles,
-                              listProjectDocuments(resolvedRoot),
-                              true,
-                              () => listProjectDocuments(resolvedRoot),
-                              controller.signal
-                          );
+                    const existingRawIndex = existingState?.index.rawIndex;
+                    const workerBoundary = createWorkerBuildBoundary(resolvedRoot, "definitions", buildVersion);
+                    const state = await buildSemanticIndexInWorker(
+                        resolvedRoot,
+                        priorityFiles,
+                        listProjectDocuments(resolvedRoot),
+                        true,
+                        () => listProjectDocuments(resolvedRoot),
+                        {
+                            boundary: workerBoundary,
+                            isCurrent: (boundary) => isWorkerBuildBoundaryCurrent(resolvedRoot, boundary)
+                        },
+                        controller.signal,
+                        existingState && Core.isObjectLike(existingRawIndex)
+                            ? {
+                                  changes: [{ filePath: document.filePath, kind: "modified" }],
+                                  existingIndex: Object.fromEntries(Object.entries(existingRawIndex))
+                              }
+                            : null
+                    );
                     if (
                         state &&
                         !disposed &&
@@ -1255,12 +1293,17 @@ export function createGmlSemanticIndex(
                     ? getSemanticStore(resolvedRoot).readSemanticNavigationProjection("definitions")
                     : null;
                 if (definitionsIncrementalIndex !== null) {
+                    const definitionsBoundary = createWorkerBuildBoundary(resolvedRoot, "definitions", buildVersion);
                     const definitionsState = await buildSemanticIndexInWorker(
                         resolvedRoot,
                         priorityFiles,
                         listProjectDocuments(resolvedRoot),
                         true,
                         () => listProjectDocuments(resolvedRoot),
+                        {
+                            boundary: definitionsBoundary,
+                            isCurrent: (boundary) => isWorkerBuildBoundaryCurrent(resolvedRoot, boundary)
+                        },
                         controller.signal,
                         { changes: impactedChanges, existingIndex: definitionsIncrementalIndex }
                     );
@@ -1297,16 +1340,22 @@ export function createGmlSemanticIndex(
                         fullImpactedFiles = [
                             ...new Set([...impactedChanges.map((change) => change.filePath), ...unresolvedDependents])
                         ].toSorted();
+                        await (pendingCacheWrites.get(resolvedRoot) ?? Promise.resolve());
                     } else {
                         return null;
                     }
                 }
+                const fullBoundary = createWorkerBuildBoundary(resolvedRoot, "full", buildVersion);
                 const state = await buildSemanticIndexInWorker(
                     resolvedRoot,
                     priorityFiles,
                     listProjectDocuments(resolvedRoot),
                     false,
                     () => listProjectDocuments(resolvedRoot),
+                    {
+                        boundary: fullBoundary,
+                        isCurrent: (boundary) => isWorkerBuildBoundaryCurrent(resolvedRoot, boundary)
+                    },
                     controller.signal,
                     canIncremental
                         ? {

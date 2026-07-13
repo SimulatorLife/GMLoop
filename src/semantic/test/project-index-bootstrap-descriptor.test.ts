@@ -4,7 +4,6 @@ import test from "node:test";
 import {
     createProjectIndexBuildOptions,
     createProjectIndexDescriptor,
-    type ProjectIndexBuildOptions,
     type ProjectIndexConcurrencySettings
 } from "../src/project-index/bootstrap-descriptor.js";
 
@@ -59,20 +58,17 @@ void test("createProjectIndexBuildOptions ignores concurrency with non-positive 
     }
 
     const stringCase = { gml: "2", gmlParsing: 3 } as unknown;
-    const options = createProjectIndexBuildOptions({ concurrency: stringCase as ProjectIndexConcurrencySettings });
+    const options = createProjectIndexBuildOptions({ concurrency: stringCase });
     assert.equal(options.concurrency, undefined);
 });
 
 void test("createProjectIndexBuildOptions ignores non-function parseGml", () => {
     assert.equal(createProjectIndexBuildOptions({ parseGml: null }).parseGml, undefined);
     const nonFn = "not a function" as unknown;
-    assert.equal(
-        createProjectIndexBuildOptions({ parseGml: nonFn as ProjectIndexBuildOptions["parseGml"] }).parseGml,
-        undefined
-    );
+    assert.equal(createProjectIndexBuildOptions({ parseGml: nonFn }).parseGml, undefined);
     assert.equal(
         createProjectIndexBuildOptions({
-            parseGml: { call: () => {} } as unknown as ProjectIndexBuildOptions["parseGml"]
+            parseGml: { call: () => {} }
         }).parseGml,
         undefined
     );

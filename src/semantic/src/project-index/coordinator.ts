@@ -2,13 +2,14 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
+import type { ProjectIndexBuildOptions } from "./build-options.js";
 import type { ProjectIndexFsFacade } from "./fs-facade.js";
+import type { SemanticFileManifest } from "./semantic-manifest.js";
 
 /** Descriptor passed to {@link ProjectIndexCoordinatorInstance.ensureReady}. */
 type EnsureReadyDescriptor = {
     projectRoot: string;
-    buildOptions?: Record<string, unknown>;
-    [key: string]: unknown;
+    buildOptions?: ProjectIndexBuildOptions;
 };
 
 /** Project index data returned from a build or cache hit. */
@@ -24,12 +25,19 @@ type CacheSaveResult = {
 };
 
 /** Result returned by a cache load operation. */
-type CacheLoadResult = {
-    status: string;
-    projectIndex?: ProjectIndexData;
-    cacheFilePath: string;
-    [key: string]: unknown;
-};
+type CacheLoadResult =
+    | Readonly<{
+          cacheFilePath: string;
+          manifest: SemanticFileManifest;
+          projectIndex: ProjectIndexData;
+          status: "hit";
+      }>
+    | Readonly<{
+          cacheFilePath: string;
+          manifest: SemanticFileManifest;
+          reason: Readonly<{ type: "not-found" | "revision-mismatch" }>;
+          status: "miss";
+      }>;
 
 /** Result returned by {@link ProjectIndexCoordinatorInstance.ensureReady}. */
 export type EnsureReadyResult = {
@@ -53,7 +61,7 @@ type SaveCacheFunction = (
     descriptor: {
         projectRoot: string;
         projectIndex: ProjectIndexData;
-        [key: string]: unknown;
+        manifest: SemanticFileManifest;
     },
     fsFacade: ProjectIndexFsFacade,
     options: { signal: AbortSignal }
@@ -63,7 +71,7 @@ type SaveCacheFunction = (
 type BuildIndexFunction = (
     projectRoot: string,
     fsFacade: ProjectIndexFsFacade,
-    options?: Record<string, unknown>
+    options?: ProjectIndexBuildOptions
 ) => Promise<ProjectIndexData>;
 
 /**
@@ -204,7 +212,8 @@ async function executeEnsureReadyOperation({
         {
             ...descriptor,
             projectRoot: resolvedRoot,
-            projectIndex
+            projectIndex,
+            manifest: loadResult.manifest
         },
         fsFacade,
         { signal }

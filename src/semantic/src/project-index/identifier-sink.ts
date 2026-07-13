@@ -57,7 +57,8 @@ export type LruCacheEntry = {
     records: Array<unknown>;
 };
 
-type TempFileIdentifierSinkOptions = Readonly<{
+/** Bounded spill and cache policy for project identifier aggregation. */
+export type IdentifierSinkOptions = Readonly<{
     enabled?: boolean;
     flushThreshold?: unknown;
     retainedEntriesPerKey?: unknown;
@@ -127,7 +128,7 @@ export class TempFileIdentifierSink implements IdentifierSink {
     private cacheMisses = 0;
     private disposed = false;
 
-    constructor(options: TempFileIdentifierSinkOptions = {}) {
+    constructor(options: IdentifierSinkOptions = {}) {
         this.enabled = options.enabled ?? false;
         this.thresholds = normalizeSinkThresholds(options);
 
@@ -334,7 +335,7 @@ export class TempFileIdentifierSink implements IdentifierSink {
     }
 }
 
-export function createIdentifierSink(options: TempFileIdentifierSinkOptions = {}): IdentifierSink {
+export function createIdentifierSink(options: IdentifierSinkOptions = {}): IdentifierSink {
     return new TempFileIdentifierSink({
         ...options,
         enabled: options.enabled ?? true

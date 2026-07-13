@@ -17,7 +17,17 @@ type WorkerSemanticFileChange = Readonly<{
     kind: "added" | "deleted" | "metadataChanged" | "modified";
 }>;
 
+type WorkerBuildBoundary = Readonly<{
+    baseGeneration: number | null;
+    definitionsGeneration: number | null;
+    definitionsSourceRevision: string | null;
+    projectHeadGeneration: number;
+    projectVersion: number;
+    tier: "definitions" | "full";
+}>;
+
 type WorkerRequest = Readonly<{
+    buildBoundary: WorkerBuildBoundary;
     definitionsOnly: boolean;
     incremental: Readonly<{
         changes: ReadonlyArray<WorkerSemanticFileChange>;
@@ -63,6 +73,7 @@ async function buildWorkerIndex(request: WorkerRequest): Promise<void> {
             "" as Parameters<typeof Semantic.createSemanticSnapshotFromProjectIndex>[2]
         );
         parentPort?.postMessage({
+            buildBoundary: request.buildBoundary,
             openDocumentBoundary: request.openDocuments.map((document) => ({
                 contentHash: document.contentHash,
                 documentVersion: document.documentVersion,

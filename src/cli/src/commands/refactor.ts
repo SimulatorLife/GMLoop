@@ -127,23 +127,11 @@ async function getOrBuildProjectIndex(
     projectRoot: string,
     verbose: boolean,
     selectedCodemodIds?: Array<RegisteredCodemodId>
-): Promise<{ projectIndex: Awaited<ReturnType<typeof buildProjectIndex>>; coordinator: any }> {
-    console.log("[refactor] Scanning project tree...");
-    const { yyFiles, gmlFiles } = await Semantic.scanProjectTree(projectRoot);
-    console.log(`[refactor] Found ${yyFiles.length} manifest files and ${gmlFiles.length} GML files.`);
+): Promise<{
+    coordinator: ReturnType<typeof Semantic.createProjectIndexCoordinator>;
+    projectIndex: Awaited<ReturnType<typeof buildProjectIndex>>;
+}> {
     console.log("[refactor] Loading semantic project index...");
-    const manifestMtimes: Record<string, number> = {};
-    const sourceMtimes: Record<string, number> = {};
-    for (const file of yyFiles) {
-        if (file.mtimeMs !== null) {
-            manifestMtimes[file.relativePath] = file.mtimeMs;
-        }
-    }
-    for (const file of gmlFiles) {
-        if (file.mtimeMs !== null) {
-            sourceMtimes[file.relativePath] = file.mtimeMs;
-        }
-    }
 
     const baseParser = Semantic.getDefaultProjectIndexParser();
     const tolerantParser = Semantic.createTolerantProjectIndexParser(baseParser, (filePath, errorMessage) => {
@@ -180,7 +168,7 @@ async function getOrBuildProjectIndex(
                 ...options,
                 logger: verbose ? console : undefined,
                 parseGml: tolerantParser,
-                onProgress: (progress: any) => {
+                onProgress: (progress) => {
                     if (progress.stage === "gml-parse" && progress.current && progress.total) {
                         const now = Date.now();
                         // Throttle logging to once per 500ms or when complete to avoid flooding
@@ -195,9 +183,7 @@ async function getOrBuildProjectIndex(
     });
 
     const descriptor = Semantic.createProjectIndexDescriptor({
-        projectRoot,
-        manifestMtimes,
-        sourceMtimes
+        projectRoot
     });
 
     const startIndexLoad = Date.now();
@@ -765,9 +751,10 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
                             logger: verbose ? console : undefined,
                             parseGml: tolerantParser,
                             incremental: {
-                                changedFiles: summary.changedFiles.map((changedFile) =>
-                                    path.resolve(projectRoot, changedFile)
-                                ),
+                                changes: summary.changedFiles.map((changedFile) => ({
+                                    filePath: path.resolve(projectRoot, changedFile),
+                                    kind: "modified" as const
+                                })),
                                 existingIndex: initialProjectIndex
                             }
                         });
