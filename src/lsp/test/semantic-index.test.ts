@@ -44,7 +44,17 @@ async function createTwoScriptProject(): Promise<{
 
     await fs.mkdir(path.dirname(sourcePath), { recursive: true });
     await fs.mkdir(path.dirname(targetPath), { recursive: true });
-    await fs.writeFile(path.join(projectRoot, "Game.yyp"), JSON.stringify({ name: "Game", resourceType: "GMProject" }));
+    await fs.writeFile(
+        path.join(projectRoot, "Game.yyp"),
+        JSON.stringify({
+            name: "Game",
+            resourceType: "GMProject",
+            resources: [
+                { id: { name: "source", path: "scripts/source/source.yy" } },
+                { id: { name: "target", path: "scripts/target/target.yy" } }
+            ]
+        })
+    );
     await fs.writeFile(
         path.join(projectRoot, "scripts/source/source.yy"),
         JSON.stringify({ name: "source", resourceType: "GMScript" })
@@ -171,41 +181,67 @@ void test("semantic index refreshes project facts after an external resource met
         await fs.mkdir(path.dirname(resourcePath), { recursive: true });
         await fs.writeFile(resourcePath, JSON.stringify({ name: "external", resourceType: "GMScript" }));
         await fs.writeFile(sourcePath, "function external_added() { return 1; }\n");
+        const projectManifestPath = path.join(fixture.projectRoot, "Game.yyp");
+        await fs.writeFile(
+            projectManifestPath,
+            JSON.stringify({
+                name: "Game",
+                resourceType: "GMProject",
+                resources: [
+                    { id: { name: "source", path: "scripts/source/source.yy" } },
+                    { id: { name: "target", path: "scripts/target/target.yy" } },
+                    { id: { name: "external", path: "scripts/external/external.yy" } }
+                ]
+            })
+        );
 
-        await semanticIndex.refreshForFilePath(resourcePath);
+        await semanticIndex.refreshForFilePath(projectManifestPath);
         const completions = await semanticIndex.searchCompletions(document, "external_added");
         assert.ok(completions.some((completion) => completion.label === "external_added"));
-        await waitForCondition(() => {
-            const database = new DatabaseSync(Semantic.getSemanticIndexDatabasePath(fixture.projectRoot), {
-                readOnly: true
-            });
-            try {
-                const rows = database
-                    .prepare(
-                        "SELECT files.relative_path, files.updated_generation, slots.generation FROM semantic_files files JOIN semantic_slots slots ON slots.project_root = files.project_root AND slots.tier = files.tier WHERE files.project_root = ? AND files.tier = 'full' AND files.relative_path IN (?, ?) ORDER BY files.relative_path"
-                    )
-                    .all(fixture.projectRoot, "scripts/external/external.gml", "scripts/source/source.gml");
-                const fileGenerations = new Map(
-                    rows.flatMap((row) =>
-                        typeof row.relative_path === "string" &&
-                        typeof row.updated_generation === "number" &&
-                        typeof row.generation === "number"
-                            ? [[row.relative_path, { file: row.updated_generation, slot: row.generation }] as const]
-                            : []
-                    )
-                );
-                const externalGeneration = fileGenerations.get("scripts/external/external.gml");
-                const sourceGeneration = fileGenerations.get("scripts/source/source.gml");
-                return (
-                    externalGeneration !== undefined &&
-                    sourceGeneration !== undefined &&
-                    externalGeneration.file === externalGeneration.slot &&
-                    sourceGeneration.file < sourceGeneration.slot
-                );
-            } finally {
-                database.close();
-            }
+
+        await fs.writeFile(
+            projectManifestPath,
+            JSON.stringify({
+                name: "Game",
+                resourceType: "GMProject",
+                resources: [
+                    { id: { name: "source", path: "scripts/source/source.yy" } },
+                    { id: { name: "target", path: "scripts/target/target.yy" } }
+                ]
+            })
+        );
+        await semanticIndex.refreshForFileChanges([{ filePath: projectManifestPath, kind: "metadataChanged" }]);
+        const completionsAfterRemoval = await semanticIndex.searchCompletions(document, "external_added");
+        assert.equal(
+            completionsAfterRemoval.some((completion) => completion.label === "external_added"),
+            false,
+            "removing a resource from the YYP must remove its semantic facts even while its GML remains on disk"
+        );
+        await semanticIndex.dispose();
+        const database = new DatabaseSync(Semantic.getSemanticIndexDatabasePath(fixture.projectRoot), {
+            readOnly: true
         });
+        try {
+            const rows = database
+                .prepare(
+                    "SELECT files.relative_path, files.updated_generation, slots.generation FROM semantic_files files JOIN semantic_slots slots ON slots.project_root = files.project_root AND slots.tier = files.tier WHERE files.project_root = ? AND files.tier = 'full' AND files.relative_path = ?"
+                )
+                .all(fixture.projectRoot, "scripts/external/external.gml");
+            const fileGenerations = new Map(
+                rows.flatMap((row) =>
+                    typeof row.relative_path === "string" &&
+                    typeof row.updated_generation === "number" &&
+                    typeof row.generation === "number"
+                        ? [[row.relative_path, { file: row.updated_generation, slot: row.generation }] as const]
+                        : []
+                )
+            );
+            const externalGeneration = fileGenerations.get("scripts/external/external.gml");
+            assert.ok(externalGeneration);
+            assert.equal(externalGeneration.file, externalGeneration.slot);
+        } finally {
+            database.close();
+        }
     } finally {
         await fixture.cleanup();
     }

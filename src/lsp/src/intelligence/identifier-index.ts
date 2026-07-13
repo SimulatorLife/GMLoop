@@ -25,6 +25,7 @@ import {
 } from "../documents/index.js";
 import { gmlSymbolKindToCompletionItemKind, gmlSymbolKindToLspSymbolKind } from "../protocol/index.js";
 import { coerceToError } from "./error-normalization.js";
+import { createWorkerOverlayBoundary, isWorkerOverlayBoundaryCurrent } from "./worker-overlay-boundary.js";
 
 type NavigationIndex = Awaited<ReturnType<typeof Semantic.buildProjectNavigationIndex>>;
 type NavigationOccurrence = NonNullable<ReturnType<typeof Semantic.findNavigationSymbolAtPosition>>;
@@ -36,6 +37,12 @@ type NavigationState = {
     lightweight?: boolean;
 };
 type SemanticIndexStore = ReturnType<typeof Semantic.openSemanticIndexStore>;
+
+/** Physical or metadata inventory change applied to one semantic project. */
+export type GmlSemanticFileChange = Readonly<{
+    filePath: string;
+    kind: "added" | "deleted" | "metadataChanged" | "modified";
+}>;
 
 /**
  * Query facade used by the LSP layer to consume semantic navigation facts.
@@ -66,7 +73,7 @@ export type GmlSemanticIndex = Readonly<{
     preload(): void;
     refreshForDocument(document: GmlTextDocument): Promise<NavigationState | null>;
     refreshForFilePath(filePath: string): Promise<NavigationState | null>;
-    refreshForFilePaths(filePaths: ReadonlyArray<string>): Promise<void>;
+    refreshForFileChanges(changes: ReadonlyArray<GmlSemanticFileChange>): Promise<void>;
     searchCompletions(document: GmlTextDocument, query: string): Promise<CompletionItem[]>;
     searchWorkspaceSymbols(document: GmlTextDocument, query: string): Promise<WorkspaceSymbol[]>;
 }>;
@@ -404,7 +411,7 @@ async function buildSemanticIndexForDocument(
     definitionsOnly?: boolean,
     signal?: AbortSignal,
     existingIndex?: any,
-    changedFiles: ReadonlyArray<string> = [document.filePath]
+    changes: ReadonlyArray<GmlSemanticFileChange> = [{ filePath: document.filePath, kind: "modified" }]
 ): Promise<NavigationState | null> {
     const projectRoot = await getProjectRoot(document.filePath);
     if (!projectRoot) {
@@ -418,7 +425,7 @@ async function buildSemanticIndexForDocument(
         incremental: existingIndex
             ? {
                   existingIndex,
-                  changedFiles
+                  changes
               }
             : undefined
     });
@@ -435,12 +442,14 @@ function buildSemanticIndexInWorker(
     priorityFiles: ReadonlyArray<string>,
     openDocuments: ReadonlyArray<GmlTextDocument>,
     definitionsOnly: boolean,
+    readCurrentOpenDocuments: () => ReadonlyArray<GmlTextDocument>,
     signal?: AbortSignal,
     incremental: Readonly<{
-        changedFiles: ReadonlyArray<string>;
+        changes: ReadonlyArray<GmlSemanticFileChange>;
         existingIndex: Record<string, unknown>;
     }> | null = null
 ): Promise<NavigationState | null> {
+    const overlayBoundary = createWorkerOverlayBoundary(openDocuments);
     return new Promise((resolve, reject) => {
         const worker = new Worker(new URL("project-index-worker.js", import.meta.url));
         let settled = false;
@@ -464,6 +473,10 @@ function buildSemanticIndexInWorker(
                     return;
                 }
                 if (!Core.isObjectLike(message.rawIndex) || message.semanticSnapshot === undefined) {
+                    finish(() => resolve(null));
+                    return;
+                }
+                if (!isWorkerOverlayBoundaryCurrent(overlayBoundary, readCurrentOpenDocuments())) {
                     finish(() => resolve(null));
                     return;
                 }
@@ -572,29 +585,122 @@ export function createGmlSemanticIndex(
         return store;
     }
 
-    async function findMetadataOwnedGmlFiles(resolvedRoot: string, metadataFilePath: string): Promise<string[]> {
-        const relativeMetadataPath = path.relative(resolvedRoot, metadataFilePath);
-        const persistedFiles =
-            getSemanticStore(resolvedRoot)
-                .readSemanticSnapshot("full")
-                ?.scopes.filter((scope) => scope.resourcePath === relativeMetadataPath)
-                .flatMap((scope) => scope.filePaths.map((filePath) => path.resolve(resolvedRoot, filePath))) ?? [];
-        const directoryFiles = await fs
-            .readdir(path.dirname(metadataFilePath), { withFileTypes: true })
-            .then((entries) =>
-                entries.flatMap((entry) =>
-                    entry.isFile() && entry.name.toLowerCase().endsWith(".gml")
-                        ? [path.resolve(path.dirname(metadataFilePath), entry.name)]
-                        : []
-                )
-            )
-            .catch((error: unknown) => {
-                if (Core.isErrorWithCode(error, "ENOENT")) {
-                    return [];
+    async function findMetadataAffectedFiles(
+        resolvedRoot: string,
+        metadataChange: GmlSemanticFileChange
+    ): Promise<GmlSemanticFileChange[]> {
+        const metadataFilePath = metadataChange.filePath;
+        // Metadata impact is calculated from the last committed resource
+        // inventory. A preceding refresh may have returned after publishing its
+        // in-memory state but while its serialized publication is still queued.
+        // Waiting for that project-local queue prevents a rapid add/remove pair
+        // from diffing against an older manifest and retaining orphaned facts.
+        await (pendingCacheWrites.get(resolvedRoot) ?? Promise.resolve());
+        const snapshot = getSemanticStore(resolvedRoot).readSemanticSnapshot("full");
+        const changesByPath = new Map<string, GmlSemanticFileChange["kind"]>([
+            [path.resolve(metadataFilePath), metadataChange.kind]
+        ]);
+        if (metadataFilePath.toLowerCase().endsWith(".yyp")) {
+            const currentResourcePaths = await fs
+                .readFile(metadataFilePath, "utf8")
+                .then((sourceText) => JSON.parse(sourceText) as unknown)
+                .then((manifest) => {
+                    if (!Core.isObjectLike(manifest)) {
+                        return [];
+                    }
+                    const manifestRecord = Object.fromEntries(Object.entries(manifest));
+                    if (!Array.isArray(manifestRecord.resources)) {
+                        return [];
+                    }
+                    return manifestRecord.resources.flatMap((resource) => {
+                        if (!Core.isObjectLike(resource)) {
+                            return [];
+                        }
+                        const resourceRecord = Object.fromEntries(Object.entries(resource));
+                        if (!Core.isObjectLike(resourceRecord.id)) {
+                            return [];
+                        }
+                        const idRecord = Object.fromEntries(Object.entries(resourceRecord.id));
+                        return typeof idRecord.path === "string" ? [idRecord.path] : [];
+                    });
+                })
+                .catch((error: unknown) => {
+                    if (Core.isErrorWithCode(error, "ENOENT")) {
+                        return [];
+                    }
+                    throw error;
+                });
+            const liveRawIndex = cachedStates.get(resolvedRoot)?.index.rawIndex;
+            const liveRawIndexRecord = Core.isObjectLike(liveRawIndex)
+                ? Object.fromEntries(Object.entries(liveRawIndex))
+                : {};
+            const liveRawResources = Core.isObjectLike(liveRawIndexRecord.resources)
+                ? Object.keys(liveRawIndexRecord.resources)
+                : [];
+            const previousResourcePaths = [
+                ...new Set([
+                    ...(snapshot?.resources.map((resource) => resource.resourcePath) ?? []),
+                    ...liveRawResources
+                ])
+            ];
+            const currentPathSet = new Set(currentResourcePaths);
+            const previousPathSet = new Set(previousResourcePaths);
+            for (const resourcePath of [...currentPathSet, ...previousPathSet]) {
+                if (currentPathSet.has(resourcePath) !== previousPathSet.has(resourcePath)) {
+                    changesByPath.set(
+                        path.resolve(resolvedRoot, resourcePath),
+                        currentPathSet.has(resourcePath) ? "added" : "deleted"
+                    );
                 }
-                throw error;
-            });
-        return [...new Set([...persistedFiles, ...directoryFiles])].toSorted();
+            }
+        }
+        const metadataChanges = [...changesByPath].filter(([filePath]) => !isGmlDocumentPath(filePath));
+        for (const [affectedMetadataPath, affectedKind] of metadataChanges) {
+            const relativeMetadataPath = path.relative(resolvedRoot, affectedMetadataPath);
+            for (const scope of snapshot?.scopes ?? []) {
+                if (scope.resourcePath === relativeMetadataPath) {
+                    for (const filePath of scope.filePaths) {
+                        changesByPath.set(
+                            path.resolve(resolvedRoot, filePath),
+                            affectedKind === "deleted" ? "deleted" : "modified"
+                        );
+                    }
+                }
+            }
+        }
+        const directoryFileGroups = await Promise.all(
+            metadataChanges.map(([affectedMetadataPath, affectedKind]) =>
+                fs
+                    .readdir(path.dirname(affectedMetadataPath), { withFileTypes: true })
+                    .then((entries) =>
+                        entries.flatMap((entry) =>
+                            entry.isFile() && entry.name.toLowerCase().endsWith(".gml")
+                                ? [
+                                      {
+                                          filePath: path.resolve(path.dirname(affectedMetadataPath), entry.name),
+                                          kind:
+                                              affectedKind === "deleted" ? ("deleted" as const) : ("modified" as const)
+                                      }
+                                  ]
+                                : []
+                        )
+                    )
+                    .catch((error: unknown) => {
+                        if (Core.isErrorWithCode(error, "ENOENT")) {
+                            return [];
+                        }
+                        throw error;
+                    })
+            )
+        );
+        for (const directoryChanges of directoryFileGroups) {
+            for (const directoryChange of directoryChanges) {
+                changesByPath.set(directoryChange.filePath, directoryChange.kind);
+            }
+        }
+        return [...changesByPath]
+            .map(([filePath, kind]) => ({ filePath, kind }))
+            .toSorted((left, right) => left.filePath.localeCompare(right.filePath));
     }
 
     function reconcileRestoredManifest(
@@ -609,7 +715,7 @@ export function createGmlSemanticIndex(
             return;
         }
         const reconciliation = (async () => {
-            const previousManifest = getSemanticStore(resolvedRoot).readManifestForTier(tier);
+            const previousManifest = getSemanticStore(resolvedRoot).readSemanticManifest(tier);
             if (previousManifest === null) {
                 return;
             }
@@ -626,8 +732,11 @@ export function createGmlSemanticIndex(
                 // every detected disk and overlay change as one impacted set. The
                 // previous implementation refreshed only the opening document and
                 // forced a project rebuild, leaving closed-session edits stale.
-                await refreshForFilePaths(
-                    reconciliationResult.changedFiles.map((change) => path.resolve(resolvedRoot, change.relativePath))
+                await refreshForFileChanges(
+                    reconciliationResult.changedFiles.map((change) => ({
+                        filePath: path.resolve(resolvedRoot, change.relativePath),
+                        kind: change.kind
+                    }))
                 );
             }
         })()
@@ -672,7 +781,7 @@ export function createGmlSemanticIndex(
                     sourceText: document.sourceText
                 }));
                 const store = getSemanticStore(resolvedRoot);
-                const previousManifest = store.readManifestForTier(tier);
+                const previousManifest = store.readSemanticManifest(tier);
                 const manifest =
                     previousManifest !== null && changedFiles !== null
                         ? await Semantic.updateSemanticFileManifest(
@@ -688,8 +797,8 @@ export function createGmlSemanticIndex(
                 }
                 const publicationRequest = {
                     authoritative: false,
-                    baseGeneration: store.readStateForTier(tier)?.generation ?? null,
-                    expectedHeadGeneration: store.readProjectHead().generation,
+                    baseGeneration: store.readActiveSemanticSlots()[tier]?.generation ?? null,
+                    expectedHeadGeneration: store.readSemanticProjectHead().generation,
                     index: index.rawIndex as Record<string, unknown>,
                     manifest,
                     sourceRevision: manifest.sourceRevision,
@@ -785,6 +894,7 @@ export function createGmlSemanticIndex(
                     priorityFiles,
                     documents.list(),
                     false,
+                    () => documents.list(),
                     controller.signal
                 );
                 if (
@@ -855,7 +965,7 @@ export function createGmlSemanticIndex(
                     const existingState = cachedStates.get(resolvedRoot) ?? staleStates.get(resolvedRoot);
                     const existingRawIndex =
                         existingState?.index.rawIndex ??
-                        getSemanticStore(resolvedRoot).readIndexForTier("definitions") ??
+                        getSemanticStore(resolvedRoot).readSemanticNavigationProjection("definitions") ??
                         undefined;
                     const state = existingState
                         ? await buildSemanticIndexForDocument(
@@ -871,6 +981,7 @@ export function createGmlSemanticIndex(
                               priorityFiles,
                               documents.list(),
                               true,
+                              () => documents.list(),
                               controller.signal
                           );
                     if (
@@ -936,7 +1047,7 @@ export function createGmlSemanticIndex(
         if (!currentState && !staleState) {
             try {
                 const store = getSemanticStore(resolvedRoot);
-                const activeSlots = store.readActiveSlots();
+                const activeSlots = store.readActiveSemanticSlots();
                 const cachedState = activeSlots.hasMatchingFull
                     ? activeSlots.full
                     : (activeSlots.definitions ?? activeSlots.full);
@@ -1005,6 +1116,7 @@ export function createGmlSemanticIndex(
                               priorityFiles,
                               documents.list(),
                               true,
+                              () => documents.list(),
                               controller.signal
                           );
                     if (
@@ -1044,7 +1156,7 @@ export function createGmlSemanticIndex(
 
     async function refreshIndex(
         document: GmlTextDocument,
-        changedFiles: ReadonlyArray<string> = [document.filePath],
+        changes: ReadonlyArray<GmlSemanticFileChange> = [{ filePath: document.filePath, kind: "modified" }],
         forceFullRebuild = false
     ): Promise<NavigationState | null> {
         if (disposed) {
@@ -1071,20 +1183,25 @@ export function createGmlSemanticIndex(
         if (disposed) {
             return null;
         }
-        const impactedFiles = [
-            ...new Set(
-                changedFiles.flatMap((changedFile) => {
-                    const resolvedChangedFile = path.resolve(changedFile);
-                    const relativeChangedFile = path.relative(resolvedRoot, resolvedChangedFile);
-                    return [
-                        resolvedChangedFile,
-                        ...getSemanticStore(resolvedRoot)
-                            .findImmediateDownstreamFiles(relativeChangedFile)
-                            .map((relativePath) => path.resolve(resolvedRoot, relativePath))
-                    ];
-                })
-            )
-        ].toSorted();
+        const changesByPath = new Map<string, GmlSemanticFileChange["kind"]>();
+        for (const change of changes) {
+            changesByPath.set(path.resolve(change.filePath), change.kind);
+        }
+        for (const change of changes) {
+            const resolvedChangedFile = path.resolve(change.filePath);
+            const relativeChangedFile = path.relative(resolvedRoot, resolvedChangedFile);
+            for (const relativePath of getSemanticStore(resolvedRoot).findImmediateDownstreamFiles(
+                relativeChangedFile
+            )) {
+                const dependentPath = path.resolve(resolvedRoot, relativePath);
+                if (!changesByPath.has(dependentPath)) {
+                    changesByPath.set(dependentPath, "modified");
+                }
+            }
+        }
+        const impactedChanges = [...changesByPath]
+            .map(([filePath, kind]) => ({ filePath, kind }))
+            .toSorted((left, right) => left.filePath.localeCompare(right.filePath));
         const buildVersion = readRootVersion(resolvedRoot);
         const priorityFiles = documents.list().map((doc) => doc.filePath);
 
@@ -1107,14 +1224,14 @@ export function createGmlSemanticIndex(
                         .filter((symbol) => symbol.definitions.length > 0)
                         .map((symbol) => symbol.name)
                 );
-                let fullImpactedFiles = impactedFiles;
+                let fullImpactedFiles = impactedChanges.map((change) => change.filePath);
                 const canIncremental = existingState && !existingState.lightweight && !forceFullRebuild;
                 const fullIncrementalIndex = canIncremental
                     ? ((existingState.index.rawIndex as Record<string, unknown> | undefined) ??
-                      getSemanticStore(resolvedRoot).readIndexForTier("full"))
+                      getSemanticStore(resolvedRoot).readSemanticNavigationProjection("full"))
                     : null;
                 const definitionsIncrementalIndex = canIncremental
-                    ? getSemanticStore(resolvedRoot).readIndexForTier("definitions")
+                    ? getSemanticStore(resolvedRoot).readSemanticNavigationProjection("definitions")
                     : null;
                 if (definitionsIncrementalIndex !== null) {
                     const definitionsState = await buildSemanticIndexInWorker(
@@ -1122,8 +1239,9 @@ export function createGmlSemanticIndex(
                         priorityFiles,
                         documents.list(),
                         true,
+                        () => documents.list(),
                         controller.signal,
-                        { changedFiles: impactedFiles, existingIndex: definitionsIncrementalIndex }
+                        { changes: impactedChanges, existingIndex: definitionsIncrementalIndex }
                     );
                     if (
                         definitionsState &&
@@ -1140,7 +1258,13 @@ export function createGmlSemanticIndex(
                         }
                         staleStates.delete(resolvedRoot);
                         markProjectDocumentFactsCurrent(resolvedRoot);
-                        saveIndexCacheToDisk(resolvedRoot, definitionsState.index, true, buildVersion, impactedFiles);
+                        saveIndexCacheToDisk(
+                            resolvedRoot,
+                            definitionsState.index,
+                            true,
+                            buildVersion,
+                            impactedChanges.map((change) => change.filePath)
+                        );
                         onSemanticGenerationPublished?.();
                         const introducedNames = definitionsState.index.symbols
                             .filter((symbol) => symbol.definitions.length > 0)
@@ -1149,7 +1273,9 @@ export function createGmlSemanticIndex(
                         const unresolvedDependents = getSemanticStore(resolvedRoot)
                             .findUnresolvedDependents(introducedNames)
                             .map((relativePath) => path.resolve(resolvedRoot, relativePath));
-                        fullImpactedFiles = [...new Set([...impactedFiles, ...unresolvedDependents])].toSorted();
+                        fullImpactedFiles = [
+                            ...new Set([...impactedChanges.map((change) => change.filePath), ...unresolvedDependents])
+                        ].toSorted();
                     } else {
                         return null;
                     }
@@ -1159,10 +1285,14 @@ export function createGmlSemanticIndex(
                     priorityFiles,
                     documents.list(),
                     false,
+                    () => documents.list(),
                     controller.signal,
                     canIncremental
                         ? {
-                              changedFiles: fullImpactedFiles,
+                              changes: fullImpactedFiles.map((filePath) => ({
+                                  filePath,
+                                  kind: changesByPath.get(filePath) ?? "modified"
+                              })),
                               existingIndex: fullIncrementalIndex
                           }
                         : null
@@ -1232,36 +1362,6 @@ export function createGmlSemanticIndex(
         return fullState && !fullState.lightweight ? fullState : null;
     }
 
-    function collectDeclaredNames(
-        index: NavigationIndex,
-        projectRoot: string,
-        filePaths: ReadonlySet<string>
-    ): ReadonlyArray<string> {
-        const rawIndex = index.rawIndex;
-        const rawIndexRecord = Core.isObjectLike(rawIndex) ? (rawIndex as Record<string, unknown>) : {};
-        const rawFiles = Core.isObjectLike(rawIndexRecord.files)
-            ? (rawIndexRecord.files as Record<string, unknown>)
-            : {};
-        const names = new Set<string>();
-        for (const [relativePath, rawFile] of Object.entries(rawFiles)) {
-            if (!filePaths.has(path.resolve(projectRoot, relativePath)) || !Core.isObjectLike(rawFile)) {
-                continue;
-            }
-            const fileRecord = rawFile as Record<string, unknown>;
-            const declarations = Array.isArray(fileRecord.declarations) ? fileRecord.declarations : [];
-            for (const declaration of declarations) {
-                if (!Core.isObjectLike(declaration)) {
-                    continue;
-                }
-                const name = declaration.name;
-                if (typeof name === "string" && name.length > 0) {
-                    names.add(name);
-                }
-            }
-        }
-        return [...names].toSorted((left, right) => left.localeCompare(right));
-    }
-
     function orderImpactedFiles(projectRoot: string, impactedPaths: ReadonlySet<string>): ReadonlyArray<string> {
         const orderedPaths = [...impactedPaths].toSorted((left, right) => left.localeCompare(right));
         const pathSet = new Set(orderedPaths);
@@ -1307,63 +1407,67 @@ export function createGmlSemanticIndex(
         return [...result, ...orderedPaths.filter((filePath) => !emittedPaths.has(filePath))];
     }
 
-    async function refreshForFilePaths(filePaths: ReadonlyArray<string>): Promise<void> {
+    async function refreshForFileChanges(changes: ReadonlyArray<GmlSemanticFileChange>): Promise<void> {
         if (disposed) {
             return;
         }
         const rootsByFilePath = await Promise.all(
-            filePaths.map(async (filePath) => ({
-                filePath: path.resolve(filePath),
-                projectRoot: await getProjectRoot(filePath)
+            changes.map(async (change) => ({
+                filePath: path.resolve(change.filePath),
+                kind: change.kind,
+                projectRoot: await getProjectRoot(change.filePath)
             }))
         );
-        const pathsByProjectRoot = new Map<string, Array<string>>();
+        const changesByProjectRoot = new Map<string, GmlSemanticFileChange[]>();
         for (const entry of rootsByFilePath) {
             if (!entry.projectRoot) {
                 continue;
             }
             const resolvedRoot = path.resolve(entry.projectRoot);
-            const paths = pathsByProjectRoot.get(resolvedRoot) ?? [];
-            paths.push(entry.filePath);
-            pathsByProjectRoot.set(resolvedRoot, paths);
+            const projectChanges = changesByProjectRoot.get(resolvedRoot) ?? [];
+            projectChanges.push({ filePath: entry.filePath, kind: entry.kind });
+            changesByProjectRoot.set(resolvedRoot, projectChanges);
         }
 
-        await [...pathsByProjectRoot.entries()].reduce(async (previous, [projectRoot, changedPaths]) => {
+        await [...changesByProjectRoot.entries()].reduce(async (previous, [projectRoot, projectChanges]) => {
             await previous;
-            const gmlPaths = changedPaths.filter((changedPath) => isGmlDocumentPath(changedPath));
-            const metadataChanged = gmlPaths.length !== changedPaths.length;
+            const expandedChangesByPath = new Map(
+                projectChanges.map((change) => [path.resolve(change.filePath), change.kind] as const)
+            );
+            const metadataImpactGroups = await Promise.all(
+                projectChanges
+                    .filter((change) => !isGmlDocumentPath(change.filePath))
+                    .map(async (metadataChange) => await findMetadataAffectedFiles(projectRoot, metadataChange))
+            );
+            for (const metadataImpactGroup of metadataImpactGroups) {
+                for (const affectedChange of metadataImpactGroup) {
+                    expandedChangesByPath.set(path.resolve(affectedChange.filePath), affectedChange.kind);
+                }
+            }
+            const expandedChanges = [...expandedChangesByPath]
+                .map(([filePath, kind]) => ({ filePath, kind }))
+                .toSorted((left, right) => left.filePath.localeCompare(right.filePath));
             const anchorDocument = documents
                 .list()
                 .find((document) => isDocumentWithinProjectRoot(document, projectRoot));
             if (!anchorDocument) {
-                await Promise.all(changedPaths.map(async (changedPath) => await invalidateKnownFileRoots(changedPath)));
+                await Promise.all(
+                    expandedChanges.map(async (change) => await invalidateKnownFileRoots(change.filePath))
+                );
                 return;
-            }
-            const impactedPaths = new Set(gmlPaths);
-            for (const changedPath of gmlPaths) {
-                const relativePath = path.relative(projectRoot, changedPath);
-                for (const downstreamPath of getSemanticStore(projectRoot).findImmediateDownstreamFiles(relativePath)) {
-                    impactedPaths.add(path.join(projectRoot, downstreamPath));
-                }
             }
             invalidateRoot(projectRoot);
-            const initialState = await refreshIndex(
+            const orderedPaths = orderImpactedFiles(
+                projectRoot,
+                new Set(expandedChanges.map((change) => change.filePath))
+            );
+            await refreshIndex(
                 anchorDocument,
-                orderImpactedFiles(projectRoot, impactedPaths),
-                metadataChanged
+                orderedPaths.map((filePath) => ({
+                    filePath,
+                    kind: expandedChangesByPath.get(filePath) ?? "modified"
+                }))
             );
-            if (metadataChanged || initialState === null || gmlPaths.length === 0) {
-                return;
-            }
-            const unresolvedPaths = getSemanticStore(projectRoot).findUnresolvedDependents(
-                collectDeclaredNames(initialState.index, projectRoot, new Set(gmlPaths))
-            );
-            const unresolvedAbsolutePaths = unresolvedPaths
-                .map((relativePath) => path.join(projectRoot, relativePath))
-                .filter((unresolvedPath) => !impactedPaths.has(unresolvedPath));
-            if (unresolvedAbsolutePaths.length > 0) {
-                await refreshIndex(anchorDocument, unresolvedAbsolutePaths);
-            }
         }, Promise.resolve());
     }
 
@@ -1391,7 +1495,7 @@ export function createGmlSemanticIndex(
         },
         buildForDocument: ensureIndex,
         refreshForDocument: refreshIndex,
-        refreshForFilePaths,
+        refreshForFileChanges,
         invalidateForDocument: invalidateKnownDocumentRoots,
         invalidateForFilePath: invalidateKnownFileRoots,
         async refreshForFilePath(filePath) {
@@ -1408,9 +1512,12 @@ export function createGmlSemanticIndex(
                     await invalidateKnownFileRoots(filePath);
                     return null;
                 }
-                const metadataGmlFiles = await findMetadataOwnedGmlFiles(resolvedRoot, filePath);
+                const metadataAffectedFiles = await findMetadataAffectedFiles(resolvedRoot, {
+                    filePath,
+                    kind: "metadataChanged"
+                });
                 invalidateRoot(resolvedRoot);
-                return await refreshIndex(anchorDocument, [path.resolve(filePath), ...metadataGmlFiles]);
+                return await refreshIndex(anchorDocument, metadataAffectedFiles);
             }
 
             const resolvedPath = path.resolve(filePath);
@@ -1429,20 +1536,31 @@ export function createGmlSemanticIndex(
                 .find((document) => path.resolve(document.filePath) === resolvedPath);
             if (openedDocument) {
                 invalidateKnownDocumentRoots(openedDocument);
-                return await refreshIndex(openedDocument, changedFiles);
+                return await refreshIndex(
+                    openedDocument,
+                    changedFiles.map((changedFile) => ({ filePath: changedFile, kind: "modified" }))
+                );
             }
 
             let sourceText = "";
+            let fileExists = true;
             try {
                 sourceText = await fs.readFile(resolvedPath, "utf8");
             } catch (error) {
                 if (!Core.isErrorWithCode(error, "ENOENT")) {
                     throw error;
                 }
+                fileExists = false;
             }
             const document = createGmlTextDocument(filePathToUri(resolvedPath), "gml", 0, sourceText);
             await invalidateKnownFileRoots(resolvedPath);
-            return await refreshIndex(document, changedFiles);
+            return await refreshIndex(
+                document,
+                changedFiles.map((changedFile) => ({
+                    filePath: changedFile,
+                    kind: changedFile === resolvedPath && !fileExists ? "deleted" : "modified"
+                }))
+            );
         },
         preload() {
             try {

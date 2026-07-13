@@ -10,10 +10,15 @@ type OpenDocumentOverlay = Readonly<{
     sourceText: string;
 }>;
 
+type WorkerSemanticFileChange = Readonly<{
+    filePath: string;
+    kind: "added" | "deleted" | "metadataChanged" | "modified";
+}>;
+
 type WorkerRequest = Readonly<{
     definitionsOnly: boolean;
     incremental: Readonly<{
-        changedFiles: ReadonlyArray<string>;
+        changes: ReadonlyArray<WorkerSemanticFileChange>;
         existingIndex: Record<string, unknown>;
     }> | null;
     openDocuments: ReadonlyArray<OpenDocumentOverlay>;

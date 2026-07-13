@@ -29,11 +29,6 @@ type SemanticNavigationProjectionRow = Readonly<{
     payload: string;
 }>;
 
-type SemanticFileHashRow = Readonly<{
-    content_hash: string | null;
-    file_path: string;
-}>;
-
 type SemanticManifestRow = Readonly<{
     content_hash: string;
     file_kind: "gml" | "projectManifest" | "resourceMetadata";
@@ -89,13 +84,16 @@ export type SemanticIncrementPublicationRequest = SemanticSnapshotPublicationReq
 
 export type SemanticIndexStore = Readonly<{
     close: () => void;
-    readFileContentHashes: () => ReadonlyMap<string, string>;
-    readActiveSlots: () => SemanticActiveSlots;
-    readManifestForTier: (tier: "definitions" | "full") => SemanticFileManifest | null;
+    /** Reads both active tier descriptors and their exact revision compatibility. */
+    readActiveSemanticSlots: () => SemanticActiveSlots;
+    /** Reads the persisted file manifest for one semantic tier. */
+    readSemanticManifest: (tier: SemanticTier) => SemanticFileManifest | null;
+    /** Reads the generation-checked derived navigation payload used for warm restore. */
+    readSemanticNavigationProjection: (tier: SemanticTier) => Record<string, unknown> | null;
+    /** Reads the project-wide compare-and-publish generation boundary. */
+    readSemanticProjectHead: () => SemanticProjectHead;
+    /** Reconstructs the canonical normalized semantic facts for one tier. */
     readSemanticSnapshot: (tier: SemanticTier) => SemanticSnapshot | null;
-    readIndexForTier: (tier: "definitions" | "full") => Record<string, unknown> | null;
-    readStateForTier: (tier: "definitions" | "full") => SemanticStoreState | null;
-    readProjectHead: () => SemanticProjectHead;
     applySemanticIncrement: (request: SemanticIncrementPublicationRequest) => SemanticPublishResult;
     publishSemanticSnapshot: (request: SemanticSnapshotPublicationRequest) => SemanticPublishResult;
     findImmediateDownstreamFiles: (filePath: string) => ReadonlyArray<string>;
@@ -118,6 +116,46 @@ function createAffectedFileSet(
 
 function isAffectedSemanticFile(affectedFiles: ReadonlySet<string> | null, filePath: string | null): boolean {
     return affectedFiles === null || (filePath !== null && affectedFiles.has(filePath));
+}
+
+function readSymbolIdsDefinedByFiles(
+    database: GraphDatabase,
+    projectRoot: string,
+    tier: SemanticTier,
+    affectedFiles: ReadonlySet<string> | null
+): ReadonlySet<string> {
+    if (affectedFiles === null || affectedFiles.size === 0) {
+        return new Set();
+    }
+    const paths = [...affectedFiles];
+    const placeholders = paths.map(() => "?").join(", ");
+    const rows = database
+        .prepare(
+            `SELECT DISTINCT symbol_id FROM semantic_occurrences WHERE project_root = ? AND tier = ? AND role = 'definition' AND file_path IN (${placeholders})`
+        )
+        .all(projectRoot, tier, ...paths) as unknown as ReadonlyArray<{ symbol_id: string }>;
+    return new Set(rows.map((row) => row.symbol_id));
+}
+
+function readScopeIdsOwnedByFiles(
+    database: GraphDatabase,
+    projectRoot: string,
+    tier: SemanticTier,
+    affectedFiles: ReadonlySet<string> | null
+): ReadonlySet<string> {
+    if (affectedFiles === null || affectedFiles.size === 0) {
+        return new Set();
+    }
+    const paths = [...affectedFiles];
+    const placeholders = paths.map(() => "?").join(", ");
+    const rows = database
+        .prepare(
+            `SELECT DISTINCT scope_id FROM semantic_scope_files WHERE project_root = ? AND tier = ? AND file_path IN (${placeholders}) UNION SELECT scope_id FROM semantic_scopes WHERE project_root = ? AND tier = ? AND resource_path IN (${placeholders})`
+        )
+        .all(projectRoot, tier, ...paths, projectRoot, tier, ...paths) as unknown as ReadonlyArray<{
+        scope_id: string;
+    }>;
+    return new Set(rows.map((row) => row.scope_id));
 }
 
 function deleteAffectedRows(
@@ -155,14 +193,9 @@ function deleteAffectedRows(
         .run(...parameters, ...paths);
     database
         .prepare(
-            `DELETE FROM semantic_symbols WHERE project_root = ? AND tier = ? AND (defining_file_path IN (${placeholders}) OR symbol_id IN (SELECT symbol_id FROM semantic_occurrences WHERE project_root = ? AND tier = ? AND role = 'definition' AND file_path IN (${placeholders})))`
+            `DELETE FROM semantic_scope_files WHERE project_root = ? AND tier = ? AND file_path IN (${placeholders})`
         )
-        .run(...parameters, projectRoot, tier, ...paths);
-    database
-        .prepare(
-            `DELETE FROM semantic_scopes WHERE project_root = ? AND tier = ? AND scope_id IN (SELECT scope_id FROM semantic_scope_files WHERE project_root = ? AND tier = ? AND file_path IN (${placeholders}))`
-        )
-        .run(projectRoot, tier, projectRoot, tier, ...paths);
+        .run(...parameters);
     database
         .prepare(
             `DELETE FROM semantic_occurrences WHERE project_root = ? AND tier = ? AND file_path IN (${placeholders})`
@@ -188,11 +221,6 @@ function deleteAffectedRows(
             `DELETE FROM semantic_resources WHERE project_root = ? AND tier = ? AND resource_path IN (${placeholders})`
         )
         .run(...parameters);
-    database
-        .prepare(
-            `DELETE FROM semantic_scopes WHERE project_root = ? AND tier = ? AND resource_path IN (${placeholders})`
-        )
-        .run(...parameters);
 }
 
 function parseRecordPayload(payload: string): unknown {
@@ -203,21 +231,12 @@ function parseRecordPayload(payload: string): unknown {
     }
 }
 
-function readFileContentHashes(database: GraphDatabase, projectRoot: string): ReadonlyMap<string, string> {
-    const rows = database
-        .prepare(
-            "SELECT relative_path AS file_path, content_hash FROM semantic_files WHERE project_root = ? AND tier = 'full' ORDER BY relative_path"
-        )
-        .all(projectRoot) as unknown as ReadonlyArray<SemanticFileHashRow>;
-    return new Map(rows.flatMap((row) => (row.content_hash ? [[row.file_path, row.content_hash] as const] : [])));
-}
-
-function readManifestForTier(
+function readSemanticManifest(
     database: GraphDatabase,
     projectRoot: string,
     tier: "definitions" | "full"
 ): SemanticFileManifest | null {
-    const state = readStateForTier(database, projectRoot, tier);
+    const state = readSemanticSlotState(database, projectRoot, tier);
     if (state === null || state.sourceSignature.length === 0) {
         return null;
     }
@@ -264,7 +283,7 @@ function readSemanticSnapshot(
     projectRoot: string,
     tier: SemanticTier
 ): SemanticSnapshot | null {
-    const state = readStateForTier(database, projectRoot, tier);
+    const state = readSemanticSlotState(database, projectRoot, tier);
     if (state === null) {
         return null;
     }
@@ -491,7 +510,7 @@ function createStorePath(projectRoot: string): string {
     return path.join(path.resolve(projectRoot), ".gmloop", "graph-index.sqlite");
 }
 
-function readStateForTier(
+function readSemanticSlotState(
     database: GraphDatabase,
     projectRoot: string,
     tier: "definitions" | "full"
@@ -515,16 +534,16 @@ function readStateForTier(
     });
 }
 
-function readProjectHead(database: GraphDatabase, projectRoot: string): SemanticProjectHead {
+function readSemanticProjectHead(database: GraphDatabase, projectRoot: string): SemanticProjectHead {
     const row = database
         .prepare("SELECT head_generation FROM semantic_projects WHERE project_root = ?")
         .get(projectRoot) as { head_generation?: number } | undefined;
     return Object.freeze({ generation: row?.head_generation ?? 0, projectRoot });
 }
 
-function readActiveSlots(database: GraphDatabase, projectRoot: string): SemanticActiveSlots {
-    const definitions = readStateForTier(database, projectRoot, "definitions");
-    const full = readStateForTier(database, projectRoot, "full");
+function readActiveSemanticSlots(database: GraphDatabase, projectRoot: string): SemanticActiveSlots {
+    const definitions = readSemanticSlotState(database, projectRoot, "definitions");
+    const full = readSemanticSlotState(database, projectRoot, "full");
     // Definitions are the authoritative navigation boundary whenever they
     // exist. A full slot is usable for reference operations only when it was
     // derived from that exact source revision; generation ordering alone is
@@ -542,12 +561,12 @@ function readActiveSlots(database: GraphDatabase, projectRoot: string): Semantic
     });
 }
 
-function readIndexForTier(
+function readSemanticNavigationProjection(
     database: GraphDatabase,
     projectRoot: string,
     tier: "definitions" | "full"
 ): Record<string, unknown> | null {
-    const state = readStateForTier(database, projectRoot, tier);
+    const state = readSemanticSlotState(database, projectRoot, tier);
     if (!state) {
         return null;
     }
@@ -630,15 +649,17 @@ function publishSemanticFacts(
             request.sourceRevision as SemanticSourceRevision
         );
         const affectedFiles = createAffectedFileSet(projectRoot, request.affectedFiles);
-        const affectedSymbolIds = new Set(
-            snapshot.occurrences
+        const affectedSymbolIds = new Set([
+            ...readSymbolIdsDefinedByFiles(database, projectRoot, request.tier, affectedFiles),
+            ...snapshot.occurrences
                 .filter(
                     (occurrence) =>
                         occurrence.role === "definition" && isAffectedSemanticFile(affectedFiles, occurrence.filePath)
                 )
                 .map((occurrence) => occurrence.symbolId)
-        );
+        ]);
         const affectedScopeIds = new Set([
+            ...readScopeIdsOwnedByFiles(database, projectRoot, request.tier, affectedFiles),
             ...snapshot.occurrences
                 .filter((occurrence) => isAffectedSemanticFile(affectedFiles, occurrence.filePath))
                 .flatMap((occurrence) => (occurrence.scopeId === null ? [] : [occurrence.scopeId])),
@@ -657,31 +678,9 @@ function publishSemanticFacts(
             database
                 .prepare("DELETE FROM semantic_resources WHERE project_root = ? AND tier = ?")
                 .run(projectRoot, request.tier);
-        } else if (affectedSymbolIds.size > 0) {
-            const symbolIds = [...affectedSymbolIds];
-            const placeholders = symbolIds.map(() => "?").join(", ");
-            database
-                .prepare(
-                    `DELETE FROM semantic_symbols WHERE project_root = ? AND tier = ? AND symbol_id IN (${placeholders})`
-                )
-                .run(projectRoot, request.tier, ...symbolIds);
-        }
-        if (affectedFiles !== null && affectedScopeIds.size > 0) {
-            const scopeIds = [...affectedScopeIds];
-            const placeholders = scopeIds.map(() => "?").join(", ");
-            database
-                .prepare(
-                    `DELETE FROM semantic_scope_files WHERE project_root = ? AND tier = ? AND scope_id IN (${placeholders})`
-                )
-                .run(projectRoot, request.tier, ...scopeIds);
-            database
-                .prepare(
-                    `DELETE FROM semantic_scopes WHERE project_root = ? AND tier = ? AND scope_id IN (${placeholders})`
-                )
-                .run(projectRoot, request.tier, ...scopeIds);
         }
         const insertSymbol = database.prepare(
-            "INSERT INTO semantic_symbols(project_root, tier, symbol_id, kind, name, display_name, defining_file_path, scope_id, documentation_json, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO semantic_symbols(project_root, tier, symbol_id, kind, name, display_name, defining_file_path, scope_id, documentation_json, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(project_root, tier, symbol_id) DO UPDATE SET kind = excluded.kind, name = excluded.name, display_name = excluded.display_name, defining_file_path = excluded.defining_file_path, scope_id = excluded.scope_id, documentation_json = excluded.documentation_json, updated_generation = excluded.updated_generation"
         );
         for (const symbol of snapshot.symbols) {
             if (
@@ -704,7 +703,7 @@ function publishSemanticFacts(
             );
         }
         const insertScope = database.prepare(
-            "INSERT INTO semantic_scopes(project_root, tier, scope_id, kind, name, display_name, resource_path, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO semantic_scopes(project_root, tier, scope_id, kind, name, display_name, resource_path, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(project_root, tier, scope_id) DO UPDATE SET kind = excluded.kind, name = excluded.name, display_name = excluded.display_name, resource_path = excluded.resource_path, updated_generation = excluded.updated_generation"
         );
         const insertScopeFile = database.prepare(
             "INSERT INTO semantic_scope_files(project_root, tier, scope_id, file_path, updated_generation) VALUES (?, ?, ?, ?, ?)"
@@ -728,7 +727,22 @@ function publishSemanticFacts(
                 generation
             );
             for (const filePath of scope.filePaths) {
+                if (!isAffectedSemanticFile(affectedFiles, filePath)) {
+                    continue;
+                }
                 insertScopeFile.run(projectRoot, request.tier, scope.scopeId, filePath, generation);
+            }
+        }
+        if (affectedFiles !== null && affectedScopeIds.size > 0) {
+            const retainedScopeIds = new Set(snapshot.scopes.map((scope) => scope.scopeId));
+            const removedScopeIds = [...affectedScopeIds].filter((scopeId) => !retainedScopeIds.has(scopeId));
+            if (removedScopeIds.length > 0) {
+                const placeholders = removedScopeIds.map(() => "?").join(", ");
+                database
+                    .prepare(
+                        `DELETE FROM semantic_scopes WHERE project_root = ? AND tier = ? AND scope_id IN (${placeholders})`
+                    )
+                    .run(projectRoot, request.tier, ...removedScopeIds);
             }
         }
         const insertResource = database.prepare(
@@ -782,6 +796,15 @@ function publishSemanticFacts(
                 occurrence.scopeId,
                 generation
             );
+        }
+        if (affectedFiles !== null && affectedSymbolIds.size > 0) {
+            const symbolIds = [...affectedSymbolIds];
+            const placeholders = symbolIds.map(() => "?").join(", ");
+            database
+                .prepare(
+                    `DELETE FROM semantic_symbols WHERE project_root = ? AND tier = ? AND symbol_id IN (${placeholders}) AND NOT EXISTS (SELECT 1 FROM semantic_occurrences WHERE semantic_occurrences.project_root = semantic_symbols.project_root AND semantic_occurrences.tier = semantic_symbols.tier AND semantic_occurrences.symbol_id = semantic_symbols.symbol_id AND semantic_occurrences.role = 'definition')`
+                )
+                .run(projectRoot, request.tier, ...symbolIds);
         }
 
         const insertDependency = database.prepare(
@@ -894,13 +917,11 @@ export function openSemanticIndexStore(projectRoot: string): SemanticIndexStore 
         findImmediateDownstreamFiles: (filePath) => findImmediateDownstreamFiles(database, resolvedRoot, filePath),
         findUnresolvedDependents: (identifierNames) =>
             findUnresolvedDependents(database, resolvedRoot, identifierNames),
-        readActiveSlots: () => readActiveSlots(database, resolvedRoot),
-        readManifestForTier: (tier) => readManifestForTier(database, resolvedRoot, tier),
+        readActiveSemanticSlots: () => readActiveSemanticSlots(database, resolvedRoot),
+        readSemanticManifest: (tier) => readSemanticManifest(database, resolvedRoot, tier),
+        readSemanticNavigationProjection: (tier) => readSemanticNavigationProjection(database, resolvedRoot, tier),
+        readSemanticProjectHead: () => readSemanticProjectHead(database, resolvedRoot),
         readSemanticSnapshot: (tier) => readSemanticSnapshot(database, resolvedRoot, tier),
-        readFileContentHashes: () => readFileContentHashes(database, resolvedRoot),
-        readIndexForTier: (tier) => readIndexForTier(database, resolvedRoot, tier),
-        readProjectHead: () => readProjectHead(database, resolvedRoot),
-        readStateForTier: (tier) => readStateForTier(database, resolvedRoot, tier),
         publishSemanticSnapshot: (request) =>
             publishSemanticFacts(database, resolvedRoot, { ...request, affectedFiles: null })
     };

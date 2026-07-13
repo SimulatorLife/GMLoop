@@ -50,8 +50,8 @@ async function publishSemanticProjectIndex(projectRoot: string, projectIndex: Re
     try {
         const publication = store.publishSemanticSnapshot({
             authoritative: true,
-            baseGeneration: store.readStateForTier("full")?.generation ?? null,
-            expectedHeadGeneration: store.readProjectHead().generation,
+            baseGeneration: store.readActiveSemanticSlots().full?.generation ?? null,
+            expectedHeadGeneration: store.readSemanticProjectHead().generation,
             index: projectIndex,
             manifest,
             sourceRevision: manifest.sourceRevision,

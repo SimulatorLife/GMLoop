@@ -138,1154 +138,136 @@ Use a two-tier workflow: format only when parse succeeds, and run lint in two ph
 10. Fixture goldens may compose multiple canonical rules in `gmloop.json` to preserve output. Do not assign a fixer to the wrong Feather rule, exclude a fixture, or modify a `.gml` golden merely to hide an ownership mismatch. If no domain-correct composition can reproduce the golden, stop for clarification unless the user has explicitly authorized a report-only/unchanged expectation update.
 11. Recommended, all, and Feather presets must stay deduplicated and use canonical owning IDs. When ownership migrates, presets and docs must move to the new IDs in the same change.
 
-## 4. Semantic Analysis, Symbol Indexing, and Storage
-
-### 4.1 Purpose
-
-ANTLR4 provides the syntactic structure of GML source code but does not determine its meaning. GMLoop must provide a semantic-analysis layer that resolves and records the meaning of project declarations, identifiers, expressions, resources, relationships, and dependencies.
-
-The semantic-analysis system is the authoritative source of semantic facts for a specific project revision. Downstream systems, including the LSP, linter, refactor engine, codemods, transpiler, hot-reload system, project graph, and CLI tools, must consume these shared semantic facts rather than independently inferring or approximating code meaning.
-
-The semantic system must support:
-
-- Symbol declaration and identity.
-- Lexical, instance, object, constructor, struct, static, global, built-in, and resource scopes.
-- Identifier and member resolution.
-- Type representation and inference.
-- Function and method dispatch.
-- Inheritance and override relationships.
-- Definition and reference indexing.
-- Resource and project relationships.
-- Dependency and impact analysis.
-- Documentation and signature extraction.
-- Refactor-safety validation.
-- Incremental invalidation and recomputation.
-- Deterministic transpilation decisions.
-- Semantic diagnostics and explicit semantic-gap reporting.
-
-### 4.2 Canonical Semantic Model
-
-The semantic-analysis service is the canonical source of semantic facts for a project revision.
-
-The canonical semantic model must represent, directly or through deterministic queries:
-
-- Files and project resources
-- Syntax and semantic nodes
-- Declarations
-- Symbols
-- Symbol ownership
-- Symbol kinds
-- Scopes and scope relationships
-- Namespaces
-- Types
-- Function and method signatures
-- Definitions and occurrences
-- Identifier and property resolution
-- Receiver resolution
-- Inheritance
-- Overrides and implementations
-- Calls
-- Reads and writes
-- Resource references
-- Documentation
-- Diagnostics
-- Semantic dependencies
-- Compilation and hot-reload impact
-- Refactor-safety information
-- Resolution state
-- Resolution provenance
-- Resolution completeness
-- Candidate targets
-- Conservative assumptions
-- Semantic gaps and analysis limitations
-
-The canonical semantic model must not be limited to the information expressible in an external navigation or interchange format.
-
-The project must not be represented as one giant mutable graph. The design must support immutable or revisioned semantic snapshots, replaceable file-local semantic results, indexed relationships, and scoped derived queries.
-
-Derived semantic results must use a revision-aware incremental dependency model that tracks their inputs, dependent results, completeness, capabilities, and semantic fingerprints. Invalidation should trigger scoped verification or recomputation rather than eager transitive rebuilding, stop when externally relevant output is unchanged, and support recomputation units finer than the file level where beneficial.
-
-
-### 4.3 Semantic Facts and Transpilation Decisions
-
-Semantic analysis and JavaScript emission are separate responsibilities.
-
-The semantic layer must determine facts such as:
-
-- The resolved target symbol.
-- The symbol kind.
-- The declaring scope.
-- The owning object, constructor, struct, resource, or namespace.
-- The receiver kind.
-- The resolved receiver type, where known.
-- The lookup path used to resolve the occurrence.
-- Whether access is explicit or implicit.
-- Whether the occurrence reads, writes, calls, constructs, or references the symbol.
-- The dispatch kind.
-- The resolution confidence.
-- Relevant built-in, reserved-name, and shadowing rules.
-
-The transpiler consumes these facts and determines the appropriate JavaScript representation.
-
-Typical lowering decisions may include:
-
-1. Local variables or parameters emitted as JavaScript-local identifiers.
-2. Instance fields emitted through `self.<name>`.
-3. `other` fields emitted through `other.<name>`.
-4. Global fields emitted through the configured global-state representation.
-5. Built-in functions, variables, and constants emitted through their configured shims.
-6. Script calls emitted directly or through a hot registry, wrapper, or thunk according to the active runtime mode.
-7. Resource references emitted through their configured runtime representation.
-
-These lowering forms are not themselves the canonical semantic classification.
-
-The semantic model must remain valid independently of a specific output language, transpilation strategy, runtime wrapper, or hot-reload implementation.
-
-### 4.4 Supported Symbol and Scope Model
-
-The semantic system must support every valid GML declaration, scope, ownership form, and reference form that can affect analysis, navigation, refactoring, linting, transpilation, or hot reload.
-
-This includes, but is not limited to:
-
-- Local variables
-- Function parameters
-- Function-local declarations
-- Script functions
-- Constructors
-- Constructor-owned fields
-- Struct fields
-- Instance fields
-- Implicit and explicit `self` fields
-- `other` fields
-- Object-owned fields
-- Inherited fields and methods
-- Static variables and static members
-- Global variables
-- Macros
-- Enums and enum members
-- Built-in functions
-- Built-in variables
-- Built-in constants
-- Reserved identifiers
-- Object resources
-- Sprite resources
-- Room resources
-- Sequence resources
-- Shader resources
-- Timeline resources
-- Audio resources
-- Fonts
-- Paths
-- Included files
-- Extension-provided symbols
-- Other GameMaker resources and project-defined symbol categories
-
-The model must correctly represent constructor-owned declarations such as:
-
-```gml
-self.timer = new TimerMultiplier();
-````
-
-and member accesses such as:
-
-```gml
-timer.get_multiplier();
-self.timer.set_multiplier(value);
-```
-
-The model must distinguish lexical lookup, implicit receiver lookup, explicit receiver lookup, inheritance lookup, global lookup, resource lookup, built-in lookup, and dynamic lookup.
-
-### 4.5 Identifier and Member Resolution
-
-Identifier and member resolution must be deterministic whenever the source and project state provide enough information to determine a result.
-
-Resolution must account for:
-
-* Lexical scope.
-* Scope nesting.
-* Declaration order where semantically relevant.
-* Function parameters and locals.
-* Object and event context.
-* Implicit `self`.
-* Explicit `self`.
-* `other`.
-* Constructor context.
-* Struct context.
-* Static context.
-* Receiver type.
-* Inheritance.
-* Overrides.
-* Globals.
-* Scripts.
-* Resources.
-* Macros.
-* Enums.
-* Built-ins.
-* Reserved identifiers.
-* Project configuration.
-* GameMaker runtime and built-in definitions.
-* Extensions and included packages.
-* Invalid or incomplete source.
-
-Each occurrence must have an explicit resolution state.
-
-Supported resolution states must include the equivalent of:
-
-* `exact`: The occurrence resolves to exactly one known semantic target.
-* `candidate-set`: The occurrence resolves to a bounded set of possible targets.
-* `dynamic`: The target depends on runtime data and cannot be determined statically.
-* `ambiguous`: Multiple targets remain possible because of incomplete or conflicting semantic information.
-* `unresolved`: No valid target could be determined.
-* `invalid`: The occurrence is part of syntactically or semantically invalid code.
-
-The system must never silently treat a candidate, dynamic, ambiguous, unresolved, or invalid occurrence as exact.
-
-### 4.6 Dynamic GML Behavior
-
-GML permits runtime name-based access and other dynamic behaviors that cannot always be resolved statically.
-
-Examples include:
-
-* Instance-variable access by runtime string.
-* Struct-field access by runtime string.
-* Resource lookup by runtime string.
-* Reflection-like helper functions.
-* Extension APIs with unknown semantic behavior.
-* Values whose receiver type cannot be statically bounded.
-
-The semantic system must resolve all statically determinable references and conservatively represent all remaining uncertainty.
-
-Dynamic behavior must be handled through one or more of:
-
-* Constant-string analysis
-* Candidate-set analysis
-* User-provided contracts or annotations
-* Extension metadata
-* Conservative dependency edges
-* Explicit diagnostics
-* Refactor blocking when safety cannot be proven
-
-The long-term goal is to continually reduce unsupported or unnecessarily unresolved cases. It is not a requirement to claim exact static knowledge where the language permits genuinely dynamic behavior.
-
-### 4.7 Semantic Gaps and Diagnostics
-
-Any non-exact semantic result that affects a supported operation must be explicitly represented and diagnosable.
-
-Semantic-gap categories should include the equivalent of:
-
-* Parse recovery.
-* Unsupported syntax.
-* Missing project resource.
-* Missing included file.
-* Missing extension metadata.
-* Unknown built-in or runtime version.
-* Ambiguous lexical resolution.
-* Ambiguous receiver.
-* Dynamic string lookup.
-* Incomplete type information.
-* Invalid inheritance.
-* Inheritance cycle.
-* Cyclic inference.
-* Unknown external behavior.
-* Stale dependency information.
-* Cache incompatibility.
-* Internal semantic invariant failure.
-
-Each semantic gap must be able to report:
-
-* Its category.
-* Its source file and range.
-* Its severity.
-* Its diagnostic message.
-* Its candidate symbols, where known.
-* Whether the result is conservative.
-* Which operations are affected.
-* Whether navigation remains safe.
-* Whether transpilation remains safe.
-* Whether hot reload remains safe.
-* Whether rename or another refactor must be blocked.
-
-Semantic gaps must not be silently ignored.
-
-### 4.8 Symbol Identity
-
-The semantic system must distinguish fast snapshot-local identity from cross-revision identity.
-
-A symbol may have:
-
-* A compact snapshot-local identity optimized for indexing and lookup.
-* A stable or reconciled cross-revision identity used to associate declarations across ordinary edits.
-* A current qualified semantic name.
-* An external SCIP symbol representation where applicable.
-
-A symbol's name must not be its only internal identity.
-
-Renaming a declaration must not inherently cause the semantic system to treat it as an unrelated declaration during the refactor transaction.
-
-Cross-revision identity is not required to survive arbitrary unrelated source movement forever. It must be stable enough to support ordinary editing, incremental analysis, cache reuse, and explicit refactor mappings.
-
-### 4.9 SCIP Projection
-
-GMLoop must support the Sourcegraph Code Intelligence Protocol (SCIP) as the canonical interoperable projection for navigation-oriented semantic data.
-
-The SCIP projection may contain:
-
-* Symbol definitions.
-* Symbol references.
-* Symbol documentation.
-* Symbol signatures.
-* Definition ranges.
-* Occurrence ranges.
-* Supported symbol relationships.
-* Project and document metadata.
-
-SCIP is not the sole canonical semantic model and must not constrain the internal representation of:
-
-* Scopes
-* Flow-sensitive types
-* Receiver inference
-* Query dependencies
-* Incremental invalidation
-* Refactor simulations
-* Compilation-impact relationships
-* Dynamic-resolution states
-* Project overlays
-* Internal semantic summaries
-
-SCIP symbols must be deterministic for a given project revision.
-
-SCIP symbol naming must follow the selected SCIP symbol grammar and must distinguish:
-
-* Project or package identity
-* Symbol ownership
-* Symbol kind
-* Qualified descriptors
-* Document-local symbols where appropriate
-
-A deterministic GML-oriented naming scheme may conceptually represent symbols such as scripts, objects, methods, constructors, fields, and resources, but the exact external encoding is an implementation decision.
-
-SCIP generation must be deterministic and reproducible from the canonical semantic snapshot.
-
-### 4.10 Relationship and Dependency Categories
-
-Definition and reference relationships must not be treated as equivalent to compilation or invalidation dependencies.
-
-The semantic system must distinguish relationship categories such as:
-
-* Defines
-* Declares
-* Contains
-* References
-* Reads
-* Writes
-* Calls
-* Constructs
-* Uses type
-* Inherits from
-* Is inherited by
-* Overrides
-* Is overridden by
-* Implements
-* Imports or includes
-* Uses resource
-* Generates or owns
-* Depends on configuration
-* Depends on built-in definitions
-* Affects compilation
-* Affects hot reload
-* Depends on semantic query results
-
-The system must maintain conceptually separate models for:
-
-1. Source-level semantic relationships.
-2. Project and resource relationships.
-3. Compilation and hot-reload impact.
-4. Incremental semantic-query dependencies.
-
-A source reference does not automatically require dependent recompilation.
-
-A compilation dependency does not always correspond to a direct source occurrence.
-
-### 4.11 Semantic Summaries and Change Classification
-
-The semantic system must distinguish internal implementation changes from externally observable semantic-interface changes.
-
-Dependents must be invalidated according to the semantic facts they consume, not merely because the defining file changed.
-
-The system should support semantic summaries or equivalent derived facts for declarations such as functions, methods, constructors, objects, structs, and resources.
-
-Relevant summary information may include:
-
-* Declared name and ownership.
-* Parameters.
-* Return type.
-* Declared or inferred type.
-* Declared members.
-* Effective inherited members.
-* Base types or parent objects.
-* Override relationships.
-* Read effects.
-* Write effects.
-* Global effects.
-* Resource effects.
-* Called symbols.
-* Constructed types.
-* Dynamic-behavior flags.
-* Hot-reload compatibility.
-* Exported documentation.
-
-Changes should be classifiable into categories such as:
-
-* Formatting-only.
-* Documentation-only.
-* Local implementation.
-* Local declaration.
-* Declaration-set change.
-* Exported signature change.
-* Inferred-type change.
-* Inheritance change.
-* Resource-identity change.
-* Macro or preprocessing change.
-* Runtime-effect change.
-* Configuration change.
-* Built-in-definition change.
-
-A local implementation change must not automatically invalidate all callers when the semantic facts consumed by those callers remain unchanged.
-
-### 4.12 Immutable and Revisioned Semantic Snapshots
-
-Every published semantic result must belong to a specific project revision.
-
-A project revision must account for all semantic inputs, including:
-
-* Source files.
-* Active editor overlays.
-* Document versions.
-* Project metadata.
-* Resource metadata.
-* Included files.
-* Extensions.
-* Configuration.
-* Runtime target.
-* GameMaker built-in definitions.
-* Parser version.
-* Semantic-engine version.
-* Relevant package versions.
-
-Each published semantic snapshot must be immutable from the perspective of consumers.
-
-A request must observe one consistent semantic revision.
-
-A request must not observe a mixture of:
-
-* Tier 1 data from one revision.
-* Tier 2 data from another revision.
-* Saved files from one revision.
-* Unsaved editor overlays from another revision.
-
-Publishing a new semantic snapshot must be atomic.
-
-A stable semantic-service or navigation-service object may retain its identity, but its current snapshot must be replaced through an atomic publication mechanism rather than mutating a published snapshot in place.
-
-Requests already using an older valid snapshot may complete against that snapshot unless the operation explicitly requires the newest revision.
-
-Stale results must never be published as results for newer document versions.
-
-### 4.13 File-Local Semantic Results
-
-Semantic processing should support replaceable file-local analysis units.
-
-A file-local semantic result may contain:
-
-* Parsed syntax.
-* Lowered semantic or intermediate nodes.
-* Declarations.
-* Local scopes.
-* Occurrences.
-* Outgoing references.
-* Outgoing calls.
-* Outgoing resource relationships.
-* Outgoing type relationships.
-* Documentation.
-* Diagnostics.
-* Semantic summaries.
-* Dependency inputs.
-* Content and semantic fingerprints.
-
-When a file changes, its previous file-local semantic result may be replaced atomically rather than mutating individual records throughout a global graph.
-
-Global reverse indexes and derived relationships must be updated consistently when a file-local result is replaced.
-
-The exact storage layout, serialization format, and in-memory representation remain implementation decisions.
-
-### 4.14 Two-Tier Semantic Indexing
-
-GMLoop must support progressive semantic availability so interactive editor features are not unnecessarily blocked by complete project-wide relationship indexing.
-
-#### 4.14.1 Tier 1: Declarations and Interactive Binding
-
-Tier 1 must prioritize rapid availability of the semantic facts required for basic editor interaction.
-
-Tier 1 should provide or restore:
-
-* Project and resource metadata.
-* Built-in definitions.
-* Declarations.
-* Symbol ownership.
-* Scope summaries.
-* Exported signatures.
-* Direct inheritance declarations.
-* Documentation.
-* Document and workspace symbols.
-* Basic completion candidates.
-* Active-file syntax.
-* Active-file or on-demand semantic binding.
-* Basic hover.
-* Basic Go to Definition.
-* Lexical and semantic-token support where applicable.
-
-Tier 1 is not required to build the complete project-wide reverse-reference index.
-
-Tier 1 may bind occurrences in open, focused, or requested files without recording all references across every project file.
-
-Open and focused files must be prioritized.
-
-Lexical syntax highlighting and built-in token support must remain available independently of a complete semantic cache.
-
-#### 4.14.2 Tier 2: Complete Project Relationships
-
-Tier 2 must provide the complete semantic information required for project-wide operations.
-
-Tier 2 should include:
-
-* Resolved occurrences across the project.
-* Reverse-reference indexes.
-* Complete inheritance relationships.
-* Override and implementation relationships.
-* Call relationships.
-* Type-use relationships.
-* Resource relationships.
-* Dependency and impact indexes.
-* Project-wide diagnostics.
-* Refactor-safety information.
-* Project-wide codemod prerequisites.
-* Complete SCIP output.
-* Hot-reload impact information.
-
-Reference-dependent operations such as Find All References, project-wide rename, and semantic codemods must require a compatible Tier 2 snapshot.
-
-They must never silently fall back to incomplete Tier 1 data.
-
-If Tier 2 is unavailable, stale, failed, or incompatible with the requested document versions, the operation must:
-
-* Wait for or trigger a compatible build.
-* Restart against a newer compatible revision where required.
-* Fail explicitly with diagnostics.
-* Respect request cancellation.
-
-It must not return a partial project-wide result as though it were complete.
-
-### 4.15 Build Revisioning, Cancellation, and Publication
-
-Every semantic build must be associated with a project revision.
-
-If source, project, configuration, or overlay inputs change during a build:
-
-* The running build becomes associated only with its original revision.
-* A stale build must not be published as the current revision.
-* Superseded work should be cancelled where practical.
-* Reusable file-local or query results may be retained if their inputs remain valid.
-* A new compatible build must be scheduled for the newer revision.
-
-Shared project builds and individual LSP requests must have distinct cancellation semantics.
-
-Cancelling one request must not necessarily cancel shared indexing work needed by other consumers.
-
-Build failures must complete all affected waiters with an explicit error or diagnostic.
-
-No request may wait indefinitely on a build that has failed, been superseded, or can no longer be published.
-
-Shutdown must cancel or join all owned semantic work and leave no worker, timer, watcher, store transaction, publication, or pending promise alive.
-
-### 4.16 Unified Semantic Service and Persistent Cache Boundary
-
-All GMLoop consumers must use the same semantic-service contract and compatible persistent-cache representation.
-
-Consumers include:
-
-* VS Code through the LSP.
-* Semantic tokens.
-* Hover.
-* Completion.
-* Navigation.
-* CLI semantic commands.
-* Lint rules requiring semantic facts.
-* Refactors.
-* Codemods.
-* Transpilation.
-* Hot reload.
-* Project-graph visualization.
-* SCIP generation.
-
-The persistent cache may be stored under the target project's `.gmloop/` directory or another explicitly defined project-local cache location.
-
-The persisted cache is a derived artifact. It is not the ultimate source of truth.
-
-The authoritative semantic inputs are:
-
-* Source files.
-* Project files.
-* Resource metadata.
-* Configuration.
-* Built-in definitions.
-* Extensions.
-* Included files.
-* Active editor overlays for the relevant session.
-
-For a validated project revision, the published semantic snapshot is the authoritative source of semantic facts for consumers operating on that revision.
-
-Separate processes may maintain separate immutable in-memory snapshots and query caches. They must share:
-
-* A compatible semantic model.
-* A compatible persistent schema.
-* Revision and fingerprint rules.
-* Serialization behavior.
-* Cache-validation behavior.
-* Concurrency rules.
-* Publication guarantees.
-
-The requirement is not that all processes share one literal mutable in-memory object.
-
-### 4.17 Active Editor Overlays
-
-Unsaved editor buffers must be represented as session-local overlays by default.
-
-The editor-visible semantic revision consists conceptually of:
-
-```text
-validated persisted or disk-backed project state
-+ active session overlays
-= editor-visible semantic snapshot
-```
-
-Unsaved overlays must not automatically replace or mutate the persisted disk-based semantic state consumed by unrelated CLI processes.
-
-Requirements include:
-
-* Each overlay is associated with a document URI and version.
-* Editor requests use the correct overlay version.
-* Disk-based commands use saved source unless explicitly connected to an active editor session.
-* Overlay results must not be published as disk-state results.
-* Closing or abandoning an overlay removes its session-local semantic state.
-* Repeated edits must never expose source ranges or offsets from an incompatible document version.
-* Saving a document transitions the corresponding semantic state into the persisted or disk-backed revision through the normal validation and publication lifecycle.
-
-### 4.18 Warm Start and Cache Validation
-
-When a compatible, complete, and validated persisted snapshot exists, GMLoop should provide a zero-reanalysis warm start.
-
-A validated warm request should require:
-
-* No GML parsing for unchanged files.
-* No full source-content scan when metadata or stored fingerprints are sufficient.
-* No reconstruction of already valid project-wide semantic relationships.
-* No avoidable blocking before cached navigation and documentation data become available.
-
-A true cold start occurs when no compatible validated cache exists. A true cold start may require parsing and semantic analysis.
-
-During a true cold start:
-
-* Lexical syntax highlighting must remain available.
-* Built-ins must remain available.
-* Open and focused files must be prioritized.
-* Tier 1 results must be published progressively.
-* Tier 2 must continue without blocking Tier 1 editor interaction.
-
-Cache freshness may be validated through:
-
-* Project manifests.
-* File metadata.
-* Stored content hashes.
-* Configuration fingerprints.
-* Runtime fingerprints.
-* Built-in-definition fingerprints.
-* Filesystem change journals.
-* Watcher state.
-* Other deterministic validity checks.
-
-Cache validation must not trust stale or incompatible persisted data over newer source or project inputs.
-
-### 4.19 Scoped Invalidation and Incremental Reanalysis
-
-Ordinary edits to a known source file must not trigger parsing of unrelated GML source files.
-
-Invalidation must begin from the changed semantic inputs and propagate through the dependencies that consume those inputs.
-
-Propagation must be:
-
-* Scoped.
-* Transitive where required.
-* Output-sensitive.
-* Revision-aware.
-* Deterministic in result.
-* Conservative when dependency information is incomplete.
-
-When a dependent result is recomputed and its relevant semantic output is unchanged, propagation should stop at that boundary.
-
-Examples include:
-
-* Changing a local variable should not invalidate unrelated files.
-* Changing a function body should not invalidate callers when its consumed signature and semantic summary remain unchanged.
-* Changing a function signature may invalidate callers.
-* Changing a parent object's effective interface may invalidate descendants.
-* Changing a parent implementation without changing inherited semantic facts should not rebuild descendant member tables.
-* Changing a macro or project-global semantic input may require broad invalidation.
-* Changing resource metadata may invalidate resource consumers.
-* Changing built-in definitions may invalidate all code that depends on those definitions.
-
-Known edits must parse each impacted file at most once per required tier and project revision.
-
-The parser may reparse an entire changed file. Token-level or subtree-level incremental parsing is not required unless demonstrated to be correct and beneficial.
-
-Semantic binding, type inference, relationship generation, and dependent recomputation should be scoped more finely where practical.
-
-### 4.20 Full-Project Invalidation Exceptions
-
-Full-project invalidation is permitted only when a narrower valid dependency closure cannot be proven or when a project-global semantic input changes.
-
-Valid causes may include:
-
-* Parser grammar changes.
-* Semantic-engine version changes.
-* Persistent-schema incompatibility.
-* GameMaker runtime-target changes.
-* Built-in-definition changes.
-* Project configuration changes.
-* Resource-manifest changes with project-wide effects.
-* Extension changes.
-* Included-package changes.
-* Macro or preprocessing changes with project-wide effects.
-* Corrupt or missing dependency metadata.
-* Cache corruption.
-* Path-normalization or project-identity changes.
-* Explicit clean or rebuild operations.
-
-Full invalidation must be explicit and diagnosable.
-
-The system must not silently perform broad invalidation while reporting that an incremental update occurred.
-
-### 4.21 Persistent Store Requirements
-
-The persistent semantic store must support:
-
-* Schema versioning.
-* Parser-version tracking.
-* Semantic-engine-version tracking.
-* Runtime and built-in-definition fingerprints.
-* Project-configuration fingerprints.
-* Project identity.
-* File identity.
-* Content fingerprints.
-* Semantic fingerprints.
-* Atomic transactions or equivalent atomic publication.
-* Crash-safe writes.
-* Concurrent readers.
-* Defined writer coordination.
-* Recovery from interrupted writes.
-* Detection of corrupt or incomplete data.
-* Migration or deterministic rebuild behavior.
-* Removal of obsolete revisions.
-* Cache-size management.
-* New files.
-* Deleted files.
-* Moved files.
-* Renamed files.
-* Project relocation.
-* Path normalization.
-* Case-sensitivity differences between filesystems.
-
-Dry runs must not mutate:
-
-* Source files.
-* Project metadata.
-* Persistent semantic storage.
-* Cache metadata.
-* Session overlays.
-* Current published snapshots.
-
-The target state does not require a specific database or serialization technology.
-
-### 4.22 Determinism
-
-Semantic output must be deterministic for the same complete set of project inputs.
-
-Deterministic output includes:
-
-* Symbol identities within the documented identity model.
-* Symbol ordering where externally observable.
-* Diagnostics.
-* Reference results.
-* Inheritance relationships.
-* Dependency results.
-* SCIP output.
-* Rename plans.
-* Codemod plans.
-* Transpilation-relevant semantic facts.
-* Persistent semantic fingerprints.
-
-Internal work scheduling, thread assignment, queue order, or processing order may differ as long as externally observable results remain equivalent.
-
-### 4.23 Documentation and Hover
-
-Every supported symbol kind must be capable of carrying structured documentation.
-
-Documentation extraction must support:
-
-* Description text.
-* Parameters.
-* Return values.
-* Types.
-* Repeated tags.
-* Malformed tags.
-* Missing tags.
-* Constructor documentation.
-* Method documentation.
-* Field documentation.
-* Resource documentation where available.
-* Built-in documentation.
-* Extension-provided documentation.
-
-Malformed documentation must not corrupt symbol indexing.
-
-Hover must:
-
-* Operate against one compatible semantic revision.
-* Avoid direct definition-file I/O when the required documentation is already indexed.
-* Report exact symbol and type information when available.
-* Represent uncertainty explicitly.
-* Avoid shifted or stale ranges after repeated edits.
-* Remain available for built-ins without requiring a project cache.
-* Bind active-file occurrences on demand when the full reverse-reference index is unavailable.
-
-Lexical ranges should be computed no more than once per document version unless invalidated by a relevant change.
-
-### 4.24 Project-Wide Rename Safety
-
-Project-wide rename must be driven by resolved semantic facts, never by unverified textual or structural heuristics.
-
-Before producing edits, the refactor engine must determine:
-
-* The exact target symbol.
-* The target's ownership and scope.
-* The rename family.
-* All exact definitions and references.
-* Relevant candidate, ambiguous, dynamic, and unresolved occurrences.
-* Inheritance and override relationships.
-* Constructor and member relationships.
-* Resource relationships.
-* Call and dispatch relationships.
-* Built-in and reserved-name constraints.
-* Shadowing and capture risks.
-* Duplicate declaration risks.
-* Target-name collisions.
-* Cross-file consistency.
-* Generated or project-metadata references.
-* String-based references that can be proven relevant.
-* The compatible project revision.
-
-A rename family may include:
-
-* One local declaration.
-* One parameter.
-* One field.
-* One constructor-owned field.
-* One script.
-* One resource.
-* One override family.
-* One inherited-member family.
-* One generated or project-linked declaration family.
-
-The rename engine must not assume that all identically spelled occurrences belong to the target.
-
-### 4.25 Rename Blocking Rules
-
-A project-wide rename must fail before mutating source when safety cannot be proven.
-
-A non-exact occurrence must block rename when it:
-
-* Could refer to the target symbol.
-* Could become bound to the proposed target name.
-* Could be captured by the rename.
-* Could introduce ambiguity.
-* Could change dispatch.
-* Could change inheritance or override behavior.
-* Could create mixed old and new naming.
-* Otherwise intersects the rename's semantic safety closure.
-
-An unrelated unresolved occurrence elsewhere in the project must not automatically block the rename when the semantic system can prove it cannot refer to the target and cannot interact with the proposed name.
-
-When rename is blocked, the command must:
-
-* Exit with a non-zero status where applicable.
-* Produce explicit diagnostic errors.
-* Identify the blocking occurrences.
-* Explain the uncertainty or collision.
-* Make no partial source edits.
-* Make no persistent semantic-store mutation.
-
-### 4.26 Reserved and Built-In Identifier Rules
-
-The rename engine must distinguish symbol ownership from spelling.
-
-The following must be rejected:
-
-* Renaming a GameMaker-owned built-in declaration.
-* Renaming a reserved language identifier.
-* Renaming to a syntactically invalid identifier.
-* Renaming to a name that would introduce invalid shadowing, ambiguity, capture, dispatch changes, or behavior changes.
-* Renaming a symbol whose identity is fixed by the GameMaker runtime or project format.
-
-A user-owned symbol that currently has the same spelling as a built-in must still be recognized as user-owned.
-
-The engine must permit renaming such a user-owned symbol away from the built-in spelling when doing so is otherwise safe.
-
-Renaming to a built-in spelling may be rejected conservatively unless the semantic system can prove that the result is valid and behavior-preserving in every affected scope.
-
-### 4.27 Rename Planning and Application
-
-Rename must be performed as an atomic semantic transaction.
-
-#### Preflight
-
-The preflight stage must:
-
-1. Resolve the selected occurrence to an exact target symbol.
-2. Determine the rename family.
-3. Collect all affected exact occurrences.
-4. Identify relevant non-exact occurrences.
-5. Simulate name lookup using the proposed name.
-6. Detect duplicate declarations.
-7. Detect shadowing.
-8. Detect capture.
-9. Detect built-in and reserved-name conflicts.
-10. Detect inheritance and override conflicts.
-11. Detect dispatch changes.
-12. Detect resource-name conflicts.
-13. Detect generated-name conflicts.
-14. Detect rename cycles.
-15. Validate document versions and the project revision.
-16. Produce a complete edit plan without mutating source.
-
-#### Application
-
-The application stage must:
-
-1. Apply all planned edits atomically.
-2. Avoid publishing intermediate mixed-name states.
-3. Reparse affected files.
-4. Rebuild affected file-local semantic results.
-5. Recompute affected semantic relationships.
-6. Resolve all edited occurrences again.
-7. Verify that each occurrence resolves to the intended post-rename symbol.
-8. Verify that unrelated previously resolved occurrences have not changed binding.
-9. Verify that no new ambiguity, collision, or capture was introduced.
-10. Run configured parsing, semantic, and compilation validation.
-11. Commit the transaction only if all required validation succeeds.
-12. Roll back or leave source unmodified if validation fails.
-
-A rename cycle such as:
-
-```text
-a -> b
-b -> a
-```
-
-must either be executed atomically without exposing intermediate collisions or rejected before source mutation.
-
-### 4.28 Refactor Equivalence Requirements
-
-General program equivalence is not a practical proof obligation.
-
-For rename and equivalent binding-preserving refactors, correctness means:
-
-* All intended definitions are updated.
-* All exact intended references are updated.
-* Every updated occurrence resolves to the corresponding post-refactor symbol.
-* No previously resolved unrelated occurrence changes binding.
-* No new duplicate declaration is introduced.
-* No new shadowing or capture is introduced.
-* No unintended dispatch change is introduced.
-* No unintended inheritance or override change is introduced.
-* No mixed old and new naming remains.
-* Dynamic or reflective references are handled according to the operation's declared safety policy.
-* The transformed project passes required parsing and semantic validation.
-* The transformed project passes configured build or compilation validation where available.
-
-### 4.29 Codemod Requirements
-
-Semantic codemods must operate against a complete compatible semantic snapshot whenever their correctness depends on project-wide meaning.
-
-Codemods must:
-
-* Declare the semantic facts they require.
-* Declare whether Tier 1 or Tier 2 is sufficient.
-* Perform a whole-operation preflight.
-* Avoid unbounded edit accumulation.
-* Avoid unbounded content-overlay growth.
-* Bound memory through streaming, chunking, or scoped materialization where appropriate.
-* Detect target collisions.
-* Detect circular transformations.
-* Validate cross-file consistency.
-* Apply edits atomically where partial application would be unsafe.
-* Avoid mutating source or persistent state during dry runs.
-* Produce deterministic plans for identical inputs.
-* Revalidate affected semantic bindings after transformation.
-
-A codemod must not silently skip an occurrence whose omission would produce a partially transformed or semantically inconsistent result.
-
-### 4.30 Performance and Memory Requirements
-
-The semantic architecture must:
-
-* Avoid monolithic full-project identifier accumulation where a scoped or indexed representation is sufficient.
-* Avoid requiring all project semantic data to be materialized simultaneously.
-* Support bounded-memory processing.
-* Support streaming or chunked serialization.
-* Support replaceable file-local semantic results.
-* Support compact symbol, type, scope, file, and occurrence identities.
-* Support fast symbol lookup.
-* Support fast source-position lookup.
-* Support fast definition lookup.
-* Support fast reverse-reference lookup.
-* Support fast direct inheritance lookup.
-* Support efficient descendant traversal.
-* Support output-sensitive invalidation.
-* Avoid deep duplicated relationship structures.
-* Avoid unbounded edit overlays.
-* Avoid increasing process heap limits as the primary scalability solution.
-
-Performance optimizations must not weaken semantic correctness or snapshot consistency.
-
-### 4.31 Expected Incremental Behavior
-
-The target architecture should support behavior equivalent to:
-
-```text
-Ordinary implementation edit:
-  Reparse the changed file.
-  Recompute affected local semantics.
-  Recompute demanded dependents only when their consumed semantic facts changed.
-
-Local rename:
-  Update the declaration and exact references in its scope.
-  Validate capture and shadowing.
-  Avoid unrelated project work.
-
-Function signature change:
-  Recompute the function summary.
-  Invalidate callers and other signature consumers transitively.
-  Stop where dependent outputs remain semantically unchanged.
-
-Parent-object interface change:
-  Recompute direct descendant effective-member results.
-  Propagate transitively only through descendants whose effective semantic result changes.
-
-Resource rename:
-  Update exact semantic resource references and project metadata.
-  Block when relevant dynamic resource lookup cannot be handled safely.
-
-Find All References:
-  Read the complete reverse-reference index for a compatible Tier 2 revision.
-
-Warm editor startup:
-  Restore and validate the persisted semantic snapshot without reparsing unchanged files.
-
-Unsaved edit:
-  Publish a new editor-session overlay revision without changing unrelated disk-based consumers.
-```
-
-### 4.32 Observability and Testing
-
-The semantic system must expose enough structured information to test and diagnose:
-
-* Project revision identity.
-* Snapshot tier.
-* Cache validity.
-* Changed inputs.
-* Parsed files.
-* Reanalyzed files.
-* Invalidated symbols.
-* Invalidated queries.
-* Reused semantic results.
-* Propagation boundaries.
-* Semantic fingerprints.
-* Full-project invalidation causes.
-* Blocking semantic gaps.
-* Rename safety decisions.
-* Persistent-store mutations.
-* Worker and watcher shutdown.
-
-Tests should verify semantic stability rather than storage-byte stability.
-
-For unaffected semantic data, tests should verify that:
-
-* Stable identities are retained where promised.
-* Semantic fingerprints remain unchanged.
-* Records are not unnecessarily deleted or recomputed.
-* Unrelated definitions and occurrences remain semantically equivalent.
-* No unrelated source file is parsed for an ordinary known-file edit.
-* No stale revision is published.
-* No partial Tier 1 result is returned as a complete Tier 2 result.
-* Dry runs perform no persistent or source mutation.
-* Shutdown leaves no owned work active.
-
-### 4.33 Goals
-
-1. Provide one authoritative semantic model for every GMLoop consumer.
-2. Resolve all statically determinable GML references.
-3. Represent dynamic and uncertain behavior explicitly and conservatively.
-4. Make project-wide rename and codemod operations provably safe within their declared semantic scope.
-5. Support fast definition, reference, scope, type, inheritance, and dependency lookup.
-6. Support output-sensitive cascading when parents, signatures, resources, or other dependencies change.
-7. Avoid reparsing unrelated source files for ordinary edits.
-8. Provide rapid Tier 1 editor functionality while Tier 2 relationships are built.
-9. Provide zero-reanalysis warm starts from compatible validated caches.
-10. Maintain immutable, revision-consistent semantic snapshots.
-11. Keep unsaved editor overlays isolated from unrelated disk-based consumers.
-12. Reduce peak RSS and heap use through bounded-memory processing.
-13. Avoid monolithic full-project in-memory aggregates.
-14. Preserve deterministic output while allowing internal parallelism and processing-order differences.
-15. Prevent unbounded edit, overlay, cache, and intermediate-result growth.
-16. Support crash-safe and concurrent persistent-cache use.
-17. Provide explicit diagnostics for semantic gaps and broad invalidation.
-18. Keep the design independent of a specific programming language, database, serializer, or incremental-query framework.
-
-### 4.34 Non-Goals and Antipatterns
-
-1. Using SCIP as the complete internal semantic model.
-2. Treating references as equivalent to compilation dependencies.
-3. Claiming exact static resolution for fundamentally dynamic runtime behavior.
-4. Silently guessing unresolved symbol targets.
-5. Silently skipping occurrences during safety-critical refactors.
-6. Blocking every rename because of unrelated unresolved code.
-7. Combining semantic resolution with one fixed JavaScript-emission strategy.
-8. Representing the entire project as one giant mutable graph.
-9. Mutating published semantic snapshots in place.
-10. Persisting unsaved editor buffers as shared disk state by default.
-11. Treating the persistent cache as more authoritative than source and project inputs.
-12. Requiring every process to share one literal in-memory cache object.
-13. Performing full-project parsing for an ordinary known-file edit.
-14. Promising zero work on a true cold start.
-15. Increasing `max-old-space-size` as the primary scalability solution.
-16. Introducing broad user-facing configuration for internal semantic-pipeline details.
-17. Rewriting unrelated formatter or linter architecture.
-18. Adding vector-database-style retrieval to semantic analysis.
-19. Requiring byte-for-byte storage stability for semantically unchanged records.
-20. Locking the target architecture to SQLite or another specific storage engine.
-21. Requiring token-level incremental parsing without evidence that it is necessary.
-22. Treating general program equivalence as a mechanically provable requirement.
-23. Publishing stale or mixed-revision semantic results.
-24. Returning incomplete Tier 1 data as complete project-wide analysis.
+## 4. Semantic Analysis Target State
+
+GMLoop must provide one authoritative, revision-aware semantic-analysis system that resolves and indexes the meaning of an entire GML project for every consumer, including the LSP, linter, refactor engine, codemods, transpiler, hot-reload system, CLI, project graph, documentation tools, and SCIP output. It must provide rapid interactive results through a two-tier model, thorough semantic understanding wherever statically possible, explicit and conservative handling of dynamic behavior, fast indexed lookup, safe project-wide transformations, output-sensitive incremental recomputation, immutable revision-consistent snapshots, validated persistent caching, bounded memory use, and deterministic behavior without prescribing a specific implementation language, storage engine, serializer, process model, or incremental-analysis framework.
+
+### 4.1 Canonical Semantic Model
+
+The semantic-analysis system must be the canonical source of semantic facts for a project revision, and all consumers must use those shared facts rather than independently inferring, approximating, or duplicating code meaning. The model must represent every declaration, scope, ownership form, type, resource, relationship, and reference form that can affect navigation, diagnostics, linting, refactoring, transpilation, hot reload, or project behavior, while keeping semantic meaning independent of consumer-specific presentation, lowering, execution, or storage decisions.
+
+- The canonical model must cover projects, files, resources, syntax relevant to semantics, declarations, symbols, ownership, scopes, namespaces, signatures, definitions, occurrences, receivers, calls, reads, writes, construction, inheritance, overrides, implementations, documentation, diagnostics, semantic dependencies, compilation impact, hot-reload impact, refactor safety, resolution states, and completeness.
+- Supported symbols and owners must include locals, parameters, functions, scripts, constructors, constructor-owned fields, structs, instance and object fields, implicit and explicit `self`, `other`, inherited members, statics, methods, globals, macros, enums, built-ins, reserved identifiers, resources, included files, extensions, packages, generated declarations, and other GameMaker-defined categories.
+- The model must distinguish lexical, implicit-receiver, explicit-receiver, `self`, `other`, constructor, struct, static, inheritance, override, global, script, resource, macro, enum, built-in, extension, and dynamic lookup.
+- The type model must distinguish declared, inferred, flow-narrowed, receiver, constructed, return, candidate, unknown, dynamic, invalid, and recovery types while supporting primitives, literals, objects, constructor instances, structs, functions, methods, resources, unions, recursive types, inference variables, built-ins, extensions, and project-defined types.
+- Unknown, dynamic, candidate, ambiguous, unresolved, invalid, and exact results must remain semantically distinct, and cyclic inference or inheritance must terminate deterministically through a fixed-point or equivalent policy.
+- Every occurrence must have an explicit resolution state equivalent to exact, candidate-set, dynamic, ambiguous, unresolved, or invalid, together with applicable candidates, lookup path, name domain, receiver information, provenance, completeness, uncertainty reason, and conservative assumptions.
+- Dynamic and reflective behavior must be resolved as far as statically possible and otherwise indexed conservatively by relevant name domain, known or candidate name, ownership, operation, and resolution state so related uses can be found without treating all unresolved code as relevant.
+- Symbol spelling must remain distinct from ownership and identity, with compact snapshot-local identities and deterministic cross-revision reconciliation sufficient for ordinary editing, cache reuse, movement, and explicit refactor mappings.
+- Source and project errors, semantic-analysis limitations, and semantic-service or cache failures must remain distinguishable and must report their origin, affected capabilities, safety implications, and blocking behavior.
+- Consumer-specific views may filter, aggregate, format, transform, or lower canonical facts, but must not redefine scope lookup, symbol identity, ownership, type meaning, inheritance, resource resolution, dependencies, or refactor safety
+- All consumers/workspaces must access persistent semantic state through the same canonical semantic-service or cache interface, which owns schema, identity, fingerprinting, serialization, validation, concurrency, publication, migration, and recovery behavior
+
+### 4.2 Revisions, Snapshots, Tiers, and Overlays
+
+Every semantic result must belong to one explicit project revision, and every published snapshot must be immutable, internally consistent, and pinned for the duration of each request. The semantic system must use a two-tier availability model so interactive editor features can become useful quickly without waiting for complete project-wide relationship analysis, while operations that depend on global correctness can require a complete compatible snapshot.
+
+* Revision inputs: source contents, overlays, document versions, project and resource metadata, included files and packages, extensions, configuration, runtime targets, built-ins, parser and semantic-engine compatibility, package versions, path rules, and project identity.
+* Snapshot identity: project revision, analysis generation, tier, capabilities, coverage, overlay versions, validation state, and failed or excluded inputs.
+* Progressive availability through separate immutable publications; published snapshots must not be mutated as additional analysis completes.
+* Tier 1 optimized for rapid interactive use: project and resource metadata, built-ins, declarations, ownership, scopes, signatures, documentation, direct inheritance declarations, document and workspace symbols, completion candidates, active-file syntax and binding, on-demand file binding, hover, definition lookup, and semantic tokens.
+* Tier 1 may analyze open, focused, recent, or explicitly requested files without building a complete project-wide occurrence or reverse-reference index.
+* Lexical highlighting, built-ins, and other syntax-level features available independently of complete semantic indexing.
+* Tier 2 optimized for complete project-wide relationships: all in-scope files analyzed, every relevant occurrence assigned an explicit resolution state, complete exact-reference and relevant non-exact indexes, inheritance and overrides, calls, type uses, resources, semantic dependencies, compilation and hot-reload impact, project-wide diagnostics, refactor safety, codemod prerequisites, and complete SCIP output.
+* Tier 2 completeness defined by complete required coverage, current required indexes, explicit non-exact results, and no hidden failures or exclusions; universal exact resolution is not required.
+* Find All References, project-wide rename, project-wide semantic codemods, complete SCIP generation, and other relationship-dependent operations must require a compatible Tier 2 snapshot.
+* No silent fallback from required Tier 2 data to Tier 1, stale Tier 2, partial indexes, or incompatible document versions.
+* When compatible Tier 2 data is unavailable, the operation must trigger or await compatible analysis, restart against a newer revision where necessary, respect cancellation, or fail explicitly.
+* Every consumer must declare its required tier, capabilities, project and resource coverage, and overlay versions.
+* Open, focused, and requested files prioritized during cold starts and ongoing indexing.
+* Session-local unsaved overlays over validated disk state; saving, closing, or abandoning an overlay must transition or remove it without exposing mixed versions or affecting unrelated processes.
+* No stale or superseded build published as current.
+* Separate cancellation behavior for shared indexing work and individual requests.
+* Explicit completion of failed, cancelled, superseded, or unpublishable work.
+* Bounded snapshot and derived-cache retention, releasable request pins, reclaimable obsolete revisions, and reusable unchanged data.
+* Clean shutdown with no owned workers, watchers, timers, publications, transactions, or pending semantic operations.
+
+### 4.3 Relationships, Summaries, and Incremental Analysis
+
+The semantic system must keep source relationships, project and resource relationships, type and dispatch relationships, compilation impact, hot-reload impact, and incremental query dependencies conceptually distinct. Derived semantic results must use a revision-aware dependency model so changes invalidate only consumers of changed facts, recomputation occurs at the narrowest practical semantic boundary, and propagation stops when externally relevant output remains unchanged.
+
+- Supported relationships should include defines, declares, contains, owns, references, reads, writes, calls, constructs, uses type, inherits, overrides, implements, imports, includes, uses resource, generates, depends on configuration, depends on built-ins or extensions, affects compilation, affects hot reload, and depends on semantic results.
+- A source reference must not automatically imply recompilation or hot-reload invalidation, and compilation or hot-reload dependencies need not correspond to direct source occurrences.
+- Semantic summaries must distinguish implementation details from externally observable interfaces for functions, methods, constructors, objects, structs, events, resources, and project-global inputs.
+- Summaries may include ownership, parameters, return and inferred types, declared and effective members, parents, overrides, reads, writes, global and resource effects, calls, constructed types, dynamic behavior, runtime-visible behavior, compilation interfaces, hot-reload compatibility, and exported documentation.
+- Changes must be classified by semantic effect, including formatting, comments, documentation, local implementation, declarations, exported signatures, inferred types, effects, inheritance, effective members, overrides, resources, macros, preprocessing, runtime behavior, hot-reload compatibility, configuration, built-ins, extensions, and project structure.
+- File-local results should be the primary persistence and replacement boundary, while declarations, bodies, methods, constructors, events, initializers, inference groups, inheritance groups, resources, and other mutually dependent units may be finer recomputation boundaries.
+- A small edit must not make every semantic result in the containing file one indivisible dependency or cause unrelated source files to be parsed.
+- Derived results must track the semantic inputs and other results they consume, their verified revision, required capabilities and coverage, and their semantic output or equivalent fingerprint.
+- Invalidation should mark results for verification or recomputation rather than eagerly deleting or rebuilding all transitive dependents.
+- Recomputed results whose externally relevant semantic output remains unchanged must stop further propagation at that boundary.
+- Exact scoped work should be memoized and shared across consumers and tiers, while duplicate work must be observable and limited to valid causes such as cancellation, recovery, eviction, explicit rebuilding, or process isolation.
+- Function implementation changes must not invalidate callers when consumed signatures and summaries remain unchanged, while signature, type, effect, resource, configuration, built-in, or extension changes must invalidate only consumers of changed facts when a reliable closure exists.
+- Parent implementation changes must not rebuild descendant effective-member results when inherited meaning is unchanged, while parent interface changes must propagate through indexed direct relationships only through descendants whose effective outputs change.
+- Full-project invalidation is permitted only when a change is genuinely project-wide or a narrower correct dependency closure cannot be proven because dependency information is missing, incompatible, incomplete, corrupt, or untrusted.
+- Broad invalidation must be explicit, diagnosable, observable, and associated with a stated cause rather than silently reported as incremental work.
+
+### 4.4 Persistent Storage, Validation, and Startup
+
+The persistent semantic store must provide crash-safe, versioned, project-local storage for validated derived semantic state while remaining subordinate to authoritative source, project metadata, configuration, built-ins, extensions, included files, and active session overlays. Persisted data must be validated before use, readers must never observe partial generations, and compatible caches should provide rapid warm startup without compromising correctness.
+
+- The store must account for schema, parser, semantic-engine, runtime, built-in, configuration, project, file, resource, content, and semantic fingerprints.
+- Persistent publication must support complete atomic generations or equivalent guarantees, concurrent readers, coordinated writers, recovery from interrupted writers, removal of obsolete revisions, cache-size management, file and resource movement, project relocation, path normalization, and filesystem case differences.
+- Readers must never observe incomplete, mixed, or partially written generations, and incompatible concurrent writers must not publish into one logical revision.
+- Failure to acquire write coordination must permit safe read-only or non-persisting operation where appropriate rather than unsafe concurrent mutation.
+- Unsaved editor overlays and private transformation revisions must remain outside shared disk-backed state by default.
+- Persisted semantic data must be treated as untrusted until its schema, project identity, compatibility, fingerprints, integrity, completeness, bounds, offsets, counts, and paths are validated.
+- Loading persisted data must not execute serialized behavior, instantiate arbitrary implementation-defined behavior, escape the permitted cache boundary, or override newer authoritative inputs.
+- Corrupt, stale, incomplete, or incompatible data must be rejected, isolated, migrated, repaired, or deterministically rebuilt and must never become published semantic state.
+- A compatible validated cache should provide zero-reanalysis warm startup for unchanged inputs, avoiding unnecessary parsing, full source scans, relationship reconstruction, and editor blocking.
+- A true cold start may require complete parsing and semantic analysis but must preserve lexical highlighting, built-ins, active-file prioritization, progressive Tier 1 publication, and honest Tier 2 completeness reporting.
+- Cache validation may use any deterministic evidence that reliably establishes compatibility and freshness without trusting stale metadata over newer source or project inputs.
+- Dry runs must not mutate source files, project metadata, shared overlays, published snapshots, persistent storage, or cache metadata, although they may create isolated ephemeral analysis state.
+
+### 4.5 Indexing, Interoperability, Performance, and Memory
+
+The semantic architecture must provide purpose-built indexes for frequent navigation, analysis, transformation, and dependency operations and must scale through scoped work, compact identities, structural sharing, selective materialization, and bounded state rather than repeated full-project scans or larger heap limits. External projections such as SCIP must remain deterministic views of the richer internal model rather than constraining it.
+
+- Indexed access must support symbols, qualified names, owner-local names, scopes and occurrences by position, definitions, exact references, candidate references, dynamic name uses, declared and effective members, direct parents and children, descendants, override families, callers, callees, type consumers, resource consumers, compilation dependents, hot-reload dependents, documentation, diagnostics, capabilities, and coverage.
+- Lookup cost should be proportional to the relevant result set or affected dependency closure wherever practical.
+- Complete descendant closures, flattened inherited-member sets, transitive dependency closures, and other large derived structures should be materialized only where their lookup or performance benefit justifies their memory cost.
+- Documentation must support descriptions, parameters, return values, types, repeated or malformed tags, constructors, methods, fields, resources, built-ins, extensions, and included packages without malformed documentation corrupting semantic indexing.
+- Hover, navigation, and semantic tokens must use one compatible snapshot, avoid unnecessary definition-file I/O when information is already indexed, represent uncertainty explicitly, and use ranges belonging to the requested document revision.
+- SCIP or a compatible standard representation must be supported as a deterministic interoperable projection for navigation-oriented data, including project and document metadata, symbols, definitions, references, signatures, documentation, occurrence ranges, and supported relationships.
+- SCIP must not constrain internal scopes, flow-sensitive types, receiver inference, dynamic states, incremental dependencies, invalidation, overlays, summaries, refactor simulations, compilation impact, hot-reload impact, capabilities, or coverage.
+- The system must support compact semantic identities, bounded-memory processing, streamed or chunked persistence, replaceable scoped results, structural sharing, bounded overlays, bounded edit plans, bounded query caches, bounded snapshot retention, and selective relationship materialization.
+- Monolithic full-project identifier accumulation, deep duplicated relationship structures, unbounded intermediate state, and increasing process heap limits as the primary scalability strategy must be avoided.
+- Performance must be evaluated across representative project sizes, source volume, symbol and occurrence counts, resource counts, inheritance depth and fan-out, dynamic behavior, overlay counts, startup states, edit patterns, indexing workloads, reference queries, and project-wide transformations.
+- Release criteria should measure Tier 1 availability, active-file reanalysis, hover, definition and reference latency, Tier 2 completion, warm startup, rename preflight, peak memory, persistent-cache size, files parsed, semantic units recomputed, propagation depth, reused results, duplicate work, and retained revisions.
+- Performance optimizations must not weaken semantic correctness, snapshot consistency, determinism, explicit uncertainty, capability reporting, or transformation safety.
+
+### 4.6 Rename, Refactors, and Codemods
+
+Project-wide rename, binding-preserving refactors, and semantic codemods must be driven by compatible semantic facts rather than textual or structural heuristics. Every operation must declare its semantic requirements, preflight the complete affected safety closure, conservatively handle dynamic and non-exact occurrences, simulate proposed changes without mutation, apply edits through the strongest available transactional mechanism, and revalidate the resulting semantic state.
+
+- Rename must determine the exact target, ownership, scope, rename family, exact definitions and references, relevant candidate and dynamic uses, inheritance and override relationships, dispatch, resources, generated names, project metadata, built-in restrictions, proposed-name collisions, and compatible project revision.
+- Rename families may include locals, parameters, fields, constructor-owned fields, scripts, resources, inherited members, override families, and generated or project-linked declarations.
+- A transformation safety closure must include every occurrence, scope, relationship, name domain, or derived result that could be affected by the old name, proposed name, visibility, capture, shadowing, dispatch, inheritance, overrides, resources, generated names, dynamic lookup, or changed semantic summaries.
+- Unchanged dependency information may prove that occurrences outside the safety closure cannot be affected, avoiding unnecessary whole-project revalidation.
+- Unrelated unresolved code must not block an operation when it can be proven unable to interact with the target, proposed name, relevant name domain, dispatch, or hierarchy.
+- Relevant candidate, dynamic, ambiguous, unresolved, invalid, capturing, shadowing, dispatch-changing, inheritance-changing, resource-conflicting, or generated-name-conflicting cases must block the operation before mutation when safety cannot be proven.
+- Built-in declarations, reserved identifiers, runtime-fixed names, syntactically invalid names, and target names that introduce semantic behavior changes must not be renamed or introduced.
+- User-owned symbols that share built-in spelling must remain distinguishable from built-ins and may be renamed away when otherwise safe.
+- Preflight must validate the selected target, rename family, all affected occurrences, lookup behavior under the proposed name, collisions, capture, shadowing, dispatch, inheritance, resource and generated-name conflicts, rename cycles, project revision, document versions, capabilities, and coverage.
+- Preflight may construct a private semantic revision containing the proposed transformation, but it must not mutate source, metadata, shared overlays, published snapshots, or persistent storage.
+- Application must verify that source and document versions still match preflight, apply the complete edit set through the strongest transactional mechanism available, and avoid intentionally publishing an intermediate mixed state.
+- Environments without guaranteed atomic application must provide defined rollback, recovery, or explicit partial-failure handling.
+- Post-transformation validation must confirm every intended post-change binding, preserve all unintended bindings within the safety closure, detect duplicate declarations, ambiguity, capture, shadowing, dispatch changes, inheritance changes, mixed naming, and unhandled dynamic references, and run required parsing, semantic, and configured compilation validation.
+- Rename cycles must either be executed without invalid intermediate collisions or rejected before mutation.
+- Codemods must declare their required tier, capabilities, coverage, uncertainty policy, atomicity, and validation requirements; preflight the complete operation; bound memory and overlay growth; report every correctness-relevant omission; produce deterministic plans; and reject unsafe partial application.
+- Binding-preserving correctness requires updating all intended definitions and exact references while preserving unrelated bindings in the safety closure and passing declared validation, not proving general program equivalence.
+
+### 4.7 Determinism, Observability, Testing, and Outcomes
+
+Equivalent complete semantic inputs must produce equivalent externally observable results regardless of scheduling, processing order, worker assignment, or internal parallelism, and the system must expose enough structured information to explain its revisions, capabilities, cache behavior, incremental work, degraded fallbacks, transformation decisions, and resource use. Testing must verify semantic stability and target outcomes rather than incidental storage bytes, execution order, or implementation details.
+
+- Determinism must apply to symbol identities within the documented model, type results, resolution states, diagnostics, relationships, summaries, change classifications, reference results, SCIP output, rename and codemod plans, semantic fingerprints, and persistent projections.
+- Observability must include project revisions, snapshot identities, tiers, capabilities, coverage, overlay versions, cache validity, changed inputs, parsed files, recomputed units, invalidated symbols and results, reused work, semantic fingerprints, propagation boundaries, broad-invalidation causes, dynamic matches, blocking gaps, transformation safety closures, persistent-store mutations, evictions, retained snapshots, duplicate work, workers, watchers, pending operations, and shutdown state.
+- Tests must verify that unrelated files are not parsed for ordinary edits, finer semantic units are reused, output-sensitive propagation stops at correct boundaries, stale or mixed revisions are never published, Tier 1 is never presented as complete Tier 2, capability requirements are enforced, dynamic uncertainty remains explicit, and unrelated unresolved code does not block safe transformations.
+- Test coverage must include local edits, signature and inferred-type changes, parent implementation and interface changes, deep and cyclic inheritance, recursive inference, resources, macros, built-ins, extensions, dynamic strings, active overlays, repeated edits, warm and cold starts, cache incompatibility and corruption, interrupted writers, rename collisions and cycles, capture, shadowing, dispatch changes, partial Tier 2 failures, cancellation, superseded builds, dry runs, rollback behavior, bounded retention, and process shutdown.
+- The target outcome is one DRY semantic foundation that provides rapid Tier 1 editor functionality, complete capability-qualified Tier 2 analysis, safe project-wide rename and codemods, zero-reanalysis compatible warm starts, fast indexed lookup, no unrelated parsing for ordinary edits, output-sensitive cascading, bounded memory and cache growth, crash-safe persistence, and deterministic results for every current and future consumer.
+- The target state must remain independent of a specific programming language, database, serializer, graph engine, parser-incrementality strategy, process model, or incremental-query framework.
+- Antipatterns include using SCIP as the complete internal model, equating references with compilation or hot-reload dependencies, silently guessing unresolved targets, treating Tier 2 as universal exact resolution, using probabilistic confidence instead of explicit resolution states, making files the only recomputation unit, maintaining one giant mutable graph, mutating published snapshots, persisting editor overlays as shared disk state, trusting cache data over source, requiring every process to share one literal in-memory object, reparsing the entire project for ordinary edits, blocking all transformations because of unrelated uncertainty, silently skipping correctness-relevant occurrences, revalidating the entire project when a complete safety closure is known, allowing unbounded snapshots or caches, relying primarily on increased heap limits, requiring byte-for-byte storage stability, requiring token-level incremental parsing without evidence, claiming proof of general program equivalence, publishing stale or mixed-revision results, or returning incomplete Tier 1 data as complete project-wide analysis
 
 ## 5. Transpiler & Hot Reload Pipeline
 

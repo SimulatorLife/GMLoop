@@ -10,6 +10,7 @@ import {
     DidChangeConfigurationNotification,
     DocumentHighlight,
     DocumentHighlightKind,
+    FileChangeType,
     InitializeResult,
     Location,
     ProposedFeatures,
@@ -30,7 +31,7 @@ import {
     positionToOffset,
     uriToFilePath
 } from "../documents/index.js";
-import { createGmlSemanticIndex } from "../intelligence/index.js";
+import { createGmlSemanticIndex, type GmlSemanticFileChange } from "../intelligence/index.js";
 import { eslintMessageToDiagnostic, parserErrorToDiagnostic } from "../protocol/diagnostics.js";
 import { createSingleDocumentWorkspaceEdit, createWholeDocumentTextEdit } from "../protocol/edits.js";
 import {
@@ -185,7 +186,7 @@ export function createGmlLanguageServer(
     const lintFixRunner = createLintRunner(true);
     const pendingDiagnostics = new Map<string, NodeJS.Timeout>();
     const pendingSemanticRefreshes = new Map<string, NodeJS.Timeout>();
-    const pendingWatchedFilePaths = new Set<string>();
+    const pendingWatchedFileChanges = new Map<string, GmlSemanticFileChange["kind"]>();
     let watchedFileRefreshTimer: NodeJS.Timeout | null = null;
 
     if (typeof connection.onShutdown === "function") {
@@ -202,7 +203,7 @@ export function createGmlLanguageServer(
                 clearTimeout(watchedFileRefreshTimer);
                 watchedFileRefreshTimer = null;
             }
-            pendingWatchedFilePaths.clear();
+            pendingWatchedFileChanges.clear();
             await semanticIndex.dispose();
         });
     }
@@ -363,17 +364,26 @@ export function createGmlLanguageServer(
     if ("onDidChangeWatchedFiles" in connection) {
         connection.onDidChangeWatchedFiles(({ changes }) => {
             for (const change of changes) {
-                pendingWatchedFilePaths.add(uriToFilePath(change.uri));
+                const filePath = uriToFilePath(change.uri);
+                const kind =
+                    change.type === FileChangeType.Created
+                        ? "added"
+                        : change.type === FileChangeType.Deleted
+                          ? "deleted"
+                          : isGmlDocumentPath(filePath)
+                            ? "modified"
+                            : "metadataChanged";
+                pendingWatchedFileChanges.set(filePath, kind);
             }
             if (watchedFileRefreshTimer !== null) {
                 clearTimeout(watchedFileRefreshTimer);
             }
             watchedFileRefreshTimer = setTimeout(() => {
                 watchedFileRefreshTimer = null;
-                const changedFilePaths = [...pendingWatchedFilePaths];
-                pendingWatchedFilePaths.clear();
+                const changedFiles = [...pendingWatchedFileChanges].map(([filePath, kind]) => ({ filePath, kind }));
+                pendingWatchedFileChanges.clear();
                 runNotificationTask(connection, async () => {
-                    await semanticIndex.refreshForFilePaths(changedFilePaths);
+                    await semanticIndex.refreshForFileChanges(changedFiles);
                     requestSemanticTokenRefresh(connection);
                 });
             }, 50);
