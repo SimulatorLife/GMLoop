@@ -164,31 +164,29 @@ export function createPreferIsUndefinedCheckRule(definition: GmlRuleDefinition):
         create(context) {
             const sourceText = context.sourceCode.text;
 
-            return Object.freeze({
-                BinaryExpression(node) {
-                    const rewrite = tryResolveUndefinedCheckRewrite(node, sourceText);
-                    if (!rewrite) {
-                        return;
-                    }
-
-                    context.report({
-                        node,
-                        messageId: definition.messageId,
-                        fix: (fixer) => fixer.replaceTextRange(rewrite.range, rewrite.replacement)
-                    });
-                },
-                UnaryExpression(node) {
-                    const rewrite = tryResolveUndefinedCheckRewrite(node, sourceText);
-                    if (!rewrite) {
-                        return;
-                    }
-
-                    context.report({
-                        node,
-                        messageId: definition.messageId,
-                        fix: (fixer) => fixer.replaceTextRange(rewrite.range, rewrite.replacement)
-                    });
+            // The `BinaryExpression` and `UnaryExpression` visitors share an
+            // identical body: resolve the rewrite via the shared helper and,
+            // when it succeeds, report a single diagnostic with the matching
+            // autofix. Extracting that body into one closure lets the rule's
+            // visitor declaration read as a flat mapping (`{ BinaryExpression:
+            // fn, UnaryExpression: fn }`) and guarantees the two entry points
+            // stay in lock-step if the rewrite shape ever grows.
+            const reportUndefinedCheckRewrite = (node: unknown): void => {
+                const rewrite = tryResolveUndefinedCheckRewrite(node, sourceText);
+                if (!rewrite) {
+                    return;
                 }
+
+                context.report({
+                    node: node as Rule.Node,
+                    messageId: definition.messageId,
+                    fix: (fixer) => fixer.replaceTextRange(rewrite.range, rewrite.replacement)
+                });
+            };
+
+            return Object.freeze({
+                BinaryExpression: reportUndefinedCheckRewrite,
+                UnaryExpression: reportUndefinedCheckRewrite
             });
         }
     });
