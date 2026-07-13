@@ -657,6 +657,9 @@ function normalizeIdentifierCollectionKind(collectionName: string): GraphNodeKin
         case "localVariable": {
             return "local_variable";
         }
+        case "parameter": {
+            return "local_variable";
+        }
         case "structVariable": {
             return "struct_variable";
         }

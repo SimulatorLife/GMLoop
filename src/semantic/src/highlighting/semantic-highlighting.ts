@@ -105,6 +105,9 @@ function classifyDeclaration(sourceText: string, identifier: IdentifierRange): G
     if (/\benum\s+[$_\p{L}][$_\p{L}\p{Mn}\p{Nd}\p{Pc}]*\s*\{[^}]*$/u.test(before)) {
         return { ...identifier, kind: "enumMember", modifiers: [...definition, "readonly"] };
     }
+    if (/\.\s*$/u.test(before)) {
+        return { ...identifier, kind: /^\s*\(/u.test(after) ? "method" : "property", modifiers: [] };
+    }
     return null;
 }
 
@@ -115,11 +118,20 @@ export function collectGmlSemanticHighlights(
     const tokensByStart = new Map<number, GmlSemanticHighlightToken>();
     const identifiers = Parser.tokenizeGmlIdentifierRanges(parameters.sourceText);
     const identifiersByStart = new Map(identifiers.map((identifier) => [identifier.start, identifier]));
+    const lexicalKindByName = new Map<string, GmlSemanticHighlightKind>();
     const navigationKindPriorityByStart = new Map<number, number>();
     for (const identifier of identifiers) {
         const declaration = classifyDeclaration(parameters.sourceText, identifier);
         if (declaration !== null) {
             tokensByStart.set(identifier.start, declaration);
+            if (
+                declaration.kind === "enumMember" ||
+                declaration.kind === "macro" ||
+                declaration.kind === "parameter" ||
+                declaration.kind === "variable"
+            ) {
+                lexicalKindByName.set(identifier.name, declaration.kind);
+            }
         }
     }
     for (const occurrence of parameters.occurrences) {
@@ -147,6 +159,12 @@ export function collectGmlSemanticHighlights(
         const highlightKind = mapNavigationKind(normalizeGmlSemanticSymbolKind(projectKind));
         if (highlightKind === null) continue;
         tokensByStart.set(identifier.start, { ...identifier, kind: highlightKind, modifiers: [] });
+    }
+    for (const identifier of identifiers) {
+        if (tokensByStart.has(identifier.start)) continue;
+        const lexicalKind = lexicalKindByName.get(identifier.name);
+        if (lexicalKind === undefined) continue;
+        tokensByStart.set(identifier.start, { ...identifier, kind: lexicalKind, modifiers: [] });
     }
     const builtIns = new Map(parameters.builtIns.map((entry) => [entry.name, entry]));
     for (const identifier of identifiers) {

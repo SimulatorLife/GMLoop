@@ -351,7 +351,7 @@ void test("semantic index hover handles comment/string guards and ignores scope-
     }
 });
 
-void test("semantic highlights do not reuse shifted local occurrences while an edited document is stale", async () => {
+void test("semantic highlights use current lexical facts instead of shifted persisted occurrences", async () => {
     const fixture = await createTwoScriptProject();
     const initialSource = ["function source() {", "    var local_value = 1;", "    return local_value;", "}", ""].join(
         "\n"
@@ -374,11 +374,9 @@ void test("semantic highlights do not reuse shifted local occurrences while an e
 
         const localReferenceStart = updatedSource.lastIndexOf("local_value");
         const highlights = await semanticIndex.listSemanticHighlights(updatedDocument);
-        assert.equal(
-            highlights.some((highlight) => highlight.start === localReferenceStart),
-            false,
-            "A stale project occurrence must not be applied at a shifted local-reference offset."
-        );
+        const localReferenceHighlight = highlights.find((highlight) => highlight.start === localReferenceStart);
+        assert.equal(localReferenceHighlight?.kind, "variable");
+        assert.equal(localReferenceHighlight?.end, localReferenceStart + "local_value".length);
         await semanticIndex.dispose();
     } finally {
         await fixture.cleanup();
@@ -607,26 +605,23 @@ void test("closing an unsaved buffer restores disk-backed semantic facts and man
         const semanticIndex = Lsp.createGmlSemanticIndex(documents);
         await semanticIndex.buildForDocument(document);
         await semanticIndex.findReferences(document, 9, "overlay_symbol", true);
+        const overlayCompletions = await semanticIndex.searchCompletions(document, "overlay_symbol");
         assert.equal(
-            (await semanticIndex.searchCompletions(document, "overlay_symbol")).some(
-                (completion) => completion.label === "overlay_symbol"
-            ),
+            overlayCompletions.some((completion) => completion.label === "overlay_symbol"),
             true
         );
 
         documents.close(document.uri);
         await semanticIndex.refreshForFilePath(scriptPath);
         const diskDocument = Lsp.createGmlTextDocument(document.uri, "gml", 0, diskSource);
+        const diskCompletions = await semanticIndex.searchCompletions(diskDocument, "disk_symbol");
         assert.equal(
-            (await semanticIndex.searchCompletions(diskDocument, "disk_symbol")).some(
-                (completion) => completion.label === "disk_symbol"
-            ),
+            diskCompletions.some((completion) => completion.label === "disk_symbol"),
             true
         );
+        const staleOverlayCompletions = await semanticIndex.searchCompletions(diskDocument, "overlay_symbol");
         assert.equal(
-            (await semanticIndex.searchCompletions(diskDocument, "overlay_symbol")).some(
-                (completion) => completion.label === "overlay_symbol"
-            ),
+            staleOverlayCompletions.some((completion) => completion.label === "overlay_symbol"),
             false
         );
         await semanticIndex.dispose();

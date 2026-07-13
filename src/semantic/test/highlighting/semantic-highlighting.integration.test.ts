@@ -105,3 +105,44 @@ void test("semantic highlighting covers macros, enums, parameters, locals, and t
         await cleanup();
     }
 });
+
+void test("semantic highlighting covers static sound helper parameters, locals, built-ins, and method calls", async () => {
+    const { projectRoot, writeProjectFile, cleanup } = await createTempProjectWorkspace(
+        "gml-highlighting-sound-helper-"
+    );
+    const sourceText = [
+        "function SoundManager() constructor {",
+        "    static get_sound = function (sound_action) {",
+        "        var sound_list = struct_get(sounds, sound_action);",
+        "        if (is_undefined(sound_list)) return noone;",
+        "        return sound_list.get_random();",
+        "    };",
+        "}",
+        ""
+    ].join("\n");
+    try {
+        await writeProjectFile("Game.yyp", JSON.stringify({ name: "Game", resourceType: "GMProject" }));
+        const filePath = await writeProjectFile("scripts/sound/sound.gml", sourceText);
+        const navigation = await buildProjectNavigationIndex(projectRoot);
+        const tokens = collectGmlSemanticHighlights({
+            sourceText,
+            builtIns: ["struct_get", "is_undefined"].map((name) => ({ deprecated: false, name, type: "function" })),
+            projectIdentifiers: [],
+            occurrences: (navigation.occurrencesByFilePath.get(filePath) ?? []).map((occurrence) => ({
+                end: occurrence.location.range.end,
+                kind: occurrence.kind,
+                role: occurrence.role,
+                start: occurrence.location.range.start
+            }))
+        });
+        const kindsFor = (name: string) =>
+            tokens.filter((token) => sourceText.slice(token.start, token.end) === name).map((token) => token.kind);
+        assert.deepEqual(kindsFor("sound_action"), ["parameter", "parameter"]);
+        assert.deepEqual(kindsFor("sound_list"), ["variable", "variable", "variable"]);
+        assert.deepEqual(kindsFor("struct_get"), ["function"]);
+        assert.deepEqual(kindsFor("is_undefined"), ["function"]);
+        assert.deepEqual(kindsFor("get_random"), ["method"]);
+    } finally {
+        await cleanup();
+    }
+});

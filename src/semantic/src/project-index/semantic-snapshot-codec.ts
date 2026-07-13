@@ -1,5 +1,6 @@
 import { Core } from "@gmloop/core";
 
+import { getGmlSymbolKindForIdentifierCollection } from "../symbols/taxonomy.js";
 import type {
     SemanticDependency,
     SemanticOccurrence,
@@ -236,7 +237,7 @@ function resolveUniqueCallTargets(
 }> {
     const callableSymbolsByName = new Map<string, SemanticSymbol[]>();
     for (const symbol of parameters.symbols) {
-        if (symbol.definingFilePath === null || (symbol.kind !== "functions" && symbol.kind !== "scripts")) {
+        if (symbol.definingFilePath === null || (symbol.kind !== "function" && symbol.kind !== "script")) {
             continue;
         }
         Core.getOrCreateMapEntry(callableSymbolsByName, symbol.name, () => []).push(symbol);
@@ -394,7 +395,7 @@ export function createSemanticSnapshotFromProjectIndex(
                     definingFilePath,
                     displayName: readString(entry.displayName) ?? name,
                     documentation: readDocumentation(entry.documentation),
-                    kind: collectionName,
+                    kind: readString(entry.semanticKind) ?? getGmlSymbolKindForIdentifierCollection(collectionName),
                     name,
                     scopeId: readString(entry.scopeId),
                     symbolId

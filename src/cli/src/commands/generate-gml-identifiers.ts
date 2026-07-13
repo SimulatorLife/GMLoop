@@ -964,16 +964,20 @@ async function mergeCallableManualPages(
     manualBasenames: ReadonlyMap<string, string | null>
 ): Promise<void> {
     const manualPaths = [...new Set([...manualBasenames.values()].flatMap((value) => (value === null ? [] : [value])))];
-    const callablePages = await Core.runInParallelWithLimit(manualPaths, async (manualPath) => {
-        const html = await readManualText(manualRoot, path.posix.join("Manual/contents", manualPath));
-        const document = parseManualDocument(html);
-        const identifier = normalizeManualHoverText(document.querySelector("h1")?.textContent);
-        if (!IDENTIFIER_PATTERN.test(identifier)) {
-            return null;
-        }
-        const hover = extractManualHoverMetadata(identifier, html);
-        return hover === null ? null : { hover, identifier, manualPath };
-    }, 8);
+    const callablePages = await Core.runInParallelWithLimit(
+        manualPaths,
+        async (manualPath) => {
+            const html = await readManualText(manualRoot, path.posix.join("Manual/contents", manualPath));
+            const document = parseManualDocument(html);
+            const identifier = normalizeManualHoverText(document.querySelector("h1")?.textContent);
+            if (!IDENTIFIER_PATTERN.test(identifier)) {
+                return null;
+            }
+            const hover = extractManualHoverMetadata(identifier, html);
+            return hover === null ? null : { hover, identifier, manualPath };
+        },
+        8
+    );
     for (const callablePage of callablePages) {
         if (callablePage === null) {
             continue;

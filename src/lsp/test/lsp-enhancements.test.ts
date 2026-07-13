@@ -147,6 +147,56 @@ void test("LSP: built-in functions appear in completions and hover", async () =>
     }
 });
 
+void test("LSP: static sound helper exposes complete hover and highlighting facts", async () => {
+    const proj = await createProject("SoundHelperTest");
+    const sourceText = [
+        "function SoundManager() constructor {",
+        "    static get_sound = function (sound_action) {",
+        "        var sound_list = struct_get(sounds, sound_action);",
+        "        if (is_undefined(sound_list)) return noone;",
+        "        return sound_list.get_random();",
+        "    };",
+        "}",
+        ""
+    ].join("\n");
+    try {
+        const store = Lsp.createGmlDocumentStore();
+        const document = store.open({
+            uri: Lsp.filePathToUri(proj.scriptPath),
+            languageId: "gml",
+            version: 1,
+            text: sourceText
+        });
+        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        await semanticIndex.buildForDocument(document);
+
+        const hoverText = async (name: string) => {
+            const hover = await semanticIndex.hover(document, sourceText.indexOf(name), name);
+            return typeof hover?.contents === "object" && "value" in hover.contents ? hover.contents.value : "";
+        };
+        assert.match(await hoverText("sound_action"), /parameter/u);
+        assert.match(await hoverText("sound_list"), /localVariable/u);
+        for (const builtIn of ["struct_get", "is_undefined"]) {
+            const text = await hoverText(builtIn);
+            assert.match(text, /Built-in function/u);
+            assert.match(text, /Open GameMaker Manual Page/u);
+        }
+
+        const highlights = await semanticIndex.listSemanticHighlights(document);
+        const kindsFor = (name: string) =>
+            highlights
+                .filter((highlight) => sourceText.slice(highlight.start, highlight.end) === name)
+                .map((highlight) => highlight.kind);
+        assert.deepEqual(kindsFor("sound_action"), ["parameter", "parameter"]);
+        assert.deepEqual(kindsFor("sound_list"), ["variable", "variable", "variable"]);
+        assert.deepEqual(kindsFor("struct_get"), ["function"]);
+        assert.deepEqual(kindsFor("is_undefined"), ["function"]);
+        assert.deepEqual(kindsFor("get_random"), ["method"]);
+    } finally {
+        await proj.cleanup();
+    }
+});
+
 void test("LSP: custom FsFacade resolves open document when physical file is missing from disk", async () => {
     const proj = await createProject("MissingDiskFileTest");
     try {

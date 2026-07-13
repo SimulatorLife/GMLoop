@@ -244,8 +244,16 @@ function normalizeIdentifierEntry(
     const entry = asRecord(rawEntry);
     const name = readString(entry.name) ?? readString(entry.displayName) ?? entryKey;
     const displayName = readString(entry.displayName) ?? name;
+    const declarations = Array.isArray(entry.declarations) ? entry.declarations : [];
+    const isParameter = declarations.some((declaration) => {
+        const classifications = asRecord(declaration).classifications;
+        return Array.isArray(classifications) && classifications.includes("parameter");
+    });
     const kind = normalizeGmlSemanticSymbolKind(
-        readString(entry.semanticKind) ?? getGmlSymbolKindForIdentifierCollection(collectionName)
+        readString(entry.semanticKind) ??
+            (collectionName === "localVariables" && isParameter
+                ? "parameter"
+                : getGmlSymbolKindForIdentifierCollection(collectionName))
     );
     const symbolId = readString(entry.identifierId) ?? `${kind}:${entryKey}`;
     const entryFilePath = readString(entry.filePath) ?? readString(entry.resourcePath);
@@ -544,7 +552,7 @@ export function createProjectNavigationIndexFromSemanticSnapshot(
     }
     const symbols = snapshot.symbols
         .map((symbol): GmlNavigationSymbol => {
-            const kind = getGmlSymbolKindForIdentifierCollection(symbol.kind);
+            const kind = normalizeGmlSemanticSymbolKind(symbol.kind);
             const occurrences = (occurrencesBySymbolId.get(symbol.symbolId) ?? []).map((occurrence) => ({
                 ...occurrence,
                 displayName: symbol.displayName,
