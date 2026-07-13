@@ -31,7 +31,7 @@ Semantic owns:
 - project index construction and query interfaces
 - bounded-memory index execution backends
 
-Semantic does not own:
+Semantic does **not** own:
 
 - syntax parsing
 - formatting layout
