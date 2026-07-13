@@ -109,7 +109,8 @@ function publishSnapshot(
     store: ReturnType<typeof openSemanticIndexStore>,
     index: Record<string, unknown>,
     tier: "definitions" | "full",
-    sourceRevision: string
+    sourceRevision: string,
+    affectedFiles: ReadonlyArray<string> | null = null
 ) {
     const files = Core.isObjectLike(index.files) ? index.files : {};
     const entries = new Map(
@@ -132,7 +133,7 @@ function publishSnapshot(
         entries,
         sourceRevision: sourceRevision as SemanticFileManifest["sourceRevision"]
     });
-    const publication = store.publishIndex({
+    const publicationRequest = {
         authoritative: tier === "full" && sourceRevision !== "revision-definitions",
         baseGeneration: store.readStateForTier(tier)?.generation ?? null,
         expectedHeadGeneration: store.readProjectHead().generation,
@@ -140,11 +141,137 @@ function publishSnapshot(
         manifest,
         sourceRevision,
         tier
-    });
+    } as const;
+    const publication =
+        affectedFiles === null
+            ? store.publishSemanticSnapshot(publicationRequest)
+            : store.applySemanticIncrement({ ...publicationRequest, affectedFiles });
     assert.equal(publication.status, "published");
     assert.ok(publication.state);
     return publication.state;
 }
+
+void test("scoped publication preserves unrelated normalized rows and generations", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-store-scoped-"));
+    const store = openSemanticIndexStore(projectRoot);
+    const createIndex = (displayName: string, includeA = true) => ({
+        identifiers: {
+            functions: {
+                ...(includeA
+                    ? {
+                          a: {
+                              declarations: [
+                                  {
+                                      filePath: "scripts/a.gml",
+                                      location: { end: { index: 1 }, start: { index: 0 } }
+                                  }
+                              ],
+                              displayName,
+                              filePath: "scripts/a.gml",
+                              identifierId: "gml/function/a",
+                              name: "a"
+                          }
+                      }
+                    : {}),
+                b: {
+                    declarations: [{ filePath: "scripts/b.gml", location: { end: { index: 1 }, start: { index: 0 } } }],
+                    displayName: "b",
+                    filePath: "scripts/b.gml",
+                    identifierId: "gml/function/b",
+                    name: "b"
+                }
+            }
+        },
+        scopes: {
+            ...(includeA
+                ? { "scope:a": { displayName: "a", filePaths: ["scripts/a.gml"], kind: "script", name: "a" } }
+                : {}),
+            "scope:b": { displayName: "b", filePaths: ["scripts/b.gml"], kind: "script", name: "b" }
+        },
+        projectRoot
+    });
+    try {
+        publishSnapshot(store, createIndex("a"), "definitions", "scoped-r1");
+        publishSnapshot(store, createIndex("a updated"), "definitions", "scoped-r2", ["scripts/a.gml"]);
+        const database = openGraphIndexDatabase(getSemanticIndexDatabasePath(projectRoot));
+        try {
+            const rows = database
+                .prepare(
+                    "SELECT symbol_id, display_name, updated_generation FROM semantic_symbols WHERE project_root = ? AND tier = 'definitions' ORDER BY symbol_id"
+                )
+                .all(projectRoot)
+                .flatMap((row) =>
+                    typeof row.symbol_id === "string" &&
+                    typeof row.display_name === "string" &&
+                    typeof row.updated_generation === "number"
+                        ? [
+                              {
+                                  displayName: row.display_name,
+                                  generation: row.updated_generation,
+                                  symbolId: row.symbol_id
+                              }
+                          ]
+                        : []
+                );
+            assert.deepEqual(rows, [
+                { displayName: "a updated", generation: 2, symbolId: "gml/function/a" },
+                { displayName: "b", generation: 1, symbolId: "gml/function/b" }
+            ]);
+        } finally {
+            database.close();
+        }
+        publishSnapshot(store, createIndex("unused", false), "definitions", "scoped-r3", ["scripts/a.gml"]);
+        const afterDeleteDatabase = openGraphIndexDatabase(getSemanticIndexDatabasePath(projectRoot));
+        try {
+            const remainingSymbols = afterDeleteDatabase
+                .prepare(
+                    "SELECT symbol_id, updated_generation FROM semantic_symbols WHERE project_root = ? AND tier = 'definitions' ORDER BY symbol_id"
+                )
+                .all(projectRoot)
+                .flatMap((row) =>
+                    typeof row.symbol_id === "string" && typeof row.updated_generation === "number"
+                        ? [{ generation: row.updated_generation, symbolId: row.symbol_id }]
+                        : []
+                );
+            const remainingScopes = afterDeleteDatabase
+                .prepare(
+                    "SELECT scope_id, updated_generation FROM semantic_scopes WHERE project_root = ? AND tier = 'definitions' ORDER BY scope_id"
+                )
+                .all(projectRoot)
+                .flatMap((row) =>
+                    typeof row.scope_id === "string" && typeof row.updated_generation === "number"
+                        ? [{ generation: row.updated_generation, scopeId: row.scope_id }]
+                        : []
+                );
+            const scopeFiles = afterDeleteDatabase
+                .prepare(
+                    "SELECT scope_id, file_path, updated_generation FROM semantic_scope_files WHERE project_root = ? AND tier = 'definitions' ORDER BY scope_id, file_path"
+                )
+                .all(projectRoot)
+                .flatMap((row) =>
+                    typeof row.scope_id === "string" &&
+                    typeof row.file_path === "string" &&
+                    typeof row.updated_generation === "number"
+                        ? [{ filePath: row.file_path, generation: row.updated_generation, scopeId: row.scope_id }]
+                        : []
+                );
+            const history = afterDeleteDatabase
+                .prepare(
+                    "SELECT reason, affected_file_count FROM semantic_generation_history WHERE project_root = ? AND generation = 3"
+                )
+                .get(projectRoot);
+            assert.deepEqual(remainingSymbols, [{ generation: 1, symbolId: "gml/function/b" }]);
+            assert.deepEqual(remainingScopes, [{ generation: 1, scopeId: "scope:b" }]);
+            assert.deepEqual(scopeFiles, [{ filePath: "scripts/b.gml", generation: 1, scopeId: "scope:b" }]);
+            assert.equal(history?.affected_file_count, 1);
+            assert.equal(history?.reason, "increment");
+        } finally {
+            afterDeleteDatabase.close();
+        }
+    } finally {
+        store.close();
+    }
+});
 
 void test("semantic index store persists records and generation state in SQLite", async () => {
     const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-store-"));
@@ -203,7 +330,7 @@ void test("semantic index store rejects stale generation publications without ch
     const store = openSemanticIndexStore(projectRoot);
     try {
         const initialHead = store.readProjectHead();
-        const fullPublication = store.publishIndex({
+        const fullPublication = store.publishSemanticSnapshot({
             authoritative: true,
             baseGeneration: null,
             expectedHeadGeneration: initialHead.generation,
@@ -215,7 +342,7 @@ void test("semantic index store rejects stale generation publications without ch
         assert.equal(fullPublication.status, "published");
         assert.equal(fullPublication.state?.generation, 1);
 
-        const staleDefinitionsPublication = store.publishIndex({
+        const staleDefinitionsPublication = store.publishSemanticSnapshot({
             authoritative: false,
             baseGeneration: null,
             expectedHeadGeneration: initialHead.generation,
@@ -241,7 +368,7 @@ void test("semantic index store rejects a publication derived from an older slot
     try {
         const initial = publishSnapshot(store, { files: {}, projectRoot }, "definitions", "revision-one");
         const advanced = publishSnapshot(store, { files: {}, projectRoot }, "definitions", "revision-two");
-        const rejected = store.publishIndex({
+        const rejected = store.publishSemanticSnapshot({
             authoritative: false,
             baseGeneration: initial.generation,
             expectedHeadGeneration: store.readProjectHead().generation,
@@ -281,7 +408,7 @@ void test("semantic index store rejects a non-authoritative full publication wit
     const store = openSemanticIndexStore(projectRoot);
     try {
         const definitions = publishSnapshot(store, { files: {}, projectRoot }, "definitions", "revision-definitions");
-        const rejected = store.publishIndex({
+        const rejected = store.publishSemanticSnapshot({
             authoritative: false,
             baseGeneration: definitions.generation,
             expectedHeadGeneration: definitions.generation,
@@ -305,7 +432,7 @@ void test("semantic index store persists and restores the generation-bound manif
     const manifest = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade);
     const store = openSemanticIndexStore(projectRoot);
     try {
-        const publication = store.publishIndex({
+        const publication = store.publishSemanticSnapshot({
             authoritative: false,
             baseGeneration: null,
             expectedHeadGeneration: 0,
@@ -430,14 +557,27 @@ void test("semantic index store persists file hashes and immediate reverse depen
                     "scripts/d/d.gml": {
                         contentHash: "hash-d",
                         filePath: "scripts/d/d.gml",
-                        ignoredIdentifiers: [{ name: "newly_defined" }]
+                        ignoredIdentifiers: [
+                            { end: { index: 12 }, name: "newly_defined", start: { index: 0 } },
+                            { end: { index: 19 }, name: "show_debug_message", reason: "built-in", start: { index: 1 } }
+                        ]
                     }
                 },
                 identifiers: {
                     functions: {
                         "function:resolved": {
-                            declarations: [{ filePath: "scripts/c/c.gml" }],
-                            references: [{ filePath: "scripts/d/d.gml" }]
+                            declarations: [
+                                {
+                                    filePath: "scripts/c/c.gml",
+                                    location: { end: { index: 7 }, start: { index: 0 } }
+                                }
+                            ],
+                            references: [
+                                {
+                                    filePath: "scripts/d/d.gml",
+                                    location: { end: { index: 7 }, start: { index: 0 } }
+                                }
+                            ]
                         }
                     }
                 },
@@ -470,6 +610,10 @@ void test("semantic index store persists file hashes and immediate reverse depen
         assert.deepEqual(store.findImmediateDownstreamFiles("scripts/a/a.gml"), ["scripts/b/b.gml"]);
         assert.deepEqual(store.findImmediateDownstreamFiles("scripts/c/c.gml"), ["scripts/d/d.gml"]);
         assert.deepEqual(store.findUnresolvedDependents(["newly_defined"]), ["scripts/d/d.gml"]);
+        assert.deepEqual(store.findUnresolvedDependents(["show_debug_message"]), []);
+        assert.deepEqual(store.readSemanticSnapshot("full")?.unresolvedReferences, [
+            { end: 13, filePath: "scripts/d/d.gml", name: "newly_defined", start: 0 }
+        ]);
         assert.deepEqual(store.findImmediateDownstreamFiles("scripts/b/b.gml"), []);
         assert.deepEqual(
             store.readSemanticSnapshot("full")?.relationships.map((relationship) => relationship.kind),

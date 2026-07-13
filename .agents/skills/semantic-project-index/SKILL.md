@@ -9,13 +9,19 @@ description: Use this skill when working on semantic analysis, scope tracking, s
 
 Use this skill when an agent is changing semantic analysis or project indexing.
 
+The semantic-analysis system is the authoritative source of semantic facts for a specific project revision. Downstream systems, including the LSP, linter, refactor engine, codemods, transpiler, hot-reload system, project graph, and CLI tools, must consume these shared semantic facts rather than independently inferring or approximating code meaning.
+
 The semantic target state is a robust, bounded-memory understanding layer for GameMaker projects:
 
 - classify identifiers and scopes deterministically
-- model definitions and references through SCIP-shaped data
 - support linting, refactoring, transpilation, graph views, search, and AI-agent context retrieval
 - scale to large projects without retaining monolithic aggregates
-- preserve strict GameMaker semantics instead of generic JavaScript assumptions
+- preserve strict GameMaker semantics; must support every valid GML declaration, scope, ownership form, reference form, etc.
+- Invalidation must trigger verification or recomputation only for results whose inputs may have changed, without eagerly deleting or rebuilding every transitive dependent
+- Inheritance changes must propagate through indexed direct relationships, recomputing affected effective interfaces and continuing only where their externally relevant semantic output changes
+- Snapshot and derived-cache retention must be bounded, with completed or cancelled requests releasing their references and obsolete revisions becoming reclaimable. Unchanged data may be shared across revisions, but unexpectedly retained snapshots and caches must be observable
+- Progressive semantic availability must be published as separate immutable snapshots rather than mutations to existing snapshots. Each request must pin one snapshot identified by project revision, analysis generation, tier, capabilities, coverage, and overlay versions for its full duration
+- The system must distinguish source and project errors, limitations or uncertainty in semantic analysis, and failures in the semantic service or persistent cache. Every issue must identify its origin, affected capabilities, safety implications, source location where applicable, and whether the result is conservative or blocks an operation
 
 This skill is target-state oriented. Refactor the current codebase's implementation/structures when they block correctness, typing, DRY design, or performance.
 

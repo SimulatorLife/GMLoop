@@ -169,34 +169,42 @@ The semantic-analysis service is the canonical source of semantic facts for a pr
 
 The canonical semantic model must represent, directly or through deterministic queries:
 
-- Files and project resources.
-- Syntax and semantic nodes.
-- Declarations.
-- Symbols.
-- Symbol ownership.
-- Symbol kinds.
-- Scopes and scope relationships.
-- Namespaces.
-- Types.
-- Function and method signatures.
-- Definitions and occurrences.
-- Identifier and property resolution.
-- Receiver resolution.
-- Inheritance.
-- Overrides and implementations.
-- Calls.
-- Reads and writes.
-- Resource references.
-- Documentation.
-- Diagnostics.
-- Semantic dependencies.
-- Compilation and hot-reload impact.
-- Refactor-safety information.
-- Resolution confidence and semantic gaps.
+- Files and project resources
+- Syntax and semantic nodes
+- Declarations
+- Symbols
+- Symbol ownership
+- Symbol kinds
+- Scopes and scope relationships
+- Namespaces
+- Types
+- Function and method signatures
+- Definitions and occurrences
+- Identifier and property resolution
+- Receiver resolution
+- Inheritance
+- Overrides and implementations
+- Calls
+- Reads and writes
+- Resource references
+- Documentation
+- Diagnostics
+- Semantic dependencies
+- Compilation and hot-reload impact
+- Refactor-safety information
+- Resolution state
+- Resolution provenance
+- Resolution completeness
+- Candidate targets
+- Conservative assumptions
+- Semantic gaps and analysis limitations
 
 The canonical semantic model must not be limited to the information expressible in an external navigation or interchange format.
 
 The project must not be represented as one giant mutable graph. The design must support immutable or revisioned semantic snapshots, replaceable file-local semantic results, indexed relationships, and scoped derived queries.
+
+Derived semantic results must use a revision-aware incremental dependency model that tracks their inputs, dependent results, completeness, capabilities, and semantic fingerprints. Invalidation should trigger scoped verification or recomputation rather than eager transitive rebuilding, stop when externally relevant output is unchanged, and support recomputation units finer than the file level where beneficial.
+
 
 ### 4.3 Semantic Facts and Transpilation Decisions
 
@@ -237,41 +245,40 @@ The semantic model must remain valid independently of a specific output language
 
 The semantic system must support every valid GML declaration, scope, ownership form, and reference form that can affect analysis, navigation, refactoring, linting, transpilation, or hot reload.
 
-This includes, without limiting the implementation to a fixed enumeration:
+This includes, but is not limited to:
 
-- Local variables.
-- Function parameters.
-- Function-local declarations.
-- Script functions.
-- Constructors.
-- Constructor-owned fields.
-- Struct fields.
-- Instance fields.
-- Implicit and explicit `self` fields.
-- `other` fields.
-- Object-owned fields.
-- Inherited fields and methods.
-- Static variables and static members.
-- Methods.
-- Global variables.
-- Macros.
-- Enums and enum members.
-- Built-in functions.
-- Built-in variables.
-- Built-in constants.
-- Reserved identifiers.
-- Object resources.
-- Sprite resources.
-- Room resources.
-- Sequence resources.
-- Shader resources.
-- Timeline resources.
-- Audio resources.
-- Fonts.
-- Paths.
-- Included files.
-- Extension-provided symbols.
-- Other GameMaker resources and project-defined symbol categories.
+- Local variables
+- Function parameters
+- Function-local declarations
+- Script functions
+- Constructors
+- Constructor-owned fields
+- Struct fields
+- Instance fields
+- Implicit and explicit `self` fields
+- `other` fields
+- Object-owned fields
+- Inherited fields and methods
+- Static variables and static members
+- Global variables
+- Macros
+- Enums and enum members
+- Built-in functions
+- Built-in variables
+- Built-in constants
+- Reserved identifiers
+- Object resources
+- Sprite resources
+- Room resources
+- Sequence resources
+- Shader resources
+- Timeline resources
+- Audio resources
+- Fonts
+- Paths
+- Included files
+- Extension-provided symbols
+- Other GameMaker resources and project-defined symbol categories
 
 The model must correctly represent constructor-owned declarations such as:
 
@@ -350,13 +357,13 @@ The semantic system must resolve all statically determinable references and cons
 
 Dynamic behavior must be handled through one or more of:
 
-* Constant-string analysis.
-* Candidate-set analysis.
-* User-provided contracts or annotations.
-* Extension metadata.
-* Conservative dependency edges.
-* Explicit diagnostics.
-* Refactor blocking when safety cannot be proven.
+* Constant-string analysis
+* Candidate-set analysis
+* User-provided contracts or annotations
+* Extension metadata
+* Conservative dependency edges
+* Explicit diagnostics
+* Refactor blocking when safety cannot be proven
 
 The long-term goal is to continually reduce unsupported or unnecessarily unresolved cases. It is not a requirement to claim exact static knowledge where the language permits genuinely dynamic behavior.
 
@@ -419,7 +426,7 @@ Cross-revision identity is not required to survive arbitrary unrelated source mo
 
 ### 4.9 SCIP Projection
 
-GMLoop must support the Sourcegraph Code Intelligence Protocol, or a compatible standardized code-intelligence representation, as the canonical interoperable projection for navigation-oriented semantic data.
+GMLoop must support the Sourcegraph Code Intelligence Protocol (SCIP) as the canonical interoperable projection for navigation-oriented semantic data.
 
 The SCIP projection may contain:
 
@@ -434,26 +441,26 @@ The SCIP projection may contain:
 
 SCIP is not the sole canonical semantic model and must not constrain the internal representation of:
 
-* Scopes.
-* Flow-sensitive types.
-* Receiver inference.
-* Query dependencies.
-* Incremental invalidation.
-* Refactor simulations.
-* Compilation-impact relationships.
-* Dynamic-resolution states.
-* Project overlays.
-* Internal semantic summaries.
+* Scopes
+* Flow-sensitive types
+* Receiver inference
+* Query dependencies
+* Incremental invalidation
+* Refactor simulations
+* Compilation-impact relationships
+* Dynamic-resolution states
+* Project overlays
+* Internal semantic summaries
 
 SCIP symbols must be deterministic for a given project revision.
 
 SCIP symbol naming must follow the selected SCIP symbol grammar and must distinguish:
 
-* Project or package identity.
-* Symbol ownership.
-* Symbol kind.
-* Qualified descriptors.
-* Document-local symbols where appropriate.
+* Project or package identity
+* Symbol ownership
+* Symbol kind
+* Qualified descriptors
+* Document-local symbols where appropriate
 
 A deterministic GML-oriented naming scheme may conceptually represent symbols such as scripts, objects, methods, constructors, fields, and resources, but the exact external encoding is an implementation decision.
 
@@ -465,28 +472,28 @@ Definition and reference relationships must not be treated as equivalent to comp
 
 The semantic system must distinguish relationship categories such as:
 
-* Defines.
-* Declares.
-* Contains.
-* References.
-* Reads.
-* Writes.
-* Calls.
-* Constructs.
-* Uses type.
-* Inherits from.
-* Is inherited by.
-* Overrides.
-* Is overridden by.
-* Implements.
-* Imports or includes.
-* Uses resource.
-* Generates or owns.
-* Depends on configuration.
-* Depends on built-in definitions.
-* Affects compilation.
-* Affects hot reload.
-* Depends on semantic query results.
+* Defines
+* Declares
+* Contains
+* References
+* Reads
+* Writes
+* Calls
+* Constructs
+* Uses type
+* Inherits from
+* Is inherited by
+* Overrides
+* Is overridden by
+* Implements
+* Imports or includes
+* Uses resource
+* Generates or owns
+* Depends on configuration
+* Depends on built-in definitions
+* Affects compilation
+* Affects hot reload
+* Depends on semantic query results
 
 The system must maintain conceptually separate models for:
 

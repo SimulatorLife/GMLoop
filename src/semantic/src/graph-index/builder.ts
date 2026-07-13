@@ -2072,7 +2072,7 @@ async function getOrBuildProjectIndex(projectRoot: string): Promise<ProjectIndex
         const index = (await buildProjectIndex(projectRoot, Core.defaultFsFacade, {
             parseGml: parser
         })) as ProjectIndexSnapshot;
-        const publication = store.publishIndex({
+        const publication = store.publishSemanticSnapshot({
             authoritative: true,
             baseGeneration: store.readStateForTier("full")?.generation ?? null,
             expectedHeadGeneration: store.readProjectHead().generation,

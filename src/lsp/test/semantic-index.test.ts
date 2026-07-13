@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 
 import { Lsp } from "@gmloop/lsp";
+import { Semantic } from "@gmloop/semantic";
 
 async function cleanupProjectDir(projectRoot: string) {
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -162,6 +164,7 @@ void test("semantic index refreshes project facts after an external resource met
         });
         const semanticIndex = Lsp.createGmlSemanticIndex(store);
         await semanticIndex.buildForDocument(document);
+        await semanticIndex.findReferences(document, fixture.sourceText.indexOf("target();"), "target", false);
 
         const resourcePath = path.join(fixture.projectRoot, "scripts", "external", "external.yy");
         const sourcePath = path.join(fixture.projectRoot, "scripts", "external", "external.gml");
@@ -172,6 +175,37 @@ void test("semantic index refreshes project facts after an external resource met
         await semanticIndex.refreshForFilePath(resourcePath);
         const completions = await semanticIndex.searchCompletions(document, "external_added");
         assert.ok(completions.some((completion) => completion.label === "external_added"));
+        await waitForCondition(() => {
+            const database = new DatabaseSync(Semantic.getSemanticIndexDatabasePath(fixture.projectRoot), {
+                readOnly: true
+            });
+            try {
+                const rows = database
+                    .prepare(
+                        "SELECT files.relative_path, files.updated_generation, slots.generation FROM semantic_files files JOIN semantic_slots slots ON slots.project_root = files.project_root AND slots.tier = files.tier WHERE files.project_root = ? AND files.tier = 'full' AND files.relative_path IN (?, ?) ORDER BY files.relative_path"
+                    )
+                    .all(fixture.projectRoot, "scripts/external/external.gml", "scripts/source/source.gml");
+                const fileGenerations = new Map(
+                    rows.flatMap((row) =>
+                        typeof row.relative_path === "string" &&
+                        typeof row.updated_generation === "number" &&
+                        typeof row.generation === "number"
+                            ? [[row.relative_path, { file: row.updated_generation, slot: row.generation }] as const]
+                            : []
+                    )
+                );
+                const externalGeneration = fileGenerations.get("scripts/external/external.gml");
+                const sourceGeneration = fileGenerations.get("scripts/source/source.gml");
+                return (
+                    externalGeneration !== undefined &&
+                    sourceGeneration !== undefined &&
+                    externalGeneration.file === externalGeneration.slot &&
+                    sourceGeneration.file < sourceGeneration.slot
+                );
+            } finally {
+                database.close();
+            }
+        });
     } finally {
         await fixture.cleanup();
     }
@@ -526,7 +560,8 @@ void test("semantic index performs incremental updates on document refresh", asy
             path.join(projectRoot, "scripts/b/b.yy"),
             JSON.stringify({ name: "b", resourceType: "GMScript" })
         );
-        await fs.writeFile(bPath, "function b_func() { return 2; }");
+        const bSource = "function b_func() { return new_func(); }";
+        await fs.writeFile(bPath, bSource);
 
         const store = Lsp.createGmlDocumentStore();
         const docA = store.open({
@@ -535,11 +570,11 @@ void test("semantic index performs incremental updates on document refresh", asy
             version: 1,
             text: "function a_func() { return 1; }"
         });
-        store.open({
+        const docB = store.open({
             uri: Lsp.filePathToUri(bPath),
             languageId: "gml",
             version: 1,
-            text: "function b_func() { return 2; }"
+            text: bSource
         });
 
         let publishedGenerationCount = 0;
@@ -557,6 +592,14 @@ void test("semantic index performs incremental updates on document refresh", asy
             2,
             "Cold indexing should publish one definitions and one full generation"
         );
+        await waitForCondition(() => {
+            const persistedStore = Semantic.openSemanticIndexStore(projectRoot);
+            try {
+                return persistedStore.findUnresolvedDependents(["new_func"]).includes("scripts/b/b.gml");
+            } finally {
+                persistedStore.close();
+            }
+        });
 
         // Verify initial state has both functions
         const comps1 = await semanticIndex.searchCompletions(docA, "a_func");
@@ -573,11 +616,24 @@ void test("semantic index performs incremental updates on document refresh", asy
         assert.ok(updatedDocA);
 
         semanticIndex.invalidateForDocument(updatedDocA);
-        await semanticIndex.refreshForDocument(updatedDocA);
+        const refreshedState = await semanticIndex.refreshForDocument(updatedDocA);
+        assert.ok(refreshedState);
         assert.equal(
             publishedGenerationCount,
             4,
             "A scoped edit should publish one definitions generation before its full upgrade."
+        );
+        const immediateReferences = await semanticIndex.findReferences(
+            docB,
+            bSource.indexOf("new_func"),
+            "new_func",
+            false
+        );
+        assert.ok(immediateReferences.some((reference) => reference.uri === Lsp.filePathToUri(bPath)));
+        assert.equal(
+            publishedGenerationCount,
+            4,
+            "A current in-memory full snapshot must not launch a redundant Tier-2 build while persistence is queued."
         );
 
         // Verify new_func exists, a_func is gone, and b_func is STILL there
@@ -594,6 +650,53 @@ void test("semantic index performs incremental updates on document refresh", asy
         assert.ok(
             comps4.some((c) => c.label === "b_func"),
             "b_func from unrelated file should be preserved"
+        );
+        await waitForCondition(() => {
+            const database = new DatabaseSync(Semantic.getSemanticIndexDatabasePath(projectRoot), { readOnly: true });
+            try {
+                const row = database
+                    .prepare(
+                        "SELECT files.updated_generation, slots.generation FROM semantic_files files JOIN semantic_slots slots ON slots.project_root = files.project_root AND slots.tier = files.tier WHERE files.project_root = ? AND files.tier = 'full' AND files.relative_path = 'scripts/b/b.gml'"
+                    )
+                    .get(projectRoot);
+                return (
+                    typeof row?.generation === "number" &&
+                    row.generation >= 4 &&
+                    row.updated_generation === row.generation
+                );
+            } finally {
+                database.close();
+            }
+        });
+        const persistedStore = Semantic.openSemanticIndexStore(projectRoot);
+        const persistedSnapshot = persistedStore.readSemanticSnapshot("full");
+        persistedStore.close();
+        const persistedNewFunction = persistedSnapshot?.symbols.find((symbol) => symbol.name === "new_func");
+        assert.ok(persistedNewFunction, "The new function must exist in the matching full snapshot");
+        assert.ok(
+            persistedSnapshot?.occurrences.some(
+                (occurrence) =>
+                    occurrence.symbolId === persistedNewFunction.symbolId &&
+                    occurrence.role === "reference" &&
+                    occurrence.filePath === "scripts/b/b.gml"
+            ),
+            "The matching full snapshot must contain the rebound bare-call occurrence"
+        );
+        const liveNewFunction = refreshedState.index.symbols.find((symbol) => symbol.name === "new_func");
+        assert.ok(liveNewFunction, "The refreshed navigation state must contain the new function");
+        assert.ok(
+            liveNewFunction.references.some((reference) => reference.location.filePath === bPath),
+            "The refreshed navigation state must contain the rebound bare-call occurrence"
+        );
+        const newFunctionReferences = await semanticIndex.findReferences(
+            docB,
+            bSource.indexOf("new_func"),
+            "new_func",
+            false
+        );
+        assert.ok(
+            newFunctionReferences.some((reference) => reference.uri === Lsp.filePathToUri(bPath)),
+            "A unique newly introduced function should bind persisted unresolved bare calls"
         );
     } finally {
         await cleanupProjectDir(projectRoot);

@@ -10,6 +10,7 @@ import {
     resolveNavigationSymbolId
 } from "../src/navigation/index.js";
 import type { SemanticSnapshot } from "../src/project-index/semantic-snapshot.js";
+import { createSemanticSnapshotFromProjectIndex } from "../src/project-index/semantic-snapshot-codec.js";
 
 void test("project navigation separates definitions and references with exclusive ranges", () => {
     const index = createProjectNavigationIndex({
@@ -127,4 +128,52 @@ void test("project navigation restores directly from normalized semantic facts",
     assert.equal(findNavigationReferences(index, symbolId, false).length, 2);
     assert.equal(findNavigationSymbolAtPosition(index, "/tmp/game/scripts/use.gml", 25)?.symbolId, symbolId);
     assert.equal(findNavigationSymbolAtPosition(index, "/tmp/game/scripts/caller.gml", 13)?.symbolId, symbolId);
+});
+
+void test("semantic snapshot keeps ambiguous bare calls unresolved", () => {
+    const snapshot = createSemanticSnapshotFromProjectIndex(
+        {
+            identifiers: {
+                functions: {
+                    first: {
+                        declarations: [
+                            { filePath: "scripts/first.gml", location: { end: { index: 8 }, start: { index: 0 } } }
+                        ],
+                        filePath: "scripts/first.gml",
+                        identifierId: "gml/function/first-duplicate",
+                        name: "duplicate"
+                    },
+                    second: {
+                        declarations: [
+                            { filePath: "scripts/second.gml", location: { end: { index: 8 }, start: { index: 0 } } }
+                        ],
+                        filePath: "scripts/second.gml",
+                        identifierId: "gml/function/second-duplicate",
+                        name: "duplicate"
+                    }
+                }
+            },
+            relationships: {
+                scriptCalls: [
+                    {
+                        from: { filePath: "scripts/caller.gml", scopeId: "scope:caller" },
+                        isResolved: false,
+                        location: { end: { index: 16 }, start: { index: 8 } },
+                        target: { name: "duplicate", scopeId: null }
+                    }
+                ]
+            }
+        },
+        "full",
+        "ambiguous" as SemanticSnapshot["sourceRevision"]
+    );
+    assert.deepEqual(snapshot.unresolvedReferences, [
+        { end: 17, filePath: "scripts/caller.gml", name: "duplicate", start: 8 }
+    ]);
+    assert.equal(
+        snapshot.occurrences.some(
+            (occurrence) => occurrence.role === "reference" && occurrence.filePath === "scripts/caller.gml"
+        ),
+        false
+    );
 });

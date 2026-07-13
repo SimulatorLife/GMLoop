@@ -33,6 +33,7 @@ export type SemanticOccurrence = Readonly<{
 /** One canonical scope fact. */
 export type SemanticScope = Readonly<{
     displayName: string;
+    filePaths: ReadonlyArray<string>;
     kind: string;
     name: string;
     resourcePath: string | null;

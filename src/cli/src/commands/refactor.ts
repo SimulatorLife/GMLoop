@@ -48,7 +48,7 @@ async function publishSemanticProjectIndex(projectRoot: string, projectIndex: Re
     const manifest = await Semantic.buildSemanticFileManifest(projectRoot, Core.defaultFsFacade);
     const store = Semantic.openSemanticIndexStore(projectRoot);
     try {
-        const publication = store.publishIndex({
+        const publication = store.publishSemanticSnapshot({
             authoritative: true,
             baseGeneration: store.readStateForTier("full")?.generation ?? null,
             expectedHeadGeneration: store.readProjectHead().generation,

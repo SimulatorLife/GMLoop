@@ -72,6 +72,21 @@ export type SemanticActiveSlots = Readonly<{
     newestDefinitionsRevision: string | null;
 }>;
 
+/** Complete cold/recovery publication replacing one semantic tier. */
+export type SemanticSnapshotPublicationRequest = Readonly<{
+    authoritative: boolean;
+    baseGeneration: number | null;
+    expectedHeadGeneration: number;
+    index: Record<string, unknown>;
+    manifest: SemanticFileManifest | null;
+    sourceRevision: string;
+    tier: SemanticTier;
+}>;
+
+/** Atomic normalized-row publication for one complete impacted file set. */
+export type SemanticIncrementPublicationRequest = SemanticSnapshotPublicationRequest &
+    Readonly<{ affectedFiles: ReadonlyArray<string> }>;
+
 export type SemanticIndexStore = Readonly<{
     close: () => void;
     readFileContentHashes: () => ReadonlyMap<string, string>;
@@ -81,20 +96,104 @@ export type SemanticIndexStore = Readonly<{
     readIndexForTier: (tier: "definitions" | "full") => Record<string, unknown> | null;
     readStateForTier: (tier: "definitions" | "full") => SemanticStoreState | null;
     readProjectHead: () => SemanticProjectHead;
-    publishIndex: (
-        request: Readonly<{
-            authoritative: boolean;
-            baseGeneration: number | null;
-            expectedHeadGeneration: number;
-            index: Record<string, unknown>;
-            manifest: SemanticFileManifest | null;
-            sourceRevision: string;
-            tier: "definitions" | "full";
-        }>
-    ) => SemanticPublishResult;
+    applySemanticIncrement: (request: SemanticIncrementPublicationRequest) => SemanticPublishResult;
+    publishSemanticSnapshot: (request: SemanticSnapshotPublicationRequest) => SemanticPublishResult;
     findImmediateDownstreamFiles: (filePath: string) => ReadonlyArray<string>;
     findUnresolvedDependents: (identifierNames: ReadonlyArray<string>) => ReadonlyArray<string>;
 }>;
+
+function normalizeSemanticFilePath(projectRoot: string, filePath: string): string {
+    const relativePath = path.isAbsolute(filePath) ? path.relative(projectRoot, filePath) : filePath;
+    return path.normalize(relativePath).split(path.sep).join("/").replaceAll("\\", "/");
+}
+
+function createAffectedFileSet(
+    projectRoot: string,
+    affectedFiles: ReadonlyArray<string> | null
+): ReadonlySet<string> | null {
+    return affectedFiles === null
+        ? null
+        : new Set(affectedFiles.map((filePath) => normalizeSemanticFilePath(projectRoot, filePath)));
+}
+
+function isAffectedSemanticFile(affectedFiles: ReadonlySet<string> | null, filePath: string | null): boolean {
+    return affectedFiles === null || (filePath !== null && affectedFiles.has(filePath));
+}
+
+function deleteAffectedRows(
+    database: GraphDatabase,
+    projectRoot: string,
+    tier: SemanticTier,
+    affectedFiles: ReadonlySet<string> | null
+): void {
+    if (affectedFiles === null) {
+        for (const tableName of [
+            "semantic_dependencies",
+            "semantic_occurrences",
+            "semantic_scope_files",
+            "semantic_relationships",
+            "semantic_symbols",
+            "semantic_scopes",
+            "semantic_resources",
+            "semantic_files",
+            "semantic_unresolved_references"
+        ]) {
+            database.prepare(`DELETE FROM ${tableName} WHERE project_root = ? AND tier = ?`).run(projectRoot, tier);
+        }
+        return;
+    }
+    if (affectedFiles.size === 0) {
+        return;
+    }
+    const paths = [...affectedFiles];
+    const placeholders = paths.map(() => "?").join(", ");
+    const parameters = [projectRoot, tier, ...paths];
+    database
+        .prepare(
+            `DELETE FROM semantic_dependencies WHERE project_root = ? AND tier = ? AND (owner_file_path IN (${placeholders}) OR dependent_file_path IN (${placeholders}))`
+        )
+        .run(...parameters, ...paths);
+    database
+        .prepare(
+            `DELETE FROM semantic_symbols WHERE project_root = ? AND tier = ? AND (defining_file_path IN (${placeholders}) OR symbol_id IN (SELECT symbol_id FROM semantic_occurrences WHERE project_root = ? AND tier = ? AND role = 'definition' AND file_path IN (${placeholders})))`
+        )
+        .run(...parameters, projectRoot, tier, ...paths);
+    database
+        .prepare(
+            `DELETE FROM semantic_scopes WHERE project_root = ? AND tier = ? AND scope_id IN (SELECT scope_id FROM semantic_scope_files WHERE project_root = ? AND tier = ? AND file_path IN (${placeholders}))`
+        )
+        .run(projectRoot, tier, projectRoot, tier, ...paths);
+    database
+        .prepare(
+            `DELETE FROM semantic_occurrences WHERE project_root = ? AND tier = ? AND file_path IN (${placeholders})`
+        )
+        .run(...parameters);
+    database
+        .prepare(
+            `DELETE FROM semantic_relationships WHERE project_root = ? AND tier = ? AND owner_file_path IN (${placeholders})`
+        )
+        .run(...parameters);
+    database
+        .prepare(
+            `DELETE FROM semantic_unresolved_references WHERE project_root = ? AND tier = ? AND file_path IN (${placeholders})`
+        )
+        .run(...parameters);
+    database
+        .prepare(
+            `DELETE FROM semantic_files WHERE project_root = ? AND tier = ? AND relative_path IN (${placeholders})`
+        )
+        .run(...parameters);
+    database
+        .prepare(
+            `DELETE FROM semantic_resources WHERE project_root = ? AND tier = ? AND resource_path IN (${placeholders})`
+        )
+        .run(...parameters);
+    database
+        .prepare(
+            `DELETE FROM semantic_scopes WHERE project_root = ? AND tier = ? AND resource_path IN (${placeholders})`
+        )
+        .run(...parameters);
+}
 
 function parseRecordPayload(payload: string): unknown {
     try {
@@ -102,14 +201,6 @@ function parseRecordPayload(payload: string): unknown {
     } catch {
         return null;
     }
-}
-
-function readRecordString(value: unknown, key: string): string | null {
-    if (!Core.isObjectLike(value)) {
-        return null;
-    }
-    const candidate = (value as Record<string, unknown>)[key];
-    return typeof candidate === "string" && candidate.length > 0 ? candidate : null;
 }
 
 function readFileContentHashes(database: GraphDatabase, projectRoot: string): ReadonlyMap<string, string> {
@@ -227,6 +318,18 @@ function readSemanticSnapshot(
                       ]
                     : []
         );
+    const scopeFilePaths = new Map<string, string[]>();
+    for (const row of database
+        .prepare(
+            "SELECT scope_id, file_path FROM semantic_scope_files WHERE project_root = ? AND tier = ? ORDER BY scope_id, file_path"
+        )
+        .all(projectRoot, tier)) {
+        if (typeof row.scope_id !== "string" || typeof row.file_path !== "string") {
+            continue;
+        }
+        const filePaths = Core.getOrCreateMapEntry(scopeFilePaths, row.scope_id, () => []);
+        filePaths.push(row.file_path);
+    }
     const scopes = database
         .prepare(
             "SELECT scope_id, kind, name, display_name, resource_path FROM semantic_scopes WHERE project_root = ? AND tier = ? ORDER BY scope_id"
@@ -241,6 +344,7 @@ function readSemanticSnapshot(
                     ? [
                           Object.freeze({
                               displayName: row.display_name,
+                              filePaths: Object.freeze(scopeFilePaths.get(row.scope_id) ?? []),
                               kind: row.kind,
                               name: row.name,
                               resourcePath: typeof row.resource_path === "string" ? row.resource_path : null,
@@ -383,91 +487,6 @@ function findUnresolvedDependents(
     return rows.map((row) => row.owner_file);
 }
 
-type FileDependency = Readonly<{
-    downstreamFile: string;
-    kind: "resolved-symbol-reference" | "script-call";
-    sourceFile: string;
-}>;
-
-function collectFileDependencies(index: Record<string, unknown>): ReadonlyArray<FileDependency> {
-    const scopes = Core.isObjectLike(index.scopes) ? (index.scopes as Record<string, unknown>) : {};
-    const filesByScopeId = new Map<string, ReadonlyArray<string>>();
-    for (const [scopeId, rawScope] of Object.entries(scopes)) {
-        const scope = Core.isObjectLike(rawScope) ? (rawScope as Record<string, unknown>) : null;
-        if (!scope || !Array.isArray(scope.filePaths)) {
-            continue;
-        }
-        const filePaths = scope.filePaths.filter((filePath): filePath is string => typeof filePath === "string");
-        if (filePaths.length > 0) {
-            filesByScopeId.set(scopeId, filePaths);
-        }
-    }
-    const relationships = Core.isObjectLike(index.relationships)
-        ? (index.relationships as Record<string, unknown>)
-        : {};
-    const scriptCalls = Array.isArray(relationships.scriptCalls) ? relationships.scriptCalls : [];
-    const dependencies = new Map<string, FileDependency>();
-    const registerDependency = (sourceFile: string, downstreamFile: string, kind: FileDependency["kind"]): void => {
-        if (sourceFile === downstreamFile) {
-            return;
-        }
-        dependencies.set(
-            `${kind}\u0000${sourceFile}\u0000${downstreamFile}`,
-            Object.freeze({ downstreamFile, kind, sourceFile })
-        );
-    };
-
-    const identifiers = Core.isObjectLike(index.identifiers) ? (index.identifiers as Record<string, unknown>) : {};
-    for (const collection of Object.values(identifiers)) {
-        if (!Core.isObjectLike(collection)) {
-            continue;
-        }
-        for (const rawEntry of Object.values(collection as Record<string, unknown>)) {
-            if (!Core.isObjectLike(rawEntry)) {
-                continue;
-            }
-            const entry = rawEntry as Record<string, unknown>;
-            const declarations = Array.isArray(entry.declarations) ? entry.declarations : [];
-            const references = Array.isArray(entry.references) ? entry.references : [];
-            const declarationFiles = declarations.flatMap((declaration) => {
-                const filePath = readRecordString(declaration, "filePath");
-                return filePath ? [filePath] : [];
-            });
-            for (const reference of references) {
-                const referenceFile = readRecordString(reference, "filePath");
-                if (!referenceFile) {
-                    continue;
-                }
-                for (const declarationFile of declarationFiles) {
-                    registerDependency(declarationFile, referenceFile, "resolved-symbol-reference");
-                }
-            }
-        }
-    }
-    for (const rawCall of scriptCalls) {
-        if (!Core.isObjectLike(rawCall)) {
-            continue;
-        }
-        const from = Core.isObjectLike(rawCall.from) ? rawCall.from : {};
-        const target = Core.isObjectLike(rawCall.target) ? rawCall.target : {};
-        const downstreamFile = readRecordString(from, "filePath");
-        const targetScopeId = readRecordString(target, "scopeId");
-        if (!downstreamFile || !targetScopeId) {
-            continue;
-        }
-        for (const sourceFile of filesByScopeId.get(targetScopeId) ?? []) {
-            registerDependency(sourceFile, downstreamFile, "script-call");
-        }
-    }
-    return [...dependencies.values()].toSorted((left, right) =>
-        left.sourceFile === right.sourceFile
-            ? left.downstreamFile === right.downstreamFile
-                ? left.kind.localeCompare(right.kind)
-                : left.downstreamFile.localeCompare(right.downstreamFile)
-            : left.sourceFile.localeCompare(right.sourceFile)
-    );
-}
-
 function createStorePath(projectRoot: string): string {
     return path.join(path.resolve(projectRoot), ".gmloop", "graph-index.sqlite");
 }
@@ -551,12 +570,13 @@ function readIndexForTier(
     return null;
 }
 
-function publishIndex(
+function publishSemanticFacts(
     database: GraphDatabase,
     projectRoot: string,
     request: Readonly<{
         expectedHeadGeneration: number | null;
         authoritative: boolean;
+        affectedFiles: ReadonlyArray<string> | null;
         baseGeneration: number | null;
         index: Record<string, unknown>;
         manifest: SemanticFileManifest | null;
@@ -604,43 +624,72 @@ function publishIndex(
                 "INSERT INTO semantic_slots(project_root, tier, generation, source_revision, base_generation, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(project_root, tier) DO UPDATE SET generation = excluded.generation, source_revision = excluded.source_revision, base_generation = excluded.base_generation, updated_at = excluded.updated_at"
             )
             .run(projectRoot, request.tier, generation, request.sourceRevision, request.baseGeneration, updatedAt);
-        database
-            .prepare("DELETE FROM semantic_dependencies WHERE project_root = ? AND tier = ?")
-            .run(projectRoot, request.tier);
-        database
-            .prepare("DELETE FROM semantic_occurrences WHERE project_root = ? AND tier = ?")
-            .run(projectRoot, request.tier);
-        database
-            .prepare("DELETE FROM semantic_scope_files WHERE project_root = ? AND tier = ?")
-            .run(projectRoot, request.tier);
-        database
-            .prepare("DELETE FROM semantic_relationships WHERE project_root = ? AND tier = ?")
-            .run(projectRoot, request.tier);
-        database
-            .prepare("DELETE FROM semantic_symbols WHERE project_root = ? AND tier = ?")
-            .run(projectRoot, request.tier);
-        database
-            .prepare("DELETE FROM semantic_scopes WHERE project_root = ? AND tier = ?")
-            .run(projectRoot, request.tier);
-        database
-            .prepare("DELETE FROM semantic_resources WHERE project_root = ? AND tier = ?")
-            .run(projectRoot, request.tier);
-        database
-            .prepare("DELETE FROM semantic_files WHERE project_root = ? AND tier = ?")
-            .run(projectRoot, request.tier);
-        database
-            .prepare("DELETE FROM semantic_unresolved_references WHERE project_root = ? AND tier = ?")
-            .run(projectRoot, request.tier);
-
         const snapshot = createSemanticSnapshotFromProjectIndex(
             request.index,
             request.tier,
             request.sourceRevision as SemanticSourceRevision
         );
+        const affectedFiles = createAffectedFileSet(projectRoot, request.affectedFiles);
+        const affectedSymbolIds = new Set(
+            snapshot.occurrences
+                .filter(
+                    (occurrence) =>
+                        occurrence.role === "definition" && isAffectedSemanticFile(affectedFiles, occurrence.filePath)
+                )
+                .map((occurrence) => occurrence.symbolId)
+        );
+        const affectedScopeIds = new Set([
+            ...snapshot.occurrences
+                .filter((occurrence) => isAffectedSemanticFile(affectedFiles, occurrence.filePath))
+                .flatMap((occurrence) => (occurrence.scopeId === null ? [] : [occurrence.scopeId])),
+            ...snapshot.scopes
+                .filter((scope) => scope.filePaths.some((filePath) => isAffectedSemanticFile(affectedFiles, filePath)))
+                .map((scope) => scope.scopeId)
+        ]);
+        deleteAffectedRows(database, projectRoot, request.tier, affectedFiles);
+        if (affectedFiles === null) {
+            database
+                .prepare("DELETE FROM semantic_symbols WHERE project_root = ? AND tier = ?")
+                .run(projectRoot, request.tier);
+            database
+                .prepare("DELETE FROM semantic_scopes WHERE project_root = ? AND tier = ?")
+                .run(projectRoot, request.tier);
+            database
+                .prepare("DELETE FROM semantic_resources WHERE project_root = ? AND tier = ?")
+                .run(projectRoot, request.tier);
+        } else if (affectedSymbolIds.size > 0) {
+            const symbolIds = [...affectedSymbolIds];
+            const placeholders = symbolIds.map(() => "?").join(", ");
+            database
+                .prepare(
+                    `DELETE FROM semantic_symbols WHERE project_root = ? AND tier = ? AND symbol_id IN (${placeholders})`
+                )
+                .run(projectRoot, request.tier, ...symbolIds);
+        }
+        if (affectedFiles !== null && affectedScopeIds.size > 0) {
+            const scopeIds = [...affectedScopeIds];
+            const placeholders = scopeIds.map(() => "?").join(", ");
+            database
+                .prepare(
+                    `DELETE FROM semantic_scope_files WHERE project_root = ? AND tier = ? AND scope_id IN (${placeholders})`
+                )
+                .run(projectRoot, request.tier, ...scopeIds);
+            database
+                .prepare(
+                    `DELETE FROM semantic_scopes WHERE project_root = ? AND tier = ? AND scope_id IN (${placeholders})`
+                )
+                .run(projectRoot, request.tier, ...scopeIds);
+        }
         const insertSymbol = database.prepare(
             "INSERT INTO semantic_symbols(project_root, tier, symbol_id, kind, name, display_name, defining_file_path, scope_id, documentation_json, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
         for (const symbol of snapshot.symbols) {
+            if (
+                !isAffectedSemanticFile(affectedFiles, symbol.definingFilePath) &&
+                !affectedSymbolIds.has(symbol.symbolId)
+            ) {
+                continue;
+            }
             insertSymbol.run(
                 projectRoot,
                 request.tier,
@@ -657,7 +706,17 @@ function publishIndex(
         const insertScope = database.prepare(
             "INSERT INTO semantic_scopes(project_root, tier, scope_id, kind, name, display_name, resource_path, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         );
+        const insertScopeFile = database.prepare(
+            "INSERT INTO semantic_scope_files(project_root, tier, scope_id, file_path, updated_generation) VALUES (?, ?, ?, ?, ?)"
+        );
         for (const scope of snapshot.scopes) {
+            if (
+                affectedFiles !== null &&
+                !affectedScopeIds.has(scope.scopeId) &&
+                !isAffectedSemanticFile(affectedFiles, scope.resourcePath)
+            ) {
+                continue;
+            }
             insertScope.run(
                 projectRoot,
                 request.tier,
@@ -668,11 +727,17 @@ function publishIndex(
                 scope.resourcePath,
                 generation
             );
+            for (const filePath of scope.filePaths) {
+                insertScopeFile.run(projectRoot, request.tier, scope.scopeId, filePath, generation);
+            }
         }
         const insertResource = database.prepare(
             "INSERT INTO semantic_resources(project_root, tier, resource_path, name, resource_type, updated_generation) VALUES (?, ?, ?, ?, ?, ?)"
         );
         for (const resource of snapshot.resources) {
+            if (!isAffectedSemanticFile(affectedFiles, resource.resourcePath)) {
+                continue;
+            }
             insertResource.run(
                 projectRoot,
                 request.tier,
@@ -686,6 +751,9 @@ function publishIndex(
             "INSERT INTO semantic_relationships(project_root, tier, relationship_id, owner_file_path, relationship_kind, payload_json, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?)"
         );
         for (const relationship of snapshot.relationships) {
+            if (!isAffectedSemanticFile(affectedFiles, relationship.ownerFilePath)) {
+                continue;
+            }
             insertRelationship.run(
                 projectRoot,
                 request.tier,
@@ -700,6 +768,9 @@ function publishIndex(
             "INSERT INTO semantic_occurrences(project_root, tier, symbol_id, file_path, role, start_offset, end_offset, scope_id, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
         for (const occurrence of snapshot.occurrences) {
+            if (!isAffectedSemanticFile(affectedFiles, occurrence.filePath)) {
+                continue;
+            }
             insertOccurrence.run(
                 projectRoot,
                 request.tier,
@@ -714,36 +785,42 @@ function publishIndex(
         }
 
         const insertDependency = database.prepare(
-            "INSERT INTO semantic_dependencies(project_root, tier, owner_file_path, dependent_file_path, dependency_kind, symbol_id, updated_generation) VALUES (?, ?, ?, ?, ?, NULL, ?)"
+            "INSERT INTO semantic_dependencies(project_root, tier, owner_file_path, dependent_file_path, dependency_kind, symbol_id, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?)"
         );
-        for (const dependency of collectFileDependencies(request.index)) {
+        for (const dependency of snapshot.dependencies) {
+            if (
+                !isAffectedSemanticFile(affectedFiles, dependency.ownerFilePath) &&
+                !isAffectedSemanticFile(affectedFiles, dependency.dependentFilePath)
+            ) {
+                continue;
+            }
             insertDependency.run(
                 projectRoot,
                 request.tier,
-                dependency.sourceFile,
-                dependency.downstreamFile,
+                dependency.ownerFilePath,
+                dependency.dependentFilePath,
                 dependency.kind,
+                dependency.symbolId,
                 generation
             );
         }
-        if (request.tier === "full" && Core.isObjectLike(request.index.files)) {
+        if (request.tier === "full") {
             const insertUnresolved = database.prepare(
-                "INSERT INTO semantic_unresolved_references(project_root, tier, name, file_path, start_offset, end_offset, updated_generation) VALUES (?, ?, ?, ?, 0, 0, ?)"
+                "INSERT INTO semantic_unresolved_references(project_root, tier, name, file_path, start_offset, end_offset, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?)"
             );
-            for (const [filePath, rawFile] of Object.entries(request.index.files as Record<string, unknown>)) {
-                if (!Core.isObjectLike(rawFile)) {
+            for (const unresolvedReference of snapshot.unresolvedReferences) {
+                if (!isAffectedSemanticFile(affectedFiles, unresolvedReference.filePath)) {
                     continue;
                 }
-                const fileRecord = rawFile as Record<string, unknown>;
-                const ignoredIdentifiers = Array.isArray(fileRecord.ignoredIdentifiers)
-                    ? fileRecord.ignoredIdentifiers
-                    : [];
-                for (const ignoredIdentifier of ignoredIdentifiers) {
-                    const identifierName = readRecordString(ignoredIdentifier, "name");
-                    if (identifierName) {
-                        insertUnresolved.run(projectRoot, request.tier, identifierName, filePath, generation);
-                    }
-                }
+                insertUnresolved.run(
+                    projectRoot,
+                    request.tier,
+                    unresolvedReference.name,
+                    unresolvedReference.filePath,
+                    unresolvedReference.start,
+                    unresolvedReference.end,
+                    generation
+                );
             }
         }
         if (request.manifest !== null) {
@@ -751,6 +828,9 @@ function publishIndex(
                 "INSERT INTO semantic_files(project_root, tier, relative_path, file_kind, content_hash, size_bytes, mtime_ms, source_origin, source_version, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             );
             for (const entry of request.manifest.entries.values()) {
+                if (!isAffectedSemanticFile(affectedFiles, entry.relativePath)) {
+                    continue;
+                }
                 insertManifestFile.run(
                     projectRoot,
                     request.tier,
@@ -772,14 +852,15 @@ function publishIndex(
             .run(projectRoot, request.tier, generation, JSON.stringify(request.index));
         database
             .prepare(
-                "INSERT INTO semantic_generation_history(project_root, generation, tier, source_revision, reason, affected_file_count, published_at, result) VALUES (?, ?, ?, ?, 'publication', ?, ?, 'published')"
+                "INSERT INTO semantic_generation_history(project_root, generation, tier, source_revision, reason, affected_file_count, published_at, result) VALUES (?, ?, ?, ?, ?, ?, ?, 'published')"
             )
             .run(
                 projectRoot,
                 generation,
                 request.tier,
                 request.sourceRevision,
-                request.manifest?.entries.size ?? 0,
+                affectedFiles === null ? "snapshot" : "increment",
+                affectedFiles?.size ?? request.manifest?.entries.size ?? 0,
                 updatedAt
             );
         database
@@ -807,6 +888,8 @@ export function openSemanticIndexStore(projectRoot: string): SemanticIndexStore 
     const resolvedRoot = path.resolve(projectRoot);
     const database = openGraphIndexDatabase(createStorePath(resolvedRoot));
     return {
+        applySemanticIncrement: (request) =>
+            publishSemanticFacts(database, resolvedRoot, { ...request, affectedFiles: request.affectedFiles }),
         close: () => database.close(),
         findImmediateDownstreamFiles: (filePath) => findImmediateDownstreamFiles(database, resolvedRoot, filePath),
         findUnresolvedDependents: (identifierNames) =>
@@ -818,7 +901,8 @@ export function openSemanticIndexStore(projectRoot: string): SemanticIndexStore 
         readIndexForTier: (tier) => readIndexForTier(database, resolvedRoot, tier),
         readProjectHead: () => readProjectHead(database, resolvedRoot),
         readStateForTier: (tier) => readStateForTier(database, resolvedRoot, tier),
-        publishIndex: (request) => publishIndex(database, resolvedRoot, request)
+        publishSemanticSnapshot: (request) =>
+            publishSemanticFacts(database, resolvedRoot, { ...request, affectedFiles: null })
     };
 }
 

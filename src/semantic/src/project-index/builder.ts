@@ -96,7 +96,7 @@ async function saveSemanticStoreIndex(descriptor: { projectRoot: string; project
     const manifest = await buildSemanticFileManifest(descriptor.projectRoot, Core.defaultFsFacade);
     const store = openSemanticIndexStore(descriptor.projectRoot);
     try {
-        const publication = store.publishIndex({
+        const publication = store.publishSemanticSnapshot({
             authoritative: true,
             baseGeneration: store.readStateForTier("full")?.generation ?? null,
             expectedHeadGeneration: store.readProjectHead().generation,
@@ -2998,13 +2998,85 @@ export async function buildProjectIndex(projectRoot, fsFacade = Core.defaultFsFa
         ];
 
         resourceAnalysis = reconstructResourceAnalysis(existingIndex);
+        const requestedGmlFiles = uniqueChangedFiles.filter((changedFile) =>
+            changedFile.toLowerCase().endsWith(".gml")
+        );
+        const changedMetadataFiles = uniqueChangedFiles.filter(
+            (changedFile) => !changedFile.toLowerCase().endsWith(".gml")
+        );
+        const metadataAffectedGmlFiles = new Set<string>();
+        for (const changedMetadataFile of changedMetadataFiles) {
+            const relativeMetadataPath = path.relative(resolvedRoot, changedMetadataFile);
+            const previousResource = resourceAnalysis.resourcesMap.get(relativeMetadataPath);
+            for (const gmlFile of previousResource?.gmlFiles ?? []) {
+                metadataAffectedGmlFiles.add(path.resolve(resolvedRoot, gmlFile));
+            }
+            if (previousResource?.name) {
+                resourceAnalysis.scriptNameToScopeId.delete(previousResource.name);
+                resourceAnalysis.scriptNameToResourcePath.delete(previousResource.name);
+            }
+            resourceAnalysis.resourcesMap.delete(relativeMetadataPath);
+            resourceAnalysis.assetReferences = resourceAnalysis.assetReferences.filter(
+                (reference) => reference.fromResourcePath !== relativeMetadataPath
+            );
+            for (const [gmlFile, descriptor] of resourceAnalysis.gmlScopeMap) {
+                if (descriptor.resourcePath === relativeMetadataPath) {
+                    resourceAnalysis.gmlScopeMap.delete(gmlFile);
+                }
+            }
+        }
+        const existingMetadataFiles = (
+            await Promise.all(
+                changedMetadataFiles.map(async (absolutePath) => {
+                    const stats = await runWithMissingPathFallback(
+                        () => fsFacade.stat(absolutePath),
+                        () => null
+                    );
+                    return stats === null || (typeof stats.isFile === "function" && !stats.isFile())
+                        ? null
+                        : { absolutePath, relativePath: path.relative(resolvedRoot, absolutePath) };
+                })
+            )
+        ).flatMap((file) => (file === null ? [] : [file]));
+        if (existingMetadataFiles.length > 0) {
+            const refreshedMetadata = await analyseProjectResourcesForIndex({
+                projectRoot: resolvedRoot,
+                yyFiles: existingMetadataFiles,
+                fsFacade,
+                metrics,
+                signal,
+                ensureNotAborted,
+                logger
+            });
+            for (const [resourcePath, resource] of refreshedMetadata.resourcesMap) {
+                resourceAnalysis.resourcesMap.set(resourcePath, {
+                    ...resource,
+                    scopes: new Set(resource.scopes),
+                    gmlFiles: new Set(resource.gmlFiles)
+                });
+                for (const gmlFile of resource.gmlFiles) {
+                    metadataAffectedGmlFiles.add(path.resolve(resolvedRoot, gmlFile));
+                }
+            }
+            resourceAnalysis.assetReferences.push(...refreshedMetadata.assetReferences);
+            for (const [gmlFile, descriptor] of refreshedMetadata.gmlScopeMap) {
+                resourceAnalysis.gmlScopeMap.set(gmlFile, descriptor);
+            }
+            for (const [scriptName, resourcePath] of refreshedMetadata.scriptNameToResourcePath) {
+                resourceAnalysis.scriptNameToResourcePath.set(scriptName, resourcePath);
+            }
+            for (const [scriptName, scopeId] of refreshedMetadata.scriptNameToScopeId) {
+                resourceAnalysis.scriptNameToScopeId.set(scriptName, scopeId);
+            }
+        }
+        const changedGmlFiles = [...new Set([...requestedGmlFiles, ...metadataAffectedGmlFiles])];
         const state = createProjectIndexAggregationStateFromExisting(existingIndex, resourceAnalysis);
         scopeMap = state.scopeMap;
         filesMap = state.filesMap;
         relationships = state.relationships;
         identifierCollections = state.identifierCollections;
 
-        const changedFileDescriptors = uniqueChangedFiles.map((changedFile) => {
+        const changedFileDescriptors = changedGmlFiles.map((changedFile) => {
             const relativeChangedPath = path.relative(resolvedRoot, changedFile);
             removeFileFromAggregationState(
                 relativeChangedPath,

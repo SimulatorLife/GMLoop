@@ -1,12 +1,14 @@
 import { Core } from "@gmloop/core";
 
 import type {
+    SemanticDependency,
     SemanticOccurrence,
     SemanticRelationship,
     SemanticSnapshot,
     SemanticSourceRevision,
     SemanticSymbol,
-    SemanticTier
+    SemanticTier,
+    SemanticUnresolvedReference
 } from "./semantic-snapshot.js";
 import { createEmptyGmlSymbolDocumentation, type GmlSymbolDocumentation } from "./symbol-documentation.js";
 
@@ -110,6 +112,19 @@ function collectOccurrences(
     return Object.freeze([...collect(entry.declarations, "definition"), ...collect(entry.references, "reference")]);
 }
 
+function readFirstOccurrenceFilePath(records: unknown): string | null {
+    if (!Array.isArray(records)) {
+        return null;
+    }
+    for (const value of records) {
+        const filePath = readString(asRecord(value).filePath);
+        if (filePath !== null) {
+            return filePath;
+        }
+    }
+    return null;
+}
+
 function collectScriptCallRelationships(
     index: Readonly<Record<string, unknown>>,
     tier: SemanticTier
@@ -137,6 +152,7 @@ function collectScriptCallRelationships(
                       payload: Object.freeze({
                           end: endInclusive === null ? null : endInclusive + 1,
                           fromScopeId: readString(from.scopeId),
+                          isResolved: call.isResolved === true,
                           start,
                           targetName: readString(target.name),
                           targetScopeId: readString(target.scopeId)
@@ -146,6 +162,212 @@ function collectScriptCallRelationships(
               ];
           })
         : [];
+}
+
+function collectUnresolvedReferences(
+    index: Readonly<Record<string, unknown>>,
+    tier: SemanticTier
+): ReadonlyArray<SemanticUnresolvedReference> {
+    if (tier === "definitions") {
+        return [];
+    }
+    const references = new Map<string, SemanticUnresolvedReference>();
+    const register = (reference: SemanticUnresolvedReference): void => {
+        references.set(
+            `${reference.filePath}\u0000${reference.start}\u0000${reference.end}\u0000${reference.name}`,
+            reference
+        );
+    };
+    for (const [filePath, rawFile] of Object.entries(asRecord(index.files))) {
+        const ignoredIdentifiers = asRecord(rawFile).ignoredIdentifiers;
+        if (!Array.isArray(ignoredIdentifiers)) {
+            continue;
+        }
+        for (const rawIdentifier of ignoredIdentifiers) {
+            const identifier = asRecord(rawIdentifier);
+            const name = readString(identifier.name);
+            const start = readOffset(identifier.start);
+            const endInclusive = readOffset(identifier.end);
+            if (name === null || start === null || endInclusive === null || identifier.reason === "built-in") {
+                continue;
+            }
+            register(Object.freeze({ end: Math.max(start, endInclusive + 1), filePath, name, start }));
+        }
+    }
+    const scriptCalls = asRecord(index.relationships).scriptCalls;
+    if (Array.isArray(scriptCalls)) {
+        for (const rawCall of scriptCalls) {
+            const call = asRecord(rawCall);
+            if (call.isResolved === true) {
+                continue;
+            }
+            const from = asRecord(call.from);
+            const target = asRecord(call.target);
+            const location = asRecord(call.location);
+            const filePath = readString(from.filePath);
+            const name = readString(target.name);
+            const start = readOffset(location.start);
+            const endInclusive = readOffset(location.end);
+            if (filePath === null || name === null || start === null || endInclusive === null) {
+                continue;
+            }
+            register(Object.freeze({ end: Math.max(start, endInclusive + 1), filePath, name, start }));
+        }
+    }
+    return [...references.values()].toSorted((left, right) =>
+        left.filePath === right.filePath ? left.start - right.start : left.filePath.localeCompare(right.filePath)
+    );
+}
+
+function createReferenceKey(filePath: string, start: number, end: number, name: string): string {
+    return `${filePath}\u0000${start}\u0000${end}\u0000${name}`;
+}
+
+function resolveUniqueCallTargets(
+    parameters: Readonly<{
+        occurrences: ReadonlyArray<SemanticOccurrence>;
+        relationships: ReadonlyArray<SemanticRelationship>;
+        symbols: ReadonlyArray<SemanticSymbol>;
+    }>
+): Readonly<{
+    occurrences: ReadonlyArray<SemanticOccurrence>;
+    relationships: ReadonlyArray<SemanticRelationship>;
+    resolvedReferenceKeys: ReadonlySet<string>;
+}> {
+    const callableSymbolsByName = new Map<string, SemanticSymbol[]>();
+    for (const symbol of parameters.symbols) {
+        if (symbol.definingFilePath === null || (symbol.kind !== "functions" && symbol.kind !== "scripts")) {
+            continue;
+        }
+        Core.getOrCreateMapEntry(callableSymbolsByName, symbol.name, () => []).push(symbol);
+    }
+    const existingOccurrenceKeys = new Set(
+        parameters.occurrences.map(
+            (occurrence) =>
+                `${occurrence.symbolId}\u0000${occurrence.filePath}\u0000${occurrence.start}\u0000${occurrence.end}`
+        )
+    );
+    const occurrences: SemanticOccurrence[] = [];
+    const resolvedReferenceKeys = new Set<string>();
+    const relationships = parameters.relationships.map((relationship) => {
+        if (relationship.kind !== "scriptCall") {
+            return relationship;
+        }
+        const targetName = relationship.payload.targetName;
+        const start = relationship.payload.start;
+        const end = relationship.payload.end;
+        if (typeof targetName !== "string" || typeof start !== "number" || typeof end !== "number") {
+            return relationship;
+        }
+        const candidates = callableSymbolsByName.get(targetName) ?? [];
+        if (candidates.length !== 1) {
+            return relationship;
+        }
+        const target = candidates[0];
+        const occurrenceKey = `${target.symbolId}\u0000${relationship.ownerFilePath}\u0000${start}\u0000${end}`;
+        if (!existingOccurrenceKeys.has(occurrenceKey)) {
+            occurrences.push(
+                Object.freeze({
+                    end,
+                    filePath: relationship.ownerFilePath,
+                    role: "reference",
+                    scopeId:
+                        typeof relationship.payload.fromScopeId === "string" ? relationship.payload.fromScopeId : null,
+                    start,
+                    symbolId: target.symbolId
+                })
+            );
+            existingOccurrenceKeys.add(occurrenceKey);
+        }
+        resolvedReferenceKeys.add(createReferenceKey(relationship.ownerFilePath, start, end, targetName));
+        return Object.freeze({
+            ...relationship,
+            payload: Object.freeze({ ...relationship.payload, isResolved: true, targetSymbolId: target.symbolId })
+        });
+    });
+    return Object.freeze({
+        occurrences: Object.freeze(occurrences),
+        relationships: Object.freeze(relationships),
+        resolvedReferenceKeys
+    });
+}
+
+function collectDependencies(
+    parameters: Readonly<{
+        occurrences: ReadonlyArray<SemanticOccurrence>;
+        relationships: ReadonlyArray<SemanticRelationship>;
+        scopes: ReadonlyArray<SemanticSnapshot["scopes"][number]>;
+        symbols: ReadonlyArray<SemanticSymbol>;
+        tier: SemanticTier;
+    }>
+): ReadonlyArray<SemanticDependency> {
+    if (parameters.tier === "definitions") {
+        return [];
+    }
+    const dependencies = new Map<string, SemanticDependency>();
+    const register = (dependency: SemanticDependency): void => {
+        if (dependency.ownerFilePath === dependency.dependentFilePath) {
+            return;
+        }
+        dependencies.set(
+            `${dependency.kind}\u0000${dependency.ownerFilePath}\u0000${dependency.dependentFilePath}\u0000${dependency.symbolId ?? ""}`,
+            Object.freeze(dependency)
+        );
+    };
+    const definitionsBySymbolId = new Map<string, string[]>();
+    for (const occurrence of parameters.occurrences) {
+        if (occurrence.role !== "definition") {
+            continue;
+        }
+        const filePaths = Core.getOrCreateMapEntry(definitionsBySymbolId, occurrence.symbolId, () => []);
+        if (!filePaths.includes(occurrence.filePath)) {
+            filePaths.push(occurrence.filePath);
+        }
+    }
+    for (const occurrence of parameters.occurrences) {
+        if (occurrence.role !== "reference") {
+            continue;
+        }
+        for (const ownerFilePath of definitionsBySymbolId.get(occurrence.symbolId) ?? []) {
+            register({
+                dependentFilePath: occurrence.filePath,
+                kind: "resolvedSymbolReference",
+                ownerFilePath,
+                symbolId: occurrence.symbolId
+            });
+        }
+    }
+    const filesByScopeId = new Map(parameters.scopes.map((scope) => [scope.scopeId, scope.filePaths]));
+    const symbolsByName = new Map(parameters.symbols.map((symbol) => [symbol.name, symbol]));
+    for (const relationship of parameters.relationships) {
+        if (relationship.kind !== "scriptCall") {
+            continue;
+        }
+        const targetScopeId = relationship.payload.targetScopeId;
+        const targetName = relationship.payload.targetName;
+        const targetSymbol = typeof targetName === "string" ? symbolsByName.get(targetName) : undefined;
+        const ownerFilePaths =
+            typeof targetScopeId === "string"
+                ? (filesByScopeId.get(targetScopeId) ?? [])
+                : targetSymbol?.definingFilePath
+                  ? [targetSymbol.definingFilePath]
+                  : [];
+        for (const ownerFilePath of ownerFilePaths) {
+            register({
+                dependentFilePath: relationship.ownerFilePath,
+                kind: "scriptCall",
+                ownerFilePath,
+                symbolId: targetSymbol?.symbolId ?? null
+            });
+        }
+    }
+    return [...dependencies.values()].toSorted((left, right) =>
+        left.ownerFilePath === right.ownerFilePath
+            ? left.dependentFilePath === right.dependentFilePath
+                ? left.kind.localeCompare(right.kind)
+                : left.dependentFilePath.localeCompare(right.dependentFilePath)
+            : left.ownerFilePath.localeCompare(right.ownerFilePath)
+    );
 }
 
 /** Convert the current analysis result into deterministic normalized semantic facts. */
@@ -166,7 +388,7 @@ export function createSemanticSnapshotFromProjectIndex(
             const entry = asRecord(rawEntry);
             const symbolId = readString(entry.identifierId) ?? `gml/${collectionName}/${entryKey}`;
             const name = readString(entry.name) ?? readString(entry.key) ?? entryKey;
-            const definingFilePath = readString(entry.filePath);
+            const definingFilePath = readString(entry.filePath) ?? readFirstOccurrenceFilePath(entry.declarations);
             symbols.push(
                 Object.freeze({
                     definingFilePath,
@@ -185,6 +407,9 @@ export function createSemanticSnapshotFromProjectIndex(
         const scope = asRecord(rawScope);
         return Object.freeze({
             displayName: readString(scope.displayName) ?? scopeId,
+            filePaths: Array.isArray(scope.filePaths)
+                ? Object.freeze(scope.filePaths.flatMap((filePath) => (typeof filePath === "string" ? [filePath] : [])))
+                : Object.freeze([]),
             kind: readString(scope.kind) ?? "unknown",
             name: readString(scope.name) ?? scopeId,
             resourcePath: readString(scope.resourcePath),
@@ -199,9 +424,19 @@ export function createSemanticSnapshotFromProjectIndex(
             resourceType: readString(resource.resourceType) ?? "unknown"
         });
     });
-    const relationships = collectScriptCallRelationships(index, tier);
+    const rawRelationships = collectScriptCallRelationships(index, tier);
+    const resolvedCalls = resolveUniqueCallTargets({ occurrences, relationships: rawRelationships, symbols });
+    occurrences.push(...resolvedCalls.occurrences);
+    const relationships = resolvedCalls.relationships;
+    const unresolvedReferences = collectUnresolvedReferences(index, tier).filter(
+        (reference) =>
+            !resolvedCalls.resolvedReferenceKeys.has(
+                createReferenceKey(reference.filePath, reference.start, reference.end, reference.name)
+            )
+    );
+    const dependencies = collectDependencies({ occurrences, relationships, scopes, symbols, tier });
     return Object.freeze({
-        dependencies: Object.freeze([]),
+        dependencies: Object.freeze(dependencies),
         occurrences: Object.freeze(occurrences),
         relationships: Object.freeze(relationships),
         resources: Object.freeze(resources),
@@ -209,6 +444,6 @@ export function createSemanticSnapshotFromProjectIndex(
         sourceRevision,
         symbols: Object.freeze(symbols),
         tier,
-        unresolvedReferences: Object.freeze([])
+        unresolvedReferences: Object.freeze(unresolvedReferences)
     });
 }

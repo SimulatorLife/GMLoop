@@ -41,7 +41,7 @@ parentPort.on("message", (request: WorkerRequest) => {
 
 async function buildWorkerIndex(request: WorkerRequest): Promise<void> {
     try {
-        const index = await Semantic.buildProjectNavigationIndex(
+        const rawIndex = await Semantic.buildProjectIndex(
             request.projectRoot,
             createWorkerFsFacade(request.openDocuments),
             {
@@ -50,7 +50,12 @@ async function buildWorkerIndex(request: WorkerRequest): Promise<void> {
                 priorityFiles: request.priorityFiles
             }
         );
-        parentPort?.postMessage({ rawIndex: index.rawIndex });
+        const semanticSnapshot = Semantic.createSemanticSnapshotFromProjectIndex(
+            rawIndex,
+            request.definitionsOnly ? "definitions" : "full",
+            "" as Parameters<typeof Semantic.createSemanticSnapshotFromProjectIndex>[2]
+        );
+        parentPort?.postMessage({ rawIndex, semanticSnapshot });
     } catch (error) {
         parentPort?.postMessage({ error: normalizeWorkerErrorPayload(error) });
     }
