@@ -96,7 +96,32 @@ const expectedRules = Object.freeze([
             {
                 type: "object",
                 additionalProperties: false,
-                properties: { maxBooleanVariables: { type: "integer", minimum: 1, maximum: 10, default: 10 } }
+                properties: {
+                    maxVariablesForTruthTable: {
+                        type: "integer",
+                        minimum: 1,
+                        maximum: 32,
+                        default: 10
+                    },
+                    maxSimplificationIterations: {
+                        type: "integer",
+                        minimum: 1,
+                        maximum: 1000,
+                        default: 50
+                    },
+                    maxPostProcessingIterations: {
+                        type: "integer",
+                        minimum: 1,
+                        maximum: 100,
+                        default: 5
+                    },
+                    maxTraversalIterations: {
+                        type: "integer",
+                        minimum: 1,
+                        maximum: 100,
+                        default: 10
+                    }
+                }
             }
         ]
     },

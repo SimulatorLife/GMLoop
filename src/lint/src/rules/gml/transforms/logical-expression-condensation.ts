@@ -31,7 +31,12 @@ import {
     toBooleanExpression
 } from "./logical-expression-condensation-boolean.js";
 import { TRAVERSAL_IGNORED_KEYS } from "./logical-expression-condensation-key.js";
-import { evaluateTruthTablePolicy, TRUTH_TABLE_POLICY_BASELINE } from "./logical-expression-condensation-policy.js";
+import {
+    evaluateTruthTablePolicy,
+    OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE,
+    type OptimizeLogicalFlowPolicy,
+    type TruthTablePolicy
+} from "./logical-expression-condensation-policy.js";
 import {
     chooseBestCandidate,
     combineConditionalBoolean,
@@ -44,17 +49,26 @@ const { cloneAstNode, cloneLocation, forEachNodeChild, getBooleanLiteralValue, i
 /**
  * Condenses logical control-flow branches into simplified boolean return
  * expressions.
+ *
+ * @param ast The AST to condense in place.
+ * @param policy Optional policy overriding the baseline truth-table cap and
+ *   simplification iteration limits. Defaults to
+ *   `OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE` so existing callers that don't
+ *   expose the option continue to behave exactly as before.
  */
-export function applyLogicalExpressionCondensation(ast: any) {
+export function applyLogicalExpressionCondensation(
+    ast: any,
+    policy: OptimizeLogicalFlowPolicy = OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE
+) {
     if (!isNode(ast)) {
         return ast;
     }
 
-    visit(ast);
+    visit(ast, policy);
     return ast;
 }
 
-function visit(node) {
+function visit(node, policy: OptimizeLogicalFlowPolicy = OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE) {
     // Walk child nodes and attempt to collapse boolean branches into normalized boolean formulas.
     if (!isNode(node)) {
         return;
@@ -62,16 +76,16 @@ function visit(node) {
 
     if (Array.isArray(node)) {
         for (const child of node) {
-            visit(child);
+            visit(child, policy);
         }
         return;
     }
 
     const bodyStatements = Core.getBodyStatements(node);
     if (bodyStatements.length > 0) {
-        condenseWithinStatements(bodyStatements);
+        condenseWithinStatements(bodyStatements, policy);
     } else if (isNode(node.body)) {
-        visit(node.body);
+        visit(node.body, policy);
     }
 
     forEachNodeChild(node, (value, key) => {
@@ -79,7 +93,7 @@ function visit(node) {
             return;
         }
         if (isNode(value) || Array.isArray(value)) {
-            visit(value);
+            visit(value, policy);
         }
     });
 }
@@ -95,7 +109,10 @@ function visit(node) {
  * element on the next iteration and risk leaving the new guard clause or
  * condensed return unprocessed.
  */
-function condenseWithinStatements(statements) {
+function condenseWithinStatements(
+    statements,
+    policy: OptimizeLogicalFlowPolicy = OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE
+) {
     if (!isNonEmptyArray(statements)) {
         return;
     }
@@ -117,7 +134,7 @@ function condenseWithinStatements(statements) {
                 continue;
             }
 
-            const condensed = tryCondenseIfStatement(statements, index);
+            const condensed = tryCondenseIfStatement(statements, index, policy);
             if (condensed) {
                 // The original IfStatement (and possibly its trailing return)
                 // was replaced with a new ReturnStatement at `index`. Re-visit
@@ -127,7 +144,7 @@ function condenseWithinStatements(statements) {
             }
         }
 
-        visit(statement);
+        visit(statement, policy);
         index += 1;
     }
 }
@@ -162,7 +179,11 @@ function tryExtractEarlyExitGuardClause(statements, index) {
     return true;
 }
 
-function tryCondenseIfStatement(statements, index) {
+function tryCondenseIfStatement(
+    statements,
+    index,
+    policy: OptimizeLogicalFlowPolicy = OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE
+) {
     const statement = statements[index];
     if (!statement || statement.type !== "IfStatement") {
         return false;
@@ -233,18 +254,29 @@ function tryCondenseIfStatement(statements, index) {
         // Delegate the "should we build a truth table?" decision to the policy
         // evaluator so the threshold is managed in one place and remains
         // independently testable.
+        const truthTablePolicy: TruthTablePolicy = Object.freeze({
+            maxVariablesForTruthTable: policy.maxVariablesForTruthTable
+        });
         const truthTableDecision = evaluateTruthTablePolicy(
             { variableCount: booleanContext.variables.length },
-            TRUTH_TABLE_POLICY_BASELINE
+            truthTablePolicy
         );
 
         if (truthTableDecision.allowTruthTable) {
+            const simplificationPolicy = Object.freeze({
+                maxSimplificationIterations: policy.maxSimplificationIterations,
+                maxPostProcessingIterations: policy.maxPostProcessingIterations
+            });
             const combinedExpression = combineConditionalBoolean(testExpr, consequentExpr, alternateExpr);
-            const simplifiedCandidates = generateSimplifiedCandidates(combinedExpression, booleanContext);
+            const simplifiedCandidates = generateSimplifiedCandidates(
+                combinedExpression,
+                booleanContext,
+                simplificationPolicy
+            );
             if (simplifiedCandidates.length > 0) {
                 const chosen = chooseBestCandidate(simplifiedCandidates);
                 if (chosen) {
-                    const optimizedExpr = postProcessBooleanExpression(chosen);
+                    const optimizedExpr = postProcessBooleanExpression(chosen, simplificationPolicy);
                     argumentAst = booleanExpressionToAst(optimizedExpr, booleanContext);
                 }
             }

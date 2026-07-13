@@ -3,7 +3,11 @@ import type { Rule } from "eslint";
 
 import { gmlRuleAutofixServices } from "../gml-rule-services.js";
 import type { GmlRuleDefinition } from "../index.js";
-import { createMeta, resolveLocFromIndex } from "../rule-base-helpers.js";
+import { createMeta, readObjectOption, resolveLocFromIndex } from "../rule-base-helpers.js";
+import {
+    OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE,
+    type OptimizeLogicalFlowPolicy
+} from "../transforms/logical-expression-condensation-policy.js";
 import { applyLogicalNormalizationWithChangeMetadata } from "../transforms/logical-expression-traversal-normalization.js";
 import {
     evaluateCanDirectBooleanReturnBenefitFromNormalization,
@@ -15,6 +19,52 @@ import {
     evaluateIsIfNodeInElseIfChain,
     evaluateUnsafeCommentSyntax
 } from "./optimize-logical-flow-policy.js";
+
+/**
+ * Inclusive lower bound for `gml/optimize-logical-flow` iteration caps.
+ *
+ * The schema declares the same minimums; mirroring them here keeps the
+ * option reader honest when a value arrives from any source (rule options,
+ * future project config, or tests).
+ */
+const MIN_MAX_VARIABLES_FOR_TRUTH_TABLE = 1;
+const MIN_MAX_SIMPLIFICATION_ITERATIONS = 1;
+const MIN_MAX_POST_PROCESSING_ITERATIONS = 1;
+const MIN_MAX_TRAVERSAL_ITERATIONS = 1;
+
+/**
+ * Read numeric rule options, clamping each value into the same inclusive
+ * `[minimum, Infinity)` range that the schema enforces. Non-numeric values
+ * (including `undefined` when an option is omitted) leave the corresponding
+ * baseline field in place so opt-in behaviour remains non-breaking.
+ */
+function resolveOptimizeLogicalFlowPolicyFromOptions(options: Record<string, unknown>): OptimizeLogicalFlowPolicy {
+    const {
+        maxVariablesForTruthTable,
+        maxSimplificationIterations,
+        maxPostProcessingIterations,
+        maxTraversalIterations
+    } = options;
+
+    return Object.freeze({
+        maxVariablesForTruthTable:
+            typeof maxVariablesForTruthTable === "number" && Number.isFinite(maxVariablesForTruthTable)
+                ? Math.max(MIN_MAX_VARIABLES_FOR_TRUTH_TABLE, Math.floor(maxVariablesForTruthTable))
+                : OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE.maxVariablesForTruthTable,
+        maxSimplificationIterations:
+            typeof maxSimplificationIterations === "number" && Number.isFinite(maxSimplificationIterations)
+                ? Math.max(MIN_MAX_SIMPLIFICATION_ITERATIONS, Math.floor(maxSimplificationIterations))
+                : OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE.maxSimplificationIterations,
+        maxPostProcessingIterations:
+            typeof maxPostProcessingIterations === "number" && Number.isFinite(maxPostProcessingIterations)
+                ? Math.max(MIN_MAX_POST_PROCESSING_ITERATIONS, Math.floor(maxPostProcessingIterations))
+                : OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE.maxPostProcessingIterations,
+        maxTraversalIterations:
+            typeof maxTraversalIterations === "number" && Number.isFinite(maxTraversalIterations)
+                ? Math.max(MIN_MAX_TRAVERSAL_ITERATIONS, Math.floor(maxTraversalIterations))
+                : OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE.maxTraversalIterations
+    });
+}
 
 /**
  * Normalize whitespace for structural expression comparisons.
@@ -73,6 +123,7 @@ export function createOptimizeLogicalFlowRule(definition: GmlRuleDefinition): Ru
         create(context) {
             const rewrittenNodeRanges: SourceTextRange[] = [];
             const skippedNodeRanges: SourceTextRange[] = [];
+            const policy = resolveOptimizeLogicalFlowPolicyFromOptions(readObjectOption(context));
 
             return Object.freeze({
                 "LogicalExpression, BinaryExpression, UnaryExpression[operator='!'], IfStatement"(node: any) {
@@ -141,7 +192,7 @@ export function createOptimizeLogicalFlowRule(definition: GmlRuleDefinition): Ru
                         return;
                     }
 
-                    const normalizationResult = applyLogicalNormalizationWithChangeMetadata(cloned);
+                    const normalizationResult = applyLogicalNormalizationWithChangeMetadata(cloned, policy);
                     if (!normalizationResult.changed) {
                         return;
                     }

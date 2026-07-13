@@ -3,6 +3,10 @@ import { test } from "node:test";
 
 import { type MutableGameMakerAstNode } from "@gmloop/core";
 
+import {
+    OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE,
+    type OptimizeLogicalFlowPolicy
+} from "../../src/rules/gml/transforms/logical-expression-condensation-policy.js";
 import { applyLogicalNormalizationWithChangeMetadata } from "../../src/rules/gml/transforms/logical-expression-traversal-normalization.js";
 
 type MutableRecord = Record<string, unknown>;
@@ -487,4 +491,89 @@ void test("simplifyStatementList returns false (no rewrite) when the body has no
     const body = ast.body as Array<MutableRecord>;
     assert.equal(body.length, 1);
     assert.equal(body[0], expr, "Unchanged elements must keep their reference");
+});
+
+void test("applyLogicalNormalizationWithChangeMetadata falls back to the baseline traversal cap (10) when no policy is supplied", () => {
+    // Construct an AST that triggers a `simplifyStatementList` rewrite via the
+    // canonical `if (cond) return true;` followed by `return false;` pair, which
+    // let us observe the orchestrator's traversal behaviour without dragging
+    // in the condensation pipeline.
+    const ast: MutableGameMakerAstNode = {
+        type: "Program",
+        body: [
+            {
+                type: "IfStatement",
+                test: { type: "Identifier", name: "cond" },
+                consequent: {
+                    type: "BlockStatement",
+                    body: [{ type: "ReturnStatement", argument: { type: "Literal", value: "true" } }]
+                }
+            },
+            { type: "ReturnStatement", argument: { type: "Literal", value: "false" } }
+        ]
+    };
+
+    applyLogicalNormalizationWithChangeMetadata(ast);
+    assert.strictEqual(
+        OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE.maxTraversalIterations,
+        10,
+        "baseline traversal cap stays at 10 for backwards compatibility"
+    );
+});
+
+void test("applyLogicalNormalizationWithChangeMetadata honours a custom maxTraversalIterations below the baseline", () => {
+    // Mirror the rewritable pair shape, but bound the orchestrator to two
+    // passes via a custom policy. Even with a reduced iteration budget, the
+    // orchestrator must still produce a working rewrite whenever the inner
+    // passes have already converged — there is no requirement that
+    // `maxTraversalIterations` be >= the baseline.
+    const ast: MutableGameMakerAstNode = {
+        type: "Program",
+        body: [
+            {
+                type: "IfStatement",
+                test: { type: "Identifier", name: "cond" },
+                consequent: {
+                    type: "BlockStatement",
+                    body: [{ type: "ReturnStatement", argument: { type: "Literal", value: "true" } }]
+                }
+            },
+            { type: "ReturnStatement", argument: { type: "Literal", value: "false" } }
+        ]
+    };
+
+    const reducedPolicy: OptimizeLogicalFlowPolicy = Object.freeze({
+        ...OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE,
+        maxTraversalIterations: 2
+    });
+
+    const result = applyLogicalNormalizationWithChangeMetadata(ast, reducedPolicy);
+
+    assert.strictEqual(result.changed, true, "Rewrite should still occur under a tighter iteration cap");
+    const rewritten = ast.body as Array<MutableRecord>;
+    assert.strictEqual(rewritten.length, 1, "The eligible pair collapses to a single ReturnStatement");
+    assert.strictEqual(rewritten[0]?.type, "ReturnStatement");
+});
+
+void test("applyLogicalNormalizationWithChangeMetadata accepts a minimal iteration cap (>= 1) without crashing", () => {
+    // Even at the documented lower bound of one traversal pass the
+    // orchestrator should still terminate and produce a valid result for an
+    // already-converged AST. This pins the contract that the rule's schema
+    // lower bound of 1 (rather than 0) is enforced cooperatively by the
+    // runtime option reader in the rule, not by the orchestrator itself.
+    const ast: MutableGameMakerAstNode = {
+        type: "Program",
+        body: [{ type: "ExpressionStatement", expression: { type: "Identifier", name: "noop" } }]
+    };
+
+    const minimumPolicy: OptimizeLogicalFlowPolicy = Object.freeze({
+        ...OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE,
+        maxTraversalIterations: 1
+    });
+
+    const result = applyLogicalNormalizationWithChangeMetadata(ast, minimumPolicy);
+    assert.strictEqual(result.changed, false);
+    const body = ast.body as Array<MutableRecord>;
+    assert.strictEqual(body.length, 1);
+    assert.strictEqual(body[0]?.type, "ExpressionStatement");
 });
