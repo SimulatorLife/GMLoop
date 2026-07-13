@@ -17,7 +17,7 @@ The semantic target state is a robust, bounded-memory understanding layer for Ga
 - scale to large projects without retaining monolithic aggregates
 - preserve strict GameMaker semantics instead of generic JavaScript assumptions
 
-This skill is target-state oriented. Refactor current structures when they block correctness, typing, DRY design, or performance.
+This skill is target-state oriented. Refactor the current codebase's implementation/structures when they block correctness, typing, DRY design, or performance.
 
 ## Ownership
 
@@ -77,8 +77,6 @@ SCIP-shaped data is the canonical model for definitions and references.
 Prefer bounded-memory execution.
 
 - Stream large intermediate records instead of building one full-project object graph.
-- Use temp-file chunking as the default low-risk spill strategy when memory growth is the problem.
-- Consider SQLite or another established indexed store only behind a clear benchmark or query need.
 - Keep storage adapters behind typed interfaces so semantic facts remain the canonical model.
 - Avoid exposing internal storage choices as user-facing configuration.
 
@@ -120,6 +118,5 @@ Before finishing semantic work, verify:
 
 - Full-project aggregates retained longer than needed.
 - User-facing knobs for internal indexing backends.
-- Duplicated symbol resolution in lint, refactor, transpiler, or CLI.
-- Semantic code that mutates source files.
+- Duplicated symbol resolution across the project/workspaces.
 - Dynamic imports, `require()`, `any`, or non-null assertions to bypass typing.

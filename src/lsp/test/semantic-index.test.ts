@@ -237,6 +237,40 @@ void test("semantic index hover handles comment/string guards and ignores scope-
     }
 });
 
+void test("semantic highlights do not reuse shifted local occurrences while an edited document is stale", async () => {
+    const fixture = await createTwoScriptProject();
+    const initialSource = ["function source() {", "    var local_value = 1;", "    return local_value;", "}", ""].join(
+        "\n"
+    );
+    try {
+        const store = Lsp.createGmlDocumentStore();
+        const document = store.open({
+            uri: Lsp.filePathToUri(fixture.sourcePath),
+            languageId: "gml",
+            version: 1,
+            text: initialSource
+        });
+        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        await semanticIndex.buildForDocument(document);
+
+        const updatedSource = `// shifted document\n${initialSource}`;
+        const updatedDocument = store.update(document.uri, 2, [{ text: updatedSource }]);
+        assert.ok(updatedDocument);
+        semanticIndex.invalidateForDocument(updatedDocument);
+
+        const localReferenceStart = updatedSource.lastIndexOf("local_value");
+        const highlights = await semanticIndex.listSemanticHighlights(updatedDocument);
+        assert.equal(
+            highlights.some((highlight) => highlight.start === localReferenceStart),
+            false,
+            "A stale project occurrence must not be applied at a shifted local-reference offset."
+        );
+        await semanticIndex.dispose();
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
 void test("semantic index prioritizes open files in indexing queue", async () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gmloop-lsp-prioritize-"));
     try {
@@ -283,6 +317,27 @@ void test("semantic index prioritizes open files in indexing queue", async () =>
         assert.ok(hoverRes === null || hoverRes !== undefined);
     } finally {
         await cleanupProjectDir(projectRoot);
+    }
+});
+
+void test("semantic index disposal waits for an aborted build before releasing its project state", async () => {
+    const fixture = await createTwoScriptProject();
+    try {
+        const store = Lsp.createGmlDocumentStore();
+        const document = store.open({
+            uri: Lsp.filePathToUri(fixture.sourcePath),
+            languageId: "gml",
+            version: 1,
+            text: fixture.sourceText
+        });
+        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+
+        const build = semanticIndex.buildForDocument(document);
+        await semanticIndex.dispose();
+
+        assert.equal(await build, null);
+    } finally {
+        await fixture.cleanup();
     }
 });
 
@@ -487,13 +542,21 @@ void test("semantic index performs incremental updates on document refresh", asy
             text: "function b_func() { return 2; }"
         });
 
-        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        let publishedGenerationCount = 0;
+        const semanticIndex = Lsp.createGmlSemanticIndex(store, () => {
+            publishedGenerationCount += 1;
+        });
 
         // 1. Initial cold build
         const state = await semanticIndex.buildForDocument(docA);
         assert.ok(state);
         // Force upgrade to full index
         await semanticIndex.findReferences(docA, 9, "a_func", false);
+        assert.equal(
+            publishedGenerationCount,
+            2,
+            "Cold indexing should publish one definitions and one full generation"
+        );
 
         // Verify initial state has both functions
         const comps1 = await semanticIndex.searchCompletions(docA, "a_func");
@@ -511,6 +574,11 @@ void test("semantic index performs incremental updates on document refresh", asy
 
         semanticIndex.invalidateForDocument(updatedDocA);
         await semanticIndex.refreshForDocument(updatedDocA);
+        assert.equal(
+            publishedGenerationCount,
+            4,
+            "A scoped edit should publish one definitions generation before its full upgrade."
+        );
 
         // Verify new_func exists, a_func is gone, and b_func is STILL there
         const comps2 = await semanticIndex.searchCompletions(updatedDocA, "new_func");

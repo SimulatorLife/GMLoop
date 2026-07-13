@@ -3,6 +3,11 @@ import path from "node:path";
 import { Core } from "@gmloop/core";
 
 import { buildProjectIndex, type ProjectIndexFsFacade } from "../project-index/index.js";
+import type { SemanticSnapshot } from "../project-index/semantic-snapshot.js";
+import {
+    createEmptyGmlSymbolDocumentation,
+    type GmlSymbolDocumentation
+} from "../project-index/symbol-documentation.js";
 import { getGmlSymbolKindForIdentifierCollection, type GmlSemanticSymbolKind } from "../symbols/taxonomy.js";
 
 /**
@@ -43,7 +48,7 @@ export type GmlNavigationOccurrence = Readonly<{
  * Symbol entry with declarations and references separated for editor-style queries.
  */
 export type GmlNavigationSymbol = Readonly<{
-    documentation: string;
+    documentation: GmlSymbolDocumentation;
     definitions: ReadonlyArray<GmlNavigationOccurrence>;
     displayName: string;
     kind: GmlSemanticSymbolKind;
@@ -96,6 +101,50 @@ function readString(value: unknown): string | null {
 
 function readFiniteNumber(value: unknown): number | null {
     return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function readDocumentation(value: unknown): GmlSymbolDocumentation {
+    if (!Core.isObjectLike(value)) {
+        return createEmptyGmlSymbolDocumentation();
+    }
+    const documentation = asRecord(value);
+    const normalizedText = readString(documentation.normalizedText);
+    if (normalizedText === null) {
+        return createEmptyGmlSymbolDocumentation();
+    }
+    const description = readString(documentation.description) ?? "";
+    const parameters = Array.isArray(documentation.parameters)
+        ? documentation.parameters.flatMap((parameter) => {
+              if (!Core.isObjectLike(parameter) || readString(parameter.name) === null) {
+                  return [];
+              }
+              return [
+                  Object.freeze({
+                      name: readString(parameter.name) ?? "",
+                      type: readString(parameter.type),
+                      description: readString(parameter.description)
+                  })
+              ];
+          })
+        : [];
+    const returnsValue = asRecord(documentation.returns);
+    const returns = Core.isObjectLike(documentation.returns)
+        ? Object.freeze({ type: readString(returnsValue.type), description: readString(returnsValue.description) })
+        : null;
+    const additionalTags = Array.isArray(documentation.additionalTags)
+        ? documentation.additionalTags.flatMap((tag) =>
+              Core.isObjectLike(tag) && readString(tag.name) !== null
+                  ? [Object.freeze({ name: readString(tag.name) ?? "", value: readString(tag.value) ?? "" })]
+                  : []
+          )
+        : [];
+    return Object.freeze({
+        normalizedText,
+        description,
+        parameters: Object.freeze(parameters),
+        returns,
+        additionalTags: Object.freeze(additionalTags)
+    });
 }
 
 function readLocationIndex(value: unknown): number | null {
@@ -192,7 +241,7 @@ function normalizeIdentifierEntry(
     const symbolId = readString(entry.identifierId) ?? `${kind}:${entryKey}`;
     const entryFilePath = readString(entry.filePath) ?? readString(entry.resourcePath);
     const scopeId = readString(entry.scopeId);
-    const documentation = readString(entry.documentation) ?? "";
+    const documentation = readDocumentation(entry.documentation);
     const common = { projectRoot, entryFilePath, symbolId, name, displayName, kind, scopeId };
     const definitions = readOccurrences({
         ...common,
@@ -457,6 +506,122 @@ export function createProjectNavigationIndex(projectIndex: unknown): GmlProjectN
         resourceKindsByName,
         symbols: sortedSymbols,
         ...createNavigationIndexMaps(sortedSymbols)
+    };
+}
+
+/**
+ * Build navigation maps from normalized semantic facts restored from SQLite.
+ * This path intentionally does not depend on the optional JSON projection.
+ */
+export function createProjectNavigationIndexFromSemanticSnapshot(
+    projectRoot: string,
+    snapshot: SemanticSnapshot
+): GmlProjectNavigationIndex {
+    const occurrencesBySymbolId = new Map<string, GmlNavigationOccurrence[]>();
+    for (const occurrence of snapshot.occurrences) {
+        const occurrences = Core.getOrCreateMapEntry(occurrencesBySymbolId, occurrence.symbolId, () => []);
+        occurrences.push({
+            displayName: "",
+            kind: "variable",
+            location: {
+                filePath: resolveProjectFilePath(projectRoot, occurrence.filePath),
+                range: { end: occurrence.end, start: occurrence.start }
+            },
+            name: "",
+            role: occurrence.role,
+            scopeId: occurrence.scopeId,
+            symbolId: occurrence.symbolId
+        });
+    }
+    const symbols = snapshot.symbols
+        .map((symbol): GmlNavigationSymbol => {
+            const kind = getGmlSymbolKindForIdentifierCollection(symbol.kind);
+            const occurrences = (occurrencesBySymbolId.get(symbol.symbolId) ?? []).map((occurrence) => ({
+                ...occurrence,
+                displayName: symbol.displayName,
+                kind,
+                name: symbol.name
+            }));
+            return {
+                definitions: occurrences.filter((occurrence) => occurrence.role === "definition"),
+                displayName: symbol.displayName,
+                documentation: symbol.documentation,
+                kind,
+                name: symbol.name,
+                references: occurrences.filter((occurrence) => occurrence.role === "reference"),
+                symbolId: symbol.symbolId
+            };
+        })
+        .toSorted(compareSymbols);
+    const scriptsByScopeId = new Map<string, GmlNavigationSymbol>();
+    const scriptsByName = new Map<string, GmlNavigationSymbol>();
+    for (const symbol of symbols) {
+        if (symbol.kind !== "script") {
+            continue;
+        }
+        scriptsByName.set(symbol.name, symbol);
+        for (const definition of symbol.definitions) {
+            if (definition.scopeId !== null) {
+                scriptsByScopeId.set(definition.scopeId, symbol);
+            }
+        }
+    }
+    const relationshipReferences = new Map<string, GmlNavigationOccurrence[]>();
+    for (const relationship of snapshot.relationships) {
+        if (relationship.kind !== "scriptCall") {
+            continue;
+        }
+        const start = relationship.payload.start;
+        const end = relationship.payload.end;
+        const targetScopeId = relationship.payload.targetScopeId;
+        const targetName = relationship.payload.targetName;
+        if (typeof start !== "number" || typeof end !== "number") {
+            continue;
+        }
+        const symbol =
+            (typeof targetScopeId === "string" ? scriptsByScopeId.get(targetScopeId) : undefined) ??
+            (typeof targetName === "string" ? scriptsByName.get(targetName) : undefined);
+        if (symbol === undefined) {
+            continue;
+        }
+        const references = Core.getOrCreateMapEntry(relationshipReferences, symbol.symbolId, () => []);
+        references.push({
+            displayName: symbol.displayName,
+            kind: symbol.kind,
+            location: {
+                filePath: resolveProjectFilePath(projectRoot, relationship.ownerFilePath),
+                range: { end: Math.max(start, end), start }
+            },
+            name: symbol.name,
+            role: "reference",
+            scopeId: typeof relationship.payload.fromScopeId === "string" ? relationship.payload.fromScopeId : null,
+            symbolId: symbol.symbolId
+        });
+    }
+    const symbolsWithRelationships = symbols.map((symbol) => {
+        const references = relationshipReferences.get(symbol.symbolId) ?? [];
+        return references.length === 0
+            ? symbol
+            : { ...symbol, references: [...symbol.references, ...references].toSorted(compareOccurrencesByLocation) };
+    });
+    const resourceKindsByName = new Map(
+        snapshot.resources.map(
+            (resource) =>
+                [
+                    resource.name,
+                    resource.resourceType === "GMObject"
+                        ? "object"
+                        : resource.resourceType === "GMRoom"
+                          ? "room"
+                          : "resource"
+                ] as const
+        )
+    );
+    return {
+        projectRoot,
+        resourceKindsByName,
+        symbols: symbolsWithRelationships,
+        ...createNavigationIndexMaps(symbolsWithRelationships)
     };
 }
 

@@ -8,7 +8,12 @@ import { createTempProjectWorkspace, recordValues } from "./test-project-helpers
 type IdentifierIndexEntry = {
     name?: string;
     declarations?: Array<{ name?: string }>;
-    documentation?: string;
+    documentation?: {
+        description: string;
+        normalizedText: string;
+        parameters: Array<{ description: string | null; name: string; type: string | null }>;
+        returns: { description: string | null; type: string | null } | null;
+    };
     references?: Array<{ filePath?: string }>;
 };
 
@@ -270,14 +275,17 @@ void test("buildProjectIndex consumes parser-attached documentation without decl
             (entry) => entry.name === "documented"
         )?.documentation;
 
-        assert.equal(
-            documentation,
-            [
+        assert.deepEqual(documentation, {
+            additionalTags: [],
+            description: "Computes the documented value.",
+            normalizedText: [
                 "@desc Computes the documented value.",
                 "@param {real} value Input value.",
                 "@returns {real} Computed value."
-            ].join("\n")
-        );
+            ].join("\n"),
+            parameters: [{ description: "Input value.", name: "value", type: "real" }],
+            returns: { description: "Computed value.", type: "real" }
+        });
     } finally {
         await cleanup();
     }

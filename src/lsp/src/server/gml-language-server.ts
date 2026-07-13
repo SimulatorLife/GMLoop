@@ -185,6 +185,8 @@ export function createGmlLanguageServer(
     const lintFixRunner = createLintRunner(true);
     const pendingDiagnostics = new Map<string, NodeJS.Timeout>();
     const pendingSemanticRefreshes = new Map<string, NodeJS.Timeout>();
+    const pendingWatchedFilePaths = new Set<string>();
+    let watchedFileRefreshTimer: NodeJS.Timeout | null = null;
 
     if (typeof connection.onShutdown === "function") {
         connection.onShutdown(async () => {
@@ -196,6 +198,11 @@ export function createGmlLanguageServer(
                 clearTimeout(timeout);
             }
             pendingSemanticRefreshes.clear();
+            if (watchedFileRefreshTimer !== null) {
+                clearTimeout(watchedFileRefreshTimer);
+                watchedFileRefreshTimer = null;
+            }
+            pendingWatchedFilePaths.clear();
             await semanticIndex.dispose();
         });
     }
@@ -355,10 +362,21 @@ export function createGmlLanguageServer(
 
     if ("onDidChangeWatchedFiles" in connection) {
         connection.onDidChangeWatchedFiles(({ changes }) => {
-            runNotificationTask(connection, async () => {
-                await semanticIndex.refreshForFilePaths(changes.map((change) => uriToFilePath(change.uri)));
-                requestSemanticTokenRefresh(connection);
-            });
+            for (const change of changes) {
+                pendingWatchedFilePaths.add(uriToFilePath(change.uri));
+            }
+            if (watchedFileRefreshTimer !== null) {
+                clearTimeout(watchedFileRefreshTimer);
+            }
+            watchedFileRefreshTimer = setTimeout(() => {
+                watchedFileRefreshTimer = null;
+                const changedFilePaths = [...pendingWatchedFilePaths];
+                pendingWatchedFilePaths.clear();
+                runNotificationTask(connection, async () => {
+                    await semanticIndex.refreshForFilePaths(changedFilePaths);
+                    requestSemanticTokenRefresh(connection);
+                });
+            }, 50);
         });
     }
 

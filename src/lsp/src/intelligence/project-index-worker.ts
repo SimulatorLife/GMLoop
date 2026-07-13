@@ -12,6 +12,10 @@ type OpenDocumentOverlay = Readonly<{
 
 type WorkerRequest = Readonly<{
     definitionsOnly: boolean;
+    incremental: Readonly<{
+        changedFiles: ReadonlyArray<string>;
+        existingIndex: Record<string, unknown>;
+    }> | null;
     openDocuments: ReadonlyArray<OpenDocumentOverlay>;
     priorityFiles: ReadonlyArray<string>;
     projectRoot: string;
@@ -42,6 +46,7 @@ async function buildWorkerIndex(request: WorkerRequest): Promise<void> {
             createWorkerFsFacade(request.openDocuments),
             {
                 definitionsOnly: request.definitionsOnly,
+                incremental: request.incremental ?? undefined,
                 priorityFiles: request.priorityFiles
             }
         );

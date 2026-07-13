@@ -18,6 +18,7 @@ import { scanProjectTree } from "./project-tree.js";
 import { analyseResourceFiles, createFileScopeDescriptor } from "./resource-analysis.js";
 import { buildSemanticFileManifest } from "./semantic-manifest.js";
 import { getSemanticIndexDatabasePath, openSemanticIndexStore } from "./semantic-store.js";
+import { parseGmlSymbolDocumentation } from "./symbol-documentation.js";
 
 type BuildProjectIndexFunction = (
     projectRoot: string,
@@ -96,6 +97,8 @@ async function saveSemanticStoreIndex(descriptor: { projectRoot: string; project
     const store = openSemanticIndexStore(descriptor.projectRoot);
     try {
         const publication = store.publishIndex({
+            authoritative: true,
+            baseGeneration: store.readStateForTier("full")?.generation ?? null,
             expectedHeadGeneration: store.readProjectHead().generation,
             index: descriptor.projectIndex,
             manifest,
@@ -388,8 +391,8 @@ function extractAttachedDeclarationDocumentation(node: unknown): string {
     return lines.join("\n");
 }
 
-function extractDeclarationDocumentation(node: unknown): string {
-    return extractAttachedDeclarationDocumentation(node);
+function extractDeclarationDocumentation(node: unknown) {
+    return parseGmlSymbolDocumentation(extractAttachedDeclarationDocumentation(node));
 }
 function removeSyntheticScriptDeclarations(collection, { name, scopeId }) {
     if (!Array.isArray(collection)) {
@@ -605,7 +608,7 @@ function registerFunctionLikeSymbolDeclaration({
         displayName: declarationRecord.name,
         scopeId: declarationRecord.scopeId ?? null
     });
-    if (typeof declarationRecord.documentation === "string" && declarationRecord.documentation.length > 0) {
+    if (declarationRecord.documentation.normalizedText.length > 0) {
         entry.documentation = declarationRecord.documentation;
     }
 
@@ -660,7 +663,7 @@ function registerScriptDeclaration({ identifierCollections, descriptor, declarat
         displayName: descriptor?.displayName ?? null,
         resourcePath: descriptor?.resourcePath ?? null
     });
-    if (typeof declarationRecord?.documentation === "string" && declarationRecord.documentation.length > 0) {
+    if (declarationRecord?.documentation?.normalizedText.length > 0) {
         entry.documentation = declarationRecord.documentation;
     }
     if (!declarationRecord) {
@@ -2531,7 +2534,7 @@ function createProjectIndexResultSnapshot({
             id: entry.id,
             name: entry.name ?? null,
             displayName: entry.displayName ?? entry.name ?? entry.id,
-            documentation: entry.documentation ?? "",
+            documentation: entry.documentation ?? parseGmlSymbolDocumentation(""),
             resourcePath: entry.resourcePath ?? null,
             declarationKinds: [...Core.asArray(entry.declarationKinds)],
             declarations: resolveIdentifierRoleRecords({
@@ -2566,7 +2569,7 @@ function createProjectIndexResultSnapshot({
             key: entry.key,
             name: entry.name ?? null,
             displayName: entry.displayName ?? entry.name ?? entry.key,
-            documentation: entry.documentation ?? "",
+            documentation: entry.documentation ?? parseGmlSymbolDocumentation(""),
             filePath: entry.filePath ?? null,
             scopeId: entry.scopeId ?? null,
             declarations: resolveIdentifierRoleRecords({
@@ -2589,7 +2592,7 @@ function createProjectIndexResultSnapshot({
             key: entry.key,
             name: entry.name ?? null,
             displayName: entry.displayName ?? entry.name ?? entry.key,
-            documentation: entry.documentation ?? "",
+            documentation: entry.documentation ?? parseGmlSymbolDocumentation(""),
             filePath: entry.filePath ?? null,
             scopeId: entry.scopeId ?? null,
             declarations: resolveIdentifierRoleRecords({

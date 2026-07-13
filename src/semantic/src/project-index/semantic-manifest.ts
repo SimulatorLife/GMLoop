@@ -97,6 +97,11 @@ function createSourceRevision(entries: ReadonlyMap<string, SemanticFileManifestE
     return digest.digest("hex") as SemanticSourceRevision;
 }
 
+function isSupportedSemanticManifestPath(relativePath: string): boolean {
+    const normalized = relativePath.toLowerCase();
+    return normalized.endsWith(".gml") || normalized.endsWith(".yy") || normalized.endsWith(".yyp");
+}
+
 function createOverlayMap(
     overlays: ReadonlyArray<SemanticOpenBufferOverlay>
 ): ReadonlyMap<string, SemanticOpenBufferOverlay> {
@@ -180,6 +185,67 @@ export async function buildSemanticFileManifest(
 /** Create a SHA-256 content hash for an open-buffer overlay. */
 export function createSemanticContentHash(sourceText: string): string {
     return createContentHash(sourceText);
+}
+
+/**
+ * Apply known filesystem or open-buffer changes to a persisted manifest
+ * without rediscovering every project file. Full inventory reconciliation is
+ * intentionally kept separate for restart and metadata-inventory paths.
+ */
+export async function updateSemanticFileManifest(
+    projectRoot: string,
+    previousManifest: SemanticFileManifest,
+    fsFacade: ProjectIndexFsFacade,
+    overlays: ReadonlyArray<SemanticOpenBufferOverlay>,
+    changedAbsolutePaths: ReadonlyArray<string>
+): Promise<SemanticFileManifest> {
+    const resolvedRoot = path.resolve(projectRoot);
+    const overlayByAbsolutePath = createOverlayMap(overlays);
+    const entries = new Map(previousManifest.entries);
+    const changedPaths = new Set(changedAbsolutePaths.map((filePath) => path.resolve(filePath)));
+    const changes = await Core.runInParallelWithLimit(
+        changedPaths,
+        async (changedPath) => {
+            const relativePath = Core.toPosixPath(path.relative(resolvedRoot, changedPath));
+            if (
+                relativePath.startsWith("../") ||
+                path.isAbsolute(relativePath) ||
+                !isSupportedSemanticManifestPath(relativePath)
+            ) {
+                return null;
+            }
+            const overlay = overlayByAbsolutePath.get(changedPath);
+            const stats = await fsFacade.stat(changedPath).catch(() => null);
+            if (overlay === undefined && (stats === null || (typeof stats.isFile === "function" && !stats.isFile()))) {
+                return Object.freeze({ entry: null, relativePath });
+            }
+            const sourceText = overlay?.sourceText ?? (await fsFacade.readFile(changedPath, "utf8"));
+            return Object.freeze({
+                relativePath,
+                entry: Object.freeze({
+                    contentHash: overlay?.contentHash ?? createContentHash(sourceText),
+                    fileKind: classifyManifestFile(relativePath),
+                    mtimeMs: typeof stats?.mtimeMs === "number" ? stats.mtimeMs : null,
+                    relativePath,
+                    sizeBytes: Buffer.byteLength(sourceText, "utf8"),
+                    sourceOrigin: overlay === undefined ? "disk" : "openBuffer",
+                    sourceVersion: overlay?.documentVersion ?? null
+                })
+            });
+        },
+        16
+    );
+    for (const change of changes) {
+        if (change === null) {
+            continue;
+        }
+        if (change.entry === null) {
+            entries.delete(change.relativePath);
+        } else {
+            entries.set(change.relativePath, change.entry);
+        }
+    }
+    return Object.freeze({ entries, sourceRevision: createSourceRevision(entries) });
 }
 
 /** Compare persisted semantic inputs with a newly scanned canonical manifest. */

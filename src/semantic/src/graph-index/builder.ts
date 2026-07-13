@@ -2073,6 +2073,8 @@ async function getOrBuildProjectIndex(projectRoot: string): Promise<ProjectIndex
             parseGml: parser
         })) as ProjectIndexSnapshot;
         const publication = store.publishIndex({
+            authoritative: true,
+            baseGeneration: store.readStateForTier("full")?.generation ?? null,
             expectedHeadGeneration: store.readProjectHead().generation,
             index,
             manifest,

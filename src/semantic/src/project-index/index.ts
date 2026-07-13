@@ -18,5 +18,21 @@ export * from "./project-root.js";
 export * from "./project-tree.js";
 export * from "./resource-analysis.js";
 export * from "./semantic-manifest.js";
+export type {
+    SemanticDependency,
+    SemanticGeneration,
+    SemanticOccurrence,
+    SemanticRelationship,
+    SemanticResource,
+    SemanticScope,
+    SemanticSnapshot,
+    SemanticSourceRevision,
+    SemanticSymbol,
+    SemanticTier,
+    SemanticUnresolvedReference
+} from "./semantic-snapshot.js";
+export { createSemanticSnapshotFromProjectIndex } from "./semantic-snapshot-codec.js";
 export * from "./semantic-store.js";
+export type { GmlSymbolDocumentation } from "./symbol-documentation.js";
+export { createEmptyGmlSymbolDocumentation, parseGmlSymbolDocumentation } from "./symbol-documentation.js";
 export * from "./syntax-error-formatter.js";

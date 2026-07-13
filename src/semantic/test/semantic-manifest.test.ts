@@ -9,7 +9,8 @@ import { Core } from "@gmloop/core";
 import {
     buildSemanticFileManifest,
     createSemanticContentHash,
-    reconcileSemanticManifests
+    reconcileSemanticManifests,
+    updateSemanticFileManifest
 } from "../src/project-index/semantic-manifest.js";
 
 void test("semantic manifest hashes GML, resources, and the project manifest deterministically", async () => {
@@ -84,4 +85,20 @@ void test("semantic manifest reconciliation identifies scoped source and metadat
             ["scripts/main/main.gml", "modified"]
         ]
     );
+});
+
+void test("semantic manifest updates known file entries without rediscovering unrelated files", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-manifest-increment-"));
+    const firstPath = path.join(projectRoot, "first.gml");
+    const secondPath = path.join(projectRoot, "second.gml");
+    await writeFile(firstPath, "return 1;", "utf8");
+    await writeFile(secondPath, "return 2;", "utf8");
+    const previous = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade);
+
+    await writeFile(firstPath, "return 3;", "utf8");
+    const updated = await updateSemanticFileManifest(projectRoot, previous, Core.defaultFsFacade, [], [firstPath]);
+
+    assert.notEqual(updated.sourceRevision, previous.sourceRevision);
+    assert.equal(updated.entries.get("first.gml")?.contentHash, createSemanticContentHash("return 3;"));
+    assert.deepEqual(updated.entries.get("second.gml"), previous.entries.get("second.gml"));
 });
