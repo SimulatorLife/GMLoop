@@ -847,58 +847,67 @@ void test("semantic index performs incremental updates on document refresh", asy
 
 void test("semantic index loads cache from disk on startup and saves updates to disk", async () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gmloop-lsp-cache-"));
+    const aPath = path.join(projectRoot, "scripts/a/a.gml");
+    const aRelativePath = "scripts/a/a.gml";
+    const sourceText = "function cache_func() { return 1; }";
     try {
         await fs.writeFile(
             path.join(projectRoot, "Game.yyp"),
             JSON.stringify({ name: "Game", resourceType: "GMProject" })
         );
-
-        const aPath = path.join(projectRoot, "scripts/a/a.gml");
         await fs.mkdir(path.dirname(aPath), { recursive: true });
         await fs.writeFile(
             path.join(projectRoot, "scripts/a/a.yy"),
             JSON.stringify({ name: "a", resourceType: "GMScript" })
         );
-        await fs.writeFile(aPath, "function cache_func() { return 1; }");
+        await fs.writeFile(aPath, sourceText);
 
         const store = Lsp.createGmlDocumentStore();
         const doc = store.open({
             uri: Lsp.filePathToUri(aPath),
             languageId: "gml",
             version: 1,
-            text: "function cache_func() { return 1; }"
+            text: sourceText
         });
 
-        // 1. First semantic index instance builds and saves to disk cache
+        // 1. First semantic index instance builds the project and persists it.
         const index1 = Lsp.createGmlSemanticIndex(store);
         const state1 = await index1.buildForDocument(doc);
-        assert.ok(state1);
+        assert.ok(state1, "Initial semantic build must succeed");
 
-        // Wait for background build to complete so it writes to disk cache
-        await index1.findReferences(doc, 9, "cache_func", false);
+        // findReferences awaits the background full build via ensureFullIndex, but
+        // the resulting SQLite write is queued behind earlier entries. Wait for
+        // the persisted tier to reflect the just-computed build rather than for
+        // a fixed delay.
+        await index1.findReferences(doc, "function cache_func".length, "cache_func", false);
+        await waitForCondition(async () => {
+            const persistedStore = Semantic.openSemanticIndexStore(projectRoot);
+            try {
+                const slots = persistedStore.readActiveSemanticSlots();
+                if (!slots.hasMatchingFull) {
+                    return false;
+                }
+                const fullManifest = persistedStore.readSemanticManifest("full");
+                return fullManifest?.entries.has(aRelativePath) ?? false;
+            } finally {
+                await persistedStore.close();
+            }
+        });
 
-        // Wait a brief moment for the background cache save to finish writing to disk
-        await new Promise((resolve) => setTimeout(resolve, 100));
-
-        // Verify the cache directory and file exist
-        const cacheDir = path.join(projectRoot, ".gmloop");
-        const cacheFilePath = path.join(cacheDir, "graph-index.sqlite");
-        const fileExists = await fs
-            .stat(cacheFilePath)
-            .then(() => true)
-            .catch(() => false);
-        assert.ok(fileExists, "Semantic index should be saved to the unified .gmloop/graph-index.sqlite store");
-
-        // 2. Start a second semantic index instance (simulating VS Code reload)
+        // 2. A fresh semantic index must restore the persisted state without a rebuild.
         const index2 = Lsp.createGmlSemanticIndex(store);
         const state2 = await index2.buildForDocument(doc);
-        assert.ok(state2, "Should load cached state from disk on startup");
-        assert.equal(state2.lightweight, false, "Loaded cached state should be full (not lightweight)");
+        assert.ok(state2, "A restarted semantic index must load previously persisted state");
+        assert.equal(
+            state2.lightweight,
+            false,
+            "Restored state must be the persisted full tier, not a lightweight fallback that would force a rebuild"
+        );
 
         const comps = await index2.searchCompletions(doc, "cache_func");
         assert.ok(
             comps.some((c) => c.label === "cache_func"),
-            "Completions should be available immediately from disk cache"
+            "Completions derived from the cached full snapshot must include the persisted function"
         );
     } finally {
         await cleanupProjectDir(projectRoot);
