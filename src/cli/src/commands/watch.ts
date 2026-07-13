@@ -54,6 +54,7 @@ import {
     type PatchBroadcastService,
     type PatchHistoryStore,
     registerScriptNamesFromSymbols,
+    type ResourcePatch,
     type TranspilationContext,
     type TranspilationCounter,
     transpileFile,
@@ -326,6 +327,7 @@ interface RuntimeContext
      * Used as a low-cost pre-check to avoid hashing when content length changed. */
     fileContentLengths: Map<string, number>;
     roomResources: Map<string, Record<string, unknown>>;
+    resourcePatches: Map<string, ResourcePatch>;
     transientEmptyFileReadRetryCount: number;
     transientEmptyFileReadRetryDelayMs: number;
 }
@@ -922,6 +924,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         fileContentHashes: new Map(),
         fileContentLengths: new Map(),
         roomResources: new Map(),
+        resourcePatches: new Map(),
         dependencyTracker,
         transientEmptyFileReadRetryCount,
         transientEmptyFileReadRetryDelayMs
@@ -969,7 +972,10 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                 },
                 prepareInitialMessages: () => {
                     removeDeletedCachedPatchSources(runtimeContext, verbose, quiet);
-                    return orderPatchesForReplay(Array.from(runtimeContext.lastSuccessfulPatches.values()));
+                    return [
+                        ...orderPatchesForReplay(Array.from(runtimeContext.lastSuccessfulPatches.values())),
+                        ...runtimeContext.resourcePatches.values()
+                    ];
                 },
                 onClientDisconnect: (clientId) => {
                     if (verbose) {

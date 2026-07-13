@@ -36,6 +36,8 @@ void describe("room resource changes", () => {
         const context = {
             fileSnapshots: new Map<string, number>(),
             fileContentHashes: new Map<string, string>(),
+            resourcePatches: new Map(),
+            totalPatchCount: 0,
             websocketServer: {
                 broadcast(patch: unknown) {
                     patches.push(patch);
@@ -84,6 +86,8 @@ void describe("room resource changes", () => {
                     }
                 }
             ]);
+            assert.strictEqual(context.totalPatchCount, 1);
+            assert.strictEqual(context.resourcePatches.size, 1);
         } finally {
             await rm(directory, { recursive: true, force: true });
         }

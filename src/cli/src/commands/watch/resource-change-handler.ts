@@ -2,7 +2,11 @@ import { readFile, stat } from "node:fs/promises";
 
 import { Core } from "@gmloop/core";
 
-import { createResourcePatch, type ResourceLayerUpdate } from "../../modules/transpilation/index.js";
+import {
+    createResourcePatch,
+    type ResourceLayerUpdate,
+    type ResourcePatch
+} from "../../modules/transpilation/index.js";
 import type { PatchBroadcaster } from "../../modules/websocket/server.js";
 import { hashSourceContent, readSourceFileWithTransientEmptyRetry } from "./source-analysis.js";
 
@@ -11,6 +15,8 @@ type JsonObject = Record<string, unknown>;
 export interface ResourceChangeContext {
     fileSnapshots: Map<string, number>;
     fileContentHashes: Map<string, string>;
+    resourcePatches: Map<string, ResourcePatch>;
+    totalPatchCount: number;
     websocketServer: PatchBroadcaster | null;
     transientEmptyFileReadRetryCount: number;
     transientEmptyFileReadRetryDelayMs: number;
@@ -145,7 +151,10 @@ export async function handleResourceFileChange(
         return;
     }
 
-    context.websocketServer?.broadcast(createResourcePatch(filePath, resourceName, layerUpdates, sourceHash));
+    const patch = createResourcePatch(filePath, resourceName, layerUpdates, sourceHash);
+    context.resourcePatches.set(patch.id, patch);
+    context.totalPatchCount += 1;
+    context.websocketServer?.broadcast(patch);
 }
 
 /** Seeds the room cache without emitting a patch during watcher start-up. */

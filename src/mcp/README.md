@@ -110,4 +110,5 @@ must stay CLI-derived.
 - The MCP implementation uses `registerTool` from the official TypeScript SDK and generates tool schemas from CLI metadata rather than maintaining MCP-local command definitions.
 
 ## TODO
-- Make a GML LSP so that it can be directly consumed by agents
+- **FEAT** Could CLI/MCP tools 'gmloop_live_reload_discover', 'gmloop_live_reload_dev', and 'gmloop_live_reload_status' be combined into one? So it would use a start-or-load methodology where either loads an/the existing live-reload session or starts a new one if there isn't one already running? With on option to force-start too, which would stop the existing session if there is one and then start a new one, or else just start a new one if there isn't one.
+- **BUG**: The MCP tool to list the runtime instances for a live-reload session/game currently returns no content: "Tool returned no content"
