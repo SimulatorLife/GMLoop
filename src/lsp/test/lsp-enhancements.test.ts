@@ -6,13 +6,16 @@ import { test } from "node:test";
 
 import { Lsp } from "@gmloop/lsp";
 
-async function createProject(projectName: string): Promise<{
+async function createProject(
+    projectName: string,
+    scriptName = "main"
+): Promise<{
     cleanup(): Promise<void>;
     projectRoot: string;
     scriptPath: string;
 }> {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), `gmloop-lsp-test-${projectName}-`));
-    const scriptPath = path.join(projectRoot, "scripts/main/main.gml");
+    const scriptPath = path.join(projectRoot, `scripts/${scriptName}/${scriptName}.gml`);
     const scriptText = "function main() {\n    return 0;\n}";
 
     await fs.mkdir(path.dirname(scriptPath), { recursive: true });
@@ -21,8 +24,8 @@ async function createProject(projectName: string): Promise<{
         JSON.stringify({ name: projectName, resourceType: "GMProject" })
     );
     await fs.writeFile(
-        path.join(projectRoot, "scripts/main/main.yy"),
-        JSON.stringify({ name: "main", resourceType: "GMScript" })
+        path.join(projectRoot, `scripts/${scriptName}/${scriptName}.yy`),
+        JSON.stringify({ name: scriptName, resourceType: "GMScript" })
     );
     await fs.writeFile(scriptPath, scriptText);
 
@@ -174,14 +177,67 @@ void test("LSP: runtime built-ins hover while language keywords do not", async (
     }
 });
 
+void test("LSP: enum hover renders commented members on declarations and qualified uses", async () => {
+    const proj = await createProject("CommentedEnumHoverTest");
+    try {
+        const store = Lsp.createGmlDocumentStore();
+        const document = store.open({
+            uri: Lsp.filePathToUri(proj.scriptPath),
+            languageId: "gml",
+            version: 1,
+            text: [
+                "function ActorSoundManager() constructor {",
+                "    enum eSoundAction {",
+                "        interacting, // interacting with something",
+                "        damage, // took damage",
+                "        death, // dying",
+                "        num // should always be last",
+                "    }",
+                "    var currentAction = eSoundAction.interacting;",
+                "}"
+            ].join("\n")
+        });
+        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        await semanticIndex.buildForDocument(document);
+
+        for (const [offset, identifierName] of [
+            [document.sourceText.indexOf("eSoundAction"), "eSoundAction"],
+            [document.sourceText.indexOf("interacting"), "interacting"],
+            [document.sourceText.lastIndexOf("interacting"), "interacting"]
+        ] as const) {
+            const hover = await semanticIndex.hover(document, offset, identifierName);
+            const hoverText =
+                typeof hover?.contents === "object" && "value" in hover.contents ? hover.contents.value : "";
+
+            assert.match(hoverText, /enum eSoundAction \{/u);
+            assert.match(hoverText, /interacting = 0/u);
+            assert.match(hoverText, /damage = 1/u);
+            assert.match(hoverText, /death = 2/u);
+            assert.match(hoverText, /num = 3/u);
+        }
+    } finally {
+        await proj.cleanup();
+    }
+});
+
 void test("LSP: static sound helper exposes complete hover and highlighting facts", async () => {
-    const proj = await createProject("SoundHelperTest");
+    const proj = await createProject("SoundHelperTest", "ActorSoundManager");
     const sourceText = [
-        "function SoundManager() constructor {",
-        "    static get_sound = function (sound_action) {",
+        "function ActorSoundManager() : Object() constructor {",
+        "    sounds = {};",
+        "    /// @desc Add possible options for sound effects to play for the given sound action",
+        "    /// @param {enum} sound_action",
+        "    /// @returns {undefined}",
+        "    static add_sounds = function (sound_action) {",
         "        var sound_list = struct_get(sounds, sound_action);",
-        "        if (is_undefined(sound_list)) return noone;",
-        "        return sound_list.get_random();",
+        "        if (is_undefined(sound_list)) {",
+        "            sound_list = new ArrayList();",
+        "            struct_set(sounds, sound_action, sound_list);",
+        "        }",
+        "        var i = 1;",
+        "        repeat (argument_count - 1) {",
+        "            sound_list.push(argument[i++]);",
+        "        }",
         "    };",
         "}",
         ""
@@ -198,9 +254,24 @@ void test("LSP: static sound helper exposes complete hover and highlighting fact
         await semanticIndex.buildForDocument(document);
 
         const hoverText = async (name: string) => {
-            const hover = await semanticIndex.hover(document, sourceText.indexOf(name), name);
+            const implementationStart = sourceText.indexOf("static add_sounds");
+            const hover = await semanticIndex.hover(document, sourceText.indexOf(name, implementationStart), name);
             return typeof hover?.contents === "object" && "value" in hover.contents ? hover.contents.value : "";
         };
+        const addSoundsHoverText = await hoverText("add_sounds");
+        assert.match(addSoundsHoverText, /Add possible options for sound effects to play for the given sound action/u);
+        assert.match(addSoundsHoverText, /Parameters:.*sound_action.*enum/su);
+        assert.match(addSoundsHoverText, /Returns.*undefined/su);
+        assert.doesNotMatch(addSoundsHoverText, /structVariable/u);
+        const soundsUseOffset = sourceText.indexOf("sounds", sourceText.indexOf("struct_set("));
+        const soundsHover = await semanticIndex.hover(document, soundsUseOffset, "sounds");
+        const soundsHoverText =
+            typeof soundsHover?.contents === "object" && "value" in soundsHover.contents
+                ? soundsHover.contents.value
+                : "";
+        assert.match(soundsHoverText, /sounds/u);
+        assert.match(soundsHoverText, /instanceVariable/u);
+        assert.match(soundsHoverText, /scripts\/ActorSoundManager\/ActorSoundManager\.gml:2:5/u);
         assert.match(await hoverText("sound_action"), /parameter/u);
         assert.match(await hoverText("sound_list"), /localVariable/u);
         for (const builtIn of ["struct_get", "is_undefined"]) {
@@ -214,11 +285,11 @@ void test("LSP: static sound helper exposes complete hover and highlighting fact
             highlights
                 .filter((highlight) => sourceText.slice(highlight.start, highlight.end) === name)
                 .map((highlight) => highlight.kind);
-        assert.deepEqual(kindsFor("sound_action"), ["parameter", "parameter"]);
-        assert.deepEqual(kindsFor("sound_list"), ["variable", "variable", "variable"]);
+        assert.deepEqual(kindsFor("sound_action"), ["parameter", "parameter", "parameter"]);
+        assert.deepEqual(kindsFor("sound_list"), ["variable", "variable", "variable", "variable", "variable"]);
         assert.deepEqual(kindsFor("struct_get"), ["function"]);
         assert.deepEqual(kindsFor("is_undefined"), ["function"]);
-        assert.deepEqual(kindsFor("get_random"), ["method"]);
+        assert.deepEqual(kindsFor("push"), ["method"]);
     } finally {
         await proj.cleanup();
     }

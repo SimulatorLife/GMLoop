@@ -14,6 +14,7 @@ type ConstructorStaticMemberEntry = {
 type ProjectIndexSnapshot = {
     identifiers: {
         constructorStaticMembers: Record<string, ConstructorStaticMemberEntry>;
+        structVariables: Record<string, { name?: string }>;
     };
 };
 
@@ -79,6 +80,7 @@ void test("buildProjectIndex resolves constructor-owned receiver static member r
 
         const index = (await buildProjectIndex(projectRoot)) as ProjectIndexSnapshot;
         const entries = recordValues(index.identifiers.constructorStaticMembers);
+        const structVariableNames = new Set(recordValues(index.identifiers.structVariables).map((entry) => entry.name));
         const timerGet = entries.find(
             (entry) => entry.constructorName === "TimerMultiplier" && entry.name === "get_multiplier"
         );
@@ -107,6 +109,8 @@ void test("buildProjectIndex resolves constructor-owned receiver static member r
         assert.ok(otherGet, "expected OtherTimer.get_multiplier entry");
         assert.equal(otherGet.declarations?.length, 1);
         assert.deepEqual(otherGet.references, []);
+        assert.equal(structVariableNames.has("get_multiplier"), false);
+        assert.equal(structVariableNames.has("set_multiplier"), false);
     } finally {
         await cleanup();
     }

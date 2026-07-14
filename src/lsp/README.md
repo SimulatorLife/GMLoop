@@ -55,7 +55,7 @@ Most intelligence should live in reusable GML systems; the server should only ex
 
 ## Hover Behavior
 
-Hover responses describe project symbols and documented runtime built-ins, including functions, properties, symbols, and literals. Language keywords such as `function`, `var`, `constructor`, `if`, `else`, and `repeat` are syntax rather than inspectable symbols, so hovering them returns no tooltip.
+Hover responses describe project symbols and documented runtime built-ins, including functions, properties, symbols, and literals. Documented callable project symbols, including constructor static methods, expose their description, parameter names and types, and return information. Hovering a user-defined enum, its member declaration, or a resolved member usage includes the complete enum with its members and values. Language keywords such as `function`, `var`, `constructor`, `if`, `else`, and `repeat` are syntax rather than inspectable symbols, so hovering them returns no tooltip.
 
 ## Launching and Communication Transport
 

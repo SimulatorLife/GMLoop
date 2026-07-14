@@ -161,7 +161,7 @@ fix instead of the broader `optimize-logical-flow` rule.
 
 `prefer-struct-literal-assignments` only rewrites contiguous property assignments when they immediately follow an empty struct creation (`var foo = {};` or `foo = {};`). Property writes against existing structs are left unchanged.
 
-`prefer-loop-invariant-expressions` hoists a single side-effect-free, loop-invariant expression into a cached `var` declared immediately before the loop. Equivalent occurrences inside the same loop reuse that single cache declaration, and later lint passes skip re-hoisting the synthetic `cached_*` initializers into ancestor loops. The rule is intentionally conservative: it skips unknown calls, non-deterministic reads (for example `current_time`), dynamic DS/map accessors, and member/index reads that could be invalidated by loop-local mutations or impure calls.
+`prefer-loop-invariant-expressions` hoists a single side-effect-free, loop-invariant expression into a cached `var` declared immediately before the loop. Equivalent occurrences inside the same loop reuse that single cache declaration, and later lint passes skip re-hoisting the synthetic `cached_*` initializers into ancestor loops. The rule is intentionally conservative: it checks the body and every loop-control expression for dependency mutations, does not move expressions across nested function, `with`, or exception-handling boundaries, and skips unknown calls, non-deterministic reads (for example `current_time`), dynamic DS/map accessors, and member/index reads that could be invalidated by loop-local mutations or impure calls.
 
 `remove-default-comments` removes default GameMaker placeholder and migration-banner comments. If an object event file contains only those placeholder comments, the rule replaces them with `// Intentionally empty: overrides inherited/default object event behavior.` instead of making the file empty. Comment-only object events can be intentional in GameMaker because the event file can override inherited or default event behavior, such as disabling an automatic draw event.
 
@@ -243,13 +243,7 @@ Performance-sensitive autofix rules also have dedicated regression coverage unde
 
 - Add an ESLint auto-fix rule that detects simple numeric accumulation loops like `alpha += index` over a fixed range and replaces them with the equivalent arithmetic-series expression. Example: `for index = 0..9` can become `alpha += count * (count - 1) * 0.5`, avoiding unnecessary runtime iteration.
 - Continue splitting the remaining multi-purpose `optimize-logical-flow` behaviors into focused rules; direct boolean return passthroughs and boolean literal comparisons now live in focused rules.
-- **BUG**: Auto-fix for hoisting loop-values can result in breaks/changes in behavior like this:
-    ```
-    -    while (--i >= 0) array[i] = argument[i];
-    +    var cached_value = argument[i];
-    +    while (--i >= 0) { array[i] = cached_value; }
-    ```
-- **BUG**: Auto-fix for doc-comments can produce invalid/duplicate params, ex.:
+- **BUG**: Lint auto-fix(es) related to doc-comments can produce invalid/duplicate params, ex.:
     ```gml
     -/// @function scr_timeline_play
     -/// @param {Resource.GMTimeline} timeline_to_play - A timeline asset index

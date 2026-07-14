@@ -1433,6 +1433,22 @@ export function createGmlSemanticIndex(
         return fullState && !fullState.lightweight ? fullState : null;
     }
 
+    async function ensureNavigationProjection(
+        document: GmlTextDocument,
+        state: NavigationState
+    ): Promise<NavigationState> {
+        if (state.index.rawIndex !== undefined) {
+            return state;
+        }
+
+        const projectRoot = await getProjectRoot(document.filePath);
+        if (!projectRoot) {
+            return state;
+        }
+
+        return (await triggerBackgroundFullBuild(document, path.resolve(projectRoot))) ?? state;
+    }
+
     async function refreshForFileChanges(changes: ReadonlyArray<GmlSemanticFileChange>): Promise<void> {
         if (disposed) {
             return;
@@ -1635,12 +1651,12 @@ export function createGmlSemanticIndex(
                 return null;
             }
 
-            const state = await ensureIndex(document, { allowStale: true });
+            let state = await ensureIndex(document, { allowStale: true });
             if (!state) {
                 return null;
             }
 
-            const symbolId = findSymbolId(
+            let symbolId = findSymbolId(
                 state.index,
                 document,
                 offset,
@@ -1648,7 +1664,19 @@ export function createGmlSemanticIndex(
                 isIgnoredOffset,
                 !staleSemanticDocumentUris.has(document.uri)
             );
-            const facts = symbolId ? Semantic.getNavigationHoverFacts(state.index, symbolId) : null;
+            let facts = symbolId ? Semantic.getNavigationHoverFacts(state.index, symbolId) : null;
+            if (facts && (facts.kind === "enum" || facts.kind === "enumMember") && state.index.rawIndex === undefined) {
+                state = await ensureNavigationProjection(document, state);
+                symbolId = findSymbolId(
+                    state.index,
+                    document,
+                    offset,
+                    identifierName,
+                    isIgnoredOffset,
+                    !staleSemanticDocumentUris.has(document.uri)
+                );
+                facts = symbolId ? Semantic.getNavigationHoverFacts(state.index, symbolId) : null;
+            }
             if (facts) {
                 const symbol = state.index.symbolsById.get(symbolId);
                 let definitionInfo = "";

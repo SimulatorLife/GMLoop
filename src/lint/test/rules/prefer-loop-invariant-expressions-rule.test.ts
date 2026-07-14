@@ -376,6 +376,126 @@ void test("prefer-loop-invariant-expressions does not hoist expressions that dep
     expectNoAutoFix(input);
 });
 
+void test("prefer-loop-invariant-expressions does not hoist indexed reads across while-test mutations", () => {
+    const input = "while (--i >= 0) array[i] = argument[i];\n";
+    expectNoAutoFix(input);
+});
+
+void test("prefer-loop-invariant-expressions does not hoist indexed reads across for-test mutations", () => {
+    const input = ["for (; ++i < count;) {", "    array[i] = argument[i];", "}", ""].join("\n");
+    expectNoAutoFix(input);
+});
+
+void test("prefer-loop-invariant-expressions does not hoist indexed reads across do-until-test mutations", () => {
+    const input = ["do {", "    array[i] = argument[i];", "} until (++i >= count);", ""].join("\n");
+    expectNoAutoFix(input);
+});
+
+void test("prefer-loop-invariant-expressions does not hoist indexed reads ahead of for initializers", () => {
+    const input = ["for (i = count - 1; j >= 0; --j) {", "    array[j] = argument[i];", "}", ""].join("\n");
+    expectNoAutoFix(input);
+});
+
+void test("prefer-loop-invariant-expressions does not hoist indexed reads ahead of repeat-count mutations", () => {
+    const input = ["repeat (++i) {", "    total += argument[i] * 2;", "}", ""].join("\n");
+    expectNoAutoFix(input);
+});
+
+void test("prefer-loop-invariant-expressions still hoists values independent of loop-control expressions", () => {
+    const input = ["while (--i >= 0) {", "    total += weights[0] + weights[1];", "}", ""].join("\n");
+    const expected = [
+        "var cached_value = weights[0] + weights[1];",
+        "while (--i >= 0) {",
+        "    total += cached_value;",
+        "}",
+        ""
+    ].join("\n");
+
+    expectAutoFix(input, expected);
+});
+
+void test("prefer-loop-invariant-expressions ignores assignment-like text in loop-control strings and comments", () => {
+    const input = [
+        'while (string_pos("+=", marker) > 0 /* += is only text */) {',
+        "    total += 60 * 60;",
+        "}",
+        ""
+    ].join("\n");
+    const expected = [
+        "var cached_value = 60 * 60;",
+        'while (string_pos("+=", marker) > 0 /* += is only text */) {',
+        "    total += cached_value;",
+        "}",
+        ""
+    ].join("\n");
+
+    expectAutoFix(input, expected);
+});
+
+void test("prefer-loop-invariant-expressions does not hoist indexed reads across compound test assignments", () => {
+    const input = ["while ((i += step) < count) {", "    array[i] = argument[i];", "}", ""].join("\n");
+    expectNoAutoFix(input);
+});
+
+void test("prefer-loop-invariant-expressions does not hoist member reads across loop-control root reassignment", () => {
+    const input = [
+        "while ((current = current.next) != undefined) {",
+        "    total += current.value * scale;",
+        "}",
+        ""
+    ].join("\n");
+    expectNoAutoFix(input);
+});
+
+void test("prefer-loop-invariant-expressions does not hoist member reads across loop-control member mutation", () => {
+    const input = [
+        "for (; state.index < count; state.index += 1) {",
+        "    total += values[state.index] * scale;",
+        "}",
+        ""
+    ].join("\n");
+    expectNoAutoFix(input);
+});
+
+void test("prefer-loop-invariant-expressions does not hoist expressions out of nested functions", () => {
+    const input = [
+        "repeat (count) {",
+        "    var callback = function() {",
+        "        return base_damage * multiplier;",
+        "    };",
+        "    callbacks[i] = callback;",
+        "}",
+        ""
+    ].join("\n");
+    expectNoAutoFix(input);
+});
+
+void test("prefer-loop-invariant-expressions does not hoist expressions out of with receiver scopes", () => {
+    const input = [
+        "repeat (count) {",
+        "    with (obj_enemy) {",
+        "        total += attack_power * damage_scale;",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+    expectNoAutoFix(input);
+});
+
+void test("prefer-loop-invariant-expressions does not hoist potentially-throwing reads out of try blocks", () => {
+    const input = [
+        "repeat (count) {",
+        "    try {",
+        "        total += current.value * scale;",
+        "    } catch (error) {",
+        "        failed += 1;",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+    expectNoAutoFix(input);
+});
+
 void test("prefer-loop-invariant-expressions does not hoist struct field reads when the struct is mutated in-loop", () => {
     const input = ["repeat (count) {", "    total += settings.speed * 2;", "    settings.speed += 1;", "}", ""].join(
         "\n"

@@ -849,7 +849,9 @@ void test("semantic index loads cache from disk on startup and saves updates to 
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gmloop-lsp-cache-"));
     const aPath = path.join(projectRoot, "scripts/a/a.gml");
     const aRelativePath = "scripts/a/a.gml";
-    const sourceText = "function cache_func() { return 1; }";
+    const sourceText = ["enum eCacheState { cold, warm }", "function cache_func() { return eCacheState.warm; }"].join(
+        "\n"
+    );
     try {
         await fs.writeFile(
             path.join(projectRoot, "Game.yyp"),
@@ -909,6 +911,13 @@ void test("semantic index loads cache from disk on startup and saves updates to 
             comps.some((c) => c.label === "cache_func"),
             "Completions derived from the cached full snapshot must include the persisted function"
         );
+
+        const enumHover = await index2.hover(doc, sourceText.indexOf("eCacheState"), "eCacheState");
+        const enumHoverText =
+            typeof enumHover?.contents === "object" && "value" in enumHover.contents ? enumHover.contents.value : "";
+        assert.match(enumHoverText, /enum eCacheState \{/u);
+        assert.match(enumHoverText, /cold = 0/u);
+        assert.match(enumHoverText, /warm = 1/u);
     } finally {
         await cleanupProjectDir(projectRoot);
     }

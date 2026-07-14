@@ -7,7 +7,10 @@ import { loadBuiltInIdentifiers } from "../symbols/built-in-identifiers.js";
 import { createProjectIndexAbortGuard, PROJECT_INDEX_BUILD_ABORT_MESSAGE } from "./abort-guard.js";
 import type { ProjectIndexBuildOptions } from "./build-options.js";
 import { clampConcurrency } from "./concurrency.js";
-import { collectConstructorStaticMemberAnalysis } from "./constructor-static-members.js";
+import {
+    collectConstructorStaticMemberAnalysis,
+    type ConstructorStaticMemberAnalysis
+} from "./constructor-static-members.js";
 import { createProjectIndexCoordinator as createProjectIndexCoordinatorCore } from "./coordinator.js";
 import { type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
 import { resolveProjectIndexParser } from "./gml-parser-facade.js";
@@ -1579,6 +1582,7 @@ function handleIdentifierNode({
     scopeDescriptor,
     metrics,
     structVariableDeclarationScopeIds,
+    constructorStaticMemberDeclarationIdentifiers,
     identifierSink,
     definitionsOnly = false,
     recordReferences = false
@@ -1602,16 +1606,18 @@ function handleIdentifierNode({
         metrics?.counters?.increment("identifiers.declarations");
         fileRecord.declarations.push(identifierRecord);
         scopeRecord.declarations.push(identifierRecord);
-        registerIdentifierOccurrence({
-            identifierCollections,
-            identifierRecord,
-            filePath: fileRecord?.filePath ?? null,
-            role: IdentifierRole.DECLARATION,
-            enumLookup,
-            scopeDescriptor: scopeDescriptor ?? scopeRecord,
-            structVariableDeclarationScopeIds,
-            identifierSink
-        });
+        if (!constructorStaticMemberDeclarationIdentifiers.has(node)) {
+            registerIdentifierOccurrence({
+                identifierCollections,
+                identifierRecord,
+                filePath: fileRecord?.filePath ?? null,
+                role: IdentifierRole.DECLARATION,
+                enumLookup,
+                scopeDescriptor: scopeDescriptor ?? scopeRecord,
+                structVariableDeclarationScopeIds,
+                identifierSink
+            });
+        }
     }
     if (isReference && (!definitionsOnly || recordReferences)) {
         metrics?.counters?.increment("identifiers.references");
@@ -1962,6 +1968,7 @@ function analyseGmlAst({
     sourceContents = "",
     lineOffsets = null,
     structVariableDeclarationScopeIds = new Set(),
+    constructorStaticMemberDeclarationIdentifiers,
     identifierSink,
     definitionsOnly = false,
     recordReferences = false
@@ -1989,6 +1996,7 @@ function analyseGmlAst({
             scopeDescriptor,
             metrics,
             structVariableDeclarationScopeIds,
+            constructorStaticMemberDeclarationIdentifiers,
             identifierSink,
             definitionsOnly,
             recordReferences
@@ -2042,7 +2050,7 @@ function analyseGmlAst({
     });
 }
 function analyseConstructorStaticMemberOccurrences({
-    ast,
+    analysis,
     filePath,
     identifierCollections,
     pendingConstructorStaticMemberReferences,
@@ -2052,7 +2060,6 @@ function analyseConstructorStaticMemberOccurrences({
         return;
     }
 
-    const analysis = collectConstructorStaticMemberAnalysis(ast);
     for (const declaration of analysis.declarations) {
         registerConstructorStaticMemberDeclaration({
             identifierCollections,
@@ -2073,6 +2080,12 @@ function analyseConstructorStaticMemberOccurrences({
             identifierRecord: createIdentifierRecord(reference.memberIdentifier)
         });
     }
+}
+
+function collectConstructorStaticMemberDeclarationIdentifiers(
+    analysis: ConstructorStaticMemberAnalysis
+): WeakSet<object> {
+    return new WeakSet(analysis.declarations.map((declaration) => declaration.memberIdentifier));
 }
 function registerPendingConstructorStaticMemberReferences({
     identifierCollections,
@@ -2251,6 +2264,10 @@ async function processProjectGmlFile({
         projectRoot
     });
     const structVariableDeclarationScopeIds = collectConstructorVariableDeclarationScopeIds(ast);
+    const constructorStaticMemberAnalysis = collectConstructorStaticMemberAnalysis(ast);
+    const constructorStaticMemberDeclarationIdentifiers = collectConstructorStaticMemberDeclarationIdentifiers(
+        constructorStaticMemberAnalysis
+    );
     metrics.timers.timeSync("gml.analyse", () =>
         analyseGmlAst({
             ast,
@@ -2266,6 +2283,7 @@ async function processProjectGmlFile({
             sourceContents: contents,
             lineOffsets,
             structVariableDeclarationScopeIds,
+            constructorStaticMemberDeclarationIdentifiers,
             identifierSink,
             definitionsOnly,
             recordReferences
@@ -2273,7 +2291,7 @@ async function processProjectGmlFile({
     );
     metrics.timers.timeSync("gml.constructorStaticMembers", () =>
         analyseConstructorStaticMemberOccurrences({
-            ast,
+            analysis: constructorStaticMemberAnalysis,
             filePath: file.relativePath,
             identifierCollections,
             pendingConstructorStaticMemberReferences,
