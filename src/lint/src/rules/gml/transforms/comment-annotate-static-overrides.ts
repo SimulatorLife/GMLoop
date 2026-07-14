@@ -20,29 +20,44 @@ const { isObjectLike } = Core;
 type AnnotateStaticFunctionOverridesTransformOptions = Record<string, never>;
 
 type ConstructorInfo = {
-    node: MutableGameMakerAstNode;
     parentName: string | null;
     staticFunctions: Map<string, MutableGameMakerAstNode>;
 };
 
 /**
- * Helper to validate that a statement declares a single static variable with a function initializer.
+ * The declarator shape guaranteed by {@link getStaticFunctionDeclarator}.
+ *
+ * `MutableGameMakerAstNode` carries `Record<string, unknown>`, so without an
+ * explicit narrowing the type system still treats `declarator.id` as
+ * `unknown`. Encoding the identifier-narrowing in the return type lets
+ * callers read `declarator.id.name` directly without re-running
+ * `Core.isIdentifierNode`.
  */
-function getStaticFunctionDeclarator(statement: MutableGameMakerAstNode | null | undefined) {
-    if (!statement || statement.type !== "VariableDeclaration") {
+type StaticFunctionDeclarator = MutableGameMakerAstNode & {
+    id: { name: string };
+};
+
+/**
+ * Validate that a statement declares a single static variable and return its
+ * declarator, narrowing `id` to an identifier so callers can read
+ * `declarator.id.name` without re-validating the shape.
+ */
+function getStaticFunctionDeclarator(statement: unknown): StaticFunctionDeclarator | null {
+    if (!Core.isNode(statement) || statement.type !== "VariableDeclaration") {
         return null;
     }
 
-    if (statement.kind !== "static") {
+    const variableDeclaration = statement as MutableGameMakerAstNode & { kind?: unknown };
+    if (variableDeclaration.kind !== "static") {
         return null;
     }
 
-    if (!Core.isNonEmptyArray(statement.declarations)) {
+    const declarations = (variableDeclaration as { declarations?: unknown }).declarations;
+    if (!Core.isNonEmptyArray(declarations)) {
         return null;
     }
 
-    const [declarator] = statement.declarations;
-
+    const declarator = declarations[0];
     if (!declarator) {
         return null;
     }
@@ -52,32 +67,24 @@ function getStaticFunctionDeclarator(statement: MutableGameMakerAstNode | null |
         return null;
     }
 
-    return declarator;
+    return declarator as StaticFunctionDeclarator;
 }
 
 /**
  * Pull the identifier name from a static declarator.
  */
-function extractStaticFunctionName(statement: MutableGameMakerAstNode | null | undefined) {
+function extractStaticFunctionName(statement: unknown): string | null {
     const declarator = getStaticFunctionDeclarator(statement);
-
-    if (!declarator) {
-        return null;
-    }
-
-    if (!Core.isIdentifierNode(declarator.id)) {
-        return null;
-    }
-
-    return Core.getNonEmptyString(declarator.id.name);
+    return declarator ? Core.getNonEmptyString(declarator.id.name) : null;
 }
 
 /**
  * Identify static variable declarations that host function expressions/declarations.
  */
-function isStaticFunctionDeclaration(statement: MutableGameMakerAstNode | null | undefined) {
+function isStaticFunctionDeclaration(statement: unknown): boolean {
     const declarator = getStaticFunctionDeclarator(statement);
-    return declarator?.init?.type === "FunctionDeclaration" || declarator?.init?.type === "FunctionExpression";
+    const initType = (declarator?.init as { type?: unknown } | null | undefined)?.type;
+    return initType === "FunctionDeclaration" || initType === "FunctionExpression";
 }
 
 /**
@@ -114,15 +121,16 @@ function findAncestorStaticFunction(
 }
 
 /**
- * Resolve the string name of a constructor node.
+ * Resolve a constructor name from an `id` slot that the parser may populate as
+ * either an `IdentifierNode` or a raw string literal.
  */
-function resolveConstructorName(node: MutableGameMakerAstNode): string | null {
-    if (Core.isIdentifierNode(node.id)) {
-        return Core.getNonEmptyString(node.id.name);
+function resolveConstructorNameFromId(id: unknown): string | null {
+    if (Core.isIdentifierNode(id)) {
+        return Core.getNonEmptyString(id.name);
     }
 
-    if (typeof node.id === "string") {
-        return Core.getNonEmptyString(node.id);
+    if (typeof id === "string") {
+        return Core.getNonEmptyString(id);
     }
 
     return null;
@@ -136,17 +144,7 @@ function resolveParentConstructorName(node: MutableGameMakerAstNode): string | n
         return null;
     }
 
-    const parentId = (node.parent as MutableGameMakerAstNode & { id?: unknown }).id;
-
-    if (Core.isIdentifierNode(parentId)) {
-        return Core.getNonEmptyString(parentId.name);
-    }
-
-    if (typeof parentId === "string") {
-        return Core.getNonEmptyString(parentId);
-    }
-
-    return null;
+    return resolveConstructorNameFromId((node.parent as MutableGameMakerAstNode & { id?: unknown }).id);
 }
 
 /**
@@ -155,9 +153,9 @@ function resolveParentConstructorName(node: MutableGameMakerAstNode): string | n
 function collectStaticFunctions(node: MutableGameMakerAstNode): Map<string, MutableGameMakerAstNode> {
     const staticFunctions = new Map<string, MutableGameMakerAstNode>();
 
-    const statements = Core.getBodyStatements((node as Record<string, unknown>).body) as MutableGameMakerAstNode[];
-
-    for (const statement of statements) {
+    // `getBodyStatements` expects a `Program` or `BlockStatement`, so unwrap
+    // the constructor's nested `BlockStatement` first.
+    for (const statement of Core.getBodyStatements(node.body)) {
         if (!isStaticFunctionDeclaration(statement)) {
             continue;
         }
@@ -167,7 +165,7 @@ function collectStaticFunctions(node: MutableGameMakerAstNode): Map<string, Muta
             continue;
         }
 
-        staticFunctions.set(staticName, statement);
+        staticFunctions.set(staticName, statement as MutableGameMakerAstNode);
     }
 
     return staticFunctions;
@@ -182,20 +180,18 @@ function collectConstructorInfos(ast: MutableGameMakerAstNode): Map<string, Cons
     }
 
     const constructors = new Map<string, ConstructorInfo>();
-    const body = Core.getBodyStatements(ast);
 
-    for (const node of body) {
+    for (const node of Core.getBodyStatements(ast)) {
         if (!Core.isNode(node) || node.type !== "ConstructorDeclaration") {
             continue;
         }
 
-        const name = resolveConstructorName(node as MutableGameMakerAstNode);
+        const name = resolveConstructorNameFromId((node as MutableGameMakerAstNode).id);
         if (!name) {
             continue;
         }
 
         constructors.set(name, {
-            node: node as MutableGameMakerAstNode,
             parentName: resolveParentConstructorName(node as MutableGameMakerAstNode),
             staticFunctions: collectStaticFunctions(node as MutableGameMakerAstNode)
         });
