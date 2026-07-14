@@ -68,20 +68,9 @@ must stay CLI-derived.
     - Omit unset fields so Commander defaulting and validation stay in one place.
 - Return structured MCP output with:
     - `command`, `argv`, `cwd`, `exitCode`, `stdout`, and `stderr`.
-    - Text content containing a concise command result summary.
+    - Text content containing the CLI result payload, or a concise command result summary when stdout is empty.
     - `isError: true` when the CLI exits nonzero.
 - Serialize CLI invocations inside the MCP server if the chosen runner mutates process-level state such as `cwd`, env, or output streams.
-
-### MCP Resources
-
-- Register read-only graph resources backed by the semantic graph-index query APIs.
-- v1 resource URIs include:
-  - `gm://graph/overview`
-  - `gm://graph/project/overview`
-  - `gm://graph/toolset/overview`
-  - `gm://node/<id>`
-  - `gm://context/<id>?depth=2`
-  - `gm://neighbors/<id>?depth=2`
 
 ### Tests
 
@@ -105,10 +94,8 @@ must stay CLI-derived.
 
 ### Assumptions
 
-- Package name is `@gmloop/mcp`, per the current request, not the older docs TODO name `@gmloop/mcp-server`.
 - v1 supports stdio only. This follows the selected direction and the MCP TypeScript SDK's stdio transport for local process-spawned MCP clients.
 - The MCP implementation uses `registerTool` from the official TypeScript SDK and generates tool schemas from CLI metadata rather than maintaining MCP-local command definitions.
 
 ## TODO
 - **FEAT** Could CLI/MCP tools 'gmloop_live_reload_discover', 'gmloop_live_reload_dev', and 'gmloop_live_reload_status' be combined into one? So it would use a start-or-load methodology where either loads an/the existing live-reload session or starts a new one if there isn't one already running? With on option to force-start too, which would stop the existing session if there is one and then start a new one, or else just start a new one if there isn't one.
-- **BUG**: The MCP tool to list the runtime instances for a live-reload session/game currently returns no content: "Tool returned no content"

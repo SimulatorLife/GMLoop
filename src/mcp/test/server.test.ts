@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -14,6 +15,26 @@ import {
 } from "../src/server/index.js";
 
 const WORKSPACE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+
+type RuntimeInstancesPayload = Readonly<{
+    command: string;
+    payload: Readonly<{
+        instances: ReadonlyArray<Readonly<{ instanceId: string; keys: ReadonlyArray<string> }>>;
+        ok: boolean;
+    }>;
+}>;
+
+type RuntimeInstancesToolResult = Readonly<{
+    content: ReadonlyArray<Readonly<{ text: string; type: string }>>;
+    structuredContent: Readonly<{ jsonPayload: RuntimeInstancesPayload }>;
+}>;
+
+type RuntimeInstancesTool = Readonly<{
+    handler: (
+        argumentsObject: Readonly<{ cwd: string; project: string }>,
+        extra: Record<string, never>
+    ) => Promise<RuntimeInstancesToolResult>;
+}>;
 
 void test("MCP workspace scaffold declares the server package and plan", async () => {
     const packageJsonText = await readFile(path.join(WORKSPACE_ROOT, "package.json"), "utf8");
@@ -98,6 +119,32 @@ void test("MCP server registers CLI-derived graph tools and graph resources", ()
     assert.ok(Object.hasOwn(server._registeredResources, "gm://graph/overview"));
     assert.ok(Object.hasOwn(server._registeredResourceTemplates, "graph-node"));
     assert.ok(Object.hasOwn(server._registeredResourceTemplates, "graph-context"));
+});
+
+void test("runtime instances returns the CLI payload as MCP text content", async () => {
+    const projectRoot = await mkdtemp(path.join(tmpdir(), "gmloop-mcp-runtime-instances-"));
+    await writeFile(path.join(projectRoot, "gmloop.json"), "{}\n", "utf8");
+
+    try {
+        const server = createGmloopMcpServer() as unknown as {
+            _registeredTools: Record<string, RuntimeInstancesTool>;
+        };
+        const runtimeInstancesTool = server._registeredTools.gmloop_runtime_instances;
+        assert.ok(runtimeInstancesTool);
+
+        const result = await runtimeInstancesTool.handler({ cwd: projectRoot, project: projectRoot }, {});
+        const content = result.content[0];
+        assert.ok(content);
+        assert.equal(content.type, "text");
+
+        const payload = JSON.parse(content.text) as RuntimeInstancesPayload;
+        assert.equal(payload.command, "runtime instances");
+        assert.equal(payload.payload.ok, true);
+        assert.deepEqual(payload.payload.instances, []);
+        assert.deepEqual(result.structuredContent.jsonPayload, payload);
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
 });
 
 void test("MCP tool catalog exposes object event add from the CLI command catalog", () => {

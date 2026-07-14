@@ -166,8 +166,16 @@ function createCliCommandArgv(entry: CliCatalogEntry, argumentsObject: Record<st
     return argv;
 }
 
-function createToolTextSummary(commandPath: ReadonlyArray<string>, exitCode: number): string {
-    return `${commandPath.join(" ")} exited with code ${exitCode}`;
+function createToolTextContent(
+    commandPath: ReadonlyArray<string>,
+    result: Readonly<{ exitCode: number; stderr: string; stdout: string }>
+): string {
+    if (result.exitCode !== 0) {
+        return readCliFailureSummary(result);
+    }
+
+    const stdout = result.stdout.trim();
+    return stdout.length > 0 ? stdout : `${commandPath.join(" ")} exited with code ${result.exitCode}`;
 }
 
 function readCliFailureSummary(result: { exitCode: number; stderr: string; stdout: string }): string {
@@ -312,7 +320,7 @@ function registerCliTools(server: McpServer): void {
                 return {
                     content: [
                         {
-                            text: createToolTextSummary(entry.commandPath, result.exitCode),
+                            text: createToolTextContent(entry.commandPath, result),
                             type: "text"
                         }
                     ],
