@@ -85,16 +85,17 @@ async function loadSemanticStoreIndex(
     fsFacade: ProjectIndexFsFacade,
     options: { signal: AbortSignal }
 ) {
-    const manifest = await buildSemanticFileManifest(descriptor.projectRoot, fsFacade);
-    Core.throwIfAborted(options.signal, PROJECT_INDEX_BUILD_ABORT_MESSAGE);
     const store = openSemanticIndexStore(descriptor.projectRoot);
     try {
+        const storedManifest = store.readSemanticManifest("full") ?? store.readSemanticManifest("definitions");
+        const manifest = await buildSemanticFileManifest(descriptor.projectRoot, fsFacade, [], storedManifest);
+        Core.throwIfAborted(options.signal, PROJECT_INDEX_BUILD_ABORT_MESSAGE);
         const activeSlots = store.readActiveSemanticSlots();
-        const storedManifest = store.readSemanticManifest("full");
+        const storedManifestFull = store.readSemanticManifest("full");
         const projectIndex = store.readSemanticNavigationProjection("full");
         const matchesCurrentRevision =
             activeSlots.hasMatchingFull &&
-            storedManifest?.sourceRevision === manifest.sourceRevision &&
+            storedManifestFull?.sourceRevision === manifest.sourceRevision &&
             activeSlots.full?.sourceSignature === manifest.sourceRevision;
         return projectIndex && matchesCurrentRevision
             ? {
@@ -3496,7 +3497,14 @@ export async function publishBuiltProjectIndex(
     projectIndex: Awaited<ReturnType<typeof buildProjectIndex>>,
     fsFacade: ProjectIndexFsFacade = Core.defaultFsFacade
 ): Promise<void> {
-    const manifest = await buildSemanticFileManifest(projectRoot, fsFacade);
+    const store = openSemanticIndexStore(projectRoot);
+    let storedManifest;
+    try {
+        storedManifest = store.readSemanticManifest("full") ?? store.readSemanticManifest("definitions");
+    } finally {
+        await store.close();
+    }
+    const manifest = await buildSemanticFileManifest(projectRoot, fsFacade, [], storedManifest);
     await saveSemanticStoreIndex({ manifest, projectIndex, projectRoot });
 }
 

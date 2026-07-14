@@ -406,7 +406,8 @@ function buildSemanticIndexInWorker(
     incremental: Readonly<{
         changes: ReadonlyArray<GmlSemanticFileChange>;
         existingIndex: Record<string, unknown>;
-    }> | null = null
+    }> | null = null,
+    previousManifest?: SemanticFileManifest | null
 ): Promise<NavigationState | null> {
     const { boundary: buildBoundary, isCurrent: isBuildBoundaryCurrent } = buildIdentity;
     const overlayBoundary = createWorkerOverlayBoundary(openDocuments);
@@ -502,7 +503,8 @@ function buildSemanticIndexInWorker(
                 sourceText: document.sourceText
             })),
             priorityFiles,
-            projectRoot
+            projectRoot,
+            previousManifest
         });
     });
 }
@@ -786,7 +788,12 @@ export function createGmlSemanticIndex(
                 documentVersion: openDocument.version,
                 sourceText: openDocument.sourceText
             }));
-            const currentManifest = await Semantic.buildSemanticFileManifest(resolvedRoot, fsFacade, overlays);
+            const currentManifest = await Semantic.buildSemanticFileManifest(
+                resolvedRoot,
+                fsFacade,
+                overlays,
+                previousManifest
+            );
             const reconciliationResult = Semantic.reconcileSemanticManifests(previousManifest, currentManifest);
             if (!disposed && reconciliationResult.requiresBuild) {
                 // Reuse the watched-file batch path so a restarted session applies
@@ -964,6 +971,9 @@ export function createGmlSemanticIndex(
                     tier: "full"
                 });
                 const workerBoundary = createWorkerBuildBoundary(resolvedRoot, "full", buildVersion);
+                const store = getSemanticStore(resolvedRoot);
+                const previousManifest =
+                    store.readSemanticManifest("full") ?? store.readSemanticManifest("definitions");
                 const fullState = await buildSemanticIndexInWorker(
                     resolvedRoot,
                     priorityFiles,
@@ -974,7 +984,9 @@ export function createGmlSemanticIndex(
                         boundary: workerBoundary,
                         isCurrent: (boundary) => isWorkerBuildBoundaryCurrent(resolvedRoot, boundary)
                     },
-                    controller.signal
+                    controller.signal,
+                    null,
+                    previousManifest
                 );
                 if (
                     fullState &&
@@ -1132,6 +1144,9 @@ export function createGmlSemanticIndex(
                         tier: "definitions"
                     });
                     const workerBoundary = createWorkerBuildBoundary(resolvedRoot, "definitions", buildVersion);
+                    const store = getSemanticStore(resolvedRoot);
+                    const previousManifest =
+                        store.readSemanticManifest("definitions") ?? store.readSemanticManifest("full");
                     const state = await buildSemanticIndexInWorker(
                         resolvedRoot,
                         priorityFiles,
@@ -1148,7 +1163,8 @@ export function createGmlSemanticIndex(
                                   changes: [{ filePath: document.filePath, kind: "modified" }],
                                   existingIndex: Object.fromEntries(Object.entries(existingRawIndex))
                               }
-                            : null
+                            : null,
+                        previousManifest
                     );
                     if (
                         state &&
@@ -1270,6 +1286,9 @@ export function createGmlSemanticIndex(
                     tier: "definitions"
                 });
                 const definitionsBoundary = createWorkerBuildBoundary(resolvedRoot, "definitions", buildVersion);
+                const store = getSemanticStore(resolvedRoot);
+                const definitionsPreviousManifest =
+                    store.readSemanticManifest("definitions") ?? store.readSemanticManifest("full");
                 const definitionsState = await buildSemanticIndexInWorker(
                     resolvedRoot,
                     priorityFiles,
@@ -1283,7 +1302,8 @@ export function createGmlSemanticIndex(
                     controller.signal,
                     canIncrementDefinitions
                         ? { changes: impactedChanges, existingIndex: definitionsIncrementalIndex }
-                        : null
+                        : null,
+                    definitionsPreviousManifest
                 );
                 if (
                     !definitionsState ||
@@ -1334,6 +1354,9 @@ export function createGmlSemanticIndex(
                     tier: "full"
                 });
                 const fullBoundary = createWorkerBuildBoundary(resolvedRoot, "full", buildVersion);
+                const storeForFull = getSemanticStore(resolvedRoot);
+                const fullPreviousManifest =
+                    storeForFull.readSemanticManifest("full") ?? storeForFull.readSemanticManifest("definitions");
                 const state = await buildSemanticIndexInWorker(
                     resolvedRoot,
                     priorityFiles,
@@ -1353,7 +1376,8 @@ export function createGmlSemanticIndex(
                               })),
                               existingIndex: fullIncrementalIndex
                           }
-                        : null
+                        : null,
+                    fullPreviousManifest
                 );
                 if (
                     state &&

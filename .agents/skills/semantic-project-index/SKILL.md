@@ -22,7 +22,7 @@ The semantic target state is a robust, understanding layer for GameMaker project
 - scale to large projects without retaining monolithic aggregates
 - preserve strict GameMaker semantics; must support every valid GML declaration, scope, ownership form, reference form, etc.
 - invalidation must trigger verification or recomputation only for results whose inputs may have changed, without eagerly deleting or rebuilding every transitive dependent
-- zero-reanalysis compatible warm starts
+- zero-reanalysis compatible warm starts utilizing cached manifest entry metadata (such as content hashes and sizes) when modification times (mtime) match the cache
 - Inheritance changes must propagate through indexed direct relationships, recomputing affected effective interfaces and continuing only where their externally relevant semantic output changes
 - Snapshot and derived-cache retention must be bounded, with completed or cancelled requests releasing their references and obsolete revisions becoming reclaimable. Unchanged data may be shared across revisions, but unexpectedly retained snapshots and caches must be observable
 - Progressive semantic availability must be published as separate immutable snapshots rather than mutations to existing snapshots. Each request must pin one snapshot identified by project revision, analysis generation, tier, capabilities, coverage, and overlay versions for its full duration

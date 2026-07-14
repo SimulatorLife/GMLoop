@@ -142,7 +142,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export async function buildSemanticFileManifest(
     projectRoot: string,
     fsFacade: ProjectIndexFsFacade,
-    overlays: ReadonlyArray<SemanticOpenBufferOverlay> = []
+    overlays: ReadonlyArray<SemanticOpenBufferOverlay> = [],
+    previousManifest?: SemanticFileManifest | null
 ): Promise<SemanticFileManifest> {
     const resolvedRoot = path.resolve(projectRoot);
     const overlayByAbsolutePath = createOverlayMap(overlays);
@@ -158,8 +159,21 @@ export async function buildSemanticFileManifest(
         async (file) => {
             const absolutePath = path.resolve(file.absolutePath);
             const overlay = overlayByAbsolutePath.get(absolutePath);
-            const sourceText = overlay ? overlay.sourceText : await fsFacade.readFile(absolutePath, "utf8");
             const relativePath = Core.toPosixPath(file.relativePath);
+
+            const previousEntry = previousManifest?.entries.get(relativePath);
+            if (
+                !overlay &&
+                previousEntry &&
+                previousEntry.sourceOrigin === "disk" &&
+                file.mtimeMs !== null &&
+                previousEntry.mtimeMs !== null &&
+                file.mtimeMs === previousEntry.mtimeMs
+            ) {
+                return previousEntry;
+            }
+
+            const sourceText = overlay ? overlay.sourceText : await fsFacade.readFile(absolutePath, "utf8");
             return Object.freeze({
                 contentHash: overlay?.contentHash ?? createContentHash(sourceText),
                 fileKind: classifyManifestFile(relativePath),
