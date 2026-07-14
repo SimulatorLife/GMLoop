@@ -1322,13 +1322,14 @@ export function createGmlSemanticIndex(
                         .map((symbol) => symbol.name)
                 );
                 let fullImpactedFiles = impactedChanges.map((change) => change.filePath);
-                const fullIncrementalIndex =
-                    existingState && !existingState.lightweight
-                        ? ((existingState.index.rawIndex as Record<string, unknown> | undefined) ??
-                          getSemanticStore(resolvedRoot).readSemanticNavigationProjection("full"))
-                        : null;
+                const hadFullState = existingState !== undefined && !existingState.lightweight;
+                const fullIncrementalIndex = hadFullState
+                    ? ((existingState.index.rawIndex as Record<string, unknown> | undefined) ??
+                      getSemanticStore(resolvedRoot).readSemanticNavigationProjection("full"))
+                    : null;
                 const canIncrementFull = Core.isObjectLike(fullIncrementalIndex);
                 const definitionsIncrementalIndex =
+                    (existingState?.index.rawIndex as Record<string, unknown> | undefined) ??
                     getSemanticStore(resolvedRoot).readSemanticNavigationProjection("definitions");
                 const canIncrementDefinitions = Core.isObjectLike(definitionsIncrementalIndex);
                 reportSemanticAnalysisStart({
@@ -1379,7 +1380,7 @@ export function createGmlSemanticIndex(
                     impactedChanges.map((change) => change.filePath)
                 );
                 onSemanticGenerationPublished?.();
-                if (!existingState || existingState.lightweight) {
+                if (!hadFullState) {
                     return definitionsState;
                 }
                 const introducedNames = definitionsState.index.symbols

@@ -35,7 +35,8 @@ scopes and standard LSP semantic token types rather than installing a custom the
 ## Semantic Analysis Activity
 
 Run `GMLoop: Show Language Server Output` to see each semantic-analysis build as it starts. The output identifies
-the tier (`definitions` or `full`), scope (`incremental` or `project`), affected-file count, and reason. A
+the tier (`definitions` or `full`), scope (`incremental` or `project`), the affected-file count for incremental
+work, and reason. A
 `project`-scope `full` build is reserved for a full-capability request such as Find References or Rename when no
 current full snapshot is available; ordinary hovers, completions, and document opens use definitions facts and do
 not trigger one.

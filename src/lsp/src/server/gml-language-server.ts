@@ -177,7 +177,11 @@ function requestSemanticTokenRefresh(connection: GmlLanguageServerConnection): v
 }
 
 function formatSemanticAnalysisStart(event: GmlSemanticAnalysisStart): string {
-    return `Semantic analysis started: ${event.tier} tier, ${event.scope} scope, ${event.affectedFileCount} affected file${event.affectedFileCount === 1 ? "" : "s"}, reason ${event.reason}.`;
+    const scopeDescription =
+        event.scope === "project"
+            ? "all project files"
+            : `${event.affectedFileCount} affected file${event.affectedFileCount === 1 ? "" : "s"}`;
+    return `Semantic analysis started: ${event.tier} tier, ${event.scope} scope (${scopeDescription}), reason ${event.reason}.`;
 }
 
 /**
