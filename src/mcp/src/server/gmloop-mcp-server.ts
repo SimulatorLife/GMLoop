@@ -314,7 +314,8 @@ function registerCliTools(server: McpServer): void {
                 const cwd = typeof cwdValue === "string" && cwdValue.length > 0 ? cwdValue : process.cwd();
                 const result = await CLI.runCliCommandCapture({
                     argv,
-                    cwd
+                    cwd,
+                    env: entry.displayName === "live-reload session" ? { GMLOOP_LIVE_RELOAD_START_SOURCE: "mcp" } : {}
                 });
 
                 return {

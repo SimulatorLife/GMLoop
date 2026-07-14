@@ -717,7 +717,7 @@ void test("graph visualize live-reload startup timeout allows long build-first s
     assert.equal(__graphCommandTest__.GRAPH_VISUALIZATION_LIVE_RELOAD_START_TIMEOUT_MS, 600_000);
 });
 
-void test("graph visualize live-reload dev args include configured startup paths", () => {
+void test("graph visualize live-reload worker args include configured startup paths", () => {
     const args = __graphCommandTest__.createGraphVisualizationLiveReloadDevCommandArgs("/tmp/project", {
         gmTempRoot: "/tmp/project/.gm-temp/html5",
         hasBuildConfiguration: true,
@@ -728,10 +728,9 @@ void test("graph visualize live-reload dev args include configured startup paths
         websocketPort: 47_910
     });
 
-    assert.deepEqual(args, [
-        "live-reload",
-        "dev",
-        "/tmp/project",
+    assert.deepEqual(args.slice(0, 5), ["live-reload", "worker", "--path", "/tmp/project", "--session-id"]);
+    assert.match(args[5] ?? "", /^[0-9a-f-]{36}$/u);
+    assert.deepEqual(args.slice(6), [
         "--html5-output",
         "/tmp/project/dist/html5",
         "--gm-temp-root",

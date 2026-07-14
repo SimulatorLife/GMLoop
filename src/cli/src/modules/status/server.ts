@@ -77,6 +77,12 @@ export interface StatusSnapshot {
     avgHotReloadLatencyMs?: number;
     /** 95th-percentile end-to-end hot-reload latency (ms) across all patches in the current metrics window. */
     p95HotReloadLatencyMs?: number;
+    /** Identity of the managed live-reload worker, present only for project sessions. */
+    liveReloadSession?: {
+        processId: number;
+        projectRoot: string;
+        sessionId: string;
+    };
 }
 
 /**

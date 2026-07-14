@@ -1,5 +1,5 @@
 import { type ChildProcessWithoutNullStreams, execFile, spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, type FSWatcher, readFileSync, watch, type WatchListener, type WatchOptions } from "node:fs";
 import { access, constants, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import net from "node:net";
@@ -473,8 +473,11 @@ function createGraphVisualizationLiveReloadDevCommandArgs(
 ): Array<string> {
     return [
         "live-reload",
-        "dev",
+        "worker",
+        "--path",
         projectRoot,
+        "--session-id",
+        randomUUID(),
         ...(startupOptions.html5OutputRoot === null ? [] : ["--html5-output", startupOptions.html5OutputRoot]),
         "--gm-temp-root",
         startupOptions.gmTempRoot,

@@ -777,6 +777,36 @@ export function getNavigationHoverFacts(index: GmlProjectNavigationIndex, symbol
         : null;
 }
 
+/**
+ * Return hover facts for the enum that owns an enum symbol or enum member.
+ *
+ * This lets editor consumers render the complete enum consistently when a
+ * user hovers either its declaration or one of its members.
+ */
+export function getNavigationEnumHoverFacts(index: GmlProjectNavigationIndex, symbolId: string): GmlHoverFacts | null {
+    const facts = getNavigationHoverFacts(index, symbolId);
+    if (facts?.kind === "enum") {
+        return facts;
+    }
+    if (facts?.kind !== "enumMember") {
+        return null;
+    }
+
+    const identifiers = asRecord(asRecord(index.rawIndex).identifiers);
+    const enumMembers = asRecord(identifiers.enumMembers);
+    const member = Object.values(enumMembers)
+        .map(asRecord)
+        .find((entry) => readString(entry.identifierId) === symbolId);
+    const enumKey = member ? readString(member.enumKey) : null;
+    if (enumKey === null) {
+        return null;
+    }
+
+    const enumEntry = asRecord(asRecord(identifiers.enums)[enumKey]);
+    const enumSymbolId = readString(enumEntry.identifierId);
+    return enumSymbolId === null ? null : getNavigationHoverFacts(index, enumSymbolId);
+}
+
 /** Return the complete ordered member list for an indexed enum symbol. */
 export function listNavigationEnumHoverMembers(
     index: GmlProjectNavigationIndex,

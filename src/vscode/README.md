@@ -22,6 +22,10 @@ Standalone `.gml` files receive declaration and bundled GameMaker built-in highl
 a `.yyp` project adds project-aware definition/reference and resource classification. Unsaved document text is used
 when semantic tokens are recomputed.
 
+Hover tooltips are available for project symbols and documented GameMaker runtime built-ins such as functions and
+instance properties. Language keywords such as `function`, `var`, `constructor`, `if`, `else`, and `repeat` do not
+open hover tooltips.
+
 To inspect the scope and semantic token applied at the cursor, run VSCode's `Developer: Inspect Editor Tokens and
 Scopes` command. Color choices remain controlled by the active VSCode theme; GMLoop contributes standard TextMate
 scopes and standard LSP semantic token types rather than installing a custom theme.

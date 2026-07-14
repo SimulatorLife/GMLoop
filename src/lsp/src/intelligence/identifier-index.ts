@@ -1670,10 +1670,11 @@ export function createGmlSemanticIndex(
                 if (docComment) {
                     markdownValue += `\n\n---\n\n${docComment}`;
                 }
-                if (facts.kind === "enum") {
-                    const members = Semantic.listNavigationEnumHoverMembers(state.index, facts.symbolId);
+                const enumFacts = Semantic.getNavigationEnumHoverFacts(state.index, facts.symbolId);
+                if (enumFacts) {
+                    const members = Semantic.listNavigationEnumHoverMembers(state.index, enumFacts.symbolId);
                     if (members.length > 0) {
-                        markdownValue += `\n\n\`\`\`gml\nenum ${facts.displayName} {\n${members
+                        markdownValue += `\n\n\`\`\`gml\nenum ${enumFacts.displayName} {\n${members
                             .map((member) => `    ${member.name}${member.value === null ? "" : ` = ${member.value}`}`)
                             .join(",\n")}\n}\n\`\`\``;
                     }
@@ -1691,6 +1692,9 @@ export function createGmlSemanticIndex(
             const builtIn = getBuiltInsMetadata()[identifierName];
             if (Core.isObjectLike(builtIn)) {
                 const info = builtIn as Record<string, unknown>;
+                if (info.type === "keyword") {
+                    return null;
+                }
                 const hoverInfo = Core.isObjectLike(info.hover) ? (info.hover as Record<string, unknown>) : null;
                 const type = typeof info.type === "string" ? info.type : "unknown";
                 const signature =

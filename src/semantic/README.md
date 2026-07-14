@@ -1045,7 +1045,6 @@ for (const p of sorted) {
 
 ## TODO
 
-- **FEAT**: Node types `Local variable`, `Instance variable`, and `Enum member` should be unchecked/disabled by default in the visualization, since they are very common and can create a lot of visual noise in the graph. Instead, the user can choose to enable them if they want to see those details.
 - **FEAT/BUG**: We should NOT have node types for these & they should not be included in the graph index:
   1. ALL `*.gml` `*.yy`, `*.yyp` files should be excluded (these are currently being considered `File` type nodes). Just the *actual* node that the two files together define/represent should be in the index as a single node (e.g. a single `Object` node named `obj_spider` instead of `objects/obj_spider/obj_spider.yy` and `objects/obj_spider/obj_spider.gml`)
   2. ALL options should be excluded/removed (`tvOS`, `Reddit`, `macOS`, `HTML5`, etc.) these are currently being considered 'Resource' type nodes in the graph index

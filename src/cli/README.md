@@ -331,17 +331,18 @@ pnpm run cli -- live-reload build /path/to/project
 # Prepare an existing HTML5 output explicitly
 pnpm run cli -- live-reload prepare --html5-output /path/to/output
 
-# Start the full live-reload dev session (builds first when configured)
-pnpm run cli -- live-reload dev /path/to/project
+# Attach to or start the managed live-reload session (builds first when configured)
+pnpm run cli -- live-reload session --path /path/to/project
 
-# Query the running status server by project path
-pnpm run cli -- live-reload status --path /path/to/project --format json
+# Replace or stop the managed project session
+pnpm run cli -- live-reload session --path /path/to/project --force-start
+pnpm run cli -- live-reload session --path /path/to/project --stop
 ```
 
-The `live-reload dev` command will:
+The `live-reload session` command will:
 
 1. Resolve the canonical GameMaker project root and project-local `.gmloop/live-reload-session.json` registry.
-2. Attach to a healthy registered session for that project unless `--force-new` or `--reuse-existing false` is set.
+2. Attach to a healthy registered session for that project unless `--force-start` is set.
 3. Resolve `runtime.liveReload` from `gmloop.json`.
 4. Build the GameMaker project into `runtime.liveReload.html5Output` when `runtime.liveReload.build` is configured.
 5. Otherwise, locate an existing HTML5 output via `--html5-output`, `runtime.liveReload.html5Output`, or the latest GameMaker temp output.
@@ -680,24 +681,24 @@ pnpm run cli -- live-reload build /path/to/project
 - `--verbose` - Print the selected backend command line
 - `--quiet` - Suppress informational output
 
-### `live-reload dev` - Build, Prepare, And Watch
+### `live-reload session` - Attach, Start, Replace, Or Stop
 
 Start the full live-reload session for a GameMaker project.
 
 ```bash
 # Build first when runtime.liveReload.build is configured, then watch
-pnpm run cli -- live-reload dev /path/to/project
+pnpm run cli -- live-reload session --path /path/to/project
 
 # Force an existing output directory when build orchestration is not configured
-pnpm run cli -- live-reload dev /path/to/project --html5-output /path/to/html5/output
+pnpm run cli -- live-reload session --path /path/to/project --html5-output /path/to/html5/output
 
 # Intentionally start a second session for debugging
-pnpm run cli -- live-reload dev /path/to/project --force-new
+pnpm run cli -- live-reload session --path /path/to/project --force-start
 ```
 
 When `runtime.liveReload.build` exists, `live-reload dev` treats `runtime.liveReload.html5Output` as the canonical output directory, rebuilds it before injection, and serves that same prepared output as the runtime URL shown by the UI.
 
-By default, `live-reload dev` is attach-or-start. If `.gmloop/live-reload-session.json` points to a healthy status server for the same canonical project root, the command prints the existing runtime URL, status URL, and WebSocket URL instead of starting parallel servers.
+By default, `live-reload session` is attach-or-start. If `.gmloop/live-reload-session.json` points to a healthy session for the same canonical project root, the command returns the existing runtime URL, status URL, WebSocket URL, and status snapshot instead of starting parallel servers.
 
 Igor builds materialize project prefab packages from `.gmcache/prefabs` into the project-local `prefabs` path while the build runs, then remove the temporary materialization after the build. This keeps one-click Live Reload startup aligned with GameMaker projects whose package cache already contains the referenced prefab libraries.
 
@@ -720,47 +721,31 @@ If Node's native recursive watcher exhausts file handles after startup, Live Rel
 - Event transpilation (not just scripts)
 - Shader and asset hot-reloading
 
-### `live-reload status` - Query Live-Reload Status
+### Managed Session Status
 
-Queries the running live-reload status server for real-time metrics and diagnostics without interrupting the watcher.
+`live-reload session` returns the current full status snapshot. Health, ping, and readiness endpoints remain available from the returned status URL.
 
 ```bash
-# Query full status with metrics and recent patches
-pnpm run cli -- live-reload status
+# Attach to an existing session or start one and return JSON status
+pnpm run cli -- live-reload session --path /path/to/project
 
-# Get health check information
-pnpm run cli -- live-reload status --endpoint health
-
-# Check if live reload is running (lightweight ping)
-pnpm run cli -- live-reload status --endpoint ping
-
-# Query readiness status (for Kubernetes/orchestration)
-pnpm run cli -- live-reload status --endpoint ready
-
-# Get JSON output for scripting/automation
-pnpm run cli -- live-reload status --format json
-
-# Discover the registered session without knowing the status port
-pnpm run cli -- live-reload status --path /path/to/project --format json
-
-# Query custom host/port
-pnpm run cli -- live-reload status --status-host 127.0.0.1 --status-port 18000
+# Render a concise terminal summary
+pnpm run cli -- live-reload session --path /path/to/project --format pretty
 ```
 
 **Options:**
 
 - `--path <project>` - Project directory or `.yyp` path used to locate `.gmloop/live-reload-session.json`
-- `--status-host <host>` - Status server host (default: 127.0.0.1, env: WATCH_STATUS_HOST)
-- `--status-port <port>` - Status server port (default: 17891, env: WATCH_STATUS_PORT)
-- `--format <format>` - Output format: `pretty` (default) or `json`
-- `--endpoint <endpoint>` - Endpoint to query: `status` (default), `health`, `ping`, or `ready`
+- `--force-start` - Gracefully replace an active project session
+- `--stop` - Stop an active project session without starting another
+- `--format <format>` - Output format: `json` (default) or `pretty`
 
-Agents can also use `live-reload status` (for discovery/health checks) and `live-reload wait-for-patch` by project path. Through MCP these appear as `gmloop_live_reload_status` and `gmloop_live_reload_wait_for_patch`.
+Agents use `live-reload session` and `live-reload wait-for-patch` by project path. Through MCP these appear as `gmloop_live_reload_session` and `gmloop_live_reload_wait_for_patch`.
 
 **Example Output:**
 
 ```
-$ pnpm run cli -- live-reload status
+$ pnpm run cli -- live-reload session --path /path/to/project
 === Live Reload Status ===
 
 Uptime: 2h 15m 43s

@@ -21,6 +21,7 @@ export type LiveReloadRegisteredSession = Readonly<{
     statusHost: string;
     statusPort: number;
     statusUrl: string;
+    sessionId?: string;
     watchedRoot: string;
     websocketHost: string;
     websocketPort: number;
@@ -38,6 +39,7 @@ export type LiveReloadSessionDiscovery = Readonly<{
     alive: boolean;
     registryPath: string;
     session: LiveReloadRegisteredSession | null;
+    status: Record<string, unknown> | null;
 }>;
 
 type SessionHealthFetch = (url: string) => Promise<unknown>;
@@ -58,6 +60,7 @@ function isRegisteredSession(value: unknown): value is LiveReloadRegisteredSessi
         typeof record.statusHost === "string" &&
         typeof record.statusPort === "number" &&
         typeof record.statusUrl === "string" &&
+        (typeof record.sessionId === "string" || record.sessionId === undefined) &&
         typeof record.watchedRoot === "string" &&
         typeof record.websocketHost === "string" &&
         typeof record.websocketPort === "number" &&
@@ -137,6 +140,15 @@ export async function removeLiveReloadSessionRegistry(projectRoot: string): Prom
     await fs.rm(path.join(projectRoot, LIVE_RELOAD_SESSION_REGISTRY_RELATIVE_PATH), { force: true });
 }
 
+/** Remove the registry only when it still belongs to the terminating session. */
+export async function removeLiveReloadSessionRegistryForSession(projectRoot: string, sessionId: string): Promise<void> {
+    const registryPath = path.join(projectRoot, LIVE_RELOAD_SESSION_REGISTRY_RELATIVE_PATH);
+    const session = await readLiveReloadSessionRegistry(registryPath);
+    if (session?.sessionId === sessionId) {
+        await fs.rm(registryPath, { force: true });
+    }
+}
+
 async function fetchJsonWithTimeout(url: string): Promise<unknown> {
     const controller = new AbortController();
     const timeout = setTimeout(() => {
@@ -164,7 +176,22 @@ export async function isLiveReloadRegisteredSessionAlive(
     fetchStatus: SessionHealthFetch = fetchJsonWithTimeout
 ): Promise<boolean> {
     const statusPayload = await fetchStatus(resolveStatusEndpointUrl(session.statusUrl)).catch(() => null);
-    return Core.isObjectLike(statusPayload);
+    if (!Core.isObjectLike(statusPayload)) {
+        return false;
+    }
+    const identity = (statusPayload as Record<string, unknown>).liveReloadSession;
+    if (session.sessionId === undefined || session.processId === null) {
+        return true;
+    }
+    if (!Core.isObjectLike(identity)) {
+        return false;
+    }
+    const identityRecord = identity as Record<string, unknown>;
+    return (
+        identityRecord.sessionId === session.sessionId &&
+        identityRecord.processId === session.processId &&
+        identityRecord.projectRoot === session.projectRoot
+    );
 }
 
 /**
@@ -180,14 +207,39 @@ export async function discoverLiveReloadSessionByPath(
     const identity = await resolveLiveReloadProjectIdentity(targetPath, options.projectContextResolver);
     const session = await readLiveReloadSessionRegistry(identity.registryPath);
     if (session === null) {
-        return Object.freeze({ alive: false, registryPath: identity.registryPath, session: null });
+        return Object.freeze({ alive: false, registryPath: identity.registryPath, session: null, status: null });
     }
 
-    const alive = await isLiveReloadRegisteredSessionAlive(session, options.fetchStatus);
-    if (!alive) {
+    const status = await (options.fetchStatus ?? fetchJsonWithTimeout)(
+        resolveStatusEndpointUrl(session.statusUrl)
+    ).catch(() => null);
+    if (!isMatchingLiveReloadStatus(session, status)) {
         await removeLiveReloadSessionRegistry(identity.projectRoot);
-        return Object.freeze({ alive: false, registryPath: identity.registryPath, session: null });
+        return Object.freeze({ alive: false, registryPath: identity.registryPath, session: null, status: null });
     }
+    return Object.freeze({
+        alive: true,
+        registryPath: identity.registryPath,
+        session,
+        status: status as Record<string, unknown>
+    });
+}
 
-    return Object.freeze({ alive: true, registryPath: identity.registryPath, session });
+function isMatchingLiveReloadStatus(session: LiveReloadRegisteredSession, statusPayload: unknown): boolean {
+    if (!Core.isObjectLike(statusPayload)) {
+        return false;
+    }
+    if (session.sessionId === undefined || session.processId === null) {
+        return true;
+    }
+    const identity = (statusPayload as Record<string, unknown>).liveReloadSession;
+    if (!Core.isObjectLike(identity)) {
+        return false;
+    }
+    const identityRecord = identity as Record<string, unknown>;
+    return (
+        identityRecord.sessionId === session.sessionId &&
+        identityRecord.processId === session.processId &&
+        identityRecord.projectRoot === session.projectRoot
+    );
 }

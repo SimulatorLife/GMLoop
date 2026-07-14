@@ -21,6 +21,7 @@ import {
     prepareLiveReload,
     startLiveReloadDevSession
 } from "../modules/live-reload/session.js";
+import { manageLiveReloadSession } from "../modules/live-reload/session-controller.js";
 import {
     discoverLiveReloadSessionByPath,
     type LiveReloadRegisteredSession,
@@ -42,16 +43,9 @@ import {
     DEFAULT_WATCH_MAX_PATCH_HISTORY,
     DEFAULT_WATCH_POLLING_INTERVAL_MS
 } from "./watch/constants.js";
-import {
-    runWatchStatusCommand,
-    WATCH_STATUS_OUTPUT_FORMAT_VALUES,
-    WATCH_STATUS_OUTPUT_FORMATS
-} from "./watch/status.js";
 
 const PROJECT_PATH_OPTION_DESCRIPTION = "Project directory or .yyp path.";
 const PROJECT_PATH_OPTION_FLAG = "--path <project>";
-const PROJECT_SESSION_PATH_OPTION_DESCRIPTION =
-    "Project directory or .yyp path used to discover the project-local live-reload session.";
 const LIVE_RELOAD_WAIT_FOR_PATCH_COMMAND = "live-reload wait-for-patch";
 
 type RuntimeDescriptorFormatter = (source: RuntimeSourceDescriptor) => string;
@@ -91,17 +85,15 @@ interface LiveReloadDevCommandOptions extends LiveReloadPrepareCommandOptions {
     runtimeDescriptor?: RuntimeDescriptorFormatter;
     runtimeServerStarter?: typeof startRuntimeStaticServer;
     abortSignal?: AbortSignal;
-    forceNew?: boolean;
-    reuseExisting?: boolean;
+    sessionId?: string;
     startSource?: "cli" | "mcp" | "ui";
 }
 
-interface LiveReloadStatusCommandOptions {
-    endpoint?: "status" | "health" | "ping" | "ready";
-    format?: string;
+interface LiveReloadSessionCommandOptions extends Omit<LiveReloadDevCommandOptions, "sessionId"> {
+    forceStart?: boolean;
+    format?: "json" | "pretty";
     path?: string;
-    statusHost?: string;
-    statusPort?: number;
+    stop?: boolean;
 }
 
 interface LiveReloadPathCommandOptions {
@@ -211,13 +203,12 @@ export async function runLiveReloadDevCommand(
     targetPath: string,
     options: LiveReloadDevCommandOptions = {}
 ): Promise<void> {
-    const result = await startLiveReloadDevSession({
+    await startLiveReloadDevSession({
         targetPath,
         html5OutputRoot: options.html5Output,
         gmTempRoot: options.gmTempRoot,
         bootstrapConfig: createLiveReloadBootstrapConfig(options),
-        forceNew: options.forceNew,
-        reuseExisting: options.reuseExisting,
+        sessionId: options.sessionId,
         startSource: options.startSource ?? "cli",
         watchOptions: {
             polling: options.polling,
@@ -245,53 +236,60 @@ export async function runLiveReloadDevCommand(
             runtimeServerStarter: options.runtimeServerStarter ?? startRuntimeStaticServer
         }
     });
-    if (result.mode === "attached" && result.session !== null && options.quiet !== true) {
-        reportLiveReloadAttachedSession(result.session);
-    }
 }
 
-function reportLiveReloadAttachedSession(session: LiveReloadRegisteredSession): void {
-    console.log("Attached to existing live-reload session.");
-    console.log(`Project root: ${session.projectRoot}`);
-    console.log(`Runtime URL: ${session.runtimeUrl ?? "<not served>"}`);
-    console.log(`Status URL: ${session.statusUrl}`);
-    console.log(`WebSocket URL: ${session.websocketUrl}`);
-}
-
-export async function runLiveReloadStatusCommand(options: LiveReloadStatusCommandOptions = {}): Promise<void> {
-    if (options.path) {
-        const discovery = await discoverLiveReloadSessionByPath(options.path);
-        if (!discovery.alive || discovery.session === null) {
-            console.error(`No active live-reload session is registered for ${options.path}.`);
-            process.exit(1);
-        }
-
-        await runWatchStatusCommand({
-            endpoint: options.endpoint,
-            format: options.format,
-            statusHost: discovery.session.statusHost,
-            statusPort: discovery.session.statusPort
+export async function runLiveReloadSessionCommand(options: LiveReloadSessionCommandOptions = {}): Promise<void> {
+    try {
+        const result = await manageLiveReloadSession({
+            forceStart: options.forceStart === true,
+            startArguments: createLiveReloadWorkerArguments(options),
+            stop: options.stop === true,
+            targetPath: options.path ?? process.cwd()
         });
-        return;
+        const payload = { command: "live-reload session", ok: true, payload: result };
+        if (options.format === "pretty") {
+            console.log(`${result.mode}: ${result.session?.runtimeUrl ?? "no active runtime"}`);
+            return;
+        }
+        console.log(JSON.stringify(payload, null, 2));
+    } catch (error) {
+        const payload = {
+            command: "live-reload session",
+            ok: false,
+            code: options.forceStart ? "session_stop_failed" : "session_start_failed",
+            error: Core.getErrorMessage(error, { fallback: "Failed to manage live-reload session." })
+        };
+        console.log(JSON.stringify(payload, null, 2));
+        process.exit(1);
     }
-
-    await runWatchStatusCommand(options);
 }
 
-export async function runLiveReloadDiscoverCommand(options: LiveReloadPathCommandOptions = {}): Promise<void> {
-    const targetPath = options.path ?? process.cwd();
-    const discovery = await discoverLiveReloadSessionByPath(targetPath);
-    console.log(
-        JSON.stringify(
-            {
-                command: "live-reload discover",
-                ok: true,
-                payload: discovery
-            },
-            null,
-            2
-        )
-    );
+function createLiveReloadWorkerArguments(options: LiveReloadSessionCommandOptions): Array<string> {
+    const argumentsList: Array<string> = [];
+    const values: ReadonlyArray<readonly [string, string | number | boolean | undefined]> = [
+        ["--html5-output", options.html5Output],
+        ["--gm-temp-root", options.gmTempRoot],
+        ["--websocket-host", options.websocketHost],
+        ["--websocket-port", options.websocketPort],
+        ["--status-host", options.statusHost],
+        ["--status-port", options.statusPort],
+        ["--polling-interval", options.pollingInterval],
+        ["--debounce-delay", options.debounceDelay],
+        ["--max-concurrent-dirs", options.maxConcurrentDirs],
+        ["--max-patch-history", options.maxPatchHistory],
+        ["--runtime-root", options.runtimeRoot],
+        ["--runtime-package", options.runtimePackage]
+    ];
+    for (const [flag, value] of values) {
+        if (typeof value === "string" || typeof value === "number") argumentsList.push(flag, String(value));
+    }
+    if (options.polling) argumentsList.push("--polling");
+    if (options.verbose) argumentsList.push("--verbose");
+    if (options.quiet) argumentsList.push("--quiet");
+    if (options.websocketServer === false) argumentsList.push("--no-websocket-server");
+    if (options.runtimeServer === false) argumentsList.push("--no-runtime-server");
+    argumentsList.push("--start-source", process.env.GMLOOP_LIVE_RELOAD_START_SOURCE === "mcp" ? "mcp" : "cli");
+    return argumentsList;
 }
 
 async function fetchLiveReloadStatusPayload(session: LiveReloadRegisteredSession): Promise<unknown> {
@@ -507,13 +505,14 @@ function createLiveReloadBuildSubcommand(): Command {
         );
 }
 
-function createLiveReloadDevSubcommand(): Command {
-    const command = new Command("dev");
+function createLiveReloadWorkerSubcommand(): Command {
+    const command = new Command("worker");
     applyStandardCommandOptions(command);
 
     return applySharedLiveReloadPrepareOptions(command)
-        .description("Build HTML5 when configured, prepare live reload, start servers, then watch GML files.")
-        .argument("[targetPath]", "Directory to watch for changes", process.cwd())
+        .description("Internal foreground live-reload worker.")
+        .addOption(new Option(PROJECT_PATH_OPTION_FLAG, PROJECT_PATH_OPTION_DESCRIPTION).default(process.cwd()))
+        .addOption(new Option("--session-id <id>", "Internal session identity.").makeOptionMandatory())
         .addOption(new Option("--gm-temp-root <path>", "Root directory for GameMaker HTML5 temporary outputs."))
         .addOption(new Option("--polling", "Use polling instead of native file watching").default(false))
         .addOption(
@@ -561,7 +560,6 @@ function createLiveReloadDevSubcommand(): Command {
                 .default(DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS)
         )
         .option("--no-websocket-server", "Disable starting the WebSocket patch server.")
-        .option("--no-status-server", "Disable starting the HTTP status server.")
         .addOption(
             new Option(
                 "--runtime-root <path>",
@@ -575,68 +573,29 @@ function createLiveReloadDevSubcommand(): Command {
         )
         .option("--no-runtime-server", "Disable starting the HTML5 runtime static server.")
         .addOption(
-            new Option(
-                "--force-new",
-                "Start a new live-reload session even when a healthy project session is registered."
-            ).default(false)
-        )
-        .addOption(
-            new Option(
-                "--reuse-existing <boolean>",
-                "Attach to a healthy project session instead of starting a duplicate."
-            )
-                .argParser((value) => value !== "false")
-                .default(true)
-        )
-        .addOption(
             new Option("--start-source <source>", "Live-reload session owner.")
                 .choices(["cli", "mcp", "ui"])
                 .default("cli")
         )
-        .action((targetPath: string, options: LiveReloadDevCommandOptions) =>
-            runLiveReloadDevCommand(targetPath, options)
+        .action((options: LiveReloadDevCommandOptions & { path: string }) =>
+            runLiveReloadDevCommand(options.path, options)
         );
 }
 
-function createLiveReloadStatusSubcommand(): Command {
-    const command = new Command("status");
+function createLiveReloadSessionSubcommand(): Command {
+    const command = new Command("session");
     applyStandardCommandOptions(command);
 
-    return command
-        .description("Query the running live-reload status server for metrics and diagnostics.")
-        .addOption(new Option(PROJECT_PATH_OPTION_FLAG, PROJECT_SESSION_PATH_OPTION_DESCRIPTION))
-        .addOption(
-            new Option("--status-host <host>", "Status server host")
-                .default(DEFAULT_LIVE_RELOAD_STATUS_HOST)
-                .env("WATCH_STATUS_HOST")
-        )
-        .addOption(
-            new Option("--status-port <port>", "Status server port")
-                .argParser(portValidator)
-                .default(DEFAULT_LIVE_RELOAD_STATUS_PORT)
-                .env("WATCH_STATUS_PORT")
-        )
-        .addOption(
-            new Option("--format <format>", "Output format")
-                .choices([...WATCH_STATUS_OUTPUT_FORMAT_VALUES])
-                .default(WATCH_STATUS_OUTPUT_FORMATS.PRETTY)
-        )
-        .addOption(
-            new Option("--endpoint <endpoint>", "Endpoint to query")
-                .choices(["status", "health", "ping", "ready"] as const)
-                .default("status")
-        )
-        .action((options: LiveReloadStatusCommandOptions) => runLiveReloadStatusCommand(options));
-}
-
-function createLiveReloadDiscoverSubcommand(): Command {
-    const command = new Command("discover");
-    applyStandardCommandOptions(command);
-
-    return command
-        .description("Discover the project-local live-reload session registry.")
+    return applySharedLiveReloadPrepareOptions(command)
+        .description("Attach to, start, replace, or stop the project live-reload session.")
         .addOption(new Option(PROJECT_PATH_OPTION_FLAG, PROJECT_PATH_OPTION_DESCRIPTION).default(process.cwd()))
-        .action((options: LiveReloadPathCommandOptions) => runLiveReloadDiscoverCommand(options));
+        .addOption(new Option("--gm-temp-root <path>", "Root directory for GameMaker HTML5 temporary outputs."))
+        .addOption(new Option("--force-start", "Stop the active session before starting a replacement.").default(false))
+        .addOption(new Option("--stop", "Stop the active session without starting another.").default(false))
+        .addOption(
+            new Option("--format <format>", "Output format").choices(["json", "pretty"] as const).default("json")
+        )
+        .action((options: LiveReloadSessionCommandOptions) => runLiveReloadSessionCommand(options));
 }
 
 function createLiveReloadWaitForPatchSubcommand(): Command {
@@ -667,9 +626,8 @@ export function createLiveReloadCommand(): Command {
     return command
         .description("Prepare, run, and inspect the HTML5 live-reload workflow.")
         .addCommand(createLiveReloadBuildSubcommand())
-        .addCommand(createLiveReloadDiscoverSubcommand())
         .addCommand(createLiveReloadPrepareSubcommand())
-        .addCommand(createLiveReloadDevSubcommand())
-        .addCommand(createLiveReloadStatusSubcommand())
+        .addCommand(createLiveReloadSessionSubcommand())
+        .addCommand(createLiveReloadWorkerSubcommand(), { hidden: true })
         .addCommand(createLiveReloadWaitForPatchSubcommand(), { hidden: true });
 }

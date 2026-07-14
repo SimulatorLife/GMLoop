@@ -15,6 +15,59 @@ async function assertFormattedOutput(
     assert.equal(formatted, toGmlSource(expectedLines));
 }
 
+void test("preserves one blank line before a callback-body line comment", async () => {
+    await assertFormattedOutput(
+        [
+            "ts_path = time_source_create(",
+            "    time_source_game,",
+            "    function () {",
+            '        gml_pragma("forceinline");',
+            "",
+            "",
+            "        // Check if still on a valid path",
+            "        var curr_sight_rad = sight_radius.get();",
+            "    }",
+            ");",
+            ""
+        ],
+        [
+            "ts_path = time_source_create(",
+            "    time_source_game,",
+            "    function () {",
+            '        gml_pragma("forceinline");',
+            "",
+            "        // Check if still on a valid path",
+            "        var curr_sight_rad = sight_radius.get();",
+            "    }",
+            ");",
+            ""
+        ]
+    );
+});
+
+void test("does not add a second blank line before nested leading comments", async () => {
+    await assertFormattedOutput(
+        [
+            "function demo() {",
+            "    update_state();",
+            "",
+            "    // Run after state changes",
+            "    refresh_display();",
+            "}",
+            ""
+        ],
+        [
+            "function demo() {",
+            "    update_state();",
+            "",
+            "    // Run after state changes",
+            "    refresh_display();",
+            "}",
+            ""
+        ]
+    );
+});
+
 void test("preserves triple-slash continuation lines adjacent to doc tags", async () => {
     const source = [
         "/// @description Base doc line.",

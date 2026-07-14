@@ -121,10 +121,11 @@ See the durable split contract and examples in [`docs/target-state.md`](../../do
         );
     }
   ```
-- **BUG**: With `allowInlineControlFlowBlocks` enabled, the formatter is incorrectly breaking one-line brace statements into multi-line blocks, for example:
+- **BUG**: With `allowInlineControlFlowBlocks` enabled, the formatter seems to be incorrectly breaking one-line brace statements into multi-line blocks, for example:
     ```gml
     -if (TRAILER_MODE) { exit; }
     +if (TRAILER_MODE) {
     +    exit;
     +}
     ```
+    Is this expected behavior? Or a gap/miss/bug?

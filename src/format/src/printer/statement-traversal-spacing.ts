@@ -329,14 +329,10 @@ function handleIntermediateTrailingSpacing({
         // immediately before the next node; if so, let Prettier handle spacing.
         const nextNodeStartIndex = nextNode == null ? null : Core.getNodeStartIndex(nextNode);
         const nextNodeHasLeadingComment =
-            isTopLevel &&
             typeof nextNodeStartIndex === NUMBER_TYPE &&
             Core.hasCommentImmediatelyBefore(originalText, nextNodeStartIndex);
         const nextNodeHasCommentGap =
-            isTopLevel &&
-            originalText !== null &&
-            nextNode != null &&
-            hasCommentBetweenStatements(node, nextNode, originalText);
+            originalText !== null && nextNode != null && hasCommentBetweenStatements(node, nextNode, originalText);
         const nextNodeHasBlockCommentImmediatelyBefore =
             originalText !== null &&
             nextNode != null &&

@@ -63,7 +63,7 @@ void test("LSP: custom FsFacade resolves unsaved document edits for semantic que
     }
 });
 
-void test("LSP: built-in functions appear in completions and hover", async () => {
+void test("LSP: runtime built-ins hover while language keywords do not", async () => {
     const proj = await createProject("BuiltInsTest");
     try {
         const store = Lsp.createGmlDocumentStore();
@@ -71,7 +71,18 @@ void test("LSP: built-in functions appear in completions and hover", async () =>
             uri: Lsp.filePathToUri(proj.scriptPath),
             languageId: "gml",
             version: 1,
-            text: "enum eAIState { idle = 0, attack_target }\nshow_debug_message('hello');\nds_priority_create();"
+            text: [
+                "enum eAIState { idle = 0, attack_target }",
+                "enum eFallbackState { idle = 99 }",
+                "function BuiltInHoverTest() constructor {",
+                "    var instanceSprite = sprite_index;",
+                "    var missingValue = undefined;",
+                "    var currentState = eAIState.attack_target;",
+                "    if (visible) { repeat (1) {} } else {}",
+                "}",
+                "show_debug_message('hello');",
+                "ds_priority_create();"
+            ].join("\n")
         });
 
         const semanticIndex = Lsp.createGmlSemanticIndex(store);
@@ -101,20 +112,23 @@ void test("LSP: built-in functions appear in completions and hover", async () =>
             /monthly\/en\/#t=/
         );
 
-        const enumMemberOffset = document.sourceText.indexOf("idle");
-        const enumMemberHover = await semanticIndex.hover(document, enumMemberOffset, "idle");
-        const enumMemberHoverText =
-            typeof enumMemberHover?.contents === "object" && "value" in enumMemberHover.contents
-                ? enumMemberHover.contents.value
-                : "";
-        assert.match(enumMemberHoverText, /enumMember/u);
-        assert.doesNotMatch(enumMemberHoverText, /Built-in function/u);
-        const enumHover = await semanticIndex.hover(document, document.sourceText.indexOf("eAIState"), "eAIState");
-        const enumHoverText =
-            typeof enumHover?.contents === "object" && "value" in enumHover.contents ? enumHover.contents.value : "";
-        assert.match(enumHoverText, /enum eAIState \{/u);
-        assert.match(enumHoverText, /idle = 0/u);
-        assert.match(enumHoverText, /attack_target = 1/u);
+        for (const [offset, identifierName] of [
+            [document.sourceText.indexOf("eAIState"), "eAIState"],
+            [document.sourceText.indexOf("idle"), "idle"],
+            [document.sourceText.lastIndexOf("attack_target"), "attack_target"]
+        ] as const) {
+            const enumHover = await semanticIndex.hover(document, offset, identifierName);
+            const enumHoverText =
+                typeof enumHover?.contents === "object" && "value" in enumHover.contents
+                    ? enumHover.contents.value
+                    : "";
+
+            assert.match(enumHoverText, /enum eAIState \{/u);
+            assert.match(enumHoverText, /idle = 0/u);
+            assert.match(enumHoverText, /attack_target = 1/u);
+            assert.doesNotMatch(enumHoverText, /enum eFallbackState/u);
+            assert.doesNotMatch(enumHoverText, /idle = 99/u);
+        }
 
         const priorityCreateOffset = document.sourceText.indexOf("ds_priority_create");
         const priorityCreateHover = await semanticIndex.hover(document, priorityCreateOffset, "ds_priority_create");
@@ -127,8 +141,11 @@ void test("LSP: built-in functions appear in completions and hover", async () =>
         assert.match(priorityCreateHoverText, /creates a new priority queue/u);
         assert.match(priorityCreateHoverText, /Returns.*DS Priority/su);
 
-        // Built-in literal type regression test
-        const hoverUndefined = await semanticIndex.hover(document, 0, "undefined");
+        const hoverUndefined = await semanticIndex.hover(
+            document,
+            document.sourceText.indexOf("undefined"),
+            "undefined"
+        );
         assert.ok(hoverUndefined);
         const undefinedHoverText =
             typeof hoverUndefined?.contents === "object" && "value" in hoverUndefined.contents
@@ -136,12 +153,22 @@ void test("LSP: built-in functions appear in completions and hover", async () =>
                 : "";
         assert.match(undefinedHoverText, /Built-in literal/);
 
-        // Built-in keyword type regression test
-        const hoverVar = await semanticIndex.hover(document, 0, "var");
-        assert.ok(hoverVar);
-        const varHoverText =
-            typeof hoverVar?.contents === "object" && "value" in hoverVar.contents ? hoverVar.contents.value : "";
-        assert.match(varHoverText, /Built-in keyword/);
+        for (const keyword of ["function", "var", "constructor", "if", "else", "repeat"]) {
+            const keywordOffset = document.sourceText.indexOf(keyword);
+            assert.notEqual(keywordOffset, -1);
+            assert.equal(await semanticIndex.hover(document, keywordOffset, keyword), null);
+        }
+
+        for (const property of ["sprite_index", "visible"]) {
+            const propertyOffset = document.sourceText.indexOf(property);
+            const propertyHover = await semanticIndex.hover(document, propertyOffset, property);
+            const propertyHoverText =
+                typeof propertyHover?.contents === "object" && "value" in propertyHover.contents
+                    ? propertyHover.contents.value
+                    : "";
+            assert.match(propertyHoverText, /Built-in symbol/u);
+            assert.match(propertyHoverText, /Open GameMaker Manual Page/u);
+        }
     } finally {
         await proj.cleanup();
     }

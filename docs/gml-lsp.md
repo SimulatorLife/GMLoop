@@ -37,6 +37,8 @@ The extension contributes:
 
 For semantic navigation features such as definitions, references, workspace symbols, and rename, open a folder that contains or is nested under a GameMaker `.yyp` project so the semantic project root can be discovered.
 
+Hover distinguishes inspectable symbols from language syntax. Project symbols and documented runtime built-ins such as functions, `sprite_index`, and `visible` provide tooltips; keywords such as `function`, `var`, `constructor`, `if`, `else`, and `repeat` do not.
+
 Game projects initialized with `gmloop agent-pack init --vscode` receive project-local `.vscode/settings.json` and `.vscode/extensions.json` files for this setup. The command also makes a best-effort attempt to install the GMLoop VSCode extension through the `code` CLI.
 
 Before Marketplace publishing, the installable VSCode extension artifact is a local `.vsix`:

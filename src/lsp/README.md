@@ -53,6 +53,10 @@ The language server should be boring, standard, constrained, agent-agnostic, and
 
 Most intelligence should live in reusable GML systems; the server should only expose that intelligence through the standard LSP capabilities reachable by `lsp-mcp-server`.
 
+## Hover Behavior
+
+Hover responses describe project symbols and documented runtime built-ins, including functions, properties, symbols, and literals. Language keywords such as `function`, `var`, `constructor`, `if`, `else`, and `repeat` are syntax rather than inspectable symbols, so hovering them returns no tooltip.
+
 ## Launching and Communication Transport
 
 The language server is started via the CLI using:
@@ -64,6 +68,4 @@ gmloop lsp
 To ensure seamless integration with LSP/MCP clients (such as `lsp-mcp-server`) and editor extensions, the server does not require command-line options like `--stdio`. Instead, it defaults to standard I/O (stdio) transport internally by explicitly wiring `process.stdin` and `process.stdout` into the LSP connection.
 
 ## TODO
-- **BUG/FEAT**: When hovering over a built-in function, the hover tooltip does not include the function description, params, return type. It should show the function signature, params, return type, and description from the Manual (probably via the `gml-identifiers.json` file).
-- **FEAT**: For the LSP/VSCode extension, hovering over a user-defined gml enum should show the full enum with all its members and values in the tooltip.
 - **BUG**: For the LSP/semantic/VSCode extension/syntax-highlighting, there are some misses in the semantic highlighting: macros are not highlighted, *some* enum-members (even in the same enum declaration) are not highlighted, some/most function arguments are not highlighted, uses of an enum member are not highlighted, local variables are not highlighted, static-struct members/variables are not highlighted (ex. `get_debug_text` in this snippet: `static get_debug_text = function () {...`)

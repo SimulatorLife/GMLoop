@@ -20,12 +20,7 @@ import {
     resolveLiveReloadProjectBuildSettings
 } from "./game-maker-build.js";
 import { injectLiveReloadBootstrap } from "./html-injector.js";
-import {
-    discoverLiveReloadSessionByPath,
-    type LiveReloadRegisteredSession,
-    type LiveReloadSessionStartSource,
-    resolveLiveReloadProjectIdentity
-} from "./session-registry.js";
+import { type LiveReloadSessionStartSource, resolveLiveReloadProjectIdentity } from "./session-registry.js";
 import { resolveLiveReloadTarget } from "./target-resolution.js";
 
 export interface PrepareLiveReloadOptions {
@@ -49,8 +44,7 @@ export interface StartLiveReloadDevSessionOptions {
     bootstrapConfig: LiveReloadBootstrapConfig;
     runtimeWrapperDistRoot?: string;
     watchOptions?: WatchCommandOptions;
-    forceNew?: boolean;
-    reuseExisting?: boolean;
+    sessionId?: string;
     startSource?: LiveReloadSessionStartSource;
     buildRunner?: typeof buildGameMakerHtml5Output;
     prepareRunner?: typeof prepareLiveReload;
@@ -58,11 +52,6 @@ export interface StartLiveReloadDevSessionOptions {
     settingsResolver?: typeof resolveLiveReloadProjectBuildSettings;
     watchRunner?: typeof runWatchCommand;
 }
-
-export type StartLiveReloadDevSessionResult = Readonly<{
-    mode: "attached" | "started";
-    session: LiveReloadRegisteredSession | null;
-}>;
 
 /**
  * Resolve and run the configured GameMaker HTML5 build for a live-reload
@@ -131,28 +120,17 @@ export async function startLiveReloadDevSession({
     bootstrapConfig,
     runtimeWrapperDistRoot,
     watchOptions = {},
-    forceNew = false,
-    reuseExisting = true,
+    sessionId,
     startSource = "cli",
     buildRunner = buildGameMakerHtml5Output,
     prepareRunner = prepareLiveReload,
     projectContextResolver = resolveCommandProjectContext,
     settingsResolver = resolveLiveReloadProjectBuildSettings,
     watchRunner = runWatchCommand
-}: StartLiveReloadDevSessionOptions): Promise<StartLiveReloadDevSessionResult> {
+}: StartLiveReloadDevSessionOptions): Promise<void> {
     const projectContext = await projectContextResolver({
         path: targetPath
     });
-    if (reuseExisting && !forceNew) {
-        const discovery = await discoverLiveReloadSessionByPath(targetPath, { projectContextResolver });
-        if (discovery.alive && discovery.session !== null) {
-            return Object.freeze({
-                mode: "attached",
-                session: discovery.session
-            });
-        }
-    }
-
     const projectIdentity = await resolveLiveReloadProjectIdentity(targetPath, projectContextResolver);
     const projectSettings = await settingsResolver(projectContext.projectRoot, projectContext.projectConfig);
     const configuredHtml5OutputRoot = projectSettings.html5OutputRoot;
@@ -223,15 +201,12 @@ export async function startLiveReloadDevSession({
         ...watchOptions,
         liveReloadSession: {
             projectRoot: projectIdentity.projectRoot,
+            sessionId: sessionId ?? `${process.pid}-${Date.now()}`,
             startSource,
             yypPath: projectIdentity.yypPath
         },
         runtimeRoot: preparation.target.outputRoot,
         runtimeServer: true
-    });
-    return Object.freeze({
-        mode: "started",
-        session: null
     });
 }
 

@@ -28,7 +28,8 @@ export const MCP_TOOL_DENY_LIST: ReadonlyArray<ReadonlyArray<string>> = Object.f
     // Low-level live-reload or file watching commands
     Object.freeze(["watch"]),
     Object.freeze(["live-reload", "prepare"]),
-    Object.freeze(["live-reload", "build"])
+    Object.freeze(["live-reload", "build"]),
+    Object.freeze(["live-reload", "worker"])
 ]);
 
 /**

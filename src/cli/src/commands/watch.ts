@@ -27,6 +27,7 @@ import { createStatusUrl, createWebSocketUrl, DEFAULT_GM_TEMP_ROOT } from "../mo
 import { prepareLiveReload } from "../modules/live-reload/session.js";
 import {
     type LiveReloadRegisteredSession,
+    removeLiveReloadSessionRegistryForSession,
     writeLiveReloadSessionRegistry
 } from "../modules/live-reload/session-registry.js";
 import {
@@ -202,7 +203,7 @@ interface InfrastructureConfig {
     abortSignal?: AbortSignal;
     onWebSocketServerReady?: (server: PatchWebSocketServer) => void;
     onStatusServerReady?: (server: StatusServerHandle) => void;
-    liveReloadSession?: Pick<LiveReloadRegisteredSession, "projectRoot" | "startSource" | "yypPath">;
+    liveReloadSession?: Pick<LiveReloadRegisteredSession, "projectRoot" | "sessionId" | "startSource" | "yypPath">;
 }
 
 /**
@@ -778,7 +779,9 @@ async function startWatchRuntimeServerAfterPatchServers({
 
 async function writeLiveReloadSessionAfterStartup(
     parameters: Readonly<{
-        liveReloadSession: Pick<LiveReloadRegisteredSession, "projectRoot" | "startSource" | "yypPath"> | undefined;
+        liveReloadSession:
+            | Pick<LiveReloadRegisteredSession, "projectRoot" | "sessionId" | "startSource" | "yypPath">
+            | undefined;
         normalizedPath: string;
         runtimeServerController: RuntimeStaticServerInstance | null;
         statusServerController: StatusServerHandle | null;
@@ -804,6 +807,7 @@ async function writeLiveReloadSessionAfterStartup(
         statusHost: statusEndpoint.hostname,
         statusPort: Number(statusEndpoint.port),
         statusUrl,
+        sessionId: parameters.liveReloadSession.sessionId,
         watchedRoot: parameters.normalizedPath,
         websocketHost: websocketEndpoint?.hostname ?? "",
         websocketPort: websocketEndpoint === null ? 0 : Number(websocketEndpoint.port),
@@ -1035,6 +1039,14 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                         websocketConnectionCount: runtimeContext.websocketServer?.getClientCount() ?? 0,
                         scanComplete: runtimeContext.scanComplete,
                         watchedRoot: normalizedPath,
+                        liveReloadSession:
+                            liveReloadSession === undefined
+                                ? undefined
+                                : {
+                                      processId: process.pid,
+                                      projectRoot: liveReloadSession.projectRoot,
+                                      sessionId: liveReloadSession.sessionId
+                                  },
                         lastChangedFile:
                             lastMetric === null ? null : path.relative(normalizedPath, lastMetric.filePath),
                         lastPatchId: lastMetric?.patchId ?? null,
@@ -1150,6 +1162,13 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                 debouncedHandler.cancel();
             }
             runtimeContext.debouncedHandlers.clear();
+
+            if (liveReloadSession !== undefined) {
+                await removeLiveReloadSessionRegistryForSession(
+                    liveReloadSession.projectRoot,
+                    liveReloadSession.sessionId
+                );
+            }
 
             displayTranspilationStatistics(runtimeContext, verbose, quiet);
 

@@ -54,7 +54,7 @@ must stay CLI-derived.
 
 - Generate tool names deterministically as `gmloop_<command-name-with-dashes-converted-to-underscores>`, for example `gmloop_format`, `gmloop_lint`, and `gmloop_refactor`.
 - Graph leaf commands follow the same pattern, such as `gmloop_graph_index`, `gmloop_graph_search`, `gmloop_graph_context`, and `gmloop_graph_usages`.
-- Live-reload project session tools are CLI-derived as well. Agents should use `gmloop_live_reload_status` and `gmloop_live_reload_wait_for_patch` with `path`/`cwd` so they can adopt or check an existing UI-started session from `.gmloop/live-reload-session.json` instead of guessing ports or starting duplicate servers.
+- Live-reload project session tools are CLI-derived as well. Agents should use `gmloop_live_reload_session` with `path`/`cwd` to attach to or start the project session, `forceStart` to replace it, or `stop` to end it. `gmloop_live_reload_wait_for_patch` waits for a patch from that managed session.
 - Generate each tool's input schema from Commander metadata:
     - Include `cwd` as an MCP-only execution context field.
     - Include positional arguments by declared Commander argument name and order.
@@ -98,4 +98,3 @@ must stay CLI-derived.
 - The MCP implementation uses `registerTool` from the official TypeScript SDK and generates tool schemas from CLI metadata rather than maintaining MCP-local command definitions.
 
 ## TODO
-- **FEAT** Could CLI/MCP tools 'gmloop_live_reload_discover', 'gmloop_live_reload_dev', and 'gmloop_live_reload_status' be combined into one? So it would use a start-or-load methodology where either loads an/the existing live-reload session or starts a new one if there isn't one already running? With on option to force-start too, which would stop the existing session if there is one and then start a new one, or else just start a new one if there isn't one.

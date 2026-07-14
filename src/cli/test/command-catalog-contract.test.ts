@@ -152,13 +152,9 @@ void test("project readiness MCP tool schemas include project path and graph opt
     }
 });
 
-void test("live-reload MCP tool schemas expose project-path attach and patch wait workflows", () => {
+void test("live-reload MCP tool schema exposes the unified project session workflow", () => {
     const mcpCatalog = getMcpToolCatalogEntries();
-    const expectedPathTools = [
-        "gmloop_live_reload_discover",
-        "gmloop_live_reload_status",
-        "gmloop_live_reload_wait_for_patch"
-    ];
+    const expectedPathTools = ["gmloop_live_reload_session", "gmloop_live_reload_wait_for_patch"];
 
     for (const toolName of expectedPathTools) {
         const entry = mcpCatalog.find((candidate) => candidate.toolName === toolName);
@@ -168,6 +164,28 @@ void test("live-reload MCP tool schemas expose project-path attach and patch wai
         assert.ok(pathField, `Missing path field on ${toolName}`);
         assert.equal(pathField.kind, "option");
     }
+
+    assert.equal(
+        mcpCatalog.some((entry) => entry.toolName === "gmloop_live_reload_dev"),
+        false
+    );
+    assert.equal(
+        mcpCatalog.some((entry) => entry.toolName === "gmloop_live_reload_discover"),
+        false
+    );
+    assert.equal(
+        mcpCatalog.some((entry) => entry.toolName === "gmloop_live_reload_status"),
+        false
+    );
+    assert.equal(
+        mcpCatalog.some((entry) => entry.toolName === "gmloop_live_reload_worker"),
+        false
+    );
+
+    const sessionTool = mcpCatalog.find((candidate) => candidate.toolName === "gmloop_live_reload_session");
+    assert.ok(sessionTool);
+    assert.ok(sessionTool.fields.some((field) => field.attributeName === "forceStart"));
+    assert.ok(sessionTool.fields.some((field) => field.attributeName === "stop"));
 
     const waitTool = mcpCatalog.find((candidate) => candidate.toolName === "gmloop_live_reload_wait_for_patch");
     assert.ok(waitTool);
