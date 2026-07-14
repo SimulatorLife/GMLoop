@@ -2,8 +2,9 @@
  * Semicolon emission rules for the printer layer.
  *
  * Printer-internal helpers stay defined directly in this file. The shared
- * layout helpers (`countTrailingBlankLines`, `getNextNonWhitespaceCharacter`)
- * live in `../shared/layout-helpers.js` and are imported directly by callers.
+ * layout helpers (`countTrailingBlankLines`, `getNextNonWhitespaceCharacter`,
+ * `isWhitespaceCharacterCode`) live in `../shared/layout-helpers.js` and are
+ * imported directly by callers.
  */
 
 import { Core } from "@gmloop/core";
@@ -52,13 +53,6 @@ export function optionalSemicolon(nodeType?: string): "" | ";" {
 }
 
 /**
- * Determine whether the semicolon cleanup logic should skip the character.
- */
-export function isSkippableSemicolonWhitespace(charCode: number): boolean {
-    return isWhitespaceCharacterCode(charCode);
-}
-
-/**
  * Determine whether the current path points at the last statement in a body.
  */
 export function isLastStatement(path: AstPath<unknown>): boolean {
@@ -75,16 +69,6 @@ export function isLastStatement(path: AstPath<unknown>): boolean {
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
-
-const UNICODE_WHITESPACE_REGEX = /\s/;
-
-function isWhitespaceCharacterCode(charCode: number): boolean {
-    if (charCode < 0x80) {
-        return charCode === 0x20 || (charCode >= 0x09 && charCode <= 0x0d);
-    }
-
-    return UNICODE_WHITESPACE_REGEX.test(String.fromCharCode(charCode));
-}
 
 function getParentNodeListProperty(path: AstPath<unknown>): unknown[] | null {
     const parent = path.getParentNode();
