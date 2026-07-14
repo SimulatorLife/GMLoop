@@ -33,21 +33,67 @@ function printRunnerPayload(payload: unknown): void {
     console.log(JSON.stringify(payload, null, 2));
 }
 
+/**
+ * Parse the `GMLOOP_RUNNER_ARGS` environment variable into an ordered array
+ * of process arguments for the runtime runner backend.
+ *
+ * Two input shapes are accepted:
+ *
+ * - A JSON array of strings — exactly what the runner controller forwards to
+ *   `child_process.spawn`, so a hand-curated list can be expressed inline
+ *   (e.g. `GMLOOP_RUNNER_ARGS='["-e","setInterval(...)"]'`).
+ * - A whitespace-delimited string of arguments, split on runs of `\s+` and
+ *   filtered to drop empty entries produced by leading or trailing whitespace.
+ *
+ * Malformed input — non-JSON syntax, a top-level JSON value that is not an
+ * array, or an array containing any non-string entry — must surface as a
+ * `TypeError` carrying both the diagnostic reason and the offending payload.
+ * The previous implementation let the raw `SyntaxError` from `JSON.parse`
+ * escape through; that crashed the CLI with an opaque "Unexpected token"
+ * message whenever a user supplied truncated JSON. Wrapping the parse in a
+ * structured guard keeps the failure mode predictable and self-documenting.
+ *
+ * @param value Raw environment variable value, exactly as supplied by the
+ *              caller. Leading and trailing whitespace is tolerated.
+ * @returns Ordered array of runner arguments.
+ * @throws {TypeError} When the payload does not conform to the documented
+ *                     shape. The error message always identifies the field
+ *                     name and includes the offending input for context.
+ */
 function parseRunnerArgsInput(value: string): Array<string> {
     const trimmed = value.trim();
     if (trimmed.length === 0) {
         return [];
     }
 
-    if (trimmed.startsWith("[")) {
-        const parsed = JSON.parse(trimmed) as unknown;
-        if (!Array.isArray(parsed) || parsed.some((entry) => typeof entry !== "string")) {
-            throw new TypeError("GMLOOP_RUNNER_ARGS JSON must be an array of strings.");
-        }
-        return parsed;
+    if (!trimmed.startsWith("[")) {
+        return trimmed.split(/\s+/u).filter((entry) => entry.length > 0);
     }
 
-    return trimmed.split(/\s+/u).filter((entry) => entry.length > 0);
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(trimmed);
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new TypeError(`GMLOOP_RUNNER_ARGS JSON is malformed (${reason}): ${trimmed}`, {
+            cause: error
+        });
+    }
+
+    if (!Array.isArray(parsed)) {
+        const actualKind = parsed === null ? "null" : typeof parsed;
+        throw new TypeError(`GMLOOP_RUNNER_ARGS JSON must be an array of strings, received ${actualKind}: ${trimmed}`);
+    }
+
+    const nonStringIndex = parsed.findIndex((entry) => typeof entry !== "string");
+    if (nonStringIndex !== -1) {
+        const actualKind = parsed[nonStringIndex] === null ? "null" : typeof parsed[nonStringIndex];
+        throw new TypeError(
+            `GMLOOP_RUNNER_ARGS JSON entry at index ${nonStringIndex} must be a string, received ${actualKind}: ${trimmed}`
+        );
+    }
+
+    return parsed;
 }
 
 function resolveRunnerArgsFromConfig(config: unknown): Array<string> {
@@ -391,3 +437,10 @@ export function createRunnerCommand(): Command {
 
     return command;
 }
+
+// `parseRunnerArgsInput` is exported separately (rather than only through a
+// test-only helper) so that direct unit tests can exercise the malformed-JSON
+// guard without having to spawn the `runner` command with a hand-crafted
+// environment. The function is not part of the CLI's public surface, but the
+// inline `export` keeps the test reachable without adding a new barrel entry.
+export { parseRunnerArgsInput };
