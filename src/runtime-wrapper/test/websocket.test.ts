@@ -95,8 +95,16 @@ class MockWebSocket implements RuntimeWebSocketInstance {
         this.dispatch("error", error);
     }
 
+    // Snapshot the listener list before iteration so a handler that unsubscribes
+    // itself (or a sibling) during dispatch cannot shift the live array and
+    // cause the next handler in the registration order to be skipped. This
+    // mirrors the safety pattern used by the production store/subscriber code
+    // (see src/ui/src/app/state/store.ts and the recovery-traversal
+    // helpers), where dispatch iterates over a shallow copy precisely to
+    // guard against mutation-during-iteration hazards.
     private dispatch(event: WebSocketEvent, payload?: Error | MessageEventLike) {
-        for (const handler of this.listeners[event] ?? []) {
+        const handlers = [...(this.listeners[event] ?? [])];
+        for (const handler of handlers) {
             handler(payload);
         }
     }
@@ -1068,7 +1076,11 @@ void test("WebSocket client removes socket observers on disconnect to prevent li
 
         close(): void {
             this.readyState = 3;
-            for (const handler of this.listeners.close) {
+            // Snapshot the close listeners before iteration so a handler that
+            // removes itself (or a sibling) during teardown cannot shift the
+            // live array and cause later close handlers to be skipped.
+            const closeHandlers = [...this.listeners.close];
+            for (const handler of closeHandlers) {
                 handler();
             }
         }
@@ -1100,6 +1112,43 @@ void test("WebSocket client removes socket observers on disconnect to prevent li
     } finally {
         delete globalWithWebSocket.WebSocket;
     }
+});
+
+void test("MockWebSocket dispatch keeps later listeners when an earlier one removes itself", () => {
+    // Regression coverage for the listener-iteration hazard: dispatch used to
+    // walk `this.listeners[event]` directly, so a handler that called
+    // `removeEventListener` for itself during dispatch would `splice` its own
+    // index and shift every subsequent handler down by one — the next
+    // iteration step would then advance past the handler that just shifted
+    // into the freed slot, silently skipping it. The dispatch shim now walks
+    // a shallow snapshot of the listener list so each handler is invoked
+    // exactly once even when the handler mutates the underlying list.
+    const socket = new MockWebSocket("ws://test/snapshot");
+    const invocations: Array<string> = [];
+
+    const firstListener = (): void => {
+        invocations.push("first");
+        // Self-unsubscribe while dispatch is iterating the live listener list.
+        socket.removeEventListener("message", firstListener);
+    };
+    const secondListener = (): void => {
+        invocations.push("second");
+    };
+    const thirdListener = (): void => {
+        invocations.push("third");
+    };
+
+    socket.addEventListener("message", firstListener);
+    socket.addEventListener("message", secondListener);
+    socket.addEventListener("message", thirdListener);
+
+    socket.simulateMessage({ data: "ping" });
+
+    assert.deepStrictEqual(
+        invocations,
+        ["first", "second", "third"],
+        "All registered message listeners should fire in registration order even when a handler unsubscribes itself mid-dispatch."
+    );
 });
 
 void test("WebSocket client reconnects after connection loss", async (t) => {
