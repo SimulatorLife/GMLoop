@@ -3,10 +3,16 @@ import path from "node:path";
 import { Core } from "@gmloop/core";
 import { Argument, Command } from "commander";
 
+import { wrapInvalidArgumentResolver } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { handleCliError } from "../cli-core/errors.js";
 import { createPathOption } from "../cli-core/shared-command-options.js";
 import { getRunnerController } from "../modules/runtime/index.js";
+import {
+    coerceRunnerLifecycleAction,
+    RUNNER_LIFECYCLE_ACTIONS,
+    type RunnerLifecycleAction
+} from "../modules/runtime/lifecycle.js";
 import { isRecord } from "../shared/error-guards.js";
 import { discoverProjectRoot } from "../workflow/project-root.js";
 import { followRunnerLogs, type FollowRunnerLogsReadOptions, resolveBoundRunnerState } from "./runner-context.js";
@@ -338,42 +344,35 @@ export function createRunnerCommand(): Command {
         applyStandardCommandOptions(new Command("lifecycle"))
             .description("Manage the runner process lifecycle (start, stop, restart, pause, resume).")
             .addArgument(
-                new Argument("<action>", "Lifecycle action to perform.").choices([
-                    "start",
-                    "stop",
-                    "restart",
-                    "pause",
-                    "resume"
-                ])
+                new Argument("<action>", "Lifecycle action to perform.")
+                    .choices(Object.values(RUNNER_LIFECYCLE_ACTIONS))
+                    .argParser(wrapInvalidArgumentResolver(coerceRunnerLifecycleAction))
             )
             .option("--debug", "Start/restart in debug mode.")
     );
-    lifecycle.action(async function runnerLifecycleAction(action: string) {
+    lifecycle.action(async function runnerLifecycleAction(action: RunnerLifecycleAction) {
         await runRunnerCommandAction(async () => {
             const options = this.opts<RunnerOptions>();
             switch (action) {
-                case "start": {
+                case RUNNER_LIFECYCLE_ACTIONS.start: {
                     await runRunnerStartAction(options);
                     break;
                 }
-                case "stop": {
+                case RUNNER_LIFECYCLE_ACTIONS.stop: {
                     await runRunnerStopAction(options);
                     break;
                 }
-                case "restart": {
+                case RUNNER_LIFECYCLE_ACTIONS.restart: {
                     await runRunnerRestartAction(options);
                     break;
                 }
-                case "pause": {
+                case RUNNER_LIFECYCLE_ACTIONS.pause: {
                     await runRunnerPauseAction(options);
                     break;
                 }
-                case "resume": {
+                case RUNNER_LIFECYCLE_ACTIONS.resume: {
                     await runRunnerResumeAction(options);
                     break;
-                }
-                default: {
-                    throw new Error(`Unsupported lifecycle action: ${action}`);
                 }
             }
         });
