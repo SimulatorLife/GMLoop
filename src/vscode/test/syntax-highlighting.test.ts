@@ -108,7 +108,8 @@ void test("reserved syntax takes precedence over the generic function-call fallb
     }
 
     const keywordRule = grammar.repository.keywords.patterns[0];
-    assert.equal(keywordRule?.name, "keyword.control.gml");
+    assert.equal(keywordRule?.name, "keyword.control.flow.gml");
+    assert.equal(grammar.repository.keywords.patterns[1]?.name, "keyword.control.gml");
     const keywordPattern = new RegExp(keywordRule?.match ?? "", "u");
     const functionCallPattern = new RegExp(grammar.repository.functionCalls.patterns[0]?.match ?? "", "u");
     for (const keyword of ["if", "else", "for", "while", "repeat", "switch", "with"]) {
@@ -116,7 +117,7 @@ void test("reserved syntax takes precedence over the generic function-call fallb
     }
     for (const keyword of ["if", "for", "while", "repeat", "switch", "with"]) {
         const sourceText = `${keyword} (condition)`;
-        assert.match(sourceText, functionCallPattern, `${keyword} exercises the generic-call ambiguity`);
+        assert.doesNotMatch(sourceText, functionCallPattern, `${keyword} must not match the generic-call pattern`);
     }
     assert.doesNotMatch("play_sound(condition)", keywordPattern);
     assert.match("play_sound(condition)", functionCallPattern);

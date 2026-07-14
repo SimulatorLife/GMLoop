@@ -194,7 +194,7 @@
     "functionCalls": {
       "patterns": [
         {
-          "match": "\\b([$_\\p{L}][$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}]*)\\s*(?=\\()",
+          "match": "\\b(?!(?:begin|break|case|catch|constructor|continue|default|delete|do|else|end|enum|exit|finally|for|function|globalvar|if|new|repeat|return|static|switch|then|throw|try|until|var|while|with)\\b)([$_\\p{L}][$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}]*)\\s*(?=\\()",
           "captures": { "1": { "name": "entity.name.function.gml" } }
         }
       ]
@@ -202,8 +202,12 @@
     "keywords": {
       "patterns": [
         {
+          "name": "keyword.control.flow.gml",
+          "match": "\\b(?:break|case|catch|continue|default|do|else|exit|finally|for|if|repeat|return|switch|then|throw|try|until|while|with)\\b"
+        },
+        {
           "name": "keyword.control.gml",
-          "match": "\\b(?:begin|break|case|catch|constructor|continue|default|delete|do|else|end|enum|exit|finally|for|function|globalvar|if|new|repeat|return|static|switch|then|throw|try|until|var|while|with)\\b"
+          "match": "\\b(?:begin|constructor|delete|end|enum|function|globalvar|new|static|var)\\b"
         }
       ]
     },

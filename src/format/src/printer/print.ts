@@ -954,12 +954,6 @@ function shouldForceInlineFunctionParameters(path, options) {
         return false;
     }
 
-    // For regular function declarations and struct function declarations,
-    // always keep parameters inline
-    if (Core.isFunctionLikeDeclaration(node)) {
-        return true;
-    }
-
     // For constructor declarations in parent clauses, only keep inline
     // if params were originally on a single line
     if (node.type !== "ConstructorDeclaration") {
