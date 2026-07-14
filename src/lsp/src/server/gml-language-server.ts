@@ -265,6 +265,14 @@ export function createGmlLanguageServer(
         });
     }
 
+    function cancelPendingSemanticRefresh(uri: string): void {
+        const timer = pendingSemanticRefreshes.get(uri);
+        if (timer) {
+            clearTimeout(timer);
+            pendingSemanticRefreshes.delete(uri);
+        }
+    }
+
     async function publishDiagnostics(document: GmlTextDocument): Promise<void> {
         const diagnostics = await collectDiagnostics(document, lintRunner);
         await connection.sendDiagnostics({ uri: document.uri, diagnostics });
@@ -466,6 +474,7 @@ export function createGmlLanguageServer(
     });
 
     connection.onDefinition(async ({ textDocument, position }): Promise<Location[]> => {
+        cancelPendingSemanticRefresh(textDocument.uri);
         try {
             const document = documents.get(textDocument.uri);
             if (!document) {
@@ -487,6 +496,7 @@ export function createGmlLanguageServer(
     });
 
     connection.onReferences(async ({ textDocument, position, context }): Promise<Location[]> => {
+        cancelPendingSemanticRefresh(textDocument.uri);
         try {
             const document = documents.get(textDocument.uri);
             if (!document) {
@@ -515,6 +525,7 @@ export function createGmlLanguageServer(
     });
 
     connection.languages.semanticTokens.on(async ({ textDocument }) => {
+        cancelPendingSemanticRefresh(textDocument.uri);
         try {
             const document = documents.get(textDocument.uri);
             return document
@@ -537,6 +548,7 @@ export function createGmlLanguageServer(
     });
 
     connection.onHover(async ({ textDocument, position }) => {
+        cancelPendingSemanticRefresh(textDocument.uri);
         try {
             const document = documents.get(textDocument.uri);
             if (!document) {
@@ -557,6 +569,7 @@ export function createGmlLanguageServer(
     });
 
     connection.onPrepareRename(({ textDocument, position }) => {
+        cancelPendingSemanticRefresh(textDocument.uri);
         try {
             const document = documents.get(textDocument.uri);
             if (!document) {
@@ -571,6 +584,7 @@ export function createGmlLanguageServer(
     });
 
     connection.onRenameRequest(async ({ textDocument, position, newName }) => {
+        cancelPendingSemanticRefresh(textDocument.uri);
         try {
             const document = documents.get(textDocument.uri);
             if (!document) {
@@ -590,6 +604,7 @@ export function createGmlLanguageServer(
     });
 
     connection.onCompletion(async ({ textDocument, position }) => {
+        cancelPendingSemanticRefresh(textDocument.uri);
         try {
             const document = documents.get(textDocument.uri);
             if (!document) {
@@ -644,6 +659,7 @@ export function createGmlLanguageServer(
     });
 
     connection.onDocumentHighlight(async ({ textDocument, position }): Promise<DocumentHighlight[]> => {
+        cancelPendingSemanticRefresh(textDocument.uri);
         const document = documents.get(textDocument.uri);
         if (!document) {
             return [];

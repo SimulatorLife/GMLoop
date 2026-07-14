@@ -896,7 +896,7 @@ export function createGmlSemanticIndex(
                     tier
                 } as const;
                 const publication =
-                    changedFiles === null
+                    changedFiles === null || publicationRequest.baseGeneration === null
                         ? store.publishSemanticSnapshot(publicationRequest)
                         : store.applySemanticIncrement({ ...publicationRequest, affectedFiles: changedFiles });
                 if (publication.status === "superseded") {
@@ -1680,18 +1680,7 @@ export function createGmlSemanticIndex(
                 return;
             }
             invalidateRoot(projectRoot);
-            const orderedPaths = await Semantic.resolveSemanticImpactFilePaths(
-                projectRoot,
-                expandedChanges.map((change) => change.filePath),
-                []
-            );
-            await refreshIndex(
-                anchorDocument,
-                orderedPaths.map((filePath) => ({
-                    filePath,
-                    kind: expandedChangesByPath.get(filePath) ?? "modified"
-                }))
-            );
+            await refreshIndex(anchorDocument, expandedChanges);
         }, Promise.resolve());
     }
 
@@ -1745,18 +1734,12 @@ export function createGmlSemanticIndex(
             const resolvedPath = path.resolve(filePath);
             const projectRoot = await getProjectRoot(resolvedPath);
             const resolvedRoot = projectRoot ? path.resolve(projectRoot) : null;
-            const changedFiles = resolvedRoot
-                ? await Semantic.resolveSemanticImpactFilePaths(resolvedRoot, [resolvedPath], [])
-                : [resolvedPath];
             const openedDocument = documents
                 .list()
                 .find((document) => path.resolve(document.filePath) === resolvedPath);
             if (openedDocument) {
                 invalidateKnownDocumentRoots(openedDocument);
-                return await refreshIndex(
-                    openedDocument,
-                    changedFiles.map((changedFile) => ({ filePath: changedFile, kind: "modified" }))
-                );
+                return await refreshIndex(openedDocument, [{ filePath: resolvedPath, kind: "modified" }]);
             }
 
             let sourceText = "";
@@ -1771,13 +1754,12 @@ export function createGmlSemanticIndex(
             }
             const document = createGmlTextDocument(filePathToUri(resolvedPath), "gml", 0, sourceText);
             await invalidateKnownFileRoots(resolvedPath);
-            return await refreshIndex(
-                document,
-                changedFiles.map((changedFile) => ({
-                    filePath: changedFile,
-                    kind: changedFile === resolvedPath && !fileExists ? "deleted" : "modified"
-                }))
-            );
+            return await refreshIndex(document, [
+                {
+                    filePath: resolvedPath,
+                    kind: fileExists ? "modified" : "deleted"
+                }
+            ]);
         },
         preload() {
             try {

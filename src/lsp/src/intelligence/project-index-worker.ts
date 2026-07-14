@@ -65,17 +65,31 @@ async function buildWorkerIndex(request: WorkerRequest): Promise<void> {
             incremental: request.incremental ?? undefined,
             priorityFiles: request.priorityFiles
         });
-        const manifest = await Semantic.buildSemanticFileManifest(
-            request.projectRoot,
-            fsFacade,
-            request.openDocuments.map((document) => ({
-                absolutePath: document.filePath,
-                contentHash: document.contentHash,
-                documentVersion: document.documentVersion,
-                sourceText: document.sourceText
-            })),
-            request.previousManifest
-        );
+        const manifest =
+            request.incremental && request.previousManifest
+                ? await Semantic.updateSemanticFileManifest(
+                      request.projectRoot,
+                      request.previousManifest,
+                      fsFacade,
+                      request.openDocuments.map((document) => ({
+                          absolutePath: document.filePath,
+                          contentHash: document.contentHash,
+                          documentVersion: document.documentVersion,
+                          sourceText: document.sourceText
+                      })),
+                      request.incremental.changes.map((change) => change.filePath)
+                  )
+                : await Semantic.buildSemanticFileManifest(
+                      request.projectRoot,
+                      fsFacade,
+                      request.openDocuments.map((document) => ({
+                          absolutePath: document.filePath,
+                          contentHash: document.contentHash,
+                          documentVersion: document.documentVersion,
+                          sourceText: document.sourceText
+                      })),
+                      request.previousManifest
+                  );
         const semanticSnapshot = Semantic.createSemanticSnapshotFromProjectIndex(
             rawIndex,
             request.definitionsOnly ? "definitions" : "full",

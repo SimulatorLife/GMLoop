@@ -17,6 +17,9 @@ type AgentPackReceiptFixture = Readonly<{
 
 const EXPECTED_VSCODE_SETTINGS = Object.freeze({
     "gmloop.serverPath": "gmloop",
+    "editor.detectIndentation": false,
+    "editor.formatOnSave": true,
+    "editor.formatOnPaste": true,
     "search.exclude": Object.freeze({
         "tmp/": true,
         "**/node_modules": true,
