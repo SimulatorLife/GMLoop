@@ -303,7 +303,9 @@ void test("semantic index hover handles comment/string guards and ignores scope-
         "}",
         "",
         "function B() {",
-        "    /// @desc some comment",
+        "    /// @desc desc documentation",
+        "    /// @param {real} desc",
+        "    /// @returns {real}",
         '    var str = "desc";',
         "}"
     ].join("\n");
@@ -337,9 +339,21 @@ void test("semantic index hover handles comment/string guards and ignores scope-
         assert.match(hoverLocalText, /desc/);
         assert.match(hoverLocalText, /localVariable/);
 
-        const offsetComment = sourceText.indexOf("@desc");
-        const hoverComment = await semanticIndex.hover(document, offsetComment, "desc");
-        assert.equal(hoverComment, null, "Should not hover inside comment");
+        for (const [text, name] of [
+            ["@desc", "desc"],
+            ["desc documentation", "desc"],
+            ["@param", "param"],
+            ["{real} desc", "desc"],
+            ["@returns", "returns"]
+        ] as const) {
+            const textOffset = sourceText.indexOf(text);
+            const identifierOffset = textOffset + (text.startsWith("@") ? 1 : text.lastIndexOf(name));
+            assert.equal(
+                await semanticIndex.hover(document, identifierOffset, name),
+                null,
+                `Should not hover ${name} inside function documentation`
+            );
+        }
 
         const offsetString = sourceText.indexOf('"desc"') + 1;
         const hoverString = await semanticIndex.hover(document, offsetString, "desc");

@@ -26,7 +26,13 @@ when semantic tokens are recomputed.
 
 Hover tooltips are available for project symbols and documented GameMaker runtime built-ins such as functions and
 instance properties. Language keywords such as `function`, `var`, `constructor`, `if`, `else`, and `repeat` do not
-open hover tooltips.
+open hover tooltips. GMLoop also suppresses hover results throughout comments and function-documentation blocks,
+including tags such as `@desc`, `@param`, and `@returns`.
+
+VSCode combines results from every installed hover provider. The GitHub Pull Requests extension independently treats
+raw `@name` text in comments as a GitHub user mention and may therefore show a profile card for a GML documentation
+tag even though GMLoop returned no hover. That provider does not expose a language-specific hover exclusion setting;
+disable GitHub Pull Requests for the workspace to remove those cards without disabling GMLoop symbol hovers.
 
 To inspect the scope and semantic token applied at the cursor, run VSCode's `Developer: Inspect Editor Tokens and
 Scopes` command. Color choices remain controlled by the active VSCode theme; GMLoop contributes standard TextMate

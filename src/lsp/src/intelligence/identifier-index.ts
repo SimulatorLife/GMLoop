@@ -1688,12 +1688,12 @@ export function createGmlSemanticIndex(
                 return null;
             }
 
-            let state = await ensureIndex(document, { allowStale: true });
+            const state = await ensureIndex(document, { allowStale: true });
             if (!state) {
                 return null;
             }
 
-            let symbolId = findSymbolId(
+            const symbolId = findSymbolId(
                 state.index,
                 document,
                 offset,
@@ -1701,22 +1701,7 @@ export function createGmlSemanticIndex(
                 isIgnoredOffset,
                 !staleSemanticDocumentUris.has(document.uri)
             );
-            let facts = symbolId ? Semantic.getNavigationHoverFacts(state.index, symbolId) : null;
-            if (
-                (facts === null && state.lightweight === true) ||
-                (state.index.rawIndex === undefined && (facts?.kind === "enum" || facts?.kind === "enumMember"))
-            ) {
-                state = (await ensureFullIndex(document, "references")) ?? state;
-                symbolId = findSymbolId(
-                    state.index,
-                    document,
-                    offset,
-                    identifierName,
-                    isIgnoredOffset,
-                    !staleSemanticDocumentUris.has(document.uri)
-                );
-                facts = symbolId ? Semantic.getNavigationHoverFacts(state.index, symbolId) : null;
-            }
+            const facts = symbolId ? Semantic.getNavigationHoverFacts(state.index, symbolId) : null;
             if (facts) {
                 const symbol = state.index.symbolsById.get(symbolId);
                 let definitionInfo = "";

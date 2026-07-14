@@ -39,6 +39,8 @@ For semantic navigation features such as definitions, references, workspace symb
 
 Hover distinguishes inspectable symbols from language syntax. Project symbols and documented runtime built-ins such as functions, `sprite_index`, and `visible` provide tooltips; keywords such as `function`, `var`, `constructor`, `if`, `else`, and `repeat` do not. Constructor-owned instance variables resolve from both bare references and `self`-qualified references inside static methods, and their tooltips link to the defining assignment. For documented callable project symbols, including constructor static methods, the tooltip includes the description, parameter names and types, and return information.
 
+Comments, strings, and function-documentation contents such as `@desc`, `@param`, and `@returns` do not produce GMLoop hover results. VSCode can still merge a hover from another installed extension; in particular, GitHub Pull Requests treats raw `@name` text in comments as GitHub user mentions. Disable that extension for the workspace if those external profile cards conflict with GML documentation tags.
+
 Game projects initialized with `gmloop agent-pack init --vscode` receive project-local `.vscode/settings.json` and `.vscode/extensions.json` files for this setup. The command also makes a best-effort attempt to install the GMLoop VSCode extension through the `code` CLI.
 
 Before Marketplace publishing, the installable VSCode extension artifact is a local `.vsix`:

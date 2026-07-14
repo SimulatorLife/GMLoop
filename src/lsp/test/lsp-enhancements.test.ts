@@ -264,6 +264,8 @@ void test("LSP: static sound helper exposes complete hover and highlighting fact
         assert.match(addSoundsHoverText, /Returns.*undefined/su);
         assert.doesNotMatch(addSoundsHoverText, /structVariable/u);
         const soundsUseOffset = sourceText.indexOf("sounds", sourceText.indexOf("struct_set("));
+        const soundsReferences = await semanticIndex.findReferences(document, soundsUseOffset, "sounds", true);
+        assert.ok(soundsReferences.length >= 2, "expected constructor field definition and references");
         const soundsHover = await semanticIndex.hover(document, soundsUseOffset, "sounds");
         const soundsHoverText =
             typeof soundsHover?.contents === "object" && "value" in soundsHover.contents
@@ -275,8 +277,6 @@ void test("LSP: static sound helper exposes complete hover and highlighting fact
             .get(path.resolve(proj.scriptPath))
             ?.find((occurrence) => occurrence.location.range.start === soundsUseOffset);
         assert.ok(soundsOccurrence, "expected the full navigation index to contain the sounds reference");
-        const soundsReferences = await semanticIndex.findReferences(document, soundsUseOffset, "sounds", true);
-        assert.ok(soundsReferences.length >= 2, "expected constructor field definition and references");
         const soundsDefinition = await semanticIndex.findDefinition(document, soundsUseOffset, "sounds");
         assert.equal(soundsDefinition?.uri, document.uri);
         assert.deepEqual(soundsDefinition?.range.start, { line: 1, character: 4 });
