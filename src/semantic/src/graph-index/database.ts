@@ -6,7 +6,7 @@ import {
 } from "./sqlite-adapter.js";
 
 /** The canonical normalized SCIP semantic-store schema. */
-export const GRAPH_INDEX_SCHEMA_VERSION = 6;
+export const GRAPH_INDEX_SCHEMA_VERSION = 8;
 
 const TABLE_RESET_STATEMENTS = Object.freeze([
     "DELETE FROM index_state",
@@ -271,7 +271,7 @@ function createSemanticIndexSchemaV5(database: GraphDatabase): void {
     `);
 }
 
-function createSemanticIndexSchemaV6(database: GraphDatabase): void {
+function createSemanticIndexSchema(database: GraphDatabase): void {
     database.exec(`
         CREATE TABLE IF NOT EXISTS semantic_projects (
             project_root TEXT PRIMARY KEY,
@@ -306,7 +306,7 @@ function createSemanticIndexSchemaV6(database: GraphDatabase): void {
         CREATE TABLE IF NOT EXISTS semantic_occurrences (
             project_root TEXT NOT NULL, tier TEXT NOT NULL, symbol_id TEXT NOT NULL, file_path TEXT NOT NULL,
             role TEXT NOT NULL CHECK (role IN ('definition', 'reference')), start_offset INTEGER NOT NULL,
-            end_offset INTEGER NOT NULL, scope_id TEXT, updated_generation INTEGER NOT NULL,
+            end_offset INTEGER NOT NULL, scope_id TEXT, resolution_json TEXT NOT NULL, updated_generation INTEGER NOT NULL,
             PRIMARY KEY (project_root, tier, symbol_id, file_path, role, start_offset, end_offset),
             FOREIGN KEY (project_root, tier, symbol_id) REFERENCES semantic_symbols(project_root, tier, symbol_id) ON DELETE CASCADE
         );
@@ -342,7 +342,8 @@ function createSemanticIndexSchemaV6(database: GraphDatabase): void {
         );
         CREATE TABLE IF NOT EXISTS semantic_unresolved_references (
             project_root TEXT NOT NULL, tier TEXT NOT NULL, name TEXT NOT NULL, file_path TEXT NOT NULL,
-            start_offset INTEGER NOT NULL, end_offset INTEGER NOT NULL, updated_generation INTEGER NOT NULL,
+            start_offset INTEGER NOT NULL, end_offset INTEGER NOT NULL, resolution_json TEXT NOT NULL,
+            updated_generation INTEGER NOT NULL,
             PRIMARY KEY (project_root, tier, name, file_path, start_offset, end_offset),
             FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
         );
@@ -424,11 +425,11 @@ function writeGraphIndexSchemaVersion(database: GraphDatabase): void {
 function createGraphIndexSchema(database: GraphDatabase): void {
     createSchemaMetaTable(database);
     createGraphIndexSchemaV2(database);
-    createSemanticIndexSchemaV6(database);
+    createSemanticIndexSchema(database);
     writeGraphIndexSchemaVersion(database);
 }
 
-const DERIVED_TABLES_FOR_V6_CUTOVER = Object.freeze([
+const DERIVED_SEMANTIC_TABLES = Object.freeze([
     "semantic_navigation_projection",
     "semantic_unresolved_references",
     "semantic_dependencies",
@@ -456,10 +457,10 @@ const DERIVED_TABLES_FOR_V6_CUTOVER = Object.freeze([
     "graphs"
 ]);
 
-/** Drop derived cache facts so a pre-v6 database cannot be interpreted by v6 runtime code. */
-function resetDerivedDatabaseForV6(database: GraphDatabase): void {
+/** Drop derived cache facts before recreating the current schema. */
+function resetDerivedDatabaseForCurrentSchema(database: GraphDatabase): void {
     runGraphDatabaseTransaction(database, () => {
-        for (const tableName of DERIVED_TABLES_FOR_V6_CUTOVER) {
+        for (const tableName of DERIVED_SEMANTIC_TABLES) {
             database.exec(`DROP TABLE IF EXISTS ${tableName}`);
         }
         createGraphIndexSchema(database);
@@ -557,8 +558,8 @@ function ensureGraphIndexSchema(database: GraphDatabase): void {
     }
 
     // Graph and semantic cache rows are derived facts. A hard reset avoids any
-    // v3-v5 reader or dual-write path and guarantees v6 starts with no slots.
-    resetDerivedDatabaseForV6(database);
+    // old-reader or dual-write path and guarantees the current schema starts with no slots.
+    resetDerivedDatabaseForCurrentSchema(database);
 }
 
 /**

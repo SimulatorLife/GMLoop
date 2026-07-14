@@ -46,6 +46,34 @@ export interface SemanticValidationResult {
     warnings?: Array<string>;
 }
 
+/** A blocking semantic uncertainty reported during rename preflight. */
+export interface RenameSafetyGap {
+    message: string;
+    path?: string;
+}
+
+/** Tier-2 semantic query role required to report rename-safety uncertainty. */
+export interface RenameSafetyProvider {
+    getRenameSafetyGaps(symbolId: string): MaybePromise<Array<RenameSafetyGap>>;
+}
+
+/** A same-name semantic uncertainty reported during conflict detection. */
+export interface SemanticGap {
+    message: string;
+    path?: string;
+}
+
+/**
+ * Semantic query role for name-scoped uncertainty that prevents a rename.
+ *
+ * This is intentionally separate from {@link RenameSafetyProvider}: callers
+ * that have a stable symbol identity must use rename-safety queries, while
+ * name-planning codemods can only ask for conservative same-name gaps.
+ */
+export interface SemanticGapProvider {
+    checkSemanticGaps(symbolName: string, symbolKind?: string | null): Array<SemanticGap>;
+}
+
 /**
  * Symbol existence and lookup operations.
  *
@@ -183,7 +211,15 @@ export interface SemanticWorkspaceSourceProvider {
  * interface when possible.
  */
 export interface SemanticAnalyzer
-    extends SymbolResolver, OccurrenceTracker, FileSymbolProvider, DependencyAnalyzer, KeywordProvider, EditValidator {}
+    extends
+        SymbolResolver,
+        OccurrenceTracker,
+        FileSymbolProvider,
+        DependencyAnalyzer,
+        KeywordProvider,
+        EditValidator,
+        RenameSafetyProvider,
+        SemanticGapProvider {}
 
 /**
  * Partial semantic analyzer for dependency injection.
@@ -203,6 +239,8 @@ export type PartialSemanticAnalyzer = Partial<SymbolResolver> &
     Partial<DependencyAnalyzer> &
     Partial<KeywordProvider> &
     Partial<EditValidator> &
+    Partial<RenameSafetyProvider> &
+    Partial<SemanticGapProvider> &
     Partial<BatchWorkspaceOverlay> &
     Partial<SemanticWorkspaceSourceProvider> &
     Partial<NamingConventionTargetProvider> &

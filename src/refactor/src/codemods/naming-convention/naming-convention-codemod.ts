@@ -28,6 +28,7 @@ import type {
     PartialSemanticAnalyzer,
     RefactorProjectConfig,
     RenameRequest,
+    SemanticGap,
     ValidationSummary
 } from "../../types.js";
 import { type WorkspaceEdit, WorkspaceEdit as WorkspaceEditClass } from "../../workspace-edit.js";
@@ -542,7 +543,6 @@ type TopLevelRenameSelection = {
     errors: Array<string>;
 };
 
-type SemanticGap = Readonly<{ message: string; path?: string }>;
 type SemanticGapChecker = (symbolName: string) => ReadonlyArray<SemanticGap>;
 
 type MacroDependencyNamesByFile = Map<string, Map<string, Set<string>>>;
@@ -1155,21 +1155,16 @@ export async function planNamingConventionCodemod(
     // query and amplify the cost of large batches.
     const cachedSemanticGaps = new Map<string, ReadonlyArray<SemanticGap>>();
     const semanticGapChecker: SemanticGapChecker = (symbolName: string): ReadonlyArray<SemanticGap> => {
-        if (typeof (semantic as { checkSemanticGaps?: unknown } | null)?.checkSemanticGaps !== "function") {
+        if (!Core.hasMethods(semantic, "checkSemanticGaps")) {
             return [];
         }
         const cached = cachedSemanticGaps.get(symbolName);
         if (cached !== undefined) {
             return cached;
         }
-        const result = (
-            semantic as unknown as {
-                checkSemanticGaps(name: string): ReadonlyArray<SemanticGap>;
-            }
-        ).checkSemanticGaps(symbolName);
-        const normalized = Array.isArray(result) ? result : [];
-        cachedSemanticGaps.set(symbolName, normalized);
-        return normalized;
+        const gaps = semantic.checkSemanticGaps(symbolName);
+        cachedSemanticGaps.set(symbolName, gaps);
+        return gaps;
     };
     const isSelectedTargetPath = createPathSelectionMatcher(parameters.projectRoot, parameters.targetPaths, []);
     const selectedWholeProject =

@@ -285,7 +285,7 @@ void test("namingConvention does not block local variable renames due to unresol
         }
     ];
 
-    const semantic: any = {
+    const semantic: PartialSemanticAnalyzer = {
         listNamingConventionTargets: async () => targets,
         getSymbolOccurrences: async () => [],
         hasSymbol: async () => true,
@@ -345,7 +345,7 @@ void test("namingConvention does not block enum member renames due to unresolved
         }
     ];
 
-    const semantic: any = {
+    const semantic: PartialSemanticAnalyzer = {
         listNamingConventionTargets: async () => targets,
         getSymbolOccurrences: async () => [
             {
@@ -439,7 +439,7 @@ void test("namingConvention partitions large rename batches (> 256) into fast-pa
         });
     }
 
-    const semantic: any = {
+    const semantic: PartialSemanticAnalyzer = {
         listNamingConventionTargets: async () => targets,
         getSymbolOccurrences: async (_name: string, symbolId?: string | null) => {
             const target = targets.find((t) => t.symbolId === symbolId);

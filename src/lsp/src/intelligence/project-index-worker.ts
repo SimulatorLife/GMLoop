@@ -58,22 +58,30 @@ parentPort.on("message", (request: WorkerRequest) => {
 
 async function buildWorkerIndex(request: WorkerRequest): Promise<void> {
     try {
-        const rawIndex = await Semantic.buildProjectIndex(
+        const fsFacade = createWorkerFsFacade(request.openDocuments);
+        const rawIndex = await Semantic.buildProjectIndex(request.projectRoot, fsFacade, {
+            definitionsOnly: request.definitionsOnly,
+            incremental: request.incremental ?? undefined,
+            priorityFiles: request.priorityFiles
+        });
+        const manifest = await Semantic.buildSemanticFileManifest(
             request.projectRoot,
-            createWorkerFsFacade(request.openDocuments),
-            {
-                definitionsOnly: request.definitionsOnly,
-                incremental: request.incremental ?? undefined,
-                priorityFiles: request.priorityFiles
-            }
+            fsFacade,
+            request.openDocuments.map((document) => ({
+                absolutePath: document.filePath,
+                contentHash: document.contentHash,
+                documentVersion: document.documentVersion,
+                sourceText: document.sourceText
+            }))
         );
         const semanticSnapshot = Semantic.createSemanticSnapshotFromProjectIndex(
             rawIndex,
             request.definitionsOnly ? "definitions" : "full",
-            "" as Parameters<typeof Semantic.createSemanticSnapshotFromProjectIndex>[2]
+            manifest.sourceRevision
         );
         parentPort?.postMessage({
             buildBoundary: request.buildBoundary,
+            manifest,
             openDocumentBoundary: request.openDocuments.map((document) => ({
                 contentHash: document.contentHash,
                 documentVersion: document.documentVersion,

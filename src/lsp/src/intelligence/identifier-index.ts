@@ -31,12 +31,19 @@ type NavigationIndex = Awaited<ReturnType<typeof Semantic.buildProjectNavigation
 type NavigationOccurrence = NonNullable<ReturnType<typeof Semantic.findNavigationSymbolAtPosition>>;
 type NavigationSymbol = ReturnType<typeof Semantic.searchNavigationWorkspaceSymbols>[number];
 type GmlSymbolDocumentation = ReturnType<typeof Semantic.createEmptyGmlSymbolDocumentation>;
+type SemanticFileManifest = Awaited<ReturnType<typeof Semantic.buildSemanticFileManifest>>;
+type SemanticSnapshot = ReturnType<typeof Semantic.createSemanticSnapshotFromProjectIndex>;
 type NavigationState = {
     index: NavigationIndex;
+    manifest: SemanticFileManifest | null;
     projectRoot: string;
     lightweight?: boolean;
+    snapshot: SemanticSnapshot;
 };
 type SemanticIndexStore = ReturnType<typeof Semantic.openSemanticIndexStore>;
+type SemanticSnapshotRequirement = Parameters<SemanticIndexStore["acquireSemanticSnapshot"]>[0];
+type RequiredSemanticCapability =
+    SemanticSnapshotRequirement["capabilities"] extends ReadonlySet<infer Capability> ? Capability : never;
 type WorkerBuildBoundary = Readonly<{
     baseGeneration: number | null;
     definitionsGeneration: number | null;
@@ -278,49 +285,6 @@ function findSymbolId(
     return null;
 }
 
-function createRefactorSemanticProvider(index: NavigationIndex) {
-    return {
-        hasSymbol(symbolId: string) {
-            return Semantic.hasNavigationSymbol(index, symbolId);
-        },
-        resolveSymbolId(name: string) {
-            return Semantic.resolveNavigationSymbolId(index, name);
-        },
-        getSymbolAtPosition(filePath: string, offset: number) {
-            const occurrence = Semantic.findNavigationSymbolAtPosition(index, filePath, offset);
-            return occurrence
-                ? {
-                      symbolId: occurrence.symbolId,
-                      name: occurrence.name,
-                      range: {
-                          start: occurrence.location.range.start,
-                          end: occurrence.location.range.end
-                      }
-                  }
-                : null;
-        },
-        getSymbolOccurrences(symbolName: string, symbolId: string | null = null) {
-            const resolvedSymbolId = symbolId ?? Semantic.resolveNavigationSymbolId(index, symbolName);
-            if (!resolvedSymbolId) {
-                return [];
-            }
-
-            return Semantic.findNavigationReferences(index, resolvedSymbolId, true).map((occurrence) => ({
-                path: occurrence.location.filePath,
-                start: occurrence.location.range.start,
-                end: occurrence.location.range.end,
-                scopeId: occurrence.scopeId ?? undefined,
-                kind: occurrence.role
-            }));
-        },
-        getFileSymbols(filePath: string) {
-            return Semantic.listNavigationDocumentSymbols(index, filePath).map((occurrence) => ({
-                id: occurrence.symbolId
-            }));
-        }
-    };
-}
-
 async function refactorWorkspaceEditToLspWorkspaceEdit(
     workspace: InstanceType<typeof Refactor.WorkspaceEdit>
 ): Promise<WorkspaceEdit | null> {
@@ -467,6 +431,7 @@ function buildSemanticIndexInWorker(
                     documentVersion: number;
                     filePath: string;
                 }>;
+                manifest?: SemanticFileManifest;
                 rawIndex?: unknown;
                 semanticSnapshot?: ReturnType<typeof Semantic.createSemanticSnapshotFromProjectIndex>;
             }) => {
@@ -474,7 +439,11 @@ function buildSemanticIndexInWorker(
                     finish(() => reject(new Error(Core.getErrorMessageOrFallback(message.error))));
                     return;
                 }
-                if (!Core.isObjectLike(message.rawIndex) || message.semanticSnapshot === undefined) {
+                if (
+                    !Core.isObjectLike(message.rawIndex) ||
+                    message.manifest === undefined ||
+                    message.semanticSnapshot === undefined
+                ) {
                     finish(() => resolve(null));
                     return;
                 }
@@ -506,7 +475,15 @@ function buildSemanticIndexInWorker(
                     message.semanticSnapshot
                 );
                 (index as { rawIndex?: unknown }).rawIndex = message.rawIndex;
-                finish(() => resolve({ projectRoot, index, lightweight: definitionsOnly }));
+                finish(() =>
+                    resolve({
+                        projectRoot,
+                        index,
+                        lightweight: definitionsOnly,
+                        manifest: message.manifest,
+                        snapshot: message.semanticSnapshot
+                    })
+                );
             }
         );
         worker.on("error", (error) => finish(() => reject(coerceToError(error))));
@@ -601,10 +578,10 @@ export function createGmlSemanticIndex(
         const current = cachedStates.get(resolvedRoot);
         if (current) {
             staleStates.set(resolvedRoot, current);
+            cachedStates.delete(resolvedRoot);
         }
-        // Keep the last complete snapshot available to hover, completion, and
-        // semantic-token requests while the scoped refresh runs. Deleting it
-        // here made every edit turn otherwise-fast requests into "Loading...".
+        // A stale snapshot can be retained for lifecycle bookkeeping but is
+        // never eligible to satisfy a semantic request for the new revision.
         inFlightBuilds.delete(resolvedRoot);
     }
 
@@ -656,111 +633,135 @@ export function createGmlSemanticIndex(
         // Waiting for that project-local queue prevents a rapid add/remove pair
         // from diffing against an older manifest and retaining orphaned facts.
         await (pendingCacheWrites.get(resolvedRoot) ?? Promise.resolve());
-        const snapshot = getSemanticStore(resolvedRoot).readSemanticSnapshot("full");
-        const changesByPath = new Map<string, GmlSemanticFileChange["kind"]>([
-            [path.resolve(metadataFilePath), metadataChange.kind]
-        ]);
-        if (metadataFilePath.toLowerCase().endsWith(".yyp")) {
-            const currentResourcePaths = await fs
-                .readFile(metadataFilePath, "utf8")
-                .then((sourceText) => JSON.parse(sourceText) as unknown)
-                .then((manifest) => {
-                    if (!Core.isObjectLike(manifest)) {
-                        return [];
-                    }
-                    const manifestRecord = Object.fromEntries(Object.entries(manifest));
-                    if (!Array.isArray(manifestRecord.resources)) {
-                        return [];
-                    }
-                    return manifestRecord.resources.flatMap((resource) => {
-                        if (!Core.isObjectLike(resource)) {
+        const requirements: SemanticSnapshotRequirement = Object.freeze({
+            capabilities: new Set<RequiredSemanticCapability>(),
+            overlayVersions: new Map<string, number>(),
+            requiredFiles: new Set<string>(),
+            requiredResources: new Set<string>(),
+            tier: "full"
+        });
+        const acquisition = getSemanticStore(resolvedRoot).acquireSemanticSnapshot(
+            requirements,
+            new AbortController().signal
+        );
+        const lease = acquisition.kind === "lease" ? acquisition.lease : null;
+        try {
+            const snapshot = lease === null ? null : lease.snapshot;
+            const changesByPath = new Map<string, GmlSemanticFileChange["kind"]>([
+                [path.resolve(metadataFilePath), metadataChange.kind]
+            ]);
+            if (metadataFilePath.toLowerCase().endsWith(".yyp")) {
+                const currentResourcePaths = await fs
+                    .readFile(metadataFilePath, "utf8")
+                    .then((sourceText) => JSON.parse(sourceText) as unknown)
+                    .then((manifest) => {
+                        if (!Core.isObjectLike(manifest)) {
                             return [];
                         }
-                        const resourceRecord = Object.fromEntries(Object.entries(resource));
-                        if (!Core.isObjectLike(resourceRecord.id)) {
+                        const manifestRecord = Object.fromEntries(Object.entries(manifest));
+                        if (!Array.isArray(manifestRecord.resources)) {
                             return [];
                         }
-                        const idRecord = Object.fromEntries(Object.entries(resourceRecord.id));
-                        return typeof idRecord.path === "string" ? [idRecord.path] : [];
-                    });
-                })
-                .catch((error: unknown) => {
-                    if (Core.isErrorWithCode(error, "ENOENT")) {
-                        return [];
-                    }
-                    throw error;
-                });
-            const liveRawIndex = cachedStates.get(resolvedRoot)?.index.rawIndex;
-            const liveRawIndexRecord = Core.isObjectLike(liveRawIndex)
-                ? Object.fromEntries(Object.entries(liveRawIndex))
-                : {};
-            const liveRawResources = Core.isObjectLike(liveRawIndexRecord.resources)
-                ? Object.keys(liveRawIndexRecord.resources)
-                : [];
-            const previousResourcePaths = [
-                ...new Set([
-                    ...(snapshot?.resources.map((resource) => resource.resourcePath) ?? []),
-                    ...liveRawResources
-                ])
-            ];
-            const currentPathSet = new Set(currentResourcePaths);
-            const previousPathSet = new Set(previousResourcePaths);
-            for (const resourcePath of [...currentPathSet, ...previousPathSet]) {
-                if (currentPathSet.has(resourcePath) !== previousPathSet.has(resourcePath)) {
-                    changesByPath.set(
-                        path.resolve(resolvedRoot, resourcePath),
-                        currentPathSet.has(resourcePath) ? "added" : "deleted"
-                    );
-                }
-            }
-        }
-        const metadataChanges = [...changesByPath].filter(([filePath]) => !isGmlDocumentPath(filePath));
-        for (const [affectedMetadataPath, affectedKind] of metadataChanges) {
-            const relativeMetadataPath = path.relative(resolvedRoot, affectedMetadataPath);
-            for (const scope of snapshot?.scopes ?? []) {
-                if (scope.resourcePath === relativeMetadataPath) {
-                    for (const filePath of scope.filePaths) {
-                        changesByPath.set(
-                            path.resolve(resolvedRoot, filePath),
-                            affectedKind === "deleted" ? "deleted" : "modified"
-                        );
-                    }
-                }
-            }
-        }
-        const directoryFileGroups = await Promise.all(
-            metadataChanges.map(([affectedMetadataPath, affectedKind]) =>
-                fs
-                    .readdir(path.dirname(affectedMetadataPath), { withFileTypes: true })
-                    .then((entries) =>
-                        entries.flatMap((entry) =>
-                            entry.isFile() && entry.name.toLowerCase().endsWith(".gml")
-                                ? [
-                                      {
-                                          filePath: path.resolve(path.dirname(affectedMetadataPath), entry.name),
-                                          kind:
-                                              affectedKind === "deleted" ? ("deleted" as const) : ("modified" as const)
-                                      }
-                                  ]
-                                : []
-                        )
-                    )
+                        return manifestRecord.resources.flatMap((resource) => {
+                            if (!Core.isObjectLike(resource)) {
+                                return [];
+                            }
+                            const resourceRecord = Object.fromEntries(Object.entries(resource));
+                            if (!Core.isObjectLike(resourceRecord.id)) {
+                                return [];
+                            }
+                            const idRecord = Object.fromEntries(Object.entries(resourceRecord.id));
+                            return typeof idRecord.path === "string" ? [idRecord.path] : [];
+                        });
+                    })
                     .catch((error: unknown) => {
                         if (Core.isErrorWithCode(error, "ENOENT")) {
                             return [];
                         }
                         throw error;
-                    })
-            )
-        );
-        for (const directoryChanges of directoryFileGroups) {
-            for (const directoryChange of directoryChanges) {
-                changesByPath.set(directoryChange.filePath, directoryChange.kind);
+                    });
+                const previousResourcePaths = [
+                    ...new Set(snapshot === null ? [] : snapshot.resources.map((resource) => resource.resourcePath))
+                ];
+                const currentPathSet = new Set(currentResourcePaths);
+                const previousPathSet = new Set(previousResourcePaths);
+                if (snapshot === null) {
+                    // A session-local overlay intentionally has no persistent
+                    // full snapshot. Reuse semantic project discovery to find
+                    // resource metadata still on disk but no longer listed by
+                    // the manifest, then invalidate their sibling source files
+                    // as deleted. This is conservative without relying on the
+                    // LSP's mutable raw-index projection.
+                    const currentManifest = await Semantic.buildSemanticFileManifest(resolvedRoot, fsFacade, []);
+                    for (const entry of currentManifest.entries.values()) {
+                        if (entry.fileKind === "resourceMetadata" && !currentPathSet.has(entry.relativePath)) {
+                            changesByPath.set(path.resolve(resolvedRoot, entry.relativePath), "deleted");
+                        }
+                    }
+                }
+                for (const resourcePath of [...currentPathSet, ...previousPathSet]) {
+                    if (currentPathSet.has(resourcePath) !== previousPathSet.has(resourcePath)) {
+                        changesByPath.set(
+                            path.resolve(resolvedRoot, resourcePath),
+                            currentPathSet.has(resourcePath) ? "added" : "deleted"
+                        );
+                    }
+                }
+            }
+            const metadataChanges = [...changesByPath].filter(([filePath]) => !isGmlDocumentPath(filePath));
+            for (const [affectedMetadataPath, affectedKind] of metadataChanges) {
+                const relativeMetadataPath = path.relative(resolvedRoot, affectedMetadataPath);
+                for (const scope of snapshot?.scopes ?? []) {
+                    if (scope.resourcePath === relativeMetadataPath) {
+                        for (const filePath of scope.filePaths) {
+                            changesByPath.set(
+                                path.resolve(resolvedRoot, filePath),
+                                affectedKind === "deleted" ? "deleted" : "modified"
+                            );
+                        }
+                    }
+                }
+            }
+            const directoryFileGroups = await Promise.all(
+                metadataChanges.map(([affectedMetadataPath, affectedKind]) =>
+                    fs
+                        .readdir(path.dirname(affectedMetadataPath), { withFileTypes: true })
+                        .then((entries) =>
+                            entries.flatMap((entry) =>
+                                entry.isFile() && entry.name.toLowerCase().endsWith(".gml")
+                                    ? [
+                                          {
+                                              filePath: path.resolve(path.dirname(affectedMetadataPath), entry.name),
+                                              kind:
+                                                  affectedKind === "deleted"
+                                                      ? ("deleted" as const)
+                                                      : ("modified" as const)
+                                          }
+                                      ]
+                                    : []
+                            )
+                        )
+                        .catch((error: unknown) => {
+                            if (Core.isErrorWithCode(error, "ENOENT")) {
+                                return [];
+                            }
+                            throw error;
+                        })
+                )
+            );
+            for (const directoryChanges of directoryFileGroups) {
+                for (const directoryChange of directoryChanges) {
+                    changesByPath.set(directoryChange.filePath, directoryChange.kind);
+                }
+            }
+            return [...changesByPath]
+                .map(([filePath, kind]) => ({ filePath, kind }))
+                .toSorted((left, right) => left.filePath.localeCompare(right.filePath));
+        } finally {
+            if (lease !== null) {
+                lease.release();
             }
         }
-        return [...changesByPath]
-            .map(([filePath, kind]) => ({ filePath, kind }))
-            .toSorted((left, right) => left.filePath.localeCompare(right.filePath));
     }
 
     function reconcileRestoredManifest(
@@ -809,17 +810,22 @@ export function createGmlSemanticIndex(
         manifestReconciliations.set(resolvedRoot, reconciliation);
     }
 
-    function saveIndexCacheToDisk(
+    function publishNavigationState(
         resolvedRoot: string,
-        index: NavigationIndex,
-        lightweight: boolean,
+        state: NavigationState,
         expectedRootVersion: number,
         changedFiles: ReadonlyArray<string> | null = null
     ): void {
         if (disposed) {
             return;
         }
-        const tier = lightweight ? "definitions" : "full";
+        if (state.manifest === null) {
+            return;
+        }
+        const tier = state.lightweight ? "definitions" : "full";
+        if (state.snapshot.tier !== tier || state.snapshot.sourceRevision !== state.manifest.sourceRevision) {
+            return;
+        }
 
         const previousWrite = pendingCacheWrites.get(resolvedRoot) ?? Promise.resolve();
         const write = previousWrite
@@ -827,47 +833,40 @@ export function createGmlSemanticIndex(
                 // A failed earlier write must not permanently block later snapshots.
                 return undefined;
             })
-            .then(async () => {
+            .then(() => {
                 if (disposed) {
                     return undefined;
                 }
                 if (readRootVersion(resolvedRoot) !== expectedRootVersion) {
                     return undefined;
                 }
-                const overlays = listProjectDocuments(resolvedRoot).map((document) => ({
-                    absolutePath: document.filePath,
-                    contentHash: Semantic.createSemanticContentHash(document.sourceText),
-                    documentVersion: document.version,
-                    sourceText: document.sourceText
-                }));
                 const store = getSemanticStore(resolvedRoot);
-                const previousManifest = store.readSemanticManifest(tier);
-                const manifest =
-                    previousManifest !== null && changedFiles !== null
-                        ? await Semantic.updateSemanticFileManifest(
-                              resolvedRoot,
-                              previousManifest,
-                              fsFacade,
-                              overlays,
-                              changedFiles
-                          )
-                        : await Semantic.buildSemanticFileManifest(resolvedRoot, fsFacade, overlays);
-                if (readRootVersion(resolvedRoot) !== expectedRootVersion) {
+                const hasSessionOverlay = [...state.manifest.entries.values()].some(
+                    (entry) => entry.sourceOrigin === "openBuffer"
+                );
+                if (hasSessionOverlay) {
+                    const sessionPublication = store.publishSessionSemanticSnapshot({
+                        manifest: state.manifest,
+                        snapshot: state.snapshot
+                    });
+                    if (sessionPublication.kind !== "published") {
+                        throw new Error(`Failed to publish the session semantic snapshot: ${sessionPublication.kind}.`);
+                    }
                     return undefined;
                 }
-                const navigationProjection = index.rawIndex as Record<string, unknown>;
+                const rawNavigationProjection = state.index.rawIndex;
+                if (!Core.isObjectLike(rawNavigationProjection)) {
+                    return undefined;
+                }
+                const navigationProjection = Object.freeze(Object.fromEntries(Object.entries(rawNavigationProjection)));
                 const publicationRequest = {
                     authoritative: false,
                     baseGeneration: store.readActiveSemanticSlots()[tier]?.generation ?? null,
                     expectedHeadGeneration: store.readSemanticProjectHead().generation,
-                    manifest,
+                    manifest: state.manifest,
                     navigationProjection,
-                    snapshot: Semantic.createSemanticSnapshotFromProjectIndex(
-                        navigationProjection,
-                        tier,
-                        manifest.sourceRevision
-                    ),
-                    sourceRevision: manifest.sourceRevision,
+                    snapshot: state.snapshot,
+                    sourceRevision: state.manifest.sourceRevision,
                     tier
                 } as const;
                 const publication =
@@ -987,13 +986,15 @@ export function createGmlSemanticIndex(
                     if (currentState && currentState.lightweight) {
                         currentState.index = fullState.index;
                         currentState.lightweight = false;
+                        currentState.manifest = fullState.manifest;
+                        currentState.snapshot = fullState.snapshot;
                     } else {
                         cachedStates.set(resolvedRoot, fullState);
                     }
                     staleStates.delete(resolvedRoot);
                     markProjectDocumentFactsCurrent(resolvedRoot);
 
-                    saveIndexCacheToDisk(resolvedRoot, fullState.index, false, buildVersion);
+                    publishNavigationState(resolvedRoot, fullState, buildVersion);
                     onSemanticGenerationPublished?.();
 
                     return cachedStates.get(resolvedRoot) ?? fullState;
@@ -1020,94 +1021,51 @@ export function createGmlSemanticIndex(
         return finalBuild;
     }
 
-    function triggerBuildInBackground(document: GmlTextDocument, resolvedRoot: string): void {
-        let inFlight = inFlightBuilds.get(resolvedRoot);
-        if (inFlight === undefined) {
-            const resolvedUri = document.uri;
-            const startDocVersion = readDocumentVersion(resolvedUri);
-            const buildVersion = readRootVersion(resolvedRoot);
-            abortActiveBuild(resolvedRoot);
-            const controller = new AbortController();
-            abortControllers.set(resolvedRoot, controller);
-
-            const buildPromise = (async () => {
-                const priorityFiles = listProjectDocuments(resolvedRoot).map((doc) => doc.filePath);
-                try {
-                    const currentDoc = documents.get(document.uri);
-                    if (currentDoc && currentDoc.version !== document.version) {
-                        return null;
-                    }
-                    if (readDocumentVersion(resolvedUri) !== startDocVersion) {
-                        return null;
-                    }
-                    const existingState = cachedStates.get(resolvedRoot) ?? staleStates.get(resolvedRoot);
-                    const existingRawIndex =
-                        existingState?.index.rawIndex ??
-                        getSemanticStore(resolvedRoot).readSemanticNavigationProjection("definitions") ??
-                        undefined;
-                    const incrementalBuild = existingState !== undefined && Core.isObjectLike(existingRawIndex);
-                    reportSemanticAnalysisStart({
-                        affectedFileCount: 1,
-                        projectRoot: resolvedRoot,
-                        reason: "documentChange",
-                        scope: incrementalBuild ? "incremental" : "project",
-                        tier: "definitions"
-                    });
-                    const workerBoundary = createWorkerBuildBoundary(resolvedRoot, "definitions", buildVersion);
-                    const state = await buildSemanticIndexInWorker(
-                        resolvedRoot,
-                        priorityFiles,
-                        listProjectDocuments(resolvedRoot),
-                        true,
-                        () => listProjectDocuments(resolvedRoot),
-                        {
-                            boundary: workerBoundary,
-                            isCurrent: (boundary) => isWorkerBuildBoundaryCurrent(resolvedRoot, boundary)
-                        },
-                        controller.signal,
-                        incrementalBuild
-                            ? {
-                                  changes: [{ filePath: document.filePath, kind: "modified" }],
-                                  existingIndex: Object.fromEntries(Object.entries(existingRawIndex))
-                              }
-                            : null
-                    );
-                    if (
-                        state &&
-                        !disposed &&
-                        readRootVersion(resolvedRoot) === buildVersion &&
-                        readDocumentVersion(resolvedUri) === startDocVersion
-                    ) {
-                        cachedStates.set(resolvedRoot, state);
-                        staleStates.delete(resolvedRoot);
-                        markProjectDocumentFactsCurrent(resolvedRoot);
-                        saveIndexCacheToDisk(resolvedRoot, state.index, true, buildVersion);
-                        onSemanticGenerationPublished?.();
-                        return state;
-                    }
-                    return null;
-                } catch (error) {
-                    if (Core.isAbortError(error)) {
-                        return null;
-                    }
-                    throw error;
-                }
-            })();
-
-            inFlight = buildPromise.finally(() => {
-                if (abortControllers.get(resolvedRoot) === controller) {
-                    abortControllers.delete(resolvedRoot);
-                }
-                inFlightBuilds.delete(resolvedRoot);
-            });
-            inFlightBuilds.set(resolvedRoot, inFlight);
+    function restorePersistentSemanticState(document: GmlTextDocument, resolvedRoot: string): NavigationState | null {
+        const store = getSemanticStore(resolvedRoot);
+        const activeSlots = store.readActiveSemanticSlots();
+        const cachedState = activeSlots.hasMatchingFull
+            ? activeSlots.full
+            : (activeSlots.definitions ?? activeSlots.full);
+        if (cachedState === null) {
+            return null;
+        }
+        const requirements: SemanticSnapshotRequirement = Object.freeze({
+            capabilities: new Set<RequiredSemanticCapability>(),
+            overlayVersions: new Map<string, number>(),
+            requiredFiles: new Set<string>(),
+            requiredResources: new Set<string>(),
+            tier: cachedState.tier
+        });
+        const acquisition = store.acquireSemanticSnapshot(requirements, new AbortController().signal);
+        if (acquisition.kind !== "lease") {
+            return null;
+        }
+        try {
+            const index = Semantic.createProjectNavigationIndexFromSemanticSnapshot(
+                resolvedRoot,
+                acquisition.lease.snapshot
+            );
+            const navigationProjection = store.readSemanticNavigationProjection(cachedState.tier);
+            if (Core.isObjectLike(navigationProjection)) {
+                (index as { rawIndex?: unknown }).rawIndex = navigationProjection;
+            }
+            const state = {
+                projectRoot: resolvedRoot,
+                index,
+                lightweight: cachedState.tier === "definitions",
+                manifest: store.readSemanticManifest(cachedState.tier),
+                snapshot: acquisition.lease.snapshot
+            };
+            cachedStates.set(resolvedRoot, state);
+            reconcileRestoredManifest(document, resolvedRoot, cachedState.tier);
+            return state;
+        } finally {
+            acquisition.lease.release();
         }
     }
 
-    async function ensureIndex(
-        document: GmlTextDocument,
-        options?: { allowStale?: boolean }
-    ): Promise<NavigationState | null> {
+    async function ensureIndex(document: GmlTextDocument): Promise<NavigationState | null> {
         if (disposed) {
             return null;
         }
@@ -1133,30 +1091,7 @@ export function createGmlSemanticIndex(
 
         if (!currentState && !staleState) {
             try {
-                const store = getSemanticStore(resolvedRoot);
-                const activeSlots = store.readActiveSemanticSlots();
-                const cachedState = activeSlots.hasMatchingFull
-                    ? activeSlots.full
-                    : (activeSlots.definitions ?? activeSlots.full);
-                const cachedSnapshot = cachedState ? store.readSemanticSnapshot(cachedState.tier) : null;
-                if (cachedSnapshot && cachedState) {
-                    const navIndex = Semantic.createProjectNavigationIndexFromSemanticSnapshot(
-                        resolvedRoot,
-                        cachedSnapshot
-                    );
-                    const navigationProjection = store.readSemanticNavigationProjection(cachedState.tier);
-                    if (Core.isObjectLike(navigationProjection)) {
-                        (navIndex as { rawIndex?: unknown }).rawIndex = navigationProjection;
-                    }
-                    const loadedState = {
-                        projectRoot: resolvedRoot,
-                        index: navIndex,
-                        lightweight: cachedState.tier === "definitions"
-                    };
-                    cachedStates.set(resolvedRoot, loadedState);
-                    currentState = loadedState;
-                    reconcileRestoredManifest(document, resolvedRoot, cachedState.tier);
-                }
+                currentState = restorePersistentSemanticState(document, resolvedRoot);
             } catch (error) {
                 console.error(`Failed to restore semantic index for ${resolvedRoot}:`, error);
             }
@@ -1169,11 +1104,6 @@ export function createGmlSemanticIndex(
         if (currentState && currentState.lightweight) {
             return currentState;
         }
-        if (staleState && options?.allowStale) {
-            triggerBuildInBackground(document, resolvedRoot);
-            return staleState;
-        }
-
         let inFlight = inFlightBuilds.get(resolvedRoot);
         if (inFlight === undefined) {
             const buildVersion = readRootVersion(resolvedRoot);
@@ -1229,7 +1159,7 @@ export function createGmlSemanticIndex(
                         cachedStates.set(resolvedRoot, state);
                         staleStates.delete(resolvedRoot);
                         markProjectDocumentFactsCurrent(resolvedRoot);
-                        saveIndexCacheToDisk(resolvedRoot, state.index, true, buildVersion);
+                        publishNavigationState(resolvedRoot, state, buildVersion);
                         onSemanticGenerationPublished?.();
                         return state;
                     }
@@ -1367,15 +1297,16 @@ export function createGmlSemanticIndex(
                 if (currentState) {
                     currentState.index = definitionsState.index;
                     currentState.lightweight = true;
+                    currentState.manifest = definitionsState.manifest;
+                    currentState.snapshot = definitionsState.snapshot;
                 } else {
                     cachedStates.set(resolvedRoot, definitionsState);
                 }
                 staleStates.delete(resolvedRoot);
                 markProjectDocumentFactsCurrent(resolvedRoot);
-                saveIndexCacheToDisk(
+                publishNavigationState(
                     resolvedRoot,
-                    definitionsState.index,
-                    true,
+                    definitionsState,
                     buildVersion,
                     impactedChanges.map((change) => change.filePath)
                 );
@@ -1434,13 +1365,15 @@ export function createGmlSemanticIndex(
                     if (cachedState) {
                         cachedState.index = state.index;
                         cachedState.lightweight = false;
+                        cachedState.manifest = state.manifest;
+                        cachedState.snapshot = state.snapshot;
                     } else {
                         cachedStates.set(resolvedRoot, state);
                     }
                     staleStates.delete(resolvedRoot);
                     markProjectDocumentFactsCurrent(resolvedRoot);
 
-                    saveIndexCacheToDisk(resolvedRoot, state.index, false, buildVersion, fullImpactedFiles);
+                    publishNavigationState(resolvedRoot, state, buildVersion, fullImpactedFiles);
                     onSemanticGenerationPublished?.();
 
                     return state;
@@ -1688,7 +1621,7 @@ export function createGmlSemanticIndex(
                 return null;
             }
 
-            const state = await ensureIndex(document, { allowStale: true });
+            const state = await ensureIndex(document);
             if (!state) {
                 return null;
             }
@@ -1804,7 +1737,7 @@ export function createGmlSemanticIndex(
             if (!cachedState) {
                 // Baseline lexical/built-in highlighting must not wait for a
                 // project parse. The semantic refresh will replace it later.
-                void ensureIndex(document, { allowStale: true });
+                void ensureIndex(document);
                 return Semantic.collectGmlSemanticHighlights({
                     sourceText: document.sourceText,
                     builtIns: Object.entries(getBuiltInsMetadata()).flatMap(([name, descriptor]) => {
@@ -1818,7 +1751,7 @@ export function createGmlSemanticIndex(
                     occurrences: []
                 });
             }
-            const state = await ensureIndex(document, { allowStale: true });
+            const state = await ensureIndex(document);
             const occurrences = staleSemanticDocumentUris.has(document.uri)
                 ? []
                 : (state?.index.occurrencesByFilePath.get(path.resolve(document.filePath)) ?? []);
@@ -1905,7 +1838,7 @@ export function createGmlSemanticIndex(
             }
 
             const refactorEngine = new Refactor.RefactorEngine({
-                semantic: createRefactorSemanticProvider(state.index)
+                semantic: Semantic.createSemanticSnapshotRefactorQueries(state.projectRoot, state.snapshot)
             });
             const workspace = await refactorEngine.planRename({ symbolId, newName });
             return await refactorWorkspaceEditToLspWorkspaceEdit(workspace);

@@ -255,6 +255,20 @@ void test("planRename creates workspace edit with occurrences", async () => {
     assert.equal(workspace.edits[1].newText, "scr_new");
 });
 
+void test("planRename blocks a Tier 2 semantic rename-safety gap", async () => {
+    const message = "Cannot safely rename 'scr_old': an ambiguous binding exists at scripts/caller.gml:8-17.";
+    const semantic: PartialSemanticAnalyzer = {
+        getRenameSafetyGaps: async () => [{ message, path: "scripts/caller.gml" }],
+        getSymbolOccurrences: async () => [{ end: 7, path: "scripts/test.gml", start: 0 }],
+        hasSymbol: async () => true
+    };
+    const engine = new RefactorEngineClass({ semantic });
+
+    await assert.rejects(() => engine.planRename({ symbolId: "gml/script/scr_old", newName: "scr_new" }), {
+        message: new RegExp(message)
+    });
+});
+
 void test("planRename drops metadata-file text edits when a full metadata rewrite is staged", async () => {
     const mockSemantic = {
         hasSymbol: () => true,
@@ -584,8 +598,16 @@ void test("prepareHotReloadUpdates includes transitive dependents from cascade",
     assert.equal(grandchildUpdate?.filePath, "deps/grandchild.gml");
 });
 
-void test("findSymbolAtLocation returns null without semantic", async () => {
-    const engine = new RefactorEngineClass();
+void test("findSymbolAtLocation rejects parser-only rename targets without semantic facts", async () => {
+    const parser: ParserBridge = {
+        parse: async () => ({
+            children: [{ end: 10, name: "syntactic_only", start: 0, type: "identifier" }],
+            end: 10,
+            start: 0,
+            type: "program"
+        })
+    };
+    const engine = new RefactorEngineClass({ parser });
     const result = await engine.findSymbolAtLocation("test.gml", 10);
     assert.equal(result, null);
 });

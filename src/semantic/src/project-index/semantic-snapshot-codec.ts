@@ -101,6 +101,7 @@ function collectOccurrences(
                       Object.freeze({
                           end: Math.max(start, endInclusive + 1),
                           filePath,
+                          resolution: Object.freeze({ kind: "exact" }),
                           role,
                           scopeId: readString(record.scopeId) ?? readString(entry.scopeId),
                           start,
@@ -192,7 +193,18 @@ function collectUnresolvedReferences(
             if (name === null || start === null || endInclusive === null || identifier.reason === "built-in") {
                 continue;
             }
-            register(Object.freeze({ end: Math.max(start, endInclusive + 1), filePath, name, start }));
+            register(
+                Object.freeze({
+                    end: Math.max(start, endInclusive + 1),
+                    filePath,
+                    name,
+                    resolution: Object.freeze({
+                        kind: "unresolved",
+                        uncertaintyReason: "The analyzer found no binding for this identifier."
+                    }),
+                    start
+                })
+            );
         }
     }
     const scriptCalls = asRecord(index.relationships).scriptCalls;
@@ -212,11 +224,56 @@ function collectUnresolvedReferences(
             if (filePath === null || name === null || start === null || endInclusive === null) {
                 continue;
             }
-            register(Object.freeze({ end: Math.max(start, endInclusive + 1), filePath, name, start }));
+            register(
+                Object.freeze({
+                    end: Math.max(start, endInclusive + 1),
+                    filePath,
+                    name,
+                    resolution: Object.freeze({
+                        kind: "unresolved",
+                        uncertaintyReason: "The call target has no resolved declaration scope."
+                    }),
+                    start
+                })
+            );
         }
     }
     return [...references.values()].toSorted((left, right) =>
         left.filePath === right.filePath ? left.start - right.start : left.filePath.localeCompare(right.filePath)
+    );
+}
+
+function classifyUnresolvedReferenceCandidates(
+    references: ReadonlyArray<SemanticUnresolvedReference>,
+    symbols: ReadonlyArray<SemanticSymbol>
+): ReadonlyArray<SemanticUnresolvedReference> {
+    const symbolIdsByName = new Map<string, string[]>();
+    for (const symbol of symbols) {
+        if (symbol.definingFilePath === null) {
+            continue;
+        }
+        Core.getOrCreateMapEntry(symbolIdsByName, symbol.name, () => []).push(symbol.symbolId);
+    }
+    return Object.freeze(
+        references.map((reference) => {
+            const candidateSymbolIds = [...(symbolIdsByName.get(reference.name) ?? [])].toSorted((left, right) =>
+                left.localeCompare(right)
+            );
+            if (candidateSymbolIds.length === 0) {
+                return reference;
+            }
+            return Object.freeze({
+                ...reference,
+                resolution: Object.freeze({
+                    candidateSymbolIds: Object.freeze(candidateSymbolIds),
+                    kind: candidateSymbolIds.length === 1 ? "candidate" : "ambiguous",
+                    uncertaintyReason:
+                        candidateSymbolIds.length === 1
+                            ? "A same-named declaration exists, but lexical binding could not be proven."
+                            : "Multiple same-named declarations prevent a unique binding."
+                })
+            });
+        })
     );
 }
 
@@ -255,12 +312,17 @@ function resolveUniqueCallTargets(
             return relationship;
         }
         const targetName = relationship.payload.targetName;
+        const targetScopeId = relationship.payload.targetScopeId;
         const start = relationship.payload.start;
         const end = relationship.payload.end;
         if (typeof targetName !== "string" || typeof start !== "number" || typeof end !== "number") {
             return relationship;
         }
-        const candidates = callableSymbolsByName.get(targetName) ?? [];
+        const namedCandidates = callableSymbolsByName.get(targetName) ?? [];
+        const candidates =
+            typeof targetScopeId === "string"
+                ? namedCandidates.filter((candidate) => candidate.scopeId === targetScopeId)
+                : namedCandidates;
         if (candidates.length !== 1) {
             return relationship;
         }
@@ -271,6 +333,7 @@ function resolveUniqueCallTargets(
                 Object.freeze({
                     end,
                     filePath: relationship.ownerFilePath,
+                    resolution: Object.freeze({ kind: "exact" }),
                     role: "reference",
                     scopeId:
                         typeof relationship.payload.fromScopeId === "string" ? relationship.payload.fromScopeId : null,
@@ -429,11 +492,14 @@ export function createSemanticSnapshotFromProjectIndex(
     const resolvedCalls = resolveUniqueCallTargets({ occurrences, relationships: rawRelationships, symbols });
     occurrences.push(...resolvedCalls.occurrences);
     const relationships = resolvedCalls.relationships;
-    const unresolvedReferences = collectUnresolvedReferences(index, tier).filter(
-        (reference) =>
-            !resolvedCalls.resolvedReferenceKeys.has(
-                createReferenceKey(reference.filePath, reference.start, reference.end, reference.name)
-            )
+    const unresolvedReferences = classifyUnresolvedReferenceCandidates(
+        collectUnresolvedReferences(index, tier).filter(
+            (reference) =>
+                !resolvedCalls.resolvedReferenceKeys.has(
+                    createReferenceKey(reference.filePath, reference.start, reference.end, reference.name)
+                )
+        ),
+        symbols
     );
     const dependencies = collectDependencies({ occurrences, relationships, scopes, symbols, tier });
     return Object.freeze({

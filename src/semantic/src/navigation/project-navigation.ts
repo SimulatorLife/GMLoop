@@ -570,57 +570,6 @@ export function createProjectNavigationIndexFromSemanticSnapshot(
             };
         })
         .toSorted(compareSymbols);
-    const scriptsByScopeId = new Map<string, GmlNavigationSymbol>();
-    const scriptsByName = new Map<string, GmlNavigationSymbol>();
-    for (const symbol of symbols) {
-        if (symbol.kind !== "script") {
-            continue;
-        }
-        scriptsByName.set(symbol.name, symbol);
-        for (const definition of symbol.definitions) {
-            if (definition.scopeId !== null) {
-                scriptsByScopeId.set(definition.scopeId, symbol);
-            }
-        }
-    }
-    const relationshipReferences = new Map<string, GmlNavigationOccurrence[]>();
-    for (const relationship of snapshot.relationships) {
-        if (relationship.kind !== "scriptCall") {
-            continue;
-        }
-        const start = relationship.payload.start;
-        const end = relationship.payload.end;
-        const targetScopeId = relationship.payload.targetScopeId;
-        const targetName = relationship.payload.targetName;
-        if (typeof start !== "number" || typeof end !== "number") {
-            continue;
-        }
-        const symbol =
-            (typeof targetScopeId === "string" ? scriptsByScopeId.get(targetScopeId) : undefined) ??
-            (typeof targetName === "string" ? scriptsByName.get(targetName) : undefined);
-        if (symbol === undefined) {
-            continue;
-        }
-        const references = Core.getOrCreateMapEntry(relationshipReferences, symbol.symbolId, () => []);
-        references.push({
-            displayName: symbol.displayName,
-            kind: symbol.kind,
-            location: {
-                filePath: resolveProjectFilePath(projectRoot, relationship.ownerFilePath),
-                range: { end: Math.max(start, end), start }
-            },
-            name: symbol.name,
-            role: "reference",
-            scopeId: typeof relationship.payload.fromScopeId === "string" ? relationship.payload.fromScopeId : null,
-            symbolId: symbol.symbolId
-        });
-    }
-    const symbolsWithRelationships = symbols.map((symbol) => {
-        const references = relationshipReferences.get(symbol.symbolId) ?? [];
-        return references.length === 0
-            ? symbol
-            : { ...symbol, references: [...symbol.references, ...references].toSorted(compareOccurrencesByLocation) };
-    });
     const resourceKindsByName = new Map(
         snapshot.resources.map(
             (resource) =>
@@ -637,8 +586,8 @@ export function createProjectNavigationIndexFromSemanticSnapshot(
     return {
         projectRoot,
         resourceKindsByName,
-        symbols: symbolsWithRelationships,
-        ...createNavigationIndexMaps(symbolsWithRelationships)
+        symbols,
+        ...createNavigationIndexMaps(symbols)
     };
 }
 

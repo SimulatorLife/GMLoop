@@ -37,7 +37,6 @@ import {
 } from "./rename/rename-validation.js";
 import { RenameValidationCache } from "./rename-validation-cache.js";
 import { DefaultOccurrenceCachePolicy, SemanticQueryCache } from "./semantic-cache.js";
-import * as SymbolQueries from "./symbol-queries.js";
 import {
     type ApplyWorkspaceEditOptions,
     type BatchRenamePlanSummary,
@@ -186,22 +185,26 @@ function semanticSupportsBatchWorkspaceOverlay(
     return Core.hasMethods(semantic, ["clearWorkspaceOverlay", "stageWorkspaceEdit"]);
 }
 
-async function shouldUseBatchWorkspaceOverlay(
+async function resolveBatchWorkspaceOverlay(
     semantic: PartialSemanticAnalyzer | null,
     renames: ReadonlyArray<RenameRequest>
-): Promise<boolean> {
+): Promise<
+    | (PartialSemanticAnalyzer &
+          Required<Pick<NonNullable<PartialSemanticAnalyzer>, "clearWorkspaceOverlay" | "stageWorkspaceEdit">>)
+    | null
+> {
     if (!semanticSupportsBatchWorkspaceOverlay(semantic)) {
-        return false;
+        return null;
     }
 
     if (
         Core.hasMethods(semantic, "canPlanRenameBatchWithoutWorkspaceOverlay") &&
         (await semantic.canPlanRenameBatchWithoutWorkspaceOverlay(renames))
     ) {
-        return false;
+        return null;
     }
 
-    return true;
+    return semantic;
 }
 
 function isMacroRenameCollisionSubject(symbolKind: string | null): boolean {
@@ -384,16 +387,13 @@ export class RefactorEngine {
      * Find the symbol at a specific location in a file.
      * Useful for triggering refactorings from editor positions.
      *
-     * Uses the semantic cache when available for efficient repeated lookups.
-     * Falls back to parser-based AST traversal when the semantic analyzer
-     * doesn't provide position-based lookup.
+     * Uses a semantic position query; parser-only text matching is unsafe for
+     * project-wide transformations and is deliberately not a fallback.
      */
     findSymbolAtLocation(filePath: string, offset: number): Promise<SymbolLocation | null> {
-        if (this.semantic !== null) {
-            return this.semanticCache.getSymbolAtPosition(filePath, offset);
-        }
-
-        return SymbolQueries.findSymbolAtLocationFallback(filePath, offset, this.parser);
+        return this.semantic === null
+            ? Promise.resolve(null)
+            : this.semanticCache.getSymbolAtPosition(filePath, offset);
     }
 
     /**
@@ -599,6 +599,8 @@ export class RefactorEngine {
             errors.push(`The new name '${normalizedNewName}' matches the existing identifier`);
             return { valid: false, errors, warnings };
         }
+
+        errors.push(...(await collectBlockingRenameSafetyMessages(this.semantic, symbolId)));
 
         // Gather occurrences to check for conflicts
         const occurrences = await this.gatherSymbolOccurrences(symbolName, symbolId);
@@ -877,6 +879,15 @@ export class RefactorEngine {
 
         if (symbolName === normalizedNewName) {
             throw new Error(`The new name '${normalizedNewName}' matches the existing identifier`);
+        }
+
+        if (!hasReusableValidation) {
+            const safetyMessages = await collectBlockingRenameSafetyMessages(this.semantic, symbolId);
+            if (safetyMessages.length > 0) {
+                throw new Error(
+                    `Cannot rename '${symbolName}' to '${normalizedNewName}': ${safetyMessages.join("; ")}`
+                );
+            }
         }
 
         // Collect all occurrences (definitions and references) of the symbol across
@@ -1214,7 +1225,7 @@ export class RefactorEngine {
         let merged = new WorkspaceEdit();
         const metadataEditsByPath = new Map<string, string>();
         const semantic = this.semantic;
-        const useBatchWorkspaceOverlay = await shouldUseBatchWorkspaceOverlay(semantic, renames);
+        const batchWorkspaceOverlay = await resolveBatchWorkspaceOverlay(semantic, renames);
         const planRenameWithReusableValidation = async (rename: RenameRequest): Promise<WorkspaceEdit> => {
             const reusableValidation = batchValidation?.renameValidations.get(rename.symbolId);
             if (reusableValidation?.valid === true) {
@@ -1224,22 +1235,22 @@ export class RefactorEngine {
             return await this.planRename(rename);
         };
 
-        if (useBatchWorkspaceOverlay) {
-            await semantic.clearWorkspaceOverlay();
+        if (batchWorkspaceOverlay) {
+            await batchWorkspaceOverlay.clearWorkspaceOverlay();
 
             try {
                 await Core.runSequentially(renames, async (rename) => {
                     const workspace = await planRenameWithReusableValidation(rename);
                     accumulateRenameWorkspace(merged, workspace, metadataEditsByPath);
 
-                    await (semantic as any).stageWorkspaceEdit(workspace);
+                    await batchWorkspaceOverlay.stageWorkspaceEdit(workspace);
                     // Metadata overlays affect subsequent metadata planning, but
                     // they do not mutate the semantic source index itself. Keep
                     // the semantic query cache warm so large batch codemods can
                     // reuse symbol existence and occurrence lookups.
                 });
             } finally {
-                await semantic.clearWorkspaceOverlay();
+                await batchWorkspaceOverlay.clearWorkspaceOverlay();
             }
         } else {
             const plannedWorkspaces = await Core.runInParallelWithLimit(
@@ -2762,6 +2773,18 @@ function throwIfValidationFailed(validation: ValidationSummary, context: string)
     if (!validation.valid) {
         throw new Error(`${context}: ${validation.errors.join("; ")}`);
     }
+}
+
+async function collectBlockingRenameSafetyMessages(
+    semantic: PartialSemanticAnalyzer | null,
+    symbolId: string
+): Promise<Array<string>> {
+    if (!Core.hasMethods(semantic, "getRenameSafetyGaps")) {
+        return [];
+    }
+
+    const gaps = await semantic.getRenameSafetyGaps(symbolId);
+    return gaps.map((gap) => gap.message);
 }
 
 /**

@@ -404,6 +404,29 @@ void test("validateRenameRequest detects reserved GameMaker identifiers", async 
     assert.ok(result.errors.some((e) => e.includes("reserved GameMaker identifier")));
 });
 
+void test("validateRenameRequest blocks a Tier 2 semantic rename-safety gap", async () => {
+    const message = "Cannot safely rename 'scr_test': an ambiguous binding exists at scripts/caller.gml:8-17.";
+    const mockSemantic: PartialSemanticAnalyzer = {
+        getRenameSafetyGaps: async () => [
+            {
+                message,
+                path: "scripts/caller.gml"
+            }
+        ],
+        getSymbolOccurrences: async () => [{ path: "scripts/test.gml", start: 0, end: 8, scopeId: "script:test" }],
+        hasSymbol: async () => true
+    };
+    const engine = new RefactorEngineClass({ semantic: mockSemantic });
+
+    const result = await engine.validateRenameRequest({
+        symbolId: "gml/script/scr_test",
+        newName: "scr_renamed"
+    });
+
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.includes(message));
+});
+
 void test("validateRenameRequest surfaces cross-file conflicts", async () => {
     const mockSemantic: PartialSemanticAnalyzer = {
         hasSymbol: async () => true,

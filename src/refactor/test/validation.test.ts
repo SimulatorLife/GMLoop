@@ -10,7 +10,7 @@ import {
     detectRenameConflicts,
     validateRenameStructure
 } from "../src/rename/rename-validation.js";
-import { ConflictType, type SymbolOccurrence, type SymbolResolver } from "../src/types.js";
+import { ConflictType, type SemanticGapProvider, type SymbolOccurrence, type SymbolResolver } from "../src/types.js";
 
 void describe("validateRenameStructure", () => {
     void test("returns error for missing symbolId", async () => {
@@ -406,6 +406,27 @@ void describe("detectRenameConflicts", () => {
         assert.equal(conflicts.length, 1);
         assert.equal(conflicts[0].type, ConflictType.SHADOW);
         assert.equal(conflicts[0].path, "scripts/player.gml");
+    });
+
+    void test("reports typed semantic gaps as blocking conflicts", async () => {
+        const resolver: Partial<SymbolResolver> & Partial<SemanticGapProvider> = {
+            checkSemanticGaps: () => [
+                {
+                    message: "An ambiguous reference prevents this rename.",
+                    path: "scripts/player.gml"
+                }
+            ]
+        };
+
+        const conflicts = await detectRenameConflicts("old_name", "new_name", [], resolver, null);
+
+        assert.deepEqual(conflicts, [
+            {
+                type: ConflictType.SEMANTIC_GAP,
+                message: "An ambiguous reference prevents this rename.",
+                path: "scripts/player.gml"
+            }
+        ]);
     });
 
     void test("applies case-sensitive checks to reserved keywords", async () => {

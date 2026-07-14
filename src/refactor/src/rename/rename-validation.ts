@@ -12,6 +12,7 @@ import {
     type FileSymbolProvider,
     type KeywordProvider,
     type RenameRequest,
+    type SemanticGapProvider,
     type SymbolOccurrence,
     type SymbolResolver
 } from "../types.js";
@@ -27,6 +28,7 @@ type MaybePromise<T> = Promise<T> | T;
 type RenameConflictContext = {
     symbolKind: string | null;
 };
+type RenameConflictResolver = Partial<SymbolResolver> & Partial<SemanticGapProvider>;
 
 /**
  * Internal sentinel value to represent global (unscoped) symbol occurrences.
@@ -223,7 +225,7 @@ export async function detectRenameConflicts(
     oldName: string,
     newName: string,
     occurrences: Array<SymbolOccurrence>,
-    resolver: Partial<SymbolResolver> | null,
+    resolver: RenameConflictResolver | null,
     keywordProvider: Partial<KeywordProvider> | null,
     context?: RenameConflictContext
 ): Promise<Array<ConflictEntry>> {
@@ -278,17 +280,15 @@ export async function detectRenameConflicts(
         });
     }
 
-    // Check for unresolved same-name references (semantic gaps)
-    if (resolver && typeof (resolver as any).checkSemanticGaps === "function") {
-        const gaps = await (resolver as any).checkSemanticGaps(oldName, resolvedContext.symbolKind);
-        if (Array.isArray(gaps)) {
-            for (const gap of gaps) {
-                conflicts.push({
-                    type: ConflictType.SEMANTIC_GAP,
-                    message: gap.message,
-                    path: gap.path
-                });
-            }
+    // Check for unresolved same-name references (semantic gaps).
+    if (Core.hasMethods(resolver, "checkSemanticGaps")) {
+        const gaps = resolver.checkSemanticGaps(oldName, resolvedContext.symbolKind);
+        for (const gap of gaps) {
+            conflicts.push({
+                type: ConflictType.SEMANTIC_GAP,
+                message: gap.message,
+                path: gap.path
+            });
         }
     }
 

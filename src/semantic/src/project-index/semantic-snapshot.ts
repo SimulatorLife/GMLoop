@@ -9,6 +9,72 @@ export type SemanticGeneration = number & { readonly __semanticGeneration: uniqu
 /** The semantic completeness tier represented by a snapshot. */
 export type SemanticTier = "definitions" | "full";
 
+/** A semantic operation whose required facts are explicitly advertised by a snapshot. */
+export type SemanticCapability =
+    | "completion"
+    | "definition"
+    | "diagnostics"
+    | "documentSymbols"
+    | "hover"
+    | "references"
+    | "renameSafety"
+    | "semanticTokens"
+    | "workspaceSymbols";
+
+/** Immutable source-coverage facts associated with an acquired snapshot. */
+export type SemanticCoverage = Readonly<{
+    analyzedFiles: ReadonlySet<string>;
+    analyzedResources: ReadonlySet<string>;
+    status: "complete";
+}>;
+
+/** Validation result associated with an acquired snapshot. */
+export type SemanticValidationState = Readonly<{
+    status: "valid";
+}>;
+
+/** Exact identity of a leased semantic snapshot. */
+export type SemanticSnapshotIdentity = Readonly<{
+    capabilities: ReadonlySet<SemanticCapability>;
+    coverage: SemanticCoverage;
+    generation: SemanticGeneration;
+    overlayVersions: ReadonlyMap<string, number>;
+    projectRevision: SemanticSourceRevision;
+    tier: SemanticTier;
+    validation: SemanticValidationState;
+}>;
+
+/** Facts a caller requires before it can safely consume a snapshot. */
+export type SemanticSnapshotRequirements = Readonly<{
+    capabilities: ReadonlySet<SemanticCapability>;
+    overlayVersions: ReadonlyMap<string, number>;
+    requiredFiles: ReadonlySet<string>;
+    requiredResources: ReadonlySet<string>;
+    tier: SemanticTier;
+}>;
+
+/** A request-pinned immutable snapshot. Release it once the request is complete. */
+export type SemanticSnapshotLease = Readonly<{
+    identity: SemanticSnapshotIdentity;
+    release: () => void;
+    snapshot: SemanticSnapshot;
+}>;
+
+/** A typed reason why a compatible snapshot could not be acquired. */
+export type SemanticSnapshotAcquireFailure = Readonly<{
+    kind: "cancelled" | "incompleteCoverage" | "missingCapability" | "missingSnapshot" | "overlayMismatch";
+}>;
+
+/** Result of an attempted snapshot acquisition. */
+export type SemanticSnapshotAcquireResult =
+    | Readonly<{ kind: "lease"; lease: SemanticSnapshotLease }>
+    | Readonly<{ failure: SemanticSnapshotAcquireFailure; kind: "failure" }>;
+
+/** Observable count of leases retaining a store-owned snapshot. */
+export type SemanticSnapshotLeaseMetrics = Readonly<{
+    activeLeaseCount: number;
+}>;
+
 /** One canonical SCIP-shaped symbol fact. */
 export type SemanticSymbol = Readonly<{
     definingFilePath: string | null;
@@ -20,10 +86,23 @@ export type SemanticSymbol = Readonly<{
     symbolId: string;
 }>;
 
+/** The certainty of an occurrence binding in a semantic snapshot. */
+export type SemanticOccurrenceResolution =
+    | Readonly<{ kind: "exact" }>
+    | Readonly<{ candidateSymbolIds: ReadonlyArray<string>; kind: "candidate"; uncertaintyReason: string }>
+    | Readonly<{ kind: "dynamic"; uncertaintyReason: string }>
+    | Readonly<{ candidateSymbolIds: ReadonlyArray<string>; kind: "ambiguous"; uncertaintyReason: string }>
+    | Readonly<{ kind: "unresolved"; uncertaintyReason: string }>
+    | Readonly<{ kind: "invalid"; uncertaintyReason: string }>;
+
+/** A non-exact binding state that blocks safety-sensitive operations. */
+export type SemanticUncertainResolution = Exclude<SemanticOccurrenceResolution, Readonly<{ kind: "exact" }>>;
+
 /** One file-owned definition or reference occurrence. */
 export type SemanticOccurrence = Readonly<{
     end: number;
     filePath: string;
+    resolution: SemanticOccurrenceResolution;
     role: "definition" | "reference";
     scopeId: string | null;
     start: number;
@@ -68,6 +147,7 @@ export type SemanticUnresolvedReference = Readonly<{
     end: number;
     filePath: string;
     name: string;
+    resolution: SemanticUncertainResolution;
     start: number;
 }>;
 

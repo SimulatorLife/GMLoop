@@ -9,6 +9,7 @@ import {
     findNavigationSymbolAtPosition,
     resolveNavigationSymbolId
 } from "../src/navigation/index.js";
+import { listSemanticRenameSafetyGaps } from "../src/project-index/rename-safety.js";
 import type { SemanticSnapshot } from "../src/project-index/semantic-snapshot.js";
 import { createSemanticSnapshotFromProjectIndex } from "../src/project-index/semantic-snapshot-codec.js";
 
@@ -63,13 +64,14 @@ void test("project navigation separates definitions and references with exclusiv
     assert.equal(occurrenceAtExclusiveEnd, null);
 });
 
-void test("project navigation restores directly from normalized semantic facts", () => {
+void test("project navigation uses canonical occurrences without recreating relationship references", () => {
     const snapshot: SemanticSnapshot = Object.freeze({
         dependencies: [],
         occurrences: [
             {
                 end: 15,
                 filePath: "scripts/target.gml",
+                resolution: { kind: "exact" as const },
                 role: "definition" as const,
                 scopeId: "script:target",
                 start: 9,
@@ -78,6 +80,7 @@ void test("project navigation restores directly from normalized semantic facts",
             {
                 end: 30,
                 filePath: "scripts/use.gml",
+                resolution: { kind: "exact" as const },
                 role: "reference" as const,
                 scopeId: "script:use",
                 start: 24,
@@ -125,9 +128,9 @@ void test("project navigation restores directly from normalized semantic facts",
     const symbolId = resolveNavigationSymbolId(index, "target");
     assert.equal(symbolId, "gml/script/target");
     assert.equal(findNavigationDefinitions(index, symbolId).length, 1);
-    assert.equal(findNavigationReferences(index, symbolId, false).length, 2);
+    assert.equal(findNavigationReferences(index, symbolId, false).length, 1);
     assert.equal(findNavigationSymbolAtPosition(index, "/tmp/game/scripts/use.gml", 25)?.symbolId, symbolId);
-    assert.equal(findNavigationSymbolAtPosition(index, "/tmp/game/scripts/caller.gml", 13)?.symbolId, symbolId);
+    assert.equal(findNavigationSymbolAtPosition(index, "/tmp/game/scripts/caller.gml", 13), null);
 });
 
 void test("semantic snapshot keeps ambiguous bare calls unresolved", () => {
@@ -168,12 +171,196 @@ void test("semantic snapshot keeps ambiguous bare calls unresolved", () => {
         "ambiguous" as SemanticSnapshot["sourceRevision"]
     );
     assert.deepEqual(snapshot.unresolvedReferences, [
-        { end: 17, filePath: "scripts/caller.gml", name: "duplicate", start: 8 }
+        {
+            end: 17,
+            filePath: "scripts/caller.gml",
+            name: "duplicate",
+            resolution: {
+                candidateSymbolIds: ["gml/function/first-duplicate", "gml/function/second-duplicate"],
+                kind: "ambiguous",
+                uncertaintyReason: "Multiple same-named declarations prevent a unique binding."
+            },
+            start: 8
+        }
     ]);
     assert.equal(
         snapshot.occurrences.some(
             (occurrence) => occurrence.role === "reference" && occurrence.filePath === "scripts/caller.gml"
         ),
         false
+    );
+});
+
+void test("semantic snapshot marks an unbound same-named identifier as a candidate", () => {
+    const snapshot = createSemanticSnapshotFromProjectIndex(
+        {
+            files: {
+                "scripts/caller.gml": {
+                    ignoredIdentifiers: [{ end: { index: 10 }, name: "helper", start: { index: 4 } }]
+                }
+            },
+            identifiers: {
+                functions: {
+                    helper: {
+                        declarations: [
+                            { filePath: "scripts/helper.gml", location: { end: { index: 5 }, start: { index: 0 } } }
+                        ],
+                        filePath: "scripts/helper.gml",
+                        identifierId: "gml/function/helper",
+                        name: "helper"
+                    }
+                }
+            }
+        },
+        "full",
+        "candidate" as SemanticSnapshot["sourceRevision"]
+    );
+
+    assert.deepEqual(snapshot.unresolvedReferences, [
+        {
+            end: 11,
+            filePath: "scripts/caller.gml",
+            name: "helper",
+            resolution: {
+                candidateSymbolIds: ["gml/function/helper"],
+                kind: "candidate",
+                uncertaintyReason: "A same-named declaration exists, but lexical binding could not be proven."
+            },
+            start: 4
+        }
+    ]);
+});
+
+void test("rename safety blocks the requested symbol's uncertain references", () => {
+    const snapshot = createSemanticSnapshotFromProjectIndex(
+        {
+            identifiers: {
+                functions: {
+                    first: {
+                        declarations: [
+                            { filePath: "scripts/first.gml", location: { end: { index: 8 }, start: { index: 0 } } }
+                        ],
+                        filePath: "scripts/first.gml",
+                        identifierId: "gml/function/first-duplicate",
+                        name: "duplicate"
+                    },
+                    second: {
+                        declarations: [
+                            { filePath: "scripts/second.gml", location: { end: { index: 8 }, start: { index: 0 } } }
+                        ],
+                        filePath: "scripts/second.gml",
+                        identifierId: "gml/function/second-duplicate",
+                        name: "duplicate"
+                    }
+                }
+            },
+            relationships: {
+                scriptCalls: [
+                    {
+                        from: { filePath: "scripts/caller.gml", scopeId: "scope:caller" },
+                        isResolved: false,
+                        location: { end: { index: 16 }, start: { index: 8 } },
+                        target: { name: "duplicate", scopeId: null }
+                    }
+                ]
+            }
+        },
+        "full",
+        "rename-safety" as SemanticSnapshot["sourceRevision"]
+    );
+
+    assert.deepEqual(listSemanticRenameSafetyGaps(snapshot, "gml/function/first-duplicate"), [
+        {
+            end: 17,
+            filePath: "scripts/caller.gml",
+            kind: "uncertainReference",
+            message: "Cannot safely rename 'duplicate': an ambiguous binding exists at scripts/caller.gml:8-17.",
+            name: "duplicate",
+            resolution: {
+                candidateSymbolIds: ["gml/function/first-duplicate", "gml/function/second-duplicate"],
+                kind: "ambiguous",
+                uncertaintyReason: "Multiple same-named declarations prevent a unique binding."
+            },
+            start: 8,
+            symbolId: "gml/function/first-duplicate"
+        }
+    ]);
+});
+
+void test("rename safety rejects a definitions snapshot", () => {
+    const definitionsSnapshot: SemanticSnapshot = Object.freeze({
+        dependencies: [],
+        occurrences: [],
+        relationships: [],
+        resources: [],
+        scopes: [],
+        sourceRevision: "definitions" as SemanticSnapshot["sourceRevision"],
+        symbols: [],
+        tier: "definitions",
+        unresolvedReferences: []
+    });
+
+    assert.deepEqual(listSemanticRenameSafetyGaps(definitionsSnapshot, "gml/script/target"), [
+        {
+            kind: "incompleteTier",
+            message: "Rename safety requires a compatible full semantic snapshot.",
+            symbolId: "gml/script/target"
+        }
+    ]);
+});
+
+void test("semantic snapshot binds a script call by target scope before its shared function name", () => {
+    const snapshot = createSemanticSnapshotFromProjectIndex(
+        {
+            identifiers: {
+                functions: {
+                    targetFunction: {
+                        declarations: [
+                            { filePath: "scripts/target.gml", location: { end: { index: 15 }, start: { index: 0 } } }
+                        ],
+                        identifierId: "gml/function/target",
+                        name: "target",
+                        scopeId: "function:target"
+                    }
+                },
+                scripts: {
+                    targetScript: {
+                        declarations: [
+                            { filePath: "scripts/target.gml", location: { end: { index: 15 }, start: { index: 0 } } }
+                        ],
+                        identifierId: "gml/script/target",
+                        name: "target",
+                        scopeId: "script:target"
+                    }
+                }
+            },
+            relationships: {
+                scriptCalls: [
+                    {
+                        from: { filePath: "scripts/caller.gml", scopeId: "script:caller" },
+                        isResolved: true,
+                        location: { end: { index: 14 }, start: { index: 8 } },
+                        target: { name: "target", scopeId: "script:target" }
+                    }
+                ]
+            }
+        },
+        "full",
+        "scope-bound" as SemanticSnapshot["sourceRevision"]
+    );
+
+    assert.deepEqual(
+        snapshot.occurrences.filter((occurrence) => occurrence.role === "reference"),
+        [
+            {
+                end: 15,
+                filePath: "scripts/caller.gml",
+                resolution: { kind: "exact" as const },
+                role: "reference",
+                scopeId: "script:caller",
+                start: 8,
+                symbolId: "gml/script/target"
+            }
+        ]
     );
 });

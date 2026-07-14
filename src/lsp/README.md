@@ -20,6 +20,10 @@ The server should be a thin LSP adapter over the other reusable GMLoop systems/m
 - The refactor layer produces safe code edits.
 - The language server only translates those results into LSP responses.
 
+Rename requests consume the current immutable semantic snapshot through semantic-owned refactor query roles. When Tier 1 is upgraded to Tier 2, the LSP replaces the navigation view and snapshot together, so a request cannot combine declaration-only facts with full rename data.
+
+Worker analysis returns its manifest and revision-qualified snapshot as one semantic result. The adapter publishes disk-backed results to the semantic store and unsaved overlays to its bounded session snapshot slots; it does not reconstruct snapshots from the LSP navigation projection.
+
 Keep GML business logic out of the protocol layer where possible.
 
 ## Agent Compatibility

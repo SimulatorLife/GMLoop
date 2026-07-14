@@ -9,6 +9,7 @@ import {
     exportGraphVisualizationData,
     getGraphContext,
     getGraphUsages,
+    GRAPH_INDEX_SCHEMA_VERSION,
     openExistingGraphIndexDatabase,
     openGraphIndexDatabase,
     resolveGraphIndexConfig,
@@ -280,7 +281,7 @@ void test("buildGraphIndex honors disabled embeddings and doctor reports stale f
     }
 });
 
-void test("openExistingGraphIndexDatabase migrates a v1 database to the current schema", async () => {
+void test("openExistingGraphIndexDatabase discards incompatible derived graph facts", async () => {
     const fixture = await createTempProjectWorkspace("graph-index-migration-");
 
     try {
@@ -387,9 +388,9 @@ void test("openExistingGraphIndexDatabase migrates a v1 database to the current 
             const schemaVersion = migrated
                 .prepare("SELECT value FROM schema_meta WHERE key = 'schema_version'")
                 .get() as { value: string } | undefined;
-            assert.equal(schemaVersion?.value, "5");
+            assert.equal(schemaVersion?.value, String(GRAPH_INDEX_SCHEMA_VERSION));
             const nodeCount = migrated.prepare("SELECT COUNT(*) AS count FROM nodes").get() as { count: number };
-            assert.equal(nodeCount.count, 1);
+            assert.equal(nodeCount.count, 0);
             const foreignKeys = migrated.prepare("PRAGMA foreign_keys").get() as { foreign_keys: number };
             assert.equal(foreignKeys.foreign_keys, 1);
         } finally {
