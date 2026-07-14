@@ -8,7 +8,7 @@
 
 import { createHash } from "node:crypto";
 
-import { getDefaultMaxFormattingCacheEntries } from "../../runtime-options/format-memory-options.js";
+import { getDefaultMaxFormattingCacheEntries } from "./format-memory-options.js";
 
 /**
  * Internal cache storing formatted output keyed by content hash and options.

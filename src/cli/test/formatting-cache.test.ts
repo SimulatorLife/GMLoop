@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
 
 import { __test__ } from "../src/cli.js";
-import { DEFAULT_MAX_FORMATTING_CACHE_ENTRIES } from "../src/runtime-options/format-memory-constants.js";
-import { setDefaultMaxFormattingCacheEntries } from "../src/runtime-options/format-memory-options.js";
+import { DEFAULT_MAX_FORMATTING_CACHE_ENTRIES } from "../src/modules/formatting/format-memory-constants.js";
+import { setDefaultMaxFormattingCacheEntries } from "../src/modules/formatting/format-memory-options.js";
 
 const {
     clearFormattingCacheForTests,
