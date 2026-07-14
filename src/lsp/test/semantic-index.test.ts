@@ -252,7 +252,7 @@ void test("semantic index refreshes project facts after an external resource met
             uri: Lsp.filePathToUri(fixture.sourcePath),
             languageId: "gml",
             version: 1,
-            text: `${fixture.sourceText  }\n// dirty`
+            text: `${fixture.sourceText}\n// dirty`
         });
         const semanticIndex = Lsp.createGmlSemanticIndex(store);
         await semanticIndex.buildForDocument(document);
