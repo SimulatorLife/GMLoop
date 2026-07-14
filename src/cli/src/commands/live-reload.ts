@@ -3,18 +3,26 @@ import process from "node:process";
 import { Core } from "@gmloop/core";
 import { Command, Option } from "commander";
 
-import { createMinimumValueValidator, portValidator } from "../cli-core/command-parsing.js";
+import {
+    createMinimumValueValidator,
+    portValidator,
+    wrapInvalidArgumentResolver
+} from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { handleCliError } from "../cli-core/errors.js";
 import {
+    coerceLiveReloadSessionOutputFormat,
     createStatusUrl,
     createWebSocketUrl,
     DEFAULT_GM_TEMP_ROOT,
+    DEFAULT_LIVE_RELOAD_SESSION_OUTPUT_FORMAT,
     DEFAULT_LIVE_RELOAD_STATUS_HOST,
     DEFAULT_LIVE_RELOAD_STATUS_PORT,
     DEFAULT_LIVE_RELOAD_WEBSOCKET_HOST,
     DEFAULT_LIVE_RELOAD_WEBSOCKET_PORT,
-    type LiveReloadBootstrapConfig
+    LIVE_RELOAD_SESSION_OUTPUT_FORMATS,
+    type LiveReloadBootstrapConfig,
+    type LiveReloadSessionOutputFormat
 } from "../modules/live-reload/config.js";
 import {
     buildLiveReloadHtml5Output,
@@ -91,7 +99,7 @@ interface LiveReloadDevCommandOptions extends LiveReloadPrepareCommandOptions {
 
 interface LiveReloadSessionCommandOptions extends Omit<LiveReloadDevCommandOptions, "sessionId"> {
     forceStart?: boolean;
-    format?: "json" | "pretty";
+    format?: LiveReloadSessionOutputFormat;
     path?: string;
     stop?: boolean;
 }
@@ -247,7 +255,7 @@ export async function runLiveReloadSessionCommand(options: LiveReloadSessionComm
             targetPath: options.path ?? process.cwd()
         });
         const payload = { command: "live-reload session", ok: true, payload: result };
-        if (options.format === "pretty") {
+        if (options.format === LIVE_RELOAD_SESSION_OUTPUT_FORMATS.pretty) {
             console.log(`${result.mode}: ${result.session?.runtimeUrl ?? "no active runtime"}`);
             return;
         }
@@ -593,7 +601,9 @@ function createLiveReloadSessionSubcommand(): Command {
         .addOption(new Option("--force-start", "Stop the active session before starting a replacement.").default(false))
         .addOption(new Option("--stop", "Stop the active session without starting another.").default(false))
         .addOption(
-            new Option("--format <format>", "Output format").choices(["json", "pretty"] as const).default("json")
+            new Option("--format <format>", "Output format")
+                .argParser(wrapInvalidArgumentResolver(coerceLiveReloadSessionOutputFormat))
+                .default(DEFAULT_LIVE_RELOAD_SESSION_OUTPUT_FORMAT)
         )
         .action((options: LiveReloadSessionCommandOptions) => runLiveReloadSessionCommand(options));
 }
