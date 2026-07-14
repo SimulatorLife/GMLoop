@@ -8,6 +8,8 @@ import { test } from "node:test";
 import { Lsp } from "@gmloop/lsp";
 import { Semantic } from "@gmloop/semantic";
 
+import type { GmlSemanticAnalysisStart } from "../src/intelligence/index.js";
+
 async function cleanupProjectDir(projectRoot: string) {
     await new Promise((resolve) => setTimeout(resolve, 50));
     await fs.rm(projectRoot, { recursive: true, force: true }).catch(() => {});
@@ -494,15 +496,25 @@ void test("semantic index double-pass approach exposes fast hover initially, and
         });
 
         let publishedGenerationCount = 0;
-        const semanticIndex = Lsp.createGmlSemanticIndex(store, () => {
-            publishedGenerationCount += 1;
-        });
+        const analysisStarts: GmlSemanticAnalysisStart[] = [];
+        const semanticIndex = Lsp.createGmlSemanticIndex(
+            store,
+            () => {
+                publishedGenerationCount += 1;
+            },
+            (event) => {
+                analysisStarts.push(event);
+            }
+        );
 
         // 1. Initial buildForDocument returns a lightweight state
         const state1 = await semanticIndex.buildForDocument(docB);
         assert.ok(state1);
         assert.equal(state1.lightweight, true, "Initial build should be lightweight (definitionsOnly)");
         assert.equal(publishedGenerationCount, 1, "Tier 1 should publish a semantic generation");
+        assert.equal(analysisStarts.length, 1, "Cold startup should begin only the definitions tier");
+        assert.equal(analysisStarts[0]?.tier, "definitions");
+        assert.equal(analysisStarts[0]?.scope, "project");
 
         // 2. Hover is immediately available on the lightweight index — does not block
         const offsetValB = docB.sourceText.lastIndexOf("function b") + 9;
@@ -511,6 +523,11 @@ void test("semantic index double-pass approach exposes fast hover initially, and
         const hoverText =
             typeof hoverRes.contents === "object" && "value" in hoverRes.contents ? hoverRes.contents.value : "";
         assert.match(hoverText, /test function b/, "Hover should show doc-comment from lightweight pass");
+        assert.equal(
+            analysisStarts.length,
+            1,
+            "Hover must consume definitions facts and never escalate to a full project analysis"
+        );
 
         // 3. findDefinition is immediately available on the lightweight index
         const defRes = await semanticIndex.findDefinition(docB, offsetValB, "b");
@@ -523,6 +540,15 @@ void test("semantic index double-pass approach exposes fast hover initially, and
         assert.ok(refs.length > 0, "findReferences should return cross-file references after full build");
         const refUris = refs.map((r) => r.uri);
         assert.ok(refUris.includes(Lsp.filePathToUri(aPath)), "References should include usage in a.gml");
+        assert.equal(analysisStarts.length, 2, "Find References should request the full semantic tier once");
+        assert.deepEqual(
+            {
+                reason: analysisStarts[1]?.reason,
+                scope: analysisStarts[1]?.scope,
+                tier: analysisStarts[1]?.tier
+            },
+            { reason: "references", scope: "project", tier: "full" }
+        );
 
         // 5. After findReferences returns, the state should now be fully upgraded
         const finalState = await semanticIndex.buildForDocument(docB);
@@ -897,7 +923,10 @@ void test("semantic index loads cache from disk on startup and saves updates to 
         });
 
         // 2. A fresh semantic index must restore the persisted state without a rebuild.
-        const index2 = Lsp.createGmlSemanticIndex(store);
+        let restoredGenerationCount = 0;
+        const index2 = Lsp.createGmlSemanticIndex(store, () => {
+            restoredGenerationCount += 1;
+        });
         const state2 = await index2.buildForDocument(doc);
         assert.ok(state2, "A restarted semantic index must load previously persisted state");
         assert.equal(
@@ -918,6 +947,11 @@ void test("semantic index loads cache from disk on startup and saves updates to 
         assert.match(enumHoverText, /enum eCacheState \{/u);
         assert.match(enumHoverText, /cold = 0/u);
         assert.match(enumHoverText, /warm = 1/u);
+        assert.equal(
+            restoredGenerationCount,
+            0,
+            "Enum hover from a persisted full snapshot must not trigger project reanalysis."
+        );
     } finally {
         await cleanupProjectDir(projectRoot);
     }

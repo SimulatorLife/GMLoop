@@ -92,6 +92,36 @@ void test("TextMate grammar contains the shared JSON language inventory and scop
     }
 });
 
+void test("reserved syntax takes precedence over the generic function-call fallback", async () => {
+    const grammar = JSON.parse(await readFile(new URL("syntaxes/gml.tmLanguage.json", WORKSPACE_ROOT_URL), "utf8")) as {
+        patterns: Array<{ include: string }>;
+        repository: Record<string, { patterns: Array<{ match: string; name?: string }> }>;
+    };
+    const topLevelIncludes = grammar.patterns.map(({ include }) => include);
+    const functionCallIndex = topLevelIncludes.indexOf("#functionCalls");
+
+    for (const reservedGroup of ["#keywords", "#constants", "#wordOperators"]) {
+        assert.ok(
+            topLevelIncludes.indexOf(reservedGroup) < functionCallIndex,
+            `${reservedGroup} must be matched before generic function calls`
+        );
+    }
+
+    const keywordRule = grammar.repository.keywords.patterns[0];
+    assert.equal(keywordRule?.name, "keyword.control.gml");
+    const keywordPattern = new RegExp(keywordRule?.match ?? "", "u");
+    const functionCallPattern = new RegExp(grammar.repository.functionCalls.patterns[0]?.match ?? "", "u");
+    for (const keyword of ["if", "else", "for", "while", "repeat", "switch", "with"]) {
+        assert.match(keyword, keywordPattern);
+    }
+    for (const keyword of ["if", "for", "while", "repeat", "switch", "with"]) {
+        const sourceText = `${keyword} (condition)`;
+        assert.match(sourceText, functionCallPattern, `${keyword} exercises the generic-call ambiguity`);
+    }
+    assert.doesNotMatch("play_sound(condition)", keywordPattern);
+    assert.match("play_sound(condition)", functionCallPattern);
+});
+
 void test("VSIX staging includes the TextMate grammar", async () => {
     const packagingSource = await readFile(new URL("src/build-vsix-package.ts", WORKSPACE_ROOT_URL), "utf8");
     assert.match(packagingSource, /syntaxes\/gml\.tmLanguage\.json/u);

@@ -2,6 +2,7 @@ import { Core } from "@gmloop/core";
 
 type AstNodeRecord = Record<string, unknown>;
 
+/** Static member declaration discovered on a constructor. */
 export type ConstructorStaticMemberDeclarationRecord = {
     constructorName: string;
     declarationNode: AstNodeRecord;
@@ -9,14 +10,24 @@ export type ConstructorStaticMemberDeclarationRecord = {
     memberName: string;
 };
 
+/** Resolved reference to a constructor static member. */
 export type ConstructorStaticMemberReferenceRecord = {
     constructorName: string;
     memberIdentifier: AstNodeRecord;
     memberName: string;
 };
 
-export type ConstructorStaticMemberAnalysis = {
+type ConstructorInstanceVariableOccurrenceRecord = {
+    constructorName: string;
+    variableIdentifier: AstNodeRecord;
+    variableName: string;
+};
+
+/** Constructor-owned static-member and instance-variable facts collected from one AST. */
+export type ConstructorMemberAnalysis = {
     declarations: Array<ConstructorStaticMemberDeclarationRecord>;
+    instanceVariableDeclarations: Array<ConstructorInstanceVariableOccurrenceRecord>;
+    instanceVariableReferences: Array<ConstructorInstanceVariableOccurrenceRecord>;
     references: Array<ConstructorStaticMemberReferenceRecord>;
 };
 
@@ -253,6 +264,111 @@ function collectStaticFunctionNodes(constructorNode: AstNodeRecord): Array<AstNo
     return staticFunctionNodes;
 }
 
+function readAssignedInstanceVariableIdentifier(node: AstNodeRecord): AstNodeRecord | null {
+    if (node.type !== "AssignmentExpression" || !isAstNodeRecord(node.left)) {
+        return null;
+    }
+
+    if (readIdentifierName(node.left) !== null) {
+        const classifications = Core.asArray(node.left.classifications);
+        const hasLexicalDeclaration = isAstNodeRecord(node.left.declaration);
+        const isGlobal = classifications.includes("global") || node.left.isGlobalIdentifier === true;
+        return hasLexicalDeclaration || isGlobal ? null : node.left;
+    }
+
+    if (readSelfFieldName(node.left) === null || !isAstNodeRecord(node.left.property)) {
+        return null;
+    }
+
+    return node.left.property;
+}
+
+function collectInstanceVariableDeclarations(
+    constructorNode: AstNodeRecord,
+    constructorName: string
+): Array<ConstructorInstanceVariableOccurrenceRecord> {
+    const declarations: Array<ConstructorInstanceVariableOccurrenceRecord> = [];
+
+    traverseConstructorOwnedBodyNode(constructorNode.body, (node) => {
+        const variableIdentifier = readAssignedInstanceVariableIdentifier(node);
+        const variableName = readIdentifierName(variableIdentifier);
+        if (variableIdentifier === null || variableName === null) {
+            return;
+        }
+
+        declarations.push({ constructorName, variableIdentifier, variableName });
+    });
+
+    return declarations;
+}
+
+function collectInstanceVariableReferencesFromRoot(
+    root: unknown,
+    constructorName: string,
+    instanceVariableNames: ReadonlySet<string>,
+    declarationIdentifiers: WeakSet<object>
+): Array<ConstructorInstanceVariableOccurrenceRecord> {
+    const references: Array<ConstructorInstanceVariableOccurrenceRecord> = [];
+    const recordedIdentifiers = new WeakSet<object>();
+
+    traverseConstructorOwnedBodyNode(root, (node) => {
+        let variableIdentifier: AstNodeRecord | null = null;
+        if (node.type === "MemberDotExpression" && readSelfFieldName(node) !== null && isAstNodeRecord(node.property)) {
+            variableIdentifier = node.property;
+        } else if (node.type === "Identifier") {
+            const classifications = Core.asArray(node.classifications);
+            const hasLexicalDeclaration = isAstNodeRecord(node.declaration);
+            if (!classifications.includes("property") && !hasLexicalDeclaration) {
+                variableIdentifier = node;
+            }
+        }
+
+        const variableName = readIdentifierName(variableIdentifier);
+        if (
+            variableIdentifier === null ||
+            variableName === null ||
+            !instanceVariableNames.has(variableName) ||
+            declarationIdentifiers.has(variableIdentifier) ||
+            recordedIdentifiers.has(variableIdentifier)
+        ) {
+            return;
+        }
+
+        recordedIdentifiers.add(variableIdentifier);
+        references.push({ constructorName, variableIdentifier, variableName });
+    });
+
+    return references;
+}
+
+function collectInstanceVariableReferences(
+    constructorNode: AstNodeRecord,
+    constructorName: string,
+    declarations: ReadonlyArray<ConstructorInstanceVariableOccurrenceRecord>
+): Array<ConstructorInstanceVariableOccurrenceRecord> {
+    const instanceVariableNames = new Set(declarations.map((declaration) => declaration.variableName));
+    const declarationIdentifiers = new WeakSet(declarations.map((declaration) => declaration.variableIdentifier));
+    const references = collectInstanceVariableReferencesFromRoot(
+        constructorNode.body,
+        constructorName,
+        instanceVariableNames,
+        declarationIdentifiers
+    );
+
+    for (const functionNode of collectStaticFunctionNodes(constructorNode)) {
+        references.push(
+            ...collectInstanceVariableReferencesFromRoot(
+                functionNode.body,
+                constructorName,
+                instanceVariableNames,
+                declarationIdentifiers
+            )
+        );
+    }
+
+    return references;
+}
+
 function readReceiverConstructorName(
     receiverNode: unknown,
     receiverTypes: ReadonlyMap<string, string>,
@@ -301,8 +417,11 @@ function collectStaticFunctionReferences(
     return references;
 }
 
-export function collectConstructorStaticMemberAnalysis(ast: unknown): ConstructorStaticMemberAnalysis {
+/** Collect constructor member declarations and references without assigning project symbol identities. */
+export function collectConstructorMemberAnalysis(ast: unknown): ConstructorMemberAnalysis {
     const declarations: Array<ConstructorStaticMemberDeclarationRecord> = [];
+    const instanceVariableDeclarations: Array<ConstructorInstanceVariableOccurrenceRecord> = [];
+    const instanceVariableReferences: Array<ConstructorInstanceVariableOccurrenceRecord> = [];
     const references: Array<ConstructorStaticMemberReferenceRecord> = [];
 
     traverseAstNode(ast, (node) => {
@@ -315,9 +434,14 @@ export function collectConstructorStaticMemberAnalysis(ast: unknown): Constructo
             return;
         }
 
+        const constructorInstanceVariableDeclarations = collectInstanceVariableDeclarations(node, constructorName);
         declarations.push(...collectStaticMemberDeclarations(node, constructorName));
+        instanceVariableDeclarations.push(...constructorInstanceVariableDeclarations);
+        instanceVariableReferences.push(
+            ...collectInstanceVariableReferences(node, constructorName, constructorInstanceVariableDeclarations)
+        );
         references.push(...collectStaticFunctionReferences(node, collectReceiverTypes(node)));
     });
 
-    return { declarations, references };
+    return { declarations, instanceVariableDeclarations, instanceVariableReferences, references };
 }

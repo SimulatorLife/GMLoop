@@ -7,10 +7,7 @@ import { loadBuiltInIdentifiers } from "../symbols/built-in-identifiers.js";
 import { createProjectIndexAbortGuard, PROJECT_INDEX_BUILD_ABORT_MESSAGE } from "./abort-guard.js";
 import type { ProjectIndexBuildOptions } from "./build-options.js";
 import { clampConcurrency } from "./concurrency.js";
-import {
-    collectConstructorStaticMemberAnalysis,
-    type ConstructorStaticMemberAnalysis
-} from "./constructor-static-members.js";
+import { collectConstructorMemberAnalysis, type ConstructorMemberAnalysis } from "./constructor-members.js";
 import { createProjectIndexCoordinator as createProjectIndexCoordinatorCore } from "./coordinator.js";
 import { type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
 import { resolveProjectIndexParser } from "./gml-parser-facade.js";
@@ -1868,11 +1865,13 @@ function handleObjectEventAssignmentNode({
     scopeRecord,
     metrics,
     identifierSink,
-    parentMap
+    parentMap,
+    constructorInstanceVariableDeclarationIdentifiers
 }) {
     if (
         node?.type !== "AssignmentExpression" ||
         node.left?.type !== "Identifier" ||
+        constructorInstanceVariableDeclarationIdentifiers.has(node.left) ||
         (scopeDescriptor?.kind !== "objectEvent" && !isInsideConstructor(node, parentMap))
     ) {
         return;
@@ -1969,6 +1968,7 @@ function analyseGmlAst({
     lineOffsets = null,
     structVariableDeclarationScopeIds = new Set(),
     constructorStaticMemberDeclarationIdentifiers,
+    constructorInstanceVariableDeclarationIdentifiers,
     identifierSink,
     definitionsOnly = false,
     recordReferences = false
@@ -2045,7 +2045,8 @@ function analyseGmlAst({
             scopeRecord,
             metrics,
             identifierSink,
-            parentMap
+            parentMap,
+            constructorInstanceVariableDeclarationIdentifiers
         });
     });
 }
@@ -2082,10 +2083,60 @@ function analyseConstructorStaticMemberOccurrences({
     }
 }
 
-function collectConstructorStaticMemberDeclarationIdentifiers(
-    analysis: ConstructorStaticMemberAnalysis
-): WeakSet<object> {
+function analyseConstructorInstanceVariableOccurrences({
+    analysis,
+    builtInNames,
+    filePath,
+    identifierCollections,
+    scopeDescriptor,
+    identifierSink
+}) {
+    if (!identifierCollections) {
+        return;
+    }
+    const createConstructorScopeDescriptor = (constructorName) => ({
+        ...scopeDescriptor,
+        id: `${scopeDescriptor.id}:constructor:${constructorName}`,
+        kind: "constructor",
+        name: constructorName,
+        displayName: constructorName
+    });
+
+    for (const declaration of analysis.instanceVariableDeclarations) {
+        if (builtInNames.has(declaration.variableName)) {
+            continue;
+        }
+        registerInstanceAssignment({
+            identifierCollections,
+            identifierRecord: createIdentifierRecord(declaration.variableIdentifier),
+            filePath,
+            scopeDescriptor: createConstructorScopeDescriptor(declaration.constructorName),
+            identifierSink
+        });
+    }
+
+    for (const reference of analysis.instanceVariableReferences) {
+        if (builtInNames.has(reference.variableName)) {
+            continue;
+        }
+        registerInstanceOccurrence({
+            identifierCollections,
+            identifierRecord: createIdentifierRecord(reference.variableIdentifier),
+            filePath,
+            role: IdentifierRole.REFERENCE,
+            scopeDescriptor: createConstructorScopeDescriptor(reference.constructorName),
+            identifierSink
+        });
+    }
+}
+
+function collectConstructorStaticMemberDeclarationIdentifiers(analysis: ConstructorMemberAnalysis): WeakSet<object> {
     return new WeakSet(analysis.declarations.map((declaration) => declaration.memberIdentifier));
+}
+function collectConstructorInstanceVariableDeclarationIdentifiers(
+    analysis: ConstructorMemberAnalysis
+): WeakSet<object> {
+    return new WeakSet(analysis.instanceVariableDeclarations.map((declaration) => declaration.variableIdentifier));
 }
 function registerPendingConstructorStaticMemberReferences({
     identifierCollections,
@@ -2264,10 +2315,11 @@ async function processProjectGmlFile({
         projectRoot
     });
     const structVariableDeclarationScopeIds = collectConstructorVariableDeclarationScopeIds(ast);
-    const constructorStaticMemberAnalysis = collectConstructorStaticMemberAnalysis(ast);
-    const constructorStaticMemberDeclarationIdentifiers = collectConstructorStaticMemberDeclarationIdentifiers(
-        constructorStaticMemberAnalysis
-    );
+    const constructorMemberAnalysis = collectConstructorMemberAnalysis(ast);
+    const constructorStaticMemberDeclarationIdentifiers =
+        collectConstructorStaticMemberDeclarationIdentifiers(constructorMemberAnalysis);
+    const constructorInstanceVariableDeclarationIdentifiers =
+        collectConstructorInstanceVariableDeclarationIdentifiers(constructorMemberAnalysis);
     metrics.timers.timeSync("gml.analyse", () =>
         analyseGmlAst({
             ast,
@@ -2284,6 +2336,7 @@ async function processProjectGmlFile({
             lineOffsets,
             structVariableDeclarationScopeIds,
             constructorStaticMemberDeclarationIdentifiers,
+            constructorInstanceVariableDeclarationIdentifiers,
             identifierSink,
             definitionsOnly,
             recordReferences
@@ -2291,10 +2344,20 @@ async function processProjectGmlFile({
     );
     metrics.timers.timeSync("gml.constructorStaticMembers", () =>
         analyseConstructorStaticMemberOccurrences({
-            analysis: constructorStaticMemberAnalysis,
+            analysis: constructorMemberAnalysis,
             filePath: file.relativePath,
             identifierCollections,
             pendingConstructorStaticMemberReferences,
+            identifierSink
+        })
+    );
+    metrics.timers.timeSync("gml.constructorInstanceVariables", () =>
+        analyseConstructorInstanceVariableOccurrences({
+            analysis: constructorMemberAnalysis,
+            builtInNames,
+            filePath: file.relativePath,
+            identifierCollections,
+            scopeDescriptor,
             identifierSink
         })
     );

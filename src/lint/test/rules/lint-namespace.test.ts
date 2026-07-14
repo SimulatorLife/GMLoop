@@ -109,6 +109,7 @@ void test("config arrays are readonly FlatConfig[] values and share the pinned f
     assertEquals(recommendedGml.rules["gml/normalize-doc-param-separators"], "warn");
     assertEquals(recommendedGml.rules["gml/normalize-doc-param-undefined-defaults"], "warn");
     assertEquals(recommendedGml.rules["gml/require-region-pairs"], "error");
+    assertEquals(recommendedGml.rules["gml/normalize-operator-aliases"], undefined);
 
     assertEquals(recommendedFeather.plugins?.feather, Lint.featherPlugin);
     assertEquals(recommendedFeather.language, undefined);
@@ -154,6 +155,7 @@ void test("all config enables every registered rule at its recommended level", (
     for (const ruleId of gmlRuleIds) {
         assert.match(allRulesConfig.rules[ruleId] ?? "", /^(?:warn|error)$/u, `${ruleId} should be enabled`);
     }
+    assertEquals(allRulesConfig.rules["gml/normalize-operator-aliases"], "warn");
     for (const [ruleId, severity] of featherSeverityByRuleId) {
         assertEquals(allRulesConfig.rules[ruleId], severity, `${ruleId} should use its recommended severity`);
     }

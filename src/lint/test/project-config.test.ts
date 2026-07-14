@@ -122,6 +122,15 @@ void test("createLintRuleEntriesFromProjectConfig preserves explicit off entries
     assert.equal(ruleEntries["gml/no-scientific-notation"], "error");
 });
 
+void test("createLintRuleEntriesFromProjectConfig omits normalize-operator-aliases from recommended", () => {
+    const ruleEntries = createLintRuleEntriesFromProjectConfig({
+        lintRuleset: "recommended"
+    });
+
+    assert.equal(ruleEntries["gml/normalize-operator-aliases"], undefined);
+    assert.equal(ruleEntries["gml/no-scientific-notation"], "error");
+});
+
 void test("createLintRuleEntriesFromProjectConfig includes enabled preset rules", () => {
     const ruleEntries = createLintRuleEntriesFromProjectConfig({
         lintRuleset: "performance"

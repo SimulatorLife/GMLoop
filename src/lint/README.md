@@ -34,7 +34,7 @@ This wires:
 
 - `plugins.gml = Lint.plugin`
 - `language = "gml/gml"`
-- All recommended `gml/*` rule levels plus the conservative safe Feather subset
+- The curated recommended `gml/*` rule levels plus the conservative safe Feather subset
   (`gm1003`, `gm1009`, `gm1033`, `gm1041`, `gm1051`, `gm2007`, `gm2020`)
 
 ## Config Sets
@@ -42,7 +42,7 @@ This wires:
 `Lint.configs` exposes these immutable flat-config sets:
 
 - `all`: every `gml/*` and `feather/*` rule at its recommended level
-- `recommended`: all `gml/*` rules plus a conservative safe `feather/*` subset
+- `recommended`: the curated default `gml/*` rules plus a conservative safe `feather/*` subset
 - `feather`: `feather/gm####` overlay rules from the feather manifest
 
 Enable every lint rule with one config spread:
@@ -54,6 +54,9 @@ export default [...LintWorkspace.Lint.configs.all];
 ```
 
 The `all` config preserves each rule's recommended `"warn"` or `"error"` severity.
+
+`gml/normalize-operator-aliases` is intentionally omitted from `recommended`. Enable it explicitly or use
+`configs.all` when operator-alias diagnostics are desired.
 
 ## Language Behavior
 

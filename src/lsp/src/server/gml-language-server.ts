@@ -31,7 +31,11 @@ import {
     positionToOffset,
     uriToFilePath
 } from "../documents/index.js";
-import { createGmlSemanticIndex, type GmlSemanticFileChange } from "../intelligence/index.js";
+import {
+    createGmlSemanticIndex,
+    type GmlSemanticAnalysisStart,
+    type GmlSemanticFileChange
+} from "../intelligence/index.js";
 import { eslintMessageToDiagnostic, parserErrorToDiagnostic } from "../protocol/diagnostics.js";
 import { createSingleDocumentWorkspaceEdit, createWholeDocumentTextEdit } from "../protocol/edits.js";
 import {
@@ -172,6 +176,10 @@ function requestSemanticTokenRefresh(connection: GmlLanguageServerConnection): v
     });
 }
 
+function formatSemanticAnalysisStart(event: GmlSemanticAnalysisStart): string {
+    return `Semantic analysis started: ${event.tier} tier, ${event.scope} scope, ${event.affectedFileCount} affected file${event.affectedFileCount === 1 ? "" : "s"}, reason ${event.reason}.`;
+}
+
 /**
  * Create the GML language server and attach all protocol handlers to the connection.
  */
@@ -179,9 +187,15 @@ export function createGmlLanguageServer(
     connection = createConnection(ProposedFeatures.all, process.stdin, process.stdout)
 ) {
     const documents = createGmlDocumentStore();
-    const semanticIndex = createGmlSemanticIndex(documents, () => {
-        requestSemanticTokenRefresh(connection);
-    });
+    const semanticIndex = createGmlSemanticIndex(
+        documents,
+        () => {
+            requestSemanticTokenRefresh(connection);
+        },
+        (event) => {
+            connection.console.info(formatSemanticAnalysisStart(event));
+        }
+    );
     const lintRunner = createLintRunner(false);
     const lintFixRunner = createLintRunner(true);
     const pendingDiagnostics = new Map<string, NodeJS.Timeout>();

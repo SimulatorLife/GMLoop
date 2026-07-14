@@ -47,12 +47,16 @@ const RECOMMENDED_RULES: Readonly<Record<string, LintRuleLevel>> = Object.freeze
     "gml/no-assignment-in-condition": "warn",
     "gml/prefer-is-undefined-check": "warn",
     "gml/prefer-epsilon-comparisons": "warn",
-    "gml/normalize-operator-aliases": "warn",
     "gml/prefer-string-interpolation": "warn",
     "gml/optimize-math-expressions": "warn",
     "gml/require-argument-separators": "error",
     "gml/simplify-real-calls": "warn",
     "gml/no-negative-zero": "warn"
+});
+
+const ALL_GML_RULES: Readonly<Record<string, LintRuleLevel>> = Object.freeze({
+    ...RECOMMENDED_RULES,
+    "gml/normalize-operator-aliases": "warn"
 });
 
 const RECOMMENDED_SAFE_FEATHER_RULES: Readonly<Record<`feather/${string}`, LintRuleLevel>> = Object.freeze({
@@ -80,7 +84,7 @@ const FEATHER_RULES: Readonly<Record<`feather/${string}`, LintRuleLevel>> = Obje
 );
 
 const ALL_RULES: Readonly<Record<string, LintRuleLevel>> = Object.freeze({
-    ...RECOMMENDED_RULES,
+    ...ALL_GML_RULES,
     ...FEATHER_RULES
 });
 

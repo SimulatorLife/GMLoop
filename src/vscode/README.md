@@ -15,8 +15,10 @@ gmloop lsp
 
 GMLoop combines a TextMate grammar with semantic tokens from the language server. The grammar colors syntax
 immediately, including declarations, constructor types and parameters, enums, macros, member calls, JSDoc, and
-Unicode identifiers. Once the server has analyzed the document, semantic tokens distinguish built-ins, functions,
-constructors, parameters, local/global/instance variables, properties, enums, macros, and project resources.
+Unicode identifiers. Reserved syntax keeps its keyword or operator scope even when followed by parentheses, so
+paired control-flow syntax such as `if` and `else` receives consistent theme treatment. Once the server has analyzed
+the document, semantic tokens distinguish built-ins, functions, constructors, parameters, local/global/instance
+variables, properties, enums, macros, and project resources.
 
 Standalone `.gml` files receive declaration and bundled GameMaker built-in highlighting. Opening a folder containing
 a `.yyp` project adds project-aware definition/reference and resource classification. Unsaved document text is used
@@ -29,6 +31,14 @@ open hover tooltips.
 To inspect the scope and semantic token applied at the cursor, run VSCode's `Developer: Inspect Editor Tokens and
 Scopes` command. Color choices remain controlled by the active VSCode theme; GMLoop contributes standard TextMate
 scopes and standard LSP semantic token types rather than installing a custom theme.
+
+## Semantic Analysis Activity
+
+Run `GMLoop: Show Language Server Output` to see each semantic-analysis build as it starts. The output identifies
+the tier (`definitions` or `full`), scope (`incremental` or `project`), affected-file count, and reason. A
+`project`-scope `full` build is reserved for a full-capability request such as Find References or Rename when no
+current full snapshot is available; ordinary hovers, completions, and document opens use definitions facts and do
+not trigger one.
 
 ## Prerequisites
 

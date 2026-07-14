@@ -37,7 +37,7 @@ The extension contributes:
 
 For semantic navigation features such as definitions, references, workspace symbols, and rename, open a folder that contains or is nested under a GameMaker `.yyp` project so the semantic project root can be discovered.
 
-Hover distinguishes inspectable symbols from language syntax. Project symbols and documented runtime built-ins such as functions, `sprite_index`, and `visible` provide tooltips; keywords such as `function`, `var`, `constructor`, `if`, `else`, and `repeat` do not. For documented callable project symbols, including constructor static methods, the tooltip includes the description, parameter names and types, and return information.
+Hover distinguishes inspectable symbols from language syntax. Project symbols and documented runtime built-ins such as functions, `sprite_index`, and `visible` provide tooltips; keywords such as `function`, `var`, `constructor`, `if`, `else`, and `repeat` do not. Constructor-owned instance variables resolve from both bare references and `self`-qualified references inside static methods, and their tooltips link to the defining assignment. For documented callable project symbols, including constructor static methods, the tooltip includes the description, parameter names and types, and return information.
 
 Game projects initialized with `gmloop agent-pack init --vscode` receive project-local `.vscode/settings.json` and `.vscode/extensions.json` files for this setup. The command also makes a best-effort attempt to install the GMLoop VSCode extension through the `code` CLI.
 

@@ -87,11 +87,12 @@ void test("semantic highlighting orders tokens and carries built-in deprecation"
     assert.equal(tokens[1]?.kind, "namespace");
 });
 
-void test("syntax-only catalog entries do not override TextMate keyword scopes", () => {
+void test("syntax-only catalog entries do not override TextMate scopes for control flow and operators", () => {
+    const syntaxNames = ["if", "else", "for", "while", "repeat", "switch", "with", "not"];
     const tokens = Semantic.collectGmlSemanticHighlights({
-        sourceText: "if true",
+        sourceText: "if (true) else for (item) while (not done) repeat (count) switch (value) with (target)",
         builtIns: [
-            { name: "if", type: "keyword", deprecated: false },
+            ...syntaxNames.map((name) => ({ name, type: "keyword" as const, deprecated: false })),
             { name: "true", type: "literal", deprecated: false }
         ],
         projectIdentifiers: [],

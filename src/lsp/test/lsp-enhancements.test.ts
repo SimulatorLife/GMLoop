@@ -269,9 +269,20 @@ void test("LSP: static sound helper exposes complete hover and highlighting fact
             typeof soundsHover?.contents === "object" && "value" in soundsHover.contents
                 ? soundsHover.contents.value
                 : "";
+        const upgradedState = await semanticIndex.buildForDocument(document);
+        assert.equal(upgradedState?.lightweight, false);
+        const soundsOccurrence = upgradedState?.index.occurrencesByFilePath
+            .get(path.resolve(proj.scriptPath))
+            ?.find((occurrence) => occurrence.location.range.start === soundsUseOffset);
+        assert.ok(soundsOccurrence, "expected the full navigation index to contain the sounds reference");
+        const soundsReferences = await semanticIndex.findReferences(document, soundsUseOffset, "sounds", true);
+        assert.ok(soundsReferences.length >= 2, "expected constructor field definition and references");
+        const soundsDefinition = await semanticIndex.findDefinition(document, soundsUseOffset, "sounds");
+        assert.equal(soundsDefinition?.uri, document.uri);
+        assert.deepEqual(soundsDefinition?.range.start, { line: 1, character: 4 });
         assert.match(soundsHoverText, /sounds/u);
         assert.match(soundsHoverText, /instanceVariable/u);
-        assert.match(soundsHoverText, /scripts\/ActorSoundManager\/ActorSoundManager\.gml:2:5/u);
+        assert.match(soundsHoverText, /scripts\/ActorSoundManager\/ActorSoundManager\.gml/u);
         assert.match(await hoverText("sound_action"), /parameter/u);
         assert.match(await hoverText("sound_list"), /localVariable/u);
         for (const builtIn of ["struct_get", "is_undefined"]) {
@@ -287,6 +298,7 @@ void test("LSP: static sound helper exposes complete hover and highlighting fact
                 .map((highlight) => highlight.kind);
         assert.deepEqual(kindsFor("sound_action"), ["parameter", "parameter", "parameter"]);
         assert.deepEqual(kindsFor("sound_list"), ["variable", "variable", "variable", "variable", "variable"]);
+        assert.deepEqual(kindsFor("sounds"), ["property", "property", "property"]);
         assert.deepEqual(kindsFor("struct_get"), ["function"]);
         assert.deepEqual(kindsFor("is_undefined"), ["function"]);
         assert.deepEqual(kindsFor("push"), ["method"]);
