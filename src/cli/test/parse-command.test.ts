@@ -28,6 +28,7 @@ void test("createParseCommand exposes shared parse options and optional position
     assert.ok(command.options.some((option) => option.long === "--write"));
     assert.ok(command.options.some((option) => option.long === "--list"));
     assert.ok(command.options.some((option) => option.long === "--verbose"));
+    assert.ok(command.options.some((option) => option.long === "--on-parse-error"));
 });
 
 void test("parse --help output documents command examples and shared options", async () => {
@@ -42,6 +43,8 @@ void test("parse --help output documents command examples and shared options", a
     assert.match(stdout, /--write/);
     assert.match(stdout, /--list/);
     assert.match(stdout, /--verbose/);
+    assert.match(stdout, /--on-parse-error <mode>/);
+    assert.match(stdout, /skip\|abort/);
 });
 
 void test("parse --list prints command settings and exits without parsing", async () => {
@@ -55,7 +58,20 @@ void test("parse --list prints command settings and exits without parsing", asyn
         assert.match(result.stdout, /Target path:/);
         assert.match(result.stdout, /Execution mode: dry-run \(stdout AST JSON\)/);
         assert.match(result.stdout, /Verbose mode: enabled/);
+        assert.match(result.stdout, /Parse error mode: abort/);
         assert.match(result.stdout, /Output: stdout/);
+    });
+});
+
+void test("parse --list reflects explicit --on-parse-error setting", async () => {
+    await withTemporaryDirectory(async (temporaryDirectory) => {
+        const result = await runCliTestCommand({
+            argv: ["parse", "--path", temporaryDirectory, "--list", "--on-parse-error", "skip"]
+        });
+
+        assert.equal(result.exitCode, 0);
+        assert.equal(result.stderr, "");
+        assert.match(result.stdout, /Parse error mode: skip/);
     });
 });
 
@@ -149,5 +165,108 @@ void test("parse accepts a .yyp target path and parses project .gml files", asyn
         assert.equal(result.exitCode, 0);
         assert.equal(result.stderr, "");
         await access(path.join(temporaryDirectory, "scripts", "demo", "demo.gml.ast.json"));
+    });
+});
+
+const MALFORMED_GML_SOURCE = ["function broken() {", "    if (x {", "        return 1", "}", ""].join("\n");
+
+void test("parse --on-parse-error abort (default) surfaces a clear, actionable error and exits non-zero", async () => {
+    await withTemporaryDirectory(async (temporaryDirectory) => {
+        await writeFile(path.join(temporaryDirectory, "valid.gml"), "var value = 1;\n", "utf8");
+        await writeFile(path.join(temporaryDirectory, "broken.gml"), MALFORMED_GML_SOURCE, "utf8");
+
+        const result = await runCliTestCommand({
+            argv: ["parse", "--path", temporaryDirectory]
+        });
+
+        assert.notEqual(result.exitCode, 0, "Expected non-zero exit when parse errors abort the run");
+        assert.match(
+            result.stderr,
+            /Failed to parse .*broken\.gml/,
+            "Expected stderr to mention the failing file by name"
+        );
+        assert.match(result.stderr, /Syntax Error/, "Expected stderr to surface the underlying parser error");
+        assert.match(
+            result.stderr,
+            /Adjust --on-parse-error \(skip or abort\) to change how parser failures are handled\./,
+            "Expected actionable hint pointing at --on-parse-error"
+        );
+    });
+});
+
+void test("parse --on-parse-error skip continues, reports failures, and emits AST for valid files", async () => {
+    await withTemporaryDirectory(async (temporaryDirectory) => {
+        await writeFile(path.join(temporaryDirectory, "first.gml"), "var first = 1;\n", "utf8");
+        await writeFile(path.join(temporaryDirectory, "second.gml"), "var second = 2;\n", "utf8");
+        await writeFile(path.join(temporaryDirectory, "broken.gml"), MALFORMED_GML_SOURCE, "utf8");
+
+        const result = await runCliTestCommand({
+            argv: ["parse", "--path", temporaryDirectory, "--on-parse-error", "skip"]
+        });
+
+        assert.equal(result.exitCode, 0, "Skip mode should not propagate parser failures as errors");
+        assert.match(
+            result.stderr,
+            /Failed to parse .*broken\.gml/,
+            "Expected stderr to call out the failing file even in skip mode"
+        );
+        assert.match(
+            result.stderr,
+            /Skipped 1 file due to parse errors\./,
+            "Expected summary that mentions skipped parse failures"
+        );
+        assert.match(
+            result.stderr,
+            /Adjust --on-parse-error \(skip or abort\)/,
+            "Expected actionable hint pointing at --on-parse-error"
+        );
+
+        const parsedOutput = JSON.parse(result.stdout) as {
+            files?: Array<{ path?: string }>;
+        };
+        const parsedFileNames = (parsedOutput.files ?? []).map((entry) => entry.path ?? "");
+        assert.ok(
+            parsedFileNames.some((name) => name.endsWith("first.gml")),
+            "Expected valid file AST in stdout payload"
+        );
+        assert.ok(
+            parsedFileNames.some((name) => name.endsWith("second.gml")),
+            "Expected second valid file AST in stdout payload"
+        );
+        assert.ok(
+            !parsedFileNames.some((name) => name.endsWith("broken.gml")),
+            "Expected malformed file to be excluded from stdout payload"
+        );
+    });
+});
+
+void test("parse --on-parse-error skip writes AST artifacts only for files that parse", async () => {
+    await withTemporaryDirectory(async (temporaryDirectory) => {
+        await writeFile(path.join(temporaryDirectory, "valid.gml"), "var value = 1;\n", "utf8");
+        await writeFile(path.join(temporaryDirectory, "broken.gml"), MALFORMED_GML_SOURCE, "utf8");
+
+        const result = await runCliTestCommand({
+            argv: ["parse", "--path", temporaryDirectory, "--on-parse-error", "skip", "--write"]
+        });
+
+        assert.equal(result.exitCode, 0);
+        assert.match(result.stdout, /Wrote .*valid\.gml\.ast\.json/);
+        assert.match(result.stdout, /Parsed and wrote 1 AST JSON file\./);
+        assert.match(result.stderr, /Skipped 1 file due to parse errors\./);
+
+        await access(path.join(temporaryDirectory, "valid.gml.ast.json"));
+        await assert.rejects(access(path.join(temporaryDirectory, "broken.gml.ast.json")));
+    });
+});
+
+void test("parse --on-parse-error rejects invalid mode values", async () => {
+    await withTemporaryDirectory(async (temporaryDirectory) => {
+        const result = await runCliTestCommand({
+            argv: ["parse", "--path", temporaryDirectory, "--on-parse-error", "bogus"]
+        });
+
+        assert.notEqual(result.exitCode, 0);
+        assert.match(result.stderr, /invalid/);
+        assert.match(result.stderr, /skip|abort/);
     });
 });

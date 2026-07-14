@@ -4,11 +4,11 @@ import process from "node:process";
 
 import { Core } from "@gmloop/core";
 import * as ParserWorkspace from "@gmloop/parser";
-import { Command } from "commander";
+import { Command, InvalidArgumentError, Option } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import type { CommanderCommandLike } from "../cli-core/commander-types.js";
-import { CliUsageError } from "../cli-core/errors.js";
+import { CliUsageError, formatCliError } from "../cli-core/errors.js";
 import {
     createListOption,
     createPathOption,
@@ -23,11 +23,26 @@ const AST_JSON_EXTENSION = ".ast.json";
 const PARSE_COMMAND_CLI_EXAMPLE = "pnpm dlx gmloop parse --path path/to/script.gml";
 const PARSE_COMMAND_FIX_EXAMPLE = "pnpm dlx gmloop parse --write --path path/to/project";
 
+const ParseErrorAction = Object.freeze({
+    SKIP: "skip",
+    ABORT: "abort"
+});
+type ParseErrorActionValue = (typeof ParseErrorAction)[keyof typeof ParseErrorAction];
+
+const VALID_PARSE_ERROR_ACTIONS = new Set(Object.values(ParseErrorAction));
+
+const DEFAULT_PARSE_ERROR_ACTION: ParseErrorActionValue = ParseErrorAction.ABORT;
+
+const parseErrorActionOption = Core.createEnumeratedOptionHelpers(VALID_PARSE_ERROR_ACTIONS, {
+    formatError: (list) => `Must be one of: ${list}`
+});
+
 type ParseCommandOptions = {
     write?: boolean;
     list?: boolean;
     path?: string;
     verbose?: boolean;
+    onParseError?: string;
 };
 
 type ParseCommandSettings = {
@@ -35,6 +50,13 @@ type ParseCommandSettings = {
     writeMode: boolean;
     list: boolean;
     verbose: boolean;
+    onParseError: ParseErrorActionValue;
+};
+
+type ParseFailureRecord = {
+    filePath: string;
+    displayPath: string;
+    error: unknown;
 };
 
 type ParsedGmlAst = Record<string, unknown>;
@@ -60,6 +82,10 @@ function resolveCommandOptions(command: CommanderCommandLike): ParseCommandOptio
     return command.opts();
 }
 
+function normalizeParseErrorAction(value: unknown): ParseErrorActionValue {
+    return parseErrorActionOption.requireValue(value, InvalidArgumentError) as ParseErrorActionValue;
+}
+
 function resolveParseCommandSettings(command: CommanderCommandLike): ParseCommandSettings {
     const options = resolveCommandOptions(command);
     // Positional argument takes precedence over --path option.
@@ -67,11 +93,19 @@ function resolveParseCommandSettings(command: CommanderCommandLike): ParseComman
     const explicitTargetPath = resolveExplicitWorkflowTargetPath(positionalPath ?? options.path);
     const targetPath = explicitTargetPath ?? path.resolve(process.cwd(), ".");
 
+    const requestedAction =
+        typeof options.onParseError === "string" && options.onParseError.length > 0
+            ? options.onParseError
+            : DEFAULT_PARSE_ERROR_ACTION;
+    const onParseError = (parseErrorActionOption.normalize(requestedAction) ??
+        DEFAULT_PARSE_ERROR_ACTION) as ParseErrorActionValue;
+
     return {
         targetPath,
         writeMode: Boolean(options.write),
         list: Boolean(options.list),
-        verbose: Boolean(options.verbose)
+        verbose: Boolean(options.verbose),
+        onParseError
     };
 }
 
@@ -81,6 +115,7 @@ function printParseCommandSettings(settings: ParseCommandSettings): void {
         `Execution mode: ${settings.writeMode ? "write AST JSON files (--write)" : "dry-run (stdout AST JSON)"}`
     );
     console.log(`Verbose mode: ${settings.verbose ? "enabled" : "disabled"}`);
+    console.log(`Parse error mode: ${settings.onParseError}`);
     console.log(`Output: ${settings.writeMode ? `sibling *${AST_JSON_EXTENSION} files` : "stdout"}`);
 }
 
@@ -195,16 +230,84 @@ function logVerboseParseSummary(filePath: string): void {
     console.error(`Parsed ${formatPathForDisplay(filePath)}`);
 }
 
-async function parseAndLogTargetFile(filePath: string, verbose: boolean): Promise<ParsedFileAst> {
-    const parsedFile = await parseFileToAst(filePath);
-    if (verbose) {
-        logVerboseParseSummary(filePath);
-    }
-    return parsedFile;
+function logParseFailureHeader(displayPath: string): void {
+    console.error(`Failed to parse ${displayPath}`);
 }
 
-function parseTargetFiles(filePaths: ReadonlyArray<string>, verbose: boolean): Promise<Array<ParsedFileAst>> {
-    return mapSequentially(filePaths, (filePath) => parseAndLogTargetFile(filePath, verbose));
+function logParseFailureDetails(error: unknown): void {
+    const formattedError = formatCliError(error);
+    if (!formattedError) {
+        return;
+    }
+
+    const indented = formattedError
+        .split("\n")
+        .map((line) => `  ${line}`)
+        .join("\n");
+    console.error(indented);
+}
+
+type ParseTargetRunResult = {
+    parsedFiles: Array<ParsedFileAst>;
+    failures: Array<ParseFailureRecord>;
+};
+
+async function tryParseTargetFile(
+    filePath: string,
+    verbose: boolean
+): Promise<{
+    parsedFile?: ParsedFileAst;
+    failure?: ParseFailureRecord;
+}> {
+    try {
+        const parsedFile = await parseFileToAst(filePath);
+        if (verbose) {
+            logVerboseParseSummary(filePath);
+        }
+        return { parsedFile };
+    } catch (error) {
+        return {
+            failure: {
+                filePath,
+                displayPath: formatPathForDisplay(filePath),
+                error
+            }
+        };
+    }
+}
+
+async function parseTargetFilesWithFailures(
+    filePaths: ReadonlyArray<string>,
+    verbose: boolean,
+    onParseError: ParseErrorActionValue
+): Promise<ParseTargetRunResult> {
+    const parsedFiles: Array<ParsedFileAst> = [];
+    const failures: Array<ParseFailureRecord> = [];
+
+    await Core.runSequentially(filePaths, async (filePath) => {
+        const result = await tryParseTargetFile(filePath, verbose);
+
+        if (result.failure) {
+            failures.push(result.failure);
+            if (onParseError === ParseErrorAction.ABORT) {
+                logParseFailureHeader(result.failure.displayPath);
+                logParseFailureDetails(result.failure.error);
+                throw new CliUsageError(
+                    `Parse command failed. Review the errors above for details. Adjust --on-parse-error (skip or abort) to change how parser failures are handled.`
+                );
+            }
+
+            logParseFailureHeader(result.failure.displayPath);
+            logParseFailureDetails(result.failure.error);
+            return;
+        }
+
+        if (result.parsedFile) {
+            parsedFiles.push(result.parsedFile);
+        }
+    });
+
+    return { parsedFiles, failures };
 }
 
 function writeParsedAstJsonFiles(parsedFiles: ReadonlyArray<ParsedFileAst>): Promise<Array<string>> {
@@ -230,12 +333,33 @@ function printNoMatchingFilesMessage(targetPath: string): void {
     );
 }
 
+function printSkippedParseFailureSummary(failures: ReadonlyArray<ParseFailureRecord>): void {
+    if (failures.length === 0) {
+        return;
+    }
+
+    const failureLabel = failures.length === 1 ? "file" : "files";
+    console.error(
+        [
+            `Skipped ${failures.length} ${failureLabel} due to parse errors.`,
+            "Adjust --on-parse-error (skip or abort) to change how parser failures are handled."
+        ].join(" ")
+    );
+}
+
 /**
  * Create the CLI command that exposes `@gmloop/parser` AST output.
  *
  * @returns Commander command definition for parsing `.gml` targets.
  */
 export function createParseCommand(): Command {
+    const parseErrorOption = new Option(
+        "--on-parse-error <mode>",
+        "Parser failure handling: skip|abort. Default: abort"
+    )
+        .argParser((value) => normalizeParseErrorAction(value))
+        .default(DEFAULT_PARSE_ERROR_ACTION, DEFAULT_PARSE_ERROR_ACTION);
+
     return applyStandardCommandOptions(
         new Command("parse")
             .usage("[path] [options]")
@@ -244,6 +368,7 @@ export function createParseCommand(): Command {
             .addOption(createPathOption())
             .addOption(createWriteOption())
             .addOption(createListOption())
+            .addOption(parseErrorOption)
             .addOption(createVerboseOption())
             .addHelpText("after", () =>
                 ["", "Examples:", `  ${PARSE_COMMAND_CLI_EXAMPLE}`, `  ${PARSE_COMMAND_FIX_EXAMPLE}`, ""].join("\n")
@@ -271,12 +396,22 @@ export async function runParseCommand(command: CommanderCommandLike): Promise<vo
         return;
     }
 
-    const parsedFiles = await parseTargetFiles(filePaths, settings.verbose);
-    if (!settings.writeMode) {
+    const { parsedFiles, failures } = await parseTargetFilesWithFailures(
+        filePaths,
+        settings.verbose,
+        settings.onParseError
+    );
+
+    if (parsedFiles.length > 0 && !settings.writeMode) {
         printDryRunAstJson(parsedFiles);
-        return;
     }
 
-    const outputPaths = await writeParsedAstJsonFiles(parsedFiles);
-    printWriteModeSummary(outputPaths);
+    if (settings.writeMode && parsedFiles.length > 0) {
+        const outputPaths = await writeParsedAstJsonFiles(parsedFiles);
+        printWriteModeSummary(outputPaths);
+    }
+
+    if (failures.length > 0 && settings.onParseError === ParseErrorAction.SKIP) {
+        printSkippedParseFailureSummary(failures);
+    }
 }
