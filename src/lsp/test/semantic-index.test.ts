@@ -252,7 +252,7 @@ void test("semantic index refreshes project facts after an external resource met
             uri: Lsp.filePathToUri(fixture.sourcePath),
             languageId: "gml",
             version: 1,
-            text: fixture.sourceText
+            text: `${fixture.sourceText  }\n// dirty`
         });
         const semanticIndex = Lsp.createGmlSemanticIndex(store);
         await semanticIndex.buildForDocument(document);
@@ -793,7 +793,7 @@ void test("semantic index performs incremental updates on document refresh", asy
             uri: Lsp.filePathToUri(aPath),
             languageId: "gml",
             version: 1,
-            text: "function a_func() { return 1; }"
+            text: "function a_func() { return 1; }\n// dirty"
         });
         const docB = store.open({
             uri: Lsp.filePathToUri(bPath),

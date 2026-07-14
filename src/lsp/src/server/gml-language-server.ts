@@ -33,6 +33,7 @@ import {
 } from "../documents/index.js";
 import {
     createGmlSemanticIndex,
+    type GmlSemanticAnalysisFinish,
     type GmlSemanticAnalysisStart,
     type GmlSemanticFileChange
 } from "../intelligence/index.js";
@@ -176,6 +177,12 @@ function requestSemanticTokenRefresh(connection: GmlLanguageServerConnection): v
     });
 }
 
+const isLocalDebug =
+    process.env.GMLOOP_LSP_DEBUG === "true" ||
+    process.env.GMLOOP_DEBUG === "true" ||
+    process.env.NODE_ENV !== "production" ||
+    !import.meta.url.includes("node_modules");
+
 function formatSemanticAnalysisStart(event: GmlSemanticAnalysisStart): string {
     const scopeDescription =
         event.scope === "project"
@@ -184,12 +191,37 @@ function formatSemanticAnalysisStart(event: GmlSemanticAnalysisStart): string {
     return `Semantic analysis started: ${event.tier} tier, ${event.scope} scope (${scopeDescription}), reason ${event.reason}.`;
 }
 
+function formatSemanticAnalysisFinish(event: GmlSemanticAnalysisFinish): string {
+    const scopeDescription =
+        event.scope === "project"
+            ? "all project files"
+            : `${event.affectedFileCount} affected file${event.affectedFileCount === 1 ? "" : "s"}`;
+    const duration = `${event.durationMs}ms`;
+    if (event.status === "success") {
+        return `Semantic analysis completed: ${event.tier} tier, ${event.scope} scope (${scopeDescription}), took ${duration}.`;
+    } else if (event.status === "aborted") {
+        return `Semantic analysis aborted: ${event.tier} tier, ${event.scope} scope (${scopeDescription}), took ${duration}.`;
+    } else {
+        return `Semantic analysis failed: ${event.tier} tier, ${event.scope} scope (${scopeDescription}), took ${duration}. Error: ${event.errorMessage ?? "Unknown error"}`;
+    }
+}
+
 /**
  * Create the GML language server and attach all protocol handlers to the connection.
  */
 export function createGmlLanguageServer(
     connection = createConnection(ProposedFeatures.all, process.stdin, process.stdout)
 ) {
+    const debugLog = (message: string): void => {
+        if (isLocalDebug && typeof connection.console?.info === "function") {
+            connection.console.info(`[Debug] ${message}`);
+        }
+    };
+
+    if (isLocalDebug && typeof connection.console?.info === "function") {
+        connection.console.info("[Debug] GMLoop LSP server started in local debug mode.");
+    }
+
     const documents = createGmlDocumentStore();
     const semanticIndex = createGmlSemanticIndex(
         documents,
@@ -197,7 +229,14 @@ export function createGmlLanguageServer(
             requestSemanticTokenRefresh(connection);
         },
         (event) => {
-            connection.console.info(formatSemanticAnalysisStart(event));
+            if (typeof connection.console?.info === "function") {
+                connection.console.info(formatSemanticAnalysisStart(event));
+            }
+        },
+        (event) => {
+            if (typeof connection.console?.info === "function") {
+                connection.console.info(formatSemanticAnalysisFinish(event));
+            }
         }
     );
     const lintRunner = createLintRunner(false);
@@ -282,6 +321,7 @@ export function createGmlLanguageServer(
     });
 
     connection.onDidOpenTextDocument(({ textDocument }) => {
+        debugLog(`Opened document: ${textDocument.uri}`);
         const document = documents.open(textDocument);
         // Start semantic readiness first. Diagnostics are intentionally
         // independent so parser/lint work cannot delay the first hover.
@@ -295,6 +335,7 @@ export function createGmlLanguageServer(
     });
 
     connection.onDidChangeTextDocument(({ textDocument, contentChanges }) => {
+        debugLog(`Changed document: ${textDocument.uri} (version ${textDocument.version})`);
         const document = documents.update(textDocument.uri, textDocument.version, contentChanges);
         if (!document) {
             return;
@@ -335,6 +376,7 @@ export function createGmlLanguageServer(
     });
 
     connection.onDidSaveTextDocument(({ textDocument }) => {
+        debugLog(`Saved document: ${textDocument.uri}`);
         const existingTimer = pendingDiagnostics.get(textDocument.uri);
         if (existingTimer) {
             clearTimeout(existingTimer);
@@ -357,6 +399,7 @@ export function createGmlLanguageServer(
     });
 
     connection.onDidCloseTextDocument(({ textDocument }) => {
+        debugLog(`Closed document: ${textDocument.uri}`);
         const existingTimer = pendingDiagnostics.get(textDocument.uri);
         if (existingTimer) {
             clearTimeout(existingTimer);

@@ -130,3 +130,49 @@ void test("buildSemanticFileManifest avoids reading unchanged files when previou
         initialManifest.entries.get("main.gml")?.contentHash
     );
 });
+
+void test("buildSemanticFileManifest treats matching overlays as disk origin to enable persistent caching", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-manifest-overlay-clean-"));
+    const sourcePath = path.join(projectRoot, "main.gml");
+    await writeFile(sourcePath, "return 1;", "utf8");
+
+    // Clean overlay (matches disk content exactly)
+    const overlays = [
+        {
+            absolutePath: sourcePath,
+            contentHash: createSemanticContentHash("return 1;"),
+            documentVersion: 2,
+            sourceText: "return 1;"
+        }
+    ];
+
+    const manifest = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade, overlays);
+    const entry = manifest.entries.get("main.gml");
+
+    assert.ok(entry);
+    assert.equal(entry.sourceOrigin, "disk", "Clean overlay should resolve to disk origin");
+    assert.equal(entry.sourceVersion, null, "Clean overlay should clear source version");
+});
+
+void test("buildSemanticFileManifest treats mismatched/dirty overlays as openBuffer origin to block persistent caching", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-manifest-overlay-dirty-"));
+    const sourcePath = path.join(projectRoot, "main.gml");
+    await writeFile(sourcePath, "return 1;", "utf8");
+
+    // Dirty overlay (differs from disk content)
+    const overlays = [
+        {
+            absolutePath: sourcePath,
+            contentHash: createSemanticContentHash("return 2;"),
+            documentVersion: 2,
+            sourceText: "return 2;"
+        }
+    ];
+
+    const manifest = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade, overlays);
+    const entry = manifest.entries.get("main.gml");
+
+    assert.ok(entry);
+    assert.equal(entry.sourceOrigin, "openBuffer", "Dirty overlay must resolve to openBuffer origin");
+    assert.equal(entry.sourceVersion, 2, "Dirty overlay must preserve source version");
+});

@@ -174,14 +174,23 @@ export async function buildSemanticFileManifest(
             }
 
             const sourceText = overlay ? overlay.sourceText : await fsFacade.readFile(absolutePath, "utf8");
+            let isOverlayUnsaved = false;
+            if (overlay) {
+                try {
+                    const diskText = await Core.defaultFsFacade.readFile(absolutePath, "utf8");
+                    isOverlayUnsaved = diskText !== overlay.sourceText;
+                } catch {
+                    isOverlayUnsaved = true;
+                }
+            }
             return Object.freeze({
                 contentHash: overlay?.contentHash ?? createContentHash(sourceText),
                 fileKind: classifyManifestFile(relativePath),
                 mtimeMs: file.mtimeMs,
                 relativePath,
                 sizeBytes: Buffer.byteLength(sourceText, "utf8"),
-                sourceOrigin: overlay ? "openBuffer" : "disk",
-                sourceVersion: overlay?.documentVersion ?? null
+                sourceOrigin: isOverlayUnsaved ? "openBuffer" : "disk",
+                sourceVersion: isOverlayUnsaved ? (overlay?.documentVersion ?? null) : null
             });
         },
         16
@@ -231,6 +240,15 @@ export async function updateSemanticFileManifest(
                 return Object.freeze({ entry: null, relativePath });
             }
             const sourceText = overlay?.sourceText ?? (await fsFacade.readFile(changedPath, "utf8"));
+            let isOverlayUnsaved = false;
+            if (overlay !== undefined) {
+                try {
+                    const diskText = await Core.defaultFsFacade.readFile(changedPath, "utf8");
+                    isOverlayUnsaved = diskText !== overlay.sourceText;
+                } catch {
+                    isOverlayUnsaved = true;
+                }
+            }
             return Object.freeze({
                 relativePath,
                 entry: Object.freeze({
@@ -239,8 +257,8 @@ export async function updateSemanticFileManifest(
                     mtimeMs: typeof stats?.mtimeMs === "number" ? stats.mtimeMs : null,
                     relativePath,
                     sizeBytes: Buffer.byteLength(sourceText, "utf8"),
-                    sourceOrigin: overlay === undefined ? "disk" : "openBuffer",
-                    sourceVersion: overlay?.documentVersion ?? null
+                    sourceOrigin: isOverlayUnsaved ? "openBuffer" : "disk",
+                    sourceVersion: isOverlayUnsaved ? (overlay?.documentVersion ?? null) : null
                 })
             });
         },
