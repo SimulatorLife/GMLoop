@@ -57,6 +57,7 @@ export type {
 export * as Runtime from "./browser/runtime/index.js";
 export type {
     MessageEventLike,
+    PatchAppliedAcknowledgement,
     PatchQueueMetrics,
     PatchQueueOptions,
     PatchQueueState,

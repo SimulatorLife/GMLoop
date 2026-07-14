@@ -42,6 +42,9 @@ function startStatusServer(
 ) {
     let statusRequestCount = 0;
     const state = {
+        lastAppliedPatch: null as { id: string; revision: string } | null,
+        appliedPatchClients: [] as Array<{ id: string; revision: string }>,
+        lastPatchRevision: null as string | null,
         patches: [...initialPatches],
         scanComplete: true,
         uptimeMs: 100,
@@ -101,6 +104,51 @@ void test("live-reload wait-for-patch succeeds instantly if a new patch exists",
         assert.equal(payload.payload.patches.length, 1);
         assert.equal(payload.payload.patches[0]?.patchId, "patch-1");
     } finally {
+        await server.close();
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("live-reload wait-for-patch can require a new runtime-applied revision", async () => {
+    const port = 60_997;
+    const projectRoot = await createTempSessionProject(port);
+    const server = startStatusServer(port, [{ patchId: "gml/script/player" }]);
+    server.state.lastPatchRevision = "revision-1";
+    server.state.lastAppliedPatch = { id: "gml/script/player", revision: "revision-1" };
+    server.state.appliedPatchClients = [{ id: "gml/script/player", revision: "revision-1" }];
+    await server.listen();
+
+    const timer = setTimeout(() => {
+        server.state.lastPatchRevision = "revision-2";
+        server.state.lastAppliedPatch = { id: "gml/script/player", revision: "revision-2" };
+        server.state.appliedPatchClients = [{ id: "gml/script/player", revision: "revision-2" }];
+    }, 100);
+
+    try {
+        const result = await runCliTestCommand({
+            argv: [
+                "live-reload",
+                "wait-for-patch",
+                "--require-applied",
+                "--since-revision",
+                "revision-1",
+                "--path",
+                projectRoot,
+                "--poll-interval-ms",
+                "25",
+                "--timeout-ms",
+                "1000"
+            ]
+        });
+        assert.equal(result.exitCode, 0);
+        const payload = JSON.parse(result.stdout) as {
+            ok: boolean;
+            payload: { lastAppliedPatch: { revision: string } };
+        };
+        assert.equal(payload.ok, true);
+        assert.equal(payload.payload.lastAppliedPatch.revision, "revision-2");
+    } finally {
+        clearTimeout(timer);
         await server.close();
         await rm(projectRoot, { recursive: true, force: true });
     }

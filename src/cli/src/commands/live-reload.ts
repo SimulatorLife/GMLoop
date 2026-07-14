@@ -110,7 +110,9 @@ interface LiveReloadPathCommandOptions {
 
 interface LiveReloadWaitForPatchCommandOptions extends LiveReloadPathCommandOptions {
     pollIntervalMs?: number;
+    requireApplied?: boolean;
     sincePatchId?: string;
+    sinceRevision?: string;
     timeoutMs?: number;
 }
 
@@ -313,12 +315,34 @@ function readLastPatchId(statusPayload: unknown): string | null {
     return typeof lastPatchId === "string" && lastPatchId.length > 0 ? lastPatchId : null;
 }
 
+function readLastPatchRevision(statusPayload: unknown): string | null {
+    if (!Core.isObjectLike(statusPayload)) {
+        return null;
+    }
+
+    const revision = (statusPayload as Record<string, unknown>).lastPatchRevision;
+    return typeof revision === "string" && revision.length > 0 ? revision : null;
+}
+
+function hasAppliedRevision(statusPayload: unknown, revision: string): boolean {
+    if (!Core.isObjectLike(statusPayload)) {
+        return false;
+    }
+    const status = statusPayload as Record<string, unknown>;
+    const appliedPatches = Core.toArray(status.appliedPatchClients);
+    return appliedPatches.some(
+        (patch) => Core.isObjectLike(patch) && (patch as Record<string, unknown>).revision === revision
+    );
+}
+
 async function pollLiveReloadStatusForPatch(
     parameters: Readonly<{
         deadline: number;
         pollIntervalMs: number;
+        requireApplied: boolean;
         session: LiveReloadRegisteredSession;
         sincePatchId: string | undefined;
+        sinceRevision: string | undefined;
     }>
 ): Promise<Record<string, unknown> | null> {
     if (Date.now() > parameters.deadline) {
@@ -336,9 +360,23 @@ async function pollLiveReloadStatusForPatch(
         // resolves the wait deterministically.
     }
 
-    const lastPatchId = statusPayload === null ? null : readLastPatchId(statusPayload);
-    if (lastPatchId !== null && lastPatchId !== parameters.sincePatchId) {
-        return statusPayload ?? {};
+    if (parameters.requireApplied && statusPayload !== null) {
+        if (!Object.hasOwn(statusPayload, "lastPatchRevision")) {
+            throw new Error("The active live-reload session does not support runtime-applied patch acknowledgements.");
+        }
+        const streamedRevision = readLastPatchRevision(statusPayload);
+        if (
+            streamedRevision !== null &&
+            streamedRevision !== parameters.sinceRevision &&
+            hasAppliedRevision(statusPayload, streamedRevision)
+        ) {
+            return statusPayload;
+        }
+    } else {
+        const latestPatchId = statusPayload === null ? null : readLastPatchId(statusPayload);
+        if (latestPatchId !== null && latestPatchId !== parameters.sincePatchId) {
+            return statusPayload ?? {};
+        }
     }
 
     const remainingMs = parameters.deadline - Date.now();
@@ -391,26 +429,38 @@ export async function runLiveReloadWaitForPatchCommand(
     }
 
     let sincePatchId = options.sincePatchId;
-    if (!sincePatchId) {
-        try {
-            const initialPayload = await fetchLiveReloadStatusPayload(discovery.session);
-            sincePatchId = readLastPatchId(initialPayload) ?? undefined;
-        } catch {
-            // Ignore baseline fetch error; will wait for any patch
-        }
-    }
-
-    const timeoutMs = options.timeoutMs ?? 10_000;
-    const pollIntervalMs = options.pollIntervalMs ?? 250;
-    const deadline = Date.now() + timeoutMs;
-
+    let sinceRevision = options.sinceRevision;
+    const requireApplied = options.requireApplied ?? false;
     let latestPayload: Record<string, unknown> | null = null;
     try {
+        if ((requireApplied && !sinceRevision) || (!requireApplied && !sincePatchId)) {
+            const initialPayload = await fetchLiveReloadStatusPayload(discovery.session);
+            if (requireApplied) {
+                if (
+                    !Core.isObjectLike(initialPayload) ||
+                    !Object.hasOwn(initialPayload as object, "lastPatchRevision")
+                ) {
+                    throw new Error(
+                        "The active live-reload session does not support runtime-applied patch acknowledgements."
+                    );
+                }
+                sinceRevision = readLastPatchRevision(initialPayload) ?? undefined;
+            } else {
+                sincePatchId = readLastPatchId(initialPayload) ?? undefined;
+            }
+        }
+
+        const timeoutMs = options.timeoutMs ?? 10_000;
+        const pollIntervalMs = options.pollIntervalMs ?? 250;
+        const deadline = Date.now() + timeoutMs;
+
         latestPayload = await pollLiveReloadStatusForPatch({
             deadline,
             pollIntervalMs,
+            requireApplied,
             session: discovery.session,
-            sincePatchId
+            sincePatchId,
+            sinceRevision
         });
     } catch (error) {
         const errorMessage = Core.getErrorMessage(error, {
@@ -427,6 +477,7 @@ export async function runLiveReloadWaitForPatchCommand(
         process.exit(1);
     }
 
+    const timeoutMs = options.timeoutMs ?? 10_000;
     if (latestPayload !== null) {
         console.log(
             JSON.stringify(
@@ -445,7 +496,7 @@ export async function runLiveReloadWaitForPatchCommand(
     const payload = {
         command: LIVE_RELOAD_WAIT_FOR_PATCH_COMMAND,
         ok: false,
-        error: `Timed out waiting for a live-reload patch after ${String(timeoutMs)}ms.`,
+        error: `Timed out waiting for a live-reload ${requireApplied ? "applied patch acknowledgement" : "patch"} after ${String(timeoutMs)}ms.`,
         code: "timeout"
     };
     console.log(JSON.stringify(payload, null, 2));
@@ -647,6 +698,8 @@ function createLiveReloadWaitForPatchSubcommand(): Command {
         .description("Wait until the registered live-reload session reports a new patch.")
         .addOption(new Option(PROJECT_PATH_OPTION_FLAG, PROJECT_PATH_OPTION_DESCRIPTION).default(process.cwd()))
         .addOption(new Option("--since-patch-id <id>", "Existing patch id to wait past."))
+        .addOption(new Option("--require-applied", "Wait for an HTML5 runtime-applied acknowledgement."))
+        .addOption(new Option("--since-revision <revision>", "Existing streamed revision to wait past."))
         .addOption(
             new Option("--timeout-ms <ms>", "Maximum wait time in milliseconds.")
                 .argParser(createMinimumValueValidator(1, "Timeout must be a positive integer."))

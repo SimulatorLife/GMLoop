@@ -190,17 +190,20 @@ void describe("Transpilation error classification", () => {
         await writeFile(testFile, content, "utf8");
 
         let broadcastCount = 0;
+        const broadcastPatches: Array<unknown> = [];
         const context = createTranspilationContext();
         context.websocketServer = {
-            broadcast: () => {
+            broadcast: (patch) => {
                 broadcastCount += 1;
+                broadcastPatches.push(patch);
                 return {
                     successCount: 1,
                     failureCount: 0,
                     totalClients: 1
                 };
             },
-            getClientCount: () => 1
+            getClientCount: () => 1,
+            getLastStreamedPatch: () => null
         };
 
         const firstResult = transpileFile(context, testFile, content, 3, { verbose: false, quiet: true });
@@ -212,5 +215,12 @@ void describe("Transpilation error classification", () => {
         assert.strictEqual(context.totalPatchCount, 1, "duplicate runtime patch should not increase patch counter");
         assert.strictEqual(context.patches.length, 1, "duplicate runtime patch should not add history entries");
         assert.strictEqual(context.metrics.length, 2, "transpilation metrics should still capture both executions");
+        const firstBroadcast = broadcastPatches[0] as { revision?: string };
+        assert.ok(firstBroadcast.revision, "emitted runtime patch should carry a revision");
+        assert.strictEqual(
+            (secondResult.patch as { revision?: string }).revision,
+            firstBroadcast.revision,
+            "an unchanged patch body should retain its revision"
+        );
     });
 });

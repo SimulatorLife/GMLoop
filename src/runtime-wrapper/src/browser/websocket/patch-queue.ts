@@ -256,7 +256,8 @@ export function flushQueuedPatches(
     state: WebSocketClientState,
     wrapper: PatchApplicator | null,
     applyQueuedPatch: (incoming: unknown) => boolean,
-    logger?: Logger
+    logger?: Logger,
+    onBatchApplied?: (patches: Array<unknown>, runtimeVersion?: number) => void
 ): number {
     if (!state.patchQueue || !wrapper) {
         return 0;
@@ -304,8 +305,9 @@ export function flushQueuedPatches(
         }
         queueMetrics.totalFlushed += flushSize;
 
-        if (result.success && applied > 0) {
+        if (result.success && !result.rolledBack && applied === patchesToApply.length && applied > 0) {
             connectionMetrics.lastPatchAppliedAt = Date.now();
+            onBatchApplied?.(patchesToApply, result.version);
         }
     } else {
         for (const patch of patchesToApply) {

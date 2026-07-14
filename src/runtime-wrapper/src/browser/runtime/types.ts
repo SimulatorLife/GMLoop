@@ -12,6 +12,8 @@ export interface PatchMetadata {
 export interface BasePatch {
     kind: PatchKind;
     id: string;
+    /** Unique identity for this emitted patch body on the live-reload wire. */
+    revision?: string;
     metadata?: PatchMetadata;
     /**
      * Optional GameMaker HTML5 runtime binding name for patches whose canonical

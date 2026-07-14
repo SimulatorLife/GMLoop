@@ -22,6 +22,7 @@ import {
 import { ensureApplicationSurfaceAccessor, resolveRuntimeReadiness } from "./runtime-readiness.js";
 import type {
     MessageEventLike,
+    PatchAppliedAcknowledgement,
     PatchQueueMetrics,
     RuntimeWebSocketClient,
     RuntimeWebSocketConstructor,
@@ -82,7 +83,8 @@ function applyIncomingPatchInternal(
     wrapper: PatchApplicator | null,
     onError?: WebSocketClientOptions["onError"],
     logger?: Logger,
-    alreadyRecordedReceived = false
+    alreadyRecordedReceived = false,
+    onPatchApplied?: (patch: Patch) => void
 ): boolean {
     const receivedAt = alreadyRecordedReceived
         ? (state.connectionMetrics.lastPatchReceivedAt ?? Date.now())
@@ -120,6 +122,7 @@ function applyIncomingPatchInternal(
         if (logger) {
             logger.info(`Patch ${patch.id} applied in ${applyDuration}ms`);
         }
+        onPatchApplied?.(patch);
     };
 
     const recordFailure = () => {
@@ -191,6 +194,38 @@ export function createWebSocketClient({
     };
     let detachWebSocketListeners = noopListenerTeardown;
 
+    const sendPatchAcknowledgement = (patch: Patch, runtimeVersion?: number): void => {
+        if (!patch.revision || !state.ws || !state.isConnected) {
+            return;
+        }
+
+        const acknowledgement: PatchAppliedAcknowledgement = {
+            type: "patch_ack",
+            id: patch.id,
+            revision: patch.revision,
+            status: "applied",
+            ...(runtimeVersion === undefined ? {} : { runtimeVersion })
+        };
+
+        try {
+            state.ws.send(JSON.stringify(acknowledgement));
+        } catch (error) {
+            logger?.warn(`Failed to acknowledge applied patch ${patch.id}: ${String(error)}`);
+        }
+    };
+
+    const acknowledgeAppliedBatch = (patches: Array<unknown>, runtimeVersion?: number): void => {
+        for (const candidate of patches) {
+            if (!candidate || typeof candidate !== "object") {
+                continue;
+            }
+            const patch = candidate as Patch;
+            if (typeof patch.id === "string" && typeof patch.revision === "string") {
+                sendPatchAcknowledgement(patch, runtimeVersion);
+            }
+        }
+    };
+
     const clearReadinessTimer = (): void => {
         if (state.readinessTimer !== null) {
             clearInterval(state.readinessTimer);
@@ -222,7 +257,7 @@ export function createWebSocketClient({
                     recordPatchReceived(state);
                     enqueuePatch(patch);
                 } else {
-                    applyIncomingPatchInternal(patch, state, wrapper, onError, logger);
+                    applyIncomingPatchInternal(patch, state, wrapper, onError, logger, false, sendPatchAcknowledgement);
                 }
             }
         }
@@ -253,8 +288,10 @@ export function createWebSocketClient({
         return flushQueuedPatchBatch(
             state,
             wrapper,
-            (incoming) => applyIncomingPatchInternal(incoming, state, wrapper, onError, logger, true),
-            logger
+            (incoming) =>
+                applyIncomingPatchInternal(incoming, state, wrapper, onError, logger, true, sendPatchAcknowledgement),
+            logger,
+            acknowledgeAppliedBatch
         );
     };
 
@@ -294,7 +331,7 @@ export function createWebSocketClient({
             return true;
         }
 
-        return applyIncomingPatchInternal(incoming, state, wrapper, onError, logger);
+        return applyIncomingPatchInternal(incoming, state, wrapper, onError, logger, false, sendPatchAcknowledgement);
     };
 
     function connect() {

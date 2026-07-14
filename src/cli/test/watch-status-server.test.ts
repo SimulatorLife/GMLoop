@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
 import { describe, it } from "node:test";
 
+import { findAvailablePort } from "./test-helpers/free-port.js";
+import { waitForScanComplete, waitForStatus } from "./test-helpers/status-polling.js";
 import { runWatchTest } from "./test-helpers/watch-runner.js";
+import { connectToHotReloadWebSocket } from "./test-helpers/websocket-client.js";
 
 void describe("watch command status server", () => {
     void it("should start status server by default and provide status endpoint", async () => {
@@ -42,6 +47,42 @@ void describe("watch command status server", () => {
                 assert.ok(error instanceof Error, "Expected an error when connecting to disabled server");
             }
         });
+    });
+
+    void it("reports only acknowledgements for patch revisions emitted by this watcher", async () => {
+        const websocketPort = await findAvailablePort();
+        await runWatchTest(
+            "watch-applied-patch-status",
+            { websocketServer: true, websocketPort },
+            async ({ baseUrl, testDir }) => {
+                const client = await connectToHotReloadWebSocket(`ws://127.0.0.1:${websocketPort}`);
+                try {
+                    await waitForScanComplete(baseUrl);
+                    await writeFile(path.join(testDir, "player.gml"), "var speed = 4;", "utf8");
+                    const [patch] = await client.waitForPatches({ timeoutMs: 4000 });
+                    assert.equal(typeof patch?.revision, "string");
+
+                    client.websocketClient.send(
+                        JSON.stringify({
+                            type: "patch_ack",
+                            id: patch?.id,
+                            revision: patch?.revision,
+                            status: "applied"
+                        })
+                    );
+
+                    const status = await waitForStatus(
+                        baseUrl,
+                        (payload) => payload.lastAppliedPatch?.revision === patch?.revision,
+                        4000
+                    );
+                    assert.equal(status.lastAppliedPatch?.id, patch?.id);
+                    assert.equal(status.appliedPatchClients?.length, 1);
+                } finally {
+                    await client.disconnect();
+                }
+            }
+        );
     });
 
     void it("should handle missing route with 404 error", async () => {

@@ -34,6 +34,15 @@ export interface WebSocketClientOptions {
     logger?: Logger;
 }
 
+/** Browser-to-server confirmation that an identified patch revision committed. */
+export interface PatchAppliedAcknowledgement {
+    type: "patch_ack";
+    id: string;
+    revision: string;
+    status: "applied";
+    runtimeVersion?: number;
+}
+
 export interface PatchQueueState {
     queue: Array<unknown>;
     flushTimer: ReturnType<typeof setTimeout> | null;

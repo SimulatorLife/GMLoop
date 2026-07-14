@@ -6,6 +6,7 @@
  * file change detection and WebSocket patch streaming.
  */
 
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
@@ -34,9 +35,10 @@ const defaultParserAdapter: GmlParserAdapter = createGmlParserAdapter();
 
 type RuntimeTranspiler = GmlTranspilerInstance;
 type GmlTranspilerInstance = ReturnType<typeof createGmlTranspilerAdapter>;
-export type RuntimeTranspilerPatch =
+export type RuntimeTranspilerPatch = (
     | ReturnType<GmlTranspilerInstance["transpileScript"]>
-    | ReturnType<GmlTranspilerInstance["transpileEvent"]>;
+    | ReturnType<GmlTranspilerInstance["transpileEvent"]>
+) & { revision?: string };
 
 export interface ResourceLayerUpdate {
     layerName: string;
@@ -47,6 +49,7 @@ export interface ResourceLayerUpdate {
 export interface ResourcePatch {
     kind: "resource";
     id: string;
+    revision: string;
     resourceType: "GMRoom";
     resourceName: string;
     layerUpdates: Array<ResourceLayerUpdate>;
@@ -63,6 +66,7 @@ export function createResourcePatch(
     return {
         kind: "resource",
         id: `resource/room/${resourceName}`,
+        revision: randomUUID(),
         resourceType: "GMRoom",
         resourceName,
         layerUpdates,
@@ -774,8 +778,10 @@ export function transpileFile(
         );
         const previousPatch = context.lastSuccessfulPatches.get(patchPayload.id);
         const runtimePatchChanged = hasRuntimePatchChanged(previousPatch, patchPayload);
+        const revision = runtimePatchChanged || !previousPatch?.revision ? randomUUID() : previousPatch.revision;
+        const identifiedPatchPayload: RuntimeTranspilerPatch = { ...patchPayload, revision };
 
-        context.lastSuccessfulPatches.set(patchPayload.id, patchPayload);
+        context.lastSuccessfulPatches.set(patchPayload.id, identifiedPatchPayload);
 
         let patchIdsForSource = context.sourcePathToPatchIds.get(filePath);
         if (!patchIdsForSource) {
@@ -784,10 +790,14 @@ export function transpileFile(
         }
         patchIdsForSource.add(patchPayload.id);
         if (runtimePatchChanged) {
-            addToBoundedCollection(context.patches, createPatchSummary(patchPayload), context.bounds.maxEntries);
+            addToBoundedCollection(
+                context.patches,
+                createPatchSummary(identifiedPatchPayload),
+                context.bounds.maxEntries
+            );
             context.totalPatchCount += 1;
 
-            const broadcastResult = context.websocketServer?.broadcast(patchPayload);
+            const broadcastResult = context.websocketServer?.broadcast(identifiedPatchPayload);
 
             // Record end-to-end hot-reload latency after the patch has been broadcast.
             // This captures the full pipeline delay (file-change detection → broadcast)
@@ -845,7 +855,7 @@ export function transpileFile(
 
         return {
             success: true,
-            patch: patchPayload,
+            patch: identifiedPatchPayload,
             metrics,
             symbols: parsedSymbols,
             references: parsedReferences

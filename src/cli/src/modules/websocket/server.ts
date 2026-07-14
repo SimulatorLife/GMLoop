@@ -18,13 +18,37 @@ const DEFAULT_PORT = 17_890;
 
 const describeWebSocketError = Core.getErrorMessage;
 
+function acknowledgementKey(id: string, revision: string): string {
+    return `${id}\u0000${revision}`;
+}
+
 export interface PatchWebSocketServerOptions {
     host?: string;
     port?: number;
     verbose?: boolean;
     onClientConnect?: (clientId: string, socket: WebSocket) => void;
     onClientDisconnect?: (clientId: string) => void;
+    onPatchAcknowledgement?: (clientId: string, acknowledgement: StreamedPatchAcknowledgement) => void;
     prepareInitialMessages?: () => Iterable<unknown>;
+}
+
+/** Validated browser-runtime confirmation for one applied patch revision. */
+export interface PatchAppliedAcknowledgement {
+    type: "patch_ack";
+    id: string;
+    revision: string;
+    status: "applied";
+    runtimeVersion?: number;
+}
+
+export interface StreamedPatchRevision {
+    id: string;
+    revision: string;
+    sequence: number;
+}
+
+export interface StreamedPatchAcknowledgement extends PatchAppliedAcknowledgement {
+    sequence: number;
 }
 
 export interface PatchBroadcastResult {
@@ -42,6 +66,7 @@ export interface PatchBroadcastResult {
 export interface PatchBroadcaster {
     broadcast(patch: unknown): PatchBroadcastResult;
     getClientCount(): number;
+    getLastStreamedPatch(): StreamedPatchRevision | null;
 }
 
 /**
@@ -80,10 +105,15 @@ export async function startPatchWebSocketServer({
     verbose = false,
     onClientConnect,
     onClientDisconnect,
+    onPatchAcknowledgement,
     prepareInitialMessages
 }: PatchWebSocketServerOptions = {}): Promise<PatchWebSocketServer> {
     const clients = new Set<WebSocket>();
     const clientIds = new Map<WebSocket, string>();
+    const pendingAcknowledgements = new Map<WebSocket, Map<string, StreamedPatchRevision>>();
+    const streamedPatchById = new Map<string, StreamedPatchRevision>();
+    let patchSequence = 0;
+    let lastStreamedPatch: StreamedPatchRevision | null = null;
 
     const wss = new WebSocketServer({
         host,
@@ -99,6 +129,57 @@ export async function startPatchWebSocketServer({
     });
 
     const READY_STATE_OPEN = 1;
+
+    function streamedPatchRevisions(payload: unknown): Array<Omit<StreamedPatchRevision, "sequence">> {
+        const revisions: Array<Omit<StreamedPatchRevision, "sequence">> = [];
+        for (const item of Core.toArray(payload)) {
+            if (!Core.isObjectLike(item)) {
+                continue;
+            }
+            const patch = item as Record<string, unknown>;
+            if (Core.isNonEmptyString(patch.id) && Core.isNonEmptyString(patch.revision)) {
+                revisions.push({ id: patch.id, revision: patch.revision });
+            }
+        }
+        return revisions;
+    }
+
+    function recordDeliveredPatches(ws: WebSocket, patches: Array<StreamedPatchRevision>): void {
+        const pending = pendingAcknowledgements.get(ws);
+        if (!pending) {
+            return;
+        }
+        for (const patch of patches) {
+            pending.set(acknowledgementKey(patch.id, patch.revision), patch);
+        }
+        while (pending.size > 1000) {
+            const oldestKey = pending.keys().next().value;
+            if (typeof oldestKey !== "string") {
+                break;
+            }
+            pending.delete(oldestKey);
+        }
+    }
+
+    function identifyStreamedPatches(payload: unknown): Array<StreamedPatchRevision> {
+        return streamedPatchRevisions(payload).map((patch) => {
+            const current = streamedPatchById.get(patch.id);
+            if (current?.revision === patch.revision) {
+                return current;
+            }
+            const streamedPatch = { ...patch, sequence: ++patchSequence };
+            streamedPatchById.set(patch.id, streamedPatch);
+            return streamedPatch;
+        });
+    }
+
+    function recordLatestStreamedPatch(patches: Array<StreamedPatchRevision>): void {
+        for (const patch of patches) {
+            if (!lastStreamedPatch || lastStreamedPatch.sequence < patch.sequence) {
+                lastStreamedPatch = patch;
+            }
+        }
+    }
 
     function sendJsonMessage(ws: WebSocket, payload: unknown, clientId: string): boolean {
         try {
@@ -123,6 +204,7 @@ export async function startPatchWebSocketServer({
 
         clients.add(ws);
         clientIds.set(ws, clientId);
+        pendingAcknowledgements.set(ws, new Map());
 
         if (verbose) {
             console.log(`[WebSocket] Client connected: ${clientId}`);
@@ -136,10 +218,16 @@ export async function startPatchWebSocketServer({
             try {
                 const replayPayloads = Array.from(prepareInitialMessages());
                 const replayPayload = replayPayloads.length === 1 ? replayPayloads[0] : replayPayloads;
+                const replayPatches = identifyStreamedPatches(replayPayload);
                 const replayedCount =
                     replayPayloads.length > 0 && sendJsonMessage(ws, replayPayload, clientId)
                         ? replayPayloads.length
                         : 0;
+
+                if (replayedCount > 0) {
+                    recordDeliveredPatches(ws, replayPatches);
+                    recordLatestStreamedPatch(replayPatches);
+                }
 
                 if (verbose && replayedCount > 0) {
                     console.log(`[WebSocket] Sent ${replayedCount} queued message(s) to ${clientId}`);
@@ -153,6 +241,39 @@ export async function startPatchWebSocketServer({
             }
         }
 
+        ws.on("message", (data) => {
+            let payload: unknown;
+            try {
+                payload = JSON.parse(data.toString());
+            } catch (error) {
+                if (verbose) {
+                    console.error(
+                        `[WebSocket] Ignored malformed client message (${clientId}): ${describeWebSocketError(error)}`
+                    );
+                }
+                return;
+            }
+
+            const acknowledgement = parsePatchAppliedAcknowledgement(payload);
+            if (acknowledgement) {
+                const deliveredPatch = pendingAcknowledgements
+                    .get(ws)
+                    ?.get(acknowledgementKey(acknowledgement.id, acknowledgement.revision));
+                if (!deliveredPatch) {
+                    if (verbose) {
+                        console.error(`[WebSocket] Ignored acknowledgement for an undelivered patch (${clientId})`);
+                    }
+                    return;
+                }
+                pendingAcknowledgements
+                    .get(ws)
+                    ?.delete(acknowledgementKey(acknowledgement.id, acknowledgement.revision));
+                onPatchAcknowledgement?.(clientId, { ...acknowledgement, sequence: deliveredPatch.sequence });
+            } else if (verbose) {
+                console.error(`[WebSocket] Ignored unsupported client message (${clientId})`);
+            }
+        });
+
         let cleanedUp = false;
         const cleanupClient = (reason: "close" | "error", error?: unknown) => {
             if (cleanedUp) {
@@ -162,6 +283,7 @@ export async function startPatchWebSocketServer({
 
             clients.delete(ws);
             clientIds.delete(ws);
+            pendingAcknowledgements.delete(ws);
 
             if (verbose) {
                 if (reason === "error") {
@@ -234,6 +356,9 @@ export async function startPatchWebSocketServer({
             return { successCount: 0, failureCount: clients.size, totalClients: clients.size };
         }
 
+        const streamedPatches = identifyStreamedPatches(patch);
+        recordLatestStreamedPatch(streamedPatches);
+
         for (const ws of clients) {
             try {
                 if (ws.readyState !== READY_STATE_OPEN) {
@@ -242,6 +367,7 @@ export async function startPatchWebSocketServer({
                 }
 
                 ws.send(serializedMessage);
+                recordDeliveredPatches(ws, streamedPatches);
                 successCount += 1;
             } catch (error) {
                 failureCount += 1;
@@ -312,6 +438,46 @@ export async function startPatchWebSocketServer({
         port: resolvedPort,
         broadcast,
         stop,
-        getClientCount: () => clients.size
+        getClientCount: () => clients.size,
+        getLastStreamedPatch: () => lastStreamedPatch
+    };
+}
+
+function parsePatchAppliedAcknowledgement(payload: unknown): PatchAppliedAcknowledgement | null {
+    if (!Core.isObjectLike(payload)) {
+        return null;
+    }
+
+    const message = payload as Record<string, unknown>;
+    if (
+        message.type !== "patch_ack" ||
+        message.status !== "applied" ||
+        !Core.isNonEmptyString(message.id) ||
+        message.id.length > 512 ||
+        !Core.isNonEmptyString(message.revision) ||
+        message.revision.length > 512
+    ) {
+        return null;
+    }
+
+    const runtimeVersion = message.runtimeVersion;
+    if (runtimeVersion === undefined) {
+        return {
+            type: "patch_ack",
+            id: message.id,
+            revision: message.revision,
+            status: "applied"
+        };
+    }
+    if (typeof runtimeVersion !== "number" || !Number.isFinite(runtimeVersion) || runtimeVersion < 0) {
+        return null;
+    }
+
+    return {
+        type: "patch_ack",
+        id: message.id,
+        revision: message.revision,
+        status: "applied",
+        runtimeVersion
     };
 }

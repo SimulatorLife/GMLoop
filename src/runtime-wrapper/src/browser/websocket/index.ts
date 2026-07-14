@@ -2,6 +2,7 @@ export { createWebSocketClient, DEFAULT_READINESS_POLL_INTERVAL_MS } from "./cli
 export { ensureApplicationSurfaceAccessor, resolveRuntimeReadiness } from "./runtime-readiness.js";
 export type {
     MessageEventLike,
+    PatchAppliedAcknowledgement,
     PatchQueueMetrics,
     PatchQueueOptions,
     PatchQueueState,

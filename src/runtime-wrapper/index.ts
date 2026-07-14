@@ -8,6 +8,7 @@ export type {
     LogLevel,
     MessageEventLike,
     Patch,
+    PatchAppliedAcknowledgement,
     PatchErrorAnalytics,
     PatchErrorCategory,
     PatchErrorOccurrence,

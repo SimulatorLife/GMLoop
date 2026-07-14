@@ -65,7 +65,11 @@ import {
     resolveScriptFileNameFromSegments
 } from "../modules/transpilation/runtime-identifiers.js";
 import { extractReferencesFromAst, extractSymbolsFromAst } from "../modules/transpilation/symbol-extraction.js";
-import { type PatchWebSocketServer, startPatchWebSocketServer } from "../modules/websocket/server.js";
+import {
+    type PatchWebSocketServer,
+    startPatchWebSocketServer,
+    type StreamedPatchAcknowledgement
+} from "../modules/websocket/server.js";
 import {
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_COUNT,
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS,
@@ -98,6 +102,11 @@ const { debounce, getErrorMessage, isErrorWithCode } = Core;
 const IGNORED_WATCH_DIRECTORY_NAMES = new Set(DEFAULT_WATCH_IGNORED_DIRECTORY_NAMES);
 
 type RuntimeDescriptorFormatter = (source: RuntimeSourceDescriptor) => string;
+
+interface AppliedPatchStatus extends StreamedPatchAcknowledgement {
+    clientId: string;
+    acknowledgedAt: number;
+}
 
 type WatchFactory = (
     path: string,
@@ -933,6 +942,8 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
     let websocketServerController: PatchWebSocketServer | null = null;
     let statusServerController: StatusServerHandle | null = null;
     let runtimeServerController: RuntimeStaticServerInstance | null = null;
+    const appliedPatchByClient = new Map<string, AppliedPatchStatus>();
+    let lastAppliedPatch: AppliedPatchStatus | null = null;
 
     const watchedFiles = await collectWatchedFilePaths(normalizedPath, extensionMatcher, maxConcurrentDirs);
     await Core.runInParallelWithLimit(
@@ -978,8 +989,30 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                     ];
                 },
                 onClientDisconnect: (clientId) => {
+                    appliedPatchByClient.delete(clientId);
                     if (verbose) {
                         console.log(`Patch streaming client disconnected: ${clientId}`);
+                    }
+                },
+                onPatchAcknowledgement: (clientId, acknowledgement) => {
+                    const expectedPatch =
+                        runtimeContext.lastSuccessfulPatches.get(acknowledgement.id) ??
+                        runtimeContext.resourcePatches.get(acknowledgement.id);
+                    if (expectedPatch?.revision !== acknowledgement.revision) {
+                        return;
+                    }
+                    const previous = appliedPatchByClient.get(clientId);
+                    if (previous && previous.sequence >= acknowledgement.sequence) {
+                        return;
+                    }
+                    const appliedPatch = {
+                        ...acknowledgement,
+                        clientId,
+                        acknowledgedAt: Date.now()
+                    };
+                    appliedPatchByClient.set(clientId, appliedPatch);
+                    if (!lastAppliedPatch || lastAppliedPatch.sequence < appliedPatch.sequence) {
+                        lastAppliedPatch = appliedPatch;
                     }
                 }
             });
@@ -1012,6 +1045,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                         error: e.error
                     }));
                     const lastMetric = runtimeContext.metrics.at(-1) ?? null;
+                    const lastStreamedPatch = websocketServerController?.getLastStreamedPatch() ?? null;
                     return {
                         uptime: Date.now() - runtimeContext.startTime,
                         patchCount: runtimeContext.metrics.length,
@@ -1037,8 +1071,11 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                         watchedRoot: normalizedPath,
                         lastChangedFile:
                             lastMetric === null ? null : path.relative(normalizedPath, lastMetric.filePath),
-                        lastPatchId: lastMetric?.patchId ?? null,
+                        lastPatchId: lastStreamedPatch?.id ?? lastMetric?.patchId ?? null,
+                        lastPatchRevision: lastStreamedPatch?.revision ?? null,
                         lastPatchResult: lastMetric?.patchResult ?? null,
+                        lastAppliedPatch,
+                        appliedPatchClients: Array.from(appliedPatchByClient.values()),
                         transpileErrors: recentErrors,
                         runtimeErrors: [],
                         avgHotReloadLatencyMs: latencyStats?.avg,

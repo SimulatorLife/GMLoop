@@ -143,6 +143,98 @@ void describe("patch websocket server client cleanup", () => {
         }
     });
 
+    void it("keeps the latest streamed revision stable when cached patches replay", async () => {
+        const patches = [
+            { kind: "script", id: "gml/script/first", revision: "revision-1", js_body: "return 1;" },
+            { kind: "script", id: "gml/script/second", revision: "revision-2", js_body: "return 2;" }
+        ];
+        const server = await startPatchWebSocketServer({
+            host: "127.0.0.1",
+            port: 0,
+            prepareInitialMessages: () => [patches[1], patches[0]]
+        });
+        server.broadcast(patches[0]);
+        server.broadcast(patches[1]);
+        const beforeReplay = server.getLastStreamedPatch();
+        const client = new WebSocket(server.url);
+
+        try {
+            const replayPayloadPromise = waitForMessage(client);
+            await waitForOpen(client);
+            await replayPayloadPromise;
+            assert.deepEqual(server.getLastStreamedPatch(), beforeReplay);
+            assert.equal(server.getLastStreamedPatch()?.revision, "revision-2");
+        } finally {
+            client.terminate();
+            await server.stop();
+        }
+    });
+
+    void it("validates and associates runtime patch acknowledgements with the client", async () => {
+        const acknowledgements: Array<{ clientId: string; id: string; revision: string }> = [];
+        let resolveAcknowledgement: () => void;
+        const acknowledgementReceived = new Promise<void>((resolve) => {
+            resolveAcknowledgement = resolve;
+        });
+        const server = await startPatchWebSocketServer({
+            host: "127.0.0.1",
+            port: 0,
+            onPatchAcknowledgement: (clientId, acknowledgement) => {
+                acknowledgements.push({ clientId, id: acknowledgement.id, revision: acknowledgement.revision });
+                resolveAcknowledgement();
+            }
+        });
+        const client = new WebSocket(server.url);
+
+        try {
+            await waitForOpen(client);
+            client.send("not json");
+            client.send(JSON.stringify({ type: "patch_ack", id: "missing-revision", status: "applied" }));
+            client.send(
+                JSON.stringify({
+                    type: "patch_ack",
+                    id: "gml/script/not_delivered",
+                    revision: "revision-forged",
+                    status: "applied"
+                })
+            );
+            server.broadcast({
+                kind: "script",
+                id: "gml/script/player_step",
+                revision: "revision-7",
+                js_body: "return 7;"
+            });
+            client.send(
+                JSON.stringify({
+                    type: "patch_ack",
+                    id: "gml/script/player_step",
+                    revision: "revision-7",
+                    status: "applied"
+                })
+            );
+
+            await acknowledgementReceived;
+            client.send(
+                JSON.stringify({
+                    type: "patch_ack",
+                    id: "gml/script/player_step",
+                    revision: "revision-7",
+                    status: "applied"
+                })
+            );
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            assert.equal(acknowledgements.length, 1);
+            assert.match(acknowledgements[0]?.clientId ?? "", /:/);
+            assert.deepEqual(
+                { id: acknowledgements[0]?.id, revision: acknowledgements[0]?.revision },
+                { id: "gml/script/player_step", revision: "revision-7" }
+            );
+        } finally {
+            client.terminate();
+            await server.stop();
+        }
+    });
+
     void it("logs structured close errors when client shutdown fails", async (testContext) => {
         let serverSocket: WebSocketType;
         const loggedErrors: Array<string> = [];

@@ -757,6 +757,8 @@ pnpm run cli -- live-reload status --status-host 127.0.0.1 --status-port 18000
 
 Agents can also use `live-reload status` (for discovery/health checks) and `live-reload wait-for-patch` by project path. Through MCP these appear as `gmloop_live_reload_status` and `gmloop_live_reload_wait_for_patch`.
 
+For injected HTML5 runtimes, `live-reload wait-for-patch --require-applied` waits until the runtime wrapper acknowledges the exact new streamed revision. Pass `--since-revision <revision>` from a previous status snapshot to establish the baseline. The status payload exposes `lastPatchRevision`, `lastAppliedPatch`, and `appliedPatchClients`; an acknowledgement confirms that the wrapper committed the patch, not that a particular gameplay outcome occurred. Native runners and clients without the injected wrapper do not provide applied acknowledgements.
+
 **Example Output:**
 
 ```
@@ -1220,4 +1222,5 @@ Provides ANTLR-based GML parsing used by the transpiler.
     - Stores patches in runtime context for future streaming
 
 ## TODO
+
 - **FEAT**: If/when the UI is running and at the same time a "fix" command (e.g. refactor/format/lint-fix/etc.) is run via the CLI for that same, currently-opened-project (ex. `pnpm run cli -- refactor codemod --path /Users/henrykirk/Desktop/CannonFatherSource/cannonfather --only namingConvention`), the UI's "Fix" page/tab should show the progress of that command in real-time, the same way as if it were started via the UI. Similarly, running a "fix" workflow on a GameMaker project should lock/reserve it so that the user cannot start a new "fix" workflow in parallel until the current one is finished (should work across the UI & CLI, since the CLI can also start a fix workflow). This is to prevent multiple fix workflows from running in parallel and potentially conflicting with each other.

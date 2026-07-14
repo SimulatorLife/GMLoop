@@ -14,6 +14,7 @@ const { createWebSocketClient } = Clients;
 
 class MockWebSocket {
     public readyState = 0;
+    public readonly sentMessages: Array<string> = [];
     private listeners = new Map<string, Set<(event?: unknown) => void>>();
 
     constructor() {
@@ -38,12 +39,8 @@ class MockWebSocket {
         this.listeners.get(event)?.delete(handler);
     }
 
-    send(): void {
-        // No-op for testing: Mock WebSocket implementation doesn't transmit
-        // messages over the network. Tests verify client-side behavior
-        // (event handling, reconnection logic, state management) without
-        // requiring an actual WebSocket server. Real message transmission
-        // would add test flakiness and infrastructure dependencies.
+    send(data: string): void {
+        this.sentMessages.push(data);
     }
 
     close(): void {
@@ -960,6 +957,63 @@ void test("patch queue uses applyPatchBatch when available", async () => {
     } finally {
         client.disconnect();
         restoreRuntimeGlobals();
+    }
+});
+
+void test("patch queue acknowledges committed revisions and not rolled-back batches", async () => {
+    const success = await createConnectedPatchQueueClient({
+        patchQueue: { flushIntervalMs: 10, maxQueueSize: 10 }
+    });
+
+    try {
+        success.ws.simulateMessage(
+            JSON.stringify({
+                kind: "script",
+                id: "gml/script/queued_ack",
+                revision: "queued-revision-1",
+                js_body: "return 1;"
+            })
+        );
+        await waitForCondition("queued patch acknowledgement", () => success.ws.sentMessages.length === 1, {
+            timeoutMs: 200,
+            pollIntervalMs: 5
+        });
+        assert.equal(
+            (JSON.parse(success.ws.sentMessages[0] ?? "null") as { revision?: string }).revision,
+            "queued-revision-1"
+        );
+    } finally {
+        success.client.disconnect();
+        success.restoreRuntimeGlobals();
+    }
+
+    const rolledBack = await createConnectedPatchQueueClient({
+        patchQueue: { flushIntervalMs: 10, maxQueueSize: 10 },
+        wrapperMutator: (wrapper) => {
+            wrapper.applyPatchBatch = () => ({
+                success: false,
+                appliedCount: 0,
+                error: "synthetic rollback",
+                rolledBack: true
+            });
+            return wrapper;
+        }
+    });
+
+    try {
+        rolledBack.ws.simulateMessage(
+            JSON.stringify({
+                kind: "script",
+                id: "gml/script/rolled_back",
+                revision: "queued-revision-2",
+                js_body: "return 2;"
+            })
+        );
+        await wait(40);
+        assert.equal(rolledBack.ws.sentMessages.length, 0);
+    } finally {
+        rolledBack.client.disconnect();
+        rolledBack.restoreRuntimeGlobals();
     }
 });
 

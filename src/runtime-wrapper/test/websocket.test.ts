@@ -43,6 +43,7 @@ const flush = () =>
 
 class MockWebSocket implements RuntimeWebSocketInstance {
     public readyState = 0;
+    public readonly sentMessages: Array<string> = [];
     private readonly listeners: Record<WebSocketEvent, Array<(event?: unknown) => void>> = {
         open: [],
         message: [],
@@ -70,10 +71,10 @@ class MockWebSocket implements RuntimeWebSocketInstance {
     }
 
     send(data: string) {
-        void data;
         if (this.readyState !== 1) {
             throw new Error("WebSocket is not open");
         }
+        this.sentMessages.push(data);
     }
 
     close() {
@@ -194,9 +195,35 @@ void test("WebSocket client applies patches from messages", async () => {
     await wait(10);
 
     assert.ok(wrapper.hasScript("script:test"));
+    assert.equal(mockSocket.sentMessages.length, 0, "legacy patches without a revision are not acknowledged");
 
     client.disconnect();
     delete globalWithWebSocket.WebSocket;
+});
+
+void test("WebSocket client acknowledges an identified patch only after it applies", async () => {
+    const wrapper = RuntimeWrapper.createRuntimeWrapper();
+
+    await runWebSocketTest({ wrapper }, async (_client, mockSocket) => {
+        mockSocket.simulateMessage(
+            JSON.stringify({
+                kind: "script",
+                id: "gml/script/acknowledged",
+                revision: "revision-1",
+                js_body: "return 42;"
+            })
+        );
+
+        await wait(10);
+
+        assert.ok(wrapper.hasScript("gml/script/acknowledged"));
+        assert.deepEqual(JSON.parse(mockSocket.sentMessages[0] ?? "null"), {
+            type: "patch_ack",
+            id: "gml/script/acknowledged",
+            revision: "revision-1",
+            status: "applied"
+        });
+    });
 });
 
 void test("WebSocket client applies batch patches from messages", async () => {

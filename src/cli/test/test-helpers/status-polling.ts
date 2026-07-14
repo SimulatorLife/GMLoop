@@ -1,4 +1,19 @@
 export type StatusPayload = {
+    lastAppliedPatch?: {
+        id: string;
+        revision: string;
+        sequence: number;
+        clientId: string;
+        acknowledgedAt: number;
+    } | null;
+    lastPatchRevision?: string | null;
+    appliedPatchClients?: Array<{
+        id: string;
+        revision: string;
+        sequence: number;
+        clientId: string;
+        acknowledgedAt: number;
+    }>;
     patchCount?: number;
     patchHistorySize?: number;
     maxPatchHistory?: number;

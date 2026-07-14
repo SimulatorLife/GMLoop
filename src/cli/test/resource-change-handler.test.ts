@@ -45,6 +45,9 @@ void describe("room resource changes", () => {
                 },
                 getClientCount() {
                     return 1;
+                },
+                getLastStreamedPatch() {
+                    return null;
                 }
             },
             transientEmptyFileReadRetryCount: 0,
@@ -70,6 +73,7 @@ void describe("room resource changes", () => {
                 {
                     kind: "resource",
                     id: "resource/room/Room1",
+                    revision: (patches[0] as { revision: string }).revision,
                     resourceType: "GMRoom",
                     resourceName: "Room1",
                     layerUpdates: [
@@ -86,6 +90,7 @@ void describe("room resource changes", () => {
                     }
                 }
             ]);
+            assert.ok((patches[0] as { revision?: string }).revision);
             assert.strictEqual(context.totalPatchCount, 1);
             assert.strictEqual(context.resourcePatches.size, 1);
         } finally {

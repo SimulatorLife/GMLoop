@@ -16,6 +16,17 @@ import {
     evaluateTranspilationHealth
 } from "./status-health-policy.js";
 
+interface AppliedPatchSnapshot {
+    id: string;
+    revision: string;
+    sequence: number;
+    status: "applied";
+    type: "patch_ack";
+    clientId: string;
+    acknowledgedAt: number;
+    runtimeVersion?: number;
+}
+
 export interface StatusSnapshot {
     uptime: number;
     /** Number of patches in the bounded metrics window (capped at maxPatchHistory). */
@@ -57,6 +68,9 @@ export interface StatusSnapshot {
     websocketUrl?: string;
     lastChangedFile?: string | null;
     lastPatchId?: string | null;
+    lastPatchRevision?: string | null;
+    lastAppliedPatch?: AppliedPatchSnapshot | null;
+    appliedPatchClients?: Array<AppliedPatchSnapshot>;
     lastPatchResult?: {
         delivered: boolean;
         failureCount: number;
