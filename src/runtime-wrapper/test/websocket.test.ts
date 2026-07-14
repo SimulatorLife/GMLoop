@@ -1102,10 +1102,37 @@ void test("WebSocket client removes socket observers on disconnect to prevent li
     }
 });
 
-void test("WebSocket client reconnects after connection loss", async () => {
+void test("WebSocket client reconnects after connection loss", async (t) => {
+    // === Determinism notes ===
+    // The previous version of this test scheduled a 30ms reconnect via the
+    // client's real `setTimeout` and then polled for completion with
+    // `await wait(40)` — a 10ms margin against a 30ms delay. Under heavy CI
+    // load (worker contention, GC pauses, file-system events from sibling
+    // tests, etc.) the Node event loop can be delayed past the wait window,
+    // causing `reconnectCount >= 2` to fail intermittently even though the
+    // timer was scheduled for 30ms. Evidence of the failure mode: the test
+    // would intermittently throw `Expected at least 2 reconnects, got 1`
+    // because the 30ms tick drifted past the 40ms polling window before the
+    // reconnect callback could run on a saturated worker.
+    //
+    // The fix replaces the reconnect's `setTimeout` with Node's `mock.timers`
+    // so the reconnect fires at an exact, deterministic moment controlled by
+    // the test (`t.mock.timers.tick(30)`). `setImmediate` is intentionally
+    // left un-mocked because `MockWebSocket` uses it to dispatch the open /
+    // close events — those still fire in real time, which is what we want.
+    // Net effect: the assertion becomes a strict equality (`=== 2`) instead
+    // of a loose lower bound (`>= 2`) because the reconnect count is now
+    // fully deterministic.
     let reconnectCount = 0;
 
     globalWithWebSocket.WebSocket = MockWebSocket;
+
+    // Enable mock timers BEFORE creating the client so the reconnect
+    // `setTimeout` (scheduled by the close handler) is captured by the mock
+    // rather than the real event loop. `apis: ["setTimeout"]` keeps
+    // `setImmediate` real, so `MockWebSocket`'s open/close events still fire
+    // when we `await flush()`.
+    t.mock.timers.enable({ apis: ["setTimeout"] });
 
     const client = RuntimeWrapper.createWebSocketClient({
         onConnect: () => {
@@ -1116,20 +1143,37 @@ void test("WebSocket client reconnects after connection loss", async () => {
     });
 
     try {
-        await wait(40);
-
-        assert.strictEqual(reconnectCount, 1);
+        // The initial connection completes via `MockWebSocket`'s
+        // `setImmediate(() => dispatch("open"))`, which is not mocked. One
+        // `flush()` drains that immediate so `onConnect` fires before we
+        // assert on the initial connection count.
+        await flush();
+        assert.strictEqual(reconnectCount, 1, "Initial connection should fire onConnect");
 
         const ws = client.getWebSocket();
         assert.ok(ws, "WebSocket should be available");
 
+        // `ws.close()` synchronously marks the socket closed and schedules
+        // `setImmediate(() => dispatch("close"))`. One `flush()` lets the
+        // close handler run so it can schedule the reconnect `setTimeout`
+        // (which the mock now owns).
         ws.close();
+        await flush();
 
-        await wait(10);
-        await wait(40);
+        // Advance the mocked clock exactly 30ms to fire the reconnect timer
+        // at the instant the production code expects, with zero event-loop
+        // latency in the assertion path.
+        t.mock.timers.tick(30);
 
-        assert.ok(reconnectCount >= 2, `Expected at least 2 reconnects, got ${reconnectCount}`);
+        // The reconnect synchronously creates a new `MockWebSocket`, which
+        // dispatches `open` via `setImmediate`. One more `flush()` drains
+        // that immediate so the second `onConnect` is observable before we
+        // assert.
+        await flush();
+
+        assert.strictEqual(reconnectCount, 2, `Expected exactly 2 reconnects, got ${reconnectCount}`);
     } finally {
+        t.mock.timers.reset();
         client?.disconnect();
         delete globalWithWebSocket.WebSocket;
     }
