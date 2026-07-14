@@ -6,12 +6,26 @@ const WORKSPACE_ROOT_URL = new URL("../../", import.meta.url);
 
 void test("extension manifest registers and packages the GML TextMate grammar", async () => {
     const manifest = JSON.parse(await readFile(new URL("package.json", WORKSPACE_ROOT_URL), "utf8")) as {
-        contributes: { grammars: Array<{ language: string; path: string; scopeName: string }> };
+        contributes: {
+            grammars: Array<{
+                language?: string;
+                path: string;
+                scopeName: string;
+                injectTo?: string[];
+                embeddedLanguages?: Record<string, string>;
+            }>;
+        };
         files: string[];
     };
 
     assert.deepEqual(manifest.contributes.grammars, [
-        { language: "gml", scopeName: "source.gml", path: "./syntaxes/gml.tmLanguage.json" }
+        { language: "gml", scopeName: "source.gml", path: "./syntaxes/gml.tmLanguage.json" },
+        {
+            scopeName: "markdown.gml.codeblock",
+            path: "./syntaxes/markdown-gml.tmLanguage.json",
+            injectTo: ["text.html.markdown"],
+            embeddedLanguages: { "source.gml": "gml" }
+        }
     ]);
     assert.ok(manifest.files.includes("syntaxes"));
 });
@@ -126,7 +140,22 @@ void test("reserved syntax takes precedence over the generic function-call fallb
 void test("VSIX staging includes the TextMate grammar", async () => {
     const packagingSource = await readFile(new URL("src/build-vsix-package.ts", WORKSPACE_ROOT_URL), "utf8");
     assert.match(packagingSource, /syntaxes\/gml\.tmLanguage\.json/u);
+    assert.match(packagingSource, /syntaxes\/markdown-gml\.tmLanguage\.json/u);
     assert.match(packagingSource, /stageSyntaxRoot/u);
+});
+
+void test("Markdown GML TextMate injection grammar is valid and exposes the registered scope", async () => {
+    const grammar = JSON.parse(
+        await readFile(new URL("syntaxes/markdown-gml.tmLanguage.json", WORKSPACE_ROOT_URL), "utf8")
+    ) as {
+        injectionSelector: string;
+        repository: Record<string, object>;
+        scopeName: string;
+    };
+
+    assert.equal(grammar.scopeName, "markdown.gml.codeblock");
+    assert.equal(grammar.injectionSelector, "L:text.html.markdown");
+    assert.deepEqual(Object.keys(grammar.repository).sort(), ["gml-code-block"]);
 });
 
 void test("language configuration covers GML accessors, regions, strings, and indentation", async () => {

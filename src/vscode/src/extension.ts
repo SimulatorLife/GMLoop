@@ -1,10 +1,11 @@
-import { existsSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import * as vscode from "vscode";
 import { LanguageClient, type LanguageClientOptions, type ServerOptions } from "vscode-languageclient/node.js";
 
 import { resolveGmloopLanguageServerExecutableOptions } from "./server-command.js";
+import { syncLocalExtensionFilesPure } from "./sync.js";
 
 const GMLOOP_CONFIGURATION_SECTION = "gmloop";
 const GMLOOP_SERVER_PATH_SETTING = "serverPath";
@@ -15,6 +16,28 @@ const GMLOOP_CLIENT_NAME = "GMLoop GML Language Server";
 let languageClient: LanguageClient | null = null;
 let languageServerOutput: vscode.OutputChannel | null = null;
 let projectFileWatcher: vscode.FileSystemWatcher | null = null;
+
+function syncLocalExtensionFiles(context: vscode.ExtensionContext): void {
+    syncLocalExtensionFilesPure({
+        workspaceFolders: vscode.workspace.workspaceFolders,
+        extensionPath: context.extensionPath,
+        existsSync,
+        readFileSync,
+        copyFileSync,
+        onChanged() {
+            void vscode.window
+                .showInformationMessage(
+                    "GMLoop: Local extension grammars updated from monorepo. Please reload VS Code to apply changes.",
+                    "Reload Window"
+                )
+                .then((selection) => {
+                    if (selection === "Reload Window") {
+                        void vscode.commands.executeCommand("workbench.action.reloadWindow");
+                    }
+                });
+        }
+    });
+}
 
 function getLanguageServerOutputChannel(): vscode.OutputChannel {
     languageServerOutput ??= vscode.window.createOutputChannel(GMLOOP_CLIENT_NAME);
@@ -108,6 +131,7 @@ async function restartLanguageClient(): Promise<void> {
  * Activate the GMLoop VSCode extension and start the GML language server.
  */
 export function activate(context: vscode.ExtensionContext): void {
+    syncLocalExtensionFiles(context);
     projectFileWatcher ??= vscode.workspace.createFileSystemWatcher("**/*.{gml,yy,yyp}");
     context.subscriptions.push(
         projectFileWatcher,

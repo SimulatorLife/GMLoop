@@ -46,6 +46,16 @@
         "language": "gml",
         "scopeName": "source.gml",
         "path": "./syntaxes/gml.tmLanguage.json"
+      },
+      {
+        "scopeName": "markdown.gml.codeblock",
+        "path": "./syntaxes/markdown-gml.tmLanguage.json",
+        "injectTo": [
+          "text.html.markdown"
+        ],
+        "embeddedLanguages": {
+          "source.gml": "gml"
+        }
       }
     ],
     "configuration": {

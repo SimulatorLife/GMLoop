@@ -223,6 +223,14 @@ There is no automatic server refresh in the extension today. The current reliabl
 
 A future development-only watcher could combine those two steps by watching the repo, rebuilding TypeScript, and asking the extension to restart the client, but that behavior is not currently implemented.
 
+## Automatic Local Extension File Syncing
+
+When developing the VSCode extension or modifying its TextMate grammars (`gml.tmLanguage.json`, `markdown-gml.tmLanguage.json`), package manifest (`package.json`), or language configurations (`language-configuration.json`), the extension automatically keeps your installed copy synced:
+
+- **Monorepo Detection**: Upon activation, the extension checks if the GMLoop monorepo workspace is open.
+- **Auto-Copy & Reload**: If open, it compares the configuration and grammar files in the monorepo against the installed copy in your global VSCode extensions directory (`~/.vscode/extensions/gmloop.gmloop-0.0.1`). If they differ, it copies the updated files in place and prompts you to reload the VSCode window to apply the changes immediately.
+
+
 For GameMaker projects initialized through GMLoop, this project-local setting can be created automatically with:
 
 ```sh

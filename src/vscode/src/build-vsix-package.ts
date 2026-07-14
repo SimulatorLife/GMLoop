@@ -25,6 +25,7 @@ const VSCODE_EXTENSION_FILES = [
     "dist/src/server-command.js.map",
     "language-configuration.json",
     "syntaxes/gml.tmLanguage.json",
+    "syntaxes/markdown-gml.tmLanguage.json",
     "node_modules/**",
     "README.md"
 ] as const;
@@ -67,6 +68,10 @@ function copyRequiredExtensionFiles(packageRoot: string, stageRoot: string): voi
     cpSync(
         path.join(packageRoot, "syntaxes", "gml.tmLanguage.json"),
         path.join(stageSyntaxRoot, "gml.tmLanguage.json")
+    );
+    cpSync(
+        path.join(packageRoot, "syntaxes", "markdown-gml.tmLanguage.json"),
+        path.join(stageSyntaxRoot, "markdown-gml.tmLanguage.json")
     );
     cpSync(path.join(packageRoot, "README.md"), path.join(stageRoot, "README.md"));
 }
