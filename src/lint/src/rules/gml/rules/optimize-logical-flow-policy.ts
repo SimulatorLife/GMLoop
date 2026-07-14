@@ -48,7 +48,7 @@ export type LogicalFlowSignalPatterns = Readonly<{
  * `xor`) and the boolean literals (`true`, `false`).
  */
 export const DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS: LogicalFlowSignalPatterns = Object.freeze({
-    logicalNormalizationSignal: /&&|\|\||\^\^|\b(?:and|or|xor|true|false)\b/u,
+    logicalNormalizationSignal: /!|&&|\|\||\^\^|\b(?:and|or|xor|not|true|false)\b/u,
     commentSequence: /\/\/|\/\*/u
 });
 

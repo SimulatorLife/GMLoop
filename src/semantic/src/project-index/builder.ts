@@ -205,8 +205,10 @@ function cloneIdentifierForCollections(record, filePath) {
 function ensureCollectionEntry(map, key, initializer) {
     return Core.getOrCreateMapEntry(map, key, initializer);
 }
-function ensureIdentifierCollectionEntry({ collection, key, identifierId, initializer }) {
-    return ensureCollectionEntry(collection, key, () => {
+const CLONED_MARKER = Symbol("cloned");
+
+function ensureIdentifierCollectionEntry({ collection, key, identifierId, initializer }: any) {
+    const entry = ensureCollectionEntry(collection, key, () => {
         const initializerValue = typeof initializer === "function" ? initializer() : initializer;
         const {
             declarations: initialDeclarations,
@@ -222,6 +224,25 @@ function ensureIdentifierCollectionEntry({ collection, key, identifierId, initia
             ...rest
         };
     });
+
+    // Copy-on-write if the entry was retrieved from the cached map and not yet cloned in this build
+    if (entry && !(entry)[CLONED_MARKER]) {
+        const clonedEntry = {
+            ...entry,
+            declarationKinds: [...(entry.declarationKinds || [])],
+            declarations: [...(entry.declarations || [])],
+            references: [...(entry.references || [])]
+        };
+        Object.defineProperty(clonedEntry, CLONED_MARKER, {
+            value: true,
+            writable: true,
+            enumerable: false,
+            configurable: true
+        });
+        collection.set(key, clonedEntry);
+        return clonedEntry;
+    }
+    return entry;
 }
 function recordIdentifierCollectionRole({
     entry,
@@ -1413,31 +1434,68 @@ function registerInstanceAssignment({
         identifierSink
     });
 }
-function ensureScopeRecord(scopeMap, descriptor) {
-    return Core.getOrCreateMapEntry(scopeMap, descriptor.id, () => ({
+function ensureScopeRecord(scopeMap: Map<string, any>, descriptor: any) {
+    const entry = Core.getOrCreateMapEntry(scopeMap, descriptor.id, () => ({
         id: descriptor.id,
         kind: descriptor.kind,
         name: descriptor.name,
         displayName: descriptor.displayName,
         resourcePath: descriptor.resourcePath,
         event: descriptor.event ?? null,
-        filePaths: [],
-        declarations: [],
-        references: [],
-        ignoredIdentifiers: [],
-        scriptCalls: []
+        filePaths: [] as string[],
+        declarations: [] as any[],
+        references: [] as any[],
+        ignoredIdentifiers: [] as any[],
+        scriptCalls: [] as any[]
     }));
+    if (entry && !(entry)[CLONED_MARKER]) {
+        const clonedEntry = {
+            ...entry,
+            filePaths: [...(entry.filePaths || [])],
+            declarations: [...(entry.declarations || [])],
+            references: [...(entry.references || [])],
+            ignoredIdentifiers: [...(entry.ignoredIdentifiers || [])],
+            scriptCalls: [...(entry.scriptCalls || [])]
+        };
+        Object.defineProperty(clonedEntry, CLONED_MARKER, {
+            value: true,
+            writable: true,
+            enumerable: false,
+            configurable: true
+        });
+        scopeMap.set(descriptor.id, clonedEntry);
+        return clonedEntry;
+    }
+    return entry;
 }
-function ensureFileRecord(filesMap, relativePath, scopeId) {
-    return Core.getOrCreateMapEntry(filesMap, relativePath, () => ({
+function ensureFileRecord(filesMap: Map<string, any>, relativePath: string, scopeId: string) {
+    const entry = Core.getOrCreateMapEntry(filesMap, relativePath, () => ({
         filePath: relativePath,
         contentHash: null,
         scopeId,
-        declarations: [],
-        references: [],
-        ignoredIdentifiers: [],
-        scriptCalls: []
+        declarations: [] as any[],
+        references: [] as any[],
+        ignoredIdentifiers: [] as any[],
+        scriptCalls: [] as any[]
     }));
+    if (entry && !(entry)[CLONED_MARKER]) {
+        const clonedEntry = {
+            ...entry,
+            declarations: [...(entry.declarations || [])],
+            references: [...(entry.references || [])],
+            ignoredIdentifiers: [...(entry.ignoredIdentifiers || [])],
+            scriptCalls: [...(entry.scriptCalls || [])]
+        };
+        Object.defineProperty(clonedEntry, CLONED_MARKER, {
+            value: true,
+            writable: true,
+            enumerable: false,
+            configurable: true
+        });
+        filesMap.set(relativePath, clonedEntry);
+        return clonedEntry;
+    }
+    return entry;
 }
 const TRAVERSAL_LINK_KEYS = new Set(["parent", "enclosingNode", "precedingNode", "followingNode"]);
 
@@ -2435,67 +2493,40 @@ function reconstructResourceAnalysis(existingIndex: any): {
 function createProjectIndexAggregationStateFromExisting(existingIndex: any, resourceAnalysis: any) {
     const scopeMap = new Map<string, any>();
     if (existingIndex && existingIndex.scopes) {
-        for (const [key, value] of Object.entries(existingIndex.scopes)) {
-            const val = value as any;
-            scopeMap.set(key, {
-                id: val.id,
-                kind: val.kind,
-                name: val.name,
-                displayName: val.displayName,
-                resourcePath: val.resourcePath,
-                event: val.event,
-                filePaths: [...(val.filePaths || [])],
-                declarations: [...(val.declarations || [])],
-                references: [...(val.references || [])],
-                ignoredIdentifiers: [...(val.ignoredIdentifiers || [])],
-                scriptCalls: [...(val.scriptCalls || [])]
-            });
+        const scopes = existingIndex.scopes;
+        for (const key in scopes) {
+            if (Object.hasOwn(scopes, key)) {
+                scopeMap.set(key, scopes[key]);
+            }
         }
     }
 
     const filesMap = new Map<string, any>();
     if (existingIndex && existingIndex.files) {
-        for (const [key, value] of Object.entries(existingIndex.files)) {
-            const val = value as any;
-            filesMap.set(key, {
-                filePath: val.filePath,
-                contentHash: val.contentHash ?? null,
-                scopeId: val.scopeId,
-                declarations: [...(val.declarations || [])],
-                references: [...(val.references || [])],
-                ignoredIdentifiers: [...(val.ignoredIdentifiers || [])],
-                scriptCalls: [...(val.scriptCalls || [])]
-            });
+        const files = existingIndex.files;
+        for (const key in files) {
+            if (Object.hasOwn(files, key)) {
+                filesMap.set(key, files[key]);
+            }
         }
     }
 
     const relationships = {
         scriptCalls: [...(existingIndex?.relationships?.scriptCalls || [])],
-        assetReferences: (resourceAnalysis.assetReferences || []).map((reference: any) =>
-            cloneAssetReference(reference)
-        )
+        assetReferences: []
     };
 
     const identifierCollections = createIdentifierCollections();
     if (existingIndex && existingIndex.identifiers) {
-        for (const key of Object.keys(identifierCollections)) {
+        const identifiers = existingIndex.identifiers;
+        for (const key in identifierCollections) {
             const map = (identifierCollections as any)[key];
-            const existingMap = existingIndex.identifiers[key];
+            const existingMap = identifiers[key];
             if (existingMap) {
-                for (const [itemKey, itemVal] of Object.entries(existingMap)) {
-                    const val = itemVal as any;
-                    map.set(itemKey, {
-                        identifierId: val.identifierId,
-                        id: val.id,
-                        key: val.key,
-                        name: val.name,
-                        displayName: val.displayName,
-                        filePath: val.filePath,
-                        resourcePath: val.resourcePath,
-                        declarationKinds: [...(val.declarationKinds || [])],
-                        declarations: [...(val.declarations || [])],
-                        references: [...(val.references || [])]
-                    });
+                for (const itemKey in existingMap) {
+                    if (Object.hasOwn(existingMap, itemKey)) {
+                        map.set(itemKey, existingMap[itemKey]);
+                    }
                 }
             }
         }
@@ -2529,11 +2560,28 @@ function removeFileFromAggregationState(
             if (scopeId !== "global" && scopeId !== "project") {
                 scopeMap.delete(scopeId);
             } else {
-                scopeRecord.filePaths = scopeRecord.filePaths.filter((p: string) => p !== relativeChangedPath);
-                scopeRecord.declarations = scopeRecord.declarations.filter(
+                // Perform copy-on-write for global/project scopes
+                const filePaths = (scopeRecord.filePaths || []).filter((p: string) => p !== relativeChangedPath);
+                const declarations = (scopeRecord.declarations || []).filter(
                     (d: any) => d.filePath !== relativeChangedPath
                 );
-                scopeRecord.references = scopeRecord.references.filter((r: any) => r.filePath !== relativeChangedPath);
+                const references = (scopeRecord.references || []).filter(
+                    (r: any) => r.filePath !== relativeChangedPath
+                );
+                const ignoredIdentifiers = (scopeRecord.ignoredIdentifiers || []).filter(
+                    (i: any) => i.filePath !== relativeChangedPath
+                );
+                const scriptCalls = (scopeRecord.scriptCalls || []).filter(
+                    (c: any) => c.from?.filePath !== relativeChangedPath
+                );
+                scopeMap.set(scopeId, {
+                    ...scopeRecord,
+                    filePaths,
+                    declarations,
+                    references,
+                    ignoredIdentifiers,
+                    scriptCalls
+                });
             }
         }
     }
@@ -2542,10 +2590,22 @@ function removeFileFromAggregationState(
     for (const collectionVal of Object.values(identifierCollections)) {
         const collection = collectionVal as Map<string, any>;
         for (const [key, entry] of collection.entries()) {
-            entry.declarations = entry.declarations.filter((d: any) => d.filePath !== relativeChangedPath);
-            entry.references = entry.references.filter((r: any) => r.filePath !== relativeChangedPath);
-            if (entry.declarations.length === 0 && entry.references.length === 0) {
-                collection.delete(key);
+            const decls = entry.declarations || [];
+            const refs = entry.references || [];
+            const hasDecl = decls.some((d: any) => d.filePath === relativeChangedPath);
+            const hasRef = refs.some((r: any) => r.filePath === relativeChangedPath);
+            if (hasDecl || hasRef) {
+                const declarations = declarationsFilterForRemove(decls, relativeChangedPath);
+                const references = referencesFilterForRemove(refs, relativeChangedPath);
+                if (declarations.length === 0 && references.length === 0) {
+                    collection.delete(key);
+                } else {
+                    collection.set(key, {
+                        ...entry,
+                        declarations,
+                        references
+                    });
+                }
             }
         }
     }
@@ -2556,6 +2616,14 @@ function removeFileFromAggregationState(
             (call: any) => call.from?.filePath !== relativeChangedPath
         );
     }
+}
+
+function declarationsFilterForRemove(decls: any[], relativeChangedPath: string) {
+    return decls.filter((d: any) => d.filePath !== relativeChangedPath);
+}
+
+function referencesFilterForRemove(refs: any[], relativeChangedPath: string) {
+    return refs.filter((r: any) => r.filePath !== relativeChangedPath);
 }
 
 function removeChangedFilesFromAggregationState({

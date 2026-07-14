@@ -211,19 +211,16 @@ function scr_spring(a, b, dst, force) {
         actual_dist = sqrt(actual_dist);
         var diff = actual_dist - dst;
 
-
         // normalize and multiply with diff and amount
         var norm = force * diff / actual_dist;
         xoff *= norm;
         yoff *= norm;
-
 
         // calculate mass
         var m1, r1, r2;
         m1 = 1 / (b.mass + a.mass);
         r1 = b.mass * m1 * 0.5;
         r2 = a.mass * m1 * 0.5;
-
 
         // add speeds
         a.velocity.x -= xoff * r1;
@@ -261,9 +258,13 @@ get_debug_text = function () {
 /// @param [alpha=1]
 /// @param [trans_mat]
 /// @returns {undefined}
-function vertex_buffer_write_triangular_prism(vbuff, colour = c_white, alpha = 1, trans_mat = undefined) {
+function vertex_buffer_write_triangular_prism(
+    vbuff,
+    colour = c_white,
+    alpha = 1,
+    trans_mat = undefined
+) {
     var hx = 0.5, hy = 0.5, h = 1;
-
 
     // Base corners (Z = 0)
     var L0 = [-hx, -hy, 0]; // x-, y-
@@ -275,13 +276,11 @@ function vertex_buffer_write_triangular_prism(vbuff, colour = c_white, alpha = 1
     var LA = [-hx, 0, h];
     var RA = [+hx, 0, h];
 
-
     // Reusable UVs
     static uv00 = [0, 0];
     static uv10 = [1, 0];
     static uv11 = [1, 1];
     static uv01 = [0, 1];
-
 
     // Base quad (Z=0): L0-R0-R1, L0-R1-L1 (outside normal points to Z-; ok for debug)
     vertex_buffer_write_triangle(
@@ -309,7 +308,6 @@ function vertex_buffer_write_triangular_prism(vbuff, colour = c_white, alpha = 1
         trans_mat
     );
 
-
     // Left sloped face (y=-hy -> apex): quad L0-R0-RA-LA => (L0,R0,RA) + (L0,RA,LA)
     vertex_buffer_write_triangle(
         vbuff,
@@ -336,7 +334,6 @@ function vertex_buffer_write_triangular_prism(vbuff, colour = c_white, alpha = 1
         trans_mat
     );
 
-
     // Right sloped face (y=+hy -> apex): quad R1-L1-LA-RA => (R1,L1,LA) + (R1,LA,RA)
     vertex_buffer_write_triangle(
         vbuff,
@@ -362,7 +359,6 @@ function vertex_buffer_write_triangular_prism(vbuff, colour = c_white, alpha = 1
         alpha,
         trans_mat
     );
-
 
     // End caps (triangles in X)
     // X = -hx cap: L0, L1, LA

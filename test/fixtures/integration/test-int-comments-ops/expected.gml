@@ -68,7 +68,9 @@ alarm[1] = 10; // not everything loaded yet, check again in a bit
 
 // Create colmesh shape & mark as trigger - now collision functions can be executed
 colmesh_shape = new ColmeshBlock(scr_matrix_build(round(x), round(y), round(z - 2), 0, 0, 0, max(ceil(sprite_width * 0.5), 10), 4, max(32, sprite_height + 2)));
-global.room_colmesh.add_shape(colmesh_shape, true, false, true, false, undefined, function (o) { // need a function for trigger so projectiles can collide with this, passthrough and call projectile's function
+global.room_colmesh.add_shape(colmesh_shape, true, false, true, false, undefined, function (
+    o
+) { // need a function for trigger so projectiles can collide with this, passthrough and call projectile's function
     gml_pragma("forceinline");
     try {
         o.collider.trigger_shape.col_func(id);

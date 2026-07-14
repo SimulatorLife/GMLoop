@@ -24,7 +24,8 @@ void describe("Error Analytics", () => {
         assert.deepStrictEqual(analytics.errorsByKind, {
             script: 0,
             event: 0,
-            closure: 0
+            closure: 0,
+            resource: 0
         });
     });
 
