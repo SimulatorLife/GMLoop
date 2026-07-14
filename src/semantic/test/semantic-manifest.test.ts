@@ -102,3 +102,31 @@ void test("semantic manifest updates known file entries without rediscovering un
     assert.equal(updated.entries.get("first.gml")?.contentHash, createSemanticContentHash("return 3;"));
     assert.deepEqual(updated.entries.get("second.gml"), previous.entries.get("second.gml"));
 });
+
+void test("buildSemanticFileManifest avoids reading unchanged files when previousManifest is provided", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-manifest-cache-"));
+    const sourcePath = path.join(projectRoot, "main.gml");
+    await writeFile(sourcePath, "return 1;", "utf8");
+
+    // 1. First build (cold start, must read file)
+    const initialManifest = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade);
+
+    // 2. Second build with previousManifest (cache hit on mtime)
+    let readCount = 0;
+    const spyFsFacade = {
+        ...Core.defaultFsFacade,
+        async readFile(filePath: string, encoding: any) {
+            readCount += 1;
+            return Core.defaultFsFacade.readFile(filePath, encoding);
+        }
+    };
+
+    const cachedManifest = await buildSemanticFileManifest(projectRoot, spyFsFacade, [], initialManifest);
+
+    assert.equal(readCount, 0, "Should not read the file from disk if mtime has not changed");
+    assert.deepEqual(cachedManifest.sourceRevision, initialManifest.sourceRevision);
+    assert.deepEqual(
+        cachedManifest.entries.get("main.gml")?.contentHash,
+        initialManifest.entries.get("main.gml")?.contentHash
+    );
+});

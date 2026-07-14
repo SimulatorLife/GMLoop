@@ -2062,9 +2062,15 @@ function createTolerantProjectIndexCoordinator(): ProjectIndexCoordinatorInstanc
  * three-step orchestration plus resource cleanup.
  */
 async function getOrBuildProjectIndex(projectRoot: string): Promise<ProjectIndexSnapshot> {
-    const manifest = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade);
-    const sourceSignature = manifest.sourceRevision;
     const store = openSemanticIndexStore(projectRoot);
+    let storedManifest;
+    try {
+        storedManifest = store.readSemanticManifest("full") ?? store.readSemanticManifest("definitions");
+    } catch {
+        // Ignore failure to read manifest
+    }
+    const manifest = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade, [], storedManifest);
+    const sourceSignature = manifest.sourceRevision;
     const storedState = store.readActiveSemanticSlots().full;
     const storedIndex = store.readSemanticNavigationProjection("full");
     if (storedIndex && storedState?.sourceSignature === sourceSignature) {

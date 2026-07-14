@@ -36,6 +36,7 @@ type WorkerRequest = Readonly<{
     openDocuments: ReadonlyArray<OpenDocumentOverlay>;
     priorityFiles: ReadonlyArray<string>;
     projectRoot: string;
+    previousManifest: any;
 }>;
 
 function createWorkerFsFacade(openDocuments: ReadonlyArray<OpenDocumentOverlay>): FsFacade {
@@ -72,7 +73,8 @@ async function buildWorkerIndex(request: WorkerRequest): Promise<void> {
                 contentHash: document.contentHash,
                 documentVersion: document.documentVersion,
                 sourceText: document.sourceText
-            }))
+            })),
+            request.previousManifest
         );
         const semanticSnapshot = Semantic.createSemanticSnapshotFromProjectIndex(
             rawIndex,
