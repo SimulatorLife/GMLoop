@@ -4,12 +4,12 @@ import { afterEach, describe, it } from "node:test";
 import {
     DEFAULT_MAX_IN_MEMORY_SNAPSHOTS,
     MAX_IN_MEMORY_SNAPSHOTS_ENV_VAR
-} from "../src/runtime-options/format-memory-constants.js";
+} from "../src/modules/formatting/format-memory-constants.js";
 import {
     applyMaxInMemorySnapshotsEnvOverride,
     getDefaultMaxInMemorySnapshots,
     setDefaultMaxInMemorySnapshots
-} from "../src/runtime-options/format-memory-options.js";
+} from "../src/modules/formatting/format-memory-options.js";
 
 const originalEnvValue = process.env[MAX_IN_MEMORY_SNAPSHOTS_ENV_VAR];
 

@@ -17,7 +17,7 @@
 
 import { Core } from "@gmloop/core";
 
-import { createIntegerEnvConfiguredValue } from "../shared/env-configured-integer.js";
+import { createIntegerEnvConfiguredValue } from "../../shared/env-configured-integer.js";
 import {
     DEFAULT_MAX_FORMATTING_CACHE_ENTRIES,
     DEFAULT_MAX_IN_MEMORY_SNAPSHOTS,

@@ -34,6 +34,14 @@ import {
 import { importFormatModule, resolveFormatEntryPoint as resolveCliFormatEntryPoint } from "../format-runtime/index.js";
 import { tryAddSample } from "../modules/formatting/bounded-sample-collector.js";
 import {
+    PERIODIC_CLEANUP_CACHE_RETAINED_ENTRIES,
+    PERIODIC_CLEANUP_INTERVAL
+} from "../modules/formatting/format-memory-constants.js";
+import {
+    getDefaultMaxInMemorySnapshots,
+    setDefaultMaxInMemorySnapshots
+} from "../modules/formatting/format-memory-options.js";
+import {
     hasNegatedIgnoreRules,
     markNegatedIgnoreRulesDetected,
     resetNegatedIgnoreRulesFlag
@@ -53,14 +61,6 @@ import {
     resolveTargetStats,
     validateTargetPathInput
 } from "../modules/formatting/target-path-resolution.js";
-import {
-    PERIODIC_CLEANUP_CACHE_RETAINED_ENTRIES,
-    PERIODIC_CLEANUP_INTERVAL
-} from "../runtime-options/format-memory-constants.js";
-import {
-    getDefaultMaxInMemorySnapshots,
-    setDefaultMaxInMemorySnapshots
-} from "../runtime-options/format-memory-options.js";
 import {
     getDefaultIgnoredFileSampleLimit,
     getDefaultSkippedDirectorySampleLimit,
