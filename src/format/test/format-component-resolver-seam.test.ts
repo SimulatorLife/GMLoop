@@ -99,6 +99,7 @@ void test("createDefaultGmlFormatComponents honours an injected resolver", () =>
         SYMBOLS: "custom-symbols"
     });
     const noopNormalizer = (_formatted: string) => "noop";
+    const customLayoutDefaults = Object.freeze({ printWidth: 100, tabWidth: 2 });
     const resolver = {
         resolveAdapters: () => {
             resolveCalls += 1;
@@ -117,6 +118,7 @@ void test("createDefaultGmlFormatComponents honours an injected resolver", () =>
             bracketSpacing: true,
             singleQuote: true
         }),
+        resolvePrinterLayoutDefaults: () => customLayoutDefaults,
         resolveNormalizeFormattedOutput: () => noopNormalizer
     };
 

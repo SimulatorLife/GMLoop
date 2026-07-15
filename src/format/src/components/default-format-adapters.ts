@@ -5,6 +5,7 @@ import { DEFAULT_PRINT_WIDTH, DEFAULT_TAB_WIDTH } from "../printer/constants.js"
 import { print } from "../printer/index.js";
 import { normalizeFormattedOutput } from "../printer/normalize-formatted-output.js";
 import type { GmlFormatComponentContract } from "./format-types.js";
+import { DEFAULT_GML_PRINTER_LAYOUT_DEFAULTS, type GmlPrinterLayoutDefaults } from "./printer-layout-defaults.js";
 
 /**
  * Default Prettier option overrides shared by the formatter orchestration.
@@ -21,6 +22,8 @@ export type GmlFormatPrettierDefaults = Readonly<{
     bracketSpacing: boolean;
     singleQuote: boolean;
 }>;
+
+export type { GmlPrinterLayoutDefaults } from "./printer-layout-defaults.js";
 
 /**
  * Dependency-inversion seam for the concrete adapters that back the
@@ -45,6 +48,7 @@ export type GmlFormatPrettierDefaults = Readonly<{
 export type GmlFormatAdapterResolver = Readonly<{
     resolveAdapters: () => GmlFormatComponentContract;
     resolvePrettierDefaults: () => GmlFormatPrettierDefaults;
+    resolvePrinterLayoutDefaults: () => GmlPrinterLayoutDefaults;
     resolveNormalizeFormattedOutput: () => (formatted: string) => string;
 }>;
 
@@ -55,6 +59,8 @@ const DEFAULT_PRETTIER_OPTIONS: GmlFormatPrettierDefaults = Object.freeze({
     bracketSpacing: false, // Keep false to match existing GML formatting expectations.
     singleQuote: false
 });
+
+const DEFAULT_PRINTER_LAYOUT_DEFAULTS: GmlPrinterLayoutDefaults = DEFAULT_GML_PRINTER_LAYOUT_DEFAULTS;
 
 const DEFAULT_ADAPTERS: GmlFormatComponentContract = Object.freeze({
     gmlParserAdapter,
@@ -78,5 +84,6 @@ const DEFAULT_ADAPTERS: GmlFormatComponentContract = Object.freeze({
 export const defaultGmlFormatAdapterResolver: GmlFormatAdapterResolver = Object.freeze({
     resolveAdapters: () => DEFAULT_ADAPTERS,
     resolvePrettierDefaults: () => DEFAULT_PRETTIER_OPTIONS,
+    resolvePrinterLayoutDefaults: () => DEFAULT_PRINTER_LAYOUT_DEFAULTS,
     resolveNormalizeFormattedOutput: () => normalizeFormattedOutput
 });
