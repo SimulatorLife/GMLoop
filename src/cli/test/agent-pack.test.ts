@@ -545,7 +545,7 @@ void test("agent pack rejects projects without a yyp and unsafe receipt paths", 
             `${JSON.stringify({ conflicts: [], files: { "../../outside": "hash" }, package: "@gmloop/agent-pack", version: "0.0.0" })}\n`,
             "utf8"
         );
-        await assert.rejects(() => AgentPack.initializeAgentPack(directory), /safe project-relative paths/u);
+        await assert.rejects(() => AgentPack.initializeAgentPack(directory), /'files' is malformed \(unsafe path/u);
     } finally {
         await rm(directory, { force: true, recursive: true });
     }

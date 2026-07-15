@@ -174,39 +174,122 @@ function isSafeProjectRelativePath(candidatePath: string): boolean {
 
 function parseStringRecord(value: unknown, fieldName: string, sourcePath: string): Readonly<Record<string, string>> {
     if (!isRecord(value)) {
-        throw new Error(`Agent-pack receipt field '${fieldName}' must be an object: ${sourcePath}`);
+        throw new TypeError(
+            `${AGENT_PACK_NAME} receipt field '${fieldName}' must be an object of string values: ${sourcePath}`
+        );
     }
     const entries = Object.entries(value);
-    if (entries.some((entry) => !isSafeProjectRelativePath(entry[0]) || typeof entry[1] !== "string")) {
-        throw new Error(
-            `Agent-pack receipt field '${fieldName}' must contain safe project-relative paths and string values: ${sourcePath}`
-        );
+    const unsafeEntry = entries.find((entry) => !isSafeProjectRelativePath(entry[0]) || typeof entry[1] !== "string");
+    if (unsafeEntry !== undefined) {
+        const [unsafePath, unsafeValue] = unsafeEntry;
+        const reason =
+            typeof unsafeValue === "string"
+                ? `unsafe path "${unsafePath}"`
+                : `value of kind ${unsafeValue === null ? "null" : typeof unsafeValue}`;
+        throw new TypeError(`${AGENT_PACK_NAME} receipt field '${fieldName}' is malformed (${reason}): ${sourcePath}`);
     }
     return Object.freeze(Object.fromEntries(entries) as Record<string, string>);
 }
 
 function parseStringArray(value: unknown, fieldName: string, sourcePath: string): ReadonlyArray<string> {
-    if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
-        throw new Error(`Agent-pack receipt field '${fieldName}' must be an array of strings: ${sourcePath}`);
+    if (!Array.isArray(value)) {
+        throw new TypeError(
+            `${AGENT_PACK_NAME} receipt field '${fieldName}' must be an array of strings: ${sourcePath}`
+        );
+    }
+    const nonStringIndex = value.findIndex((entry) => typeof entry !== "string");
+    if (nonStringIndex !== -1) {
+        const offendingValue = value[nonStringIndex];
+        const actualKind = offendingValue === null ? "null" : typeof offendingValue;
+        throw new TypeError(
+            `${AGENT_PACK_NAME} receipt field '${fieldName}' entry at index ${nonStringIndex} must be a string, received ${actualKind}: ${sourcePath}`
+        );
     }
     return Object.freeze([...value].sort());
 }
 
+/**
+ * Parse the contents of a project-local agent-pack receipt into a typed
+ * {@link AgentPackReceipt}.
+ *
+ * The receipt records the installed agent-pack version, the conflicts the
+ * installer previously detected, and the source hashes for every packaged
+ * file shipped to the project. Because the file is a user-editable JSON
+ * artifact under `.gmloop/agent-pack.json`, the parser must surface every
+ * failure mode as a structured {@link TypeError} that identifies the
+ * offending source path — the previous implementation let the raw
+ * `SyntaxError` from `JSON.parse` escape through and folded shape
+ * mismatches into a single catch-all branch, which made CLI failures hard
+ * to diagnose whenever a hand-edited receipt drifted out of sync with the
+ * schema (truncated JSON, wrong `package` discriminant, non-string
+ * `version`, etc.).
+ *
+ * Every failure mode — malformed JSON, non-object top-level value,
+ * unexpected `package`, missing or non-string `version`, empty `version`,
+ * and per-element validation of `conflicts` / `files` — now surfaces a
+ * `TypeError` whose message names the source path and the specific
+ * condition that triggered the rejection. The original `SyntaxError` is
+ * preserved on the new error via `cause` so callers can still recover the
+ * parser's line/column detail when surfacing the failure.
+ *
+ * @param source Raw receipt file contents, exactly as read from disk.
+ * @param sourcePath Absolute or project-relative path included in error
+ *                   messages to trace the failure back to its on-disk
+ *                   origin.
+ * @returns A frozen {@link AgentPackReceipt} with deterministic ordering.
+ * @throws {TypeError} When the payload is not valid JSON, is not a JSON
+ *                     object, has an unexpected `package` discriminant,
+ *                     has a missing/empty/non-string `version`, or
+ *                     contains `conflicts` / `files` entries that fail
+ *                     per-element validation. The error message always
+ *                     names the source path and identifies the specific
+ *                     failure.
+ */
 function parseAgentPackReceipt(source: string, sourcePath: string): AgentPackReceipt {
-    const parsed: unknown = JSON.parse(source);
-    if (
-        !isRecord(parsed) ||
-        parsed.package !== AGENT_PACK_NAME ||
-        typeof parsed.version !== "string" ||
-        parsed.version.trim().length === 0
-    ) {
-        throw new Error(`Invalid ${AGENT_PACK_NAME} receipt: ${sourcePath}`);
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(source);
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new TypeError(`${AGENT_PACK_NAME} receipt JSON is malformed (${reason}): ${sourcePath}`, {
+            cause: error
+        });
     }
+
+    if (!isRecord(parsed)) {
+        const actualKind = parsed === null ? "null" : Array.isArray(parsed) ? "an array" : typeof parsed;
+        throw new TypeError(`${AGENT_PACK_NAME} receipt must be a JSON object, received ${actualKind}: ${sourcePath}`);
+    }
+
+    if (parsed.package !== AGENT_PACK_NAME) {
+        const actualPackage = parsed.package;
+        const actualDescription =
+            typeof actualPackage === "string"
+                ? `"${actualPackage}"`
+                : actualPackage === null
+                  ? "null"
+                  : typeof actualPackage;
+        throw new TypeError(
+            `${AGENT_PACK_NAME} receipt has unexpected package ${actualDescription}, expected "${AGENT_PACK_NAME}": ${sourcePath}`
+        );
+    }
+
+    const { version } = parsed;
+    if (typeof version !== "string") {
+        const actualKind = version === null ? "null" : Array.isArray(version) ? "array" : typeof version;
+        throw new TypeError(
+            `${AGENT_PACK_NAME} receipt version must be a string, received ${actualKind}: ${sourcePath}`
+        );
+    }
+    if (version.trim().length === 0) {
+        throw new TypeError(`${AGENT_PACK_NAME} receipt version must be a non-empty string: ${sourcePath}`);
+    }
+
     return Object.freeze({
-        conflicts: parseStringArray(parsed.conflicts, "conflicts", sourcePath),
-        files: parseStringRecord(parsed.files, "files", sourcePath),
+        conflicts: parseStringArray(parsed.conflicts === undefined ? [] : parsed.conflicts, "conflicts", sourcePath),
+        files: parseStringRecord(parsed.files === undefined ? {} : parsed.files, "files", sourcePath),
         package: AGENT_PACK_NAME,
-        version: parsed.version
+        version
     });
 }
 
@@ -784,14 +867,15 @@ export async function initializeAgentPack(
 }
 
 /**
- * Test-only surface that exposes the receipt comparison helpers so the
- * dedicated test file can exercise them directly without having to drive the
- * full project initialization pipeline. The named `__agentPackTest__`
- * marker keeps these references out of the public API while still being
- * discoverable for the internal test suite.
+ * Test-only surface that exposes the receipt comparison helpers and the
+ * hardened receipt parser so the dedicated test files can exercise them
+ * directly without having to drive the full project initialization pipeline.
+ * The named `__agentPackTest__` marker keeps these references out of the
+ * public API while still being discoverable for the internal test suite.
  */
 export const __agentPackTest__ = Object.freeze({
     agentPackReceiptsMatch,
     areStringArraysEqual,
-    areStringRecordsEqual
+    areStringRecordsEqual,
+    parseAgentPackReceipt
 });
