@@ -7,6 +7,7 @@ import test from "node:test";
 import { Parser } from "@gmloop/parser";
 
 import { __test__, runCliTestCommand } from "../src/cli.js";
+import { createCodemodExecutionOrderTracker } from "../src/commands/refactor-codemod-execution-order.js";
 import {
     assertProjectGmlFilesParse,
     createSyntheticRefactorProject as createSyntheticProject,
@@ -16,6 +17,22 @@ import {
     writeProjectFile,
     writeScriptResource
 } from "./test-helpers/refactor-codemod-command-fixture.js";
+
+void test("codemod execution order tracker consumes callbacks in configured order", () => {
+    const tracker = createCodemodExecutionOrderTracker(["globalvarToGlobal", "loopLengthHoisting"]);
+
+    assert.equal(tracker.nextCodemodId(), "globalvarToGlobal");
+    tracker.consumeCompletedCodemod("globalvarToGlobal");
+    assert.equal(tracker.nextCodemodId(), "loopLengthHoisting");
+    tracker.consumeCompletedCodemod("loopLengthHoisting");
+    assert.equal(tracker.nextCodemodId(), undefined);
+
+    const driftTracker = createCodemodExecutionOrderTracker(["globalvarToGlobal"]);
+    assert.throws(
+        () => driftTracker.consumeCompletedCodemod("loopLengthHoisting"),
+        /expected globalvarToGlobal, received loopLengthHoisting/u
+    );
+});
 
 void test("refactor codemod --list discovers gmloop.json and tolerates unrelated top-level config", async () => {
     await withSyntheticRefactorProject(

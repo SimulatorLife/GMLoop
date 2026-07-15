@@ -31,6 +31,7 @@ import {
     resolveExistingGmloopConfigPath,
     resolveExplicitWorkflowTargetPath
 } from "../workflow/project-root.js";
+import { createCodemodExecutionOrderTracker } from "./refactor-codemod-execution-order.js";
 
 const { buildProjectIndex } = Semantic;
 const {
@@ -615,7 +616,7 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
         const indexedRootTargetGmlFiles =
             projectIndex === null ? null : resolveIndexedRootTargetGmlFiles(projectRoot, targetPaths, projectIndex);
         const gmlFilePaths = indexedRootTargetGmlFiles ?? (await collectTargetGmlFiles(projectRoot, targetPaths));
-        const remainingSelectedCodemodIds = [...selectedCodemodIds];
+        const codemodExecutionOrder = createCodemodExecutionOrderTracker(selectedCodemodIds);
 
         if (selectedCodemodIds.length === 0) {
             console.log("No configured codemods were selected. Nothing to do.");
@@ -659,12 +660,7 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
             },
             onAfterCodemod: async (summary, context) => {
                 const codemodDuration = ((Date.now() - codemodStartTime) / 1000).toFixed(2);
-                const completedCodemodId = remainingSelectedCodemodIds.shift();
-                if (completedCodemodId !== summary.id) {
-                    throw new Error(
-                        `Configured codemod execution order drifted while refreshing semantic index (expected ${completedCodemodId ?? "<none>"}, received ${summary.id}).`
-                    );
-                }
+                codemodExecutionOrder.consumeCompletedCodemod(summary.id);
                 if (summary.changed && !semanticIndexDependentCodemodIds.has(summary.id)) {
                     hasPendingSemanticIndexRefresh = true;
                 }
@@ -681,7 +677,7 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
                     console.log(`Error: ${error}`);
                 }
 
-                const nextCodemodId = remainingSelectedCodemodIds[0];
+                const nextCodemodId = codemodExecutionOrder.nextCodemodId();
 
                 const shouldRefreshBeforeRemainingSemanticCodemods =
                     hasPendingSemanticIndexRefresh &&
