@@ -5,7 +5,7 @@ import type {
     GraphVisualizationLiveReloadRecentPatch,
     GraphVisualizationLiveReloadStatusSnapshot
 } from "../../graph/types.js";
-import { getUiErrorMessage } from "../error-message.js";
+import { getUiNetworkErrorMessage } from "../error-message.js";
 
 const DEFAULT_POLL_INTERVAL_MS = 2000;
 const MIN_POLL_INTERVAL_MS = 500;
@@ -253,7 +253,11 @@ export class LiveReloadPollingController implements ReactiveController {
             // a momentary hiccup does not flash an error banner; scheduled
             // polls still surface the failure.
             if (!silent) {
-                const message = getUiErrorMessage(error, "Unknown polling error.");
+                const message = getUiNetworkErrorMessage(
+                    error,
+                    `the live-reload status server at ${statusUrl}`,
+                    "Unknown polling error."
+                );
                 this.#state = {
                     pollErrorMessage: message,
                     polledStatus: this.#state.polledStatus

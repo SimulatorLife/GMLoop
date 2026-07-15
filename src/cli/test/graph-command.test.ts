@@ -10,6 +10,7 @@ import { Core } from "@gmloop/core";
 
 import { writeGameMakerCliActiveProjectState } from "../src/commands/game-maker-cli.js";
 import { __graphCommandTest__, createGraphCommand } from "../src/commands/graph.js";
+import type { LiveReloadRegisteredSession } from "../src/modules/live-reload/session-registry.js";
 
 const SKIP_CLI_ENV_VAR = "PRETTIER_PLUGIN_GML_SKIP_CLI_RUN";
 const SKIP_CLI_ENV_VALUE = "1";
@@ -93,22 +94,48 @@ async function waitForCondition(predicate: () => boolean, failureMessage: string
     assert.fail(failureMessage);
 }
 
-function createLiveReloadStatusSnapshot() {
+function createLiveReloadStatusPayload(runtimeUrl: string | null): Record<string, unknown> {
     return {
-        avgHotReloadLatencyMs: null,
         errorCount: 0,
-        maxPatchHistory: 50,
+        liveReloadSession: { sessionId: "graph-test-session" },
         patchCount: 0,
-        patchHistorySize: 0,
-        p95HotReloadLatencyMs: null,
-        recentErrors: [],
-        recentPatches: [],
-        runtimeUrl: null,
+        runtimeUrl,
         scanComplete: true,
         totalPatchCount: 0,
-        uptimeMs: 10,
-        watcherStatus: "running" as const,
+        uptime: 10,
         websocketClients: 0
+    };
+}
+
+type LiveReloadSessionEndpointOverrides = Readonly<{
+    projectRoot?: string;
+    runtimeUrl?: string | null;
+    sessionId?: string;
+    statusPort?: number;
+    watchedRoot?: string;
+    websocketPort?: number;
+}>;
+
+function createRegisteredLiveReloadSession(
+    overrides: LiveReloadSessionEndpointOverrides = {}
+): LiveReloadRegisteredSession {
+    return {
+        lastHeartbeatAt: Date.now(),
+        processId: 12_345,
+        projectRoot: "/tmp/graph-live-reload-project",
+        runtimeUrl: "http://127.0.0.1:61003/",
+        startSource: "ui",
+        status: "running",
+        statusHost: "127.0.0.1",
+        statusPort: 61_001,
+        statusUrl: "http://127.0.0.1:61001/status",
+        sessionId: "graph-test-session",
+        watchedRoot: "/tmp/graph-live-reload-project",
+        websocketHost: "127.0.0.1",
+        websocketPort: 61_002,
+        websocketUrl: "ws://127.0.0.1:61002",
+        yypPath: "/tmp/graph-live-reload-project/Project.yyp",
+        ...overrides
     };
 }
 
@@ -172,79 +199,6 @@ void test("CLI command catalog includes graph leaf commands", async () => {
     assert.ok(!catalog.some((entry) => entry.displayName === "graph usages"));
     assert.ok(catalog.some((entry) => entry.displayName === "symbol inspect"));
     assert.ok(!catalog.some((entry) => entry.displayName === "performance"));
-});
-
-void test("graph live-reload ready model requires a runtime URL", () => {
-    const snapshot = createLiveReloadStatusSnapshot();
-    const model = __graphCommandTest__.createReadyGraphVisualizationLiveReloadModel(
-        {
-            model: __graphCommandTest__.createGraphVisualizationLiveReloadModel(null)
-        },
-        snapshot
-    );
-
-    assert.equal(model, null);
-});
-
-void test("graph live-reload ready model preserves runtime URL and status snapshot", () => {
-    const snapshot = createLiveReloadStatusSnapshot();
-    const model = __graphCommandTest__.createReadyGraphVisualizationLiveReloadModel(
-        {
-            model: __graphCommandTest__.createGraphVisualizationLiveReloadModel("http://127.0.0.1:51264/")
-        },
-        snapshot
-    );
-
-    assert.equal(model?.endpoints.runtimeUrl, "http://127.0.0.1:51264/");
-    assert.equal(model?.statusSnapshot, snapshot);
-});
-
-void test("graph live-reload ready model can adopt runtime URL from status snapshot", () => {
-    const snapshot = {
-        ...createLiveReloadStatusSnapshot(),
-        runtimeUrl: "http://127.0.0.1:51264/"
-    };
-    const model = __graphCommandTest__.createReadyGraphVisualizationLiveReloadModel(
-        {
-            model: null
-        },
-        snapshot
-    );
-
-    assert.equal(model?.endpoints.runtimeUrl, "http://127.0.0.1:51264/");
-    assert.equal(model?.statusSnapshot, snapshot);
-});
-
-void test("graph live-reload startup readiness requires a reachable runtime URL", async () => {
-    const snapshot = createLiveReloadStatusSnapshot();
-    const model = await __graphCommandTest__.createReachableGraphVisualizationLiveReloadModel(
-        {
-            model: __graphCommandTest__.createGraphVisualizationLiveReloadModel("http://127.0.0.1:51264/")
-        },
-        snapshot
-    );
-
-    assert.equal(model, null);
-});
-
-void test("graph live-reload runtime URL reachability accepts successful HEAD responses", async () => {
-    const isReachable = await __graphCommandTest__.isGraphVisualizationLiveReloadRuntimeUrlReachable(
-        "http://127.0.0.1:51264/",
-        async () => new Response(null, { status: 200 })
-    );
-
-    assert.equal(isReachable, true);
-});
-
-void test("graph live-reload runtime URL reachability rejects failed probes", async () => {
-    const isReachable = await __graphCommandTest__.isGraphVisualizationLiveReloadRuntimeUrlReachable(
-        "http://127.0.0.1:51264/",
-        async () => {
-            throw new Error("Connection refused");
-        }
-    );
-
-    assert.equal(isReachable, false);
 });
 
 void test("graph command rejects removed symbol-centric subcommands", async () => {
@@ -713,12 +667,8 @@ void test("graph visualize live-reload startup options honor runtime.liveReload 
     assert.equal(startupOptions.websocketPort, 17_890);
 });
 
-void test("graph visualize live-reload startup timeout allows long build-first startup", () => {
-    assert.equal(__graphCommandTest__.GRAPH_VISUALIZATION_LIVE_RELOAD_START_TIMEOUT_MS, 600_000);
-});
-
-void test("graph visualize live-reload worker args include configured startup paths", () => {
-    const args = __graphCommandTest__.createGraphVisualizationLiveReloadDevCommandArgs("/tmp/project", {
+void test("graph visualize live-reload worker args include configured startup paths and UI ownership", () => {
+    const args = __graphCommandTest__.createGraphVisualizationLiveReloadStartArguments({
         gmTempRoot: "/tmp/project/.gm-temp/html5",
         hasBuildConfiguration: true,
         html5OutputRoot: "/tmp/project/dist/html5",
@@ -728,9 +678,7 @@ void test("graph visualize live-reload worker args include configured startup pa
         websocketPort: 47_910
     });
 
-    assert.deepEqual(args.slice(0, 5), ["live-reload", "worker", "--path", "/tmp/project", "--session-id"]);
-    assert.match(args[5] ?? "", /^[0-9a-f-]{36}$/u);
-    assert.deepEqual(args.slice(6), [
+    assert.deepEqual(args, [
         "--html5-output",
         "/tmp/project/dist/html5",
         "--gm-temp-root",
@@ -747,6 +695,232 @@ void test("graph visualize live-reload worker args include configured startup pa
         "ui",
         "--quiet"
     ]);
+});
+
+void test("graph live-reload adoption preserves registry endpoints without allocating ports", async () => {
+    const session = createRegisteredLiveReloadSession();
+    let allocationCount = 0;
+    let receivedStartArguments: ReadonlyArray<string> | null = null;
+    const state = __graphCommandTest__.createGraphVisualizationLiveReloadSessionState();
+
+    const model = await __graphCommandTest__.ensureGraphVisualizationLiveReloadSession(
+        state,
+        { projectConfig: {}, projectRoot: session.projectRoot, restart: false },
+        {
+            allocateEndpointOptions: async () => {
+                allocationCount += 1;
+                return {
+                    statusHost: "127.0.0.1",
+                    statusPort: 61_001,
+                    websocketHost: "127.0.0.1",
+                    websocketPort: 61_002
+                };
+            },
+            discoverSession: async () => ({
+                alive: true,
+                registryPath: path.join(session.projectRoot, ".gmloop/live-reload-session.json"),
+                session,
+                status: createLiveReloadStatusPayload("http://127.0.0.1:61999/")
+            }),
+            manageSession: async (options) => {
+                receivedStartArguments = options.startArguments;
+                return { mode: "attached", session, status: createLiveReloadStatusPayload("http://127.0.0.1:61999/") };
+            }
+        }
+    );
+
+    assert.equal(allocationCount, 0);
+    assert.deepEqual(receivedStartArguments, []);
+    assert.deepEqual(model.endpoints, {
+        runtimeUrl: session.runtimeUrl,
+        statusUrl: session.statusUrl,
+        websocketUrl: session.websocketUrl
+    });
+    assert.equal(state.ownedSession, null);
+});
+
+void test("graph live-reload startup allocates dynamic endpoints only for a new worker", async () => {
+    const session = createRegisteredLiveReloadSession({
+        runtimeUrl: "http://127.0.0.1:62003/",
+        statusPort: 62_001,
+        websocketPort: 62_002
+    });
+    let allocationCount = 0;
+    let receivedStartArguments: ReadonlyArray<string> | null = null;
+    const state = __graphCommandTest__.createGraphVisualizationLiveReloadSessionState();
+
+    await __graphCommandTest__.ensureGraphVisualizationLiveReloadSession(
+        state,
+        { projectConfig: {}, projectRoot: session.projectRoot, restart: false },
+        {
+            allocateEndpointOptions: async () => {
+                allocationCount += 1;
+                return {
+                    statusHost: "127.0.0.1",
+                    statusPort: 62_001,
+                    websocketHost: "127.0.0.1",
+                    websocketPort: 62_002
+                };
+            },
+            discoverSession: async () => ({
+                alive: false,
+                registryPath: path.join(session.projectRoot, ".gmloop/live-reload-session.json"),
+                session: null,
+                status: null
+            }),
+            manageSession: async (options) => {
+                receivedStartArguments = options.startArguments;
+                return { mode: "started", session, status: createLiveReloadStatusPayload(session.runtimeUrl) };
+            }
+        }
+    );
+
+    assert.equal(allocationCount, 1);
+    assert.ok(receivedStartArguments?.includes("--start-source"));
+    assert.ok(receivedStartArguments?.includes("ui"));
+    assert.ok(receivedStartArguments?.includes("62001"));
+    assert.ok(receivedStartArguments?.includes("62002"));
+    assert.equal(state.ownedSession?.sessionId, session.sessionId);
+});
+
+void test("graph live-reload new sessions receive distinct dynamic status and websocket ports", async () => {
+    const sessions = [
+        createRegisteredLiveReloadSession({
+            projectRoot: "/tmp/graph-live-reload-project-one",
+            watchedRoot: "/tmp/graph-live-reload-project-one"
+        }),
+        createRegisteredLiveReloadSession({
+            projectRoot: "/tmp/graph-live-reload-project-two",
+            watchedRoot: "/tmp/graph-live-reload-project-two",
+            sessionId: "graph-test-session-two"
+        })
+    ];
+    const allocatedEndpoints: Array<{ statusPort: number; websocketPort: number }> = [];
+    let nextPort = 62_100;
+
+    for (const session of sessions) {
+        const state = __graphCommandTest__.createGraphVisualizationLiveReloadSessionState();
+        await __graphCommandTest__.ensureGraphVisualizationLiveReloadSession(
+            state,
+            { projectConfig: {}, projectRoot: session.projectRoot, restart: false },
+            {
+                allocateEndpointOptions: async () => {
+                    const endpointOptions = {
+                        statusHost: "127.0.0.1",
+                        statusPort: nextPort,
+                        websocketHost: "127.0.0.1",
+                        websocketPort: nextPort + 1
+                    };
+                    nextPort += 2;
+                    allocatedEndpoints.push(endpointOptions);
+                    return endpointOptions;
+                },
+                discoverSession: async (targetPath) => ({
+                    alive: false,
+                    registryPath: path.join(targetPath, ".gmloop/live-reload-session.json"),
+                    session: null,
+                    status: null
+                }),
+                manageSession: async (options) => {
+                    assert.ok(options.startArguments.includes("--start-source"));
+                    assert.ok(options.startArguments.includes("ui"));
+                    const registeredSession = sessions.find(({ projectRoot }) => projectRoot === options.targetPath);
+                    assert.ok(registeredSession);
+                    return {
+                        mode: "started",
+                        session: registeredSession,
+                        status: createLiveReloadStatusPayload(registeredSession.runtimeUrl)
+                    };
+                }
+            }
+        );
+    }
+
+    const firstEndpoints = allocatedEndpoints[0];
+    const secondEndpoints = allocatedEndpoints[1];
+    assert.ok(firstEndpoints);
+    assert.ok(secondEndpoints);
+    assert.notEqual(firstEndpoints.statusPort, secondEndpoints.statusPort);
+    assert.notEqual(firstEndpoints.websocketPort, secondEndpoints.websocketPort);
+});
+
+void test("graph host shutdown does not stop a session owned outside the graph host", async () => {
+    const session = createRegisteredLiveReloadSession();
+    const state = __graphCommandTest__.createGraphVisualizationLiveReloadSessionState();
+    state.model = __graphCommandTest__.createGraphVisualizationLiveReloadModelFromSession(session, null);
+    let stopCallCount = 0;
+
+    await __graphCommandTest__.stopOwnedGraphVisualizationLiveReloadSession(
+        state,
+        session.projectRoot,
+        async () => {
+            stopCallCount += 1;
+            return { mode: "stopped", session: null, status: null };
+        },
+        async () => ({
+            alive: true,
+            registryPath: path.join(session.projectRoot, ".gmloop/live-reload-session.json"),
+            session,
+            status: null
+        })
+    );
+
+    assert.equal(stopCallCount, 0);
+    assert.equal(state.model, null);
+});
+
+void test("graph live-reload stop leaves an externally owned session running", async () => {
+    const state = __graphCommandTest__.createGraphVisualizationLiveReloadSessionState();
+    const externalSession = createRegisteredLiveReloadSession();
+    state.model = __graphCommandTest__.createGraphVisualizationLiveReloadModelFromSession(
+        externalSession,
+        createLiveReloadStatusPayload(externalSession.runtimeUrl)
+    );
+    let stopCalls = 0;
+
+    await __graphCommandTest__.stopOwnedGraphVisualizationLiveReloadSession(
+        state,
+        externalSession.projectRoot,
+        async () => {
+            stopCalls += 1;
+            return { mode: "stopped", session: null, status: null };
+        },
+        async () => ({
+            alive: true,
+            registryPath: path.join(externalSession.projectRoot, ".gmloop/live-reload-session.json"),
+            session: externalSession,
+            status: createLiveReloadStatusPayload(externalSession.runtimeUrl)
+        })
+    );
+
+    assert.equal(stopCalls, 0);
+    assert.equal(state.model, null);
+});
+
+void test("graph live-reload project switching stops only the previously owned matching session", async () => {
+    const state = __graphCommandTest__.createGraphVisualizationLiveReloadSessionState();
+    const ownedSession = createRegisteredLiveReloadSession();
+    state.ownedSession = ownedSession;
+    let stopTargetPath = "";
+
+    await __graphCommandTest__.stopOwnedGraphVisualizationLiveReloadSession(
+        state,
+        ownedSession.projectRoot,
+        async (options) => {
+            stopTargetPath = options.targetPath;
+            return { mode: "stopped", session: null, status: null };
+        },
+        async () => ({
+            alive: true,
+            registryPath: path.join(ownedSession.projectRoot, ".gmloop/live-reload-session.json"),
+            session: ownedSession,
+            status: createLiveReloadStatusPayload(ownedSession.runtimeUrl)
+        })
+    );
+
+    assert.equal(stopTargetPath, ownedSession.projectRoot);
+    assert.equal(state.ownedSession, null);
+    assert.equal(state.model, null);
 });
 
 void test("graph visualize serve defaults to the bundled 3DSpider demo from the repository root", () => {
@@ -1043,316 +1217,6 @@ void test("streamProcessOutputByLine removes all listeners on error", async () =
     );
     assert.equal(mockStream.listenerCount("error"), 0, "Expected zero 'error' listeners after error.");
     assert.equal(mockStream.listenerCount("end"), 0, "Expected zero 'end' listeners after error.");
-});
-
-type FakeTimerHandle = number;
-
-function createFakeStartupTimers() {
-    let nextHandle = 1;
-    const pending = new Map<FakeTimerHandle, { callback: () => void; delayMs: number; type: "poll" | "timeout" }>();
-    const fireOrder: Array<{ handle: FakeTimerHandle; type: "poll" | "timeout" }> = [];
-
-    const schedule =
-        (type: "poll" | "timeout") =>
-        (callback: () => void, delayMs: number): FakeTimerHandle => {
-            const handle = nextHandle++;
-            pending.set(handle, { callback, delayMs, type });
-            return handle;
-        };
-
-    const cancel =
-        (_type: "poll" | "timeout") =>
-        (handle: FakeTimerHandle): void => {
-            pending.delete(handle);
-        };
-
-    const advanceTime = async (elapsedMs: number): Promise<void> => {
-        let remainingMs = elapsedMs;
-        while (remainingMs > 0 && pending.size > 0) {
-            const dueHandle = [...pending.entries()]
-                .filter(([, entry]) => entry.delayMs <= remainingMs)
-                .sort(([, left], [, right]) => left.delayMs - right.delayMs)[0]?.[0];
-
-            if (dueHandle === undefined) {
-                return;
-            }
-            const entry = pending.get(dueHandle);
-            if (entry === undefined) {
-                return;
-            }
-            remainingMs -= entry.delayMs;
-            pending.delete(dueHandle);
-            fireOrder.push({ handle: dueHandle, type: entry.type });
-            entry.callback();
-            // Yield to the microtask queue so async continuations from the fired
-            // callback (e.g., the polling loop scheduling its next tick) complete
-            // before the next timer is selected. This mirrors real Node behavior
-            // where microtasks drain between timer callbacks.
-            await Promise.resolve();
-        }
-    };
-
-    const snapshotPendingCounts = (): { polls: number; timeouts: number } => {
-        let polls = 0;
-        let timeouts = 0;
-        for (const entry of pending.values()) {
-            if (entry.type === "poll") {
-                polls += 1;
-            } else {
-                timeouts += 1;
-            }
-        }
-        return { polls, timeouts };
-    };
-
-    return {
-        advanceTime,
-        fireOrder,
-        pending,
-        snapshotPendingCounts,
-        timers: Object.freeze({
-            cancelPoll: cancel("poll"),
-            cancelTimeout: cancel("timeout"),
-            schedulePoll: schedule("poll"),
-            scheduleTimeout: schedule("timeout")
-        })
-    };
-}
-
-function createStartupProbeSnapshot(): ReturnType<typeof __graphCommandTest__.createGraphVisualizationLiveReloadModel> {
-    return __graphCommandTest__.createGraphVisualizationLiveReloadModel("http://127.0.0.1:51264/", null);
-}
-
-void test("awaitGraphVisualizationLiveReloadStartup resolves when probe reports a ready model on first poll", async () => {
-    let pollAttempts = 0;
-    const readyModel = createStartupProbeSnapshot();
-    const fakeTimers = createFakeStartupTimers();
-
-    const result = await __graphCommandTest__.awaitGraphVisualizationLiveReloadStartup(
-        {
-            buildReadyModel: async () => {
-                pollAttempts += 1;
-                return readyModel;
-            },
-            childStderrBuffer: [],
-            createTimeoutError: (stderrBuffer) => new Error(`timeout: ${stderrBuffer.join("|") || "no stderr"}`),
-            isChildProcessActive: () => true,
-            tryFetchStatus: async () => ({
-                avgHotReloadLatencyMs: null,
-                errorCount: 0,
-                maxPatchHistory: 50,
-                patchCount: 0,
-                patchHistorySize: 0,
-                p95HotReloadLatencyMs: null,
-                recentErrors: [],
-                recentPatches: [],
-                runtimeUrl: "http://127.0.0.1:51264/",
-                scanComplete: true,
-                totalPatchCount: 0,
-                uptimeMs: 10,
-                watcherStatus: "running" as const,
-                websocketClients: 0
-            })
-        },
-        { pollIntervalMs: 50, startupTimeoutMs: 1000 },
-        null,
-        fakeTimers.timers
-    );
-
-    assert.equal(result, readyModel);
-    assert.equal(pollAttempts, 1, "Expected exactly one poll before resolving.");
-    assert.equal(fakeTimers.fireOrder.length, 0, "Expected no timer to fire when the first probe call resolves.");
-    assert.deepEqual(
-        fakeTimers.snapshotPendingCounts(),
-        { polls: 0, timeouts: 0 },
-        "Expected both startup and poll timers to be cancelled on resolve."
-    );
-});
-
-void test("awaitGraphVisualizationLiveReloadStartup cancels pending poll timer when startup timeout fires", async () => {
-    const fakeTimers = createFakeStartupTimers();
-
-    let snapshotCalls = 0;
-    const startupPromise = __graphCommandTest__.awaitGraphVisualizationLiveReloadStartup(
-        {
-            buildReadyModel: async () => null,
-            childStderrBuffer: ["warn: build started"],
-            createTimeoutError: (stderrBuffer) => new Error(`timeout: ${stderrBuffer.join("|") || "no stderr"}`),
-            isChildProcessActive: () => true,
-            tryFetchStatus: async () => {
-                snapshotCalls += 1;
-                return null;
-            }
-        },
-        { pollIntervalMs: 25, startupTimeoutMs: 100 },
-        null,
-        fakeTimers.timers
-    );
-
-    await fakeTimers.advanceTime(200);
-
-    let caughtError: unknown;
-    try {
-        await startupPromise;
-    } catch (error) {
-        caughtError = error;
-    }
-
-    assert.ok(caughtError instanceof Error);
-    assert.match(caughtError.message, /timeout: warn: build started/u);
-    assert.ok(snapshotCalls > 0, "Expected the probe to be invoked at least once before timing out.");
-
-    const initialFireCount = fakeTimers.fireOrder.length;
-    await fakeTimers.advanceTime(500);
-    assert.equal(
-        fakeTimers.fireOrder.length,
-        initialFireCount,
-        "Expected no further timer fires after timeout (poll timer leak — clearTimeout not called)."
-    );
-    assert.deepEqual(
-        fakeTimers.snapshotPendingCounts(),
-        { polls: 0, timeouts: 0 },
-        "Expected every scheduled timer to be cleared after the timeout fired."
-    );
-    assert.equal(
-        snapshotCalls,
-        1,
-        "Expected exactly one probe invocation; the leak fix must prevent extra polls scheduled right before timeout."
-    );
-});
-
-void test("awaitGraphVisualizationLiveReloadStartup routes probe throw through rejection without leaking timers", async () => {
-    const fakeTimers = createFakeStartupTimers();
-
-    const startupPromise = __graphCommandTest__.awaitGraphVisualizationLiveReloadStartup(
-        {
-            buildReadyModel: async () => null,
-            childStderrBuffer: [],
-            createTimeoutError: () => new Error("should not be reached"),
-            isChildProcessActive: () => true,
-            tryFetchStatus: async () => {
-                throw new Error("synthetic probe failure");
-            }
-        },
-        { pollIntervalMs: 25, startupTimeoutMs: 1000 },
-        null,
-        fakeTimers.timers
-    );
-
-    let unhandledRejection: unknown = null;
-    const rejectionListener = (reason: unknown): void => {
-        unhandledRejection = reason;
-    };
-    process.on("unhandledRejection", rejectionListener);
-
-    try {
-        let caughtError: unknown;
-        try {
-            await startupPromise;
-        } catch (error) {
-            caughtError = error;
-        }
-
-        assert.ok(caughtError instanceof Error);
-        assert.equal(caughtError.message, "synthetic probe failure");
-        assert.equal(unhandledRejection, null, "Expected no unhandledRejection to escape (probe throw leak).");
-
-        await fakeTimers.advanceTime(1000);
-        assert.deepEqual(
-            fakeTimers.snapshotPendingCounts(),
-            { polls: 0, timeouts: 0 },
-            "Expected both pending timers to be cancelled after the probe threw."
-        );
-    } finally {
-        process.off("unhandledRejection", rejectionListener);
-    }
-});
-
-void test("awaitGraphVisualizationLiveReloadStartup rejects with the abort reason when the AbortSignal fires", async () => {
-    const fakeTimers = createFakeStartupTimers();
-    const abortController = new AbortController();
-
-    let snapshotCalls = 0;
-    const startupPromise = __graphCommandTest__.awaitGraphVisualizationLiveReloadStartup(
-        {
-            buildReadyModel: async () => null,
-            childStderrBuffer: [],
-            createTimeoutError: () => new Error("should not be reached"),
-            isChildProcessActive: () => true,
-            tryFetchStatus: async () => {
-                snapshotCalls += 1;
-                return null;
-            }
-        },
-        { pollIntervalMs: 25, startupTimeoutMs: 5000 },
-        abortController.signal,
-        fakeTimers.timers
-    );
-
-    await fakeTimers.advanceTime(50);
-    assert.ok(snapshotCalls >= 1, "Expected the first poll to have run before aborting.");
-
-    const abortError = new Error("Live reload exited before it became ready (exit code 1).");
-    abortController.abort(abortError);
-
-    let caughtError: unknown;
-    try {
-        await startupPromise;
-    } catch (error) {
-        caughtError = error;
-    }
-
-    assert.equal(caughtError, abortError);
-    assert.deepEqual(
-        fakeTimers.snapshotPendingCounts(),
-        { polls: 0, timeouts: 0 },
-        "Expected abort to clear both the pending poll and startup timeout timers."
-    );
-
-    const initialFireCount = fakeTimers.fireOrder.length;
-    await fakeTimers.advanceTime(200);
-    assert.equal(
-        fakeTimers.fireOrder.length,
-        initialFireCount,
-        "Expected no further timer fires after abort (poll leak — clearTimeout not called on abort path)."
-    );
-});
-
-void test("awaitGraphVisualizationLiveReloadStartup rejects when child process stops before status becomes available", async () => {
-    const fakeTimers = createFakeStartupTimers();
-    let childActive = true;
-
-    const startupPromise = __graphCommandTest__.awaitGraphVisualizationLiveReloadStartup(
-        {
-            buildReadyModel: async () => null,
-            childStderrBuffer: [],
-            createTimeoutError: () => new Error("should not be reached"),
-            isChildProcessActive: () => childActive,
-            tryFetchStatus: async () => null
-        },
-        { pollIntervalMs: 25, startupTimeoutMs: 1000 },
-        null,
-        fakeTimers.timers
-    );
-
-    await fakeTimers.advanceTime(25);
-    childActive = false;
-    await fakeTimers.advanceTime(25);
-
-    let caughtError: unknown;
-    try {
-        await startupPromise;
-    } catch (error) {
-        caughtError = error;
-    }
-
-    assert.ok(caughtError instanceof Error);
-    assert.match(caughtError.message, /Live reload stopped before the status server became available/iu);
-    assert.deepEqual(
-        fakeTimers.snapshotPendingCounts(),
-        { polls: 0, timeouts: 0 },
-        "Expected both the pending poll timer and the startup timeout to be cleared on the child-stopped exit path."
-    );
 });
 
 void test("graph visualize feather metadata watcher only calls onChanged if content hash changes", async () => {

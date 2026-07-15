@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { getUiErrorMessage } from "../src/app/error-message.js";
+import { getUiErrorMessage, getUiNetworkErrorMessage } from "../src/app/error-message.js";
 
 const FALLBACK = "Fallback message.";
 
@@ -66,4 +66,25 @@ void test("getUiErrorMessage ignores cross-realm objects with a non-string messa
         name: "WeirdError"
     };
     assert.equal(getUiErrorMessage(crossRealmShape, FALLBACK), FALLBACK);
+});
+
+void test("getUiNetworkErrorMessage identifies browser fetch failures", () => {
+    assert.equal(
+        getUiNetworkErrorMessage(new TypeError("Failed to fetch"), "the graph server", "Live reload startup failed."),
+        "Unable to reach the graph server. Check that the server is running and try again."
+    );
+});
+
+void test("getUiNetworkErrorMessage preserves server-side errors", () => {
+    assert.equal(
+        getUiNetworkErrorMessage(new Error("worker failed"), "the graph server", "Live reload startup failed."),
+        "worker failed"
+    );
+});
+
+void test("getUiNetworkErrorMessage preserves server errors that reuse a browser network message", () => {
+    assert.equal(
+        getUiNetworkErrorMessage(new Error("Failed to fetch"), "the graph server", "Live reload startup failed."),
+        "Failed to fetch"
+    );
 });

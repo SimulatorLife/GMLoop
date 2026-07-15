@@ -365,7 +365,17 @@ The watcher ignores generated/cache directories such as `.gmcache`, `.gml-hot-re
 
 **Project config for one-click graph UI startup:**
 
-When using `graph visualize --serve`, the `Start Live Reload` button now reads `runtime.liveReload` from `gmloop.json` and forwards that configuration to `live-reload dev`. This allows the graph UI to build the HTML5 export first when build orchestration is configured, instead of relying only on transient `GMS2TEMP` auto-detection.
+When using `graph visualize --serve`, the `Start Live Reload` button uses the same managed session controller as `live-reload session`. It resolves the project-local `.gmloop/live-reload-session.json` registry first, adopts a healthy session when one exists, and returns that session's exact runtime, status, and WebSocket URLs to the UI. A new session receives dynamically allocated status and WebSocket ports, then reads the project's `runtime.liveReload` build/output configuration before the watcher starts. This keeps the graph UI from probing a fixed status port or creating parallel workers for a project that is already running.
+
+The graph host owns a session only when the UI starts that session itself. Closing the graph host does not stop a session started by the CLI, MCP, or another graph host; an explicit `Stop Live Reload` action is the user-directed operation that stops the registered project session.
+
+**Graph serve verification:**
+
+1. Inspect or start `live-reload session --path /path/to/project`.
+2. Launch `graph visualize --serve` and open the Live Reload tab.
+3. Confirm Start returns the registry's unchanged runtime, status, and WebSocket URLs and does not create a second worker.
+4. Confirm closing the graph host leaves an externally owned session running.
+5. Use `live-reload session --path /path/to/project --stop` for explicit cleanup.
 
 ```json
 {

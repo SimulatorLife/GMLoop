@@ -1,5 +1,6 @@
 import { bootstrapGraphVisualizationLitApp } from "../app/bootstrap.js";
 import type { GraphVisualizationFixRunOptions } from "../app/contracts.js";
+import { getUiNetworkErrorMessage } from "../app/error-message.js";
 import {
     LIVE_RELOAD_RUNTIME_TAB_TARGET,
     type LiveReloadRuntimeTab,
@@ -163,11 +164,24 @@ async function startLiveReloadFromServer(
         ? globalThis.open.bind(globalThis)
         : null
 ): Promise<GraphVisualizationLiveReloadModel> {
-    const response = await fetchLiveReload("/api/live-reload/start", {
-        body: LIVE_RELOAD_START_REQUEST_BODY,
-        headers: { "Content-Type": "application/json" },
-        method: "POST"
-    });
+    let response: Response;
+    try {
+        response = await fetchLiveReload("/api/live-reload/start", {
+            body: LIVE_RELOAD_START_REQUEST_BODY,
+            headers: { "Content-Type": "application/json" },
+            method: "POST"
+        });
+    } catch (error) {
+        throw new Error(
+            getUiNetworkErrorMessage(
+                error,
+                "the GMLoop graph server (POST /api/live-reload/start)",
+                "Live reload startup failed."
+            ),
+            { cause: error }
+        );
+    }
+
     const result = await readJsonResponse<LiveReloadStartApiResponse>(response);
     if (!response.ok || result.ok !== true) {
         throw new Error(result.error ?? "Live reload startup failed.");
