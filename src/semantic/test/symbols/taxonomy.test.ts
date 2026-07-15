@@ -43,7 +43,9 @@ void test("identifier collections have one canonical semantic taxonomy", () => {
 
 void test("semantic specificity and external normalization are deterministic", () => {
     assert.ok(getGmlSymbolKindSpecificity("constructorStaticMember") > getGmlSymbolKindSpecificity("structVariable"));
-    assert.ok(getGmlSymbolKindSpecificity("structVariable") > getGmlSymbolKindSpecificity("unresolved"));
+    assert.ok(getGmlSymbolKindSpecificity("structVariable") > getGmlSymbolKindSpecificity("struct"));
+    assert.ok(getGmlSymbolKindSpecificity("struct") > getGmlSymbolKindSpecificity("script"));
+    assert.ok(getGmlSymbolKindSpecificity("script") > getGmlSymbolKindSpecificity("unresolved"));
     assert.equal(normalizeGmlSemanticSymbolKind("futureKind"), "unresolved");
 });
 

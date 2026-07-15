@@ -73,9 +73,12 @@ export function getGmlSymbolKindForIdentifierCollection(collectionName: string):
 
 /** Specificity used when multiple semantic facts describe the same source token. */
 export function getGmlSymbolKindSpecificity(kind: GmlSemanticSymbolKind): number {
-    if (kind === "constructorStaticMember") return 3;
-    if (kind === "instanceVariable" || kind === "structVariable") return 2;
-    return kind === "unresolved" ? 0 : 1;
+    if (kind === "constructorStaticMember") return 4;
+    if (kind === "instanceVariable" || kind === "structVariable") return 3;
+    if (kind === "script" || kind === "object" || kind === "room" || kind === "resource" || kind === "callable") {
+        return 1;
+    }
+    return kind === "unresolved" ? 0 : 2;
 }
 
 /** Narrow arbitrary external metadata to a canonical semantic kind. */

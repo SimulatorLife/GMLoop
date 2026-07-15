@@ -10,6 +10,7 @@ import {
 } from "../project-index/symbol-documentation.js";
 import {
     getGmlSymbolKindForIdentifierCollection,
+    getGmlSymbolKindSpecificity,
     type GmlSemanticSymbolKind,
     normalizeGmlSemanticSymbolKind
 } from "../symbols/taxonomy.js";
@@ -460,7 +461,21 @@ function createNavigationIndexMaps(
 
     return {
         symbolsById,
-        symbolIdsByName: new Map([...symbolIdsByName.entries()].map(([name, ids]) => [name, ids.toSorted()])),
+        symbolIdsByName: new Map(
+            [...symbolIdsByName.entries()].map(([name, ids]) => [
+                name,
+                ids.toSorted((a, b) => {
+                    const symbolA = symbolsById.get(a);
+                    const symbolB = symbolsById.get(b);
+                    const specA = symbolA ? getGmlSymbolKindSpecificity(symbolA.kind) : 0;
+                    const specB = symbolB ? getGmlSymbolKindSpecificity(symbolB.kind) : 0;
+                    if (specA !== specB) {
+                        return specB - specA;
+                    }
+                    return a.localeCompare(b);
+                })
+            ])
+        ),
         definitionsByFilePath: new Map(
             [...definitionsByFilePath.entries()].map(([filePath, occurrences]) => [
                 filePath,
@@ -637,10 +652,13 @@ export function findNavigationSymbolAtPosition(
         if (!isOffsetInRange(offset, occurrence.location.range)) {
             continue;
         }
+        const currentLength = occurrence.location.range.end - occurrence.location.range.start;
+        const bestLength = best ? best.location.range.end - best.location.range.start : 0;
         if (
             best === null ||
-            occurrence.location.range.end - occurrence.location.range.start <
-                best.location.range.end - best.location.range.start
+            currentLength < bestLength ||
+            (currentLength === bestLength &&
+                getGmlSymbolKindSpecificity(occurrence.kind) > getGmlSymbolKindSpecificity(best.kind))
         ) {
             best = occurrence;
         }
