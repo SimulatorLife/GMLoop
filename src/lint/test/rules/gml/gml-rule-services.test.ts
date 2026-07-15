@@ -10,7 +10,8 @@ import {
     gmlRuleDeprecatedIdentifierServices,
     gmlRuleDocCommentServices,
     gmlRuleLanguageServices,
-    gmlRuleMalformedServices
+    gmlRuleMalformedServices,
+    gmlRuleRegionDirectiveServices
 } from "../../../src/rules/gml/gml-rule-services.js";
 
 const FEATHER_DIRECTORY = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../src/rules/feather");
@@ -91,6 +92,16 @@ void test("gml-rule-services gmlRuleBaseHelpersServices is frozen and cannot be 
     assert.ok(Object.isFrozen(gmlRuleBaseHelpersServices));
 });
 
+void test("gmlRuleRegionDirectiveServices exposes the region-parsing contract needed by rules", () => {
+    assert.equal(typeof gmlRuleRegionDirectiveServices.collectRegionSourceLines, "function");
+    assert.equal(typeof gmlRuleRegionDirectiveServices.readRegionDirectiveType, "function");
+    assert.equal(typeof gmlRuleRegionDirectiveServices.resolveRegionDirectiveLineEnding, "function");
+});
+
+void test("gml-rule-services gmlRuleRegionDirectiveServices is frozen and cannot be mutated at runtime", () => {
+    assert.ok(Object.isFrozen(gmlRuleRegionDirectiveServices));
+});
+
 void test("feather rules depend on the doc-comment rule-services contract, not deep relative imports", async () => {
     const sources = await readFeatherSourceFiles();
     const aggregated = [...sources.values()].join("\n");
@@ -116,5 +127,15 @@ void test("feather rules depend on the base-helper rule-services contract, not d
     assert.ok(
         !/from\s+["']\.\.\/\.\.\/gml\/rule-base-helpers\.js["']/.test(aggregated),
         "Feather rule sources must not reach two directory levels into src/lint/src/rules/gml/ for rule-base-helpers."
+    );
+});
+
+void test("feather rules depend on the region-directive rule-services contract, not deep relative imports", async () => {
+    const sources = await readFeatherSourceFiles();
+    const aggregated = [...sources.values()].join("\n");
+
+    assert.ok(
+        !/from\s+["']\.\.\/\.\.\/gml\/region-directives\.js["']/.test(aggregated),
+        "Feather rule sources must not reach into src/lint/src/rules/gml/region-directives.js; consume gmlRuleRegionDirectiveServices through the shared rule-services facade instead."
     );
 });
