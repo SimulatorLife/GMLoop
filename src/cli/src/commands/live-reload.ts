@@ -308,7 +308,7 @@ async function fetchLiveReloadStatusPayload(session: LiveReloadRegisteredSession
         throw new Error(`Live-reload status request failed with HTTP ${String(response.status)}.`);
     }
 
-    return await response.json();
+    return response.json();
 }
 
 function readLastPatchId(statusPayload: unknown): string | null {
@@ -355,7 +355,7 @@ async function pollLiveReloadStatusForPatch(
     }
 
     await delayLiveReloadPatchPoll(Math.min(parameters.pollIntervalMs, remainingMs), parameters.abortSignal);
-    return await pollLiveReloadStatusForPatch(parameters);
+    return pollLiveReloadStatusForPatch(parameters);
 }
 
 function delayLiveReloadPatchPoll(pollIntervalMs: number, abortSignal?: AbortSignal): Promise<void> {

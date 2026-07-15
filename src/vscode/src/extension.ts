@@ -21,6 +21,7 @@ const GMLOOP_CLIENT_NAME = "GMLoop GML Language Server";
 let languageClient: LanguageClient | null = null;
 let languageServerOutput: vscode.OutputChannel | null = null;
 let projectFileWatcher: vscode.FileSystemWatcher | null = null;
+let activeExtensionPath: string | null = null;
 
 function syncLocalExtensionFiles(context: vscode.ExtensionContext): void {
     syncLocalExtensionFilesPure({
@@ -39,6 +40,10 @@ function syncLocalExtensionFiles(context: vscode.ExtensionContext): void {
                     await vscode.commands.executeCommand("workbench.action.reloadWindow");
                 }
             })();
+        },
+        logError(message, error) {
+            const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+            getLanguageServerOutputChannel().appendLine(`${message} ${errorMessage}`);
         }
     });
 }
@@ -46,6 +51,33 @@ function syncLocalExtensionFiles(context: vscode.ExtensionContext): void {
 function getLanguageServerOutputChannel(): vscode.OutputChannel {
     languageServerOutput ??= vscode.window.createOutputChannel(GMLOOP_CLIENT_NAME);
     return languageServerOutput;
+}
+
+function resolveMonorepoOrLocalExecutable(
+    workspaceFolders: readonly vscode.WorkspaceFolder[] | undefined,
+    extensionPath: string | null
+): { readonly command: string; readonly args: readonly string[] } | null {
+    if (workspaceFolders) {
+        for (const folder of workspaceFolders) {
+            const monorepoCliPath = path.join(folder.uri.fsPath, "src/cli/dist/index.js");
+            if (existsSync(monorepoCliPath)) {
+                return { command: "node", args: [monorepoCliPath, "lsp"] };
+            }
+            const localBinPath = path.join(folder.uri.fsPath, "node_modules", ".bin", "gmloop");
+            if (existsSync(localBinPath)) {
+                return { command: localBinPath, args: ["lsp"] };
+            }
+        }
+    }
+
+    if (extensionPath) {
+        const relativeCliPath = path.join(extensionPath, "../cli/dist/index.js");
+        if (existsSync(relativeCliPath)) {
+            return { command: "node", args: [relativeCliPath, "lsp"] };
+        }
+    }
+
+    return null;
 }
 
 function createServerOptions(): ServerOptions {
@@ -57,19 +89,11 @@ function createServerOptions(): ServerOptions {
     let command = serverCommand.command;
     let args: string[] = [...serverCommand.args];
 
-    if (command === "gmloop" && vscode.workspace.workspaceFolders) {
-        for (const folder of vscode.workspace.workspaceFolders) {
-            const monorepoCliPath = path.join(folder.uri.fsPath, "src/cli/dist/index.js");
-            if (existsSync(monorepoCliPath)) {
-                command = "node";
-                args = [monorepoCliPath, "lsp"];
-                break;
-            }
-            const localBinPath = path.join(folder.uri.fsPath, "node_modules", ".bin", "gmloop");
-            if (existsSync(localBinPath)) {
-                command = localBinPath;
-                break;
-            }
+    if (command === "gmloop") {
+        const resolved = resolveMonorepoOrLocalExecutable(vscode.workspace.workspaceFolders, activeExtensionPath);
+        if (resolved) {
+            command = resolved.command;
+            args = [...resolved.args];
         }
     }
 
@@ -135,6 +159,7 @@ async function restartLanguageClient(): Promise<void> {
  * Activate the GMLoop VSCode extension and start the GML language server.
  */
 export function activate(context: vscode.ExtensionContext): void {
+    activeExtensionPath = context.extensionPath;
     syncLocalExtensionFiles(context);
     projectFileWatcher ??= vscode.workspace.createFileSystemWatcher("**/*.{gml,yy,yyp}");
     context.subscriptions.push(

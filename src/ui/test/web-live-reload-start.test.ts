@@ -76,7 +76,7 @@ void test("web live-reload start opens runtime tab only after startup returns a 
     });
 
     const startPromise = webTestExports.startLiveReloadFromServer(
-        async () => await startResponse,
+        async () => startResponse,
         (url, target) => {
             openedTabs.push({ target, url });
             return createTestRuntimeTab(() => {
@@ -140,7 +140,7 @@ void test("web live-reload start rejects missing runtime URLs without opening a 
 
     await assert.rejects(
         async () =>
-            await webTestExports.startLiveReloadFromServer(
+            webTestExports.startLiveReloadFromServer(
                 async () =>
                     Response.json(
                         {
@@ -178,7 +178,7 @@ void test("web live-reload stop clears bootstrap live-reload state only after ho
 
     await assert.rejects(
         async () =>
-            await webTestExports.stopLiveReloadFromServer(async () =>
+            webTestExports.stopLiveReloadFromServer(async () =>
                 Response.json({ error: "stop failed", ok: false }, { status: 500 })
             ),
         /stop failed/u

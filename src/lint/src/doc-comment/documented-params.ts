@@ -80,6 +80,8 @@ export function extractParamNameFromComment(value: string): string | null {
         name = name.slice(0, equalsIndex);
     }
 
+    name = name.replace(/^\*+/u, "");
+
     return name.trim() || null;
 }
 
