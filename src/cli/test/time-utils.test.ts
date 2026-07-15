@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { formatDuration, timeSync } from "../src/shared/timing/verbose-timing.js";
+import { formatDuration, resolveVerboseFlag, timeSync } from "../src/shared/timing/verbose-timing.js";
 
 function createCollectingLogger() {
     const calls: unknown[][] = [];
@@ -79,5 +79,30 @@ void describe("time-utils", () => {
 
         assert.equal(result, "done");
         assert.equal(logger.calls.length, 0);
+    });
+
+    void describe("resolveVerboseFlag", () => {
+        void it("enables parsing when quiet is false", () => {
+            assert.deepEqual(resolveVerboseFlag({ quiet: false }), { parsing: true });
+        });
+
+        void it("disables parsing when quiet is true", () => {
+            assert.deepEqual(resolveVerboseFlag({ quiet: true }), { parsing: false });
+        });
+
+        void it("defaults to enabled parsing when no options are provided", () => {
+            assert.deepEqual(resolveVerboseFlag(), { parsing: true });
+        });
+
+        void it("feeds the verbose flag straight into timeSync", () => {
+            const logger = createCollectingLogger();
+            const result = timeSync("quiet-resolved task", () => "ok", {
+                verbose: resolveVerboseFlag({ quiet: true }),
+                logger
+            });
+
+            assert.equal(result, "ok");
+            assert.equal(logger.calls.length, 0);
+        });
     });
 });
