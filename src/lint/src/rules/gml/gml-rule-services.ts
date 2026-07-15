@@ -11,6 +11,11 @@ import {
 import { createLimitedRecoveryProjection } from "../../language/index.js";
 import { getDeprecatedIdentifierCatalogEntry } from "../../services/deprecated-identifiers/index.js";
 import {
+    collectRegionSourceLines,
+    readRegionDirectiveType,
+    resolveRegionDirectiveLineEnding
+} from "./region-directives.js";
+import {
     applySourceTextEdits,
     findMatchingBraceEndIndex,
     getVariableDeclarator,
@@ -128,3 +133,26 @@ export const gmlRuleBaseHelpersServices = Object.freeze({
     walkAstNodes,
     walkAstNodesWithParent
 });
+
+/**
+ * Stable region-directive contract for GML rule implementations.
+ *
+ * Rules that parse `#region`/`#endregion` lines should import from this
+ * object rather than reaching into `src/lint/src/rules/gml/region-directives.js`
+ * directly. When the implementation is reorganised (for example split across
+ * several files, specialised into per-rule variants, or migrated to the
+ * language parser layer), only this facade needs updating and rule consumers
+ * stay stable.
+ *
+ * The matching {@link RegionDirectiveType} and {@link RegionSourceLine} type
+ * aliases are re-exported from this module so consumers can depend on a
+ * single, versioned entry point instead of naming the implementation file in
+ * their `import type` specifiers.
+ */
+export const gmlRuleRegionDirectiveServices = Object.freeze({
+    collectRegionSourceLines,
+    readRegionDirectiveType,
+    resolveRegionDirectiveLineEnding
+});
+
+export { type RegionDirectiveType, type RegionSourceLine } from "./region-directives.js";
