@@ -1,12 +1,18 @@
 /**
- * Method name reflection and derivation utilities.
+ * Prototype method discovery and definition utilities for ANTLR wrappers.
  *
- * This module provides utilities for discovering and deriving method names from
- * ANTLR-generated visitor and listener base classes. These functions enable dynamic
- * method definition on wrapper classes without hardcoding method names.
+ * This module provides a single home for operations that read and write method
+ * names on parse-tree prototype objects. It consolidates what used to be split
+ * between `method-reflection.ts` (name discovery) and `prototype-builder.ts`
+ * (method definition). Both operations target the same domain — the prototypes
+ * exposed by ANTLR-generated visitor and listener classes — so keeping them in
+ * one file reduces import churn and makes the read/write contract easier to
+ * reason about together.
  *
- * @module parser/runtime/method-reflection
+ * @module parser/runtime/prototype-methods
  */
+
+export type MethodFactory = (methodName: string) => (...args: unknown[]) => unknown;
 
 /**
  * Collects all visit method names from an ANTLR-generated visitor base class.
@@ -85,4 +91,34 @@ export function deriveListenerMethodNames(visitMethodNames: unknown): ReadonlyAr
     }
 
     return listenerNames;
+}
+
+/**
+ * Defines a set of methods on a prototype object using a factory function.
+ *
+ * @param prototype - The prototype object to add methods to
+ * @param methodNames - Array of method names to define
+ * @param createMethod - Factory function that creates method implementations
+ *
+ * @remarks
+ * Methods are defined with configurable and writable descriptors, allowing them
+ * to be overridden if needed. This is used to generate wrapper methods that delegate
+ * to a shared dispatch mechanism.
+ */
+export function definePrototypeMethods(
+    prototype: unknown,
+    methodNames: ReadonlyArray<string>,
+    createMethod: MethodFactory
+): void {
+    if (!prototype || typeof prototype !== "object" || typeof createMethod !== "function") {
+        return;
+    }
+
+    for (const methodName of methodNames) {
+        Object.defineProperty(prototype, methodName, {
+            value: createMethod(methodName),
+            writable: true,
+            configurable: true
+        });
+    }
 }

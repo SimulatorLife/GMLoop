@@ -9,8 +9,7 @@ import {
     type ParserListenerPrototype,
     type ParseTreeListenerMethod
 } from "./generated-bindings.js";
-import { collectPrototypeMethodNames, deriveListenerMethodNames } from "./method-reflection.js";
-import { definePrototypeMethods } from "./prototype-builder.js";
+import { collectPrototypeMethodNames, definePrototypeMethods, deriveListenerMethodNames } from "./prototype-methods.js";
 import { createWrapperSymbols, ensureHasInstancePatched } from "./symbol-patching.js";
 
 const DEFAULT_LISTENER_DELEGATE: ListenerDelegate = ({ fallback = Core.noop }) => fallback();

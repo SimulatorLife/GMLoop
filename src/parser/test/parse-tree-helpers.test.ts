@@ -4,9 +4,9 @@ import { test } from "node:test";
 import {
     collectPrototypeMethodNames,
     collectVisitMethodNames,
+    definePrototypeMethods,
     deriveListenerMethodNames
-} from "../src/runtime/method-reflection.js";
-import { definePrototypeMethods } from "../src/runtime/prototype-builder.js";
+} from "../src/runtime/prototype-methods.js";
 import { createWrapperSymbols, ensureHasInstancePatched } from "../src/runtime/symbol-patching.js";
 
 function WrapperBase() {}
