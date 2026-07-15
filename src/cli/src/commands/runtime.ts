@@ -1,7 +1,12 @@
 import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
-import { getRunnerStateStore } from "../modules/runtime/index.js";
+import {
+    getRunnerStateStore,
+    type RunnerLogReader,
+    type RunnerProjectBinder,
+    type RunnerSnapshotReader
+} from "../modules/runtime/index.js";
 import {
     readRuntimeProjectState,
     type RuntimeProjectState,
@@ -291,7 +296,11 @@ async function runRuntimeObserveAction(options: RuntimeOptions): Promise<void> {
 async function runRuntimeStateAction(options: RuntimeOptions): Promise<void> {
     const projectRoot = await resolveRuntimeProjectRoot(options);
     const runtimeState = readRuntimeProjectState(projectRoot);
-    const runnerStateStore = getRunnerStateStore();
+    // Narrow the local binding to the role interfaces the action actually
+    // exercises so the call site documents that this handler only needs to
+    // (re)target the store and read a status snapshot — never to mutate
+    // logs, lifecycle state, or the active room.
+    const runnerStateStore: RunnerProjectBinder & RunnerSnapshotReader = getRunnerStateStore();
     runnerStateStore.bindProjectRoot(projectRoot);
     const runnerSnapshot = runnerStateStore.readSnapshot();
     const kind = options.kind ?? "room";
@@ -312,7 +321,10 @@ async function runRuntimeStateAction(options: RuntimeOptions): Promise<void> {
 async function runRuntimeLogsAction(options: RuntimeOptions): Promise<void> {
     const projectRoot = await resolveRuntimeProjectRoot(options);
     const runtimeState = readRuntimeProjectState(projectRoot);
-    const runnerStateStore = getRunnerStateStore();
+    // Narrow the local binding to the role interfaces this handler actually
+    // exercises (binding + reading logs); lifecycle, room, and log-mutation
+    // capabilities remain outside the action's contract.
+    const runnerStateStore: RunnerProjectBinder & RunnerLogReader = getRunnerStateStore();
     runnerStateStore.bindProjectRoot(projectRoot);
     const runnerLogs = runnerStateStore.readLogs({ kind: "runtime" }).map((entry) => ({
         message: `[runner:${entry.level}] ${entry.message}`,

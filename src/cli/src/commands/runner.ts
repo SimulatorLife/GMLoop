@@ -7,7 +7,15 @@ import { wrapInvalidArgumentResolver } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { handleCliError } from "../cli-core/errors.js";
 import { createPathOption } from "../cli-core/shared-command-options.js";
-import { getRunnerController } from "../modules/runtime/index.js";
+import {
+    getRunnerController,
+    type RunnerLifecycleStateController,
+    type RunnerLogClearer,
+    type RunnerLogReader,
+    type RunnerProjectBinder,
+    type RunnerRoomController,
+    type RunnerSnapshotReader
+} from "../modules/runtime/index.js";
 import {
     coerceRunnerLifecycleAction,
     RUNNER_LIFECYCLE_ACTIONS,
@@ -184,9 +192,13 @@ function resolveRunnerLogsReadOptions(options: RunnerOptions): FollowRunnerLogsR
 }
 
 async function runRunnerStatusAction(options: RunnerOptions): Promise<void> {
-    const { projectRoot, runnerStateStore } = await resolveBoundRunnerState(options);
+    const bound = await resolveBoundRunnerState(options);
+    // The status action only reads a snapshot and hands the project root to
+    // the controller; it never mutates lifecycle, room, or log state, so we
+    // narrow the binding to the read-only role interface.
+    const runnerStateStore: RunnerSnapshotReader = bound.runnerStateStore;
     const snapshot = runnerStateStore.readSnapshot();
-    const processStatus = getRunnerController().status(projectRoot);
+    const processStatus = getRunnerController().status(bound.projectRoot);
     printRunnerPayload({
         command: "runner status",
         payload: {
@@ -197,7 +209,11 @@ async function runRunnerStatusAction(options: RunnerOptions): Promise<void> {
 }
 
 async function runRunnerLogsAction(options: RunnerOptions): Promise<void> {
-    const { runnerStateStore } = await resolveBoundRunnerState(options);
+    const bound = await resolveBoundRunnerState(options);
+    // The logs action only reads the persisted log stream; narrowing to the
+    // log-reader role documents that this handler does not mutate logs,
+    // lifecycle, or room state.
+    const runnerStateStore: RunnerLogReader = bound.runnerStateStore;
     const logs = runnerStateStore.readLogs(resolveRunnerLogsReadOptions(options));
     printRunnerPayload({
         command: "runner logs",
@@ -206,7 +222,11 @@ async function runRunnerLogsAction(options: RunnerOptions): Promise<void> {
 }
 
 async function runRunnerLogsFollowAction(options: RunnerOptions): Promise<void> {
-    const { projectRoot, runnerStateStore } = await resolveBoundRunnerState(options);
+    const bound = await resolveBoundRunnerState(options);
+    // The follow loop re-binds the project root on every tick and reads the
+    // log stream; narrowing to those two roles keeps the closure signatures
+    // honest and prevents accidental coupling to lifecycle or room mutation.
+    const runnerStateStore: RunnerProjectBinder & RunnerLogReader = bound.runnerStateStore;
     const readOptions = resolveRunnerLogsReadOptions(options);
 
     await followRunnerLogs({
@@ -219,13 +239,17 @@ async function runRunnerLogsFollowAction(options: RunnerOptions): Promise<void> 
         },
         readLogs: () => runnerStateStore.readLogs(readOptions),
         rebind: () => {
-            runnerStateStore.bindProjectRoot(projectRoot);
+            runnerStateStore.bindProjectRoot(bound.projectRoot);
         }
     });
 }
 
 async function runRunnerClearLogsAction(options: RunnerOptions): Promise<void> {
-    const { runnerStateStore } = await resolveBoundRunnerState(options);
+    const bound = await resolveBoundRunnerState(options);
+    // The clear-logs action only drops the persisted log stream; narrowing
+    // to the log-clearer role makes the absence of any read or write
+    // dependency explicit.
+    const runnerStateStore: RunnerLogClearer = bound.runnerStateStore;
     runnerStateStore.clearLogs();
     printRunnerPayload({
         command: "runner clear-logs",
@@ -234,7 +258,9 @@ async function runRunnerClearLogsAction(options: RunnerOptions): Promise<void> {
 }
 
 async function runRunnerPauseAction(options: RunnerOptions): Promise<void> {
-    const { runnerStateStore } = await resolveBoundRunnerState(options);
+    const bound = await resolveBoundRunnerState(options);
+    // Lifecycle-only action; narrow to the lifecycle controller role.
+    const runnerStateStore: RunnerLifecycleStateController = bound.runnerStateStore;
     runnerStateStore.setState("paused");
     printRunnerPayload({
         command: "runner pause",
@@ -243,7 +269,9 @@ async function runRunnerPauseAction(options: RunnerOptions): Promise<void> {
 }
 
 async function runRunnerResumeAction(options: RunnerOptions): Promise<void> {
-    const { runnerStateStore } = await resolveBoundRunnerState(options);
+    const bound = await resolveBoundRunnerState(options);
+    // Lifecycle-only action; narrow to the lifecycle controller role.
+    const runnerStateStore: RunnerLifecycleStateController = bound.runnerStateStore;
     runnerStateStore.setState("running");
     printRunnerPayload({
         command: "runner resume",
@@ -252,7 +280,9 @@ async function runRunnerResumeAction(options: RunnerOptions): Promise<void> {
 }
 
 async function runRunnerRoomSetAction(roomName: string, options: RunnerOptions): Promise<void> {
-    const { runnerStateStore } = await resolveBoundRunnerState(options);
+    const bound = await resolveBoundRunnerState(options);
+    // Room-only mutating action; narrow to the room controller role.
+    const runnerStateStore: RunnerRoomController = bound.runnerStateStore;
     runnerStateStore.setRoom(roomName);
     printRunnerPayload({
         command: "runner room set",
@@ -261,7 +291,10 @@ async function runRunnerRoomSetAction(roomName: string, options: RunnerOptions):
 }
 
 async function runRunnerRoomCurrentAction(options: RunnerOptions): Promise<void> {
-    const { runnerStateStore } = await resolveBoundRunnerState(options);
+    const bound = await resolveBoundRunnerState(options);
+    // Read-only snapshot to surface the active room; no mutation should be
+    // possible through this binding.
+    const runnerStateStore: RunnerSnapshotReader = bound.runnerStateStore;
     const snapshot = runnerStateStore.readSnapshot();
     printRunnerPayload({
         command: "runner room current",

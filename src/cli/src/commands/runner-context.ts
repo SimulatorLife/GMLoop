@@ -28,7 +28,13 @@
  */
 import { Core } from "@gmloop/core";
 
-import { getRunnerStateStore, type RunnerLogEntry, type RunnerLogKind } from "../modules/runtime/index.js";
+import {
+    getRunnerStateStore,
+    type RunnerLogEntry,
+    type RunnerLogReader,
+    type RunnerLogReadOptions,
+    type RunnerStateStore
+} from "../modules/runtime/index.js";
 import { discoverProjectRoot } from "../workflow/project-root.js";
 
 /**
@@ -45,10 +51,16 @@ export interface RunnerContextOptions {
  * paired with the shared runner state store that has already been bound to
  * that project root. Consumers should treat this as the single entry point
  * for any runner action that needs to read or mutate the on-disk state.
+ *
+ * The `runnerStateStore` field is typed as the composite {@link RunnerStateStore}
+ * because every existing runner command exercises several roles during a
+ * single action; depending on the composite here lets each consumer project
+ * onto the narrow role interfaces it actually needs (e.g. lifecycle, logs)
+ * without forcing this helper to enumerate every possible projection.
  */
 export interface BoundRunnerState {
     projectRoot: string;
-    runnerStateStore: ReturnType<typeof getRunnerStateStore>;
+    runnerStateStore: RunnerStateStore;
 }
 
 /**
@@ -73,18 +85,25 @@ export async function resolveBoundRunnerState(options: RunnerContextOptions): Pr
  * Read filtering options for {@link followRunnerLogs.readLogs}. Mirrors the
  * subset of the runner state store's `readLogs` contract that the follow
  * loop needs to forward.
+ *
+ * Re-exports the {@link RunnerLogReadOptions} role-interface shape verbatim
+ * so external callers do not have to know about the underlying state-store
+ * module to express a filter.
  */
-export interface FollowRunnerLogsReadOptions {
-    errorsOnly?: boolean;
-    filter?: string;
-    kind?: "all" | RunnerLogKind;
-}
+export type FollowRunnerLogsReadOptions = RunnerLogReadOptions;
 
 /**
  * Parameters accepted by {@link followRunnerLogs}. The contract is deliberately
  * dependency-injection style: the orchestrator owns the concrete `readLogs`
  * and `rebind` operations (so the helper does not reach into the singleton
  * state store) and the `emit` callback decides how each batch is reported.
+ *
+ * The `readLogs` callback is typed against the narrow {@link RunnerLogReader}
+ * role and `rebind` against {@link RunnerProjectBinder} so the helper only
+ * depends on the surface it actually exercises. The composite
+ * {@link RunnerStateStore} is structurally compatible with either role, so
+ * callers can continue to pass the singleton while satisfying a smaller
+ * contract.
  */
 export interface FollowRunnerLogsParameters {
     /**
@@ -111,8 +130,11 @@ export interface FollowRunnerLogsParameters {
      * Reads the current log snapshot from the runner state store. The follow
      * helper filters the returned array down to entries with a timestamp
      * greater than the cursor that was advanced on the previous tick.
+     *
+     * Typed against the narrow `RunnerLogReader.readLogs` signature so the
+     * helper is independent of lifecycle, room, and project-binding concerns.
      */
-    readLogs: (options: FollowRunnerLogsReadOptions) => ReadonlyArray<RunnerLogEntry>;
+    readLogs: RunnerLogReader["readLogs"];
     /**
      * Maximum total follow duration in milliseconds. The follow loop
      * resolves once the loop has been alive for at least this long.
