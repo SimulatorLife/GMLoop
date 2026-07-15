@@ -15,7 +15,7 @@ import {
 import { getManualRootMetadataPath, readManualText, resolveManualSourceCommitHash } from "../modules/manual/source.js";
 import { type ManualWorkflowOptions, prepareManualWorkflow } from "../modules/manual/workflow.js";
 import { writeJsonArtifact } from "../shared/fs-artifacts.js";
-import { createVerboseDurationLogger, timeSync } from "../shared/timing/verbose-timing.js";
+import { createVerboseDurationLogger, resolveVerboseFlag, timeSync } from "../shared/timing/verbose-timing.js";
 import { resolveFromRepoRoot } from "../shared/workspace-paths.js";
 
 const {
@@ -91,10 +91,6 @@ function resolveFeatherMetadataOptions(command?: CommanderCommandLike): Normaliz
     const options: FeatherMetadataCommandOptions = command?.opts?.() ?? {};
 
     return normalizeManualGeneratorBaseOptions(options, DEFAULT_OUTPUT_PATH);
-}
-
-function createVerboseState({ quiet }) {
-    return quiet ? { parsing: false } : { parsing: true };
 }
 
 function normalizeMultilineText(text) {
@@ -1109,7 +1105,7 @@ export async function runGenerateFeatherMetadata({ command, workflow }: FeatherM
     assertSupportedNodeVersion();
 
     const { outputPath, manualRoot, manualPackage, quiet } = resolveFeatherMetadataOptions(command);
-    const verbose = createVerboseState({ quiet });
+    const verbose = resolveVerboseFlag({ quiet });
     const { workflowPathFilter, manualSource } = await prepareManualWorkflow({
         workflow,
         outputPath,

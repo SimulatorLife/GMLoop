@@ -23,7 +23,7 @@ import { getManualRootMetadataPath, readManualText, resolveManualSourceCommitHas
 import { type ManualWorkflowOptions, prepareManualWorkflow } from "../modules/manual/workflow.js";
 import { getDefaultVmEvalTimeoutMs, resolveVmEvalTimeout } from "../runtime-options/vm-eval-timeout.js";
 import { writeJsonArtifact } from "../shared/fs-artifacts.js";
-import { createVerboseDurationLogger, timeSync } from "../shared/timing/verbose-timing.js";
+import { createVerboseDurationLogger, resolveVerboseFlag, timeSync } from "../shared/timing/verbose-timing.js";
 import { resolveFromRepoRoot } from "../shared/workspace-paths.js";
 
 const {
@@ -1425,7 +1425,7 @@ export async function runGenerateGmlIdentifiers({ command, workflow }: RunGenera
         quiet
     } = resolveGenerateIdentifierOptions(command);
 
-    const verboseState = quiet ? {} : { parsing: true };
+    const verboseState = resolveVerboseFlag({ quiet });
     const { workflowPathFilter, manualSource } = await prepareManualWorkflow({
         workflow,
         outputPath,

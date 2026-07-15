@@ -23,6 +23,8 @@ interface VerboseLogger {
     log?: (message: string) => void;
 }
 
+export type { VerboseFlagOptions };
+
 export interface VerboseDurationLoggerOptions {
     verbose?: VerboseFlagOptions;
     formatMessage?: string | ((duration: string) => string);
@@ -32,6 +34,24 @@ export interface VerboseDurationLoggerOptions {
 export interface TimeSyncOptions {
     verbose?: VerboseFlagOptions;
     logger?: VerboseLogger;
+}
+
+export interface ResolveVerboseFlagOptions {
+    quiet?: boolean;
+}
+
+/**
+ * Translate a boolean `quiet` flag into the structured {@link VerboseFlagOptions}
+ * object consumed by {@link createVerboseDurationLogger}, {@link timeSync}, and
+ * other verbose-aware helpers. Centralising the mapping keeps generator
+ * commands from re-implementing the `quiet ? … : { parsing: true }` ternary
+ * in multiple places.
+ *
+ * @param options - Source `quiet` flag (defaults to `false`).
+ * @returns A {@link VerboseFlagOptions} with `parsing` set to the negation of `quiet`.
+ */
+export function resolveVerboseFlag({ quiet = false }: ResolveVerboseFlagOptions = {}): VerboseFlagOptions {
+    return { parsing: !quiet };
 }
 
 /**
