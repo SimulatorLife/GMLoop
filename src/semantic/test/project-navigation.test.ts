@@ -364,3 +364,50 @@ void test("semantic snapshot binds a script call by target scope before its shar
         ]
     );
 });
+
+void test("project navigation prioritizes structs and functions over script resources", () => {
+    const index = createProjectNavigationIndex({
+        projectRoot: "/tmp/game",
+        identifiers: {
+            scripts: {
+                ActorSoundManager: {
+                    identifierId: "script:scope:script:ActorSoundManager",
+                    name: "ActorSoundManager",
+                    displayName: "ActorSoundManager",
+                    declarations: [
+                        {
+                            filePath: "scripts/ActorSoundManager.gml",
+                            start: { index: 9 },
+                            end: { index: 26 },
+                            scopeId: "scope:script:ActorSoundManager"
+                        }
+                    ]
+                }
+            },
+            structs: {
+                ActorSoundManager: {
+                    identifierId: "struct:ActorSoundManager",
+                    name: "ActorSoundManager",
+                    displayName: "ActorSoundManager",
+                    declarations: [
+                        {
+                            filePath: "scripts/ActorSoundManager.gml",
+                            start: { index: 9 },
+                            end: { index: 26 },
+                            scopeId: "scope:script:ActorSoundManager"
+                        }
+                    ]
+                }
+            }
+        }
+    });
+
+    // 1. resolveNavigationSymbolId should return the struct instead of the script
+    const symbolId = resolveNavigationSymbolId(index, "ActorSoundManager");
+    assert.equal(symbolId, "struct:ActorSoundManager");
+
+    // 2. findNavigationSymbolAtPosition should return the struct occurrence instead of the script occurrence
+    const occurrence = findNavigationSymbolAtPosition(index, "/tmp/game/scripts/ActorSoundManager.gml", 12);
+    assert.equal(occurrence?.symbolId, "struct:ActorSoundManager");
+    assert.equal(occurrence?.kind, "struct");
+});
