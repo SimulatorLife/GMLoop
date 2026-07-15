@@ -698,6 +698,14 @@ export function createGmlLanguageServer(
         return createGmlSelectionRanges(document, positions);
     });
 
+    connection.onRequest("gmloop/applyLintFixes", async (params: { uri: string }): Promise<WorkspaceEdit | null> => {
+        const document = documents.get(params.uri);
+        if (!document) {
+            return null;
+        }
+        return await createLintFixWorkspaceEdit(document, lintFixRunner);
+    });
+
     return Object.freeze({
         connection,
         documents,

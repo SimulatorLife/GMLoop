@@ -386,6 +386,7 @@ void test("LSP: server handlers return correct folding ranges and selection rang
         onCodeAction: (fn: any) => {
             mockConnection.codeAction = fn;
         },
+        onRequest: () => {},
         onDocumentHighlight: (fn: any) => {
             mockConnection.documentHighlight = fn;
         },

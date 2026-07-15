@@ -129,14 +129,3 @@ See the durable split contract and examples in [`docs/target-state.md`](../../do
     +}
     ```
     Is this expected behavior? Or a gap/miss/bug?
-- **BUG**: Formatter is breaking this method definition into two lines like this:
-  ```gml
-      static determine_state = function (x, y, z, can_currently_attack = false, attack_range_max = 1, attack_range_min = attack_range_max -
-    1) { /* ... */ }
-  ```
-  If anything, should breaking like this if the line is too long:
-  ```gml
-      static determine_state = function (
-          x, y, z, can_currently_attack = false, attack_range_max = 1, attack_range_min = attack_range_max - 1
-      ) { /* ... */ }
-  ```

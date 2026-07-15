@@ -139,6 +139,36 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.commands.registerCommand("gmloop.showLanguageServerOutput", () => {
             getLanguageServerOutputChannel().show();
         }),
+        vscode.commands.registerCommand("gmloop.applyLintFixes", async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) {
+                return;
+            }
+            const document = editor.document;
+            if (document.languageId !== GMLOOP_LANGUAGE_ID) {
+                return;
+            }
+            if (languageClient === null) {
+                void vscode.window.showErrorMessage("GMLoop: Language server is not running.");
+                return;
+            }
+            try {
+                const workspaceEdit = await languageClient.sendRequest<any>("gmloop/applyLintFixes", {
+                    uri: document.uri.toString()
+                });
+                if (workspaceEdit) {
+                    const vscodeWorkspaceEdit =
+                        await languageClient.protocol2CodeConverter.asWorkspaceEdit(workspaceEdit);
+                    if (vscodeWorkspaceEdit) {
+                        await vscode.workspace.applyEdit(vscodeWorkspaceEdit);
+                    }
+                } else {
+                    void vscode.window.showInformationMessage("GMLoop: No lint fixes to apply.");
+                }
+            } catch (error) {
+                void vscode.window.showErrorMessage(`GMLoop: Failed to apply lint fixes: ${getErrorMessage(error)}`);
+            }
+        }),
         {
             dispose() {
                 void stopLanguageClient();

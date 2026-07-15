@@ -76,8 +76,27 @@
       {
         "command": "gmloop.showLanguageServerOutput",
         "title": "GMLoop: Show Language Server Output"
+      },
+      {
+        "command": "gmloop.applyLintFixes",
+        "title": "GMLoop: Apply Lint Fixes"
       }
-    ]
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "when": "editorLangId == gml",
+          "command": "gmloop.applyLintFixes",
+          "group": "1_modification"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "gmloop.applyLintFixes",
+          "when": "editorLangId == gml"
+        }
+      ]
+    }
   },
   "scripts": {
     "build:types": "tsc -b tsconfig.json",

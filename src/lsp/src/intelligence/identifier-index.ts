@@ -1039,7 +1039,7 @@ export function createGmlSemanticIndex(
     function buildFullProjectIndex(
         document: GmlTextDocument,
         resolvedRoot: string,
-        reason: "references" | "rename"
+        reason: GmlSemanticAnalysisStart["reason"]
     ): Promise<NavigationState | null> {
         const existingBuild = fullProjectBuilds.get(resolvedRoot);
         if (existingBuild !== undefined) {
@@ -1256,6 +1256,9 @@ export function createGmlSemanticIndex(
         }
 
         if (currentState && currentState.lightweight) {
+            void ensureFullIndex(document, "cacheRecovery").catch((error) => {
+                console.error("Background full index build failed:", error);
+            });
             return currentState;
         }
         let inFlight = inFlightBuilds.get(resolvedRoot);
@@ -1333,6 +1336,11 @@ export function createGmlSemanticIndex(
                             durationMs: Math.round(performance.now() - startTime),
                             status: "success"
                         });
+
+                        void ensureFullIndex(document, reason).catch((error) => {
+                            console.error("Background full index build failed:", error);
+                        });
+
                         return state;
                     }
                     reportSemanticAnalysisFinish({
@@ -1557,6 +1565,9 @@ export function createGmlSemanticIndex(
                 });
 
                 if (!hadFullState) {
+                    void ensureFullIndex(document, "fileChanges").catch((error) => {
+                        console.error("Background full index build failed:", error);
+                    });
                     return definitionsState;
                 }
                 const introducedNames = definitionsState.index.symbols
@@ -1693,7 +1704,7 @@ export function createGmlSemanticIndex(
 
     async function ensureFullIndex(
         document: GmlTextDocument,
-        reason: "references" | "rename"
+        reason: GmlSemanticAnalysisStart["reason"]
     ): Promise<NavigationState | null> {
         const state = await ensureIndex(document);
         if (!state) {
