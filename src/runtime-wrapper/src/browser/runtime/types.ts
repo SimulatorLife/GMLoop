@@ -52,21 +52,107 @@ export interface ResourcePatch extends BasePatch {
 
 export type Patch = ScriptPatch | EventPatch | ClosurePatch | ResourcePatch;
 
-export interface RuntimeRegistry {
-    version: number;
-    scripts: Record<string, RuntimeFunction>;
-    events: Record<string, RuntimeFunction>;
-    closures: Record<string, RuntimeFunction>;
-    resources?: Record<string, ResourcePatch>;
+/**
+ * Versioning concern for a runtime registry.
+ *
+ * Tracks the monotonic version counter incremented on each successful patch
+ * application. Splitting this out keeps callers that only care about
+ * versioning (e.g. dependency validators or snapshot capture) from depending
+ * on script, event, closure, and resource collections they never read.
+ */
+export interface VersionedRegistry {
+    readonly version: number;
 }
 
-export interface RuntimeRegistryOverrides {
-    version?: number;
-    scripts?: Record<string, RuntimeFunction>;
-    events?: Record<string, RuntimeFunction>;
-    closures?: Record<string, RuntimeFunction>;
-    resources?: Record<string, ResourcePatch>;
+/**
+ * Script collection facet of a runtime registry.
+ *
+ * Stores compiled GML script functions keyed by their patch id (typically
+ * `"script:<name>"`). Callers that only need to look up scripts — for
+ * example dependency validation against a script id — can depend on this
+ * interface alone.
+ */
+export interface ScriptCollection {
+    readonly scripts: Record<string, RuntimeFunction>;
 }
+
+/**
+ * Event collection facet of a runtime registry.
+ *
+ * Stores compiled object event handlers keyed by their patch id (typically
+ * `"event:<object>:<event>"`). Split out from the wider registry so callers
+ * that only consult events (e.g. event-aware dependency validators) do not
+ * need to depend on scripts, closures, or resources.
+ */
+export interface EventCollection {
+    readonly events: Record<string, RuntimeFunction>;
+}
+
+/**
+ * Closure collection facet of a runtime registry.
+ *
+ * Stores compiled anonymous GML functions keyed by their patch id. Kept
+ * distinct from {@link ScriptCollection} so closure-only callers do not
+ * pull in unrelated script and event data.
+ */
+export interface ClosureCollection {
+    readonly closures: Record<string, RuntimeFunction>;
+}
+
+/**
+ * Resource collection facet of a runtime registry.
+ *
+ * Stores room updates keyed by their patch id. Optional because the
+ * registry can be initialized without resource patches. Splitting the
+ * collection out lets resource-only consumers (e.g. room update codemods)
+ * avoid depending on the function-typed collections they never read.
+ */
+export interface ResourceCollection {
+    readonly resources?: Record<string, ResourcePatch>;
+}
+
+/**
+ * Composite registry contract combining every collection facet.
+ *
+ * Composes the narrow role interfaces above so consumers that need the
+ * full registry (patch application, snapshot capture/restore, full
+ * diagnostics) can declare a single dependency. Consumers that only need
+ * one slice of behaviour should depend on the matching role interface
+ * directly — see {@link VersionedRegistry}, {@link ScriptCollection},
+ * {@link EventCollection}, {@link ClosureCollection}, and
+ * {@link ResourceCollection}.
+ */
+export interface RuntimeRegistry
+    extends VersionedRegistry, ScriptCollection, EventCollection, ClosureCollection, ResourceCollection {}
+
+/**
+ * Override bag for constructing or patching a {@link RuntimeRegistry}.
+ *
+ * Mirrors the role split of {@link RuntimeRegistry} so callers can
+ * supply only the collections they actually want to override. All fields
+ * are optional, matching the historical "partial overrides" shape; the
+ * composite interface keeps the public surface backwards compatible while
+ * preserving the narrow consumer contracts documented above.
+ */
+export interface RuntimeRegistryOverrides
+    extends
+        Partial<VersionedRegistry>,
+        Partial<ScriptCollection>,
+        Partial<EventCollection>,
+        Partial<ClosureCollection>,
+        Partial<ResourceCollection> {}
+
+/**
+ * Minimum registry shape required by dependency-validation helpers.
+ *
+ * Dependency lookups only inspect the three function-typed collections
+ * (scripts, events, closures), so callers that wire custom validators
+ * can satisfy this alias without supplying resource data. Kept as an
+ * intersection rather than a separate interface so any future addition
+ * (for example a fourth function-typed collection) only needs to extend
+ * the role interfaces above; the alias automatically tracks the change.
+ */
+export type PatchDependencyRegistry = ScriptCollection & EventCollection & ClosureCollection;
 
 export interface PatchSnapshot {
     kind: PatchKind;

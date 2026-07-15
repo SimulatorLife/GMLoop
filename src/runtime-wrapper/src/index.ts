@@ -12,8 +12,10 @@ export const RuntimeWrapper = Object.freeze({
 export type {
     ApplyPatchResult,
     BatchApplyResult,
+    ClosureCollection,
     ConsoleOutput,
     ErrorAnalytics,
+    EventCollection,
     GeneralLogger,
     Logger,
     LoggerConfiguration,
@@ -21,6 +23,7 @@ export type {
     LogLevel,
     Patch,
     PatchApplicator,
+    PatchDependencyRegistry,
     PatchDiagnostics,
     PatchErrorAnalytics,
     PatchErrorCategory,
@@ -41,6 +44,7 @@ export type {
     RegistryLifecycleLogger,
     RegistryMutator,
     RegistryReader,
+    ResourceCollection,
     RuntimeFunction,
     RuntimeMetrics,
     RuntimePatchError,
@@ -50,7 +54,9 @@ export type {
     RuntimeWrapperOptions,
     RuntimeWrapperState,
     RuntimeWrapper as RuntimeWrapperType,
+    ScriptCollection,
     TrySafeApplyResult,
+    VersionedRegistry,
     WebSocketLogger
 } from "./browser/runtime/index.js";
 // Export sub-namespaces for internal use and testing
