@@ -15,6 +15,7 @@ import type {
     ClosurePatch,
     EventPatch,
     Patch,
+    PatchDependencyRegistry,
     PatchSnapshot,
     ResourcePatch,
     RuntimeFunction,
@@ -1241,7 +1242,7 @@ export interface DependencyValidationResult {
     missingDependencies: Array<string>;
 }
 
-function hasRegistryDependency(registry: RuntimeRegistry, dependencyId: string): boolean {
+function hasRegistryDependency(registry: PatchDependencyRegistry, dependencyId: string): boolean {
     return dependencyId in registry.scripts || dependencyId in registry.events || dependencyId in registry.closures;
 }
 
@@ -1291,7 +1292,7 @@ function hasRuntimeDependency(dependencyId: string): boolean {
     );
 }
 
-function hasSatisfiedDependency(registry: RuntimeRegistry, dependencyId: string): boolean {
+function hasSatisfiedDependency(registry: PatchDependencyRegistry, dependencyId: string): boolean {
     return hasRegistryDependency(registry, dependencyId) || hasRuntimeDependency(dependencyId);
 }
 
@@ -1320,7 +1321,7 @@ function collectMissingDependencies(
     return missingDependencies;
 }
 
-export function validatePatchDependencies(patch: Patch, registry: RuntimeRegistry): DependencyValidationResult {
+export function validatePatchDependencies(patch: Patch, registry: PatchDependencyRegistry): DependencyValidationResult {
     const dependencies = patch.metadata?.dependencies;
 
     if (!isNonEmptyArray(dependencies)) {
@@ -1353,7 +1354,7 @@ export type BatchDependencyValidationResult =
  */
 export function validateBatchPatchDependencies(
     patches: ReadonlyArray<Patch>,
-    registry: RuntimeRegistry
+    registry: PatchDependencyRegistry
 ): BatchDependencyValidationResult {
     const newlySatisfiedDependencies = new Set<string>();
 

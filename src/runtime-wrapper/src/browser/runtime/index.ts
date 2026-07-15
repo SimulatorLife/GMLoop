@@ -30,9 +30,12 @@ export { installScriptCallAdapter } from "./script-call-adapter.js";
 export type {
     ApplyPatchResult,
     BatchApplyResult,
+    ClosureCollection,
     ErrorAnalytics,
+    EventCollection,
     Patch,
     PatchApplicator,
+    PatchDependencyRegistry,
     PatchDiagnostics,
     PatchErrorAnalytics,
     PatchErrorCategory,
@@ -51,6 +54,7 @@ export type {
     RegistryHealthIssue,
     RegistryMutator,
     RegistryReader,
+    ResourceCollection,
     ResourceLayerUpdate,
     ResourcePatch,
     RuntimeFunction,
@@ -62,5 +66,7 @@ export type {
     RuntimeWrapper,
     RuntimeWrapperOptions,
     RuntimeWrapperState,
-    TrySafeApplyResult
+    ScriptCollection,
+    TrySafeApplyResult,
+    VersionedRegistry
 } from "./types.js";
