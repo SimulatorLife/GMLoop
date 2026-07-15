@@ -8,8 +8,7 @@ import {
     type ParserVisitorPrototype,
     type ParseTreeVisitorMethod
 } from "./generated-bindings.js";
-import { collectPrototypeMethodNames, collectVisitMethodNames } from "./method-reflection.js";
-import { definePrototypeMethods } from "./prototype-builder.js";
+import { collectPrototypeMethodNames, collectVisitMethodNames, definePrototypeMethods } from "./prototype-methods.js";
 import { createWrapperSymbols, ensureHasInstancePatched } from "./symbol-patching.js";
 
 const DEFAULT_VISIT_CHILDREN_DELEGATE = ({ fallback }: VisitorPayload) => fallback();
