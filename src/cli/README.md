@@ -166,6 +166,15 @@ If a target does not contain any `.gml` files, `lint` now prints an explicit
 guidance message explaining that only `.gml` sources are processed and includes
 an example invocation.
 
+Passing an explicit path that resolves to an existing file with a non-`.gml`
+extension (for example, `gmloop lint src/scripts/player.ts`) is now rejected
+with exit code `2` and a clear error listing the offending paths, because the
+command is scoped to GameMaker Language sources and would otherwise silently
+run ESLint with whatever config happens to live alongside the input. Point at a
+`.gml` file, a directory containing `.gml` sources, or use `--path` to target a
+GameMaker project (`.yyp`) or directory. For non-`.gml` files, run ESLint
+directly.
+
 ### `fix` - Project-Wide Fix Workflow
 
 Runs the project-wide write workflow in one command:
