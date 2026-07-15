@@ -62,6 +62,7 @@ export type { DocCommentLines, MutableDocCommentLines } from "./comments/comment
 export type { DocCommentNodeMetadata } from "./comments/doc-comment/node-metadata.js";
 export type { StripCommentsTransformOptions } from "./comments/strip-comments-transform.js";
 export type { FsFacade } from "./fs/io.js";
+export type { ProjectPathBoundaryMatcherOptions } from "./fs/path.js";
 export type { GmloopProjectConfig } from "./project-config/gmloop-project-config.js";
 export type { ProjectExcludeRules } from "./project-config/project-excludes.js";
 export type { FeatherDiagnostic, FeatherMetadata } from "./resources/feather-metadata.js";

@@ -11,7 +11,7 @@
  * The larger test locks in the performance improvements introduced in the
  * "Refactor Performance Lock-In" optimisation pass:
  *   - eliminating the double composeExpectedIdentifierName call in evaluateNamingConvention
- *   - caching path-resolution results inside createPathSelectionMatcher
+ *   - caching path-resolution results inside createProjectPathBoundaryMatcher
  *   - pre-sorting bannedAffixes at resolve time to avoid per-call spread+sort
  *   - replacing regex-based splitIdentifierUnderscoreAffixes with a charCode scan
  *   - replacing the for...of iterator in toCamelCaseFromLowerSnakeCore with an
