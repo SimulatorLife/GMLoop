@@ -226,7 +226,7 @@ function ensureIdentifierCollectionEntry({ collection, key, identifierId, initia
     });
 
     // Copy-on-write if the entry was retrieved from the cached map and not yet cloned in this build
-    if (entry && !(entry)[CLONED_MARKER]) {
+    if (entry && !entry[CLONED_MARKER]) {
         const clonedEntry = {
             ...entry,
             declarationKinds: [...(entry.declarationKinds || [])],
@@ -1448,7 +1448,7 @@ function ensureScopeRecord(scopeMap: Map<string, any>, descriptor: any) {
         ignoredIdentifiers: [] as any[],
         scriptCalls: [] as any[]
     }));
-    if (entry && !(entry)[CLONED_MARKER]) {
+    if (entry && !entry[CLONED_MARKER]) {
         const clonedEntry = {
             ...entry,
             filePaths: [...(entry.filePaths || [])],
@@ -1478,7 +1478,7 @@ function ensureFileRecord(filesMap: Map<string, any>, relativePath: string, scop
         ignoredIdentifiers: [] as any[],
         scriptCalls: [] as any[]
     }));
-    if (entry && !(entry)[CLONED_MARKER]) {
+    if (entry && !entry[CLONED_MARKER]) {
         const clonedEntry = {
             ...entry,
             declarations: [...(entry.declarations || [])],

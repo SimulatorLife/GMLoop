@@ -3,6 +3,7 @@ import path from "node:path";
 import { Worker } from "node:worker_threads";
 
 import { Core, type FsFacade } from "@gmloop/core";
+import { Parser } from "@gmloop/parser";
 import { Refactor } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import type {
@@ -261,6 +262,88 @@ function isOffsetInLexicalRanges(ranges: ReadonlyArray<LexicalRange>, offset: nu
         }
     }
     return false;
+}
+function readAstOffset(value: unknown): number | null {
+    if (typeof value === "number") {
+        return value;
+    }
+    if (!Core.isObjectLike(value)) {
+        return null;
+    }
+    const container = value as { index?: unknown };
+    return typeof container.index === "number" ? container.index : null;
+}
+function findAstPathAtOffset(node: any, offset: number, pathList: any[] = []): any[] {
+    if (!Core.isObjectLike(node)) {
+        return pathList;
+    }
+    const start = readAstOffset(node.start);
+    const end = readAstOffset(node.end);
+    if (start === null || end === null || offset < start || offset > end) {
+        return pathList;
+    }
+    pathList.push(node);
+    const keys = Object.keys(node);
+    for (const key of keys) {
+        if (key === "parent" || key === "enclosingNode" || key === "precedingNode" || key === "followingNode") {
+            continue;
+        }
+        const val = node[key];
+        if (Array.isArray(val)) {
+            for (const child of val) {
+                if (Core.isObjectLike(child)) {
+                    const result = findAstPathAtOffset(child, offset, [...pathList]);
+                    if (result.length > pathList.length) {
+                        return result;
+                    }
+                }
+            }
+        } else if (Core.isObjectLike(val)) {
+            const result = findAstPathAtOffset(val, offset, [...pathList]);
+            if (result.length > pathList.length) {
+                return result;
+            }
+        }
+    }
+    return pathList;
+}
+function findEnclosingFunctionDocComments(ast: any, offset: number): string {
+    const pathList = findAstPathAtOffset(ast, offset);
+    let fnIndex = -1;
+    for (let i = pathList.length - 1; i >= 0; i--) {
+        const node = pathList[i];
+        if (node && (node.type === "FunctionDeclaration" || node.type === "ConstructorDeclaration")) {
+            fnIndex = i;
+            break;
+        }
+    }
+    if (fnIndex === -1) {
+        return "";
+    }
+    for (let i = fnIndex; i >= 0; i--) {
+        const node = pathList[i];
+        const docComments = Object.getOwnPropertyDescriptor(node, "docComments")?.value;
+        if (Array.isArray(docComments) && docComments.length > 0) {
+            return extractAttachedDeclarationDocumentation(node);
+        }
+    }
+    return "";
+}
+function extractAttachedDeclarationDocumentation(node: unknown): string {
+    if (!Core.isObjectLike(node)) {
+        return "";
+    }
+    const docComments = Object.getOwnPropertyDescriptor(node, "docComments")?.value;
+    if (!Array.isArray(docComments)) {
+        return "";
+    }
+    const lines = docComments.flatMap((comment) => {
+        if (!Core.isObjectLike(comment) || typeof comment.value !== "string") {
+            return [];
+        }
+        return [comment.value.replace(/^\/\s?/u, "").trim()];
+    });
+    return lines.join("\n");
 }
 
 function findSymbolId(
@@ -1843,6 +1926,29 @@ export function createGmlSemanticIndex(
                 }
 
                 let markdownValue = `\`${facts.displayName}\`\n\n${facts.kind} - ${facts.symbolId}`;
+                if (facts.kind === "parameter") {
+                    try {
+                        const ast = Parser.GMLParser.parse(document.sourceText, {
+                            getComments: true,
+                            attachFunctionDocComments: true
+                        });
+                        const docText = findEnclosingFunctionDocComments(ast, offset);
+                        if (docText) {
+                            const parsedDoc = Semantic.parseGmlSymbolDocumentation(docText);
+                            const docParam = parsedDoc.parameters.find((p) => p.name === identifierName);
+                            if (docParam) {
+                                if (docParam.type) {
+                                    markdownValue += `\n\nType: \`${docParam.type}\``;
+                                }
+                                if (docParam.description) {
+                                    markdownValue += `\n\nDescription: ${docParam.description}`;
+                                }
+                            }
+                        }
+                    } catch {
+                        // ignore/fallback
+                    }
+                }
                 if (definitionInfo) {
                     markdownValue += `\n\n${definitionInfo}`;
                 }

@@ -386,6 +386,55 @@ void test("semantic index hover handles comment/string guards and ignores scope-
     }
 });
 
+void test("semantic index hover on function parameter includes type and description from doc-comment", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gmloop-lsp-regression-"));
+    const sourcePath = path.join(projectRoot, "scripts/source/source.gml");
+
+    const sourceText = [
+        "/// @desc Set a new top priority target",
+        "/// @param {Struct.AbstractTarget} target The new top-priority target for the AI to consider",
+        "/// @returns {undefined}",
+        "static add_priority_target = function (target) {",
+        "    targeting.add_priority_target(target);",
+        "};"
+    ].join("\n");
+
+    try {
+        await fs.mkdir(path.dirname(sourcePath), { recursive: true });
+        await fs.writeFile(
+            path.join(projectRoot, "Game.yyp"),
+            JSON.stringify({ name: "Game", resourceType: "GMProject" })
+        );
+        await fs.writeFile(
+            path.join(projectRoot, "scripts/source/source.yy"),
+            JSON.stringify({ name: "source", resourceType: "GMScript" })
+        );
+        await fs.writeFile(sourcePath, sourceText);
+
+        const store = Lsp.createGmlDocumentStore();
+        const document = store.open({
+            uri: Lsp.filePathToUri(sourcePath),
+            languageId: "gml",
+            version: 1,
+            text: sourceText
+        });
+        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+
+        const offsetParam = sourceText.indexOf("function (target)") + 10;
+        const hoverRes = await semanticIndex.hover(document, offsetParam, "target");
+        assert.ok(hoverRes, "Should hover parameter 'target'");
+        const hoverText =
+            typeof hoverRes?.contents === "object" && "value" in hoverRes.contents ? hoverRes.contents.value : "";
+
+        assert.match(hoverText, /target/);
+        assert.match(hoverText, /parameter/);
+        assert.match(hoverText, /Type: `Struct\.AbstractTarget`/);
+        assert.match(hoverText, /Description: The new top-priority target for the AI to consider/);
+    } finally {
+        await cleanupProjectDir(projectRoot);
+    }
+});
+
 void test("semantic highlights use current lexical facts instead of shifted persisted occurrences", async () => {
     const fixture = await createTwoScriptProject();
     const initialSource = ["function source() {", "    var local_value = 1;", "    return local_value;", "}", ""].join(

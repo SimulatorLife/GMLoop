@@ -73,7 +73,7 @@ To ensure seamless integration with LSP/MCP clients (such as `lsp-mcp-server`) a
 
 ## TODO
 - **BUG**: For the LSP/semantic/VSCode extension/syntax-highlighting, there are some misses in the semantic highlighting: macros are not highlighted, *some* enum-members (even in the same enum declaration) are not highlighted, some/most function arguments are not highlighted, uses of an enum member are not highlighted, local variables are not highlighted, static-struct members/variables are not highlighted (ex. `get_debug_text` in this snippet: `static get_debug_text = function () {...`)
-- **FEAT**: When hovering over a function/method parameter, the hover tooltip should show the parameter's type and description (if documented) in addition to its name. For example, hovering over `target` in this snippet:
+- **FEAT**: When hovering over a function/method's parameter, the hover tooltip should show the parameter's type and description (if documented) in addition to its name. For example, hovering over `target` in this snippet:
   ```gml
   /// @desc Set a new top priority target
   /// @param {Struct.AbstractTarget} target The new top-priority target for the AI to consider
@@ -82,4 +82,4 @@ To ensure seamless integration with LSP/MCP clients (such as `lsp-mcp-server`) a
     targeting.add_priority_target(target);
   };
   ```
-  Currently shows "target\nparameter - local:scope-6:target\ndefined in scripts/aicontroller/aicontroller.gml" but should include the type and description from the doc-comment, like.
+  Currently shows "target\nparameter - local:scope-6:target\ndefined in scripts/aicontroller/aicontroller.gml" but should include the type and description from param's doc-comment, like.

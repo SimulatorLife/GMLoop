@@ -118,3 +118,23 @@ void test("project resources receive object, room, and generic resource categori
         ["class", "namespace", "namespace"]
     );
 });
+
+void test("semantic highlighting correctly classifies parameters with default values and nested calls", () => {
+    const sourceText = `function AIController(sight_radius = irandom_range(250, 350), can_pathfind = true, can_wander = false) constructor {}`;
+    const tokens = Semantic.collectGmlSemanticHighlights({
+        sourceText,
+        occurrences: [],
+        projectIdentifiers: [],
+        builtIns: [
+            { name: "irandom_range", type: "function", deprecated: false },
+            { name: "true", type: "literal", deprecated: false },
+            { name: "false", type: "literal", deprecated: false }
+        ]
+    });
+    const byStart = new Map(tokens.map((token) => [token.start, token]));
+
+    assert.equal(byStart.get(sourceText.indexOf("sight_radius"))?.kind, "parameter");
+    assert.equal(byStart.get(sourceText.indexOf("irandom_range"))?.kind, "function");
+    assert.equal(byStart.get(sourceText.indexOf("can_pathfind"))?.kind, "parameter");
+    assert.equal(byStart.get(sourceText.indexOf("can_wander"))?.kind, "parameter");
+});
