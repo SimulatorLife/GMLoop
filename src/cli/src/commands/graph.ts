@@ -2043,7 +2043,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 return liveReload;
             },
             stopLiveReload: async () => {
-                await stopOwnedGraphVisualizationLiveReloadSession(
+                await stopGraphVisualizationLiveReloadSession(
                     activeLiveReloadSession,
                     activeContext?.projectRoot ?? null
                 );
@@ -2292,6 +2292,7 @@ export const __graphCommandTest__ = Object.freeze({
     createGraphVisualizationLiveReloadModelFromSession,
     createGraphVisualizationLiveReloadSessionState,
     ensureGraphVisualizationLiveReloadSession,
+    stopGraphVisualizationLiveReloadSession,
     stopOwnedGraphVisualizationLiveReloadSession,
     isGraphVisualizationUiSourceReloadCandidate,
     normalizeGraphVisualizationUiSourceWatchFileName,

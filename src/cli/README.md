@@ -367,7 +367,7 @@ The watcher ignores generated/cache directories such as `.gmcache`, `.gml-hot-re
 
 When using `graph visualize --serve`, the `Start Live Reload` button uses the same managed session controller as `live-reload session`. It resolves the project-local `.gmloop/live-reload-session.json` registry first, adopts a healthy session when one exists, and returns that session's exact runtime, status, and WebSocket URLs to the UI. A new session receives dynamically allocated status and WebSocket ports, then reads the project's `runtime.liveReload` build/output configuration before the watcher starts. This keeps the graph UI from probing a fixed status port or creating parallel workers for a project that is already running.
 
-The graph host owns a session only when the UI starts that session itself. Closing the graph host does not stop a session started by the CLI, MCP, or another graph host; an explicit `Stop Live Reload` action is the user-directed operation that stops the registered project session.
+The graph host owns a session only when the UI starts that session itself. Closing the graph host does not stop a session started by the CLI, MCP, or another graph host; an explicit `Stop Live Reload` action is the user-directed operation that stops the currently registered project session.
 
 **Graph serve verification:**
 

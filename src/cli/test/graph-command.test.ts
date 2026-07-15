@@ -736,6 +736,7 @@ void test("graph live-reload adoption preserves registry endpoints without alloc
         statusUrl: session.statusUrl,
         websocketUrl: session.websocketUrl
     });
+    assert.equal(state.session?.sessionId, session.sessionId);
     assert.equal(state.ownedSession, null);
 });
 
@@ -780,6 +781,7 @@ void test("graph live-reload startup allocates dynamic endpoints only for a new 
     assert.ok(receivedStartArguments?.includes("ui"));
     assert.ok(receivedStartArguments?.includes("62001"));
     assert.ok(receivedStartArguments?.includes("62002"));
+    assert.equal(state.session?.sessionId, session.sessionId);
     assert.equal(state.ownedSession?.sessionId, session.sessionId);
 });
 
@@ -847,6 +849,7 @@ void test("graph live-reload new sessions receive distinct dynamic status and we
 void test("graph host shutdown does not stop a session owned outside the graph host", async () => {
     const session = createRegisteredLiveReloadSession();
     const state = __graphCommandTest__.createGraphVisualizationLiveReloadSessionState();
+    state.session = session;
     state.model = __graphCommandTest__.createGraphVisualizationLiveReloadModelFromSession(session, null);
     let stopCallCount = 0;
 
@@ -869,16 +872,17 @@ void test("graph host shutdown does not stop a session owned outside the graph h
     assert.equal(state.model, null);
 });
 
-void test("graph live-reload stop leaves an externally owned session running", async () => {
+void test("graph live-reload explicit stop stops an externally owned session", async () => {
     const state = __graphCommandTest__.createGraphVisualizationLiveReloadSessionState();
     const externalSession = createRegisteredLiveReloadSession();
+    state.session = externalSession;
     state.model = __graphCommandTest__.createGraphVisualizationLiveReloadModelFromSession(
         externalSession,
         createLiveReloadStatusPayload(externalSession.runtimeUrl)
     );
     let stopCalls = 0;
 
-    await __graphCommandTest__.stopOwnedGraphVisualizationLiveReloadSession(
+    await __graphCommandTest__.stopGraphVisualizationLiveReloadSession(
         state,
         externalSession.projectRoot,
         async () => {
@@ -893,14 +897,16 @@ void test("graph live-reload stop leaves an externally owned session running", a
         })
     );
 
-    assert.equal(stopCalls, 0);
+    assert.equal(stopCalls, 1);
     assert.equal(state.model, null);
+    assert.equal(state.session, null);
 });
 
 void test("graph live-reload project switching stops only the previously owned matching session", async () => {
     const state = __graphCommandTest__.createGraphVisualizationLiveReloadSessionState();
     const ownedSession = createRegisteredLiveReloadSession();
     state.ownedSession = ownedSession;
+    state.session = ownedSession;
     let stopTargetPath = "";
 
     await __graphCommandTest__.stopOwnedGraphVisualizationLiveReloadSession(
