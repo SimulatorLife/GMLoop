@@ -274,6 +274,7 @@ void describe("ScopeTracker: getChangedFilePaths", () => {
 
             advanceTimestamp();
             const checkpoint = Date.now();
+            advanceTimestamp(); // consume the increment so new scopes see a strictly greater timestamp
 
             tracker.enterScope("program", { path: "/project/multi.gml" });
             tracker.declare("x", { name: "x" });
@@ -329,6 +330,7 @@ void describe("ScopeTracker: getChangedFilePaths", () => {
 
             advanceTimestamp();
             const checkpoint = Date.now();
+            advanceTimestamp(); // consume the increment so new scopes see a strictly greater timestamp
 
             tracker.enterScope("program", { path: String.raw`project\scripts\modified.gml` });
             tracker.declare("x", { name: "x" });
@@ -421,6 +423,28 @@ void describe("ScopeTracker: getChangedFilePaths", () => {
 
             const changedPaths = tracker.getChangedFilePaths(snapshotTimestamp);
             assert.equal(changedPaths.size, 0);
+        }));
+
+    void it("excludes paths whose lastModified timestamp equals the checkpoint (strict 'after')", () =>
+        withDeterministicDateNow((advanceTimestamp) => {
+            const tracker = new ScopeTracker({ enabled: true });
+
+            tracker.enterScope("program", { path: "/project/at-cutoff.gml" });
+            tracker.declare("x", { name: "x" });
+            tracker.exitScope();
+
+            const exactCutoffTimestamp = Date.now();
+
+            // A subsequent modification strictly greater than the cutoff must be returned,
+            // while the same path whose stored timestamp still equals the cutoff is excluded.
+            advanceTimestamp();
+            tracker.enterScope("program", { path: "/project/after-cutoff.gml" });
+            tracker.declare("y", { name: "y" });
+            tracker.exitScope();
+
+            const afterCheck = tracker.getChangedFilePaths(exactCutoffTimestamp);
+            assert.ok(!afterCheck.has("/project/at-cutoff.gml"), "Equal timestamps must be treated as not-changed");
+            assert.ok(afterCheck.has("/project/after-cutoff.gml"), "Later timestamps must still be detected");
         }));
 });
 

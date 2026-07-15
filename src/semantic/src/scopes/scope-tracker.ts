@@ -2053,9 +2053,19 @@ export class ScopeTracker implements ScipExportView {
      * Scopes without a path (e.g., anonymous blocks or synthetic scopes)
      * are silently skipped.
      *
+     * The boundary semantics are strictly greater than
+     * (`lastModified > sinceTimestamp`), matching the sibling
+     * {@link ScopeTracker.getModifiedScopes} and
+     * {@link ScopeTracker.exportModifiedOccurrences} helpers so callers
+     * reading multiple change-detection views in one hot-reload pass see a
+     * consistent set of touched files. Pass `0` to enumerate every path
+     * that has ever been touched (paths with `-1` sentinel timestamps are
+     * never observed because they are never written to the path index).
+     *
      * @param sinceTimestamp - Return paths for scopes with a lastModified
      *                         timestamp strictly greater than this value.
-     *                         Pass 0 to return all paths for any modified scope.
+     *                         Pass `0` to return all paths that have ever
+     *                         been touched after their initial registration.
      * @returns Set of file paths for scopes modified after the timestamp
      */
     public getChangedFilePaths(sinceTimestamp: number): Set<string> {
@@ -2065,7 +2075,7 @@ export class ScopeTracker implements ScipExportView {
 
         const paths = new Set<string>();
         for (const [trackedPath, lastModified] of this.pathLastModifiedIndex) {
-            if (lastModified >= sinceTimestamp) {
+            if (lastModified > sinceTimestamp) {
                 paths.add(trackedPath);
             }
         }
