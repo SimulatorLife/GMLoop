@@ -193,7 +193,7 @@ export function createGm1062Rule(entry: FeatherManifestEntry): Rule.RuleModule {
         rewritten = rewritten.replaceAll(/^\s*\/\/\/\s*@function\b[^\n]*\n?/gm, "");
         rewritten = rewritten.replaceAll(/^([ \t]*\/\/\/\s*)@description\b/gm, "$1@desc");
         rewritten = rewritten.replaceAll(
-            /^([ \t]*\/\/\/\s*@param\s*)\{([^}]*)\}(\s+)([A-Za-z_][A-Za-z0-9_]*)(.*)$/gm,
+            /^([ \t]*\/\/\/\s*@param\s*)\{([^}]*)\}(\s+)(\*?[A-Za-z_][A-Za-z0-9_]*)(.*)$/gm,
             (_fullMatch, prefix: string, typeText: string, spacing: string, parameterName: string, suffix: string) => {
                 const normalizedType = normalizeFeatherDocTypeText(typeText);
                 const normalizedParameterName = normalizeDocParamName(parameterName);

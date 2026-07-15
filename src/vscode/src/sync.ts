@@ -7,6 +7,7 @@ export interface SyncLocalExtensionFilesParameters {
     readonly readFileSync: (path: string, encoding: "utf8") => string;
     readonly copyFileSync: (src: string, dest: string) => void;
     readonly onChanged: () => void;
+    readonly logError?: (message: string, error: unknown) => void;
 }
 
 export function syncLocalExtensionFilesPure(parameters: SyncLocalExtensionFilesParameters): void {
@@ -57,7 +58,7 @@ export function syncLocalExtensionFilesPure(parameters: SyncLocalExtensionFilesP
                         parameters.copyFileSync(file.src, file.dest);
                         changed = true;
                     } catch (error) {
-                        console.error(`Failed to sync ${file.src} to ${file.dest}:`, error);
+                        parameters.logError?.(`Failed to sync ${file.src} to ${file.dest}:`, error);
                     }
                 }
             }

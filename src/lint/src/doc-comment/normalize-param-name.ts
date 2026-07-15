@@ -22,5 +22,5 @@
  * normalizeDocParamName("items")    // "items"
  */
 export function normalizeDocParamName(name: string): string {
-    return name.replace(/^_+/u, "");
+    return name.replace(/^\*+/u, "").replace(/^_+/u, "");
 }

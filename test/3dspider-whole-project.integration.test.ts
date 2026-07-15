@@ -154,7 +154,7 @@ async function waitForStatus(
     predicate: (payload: StatusPayload) => boolean,
     timeoutMs = WATCH_TIMEOUT_MS
 ): Promise<StatusPayload> {
-    return await FixtureRunner.waitForJsonEndpointPayload(
+    return FixtureRunner.waitForJsonEndpointPayload(
         createStatusEndpointUrl(statusPort),
         predicate,
         timeoutMs,

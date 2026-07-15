@@ -324,7 +324,9 @@ function formatOptionalParamDocName(parameterName: string, defaultValueText: str
 }
 
 function normalizeParamDescriptionSpacing(line: string): string {
-    const normalized = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+(?:\[[^\]]+\]|[A-Za-z0-9_]+))\s{2,}(\S.*)$/u.exec(line);
+    const normalized = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+(?:\[[^\]]+\]|\*?[A-Za-z0-9_]+))\s{2,}(\S.*)$/u.exec(
+        line
+    );
     if (!normalized) {
         return line;
     }
@@ -338,12 +340,12 @@ type DocCommentParamMetadata = Readonly<{
 }>;
 
 function rewriteDocCommentParamLineName(line: string, replacementName: string): string {
-    const optionalMatch = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+)\[([A-Za-z0-9_]+)([^\]]*)\](.*)$/u.exec(line);
+    const optionalMatch = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+)\[(\*?[A-Za-z0-9_]+)([^\]]*)\](.*)$/u.exec(line);
     if (optionalMatch) {
         return `${optionalMatch[1]}${replacementName}${optionalMatch[4]}`;
     }
 
-    const requiredMatch = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+)([A-Za-z0-9_]+)(.*)$/u.exec(line);
+    const requiredMatch = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+)(\*?[A-Za-z0-9_]+)(.*)$/u.exec(line);
     if (requiredMatch) {
         return `${requiredMatch[1]}${replacementName}${requiredMatch[3]}`;
     }
@@ -405,7 +407,7 @@ function remapUnmatchedParamDocLinesToFunctionOrder(
 }
 
 function parseDocCommentParamMetadata(line: string): DocCommentParamMetadata | null {
-    const paramMatch = /^\s*\/\/\/\s*@param(?:\s+\{([^}]+)\})?\s+\[?([A-Za-z0-9_]+)(?:=[^\]]*)?\]?/u.exec(line);
+    const paramMatch = /^\s*\/\/\/\s*@param(?:\s+\{([^}]+)\})?\s+\[?(\*?[A-Za-z0-9_]+)(?:=[^\]]*)?\]?/u.exec(line);
     if (!paramMatch) {
         return null;
     }
@@ -418,12 +420,12 @@ function parseDocCommentParamMetadata(line: string): DocCommentParamMetadata | n
 }
 
 function normalizeDocParamLineParameterName(line: string): string {
-    const optionalMatch = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+)\[([A-Za-z0-9_]+)([^\]]*)\](.*)$/u.exec(line);
+    const optionalMatch = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+)\[(\*?[A-Za-z0-9_]+)([^\]]*)\](.*)$/u.exec(line);
     if (optionalMatch) {
         return `${optionalMatch[1]}[${normalizeDocParamName(optionalMatch[2])}${optionalMatch[3]}]${optionalMatch[4]}`;
     }
 
-    const requiredMatch = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+)([A-Za-z0-9_]+)(.*)$/u.exec(line);
+    const requiredMatch = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+)(\*?[A-Za-z0-9_]+)(.*)$/u.exec(line);
     if (requiredMatch) {
         return `${requiredMatch[1]}${normalizeDocParamName(requiredMatch[2])}${requiredMatch[3]}`;
     }
@@ -1283,7 +1285,7 @@ function updateExistingParamDocWithDefault(docBlock: Array<string>, parameterNam
         : formatOptionalParamDocName(parameterName, defaultVal);
     for (const [index, line] of docBlock.entries()) {
         const optionalParamMatch = new RegExp(
-            String.raw`^(\s*///\s*@param)(\s+\{[^}]+\})?(\s+)\[${escapedParameterName}(?:=[^\]]*)?\]*(.*)$`
+            String.raw`^(\s*///\s*@param)(\s+\{[^}]+\})?(\s+)\[\*?${escapedParameterName}(?:=[^\]]*)?\]*(.*)$`
         ).exec(line);
         if (optionalParamMatch) {
             if (isUndefinedDefaultValueText(defaultVal)) {
@@ -1298,7 +1300,7 @@ function updateExistingParamDocWithDefault(docBlock: Array<string>, parameterNam
         }
 
         const requiredParamMatch = new RegExp(
-            String.raw`^(\s*///\s*@param)(\s+\{[^}]+\})?(\s+)${escapedParameterName}\b(.*)$`
+            String.raw`^(\s*///\s*@param)(\s+\{[^}]+\})?(\s+)\*?${escapedParameterName}\b(.*)$`
         ).exec(line);
         if (requiredParamMatch) {
             const typeAnnotation =
@@ -1314,7 +1316,7 @@ function updateExistingParamDocAsOptionalWithoutDefault(docBlock: Array<string>,
     const escapedParameterName = Core.escapeRegExp(parameterName);
     for (const [index, line] of docBlock.entries()) {
         const optionalParamMatch = new RegExp(
-            String.raw`^(\s*///\s*@param)(\s+\{[^}]+\})?(\s+)\[${escapedParameterName}(?:=[^\]]*)?\](.*)$`
+            String.raw`^(\s*///\s*@param)(\s+\{[^}]+\})?(\s+)\[\*?${escapedParameterName}(?:=[^\]]*)?\](.*)$`
         ).exec(line);
         if (optionalParamMatch) {
             docBlock[index] =
@@ -1323,7 +1325,7 @@ function updateExistingParamDocAsOptionalWithoutDefault(docBlock: Array<string>,
         }
 
         const requiredParamMatch = new RegExp(
-            String.raw`^(\s*///\s*@param)(\s+\{[^}]+\})?(\s+)${escapedParameterName}\b(.*)$`
+            String.raw`^(\s*///\s*@param)(\s+\{[^}]+\})?(\s+)\*?${escapedParameterName}\b(.*)$`
         ).exec(line);
         if (requiredParamMatch) {
             docBlock[index] =
@@ -1337,7 +1339,7 @@ function updateExistingParamDocWithoutDefault(docBlock: Array<string>, parameter
     const escapedParameterName = Core.escapeRegExp(parameterName);
     for (const [index, line] of docBlock.entries()) {
         const optionalParamMatch = new RegExp(
-            String.raw`^(\s*///\s*@param)(\s+\{[^}]+\})?(\s+)\[${escapedParameterName}(?:=[^\]]*)?\](.*)$`
+            String.raw`^(\s*///\s*@param)(\s+\{[^}]+\})?(\s+)\[\*?${escapedParameterName}(?:=[^\]]*)?\](.*)$`
         ).exec(line);
         if (optionalParamMatch) {
             docBlock[index] =
