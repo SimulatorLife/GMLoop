@@ -792,9 +792,20 @@ async function discardFormattedFileOriginalContents() {
  * Release old snapshots when the in-memory snapshot count exceeds the limit.
  * This prevents unbounded memory growth when disk writes fail and snapshots
  * must be kept in memory.
+ *
+ * A limit of `0` is treated as "disabled" to match the documented contract
+ * (`--max-in-memory-snapshots 0` / `PRETTIER_PLUGIN_GML_MAX_IN_MEMORY_SNAPSHOTS=0`
+ * both advertise "Provide 0 to disable the limit"). Without this guard, a `0`
+ * limit would force every inline snapshot to be evicted on the next call,
+ * silently breaking the `--on-parse-error=revert` safety net that this limit
+ * exists to protect.
  */
 async function enforceSnapshotMemoryLimit() {
     const maxInMemorySnapshots = getDefaultMaxInMemorySnapshots();
+
+    if (maxInMemorySnapshots === 0) {
+        return;
+    }
 
     if (inMemorySnapshotCount <= maxInMemorySnapshots) {
         return;
