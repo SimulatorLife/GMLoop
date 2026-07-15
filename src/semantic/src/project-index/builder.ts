@@ -2490,7 +2490,7 @@ function reconstructResourceAnalysis(existingIndex: any): {
     };
 }
 
-function createProjectIndexAggregationStateFromExisting(existingIndex: any, resourceAnalysis: any) {
+function createProjectIndexAggregationStateFromExisting(existingIndex: any) {
     const scopeMap = new Map<string, any>();
     if (existingIndex && existingIndex.scopes) {
         const scopes = existingIndex.scopes;
@@ -3357,7 +3357,7 @@ export async function buildProjectIndex(
             ensureNotAborted,
             logger
         });
-        const state = createProjectIndexAggregationStateFromExisting(existingIndex, resourceAnalysis);
+        const state = createProjectIndexAggregationStateFromExisting(existingIndex);
         scopeMap = state.scopeMap;
         filesMap = state.filesMap;
         relationships = state.relationships;

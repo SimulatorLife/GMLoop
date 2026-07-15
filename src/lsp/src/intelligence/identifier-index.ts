@@ -487,23 +487,35 @@ async function getProjectRoot(filepath: string): Promise<string | null> {
     return root;
 }
 
-function buildSemanticIndexInWorker(
-    projectRoot: string,
-    priorityFiles: ReadonlyArray<string>,
-    openDocuments: ReadonlyArray<GmlTextDocument>,
-    definitionsOnly: boolean,
-    readCurrentOpenDocuments: () => ReadonlyArray<GmlTextDocument>,
+interface SemanticIndexWorkerBuildOptions {
+    projectRoot: string;
+    priorityFiles: ReadonlyArray<string>;
+    openDocuments: ReadonlyArray<GmlTextDocument>;
+    definitionsOnly: boolean;
+    readCurrentOpenDocuments: () => ReadonlyArray<GmlTextDocument>;
     buildIdentity: Readonly<{
         boundary: WorkerBuildBoundary;
         isCurrent: (boundary: WorkerBuildBoundary) => boolean;
-    }>,
-    signal?: AbortSignal,
-    incremental: Readonly<{
+    }>;
+    signal?: AbortSignal;
+    incremental?: Readonly<{
         changes: ReadonlyArray<GmlSemanticFileChange>;
         existingIndex: Record<string, unknown>;
-    }> | null = null,
-    previousManifest?: SemanticFileManifest | null
-): Promise<NavigationState | null> {
+    }> | null;
+    previousManifest?: SemanticFileManifest | null;
+}
+
+function buildSemanticIndexInWorker({
+    projectRoot,
+    priorityFiles,
+    openDocuments,
+    definitionsOnly,
+    readCurrentOpenDocuments,
+    buildIdentity,
+    signal,
+    incremental = null,
+    previousManifest = null
+}: SemanticIndexWorkerBuildOptions): Promise<NavigationState | null> {
     const { boundary: buildBoundary, isCurrent: isBuildBoundaryCurrent } = buildIdentity;
     const overlayBoundary = createWorkerOverlayBoundary(openDocuments);
     return new Promise((resolve, reject) => {
@@ -1079,20 +1091,19 @@ export function createGmlSemanticIndex(
                 const store = getSemanticStore(resolvedRoot);
                 const previousManifest =
                     store.readSemanticManifest("full") ?? store.readSemanticManifest("definitions");
-                const fullState = await buildSemanticIndexInWorker(
-                    resolvedRoot,
+                const fullState = await buildSemanticIndexInWorker({
+                    projectRoot: resolvedRoot,
                     priorityFiles,
-                    listProjectDocuments(resolvedRoot),
-                    false,
-                    () => listProjectDocuments(resolvedRoot),
-                    {
+                    openDocuments: listProjectDocuments(resolvedRoot),
+                    definitionsOnly: false,
+                    readCurrentOpenDocuments: () => listProjectDocuments(resolvedRoot),
+                    buildIdentity: {
                         boundary: workerBoundary,
                         isCurrent: (boundary) => isWorkerBuildBoundaryCurrent(resolvedRoot, boundary)
                     },
-                    controller.signal,
-                    null,
+                    signal: controller.signal,
                     previousManifest
-                );
+                });
                 if (
                     fullState &&
                     !disposed &&
@@ -1299,25 +1310,25 @@ export function createGmlSemanticIndex(
                     const store = getSemanticStore(resolvedRoot);
                     const previousManifest =
                         store.readSemanticManifest("definitions") ?? store.readSemanticManifest("full");
-                    const state = await buildSemanticIndexInWorker(
-                        resolvedRoot,
+                    const state = await buildSemanticIndexInWorker({
+                        projectRoot: resolvedRoot,
                         priorityFiles,
-                        listProjectDocuments(resolvedRoot),
-                        true,
-                        () => listProjectDocuments(resolvedRoot),
-                        {
+                        openDocuments: listProjectDocuments(resolvedRoot),
+                        definitionsOnly: true,
+                        readCurrentOpenDocuments: () => listProjectDocuments(resolvedRoot),
+                        buildIdentity: {
                             boundary: workerBoundary,
                             isCurrent: (boundary) => isWorkerBuildBoundaryCurrent(resolvedRoot, boundary)
                         },
-                        controller.signal,
-                        incrementalBuild
+                        signal: controller.signal,
+                        incremental: incrementalBuild
                             ? {
                                   changes: [{ filePath: document.filePath, kind: "modified" }],
                                   existingIndex: Object.fromEntries(Object.entries(existingRawIndex))
                               }
                             : null,
                         previousManifest
-                    );
+                    });
                     if (
                         state &&
                         !disposed &&
@@ -1501,22 +1512,22 @@ export function createGmlSemanticIndex(
                 const store = getSemanticStore(resolvedRoot);
                 const definitionsPreviousManifest =
                     store.readSemanticManifest("definitions") ?? store.readSemanticManifest("full");
-                const definitionsState = await buildSemanticIndexInWorker(
-                    resolvedRoot,
+                const definitionsState = await buildSemanticIndexInWorker({
+                    projectRoot: resolvedRoot,
                     priorityFiles,
-                    listProjectDocuments(resolvedRoot),
-                    true,
-                    () => listProjectDocuments(resolvedRoot),
-                    {
+                    openDocuments: listProjectDocuments(resolvedRoot),
+                    definitionsOnly: true,
+                    readCurrentOpenDocuments: () => listProjectDocuments(resolvedRoot),
+                    buildIdentity: {
                         boundary: definitionsBoundary,
                         isCurrent: (boundary) => isWorkerBuildBoundaryCurrent(resolvedRoot, boundary)
                     },
-                    controller.signal,
-                    canIncrementDefinitions
+                    signal: controller.signal,
+                    incremental: canIncrementDefinitions
                         ? { changes: impactedChanges, existingIndex: definitionsIncrementalIndex }
                         : null,
-                    definitionsPreviousManifest
-                );
+                    previousManifest: definitionsPreviousManifest
+                });
                 if (
                     !definitionsState ||
                     disposed ||
@@ -1604,18 +1615,18 @@ export function createGmlSemanticIndex(
                 const storeForFull = getSemanticStore(resolvedRoot);
                 const fullPreviousManifest =
                     storeForFull.readSemanticManifest("full") ?? storeForFull.readSemanticManifest("definitions");
-                const state = await buildSemanticIndexInWorker(
-                    resolvedRoot,
+                const state = await buildSemanticIndexInWorker({
+                    projectRoot: resolvedRoot,
                     priorityFiles,
-                    listProjectDocuments(resolvedRoot),
-                    false,
-                    () => listProjectDocuments(resolvedRoot),
-                    {
+                    openDocuments: listProjectDocuments(resolvedRoot),
+                    definitionsOnly: false,
+                    readCurrentOpenDocuments: () => listProjectDocuments(resolvedRoot),
+                    buildIdentity: {
                         boundary: fullBoundary,
                         isCurrent: (boundary) => isWorkerBuildBoundaryCurrent(resolvedRoot, boundary)
                     },
-                    controller.signal,
-                    canIncrementFull
+                    signal: controller.signal,
+                    incremental: canIncrementFull
                         ? {
                               changes: fullImpactedFiles.map((filePath) => ({
                                   filePath,
@@ -1624,8 +1635,8 @@ export function createGmlSemanticIndex(
                               existingIndex: fullIncrementalIndex
                           }
                         : null,
-                    fullPreviousManifest
-                );
+                    previousManifest: fullPreviousManifest
+                });
                 if (
                     state &&
                     !disposed &&
@@ -1732,13 +1743,15 @@ export function createGmlSemanticIndex(
                         if (fullProjectBuilds.has(resolvedRoot)) {
                             return;
                         }
-                        void buildFullProjectIndex(document, resolvedRoot, reason).catch((error) => {
+                        return void buildFullProjectIndex(document, resolvedRoot, reason).catch((error) => {
                             console.error("Background full index build failed:", error);
                         });
                     }
+                    return null;
                 })
                 .catch((error: unknown) => {
                     console.error("Failed to get project root for background indexing:", error);
+                    return null;
                 });
         }, 1);
     }
@@ -1867,8 +1880,6 @@ export function createGmlSemanticIndex(
             }
 
             const resolvedPath = path.resolve(filePath);
-            const projectRoot = await getProjectRoot(resolvedPath);
-            const resolvedRoot = projectRoot ? path.resolve(projectRoot) : null;
             const openedDocument = documents
                 .list()
                 .find((document) => path.resolve(document.filePath) === resolvedPath);
@@ -1979,27 +1990,12 @@ export function createGmlSemanticIndex(
 
                 let markdownValue = `\`${facts.displayName}\`\n\n${facts.kind} - ${facts.symbolId}`;
                 if (facts.kind === "parameter") {
-                    try {
-                        const ast = Parser.GMLParser.parse(document.sourceText, {
-                            getComments: true,
-                            attachFunctionDocComments: true
-                        });
-                        const docText = findEnclosingFunctionDocComments(ast, offset);
-                        if (docText) {
-                            const parsedDoc = Semantic.parseGmlSymbolDocumentation(docText);
-                            const docParam = parsedDoc.parameters.find((p) => p.name === identifierName);
-                            if (docParam) {
-                                if (docParam.type) {
-                                    markdownValue += `\n\nType: \`${docParam.type}\``;
-                                }
-                                if (docParam.description) {
-                                    markdownValue += `\n\nDescription: ${docParam.description}`;
-                                }
-                            }
-                        }
-                    } catch {
-                        // ignore/fallback
-                    }
+                    markdownValue = appendParameterDocumentationMarkdown(
+                        markdownValue,
+                        document,
+                        offset,
+                        identifierName
+                    );
                 }
                 if (definitionInfo) {
                     markdownValue += `\n\n${definitionInfo}`;
@@ -2195,4 +2191,38 @@ export function createGmlSemanticIndex(
             return await refactorWorkspaceEditToLspWorkspaceEdit(workspace);
         }
     };
+}
+function appendParameterDocumentationMarkdown(
+    markdownValue: string,
+    document: GmlTextDocument,
+    offset: number,
+    identifierName: string
+): string {
+    try {
+        const ast = Parser.GMLParser.parse(document.sourceText, {
+            getComments: true,
+            attachFunctionDocComments: true
+        });
+        const docText = findEnclosingFunctionDocComments(ast, offset);
+        if (!docText) {
+            return markdownValue;
+        }
+
+        const parsedDoc = Semantic.parseGmlSymbolDocumentation(docText);
+        const docParam = parsedDoc.parameters.find((p) => p.name === identifierName);
+        if (!docParam) {
+            return markdownValue;
+        }
+
+        let nextMarkdownValue = markdownValue;
+        if (docParam.type) {
+            nextMarkdownValue += `\n\nType: \`${docParam.type}\``;
+        }
+        if (docParam.description) {
+            nextMarkdownValue += `\n\nDescription: ${docParam.description}`;
+        }
+        return nextMarkdownValue;
+    } catch {
+        return markdownValue;
+    }
 }

@@ -32,7 +32,6 @@ import type {
     ValidationSummary
 } from "../../types.js";
 import { type WorkspaceEdit, WorkspaceEdit as WorkspaceEditClass } from "../../workspace-edit.js";
-import { createPathSelectionMatcher, resolveProjectPath } from "./path-selection.js";
 
 const DEFINITELY_LOCAL_NAMING_CATEGORIES = new Set<NamingCategory>([
     "localVariable",
@@ -870,13 +869,13 @@ function buildNamingTargetQueryPaths(projectRoot: string, selectedFilePaths: Arr
 
     for (const filePath of selectedFilePaths) {
         queryPaths.add(filePath);
-        queryPaths.add(resolveProjectPath(projectRoot, filePath));
+        queryPaths.add(Core.resolveProjectPath(projectRoot, filePath));
 
         // Companion .yy resource descriptor (sibling of every GML script file).
         const yyPath = filePath.replace(/\.gml$/i, ".yy");
         if (yyPath !== filePath) {
             queryPaths.add(yyPath);
-            queryPaths.add(resolveProjectPath(projectRoot, yyPath));
+            queryPaths.add(Core.resolveProjectPath(projectRoot, yyPath));
         }
     }
 
@@ -888,8 +887,8 @@ function includesWholeProjectSelection(projectRoot: string, targetPaths: Readonl
         return true;
     }
 
-    const absoluteProjectRoot = resolveProjectPath(projectRoot, projectRoot);
-    return targetPaths.every((targetPath) => resolveProjectPath(projectRoot, targetPath) === absoluteProjectRoot);
+    const absoluteProjectRoot = Core.resolveProjectPath(projectRoot, projectRoot);
+    return targetPaths.every((targetPath) => Core.resolveProjectPath(projectRoot, targetPath) === absoluteProjectRoot);
 }
 
 function resolveNamingTargetQueryFilePaths(parameters: {
@@ -903,13 +902,13 @@ function resolveNamingTargetQueryFilePaths(parameters: {
     }
 
     const filePathsByAbsolutePath = new Map(
-        parameters.gmlFilePaths.map((filePath) => [resolveProjectPath(parameters.projectRoot, filePath), filePath])
+        parameters.gmlFilePaths.map((filePath) => [Core.resolveProjectPath(parameters.projectRoot, filePath), filePath])
     );
     const exactSelectedFilePaths: Array<string> = [];
     let hasNonFileTargetPath = false;
 
     for (const targetPath of parameters.targetPaths) {
-        const filePath = filePathsByAbsolutePath.get(resolveProjectPath(parameters.projectRoot, targetPath));
+        const filePath = filePathsByAbsolutePath.get(Core.resolveProjectPath(parameters.projectRoot, targetPath));
         if (filePath === undefined) {
             hasNonFileTargetPath = true;
             break;
@@ -1166,7 +1165,11 @@ export async function planNamingConventionCodemod(
         cachedSemanticGaps.set(symbolName, gaps);
         return gaps;
     };
-    const isSelectedTargetPath = createPathSelectionMatcher(parameters.projectRoot, parameters.targetPaths, []);
+    const isSelectedTargetPath = Core.createProjectPathBoundaryMatcher({
+        projectRoot: parameters.projectRoot,
+        allowedPaths: parameters.targetPaths,
+        deniedPaths: []
+    });
     const selectedWholeProject =
         includesWholeProjectSelection(parameters.projectRoot, parameters.targetPaths) && !tracksLocalTargets;
     const selectedFilePaths = selectedWholeProject

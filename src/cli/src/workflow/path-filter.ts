@@ -7,7 +7,7 @@ import { REPO_ROOT } from "../shared/workspace-paths.js";
 const {
     getNonEmptyTrimmedString,
     isNonEmptyString,
-    isPathWithinBoundary,
+    createProjectPathBoundaryMatcher,
     resolvePortableAbsolutePath,
     toArray,
     uniqueArray,
@@ -26,13 +26,6 @@ export interface WorkflowPathFilter {
     denyList: Array<string>;
     allowsPath: (candidate: string) => boolean;
     allowsDirectory: (candidate: string) => boolean;
-}
-
-interface WorkflowTargetAllowanceOptions {
-    candidate: string;
-    allowList: ReadonlyArray<string>;
-    denyList: ReadonlyArray<string>;
-    treatAsDirectory?: boolean;
 }
 
 /**
@@ -108,19 +101,17 @@ export function createWorkflowPathFilter(
 
     const allowList = normalizeWorkflowPathList(filters?.allowPaths);
     const denyList = normalizeWorkflowPathList(filters?.denyPaths);
-    const allowsPath = (candidate) =>
-        isWorkflowTargetAllowed({
-            candidate,
-            allowList,
-            denyList
-        });
-    const allowsDirectory = (candidate) =>
-        isWorkflowTargetAllowed({
-            candidate,
-            allowList,
-            denyList,
-            treatAsDirectory: true
-        });
+    const allowsPath = createProjectPathBoundaryMatcher({
+        projectRoot: path.parse(process.cwd()).root,
+        allowedPaths: allowList,
+        deniedPaths: denyList
+    });
+    const allowsDirectory = createProjectPathBoundaryMatcher({
+        projectRoot: path.parse(process.cwd()).root,
+        allowedPaths: allowList,
+        deniedPaths: denyList,
+        allowAncestorDirectories: true
+    });
 
     return {
         allowList,
@@ -257,26 +248,4 @@ function collectManualWorkflowArtifactEntries({
     }
 
     return entries;
-}
-
-function isWorkflowTargetAllowed({
-    candidate,
-    allowList,
-    denyList,
-    treatAsDirectory = false
-}: WorkflowTargetAllowanceOptions): boolean {
-    const normalized = resolvePortableAbsolutePath(candidate);
-
-    if (denyList.some((deny) => isPathWithinBoundary(normalized, deny))) {
-        return false;
-    }
-
-    if (allowList.length === 0) {
-        return true;
-    }
-
-    return allowList.some(
-        (allow) =>
-            isPathWithinBoundary(normalized, allow) || (treatAsDirectory && isPathWithinBoundary(allow, normalized))
-    );
 }

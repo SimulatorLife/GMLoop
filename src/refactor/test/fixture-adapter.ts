@@ -4,7 +4,6 @@ import path from "node:path";
 import { Core } from "@gmloop/core";
 import { type FixtureAdapter, FixtureRunner } from "@gmloop/fixture-runner";
 
-import { createPathSelectionMatcher } from "../src/codemods/naming-convention/path-selection.js";
 import { normalizeRefactorProjectConfig } from "../src/project-config.js";
 import { RefactorEngine } from "../src/refactor-engine.js";
 
@@ -117,7 +116,11 @@ async function createFixtureSemanticAnalyzer(projectRoot: string, gmlFilePaths: 
                 return namingTargets;
             }
 
-            const isSelectedPath = createPathSelectionMatcher(projectRoot, filePaths, []);
+            const isSelectedPath = Core.createProjectPathBoundaryMatcher({
+                projectRoot,
+                allowedPaths: filePaths,
+                deniedPaths: []
+            });
             return namingTargets.filter((target) => isSelectedPath(target.path));
         },
         getSymbolOccurrences(symbolName: string) {
