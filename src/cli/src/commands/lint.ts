@@ -196,6 +196,29 @@ function emitNoLintableFilesMessage(targets: ReadonlyArray<string>): void {
     );
 }
 
+/**
+ * Render the error surfaced when the user passes a path that points at an
+ * existing file which is not a `.gml` source. The lint command is scoped to
+ * GameMaker Language files, so accepting other extensions would silently run
+ * ESLint with whatever config the caller happens to have on disk (often a
+ * TypeScript or JavaScript config), reporting misleading diagnostics under
+ * the "lint" banner. Reject those paths explicitly so users get an immediate,
+ * actionable error instead.
+ *
+ * @param rejectedPaths - File paths the user supplied that exist on disk but
+ *   do not end in `.gml`.
+ * @returns A multi-line error message that names each offending path, lists
+ *   the supported extensions, and points the caller at the fix.
+ */
+function formatRejectedNonGmlPathsMessage(rejectedPaths: ReadonlyArray<string>): string {
+    const pathSummary = rejectedPaths.length === 1 ? rejectedPaths[0] : rejectedPaths.join("\n");
+    return [
+        `The 'lint' command only processes ${GML_FILE_EXTENSION} files, but the following path(s) point to other file types:`,
+        pathSummary,
+        `Pass a ${GML_FILE_EXTENSION} file, a directory containing ${GML_FILE_EXTENSION} sources, or use '--path' to point at a GameMaker project (.yyp) or directory. Use a regular ESLint invocation to lint non-${GML_FILE_EXTENSION} sources.`
+    ].join("\n");
+}
+
 function shouldPreferBundledDefaultsForExternalTargets(parameters: {
     cwd: string;
     targets: ReadonlyArray<string>;
@@ -459,9 +482,10 @@ function scanDirectoryForGmlFiles(directoryPath: string, out: Array<string>): vo
 function expandLintTargetsForRecovery(parameters: {
     cwd: string;
     targets: ReadonlyArray<string>;
-}): Readonly<{ fileTargets: Array<string>; passthroughTargets: Array<string> }> {
+}): Readonly<{ fileTargets: Array<string>; passthroughTargets: Array<string>; rejectedPaths: Array<string> }> {
     const fileTargetSet = new Set<string>();
     const passthroughTargets: Array<string> = [];
+    const rejectedPaths: Array<string> = [];
 
     for (const target of parameters.targets) {
         const absoluteTarget = path.resolve(parameters.cwd, target);
@@ -489,7 +513,7 @@ function expandLintTargetsForRecovery(parameters: {
             if (absoluteTarget.toLowerCase().endsWith(GML_FILE_EXTENSION)) {
                 fileTargetSet.add(absoluteTarget);
             } else {
-                passthroughTargets.push(target);
+                rejectedPaths.push(target);
             }
             continue;
         }
@@ -499,7 +523,8 @@ function expandLintTargetsForRecovery(parameters: {
 
     return Object.freeze({
         fileTargets: [...fileTargetSet.values()],
-        passthroughTargets: [...new Set(passthroughTargets).values()]
+        passthroughTargets: [...new Set(passthroughTargets).values()],
+        rejectedPaths: [...new Set(rejectedPaths).values()]
     });
 }
 
@@ -1359,7 +1384,7 @@ export function createLintCommand(): Command {
     return applyStandardCommandOptions(
         new Command("lint")
             .description("Lint GameMaker Language files using @gmloop/lint")
-            .argument("[paths...]", "File or directory paths to lint")
+            .argument("[paths...]", `.${GML_FILE_EXTENSION.slice(1)} file or directory paths to lint`)
             .option(WRITE_OPTION_FLAGS, WRITE_OPTION_DESCRIPTION, false)
             .option("--warn-ignored", "Report ignored-file warnings from ESLint output", false)
             .option("--formatter <name>", "Formatter output (stylish|json|checkstyle)", "stylish")
@@ -1373,6 +1398,11 @@ export function createLintCommand(): Command {
             .addOption(createVerboseOption())
             .addHelpText("after", () =>
                 [
+                    "",
+                    "Only existing .gml files and directories containing .gml sources are processed.",
+                    "Non-.gml file paths are rejected with exit code 2; use '--path' to point at",
+                    "a GameMaker project (.yyp) or directory, or invoke ESLint directly for other",
+                    "file types.",
                     "",
                     "Examples:",
                     `  ${LINT_COMMAND_CLI_EXAMPLE}`,
@@ -1394,6 +1424,15 @@ export async function runLintCommand(command: CommanderCommandLike): Promise<voi
     }
 
     const commandCwd = process.cwd();
+    const preflightExpansion = expandLintTargetsForRecovery({
+        cwd: commandCwd,
+        targets
+    });
+    if (preflightExpansion.rejectedPaths.length > 0) {
+        console.error(formatRejectedNonGmlPathsMessage(preflightExpansion.rejectedPaths));
+        setProcessExitCode(2);
+        return;
+    }
     const eslintCwd = resolveEslintCwd({ cwd: commandCwd, targets });
     const eslintConstructorOptions = createEslintConstructorOptions(eslintCwd, options.write, options.warnIgnored);
 
@@ -1601,11 +1640,13 @@ export const __lintCommandTest__ = Object.freeze({
     hasOverlayRuleApplied,
     formatOverlayWarning,
     discoverFlatConfig,
+    expandLintTargetsForRecovery,
     extractLintRuntimeFailureLocation,
     createRecoverableLintTargets,
     appendRetainedLintResults,
     lintTargetsWithRuntimeRecovery,
     createRetainedLintResult,
+    formatRejectedNonGmlPathsMessage,
     toLintProgressDisplayPath,
     emitLintFixProgressForResults,
     resolveEslintCwd,
