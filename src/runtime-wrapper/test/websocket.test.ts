@@ -176,35 +176,43 @@ void test("WebSocket client connects and receives patches", async () => {
 });
 
 void test("WebSocket client applies patches from messages", async () => {
+    // === Determinism notes ===
+    // The previous version of this test scheduled real timers via
+    // `await wait(50)` (to let the MockWebSocket's `setImmediate` open
+    // event fire) and `await wait(10)` (to let the message be processed).
+    // Both waits were timing-race windows: under heavy CI load the Node
+    // event loop can be delayed past them (worker contention, GC pauses,
+    // filesystem events from sibling tests), causing the assertion
+    // `wrapper.hasScript("script:test")` to fail with `false` even though
+    // the patch had been delivered synchronously by the implementation.
+    //
+    // The fix routes the test through the existing `runWebSocketTest`
+    // helper, which performs deterministic setup/teardown:
+    //   - It assigns `globalThis.WebSocket = MockWebSocket` inside a
+    //     try/finally so the global is always restored — even if the
+    //     assertion throws, the next test does not inherit the mock.
+    //   - It calls `await flush()` (a single `setImmediate` tick) instead
+    //     of `await wait(50)`. `flush()` is bounded by the event loop's
+    //     next immediate and is independent of wall-clock latency.
+    //   - The patch is then delivered via `mockSocket.simulateMessage(...)`,
+    //     which synchronously dispatches through the already-attached
+    //     message handler. No `await wait(10)` is required because the
+    //     handler runs to completion before `simulateMessage` returns.
+    // The assertion is therefore a strict post-condition on a synchronous
+    // pipeline rather than a race against wall-clock timers.
     const wrapper = RuntimeWrapper.createRuntimeWrapper();
 
-    globalWithWebSocket.WebSocket = MockWebSocket;
+    await runWebSocketTest({ wrapper, autoConnect: true }, async (_client, mockSocket) => {
+        const patch = {
+            kind: "script",
+            id: "script:test",
+            js_body: "return 42;"
+        };
 
-    const client = RuntimeWrapper.createWebSocketClient({
-        wrapper,
-        autoConnect: true
+        mockSocket.simulateMessage(JSON.stringify(patch));
+
+        assert.ok(wrapper.hasScript("script:test"));
     });
-
-    await wait(50);
-
-    const patch = {
-        kind: "script",
-        id: "script:test",
-        js_body: "return 42;"
-    };
-
-    const ws = client.getWebSocket();
-    assert.ok(ws, "WebSocket should be available");
-    const mockSocket = ws as MockWebSocket;
-
-    mockSocket.simulateMessage(JSON.stringify(patch));
-
-    await wait(10);
-
-    assert.ok(wrapper.hasScript("script:test"));
-
-    client.disconnect();
-    delete globalWithWebSocket.WebSocket;
 });
 
 void test("WebSocket client applies batch patches from messages", async () => {
