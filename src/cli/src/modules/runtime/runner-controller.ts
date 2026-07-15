@@ -1,6 +1,23 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 
-import { getRunnerStateStore } from "./runner-state.js";
+import {
+    getRunnerStateStore,
+    type RunnerLifecycleStateController,
+    type RunnerLogWriter,
+    type RunnerProjectBinder
+} from "./runner-state.js";
+
+/**
+ * Narrow state-store contracts used by the runner controller.
+ *
+ * Each alias corresponds to a specific subsystem of the runner state machine
+ * and is intentionally smaller than the composite {@link RunnerStateStore} so
+ * the controller can signal exactly which state concerns a particular path
+ * exercises. Splitting these out keeps the controller free of accidental
+ * coupling to capabilities it does not need (e.g. `status()` only needs the
+ * project binder role, never the log writer).
+ */
+type RunnerBinderAndLogger = RunnerProjectBinder & RunnerLifecycleStateController & RunnerLogWriter;
 
 type RunnerController = {
     restart(options: RunnerStartOptions): { pid: number | null };
@@ -47,7 +64,7 @@ export function createRunnerController(spawnFn: RunnerSpawnFn = spawn): RunnerCo
     let activePid: number | null = null;
 
     function attachProcessLogs(processHandle: ChildProcessWithoutNullStreams): void {
-        const runnerState = getRunnerStateStore();
+        const runnerState: RunnerLogWriter & RunnerLifecycleStateController = getRunnerStateStore();
         processHandle.stdout.on("data", (chunk) => {
             runnerState.appendLog({
                 kind: "runtime",
@@ -98,7 +115,7 @@ export function createRunnerController(spawnFn: RunnerSpawnFn = spawn): RunnerCo
 
             activeProcess = childProcess;
             activePid = childProcess.pid ?? null;
-            const runnerState = getRunnerStateStore();
+            const runnerState: RunnerBinderAndLogger = getRunnerStateStore();
             runnerState.bindProjectRoot(options.projectRoot);
             runnerState.setState("running");
             runnerState.appendLog({
@@ -111,14 +128,19 @@ export function createRunnerController(spawnFn: RunnerSpawnFn = spawn): RunnerCo
             return { pid: activePid };
         },
         status(projectRoot) {
-            getRunnerStateStore().bindProjectRoot(projectRoot);
+            // `status()` only needs to rebind the store to the requested
+            // project root; depending on the narrowest role keeps the
+            // surface honest and prevents accidental coupling to log or
+            // lifecycle state.
+            const runnerState: RunnerProjectBinder = getRunnerStateStore();
+            runnerState.bindProjectRoot(projectRoot);
             return {
                 pid: activePid,
                 running: activeProcess !== null && !activeProcess.killed
             };
         },
         stop(projectRoot) {
-            const runnerStateStore = getRunnerStateStore();
+            const runnerStateStore: RunnerBinderAndLogger = getRunnerStateStore();
             runnerStateStore.bindProjectRoot(projectRoot);
             if (!activeProcess || activeProcess.killed) {
                 runnerStateStore.setState("stopped");

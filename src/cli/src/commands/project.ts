@@ -13,7 +13,13 @@ import { createConfigOption, createPathOption } from "../cli-core/shared-command
 import * as AgentPack from "../modules/auto-game-agent-pack/index.js";
 import { discoverAutoGameProjectSkills } from "../modules/auto-game-skills/index.js";
 import { loadGameMakerCliCompanionCatalog } from "../modules/game-maker-cli/index.js";
-import { getRunnerStateStore, readArtifactJson, resolveArtifactDirectory } from "../modules/runtime/index.js";
+import {
+    getRunnerStateStore,
+    readArtifactJson,
+    resolveArtifactDirectory,
+    type RunnerProjectBinder,
+    type RunnerSnapshotReader
+} from "../modules/runtime/index.js";
 import { discoverProjectRoot, printProjectPayload, resolveCommandProjectContext } from "../workflow/project-root.js";
 
 type ProjectCacheCleanOptions = Readonly<{
@@ -184,7 +190,11 @@ async function collectTestEvidence(projectRoot: string): Promise<ProjectEvidence
 }
 
 function collectRunnerEvidence(projectRoot: string): ProjectEvidenceRecord {
-    const runnerStateStore = getRunnerStateStore();
+    // Narrow the local binding to the role interfaces `collectRunnerEvidence`
+    // actually exercises: project binding (to rehydrate from disk) and a
+    // frozen snapshot read. Lifecycle, room, and log mutation capabilities
+    // are intentionally outside this helper's contract.
+    const runnerStateStore: RunnerProjectBinder & RunnerSnapshotReader = getRunnerStateStore();
     runnerStateStore.bindProjectRoot(projectRoot);
     const snapshot = runnerStateStore.readSnapshot();
     return Object.freeze({
