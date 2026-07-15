@@ -598,6 +598,22 @@ void test("semantic index double-pass approach exposes fast hover initially, and
         assert.equal(analysisStarts[0]?.tier, "definitions");
         assert.equal(analysisStarts[0]?.scope, "project");
 
+        // Wait for the automatic background upgrade to complete
+        await new Promise<void>((resolve) => {
+            const check = () => {
+                if (publishedGenerationCount === 2) {
+                    resolve();
+                } else {
+                    setTimeout(check, 10);
+                }
+            };
+            check();
+        });
+
+        assert.equal(analysisStarts.length, 2, "Automatic background upgrade should trigger a full project build");
+        assert.equal(analysisStarts[1]?.tier, "full");
+        assert.equal(analysisStarts[1]?.scope, "project");
+
         // 2. Hover is immediately available on the lightweight index — does not block
         const offsetValB = docB.sourceText.lastIndexOf("function b") + 9;
         const hoverRes = await semanticIndex.hover(docB, offsetValB, "b");
@@ -607,8 +623,8 @@ void test("semantic index double-pass approach exposes fast hover initially, and
         assert.match(hoverText, /test function b/, "Hover should show doc-comment from lightweight pass");
         assert.equal(
             analysisStarts.length,
-            1,
-            "Hover must consume definitions facts and never escalate to a full project analysis"
+            2,
+            "Hover must consume definitions facts and never escalate to a new full project analysis"
         );
 
         // 3. findDefinition is immediately available on the lightweight index
@@ -616,7 +632,7 @@ void test("semantic index double-pass approach exposes fast hover initially, and
         assert.ok(defRes, "findDefinition should return on lightweight index");
         assert.ok(defRes.uri.includes("b.gml"), "findDefinition should point to b.gml");
 
-        // 4. An edit while only definitions facts exist remains definitions-only.
+        // 4. An edit while the project is fully indexed refreshes both tiers synchronously
         const updatedDocB = store.update(docB.uri, 2, [
             {
                 text: "/// @desc updated test function b\nfunction b() {}"
@@ -626,41 +642,40 @@ void test("semantic index double-pass approach exposes fast hover initially, and
         semanticIndex.invalidateForDocument(updatedDocB);
         const refreshedState = await semanticIndex.refreshForDocument(updatedDocB);
         assert.ok(refreshedState);
-        assert.equal(refreshedState.lightweight, true, "Definitions-only edits must not eagerly create a full tier");
-        assert.equal(analysisStarts.length, 2, "The edit should start only an incremental definitions analysis");
+        assert.equal(
+            refreshedState.lightweight,
+            false,
+            "Since the project was already fully indexed, the edit updates the full tier"
+        );
+        assert.equal(analysisStarts.length, 4, "The edit triggers definitions followed by full project indexing");
         assert.deepEqual(
             {
-                scope: analysisStarts[1]?.scope,
-                tier: analysisStarts[1]?.tier
+                scope: analysisStarts[2]?.scope,
+                tier: analysisStarts[2]?.tier
             },
             { scope: "incremental", tier: "definitions" }
         );
+        assert.deepEqual(
+            {
+                scope: analysisStarts[3]?.scope,
+                tier: analysisStarts[3]?.tier
+            },
+            { scope: "incremental", tier: "full" }
+        );
+        assert.equal(publishedGenerationCount, 4, "Both tiers are published");
 
-        // 5. findReferences transparently waits for the full build and returns complete data
+        // 5. findReferences transparently waits for/uses the full build and returns complete data
         const offsetValA = 15; // offset of "b" in "function a() { b(); }"
         const refs = await semanticIndex.findReferences(docA, offsetValA, "b", false);
         assert.ok(refs.length > 0, "findReferences should return cross-file references after full build");
         const refUris = refs.map((r) => r.uri);
         assert.ok(refUris.includes(Lsp.filePathToUri(aPath)), "References should include usage in a.gml");
-        assert.equal(analysisStarts.length, 3, "Find References should request the full semantic tier once");
-        assert.deepEqual(
-            {
-                reason: analysisStarts[2]?.reason,
-                scope: analysisStarts[2]?.scope,
-                tier: analysisStarts[2]?.tier
-            },
-            { reason: "references", scope: "project", tier: "full" }
-        );
 
         // 6. After findReferences returns, the state should now be fully upgraded
         const finalState = await semanticIndex.buildForDocument(updatedDocB);
         assert.ok(finalState);
-        assert.equal(finalState.lightweight, false, "State should be fully upgraded after findReferences completed");
-        assert.equal(
-            publishedGenerationCount,
-            3,
-            "The edit and capability escalation should each publish a generation"
-        );
+        assert.equal(finalState.lightweight, false, "State should be fully upgraded");
+        assert.equal(publishedGenerationCount, 4, "The edit and background upgrades should each publish generations");
     } finally {
         await cleanupProjectDir(projectRoot);
     }

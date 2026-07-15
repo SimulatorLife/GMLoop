@@ -61,6 +61,15 @@ Most intelligence should live in reusable GML systems; the server should only ex
 
 Hover responses describe project symbols and documented runtime built-ins, including functions, properties, symbols, and literals. Constructor-owned instance variables resolve from both bare references and `self`-qualified references inside static methods, and their tooltips link to the defining assignment. Documented callable project symbols, including constructor static methods, expose their description, parameter names and types, and return information. Hovering a user-defined enum, its member declaration, or a resolved member usage includes the complete enum with its members and values. Language keywords such as `function`, `var`, `constructor`, `if`, `else`, and `repeat` are syntax rather than inspectable symbols, so hovering them returns no tooltip.
 
+
+## Background Semantic Indexing
+
+The LSP server uses a dual-tier semantic analysis orchestration strategy to ensure editor responsiveness while guaranteeing project-wide semantic accuracy:
+
+1. **Active-File Prioritization (Tier 1)**: Any interactive event (opening a document, editing content, saving, or closing) immediately triggers a fast **Definitions Tier** build for the project. This is prioritized so that completions, hover metadata, and definition lookups are available with minimal delay.
+2. **Background Project Upgrade (Tier 2)**: Once the lightweight Definitions Tier finishes, the server automatically schedules and continues a **Full Project Tier** build asynchronously in the background. This indexes all files and relationships (e.g., cross-file references, renames, overrides) without blocking the event loop or interactive requests.
+3. **Graceful Interrupt and Resume**: If a new file operation or edit occurs while the background full build is active, the background build is aborted immediately to free resources. Once the new definitions pass completes, background indexing is rescheduled for the new revision. Scheduled background builds are version-qualified so that stale requests (invalidated by subsequent edits or file changes) exit immediately without interrupting active builds.
+
 ## Launching and Communication Transport
 
 The language server is started via the CLI using:

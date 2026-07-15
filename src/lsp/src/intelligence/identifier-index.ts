@@ -1256,9 +1256,12 @@ export function createGmlSemanticIndex(
         }
 
         if (currentState && currentState.lightweight) {
-            void ensureFullIndex(document, "cacheRecovery").catch((error) => {
-                console.error("Background full index build failed:", error);
-            });
+            triggerBackgroundFullIndex(
+                document,
+                "cacheRecovery",
+                readRootVersion(resolvedRoot),
+                readDocumentVersion(resolvedUri)
+            );
             return currentState;
         }
         let inFlight = inFlightBuilds.get(resolvedRoot);
@@ -1337,9 +1340,7 @@ export function createGmlSemanticIndex(
                             status: "success"
                         });
 
-                        void ensureFullIndex(document, reason).catch((error) => {
-                            console.error("Background full index build failed:", error);
-                        });
+                        triggerBackgroundFullIndex(document, reason, buildVersion, startDocVersion);
 
                         return state;
                     }
@@ -1565,9 +1566,7 @@ export function createGmlSemanticIndex(
                 });
 
                 if (!hadFullState) {
-                    void ensureFullIndex(document, "fileChanges").catch((error) => {
-                        console.error("Background full index build failed:", error);
-                    });
+                    triggerBackgroundFullIndex(document, "fileChanges", buildVersion, startDocVersion);
                     return definitionsState;
                 }
                 const introducedNames = definitionsState.index.symbols
@@ -1700,6 +1699,48 @@ export function createGmlSemanticIndex(
         });
         inFlightBuilds.set(resolvedRoot, finalInFlight);
         return await finalInFlight;
+    }
+
+    function triggerBackgroundFullIndex(
+        document: GmlTextDocument,
+        reason: GmlSemanticAnalysisStart["reason"],
+        scheduledRootVersion: number,
+        scheduledDocVersion: number
+    ): void {
+        setTimeout(() => {
+            if (disposed) {
+                return;
+            }
+            const resolvedRootPromise = getProjectRoot(document.filePath);
+            if (resolvedRootPromise === null) {
+                return;
+            }
+            resolvedRootPromise
+                .then((projectRoot) => {
+                    if (projectRoot && !disposed) {
+                        const resolvedRoot = path.resolve(projectRoot);
+                        if (readRootVersion(resolvedRoot) !== scheduledRootVersion) {
+                            return;
+                        }
+                        if (readDocumentVersion(document.uri) !== scheduledDocVersion) {
+                            return;
+                        }
+                        const currentState = cachedStates.get(resolvedRoot);
+                        if (currentState && !currentState.lightweight) {
+                            return;
+                        }
+                        if (fullProjectBuilds.has(resolvedRoot)) {
+                            return;
+                        }
+                        void buildFullProjectIndex(document, resolvedRoot, reason).catch((error) => {
+                            console.error("Background full index build failed:", error);
+                        });
+                    }
+                })
+                .catch((error: unknown) => {
+                    console.error("Failed to get project root for background indexing:", error);
+                });
+        }, 1);
     }
 
     async function ensureFullIndex(

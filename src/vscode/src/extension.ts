@@ -2,7 +2,12 @@ import { copyFileSync, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import * as vscode from "vscode";
-import { LanguageClient, type LanguageClientOptions, type ServerOptions } from "vscode-languageclient/node.js";
+import {
+    LanguageClient,
+    type LanguageClientOptions,
+    type ServerOptions,
+    type WorkspaceEdit
+} from "vscode-languageclient/node.js";
 
 import { resolveGmloopLanguageServerExecutableOptions } from "./server-command.js";
 import { syncLocalExtensionFilesPure } from "./sync.js";
@@ -25,16 +30,15 @@ function syncLocalExtensionFiles(context: vscode.ExtensionContext): void {
         readFileSync,
         copyFileSync,
         onChanged() {
-            void vscode.window
-                .showInformationMessage(
+            void (async () => {
+                const selection = await vscode.window.showInformationMessage(
                     "GMLoop: Local extension grammars updated from monorepo. Please reload VS Code to apply changes.",
                     "Reload Window"
-                )
-                .then((selection) => {
-                    if (selection === "Reload Window") {
-                        void vscode.commands.executeCommand("workbench.action.reloadWindow");
-                    }
-                });
+                );
+                if (selection === "Reload Window") {
+                    await vscode.commands.executeCommand("workbench.action.reloadWindow");
+                }
+            })();
         }
     });
 }
@@ -153,9 +157,12 @@ export function activate(context: vscode.ExtensionContext): void {
                 return;
             }
             try {
-                const workspaceEdit = await languageClient.sendRequest<any>("gmloop/applyLintFixes", {
-                    uri: document.uri.toString()
-                });
+                const workspaceEdit = await languageClient.sendRequest<WorkspaceEdit | null | undefined>(
+                    "gmloop/applyLintFixes",
+                    {
+                        uri: document.uri.toString()
+                    }
+                );
                 if (workspaceEdit) {
                     const vscodeWorkspaceEdit =
                         await languageClient.protocol2CodeConverter.asWorkspaceEdit(workspaceEdit);
