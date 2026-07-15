@@ -3,7 +3,7 @@
     "manualRoot": "vendor/GameMaker-Manual",
     "packageName": null,
     "packageVersion": null,
-    "manualCommitHash": "7f2e27053eb9900edc83aaef4b11ca7d44c4408d"
+    "manualCommitHash": "c3e5852e0baa0c5334e2322c2c4e6e12ec8ad674"
   },
   "identifiers": {
     "abs": {
@@ -60752,6 +60752,31 @@
         "signature": "layer_sequence_exists(layer_id, sequence_element_id)"
       }
     },
+    "layer_sequence_get_alpha": {
+      "type": "function",
+      "sources": [
+        "manual:pages"
+      ],
+      "tags": [
+        "layer_sequence_get_alpha"
+      ],
+      "manualPath": "GameMaker_Language/GML_Reference/Asset_Management/Rooms/Sequence_Layers/layer_sequence_get_alpha.htm",
+      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FAsset_Management%2FRooms%2FSequence_Layers%2Flayer_sequence_get_alpha.htm&rhsearch=layer_sequence_get_alpha&rhhlterm=layer_sequence_get_alpha",
+      "deprecated": false,
+      "legacyUsage": "call",
+      "hover": {
+        "description": "This function returns the current alpha for the given sequence element. You supply the sequence element ID - as returned by layer_sequence_create or by one of the layer element functions.",
+        "parameters": [
+          {
+            "description": "The unique ID value of the sequence element to target",
+            "name": "sequence_element_id",
+            "type": "Sequence Element ID"
+          }
+        ],
+        "returnType": "Real",
+        "signature": "layer_sequence_get_alpha(sequence_element_id)"
+      }
+    },
     "layer_sequence_get_angle": {
       "type": "function",
       "sources": [
@@ -60775,6 +60800,31 @@
         ],
         "returnType": "Real",
         "signature": "layer_sequence_get_angle(sequence_element_id)"
+      }
+    },
+    "layer_sequence_get_blend": {
+      "type": "function",
+      "sources": [
+        "manual:pages"
+      ],
+      "tags": [
+        "layer_sequence_get_blend"
+      ],
+      "manualPath": "GameMaker_Language/GML_Reference/Asset_Management/Rooms/Sequence_Layers/layer_sequence_get_blend.htm",
+      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FAsset_Management%2FRooms%2FSequence_Layers%2Flayer_sequence_get_blend.htm&rhsearch=layer_sequence_get_blend&rhhlterm=layer_sequence_get_blend",
+      "deprecated": false,
+      "legacyUsage": "call",
+      "hover": {
+        "description": "This function returns the current blend colour for the given sequence element. You supply the sequence element ID - as returned by layer_sequence_create or by one of the layer element functions.",
+        "parameters": [
+          {
+            "description": "The unique ID value of the sequence element to target",
+            "name": "sequence_element_id",
+            "type": "Sequence Element ID"
+          }
+        ],
+        "returnType": "Colour",
+        "signature": "layer_sequence_get_blend(sequence_element_id)"
       }
     },
     "layer_sequence_get_headdir": {

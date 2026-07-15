@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { parse } from "yaml";
+
 type PackageManifest = {
     readonly activationEvents: readonly string[];
     readonly categories: readonly string[];
@@ -19,22 +21,24 @@ type PackageManifest = {
 type RuntimePackageManifest = {
     readonly dependencies: Readonly<Record<string, string>>;
     readonly name: string;
+    readonly peerDependencies: Readonly<Record<string, string>> | undefined;
     readonly version: string;
-};
-
-type RepositoryPackageManifest = {
-    readonly devDependencies: Readonly<Record<string, string>>;
 };
 
 const VSCODE_EXTENSION_NAME = "gmloop";
 const VSCODE_EXTENSION_PUBLISHER = "gmloop";
 const PACKAGE_MANIFEST_FILE_NAME = "package.json";
 const BUNDLED_SERVER_WORKSPACES = ["core", "parser", "format", "lint", "refactor", "semantic"] as const;
+const EXTENSION_LAUNCHER_FILES = [
+    "extension.js",
+    "extension.js.map",
+    "server-command.js",
+    "server-command.js.map",
+    "sync.js",
+    "sync.js.map"
+] as const;
 const VSCODE_EXTENSION_FILES = [
-    "dist/src/extension.js",
-    "dist/src/extension.js.map",
-    "dist/src/server-command.js",
-    "dist/src/server-command.js.map",
+    ...EXTENSION_LAUNCHER_FILES.map((fileName) => `dist/src/${fileName}`),
     "server/**",
     "language-configuration.json",
     "syntaxes/gml.tmLanguage.json",
@@ -71,7 +75,7 @@ function copyRequiredExtensionFiles(packageRoot: string, stageRoot: string): voi
     const stageDistSourceRoot = path.join(stageRoot, "dist", "src");
     mkdirSync(stageDistSourceRoot, { recursive: true });
 
-    for (const fileName of ["extension.js", "extension.js.map", "server-command.js", "server-command.js.map"]) {
+    for (const fileName of EXTENSION_LAUNCHER_FILES) {
         cpSync(path.join(packageRoot, "dist", "src", fileName), path.join(stageDistSourceRoot, fileName));
     }
 
@@ -119,6 +123,29 @@ function readRuntimePackageManifest(packageRoot: string): RuntimePackageManifest
     ) as RuntimePackageManifest;
 }
 
+function readCatalogVersions(repositoryRoot: string): Readonly<Record<string, string>> {
+    const workspaceConfiguration: unknown = parse(
+        readFileSync(path.join(repositoryRoot, "pnpm-workspace.yaml"), "utf8")
+    );
+    if (workspaceConfiguration === null || typeof workspaceConfiguration !== "object") {
+        throw new Error("pnpm-workspace.yaml must contain a catalog mapping");
+    }
+
+    const catalog = (workspaceConfiguration as Readonly<Record<string, unknown>>).catalog;
+    if (catalog === null || typeof catalog !== "object") {
+        throw new Error("pnpm-workspace.yaml must contain a catalog mapping");
+    }
+
+    const catalogVersions: Record<string, string> = {};
+    for (const [packageName, packageVersion] of Object.entries(catalog)) {
+        if (typeof packageVersion !== "string") {
+            throw new TypeError(`Catalog version must be a string: ${packageName}`);
+        }
+        catalogVersions[packageName] = packageVersion;
+    }
+    return catalogVersions;
+}
+
 function rewriteWorkspaceDependencies(
     dependencies: Readonly<Record<string, string>>,
     catalogVersions: Readonly<Record<string, string>>,
@@ -148,6 +175,16 @@ function rewriteWorkspaceDependencies(
     return rewrittenDependencies;
 }
 
+function rewriteOptionalWorkspaceDependencies(
+    dependencies: Readonly<Record<string, string>> | undefined,
+    catalogVersions: Readonly<Record<string, string>>,
+    workspaceVersions: ReadonlyMap<string, string>
+): Record<string, string> | undefined {
+    return dependencies === undefined
+        ? undefined
+        : rewriteWorkspaceDependencies(dependencies, catalogVersions, workspaceVersions);
+}
+
 function createBundledWorkspaceTarball(
     workspaceRoot: string,
     packageBuildRoot: string,
@@ -168,8 +205,10 @@ function createBundledWorkspaceTarball(
         `${JSON.stringify(
             {
                 ...manifest,
-                dependencies: rewriteWorkspaceDependencies(
-                    manifest.dependencies,
+                devDependencies: undefined,
+                dependencies: rewriteWorkspaceDependencies(manifest.dependencies, catalogVersions, workspaceVersions),
+                peerDependencies: rewriteOptionalWorkspaceDependencies(
+                    manifest.peerDependencies,
                     catalogVersions,
                     workspaceVersions
                 )
@@ -201,9 +240,7 @@ function packageBundledLanguageServer(packageRoot: string, stageRoot: string): v
     mkdirSync(tarballRoot, { recursive: true });
 
     const lspWorkspaceRoot = path.join(repositoryRoot, "src", "lsp");
-    const repositoryManifest = JSON.parse(
-        readFileSync(path.join(repositoryRoot, PACKAGE_MANIFEST_FILE_NAME), "utf8")
-    ) as RepositoryPackageManifest;
+    const catalogVersions = readCatalogVersions(repositoryRoot);
     const bundledWorkspaceRoots = BUNDLED_SERVER_WORKSPACES.map((workspaceName) =>
         path.join(repositoryRoot, "src", workspaceName)
     );
@@ -218,7 +255,7 @@ function packageBundledLanguageServer(packageRoot: string, stageRoot: string): v
                 workspaceRoot,
                 packageBuildRoot,
                 tarballRoot,
-                repositoryManifest.devDependencies,
+                catalogVersions,
                 workspaceVersions
             )
         );
@@ -227,7 +264,7 @@ function packageBundledLanguageServer(packageRoot: string, stageRoot: string): v
     const lspManifest = readRuntimePackageManifest(lspWorkspaceRoot);
     const serverDependencies = rewriteWorkspaceDependencies(
         lspManifest.dependencies,
-        repositoryManifest.devDependencies,
+        catalogVersions,
         workspaceVersions
     );
     for (const [packageName, tarballPath] of tarballPaths) {
@@ -239,7 +276,20 @@ function packageBundledLanguageServer(packageRoot: string, stageRoot: string): v
     cpSync(path.join(lspWorkspaceRoot, "README.md"), path.join(serverRoot, "README.md"));
     writeFileSync(
         path.join(serverRoot, PACKAGE_MANIFEST_FILE_NAME),
-        `${JSON.stringify({ ...lspManifest, dependencies: serverDependencies }, null, 2)}\n`
+        `${JSON.stringify(
+            {
+                ...lspManifest,
+                devDependencies: undefined,
+                dependencies: serverDependencies,
+                peerDependencies: rewriteOptionalWorkspaceDependencies(
+                    lspManifest.peerDependencies,
+                    catalogVersions,
+                    workspaceVersions
+                )
+            },
+            null,
+            2
+        )}\n`
     );
     runCommand("npm", ["install", "--omit=dev", "--ignore-scripts"], serverRoot);
 
@@ -248,9 +298,15 @@ function packageBundledLanguageServer(packageRoot: string, stageRoot: string): v
         `${JSON.stringify(
             {
                 ...lspManifest,
+                devDependencies: undefined,
                 dependencies: rewriteWorkspaceDependencies(
                     lspManifest.dependencies,
-                    repositoryManifest.devDependencies,
+                    catalogVersions,
+                    workspaceVersions
+                ),
+                peerDependencies: rewriteOptionalWorkspaceDependencies(
+                    lspManifest.peerDependencies,
+                    catalogVersions,
                     workspaceVersions
                 )
             },

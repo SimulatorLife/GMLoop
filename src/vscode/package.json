@@ -111,6 +111,7 @@
     "@types/node": "catalog:",
     "@types/vscode": "^1.92.0",
     "@vscode/vsce": "^3.9.2",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "yaml": "^2.8.1"
   }
 }
