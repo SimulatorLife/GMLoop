@@ -109,6 +109,7 @@ interface LiveReloadPathCommandOptions {
 }
 
 interface LiveReloadWaitForPatchCommandOptions extends LiveReloadPathCommandOptions {
+    abortSignal?: AbortSignal;
     pollIntervalMs?: number;
     sincePatchId?: string;
     timeoutMs?: number;
@@ -321,13 +322,19 @@ function readLastPatchId(statusPayload: unknown): string | null {
 
 async function pollLiveReloadStatusForPatch(
     parameters: Readonly<{
+        abortSignal?: AbortSignal;
         deadline: number;
         pollIntervalMs: number;
         session: LiveReloadRegisteredSession;
         sincePatchId: string | undefined;
     }>
 ): Promise<Record<string, unknown> | null> {
-    if (Date.now() > parameters.deadline) {
+    if (parameters.abortSignal?.aborted === true) {
+        return null;
+    }
+
+    const remainingMs = parameters.deadline - Date.now();
+    if (remainingMs <= 0) {
         return null;
     }
 
@@ -347,18 +354,30 @@ async function pollLiveReloadStatusForPatch(
         return statusPayload ?? {};
     }
 
-    const remainingMs = parameters.deadline - Date.now();
-    if (remainingMs <= 0) {
-        return null;
-    }
-
-    await delayLiveReloadPatchPoll(Math.min(parameters.pollIntervalMs, remainingMs));
+    await delayLiveReloadPatchPoll(Math.min(parameters.pollIntervalMs, remainingMs), parameters.abortSignal);
     return await pollLiveReloadStatusForPatch(parameters);
 }
 
-function delayLiveReloadPatchPoll(pollIntervalMs: number): Promise<void> {
-    return new Promise((resolve) => {
-        setTimeout(resolve, pollIntervalMs);
+function delayLiveReloadPatchPoll(pollIntervalMs: number, abortSignal?: AbortSignal): Promise<void> {
+    return new Promise<void>((resolve) => {
+        if (pollIntervalMs <= 0) {
+            resolve();
+            return;
+        }
+
+        const timeout = setTimeout(() => {
+            abortSignal?.removeEventListener("abort", onAbort);
+            resolve();
+        }, pollIntervalMs);
+
+        const onAbort = (): void => {
+            clearTimeout(timeout);
+            resolve();
+        };
+
+        if (abortSignal !== undefined) {
+            abortSignal.addEventListener("abort", onAbort, { once: true });
+        }
     });
 }
 
@@ -413,6 +432,7 @@ export async function runLiveReloadWaitForPatchCommand(
     let latestPayload: Record<string, unknown> | null = null;
     try {
         latestPayload = await pollLiveReloadStatusForPatch({
+            abortSignal: options.abortSignal,
             deadline,
             pollIntervalMs,
             session: discovery.session,

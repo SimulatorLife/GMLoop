@@ -3,11 +3,14 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
+import process from "node:process";
 import { test } from "node:test";
 
 import { runCliTestCommand } from "../src/cli.js";
+import { runLiveReloadWaitForPatchCommand } from "../src/commands/live-reload.js";
 import { createStatusUrl } from "../src/modules/live-reload/config.js";
 import { writeLiveReloadSessionRegistry } from "../src/modules/live-reload/session-registry.js";
+import { captureCliErrorOutput } from "./test-helpers/capture-cli-error-output.js";
 
 async function createTempSessionProject(port: number): Promise<string> {
     const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-live-reload-wait-"));
@@ -288,6 +291,67 @@ void test("live-reload wait-for-patch tolerates transient fetch failures during 
         assert.equal(payload.payload.lastPatchId, "patch-2");
     } finally {
         await new Promise<void>((resolve) => server.close(() => resolve()));
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("live-reload wait-for-patch honours a pre-aborted AbortSignal", async () => {
+    const port = 60_997;
+    const projectRoot = await createTempSessionProject(port);
+    const server = startStatusServer(port, [{ patchId: "patch-1" }]);
+    await server.listen();
+    const abortController = new AbortController();
+    abortController.abort();
+
+    try {
+        const { exitCodes } = await captureCliErrorOutput(() => {
+            return assert.rejects(
+                runLiveReloadWaitForPatchCommand({
+                    abortSignal: abortController.signal,
+                    path: projectRoot,
+                    pollIntervalMs: 50,
+                    sincePatchId: "patch-1",
+                    timeoutMs: 5000
+                }),
+                /process\.exit called with code 1/u
+            );
+        });
+        assert.deepEqual(exitCodes, [1]);
+    } finally {
+        await server.close();
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("live-reload wait-for-patch exits early when aborted mid-poll", async () => {
+    const port = 60_998;
+    const projectRoot = await createTempSessionProject(port);
+    const server = startStatusServer(port, [{ patchId: "patch-1" }]);
+    await server.listen();
+    const abortController = new AbortController();
+    const timer = setTimeout(() => abortController.abort(), 75);
+
+    try {
+        const start = Date.now();
+        const { exitCodes } = await captureCliErrorOutput(() => {
+            return assert.rejects(
+                runLiveReloadWaitForPatchCommand({
+                    abortSignal: abortController.signal,
+                    path: projectRoot,
+                    pollIntervalMs: 50,
+                    sincePatchId: "patch-1",
+                    timeoutMs: 5000
+                }),
+                /process\.exit called with code 1/u
+            );
+        });
+        const elapsed = Date.now() - start;
+        assert.deepEqual(exitCodes, [1]);
+        // Should bail well before the 5s timeout once abort fires.
+        assert.ok(elapsed < 1500, `expected early abort exit, but took ${String(elapsed)}ms`);
+    } finally {
+        clearTimeout(timer);
+        await server.close();
         await rm(projectRoot, { recursive: true, force: true });
     }
 });
