@@ -3,7 +3,6 @@ import path from "node:path";
 import { Worker } from "node:worker_threads";
 
 import { Core, type FsFacade } from "@gmloop/core";
-import { Parser } from "@gmloop/parser";
 import { Refactor } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import type {
@@ -34,13 +33,13 @@ type NavigationSymbol = ReturnType<typeof Semantic.searchNavigationWorkspaceSymb
 type GmlSymbolDocumentation = ReturnType<typeof Semantic.createEmptyGmlSymbolDocumentation>;
 type SemanticFileManifest = Awaited<ReturnType<typeof Semantic.buildSemanticFileManifest>>;
 type SemanticSnapshot = ReturnType<typeof Semantic.createSemanticSnapshotFromProjectIndex>;
-type NavigationState = {
+type NavigationState = Readonly<{
     index: NavigationIndex;
     manifest: SemanticFileManifest | null;
     projectRoot: string;
-    lightweight?: boolean;
+    lightweight: boolean;
     snapshot: SemanticSnapshot;
-};
+}>;
 type SemanticIndexStore = ReturnType<typeof Semantic.openSemanticIndexStore>;
 type SemanticSnapshotRequirement = Parameters<SemanticIndexStore["acquireSemanticSnapshot"]>[0];
 type RequiredSemanticCapability =
@@ -53,6 +52,65 @@ type WorkerBuildBoundary = Readonly<{
     projectVersion: number;
     tier: "definitions" | "full";
 }>;
+
+function createNavigationState(
+    projectRoot: string,
+    index: NavigationIndex,
+    lightweight: boolean,
+    manifest: SemanticFileManifest | null,
+    snapshot: SemanticSnapshot
+): NavigationState {
+    return Object.freeze({ index, lightweight, manifest, projectRoot, snapshot });
+}
+
+function createNavigationSnapshotRequirements(
+    state: NavigationState,
+    document: GmlTextDocument,
+    capability: RequiredSemanticCapability,
+    requireCompleteProjectRelationships: boolean
+): SemanticSnapshotRequirement {
+    const overlayVersions = new Map<string, number>();
+    for (const entry of state.manifest?.entries.values() ?? []) {
+        if (entry.sourceOrigin === "openBuffer" && entry.sourceVersion !== null) {
+            overlayVersions.set(entry.relativePath, entry.sourceVersion);
+        }
+    }
+    return Object.freeze({
+        capabilities: new Set<RequiredSemanticCapability>([capability]),
+        overlayVersions,
+        projectRevision: state.snapshot.sourceRevision,
+        requireCompleteProjectRelationships,
+        requiredFiles: new Set([document.filePath]),
+        requiredResources: new Set<string>(),
+        tier: state.snapshot.tier
+    });
+}
+
+async function withPinnedNavigationSnapshot<Result>(
+    store: SemanticIndexStore,
+    state: NavigationState,
+    document: GmlTextDocument,
+    capability: RequiredSemanticCapability,
+    requireCompleteProjectRelationships: boolean,
+    read: (snapshot: SemanticSnapshot, index: NavigationIndex) => Promise<Result> | Result
+): Promise<Result | null> {
+    const acquisition = store.acquireSemanticSnapshot(
+        createNavigationSnapshotRequirements(state, document, capability, requireCompleteProjectRelationships),
+        new AbortController().signal
+    );
+    if (acquisition.kind !== "lease") {
+        return null;
+    }
+    try {
+        const snapshot = acquisition.lease.snapshot;
+        return await read(
+            snapshot,
+            Semantic.createProjectNavigationIndexFromSemanticSnapshot(state.projectRoot, snapshot)
+        );
+    } finally {
+        acquisition.lease.release();
+    }
+}
 
 function areWorkerBuildBoundariesEqual(left: WorkerBuildBoundary | undefined, right: WorkerBuildBoundary): boolean {
     return (
@@ -263,88 +321,6 @@ function isOffsetInLexicalRanges(ranges: ReadonlyArray<LexicalRange>, offset: nu
     }
     return false;
 }
-function readAstOffset(value: unknown): number | null {
-    if (typeof value === "number") {
-        return value;
-    }
-    if (!Core.isObjectLike(value)) {
-        return null;
-    }
-    const container = value as { index?: unknown };
-    return typeof container.index === "number" ? container.index : null;
-}
-function findAstPathAtOffset(node: any, offset: number, pathList: any[] = []): any[] {
-    if (!Core.isObjectLike(node)) {
-        return pathList;
-    }
-    const start = readAstOffset(node.start);
-    const end = readAstOffset(node.end);
-    if (start === null || end === null || offset < start || offset > end) {
-        return pathList;
-    }
-    pathList.push(node);
-    const keys = Object.keys(node);
-    for (const key of keys) {
-        if (key === "parent" || key === "enclosingNode" || key === "precedingNode" || key === "followingNode") {
-            continue;
-        }
-        const val = node[key];
-        if (Array.isArray(val)) {
-            for (const child of val) {
-                if (Core.isObjectLike(child)) {
-                    const result = findAstPathAtOffset(child, offset, [...pathList]);
-                    if (result.length > pathList.length) {
-                        return result;
-                    }
-                }
-            }
-        } else if (Core.isObjectLike(val)) {
-            const result = findAstPathAtOffset(val, offset, [...pathList]);
-            if (result.length > pathList.length) {
-                return result;
-            }
-        }
-    }
-    return pathList;
-}
-function findEnclosingFunctionDocComments(ast: any, offset: number): string {
-    const pathList = findAstPathAtOffset(ast, offset);
-    let fnIndex = -1;
-    for (let i = pathList.length - 1; i >= 0; i--) {
-        const node = pathList[i];
-        if (node && (node.type === "FunctionDeclaration" || node.type === "ConstructorDeclaration")) {
-            fnIndex = i;
-            break;
-        }
-    }
-    if (fnIndex === -1) {
-        return "";
-    }
-    for (let i = fnIndex; i >= 0; i--) {
-        const node = pathList[i];
-        const docComments = Object.getOwnPropertyDescriptor(node, "docComments")?.value;
-        if (Array.isArray(docComments) && docComments.length > 0) {
-            return extractAttachedDeclarationDocumentation(node);
-        }
-    }
-    return "";
-}
-function extractAttachedDeclarationDocumentation(node: unknown): string {
-    if (!Core.isObjectLike(node)) {
-        return "";
-    }
-    const docComments = Object.getOwnPropertyDescriptor(node, "docComments")?.value;
-    if (!Array.isArray(docComments)) {
-        return "";
-    }
-    const lines = docComments.flatMap((comment) => {
-        if (!Core.isObjectLike(comment) || typeof comment.value !== "string") {
-            return [];
-        }
-        return [comment.value.replace(/^\/\s?/u, "").trim()];
-    });
-    return lines.join("\n");
-}
 
 function findSymbolId(
     index: NavigationIndex,
@@ -361,23 +337,17 @@ function findSymbolId(
     const exactSymbolId = allowPositionOccurrence
         ? (Semantic.findNavigationSymbolAtPosition(index, document.filePath, offset)?.symbolId ?? null)
         : null;
-    if (exactSymbolId) {
+    if (exactSymbolId !== null) {
         return exactSymbolId;
     }
-
     const resolvedSymbolId = Semantic.resolveNavigationSymbolId(index, identifierName);
-    if (resolvedSymbolId) {
-        const symbol = index.symbolsById.get(resolvedSymbolId);
-        if (
-            symbol &&
-            (symbol.kind === "localVariable" || symbol.kind === "instanceVariable" || symbol.kind === "structVariable")
-        ) {
-            return null;
-        }
-        return resolvedSymbolId;
+    if (resolvedSymbolId === null) {
+        return null;
     }
-
-    return null;
+    const symbol = index.symbolsById.get(resolvedSymbolId);
+    return symbol?.kind === "localVariable" || symbol?.kind === "instanceVariable" || symbol?.kind === "structVariable"
+        ? null
+        : resolvedSymbolId;
 }
 
 async function refactorWorkspaceEditToLspWorkspaceEdit(
@@ -584,13 +554,15 @@ function buildSemanticIndexInWorker({
                 );
                 (index as { rawIndex?: unknown }).rawIndex = message.rawIndex;
                 finish(() =>
-                    resolve({
-                        projectRoot,
-                        index,
-                        lightweight: definitionsOnly,
-                        manifest: message.manifest,
-                        snapshot: message.semanticSnapshot
-                    })
+                    resolve(
+                        createNavigationState(
+                            projectRoot,
+                            index,
+                            definitionsOnly,
+                            message.manifest,
+                            message.semanticSnapshot
+                        )
+                    )
                 );
             }
         );
@@ -752,6 +724,8 @@ export function createGmlSemanticIndex(
         const requirements: SemanticSnapshotRequirement = Object.freeze({
             capabilities: new Set<RequiredSemanticCapability>(),
             overlayVersions: new Map<string, number>(),
+            projectRevision: "current",
+            requireCompleteProjectRelationships: false,
             requiredFiles: new Set<string>(),
             requiredResources: new Set<string>(),
             tier: "full"
@@ -1110,15 +1084,7 @@ export function createGmlSemanticIndex(
                     readRootVersion(resolvedRoot) === buildVersion &&
                     readDocumentVersion(resolvedUri) === startDocVersion
                 ) {
-                    const currentState = cachedStates.get(resolvedRoot);
-                    if (currentState && currentState.lightweight) {
-                        currentState.index = fullState.index;
-                        currentState.lightweight = false;
-                        currentState.manifest = fullState.manifest;
-                        currentState.snapshot = fullState.snapshot;
-                    } else {
-                        cachedStates.set(resolvedRoot, fullState);
-                    }
+                    cachedStates.set(resolvedRoot, fullState);
                     staleStates.delete(resolvedRoot);
                     markProjectDocumentFactsCurrent(resolvedRoot);
 
@@ -1198,6 +1164,8 @@ export function createGmlSemanticIndex(
         const requirements: SemanticSnapshotRequirement = Object.freeze({
             capabilities: new Set<RequiredSemanticCapability>(),
             overlayVersions: new Map<string, number>(),
+            projectRevision: "current",
+            requireCompleteProjectRelationships: false,
             requiredFiles: new Set<string>(),
             requiredResources: new Set<string>(),
             tier: cachedState.tier
@@ -1211,17 +1179,13 @@ export function createGmlSemanticIndex(
                 resolvedRoot,
                 acquisition.lease.snapshot
             );
-            const navigationProjection = store.readSemanticNavigationProjection(cachedState.tier);
-            if (Core.isObjectLike(navigationProjection)) {
-                (index as { rawIndex?: unknown }).rawIndex = navigationProjection;
-            }
-            const state = {
-                projectRoot: resolvedRoot,
+            const state = createNavigationState(
+                resolvedRoot,
                 index,
-                lightweight: cachedState.tier === "definitions",
-                manifest: store.readSemanticManifest(cachedState.tier),
-                snapshot: acquisition.lease.snapshot
-            };
+                cachedState.tier === "definitions",
+                store.readSemanticManifest(cachedState.tier),
+                acquisition.lease.snapshot
+            );
             cachedStates.set(resolvedRoot, state);
             reconcileRestoredManifest(document, resolvedRoot, cachedState.tier);
             return state;
@@ -1546,15 +1510,7 @@ export function createGmlSemanticIndex(
                     });
                     return null;
                 }
-                const currentState = cachedStates.get(resolvedRoot);
-                if (currentState) {
-                    currentState.index = definitionsState.index;
-                    currentState.lightweight = true;
-                    currentState.manifest = definitionsState.manifest;
-                    currentState.snapshot = definitionsState.snapshot;
-                } else {
-                    cachedStates.set(resolvedRoot, definitionsState);
-                }
+                cachedStates.set(resolvedRoot, definitionsState);
                 staleStates.delete(resolvedRoot);
                 markProjectDocumentFactsCurrent(resolvedRoot);
                 publishNavigationState(
@@ -1643,15 +1599,7 @@ export function createGmlSemanticIndex(
                     readRootVersion(resolvedRoot) === buildVersion &&
                     readDocumentVersion(resolvedUri) === startDocVersion
                 ) {
-                    const cachedState = cachedStates.get(resolvedRoot);
-                    if (cachedState) {
-                        cachedState.index = state.index;
-                        cachedState.lightweight = false;
-                        cachedState.manifest = state.manifest;
-                        cachedState.snapshot = state.snapshot;
-                    } else {
-                        cachedStates.set(resolvedRoot, state);
-                    }
+                    cachedStates.set(resolvedRoot, state);
                     staleStates.delete(resolvedRoot);
                     markProjectDocumentFactsCurrent(resolvedRoot);
 
@@ -1919,17 +1867,27 @@ export function createGmlSemanticIndex(
             if (!state) {
                 return null;
             }
-
-            const symbolId = findSymbolId(
-                state.index,
+            return await withPinnedNavigationSnapshot(
+                getSemanticStore(state.projectRoot),
+                state,
                 document,
-                offset,
-                identifierName,
-                isIgnoredOffset,
-                !staleSemanticDocumentUris.has(document.uri)
+                "definition",
+                false,
+                async (_snapshot, index) => {
+                    const symbolId = findSymbolId(
+                        index,
+                        document,
+                        offset,
+                        identifierName,
+                        isIgnoredOffset,
+                        !staleSemanticDocumentUris.has(document.uri)
+                    );
+                    const definition = symbolId
+                        ? (Semantic.findNavigationDefinitions(index, symbolId)[0] ?? null)
+                        : null;
+                    return definition ? await occurrenceToLspLocation(document, definition) : null;
+                }
             );
-            const definition = symbolId ? (Semantic.findNavigationDefinitions(state.index, symbolId)[0] ?? null) : null;
-            return definition ? await occurrenceToLspLocation(document, definition) : null;
         },
         async findReferences(document, offset, identifierName, includeDefinitions) {
             const state = await ensureFullIndex(document, "references");
@@ -1937,22 +1895,31 @@ export function createGmlSemanticIndex(
                 return [];
             }
 
-            const symbolId = findSymbolId(
-                state.index,
-                document,
-                offset,
-                identifierName,
-                isIgnoredOffset,
-                !staleSemanticDocumentUris.has(document.uri)
-            );
-            if (!symbolId) {
-                return [];
-            }
-
-            return await Promise.all(
-                Semantic.findNavigationReferences(state.index, symbolId, includeDefinitions).map((occurrence) =>
-                    occurrenceToLspLocation(document, occurrence)
-                )
+            return (
+                (await withPinnedNavigationSnapshot(
+                    getSemanticStore(state.projectRoot),
+                    state,
+                    document,
+                    "references",
+                    true,
+                    async (_snapshot, index) => {
+                        const symbolId = findSymbolId(
+                            index,
+                            document,
+                            offset,
+                            identifierName,
+                            isIgnoredOffset,
+                            !staleSemanticDocumentUris.has(document.uri)
+                        );
+                        return symbolId
+                            ? await Promise.all(
+                                  Semantic.findNavigationReferences(index, symbolId, includeDefinitions).map(
+                                      (occurrence) => occurrenceToLspLocation(document, occurrence)
+                                  )
+                              )
+                            : [];
+                    }
+                )) ?? []
             );
         },
         async hover(document, offset, identifierName) {
@@ -1965,17 +1932,28 @@ export function createGmlSemanticIndex(
                 return null;
             }
 
-            const symbolId = findSymbolId(
-                state.index,
+            const pinnedIndex = await withPinnedNavigationSnapshot(
+                getSemanticStore(state.projectRoot),
+                state,
                 document,
-                offset,
-                identifierName,
-                isIgnoredOffset,
-                !staleSemanticDocumentUris.has(document.uri)
+                "hover",
+                false,
+                (_snapshot, index) => index
             );
-            const facts = symbolId ? Semantic.getNavigationHoverFacts(state.index, symbolId) : null;
+            const symbolId =
+                pinnedIndex === null
+                    ? null
+                    : findSymbolId(
+                          pinnedIndex,
+                          document,
+                          offset,
+                          identifierName,
+                          isIgnoredOffset,
+                          !staleSemanticDocumentUris.has(document.uri)
+                      );
+            const facts = symbolId && pinnedIndex ? Semantic.getNavigationHoverFacts(pinnedIndex, symbolId) : null;
             if (facts) {
-                const symbol = state.index.symbolsById.get(symbolId);
+                const symbol = pinnedIndex.symbolsById.get(symbolId);
                 let definitionInfo = "";
                 let docComment = "";
 
@@ -1989,13 +1967,8 @@ export function createGmlSemanticIndex(
                 }
 
                 let markdownValue = `\`${facts.displayName}\`\n\n${facts.kind} - ${facts.symbolId}`;
-                if (facts.kind === "parameter") {
-                    markdownValue = appendParameterDocumentationMarkdown(
-                        markdownValue,
-                        document,
-                        offset,
-                        identifierName
-                    );
+                if (facts.kind === "parameter" && symbol) {
+                    markdownValue = appendParameterDocumentationMarkdown(markdownValue, pinnedIndex.symbols, symbol);
                 }
                 if (definitionInfo) {
                     markdownValue += `\n\n${definitionInfo}`;
@@ -2003,9 +1976,9 @@ export function createGmlSemanticIndex(
                 if (docComment) {
                     markdownValue += `\n\n---\n\n${docComment}`;
                 }
-                const enumFacts = Semantic.getNavigationEnumHoverFacts(state.index, facts.symbolId);
+                const enumFacts = Semantic.getNavigationEnumHoverFacts(pinnedIndex, facts.symbolId);
                 if (enumFacts) {
-                    const members = Semantic.listNavigationEnumHoverMembers(state.index, enumFacts.symbolId);
+                    const members = Semantic.listNavigationEnumHoverMembers(pinnedIndex, enumFacts.symbolId);
                     if (members.length > 0) {
                         markdownValue += `\n\n\`\`\`gml\nenum ${enumFacts.displayName} {\n${members
                             .map((member) => `    ${member.name}${member.value === null ? "" : ` = ${member.value}`}`)
@@ -2071,13 +2044,30 @@ export function createGmlSemanticIndex(
             if (!state) {
                 return [];
             }
-
-            return Semantic.listNavigationDocumentSymbols(state.index, document.filePath).map((occurrence) => ({
-                name: occurrence.displayName,
-                kind: gmlSymbolKindToLspSymbolKind(occurrence.kind),
-                range: offsetsToRange(document, occurrence.location.range.start, occurrence.location.range.end),
-                selectionRange: offsetsToRange(document, occurrence.location.range.start, occurrence.location.range.end)
-            }));
+            return (
+                (await withPinnedNavigationSnapshot(
+                    getSemanticStore(state.projectRoot),
+                    state,
+                    document,
+                    "documentSymbols",
+                    false,
+                    (_snapshot, index) =>
+                        Semantic.listNavigationDocumentSymbols(index, document.filePath).map((occurrence) => ({
+                            name: occurrence.displayName,
+                            kind: gmlSymbolKindToLspSymbolKind(occurrence.kind),
+                            range: offsetsToRange(
+                                document,
+                                occurrence.location.range.start,
+                                occurrence.location.range.end
+                            ),
+                            selectionRange: offsetsToRange(
+                                document,
+                                occurrence.location.range.start,
+                                occurrence.location.range.end
+                            )
+                        }))
+                )) ?? []
+            );
         },
         async listSemanticHighlights(document) {
             const cachedState = findCachedStateForDocument(document);
@@ -2099,9 +2089,20 @@ export function createGmlSemanticIndex(
                 });
             }
             const state = await ensureIndex(document);
+            const pinnedIndex =
+                state === null
+                    ? null
+                    : await withPinnedNavigationSnapshot(
+                          getSemanticStore(state.projectRoot),
+                          state,
+                          document,
+                          "semanticTokens",
+                          false,
+                          (_snapshot, index) => index
+                      );
             const occurrences = staleSemanticDocumentUris.has(document.uri)
                 ? []
-                : (state?.index.occurrencesByFilePath.get(path.resolve(document.filePath)) ?? []);
+                : (pinnedIndex?.occurrencesByFilePath.get(path.resolve(document.filePath)) ?? []);
             const builtIns = Object.entries(getBuiltInsMetadata()).flatMap(([name, descriptor]) => {
                 if (!Core.isObjectLike(descriptor)) return [];
                 const entry = descriptor as Record<string, unknown>;
@@ -2111,8 +2112,8 @@ export function createGmlSemanticIndex(
             return Semantic.collectGmlSemanticHighlights({
                 sourceText: document.sourceText,
                 builtIns,
-                projectIdentifiers: state
-                    ? [...state.index.resourceKindsByName].map(([name, kind]) => ({ name, kind }))
+                projectIdentifiers: pinnedIndex
+                    ? [...pinnedIndex.resourceKindsByName].map(([name, kind]) => ({ name, kind }))
                     : [],
                 occurrences: occurrences.map((occurrence) => ({
                     start: occurrence.location.range.start,
@@ -2127,24 +2128,41 @@ export function createGmlSemanticIndex(
             if (!state) {
                 return [];
             }
-
-            const symbols = await Promise.all(
-                Semantic.searchNavigationWorkspaceSymbols(state.index, query).map((symbol) =>
-                    symbolToWorkspaceSymbol(document, symbol)
-                )
+            return (
+                (await withPinnedNavigationSnapshot(
+                    getSemanticStore(state.projectRoot),
+                    state,
+                    document,
+                    "workspaceSymbols",
+                    false,
+                    async (_snapshot, index) => {
+                        const symbols = await Promise.all(
+                            Semantic.searchNavigationWorkspaceSymbols(index, query).map((symbol) =>
+                                symbolToWorkspaceSymbol(document, symbol)
+                            )
+                        );
+                        return symbols.filter((symbol): symbol is WorkspaceSymbol => symbol !== null);
+                    }
+                )) ?? []
             );
-            return symbols.filter((symbol): symbol is WorkspaceSymbol => symbol !== null);
         },
         async searchCompletions(document, query) {
             const state = await ensureIndex(document);
-            if (!state) {
-                return [];
-            }
-
-            const projectSymbols = Semantic.searchNavigationWorkspaceSymbols(state.index, query, 50).map((symbol) => ({
-                label: symbol.displayName,
-                kind: gmlSymbolKindToCompletionItemKind(symbol.kind)
-            }));
+            const projectSymbols =
+                state === null
+                    ? []
+                    : ((await withPinnedNavigationSnapshot(
+                          getSemanticStore(state.projectRoot),
+                          state,
+                          document,
+                          "completion",
+                          false,
+                          (_snapshot, index) =>
+                              Semantic.searchNavigationWorkspaceSymbols(index, query, 50).map((symbol) => ({
+                                  label: symbol.displayName,
+                                  kind: gmlSymbolKindToCompletionItemKind(symbol.kind)
+                              }))
+                      )) ?? []);
 
             const queryLower = query.toLowerCase();
             const builtIns = getBuiltInsMetadata();
@@ -2171,58 +2189,76 @@ export function createGmlSemanticIndex(
             if (!state) {
                 return null;
             }
-
-            const symbolId = findSymbolId(
-                state.index,
+            return await withPinnedNavigationSnapshot(
+                getSemanticStore(state.projectRoot),
+                state,
                 document,
-                offset,
-                identifierName,
-                isIgnoredOffset,
-                !staleSemanticDocumentUris.has(document.uri)
+                "renameSafety",
+                true,
+                async (snapshot, index) => {
+                    const symbolId = findSymbolId(
+                        index,
+                        document,
+                        offset,
+                        identifierName,
+                        isIgnoredOffset,
+                        !staleSemanticDocumentUris.has(document.uri)
+                    );
+                    if (!symbolId) {
+                        return null;
+                    }
+                    const refactorEngine = new Refactor.RefactorEngine({
+                        semantic: Semantic.createSemanticSnapshotRefactorQueries(state.projectRoot, snapshot)
+                    });
+                    return await refactorWorkspaceEditToLspWorkspaceEdit(
+                        await refactorEngine.planRename({ symbolId, newName })
+                    );
+                }
             );
-            if (!symbolId) {
-                return null;
-            }
-
-            const refactorEngine = new Refactor.RefactorEngine({
-                semantic: Semantic.createSemanticSnapshotRefactorQueries(state.projectRoot, state.snapshot)
-            });
-            const workspace = await refactorEngine.planRename({ symbolId, newName });
-            return await refactorWorkspaceEditToLspWorkspaceEdit(workspace);
         }
     };
 }
 function appendParameterDocumentationMarkdown(
     markdownValue: string,
-    document: GmlTextDocument,
-    offset: number,
-    identifierName: string
+    symbols: ReadonlyArray<NavigationSymbol>,
+    parameter: NavigationSymbol
 ): string {
-    try {
-        const ast = Parser.GMLParser.parse(document.sourceText, {
-            getComments: true,
-            attachFunctionDocComments: true
-        });
-        const docText = findEnclosingFunctionDocComments(ast, offset);
-        if (!docText) {
-            return markdownValue;
-        }
-
-        const parsedDoc = Semantic.parseGmlSymbolDocumentation(docText);
-        const docParam = parsedDoc.parameters.find((p) => p.name === identifierName);
-        if (!docParam) {
-            return markdownValue;
-        }
-
-        let nextMarkdownValue = markdownValue;
-        if (docParam.type) {
-            nextMarkdownValue += `\n\nType: \`${docParam.type}\``;
-        }
-        if (docParam.description) {
-            nextMarkdownValue += `\n\nDescription: ${docParam.description}`;
-        }
-        return nextMarkdownValue;
-    } catch {
+    const parameterDefinition = parameter.definitions[0] ?? null;
+    if (parameterDefinition === null) {
         return markdownValue;
     }
+    const documentation = symbols
+        .flatMap((symbol) =>
+            symbol.definitions.flatMap((definition) => {
+                if (
+                    definition.location.filePath !== parameterDefinition.location.filePath ||
+                    definition.location.range.start > parameterDefinition.location.range.start
+                ) {
+                    return [];
+                }
+                const documentationParameter = symbol.documentation.parameters.find(
+                    (docParameter) => docParameter.name === parameter.name
+                );
+                return documentationParameter === undefined
+                    ? []
+                    : [
+                          Object.freeze({
+                              documentation: documentationParameter,
+                              declarationStart: definition.location.range.start
+                          })
+                      ];
+            })
+        )
+        .toSorted((left, right) => right.declarationStart - left.declarationStart)[0]?.documentation;
+    if (documentation === undefined) {
+        return markdownValue;
+    }
+    let nextMarkdownValue = markdownValue;
+    if (documentation.type !== null) {
+        nextMarkdownValue += `\n\nType: \`${documentation.type}\``;
+    }
+    if (documentation.description !== null) {
+        nextMarkdownValue += `\n\nDescription: ${documentation.description}`;
+    }
+    return nextMarkdownValue;
 }

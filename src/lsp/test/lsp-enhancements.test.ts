@@ -353,11 +353,22 @@ void test("LSP: project cache uses Map-based cache to avoid eviction on multi-ro
 
         assert.ok(state1);
         assert.ok(state2);
+        assert.equal(Object.isFrozen(state1), true, "Published semantic navigation states must be immutable");
+        assert.equal(Object.isFrozen(state2), true, "Published semantic navigation states must be immutable");
         assert.notEqual(state1.projectRoot, state2.projectRoot);
 
-        // Query again, should hit the Map cache without rebuilding
-        const state1Cached = await semanticIndex.buildForDocument(doc1);
-        assert.equal(state1Cached, state1, "Should reuse the cached state for project 1");
+        // A background Tier 2 publication replaces, rather than mutates, the
+        // request-visible Tier 1 record. This keeps the first request pinned
+        // to the facts it acquired even when another project finishes first.
+        let state1Upgraded = state1;
+        for (let attempt = 0; attempt < 20 && state1Upgraded.lightweight; attempt += 1) {
+            await new Promise<void>((resolve) => setTimeout(resolve, 25));
+            state1Upgraded = await semanticIndex.buildForDocument(doc1);
+        }
+        assert.ok(state1Upgraded);
+        assert.equal(state1.lightweight, true, "The original Tier 1 record must remain unchanged");
+        assert.equal(state1Upgraded.lightweight, false, "The replacement record must expose Tier 2 facts");
+        assert.notEqual(state1Upgraded, state1, "Tier publication must replace the immutable cache record");
     } finally {
         await proj1.cleanup();
         await proj2.cleanup();

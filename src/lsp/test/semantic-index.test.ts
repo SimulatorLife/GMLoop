@@ -909,7 +909,11 @@ void test("semantic index performs incremental updates on document refresh", asy
             "new_func",
             false
         );
-        assert.ok(immediateReferences.some((reference) => reference.uri === Lsp.filePathToUri(bPath)));
+        assert.deepEqual(
+            immediateReferences,
+            [],
+            "A same-named cross-file call without a resolved target scope must not become a guessed reference."
+        );
         assert.equal(
             publishedGenerationCount,
             4,
@@ -937,19 +941,16 @@ void test("semantic index performs incremental updates on document refresh", asy
         assert.equal(persistedSnapshot, null, "Open-buffer facts must remain session-local");
         const liveNewFunction = refreshedState.index.symbols.find((symbol) => symbol.name === "new_func");
         assert.ok(liveNewFunction, "The refreshed navigation state must contain the new function");
-        assert.ok(
-            liveNewFunction.references.some((reference) => reference.location.filePath === bPath),
-            "The refreshed navigation state must contain the rebound bare-call occurrence"
-        );
         const newFunctionReferences = await semanticIndex.findReferences(
             docB,
             bSource.indexOf("new_func"),
             "new_func",
             false
         );
-        assert.ok(
-            newFunctionReferences.some((reference) => reference.uri === Lsp.filePathToUri(bPath)),
-            "A unique newly introduced function should bind persisted unresolved bare calls"
+        assert.deepEqual(
+            newFunctionReferences,
+            [],
+            "Introducing a same-named function must preserve bare-call uncertainty until semantic binding proves it."
         );
     } finally {
         await cleanupProjectDir(projectRoot);
@@ -1017,6 +1018,11 @@ void test("semantic index loads cache from disk on startup and saves updates to 
             state2.lightweight,
             false,
             "Restored state must be the persisted full tier, not a lightweight fallback that would force a rebuild"
+        );
+        assert.equal(
+            state2.index.rawIndex,
+            undefined,
+            "Restored LSP navigation must be reconstructed from canonical facts without a persisted raw projection."
         );
 
         const comps = await index2.searchCompletions(doc, "cache_func");

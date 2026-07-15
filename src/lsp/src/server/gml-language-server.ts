@@ -60,9 +60,15 @@ export const GML_LANGUAGE_SERVER_METADATA: GmlLanguageServerMetadata = Object.fr
     version: "0.0.1"
 });
 
-type WordRange = Readonly<{
+export type GmlIdentifierRange = Readonly<{
     name: string;
     range: Range;
+}>;
+
+type GmlLexerIdentifierRange = Readonly<{
+    end: number;
+    name: string;
+    start: number;
 }>;
 
 type GmlLanguageServerConnection = ReturnType<typeof createConnection>;
@@ -85,39 +91,38 @@ function createLintRunner(fix: boolean): ESLint {
     });
 }
 
-function isIdentifierCharacter(character: string): boolean {
-    return /[$A-Z_a-z0-9]/u.test(character);
+const identifierRangesByDocument = new WeakMap<GmlTextDocument, ReadonlyArray<GmlLexerIdentifierRange>>();
+
+function readDocumentIdentifierRanges(document: GmlTextDocument): ReadonlyArray<GmlLexerIdentifierRange> {
+    const cachedRanges = identifierRangesByDocument.get(document);
+    if (cachedRanges !== undefined) {
+        return cachedRanges;
+    }
+    const identifierRanges = Object.freeze(Parser.tokenizeGmlIdentifierRanges(document.sourceText));
+    identifierRangesByDocument.set(document, identifierRanges);
+    return identifierRanges;
 }
 
-function isIdentifierStart(character: string): boolean {
-    return /[$A-Z_a-z]/u.test(character);
-}
-
-function readWordAtPosition(document: GmlTextDocument, offset: number): WordRange | null {
-    const sourceText = document.sourceText;
-
-    let start = offset;
-    while (start > 0 && isIdentifierCharacter(sourceText[start - 1] ?? "")) {
-        start -= 1;
-    }
-
-    let end = offset;
-    while (end < sourceText.length && isIdentifierCharacter(sourceText[end] ?? "")) {
-        end += 1;
-    }
-
-    const name = sourceText.slice(start, end);
-    if (name.length === 0 || !isIdentifierStart(name[0] ?? "")) {
+/**
+ * Resolve the lexer-owned GML identifier enclosing a UTF-16 source offset.
+ *
+ * The range is intentionally derived from the parser tokenizer so request
+ * routing and semantic analysis agree for incomplete and non-ASCII input.
+ */
+export function readGmlIdentifierAtPosition(document: GmlTextDocument, offset: number): GmlIdentifierRange | null {
+    const identifierRange = readDocumentIdentifierRanges(document).find(
+        ({ start, end }) => start <= offset && offset <= end
+    );
+    if (identifierRange === undefined) {
         return null;
     }
-
-    return {
-        name,
+    return Object.freeze({
+        name: identifierRange.name,
         range: {
-            start: offsetToPosition(document, start),
-            end: offsetToPosition(document, end)
+            start: offsetToPosition(document, identifierRange.start),
+            end: offsetToPosition(document, identifierRange.end)
         }
-    };
+    });
 }
 
 async function collectDiagnostics(document: GmlTextDocument, lintRunner: ESLint): Promise<Diagnostic[]> {
@@ -482,7 +487,7 @@ export function createGmlLanguageServer(
             }
 
             const offset = positionToOffset(document, position);
-            const word = readWordAtPosition(document, offset);
+            const word = readGmlIdentifierAtPosition(document, offset);
             if (!word) {
                 return [];
             }
@@ -504,7 +509,7 @@ export function createGmlLanguageServer(
             }
 
             const offset = positionToOffset(document, position);
-            const word = readWordAtPosition(document, offset);
+            const word = readGmlIdentifierAtPosition(document, offset);
             return word
                 ? await semanticIndex.findReferences(document, offset, word.name, context.includeDeclaration)
                 : [];
@@ -556,7 +561,7 @@ export function createGmlLanguageServer(
             }
 
             const offset = positionToOffset(document, position);
-            const word = readWordAtPosition(document, offset);
+            const word = readGmlIdentifierAtPosition(document, offset);
             if (!word) {
                 return null;
             }
@@ -576,7 +581,7 @@ export function createGmlLanguageServer(
                 return null;
             }
 
-            return readWordAtPosition(document, positionToOffset(document, position))?.range ?? null;
+            return readGmlIdentifierAtPosition(document, positionToOffset(document, position))?.range ?? null;
         } catch (error) {
             connection.console.error(`Error in onPrepareRename: ${Core.getErrorMessageOrFallback(error)}`);
             return null;
@@ -591,7 +596,7 @@ export function createGmlLanguageServer(
                 return null;
             }
 
-            const word = readWordAtPosition(document, positionToOffset(document, position));
+            const word = readGmlIdentifierAtPosition(document, positionToOffset(document, position));
             if (!word) {
                 return null;
             }
@@ -611,7 +616,7 @@ export function createGmlLanguageServer(
                 return [];
             }
 
-            const prefix = readWordAtPosition(document, positionToOffset(document, position))?.name ?? "";
+            const prefix = readGmlIdentifierAtPosition(document, positionToOffset(document, position))?.name ?? "";
             return await semanticIndex.searchCompletions(document, prefix);
         } catch (error) {
             connection.console.error(`Error in onCompletion: ${Core.getErrorMessageOrFallback(error)}`);
@@ -666,7 +671,7 @@ export function createGmlLanguageServer(
         }
 
         const offset = positionToOffset(document, position);
-        const word = readWordAtPosition(document, offset);
+        const word = readGmlIdentifierAtPosition(document, offset);
         if (!word) {
             return [];
         }

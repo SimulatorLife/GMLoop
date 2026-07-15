@@ -7,6 +7,8 @@ import {
     findNavigationDefinitions,
     findNavigationReferences,
     findNavigationSymbolAtPosition,
+    getNavigationEnumHoverFacts,
+    listNavigationEnumHoverMembers,
     resolveNavigationSymbolId
 } from "../src/navigation/index.js";
 import { listSemanticRenameSafetyGaps } from "../src/project-index/rename-safety.js";
@@ -66,6 +68,7 @@ void test("project navigation separates definitions and references with exclusiv
 
 void test("project navigation uses canonical occurrences without recreating relationship references", () => {
     const snapshot: SemanticSnapshot = Object.freeze({
+        analyzedFilePaths: ["scripts/caller.gml", "scripts/target.gml", "scripts/use.gml"],
         dependencies: [],
         occurrences: [
             {
@@ -131,6 +134,58 @@ void test("project navigation uses canonical occurrences without recreating rela
     assert.equal(findNavigationReferences(index, symbolId, false).length, 1);
     assert.equal(findNavigationSymbolAtPosition(index, "/tmp/game/scripts/use.gml", 25)?.symbolId, symbolId);
     assert.equal(findNavigationSymbolAtPosition(index, "/tmp/game/scripts/caller.gml", 13), null);
+});
+
+void test("canonical snapshots retain enum member ownership and order without a raw navigation projection", () => {
+    const snapshot = createSemanticSnapshotFromProjectIndex(
+        {
+            identifiers: {
+                enumMembers: {
+                    active: {
+                        declarations: [
+                            { filePath: "scripts/state.gml", location: { end: { index: 24 }, start: { index: 18 } } }
+                        ],
+                        enumKey: "state",
+                        filePath: "scripts/state.gml",
+                        identifierId: "gml/enum-member/state/active",
+                        name: "active",
+                        order: 1,
+                        value: "1"
+                    },
+                    idle: {
+                        declarations: [
+                            { filePath: "scripts/state.gml", location: { end: { index: 16 }, start: { index: 12 } } }
+                        ],
+                        enumKey: "state",
+                        filePath: "scripts/state.gml",
+                        identifierId: "gml/enum-member/state/idle",
+                        name: "idle",
+                        order: 0,
+                        value: null
+                    }
+                },
+                enums: {
+                    state: {
+                        declarations: [
+                            { filePath: "scripts/state.gml", location: { end: { index: 10 }, start: { index: 0 } } }
+                        ],
+                        filePath: "scripts/state.gml",
+                        identifierId: "gml/enum/state",
+                        name: "State"
+                    }
+                }
+            }
+        },
+        "definitions",
+        "enum-relationships" as SemanticSnapshot["sourceRevision"]
+    );
+    const index = createProjectNavigationIndexFromSemanticSnapshot("/tmp/game", snapshot);
+
+    assert.equal(getNavigationEnumHoverFacts(index, "gml/enum-member/state/active")?.symbolId, "gml/enum/state");
+    assert.deepEqual(listNavigationEnumHoverMembers(index, "gml/enum/state"), [
+        { name: "idle", value: null },
+        { name: "active", value: "1" }
+    ]);
 });
 
 void test("semantic snapshot keeps ambiguous bare calls unresolved", () => {
@@ -231,6 +286,55 @@ void test("semantic snapshot marks an unbound same-named identifier as a candida
     ]);
 });
 
+void test("semantic snapshot does not treat a uniquely named resolved call as exact without a target scope", () => {
+    const snapshot = createSemanticSnapshotFromProjectIndex(
+        {
+            identifiers: {
+                functions: {
+                    helper: {
+                        declarations: [
+                            { filePath: "scripts/helper.gml", location: { end: { index: 5 }, start: { index: 0 } } }
+                        ],
+                        filePath: "scripts/helper.gml",
+                        identifierId: "gml/function/helper",
+                        name: "helper"
+                    }
+                }
+            },
+            relationships: {
+                scriptCalls: [
+                    {
+                        from: { filePath: "scripts/caller.gml", scopeId: "scope:caller" },
+                        isResolved: true,
+                        location: { end: { index: 9 }, start: { index: 4 } },
+                        target: { name: "helper", scopeId: null }
+                    }
+                ]
+            }
+        },
+        "full",
+        "call-candidate" as SemanticSnapshot["sourceRevision"]
+    );
+
+    assert.deepEqual(
+        snapshot.occurrences.filter((occurrence) => occurrence.role === "reference"),
+        []
+    );
+    assert.deepEqual(snapshot.unresolvedReferences, [
+        {
+            end: 10,
+            filePath: "scripts/caller.gml",
+            name: "helper",
+            resolution: {
+                candidateSymbolIds: ["gml/function/helper"],
+                kind: "candidate",
+                uncertaintyReason: "A same-named declaration exists, but lexical binding could not be proven."
+            },
+            start: 4
+        }
+    ]);
+});
+
 void test("rename safety blocks the requested symbol's uncertain references", () => {
     const snapshot = createSemanticSnapshotFromProjectIndex(
         {
@@ -289,6 +393,7 @@ void test("rename safety blocks the requested symbol's uncertain references", ()
 
 void test("rename safety rejects a definitions snapshot", () => {
     const definitionsSnapshot: SemanticSnapshot = Object.freeze({
+        analyzedFilePaths: [],
         dependencies: [],
         occurrences: [],
         relationships: [],

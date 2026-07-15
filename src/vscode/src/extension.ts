@@ -1,15 +1,16 @@
-import { copyFileSync, existsSync, readFileSync } from "node:fs";
-import path from "node:path";
+import { copyFileSync, existsSync, readFileSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
 
 import * as vscode from "vscode";
 import {
     LanguageClient,
     type LanguageClientOptions,
     type ServerOptions,
+    TransportKind,
     type WorkspaceEdit
 } from "vscode-languageclient/node.js";
 
-import { resolveGmloopLanguageServerExecutableOptions } from "./server-command.js";
+import { resolveGmloopLanguageServerLaunch } from "./server-command.js";
 import { syncLocalExtensionFilesPure } from "./sync.js";
 
 const GMLOOP_CONFIGURATION_SECTION = "gmloop";
@@ -53,53 +54,30 @@ function getLanguageServerOutputChannel(): vscode.OutputChannel {
     return languageServerOutput;
 }
 
-function resolveMonorepoOrLocalExecutable(
-    workspaceFolders: readonly vscode.WorkspaceFolder[] | undefined,
-    extensionPath: string | null
-): { readonly command: string; readonly args: readonly string[] } | null {
-    if (workspaceFolders) {
-        for (const folder of workspaceFolders) {
-            const monorepoCliPath = path.join(folder.uri.fsPath, "src/cli/dist/index.js");
-            if (existsSync(monorepoCliPath)) {
-                return { command: "node", args: [monorepoCliPath, "lsp"] };
-            }
-            const localBinPath = path.join(folder.uri.fsPath, "node_modules", ".bin", "gmloop");
-            if (existsSync(localBinPath)) {
-                return { command: localBinPath, args: ["lsp"] };
-            }
-        }
-    }
-
-    if (extensionPath) {
-        const relativeCliPath = path.join(extensionPath, "../cli/dist/index.js");
-        if (existsSync(relativeCliPath)) {
-            return { command: "node", args: [relativeCliPath, "lsp"] };
-        }
-    }
-
-    return null;
-}
-
 function createServerOptions(): ServerOptions {
     const configuredServerPath = vscode.workspace
         .getConfiguration(GMLOOP_CONFIGURATION_SECTION)
         .get<unknown>(GMLOOP_SERVER_PATH_SETTING);
-    const serverCommand = resolveGmloopLanguageServerExecutableOptions(configuredServerPath);
+    const launch = resolveGmloopLanguageServerLaunch(configuredServerPath, {
+        environment: process.env,
+        extensionPath: activeExtensionPath,
+        homeDirectory: homedir(),
+        pathExists: existsSync,
+        platform: process.platform,
+        resolveRealPath: realpathSync,
+        workspaceFolderPaths: vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath) ?? []
+    });
 
-    let command = serverCommand.command;
-    let args: string[] = [...serverCommand.args];
-
-    if (command === "gmloop") {
-        const resolved = resolveMonorepoOrLocalExecutable(vscode.workspace.workspaceFolders, activeExtensionPath);
-        if (resolved) {
-            command = resolved.command;
-            args = [...resolved.args];
-        }
+    if (launch.kind === "module") {
+        return {
+            run: { module: launch.modulePath, args: [...launch.args], transport: TransportKind.stdio },
+            debug: { module: launch.modulePath, args: [...launch.args], transport: TransportKind.stdio }
+        };
     }
 
     return {
-        command,
-        args
+        command: launch.command,
+        args: [...launch.args]
     };
 }
 
@@ -134,7 +112,11 @@ async function stopLanguageClient(): Promise<void> {
 
     const currentClient = languageClient;
     languageClient = null;
-    await currentClient.stop();
+    try {
+        await currentClient.stop();
+    } catch {
+        // Ignore errors if the client was not running or could not be stopped
+    }
 }
 
 async function startLanguageClient(): Promise<void> {

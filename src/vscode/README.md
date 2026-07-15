@@ -5,7 +5,7 @@ TextMate grammar. Its editor configuration for comments, accessors, strings, reg
 boundaries is adapted from [Stitch's GML language support](https://github.com/bscotch/stitch/tree/develop/packages/vscode/languages),
 with GMLoop's ANTLR lexer grammar treated as the authoritative syntax contract.
 
-This workspace contains the first-party VSCode client for GMLoop's GameMaker Language server. It registers `.gml` files as the `gml` language and starts the existing GMLoop LSP server with:
+This workspace contains the first-party VSCode client for GMLoop's GameMaker Language server. It registers `.gml` files as the `gml` language and starts the version-matched language server bundled in the VSIX. For development, `gmloop.serverPath` can override the bundle with a CLI launched as:
 
 ```sh
 gmloop lsp
@@ -58,7 +58,7 @@ not trigger one.
 pnpm install
 ```
 
-The repository postinstall links the local `gmloop` CLI. If `gmloop` is not on your PATH, set `gmloop.serverPath` in VSCode to the absolute path for the compiled CLI entrypoint, for example:
+No separate CLI installation is required by the packaged extension. During repository development, set `gmloop.serverPath` to the compiled CLI entrypoint when you intentionally want the extension to run current checkout output instead of its bundled server:
 
 ```json
 {
@@ -66,7 +66,7 @@ The repository postinstall links the local `gmloop` CLI. If `gmloop` is not on y
 }
 ```
 
-The extension always appends the fixed `lsp` argument, so do not include `lsp` in `gmloop.serverPath`.
+The extension appends the fixed `lsp` argument to an override, so do not include `lsp` in `gmloop.serverPath`.
 
 ## Build The Extension
 
@@ -102,7 +102,7 @@ Install that package into VSCode with:
 code --install-extension src/vscode/dist/gmloop-0.0.1.vsix
 ```
 
-After installing, open a GameMaker project folder and ensure `gmloop` is on PATH, or set `gmloop.serverPath` to the compiled CLI entrypoint.
+After installing, open a GameMaker project folder. The bundled server starts without a global `gmloop` command or additional path configuration.
 
 ## Run In VSCode From Source
 
@@ -165,11 +165,11 @@ The extension contributes this setting:
 
 ```json
 {
-  "gmloop.serverPath": "gmloop"
+  "gmloop.serverPath": ""
 }
 ```
 
-Use the default when `gmloop` is available on PATH. Use an absolute path when VSCode cannot find the command:
+Keep the default to use the bundled server. Use an absolute path only when developing against a separately built GMLoop checkout:
 
 ```json
 {
@@ -214,7 +214,7 @@ Then run this VSCode command from the Command Palette:
 GMLoop: Restart Language Server
 ```
 
-The installed VSCode extension does not contain the language server implementation. It only starts `<gmloop.serverPath> lsp`, so LSP/server changes are picked up by rebuilding the local CLI output and restarting the server. Rebuild and reinstall the VSIX only when `src/vscode` changes or when extension metadata, contributed settings, commands, activation behavior, or extension dependencies change.
+The installed VSCode extension contains the language server version built with that VSIX. When `gmloop.serverPath` points at a local compiled CLI, LSP/server changes are picked up by rebuilding the local CLI output and restarting the server. Rebuild and reinstall the VSIX to update its bundled production server.
 
 There is no automatic server refresh in the extension today. The current reliable loop is:
 

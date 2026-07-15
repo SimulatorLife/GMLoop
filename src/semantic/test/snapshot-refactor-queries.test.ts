@@ -9,6 +9,7 @@ import { createTempProjectWorkspace } from "./test-project-helpers.js";
 
 function createSnapshot(): SemanticSnapshot {
     return Object.freeze({
+        analyzedFilePaths: ["scripts/source/source.gml", "scripts/target/target.gml"],
         dependencies: [],
         occurrences: [
             {

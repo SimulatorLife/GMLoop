@@ -63,8 +63,8 @@
       "properties": {
         "gmloop.serverPath": {
           "type": "string",
-          "default": "gmloop",
-          "description": "Path or command name for the GMLoop CLI executable. The extension appends the fixed 'lsp' argument."
+          "default": "",
+          "description": "Optional path or command name for a development GMLoop CLI override. The bundled language server is used by default; the extension appends the fixed 'lsp' argument to an override."
         }
       }
     },

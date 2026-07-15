@@ -241,6 +241,12 @@ function createSemanticIndexSchemaV5(database: GraphDatabase): void {
             PRIMARY KEY (project_root, tier, relative_path),
             FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS semantic_analyzed_files (
+            project_root TEXT NOT NULL, tier TEXT NOT NULL, file_path TEXT NOT NULL,
+            updated_generation INTEGER NOT NULL,
+            PRIMARY KEY (project_root, tier, file_path),
+            FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
+        );
         CREATE INDEX IF NOT EXISTS idx_semantic_files_generation
             ON semantic_files(project_root, tier, updated_generation);
         CREATE TABLE IF NOT EXISTS semantic_generation_history (
@@ -294,6 +300,12 @@ function createSemanticIndexSchema(database: GraphDatabase): void {
             file_kind TEXT NOT NULL, content_hash TEXT NOT NULL, size_bytes INTEGER NOT NULL, mtime_ms INTEGER,
             source_origin TEXT NOT NULL, source_version INTEGER, updated_generation INTEGER NOT NULL,
             PRIMARY KEY (project_root, tier, relative_path),
+            FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS semantic_analyzed_files (
+            project_root TEXT NOT NULL, tier TEXT NOT NULL, file_path TEXT NOT NULL,
+            updated_generation INTEGER NOT NULL,
+            PRIMARY KEY (project_root, tier, file_path),
             FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
         );
         CREATE TABLE IF NOT EXISTS semantic_symbols (
@@ -359,6 +371,7 @@ function createSemanticIndexSchema(database: GraphDatabase): void {
             FOREIGN KEY (project_root) REFERENCES semantic_projects(project_root) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_semantic_files_manifest ON semantic_files(project_root, tier, relative_path);
+        CREATE INDEX IF NOT EXISTS idx_semantic_analyzed_files_path ON semantic_analyzed_files(project_root, tier, file_path);
         CREATE INDEX IF NOT EXISTS idx_semantic_symbols_name ON semantic_symbols(project_root, tier, name);
         CREATE INDEX IF NOT EXISTS idx_semantic_symbols_owner ON semantic_symbols(project_root, tier, defining_file_path);
         CREATE INDEX IF NOT EXISTS idx_semantic_occurrences_file ON semantic_occurrences(project_root, tier, file_path);
@@ -440,6 +453,7 @@ const DERIVED_SEMANTIC_TABLES = Object.freeze([
     "semantic_scopes",
     "semantic_resources",
     "semantic_files",
+    "semantic_analyzed_files",
     "semantic_generation_history",
     "semantic_slot_dependencies",
     "semantic_slot_records",

@@ -127,6 +127,10 @@ function readFirstOccurrenceFilePath(records: unknown): string | null {
     return null;
 }
 
+function collectAnalyzedFilePaths(index: Readonly<Record<string, unknown>>): ReadonlyArray<string> {
+    return Object.freeze(Object.keys(asRecord(index.files)).toSorted((left, right) => left.localeCompare(right)));
+}
+
 function collectScriptCallRelationships(
     index: Readonly<Record<string, unknown>>,
     tier: SemanticTier
@@ -164,6 +168,44 @@ function collectScriptCallRelationships(
               ];
           })
         : [];
+}
+
+function collectEnumMemberRelationships(index: Readonly<Record<string, unknown>>): ReadonlyArray<SemanticRelationship> {
+    const identifiers = asRecord(index.identifiers);
+    const enumSymbolIdsByKey = new Map(
+        Object.entries(asRecord(identifiers.enums)).flatMap(([enumKey, rawEnum]) => {
+            const symbolId = readString(asRecord(rawEnum).identifierId);
+            return symbolId === null ? [] : [[enumKey, symbolId] as const];
+        })
+    );
+    return Object.entries(asRecord(identifiers.enumMembers))
+        .flatMap(([, rawMember]) => {
+            const member = asRecord(rawMember);
+            const enumKey = readString(member.enumKey);
+            const memberSymbolId = readString(member.identifierId);
+            const memberName = readString(member.name);
+            const ownerFilePath = readString(member.filePath);
+            const enumSymbolId = enumKey === null ? undefined : enumSymbolIdsByKey.get(enumKey);
+            if (
+                enumSymbolId === undefined ||
+                memberSymbolId === null ||
+                memberName === null ||
+                ownerFilePath === null
+            ) {
+                return [];
+            }
+            const order = readOffset(member.order) ?? 0;
+            const value = typeof member.value === "string" || typeof member.value === "number" ? member.value : null;
+            return [
+                Object.freeze({
+                    kind: "enumMember",
+                    ownerFilePath,
+                    payload: Object.freeze({ enumSymbolId, memberName, memberSymbolId, order, value }),
+                    relationshipId: `enum-member:${memberSymbolId}`
+                })
+            ];
+        })
+        .toSorted((left, right) => left.relationshipId.localeCompare(right.relationshipId));
 }
 
 function collectUnresolvedReferences(
@@ -211,11 +253,11 @@ function collectUnresolvedReferences(
     if (Array.isArray(scriptCalls)) {
         for (const rawCall of scriptCalls) {
             const call = asRecord(rawCall);
-            if (call.isResolved === true) {
-                continue;
-            }
             const from = asRecord(call.from);
             const target = asRecord(call.target);
+            if (call.isResolved === true && readString(target.scopeId) !== null) {
+                continue;
+            }
             const location = asRecord(call.location);
             const filePath = readString(from.filePath);
             const name = readString(target.name);
@@ -281,7 +323,7 @@ function createReferenceKey(filePath: string, start: number, end: number, name: 
     return `${filePath}\u0000${start}\u0000${end}\u0000${name}`;
 }
 
-function resolveUniqueCallTargets(
+function resolveScopedCallTargets(
     parameters: Readonly<{
         occurrences: ReadonlyArray<SemanticOccurrence>;
         relationships: ReadonlyArray<SemanticRelationship>;
@@ -318,11 +360,12 @@ function resolveUniqueCallTargets(
         if (typeof targetName !== "string" || typeof start !== "number" || typeof end !== "number") {
             return relationship;
         }
-        const namedCandidates = callableSymbolsByName.get(targetName) ?? [];
-        const candidates =
-            typeof targetScopeId === "string"
-                ? namedCandidates.filter((candidate) => candidate.scopeId === targetScopeId)
-                : namedCandidates;
+        if (typeof targetScopeId !== "string") {
+            return relationship;
+        }
+        const candidates = (callableSymbolsByName.get(targetName) ?? []).filter(
+            (candidate) => candidate.scopeId === targetScopeId
+        );
         if (candidates.length !== 1) {
             return relationship;
         }
@@ -488,8 +531,11 @@ export function createSemanticSnapshotFromProjectIndex(
             resourceType: readString(resource.resourceType) ?? "unknown"
         });
     });
-    const rawRelationships = collectScriptCallRelationships(index, tier);
-    const resolvedCalls = resolveUniqueCallTargets({ occurrences, relationships: rawRelationships, symbols });
+    const rawRelationships = Object.freeze([
+        ...collectScriptCallRelationships(index, tier),
+        ...collectEnumMemberRelationships(index)
+    ]);
+    const resolvedCalls = resolveScopedCallTargets({ occurrences, relationships: rawRelationships, symbols });
     occurrences.push(...resolvedCalls.occurrences);
     const relationships = resolvedCalls.relationships;
     const unresolvedReferences = classifyUnresolvedReferenceCandidates(
@@ -503,6 +549,7 @@ export function createSemanticSnapshotFromProjectIndex(
     );
     const dependencies = collectDependencies({ occurrences, relationships, scopes, symbols, tier });
     return Object.freeze({
+        analyzedFilePaths: collectAnalyzedFilePaths(index),
         dependencies: Object.freeze(dependencies),
         occurrences: Object.freeze(occurrences),
         relationships: Object.freeze(relationships),

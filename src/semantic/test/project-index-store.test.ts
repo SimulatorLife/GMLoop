@@ -8,7 +8,11 @@ import { Core } from "@gmloop/core";
 
 import { openGraphIndexDatabase } from "../src/graph-index/database.js";
 import { buildSemanticFileManifest, type SemanticFileManifest } from "../src/project-index/semantic-manifest.js";
-import type { SemanticCapability, SemanticSnapshotRequirements } from "../src/project-index/semantic-snapshot.js";
+import type {
+    SemanticCapability,
+    SemanticSnapshot,
+    SemanticSnapshotRequirements
+} from "../src/project-index/semantic-snapshot.js";
 import { createSemanticSnapshotFromProjectIndex } from "../src/project-index/semantic-snapshot-codec.js";
 import {
     getSemanticIndexDatabasePath,
@@ -30,6 +34,7 @@ void test("semantic store creates the normalized current-schema tables without l
             "semantic_projects",
             "semantic_slots",
             "semantic_files",
+            "semantic_analyzed_files",
             "semantic_symbols",
             "semantic_occurrences",
             "semantic_scopes",
@@ -48,6 +53,153 @@ void test("semantic store creates the normalized current-schema tables without l
         assert.equal(tables.has("semantic_records"), false);
     } finally {
         database.close();
+    }
+});
+
+void test("semantic store never treats a manifest-only source file as analyzed coverage", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-store-coverage-"));
+    const store = openSemanticIndexStore(projectRoot);
+    try {
+        const sourceRevision = "partial-coverage" as SemanticFileManifest["sourceRevision"];
+        const createEntry = (relativePath: string) =>
+            Object.freeze({
+                contentHash: `hash:${relativePath}`,
+                fileKind: "gml" as const,
+                mtimeMs: null,
+                relativePath,
+                sizeBytes: 1,
+                sourceOrigin: "openBuffer" as const,
+                sourceVersion: 1
+            });
+        const manifest: SemanticFileManifest = Object.freeze({
+            entries: new Map([
+                ["scripts/analyzed.gml", createEntry("scripts/analyzed.gml")],
+                ["scripts/pending.gml", createEntry("scripts/pending.gml")]
+            ]),
+            sourceRevision
+        });
+        const snapshot = createSemanticSnapshotFromProjectIndex(
+            { files: { "scripts/analyzed.gml": { contentHash: "hash:scripts/analyzed.gml" } }, projectRoot },
+            "definitions",
+            sourceRevision
+        );
+        assert.equal(store.publishSessionSemanticSnapshot({ manifest, snapshot }).kind, "published");
+
+        const baseRequirements: SemanticSnapshotRequirements = Object.freeze({
+            capabilities: new Set<SemanticCapability>(),
+            overlayVersions: new Map([
+                ["scripts/analyzed.gml", 1],
+                ["scripts/pending.gml", 1]
+            ]),
+            projectRevision: "current",
+            requireCompleteProjectRelationships: false,
+            requiredFiles: new Set<string>(),
+            requiredResources: new Set<string>(),
+            tier: "definitions"
+        });
+        const available = store.acquireSemanticSnapshot(baseRequirements, new AbortController().signal);
+        if (available.kind !== "lease") {
+            throw new Error("expected a partial snapshot lease");
+        }
+        assert.equal(available.lease.identity.coverage.status, "partial");
+        assert.equal(available.lease.identity.coverage.analyzedFiles.has("scripts/pending.gml"), false);
+        available.lease.release();
+
+        assert.deepEqual(
+            store.acquireSemanticSnapshot(
+                { ...baseRequirements, requiredFiles: new Set(["scripts/pending.gml"]) },
+                new AbortController().signal
+            ),
+            { failure: { kind: "incompleteCoverage" }, kind: "failure" }
+        );
+    } finally {
+        await store.close();
+    }
+});
+
+void test("semantic store rejects leases for structurally invalid canonical snapshots", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-store-invalid-snapshot-"));
+    const store = openSemanticIndexStore(projectRoot);
+    try {
+        const sourceRevision = "invalid-snapshot" as SemanticFileManifest["sourceRevision"];
+        const manifest: SemanticFileManifest = Object.freeze({
+            entries: new Map([
+                [
+                    "scripts/main.gml",
+                    Object.freeze({
+                        contentHash: "main",
+                        fileKind: "gml" as const,
+                        mtimeMs: null,
+                        relativePath: "scripts/main.gml",
+                        sizeBytes: 1,
+                        sourceOrigin: "openBuffer" as const,
+                        sourceVersion: 1
+                    })
+                ]
+            ]),
+            sourceRevision
+        });
+        const snapshot: SemanticSnapshot = Object.freeze({
+            analyzedFilePaths: ["scripts/main.gml"],
+            dependencies: [],
+            occurrences: [],
+            relationships: [],
+            resources: [],
+            scopes: [],
+            sourceRevision,
+            symbols: [
+                {
+                    definingFilePath: "scripts/main.gml",
+                    displayName: "first",
+                    documentation: {
+                        additionalTags: [],
+                        description: "",
+                        normalizedText: "",
+                        parameters: [],
+                        returns: null
+                    },
+                    kind: "function",
+                    name: "first",
+                    scopeId: null,
+                    symbolId: "gml/function/duplicate"
+                },
+                {
+                    definingFilePath: "scripts/main.gml",
+                    displayName: "second",
+                    documentation: {
+                        additionalTags: [],
+                        description: "",
+                        normalizedText: "",
+                        parameters: [],
+                        returns: null
+                    },
+                    kind: "function",
+                    name: "second",
+                    scopeId: null,
+                    symbolId: "gml/function/duplicate"
+                }
+            ],
+            tier: "definitions",
+            unresolvedReferences: []
+        });
+        assert.equal(store.publishSessionSemanticSnapshot({ manifest, snapshot }).kind, "published");
+        assert.deepEqual(
+            store.acquireSemanticSnapshot(
+                {
+                    capabilities: new Set<SemanticCapability>(["definition"]),
+                    overlayVersions: new Map([["scripts/main.gml", 1]]),
+                    projectRevision: "current",
+                    requireCompleteProjectRelationships: false,
+                    requiredFiles: new Set(["scripts/main.gml"]),
+                    requiredResources: new Set<string>(),
+                    tier: "definitions"
+                },
+                new AbortController().signal
+            ),
+            { failure: { kind: "invalidSnapshot" }, kind: "failure" }
+        );
+    } finally {
+        await store.close();
     }
 });
 
@@ -243,6 +395,8 @@ void test("semantic store leases matching overlay snapshots without persisting s
         const requirements: SemanticSnapshotRequirements = Object.freeze({
             capabilities: new Set<SemanticCapability>(["references"]),
             overlayVersions: new Map([["scripts/main.gml", 4]]),
+            projectRevision: "current",
+            requireCompleteProjectRelationships: false,
             requiredFiles: new Set(["scripts/main.gml"]),
             requiredResources: new Set<string>(),
             tier: "full"
@@ -254,7 +408,27 @@ void test("semantic store leases matching overlay snapshots without persisting s
         assert.equal(result.lease.identity.projectRevision, sourceRevision);
         assert.deepEqual(result.lease.identity.overlayVersions, new Map([["scripts/main.gml", 4]]));
         assert.equal(result.lease.identity.coverage.analyzedFiles.has("scripts/main.gml"), true);
+        assert.equal(result.lease.identity.coverage.relationshipStatus, "complete");
         assert.deepEqual(store.readSemanticSnapshotLeaseMetrics(), { activeLeaseCount: 1 });
+
+        assert.deepEqual(
+            store.acquireSemanticSnapshot(
+                {
+                    ...requirements,
+                    projectRevision: "different-revision" as SemanticFileManifest["sourceRevision"]
+                },
+                new AbortController().signal
+            ),
+            { failure: { kind: "revisionMismatch" }, kind: "failure" }
+        );
+        const relationshipComplete = store.acquireSemanticSnapshot(
+            { ...requirements, requireCompleteProjectRelationships: true },
+            new AbortController().signal
+        );
+        assert.equal(relationshipComplete.kind, "lease");
+        if (relationshipComplete.kind === "lease") {
+            relationshipComplete.lease.release();
+        }
 
         const mismatch = store.acquireSemanticSnapshot(
             { ...requirements, overlayVersions: new Map([["scripts/main.gml", 5]]) },
@@ -299,6 +473,8 @@ void test("semantic store leases only capability-qualified snapshots and release
         const definitionsRequirements: SemanticSnapshotRequirements = Object.freeze({
             capabilities: new Set<SemanticCapability>(["definition"]),
             overlayVersions: new Map<string, number>(),
+            projectRevision: "current",
+            requireCompleteProjectRelationships: false,
             requiredFiles: new Set(["scripts/main.gml"]),
             requiredResources: new Set<string>(),
             tier: "definitions"
@@ -319,12 +495,77 @@ void test("semantic store leases only capability-qualified snapshots and release
         const fullRequirements: SemanticSnapshotRequirements = Object.freeze({
             capabilities: new Set<SemanticCapability>(["references"]),
             overlayVersions: new Map<string, number>(),
+            projectRevision: "current",
+            requireCompleteProjectRelationships: false,
             requiredFiles: new Set<string>(),
             requiredResources: new Set<string>(),
             tier: "full"
         });
         const missingFull = store.acquireSemanticSnapshot(fullRequirements, controller.signal);
         assert.deepEqual(missingFull, { failure: { kind: "missingSnapshot" }, kind: "failure" });
+    } finally {
+        await store.close();
+    }
+});
+
+void test("semantic store rejects relationship-dependent requirements for partial snapshots", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-store-relationships-"));
+    const store = openSemanticIndexStore(projectRoot);
+    try {
+        const sourceRevision = "partial-relationships" as SemanticFileManifest["sourceRevision"];
+        const createEntry = (relativePath: string) =>
+            Object.freeze({
+                contentHash: relativePath,
+                fileKind: "gml" as const,
+                mtimeMs: null,
+                relativePath,
+                sizeBytes: 1,
+                sourceOrigin: "openBuffer" as const,
+                sourceVersion: 1
+            });
+        const manifest: SemanticFileManifest = Object.freeze({
+            entries: new Map([
+                ["scripts/analyzed.gml", createEntry("scripts/analyzed.gml")],
+                ["scripts/pending.gml", createEntry("scripts/pending.gml")]
+            ]),
+            sourceRevision
+        });
+        const snapshot = createSemanticSnapshotFromProjectIndex(
+            { files: { "scripts/analyzed.gml": {} }, projectRoot },
+            "full",
+            sourceRevision
+        );
+        assert.equal(store.publishSessionSemanticSnapshot({ manifest, snapshot }).kind, "incompatibleDefinitions");
+        assert.equal(
+            store.publishSessionSemanticSnapshot({
+                manifest,
+                snapshot: createSemanticSnapshotFromProjectIndex(
+                    { files: { "scripts/analyzed.gml": {} }, projectRoot },
+                    "definitions",
+                    sourceRevision
+                )
+            }).kind,
+            "published"
+        );
+        assert.equal(store.publishSessionSemanticSnapshot({ manifest, snapshot }).kind, "published");
+        assert.deepEqual(
+            store.acquireSemanticSnapshot(
+                {
+                    capabilities: new Set<SemanticCapability>(["references"]),
+                    overlayVersions: new Map([
+                        ["scripts/analyzed.gml", 1],
+                        ["scripts/pending.gml", 1]
+                    ]),
+                    projectRevision: "current",
+                    requireCompleteProjectRelationships: true,
+                    requiredFiles: new Set<string>(),
+                    requiredResources: new Set<string>(),
+                    tier: "full"
+                },
+                new AbortController().signal
+            ),
+            { failure: { kind: "incompleteRelationships" }, kind: "failure" }
+        );
     } finally {
         await store.close();
     }

@@ -144,6 +144,13 @@ void test("VSIX staging includes the TextMate grammar", async () => {
     assert.match(packagingSource, /stageSyntaxRoot/u);
 });
 
+void test("VSIX staging deploys the production language server", async () => {
+    const packagingSource = await readFile(new URL("src/build-vsix-package.ts", WORKSPACE_ROOT_URL), "utf8");
+    assert.match(packagingSource, /server\/\*\*/u);
+    assert.match(packagingSource, /packageBundledLanguageServer/u);
+    assert.match(packagingSource, /@gmloop\/lsp/u);
+});
+
 void test("Markdown GML TextMate injection grammar is valid and exposes the registered scope", async () => {
     const grammar = JSON.parse(
         await readFile(new URL("syntaxes/markdown-gml.tmLanguage.json", WORKSPACE_ROOT_URL), "utf8")

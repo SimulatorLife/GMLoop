@@ -194,22 +194,21 @@ function createSnapshotCoverage(
     manifest: SemanticFileManifest | null,
     snapshot: SemanticSnapshot
 ): SemanticCoverage {
-    const analyzedFiles = new Set<string>();
-    for (const filePath of manifest?.entries.keys() ?? []) {
-        analyzedFiles.add(normalizeSemanticFilePath(projectRoot, filePath));
-    }
-    for (const occurrence of snapshot.occurrences) {
-        analyzedFiles.add(normalizeSemanticFilePath(projectRoot, occurrence.filePath));
-    }
-    for (const scope of snapshot.scopes) {
-        for (const filePath of scope.filePaths) {
-            analyzedFiles.add(normalizeSemanticFilePath(projectRoot, filePath));
-        }
-    }
+    const analyzedFiles = new Set(
+        snapshot.analyzedFilePaths.map((filePath) => normalizeSemanticFilePath(projectRoot, filePath))
+    );
+    const requiredSourceFiles = [...(manifest?.entries.values() ?? [])]
+        .filter((entry) => entry.fileKind === "gml")
+        .map((entry) => normalizeSemanticFilePath(projectRoot, entry.relativePath));
+    const status =
+        manifest !== null && requiredSourceFiles.every((filePath) => analyzedFiles.has(filePath))
+            ? "complete"
+            : "partial";
     return Object.freeze({
         analyzedFiles: Object.freeze(analyzedFiles),
         analyzedResources: Object.freeze(new Set(snapshot.resources.map((resource) => resource.resourcePath))),
-        status: "complete"
+        relationshipStatus: snapshot.tier === "full" && status === "complete" ? "complete" : "partial",
+        status
     });
 }
 
@@ -226,8 +225,37 @@ function createSnapshotIdentity(
         overlayVersions: Object.freeze(new Map(overlayVersions)),
         projectRevision: snapshot.sourceRevision,
         tier: snapshot.tier,
-        validation: Object.freeze({ status: "valid" })
+        validation: createSnapshotValidation(snapshot)
     });
+}
+
+function createSnapshotValidation(snapshot: SemanticSnapshot): SemanticSnapshotIdentity["validation"] {
+    const symbolIds = new Set<string>();
+    for (const symbol of snapshot.symbols) {
+        if (symbolIds.has(symbol.symbolId)) {
+            return Object.freeze({ reason: `Duplicate semantic symbol id '${symbol.symbolId}'.`, status: "invalid" });
+        }
+        symbolIds.add(symbol.symbolId);
+    }
+    for (const occurrence of snapshot.occurrences) {
+        if (occurrence.end < occurrence.start || !symbolIds.has(occurrence.symbolId)) {
+            return Object.freeze({
+                reason: `Invalid semantic occurrence for symbol '${occurrence.symbolId}'.`,
+                status: "invalid"
+            });
+        }
+    }
+    if (
+        snapshot.unresolvedReferences.length > 0 ||
+        snapshot.occurrences.some((occurrence) => occurrence.resolution.kind !== "exact")
+    ) {
+        return Object.freeze({
+            affectedCapabilities: Object.freeze(new Set<SemanticCapability>(["references", "renameSafety"])),
+            reason: "The snapshot contains unresolved or uncertain semantic bindings.",
+            status: "degraded"
+        });
+    }
+    return Object.freeze({ status: "valid" });
 }
 
 function normalizeOverlayVersions(
@@ -279,6 +307,12 @@ function areSnapshotRequirementsSatisfied(
     identity: SemanticSnapshotIdentity,
     requirements: SemanticSnapshotRequirements
 ): SemanticSnapshotAcquireFailure | null {
+    if (identity.validation.status === "invalid") {
+        return Object.freeze({ kind: "invalidSnapshot" });
+    }
+    if (requirements.projectRevision !== "current" && identity.projectRevision !== requirements.projectRevision) {
+        return Object.freeze({ kind: "revisionMismatch" });
+    }
     if (!areOverlayVersionsEqual(projectRoot, identity.overlayVersions, requirements.overlayVersions)) {
         return Object.freeze({ kind: "overlayMismatch" });
     }
@@ -291,9 +325,12 @@ function areSnapshotRequirementsSatisfied(
     const hasRequiredResourceCoverage = [...requirements.requiredResources].every((resourcePath) =>
         identity.coverage.analyzedResources.has(resourcePath)
     );
-    return hasRequiredFileCoverage && hasRequiredResourceCoverage
-        ? null
-        : Object.freeze({ kind: "incompleteCoverage" });
+    if (!hasRequiredFileCoverage || !hasRequiredResourceCoverage) {
+        return Object.freeze({ kind: "incompleteCoverage" });
+    }
+    return requirements.requireCompleteProjectRelationships && identity.coverage.relationshipStatus !== "complete"
+        ? Object.freeze({ kind: "incompleteRelationships" })
+        : null;
 }
 
 function readSymbolIdsDefinedByFiles(
@@ -679,7 +716,12 @@ function readSemanticSnapshot(
                   ]
                 : [];
         });
+    const analyzedFilePaths = database
+        .prepare("SELECT file_path FROM semantic_analyzed_files WHERE project_root = ? AND tier = ? ORDER BY file_path")
+        .all(projectRoot, tier)
+        .flatMap((row): ReadonlyArray<string> => (typeof row.file_path === "string" ? [row.file_path] : []));
     return Object.freeze({
+        analyzedFilePaths: Object.freeze(analyzedFilePaths),
         dependencies: Object.freeze(dependencies),
         occurrences: Object.freeze(occurrences),
         relationships: Object.freeze(relationships),
@@ -882,6 +924,15 @@ function publishSemanticFacts(
                 "INSERT INTO semantic_slots(project_root, tier, generation, source_revision, base_generation, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(project_root, tier) DO UPDATE SET generation = excluded.generation, source_revision = excluded.source_revision, base_generation = excluded.base_generation, updated_at = excluded.updated_at"
             )
             .run(projectRoot, request.tier, generation, request.sourceRevision, request.baseGeneration, updatedAt);
+        database
+            .prepare("DELETE FROM semantic_analyzed_files WHERE project_root = ? AND tier = ?")
+            .run(projectRoot, request.tier);
+        const insertAnalyzedFile = database.prepare(
+            "INSERT INTO semantic_analyzed_files(project_root, tier, file_path, updated_generation) VALUES (?, ?, ?, ?)"
+        );
+        for (const filePath of snapshot.analyzedFilePaths) {
+            insertAnalyzedFile.run(projectRoot, request.tier, filePath, generation);
+        }
         const affectedFiles = createAffectedFileSet(projectRoot, request.affectedFiles);
         const affectedSymbolIds = new Set([
             ...readSymbolIdsDefinedByFiles(database, projectRoot, request.tier, affectedFiles),

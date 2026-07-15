@@ -3,7 +3,7 @@ import path from "node:path";
 import { Core } from "@gmloop/core";
 
 import { buildProjectIndex, type ProjectIndexFsFacade } from "../project-index/index.js";
-import type { SemanticSnapshot } from "../project-index/semantic-snapshot.js";
+import type { SemanticRelationship, SemanticSnapshot } from "../project-index/semantic-snapshot.js";
 import {
     createEmptyGmlSymbolDocumentation,
     type GmlSymbolDocumentation
@@ -73,6 +73,7 @@ export type GmlProjectNavigationIndex = Readonly<{
     symbolIdsByName: ReadonlyMap<string, ReadonlyArray<string>>;
     symbolsById: ReadonlyMap<string, GmlNavigationSymbol>;
     symbols: ReadonlyArray<GmlNavigationSymbol>;
+    relationships: ReadonlyArray<SemanticRelationship>;
     rawIndex?: unknown;
 }>;
 
@@ -500,6 +501,7 @@ export function createProjectNavigationIndex(projectIndex: unknown): GmlProjectN
         return {
             projectRoot: "",
             resourceKindsByName: new Map(),
+            relationships: Object.freeze([]),
             symbols: [],
             symbolsById: new Map(),
             symbolIdsByName: new Map(),
@@ -536,6 +538,7 @@ export function createProjectNavigationIndex(projectIndex: unknown): GmlProjectN
     return {
         projectRoot: source.projectRoot,
         resourceKindsByName,
+        relationships: Object.freeze([]),
         symbols: sortedSymbols,
         ...createNavigationIndexMaps(sortedSymbols)
     };
@@ -601,6 +604,7 @@ export function createProjectNavigationIndexFromSemanticSnapshot(
     return {
         projectRoot,
         resourceKindsByName,
+        relationships: snapshot.relationships,
         symbols,
         ...createNavigationIndexMaps(symbols)
     };
@@ -759,6 +763,13 @@ export function getNavigationEnumHoverFacts(index: GmlProjectNavigationIndex, sy
         return null;
     }
 
+    const canonicalOwner = index.relationships.find(
+        (relationship) => relationship.kind === "enumMember" && relationship.payload.memberSymbolId === symbolId
+    );
+    if (typeof canonicalOwner?.payload.enumSymbolId === "string") {
+        return getNavigationHoverFacts(index, canonicalOwner.payload.enumSymbolId);
+    }
+
     const identifiers = asRecord(asRecord(index.rawIndex).identifiers);
     const enumMembers = asRecord(identifiers.enumMembers);
     const member = Object.values(enumMembers)
@@ -781,6 +792,23 @@ export function listNavigationEnumHoverMembers(
 ): ReadonlyArray<GmlEnumHoverMember> {
     if (index.symbolsById.get(symbolId)?.kind !== "enum") {
         return [];
+    }
+    const canonicalMembers = index.relationships
+        .flatMap((relationship) => {
+            if (relationship.kind !== "enumMember" || relationship.payload.enumSymbolId !== symbolId) {
+                return [];
+            }
+            const name = relationship.payload.memberName;
+            const value = relationship.payload.value;
+            const order = relationship.payload.order;
+            if (typeof name !== "string" || typeof order !== "number") {
+                return [];
+            }
+            return [{ member: Object.freeze({ name, value: typeof value === "string" ? value : null }), order }];
+        })
+        .toSorted((left, right) => left.order - right.order || left.member.name.localeCompare(right.member.name));
+    if (canonicalMembers.length > 0) {
+        return canonicalMembers.map(({ member }) => member);
     }
     const identifiers = asRecord(asRecord(index.rawIndex).identifiers);
     const enums = asRecord(identifiers.enums);

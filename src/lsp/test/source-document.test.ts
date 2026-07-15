@@ -19,6 +19,26 @@ void test("source document positions use UTF-16 columns", () => {
     assert.equal(Lsp.positionToOffset(document, position), emojiOffset + 2);
 });
 
+void test("LSP identifier lookup uses lexer-owned Unicode ranges", () => {
+    const sourceText = "var café = 1;\n😀 café;\n";
+    const document = Lsp.createGmlDocumentStore().open({
+        uri: Lsp.filePathToUri("/tmp/unicode-identifiers.gml"),
+        languageId: "gml",
+        version: 1,
+        text: sourceText
+    });
+    const useOffset = sourceText.lastIndexOf("café") + 3;
+
+    assert.deepEqual(Lsp.readGmlIdentifierAtPosition(document, useOffset), {
+        name: "café",
+        range: {
+            start: { line: 1, character: 3 },
+            end: { line: 1, character: 7 }
+        }
+    });
+    assert.equal(Lsp.readGmlIdentifierAtPosition(document, sourceText.indexOf("😀") + 1), null);
+});
+
 void test("source document store applies incremental multiline changes", () => {
     const store = Lsp.createGmlDocumentStore();
     const document = store.open({

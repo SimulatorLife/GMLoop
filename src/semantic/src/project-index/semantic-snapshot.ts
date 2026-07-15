@@ -25,13 +25,19 @@ export type SemanticCapability =
 export type SemanticCoverage = Readonly<{
     analyzedFiles: ReadonlySet<string>;
     analyzedResources: ReadonlySet<string>;
-    status: "complete";
+    relationshipStatus: "complete" | "partial";
+    status: "complete" | "partial";
 }>;
 
 /** Validation result associated with an acquired snapshot. */
-export type SemanticValidationState = Readonly<{
-    status: "valid";
-}>;
+export type SemanticValidationState =
+    | Readonly<{ status: "valid" }>
+    | Readonly<{
+          affectedCapabilities: ReadonlySet<SemanticCapability>;
+          reason: string;
+          status: "degraded";
+      }>
+    | Readonly<{ reason: string; status: "invalid" }>;
 
 /** Exact identity of a leased semantic snapshot. */
 export type SemanticSnapshotIdentity = Readonly<{
@@ -48,6 +54,8 @@ export type SemanticSnapshotIdentity = Readonly<{
 export type SemanticSnapshotRequirements = Readonly<{
     capabilities: ReadonlySet<SemanticCapability>;
     overlayVersions: ReadonlyMap<string, number>;
+    projectRevision: SemanticSourceRevision | "current";
+    requireCompleteProjectRelationships: boolean;
     requiredFiles: ReadonlySet<string>;
     requiredResources: ReadonlySet<string>;
     tier: SemanticTier;
@@ -62,7 +70,15 @@ export type SemanticSnapshotLease = Readonly<{
 
 /** A typed reason why a compatible snapshot could not be acquired. */
 export type SemanticSnapshotAcquireFailure = Readonly<{
-    kind: "cancelled" | "incompleteCoverage" | "missingCapability" | "missingSnapshot" | "overlayMismatch";
+    kind:
+        | "cancelled"
+        | "incompleteCoverage"
+        | "incompleteRelationships"
+        | "invalidSnapshot"
+        | "missingCapability"
+        | "missingSnapshot"
+        | "overlayMismatch"
+        | "revisionMismatch";
 }>;
 
 /** Result of an attempted snapshot acquisition. */
@@ -153,6 +169,8 @@ export type SemanticUnresolvedReference = Readonly<{
 
 /** A normalized semantic snapshot for one project and tier. */
 export type SemanticSnapshot = Readonly<{
+    /** Files with completed semantic analysis in this immutable generation. */
+    analyzedFilePaths: ReadonlyArray<string>;
     dependencies: ReadonlyArray<SemanticDependency>;
     occurrences: ReadonlyArray<SemanticOccurrence>;
     relationships: ReadonlyArray<SemanticRelationship>;

@@ -162,6 +162,7 @@ function cloneIdentifierDeclaration(declaration) {
 type IdentifierDeclarationRecord = ReturnType<typeof cloneIdentifierDeclaration>;
 type ProjectIdentifierRecord = {
     name: string | null;
+    documentation?: ReturnType<typeof parseGmlSymbolDocumentation>;
     start: ReturnType<typeof Core.cloneLocation>;
     end: ReturnType<typeof Core.cloneLocation>;
     scopeId: string | null;
@@ -1191,6 +1192,9 @@ function registerScopedVariableOccurrence({
     });
     if (entry && Core.asArray(identifierRecord.classifications).includes("parameter")) {
         entry.semanticKind = "parameter";
+        if (identifierRecord.documentation?.normalizedText.length > 0) {
+            entry.documentation = identifierRecord.documentation;
+        }
     }
 }
 function registerLocalVariableOccurrence({ identifierCollections, identifierRecord, filePath, role, identifierSink }) {
@@ -1639,6 +1643,7 @@ function handleIdentifierNode({
     metrics,
     structVariableDeclarationScopeIds,
     constructorStaticMemberDeclarationIdentifiers,
+    parentMap,
     identifierSink,
     definitionsOnly = false,
     recordReferences = false
@@ -1647,6 +1652,15 @@ function handleIdentifierNode({
         return false;
     }
     const identifierRecord = createIdentifierRecord(node);
+    if (
+        identifierRecord.classifications.includes("declaration") &&
+        identifierRecord.classifications.includes("parameter")
+    ) {
+        const documentation = findEnclosingParameterDocumentation(node, parentMap, identifierRecord.name);
+        if (documentation !== null) {
+            identifierRecord.documentation = documentation;
+        }
+    }
     const isBuiltIn = builtInNames.has(identifierRecord.name);
     identifierRecord.isBuiltIn = isBuiltIn;
     metrics?.counters?.increment("identifiers.encountered");
@@ -1905,6 +1919,18 @@ function buildSafeParentMap(root) {
     visit(root, null);
     return parentMap;
 }
+
+function findEnclosingParameterDocumentation(node, parentMap, parameterName) {
+    let current = parentMap.get(node) ?? null;
+    while (current !== null) {
+        const documentation = extractDeclarationDocumentation(current);
+        if (documentation.parameters.some((parameter) => parameter.name === parameterName)) {
+            return documentation;
+        }
+        current = parentMap.get(current) ?? null;
+    }
+    return null;
+}
 function isInsideConstructor(node, parentMap) {
     let curr = node;
     while (curr) {
@@ -2056,6 +2082,7 @@ function analyseGmlAst({
             metrics,
             structVariableDeclarationScopeIds,
             constructorStaticMemberDeclarationIdentifiers,
+            parentMap,
             identifierSink,
             definitionsOnly,
             recordReferences
@@ -2974,6 +3001,7 @@ function createProjectIndexResultSnapshot({
             identifierId: entry.identifierId ?? buildIdentifierId("local", entry.key ?? ""),
             key: entry.key,
             name: entry.name ?? null,
+            documentation: entry.documentation ?? parseGmlSymbolDocumentation(""),
             scopeId: entry.scopeId ?? null,
             scopeKind: entry.scopeKind ?? null,
             semanticKind: entry.semanticKind ?? "localVariable",
