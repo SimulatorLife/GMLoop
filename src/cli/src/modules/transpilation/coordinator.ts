@@ -570,11 +570,7 @@ function validatePatch(patch: RuntimeTranspilerPatch): boolean {
         return false;
     }
 
-    if (!patch.js_body || typeof patch.js_body !== "string") {
-        return false;
-    }
-
-    if (patch.js_body.trim().length === 0) {
+    if (patch.js_body === undefined || patch.js_body === null || typeof patch.js_body !== "string") {
         return false;
     }
 

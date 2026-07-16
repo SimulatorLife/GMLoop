@@ -1,5 +1,6 @@
 import { type LiveReloadBootstrapConfig, liveReloadBootstrapConfig } from "./config.js";
 import { createRuntimeWrapper, installScriptCallAdapter } from "./runtime/index.js";
+import { applyWebGLSafetyPatches } from "./webgl.js";
 import { createWebSocketClient } from "./websocket/index.js";
 
 type BrowserGlobalScope = Record<string, unknown>;
@@ -110,6 +111,7 @@ export function initializeLiveReload(
     if (globalScope) {
         applyYyGetRealSafetyPatch(globalScope);
         applyMathSafetyPatches(globalScope);
+        applyWebGLSafetyPatches(globalScope);
     }
 
     return wrapper;
