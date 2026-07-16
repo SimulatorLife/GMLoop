@@ -8,8 +8,6 @@
 
 import { Core } from "@gmloop/core";
 
-const { getErrorMessage, isObjectLike } = Core;
-
 export const WATCH_STATUS_OUTPUT_FORMATS = Object.freeze({
     PRETTY: "pretty",
     JSON: "json"
@@ -135,7 +133,7 @@ function displayPretty(data: unknown, endpoint: string): void {
     // properties of null (reading 'ready')`. Surface a deterministic
     // human-readable message in that case so the CLI never crashes for a
     // recoverable server-shape mismatch.
-    if (!isObjectLike(data)) {
+    if (!Core.isObjectLike(data)) {
         console.log(
             `Live-reload status server returned an unexpected response for the "${endpoint}" endpoint. ` +
                 "Expected a JSON object describing the live-reload session state."
@@ -277,7 +275,7 @@ export async function runWatchStatusCommand(options: WatchStatusCommandOptions =
             displayPretty(data, endpoint);
         }
     } catch (error) {
-        const message = getErrorMessage(error, {
+        const message = Core.getErrorMessage(error, {
             fallback: "Unknown error"
         });
 
