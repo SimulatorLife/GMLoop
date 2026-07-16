@@ -28,7 +28,7 @@
   "devDependencies": {
     "stylelint": "^16.14.0",
     "stylelint-declaration-strict-value": "^1.11.1",
-    "vite": "^8.0.16",
+    "vite": "^8.1.4",
     "@gmloop/core": "workspace:*",
     "@types/node": "catalog:",
     "typescript": "catalog:"

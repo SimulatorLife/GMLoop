@@ -185,19 +185,17 @@ void describe("RenameValidationCache", () => {
         void it("cleans up in-flight requests when computation fails", async () => {
             const cache = new RenameValidationCache();
             let computeCount = 0;
+            const failingCompute = async (): Promise<CachedValidationResult> => {
+                computeCount += 1;
+                throw new Error("Validation failed");
+            };
 
             await assert.rejects(async () => {
-                await cache.getOrCompute("gml/script/scr_test", "scr_new", async () => {
-                    computeCount += 1;
-                    throw new Error("Validation failed");
-                });
+                await cache.getOrCompute("gml/script/scr_test", "scr_new", failingCompute);
             });
 
             await assert.rejects(async () => {
-                await cache.getOrCompute("gml/script/scr_test", "scr_new", async () => {
-                    computeCount += 1;
-                    throw new Error("Validation failed");
-                });
+                await cache.getOrCompute("gml/script/scr_test", "scr_new", failingCompute);
             });
 
             assert.equal(computeCount, 2);

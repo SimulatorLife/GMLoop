@@ -36,9 +36,9 @@
     "eslint": "catalog:",
     "ws": "catalog:",
     "commander": "^15",
-    "fast-xml-parser": "^5.8.0",
+    "fast-xml-parser": "^5.10.0",
     "gray-matter": "^4.0.3",
-    "linkedom": "^0.18.12"
+    "linkedom": "^0.18.13"
   },
   "devDependencies": {
     "typescript": "catalog:"
