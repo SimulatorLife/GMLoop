@@ -50,16 +50,16 @@ export function isLogicalComparisonClause(node: any): boolean {
 }
 
 /**
- * Match a `&&` binary expression whose left operand is a comparison and
- * whose right operand is a simple logical value.
+ * Match a `&&` binary expression whose operands are simple logical values and
+ * include at least one comparison.
  *
  * This is one half of the conjunction required by
- * {@link isLogicalComparisonClause}; it deliberately does not descend into
- * further `&&`/`||` nesting, which would make the clause no longer
- * "simple" enough to trust the inline body layout.
+ * {@link isLogicalComparisonClause}; accepting either operand order keeps the
+ * predicate aligned with the commutative shape of a logical conjunction while
+ * still excluding nested `&&`/`||` expressions from this leaf check.
  *
  * @param {unknown} node Candidate conjunction operand to inspect.
- * @returns {boolean} `true` when {@link node} is `comparison && simple`.
+ * @returns {boolean} `true` when {@link node} contains a comparison and simple operands.
  */
 function isComparisonAndConjunction(node: any): boolean {
     const expression = Core.unwrapParenthesizedExpression(node);
@@ -71,11 +71,8 @@ function isComparisonAndConjunction(node: any): boolean {
         return false;
     }
 
-    if (!isComparisonExpression(expression.left)) {
-        return false;
-    }
-
-    return isSimpleLogicalOperand(expression.right);
+    const hasComparisonOperand = isComparisonExpression(expression.left) || isComparisonExpression(expression.right);
+    return hasComparisonOperand && isSimpleLogicalOperand(expression.left) && isSimpleLogicalOperand(expression.right);
 }
 
 /**

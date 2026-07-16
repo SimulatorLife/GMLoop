@@ -130,6 +130,13 @@ void test("omits synthetic multiplicative parentheses in comparison operands", a
     );
 });
 
+void test("preserves clause adjacency when a conjunction starts with a logical operand", async () => {
+    const source = "if ((ready and actual_dist > 0) or (active and actual_dist < 1)){\n    exit;\n}\n";
+    const formatted = await Format.format(source);
+
+    assert.strictEqual(formatted, source);
+});
+
 void test("omits redundant parentheses around a logical clause operand when precedence makes it unnecessary", async () => {
     const source = "if ((actual_dist > dst * dst) and pull_in) {\n    exit;\n}\n";
     const formatted = await Format.format(source);
