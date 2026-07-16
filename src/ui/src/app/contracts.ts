@@ -55,18 +55,14 @@ export type GraphVisualizationUiModel = Readonly<{
 export type GraphVisualizationUiCallbacks = Readonly<{
     onOpenProject: () => void | Promise<void>;
     onRegenerate: () =>
-        | GraphVisualizationHostMutationResult
-        | void
-        | Promise<GraphVisualizationHostMutationResult | void>;
+        GraphVisualizationHostMutationResult | void | Promise<GraphVisualizationHostMutationResult | void>;
     onCreateConfig?: () => void | Promise<void>;
     onSaveConfig: (config: Readonly<Record<string, unknown>>) => void | Promise<void>;
     onRunFix: (
         options: GraphVisualizationFixRunOptions
     ) => GraphVisualizationFixRunResult | Promise<GraphVisualizationFixRunResult>;
     onStartLiveReload: () =>
-        | GraphVisualizationLiveReloadModel
-        | null
-        | Promise<GraphVisualizationLiveReloadModel | null>;
+        GraphVisualizationLiveReloadModel | null | Promise<GraphVisualizationLiveReloadModel | null>;
     onStopLiveReload: () => void | Promise<void>;
 
     onInitializeAutoGameAgentPack?: (options: GraphVisualizationAgentPackInitializationOptions) => void | Promise<void>;

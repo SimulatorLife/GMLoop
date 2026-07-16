@@ -316,27 +316,35 @@ export class GmGraphPanel extends LightDomLitElement {
         const isStartupError = startupState?.phase === "error";
         return html`
             <div id="graph-empty-state" class="graph-empty-state" role="status" aria-live="polite">
-                ${isStartupLoading
-                    ? html`<div id="graph-empty-state-indicator" class="graph-empty-state-indicator">
-                          <span class="loading-spinner graph-empty-state-spinner" aria-hidden="true"></span>
-                          <span>${startupState.message}</span>
-                      </div>`
-                    : null}
-                ${isStartupError
-                    ? html`<div class="graph-empty-state-error">
-                          <strong>${startupState.message}</strong>
-                          ${startupState.detail ? html`<p>${startupState.detail}</p>` : null}
-                      </div>`
-                    : null}
+                ${
+                    isStartupLoading
+                        ? html`<div id="graph-empty-state-indicator" class="graph-empty-state-indicator">
+                              <span class="loading-spinner graph-empty-state-spinner" aria-hidden="true"></span>
+                              <span>${startupState.message}</span>
+                          </div>`
+                        : null
+                }
+                ${
+                    isStartupError
+                        ? html`<div class="graph-empty-state-error">
+                              <strong>${startupState.message}</strong>
+                              ${startupState.detail ? html`<p>${startupState.detail}</p>` : null}
+                          </div>`
+                        : null
+                }
                 <strong
-                    >${this.model?.loadedTarget
-                        ? "No graph nodes are available for the current project."
-                        : "Open a GameMaker project to start exploring the graph."}</strong
+                    >${
+                        this.model?.loadedTarget
+                            ? "No graph nodes are available for the current project."
+                            : "Open a GameMaker project to start exploring the graph."
+                    }</strong
                 >
                 <p>
-                    ${this.model?.loadedTarget
-                        ? "Rebuild the graph data or open another project to keep exploring here."
-                        : "Use Open... to load a project, then return here for graph search, filters, and visualization controls."}
+                    ${
+                        this.model?.loadedTarget
+                            ? "Rebuild the graph data or open another project to keep exploring here."
+                            : "Use Open... to load a project, then return here for graph search, filters, and visualization controls."
+                    }
                 </p>
             </div>
         `;
@@ -358,9 +366,11 @@ export class GmGraphPanel extends LightDomLitElement {
                         .checked=${this.#enabledNodeKinds.has(item.kind)}
                         @change=${() => this.toggleNodeKind(item.kind)}
                     />
-                    ${item.kind === "resource"
-                        ? html`<span class="legend-swatch legend-swatch-group" aria-hidden="true"></span>`
-                        : html`<span class="legend-swatch" style=${`background:${getNodeColor(item.kind)}`}></span>`}
+                    ${
+                        item.kind === "resource"
+                            ? html`<span class="legend-swatch legend-swatch-group" aria-hidden="true"></span>`
+                            : html`<span class="legend-swatch" style=${`background:${getNodeColor(item.kind)}`}></span>`
+                    }
                     <span>${formatNodeKindLabel(item.kind)}</span>
                 </label>
                 ${childContent}
@@ -470,21 +480,25 @@ export class GmGraphPanel extends LightDomLitElement {
 
         return html`
             <section id="graph-page" class=${graphPageClassName}>
-                ${this.state.graphErrorMessage || this.state.errorMessage
-                    ? html`<gm-error-banner
-                          .message=${this.state.graphErrorMessage || this.state.errorMessage}
-                      ></gm-error-banner>`
-                    : null}
-                ${this.state.isRegeneratePending
-                    ? html`
-                          <div class="loading-overlay" role="status" aria-live="polite">
-                              <div class="loading-indicator">
-                                  <span class="loading-spinner" aria-hidden="true"></span>
-                                  <span class="loading-message">Regenerating graph index…</span>
+                ${
+                    this.state.graphErrorMessage || this.state.errorMessage
+                        ? html`<gm-error-banner
+                              .message=${this.state.graphErrorMessage || this.state.errorMessage}
+                          ></gm-error-banner>`
+                        : null
+                }
+                ${
+                    this.state.isRegeneratePending
+                        ? html`
+                              <div class="loading-overlay" role="status" aria-live="polite">
+                                  <div class="loading-indicator">
+                                      <span class="loading-spinner" aria-hidden="true"></span>
+                                      <span class="loading-message">Regenerating graph index…</span>
+                                  </div>
                               </div>
-                          </div>
-                      `
-                    : null}
+                          `
+                        : null
+                }
                 ${hasLoadedGraphIndex(this.model) ? null : this.#renderEmptyState()}
                 <svg
                     id="graph"

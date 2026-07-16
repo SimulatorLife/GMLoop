@@ -278,17 +278,19 @@ export class GmLiveReloadPanel extends LightDomLitElement {
                 <dt>${label}</dt>
                 <dd>
                     <span class="live-reload-endpoint-value"><code>${endpointLabel}</code></span>
-                    ${value
-                        ? html`
-                              <gm-copy-button
-                                  class="live-reload-endpoint-copy"
-                                  .value=${value}
-                                  accessibleLabel=${`Copy ${label.toLowerCase()} endpoint to clipboard`}
-                                  label="Copy"
-                                  hideLabel
-                              ></gm-copy-button>
-                          `
-                        : null}
+                    ${
+                        value
+                            ? html`
+                                  <gm-copy-button
+                                      class="live-reload-endpoint-copy"
+                                      .value=${value}
+                                      accessibleLabel=${`Copy ${label.toLowerCase()} endpoint to clipboard`}
+                                      label="Copy"
+                                      hideLabel
+                                  ></gm-copy-button>
+                              `
+                            : null
+                    }
                 </dd>
             </div>
         `;
@@ -307,11 +309,12 @@ export class GmLiveReloadPanel extends LightDomLitElement {
     #renderRecentPatches(patches: ReadonlyArray<GraphVisualizationLiveReloadRecentPatch>) {
         return html`
             <gm-card class="live-reload-panel-card" .heading=${"Recent Patches"}>
-                ${patches.length === 0
-                    ? html`<p class="catalog-empty">No patches yet.</p>`
-                    : html`
-                          <ul class="live-reload-event-list">
-                              ${patches.map(
+                ${
+                    patches.length === 0
+                        ? html`<p class="catalog-empty">No patches yet.</p>`
+                        : html`
+                              <ul class="live-reload-event-list">
+                                  ${patches.map(
                                   (patch) => html`
                                       <li>
                                           <strong>${patch.id}</strong>
@@ -326,8 +329,9 @@ export class GmLiveReloadPanel extends LightDomLitElement {
                                       </li>
                                   `
                               )}
-                          </ul>
-                      `}
+                              </ul>
+                          `
+                }
             </gm-card>
         `;
     }
@@ -335,11 +339,12 @@ export class GmLiveReloadPanel extends LightDomLitElement {
     #renderRecentErrors(errors: ReadonlyArray<GraphVisualizationLiveReloadRecentError>) {
         return html`
             <gm-card class="live-reload-panel-card" .heading=${"Recent Errors"}>
-                ${errors.length === 0
-                    ? html`<p class="catalog-empty">No errors reported.</p>`
-                    : html`
-                          <ul class="live-reload-event-list">
-                              ${errors.map(
+                ${
+                    errors.length === 0
+                        ? html`<p class="catalog-empty">No errors reported.</p>`
+                        : html`
+                              <ul class="live-reload-event-list">
+                                  ${errors.map(
                                   (error) => html`
                                       <li class="live-reload-error-item">
                                           <strong>${error.filePath}</strong>
@@ -351,8 +356,9 @@ export class GmLiveReloadPanel extends LightDomLitElement {
                                       </li>
                                   `
                               )}
-                          </ul>
-                      `}
+                              </ul>
+                          `
+                }
             </gm-card>
         `;
     }
@@ -360,37 +366,40 @@ export class GmLiveReloadPanel extends LightDomLitElement {
     #renderRuntimeHealth(runtimeHealth: GraphVisualizationLiveReloadRuntimeHealth | null) {
         return html`
             <gm-card class="live-reload-panel-card" .heading=${"Runtime Health"}>
-                ${runtimeHealth === null
-                    ? html`<p class="catalog-empty">Runtime details unavailable.</p>`
-                    : html`
-                          <dl class="live-reload-health-list">
-                              <div>
-                                  <dt>Status</dt>
-                                  <dd>${runtimeHealth.runtimeStatus}</dd>
-                              </div>
-                              <div>
-                                  <dt>Registry Version</dt>
-                                  <dd>${String(runtimeHealth.registryVersion)}</dd>
-                              </div>
-                              <div>
-                                  <dt>Scripts / Events / Closures</dt>
-                                  <dd>
-                                      ${String(runtimeHealth.scriptCount)} / ${String(runtimeHealth.eventCount)} /
-                                      ${String(runtimeHealth.closureCount)}
-                                  </dd>
-                              </div>
-                              <div>
-                                  <dt>Patch Queue Depth</dt>
-                                  <dd>${String(runtimeHealth.patchQueueDepth)}</dd>
-                              </div>
-                              <div>
-                                  <dt>Applied / Failed</dt>
-                                  <dd>
-                                      ${String(runtimeHealth.appliedPatches)} / ${String(runtimeHealth.failedPatches)}
-                                  </dd>
-                              </div>
-                          </dl>
-                      `}
+                ${
+                    runtimeHealth === null
+                        ? html`<p class="catalog-empty">Runtime details unavailable.</p>`
+                        : html`
+                              <dl class="live-reload-health-list">
+                                  <div>
+                                      <dt>Status</dt>
+                                      <dd>${runtimeHealth.runtimeStatus}</dd>
+                                  </div>
+                                  <div>
+                                      <dt>Registry Version</dt>
+                                      <dd>${String(runtimeHealth.registryVersion)}</dd>
+                                  </div>
+                                  <div>
+                                      <dt>Scripts / Events / Closures</dt>
+                                      <dd>
+                                          ${String(runtimeHealth.scriptCount)} / ${String(runtimeHealth.eventCount)} /
+                                          ${String(runtimeHealth.closureCount)}
+                                      </dd>
+                                  </div>
+                                  <div>
+                                      <dt>Patch Queue Depth</dt>
+                                      <dd>${String(runtimeHealth.patchQueueDepth)}</dd>
+                                  </div>
+                                  <div>
+                                      <dt>Applied / Failed</dt>
+                                      <dd>
+                                          ${String(runtimeHealth.appliedPatches)} /
+                                          ${String(runtimeHealth.failedPatches)}
+                                      </dd>
+                                  </div>
+                              </dl>
+                          `
+                }
             </gm-card>
         `;
     }
@@ -410,22 +419,24 @@ export class GmLiveReloadPanel extends LightDomLitElement {
             <section id="live-reload-page" class=${activeClassName}>
                 ${errorMessage ? html`<gm-error-banner .message=${errorMessage}></gm-error-banner>` : null}
                 <div class="live-reload-stack" aria-live="polite">
-                    ${liveReload === null
-                        ? this.#renderSetupState()
-                        : html`
-                              ${this.#renderOverview(status)}
-                              <div class="live-reload-status-grid">
-                                  ${this.#renderSessionStatus(status)} ${this.#renderPipeline()}
-                              </div>
-                              <div class="live-reload-activity-grid">
-                                  ${this.#renderRecentPatches(status?.recentPatches ?? [])}
-                                  ${this.#renderRecentErrors(status?.recentErrors ?? [])}
-                              </div>
-                              <div class="live-reload-grid">
-                                  ${this.#renderRuntimeHealth(liveReload.runtimeHealth)}
-                                  ${this.#renderConnectionDetails()}
-                              </div>
-                          `}
+                    ${
+                        liveReload === null
+                            ? this.#renderSetupState()
+                            : html`
+                                  ${this.#renderOverview(status)}
+                                  <div class="live-reload-status-grid">
+                                      ${this.#renderSessionStatus(status)} ${this.#renderPipeline()}
+                                  </div>
+                                  <div class="live-reload-activity-grid">
+                                      ${this.#renderRecentPatches(status?.recentPatches ?? [])}
+                                      ${this.#renderRecentErrors(status?.recentErrors ?? [])}
+                                  </div>
+                                  <div class="live-reload-grid">
+                                      ${this.#renderRuntimeHealth(liveReload.runtimeHealth)}
+                                      ${this.#renderConnectionDetails()}
+                                  </div>
+                              `
+                    }
                 </div>
             </section>
         `;

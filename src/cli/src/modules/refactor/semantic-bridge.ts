@@ -1106,8 +1106,7 @@ export class GmlSemanticBridge {
         }
 
         const relationships = this.projectIndex.relationships as
-            | { scriptCalls?: Array<SemanticScriptCallRecord> }
-            | undefined;
+            { scriptCalls?: Array<SemanticScriptCallRecord> } | undefined;
         for (const call of relationships?.scriptCalls ?? []) {
             const targetName = call.target?.name;
             if (!Core.isNonEmptyString(targetName)) {

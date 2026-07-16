@@ -582,50 +582,54 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                     <span class="rule-details-header-label">${parameters.label}</span>
                     <span class="rule-details-count">${selectedCount}/${parameters.entries.length} enabled</span>
                 </button>
-                ${parameters.expanded
-                    ? html`
-                          <div class="rule-details-controls">
-                              <input
-                                  class="rule-details-search"
-                                  type="text"
-                                  aria-label="Search ${parameters.label}"
-                                  placeholder="Search ${parameters.label.toLowerCase()}..."
-                                  .value=${parameters.searchQuery}
-                                  @input=${(event: Event) => {
+                ${
+                    parameters.expanded
+                        ? html`
+                              <div class="rule-details-controls">
+                                  <input
+                                      class="rule-details-search"
+                                      type="text"
+                                      aria-label="Search ${parameters.label}"
+                                      placeholder="Search ${parameters.label.toLowerCase()}..."
+                                      .value=${parameters.searchQuery}
+                                      @input=${(event: Event) => {
                                       const target = event.target as HTMLInputElement;
                                       parameters.setSearchQuery(target.value);
                                   }}
-                              />
-                              <button
-                                  type="button"
-                                  class="rule-details-bulk-action"
-                                  @click=${() => parameters.setAllSelected(true)}
+                                  />
+                                  <button
+                                      type="button"
+                                      class="rule-details-bulk-action"
+                                      @click=${() => parameters.setAllSelected(true)}
+                                  >
+                                      Enable all
+                                  </button>
+                                  <button
+                                      type="button"
+                                      class="rule-details-bulk-action"
+                                      @click=${() => parameters.setAllSelected(false)}
+                                  >
+                                      Disable all
+                                  </button>
+                              </div>
+                              <div
+                                  id=${entriesListId}
+                                  class="rule-details-list"
+                                  role="group"
+                                  aria-label=${parameters.label}
                               >
-                                  Enable all
-                              </button>
-                              <button
-                                  type="button"
-                                  class="rule-details-bulk-action"
-                                  @click=${() => parameters.setAllSelected(false)}
-                              >
-                                  Disable all
-                              </button>
-                          </div>
-                          <div
-                              id=${entriesListId}
-                              class="rule-details-list"
-                              role="group"
-                              aria-label=${parameters.label}
-                          >
-                              ${filteredEntries.map((entry) => this.#renderRuleRow(entry))}
-                          </div>
-                          <div class="rule-details-footer">
-                              ${filteredEntries.length === parameters.entries.length
-                                  ? `${parameters.entries.length} items`
-                                  : `${filteredEntries.length} of ${parameters.entries.length} items`}
-                          </div>
-                      `
-                    : null}
+                                  ${filteredEntries.map((entry) => this.#renderRuleRow(entry))}
+                              </div>
+                              <div class="rule-details-footer">
+                                  ${
+                                  filteredEntries.length === parameters.entries.length
+                                      ? `${parameters.entries.length} items`
+                                      : `${filteredEntries.length} of ${parameters.entries.length} items`
+                              }
+                              </div>
+                          `
+                        : null
+                }
             </div>
         `;
     }
@@ -641,14 +645,18 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
         return html`
             <div class="rule-details">
-                ${formatOptions.length > 0
-                    ? html`
-                          ${hasConfiguredFormatOptions
-                              ? null
-                              : html`<p class="rule-details-note" role="note">
-                                    Set formatter values in <code>gmloop.json</code> to apply Playground format options.
-                                </p>`}
-                          ${this.#renderRuleSection({
+                ${
+                    formatOptions.length > 0
+                        ? html`
+                              ${
+                              hasConfiguredFormatOptions
+                                  ? null
+                                  : html`<p class="rule-details-note" role="note">
+                                        Set formatter values in <code>gmloop.json</code> to apply Playground format
+                                        options.
+                                    </p>`
+                          }
+                              ${this.#renderRuleSection({
                               entries: formatOptions.map((option) => ({
                                   description: option.description,
                                   keyText: option.name,
@@ -662,40 +670,45 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                               setExpanded: () => this.#toggleFormatDetails(),
                               setSearchQuery: (value) => this.#setFormatSearchQuery(value)
                           })}
-                      `
-                    : null}
-                ${lintRules.length > 0
-                    ? this.#renderRuleSection({
-                          entries: lintRules.map((rule) => ({
-                              description: rule.description,
-                              keyText: rule.ruleId,
-                              onToggle: () => this.#toggleLintRule(rule.ruleId),
-                              selected: this.#enabledLintRules.get(rule.ruleId) === true
-                          })),
-                          expanded: this.#showLintDetails,
-                          label: "Lint Rules",
-                          searchQuery: this.#lintSearchQuery,
-                          setAllSelected: (enabled) => this.#setAllLintRulesEnabled(enabled, lintRules),
-                          setExpanded: () => this.#toggleLintDetails(),
-                          setSearchQuery: (value) => this.#setLintSearchQuery(value)
-                      })
-                    : null}
-                ${codemods.length > 0
-                    ? this.#renderRuleSection({
-                          entries: codemods.map((codemod) => ({
-                              description: codemod.description,
-                              keyText: codemod.id,
-                              onToggle: () => this.#toggleCodemod(codemod.id),
-                              selected: this.#enabledCodemods.get(codemod.id) === true
-                          })),
-                          expanded: this.#showCodemodDetails,
-                          label: "Codemods",
-                          searchQuery: this.#codemodSearchQuery,
-                          setAllSelected: (enabled) => this.#setAllCodemodsEnabled(enabled, codemods),
-                          setExpanded: () => this.#toggleCodemodDetails(),
-                          setSearchQuery: (value) => this.#setCodemodSearchQuery(value)
-                      })
-                    : null}
+                          `
+                        : null
+                }
+                ${
+                    lintRules.length > 0
+                        ? this.#renderRuleSection({
+                              entries: lintRules.map((rule) => ({
+                                  description: rule.description,
+                                  keyText: rule.ruleId,
+                                  onToggle: () => this.#toggleLintRule(rule.ruleId),
+                                  selected: this.#enabledLintRules.get(rule.ruleId) === true
+                              })),
+                              expanded: this.#showLintDetails,
+                              label: "Lint Rules",
+                              searchQuery: this.#lintSearchQuery,
+                              setAllSelected: (enabled) => this.#setAllLintRulesEnabled(enabled, lintRules),
+                              setExpanded: () => this.#toggleLintDetails(),
+                              setSearchQuery: (value) => this.#setLintSearchQuery(value)
+                          })
+                        : null
+                }
+                ${
+                    codemods.length > 0
+                        ? this.#renderRuleSection({
+                              entries: codemods.map((codemod) => ({
+                                  description: codemod.description,
+                                  keyText: codemod.id,
+                                  onToggle: () => this.#toggleCodemod(codemod.id),
+                                  selected: this.#enabledCodemods.get(codemod.id) === true
+                              })),
+                              expanded: this.#showCodemodDetails,
+                              label: "Codemods",
+                              searchQuery: this.#codemodSearchQuery,
+                              setAllSelected: (enabled) => this.#setAllCodemodsEnabled(enabled, codemods),
+                              setExpanded: () => this.#toggleCodemodDetails(),
+                              setSearchQuery: (value) => this.#setCodemodSearchQuery(value)
+                          })
+                        : null
+                }
             </div>
         `;
     }
@@ -816,9 +829,11 @@ export class GmPlaygroundPanel extends LightDomLitElement {
 
         return html`
             <section id="playground-page" class=${activeClassName}>
-                ${this.state.playgroundErrorMessage
-                    ? html`<gm-error-banner .message=${this.state.playgroundErrorMessage}></gm-error-banner>`
-                    : null}
+                ${
+                    this.state.playgroundErrorMessage
+                        ? html`<gm-error-banner .message=${this.state.playgroundErrorMessage}></gm-error-banner>`
+                        : null
+                }
                 <div class=${controlsPanelClassName}>
                     <div class="playground-main">
                         <div class="editor-pane">
@@ -828,8 +843,7 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                             </div>
                             <div class="playground-input-surface">
                                 <pre class="playground-input-highlight" aria-hidden="true">
-${unsafeHTML(SyntaxHighlight.highlightGml(this.#sessionController.input))}</pre
-                                >
+${unsafeHTML(SyntaxHighlight.highlightGml(this.#sessionController.input))}</pre>
                                 <textarea
                                     class="playground-input"
                                     aria-label="Playground input GML"
@@ -844,11 +858,13 @@ ${unsafeHTML(SyntaxHighlight.highlightGml(this.#sessionController.input))}</pre
                         <div class="editor-pane">
                             <div class="pane-header">
                                 <span
-                                    >${this.#viewMode === "code"
-                                        ? this.#transpileMode === "none"
-                                            ? "GML"
-                                            : "JS"
-                                        : "Parsed AST"}</span
+                                    >${
+                                        this.#viewMode === "code"
+                                            ? this.#transpileMode === "none"
+                                                ? "GML"
+                                                : "JS"
+                                            : "Parsed AST"
+                                    }</span
                                 >
                                 <span class="pane-header-status">Read-only</span>
                             </div>

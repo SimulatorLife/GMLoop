@@ -185,27 +185,29 @@ export class GmDocsPanel extends LightDomLitElement {
                         ?hideLabel=${true}
                     ></gm-copy-button>
                 </div>
-                ${entry.arguments.length > 0 || entry.options.length > 0
-                    ? html`<details class="docs-detail-container">
-                          <summary>Arguments and options</summary>
-                          <dl class="docs-detail-list">
-                              ${entry.arguments.map(
+                ${
+                    entry.arguments.length > 0 || entry.options.length > 0
+                        ? html`<details class="docs-detail-container">
+                              <summary>Arguments and options</summary>
+                              <dl class="docs-detail-list">
+                                  ${entry.arguments.map(
                                   (argumentValue) =>
                                       html`<div class="docs-detail-row">
                                           <dt><code>${argumentValue.name}</code></dt>
                                           <dd>${argumentValue.description}</dd>
                                       </div>`
                               )}
-                              ${entry.options.map(
+                                  ${entry.options.map(
                                   (optionValue) =>
                                       html`<div class="docs-detail-row">
                                           <dt><code>${optionValue.flags}</code></dt>
                                           <dd>${optionValue.description}</dd>
                                       </div>`
                               )}
-                          </dl>
-                      </details>`
-                    : null}
+                              </dl>
+                          </details>`
+                        : null
+                }
             </article>
         `;
     }
@@ -230,20 +232,22 @@ export class GmDocsPanel extends LightDomLitElement {
                         ?hideLabel=${true}
                     ></gm-copy-button>
                 </div>
-                ${entry.fields.length > 0
-                    ? html`<details class="docs-detail-container">
-                          <summary>Fields</summary>
-                          <dl class="docs-detail-list">
-                              ${entry.fields.map(
+                ${
+                    entry.fields.length > 0
+                        ? html`<details class="docs-detail-container">
+                              <summary>Fields</summary>
+                              <dl class="docs-detail-list">
+                                  ${entry.fields.map(
                                   (fieldValue) =>
                                       html`<div class="docs-detail-row">
                                           <dt><code>${fieldValue.name}</code></dt>
                                           <dd>${fieldValue.description}</dd>
                                       </div>`
                               )}
-                          </dl>
-                      </details>`
-                    : null}
+                              </dl>
+                          </details>`
+                        : null
+                }
             </article>
         `;
     }
@@ -267,39 +271,49 @@ export class GmDocsPanel extends LightDomLitElement {
                         ?hideLabel=${true}
                     ></gm-copy-button>
                 </div>
-                ${entry.fields.length > 0
-                    ? html`<details class="docs-detail-container">
-                          <summary>Fields</summary>
-                          <dl class="docs-detail-list">
-                              ${entry.fields.map(
+                ${
+                    entry.fields.length > 0
+                        ? html`<details class="docs-detail-container">
+                              <summary>Fields</summary>
+                              <dl class="docs-detail-list">
+                                  ${entry.fields.map(
                                   (fieldValue) =>
                                       html`<div class="docs-detail-row">
                                           <dt>
-                                              <code>${fieldValue.name}</code>${fieldValue.required
-                                                  ? html` <span class="docs-field-required" title="Required">*</span>`
-                                                  : null}
+                                              <code>${fieldValue.name}</code>${
+                                                  fieldValue.required
+                                                      ? html` <span class="docs-field-required" title="Required"
+                                                            >*</span
+                                                        >`
+                                                      : null
+                                              }
                                           </dt>
                                           <dd>
                                               ${fieldValue.description}
-                                              ${fieldValue.choices && fieldValue.choices.length > 0
-                                                  ? html`<div class="docs-field-choices">
-                                                        Choices:
-                                                        ${fieldValue.choices
+                                              ${
+                                                  fieldValue.choices && fieldValue.choices.length > 0
+                                                      ? html`<div class="docs-field-choices">
+                                                            Choices:
+                                                            ${fieldValue.choices
                                                             .map((c) => html`<code>${c}</code>`)
                                                             .reduce((acc, x) => html`${acc}, ${x}`)}
-                                                    </div>`
-                                                  : null}
-                                              ${fieldValue.default === undefined
-                                                  ? null
-                                                  : html`<div class="docs-field-default">
-                                                        Default: <code>${JSON.stringify(fieldValue.default)}</code>
-                                                    </div>`}
+                                                        </div>`
+                                                      : null
+                                              }
+                                              ${
+                                                  fieldValue.default === undefined
+                                                      ? null
+                                                      : html`<div class="docs-field-default">
+                                                            Default: <code>${JSON.stringify(fieldValue.default)}</code>
+                                                        </div>`
+                                              }
                                           </dd>
                                       </div>`
                               )}
-                          </dl>
-                      </details>`
-                    : null}
+                              </dl>
+                          </details>`
+                        : null
+                }
             </article>
         `;
     }
@@ -346,13 +360,15 @@ export class GmDocsPanel extends LightDomLitElement {
         return html`
             <div id=${subpageId} class=${className} role="tabpanel" aria-labelledby=${`docs-view-${activeDocsView}`}>
                 <div id=${contentId} class="docs-reference-list">
-                    ${emptyMessage === null
-                        ? searchResult.entries.length === 0
-                            ? html`<p class="catalog-empty">
-                                  ${createNoSearchResultsMessage(searchQuery, activeDocsView)}
-                              </p>`
-                            : searchResult.entries.map((entry) => this.#renderCatalogEntry(entry))
-                        : html`<p class="catalog-empty">${emptyMessage}</p>`}
+                    ${
+                        emptyMessage === null
+                            ? searchResult.entries.length === 0
+                                ? html`<p class="catalog-empty">
+                                      ${createNoSearchResultsMessage(searchQuery, activeDocsView)}
+                                  </p>`
+                                : searchResult.entries.map((entry) => this.#renderCatalogEntry(entry))
+                            : html`<p class="catalog-empty">${emptyMessage}</p>`
+                    }
                 </div>
             </div>
         `;
@@ -386,9 +402,11 @@ export class GmDocsPanel extends LightDomLitElement {
         };
         return html`
             <section id="docs-page" class=${docsPageClassName}>
-                ${this.state.docsErrorMessage
-                    ? html`<gm-error-banner .message=${this.state.docsErrorMessage}></gm-error-banner>`
-                    : null}
+                ${
+                    this.state.docsErrorMessage
+                        ? html`<gm-error-banner .message=${this.state.docsErrorMessage}></gm-error-banner>`
+                        : null
+                }
                 <div id="docs-content" class="docs-layout">
                     ${this.#renderDocsControls({
                         activeDocsView: this.state.activeDocsView,
@@ -402,67 +420,75 @@ export class GmDocsPanel extends LightDomLitElement {
                             aria-labelledby="docs-view-cli"
                         >
                             <div id="cli-content" class="docs-reference-list">
-                                ${docsPanelContent.cliEntries.length === 0
-                                    ? html`<p class="catalog-empty">No commands are available right now.</p>`
-                                    : cliSearchResult.entries.length === 0
-                                      ? html`<p class="catalog-empty">
-                                            ${createNoSearchResultsMessage(searchQuery, "cli")}
-                                        </p>`
-                                      : cliSearchResult.entries.map((entry) => this.#renderCliEntry(entry))}
+                                ${
+                                    docsPanelContent.cliEntries.length === 0
+                                        ? html`<p class="catalog-empty">No commands are available right now.</p>`
+                                        : cliSearchResult.entries.length === 0
+                                          ? html`<p class="catalog-empty">
+                                                ${createNoSearchResultsMessage(searchQuery, "cli")}
+                                            </p>`
+                                          : cliSearchResult.entries.map((entry) => this.#renderCliEntry(entry))
+                                }
                             </div>
                         </div>
                         <div
                             id="lsp-page"
-                            class=${this.state.activeDocsView === "lsp"
-                                ? DOCS_SUBPAGE_CLASS
-                                : DOCS_HIDDEN_SUBPAGE_CLASS}
+                            class=${
+                                this.state.activeDocsView === "lsp" ? DOCS_SUBPAGE_CLASS : DOCS_HIDDEN_SUBPAGE_CLASS
+                            }
                             role="tabpanel"
                             aria-labelledby="docs-view-lsp"
                         >
                             <div id="lsp-content" class="docs-reference-list">
-                                ${docsPanelContent.lspEntries.length === 0
-                                    ? html`<p class="catalog-empty">No LSP tools are available right now.</p>`
-                                    : lspSearchResult.entries.length === 0
-                                      ? html`<p class="catalog-empty">
-                                            ${createNoSearchResultsMessage(searchQuery, "lsp")}
-                                        </p>`
-                                      : lspSearchResult.entries.map((entry) => this.#renderLspEntry(entry))}
+                                ${
+                                    docsPanelContent.lspEntries.length === 0
+                                        ? html`<p class="catalog-empty">No LSP tools are available right now.</p>`
+                                        : lspSearchResult.entries.length === 0
+                                          ? html`<p class="catalog-empty">
+                                                ${createNoSearchResultsMessage(searchQuery, "lsp")}
+                                            </p>`
+                                          : lspSearchResult.entries.map((entry) => this.#renderLspEntry(entry))
+                                }
                             </div>
                         </div>
                         <div
                             id="docs-mcp-page"
-                            class=${this.state.activeDocsView === "mcp"
-                                ? DOCS_SUBPAGE_CLASS
-                                : DOCS_HIDDEN_SUBPAGE_CLASS}
+                            class=${
+                                this.state.activeDocsView === "mcp" ? DOCS_SUBPAGE_CLASS : DOCS_HIDDEN_SUBPAGE_CLASS
+                            }
                             role="tabpanel"
                             aria-labelledby="docs-view-mcp"
                         >
-                            ${docsPanelContent.mcpEntries.some((e) => e.internal)
-                                ? html`<div class="docs-subpage-toolbar">
-                                      <label class="docs-toggle-label" for="mcp-toggle-internal">
-                                          <input
-                                              id="mcp-toggle-internal"
-                                              type="checkbox"
-                                              .checked=${this.showInternalMcpTools}
-                                              @change=${(event: Event) => {
+                            ${
+                                docsPanelContent.mcpEntries.some((e) => e.internal)
+                                    ? html`<div class="docs-subpage-toolbar">
+                                          <label class="docs-toggle-label" for="mcp-toggle-internal">
+                                              <input
+                                                  id="mcp-toggle-internal"
+                                                  type="checkbox"
+                                                  .checked=${this.showInternalMcpTools}
+                                                  @change=${(event: Event) => {
                                                   const target = event.target;
                                                   if (target instanceof HTMLInputElement) {
                                                       this.showInternalMcpTools = target.checked;
                                                   }
                                               }}
-                                          />
-                                          <span>Show internal tools (for reference only)</span>
-                                      </label>
-                                  </div>`
-                                : null}
+                                              />
+                                              <span>Show internal tools (for reference only)</span>
+                                          </label>
+                                      </div>`
+                                    : null
+                            }
                             <div id="mcp-content" class="docs-reference-list">
-                                ${filteredMcpEntries.length === 0
-                                    ? html`<p class="catalog-empty">No tools are available right now.</p>`
-                                    : mcpSearchResult.entries.length === 0
-                                      ? html`<p class="catalog-empty">
-                                            ${createNoSearchResultsMessage(searchQuery, "mcp")}
-                                        </p>`
-                                      : mcpSearchResult.entries.map((entry) => this.#renderMcpEntry(entry))}
+                                ${
+                                    filteredMcpEntries.length === 0
+                                        ? html`<p class="catalog-empty">No tools are available right now.</p>`
+                                        : mcpSearchResult.entries.length === 0
+                                          ? html`<p class="catalog-empty">
+                                                ${createNoSearchResultsMessage(searchQuery, "mcp")}
+                                            </p>`
+                                          : mcpSearchResult.entries.map((entry) => this.#renderMcpEntry(entry))
+                                }
                             </div>
                         </div>
                         ${this.#renderCatalogSubpage({

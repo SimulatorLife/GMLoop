@@ -780,8 +780,7 @@ async function startWatchRuntimeServerAfterPatchServers({
 async function writeLiveReloadSessionAfterStartup(
     parameters: Readonly<{
         liveReloadSession:
-            | Pick<LiveReloadRegisteredSession, "projectRoot" | "sessionId" | "startSource" | "yypPath">
-            | undefined;
+            Pick<LiveReloadRegisteredSession, "projectRoot" | "sessionId" | "startSource" | "yypPath"> | undefined;
         normalizedPath: string;
         runtimeServerController: RuntimeStaticServerInstance | null;
         statusServerController: StatusServerHandle | null;

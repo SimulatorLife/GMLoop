@@ -72,8 +72,7 @@ async function executeSingleFileTextCodemod(
         sourceText: string,
         semantic: PartialSemanticAnalyzer | null
     ) =>
-        | Promise<Readonly<{ changed: boolean; outputText: string }>>
-        | Readonly<{ changed: boolean; outputText: string }>
+        Promise<Readonly<{ changed: boolean; outputText: string }>> | Readonly<{ changed: boolean; outputText: string }>
 ): Promise<ConfiguredCodemodExecutionResult> {
     const gmlSourceFilePaths = request.gmlFilePaths.filter((filePath) => isGmlSourceFilePath(filePath));
 

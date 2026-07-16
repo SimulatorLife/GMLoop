@@ -71,14 +71,7 @@ export type GraphNodeKind =
     | "timeline";
 
 export type GraphEdgeType =
-    | "calls"
-    | "contains"
-    | "defines"
-    | "depends_on"
-    | "inherits"
-    | "placed_in_room"
-    | "references"
-    | "uses_toolset";
+    "calls" | "contains" | "defines" | "depends_on" | "inherits" | "placed_in_room" | "references" | "uses_toolset";
 
 export type GraphNodeRecord = Readonly<{
     displayName: string;

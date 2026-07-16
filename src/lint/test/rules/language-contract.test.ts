@@ -713,8 +713,7 @@ void test("location projection maps CRLF boundaries without line/column drift", 
     }
 
     const secondStatement = result.ast.body?.[1] as
-        | { loc?: { start?: { line?: number; column?: number } } }
-        | undefined;
+        { loc?: { start?: { line?: number; column?: number } } } | undefined;
     assertEquals(secondStatement?.loc?.start?.line, 2);
     assertEquals(secondStatement?.loc?.start?.column, 0);
 });

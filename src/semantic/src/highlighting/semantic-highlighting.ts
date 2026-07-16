@@ -22,12 +22,7 @@ export type GmlSemanticHighlightKind =
 
 /** Semantic modifiers that describe an identifier occurrence. */
 export type GmlSemanticHighlightModifier =
-    | "declaration"
-    | "defaultLibrary"
-    | "definition"
-    | "deprecated"
-    | "readonly"
-    | "static";
+    "declaration" | "defaultLibrary" | "definition" | "deprecated" | "readonly" | "static";
 
 /** A source-relative semantic highlight range using UTF-16 offsets. */
 export type GmlSemanticHighlightToken = Readonly<{

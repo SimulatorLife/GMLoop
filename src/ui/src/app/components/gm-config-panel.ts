@@ -532,9 +532,11 @@ export class GmConfigPanel extends LightDomLitElement {
                         <span role="columnheader">Rule</span>
                         <span role="columnheader">Severity</span>
                     </div>
-                    ${filteredLintRules.length === 0
-                        ? html`<p class="config-empty">No lint rules match these filters.</p>`
-                        : filteredLintRules.map((entry) => this.#renderLintRuleRow(entry, draftConfig, catalog))}
+                    ${
+                        filteredLintRules.length === 0
+                            ? html`<p class="config-empty">No lint rules match these filters.</p>`
+                            : filteredLintRules.map((entry) => this.#renderLintRuleRow(entry, draftConfig, catalog))
+                    }
                 </div>
             </details>
         `;
@@ -616,18 +618,22 @@ export class GmConfigPanel extends LightDomLitElement {
                 <div class="config-rule-main" role="cell">
                     <div class="config-rule-title">
                         <strong>${entry.ruleId}</strong>
-                        ${fixableBadgeLabel === null
-                            ? nothing
-                            : html`<gm-badge
-                                  class="config-rule-fixable-badge"
-                                  .label=${fixableBadgeLabel}
-                                  .tone=${"neutral"}
-                              ></gm-badge>`}
+                        ${
+                            fixableBadgeLabel === null
+                                ? nothing
+                                : html`<gm-badge
+                                      class="config-rule-fixable-badge"
+                                      .label=${fixableBadgeLabel}
+                                      .tone=${"neutral"}
+                                  ></gm-badge>`
+                        }
                     </div>
                     <span class="config-rule-description">${entry.description}</span>
-                    ${hasOptions
-                        ? html`<pre class="config-inline-json">${serializeConfigurationValue(entry.options)}</pre>`
-                        : nothing}
+                    ${
+                        hasOptions
+                            ? html`<pre class="config-inline-json">${serializeConfigurationValue(entry.options)}</pre>`
+                            : nothing
+                    }
                 </div>
                 <div
                     class="gm-view-selector config-rule-level-selector"
@@ -638,9 +644,11 @@ export class GmConfigPanel extends LightDomLitElement {
                         (level) => html`
                             <button
                                 type="button"
-                                class=${effectiveLevel === level
-                                    ? `gm-btn--chip active config-rule-level-${level}`
-                                    : `gm-btn--chip config-rule-level-${level}`}
+                                class=${
+                                    effectiveLevel === level
+                                        ? `gm-btn--chip active config-rule-level-${level}`
+                                        : `gm-btn--chip config-rule-level-${level}`
+                                }
                                 aria-pressed=${effectiveLevel === level}
                                 @click=${() => this.#setLintRuleLevel(entry.ruleId, level)}
                             >
@@ -794,9 +802,11 @@ export class GmConfigPanel extends LightDomLitElement {
         if (!configCatalog) {
             return html`
                 <section id="config-page" class=${configPageClassName}>
-                    ${this.state.configErrorMessage
-                        ? html`<gm-error-banner .message=${this.state.configErrorMessage}></gm-error-banner>`
-                        : nothing}
+                    ${
+                        this.state.configErrorMessage
+                            ? html`<gm-error-banner .message=${this.state.configErrorMessage}></gm-error-banner>`
+                            : nothing
+                    }
                     <p id="config-meta" class="docs-meta">Project settings are not available right now.</p>
                     <div id="config-content" class="config-stack"></div>
                 </section>
@@ -808,38 +818,44 @@ export class GmConfigPanel extends LightDomLitElement {
 
         return html`
             <section id="config-page" class=${configPageClassName}>
-                ${this.state.configErrorMessage
-                    ? html`<gm-error-banner .message=${this.state.configErrorMessage}></gm-error-banner>`
-                    : nothing}
+                ${
+                    this.state.configErrorMessage
+                        ? html`<gm-error-banner .message=${this.state.configErrorMessage}></gm-error-banner>`
+                        : nothing
+                }
                 <div id="config-content" class="config-stack">
-                    ${configCatalog.gmloop.exists
-                        ? nothing
-                        : html`
-                              <div class="config-setup-banner">
-                                  <div>
-                                      <h3>Configure GMLoop for your project</h3>
-                                      <p>
-                                          Generate a default <code>gmloop.json</code>, or edit the draft below and save
-                                          it directly.
-                                      </p>
-                                  </div>
-                                  <button
-                                      type="button"
-                                      class="gm-btn gm-btn--primary"
-                                      ?disabled=${this.state.isRegeneratePending}
-                                      aria-busy=${this.state.isRegeneratePending ? "true" : "false"}
-                                      @click=${this.#emitCreateConfig}
-                                  >
-                                      ${renderProcessButtonContent({
+                    ${
+                        configCatalog.gmloop.exists
+                            ? nothing
+                            : html`
+                                  <div class="config-setup-banner">
+                                      <div>
+                                          <h3>Configure GMLoop for your project</h3>
+                                          <p>
+                                              Generate a default <code>gmloop.json</code>, or edit the draft below and
+                                              save it directly.
+                                          </p>
+                                      </div>
+                                      <button
+                                          type="button"
+                                          class="gm-btn gm-btn--primary"
+                                          ?disabled=${this.state.isRegeneratePending}
+                                          aria-busy=${this.state.isRegeneratePending ? "true" : "false"}
+                                          @click=${this.#emitCreateConfig}
+                                      >
+                                          ${renderProcessButtonContent({
                                           label: "Create Default Config",
                                           pending: this.state.isRegeneratePending
                                       })}
-                                  </button>
-                              </div>
-                          `}
-                    ${this.state.activeConfigView === "raw"
-                        ? this.#renderRawConfig(configCatalog, draft)
-                        : this.#renderRenderedConfig(configCatalog, draft)}
+                                      </button>
+                                  </div>
+                              `
+                    }
+                    ${
+                        this.state.activeConfigView === "raw"
+                            ? this.#renderRawConfig(configCatalog, draft)
+                            : this.#renderRenderedConfig(configCatalog, draft)
+                    }
                 </div>
             </section>
         `;

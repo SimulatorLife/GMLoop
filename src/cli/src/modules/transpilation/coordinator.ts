@@ -35,8 +35,7 @@ const defaultParserAdapter: GmlParserAdapter = createGmlParserAdapter();
 type RuntimeTranspiler = GmlTranspilerInstance;
 type GmlTranspilerInstance = ReturnType<typeof createGmlTranspilerAdapter>;
 export type RuntimeTranspilerPatch =
-    | ReturnType<GmlTranspilerInstance["transpileScript"]>
-    | ReturnType<GmlTranspilerInstance["transpileEvent"]>;
+    ReturnType<GmlTranspilerInstance["transpileScript"]> | ReturnType<GmlTranspilerInstance["transpileEvent"]>;
 
 export interface ResourceLayerUpdate {
     layerName: string;

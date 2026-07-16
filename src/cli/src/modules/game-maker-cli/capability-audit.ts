@@ -6,10 +6,7 @@ import type { GameMakerCliCompanionCatalog } from "./catalog.js";
  * Ownership bucket for a planned autonomous GameMaker capability.
  */
 export type GameMakerCapabilityClassification =
-    | "direct_gm_cli_mcp"
-    | "gmloop_companion"
-    | "gmloop_native_missing"
-    | "defer";
+    "direct_gm_cli_mcp" | "gmloop_companion" | "gmloop_native_missing" | "defer";
 
 /**
  * Current availability state for a planned capability after comparing GMLoop

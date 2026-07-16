@@ -67,9 +67,11 @@ export class GmFixPanel extends LightDomLitElement {
 
         return html`
             <section id="fix-page" class=${activeClassName}>
-                ${this.state.fixErrorMessage
-                    ? html`<gm-error-banner .message=${this.state.fixErrorMessage}></gm-error-banner>`
-                    : null}
+                ${
+                    this.state.fixErrorMessage
+                        ? html`<gm-error-banner .message=${this.state.fixErrorMessage}></gm-error-banner>`
+                        : null
+                }
 
                 <section class="fix-log-section" aria-labelledby="fix-log-heading">
                     <h2 id="fix-log-heading">Run Log</h2>

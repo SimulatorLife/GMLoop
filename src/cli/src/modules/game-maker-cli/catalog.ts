@@ -168,7 +168,7 @@ function normalizeConfiguredToolPath(toolPath: string | null): string | null {
  * Load the current gm-cli command and ResourceTool MCP catalogs directly from
  * the official gm-cli implementation rather than mirroring them in GMLoop.
  */
-export async function loadGameMakerCliCompanionCatalog(
+export function loadGameMakerCliCompanionCatalog(
     options: Readonly<{
         projectRoot: string | null;
         toolPath?: string | null;
@@ -193,7 +193,7 @@ export async function loadGameMakerCliCompanionCatalog(
     const cacheKey = `${options.projectRoot ?? ""}:${options.toolPath ?? ""}`;
     if (!hasDependencies) {
         const cached = companionCatalogCache.get(cacheKey);
-        if (cached) {
+        if (cached !== undefined) {
             return cached;
         }
     }

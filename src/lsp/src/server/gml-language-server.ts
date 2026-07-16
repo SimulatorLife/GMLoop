@@ -283,36 +283,34 @@ export function createGmlLanguageServer(
         await connection.sendDiagnostics({ uri: document.uri, diagnostics });
     }
 
-    connection.onInitialize(
-        (): InitializeResult => ({
-            serverInfo: GML_LANGUAGE_SERVER_METADATA,
-            capabilities: {
-                textDocumentSync: TextDocumentSyncKind.Incremental,
-                documentFormattingProvider: true,
-                definitionProvider: true,
-                referencesProvider: true,
-                documentSymbolProvider: true,
-                workspaceSymbolProvider: true,
-                hoverProvider: true,
-                renameProvider: {
-                    prepareProvider: true
-                },
-                codeActionProvider: {
-                    codeActionKinds: [CodeActionKind.QuickFix, CodeActionKind.RefactorRewrite]
-                },
-                completionProvider: {
-                    triggerCharacters: [".", "_"]
-                },
-                documentHighlightProvider: true,
-                foldingRangeProvider: true,
-                selectionRangeProvider: true,
-                semanticTokensProvider: {
-                    legend: GML_SEMANTIC_TOKEN_LEGEND,
-                    full: true
-                }
+    connection.onInitialize((): InitializeResult => ({
+        serverInfo: GML_LANGUAGE_SERVER_METADATA,
+        capabilities: {
+            textDocumentSync: TextDocumentSyncKind.Incremental,
+            documentFormattingProvider: true,
+            definitionProvider: true,
+            referencesProvider: true,
+            documentSymbolProvider: true,
+            workspaceSymbolProvider: true,
+            hoverProvider: true,
+            renameProvider: {
+                prepareProvider: true
+            },
+            codeActionProvider: {
+                codeActionKinds: [CodeActionKind.QuickFix, CodeActionKind.RefactorRewrite]
+            },
+            completionProvider: {
+                triggerCharacters: [".", "_"]
+            },
+            documentHighlightProvider: true,
+            foldingRangeProvider: true,
+            selectionRangeProvider: true,
+            semanticTokensProvider: {
+                legend: GML_SEMANTIC_TOKEN_LEGEND,
+                full: true
             }
-        })
-    );
+        }
+    }));
 
     connection.onInitialized(() => {
         // Pre-load/warm the cached built-in metadata asynchronously so first hover/completion is instant

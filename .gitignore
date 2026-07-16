@@ -60,7 +60,8 @@ src/**/*.js
 .codex/*
 !.codex/config.toml
 !.codex/*-model-catalog.json
-!scripts/codex-mini.sh
+!.codex/agents/
+!.codex/agents/*.toml
 .agents/**
 !.agents/
 !.agents/**/

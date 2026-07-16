@@ -32,12 +32,7 @@ export type GraphVisualizationUiMcpServerStatus = "not-started" | "running" | "s
 
 /** Auto-Game host operation currently awaiting completion. */
 export type GraphVisualizationUiAutoGamePendingOperation =
-    | "initialize-agent-pack"
-    | "pipeline-pause"
-    | "pipeline-start"
-    | "pipeline-stop"
-    | "run-task"
-    | "skill-toggle";
+    "initialize-agent-pack" | "pipeline-pause" | "pipeline-start" | "pipeline-stop" | "run-task" | "skill-toggle";
 
 /**
  * Immutable UI state for graph/docs/config surfaces.

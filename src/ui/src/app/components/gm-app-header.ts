@@ -117,9 +117,11 @@ export class GmAppHeader extends LightDomLitElement {
                                     id="tab-graph"
                                     aria-pressed=${this.state.activePage === "graph"}
                                     aria-current=${this.#getAriaCurrentForPage("graph")}
-                                    class=${this.state.activePage === "graph"
-                                        ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
-                                        : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
+                                    class=${
+                                        this.state.activePage === "graph"
+                                            ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
+                                            : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS
+                                    }
                                     @click=${() => this.#emitNavigatePage("graph")}
                                 >
                                     Graph Index
@@ -128,9 +130,11 @@ export class GmAppHeader extends LightDomLitElement {
                                     id="tab-docs"
                                     aria-pressed=${this.state.activePage === "docs"}
                                     aria-current=${this.#getAriaCurrentForPage("docs")}
-                                    class=${this.state.activePage === "docs"
-                                        ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
-                                        : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
+                                    class=${
+                                        this.state.activePage === "docs"
+                                            ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
+                                            : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS
+                                    }
                                     @click=${() => this.#emitNavigatePage("docs")}
                                 >
                                     Docs
@@ -139,9 +143,11 @@ export class GmAppHeader extends LightDomLitElement {
                                     id="tab-config"
                                     aria-pressed=${this.state.activePage === "config"}
                                     aria-current=${this.#getAriaCurrentForPage("config")}
-                                    class=${this.state.activePage === "config"
-                                        ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
-                                        : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
+                                    class=${
+                                        this.state.activePage === "config"
+                                            ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
+                                            : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS
+                                    }
                                     @click=${() => this.#emitNavigatePage("config")}
                                 >
                                     Config
@@ -150,9 +156,11 @@ export class GmAppHeader extends LightDomLitElement {
                                     id="tab-fix"
                                     aria-pressed=${this.state.activePage === "fix"}
                                     aria-current=${this.#getAriaCurrentForPage("fix")}
-                                    class=${this.state.activePage === "fix"
-                                        ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
-                                        : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
+                                    class=${
+                                        this.state.activePage === "fix"
+                                            ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
+                                            : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS
+                                    }
                                     @click=${() => this.#emitNavigatePage("fix")}
                                 >
                                     Fix
@@ -161,9 +169,11 @@ export class GmAppHeader extends LightDomLitElement {
                                     id="tab-playground"
                                     aria-pressed=${this.state.activePage === "playground"}
                                     aria-current=${this.#getAriaCurrentForPage("playground")}
-                                    class=${this.state.activePage === "playground"
-                                        ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
-                                        : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
+                                    class=${
+                                        this.state.activePage === "playground"
+                                            ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
+                                            : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS
+                                    }
                                     @click=${() => this.#emitNavigatePage("playground")}
                                 >
                                     Playground
@@ -172,9 +182,11 @@ export class GmAppHeader extends LightDomLitElement {
                                     id="tab-auto-game"
                                     aria-pressed=${this.state.activePage === "auto-game"}
                                     aria-current=${this.#getAriaCurrentForPage("auto-game")}
-                                    class=${this.state.activePage === "auto-game"
-                                        ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
-                                        : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
+                                    class=${
+                                        this.state.activePage === "auto-game"
+                                            ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
+                                            : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS
+                                    }
                                     @click=${() => this.#emitNavigatePage("auto-game")}
                                 >
                                     Auto-Game
@@ -183,9 +195,11 @@ export class GmAppHeader extends LightDomLitElement {
                                     id="tab-live-reload"
                                     aria-pressed=${this.state.activePage === liveReloadPage}
                                     aria-current=${this.#getAriaCurrentForPage(liveReloadPage)}
-                                    class=${this.state.activePage === liveReloadPage
-                                        ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
-                                        : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
+                                    class=${
+                                        this.state.activePage === liveReloadPage
+                                            ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
+                                            : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS
+                                    }
                                     @click=${() => this.#emitNavigatePage(liveReloadPage)}
                                 >
                                     Live Reload

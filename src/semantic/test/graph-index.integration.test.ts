@@ -1567,8 +1567,7 @@ void test("buildGraphIndex projects the project manifest as the connected projec
                     `
                 )
                 .get("InterplanetaryFootball.yyp") as
-                | { id: string; kind: string; name: string; resourcePath: string; summary: string }
-                | undefined;
+                { id: string; kind: string; name: string; resourcePath: string; summary: string } | undefined;
             assert.ok(projectNode);
             assert.equal(projectNode.id, "project::resource::InterplanetaryFootball.yyp");
             assert.equal(projectNode.kind, "project");
@@ -2215,8 +2214,7 @@ void test("buildGraphIndex projects GameMaker folders as resource nodes for visu
                     "SELECT kind, name, display_name AS displayName, resource_path AS resourcePath FROM nodes WHERE id = ?"
                 )
                 .get(folderNodeId) as
-                | { displayName: string; kind: string; name: string; resourcePath: string }
-                | undefined;
+                { displayName: string; kind: string; name: string; resourcePath: string } | undefined;
             assert.ok(folderNode, "expected graph database to include the folder resource node");
             assert.equal(folderNode.displayName, "Rooms");
             assert.equal(folderNode.kind, "folder");

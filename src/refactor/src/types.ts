@@ -325,8 +325,7 @@ export interface RefactorCodemodConfigMap {
  * Config payload for a single registered codemod.
  */
 export type RefactorCodemodConfigEntry<T extends RefactorCodemodId = RefactorCodemodId> =
-    | RefactorCodemodConfigMap[T]
-    | false;
+    RefactorCodemodConfigMap[T] | false;
 
 /**
  * Refactor-specific configuration loaded from the `refactor` section of `gmloop.json`.

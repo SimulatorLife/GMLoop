@@ -129,7 +129,7 @@ async function pathExists(candidatePath: string): Promise<boolean> {
     }
 }
 
-async function detectAgentCli(
+function detectAgentCli(
     cliName: string,
     projectRoot: string,
     commandRunner: AgentCliCommandRunner
@@ -137,7 +137,7 @@ async function detectAgentCli(
     const isDefaultRunner = commandRunner === runAgentCliCommand;
     if (isDefaultRunner) {
         const cached = agentCliCache.get(cliName);
-        if (cached) {
+        if (cached !== undefined) {
             return cached;
         }
     }

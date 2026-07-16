@@ -430,7 +430,7 @@ function containsCommentSyntax(text: string): boolean {
 
     const scanState = createStringCommentScanState();
     const length = text.length;
-    for (let index = 0; index < length; ) {
+    for (let index = 0; index < length;) {
         const nextIndex = advanceStringCommentScan(text, length, index, scanState, true);
         if (nextIndex !== index) {
             if (scanState.inBlockComment || scanState.inLineComment) {

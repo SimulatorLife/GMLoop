@@ -2,15 +2,7 @@
  * Supported top-level UI surface identifiers.
  */
 export type UISurfaceId =
-    | "ast"
-    | "config"
-    | "docs"
-    | "fix"
-    | "graph"
-    | "live-reload"
-    | "auto-game"
-    | "rules"
-    | "playground";
+    "ast" | "config" | "docs" | "fix" | "graph" | "live-reload" | "auto-game" | "rules" | "playground";
 
 /**
  * Delivery status for a top-level UI surface.

@@ -309,8 +309,7 @@ export function normalizeGameMakerType(typeText: string) {
 
             if (typeof normalizedValue === STRING_TYPE) {
                 const canonicalPrefix = docCommentTypeNormalization.getCanonicalSpecifierName(normalizedValue) as
-                    | string
-                    | null;
+                    string | null;
 
                 if (typeof canonicalPrefix === "string" && isDotSeparatedTypeSpecifierPrefix(index)) {
                     normalizedValue = canonicalPrefix;

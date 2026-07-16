@@ -58,14 +58,7 @@ export type GraphVisualizationNodeKind =
  * Edge kinds rendered by the graph-index visualization UI.
  */
 export type GraphVisualizationEdgeType =
-    | "calls"
-    | "contains"
-    | "defines"
-    | "depends_on"
-    | "inherits"
-    | "placed_in_room"
-    | "references"
-    | "uses_toolset";
+    "calls" | "contains" | "defines" | "depends_on" | "inherits" | "placed_in_room" | "references" | "uses_toolset";
 
 /**
  * Graph metadata embedded into the graph-index visualization document.

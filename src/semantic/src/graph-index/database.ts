@@ -601,8 +601,7 @@ export function openExistingGraphIndexDatabase(databasePath: string): GraphDatab
 export function readGraphIndexSchemaVersion(database: GraphDatabase): number | null {
     try {
         const row = database.prepare("SELECT value FROM schema_meta WHERE key = 'schema_version'").get() as
-            | { value: string }
-            | undefined;
+            { value: string } | undefined;
         const parsedVersion = Number.parseInt(row?.value ?? "", 10);
         return Number.isFinite(parsedVersion) ? parsedVersion : null;
     } catch {

@@ -5,7 +5,7 @@ model_verbosity = "low"
 approval_policy = "never"
 model_supports_reasoning_summaries = true # Force reasoning summary metadata, not reasoning itself
 personality = "pragmatic"
-sandbox_mode = "workspace-write"
+sandbox_mode = "danger-full-access"
 background_terminal_max_timeout = 600000
 
 [shell_environment_policy.set]
@@ -84,3 +84,11 @@ writable_roots = [
 [agents]
 max_threads = 5
 max_depth = 1
+
+[agents.minimax_explorer]
+description = "MiniMax-M3 read-only explorer for locating code, tracing symbols and modules, answering codebase questions, and returning concise evidence-backed summaries."
+config_file = "./agents/minimax_explorer.toml"
+
+[agents.minimax_worker]
+description = "MiniMax-M3 implementation worker for bounded coding tasks, fixes, tests, refactors, and documentation changes assigned by the parent agent."
+config_file = "./agents/minimax_worker.toml"

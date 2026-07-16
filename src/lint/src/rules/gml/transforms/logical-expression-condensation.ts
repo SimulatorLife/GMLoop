@@ -117,7 +117,7 @@ function condenseWithinStatements(
         return;
     }
 
-    for (let index = 0; index < statements.length; ) {
+    for (let index = 0; index < statements.length;) {
         const statement = statements[index];
         if (!isNode(statement)) {
             index += 1;

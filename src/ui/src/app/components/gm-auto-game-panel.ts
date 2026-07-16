@@ -128,16 +128,18 @@ export class GmAutoGamePanel extends LightDomLitElement {
                         <p>Recent workflow milestones and task activity.</p>
                     </div>
                 </div>
-                ${events.length === 0
-                    ? html`
-                          <p class="gm-empty">
-                              Pipeline history from .gmloop/agent-log.jsonl and task events will appear here once a host
-                              reports it.
-                          </p>
-                      `
-                    : html`<ol class="auto-game-feed-list">
-                          ${events.map((event) => this.#renderPipelineEvent(event))}
-                      </ol>`}
+                ${
+                    events.length === 0
+                        ? html`
+                              <p class="gm-empty">
+                                  Pipeline history from .gmloop/agent-log.jsonl and task events will appear here once a
+                                  host reports it.
+                              </p>
+                          `
+                        : html`<ol class="auto-game-feed-list">
+                              ${events.map((event) => this.#renderPipelineEvent(event))}
+                          </ol>`
+                }
             </article>
         `;
     }
@@ -160,16 +162,20 @@ export class GmAutoGamePanel extends LightDomLitElement {
                     <div class="auto-game-skill-item__identity">
                         <strong>${skill.name}</strong>
                         <gm-badge
-                            .label=${skill.status === "available"
-                                ? "Skill (Detected)"
-                                : skill.status === "unreadable"
-                                  ? "Skill (Unreadable)"
-                                  : "Skill (Packaged)"}
-                            .tone=${skill.status === "available"
-                                ? "success"
-                                : skill.status === "unreadable"
-                                  ? "error"
-                                  : "muted"}
+                            .label=${
+                                skill.status === "available"
+                                    ? "Skill (Detected)"
+                                    : skill.status === "unreadable"
+                                      ? "Skill (Unreadable)"
+                                      : "Skill (Packaged)"
+                            }
+                            .tone=${
+                                skill.status === "available"
+                                    ? "success"
+                                    : skill.status === "unreadable"
+                                      ? "error"
+                                      : "muted"
+                            }
                         ></gm-badge>
                     </div>
                     <label class="auto-game-skill-toggle">
@@ -201,9 +207,11 @@ export class GmAutoGamePanel extends LightDomLitElement {
                     </label>
                 </div>
                 <p>${skill.description}</p>
-                ${skill.diagnostic
-                    ? html`<p class="auto-game-skill-item__diagnostic" role="status">${skill.diagnostic}</p>`
-                    : nothing}
+                ${
+                    skill.diagnostic
+                        ? html`<p class="auto-game-skill-item__diagnostic" role="status">${skill.diagnostic}</p>`
+                        : nothing
+                }
                 <code class="auto-game-item-meta">${skill.sourcePath}</code>
             </li>
         `;
@@ -294,9 +302,11 @@ export class GmAutoGamePanel extends LightDomLitElement {
                         <span>
                             <strong>${agentConfig.label}</strong>
                             <small
-                                >${agentConfig.cliInstalled
-                                    ? (agentConfig.cliVersion ?? agentConfig.cliName)
-                                    : "CLI not detected"}</small
+                                >${
+                                    agentConfig.cliInstalled
+                                        ? (agentConfig.cliVersion ?? agentConfig.cliName)
+                                        : "CLI not detected"
+                                }</small
                             >
                         </span>
                     </label>
@@ -306,14 +316,18 @@ export class GmAutoGamePanel extends LightDomLitElement {
                     ></gm-badge>
                 </div>
                 <p>${agentConfig.statusDetail}</p>
-                ${agentConfig.configPaths.length > 0
-                    ? html`<code class="auto-game-item-meta">${agentConfig.configPaths.join(", ")}</code>`
-                    : nothing}
-                ${agentConfig.status === "manual-required"
-                    ? html`<ul class="auto-game-agent-config__manual">
-                          ${agentConfig.manualInstructions.map((instruction) => html`<li>${instruction}</li>`)}
-                      </ul>`
-                    : nothing}
+                ${
+                    agentConfig.configPaths.length > 0
+                        ? html`<code class="auto-game-item-meta">${agentConfig.configPaths.join(", ")}</code>`
+                        : nothing
+                }
+                ${
+                    agentConfig.status === "manual-required"
+                        ? html`<ul class="auto-game-agent-config__manual">
+                              ${agentConfig.manualInstructions.map((instruction) => html`<li>${instruction}</li>`)}
+                          </ul>`
+                        : nothing
+                }
             </li>
         `;
     }
@@ -429,57 +443,63 @@ export class GmAutoGamePanel extends LightDomLitElement {
                         <h3 class="gm-card__heading">AI Skills & Guidance</h3>
                         <p>Configure the skills and templates included in Auto-Game.</p>
                     </div>
-                    ${totalItemsCount > 0
-                        ? html`<gm-badge .label=${`${totalItemsCount} Resources`}></gm-badge>`
-                        : nothing}
+                    ${
+                        totalItemsCount > 0
+                            ? html`<gm-badge .label=${`${totalItemsCount} Resources`}></gm-badge>`
+                            : nothing
+                    }
                 </div>
-                ${shouldOfferAgentPackAction
-                    ? html`
-                          <div class="gm-empty auto-game-skill-empty">
-                              <gm-badge .label=${agentPackNoticeLabel} .tone=${agentPackNoticeTone}></gm-badge>
-                              <p>${agentPackNoticeText}</p>
-                              <label class="auto-game-initialize-option">
-                                  <input
-                                      type="checkbox"
-                                      .checked=${this.includeGitIgnore}
-                                      ?disabled=${isSkillMutationPending}
-                                      @change=${(event: Event) => {
+                ${
+                    shouldOfferAgentPackAction
+                        ? html`
+                              <div class="gm-empty auto-game-skill-empty">
+                                  <gm-badge .label=${agentPackNoticeLabel} .tone=${agentPackNoticeTone}></gm-badge>
+                                  <p>${agentPackNoticeText}</p>
+                                  <label class="auto-game-initialize-option">
+                                      <input
+                                          type="checkbox"
+                                          .checked=${this.includeGitIgnore}
+                                          ?disabled=${isSkillMutationPending}
+                                          @change=${(event: Event) => {
                                           this.includeGitIgnore = (event.target as HTMLInputElement).checked;
                                       }}
-                                  />
-                                  <span>
-                                      <strong>Update Project .gitignore</strong>
-                                      <small>
-                                          Ignore GMLoop caches, local dependencies, and browser automation artifacts.
-                                      </small>
-                                  </span>
-                              </label>
-                              <label class="auto-game-initialize-option">
-                                  <input
-                                      type="checkbox"
-                                      .checked=${this.includeVSCode}
-                                      ?disabled=${isSkillMutationPending}
-                                      @change=${(event: Event) => {
+                                      />
+                                      <span>
+                                          <strong>Update Project .gitignore</strong>
+                                          <small>
+                                              Ignore GMLoop caches, local dependencies, and browser automation
+                                              artifacts.
+                                          </small>
+                                      </span>
+                                  </label>
+                                  <label class="auto-game-initialize-option">
+                                      <input
+                                          type="checkbox"
+                                          .checked=${this.includeVSCode}
+                                          ?disabled=${isSkillMutationPending}
+                                          @change=${(event: Event) => {
                                           this.includeVSCode = (event.target as HTMLInputElement).checked;
                                       }}
-                                  />
-                                  <span>
-                                      <strong>Set Up VSCode</strong>
-                                      <small>
-                                          Add project VSCode LSP settings and try to install the GMLoop extension.
-                                      </small>
-                                  </span>
-                              </label>
-                              ${this.#renderAgentConfigTargets(agentConfigs, isSkillMutationPending)}
-                              <button
-                                  id="initialize-auto-game-agent-pack"
-                                  class="gm-btn ${agentPack?.status === "current" ? "" : "gm-btn--primary"}"
-                                  type="button"
-                                  ?disabled=${!this.#hasPipelineController() ||
-                                  this.model?.loadedTarget === null ||
-                                  isSkillMutationPending}
-                                  aria-busy=${isAgentPackPending ? "true" : "false"}
-                                  @click=${() => {
+                                      />
+                                      <span>
+                                          <strong>Set Up VSCode</strong>
+                                          <small>
+                                              Add project VSCode LSP settings and try to install the GMLoop extension.
+                                          </small>
+                                      </span>
+                                  </label>
+                                  ${this.#renderAgentConfigTargets(agentConfigs, isSkillMutationPending)}
+                                  <button
+                                      id="initialize-auto-game-agent-pack"
+                                      class="gm-btn ${agentPack?.status === "current" ? "" : "gm-btn--primary"}"
+                                      type="button"
+                                      ?disabled=${
+                                      !this.#hasPipelineController() ||
+                                      this.model?.loadedTarget === null ||
+                                      isSkillMutationPending
+                                  }
+                                      aria-busy=${isAgentPackPending ? "true" : "false"}
+                                      @click=${() => {
                                       this.dispatchEvent(
                                           new CustomEvent<GraphUiInitializeAutoGameAgentPackDetail>(
                                               GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK,
@@ -495,25 +515,30 @@ export class GmAutoGamePanel extends LightDomLitElement {
                                           )
                                       );
                                   }}
-                              >
-                                  ${renderProcessButtonContent({
+                                  >
+                                      ${renderProcessButtonContent({
                                       label: agentPackActionLabel,
                                       pending: isAgentPackPending
                                   })}
-                              </button>
-                          </div>
-                      `
-                    : nothing}
-                ${agentPack !== undefined && agentPack.conflicts.length > 0
-                    ? html`<p class="auto-game-skill-item__diagnostic auto-game-conflict-notice" role="status">
-                          Preserved project-modified agent-pack files: ${agentPack.conflicts.join(", ")}
-                      </p>`
-                    : nothing}
-                ${this.model?.loadedTarget === null && totalItemsCount > 0
-                    ? html`<p class="auto-game-skill-unloaded-notice">
-                          Open a GameMaker project to discover its Auto-Game skills.
-                      </p>`
-                    : nothing}
+                                  </button>
+                              </div>
+                          `
+                        : nothing
+                }
+                ${
+                    agentPack !== undefined && agentPack.conflicts.length > 0
+                        ? html`<p class="auto-game-skill-item__diagnostic auto-game-conflict-notice" role="status">
+                              Preserved project-modified agent-pack files: ${agentPack.conflicts.join(", ")}
+                          </p>`
+                        : nothing
+                }
+                ${
+                    this.model?.loadedTarget === null && totalItemsCount > 0
+                        ? html`<p class="auto-game-skill-unloaded-notice">
+                              Open a GameMaker project to discover its Auto-Game skills.
+                          </p>`
+                        : nothing
+                }
                 <details class="auto-game-skill-disclosure">
                     <summary>
                         <span>
@@ -522,20 +547,24 @@ export class GmAutoGamePanel extends LightDomLitElement {
                         </span>
                         <gm-badge .label=${String(totalItemsCount)}></gm-badge>
                     </summary>
-                    ${totalItemsCount === 0
-                        ? html`
-                              <div class="gm-empty auto-game-skill-empty auto-game-skill-empty--skills">
-                                  <p>
-                                      ${this.model?.loadedTarget === null
-                                          ? "Open a GameMaker project to discover its Auto-Game skills."
-                                          : "No Auto-Game skills or templates are available."}
-                                  </p>
-                              </div>
-                          `
-                        : html`<ul class="auto-game-skill-list">
-                              ${skillsToDisplay.map((skill) => this.#renderUnifiedSkill(skill))}
-                              ${templateItems.map((template) => this.#renderUnifiedTemplate(template))}
-                          </ul>`}
+                    ${
+                        totalItemsCount === 0
+                            ? html`
+                                  <div class="gm-empty auto-game-skill-empty auto-game-skill-empty--skills">
+                                      <p>
+                                          ${
+                                          this.model?.loadedTarget === null
+                                              ? "Open a GameMaker project to discover its Auto-Game skills."
+                                              : "No Auto-Game skills or templates are available."
+                                      }
+                                      </p>
+                                  </div>
+                              `
+                            : html`<ul class="auto-game-skill-list">
+                                  ${skillsToDisplay.map((skill) => this.#renderUnifiedSkill(skill))}
+                                  ${templateItems.map((template) => this.#renderUnifiedTemplate(template))}
+                              </ul>`
+                    }
                 </details>
             </article>
         `;
@@ -565,16 +594,18 @@ export class GmAutoGamePanel extends LightDomLitElement {
                         <p>Planning notes and model output reported by the host.</p>
                     </div>
                 </div>
-                ${llmOutputs.length === 0
-                    ? html`
-                          <p class="gm-empty">
-                              Host-provided planning notes, thought summaries, or model output snippets will appear
-                              here.
-                          </p>
-                      `
-                    : html`<ol class="auto-game-llm-list">
-                          ${llmOutputs.map((output) => this.#renderLlmOutput(output))}
-                      </ol>`}
+                ${
+                    llmOutputs.length === 0
+                        ? html`
+                              <p class="gm-empty">
+                                  Host-provided planning notes, thought summaries, or model output snippets will appear
+                                  here.
+                              </p>
+                          `
+                        : html`<ol class="auto-game-llm-list">
+                              ${llmOutputs.map((output) => this.#renderLlmOutput(output))}
+                          </ol>`
+                }
             </article>
         `;
     }
@@ -626,9 +657,11 @@ export class GmAutoGamePanel extends LightDomLitElement {
 
         return html`
             <section id="auto-game-page" class=${autoGamePageClassName}>
-                ${this.state.autoGameErrorMessage
-                    ? html`<gm-error-banner .message=${this.state.autoGameErrorMessage}></gm-error-banner>`
-                    : nothing}
+                ${
+                    this.state.autoGameErrorMessage
+                        ? html`<gm-error-banner .message=${this.state.autoGameErrorMessage}></gm-error-banner>`
+                        : nothing
+                }
                 <div id="auto-game-content" class="auto-game-dashboard">
                     <section class="auto-game-primary-grid" aria-label="Auto-Game operations">
                         ${this.#renderAiSkills()}

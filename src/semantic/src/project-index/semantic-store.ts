@@ -541,26 +541,24 @@ function readSemanticSnapshot(
             "SELECT symbol_id, kind, name, display_name, defining_file_path, scope_id, documentation_json FROM semantic_symbols WHERE project_root = ? AND tier = ? ORDER BY symbol_id"
         )
         .all(projectRoot, tier)
-        .flatMap(
-            (row): ReadonlyArray<SemanticSymbol> =>
-                typeof row.symbol_id === "string" &&
-                typeof row.kind === "string" &&
-                typeof row.name === "string" &&
-                typeof row.display_name === "string" &&
-                typeof row.documentation_json === "string"
-                    ? [
-                          Object.freeze({
-                              definingFilePath:
-                                  typeof row.defining_file_path === "string" ? row.defining_file_path : null,
-                              displayName: row.display_name,
-                              documentation: parsePersistedDocumentation(row.documentation_json),
-                              kind: row.kind,
-                              name: row.name,
-                              scopeId: typeof row.scope_id === "string" ? row.scope_id : null,
-                              symbolId: row.symbol_id
-                          })
-                      ]
-                    : []
+        .flatMap((row): ReadonlyArray<SemanticSymbol> =>
+            typeof row.symbol_id === "string" &&
+            typeof row.kind === "string" &&
+            typeof row.name === "string" &&
+            typeof row.display_name === "string" &&
+            typeof row.documentation_json === "string"
+                ? [
+                      Object.freeze({
+                          definingFilePath: typeof row.defining_file_path === "string" ? row.defining_file_path : null,
+                          displayName: row.display_name,
+                          documentation: parsePersistedDocumentation(row.documentation_json),
+                          kind: row.kind,
+                          name: row.name,
+                          scopeId: typeof row.scope_id === "string" ? row.scope_id : null,
+                          symbolId: row.symbol_id
+                      })
+                  ]
+                : []
         );
     const occurrences = database
         .prepare(
@@ -606,42 +604,40 @@ function readSemanticSnapshot(
             "SELECT scope_id, kind, name, display_name, resource_path FROM semantic_scopes WHERE project_root = ? AND tier = ? ORDER BY scope_id"
         )
         .all(projectRoot, tier)
-        .flatMap(
-            (row): ReadonlyArray<SemanticScope> =>
-                typeof row.scope_id === "string" &&
-                typeof row.kind === "string" &&
-                typeof row.name === "string" &&
-                typeof row.display_name === "string"
-                    ? [
-                          Object.freeze({
-                              displayName: row.display_name,
-                              filePaths: Object.freeze(scopeFilePaths.get(row.scope_id) ?? []),
-                              kind: row.kind,
-                              name: row.name,
-                              resourcePath: typeof row.resource_path === "string" ? row.resource_path : null,
-                              scopeId: row.scope_id
-                          })
-                      ]
-                    : []
+        .flatMap((row): ReadonlyArray<SemanticScope> =>
+            typeof row.scope_id === "string" &&
+            typeof row.kind === "string" &&
+            typeof row.name === "string" &&
+            typeof row.display_name === "string"
+                ? [
+                      Object.freeze({
+                          displayName: row.display_name,
+                          filePaths: Object.freeze(scopeFilePaths.get(row.scope_id) ?? []),
+                          kind: row.kind,
+                          name: row.name,
+                          resourcePath: typeof row.resource_path === "string" ? row.resource_path : null,
+                          scopeId: row.scope_id
+                      })
+                  ]
+                : []
         );
     const resources = database
         .prepare(
             "SELECT resource_path, name, resource_type FROM semantic_resources WHERE project_root = ? AND tier = ? ORDER BY resource_path"
         )
         .all(projectRoot, tier)
-        .flatMap(
-            (row): ReadonlyArray<SemanticResource> =>
-                typeof row.resource_path === "string" &&
-                typeof row.name === "string" &&
-                typeof row.resource_type === "string"
-                    ? [
-                          Object.freeze({
-                              name: row.name,
-                              resourcePath: row.resource_path,
-                              resourceType: row.resource_type
-                          })
-                      ]
-                    : []
+        .flatMap((row): ReadonlyArray<SemanticResource> =>
+            typeof row.resource_path === "string" &&
+            typeof row.name === "string" &&
+            typeof row.resource_type === "string"
+                ? [
+                      Object.freeze({
+                          name: row.name,
+                          resourcePath: row.resource_path,
+                          resourceType: row.resource_type
+                      })
+                  ]
+                : []
         );
     const relationships = database
         .prepare(
@@ -677,20 +673,19 @@ function readSemanticSnapshot(
             "SELECT owner_file_path, dependent_file_path, dependency_kind, symbol_id FROM semantic_dependencies WHERE project_root = ? AND tier = ? ORDER BY owner_file_path, dependent_file_path, dependency_kind"
         )
         .all(projectRoot, tier)
-        .flatMap(
-            (row): ReadonlyArray<SemanticDependency> =>
-                typeof row.owner_file_path === "string" &&
-                typeof row.dependent_file_path === "string" &&
-                typeof row.dependency_kind === "string"
-                    ? [
-                          Object.freeze({
-                              dependentFilePath: row.dependent_file_path,
-                              kind: row.dependency_kind,
-                              ownerFilePath: row.owner_file_path,
-                              symbolId: typeof row.symbol_id === "string" ? row.symbol_id : null
-                          })
-                      ]
-                    : []
+        .flatMap((row): ReadonlyArray<SemanticDependency> =>
+            typeof row.owner_file_path === "string" &&
+            typeof row.dependent_file_path === "string" &&
+            typeof row.dependency_kind === "string"
+                ? [
+                      Object.freeze({
+                          dependentFilePath: row.dependent_file_path,
+                          kind: row.dependency_kind,
+                          ownerFilePath: row.owner_file_path,
+                          symbolId: typeof row.symbol_id === "string" ? row.symbol_id : null
+                      })
+                  ]
+                : []
         );
     const unresolvedReferences = database
         .prepare(
@@ -791,8 +786,7 @@ function readSemanticSlotState(
             "SELECT base_generation, generation, tier, source_revision FROM semantic_slots WHERE project_root = ? AND tier = ?"
         )
         .get(projectRoot, tier) as
-        | { base_generation?: number | null; generation?: number; source_revision?: string; tier?: string }
-        | undefined;
+        { base_generation?: number | null; generation?: number; source_revision?: string; tier?: string } | undefined;
     if (!row || (row.tier !== "definitions" && row.tier !== "full") || typeof row.generation !== "number") {
         return null;
     }

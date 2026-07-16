@@ -14,9 +14,11 @@ export type ProcessButtonContentOptions = Readonly<{
 export function renderProcessButtonContent(options: ProcessButtonContentOptions): TemplateResult {
     return html`
         <span class="button-content">
-            ${options.pending
-                ? html`<span class="button-spinner" aria-hidden="true"></span>`
-                : (options.idleVisual ?? nothing)}
+            ${
+                options.pending
+                    ? html`<span class="button-spinner" aria-hidden="true"></span>`
+                    : (options.idleVisual ?? nothing)
+            }
             <span class=${options.visuallyHiddenLabel === true ? "sr-only" : "button-label"}>${options.label}</span>
         </span>
     `;

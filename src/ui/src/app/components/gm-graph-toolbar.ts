@@ -459,9 +459,9 @@ export class GmGraphToolbar extends LightDomLitElement {
         return html`
             <span
                 class="pending-badge"
-                aria-label="${this.state.pendingActionCount} background operation${this.state.pendingActionCount > 1
-                    ? "s"
-                    : ""} in progress"
+                aria-label="${this.state.pendingActionCount} background operation${
+                    this.state.pendingActionCount > 1 ? "s" : ""
+                } in progress"
                 role="status"
             >
                 ${this.state.pendingActionCount}
@@ -734,20 +734,22 @@ export class GmGraphToolbar extends LightDomLitElement {
                         visuallyHiddenLabel: true
                     })}
                 </button>
-                ${runtimeUrl === null
-                    ? null
-                    : html`
-                          <a
-                              id="open-live-reload-runtime"
-                              class="live-reload-btn live-reload-btn--runtime"
-                              href=${runtimeUrl}
-                              target=${LIVE_RELOAD_RUNTIME_TAB_TARGET}
-                              rel="noreferrer"
-                              title="Open Runtime"
-                          >
-                              ${openRuntimeIcon}
-                          </a>
-                      `}
+                ${
+                    runtimeUrl === null
+                        ? null
+                        : html`
+                              <a
+                                  id="open-live-reload-runtime"
+                                  class="live-reload-btn live-reload-btn--runtime"
+                                  href=${runtimeUrl}
+                                  target=${LIVE_RELOAD_RUNTIME_TAB_TARGET}
+                                  rel="noreferrer"
+                                  title="Open Runtime"
+                              >
+                                  ${openRuntimeIcon}
+                              </a>
+                          `
+                }
                 <button
                     id="stop-live-reload"
                     type="button"
@@ -851,20 +853,28 @@ export class GmGraphToolbar extends LightDomLitElement {
                         </div>
                         <span id="toolbar-subheading">${subheading}</span>
                     </div>
-                    ${this.state.activePage === "config"
-                        ? html`<div class=${configControlsClassName}>${this.#renderConfigControls()}</div>`
-                        : null}
-                    ${this.state.activePage === "fix"
-                        ? html`<div class=${fixControlsClassName}>${this.#renderFixControls()}</div>`
-                        : null}
-                    ${this.state.activePage === LIVE_RELOAD_PAGE
-                        ? html`<div id="live-reload-controls" class=${liveReloadControlsClassName}>
-                              ${this.#renderLiveReloadControls()}
-                          </div>`
-                        : null}
-                    ${this.state.activePage === "playground"
-                        ? html`<div class="toolbar-playground-controls">${this.#renderPlaygroundControls()}</div>`
-                        : null}
+                    ${
+                        this.state.activePage === "config"
+                            ? html`<div class=${configControlsClassName}>${this.#renderConfigControls()}</div>`
+                            : null
+                    }
+                    ${
+                        this.state.activePage === "fix"
+                            ? html`<div class=${fixControlsClassName}>${this.#renderFixControls()}</div>`
+                            : null
+                    }
+                    ${
+                        this.state.activePage === LIVE_RELOAD_PAGE
+                            ? html`<div id="live-reload-controls" class=${liveReloadControlsClassName}>
+                                  ${this.#renderLiveReloadControls()}
+                              </div>`
+                            : null
+                    }
+                    ${
+                        this.state.activePage === "playground"
+                            ? html`<div class="toolbar-playground-controls">${this.#renderPlaygroundControls()}</div>`
+                            : null
+                    }
                     ${this.state.activePage === "docs" ? this.#renderDocsSearchControls() : null}
                 </div>
                 <div id="graph-controls" class=${graphControlsClassName}>
@@ -896,11 +906,13 @@ export class GmGraphToolbar extends LightDomLitElement {
                             @click=${() => this.#emitCycleLabelMode()}
                         >
                             Labels:
-                            ${this.state.labelMode === "always"
-                                ? "On"
-                                : this.state.labelMode === "hidden"
-                                  ? "Off"
-                                  : "Auto"}
+                            ${
+                                this.state.labelMode === "always"
+                                    ? "On"
+                                    : this.state.labelMode === "hidden"
+                                      ? "Off"
+                                      : "Auto"
+                            }
                         </button>
                     </div>
                     <div class="toolbar-control-group">
@@ -912,22 +924,24 @@ export class GmGraphToolbar extends LightDomLitElement {
                         >
                             Reset
                         </button>
-                        ${this.model.isServerMode
-                            ? html`
-                                  <button
-                                      id="regenerate"
-                                      class="gm-btn--chip"
-                                      ?disabled=${this.state.isRegeneratePending || !hasLoadedProject}
-                                      aria-busy=${this.state.isRegeneratePending ? "true" : "false"}
-                                      @click=${() => this.#emitRegenerate()}
-                                  >
-                                      ${renderProcessButtonContent({
+                        ${
+                            this.model.isServerMode
+                                ? html`
+                                      <button
+                                          id="regenerate"
+                                          class="gm-btn--chip"
+                                          ?disabled=${this.state.isRegeneratePending || !hasLoadedProject}
+                                          aria-busy=${this.state.isRegeneratePending ? "true" : "false"}
+                                          @click=${() => this.#emitRegenerate()}
+                                      >
+                                          ${renderProcessButtonContent({
                                           label: "Regenerate",
                                           pending: this.state.isRegeneratePending
                                       })}
-                                  </button>
-                              `
-                            : null}
+                                      </button>
+                                  `
+                                : null
+                        }
                         ${this.#renderPendingBadge()}
                     </div>
                 </div>

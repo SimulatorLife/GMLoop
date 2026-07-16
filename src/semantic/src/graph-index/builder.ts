@@ -1969,8 +1969,7 @@ function shouldReprojectGraph(
     embeddingsConfig: GraphEmbeddingsConfig
 ): boolean {
     const graphRow = database.prepare("SELECT root_path AS rootPath FROM graphs WHERE id = ?").get(context.graphId) as
-        | { rootPath: string }
-        | undefined;
+        { rootPath: string } | undefined;
     if (!graphRow || graphRow.rootPath !== context.rootPath) {
         return true;
     }

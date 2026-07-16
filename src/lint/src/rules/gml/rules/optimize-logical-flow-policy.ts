@@ -112,7 +112,7 @@ export function evaluateUnsafeCommentSyntax(
 
     const sourceLength = sourceText.length;
     const scanState = Core.createStringCommentScanState();
-    for (let index = 0; index < sourceLength; ) {
+    for (let index = 0; index < sourceLength;) {
         const nextIndex = Core.advanceStringCommentScan(sourceText, sourceLength, index, scanState, true);
         if (nextIndex !== index) {
             if (scanState.inLineComment || scanState.inBlockComment) {
