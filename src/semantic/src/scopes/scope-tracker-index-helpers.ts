@@ -1,3 +1,5 @@
+import { Core } from "@gmloop/core";
+
 import type { Scope } from "./scope.js";
 import type { ScopeSummary } from "./types.js";
 
@@ -8,15 +10,6 @@ interface FilePathCollectionOptions {
     normalizePath?: PathNormalizer;
 }
 
-function isReadonlySetLike(names: Iterable<string>): names is ReadonlySet<string> {
-    if (typeof names !== "object" || names === null) {
-        return false;
-    }
-
-    const candidate = names as { size?: unknown; has?: unknown };
-    return typeof candidate.size === "number" && typeof candidate.has === "function";
-}
-
 /**
  * Collects non-empty symbol names while preserving first-seen order.
  *
@@ -24,7 +17,7 @@ function isReadonlySetLike(names: Iterable<string>): names is ReadonlySet<string
  * deduplication Set for hot-reload workflows that already pass unique names.
  */
 export function collectUniqueSymbolNames(names: Iterable<string>): string[] {
-    if (isReadonlySetLike(names)) {
+    if (Core.isSetLike(names)) {
         const uniqueNames: string[] = [];
         for (const name of names) {
             if (!name) {
@@ -54,9 +47,7 @@ export function collectUniqueSymbolNames(names: Iterable<string>): string[] {
  * Normalizes a tracked file path to POSIX separators for stable indexing.
  */
 export function normalizeTrackedPath(path: string): string {
-    // Most tracked paths are already POSIX-style, so avoid the replaceAll()
-    // scan and string allocation on that common case.
-    return path.includes("\\") ? path.replaceAll("\\", "/") : path;
+    return Core.toPosixPath(path);
 }
 
 /**

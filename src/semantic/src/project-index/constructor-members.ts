@@ -211,7 +211,7 @@ function readAssignedInstanceVariableIdentifier(node: AstNodeRecord): AstNodeRec
 
     if (readIdentifierName(node.left) !== null) {
         const classifications = Core.asArray(node.left.classifications);
-        const hasLexicalDeclaration = isAstNodeRecord(node.left.declaration);
+        const hasLexicalDeclaration = Core.isObjectLike(node.left.declaration);
         const isGlobal = classifications.includes("global") || node.left.isGlobalIdentifier === true;
         return hasLexicalDeclaration || isGlobal ? null : node.left;
     }
@@ -257,7 +257,7 @@ function collectInstanceVariableReferencesFromRoot(
             variableIdentifier = node.property;
         } else if (node.type === "Identifier") {
             const classifications = Core.asArray(node.classifications);
-            const hasLexicalDeclaration = isAstNodeRecord(node.declaration);
+            const hasLexicalDeclaration = Core.isObjectLike(node.declaration);
             if (!classifications.includes("property") && !hasLexicalDeclaration) {
                 variableIdentifier = node;
             }

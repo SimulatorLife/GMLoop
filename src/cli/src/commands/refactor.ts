@@ -78,9 +78,10 @@ function readProjectParseContext(context: unknown): ProjectParseContext {
     if (!Core.isObjectLike(context)) {
         return {};
     }
+    const contextObj = context as Record<string, unknown>;
     return {
-        ...(typeof context.filePath === "string" ? { filePath: context.filePath } : {}),
-        ...(typeof context.projectRoot === "string" ? { projectRoot: context.projectRoot } : {})
+        ...(typeof contextObj.filePath === "string" ? { filePath: contextObj.filePath } : {}),
+        ...(typeof contextObj.projectRoot === "string" ? { projectRoot: contextObj.projectRoot } : {})
     };
 }
 

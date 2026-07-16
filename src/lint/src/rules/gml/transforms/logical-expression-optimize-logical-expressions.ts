@@ -65,7 +65,7 @@ function visitStatementChildrenWithStatementListProcessor(
     if (Array.isArray(nodeRecord.body)) {
         processStatementList(nodeRecord.body as StatementList);
     } else if (Core.isObjectLike(nodeRecord.body)) {
-        visitStatementChildren(nodeRecord.body);
+        visitStatementChildren(nodeRecord.body as MutableGameMakerAstNode);
     }
 
     if (statement.type === "IfStatement") {

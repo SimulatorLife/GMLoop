@@ -1,12 +1,12 @@
 import { Core, type GameMakerAstNode, type MutableGameMakerAstNode } from "@gmloop/core";
 
+import { SCOPE_OVERRIDE_KEYWORD } from "./scope-override-keywords.js";
 import { ScopeTracker } from "./scope-tracker.js";
 import type { ScopeRole } from "./types.js";
 
 type BindableAstNode = MutableGameMakerAstNode & { type: string };
 type BindableIdentifierNode = BindableAstNode & { name: string; type: "Identifier" };
 
-const GLOBAL_SCOPE_OVERRIDE = "global";
 const VARIABLE_DECLARATION_ROLE: ScopeRole = Object.freeze({ kind: "variable", type: "declaration" });
 const PARAMETER_DECLARATION_ROLE: ScopeRole = Object.freeze({ kind: "parameter", type: "declaration" });
 const STRUCT_DECLARATION_ROLE: ScopeRole = Object.freeze({ kind: "struct", type: "declaration" });
@@ -16,19 +16,19 @@ const PROPERTY_REFERENCE_ROLE: ScopeRole = Object.freeze({ kind: "property", typ
 const TYPE_REFERENCE_ROLE: ScopeRole = Object.freeze({ kind: "type", type: "reference" });
 const GLOBAL_VARIABLE_DECLARATION_ROLE: ScopeRole = Object.freeze({
     kind: "variable",
-    scopeOverride: GLOBAL_SCOPE_OVERRIDE,
+    scopeOverride: SCOPE_OVERRIDE_KEYWORD,
     tags: ["global"],
     type: "declaration"
 });
 const GLOBAL_VARIABLE_REFERENCE_ROLE: ScopeRole = Object.freeze({
     kind: "variable",
-    scopeOverride: GLOBAL_SCOPE_OVERRIDE,
+    scopeOverride: SCOPE_OVERRIDE_KEYWORD,
     tags: ["global"],
     type: "reference"
 });
 const GLOBAL_MACRO_DECLARATION_ROLE: ScopeRole = Object.freeze({
     kind: "macro",
-    scopeOverride: GLOBAL_SCOPE_OVERRIDE,
+    scopeOverride: SCOPE_OVERRIDE_KEYWORD,
     tags: ["global"],
     type: "declaration"
 });
@@ -199,7 +199,7 @@ function bindMemberDotExpression(coordinator: ScopeTracker, expression: Bindable
         bindNode(coordinator, receiver);
     }
 
-    const isGlobalReceiver = readIdentifier(receiver)?.name === GLOBAL_SCOPE_OVERRIDE;
+    const isGlobalReceiver = readIdentifier(receiver)?.name === SCOPE_OVERRIDE_KEYWORD;
     bindIdentifier(
         coordinator,
         expression.property,
