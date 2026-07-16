@@ -26,6 +26,7 @@
       "context_window": 1000000,
       "max_context_window": 1000000,
       "auto_compact_token_limit": 600000,
+      "requires_openai_auth": true,
       "truncation_policy": {
         "mode": "bytes",
         "limit": 10000

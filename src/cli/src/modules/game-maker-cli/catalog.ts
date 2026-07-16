@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
@@ -218,15 +219,43 @@ export async function loadGameMakerCliCompanionCatalog(
         const invocationDisplayName = versionSnapshot.invocation.displayName;
         const version = versionSnapshot.output.stdout.trim().length > 0 ? versionSnapshot.output.stdout.trim() : null;
 
-        let rootHelpSnapshot: GameMakerCliTextCommandSnapshot;
-        try {
-            rootHelpSnapshot = await runGameMakerCliTextCommand(["--help"], executionOptions, executeCommand);
-        } catch (error) {
-            return createUnavailableGameMakerCliCompanionCatalog(error, invocationDisplayName, version);
+        let cliCommands: ReadonlyArray<GameMakerCliCommandCatalogEntry> | null = null;
+        const cacheFilePath = options.projectRoot
+            ? path.join(options.projectRoot, ".gmloop", "gm-cli-commands-cache.json")
+            : null;
+
+        if (cacheFilePath && version !== null) {
+            try {
+                const cacheContent = await readFile(cacheFilePath, "utf8");
+                const cacheData = JSON.parse(cacheContent);
+                if (cacheData && cacheData.version === version && Array.isArray(cacheData.commands)) {
+                    cliCommands = cacheData.commands;
+                }
+            } catch {
+                // Ignore cache read failures and re-query
+            }
         }
 
-        const rootHelp = parseGameMakerCliHelp(rootHelpSnapshot.output.stdout);
-        const cliCommands = await collectGameMakerCliLeafCommands([], rootHelp, executionOptions, executeCommand);
+        if (cliCommands === null) {
+            let rootHelpSnapshot: GameMakerCliTextCommandSnapshot;
+            try {
+                rootHelpSnapshot = await runGameMakerCliTextCommand(["--help"], executionOptions, executeCommand);
+            } catch (error) {
+                return createUnavailableGameMakerCliCompanionCatalog(error, invocationDisplayName, version);
+            }
+
+            const rootHelp = parseGameMakerCliHelp(rootHelpSnapshot.output.stdout);
+            cliCommands = await collectGameMakerCliLeafCommands([], rootHelp, executionOptions, executeCommand);
+
+            if (cacheFilePath && version !== null) {
+                try {
+                    await mkdir(path.dirname(cacheFilePath), { recursive: true });
+                    await writeFile(cacheFilePath, JSON.stringify({ version, commands: cliCommands }, null, 2), "utf8");
+                } catch {
+                    // Ignore cache write failures
+                }
+            }
+        }
         const resolvedProjectPath = await resolveSingleProjectManifestPathOrNull(options.projectRoot);
         const configuredExternalMcpServer = await discoverConfiguredMcpServer(options.projectRoot);
 
