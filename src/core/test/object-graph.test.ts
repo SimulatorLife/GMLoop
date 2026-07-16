@@ -53,8 +53,8 @@ void test("traverseAst visits only typed AST nodes with parent and key context",
     assert.equal(visited[0].key, null);
 
     assert.equal(visited[1].type, "FunctionDeclaration");
-    assert.ok(Array.isArray(visited[1].parent));
-    assert.equal(visited[1].key, 0);
+    assert.equal(visited[1].parent, ast);
+    assert.equal(visited[1].key, "body");
 
     assert.equal(visited[2].type, "Identifier");
     assert.equal(visited[3].type, "Identifier");

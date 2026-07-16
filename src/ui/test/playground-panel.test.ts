@@ -368,7 +368,10 @@ void test("playground panel falls back to workspace catalogs when project config
     assert.match(rendered, /Format Options/u);
     assert.match(rendered, /Lint Rules/u);
     assert.match(rendered, /Codemods/u);
-    assert.match(rendered, /Set formatter values in <code>gmloop\.json<\/code> to apply Playground format options\./u);
+    assert.match(
+        rendered,
+        /Set formatter values in <code>gmloop\.json<\/code> to apply Playground format\s+options\./u
+    );
 });
 
 /**

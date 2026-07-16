@@ -1277,3 +1277,33 @@ void test("semantic index reconciles closed-session disk edits through one resta
         await fixture.cleanup();
     }
 });
+
+void test("semantic index exposes indexProjectRoot to perform background project-wide analysis without open documents", async () => {
+    const fixture = await createTwoScriptProject();
+    const store = Lsp.createGmlDocumentStore();
+    const semanticIndex = createTestSemanticIndex(store);
+
+    try {
+        // Perform indexProjectRoot on the project root directly without opening any document first
+        await semanticIndex.indexProjectRoot(fixture.projectRoot);
+
+        // Open a document to query definitions and references which should now be immediately available
+        const document = store.open({
+            uri: Lsp.filePathToUri(fixture.sourcePath),
+            languageId: "gml",
+            version: 1,
+            text: fixture.sourceText
+        });
+
+        const offset = fixture.sourceText.indexOf("target();");
+
+        // Wait for background indexing to populate the target definition
+        await waitForCondition(async () => {
+            const definition = await semanticIndex.findDefinition(document, offset, "target");
+            return definition?.uri === Lsp.filePathToUri(fixture.targetPath);
+        });
+    } finally {
+        await semanticIndex.dispose();
+        await fixture.cleanup();
+    }
+});

@@ -225,6 +225,7 @@ export type GmlSemanticAnalysisFinish = Readonly<{
  */
 export type GmlSemanticIndex = Readonly<{
     buildForDocument(document: GmlTextDocument): Promise<NavigationState | null>;
+    indexProjectRoot(projectRoot: string): Promise<void>;
     dispose(): Promise<void>;
     findDefinition(
         document: GmlTextDocument,
@@ -1897,6 +1898,328 @@ export function createGmlSemanticIndex(
         }, 1);
     }
 
+    function triggerBackgroundFullIndexForRoot(
+        resolvedRoot: string,
+        reason: GmlSemanticAnalysisStart["reason"],
+        scheduledRootVersion: number
+    ): void {
+        setTimeout(() => {
+            if (disposed) {
+                return;
+            }
+            const resolvedRootPath = path.resolve(resolvedRoot);
+            if (readRootVersion(resolvedRootPath) !== scheduledRootVersion) {
+                return;
+            }
+            const currentState = cachedStates.get(resolvedRootPath);
+            if (currentState && !currentState.lightweight) {
+                return;
+            }
+            if (fullProjectBuilds.has(resolvedRootPath)) {
+                return;
+            }
+            return void buildFullProjectIndexForRoot(resolvedRootPath, reason).catch((error) => {
+                console.error("Background full index build failed for root:", error);
+            });
+        }, 1);
+    }
+
+    function buildFullProjectIndexForRoot(
+        resolvedRoot: string,
+        reason: GmlSemanticAnalysisStart["reason"]
+    ): Promise<NavigationState | null> {
+        const existingBuild = fullProjectBuilds.get(resolvedRoot);
+        if (existingBuild !== undefined) {
+            return existingBuild;
+        }
+
+        const buildVersion = readRootVersion(resolvedRoot);
+
+        abortActiveBuild(resolvedRoot);
+        const controller = new AbortController();
+        abortControllers.set(resolvedRoot, controller);
+
+        const fullBuild = (async () => {
+            const startTime = performance.now();
+            const scope = "project";
+            const tier = "full";
+            try {
+                await (pendingCacheWrites.get(resolvedRoot) ?? Promise.resolve());
+                reportSemanticAnalysisStart({
+                    affectedFileCount: 0,
+                    projectRoot: resolvedRoot,
+                    reason,
+                    scope,
+                    tier
+                });
+                const workerBoundary = createWorkerBuildBoundary(resolvedRoot, "full", buildVersion);
+                const store = getSemanticStore(resolvedRoot);
+                const previousManifest =
+                    store.readSemanticManifest("full") ?? store.readSemanticManifest("definitions");
+                const fullState = await buildSemanticIndexInWorker({
+                    projectRoot: resolvedRoot,
+                    priorityFiles: [],
+                    openDocuments: listProjectDocuments(resolvedRoot),
+                    definitionsOnly: false,
+                    readCurrentOpenDocuments: () => listProjectDocuments(resolvedRoot),
+                    buildIdentity: {
+                        boundary: workerBoundary,
+                        isCurrent: (boundary) => isWorkerBuildBoundaryCurrent(resolvedRoot, boundary)
+                    },
+                    signal: controller.signal,
+                    previousManifest
+                });
+                if (fullState && !disposed && readRootVersion(resolvedRoot) === buildVersion) {
+                    const published = await publishNavigationState(resolvedRoot, fullState, buildVersion);
+                    if (!published) {
+                        reportSemanticAnalysisFinish({
+                            affectedFileCount: 0,
+                            projectRoot: resolvedRoot,
+                            reason,
+                            scope,
+                            tier,
+                            durationMs: Math.round(performance.now() - startTime),
+                            status: "aborted"
+                        });
+                        return null;
+                    }
+                    const retainedState = releaseBuiltNavigationState(fullState);
+                    cachedStates.set(resolvedRoot, retainedState);
+                    staleStates.delete(resolvedRoot);
+                    markProjectDocumentFactsCurrent(resolvedRoot);
+                    onSemanticGenerationPublished?.();
+
+                    reportSemanticAnalysisFinish({
+                        affectedFileCount: 0,
+                        projectRoot: resolvedRoot,
+                        reason,
+                        scope,
+                        tier,
+                        durationMs: Math.round(performance.now() - startTime),
+                        status: "success"
+                    });
+                    return retainedState;
+                }
+                reportSemanticAnalysisFinish({
+                    affectedFileCount: 0,
+                    projectRoot: resolvedRoot,
+                    reason,
+                    scope,
+                    tier,
+                    durationMs: Math.round(performance.now() - startTime),
+                    status: "aborted"
+                });
+                return null;
+            } catch (error) {
+                if (Core.isAbortError(error)) {
+                    reportSemanticAnalysisFinish({
+                        affectedFileCount: 0,
+                        projectRoot: resolvedRoot,
+                        reason,
+                        scope,
+                        tier,
+                        durationMs: Math.round(performance.now() - startTime),
+                        status: "aborted"
+                    });
+                    return null;
+                }
+                reportSemanticAnalysisFinish({
+                    affectedFileCount: 0,
+                    projectRoot: resolvedRoot,
+                    reason,
+                    scope,
+                    tier,
+                    durationMs: Math.round(performance.now() - startTime),
+                    status: "failed",
+                    errorMessage: Core.getErrorMessageOrFallback(error)
+                });
+                return null;
+            }
+        })();
+
+        const finalFullBuild = fullBuild.finally(() => {
+            if (abortControllers.get(resolvedRoot) === controller) {
+                abortControllers.delete(resolvedRoot);
+            }
+            fullProjectBuilds.delete(resolvedRoot);
+        });
+        fullProjectBuilds.set(resolvedRoot, finalFullBuild);
+        return finalFullBuild;
+    }
+
+    async function ensureProjectRootIndex(projectRoot: string): Promise<NavigationState | null> {
+        if (disposed) {
+            return null;
+        }
+        const resolvedRoot = path.resolve(projectRoot);
+        const buildVersion = readRootVersion(resolvedRoot);
+        let currentState = cachedStates.get(resolvedRoot);
+        const staleState = staleStates.get(resolvedRoot);
+
+        if (!currentState && !staleState) {
+            try {
+                const store = getSemanticStore(resolvedRoot);
+                const activeSlots = store.readActiveSemanticSlots();
+                if (activeSlots.definitions) {
+                    const requirements: SemanticSnapshotRequirement = {
+                        capabilities: new Set(["definition"]),
+                        overlayVersions: new Map(),
+                        projectRevision: "current",
+                        requireCompleteProjectRelationships: false,
+                        requiredFiles: new Set(),
+                        requiredResources: new Set(),
+                        tier: "definitions"
+                    };
+                    const acquisition = await store.acquireSemanticSnapshot(requirements, new AbortController().signal);
+                    if (acquisition.kind === "lease") {
+                        try {
+                            const state = createRestoredNavigationState(
+                                resolvedRoot,
+                                store.readSemanticNavigationProjection("definitions"),
+                                store.readSemanticManifest("definitions"),
+                                acquisition.lease
+                            );
+                            cachedStates.set(resolvedRoot, state);
+                            currentState = state;
+                        } finally {
+                            acquisition.lease.release();
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error(`Failed to restore semantic index for ${resolvedRoot}:`, error);
+            }
+        }
+
+        if (currentState && !currentState.lightweight) {
+            return currentState;
+        }
+
+        if (currentState && currentState.lightweight) {
+            triggerBackgroundFullIndexForRoot(resolvedRoot, "cacheRecovery", buildVersion);
+            return currentState;
+        }
+
+        const inFlight = inFlightBuilds.get(resolvedRoot);
+        if (inFlight === undefined) {
+            const controller = new AbortController();
+            abortControllers.set(resolvedRoot, controller);
+
+            const buildPromise = (async () => {
+                const startTime = performance.now();
+                const reason = "coldStart";
+                const tier = "definitions";
+                const existingState = cachedStates.get(resolvedRoot) ?? staleStates.get(resolvedRoot);
+                const existingRawIndex = existingState?.checkpoint;
+                const incrementalBuild = existingState !== undefined && Core.isObjectLike(existingRawIndex);
+                const scope = incrementalBuild ? "incremental" : "project";
+                try {
+                    reportSemanticAnalysisStart({
+                        affectedFileCount: 0,
+                        projectRoot: resolvedRoot,
+                        reason,
+                        scope,
+                        tier
+                    });
+                    const workerBoundary = createWorkerBuildBoundary(resolvedRoot, "definitions", buildVersion);
+                    const store = getSemanticStore(resolvedRoot);
+                    const previousManifest =
+                        store.readSemanticManifest("definitions") ?? store.readSemanticManifest("full");
+                    const state = await buildSemanticIndexInWorker({
+                        projectRoot: resolvedRoot,
+                        priorityFiles: [],
+                        openDocuments: listProjectDocuments(resolvedRoot),
+                        definitionsOnly: true,
+                        readCurrentOpenDocuments: () => listProjectDocuments(resolvedRoot),
+                        buildIdentity: {
+                            boundary: workerBoundary,
+                            isCurrent: (boundary) => isWorkerBuildBoundaryCurrent(resolvedRoot, boundary)
+                        },
+                        signal: controller.signal,
+                        previousManifest
+                    });
+                    if (state && !disposed && readRootVersion(resolvedRoot) === buildVersion) {
+                        const published = await publishNavigationState(resolvedRoot, state, buildVersion);
+                        if (!published) {
+                            reportSemanticAnalysisFinish({
+                                affectedFileCount: 0,
+                                projectRoot: resolvedRoot,
+                                reason,
+                                scope,
+                                tier,
+                                durationMs: Math.round(performance.now() - startTime),
+                                status: "aborted"
+                            });
+                            return null;
+                        }
+                        const retainedState = releaseBuiltNavigationState(state);
+                        cachedStates.set(resolvedRoot, retainedState);
+                        staleStates.delete(resolvedRoot);
+                        markProjectDocumentFactsCurrent(resolvedRoot);
+                        onSemanticGenerationPublished?.();
+
+                        reportSemanticAnalysisFinish({
+                            affectedFileCount: 0,
+                            projectRoot: resolvedRoot,
+                            reason,
+                            scope,
+                            tier,
+                            durationMs: Math.round(performance.now() - startTime),
+                            status: "success"
+                        });
+
+                        triggerBackgroundFullIndexForRoot(resolvedRoot, reason, buildVersion);
+                        return retainedState;
+                    }
+                    reportSemanticAnalysisFinish({
+                        affectedFileCount: 0,
+                        projectRoot: resolvedRoot,
+                        reason,
+                        scope,
+                        tier,
+                        durationMs: Math.round(performance.now() - startTime),
+                        status: "aborted"
+                    });
+                    return null;
+                } catch (error) {
+                    if (Core.isAbortError(error)) {
+                        reportSemanticAnalysisFinish({
+                            affectedFileCount: 0,
+                            projectRoot: resolvedRoot,
+                            reason,
+                            scope,
+                            tier,
+                            durationMs: Math.round(performance.now() - startTime),
+                            status: "aborted"
+                        });
+                        return null;
+                    }
+                    reportSemanticAnalysisFinish({
+                        affectedFileCount: 0,
+                        projectRoot: resolvedRoot,
+                        reason,
+                        scope,
+                        tier,
+                        durationMs: Math.round(performance.now() - startTime),
+                        status: "failed",
+                        errorMessage: Core.getErrorMessageOrFallback(error)
+                    });
+                    return null;
+                }
+            })();
+
+            const finalInFlight = buildPromise.finally(() => {
+                if (abortControllers.get(resolvedRoot) === controller) {
+                    abortControllers.delete(resolvedRoot);
+                }
+                inFlightBuilds.delete(resolvedRoot);
+            });
+            inFlightBuilds.set(resolvedRoot, finalInFlight);
+            return await finalInFlight;
+        }
+        return await inFlight;
+    }
+
     async function ensureFullIndex(
         document: GmlTextDocument,
         reason: GmlSemanticAnalysisStart["reason"]
@@ -1966,6 +2289,9 @@ export function createGmlSemanticIndex(
                 await Promise.all(
                     expandedChanges.map(async (change) => await invalidateKnownFileRoots(change.filePath))
                 );
+                void ensureProjectRootIndex(projectRoot).catch((error) => {
+                    console.error("Background re-indexing failed after disk changes:", error);
+                });
                 return;
             }
             invalidateRoot(projectRoot);
@@ -1994,6 +2320,9 @@ export function createGmlSemanticIndex(
             staleSemanticDocumentUris.clear();
         },
         buildForDocument: ensureIndex,
+        async indexProjectRoot(projectRoot) {
+            await ensureProjectRootIndex(projectRoot);
+        },
         refreshForDocument: refreshIndex,
         refreshForFileChanges,
         invalidateForDocument: invalidateKnownDocumentRoots,

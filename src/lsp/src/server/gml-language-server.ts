@@ -416,6 +416,28 @@ export function createGmlLanguageServer(
             }
         }, 0);
 
+        // Background project indexing
+        connection.workspace
+            .getWorkspaceFolders()
+            .then((folders) => {
+                if (folders) {
+                    for (const folder of folders) {
+                        const projectRoot = uriToFilePath(folder.uri);
+                        if (projectRoot) {
+                            connection.console.info(`Triggering background project indexing for root: ${projectRoot}`);
+                            void semanticIndex.indexProjectRoot(projectRoot).catch((error) => {
+                                connection.console.warn(
+                                    `Background indexing failed for ${projectRoot}: ${Core.getErrorMessageOrFallback(error)}`
+                                );
+                            });
+                        }
+                    }
+                }
+            })
+            .catch((error) => {
+                connection.console.warn(`Unable to query workspace folders: ${Core.getErrorMessageOrFallback(error)}`);
+            });
+
         void connection.client.register(DidChangeConfigurationNotification.type).catch((error: unknown) => {
             connection.console.warn(
                 `Unable to register configuration change notifications: ${Core.getErrorMessageOrFallback(error)}`
