@@ -57,10 +57,6 @@ fast_mode = false
 image_generation = false
 memories = false
 
-[features.multi_agent_v2]
-hide_spawn_agent_metadata = false
-tool_namespace = "agents"
-
 [analytics]
 enabled = false
 

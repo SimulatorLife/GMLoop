@@ -59,6 +59,8 @@ src/**/*.js
 !.qwen/settings.json
 .codex/*
 !.codex/config.toml
+!.codex/*-model-catalog.json
+!scripts/codex-mini.sh
 .agents/**
 !.agents/
 !.agents/**/
@@ -73,6 +75,7 @@ gha-creds-*.json
 scripts/
 !/scripts/
 /scripts/*
+!/scripts/codex-mini.sh
 
 # Logs
 logs/

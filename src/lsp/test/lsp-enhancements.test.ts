@@ -223,6 +223,7 @@ void test("LSP: enum hover renders commented members on declarations and qualifi
 void test("LSP: static sound helper exposes complete hover and highlighting facts", async () => {
     const proj = await createProject("SoundHelperTest", "ActorSoundManager");
     const sourceText = [
+        "/// @desc Handles playing sounds associated with certain actions.",
         "function ActorSoundManager() : Object() constructor {",
         "    sounds = {};",
         "    /// @desc Add possible options for sound effects to play for the given sound action",
@@ -263,6 +264,21 @@ void test("LSP: static sound helper exposes complete hover and highlighting fact
         assert.match(addSoundsHoverText, /Parameters:.*sound_action.*enum/su);
         assert.match(addSoundsHoverText, /Returns.*undefined/su);
         assert.doesNotMatch(addSoundsHoverText, /structVariable/u);
+
+        const constructorHover = await semanticIndex.hover(
+            document,
+            sourceText.indexOf("ActorSoundManager"),
+            "ActorSoundManager"
+        );
+        const constructorHoverText =
+            typeof constructorHover?.contents === "object" && "value" in constructorHover.contents
+                ? constructorHover.contents.value
+                : "";
+        assert.ok(constructorHover, "expected constructor declaration hover");
+        assert.match(constructorHoverText, /ActorSoundManager/u);
+        assert.match(constructorHoverText, /struct/u);
+        assert.match(constructorHoverText, /Handles playing sounds associated with certain actions/u);
+        assert.match(constructorHoverText, /scripts\/ActorSoundManager\/ActorSoundManager\.gml/u);
         const soundsUseOffset = sourceText.indexOf("sounds", sourceText.indexOf("struct_set("));
         const soundsReferences = await semanticIndex.findReferences(document, soundsUseOffset, "sounds", true);
         assert.ok(soundsReferences.length >= 2, "expected constructor field definition and references");
@@ -279,7 +295,7 @@ void test("LSP: static sound helper exposes complete hover and highlighting fact
         assert.ok(soundsOccurrence, "expected the full navigation index to contain the sounds reference");
         const soundsDefinition = await semanticIndex.findDefinition(document, soundsUseOffset, "sounds");
         assert.equal(soundsDefinition?.uri, document.uri);
-        assert.deepEqual(soundsDefinition?.range.start, { line: 1, character: 4 });
+        assert.deepEqual(soundsDefinition?.range.start, { line: 2, character: 4 });
         assert.match(soundsHoverText, /sounds/u);
         assert.match(soundsHoverText, /instanceVariable/u);
         assert.match(soundsHoverText, /scripts\/ActorSoundManager\/ActorSoundManager\.gml/u);

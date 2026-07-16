@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -114,6 +114,103 @@ void test("semantic store never treats a manifest-only source file as analyzed c
         );
     } finally {
         await store.close();
+    }
+});
+
+void test("semantic store recovers coverage from canonical facts without treating manifest entries as analysis", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-store-coverage-recovery-"));
+    const store = openSemanticIndexStore(projectRoot);
+    try {
+        const sourceRevision = "coverage-recovery" as SemanticFileManifest["sourceRevision"];
+        const relativePath = "scripts/main.gml";
+        const manifest: SemanticFileManifest = Object.freeze({
+            entries: new Map([
+                [
+                    relativePath,
+                    Object.freeze({
+                        contentHash: "main-hash",
+                        fileKind: "gml",
+                        mtimeMs: null,
+                        relativePath,
+                        sizeBytes: 24,
+                        sourceOrigin: "disk",
+                        sourceVersion: null
+                    })
+                ]
+            ]),
+            sourceRevision
+        });
+        const index = {
+            files: {},
+            identifiers: {
+                scripts: {
+                    main: {
+                        declarations: [
+                            {
+                                filePath: relativePath,
+                                location: { end: { index: 12 }, start: { index: 5 } },
+                                scopeId: "scope:script:main"
+                            }
+                        ],
+                        displayName: "main",
+                        filePath: relativePath,
+                        identifierId: "script:scope:script:main",
+                        name: "main",
+                        scopeId: "scope:script:main"
+                    }
+                }
+            },
+            projectRoot
+        };
+        const definitionsSnapshot = createSemanticSnapshotFromProjectIndex(index, "definitions", sourceRevision);
+        const fullSnapshot = createSemanticSnapshotFromProjectIndex(index, "full", sourceRevision);
+        assert.deepEqual(definitionsSnapshot.analyzedFilePaths, []);
+        assert.equal(
+            publishSemanticTwoTierSnapshot(store, {
+                definitionsSnapshot,
+                fullSnapshot,
+                manifest,
+                navigationProjection: index,
+                sourceRevision
+            }).status,
+            "published"
+        );
+    } finally {
+        await store.close();
+    }
+
+    const database = openGraphIndexDatabase(getSemanticIndexDatabasePath(projectRoot));
+    try {
+        database
+            .prepare("DELETE FROM semantic_analyzed_files WHERE project_root = ? AND tier = ?")
+            .run(projectRoot, "full");
+    } finally {
+        database.close();
+    }
+
+    const restoredStore = openSemanticIndexStore(projectRoot);
+    try {
+        const result = restoredStore.acquireSemanticSnapshot(
+            {
+                capabilities: new Set<SemanticCapability>(["hover"]),
+                overlayVersions: new Map(),
+                projectRevision: "current",
+                requireCompleteProjectRelationships: false,
+                requiredFiles: new Set(["scripts/main.gml"]),
+                requiredResources: new Set(),
+                tier: "full"
+            },
+            new AbortController().signal
+        );
+        assert.equal(result.kind, "lease");
+        if (result.kind === "lease") {
+            assert.equal(result.lease.identity.coverage.analyzedFiles.has("scripts/main.gml"), true);
+            assert.equal(result.lease.identity.coverage.status, "complete");
+            result.lease.release();
+        }
+    } finally {
+        await restoredStore.close();
+        await rm(projectRoot, { recursive: true, force: true });
     }
 });
 
