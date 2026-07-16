@@ -36,6 +36,8 @@ const GMLOOP_SKILL_NAME_PREFIX = "gmloop-";
 const GMLOOP_VSCODE_EXTENSION_ID = "gmloop.gmloop";
 const SYNCHRONIZATION_MANAGED_FILE = "managed-file" as const;
 
+let cachedResourcePreviews: Promise<ReadonlyArray<AgentPackResourcePreview>> | null = null;
+
 /** Installation state for the agent pack in one GameMaker project. */
 export type AgentPackProjectStatusKind = "current" | "not-installed" | "update-available";
 
@@ -720,20 +722,28 @@ export async function discoverPackagedSkillNames(): Promise<ReadonlyArray<string
 }
 
 /** Read every packaged skill and template for presentation without mutating a project. */
-export async function readAgentPackResourcePreviews(): Promise<ReadonlyArray<AgentPackResourcePreview>> {
-    const sources = await readAgentPackResourceSources();
-    return Object.freeze(
-        await Promise.all(
-            sources.map(async (source) => {
-                return Object.freeze({
-                    content: await readFile(source.sourcePath, "utf8"),
-                    kind: source.kind,
-                    packagePath: source.packagePath,
-                    targetPath: source.targetPath
-                });
-            })
-        )
-    );
+export function readAgentPackResourcePreviews(): Promise<ReadonlyArray<AgentPackResourcePreview>> {
+    if (cachedResourcePreviews !== null) {
+        return cachedResourcePreviews;
+    }
+
+    cachedResourcePreviews = (async () => {
+        const sources = await readAgentPackResourceSources();
+        return Object.freeze(
+            await Promise.all(
+                sources.map(async (source) => {
+                    return Object.freeze({
+                        content: await readFile(source.sourcePath, "utf8"),
+                        kind: source.kind,
+                        packagePath: source.packagePath,
+                        targetPath: source.targetPath
+                    });
+                })
+            )
+        );
+    })();
+
+    return cachedResourcePreviews;
 }
 
 /** Assert that a path is the root of a GameMaker project. */

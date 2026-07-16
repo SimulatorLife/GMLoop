@@ -5,6 +5,8 @@ import path from "node:path";
 
 const AGENT_CLI_TIMEOUT_MS = 30_000;
 
+const agentCliCache = new Map<string, Promise<Readonly<{ installed: boolean; version: string | null }>>>();
+
 /** Agent config targets supported by Auto-Game integration discovery. */
 export type AgentConfigTargetId = "codex" | "gemini" | "qwen";
 
@@ -132,17 +134,33 @@ async function detectAgentCli(
     projectRoot: string,
     commandRunner: AgentCliCommandRunner
 ): Promise<Readonly<{ installed: boolean; version: string | null }>> {
-    const result = await commandRunner(cliName, ["--version"], { cwd: projectRoot });
-    if (result.exitCode === 0) {
-        return Object.freeze({
-            installed: true,
-            version: normalizeVersionOutput(result.stdout) ?? normalizeVersionOutput(result.stderr)
-        });
+    const isDefaultRunner = commandRunner === runAgentCliCommand;
+    if (isDefaultRunner) {
+        const cached = agentCliCache.get(cliName);
+        if (cached) {
+            return cached;
+        }
     }
-    return Object.freeze({
-        installed: result.exitCode !== -1,
-        version: null
-    });
+
+    const promise = (async () => {
+        const result = await commandRunner(cliName, ["--version"], { cwd: projectRoot });
+        if (result.exitCode === 0) {
+            return Object.freeze({
+                installed: true,
+                version: normalizeVersionOutput(result.stdout) ?? normalizeVersionOutput(result.stderr)
+            });
+        }
+        return Object.freeze({
+            installed: result.exitCode !== -1,
+            version: null
+        });
+    })();
+
+    if (isDefaultRunner) {
+        agentCliCache.set(cliName, promise);
+    }
+
+    return promise;
 }
 
 function resolveAgentIntegrationStatus(

@@ -59,6 +59,8 @@ src/**/*.js
 !.qwen/settings.json
 .codex/*
 !.codex/config.toml
+!.codex/*-model-catalog.json
+!scripts/codex-mini.sh
 .agents/**
 !.agents/
 !.agents/**/

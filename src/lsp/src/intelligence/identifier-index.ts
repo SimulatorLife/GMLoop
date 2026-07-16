@@ -1166,7 +1166,13 @@ export function createGmlSemanticIndex(
             overlayVersions: new Map<string, number>(),
             projectRevision: "current",
             requireCompleteProjectRelationships: false,
-            requiredFiles: new Set<string>(),
+            // A restored generation is only usable for this request when it
+            // actually covers the opening document. Older/partial caches can
+            // contain symbols while omitting analyzed-file coverage; treating
+            // those generations as usable makes every project hover/definition
+            // request fail its exact coverage check and silently fall back to
+            // built-ins. Force the normal Tier 1 rebuild for that case.
+            requiredFiles: new Set([document.filePath]),
             requiredResources: new Set<string>(),
             tier: cachedState.tier
         });

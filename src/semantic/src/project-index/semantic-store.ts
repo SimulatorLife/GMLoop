@@ -717,8 +717,13 @@ function readSemanticSnapshot(
                 : [];
         });
     const analyzedFilePaths = database
-        .prepare("SELECT file_path FROM semantic_analyzed_files WHERE project_root = ? AND tier = ? ORDER BY file_path")
-        .all(projectRoot, tier)
+        .prepare(
+            "SELECT file_path FROM semantic_analyzed_files WHERE project_root = ? AND tier = ? " +
+                "UNION SELECT DISTINCT file_path FROM semantic_occurrences WHERE project_root = ? AND tier = ? " +
+                "UNION SELECT DISTINCT file_path FROM semantic_scope_files WHERE project_root = ? AND tier = ? " +
+                "ORDER BY file_path"
+        )
+        .all(projectRoot, tier, projectRoot, tier, projectRoot, tier)
         .flatMap((row): ReadonlyArray<string> => (typeof row.file_path === "string" ? [row.file_path] : []));
     return Object.freeze({
         analyzedFilePaths: Object.freeze(analyzedFilePaths),

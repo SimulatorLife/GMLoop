@@ -1,0 +1,41 @@
+{
+  "models": [
+    {
+      "slug": "MiniMax-M3",
+      "display_name": "MiniMax-M3",
+      "description": "MiniMax",
+      "default_reasoning_level": "high",
+      "supported_reasoning_levels": [
+        {
+          "effort": "none",
+          "description": "Think-Off"
+        },
+        {
+          "effort": "high",
+          "description": "Deep"
+        }
+      ],
+      "shell_type": "shell_command",
+      "visibility": "list",
+      "supported_in_api": true,
+      "priority": 0,
+      "base_instructions": "You are Codex, a coding agent based on MiniMax-M3. You and the user share the same workspace and collaborate to achieve the user's goals. Use only tools explicitly provided by Codex. For filesystem access, use the available Codex shell/exec tools. Never invent or call Claude-style tools such as Read, Write, Edit, Glob, or Grep unless they are explicitly exposed.",
+      "supports_reasoning_summaries": true,
+      "default_reasoning_summary": "none",
+      "support_verbosity": false,
+      "context_window": 1000000,
+      "max_context_window": 1000000,
+      "auto_compact_token_limit": 600000,
+      "truncation_policy": {
+        "mode": "bytes",
+        "limit": 10000
+      },
+      "supports_parallel_tool_calls": true,
+      "experimental_supported_tools": [],
+      "multi_agent_version": "v1",
+      "input_modalities": [
+        "text"
+      ]
+    }
+  ]
+}

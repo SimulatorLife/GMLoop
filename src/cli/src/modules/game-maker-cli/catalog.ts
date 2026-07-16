@@ -9,6 +9,8 @@ import {
 } from "./configured-mcp-server.js";
 import { probeStdioMcpServer, type StdioMcpServerProbeResult } from "./stdio-mcp-server.js";
 
+const companionCatalogCache = new Map<string, Promise<GameMakerCliCompanionCatalog>>();
+
 type GameMakerCliInvocation = Readonly<{
     args: ReadonlyArray<string>;
     command: string;
@@ -186,115 +188,132 @@ export async function loadGameMakerCliCompanionCatalog(
         );
     }
 
-    const executionOptions = Object.freeze({
-        cwd: options.projectRoot ?? process.cwd(),
-        toolPath: options.toolPath ?? null
-    });
-    const discoverConfiguredMcpServer =
-        dependencies.discoverConfiguredMcpServer ?? discoverConfiguredGameMakerCliMcpServer;
-    const executeCommand = dependencies.executeCommand ?? executeGameMakerCliCommand;
-    const probeConfiguredMcpServer = dependencies.probeConfiguredMcpServer ?? probeStdioMcpServer;
-    const probeMcpServer = dependencies.probeMcpServer ?? probeGameMakerCliMcpServer;
-
-    let versionSnapshot: GameMakerCliTextCommandSnapshot;
-    try {
-        versionSnapshot = await runGameMakerCliTextCommand(["--version"], executionOptions, executeCommand);
-    } catch (error) {
-        return createUnavailableGameMakerCliCompanionCatalog(error);
+    const hasDependencies = Object.keys(dependencies).length > 0;
+    const cacheKey = `${options.projectRoot ?? ""}:${options.toolPath ?? ""}`;
+    if (!hasDependencies) {
+        const cached = companionCatalogCache.get(cacheKey);
+        if (cached) {
+            return cached;
+        }
     }
 
-    const invocationDisplayName = versionSnapshot.invocation.displayName;
-    const version = versionSnapshot.output.stdout.trim().length > 0 ? versionSnapshot.output.stdout.trim() : null;
-
-    let rootHelpSnapshot: GameMakerCliTextCommandSnapshot;
-    try {
-        rootHelpSnapshot = await runGameMakerCliTextCommand(["--help"], executionOptions, executeCommand);
-    } catch (error) {
-        return createUnavailableGameMakerCliCompanionCatalog(error, invocationDisplayName, version);
-    }
-
-    const rootHelp = parseGameMakerCliHelp(rootHelpSnapshot.output.stdout);
-    const cliCommands = await collectGameMakerCliLeafCommands([], rootHelp, executionOptions, executeCommand);
-    const resolvedProjectPath = await resolveSingleProjectManifestPathOrNull(options.projectRoot);
-    const configuredExternalMcpServer = await discoverConfiguredMcpServer(options.projectRoot);
-
-    if (resolvedProjectPath === null && configuredExternalMcpServer === null) {
-        return Object.freeze({
-            available: true,
-            cliCommands,
-            error: null,
-            invocation: invocationDisplayName,
-            mcpServer: Object.freeze({
-                available: false,
-                error:
-                    options.projectRoot === null
-                        ? "No active GameMaker project is loaded, so the ResourceTool MCP catalog is unavailable."
-                        : "Could not resolve a single .yyp file for ResourceTool MCP discovery.",
-                name: null,
-                projectPath: null,
-                serverId: configuredExternalMcpServer?.serverId ?? null,
-                sourcePath: configuredExternalMcpServer?.sourcePath ?? null,
-                version: null
-            }),
-            mcpTools: [],
-            version
+    const promise = (async () => {
+        const executionOptions = Object.freeze({
+            cwd: options.projectRoot ?? process.cwd(),
+            toolPath: options.toolPath ?? null
         });
-    }
+        const discoverConfiguredMcpServer =
+            dependencies.discoverConfiguredMcpServer ?? discoverConfiguredGameMakerCliMcpServer;
+        const executeCommand = dependencies.executeCommand ?? executeGameMakerCliCommand;
+        const probeConfiguredMcpServer = dependencies.probeConfiguredMcpServer ?? probeStdioMcpServer;
+        const probeMcpServer = dependencies.probeMcpServer ?? probeGameMakerCliMcpServer;
 
-    try {
-        const mcpProbeResult =
-            configuredExternalMcpServer === null
-                ? await runGameMakerCliMcpProbe(resolvedProjectPath ?? "", executionOptions, probeMcpServer)
-                : await probeConfiguredExternalGameMakerCliMcpServer(
-                      configuredExternalMcpServer,
-                      resolvedProjectPath,
-                      executionOptions.cwd,
-                      probeConfiguredMcpServer
-                  );
-        return Object.freeze({
-            available: true,
-            cliCommands,
-            error: null,
-            invocation: invocationDisplayName,
-            mcpServer: Object.freeze({
+        let versionSnapshot: GameMakerCliTextCommandSnapshot;
+        try {
+            versionSnapshot = await runGameMakerCliTextCommand(["--version"], executionOptions, executeCommand);
+        } catch (error) {
+            return createUnavailableGameMakerCliCompanionCatalog(error);
+        }
+
+        const invocationDisplayName = versionSnapshot.invocation.displayName;
+        const version = versionSnapshot.output.stdout.trim().length > 0 ? versionSnapshot.output.stdout.trim() : null;
+
+        let rootHelpSnapshot: GameMakerCliTextCommandSnapshot;
+        try {
+            rootHelpSnapshot = await runGameMakerCliTextCommand(["--help"], executionOptions, executeCommand);
+        } catch (error) {
+            return createUnavailableGameMakerCliCompanionCatalog(error, invocationDisplayName, version);
+        }
+
+        const rootHelp = parseGameMakerCliHelp(rootHelpSnapshot.output.stdout);
+        const cliCommands = await collectGameMakerCliLeafCommands([], rootHelp, executionOptions, executeCommand);
+        const resolvedProjectPath = await resolveSingleProjectManifestPathOrNull(options.projectRoot);
+        const configuredExternalMcpServer = await discoverConfiguredMcpServer(options.projectRoot);
+
+        if (resolvedProjectPath === null && configuredExternalMcpServer === null) {
+            return Object.freeze({
                 available: true,
+                cliCommands,
                 error: null,
-                name: mcpProbeResult.serverName,
-                projectPath: resolvedProjectPath,
-                serverId: configuredExternalMcpServer?.serverId ?? null,
-                sourcePath: configuredExternalMcpServer?.sourcePath ?? null,
-                version: mcpProbeResult.serverVersion
-            }),
-            mcpTools: mcpProbeResult.tools
-                .map((tool) =>
-                    Object.freeze({
-                        description: tool.description,
-                        fields: createGameMakerCliMcpFieldEntries(tool.inputSchema),
-                        name: tool.name
-                    })
-                )
-                .sort((leftEntry, rightEntry) => leftEntry.name.localeCompare(rightEntry.name)),
-            version
-        });
-    } catch (error) {
-        return Object.freeze({
-            available: true,
-            cliCommands,
-            error: null,
-            invocation: invocationDisplayName,
-            mcpServer: Object.freeze({
-                available: false,
-                error: Core.getErrorMessage(error),
-                name: null,
-                projectPath: resolvedProjectPath,
-                serverId: configuredExternalMcpServer?.serverId ?? null,
-                sourcePath: configuredExternalMcpServer?.sourcePath ?? null,
-                version: null
-            }),
-            mcpTools: [],
-            version
-        });
+                invocation: invocationDisplayName,
+                mcpServer: Object.freeze({
+                    available: false,
+                    error:
+                        options.projectRoot === null
+                            ? "No active GameMaker project is loaded, so the ResourceTool MCP catalog is unavailable."
+                            : "Could not resolve a single .yyp file for ResourceTool MCP discovery.",
+                    name: null,
+                    projectPath: null,
+                    serverId: configuredExternalMcpServer?.serverId ?? null,
+                    sourcePath: configuredExternalMcpServer?.sourcePath ?? null,
+                    version: null
+                }),
+                mcpTools: [],
+                version
+            });
+        }
+
+        try {
+            const mcpProbeResult =
+                configuredExternalMcpServer === null
+                    ? await runGameMakerCliMcpProbe(resolvedProjectPath ?? "", executionOptions, probeMcpServer)
+                    : await probeConfiguredExternalGameMakerCliMcpServer(
+                          configuredExternalMcpServer,
+                          resolvedProjectPath,
+                          executionOptions.cwd,
+                          probeConfiguredMcpServer
+                      );
+            return Object.freeze({
+                available: true,
+                cliCommands,
+                error: null,
+                invocation: invocationDisplayName,
+                mcpServer: Object.freeze({
+                    available: true,
+                    error: null,
+                    name: mcpProbeResult.serverName,
+                    projectPath: resolvedProjectPath,
+                    serverId: configuredExternalMcpServer?.serverId ?? null,
+                    sourcePath: configuredExternalMcpServer?.sourcePath ?? null,
+                    version: mcpProbeResult.serverVersion
+                }),
+                mcpTools: mcpProbeResult.tools
+                    .map((tool) =>
+                        Object.freeze({
+                            description: tool.description,
+                            fields: createGameMakerCliMcpFieldEntries(tool.inputSchema),
+                            name: tool.name
+                        })
+                    )
+                    .sort((leftEntry, rightEntry) => leftEntry.name.localeCompare(rightEntry.name)),
+                version
+            });
+        } catch (error) {
+            return Object.freeze({
+                available: true,
+                cliCommands,
+                error: null,
+                invocation: invocationDisplayName,
+                mcpServer: Object.freeze({
+                    available: false,
+                    error: Core.getErrorMessage(error),
+                    name: null,
+                    projectPath: resolvedProjectPath,
+                    serverId: configuredExternalMcpServer?.serverId ?? null,
+                    sourcePath: configuredExternalMcpServer?.sourcePath ?? null,
+                    version: null
+                }),
+                mcpTools: [],
+                version
+            });
+        }
+    })();
+
+    if (!hasDependencies) {
+        companionCatalogCache.set(cacheKey, promise);
     }
+
+    return promise;
 }
 
 async function collectGameMakerCliLeafCommands(

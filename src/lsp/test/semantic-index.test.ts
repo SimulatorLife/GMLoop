@@ -957,6 +957,116 @@ void test("semantic index performs incremental updates on document refresh", asy
     }
 });
 
+void test("semantic index rebuilds when a persisted generation has no analyzed-file coverage", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gmloop-lsp-stale-coverage-"));
+    const relativePath = "scripts/main/main.gml";
+    const scriptPath = path.join(projectRoot, relativePath);
+    let semanticIndex: ReturnType<typeof Lsp.createGmlSemanticIndex> | null = null;
+    const sourceText = "/// @desc Main\nfunction main() {}\n";
+    try {
+        await fs.writeFile(
+            path.join(projectRoot, "Game.yyp"),
+            JSON.stringify({ name: "Game", resourceType: "GMProject" })
+        );
+        await fs.mkdir(path.dirname(scriptPath), { recursive: true });
+        await fs.writeFile(
+            path.join(projectRoot, "scripts/main/main.yy"),
+            JSON.stringify({ name: "main", resourceType: "GMScript" })
+        );
+        await fs.writeFile(scriptPath, sourceText);
+
+        const sourceRevision = "stale-coverage" as Parameters<
+            typeof Semantic.createSemanticSnapshotFromProjectIndex
+        >[2];
+        const navigationProjection = {
+            files: {},
+            identifiers: {
+                functions: {
+                    main: {
+                        declarations: [{ filePath: relativePath, start: { index: 23 }, end: { index: 26 } }],
+                        documentation: {
+                            additionalTags: [],
+                            description: "Main",
+                            normalizedText: "@desc Main",
+                            parameters: [],
+                            returns: null
+                        },
+                        identifierId: "function:main",
+                        name: "main"
+                    }
+                }
+            },
+            projectRoot,
+            resources: {},
+            scopes: {}
+        };
+        const manifest = Object.freeze({
+            entries: new Map([
+                [
+                    relativePath,
+                    Object.freeze({
+                        contentHash: "stale-hash",
+                        fileKind: "gml" as const,
+                        mtimeMs: null,
+                        relativePath,
+                        sizeBytes: sourceText.length,
+                        sourceOrigin: "disk" as const,
+                        sourceVersion: null
+                    })
+                ]
+            ]),
+            sourceRevision
+        });
+        // Keep the warm navigation projection populated while the normalized
+        // snapshot is genuinely uncovered. This is the failure mode that must
+        // force a Tier 1 rebuild; canonical-fact coverage recovery is tested
+        // separately by the semantic-store suite.
+        const staleSnapshot = Semantic.createSemanticSnapshotFromProjectIndex(
+            { files: {}, identifiers: {}, projectRoot },
+            "definitions",
+            sourceRevision
+        );
+        assert.deepEqual(staleSnapshot.analyzedFilePaths, []);
+        const persistedStore = Semantic.openSemanticIndexStore(projectRoot);
+        const publication = persistedStore.publishSemanticSnapshot({
+            authoritative: true,
+            baseGeneration: null,
+            expectedHeadGeneration: 0,
+            manifest,
+            navigationProjection,
+            snapshot: staleSnapshot,
+            sourceRevision,
+            tier: "definitions"
+        });
+        assert.equal(publication.status, "published");
+        await persistedStore.close();
+
+        const documentStore = Lsp.createGmlDocumentStore();
+        const document = documentStore.open({
+            uri: Lsp.filePathToUri(scriptPath),
+            languageId: "gml",
+            version: 1,
+            text: sourceText
+        });
+        const analysisStarts: GmlSemanticAnalysisStart[] = [];
+        semanticIndex = Lsp.createGmlSemanticIndex(documentStore, null, (event) => analysisStarts.push(event));
+        const state = await semanticIndex.buildForDocument(document);
+        assert.ok(state);
+        assert.equal(state.lightweight, true, "A partial persisted tier must be replaced by a fresh Tier 1 build.");
+        assert.deepEqual(
+            analysisStarts.map(({ tier, reason }) => ({ reason, tier })),
+            [{ reason: "coldStart", tier: "definitions" }]
+        );
+        const hover = await semanticIndex.hover(document, sourceText.indexOf("main"), "main");
+        assert.ok(hover, "User-defined hover must become available after the coverage-triggered rebuild.");
+    } finally {
+        if (semanticIndex !== null) {
+            await semanticIndex.dispose();
+        }
+        await cleanupProjectDir(projectRoot);
+    }
+});
+
 void test("semantic index loads cache from disk on startup and saves updates to disk", async () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gmloop-lsp-cache-"));
     const aPath = path.join(projectRoot, "scripts/a/a.gml");
