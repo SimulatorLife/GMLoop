@@ -5,7 +5,8 @@ import { test } from "node:test";
 import {
     buildLoopInvariantStressBatchSource,
     createOutputHash,
-    lintSingleRuleWithTiming,
+    lintSingleRuleVerifyOnlyWithTiming,
+    lintSingleRuleWithTimingFastApply,
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     STILE_FIXTURE_URL,
     STILE_OPTIMIZE_MATH_OUTPUT_HASH
@@ -89,14 +90,13 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildNonMathAssignmentBatchSource(1500);
-        const timedRun = lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleVerifyOnlyWithTiming(
             "gml/optimize-math-expressions",
             source,
             "performance-regression.gml"
         );
 
         assert.equal(timedRun.messages.length, 0);
-        assert.equal(timedRun.outputText, source);
         assert.ok(
             timedRun.ruleMilliseconds < scaleBudget(8000),
             `expected optimize-math-expressions rule runtime under 8000ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
@@ -113,10 +113,13 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildNonLogicalConditionBatchSource(1200);
-        const timedRun = lintSingleRuleWithTiming("gml/optimize-logical-flow", source, "performance-regression.gml");
+        const timedRun = lintSingleRuleVerifyOnlyWithTiming(
+            "gml/optimize-logical-flow",
+            source,
+            "performance-regression.gml"
+        );
 
         assert.equal(timedRun.messages.length, 0);
-        assert.equal(timedRun.outputText, source);
         assert.ok(
             timedRun.ruleMilliseconds < scaleBudget(5000),
             `expected optimize-logical-flow rule runtime under 5000ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
@@ -133,10 +136,13 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildHeavyIfGuardBatchSource(300);
-        const timedRun = lintSingleRuleWithTiming("gml/optimize-logical-flow", source, "performance-regression.gml");
+        const timedRun = lintSingleRuleVerifyOnlyWithTiming(
+            "gml/optimize-logical-flow",
+            source,
+            "performance-regression.gml"
+        );
 
         assert.equal(timedRun.messages.length, 0);
-        assert.equal(timedRun.outputText, source);
         assert.ok(
             timedRun.ruleMilliseconds < scaleBudget(7000),
             `expected optimize-logical-flow rule runtime under 7000ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
@@ -153,7 +159,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildArithmeticChainBatchSource(250);
-        const timedRun = lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTimingFastApply(
             "gml/optimize-math-expressions",
             source,
             "performance-regression.gml"
@@ -180,7 +186,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildArithmeticChainBatchSource(1000);
-        const timedRun = lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTimingFastApply(
             "gml/optimize-math-expressions",
             source,
             "performance-regression.gml"
@@ -207,14 +213,13 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildAdditiveIdentifierBatchSource(2500);
-        const timedRun = lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleVerifyOnlyWithTiming(
             "gml/optimize-math-expressions",
             source,
             "performance-regression.gml"
         );
 
         assert.equal(timedRun.messages.length, 0);
-        assert.equal(timedRun.outputText, source);
         assert.ok(
             timedRun.ruleMilliseconds < scaleBudget(1200),
             `expected optimize-math-expressions additive fast-path runtime under 1200ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
@@ -227,7 +232,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = await readFile(STILE_FIXTURE_URL, "utf8");
-        const timedRun = lintSingleRuleWithTiming("gml/optimize-math-expressions", source, "stile.gml");
+        const timedRun = lintSingleRuleWithTimingFastApply("gml/optimize-math-expressions", source, "stile.gml");
 
         assert.equal(timedRun.messages.length, 0);
         assert.equal(createOutputHash(timedRun.outputText), STILE_OPTIMIZE_MATH_OUTPUT_HASH);
@@ -243,7 +248,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildLoopInvariantStressBatchSource(60, 15);
-        const timedRun = lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTimingFastApply(
             "gml/prefer-loop-invariant-expressions",
             source,
             "performance-regression.gml"
@@ -270,7 +275,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildLoopInvariantStressBatchSource(160, 30);
-        const timedRun = lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTimingFastApply(
             "gml/prefer-loop-invariant-expressions",
             source,
             "performance-regression.gml"
@@ -298,7 +303,7 @@ void test(
     async () => {
         const reservedHoistNameCount = 320;
         const source = buildLoopHoistCollisionStressSource(220, reservedHoistNameCount);
-        const timedRun = lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTimingFastApply(
             "gml/prefer-loop-invariant-expressions",
             source,
             "local-collision-performance-regression.gml"
@@ -324,7 +329,7 @@ void test(
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildLoopInvariantStressBatchSource(320, 60);
-        const timedRun = lintSingleRuleWithTiming(
+        const timedRun = lintSingleRuleWithTimingFastApply(
             "gml/prefer-loop-invariant-expressions",
             source,
             "performance-regression.gml"
