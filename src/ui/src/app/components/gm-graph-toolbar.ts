@@ -379,11 +379,19 @@ export class GmGraphToolbar extends LightDomLitElement {
         );
     }
 
+    /**
+     * Forward every top-level navigation request unchanged.
+     *
+     * The shell's navigation listener now treats every page the same and
+     * lets each surface decide what to render when it has no data, so the
+     * toolbar must not intercept requests for graph navigation even when
+     * the graph index has not loaded yet. Toolbar-owned graph controls
+     * (search, view toggle, regenerate, reset) keep using
+     * `#canUseGraphControls()` to disable themselves when they have
+     * nothing to operate on; that gate belongs on the control, not on the
+     * page navigation that arrives here.
+     */
     #emitNavigatePage(page: GraphVisualizationUiPage): void {
-        if (page === "graph" && !this.#canUseGraphControls()) {
-            return;
-        }
-
         this.dispatchEvent(
             new CustomEvent<GraphUiNavigatePageDetail>(GRAPH_UI_EVENT_NAVIGATE_PAGE, {
                 bubbles: true,
