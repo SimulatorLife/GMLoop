@@ -12,6 +12,10 @@ import { SKIP_CLI_RUN_ENV_VAR } from "../shared/skip-cli-run.js";
 const GMLOOP_LSP_PACKAGE_NAME = "@gmloop/lsp";
 const GMLOOP_LSP_BIN_NAME = "gmloop-lsp";
 
+interface LspCommandOptions {
+    readonly clientProcessId?: string;
+}
+
 function resolveLspBinRelativePath(packageJson: Record<string, unknown>): string {
     const binField = packageJson.bin;
     if (typeof binField === "string" && binField.trim().length > 0) {
@@ -43,9 +47,11 @@ async function resolveLspServerEntrypoint(): Promise<string> {
     return path.resolve(path.dirname(packageJsonPath), binRelativePath);
 }
 
-function runLspServerSubprocess(entrypoint: string): Promise<void> {
+function runLspServerSubprocess(entrypoint: string, clientProcessId: string | undefined): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-        const childProcess = spawn(process.execPath, [entrypoint], {
+        const entrypointArguments =
+            clientProcessId === undefined ? [entrypoint] : [entrypoint, "--clientProcessId", clientProcessId];
+        const childProcess = spawn(process.execPath, entrypointArguments, {
             env: {
                 ...process.env,
                 [SKIP_CLI_RUN_ENV_VAR]: "1"
@@ -78,6 +84,10 @@ export function createLspCommand(): Command {
         applyStandardCommandOptions(new Command("lsp"))
             .description("Start the GMLoop GML language server (LSP).")
             .option("--stdio", "Start the LSP server over stdio (default).")
+            .option(
+                "--clientProcessId <pid>",
+                "Parent process id supplied by the language client for server lifecycle monitoring."
+            )
             .addHelpText("after", () =>
                 [
                     "",
@@ -89,7 +99,7 @@ export function createLspCommand(): Command {
                     "  pnpm dlx gmloop lsp"
                 ].join("\n")
             )
-            .action(async () => {
+            .action(async (options: LspCommandOptions) => {
                 if (process.env[SKIP_CLI_RUN_ENV_VAR] === "1") {
                     process.stderr.write(
                         "The 'lsp' command cannot run inside captured CLI execution contexts. " +
@@ -101,7 +111,7 @@ export function createLspCommand(): Command {
 
                 try {
                     const entrypoint = await resolveLspServerEntrypoint();
-                    await runLspServerSubprocess(entrypoint);
+                    await runLspServerSubprocess(entrypoint, options.clientProcessId);
                 } catch (error) {
                     process.stderr.write(`${Core.getErrorMessageOrFallback(error)}\n`);
                     process.exitCode = 1;

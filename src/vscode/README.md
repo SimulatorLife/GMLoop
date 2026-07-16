@@ -185,7 +185,7 @@ The extension invokes:
 
 ## Active LSP Development
 
-For active LSP development, install the VSIX once, keep `gmloop.serverPath` pointed at your local compiled CLI, run `pnpm run build:ts`, then restart the language server in VSCode.
+For active local development, install the VSIX once, keep `gmloop.serverPath` pointed at your local compiled CLI, run `pnpm run build:ts`, and reload the VSCode window. The extension discovers the GMLoop checkout from that absolute path and synchronizes the freshly built extension runtime before reloading.
 
 Use this setup when you are changing `@gmloop/lsp`, `@gmloop/semantic`, parser, lint, format, refactor, or other code reached by `gmloop lsp`:
 
@@ -208,27 +208,17 @@ After editing GMLoop code:
 pnpm run build:ts
 ```
 
-Then run this VSCode command from the Command Palette:
+Then reload the VSCode window. The extension starts the local compiled CLI through the existing `gmloop.serverPath`, so the newest LSP, semantic, parser, lint, refactor, and related workspace builds are used without repackaging the bundled server.
 
-```text
-GMLoop: Restart Language Server
-```
-
-The installed VSCode extension contains the language server version built with that VSIX. When `gmloop.serverPath` points at a local compiled CLI, LSP/server changes are picked up by rebuilding the local CLI output and restarting the server. Rebuild and reinstall the VSIX to update its bundled production server.
-
-There is no automatic server refresh in the extension today. The current reliable loop is:
-
-1. Run `pnpm run build:ts` after code changes.
-2. Run `GMLoop: Restart Language Server` in VSCode.
-
-A future development-only watcher could combine those two steps by watching the repo, rebuilding TypeScript, and asking the extension to restart the client, but that behavior is not currently implemented.
+`GMLoop: Restart Language Server` remains available for restarting only the protocol client without reloading the extension host. It is not required for the normal build/reload loop.
 
 ## Automatic Local Extension File Syncing
 
-When developing the VSCode extension or modifying its TextMate grammars (`gml.tmLanguage.json`, `markdown-gml.tmLanguage.json`), package manifest (`package.json`), or language configurations (`language-configuration.json`), the extension automatically keeps your installed copy synced:
+When developing the VSCode extension or modifying its compiled runtime, TextMate grammars (`gml.tmLanguage.json`, `markdown-gml.tmLanguage.json`), package contributions, or language configuration, the extension automatically keeps your installed copy synced:
 
-- **Monorepo Detection**: Upon activation, the extension checks if the GMLoop monorepo workspace is open.
-- **Auto-Copy & Reload**: If open, it compares the configuration and grammar files in the monorepo against the installed copy in your global VSCode extensions directory (`~/.vscode/extensions/gmloop.gmloop-0.0.1`). If they differ, it copies the updated files in place and prompts you to reload the VSCode window to apply the changes immediately.
+- **Monorepo Detection**: Upon activation, the extension follows an absolute `gmloop.serverPath` such as `.../src/cli/dist/index.js` to find the checkout, or detects an opened GMLoop workspace.
+- **Auto-Copy & Reload**: It compares built extension runtime files, editor assets, and source contribution fields against the installed extension. When they differ, it preserves the installed `gmloop.gmloop` identity and dependencies, copies the local build, and reloads the VSCode window automatically.
+- **One-time installation**: VSCode must know the extension once, so install the corrected VSIX once. Subsequent `pnpm run build:ts` plus a window reload applies local extension and LSP changes without another VSIX installation.
 
 
 For GameMaker projects initialized through GMLoop, this project-local setting can be created automatically with:
@@ -263,13 +253,6 @@ Run this command from the VSCode Command Palette:
 GMLoop: Restart Language Server
 ```
 
-Use this after rebuilding GMLoop or changing `gmloop.serverPath`.
+Use this when you want to restart only the protocol client without reloading the extension host. The normal local-development flow is `pnpm run build:ts` followed by a VSCode window reload.
 
-## TODO
-- **FEAT**: Add gml syntax highlighting to the extension. Use/reference these as/if applicable: https://github.com/bscotch/stitch/tree/develop/packages/vscode/languages. The GMLoop UI should use the same syntax highlighting as the VSCode extension (the UI already has a syntax highlighter, so that may be able to be used/migrated as a starting point).
-- **FEAT**: Have the syntax-highlighting apply to gml code in markdown code fences in `.md` files in VSCode, e.g.
-  ```gml
-  function foo() {
-    return 42;
-  }
-  ```
+The extension currently ships both standalone `.gml` syntax highlighting and GML syntax highlighting in Markdown code fences.

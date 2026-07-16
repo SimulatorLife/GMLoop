@@ -31,3 +31,13 @@ void test("lsp command accepts --stdio option", async () => {
     assert.match(result.stderr, /cannot run inside captured CLI execution contexts/u);
     assert.doesNotMatch(result.stderr, /unknown option/u);
 });
+
+void test("lsp command accepts the client process id supplied by VSCode", async () => {
+    const result = await runCliTestCommand({
+        argv: ["lsp", "--clientProcessId=49606"]
+    });
+
+    assert.equal(result.exitCode, 1);
+    assert.match(result.stderr, /cannot run inside captured CLI execution contexts/u);
+    assert.doesNotMatch(result.stderr, /unknown option/u);
+});

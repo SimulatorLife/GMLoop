@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, readFileSync, realpathSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 
 import * as vscode from "vscode";
@@ -11,7 +11,7 @@ import {
 } from "vscode-languageclient/node.js";
 
 import { resolveGmloopLanguageServerLaunch } from "./server-command.js";
-import { syncLocalExtensionFilesPure } from "./sync.js";
+import { resolveLocalGmlLoopRoots, syncLocalExtensionFilesPure } from "./sync.js";
 
 const GMLOOP_CONFIGURATION_SECTION = "gmloop";
 const GMLOOP_SERVER_PATH_SETTING = "serverPath";
@@ -25,22 +25,27 @@ let projectFileWatcher: vscode.FileSystemWatcher | null = null;
 let activeExtensionPath: string | null = null;
 
 function syncLocalExtensionFiles(context: vscode.ExtensionContext): void {
+    const configuredServerPath = vscode.workspace
+        .getConfiguration(GMLOOP_CONFIGURATION_SECTION)
+        .get<unknown>(GMLOOP_SERVER_PATH_SETTING);
+    const monorepoRoots = resolveLocalGmlLoopRoots({
+        configuredServerPath,
+        existsSync,
+        workspaceFolderPaths: vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath) ?? []
+    });
+
     syncLocalExtensionFilesPure({
-        workspaceFolders: vscode.workspace.workspaceFolders,
+        monorepoRoots,
         extensionPath: context.extensionPath,
         existsSync,
         readFileSync,
+        writeFileSync,
         copyFileSync,
         onChanged() {
-            void (async () => {
-                const selection = await vscode.window.showInformationMessage(
-                    "GMLoop: Local extension grammars updated from monorepo. Please reload VS Code to apply changes.",
-                    "Reload Window"
-                );
-                if (selection === "Reload Window") {
-                    await vscode.commands.executeCommand("workbench.action.reloadWindow");
-                }
-            })();
+            void vscode.window.showInformationMessage(
+                "GMLoop: Local build synchronized. Reloading VS Code to apply the new extension runtime."
+            );
+            void vscode.commands.executeCommand("workbench.action.reloadWindow");
         },
         logError(message, error) {
             const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
