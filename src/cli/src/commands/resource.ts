@@ -1,5 +1,4 @@
 import { writeFile } from "node:fs/promises";
-import path from "node:path";
 
 import { Refactor } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
@@ -9,6 +8,11 @@ import { applyStandardCommandOptions } from "../cli-core/command-standard-option
 import { handleCliError } from "../cli-core/errors.js";
 import { createConfigOption, createPathOption } from "../cli-core/shared-command-options.js";
 import { ensureProjectGraphIndex, printProjectPayload } from "../workflow/project-root.js";
+import {
+    buildCreateImageResultPayload,
+    type CreateImageRawOptions,
+    parseCreateImageOptions
+} from "./resource/create-image-options.js";
 
 type ResourceCommandSharedOptions = Readonly<{
     config?: string;
@@ -38,6 +42,19 @@ function addSharedOptions(command: Command): Command {
         .option("--database-path <path>", "Graph index database path override.")
         .option("--toolset-root <path>", "Toolset project root path override.")
         .option("--json", "Emit JSON output.");
+}
+
+/**
+ * Execute the `resource create-image` workflow as a sequence of delegation
+ * steps: parse the CLI request, render the PNG, write the file, and print
+ * the resulting payload. Each step is owned by a dedicated helper so this
+ * orchestrator focuses on sequencing rather than primitive bookkeeping.
+ */
+async function runCreateImageAction(outputPath: string, rawOptions: CreateImageRawOptions): Promise<void> {
+    const request = parseCreateImageOptions(rawOptions);
+    const imageBuffer = Refactor.createSolidColorPng(request);
+    await writeFile(outputPath, imageBuffer);
+    printProjectPayload(buildCreateImageResultPayload(request, outputPath));
 }
 
 /**
@@ -99,53 +116,7 @@ export function createResourceCommand(): Command {
 
     createImageCommand.action(async function resourceCreateImageAction(outputPath: string) {
         await runResourceCommandAction(async () => {
-            const options = this.opts<{
-                width: string;
-                height: string;
-                color: string;
-                color2: string;
-                pattern: "solid" | "checkerboard";
-                checkerSize: string;
-            }>();
-
-            const width = Number.parseInt(options.width, 10);
-            const height = Number.parseInt(options.height, 10);
-            const checkerSize = Number.parseInt(options.checkerSize, 10);
-
-            if (Number.isNaN(width) || width <= 0) {
-                throw new Error(`Invalid width: "${options.width}". Must be a positive integer.`);
-            }
-            if (Number.isNaN(height) || height <= 0) {
-                throw new Error(`Invalid height: "${options.height}". Must be a positive integer.`);
-            }
-            if (Number.isNaN(checkerSize) || checkerSize <= 0) {
-                throw new Error(`Invalid checker size: "${options.checkerSize}". Must be a positive integer.`);
-            }
-
-            const imageBuffer = Refactor.createSolidColorPng({
-                width,
-                height,
-                color: options.color,
-                color2: options.color2,
-                pattern: options.pattern,
-                checkerSize
-            });
-
-            await writeFile(outputPath, imageBuffer);
-
-            printProjectPayload({
-                command: "resource create-image",
-                ok: true,
-                payload: {
-                    outputPath: path.resolve(outputPath),
-                    width,
-                    height,
-                    color: options.color,
-                    color2: options.color2,
-                    pattern: options.pattern,
-                    checkerSize
-                }
-            });
+            await runCreateImageAction(outputPath, this.opts<CreateImageRawOptions>());
         });
     });
 

@@ -184,8 +184,10 @@ export function loadGameMakerCliCompanionCatalog(
         process.argv.some((arg) => typeof arg === "string" && (arg.startsWith("--test") || arg.includes("test/dist/")));
 
     if (isTest) {
-        return createUnavailableGameMakerCliCompanionCatalog(
-            new Error("GameMaker CLI detection is disabled during test execution.")
+        return Promise.resolve(
+            createUnavailableGameMakerCliCompanionCatalog(
+                new Error("GameMaker CLI detection is disabled during test execution.")
+            )
         );
     }
 
