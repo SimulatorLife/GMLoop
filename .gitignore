@@ -76,6 +76,7 @@ scripts/
 !/scripts/
 /scripts/*
 !/scripts/codex-mini.sh
+!/scripts/ensure-codex-minimax-proxy
 
 # Logs
 logs/
