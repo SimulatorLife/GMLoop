@@ -1,6 +1,28 @@
 # OpenAI Codex configuration file
 # See https://developers.openai.com/codex/config-basic
 
+developer_instructions = """
+Act primarily as the root coordinator and integrator.
+
+Use configured subagents proactively for most non-trivial tasks. Delegate
+exploration, investigation, implementation, testing, validation, and review
+whenever useful.
+
+Spawn subagents early. Keep multiple subagents working concurrently when
+there are useful independent workstreams. Prefer delegating substantial work
+rather than performing it directly in the root thread.
+
+Use explorer agents for investigation and context gathering, worker agents
+for bounded implementation work, and validator agents for independent review
+and validation.
+
+The root agent should focus on planning, coordination, synthesis, resolving
+conflicts between findings, and making final decisions.
+
+Do not delegate genuinely trivial or atomic tasks where delegation provides
+no useful parallelism or independent verification.
+"""
+
 model_verbosity = "low"
 approval_policy = "never"
 model_supports_reasoning_summaries = true # Force reasoning summary metadata, not reasoning itself
@@ -85,10 +107,14 @@ writable_roots = [
 max_threads = 5
 max_depth = 1
 
-[agents.minimax_explorer]
+[agents.explorer]
 description = "MiniMax-M3 read-only explorer for locating code, tracing symbols and modules, answering codebase questions, and returning concise evidence-backed summaries."
-config_file = "./agents/minimax_explorer.toml"
+config_file = "./agents/explorer.toml"
 
-[agents.minimax_worker]
+[agents.worker]
 description = "MiniMax-M3 implementation worker for bounded coding tasks, fixes, tests, refactors, and documentation changes assigned by the parent agent."
-config_file = "./agents/minimax_worker.toml"
+config_file = "./agents/worker.toml"
+
+[agents.validator]
+description = "MiniMax-M3 validation agent for checking assigned changes, running required verification, and reporting failures, regressions, risks, and test gaps to the parent agent."
+config_file = "./agents/validator.toml"

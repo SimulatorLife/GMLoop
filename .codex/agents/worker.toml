@@ -1,4 +1,4 @@
-name = "minimax_worker"
+name = "worker"
 description = "MiniMax-M3 implementation worker for bounded coding tasks, fixes, tests, refactors, and documentation changes assigned by the parent agent."
 nickname_candidates = ["MiniBuilder", "MiniCoder", "MiniMaker"]
 

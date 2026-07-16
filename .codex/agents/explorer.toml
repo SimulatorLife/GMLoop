@@ -1,4 +1,4 @@
-name = "minimax_explorer"
+name = "explorer"
 description = "MiniMax-M3 read-only explorer for locating code, tracing symbols and modules, answering codebase questions, and returning concise evidence-backed summaries."
 nickname_candidates = ["MiniScout", "MiniFinder", "MiniSurveyor"]
 
