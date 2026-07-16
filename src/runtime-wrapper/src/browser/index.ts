@@ -144,16 +144,7 @@ function installLiveReloadBootstrap(): void {
         return;
     }
 
-    const readyState = Reflect.get(browserDocument, "readyState");
-    if (readyState === "complete") {
-        ensureLiveReloadInitialized();
-        return;
-    }
-
-    const addEventListener = Reflect.get(browserWindow, "addEventListener");
-    if (typeof addEventListener === "function") {
-        Reflect.apply(addEventListener, browserWindow, ["load", ensureLiveReloadInitialized, { once: true }]);
-    }
+    ensureLiveReloadInitialized();
 }
 
 installLiveReloadBootstrap();

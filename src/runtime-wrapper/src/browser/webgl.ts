@@ -15,10 +15,13 @@ export function applyWebGLSafetyPatches(globalScope: BrowserGlobalScope): void {
         const originalGetContext = canvasProto.getContext;
         canvasProto.getContext = function (this: any, contextId: string, options?: any) {
             const gl = originalGetContext.call(this, contextId, options);
-            if (gl && (contextId === "webgl" || contextId === "experimental-webgl") && // Request WEBGL_draw_buffers extension to enable it on the WebGL context
-                typeof gl.getExtension === "function") {
-                    gl.getExtension("WEBGL_draw_buffers");
-                }
+            if (
+                gl &&
+                (contextId === "webgl" || contextId === "experimental-webgl") && // Request WEBGL_draw_buffers extension to enable it on the WebGL context
+                typeof gl.getExtension === "function"
+            ) {
+                gl.getExtension("WEBGL_draw_buffers");
+            }
             return gl;
         };
     }
@@ -34,7 +37,7 @@ export function applyWebGLSafetyPatches(globalScope: BrowserGlobalScope): void {
                 !source.includes("GL_EXT_draw_buffers")
             ) {
                 // Inject the extension line at the top of the shader source
-                modifiedSource = `#extension GL_EXT_draw_buffers : enable\n${  source}`;
+                modifiedSource = `#extension GL_EXT_draw_buffers : enable\n${source}`;
             }
             originalShaderSource.call(this, shader, modifiedSource);
         };
@@ -50,7 +53,7 @@ export function applyWebGLSafetyPatches(globalScope: BrowserGlobalScope): void {
                 source.includes("gl_FragData") &&
                 !source.includes("GL_EXT_draw_buffers")
             ) {
-                modifiedSource = `#extension GL_EXT_draw_buffers : enable\n${  source}`;
+                modifiedSource = `#extension GL_EXT_draw_buffers : enable\n${source}`;
             }
             originalShaderSource.call(this, shader, modifiedSource);
         };

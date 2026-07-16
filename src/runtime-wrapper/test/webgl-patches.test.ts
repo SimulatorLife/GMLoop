@@ -6,7 +6,7 @@ import { applyWebGLSafetyPatches } from "../src/browser/webgl.js";
 test("WebGL safety patches hook getContext and shaderSource", () => {
     // 1. Mocking HTMLCanvasElement prototype
     const mockCanvasProto = {
-        getContext (contextId: string, options?: any) {
+        getContext(contextId: string, options?: any) {
             return mockGlContext;
         }
     };
@@ -22,7 +22,7 @@ test("WebGL safety patches hook getContext and shaderSource", () => {
     // 2. Mocking WebGLRenderingContext prototype
     let shaderSourceCalledWith: [any, string] | null = null;
     const mockGlProto = {
-        shaderSource (shader: any, source: string) {
+        shaderSource(shader: any, source: string) {
             shaderSourceCalledWith = [shader, source];
         }
     };
@@ -30,15 +30,15 @@ test("WebGL safety patches hook getContext and shaderSource", () => {
     // 3. Mocking WebGL2RenderingContext prototype
     let shaderSource2CalledWith: [any, string] | null = null;
     const mockGl2Proto = {
-        shaderSource (shader: any, source: string) {
+        shaderSource(shader: any, source: string) {
             shaderSource2CalledWith = [shader, source];
         }
     };
 
     const mockGlobal = {
-        HTMLCanvasElement () {},
-        WebGLRenderingContext () {},
-        WebGL2RenderingContext () {}
+        HTMLCanvasElement() {},
+        WebGLRenderingContext() {},
+        WebGL2RenderingContext() {}
     } as any;
 
     mockGlobal.HTMLCanvasElement.prototype = mockCanvasProto;
