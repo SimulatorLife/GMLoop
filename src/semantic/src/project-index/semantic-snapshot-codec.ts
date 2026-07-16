@@ -139,35 +139,73 @@ function collectScriptCallRelationships(
         return [];
     }
     const relationships = asRecord(index.relationships);
-    return Array.isArray(relationships.scriptCalls)
-        ? relationships.scriptCalls.flatMap((rawCall, ordinal) => {
-              const call = asRecord(rawCall);
-              const from = asRecord(call.from);
-              const target = asRecord(call.target);
-              const ownerFilePath = readString(from.filePath);
-              if (ownerFilePath === null) {
-                  return [];
-              }
-              const location = asRecord(call.location);
-              const start = readOffset(location.start ?? call.start);
-              const endInclusive = readOffset(location.end ?? call.end);
-              return [
-                  Object.freeze({
-                      kind: "scriptCall",
-                      ownerFilePath,
-                      payload: Object.freeze({
-                          end: endInclusive === null ? null : endInclusive + 1,
-                          fromScopeId: readString(from.scopeId),
-                          isResolved: call.isResolved === true,
-                          start,
-                          targetName: readString(target.name),
-                          targetScopeId: readString(target.scopeId)
-                      }),
-                      relationshipId: `script-call:${ownerFilePath}:${String(ordinal)}`
-                  })
-              ];
-          })
-        : [];
+    if (!Array.isArray(relationships.scriptCalls)) {
+        return [];
+    }
+    const callsById = new Map<string, SemanticRelationship>();
+    for (const rawCall of relationships.scriptCalls) {
+        const call = asRecord(rawCall);
+        const from = asRecord(call.from);
+        const target = asRecord(call.target);
+        const ownerFilePath = readString(from.filePath);
+        if (ownerFilePath === null) {
+            continue;
+        }
+        const location = asRecord(call.location);
+        const start = readOffset(location.start ?? call.start);
+        const endInclusive = readOffset(location.end ?? call.end);
+        const payload = Object.freeze({
+            end: endInclusive === null ? null : endInclusive + 1,
+            fromScopeId: readString(from.scopeId),
+            isResolved: call.isResolved === true,
+            start,
+            targetName: readString(target.name),
+            targetScopeId: readString(target.scopeId)
+        });
+        const relationshipId = `script-call:${encodeURIComponent(
+            JSON.stringify([ownerFilePath, payload.start, payload.end, payload.targetName])
+        )}`;
+        const relationship = Object.freeze({
+            kind: "scriptCall",
+            ownerFilePath,
+            payload,
+            relationshipId
+        });
+        const existing = callsById.get(relationshipId);
+        if (
+            existing === undefined ||
+            (payload.isResolved === true && existing.payload.isResolved !== true) ||
+            (payload.isResolved === existing.payload.isResolved &&
+                JSON.stringify(payload).localeCompare(JSON.stringify(existing.payload)) < 0)
+        ) {
+            callsById.set(relationshipId, relationship);
+        }
+    }
+    return Object.freeze(
+        [...callsById.values()].toSorted((left, right) => left.relationshipId.localeCompare(right.relationshipId))
+    );
+}
+
+function compareSemanticOccurrences(left: SemanticOccurrence, right: SemanticOccurrence): number {
+    const filePathComparison = left.filePath.localeCompare(right.filePath);
+    if (filePathComparison !== 0) {
+        return filePathComparison;
+    }
+    if (left.start !== right.start) {
+        return left.start - right.start;
+    }
+    if (left.end !== right.end) {
+        return left.end - right.end;
+    }
+    const roleComparison = left.role.localeCompare(right.role);
+    if (roleComparison !== 0) {
+        return roleComparison;
+    }
+    const symbolComparison = left.symbolId.localeCompare(right.symbolId);
+    if (symbolComparison !== 0) {
+        return symbolComparison;
+    }
+    return (left.scopeId ?? "").localeCompare(right.scopeId ?? "");
 }
 
 function collectEnumMemberRelationships(index: Readonly<Record<string, unknown>>): ReadonlyArray<SemanticRelationship> {
@@ -510,33 +548,42 @@ export function createSemanticSnapshotFromProjectIndex(
             occurrences.push(...collectOccurrences(entry, symbolId, definingFilePath, tier));
         }
     }
-    const scopes = Object.entries(asRecord(index.scopes)).map(([scopeId, rawScope]) => {
-        const scope = asRecord(rawScope);
-        return Object.freeze({
-            displayName: readString(scope.displayName) ?? scopeId,
-            filePaths: Array.isArray(scope.filePaths)
-                ? Object.freeze(scope.filePaths.flatMap((filePath) => (typeof filePath === "string" ? [filePath] : [])))
-                : Object.freeze([]),
-            kind: readString(scope.kind) ?? "unknown",
-            name: readString(scope.name) ?? scopeId,
-            resourcePath: readString(scope.resourcePath),
-            scopeId
+    const scopes = Object.entries(asRecord(index.scopes))
+        .toSorted(([left], [right]) => left.localeCompare(right))
+        .map(([scopeId, rawScope]) => {
+            const scope = asRecord(rawScope);
+            return Object.freeze({
+                displayName: readString(scope.displayName) ?? scopeId,
+                filePaths: Array.isArray(scope.filePaths)
+                    ? Object.freeze(
+                          scope.filePaths
+                              .flatMap((filePath) => (typeof filePath === "string" ? [filePath] : []))
+                              .toSorted((left, right) => left.localeCompare(right))
+                      )
+                    : Object.freeze([]),
+                kind: readString(scope.kind) ?? "unknown",
+                name: readString(scope.name) ?? scopeId,
+                resourcePath: readString(scope.resourcePath),
+                scopeId
+            });
         });
-    });
-    const resources = Object.entries(asRecord(index.resources)).map(([resourcePath, rawResource]) => {
-        const resource = asRecord(rawResource);
-        return Object.freeze({
-            name: readString(resource.name) ?? resourcePath,
-            resourcePath,
-            resourceType: readString(resource.resourceType) ?? "unknown"
+    const resources = Object.entries(asRecord(index.resources))
+        .toSorted(([left], [right]) => left.localeCompare(right))
+        .map(([resourcePath, rawResource]) => {
+            const resource = asRecord(rawResource);
+            return Object.freeze({
+                name: readString(resource.name) ?? resourcePath,
+                resourcePath,
+                resourceType: readString(resource.resourceType) ?? "unknown"
+            });
         });
-    });
     const rawRelationships = Object.freeze([
         ...collectScriptCallRelationships(index, tier),
         ...collectEnumMemberRelationships(index)
     ]);
     const resolvedCalls = resolveScopedCallTargets({ occurrences, relationships: rawRelationships, symbols });
     occurrences.push(...resolvedCalls.occurrences);
+    const orderedOccurrences = occurrences.toSorted(compareSemanticOccurrences);
     const relationships = resolvedCalls.relationships;
     const unresolvedReferences = classifyUnresolvedReferenceCandidates(
         collectUnresolvedReferences(index, tier).filter(
@@ -547,11 +594,11 @@ export function createSemanticSnapshotFromProjectIndex(
         ),
         symbols
     );
-    const dependencies = collectDependencies({ occurrences, relationships, scopes, symbols, tier });
+    const dependencies = collectDependencies({ occurrences: orderedOccurrences, relationships, scopes, symbols, tier });
     return Object.freeze({
         analyzedFilePaths: collectAnalyzedFilePaths(index),
         dependencies: Object.freeze(dependencies),
-        occurrences: Object.freeze(occurrences),
+        occurrences: Object.freeze(orderedOccurrences),
         relationships: Object.freeze(relationships),
         resources: Object.freeze(resources),
         scopes: Object.freeze(scopes),

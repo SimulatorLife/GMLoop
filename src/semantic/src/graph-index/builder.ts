@@ -4,15 +4,15 @@ import path from "node:path";
 import { performance } from "node:perf_hooks";
 
 import { Core } from "@gmloop/core";
+import { Parser } from "@gmloop/parser";
 
+import type { ProjectIndexBuildOptions } from "../project-index/build-options.js";
 import { isProjectManifestPath } from "../project-index/constants.js";
 import type { ProjectIndexCoordinatorInstance } from "../project-index/coordinator.js";
 import {
     buildProjectIndex,
     buildSemanticFileManifest,
     createProjectIndexCoordinator,
-    createTolerantProjectIndexParser,
-    getDefaultProjectIndexParser,
     openSemanticIndexStore,
     publishSemanticTwoTierSnapshot
 } from "../project-index/index.js";
@@ -2029,6 +2029,27 @@ function readGraphDatabaseIntegrityStatus(database: GraphDatabase): GraphDatabas
     });
 }
 
+function createTolerantGraphProjectParser(): NonNullable<ProjectIndexBuildOptions["parseGml"]> {
+    return (sourceText) => {
+        try {
+            return Parser.GMLParser.parse(sourceText, {
+                getComments: true,
+                getLocations: true,
+                simplifyLocations: false
+            });
+        } catch (error) {
+            if (!Core.isSyntaxErrorWithLocation(error)) {
+                throw error;
+            }
+            return Parser.GMLParser.parse("", {
+                getComments: true,
+                getLocations: true,
+                simplifyLocations: false
+            });
+        }
+    };
+}
+
 /**
  * Create a project index coordinator whose build path tolerates malformed GML
  * files so a single syntax-invalid source does not fail the whole index build.
@@ -2039,8 +2060,7 @@ function readGraphDatabaseIntegrityStatus(database: GraphDatabase): GraphDatabas
  * lives here.
  */
 function createTolerantProjectIndexCoordinator(): ProjectIndexCoordinatorInstance {
-    const baseParser = getDefaultProjectIndexParser();
-    const tolerantParser = createTolerantProjectIndexParser(baseParser);
+    const tolerantParser = createTolerantGraphProjectParser();
     return createProjectIndexCoordinator({
         buildIndex: async (resolvedRoot, fsFacade, options) => {
             return await buildProjectIndex(resolvedRoot, fsFacade, {
@@ -2078,7 +2098,7 @@ async function getOrBuildProjectIndex(projectRoot: string): Promise<ProjectIndex
     }
 
     try {
-        const parser = createTolerantProjectIndexParser(getDefaultProjectIndexParser());
+        const parser = createTolerantGraphProjectParser();
         const index = (await buildProjectIndex(projectRoot, Core.defaultFsFacade, {
             parseGml: parser
         })) as ProjectIndexSnapshot;

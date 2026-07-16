@@ -9,6 +9,31 @@ import { Semantic } from "@gmloop/semantic";
 
 import type { GmlSemanticAnalysisStart } from "../src/intelligence/index.js";
 
+const TEST_REQUEST_SIGNAL = new AbortController().signal;
+
+function bindTestRequestSignal<Arguments extends unknown[], Result>(
+    request: (...arguments_: [...Arguments, AbortSignal]) => Promise<Result>
+): (...arguments_: Arguments) => Promise<Result> {
+    return (...arguments_) => request(...arguments_, TEST_REQUEST_SIGNAL);
+}
+
+function createTestSemanticIndex(...parameters: Parameters<typeof Lsp.createGmlSemanticIndex>) {
+    const semanticIndex = Lsp.createGmlSemanticIndex(...parameters);
+    return Object.freeze({
+        ...semanticIndex,
+        findDefinition: bindTestRequestSignal(semanticIndex.findDefinition),
+        findDocumentReferences: bindTestRequestSignal(semanticIndex.findDocumentReferences),
+        findReferences: bindTestRequestSignal(semanticIndex.findReferences),
+        hover: bindTestRequestSignal(semanticIndex.hover),
+        listDocumentSymbols: bindTestRequestSignal(semanticIndex.listDocumentSymbols),
+        listSemanticHighlights: bindTestRequestSignal(semanticIndex.listSemanticHighlights),
+        planRename: bindTestRequestSignal(semanticIndex.planRename),
+        prepareRename: bindTestRequestSignal(semanticIndex.prepareRename),
+        searchCompletions: bindTestRequestSignal(semanticIndex.searchCompletions),
+        searchWorkspaceSymbols: bindTestRequestSignal(semanticIndex.searchWorkspaceSymbols)
+    });
+}
+
 async function cleanupProjectDir(projectRoot: string) {
     await new Promise((resolve) => setTimeout(resolve, 50));
     await fs.rm(projectRoot, { recursive: true, force: true }).catch(() => {});
@@ -89,7 +114,7 @@ void test("semantic index resolves definitions, references, hover, and cross-fil
             version: 1,
             text: fixture.sourceText
         });
-        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        const semanticIndex = createTestSemanticIndex(store);
         const offset = fixture.sourceText.indexOf("target();");
 
         const definition = await semanticIndex.findDefinition(document, offset, "target");
@@ -114,6 +139,9 @@ void test("semantic index resolves definitions, references, hover, and cross-fil
         assert.match(hoverText, /Parameters:/);
         assert.match(hoverText, /\* `x` \(`real`\) — argument/);
 
+        const renameRange = await semanticIndex.prepareRename(document, offset, "target");
+        assert.deepEqual(renameRange, Lsp.offsetsToRange(document, offset, offset + "target".length));
+
         const renameEdit = await semanticIndex.planRename(document, offset, "target", "renamed_target");
         assert.ok(renameEdit?.changes);
         assert.ok(renameEdit.changes[Lsp.filePathToUri(fixture.sourcePath)]?.length);
@@ -134,7 +162,7 @@ void test("semantic index invalidates cached project facts for unsaved document 
             version: 1,
             text: fixture.sourceText
         });
-        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        const semanticIndex = createTestSemanticIndex(store);
 
         await semanticIndex.buildForDocument(document);
         const beforeEdit = await semanticIndex.searchCompletions(document, "new_unsaved_symbol");
@@ -174,7 +202,7 @@ void test("semantic queries wait for current Tier 1 facts after an overlay edit"
             version: 1,
             text: "function old_symbol() { return 1; }"
         });
-        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        const semanticIndex = createTestSemanticIndex(store);
         await semanticIndex.buildForDocument(document);
 
         const updatedDocument = store.update(document.uri, 2, [{ text: "function current_symbol() { return 2; }" }]);
@@ -211,7 +239,7 @@ void test("semantic manifests and open-buffer overlays remain isolated across pr
             version: 4,
             text: secondSource
         });
-        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        const semanticIndex = createTestSemanticIndex(store);
 
         await semanticIndex.buildForDocument(firstDocument);
         await semanticIndex.buildForDocument(secondDocument);
@@ -254,7 +282,8 @@ void test("semantic index refreshes project facts after an external resource met
             version: 1,
             text: `${fixture.sourceText}\n// dirty`
         });
-        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        const analysisStarts: GmlSemanticAnalysisStart[] = [];
+        const semanticIndex = createTestSemanticIndex(store, null, (event) => analysisStarts.push(event));
         await semanticIndex.buildForDocument(document);
         await semanticIndex.findReferences(document, fixture.sourceText.indexOf("target();"), "target", false);
 
@@ -281,6 +310,7 @@ void test("semantic index refreshes project facts after an external resource met
         const completions = await semanticIndex.searchCompletions(document, "external_added");
         assert.ok(completions.some((completion) => completion.label === "external_added"));
 
+        analysisStarts.length = 0;
         await fs.writeFile(
             projectManifestPath,
             JSON.stringify({
@@ -293,6 +323,13 @@ void test("semantic index refreshes project facts after an external resource met
             })
         );
         await semanticIndex.refreshForFileChanges([{ filePath: projectManifestPath, kind: "metadataChanged" }]);
+        assert.ok(
+            analysisStarts.some(
+                (event) =>
+                    event.tier === "definitions" && event.reason === "fileChanges" && event.affectedFileCount >= 3
+            ),
+            "resource ownership queries must retain deleted metadata and GML files in the impacted change batch"
+        );
         const completionsAfterRemoval = await semanticIndex.searchCompletions(document, "external_added");
         assert.equal(
             completionsAfterRemoval.some((completion) => completion.label === "external_added"),
@@ -348,7 +385,7 @@ void test("semantic index hover handles comment/string guards and ignores scope-
             version: 1,
             text: sourceText
         });
-        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        const semanticIndex = createTestSemanticIndex(store);
 
         const offsetLocalVar = sourceText.indexOf("var desc =") + 4;
         const hoverLocal = await semanticIndex.hover(document, offsetLocalVar, "desc");
@@ -418,7 +455,7 @@ void test("semantic index hover on function parameter includes type and descript
             version: 1,
             text: sourceText
         });
-        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        const semanticIndex = createTestSemanticIndex(store);
 
         const offsetParam = sourceText.indexOf("function (target)") + 10;
         const hoverRes = await semanticIndex.hover(document, offsetParam, "target");
@@ -448,7 +485,7 @@ void test("semantic highlights use current lexical facts instead of shifted pers
             version: 1,
             text: initialSource
         });
-        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        const semanticIndex = createTestSemanticIndex(store);
         await semanticIndex.buildForDocument(document);
 
         const updatedSource = `// shifted document\n${initialSource}`;
@@ -508,7 +545,7 @@ void test("semantic index prioritizes open files in indexing queue", async () =>
             text: "function b() {}"
         });
 
-        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        const semanticIndex = createTestSemanticIndex(store);
         const hoverRes = await semanticIndex.hover(docB, 0, "b");
         assert.ok(hoverRes === null || hoverRes !== undefined);
     } finally {
@@ -526,12 +563,42 @@ void test("semantic index disposal waits for an aborted build before releasing i
             version: 1,
             text: fixture.sourceText
         });
-        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        const semanticIndex = createTestSemanticIndex(store);
 
         const build = semanticIndex.buildForDocument(document);
         await semanticIndex.dispose();
 
         assert.equal(await build, null);
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("cancelling one semantic request does not abort the shared project build", async () => {
+    const fixture = await createTwoScriptProject();
+    try {
+        const store = Lsp.createGmlDocumentStore();
+        const document = store.open({
+            uri: Lsp.filePathToUri(fixture.sourcePath),
+            languageId: "gml",
+            version: 1,
+            text: fixture.sourceText
+        });
+        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        const sharedBuild = semanticIndex.buildForDocument(document);
+        const controller = new AbortController();
+        controller.abort();
+
+        const cancelledDefinition = await semanticIndex.findDefinition(
+            document,
+            fixture.sourceText.indexOf("target();"),
+            "target",
+            controller.signal
+        );
+
+        assert.equal(cancelledDefinition, null);
+        assert.ok(await sharedBuild, "The shared build must remain available after request cancellation.");
+        await semanticIndex.dispose();
     } finally {
         await fixture.cleanup();
     }
@@ -579,7 +646,7 @@ void test("semantic index double-pass approach exposes fast hover initially, and
 
         let publishedGenerationCount = 0;
         const analysisStarts: GmlSemanticAnalysisStart[] = [];
-        const semanticIndex = Lsp.createGmlSemanticIndex(
+        const semanticIndex = createTestSemanticIndex(
             store,
             () => {
                 publishedGenerationCount += 1;
@@ -703,7 +770,7 @@ void test("semantic index full worker preserves unsaved open-buffer facts", asyn
             version: 7,
             text: "function unsaved_symbol() { return 2; }"
         });
-        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        const semanticIndex = createTestSemanticIndex(store);
 
         const initialState = await semanticIndex.buildForDocument(document);
         assert.ok(initialState);
@@ -749,7 +816,7 @@ void test("closing an unsaved buffer restores disk-backed semantic facts and man
             version: 8,
             text: overlaySource
         });
-        const semanticIndex = Lsp.createGmlSemanticIndex(documents);
+        const semanticIndex = createTestSemanticIndex(documents);
         await semanticIndex.buildForDocument(document);
         await semanticIndex.findReferences(document, 9, "overlay_symbol", true);
         const overlayCompletions = await semanticIndex.searchCompletions(document, "overlay_symbol");
@@ -813,7 +880,7 @@ void test("semantic index aborts and cancels in-flight builds on invalidation", 
             text: "function a() { return 1; }"
         });
 
-        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        const semanticIndex = createTestSemanticIndex(store);
 
         // Start a build and immediately invalidate it
         const buildPromise = semanticIndex.buildForDocument(doc);
@@ -867,7 +934,7 @@ void test("semantic index performs incremental updates on document refresh", asy
         });
 
         let publishedGenerationCount = 0;
-        const semanticIndex = Lsp.createGmlSemanticIndex(store, () => {
+        const semanticIndex = createTestSemanticIndex(store, () => {
             publishedGenerationCount += 1;
         });
 
@@ -939,8 +1006,6 @@ void test("semantic index performs incremental updates on document refresh", asy
         const persistedSnapshot = persistedStore.readSemanticSnapshot("full");
         await persistedStore.close();
         assert.equal(persistedSnapshot, null, "Open-buffer facts must remain session-local");
-        const liveNewFunction = refreshedState.index.symbols.find((symbol) => symbol.name === "new_func");
-        assert.ok(liveNewFunction, "The refreshed navigation state must contain the new function");
         const newFunctionReferences = await semanticIndex.findReferences(
             docB,
             bSource.indexOf("new_func"),
@@ -961,7 +1026,7 @@ void test("semantic index rebuilds when a persisted generation has no analyzed-f
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gmloop-lsp-stale-coverage-"));
     const relativePath = "scripts/main/main.gml";
     const scriptPath = path.join(projectRoot, relativePath);
-    let semanticIndex: ReturnType<typeof Lsp.createGmlSemanticIndex> | null = null;
+    let semanticIndex: ReturnType<typeof createTestSemanticIndex> | null = null;
     const sourceText = "/// @desc Main\nfunction main() {}\n";
     try {
         await fs.writeFile(
@@ -1049,7 +1114,7 @@ void test("semantic index rebuilds when a persisted generation has no analyzed-f
             text: sourceText
         });
         const analysisStarts: GmlSemanticAnalysisStart[] = [];
-        semanticIndex = Lsp.createGmlSemanticIndex(documentStore, null, (event) => analysisStarts.push(event));
+        semanticIndex = createTestSemanticIndex(documentStore, null, (event) => analysisStarts.push(event));
         const state = await semanticIndex.buildForDocument(document);
         assert.ok(state);
         assert.equal(state.lightweight, true, "A partial persisted tier must be replaced by a fresh Tier 1 build.");
@@ -1096,9 +1161,14 @@ void test("semantic index loads cache from disk on startup and saves updates to 
 
         // 1. First semantic index instance builds from an open buffer. Its
         // facts remain session-local until the buffer is closed.
-        const index1 = Lsp.createGmlSemanticIndex(store);
+        const index1 = createTestSemanticIndex(store);
         const state1 = await index1.buildForDocument(doc);
         assert.ok(state1, "Initial semantic build must succeed");
+        assert.equal(
+            Object.hasOwn(state1, "snapshot"),
+            false,
+            "Published LSP request state must release the whole canonical build snapshot."
+        );
 
         await index1.findReferences(doc, "function cache_func".length, "cache_func", false);
         store.close(doc.uri);
@@ -1119,7 +1189,7 @@ void test("semantic index loads cache from disk on startup and saves updates to 
 
         // 2. A fresh semantic index must restore the disk-backed persisted state without a rebuild.
         let restoredGenerationCount = 0;
-        const index2 = Lsp.createGmlSemanticIndex(store, () => {
+        const index2 = createTestSemanticIndex(store, () => {
             restoredGenerationCount += 1;
         });
         const state2 = await index2.buildForDocument(doc);
@@ -1130,9 +1200,9 @@ void test("semantic index loads cache from disk on startup and saves updates to 
             "Restored state must be the persisted full tier, not a lightweight fallback that would force a rebuild"
         );
         assert.equal(
-            state2.index.rawIndex,
-            undefined,
-            "Restored LSP navigation must be reconstructed from canonical facts without a persisted raw projection."
+            Object.hasOwn(state2, "snapshot"),
+            false,
+            "Restored LSP request state must not retain a whole canonical snapshot."
         );
 
         const comps = await index2.searchCompletions(doc, "cache_func");
@@ -1167,7 +1237,7 @@ void test("semantic index reconciles closed-session disk edits through one resta
             version: 1,
             text: fixture.sourceText
         });
-        const firstIndex = Lsp.createGmlSemanticIndex(firstStore);
+        const firstIndex = createTestSemanticIndex(firstStore);
         await firstIndex.findReferences(firstDocument, fixture.sourceText.indexOf("target();"), "target", false);
         await firstIndex.dispose();
 
@@ -1185,7 +1255,7 @@ void test("semantic index reconciles closed-session disk edits through one resta
             version: 1,
             text: changedSource
         });
-        const restartedIndex = Lsp.createGmlSemanticIndex(restartedStore);
+        const restartedIndex = createTestSemanticIndex(restartedStore);
 
         const restoredState = await restartedIndex.buildForDocument(restartedDocument);
         assert.ok(restoredState, "The persisted snapshot should remain immediately usable during reconciliation.");

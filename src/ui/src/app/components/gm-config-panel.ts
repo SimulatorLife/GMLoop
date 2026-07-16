@@ -844,9 +844,9 @@ export class GmConfigPanel extends LightDomLitElement {
                                           @click=${this.#emitCreateConfig}
                                       >
                                           ${renderProcessButtonContent({
-                                          label: "Create Default Config",
-                                          pending: this.state.isRegeneratePending
-                                      })}
+                                              label: "Create Default Config",
+                                              pending: this.state.isRegeneratePending
+                                          })}
                                       </button>
                                   </div>
                               `

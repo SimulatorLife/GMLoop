@@ -1,7 +1,9 @@
 import path from "node:path";
 
+import { getGmlSymbolKindSpecificity, normalizeGmlSemanticSymbolKind } from "../symbols/taxonomy.js";
 import { listSemanticRenameSafetyGaps, type SemanticRenameSafetyGap } from "./rename-safety.js";
-import type { SemanticOccurrence, SemanticSnapshot } from "./semantic-snapshot.js";
+import { compareSemanticQueryText } from "./semantic-query-order.js";
+import type { SemanticOccurrence, SemanticSnapshot, SemanticSymbol } from "./semantic-snapshot.js";
 
 /** A source range returned by a pinned semantic snapshot query. */
 export type SemanticSnapshotRange = Readonly<{
@@ -44,21 +46,45 @@ function resolveSnapshotFilePath(projectRoot: string, filePath: string): string 
 function compareOccurrences(left: SemanticOccurrence, right: SemanticOccurrence): number {
     return left.filePath === right.filePath
         ? left.start === right.start
-            ? left.end - right.end
+            ? left.end === right.end
+                ? compareSemanticQueryText(left.symbolId, right.symbolId)
+                : left.end - right.end
             : left.start - right.start
-        : left.filePath.localeCompare(right.filePath);
+        : compareSemanticQueryText(left.filePath, right.filePath);
+}
+
+function comparePreferredSymbolIds(
+    leftId: string,
+    rightId: string,
+    symbolsById: ReadonlyMap<string, SemanticSymbol>
+): number {
+    const left = symbolsById.get(leftId);
+    const right = symbolsById.get(rightId);
+    const leftSpecificity =
+        left === undefined ? 0 : getGmlSymbolKindSpecificity(normalizeGmlSemanticSymbolKind(left.kind));
+    const rightSpecificity =
+        right === undefined ? 0 : getGmlSymbolKindSpecificity(normalizeGmlSemanticSymbolKind(right.kind));
+    return leftSpecificity === rightSpecificity
+        ? compareSemanticQueryText(leftId, rightId)
+        : rightSpecificity - leftSpecificity;
 }
 
 function findSmallestOccurrenceAtOffset(
     occurrences: ReadonlyArray<SemanticOccurrence>,
-    offset: number
+    offset: number,
+    symbolsById: ReadonlyMap<string, SemanticSymbol>
 ): SemanticOccurrence | null {
     let match: SemanticOccurrence | null = null;
     for (const occurrence of occurrences) {
         if (occurrence.start > offset || occurrence.end <= offset) {
             continue;
         }
-        if (match === null || occurrence.end - occurrence.start < match.end - match.start) {
+        if (
+            match === null ||
+            occurrence.end - occurrence.start < match.end - match.start ||
+            (occurrence.end - occurrence.start === match.end - match.start &&
+                comparePreferredSymbolIds(occurrence.symbolId, match.symbolId, symbolsById) < 0)
+        ) {
             match = occurrence;
         }
     }
@@ -81,12 +107,14 @@ export function createSemanticSnapshotRefactorQueries(
     const occurrencesByFilePath = new Map<string, Array<SemanticOccurrence>>();
 
     for (const symbol of snapshot.symbols) {
-        const ids = symbolIdsByName.get(symbol.name) ?? [];
-        ids.push(symbol.symbolId);
-        symbolIdsByName.set(symbol.name, ids);
+        for (const name of new Set([symbol.name, symbol.displayName])) {
+            const ids = symbolIdsByName.get(name) ?? [];
+            ids.push(symbol.symbolId);
+            symbolIdsByName.set(name, ids);
+        }
     }
     for (const ids of symbolIdsByName.values()) {
-        ids.sort((left, right) => left.localeCompare(right));
+        ids.sort((left, right) => comparePreferredSymbolIds(left, right, symbolById));
     }
     for (const occurrence of snapshot.occurrences) {
         const bySymbol = occurrencesBySymbolId.get(occurrence.symbolId) ?? [];
@@ -107,19 +135,20 @@ export function createSemanticSnapshotRefactorQueries(
     return Object.freeze({
         getFileSymbols(filePath) {
             const symbolIds = new Set(
-                (occurrencesByFilePath.get(path.resolve(filePath)) ?? [])
+                (occurrencesByFilePath.get(resolveSnapshotFilePath(projectRoot, filePath)) ?? [])
                     .filter((occurrence) => occurrence.role === "definition")
                     .map((occurrence) => occurrence.symbolId)
             );
-            return [...symbolIds].toSorted().map((id) => Object.freeze({ id }));
+            return [...symbolIds].toSorted(compareSemanticQueryText).map((id) => Object.freeze({ id }));
         },
         getRenameSafetyGaps(symbolId) {
             return [...listSemanticRenameSafetyGaps(snapshot, symbolId)];
         },
         getSymbolAtPosition(filePath, offset) {
             const occurrence = findSmallestOccurrenceAtOffset(
-                occurrencesByFilePath.get(path.resolve(filePath)) ?? [],
-                offset
+                occurrencesByFilePath.get(resolveSnapshotFilePath(projectRoot, filePath)) ?? [],
+                offset,
+                symbolById
             );
             const symbol = occurrence === null ? undefined : symbolById.get(occurrence.symbolId);
             return occurrence === null || symbol === undefined

@@ -6,7 +6,7 @@ import {
 } from "./sqlite-adapter.js";
 
 /** The canonical normalized SCIP semantic-store schema. */
-export const GRAPH_INDEX_SCHEMA_VERSION = 8;
+export const GRAPH_INDEX_SCHEMA_VERSION = 11;
 
 const TABLE_RESET_STATEMENTS = Object.freeze([
     "DELETE FROM index_state",
@@ -291,6 +291,10 @@ function createSemanticIndexSchema(database: GraphDatabase): void {
             generation INTEGER NOT NULL,
             source_revision TEXT NOT NULL,
             base_generation INTEGER,
+            analyzed_file_count INTEGER NOT NULL,
+            analyzed_resource_count INTEGER NOT NULL,
+            coverage_status TEXT NOT NULL CHECK (coverage_status IN ('complete', 'partial')),
+            relationship_status TEXT NOT NULL CHECK (relationship_status IN ('complete', 'partial')),
             updated_at TEXT NOT NULL,
             PRIMARY KEY (project_root, tier),
             FOREIGN KEY (project_root) REFERENCES semantic_projects(project_root) ON DELETE CASCADE
@@ -311,9 +315,16 @@ function createSemanticIndexSchema(database: GraphDatabase): void {
         CREATE TABLE IF NOT EXISTS semantic_symbols (
             project_root TEXT NOT NULL, tier TEXT NOT NULL, symbol_id TEXT NOT NULL,
             kind TEXT NOT NULL, name TEXT NOT NULL, display_name TEXT NOT NULL, defining_file_path TEXT,
-            scope_id TEXT, documentation_json TEXT NOT NULL, updated_generation INTEGER NOT NULL,
+            normalized_display_name TEXT NOT NULL, scope_id TEXT, documentation_json TEXT NOT NULL,
+            updated_generation INTEGER NOT NULL,
             PRIMARY KEY (project_root, tier, symbol_id),
             FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS semantic_symbol_search_ngrams (
+            project_root TEXT NOT NULL, tier TEXT NOT NULL, symbol_id TEXT NOT NULL, search_ngram TEXT NOT NULL,
+            PRIMARY KEY (project_root, tier, symbol_id, search_ngram),
+            FOREIGN KEY (project_root, tier, symbol_id)
+                REFERENCES semantic_symbols(project_root, tier, symbol_id) ON DELETE CASCADE
         );
         CREATE TABLE IF NOT EXISTS semantic_occurrences (
             project_root TEXT NOT NULL, tier TEXT NOT NULL, symbol_id TEXT NOT NULL, file_path TEXT NOT NULL,
@@ -373,8 +384,43 @@ function createSemanticIndexSchema(database: GraphDatabase): void {
         CREATE INDEX IF NOT EXISTS idx_semantic_files_manifest ON semantic_files(project_root, tier, relative_path);
         CREATE INDEX IF NOT EXISTS idx_semantic_analyzed_files_path ON semantic_analyzed_files(project_root, tier, file_path);
         CREATE INDEX IF NOT EXISTS idx_semantic_symbols_name ON semantic_symbols(project_root, tier, name);
+        CREATE INDEX IF NOT EXISTS idx_semantic_symbols_search_order
+            ON semantic_symbols(project_root, tier, normalized_display_name, symbol_id);
+        CREATE INDEX IF NOT EXISTS idx_semantic_symbol_search_ngram
+            ON semantic_symbol_search_ngrams(project_root, tier, search_ngram, symbol_id);
+        CREATE INDEX IF NOT EXISTS idx_semantic_resources_name
+            ON semantic_resources(project_root, tier, name, resource_path);
         CREATE INDEX IF NOT EXISTS idx_semantic_symbols_owner ON semantic_symbols(project_root, tier, defining_file_path);
+        CREATE INDEX IF NOT EXISTS idx_semantic_scopes_resource
+            ON semantic_scopes(project_root, tier, resource_path, scope_id);
+        CREATE INDEX IF NOT EXISTS idx_semantic_scope_files_path
+            ON semantic_scope_files(project_root, tier, file_path);
         CREATE INDEX IF NOT EXISTS idx_semantic_occurrences_file ON semantic_occurrences(project_root, tier, file_path);
+        CREATE INDEX IF NOT EXISTS idx_semantic_occurrences_position
+            ON semantic_occurrences(project_root, tier, file_path, start_offset, end_offset);
+        CREATE INDEX IF NOT EXISTS idx_semantic_occurrences_symbol
+            ON semantic_occurrences(project_root, tier, symbol_id, role, file_path, start_offset);
+        CREATE INDEX IF NOT EXISTS idx_semantic_occurrences_invalid
+            ON semantic_occurrences(project_root, tier) WHERE end_offset < start_offset;
+        CREATE INDEX IF NOT EXISTS idx_semantic_occurrences_uncertain
+            ON semantic_occurrences(project_root, tier)
+            WHERE json_extract(resolution_json, '$.kind') <> 'exact';
+        CREATE INDEX IF NOT EXISTS idx_semantic_relationships_kind
+            ON semantic_relationships(project_root, tier, relationship_kind);
+        CREATE INDEX IF NOT EXISTS idx_semantic_relationships_member_symbol
+            ON semantic_relationships(
+                project_root,
+                tier,
+                relationship_kind,
+                json_extract(payload_json, '$.memberSymbolId')
+            );
+        CREATE INDEX IF NOT EXISTS idx_semantic_relationships_enum_symbol
+            ON semantic_relationships(
+                project_root,
+                tier,
+                relationship_kind,
+                json_extract(payload_json, '$.enumSymbolId')
+            );
         CREATE INDEX IF NOT EXISTS idx_semantic_dependencies_owner ON semantic_dependencies(project_root, tier, owner_file_path);
         CREATE INDEX IF NOT EXISTS idx_semantic_unresolved_name ON semantic_unresolved_references(project_root, tier, name);
         CREATE INDEX IF NOT EXISTS idx_semantic_history_project ON semantic_generation_history(project_root, generation DESC);
@@ -449,6 +495,7 @@ const DERIVED_SEMANTIC_TABLES = Object.freeze([
     "semantic_relationships",
     "semantic_scope_files",
     "semantic_occurrences",
+    "semantic_symbol_search_ngrams",
     "semantic_symbols",
     "semantic_scopes",
     "semantic_resources",
@@ -592,6 +639,22 @@ export function openGraphIndexDatabase(databasePath: string): GraphDatabase {
 export function openExistingGraphIndexDatabase(databasePath: string): GraphDatabase {
     const database = openExistingGraphDatabase(databasePath);
     ensureGraphIndexSchema(database);
+    return database;
+}
+
+/**
+ * Open a query-only connection to an existing current-schema graph database.
+ *
+ * Unlike the writer opener, this path never creates or resets derived data.
+ * Snapshot leases begin a WAL read transaction on the returned connection.
+ */
+export function openGraphIndexSnapshotDatabase(databasePath: string): GraphDatabase {
+    const database = openExistingGraphDatabase(databasePath);
+    if (readGraphIndexSchemaVersion(database) !== GRAPH_INDEX_SCHEMA_VERSION) {
+        database.close();
+        throw new Error(`Graph index schema at ${databasePath} is not current.`);
+    }
+    database.exec("PRAGMA query_only = ON;");
     return database;
 }
 

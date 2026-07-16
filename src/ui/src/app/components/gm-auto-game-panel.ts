@@ -461,8 +461,8 @@ export class GmAutoGamePanel extends LightDomLitElement {
                                           .checked=${this.includeGitIgnore}
                                           ?disabled=${isSkillMutationPending}
                                           @change=${(event: Event) => {
-                                          this.includeGitIgnore = (event.target as HTMLInputElement).checked;
-                                      }}
+                                              this.includeGitIgnore = (event.target as HTMLInputElement).checked;
+                                          }}
                                       />
                                       <span>
                                           <strong>Update Project .gitignore</strong>
@@ -478,8 +478,8 @@ export class GmAutoGamePanel extends LightDomLitElement {
                                           .checked=${this.includeVSCode}
                                           ?disabled=${isSkillMutationPending}
                                           @change=${(event: Event) => {
-                                          this.includeVSCode = (event.target as HTMLInputElement).checked;
-                                      }}
+                                              this.includeVSCode = (event.target as HTMLInputElement).checked;
+                                          }}
                                       />
                                       <span>
                                           <strong>Set Up VSCode</strong>
@@ -494,32 +494,32 @@ export class GmAutoGamePanel extends LightDomLitElement {
                                       class="gm-btn ${agentPack?.status === "current" ? "" : "gm-btn--primary"}"
                                       type="button"
                                       ?disabled=${
-                                      !this.#hasPipelineController() ||
-                                      this.model?.loadedTarget === null ||
-                                      isSkillMutationPending
-                                  }
+                                          !this.#hasPipelineController() ||
+                                          this.model?.loadedTarget === null ||
+                                          isSkillMutationPending
+                                      }
                                       aria-busy=${isAgentPackPending ? "true" : "false"}
                                       @click=${() => {
-                                      this.dispatchEvent(
-                                          new CustomEvent<GraphUiInitializeAutoGameAgentPackDetail>(
-                                              GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK,
-                                              {
-                                                  bubbles: true,
-                                                  composed: true,
-                                                  detail: {
-                                                      agentTargets: this.#getSelectedAgentTargets(agentConfigs),
-                                                      includeGitIgnore: this.includeGitIgnore,
-                                                      includeVSCode: this.includeVSCode
+                                          this.dispatchEvent(
+                                              new CustomEvent<GraphUiInitializeAutoGameAgentPackDetail>(
+                                                  GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK,
+                                                  {
+                                                      bubbles: true,
+                                                      composed: true,
+                                                      detail: {
+                                                          agentTargets: this.#getSelectedAgentTargets(agentConfigs),
+                                                          includeGitIgnore: this.includeGitIgnore,
+                                                          includeVSCode: this.includeVSCode
+                                                      }
                                                   }
-                                              }
-                                          )
-                                      );
-                                  }}
+                                              )
+                                          );
+                                      }}
                                   >
                                       ${renderProcessButtonContent({
-                                      label: agentPackActionLabel,
-                                      pending: isAgentPackPending
-                                  })}
+                                          label: agentPackActionLabel,
+                                          pending: isAgentPackPending
+                                      })}
                                   </button>
                               </div>
                           `
@@ -553,10 +553,10 @@ export class GmAutoGamePanel extends LightDomLitElement {
                                   <div class="gm-empty auto-game-skill-empty auto-game-skill-empty--skills">
                                       <p>
                                           ${
-                                          this.model?.loadedTarget === null
-                                              ? "Open a GameMaker project to discover its Auto-Game skills."
-                                              : "No Auto-Game skills or templates are available."
-                                      }
+                                              this.model?.loadedTarget === null
+                                                  ? "Open a GameMaker project to discover its Auto-Game skills."
+                                                  : "No Auto-Game skills or templates are available."
+                                          }
                                       </p>
                                   </div>
                               `

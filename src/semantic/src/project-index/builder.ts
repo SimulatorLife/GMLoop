@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
 
-import { Core } from "@gmloop/core";
+import { Core, type GameMakerAstNode } from "@gmloop/core";
+import { Parser } from "@gmloop/parser";
 
+import { annotateSemanticBindings } from "../scopes/semantic-binding.js";
 import { loadBuiltInIdentifiers } from "../symbols/built-in-identifiers.js";
 import { createProjectIndexAbortGuard, PROJECT_INDEX_BUILD_ABORT_MESSAGE } from "./abort-guard.js";
 import type { ProjectIndexBuildOptions } from "./build-options.js";
@@ -10,7 +12,6 @@ import { clampConcurrency } from "./concurrency.js";
 import { collectConstructorMemberAnalysis, type ConstructorMemberAnalysis } from "./constructor-members.js";
 import { createProjectIndexCoordinator as createProjectIndexCoordinatorCore } from "./coordinator.js";
 import { type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
-import { resolveProjectIndexParser } from "./gml-parser-facade.js";
 import { assertValidIdentifierRole, IdentifierRole } from "./identifier-roles.js";
 import { createIdentifierSink, type IdentifierSink, type IdentifierSinkRole } from "./identifier-sink.js";
 import { createProjectIndexMetrics, finalizeProjectIndexMetrics } from "./metrics.js";
@@ -25,6 +26,7 @@ import {
     publishSemanticTwoTierSnapshot
 } from "./semantic-store.js";
 import { parseGmlSymbolDocumentation } from "./symbol-documentation.js";
+import { formatProjectIndexSyntaxError } from "./syntax-error-formatter.js";
 
 type BuildProjectIndexFunction = (
     projectRoot: string,
@@ -40,6 +42,14 @@ type ProjectIndexCoordinatorOptions = {
 };
 
 const IDENTIFIER_DECLARATION_LOCATION_KEYS = Symbol("identifierDeclarationLocationKeys");
+const PROJECT_INDEX_PARSE_OPTIONS = Object.freeze({
+    asJSON: false,
+    astFormat: "gml",
+    attachFunctionDocComments: true,
+    getComments: true,
+    getLocations: true,
+    simplifyLocations: false
+});
 
 const IDENTIFIER_COLLECTION_NAMES = Object.freeze({
     scripts: "scripts",
@@ -516,31 +526,19 @@ function createFunctionLikeIdentifierRecord({ node, scopeRecord, fileRecord, cla
 function createEnumLookup(ast, filePath) {
     const enumDeclarations = new Map();
     const memberDeclarations = new Map();
-    const visitStack = [ast];
-    const seen = new Set();
-    while (visitStack.length > 0) {
-        const node = visitStack.pop();
-        if (!Core.isObjectLike(node)) {
-            continue;
-        }
-        if (seen.has(node)) {
-            continue;
-        }
-        seen.add(node);
-        if (node.type === "EnumDeclaration") {
-            const enumData = collectEnumDeclarationData(node, filePath);
-            if (enumData) {
-                enumDeclarations.set(enumData.enumEntry.key, enumData.enumEntry);
-                for (const memberEntry of enumData.memberEntries) {
-                    memberDeclarations.set(memberEntry.key, memberEntry);
+    Core.traverseAst(ast, {
+        enter(node) {
+            if (node.type === "EnumDeclaration") {
+                const enumData = collectEnumDeclarationData(node, filePath);
+                if (enumData) {
+                    enumDeclarations.set(enumData.enumEntry.key, enumData.enumEntry);
+                    for (const memberEntry of enumData.memberEntries) {
+                        memberDeclarations.set(memberEntry.key, memberEntry);
+                    }
                 }
             }
         }
-        const values = Object.values(node);
-        for (const value of values) {
-            pushNodeValueChildren(visitStack, value);
-        }
-    }
+    });
     return { enumDeclarations, memberDeclarations };
 }
 
@@ -1138,8 +1136,8 @@ function registerInstanceOccurrence({
 function getIdentifierDeclarationScopeId(identifierRecord) {
     return identifierRecord?.declaration?.scopeId ?? identifierRecord?.scopeId ?? null;
 }
-function createScopedVariableKey(identifierRecord) {
-    if (!identifierRecord?.name) {
+function createScopedVariableKey(identifierRecord, filePath) {
+    if (!identifierRecord?.name || !Core.isNonEmptyString(filePath)) {
         return null;
     }
 
@@ -1148,7 +1146,8 @@ function createScopedVariableKey(identifierRecord) {
         return null;
     }
 
-    return `${declarationScopeId}:${identifierRecord.name}`;
+    const normalizedFilePath = Core.toPosixPath(filePath);
+    return `${encodeURIComponent(normalizedFilePath)}:${encodeURIComponent(declarationScopeId)}:${identifierRecord.name}`;
 }
 function registerScopedVariableOccurrence({
     collection,
@@ -1160,7 +1159,7 @@ function registerScopedVariableOccurrence({
     kind,
     identifierSink
 }) {
-    const collectionKey = createScopedVariableKey(identifierRecord);
+    const collectionKey = createScopedVariableKey(identifierRecord, filePath);
     if (!identifierCollections || !collectionKey || !identifierRecord?.name) {
         return;
     }
@@ -1501,57 +1500,6 @@ function ensureFileRecord(filesMap: Map<string, any>, relativePath: string, scop
     }
     return entry;
 }
-const TRAVERSAL_LINK_KEYS = new Set(["parent", "enclosingNode", "precedingNode", "followingNode"]);
-
-function traverseAst(root, visitor) {
-    if (!Core.isObjectLike(root)) {
-        return;
-    }
-    const stack = [root];
-    const seen = new WeakSet();
-    while (stack.length > 0) {
-        const node = stack.pop();
-        if (!Core.isObjectLike(node)) {
-            continue;
-        }
-        if (seen.has(node)) {
-            continue;
-        }
-        seen.add(node);
-        visitor(node);
-        const keys = Object.keys(node);
-        for (const key of keys) {
-            if (TRAVERSAL_LINK_KEYS.has(key)) {
-                if (key === "parent" && node.type === "ConstructorDeclaration") {
-                    // fall through to traverse the constructor's parent clause
-                } else {
-                    continue;
-                }
-            }
-            pushNodeValueChildren(stack, node[key]);
-        }
-    }
-}
-
-function pushNodeValueChildren(stack: Array<any>, value: unknown) {
-    if (!value || typeof value !== "object") {
-        return;
-    }
-
-    if (Array.isArray(value)) {
-        for (let i = value.length - 1; i >= 0; i -= 1) {
-            const child = value[i];
-            if (Core.isObjectLike(child)) {
-                stack.push(child);
-            }
-        }
-        return;
-    }
-
-    if (Core.isObjectLike(value)) {
-        stack.push(value);
-    }
-}
 function handleFunctionLikeDeclarationNode({
     node,
     scopeDescriptor,
@@ -1890,33 +1838,14 @@ function handleConstructorParentScriptCall({
     });
 }
 function buildSafeParentMap(root) {
-    const parentMap = new Map();
-    const visit = (node, parent) => {
-        if (!node || typeof node !== "object") {
-            return;
-        }
-        if (parent) {
-            parentMap.set(node, parent);
-        }
-        for (const key of Object.keys(node)) {
-            if (key === "parent" && node.type === "ConstructorDeclaration") {
-                visit(node[key], node);
-                continue;
-            }
-            if (key === "parent" || key === "enclosingNode" || key === "precedingNode" || key === "followingNode") {
-                continue;
-            }
-            const val = node[key];
-            if (Array.isArray(val)) {
-                for (const child of val) {
-                    visit(child, node);
-                }
-            } else {
-                visit(val, node);
+    const parentMap = new Map<GameMakerAstNode, GameMakerAstNode>();
+    Core.traverseAst(root, {
+        enter(node, context) {
+            if (context.parent !== null) {
+                parentMap.set(node, context.parent);
             }
         }
-    };
-    visit(root, null);
+    });
     return parentMap;
 }
 
@@ -1984,58 +1913,43 @@ function handleObjectEventAssignmentNode({
 }
 function collectConstructorVariableDeclarationScopeIds(ast) {
     const scopeIds = new Set();
-
-    const visit = (node, insideConstructor) => {
-        if (!Core.isObjectLike(node)) {
-            return;
-        }
-
-        const nodeType = node.type;
-        if (
-            insideConstructor &&
-            (nodeType === "FunctionDeclaration" ||
-                nodeType === "ConstructorDeclaration" ||
-                nodeType === "StructDeclaration")
-        ) {
-            return;
-        }
-
-        if (
-            insideConstructor &&
-            nodeType === "Identifier" &&
-            Array.isArray(node.classifications) &&
-            node.classifications.includes("declaration") &&
-            node.classifications.includes("variable")
-        ) {
-            const declarationScopeId = node.declaration?.scopeId ?? node.scopeId ?? null;
-            if (declarationScopeId) {
-                scopeIds.add(declarationScopeId);
+    const enteredConstructors = new WeakSet<object>();
+    let constructorDepth = 0;
+    Core.traverseAst(ast, {
+        enter(node) {
+            const isOwnedScopeBoundary =
+                node.type === "FunctionDeclaration" ||
+                node.type === "ConstructorDeclaration" ||
+                node.type === "StructDeclaration";
+            if (constructorDepth > 0 && isOwnedScopeBoundary) {
+                return false;
             }
-        }
 
-        const childInsideConstructor = insideConstructor || nodeType === "ConstructorDeclaration";
-        const keys = Object.keys(node);
-        for (const key of keys) {
-            if (TRAVERSAL_LINK_KEYS.has(key)) {
-                if (key === "parent" && nodeType === "ConstructorDeclaration") {
-                    // fall through
-                } else {
-                    continue;
+            if (node.type === "ConstructorDeclaration") {
+                constructorDepth += 1;
+                enteredConstructors.add(node);
+                return;
+            }
+
+            if (
+                constructorDepth > 0 &&
+                node.type === "Identifier" &&
+                Array.isArray(node.classifications) &&
+                node.classifications.includes("declaration") &&
+                node.classifications.includes("variable")
+            ) {
+                const declarationScopeId = node.declaration?.scopeId ?? node.scopeId ?? null;
+                if (declarationScopeId) {
+                    scopeIds.add(declarationScopeId);
                 }
             }
-            const value = node[key];
-            if (Array.isArray(value)) {
-                for (const element of value) {
-                    visit(element, childInsideConstructor);
-                }
-                continue;
+        },
+        leave(node) {
+            if (enteredConstructors.has(node)) {
+                constructorDepth -= 1;
             }
-
-            visit(value, childInsideConstructor);
         }
-    };
-
-    visit(ast, false);
+    });
     return scopeIds;
 }
 function analyseGmlAst({
@@ -2060,80 +1974,82 @@ function analyseGmlAst({
 }) {
     const parentMap = buildSafeParentMap(ast);
     const enumLookup = createEnumLookup(ast, fileRecord?.filePath ?? null);
-    traverseAst(ast, (node) => {
-        handleFunctionLikeDeclarationNode({
-            node,
-            scopeDescriptor,
-            scopeRecord,
-            fileRecord,
-            identifierCollections,
-            sourceContents,
-            lineOffsets,
-            identifierSink
-        });
-        const identifierHandled = handleIdentifierNode({
-            node,
-            builtInNames,
-            fileRecord,
-            scopeRecord,
-            identifierCollections,
-            enumLookup,
-            scopeDescriptor,
-            metrics,
-            structVariableDeclarationScopeIds,
-            constructorStaticMemberDeclarationIdentifiers,
-            parentMap,
-            identifierSink,
-            definitionsOnly,
-            recordReferences
-        });
-        if (identifierHandled) {
-            return;
+    Core.traverseAst(ast, {
+        enter(node) {
+            handleFunctionLikeDeclarationNode({
+                node,
+                scopeDescriptor,
+                scopeRecord,
+                fileRecord,
+                identifierCollections,
+                sourceContents,
+                lineOffsets,
+                identifierSink
+            });
+            const identifierHandled = handleIdentifierNode({
+                node,
+                builtInNames,
+                fileRecord,
+                scopeRecord,
+                identifierCollections,
+                enumLookup,
+                scopeDescriptor,
+                metrics,
+                structVariableDeclarationScopeIds,
+                constructorStaticMemberDeclarationIdentifiers,
+                parentMap,
+                identifierSink,
+                definitionsOnly,
+                recordReferences
+            });
+            if (identifierHandled) {
+                return;
+            }
+            if (!definitionsOnly) {
+                handleCallExpressionNode({
+                    node,
+                    builtInNames,
+                    fileRecord,
+                    scopeRecord,
+                    relationships,
+                    scriptNameToScopeId,
+                    scriptNameToResourcePath,
+                    metrics
+                });
+                handleNewExpressionScriptCall({
+                    node,
+                    builtInNames,
+                    fileRecord,
+                    scopeRecord,
+                    relationships,
+                    scriptNameToScopeId,
+                    scriptNameToResourcePath,
+                    metrics
+                });
+                handleConstructorParentScriptCall({
+                    node,
+                    builtInNames,
+                    fileRecord,
+                    scopeRecord,
+                    relationships,
+                    scriptNameToScopeId,
+                    scriptNameToResourcePath,
+                    metrics
+                });
+            }
+            handleObjectEventAssignmentNode({
+                node,
+                scopeDescriptor,
+                identifierCollections,
+                builtInNames,
+                fileRecord,
+                scopeRecord,
+                metrics,
+                identifierSink,
+                parentMap,
+                constructorInstanceVariableDeclarationIdentifiers
+            });
         }
-        if (!definitionsOnly) {
-            handleCallExpressionNode({
-                node,
-                builtInNames,
-                fileRecord,
-                scopeRecord,
-                relationships,
-                scriptNameToScopeId,
-                scriptNameToResourcePath,
-                metrics
-            });
-            handleNewExpressionScriptCall({
-                node,
-                builtInNames,
-                fileRecord,
-                scopeRecord,
-                relationships,
-                scriptNameToScopeId,
-                scriptNameToResourcePath,
-                metrics
-            });
-            handleConstructorParentScriptCall({
-                node,
-                builtInNames,
-                fileRecord,
-                scopeRecord,
-                relationships,
-                scriptNameToScopeId,
-                scriptNameToResourcePath,
-                metrics
-            });
-        }
-        handleObjectEventAssignmentNode({
-            node,
-            scopeDescriptor,
-            identifierCollections,
-            builtInNames,
-            fileRecord,
-            scopeRecord,
-            metrics,
-            identifierSink,
-            parentMap,
-            constructorInstanceVariableDeclarationIdentifiers
-        });
     });
 }
 function analyseConstructorStaticMemberOccurrences({
@@ -2294,6 +2210,7 @@ async function readProjectGmlFile({ file, fsFacade, metrics }) {
         return null;
     }
 
+    metrics.counters.increment("files.gmlRead");
     metrics.counters.increment("io.gmlBytes", Buffer.byteLength(contents));
     return contents;
 }
@@ -2350,13 +2267,28 @@ function prepareProjectIndexRecords({
     });
     return { scopeDescriptor, scopeRecord, fileRecord };
 }
-function parseProjectGmlSource({ contents, file, parseProjectSource, metrics, projectRoot }) {
-    return metrics.timers.timeSync("gml.parse", () =>
-        parseProjectSource(contents, {
-            filePath: file.relativePath,
-            projectRoot
-        })
-    );
+function parseProjectGmlSource({ contents, file, parseProjectSource, metrics, projectRoot }): GameMakerAstNode {
+    const context = {
+        filePath: file.relativePath,
+        projectRoot
+    };
+    return metrics.timers.timeSync("gml.parse", () => {
+        try {
+            const parsed =
+                typeof parseProjectSource === "function"
+                    ? parseProjectSource(contents, context)
+                    : Parser.GMLParser.parse(contents, PROJECT_INDEX_PARSE_OPTIONS);
+            if (!Core.isObjectLike(parsed) || (parsed as { type?: unknown }).type !== "Program") {
+                throw new TypeError(`Project parser did not return a GML Program for ${file.relativePath}.`);
+            }
+            return parsed as GameMakerAstNode;
+        } catch (error) {
+            if (Core.isSyntaxErrorWithLocation(error)) {
+                throw formatProjectIndexSyntaxError(error, contents, context);
+            }
+            throw error;
+        }
+    });
 }
 async function processProjectGmlFile({
     file,
@@ -2373,6 +2305,7 @@ async function processProjectGmlFile({
     projectRoot,
     identifierSink,
     pendingConstructorStaticMemberReferences,
+    recordMemorySample,
     definitionsOnly = false,
     recordReferences = false
 }) {
@@ -2400,6 +2333,9 @@ async function processProjectGmlFile({
         metrics,
         projectRoot
     });
+    metrics.counters.increment("files.gmlParsed");
+    metrics.timers.timeSync("gml.bind", () => annotateSemanticBindings(ast));
+    recordMemorySample();
     const structVariableDeclarationScopeIds = collectConstructorVariableDeclarationScopeIds(ast);
     const constructorMemberAnalysis = collectConstructorMemberAnalysis(ast);
     const constructorStaticMemberDeclarationIdentifiers =
@@ -2447,6 +2383,8 @@ async function processProjectGmlFile({
             identifierSink
         })
     );
+    metrics.counters.increment("files.gmlAnalysed");
+    recordMemorySample();
 }
 
 function reconstructResourceAnalysis(existingIndex: any): {
@@ -3137,7 +3075,7 @@ function configureGmlProcessing({ options, metrics }) {
     const concurrencySettings = options?.concurrency ?? {};
     const gmlConcurrency = clampConcurrency(concurrencySettings.gml ?? concurrencySettings.gmlParsing);
     metrics.metadata.setMetadata("gmlParseConcurrency", gmlConcurrency);
-    const parseProjectSource = resolveProjectIndexParser(options);
+    const parseProjectSource = options?.parseGml;
     return { gmlConcurrency, parseProjectSource };
 }
 
@@ -3264,6 +3202,7 @@ async function processProjectGmlFilesForIndex({
     signal,
     identifierSink,
     constructorStaticMemberReferences,
+    recordMemorySample,
     onProgress,
     definitionsOnly = false,
     recordReferences = false
@@ -3295,6 +3234,7 @@ async function processProjectGmlFilesForIndex({
                 projectRoot,
                 identifierSink,
                 pendingConstructorStaticMemberReferences: constructorStaticMemberReferences,
+                recordMemorySample,
                 definitionsOnly,
                 recordReferences
             });
@@ -3332,19 +3272,25 @@ export async function buildProjectIndex(
     });
     const metrics = metricsContracts.recording;
     const metricsReporting = metricsContracts.reporting;
+    metrics.metadata.setMetadata("buildMode", options.incremental ? "incremental" : "project");
+    metrics.metadata.setMetadata("analysisTier", options.definitionsOnly === true ? "definitions" : "full");
+    metrics.counters.increment("files.gmlRead", 0);
+    metrics.counters.increment("files.gmlParsed", 0);
+    metrics.counters.increment("files.gmlAnalysed", 0);
+    metrics.counters.increment("files.incrementalSelected", 0);
     const stopTotal = metrics.timers.startTimer("total");
     const { signal, ensureNotAborted } = createProjectIndexAbortGuard(options);
     const identifierSink =
         options?.identifierSink?.enabled === true ? createIdentifierSink(options.identifierSink) : null;
-    let maxRss = 0;
-    let maxHeapUsed = 0;
-    const recordMemoryHighWater = (): void => {
+    let sampledPeakRss = 0;
+    let sampledPeakHeapUsed = 0;
+    const recordMemorySample = (): void => {
         const snapshot = process.memoryUsage();
-        maxRss = Math.max(maxRss, snapshot.rss);
-        maxHeapUsed = Math.max(maxHeapUsed, snapshot.heapUsed);
+        sampledPeakRss = Math.max(sampledPeakRss, snapshot.rss);
+        sampledPeakHeapUsed = Math.max(sampledPeakHeapUsed, snapshot.heapUsed);
     };
 
-    recordMemoryHighWater();
+    recordMemorySample();
 
     if (logger) {
         logProjectIndexDebug(logger, `DEBUG: Starting buildProjectIndex for project: ${resolvedRoot}`);
@@ -3356,7 +3302,7 @@ export async function buildProjectIndex(
         signal,
         ensureNotAborted
     });
-    recordMemoryHighWater();
+    recordMemorySample();
 
     let resourceAnalysis: any;
     let scopeMap: Map<string, any>;
@@ -3442,6 +3388,7 @@ export async function buildProjectIndex(
         orderedGmlFiles = changedFileDescriptors.filter((descriptor) =>
             existingChangedPaths.has(descriptor.absolutePath)
         );
+        metrics.counters.increment("files.incrementalSelected", orderedGmlFiles.length);
     } else {
         const { yyFiles, gmlFiles } = await discoverProjectFilesForIndex({
             projectRoot: resolvedRoot,
@@ -3451,7 +3398,7 @@ export async function buildProjectIndex(
             ensureNotAborted,
             logger
         });
-        recordMemoryHighWater();
+        recordMemorySample();
 
         resourceAnalysis = await analyseProjectResourcesForIndex({
             projectRoot: resolvedRoot,
@@ -3462,7 +3409,7 @@ export async function buildProjectIndex(
             ensureNotAborted,
             logger
         });
-        recordMemoryHighWater();
+        recordMemorySample();
 
         const state = createProjectIndexAggregationState(resourceAnalysis);
         scopeMap = state.scopeMap;
@@ -3514,10 +3461,11 @@ export async function buildProjectIndex(
             signal,
             identifierSink,
             constructorStaticMemberReferences,
+            recordMemorySample,
             onProgress: options?.onProgress,
             definitionsOnly
         });
-        recordMemoryHighWater();
+        recordMemorySample();
 
         registerPendingConstructorStaticMemberReferences({
             identifierCollections,
@@ -3543,7 +3491,7 @@ export async function buildProjectIndex(
             relationships,
             identifierSink
         });
-        recordMemoryHighWater();
+        recordMemorySample();
 
         if (identifierSink) {
             const sinkStats = identifierSink.getStats();
@@ -3554,8 +3502,8 @@ export async function buildProjectIndex(
             metrics.caches.recordMetric("identifierSink", "misses", sinkStats.cacheMisses);
         }
 
-        metrics.metadata.setMetadata("memory.maxRssBytes", maxRss);
-        metrics.metadata.setMetadata("memory.maxHeapUsedBytes", maxHeapUsed);
+        metrics.metadata.setMetadata("memory.sampledPeakRssBytes", sampledPeakRss);
+        metrics.metadata.setMetadata("memory.sampledPeakHeapUsedBytes", sampledPeakHeapUsed);
 
         if (logger) {
             logProjectIndexDebug(logger, "DEBUG: identifierCollections keys:", Object.keys(identifierCollections));

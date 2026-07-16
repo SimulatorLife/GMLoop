@@ -21,4 +21,4 @@ export const Parser = Object.freeze({
 // Export types from the parser for consumer packages to import without deep
 // imports. This mirrors `Core`'s exported types and keeps package roots
 // stable for other workspaces.
-export type { ParserOptions, ScopeTracker } from "./types/parser-types.js";
+export type { ParserOptions } from "./types/parser-types.js";

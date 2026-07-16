@@ -3,6 +3,7 @@ import path from "node:path";
 import { Worker } from "node:worker_threads";
 
 import { Core, type FsFacade } from "@gmloop/core";
+import { Parser } from "@gmloop/parser";
 import { Refactor } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import type {
@@ -27,20 +28,27 @@ import { gmlSymbolKindToCompletionItemKind, gmlSymbolKindToLspSymbolKind } from 
 import { coerceToError } from "./error-normalization.js";
 import { createWorkerOverlayBoundary, isWorkerOverlayBoundaryCurrent } from "./worker-overlay-boundary.js";
 
-type NavigationIndex = Awaited<ReturnType<typeof Semantic.buildProjectNavigationIndex>>;
-type NavigationOccurrence = NonNullable<ReturnType<typeof Semantic.findNavigationSymbolAtPosition>>;
-type NavigationSymbol = ReturnType<typeof Semantic.searchNavigationWorkspaceSymbols>[number];
 type GmlSymbolDocumentation = ReturnType<typeof Semantic.createEmptyGmlSymbolDocumentation>;
 type SemanticFileManifest = Awaited<ReturnType<typeof Semantic.buildSemanticFileManifest>>;
 type SemanticSnapshot = ReturnType<typeof Semantic.createSemanticSnapshotFromProjectIndex>;
+type SemanticIndexStore = ReturnType<typeof Semantic.openSemanticIndexStore>;
+type SemanticSnapshotAcquireResult = Awaited<ReturnType<SemanticIndexStore["acquireSemanticSnapshot"]>>;
+type SemanticSnapshotLease = Extract<SemanticSnapshotAcquireResult, Readonly<{ kind: "lease" }>>["lease"];
+type SemanticSnapshotQueries = SemanticSnapshotLease["queries"];
+type SemanticOccurrenceMatch = ReturnType<SemanticSnapshotQueries["findDefinitions"]>[number];
+type SemanticQuerySymbol = NonNullable<ReturnType<SemanticSnapshotQueries["findSymbol"]>>;
 type NavigationState = Readonly<{
-    index: NavigationIndex;
+    checkpoint: Record<string, unknown> | null;
     manifest: SemanticFileManifest | null;
     projectRoot: string;
     lightweight: boolean;
-    snapshot: SemanticSnapshot;
+    sourceRevision: SemanticSnapshotLease["identity"]["projectRevision"];
+    tier: SemanticSnapshotLease["identity"]["tier"];
 }>;
-type SemanticIndexStore = ReturnType<typeof Semantic.openSemanticIndexStore>;
+type BuiltNavigationState = NavigationState &
+    Readonly<{
+        snapshot: SemanticSnapshot;
+    }>;
 type SemanticSnapshotRequirement = Parameters<SemanticIndexStore["acquireSemanticSnapshot"]>[0];
 type RequiredSemanticCapability =
     SemanticSnapshotRequirement["capabilities"] extends ReadonlySet<infer Capability> ? Capability : never;
@@ -53,14 +61,49 @@ type WorkerBuildBoundary = Readonly<{
     tier: "definitions" | "full";
 }>;
 
-function createNavigationState(
+function createBuiltNavigationState(
     projectRoot: string,
-    index: NavigationIndex,
+    checkpoint: Record<string, unknown> | null,
     lightweight: boolean,
     manifest: SemanticFileManifest | null,
     snapshot: SemanticSnapshot
+): BuiltNavigationState {
+    return Object.freeze({
+        checkpoint,
+        lightweight,
+        manifest,
+        projectRoot,
+        snapshot,
+        sourceRevision: snapshot.sourceRevision,
+        tier: snapshot.tier
+    });
+}
+
+function releaseBuiltNavigationState(state: BuiltNavigationState): NavigationState {
+    return Object.freeze({
+        checkpoint: state.checkpoint,
+        lightweight: state.lightweight,
+        manifest: state.manifest,
+        projectRoot: state.projectRoot,
+        sourceRevision: state.sourceRevision,
+        tier: state.tier
+    });
+}
+
+function createRestoredNavigationState(
+    projectRoot: string,
+    checkpoint: Record<string, unknown> | null,
+    manifest: SemanticFileManifest | null,
+    lease: SemanticSnapshotLease
 ): NavigationState {
-    return Object.freeze({ index, lightweight, manifest, projectRoot, snapshot });
+    return Object.freeze({
+        checkpoint,
+        lightweight: lease.identity.tier === "definitions",
+        manifest,
+        projectRoot,
+        sourceRevision: lease.identity.projectRevision,
+        tier: lease.identity.tier
+    });
 }
 
 function createNavigationSnapshotRequirements(
@@ -78,38 +121,65 @@ function createNavigationSnapshotRequirements(
     return Object.freeze({
         capabilities: new Set<RequiredSemanticCapability>([capability]),
         overlayVersions,
-        projectRevision: state.snapshot.sourceRevision,
+        projectRevision: state.sourceRevision,
         requireCompleteProjectRelationships,
         requiredFiles: new Set([document.filePath]),
         requiredResources: new Set<string>(),
-        tier: state.snapshot.tier
+        tier: state.tier
     });
 }
 
-async function withPinnedNavigationSnapshot<Result>(
+async function withPinnedSemanticQueries<Result>(
     store: SemanticIndexStore,
     state: NavigationState,
     document: GmlTextDocument,
     capability: RequiredSemanticCapability,
     requireCompleteProjectRelationships: boolean,
-    read: (snapshot: SemanticSnapshot, index: NavigationIndex) => Promise<Result> | Result
+    signal: AbortSignal,
+    read: (queries: SemanticSnapshotQueries) => Promise<Result> | Result
 ): Promise<Result | null> {
-    const acquisition = store.acquireSemanticSnapshot(
+    const acquisition = await store.acquireSemanticSnapshot(
         createNavigationSnapshotRequirements(state, document, capability, requireCompleteProjectRelationships),
-        new AbortController().signal
+        signal
     );
     if (acquisition.kind !== "lease") {
         return null;
     }
     try {
-        const snapshot = acquisition.lease.snapshot;
-        return await read(
-            snapshot,
-            Semantic.createProjectNavigationIndexFromSemanticSnapshot(state.projectRoot, snapshot)
-        );
+        return await read(acquisition.lease.queries);
     } finally {
         acquisition.lease.release();
     }
+}
+
+function awaitRequestSemanticState(
+    statePromise: Promise<NavigationState | null>,
+    signal: AbortSignal
+): Promise<NavigationState | null> {
+    if (signal.aborted) {
+        return Promise.resolve(null);
+    }
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        const finish = (result: NavigationState | null, error: unknown | null): void => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            signal.removeEventListener("abort", abort);
+            if (error === null) {
+                resolve(result);
+            } else {
+                reject(error);
+            }
+        };
+        const abort = (): void => finish(null, null);
+        signal.addEventListener("abort", abort, { once: true });
+        void statePromise.then(
+            (state) => finish(state, null),
+            (error: unknown) => finish(null, error)
+        );
+    });
 }
 
 function areWorkerBuildBoundariesEqual(left: WorkerBuildBoundary | undefined, right: WorkerBuildBoundary): boolean {
@@ -156,32 +226,57 @@ export type GmlSemanticAnalysisFinish = Readonly<{
 export type GmlSemanticIndex = Readonly<{
     buildForDocument(document: GmlTextDocument): Promise<NavigationState | null>;
     dispose(): Promise<void>;
-    findDefinition(document: GmlTextDocument, offset: number, identifierName: string): Promise<Location | null>;
+    findDefinition(
+        document: GmlTextDocument,
+        offset: number,
+        identifierName: string,
+        signal: AbortSignal
+    ): Promise<Location | null>;
     findReferences(
         document: GmlTextDocument,
         offset: number,
         identifierName: string,
-        includeDefinitions: boolean
+        includeDefinitions: boolean,
+        signal: AbortSignal
     ): Promise<Location[]>;
-    hover(document: GmlTextDocument, offset: number, identifierName: string): Promise<Hover | null>;
+    findDocumentReferences(
+        document: GmlTextDocument,
+        offset: number,
+        identifierName: string,
+        signal: AbortSignal
+    ): Promise<Location[]>;
+    hover(
+        document: GmlTextDocument,
+        offset: number,
+        identifierName: string,
+        signal: AbortSignal
+    ): Promise<Hover | null>;
     invalidateForDocument(document: GmlTextDocument): void;
     invalidateForFilePath(filePath: string): Promise<void>;
-    listDocumentSymbols(document: GmlTextDocument): Promise<DocumentSymbol[]>;
+    listDocumentSymbols(document: GmlTextDocument, signal: AbortSignal): Promise<DocumentSymbol[]>;
     listSemanticHighlights(
-        document: GmlTextDocument
+        document: GmlTextDocument,
+        signal: AbortSignal
     ): Promise<ReturnType<typeof Semantic.collectGmlSemanticHighlights>>;
     planRename(
         document: GmlTextDocument,
         offset: number,
         identifierName: string,
-        newName: string
+        newName: string,
+        signal: AbortSignal
     ): Promise<WorkspaceEdit | null>;
+    prepareRename(
+        document: GmlTextDocument,
+        offset: number,
+        identifierName: string,
+        signal: AbortSignal
+    ): Promise<ReturnType<typeof offsetsToRange> | null>;
     preload(): void;
     refreshForDocument(document: GmlTextDocument): Promise<NavigationState | null>;
     refreshForFilePath(filePath: string): Promise<NavigationState | null>;
     refreshForFileChanges(changes: ReadonlyArray<GmlSemanticFileChange>): Promise<void>;
-    searchCompletions(document: GmlTextDocument, query: string): Promise<CompletionItem[]>;
-    searchWorkspaceSymbols(document: GmlTextDocument, query: string): Promise<WorkspaceSymbol[]>;
+    searchCompletions(document: GmlTextDocument, query: string, signal: AbortSignal): Promise<CompletionItem[]>;
+    searchWorkspaceSymbols(document: GmlTextDocument, query: string, signal: AbortSignal): Promise<WorkspaceSymbol[]>;
 }>;
 
 function formatGmlDocComment(documentation: GmlSymbolDocumentation): string {
@@ -217,31 +312,45 @@ function formatGmlDocComment(documentation: GmlSymbolDocumentation): string {
     return sections.join("\n\n");
 }
 
+function resolveOccurrenceFilePath(projectRoot: string, occurrence: SemanticOccurrenceMatch["occurrence"]): string {
+    return path.isAbsolute(occurrence.filePath)
+        ? path.resolve(occurrence.filePath)
+        : path.resolve(projectRoot, occurrence.filePath);
+}
+
 async function readDocumentForLocation(
     openedDocument: GmlTextDocument,
-    location: NavigationOccurrence["location"]
+    projectRoot: string,
+    occurrence: SemanticOccurrenceMatch["occurrence"]
 ): Promise<GmlTextDocument> {
-    if (path.resolve(location.filePath) === path.resolve(openedDocument.filePath)) {
+    const filePath = resolveOccurrenceFilePath(projectRoot, occurrence);
+    if (filePath === path.resolve(openedDocument.filePath)) {
         return openedDocument;
     }
 
-    const sourceText = await fs.readFile(location.filePath, "utf8");
-    return createGmlTextDocument(filePathToUri(location.filePath), "gml", 0, sourceText);
+    const sourceText = await fs.readFile(filePath, "utf8");
+    return createGmlTextDocument(filePathToUri(filePath), "gml", 0, sourceText);
 }
 
-async function occurrenceToLspLocation(document: GmlTextDocument, occurrence: NavigationOccurrence): Promise<Location> {
-    const targetDocument = await readDocumentForLocation(document, occurrence.location);
+async function occurrenceToLspLocation(
+    projectRoot: string,
+    document: GmlTextDocument,
+    match: SemanticOccurrenceMatch
+): Promise<Location> {
+    const targetDocument = await readDocumentForLocation(document, projectRoot, match.occurrence);
     return {
         uri: targetDocument.uri,
-        range: offsetsToRange(targetDocument, occurrence.location.range.start, occurrence.location.range.end)
+        range: offsetsToRange(targetDocument, match.occurrence.start, match.occurrence.end)
     };
 }
 
 async function symbolToWorkspaceSymbol(
+    projectRoot: string,
     document: GmlTextDocument,
-    symbol: NavigationSymbol
+    queries: SemanticSnapshotQueries,
+    symbol: SemanticQuerySymbol
 ): Promise<WorkspaceSymbol | null> {
-    const definition = symbol.definitions[0] ?? symbol.references[0] ?? null;
+    const definition = queries.findDefinitions(symbol.symbolId)[0] ?? null;
     if (!definition) {
         return null;
     }
@@ -249,7 +358,7 @@ async function symbolToWorkspaceSymbol(
     return {
         name: symbol.displayName,
         kind: gmlSymbolKindToLspSymbolKind(symbol.kind),
-        location: await occurrenceToLspLocation(document, definition)
+        location: await occurrenceToLspLocation(projectRoot, document, definition)
     };
 }
 
@@ -323,7 +432,7 @@ function isOffsetInLexicalRanges(ranges: ReadonlyArray<LexicalRange>, offset: nu
 }
 
 function findSymbolId(
-    index: NavigationIndex,
+    queries: SemanticSnapshotQueries,
     document: GmlTextDocument,
     offset: number,
     identifierName: string,
@@ -335,16 +444,18 @@ function findSymbolId(
     }
 
     const exactSymbolId = allowPositionOccurrence
-        ? (Semantic.findNavigationSymbolAtPosition(index, document.filePath, offset)?.symbolId ?? null)
+        ? (queries.findSymbolAtPosition(document.filePath, offset)?.symbol.symbolId ?? null)
         : null;
     if (exactSymbolId !== null) {
         return exactSymbolId;
     }
-    const resolvedSymbolId = Semantic.resolveNavigationSymbolId(index, identifierName);
+    const resolvedSymbolId = queries.hasSymbol(identifierName)
+        ? identifierName
+        : queries.resolveSymbolId(identifierName);
     if (resolvedSymbolId === null) {
         return null;
     }
-    const symbol = index.symbolsById.get(resolvedSymbolId);
+    const symbol = queries.findSymbol(resolvedSymbolId);
     return symbol?.kind === "localVariable" || symbol?.kind === "instanceVariable" || symbol?.kind === "structVariable"
         ? null
         : resolvedSymbolId;
@@ -485,7 +596,7 @@ function buildSemanticIndexInWorker({
     signal,
     incremental = null,
     previousManifest = null
-}: SemanticIndexWorkerBuildOptions): Promise<NavigationState | null> {
+}: SemanticIndexWorkerBuildOptions): Promise<BuiltNavigationState | null> {
     const { boundary: buildBoundary, isCurrent: isBuildBoundaryCurrent } = buildIdentity;
     const overlayBoundary = createWorkerOverlayBoundary(openDocuments);
     return new Promise((resolve, reject) => {
@@ -548,16 +659,11 @@ function buildSemanticIndexInWorker({
                     finish(() => resolve(null));
                     return;
                 }
-                const index = Semantic.createProjectNavigationIndexFromSemanticSnapshot(
-                    projectRoot,
-                    message.semanticSnapshot
-                );
-                (index as { rawIndex?: unknown }).rawIndex = message.rawIndex;
                 finish(() =>
                     resolve(
-                        createNavigationState(
+                        createBuiltNavigationState(
                             projectRoot,
-                            index,
+                            Object.freeze(Object.fromEntries(Object.entries(message.rawIndex))),
                             definitionsOnly,
                             message.manifest,
                             message.semanticSnapshot
@@ -730,13 +836,13 @@ export function createGmlSemanticIndex(
             requiredResources: new Set<string>(),
             tier: "full"
         });
-        const acquisition = getSemanticStore(resolvedRoot).acquireSemanticSnapshot(
+        const acquisition = await getSemanticStore(resolvedRoot).acquireSemanticSnapshot(
             requirements,
             new AbortController().signal
         );
         const lease = acquisition.kind === "lease" ? acquisition.lease : null;
         try {
-            const snapshot = lease === null ? null : lease.snapshot;
+            const resources = lease?.queries.listResources() ?? [];
             const changesByPath = new Map<string, GmlSemanticFileChange["kind"]>([
                 [path.resolve(metadataFilePath), metadataChange.kind]
             ]);
@@ -770,12 +876,10 @@ export function createGmlSemanticIndex(
                         }
                         throw error;
                     });
-                const previousResourcePaths = [
-                    ...new Set(snapshot === null ? [] : snapshot.resources.map((resource) => resource.resourcePath))
-                ];
+                const previousResourcePaths = [...new Set(resources.map((resource) => resource.resourcePath))];
                 const currentPathSet = new Set(currentResourcePaths);
                 const previousPathSet = new Set(previousResourcePaths);
-                if (snapshot === null) {
+                if (lease === null) {
                     // A session-local overlay intentionally has no persistent
                     // full snapshot. Reuse semantic project discovery to find
                     // resource metadata still on disk but no longer listed by
@@ -798,20 +902,24 @@ export function createGmlSemanticIndex(
                     }
                 }
             }
-            const metadataChanges = [...changesByPath].filter(([filePath]) => !isGmlDocumentPath(filePath));
-            for (const [affectedMetadataPath, affectedKind] of metadataChanges) {
-                const relativeMetadataPath = path.relative(resolvedRoot, affectedMetadataPath);
-                for (const scope of snapshot?.scopes ?? []) {
-                    if (scope.resourcePath === relativeMetadataPath) {
-                        for (const filePath of scope.filePaths) {
-                            changesByPath.set(
-                                path.resolve(resolvedRoot, filePath),
-                                affectedKind === "deleted" ? "deleted" : "modified"
-                            );
-                        }
+            const resourcesByMetadataPath = new Map(
+                resources.map((resource) => [path.resolve(resolvedRoot, resource.resourcePath), resource] as const)
+            );
+            for (const [affectedMetadataPath, affectedKind] of changesByPath) {
+                const resource = resourcesByMetadataPath.get(path.resolve(affectedMetadataPath));
+                if (resource === undefined) {
+                    continue;
+                }
+                for (const filePath of resource.filePaths) {
+                    if (isGmlDocumentPath(filePath)) {
+                        changesByPath.set(
+                            path.resolve(resolvedRoot, filePath),
+                            affectedKind === "deleted" ? "deleted" : "modified"
+                        );
                     }
                 }
             }
+            const metadataChanges = [...changesByPath].filter(([filePath]) => !isGmlDocumentPath(filePath));
             const directoryFileGroups = await Promise.all(
                 metadataChanges.map(([affectedMetadataPath, affectedKind]) =>
                     fs
@@ -905,84 +1013,82 @@ export function createGmlSemanticIndex(
         manifestReconciliations.set(resolvedRoot, reconciliation);
     }
 
-    function publishNavigationState(
+    async function publishNavigationState(
         resolvedRoot: string,
-        state: NavigationState,
+        state: BuiltNavigationState,
         expectedRootVersion: number,
         changedFiles: ReadonlyArray<string> | null = null
-    ): void {
+    ): Promise<boolean> {
         if (disposed) {
-            return;
+            return false;
         }
         if (state.manifest === null) {
-            return;
+            throw new Error("Cannot publish a semantic build without its source manifest.");
         }
+        const snapshot = state.snapshot;
         const tier = state.lightweight ? "definitions" : "full";
-        if (state.snapshot.tier !== tier || state.snapshot.sourceRevision !== state.manifest.sourceRevision) {
-            return;
+        if (snapshot.tier !== tier || snapshot.sourceRevision !== state.manifest.sourceRevision) {
+            throw new Error("Cannot publish a semantic build with mismatched tier or source revision identity.");
         }
 
         const previousWrite = pendingCacheWrites.get(resolvedRoot) ?? Promise.resolve();
-        const write = previousWrite
-            .catch(() => {
-                // A failed earlier write must not permanently block later snapshots.
-                return undefined;
-            })
-            .then(() => {
-                if (disposed) {
-                    return undefined;
-                }
-                if (readRootVersion(resolvedRoot) !== expectedRootVersion) {
-                    return undefined;
-                }
-                const store = getSemanticStore(resolvedRoot);
-                const hasSessionOverlay = [...state.manifest.entries.values()].some(
-                    (entry) => entry.sourceOrigin === "openBuffer"
-                );
-                if (hasSessionOverlay) {
-                    const sessionPublication = store.publishSessionSemanticSnapshot({
-                        manifest: state.manifest,
-                        snapshot: state.snapshot
-                    });
-                    if (sessionPublication.kind !== "published") {
-                        throw new Error(`Failed to publish the session semantic snapshot: ${sessionPublication.kind}.`);
-                    }
-                    return undefined;
-                }
-                const rawNavigationProjection = state.index.rawIndex;
-                if (!Core.isObjectLike(rawNavigationProjection)) {
-                    return undefined;
-                }
-                const navigationProjection = Object.freeze(Object.fromEntries(Object.entries(rawNavigationProjection)));
-                const publicationRequest = {
-                    authoritative: false,
-                    baseGeneration: store.readActiveSemanticSlots()[tier]?.generation ?? null,
-                    expectedHeadGeneration: store.readSemanticProjectHead().generation,
+        const publication = previousWrite.then(() => {
+            if (disposed) {
+                return false;
+            }
+            if (readRootVersion(resolvedRoot) !== expectedRootVersion) {
+                return false;
+            }
+            const store = getSemanticStore(resolvedRoot);
+            const hasSessionOverlay = [...state.manifest.entries.values()].some(
+                (entry) => entry.sourceOrigin === "openBuffer"
+            );
+            if (hasSessionOverlay) {
+                const sessionPublication = store.publishSessionSemanticSnapshot({
                     manifest: state.manifest,
-                    navigationProjection,
-                    snapshot: state.snapshot,
-                    sourceRevision: state.manifest.sourceRevision,
-                    tier
-                } as const;
-                const publication =
-                    changedFiles === null || publicationRequest.baseGeneration === null
-                        ? store.publishSemanticSnapshot(publicationRequest)
-                        : store.applySemanticIncrement({ ...publicationRequest, affectedFiles: changedFiles });
-                if (publication.status === "superseded") {
-                    return undefined;
+                    snapshot
+                });
+                if (sessionPublication.kind !== "published") {
+                    throw new Error(`Failed to publish the session semantic snapshot: ${sessionPublication.kind}.`);
                 }
-                return undefined;
-            })
+                return true;
+            }
+            const rawNavigationProjection = state.checkpoint;
+            if (!Core.isObjectLike(rawNavigationProjection)) {
+                throw new TypeError("Cannot persist a semantic build without its incremental checkpoint.");
+            }
+            const publicationRequest = {
+                authoritative: false,
+                baseGeneration: store.readActiveSemanticSlots()[tier]?.generation ?? null,
+                expectedHeadGeneration: store.readSemanticProjectHead().generation,
+                manifest: state.manifest,
+                navigationProjection: rawNavigationProjection,
+                snapshot,
+                sourceRevision: state.manifest.sourceRevision,
+                tier
+            } as const;
+            const publication =
+                changedFiles === null || publicationRequest.baseGeneration === null
+                    ? store.publishSemanticSnapshot(publicationRequest)
+                    : store.applySemanticIncrement({ ...publicationRequest, affectedFiles: changedFiles });
+            if (publication.status === "superseded") {
+                return false;
+            }
+            return true;
+        });
+        const queuedWrite = publication
+            .then(() => undefined)
             .catch((error: unknown) => {
                 console.error(`Failed to persist semantic index for ${resolvedRoot}:`, error);
                 return undefined;
             });
-        pendingCacheWrites.set(resolvedRoot, write);
-        void write.finally(() => {
-            if (pendingCacheWrites.get(resolvedRoot) === write) {
+        pendingCacheWrites.set(resolvedRoot, queuedWrite);
+        void queuedWrite.finally(() => {
+            if (pendingCacheWrites.get(resolvedRoot) === queuedWrite) {
                 pendingCacheWrites.delete(resolvedRoot);
             }
         });
+        return await publication;
     }
 
     function invalidateKnownDocumentRoots(document: GmlTextDocument): void {
@@ -1084,11 +1190,23 @@ export function createGmlSemanticIndex(
                     readRootVersion(resolvedRoot) === buildVersion &&
                     readDocumentVersion(resolvedUri) === startDocVersion
                 ) {
-                    cachedStates.set(resolvedRoot, fullState);
+                    const published = await publishNavigationState(resolvedRoot, fullState, buildVersion);
+                    if (!published) {
+                        reportSemanticAnalysisFinish({
+                            affectedFileCount: priorityFiles.length,
+                            projectRoot: resolvedRoot,
+                            reason,
+                            scope,
+                            tier,
+                            durationMs: Math.round(performance.now() - startTime),
+                            status: "aborted"
+                        });
+                        return null;
+                    }
+                    const retainedState = releaseBuiltNavigationState(fullState);
+                    cachedStates.set(resolvedRoot, retainedState);
                     staleStates.delete(resolvedRoot);
                     markProjectDocumentFactsCurrent(resolvedRoot);
-
-                    publishNavigationState(resolvedRoot, fullState, buildVersion);
                     onSemanticGenerationPublished?.();
 
                     reportSemanticAnalysisFinish({
@@ -1100,7 +1218,7 @@ export function createGmlSemanticIndex(
                         durationMs: Math.round(performance.now() - startTime),
                         status: "success"
                     });
-                    return cachedStates.get(resolvedRoot) ?? fullState;
+                    return retainedState;
                 }
                 reportSemanticAnalysisFinish({
                     affectedFileCount: priorityFiles.length,
@@ -1152,7 +1270,10 @@ export function createGmlSemanticIndex(
         return finalBuild;
     }
 
-    function restorePersistentSemanticState(document: GmlTextDocument, resolvedRoot: string): NavigationState | null {
+    async function restorePersistentSemanticState(
+        document: GmlTextDocument,
+        resolvedRoot: string
+    ): Promise<NavigationState | null> {
         const store = getSemanticStore(resolvedRoot);
         const activeSlots = store.readActiveSemanticSlots();
         const cachedState = activeSlots.hasMatchingFull
@@ -1176,21 +1297,16 @@ export function createGmlSemanticIndex(
             requiredResources: new Set<string>(),
             tier: cachedState.tier
         });
-        const acquisition = store.acquireSemanticSnapshot(requirements, new AbortController().signal);
+        const acquisition = await store.acquireSemanticSnapshot(requirements, new AbortController().signal);
         if (acquisition.kind !== "lease") {
             return null;
         }
         try {
-            const index = Semantic.createProjectNavigationIndexFromSemanticSnapshot(
+            const state = createRestoredNavigationState(
                 resolvedRoot,
-                acquisition.lease.snapshot
-            );
-            const state = createNavigationState(
-                resolvedRoot,
-                index,
-                cachedState.tier === "definitions",
+                store.readSemanticNavigationProjection(cachedState.tier),
                 store.readSemanticManifest(cachedState.tier),
-                acquisition.lease.snapshot
+                acquisition.lease
             );
             cachedStates.set(resolvedRoot, state);
             reconcileRestoredManifest(document, resolvedRoot, cachedState.tier);
@@ -1226,7 +1342,7 @@ export function createGmlSemanticIndex(
 
         if (!currentState && !staleState) {
             try {
-                currentState = restorePersistentSemanticState(document, resolvedRoot);
+                currentState = await restorePersistentSemanticState(document, resolvedRoot);
             } catch (error) {
                 console.error(`Failed to restore semantic index for ${resolvedRoot}:`, error);
             }
@@ -1258,7 +1374,7 @@ export function createGmlSemanticIndex(
                 const reason = "coldStart";
                 const tier = "definitions";
                 const existingState = cachedStates.get(resolvedRoot) ?? staleStates.get(resolvedRoot);
-                const existingRawIndex = existingState?.index.rawIndex;
+                const existingRawIndex = existingState?.checkpoint;
                 const incrementalBuild = existingState !== undefined && Core.isObjectLike(existingRawIndex);
                 const scope = incrementalBuild ? "incremental" : "project";
                 try {
@@ -1305,10 +1421,23 @@ export function createGmlSemanticIndex(
                         readRootVersion(resolvedRoot) === buildVersion &&
                         readDocumentVersion(resolvedUri) === startDocVersion
                     ) {
-                        cachedStates.set(resolvedRoot, state);
+                        const published = await publishNavigationState(resolvedRoot, state, buildVersion);
+                        if (!published) {
+                            reportSemanticAnalysisFinish({
+                                affectedFileCount: priorityFiles.length,
+                                projectRoot: resolvedRoot,
+                                reason,
+                                scope,
+                                tier,
+                                durationMs: Math.round(performance.now() - startTime),
+                                status: "aborted"
+                            });
+                            return null;
+                        }
+                        const retainedState = releaseBuiltNavigationState(state);
+                        cachedStates.set(resolvedRoot, retainedState);
                         staleStates.delete(resolvedRoot);
                         markProjectDocumentFactsCurrent(resolvedRoot);
-                        publishNavigationState(resolvedRoot, state, buildVersion);
                         onSemanticGenerationPublished?.();
 
                         reportSemanticAnalysisFinish({
@@ -1323,7 +1452,7 @@ export function createGmlSemanticIndex(
 
                         triggerBackgroundFullIndex(document, reason, buildVersion, startDocVersion);
 
-                        return state;
+                        return retainedState;
                     }
                     reportSemanticAnalysisFinish({
                         affectedFileCount: priorityFiles.length,
@@ -1372,6 +1501,34 @@ export function createGmlSemanticIndex(
         }
 
         return await inFlight;
+    }
+
+    async function listIntroducedDefinitionNames(
+        resolvedRoot: string,
+        document: GmlTextDocument,
+        previousState: NavigationState | undefined,
+        nextSnapshot: SemanticSnapshot
+    ): Promise<ReadonlyArray<string>> {
+        const nextNames = [
+            ...new Set(
+                nextSnapshot.symbols.filter((symbol) => symbol.definingFilePath !== null).map((symbol) => symbol.name)
+            )
+        ];
+        if (previousState === undefined) {
+            return nextNames;
+        }
+        const acquisition = await getSemanticStore(resolvedRoot).acquireSemanticSnapshot(
+            createNavigationSnapshotRequirements(previousState, document, "workspaceSymbols", false),
+            new AbortController().signal
+        );
+        if (acquisition.kind !== "lease") {
+            return nextNames;
+        }
+        try {
+            return nextNames.filter((name) => acquisition.lease.queries.resolveSymbolId(name) === null);
+        } finally {
+            acquisition.lease.release();
+        }
     }
 
     async function refreshIndex(
@@ -1443,20 +1600,15 @@ export function createGmlSemanticIndex(
                     return null;
                 }
                 const existingState = cachedStates.get(resolvedRoot) ?? staleStates.get(resolvedRoot);
-                const previousDefinedSymbolNames = new Set(
-                    existingState?.index.symbols
-                        .filter((symbol) => symbol.definitions.length > 0)
-                        .map((symbol) => symbol.name)
-                );
                 let fullImpactedFiles = impactedChanges.map((change) => change.filePath);
                 const hadFullState = existingState !== undefined && !existingState.lightweight;
                 const fullIncrementalIndex = hadFullState
-                    ? ((existingState.index.rawIndex as Record<string, unknown> | undefined) ??
+                    ? (existingState.checkpoint ??
                       getSemanticStore(resolvedRoot).readSemanticNavigationProjection("full"))
                     : null;
                 const canIncrementFull = Core.isObjectLike(fullIncrementalIndex);
                 const definitionsIncrementalIndex =
-                    (existingState?.index.rawIndex as Record<string, unknown> | undefined) ??
+                    existingState?.checkpoint ??
                     getSemanticStore(resolvedRoot).readSemanticNavigationProjection("definitions");
                 const canIncrementDefinitions = Core.isObjectLike(definitionsIncrementalIndex);
 
@@ -1516,15 +1668,36 @@ export function createGmlSemanticIndex(
                     });
                     return null;
                 }
-                cachedStates.set(resolvedRoot, definitionsState);
-                staleStates.delete(resolvedRoot);
-                markProjectDocumentFactsCurrent(resolvedRoot);
-                publishNavigationState(
+                const definitionsSnapshot = definitionsState.snapshot;
+                const introducedNames = await listIntroducedDefinitionNames(
+                    resolvedRoot,
+                    document,
+                    existingState,
+                    definitionsSnapshot
+                );
+                const definitionsPublished = await publishNavigationState(
                     resolvedRoot,
                     definitionsState,
                     buildVersion,
                     impactedChanges.map((change) => change.filePath)
                 );
+                if (!definitionsPublished) {
+                    currentActiveBuild = null;
+                    reportSemanticAnalysisFinish({
+                        affectedFileCount: impactedChanges.length,
+                        projectRoot: resolvedRoot,
+                        reason: definitionsReason,
+                        scope: definitionsScope,
+                        tier: definitionsTier,
+                        durationMs: Math.round(performance.now() - definitionsStartTime),
+                        status: "aborted"
+                    });
+                    return null;
+                }
+                const retainedDefinitionsState = releaseBuiltNavigationState(definitionsState);
+                cachedStates.set(resolvedRoot, retainedDefinitionsState);
+                staleStates.delete(resolvedRoot);
+                markProjectDocumentFactsCurrent(resolvedRoot);
                 onSemanticGenerationPublished?.();
 
                 currentActiveBuild = null;
@@ -1540,12 +1713,8 @@ export function createGmlSemanticIndex(
 
                 if (!hadFullState) {
                     triggerBackgroundFullIndex(document, "fileChanges", buildVersion, startDocVersion);
-                    return definitionsState;
+                    return retainedDefinitionsState;
                 }
-                const introducedNames = definitionsState.index.symbols
-                    .filter((symbol) => symbol.definitions.length > 0)
-                    .map((symbol) => symbol.name)
-                    .filter((name) => !previousDefinedSymbolNames.has(name));
                 fullImpactedFiles = [
                     ...(await Semantic.resolveSemanticImpactFilePaths(
                         resolvedRoot,
@@ -1605,11 +1774,29 @@ export function createGmlSemanticIndex(
                     readRootVersion(resolvedRoot) === buildVersion &&
                     readDocumentVersion(resolvedUri) === startDocVersion
                 ) {
-                    cachedStates.set(resolvedRoot, state);
+                    const published = await publishNavigationState(
+                        resolvedRoot,
+                        state,
+                        buildVersion,
+                        fullImpactedFiles
+                    );
+                    if (!published) {
+                        currentActiveBuild = null;
+                        reportSemanticAnalysisFinish({
+                            affectedFileCount: fullImpactedFiles.length,
+                            projectRoot: resolvedRoot,
+                            reason: fullReason,
+                            scope: fullScope,
+                            tier: fullTier,
+                            durationMs: Math.round(performance.now() - fullStartTime),
+                            status: "aborted"
+                        });
+                        return null;
+                    }
+                    const retainedState = releaseBuiltNavigationState(state);
+                    cachedStates.set(resolvedRoot, retainedState);
                     staleStates.delete(resolvedRoot);
                     markProjectDocumentFactsCurrent(resolvedRoot);
-
-                    publishNavigationState(resolvedRoot, state, buildVersion, fullImpactedFiles);
                     onSemanticGenerationPublished?.();
 
                     currentActiveBuild = null;
@@ -1622,7 +1809,7 @@ export function createGmlSemanticIndex(
                         durationMs: Math.round(performance.now() - fullStartTime),
                         status: "success"
                     });
-                    return state;
+                    return retainedState;
                 }
                 currentActiveBuild = null;
                 reportSemanticAnalysisFinish({
@@ -1868,49 +2055,49 @@ export function createGmlSemanticIndex(
                 // Ignore pre-load errors
             }
         },
-        async findDefinition(document, offset, identifierName) {
-            const state = await ensureIndex(document);
+        async findDefinition(document, offset, identifierName, signal) {
+            const state = await awaitRequestSemanticState(ensureIndex(document), signal);
             if (!state) {
                 return null;
             }
-            return await withPinnedNavigationSnapshot(
+            return await withPinnedSemanticQueries(
                 getSemanticStore(state.projectRoot),
                 state,
                 document,
                 "definition",
                 false,
-                async (_snapshot, index) => {
+                signal,
+                async (queries) => {
                     const symbolId = findSymbolId(
-                        index,
+                        queries,
                         document,
                         offset,
                         identifierName,
                         isIgnoredOffset,
                         !staleSemanticDocumentUris.has(document.uri)
                     );
-                    const definition = symbolId
-                        ? (Semantic.findNavigationDefinitions(index, symbolId)[0] ?? null)
-                        : null;
-                    return definition ? await occurrenceToLspLocation(document, definition) : null;
+                    const definition = symbolId ? (queries.findDefinitions(symbolId)[0] ?? null) : null;
+                    return definition ? await occurrenceToLspLocation(state.projectRoot, document, definition) : null;
                 }
             );
         },
-        async findReferences(document, offset, identifierName, includeDefinitions) {
-            const state = await ensureFullIndex(document, "references");
+        async findReferences(document, offset, identifierName, includeDefinitions, signal) {
+            const state = await awaitRequestSemanticState(ensureFullIndex(document, "references"), signal);
             if (!state) {
                 return [];
             }
 
             return (
-                (await withPinnedNavigationSnapshot(
+                (await withPinnedSemanticQueries(
                     getSemanticStore(state.projectRoot),
                     state,
                     document,
                     "references",
                     true,
-                    async (_snapshot, index) => {
+                    signal,
+                    async (queries) => {
                         const symbolId = findSymbolId(
-                            index,
+                            queries,
                             document,
                             offset,
                             identifierName,
@@ -1919,86 +2106,120 @@ export function createGmlSemanticIndex(
                         );
                         return symbolId
                             ? await Promise.all(
-                                  Semantic.findNavigationReferences(index, symbolId, includeDefinitions).map(
-                                      (occurrence) => occurrenceToLspLocation(document, occurrence)
-                                  )
+                                  queries
+                                      .findReferences(symbolId, includeDefinitions)
+                                      .map((occurrence) =>
+                                          occurrenceToLspLocation(state.projectRoot, document, occurrence)
+                                      )
                               )
                             : [];
                     }
                 )) ?? []
             );
         },
-        async hover(document, offset, identifierName) {
+        async findDocumentReferences(document, offset, identifierName, signal) {
+            const state = await awaitRequestSemanticState(ensureIndex(document), signal);
+            if (!state) {
+                return [];
+            }
+            return (
+                (await withPinnedSemanticQueries(
+                    getSemanticStore(state.projectRoot),
+                    state,
+                    document,
+                    "semanticTokens",
+                    false,
+                    signal,
+                    (queries) => {
+                        const symbolId = findSymbolId(
+                            queries,
+                            document,
+                            offset,
+                            identifierName,
+                            isIgnoredOffset,
+                            !staleSemanticDocumentUris.has(document.uri)
+                        );
+                        return symbolId === null
+                            ? []
+                            : queries
+                                  .listFileOccurrences(document.filePath)
+                                  .filter((match) => match.symbol.symbolId === symbolId)
+                                  .map((match) => ({
+                                      uri: document.uri,
+                                      range: offsetsToRange(document, match.occurrence.start, match.occurrence.end)
+                                  }));
+                    }
+                )) ?? []
+            );
+        },
+        async hover(document, offset, identifierName, signal) {
             if (isIgnoredOffset(document, offset)) {
                 return null;
             }
 
-            const state = await ensureIndex(document);
+            const state = await awaitRequestSemanticState(ensureIndex(document), signal);
             if (!state) {
                 return null;
             }
 
-            const pinnedIndex = await withPinnedNavigationSnapshot(
+            const projectHover = await withPinnedSemanticQueries(
                 getSemanticStore(state.projectRoot),
                 state,
                 document,
                 "hover",
                 false,
-                (_snapshot, index) => index
+                signal,
+                async (queries): Promise<Hover | null> => {
+                    const symbolId = findSymbolId(
+                        queries,
+                        document,
+                        offset,
+                        identifierName,
+                        isIgnoredOffset,
+                        !staleSemanticDocumentUris.has(document.uri)
+                    );
+                    const symbol = symbolId === null ? null : queries.findSymbol(symbolId);
+                    if (symbolId === null || symbol === null) {
+                        return null;
+                    }
+
+                    const definition = queries.findDefinitions(symbolId)[0] ?? null;
+                    let definitionInfo = "";
+                    if (definition !== null) {
+                        const definitionFilePath = resolveOccurrenceFilePath(state.projectRoot, definition.occurrence);
+                        const relativePath = path.relative(state.projectRoot, definitionFilePath);
+                        definitionInfo = `*defined in [${relativePath}](file://${definitionFilePath})*`;
+                    }
+                    const docComment = symbol.kind === "parameter" ? "" : formatGmlDocComment(symbol.documentation);
+                    let markdownValue = `\`${symbol.displayName}\`\n\n${symbol.kind} - ${symbol.symbolId}`;
+                    if (symbol.kind === "parameter") {
+                        markdownValue = appendParameterDocumentationMarkdown(markdownValue, symbol);
+                    }
+                    if (definitionInfo.length > 0) {
+                        markdownValue += `\n\n${definitionInfo}`;
+                    }
+                    if (docComment.length > 0) {
+                        markdownValue += `\n\n---\n\n${docComment}`;
+                    }
+                    const enumOwner = queries.findEnumOwner(symbolId);
+                    if (enumOwner !== null) {
+                        const members = queries.listEnumMembers(enumOwner.symbolId);
+                        if (members.length > 0) {
+                            markdownValue += `\n\n\`\`\`gml\nenum ${enumOwner.displayName} {\n${members
+                                .map(
+                                    (member) => `    ${member.name}${member.value === null ? "" : ` = ${member.value}`}`
+                                )
+                                .join(",\n")}\n}\n\`\`\``;
+                        }
+                    }
+                    return {
+                        contents: { kind: "markdown", value: markdownValue },
+                        range: offsetsToRange(document, offset, offset + identifierName.length)
+                    };
+                }
             );
-            const symbolId =
-                pinnedIndex === null
-                    ? null
-                    : findSymbolId(
-                          pinnedIndex,
-                          document,
-                          offset,
-                          identifierName,
-                          isIgnoredOffset,
-                          !staleSemanticDocumentUris.has(document.uri)
-                      );
-            const facts = symbolId && pinnedIndex ? Semantic.getNavigationHoverFacts(pinnedIndex, symbolId) : null;
-            if (facts) {
-                const symbol = pinnedIndex.symbolsById.get(symbolId);
-                let definitionInfo = "";
-                let docComment = "";
-
-                if (symbol && symbol.definitions.length > 0) {
-                    const def = symbol.definitions[0];
-                    if (def && def.location.filePath) {
-                        const relativePath = path.relative(state.projectRoot, def.location.filePath);
-                        definitionInfo = `*defined in [${relativePath}](file://${def.location.filePath})*`;
-                    }
-                    docComment = formatGmlDocComment(symbol.documentation);
-                }
-
-                let markdownValue = `\`${facts.displayName}\`\n\n${facts.kind} - ${facts.symbolId}`;
-                if (facts.kind === "parameter" && symbol) {
-                    markdownValue = appendParameterDocumentationMarkdown(markdownValue, pinnedIndex.symbols, symbol);
-                }
-                if (definitionInfo) {
-                    markdownValue += `\n\n${definitionInfo}`;
-                }
-                if (docComment) {
-                    markdownValue += `\n\n---\n\n${docComment}`;
-                }
-                const enumFacts = Semantic.getNavigationEnumHoverFacts(pinnedIndex, facts.symbolId);
-                if (enumFacts) {
-                    const members = Semantic.listNavigationEnumHoverMembers(pinnedIndex, enumFacts.symbolId);
-                    if (members.length > 0) {
-                        markdownValue += `\n\n\`\`\`gml\nenum ${enumFacts.displayName} {\n${members
-                            .map((member) => `    ${member.name}${member.value === null ? "" : ` = ${member.value}`}`)
-                            .join(",\n")}\n}\n\`\`\``;
-                    }
-                }
-
-                return {
-                    contents: {
-                        kind: "markdown",
-                        value: markdownValue
-                    },
-                    range: offsetsToRange(document, offset, offset + identifierName.length)
-                };
+            if (projectHover !== null) {
+                return projectHover;
             }
 
             const builtIn = getBuiltInsMetadata()[identifierName];
@@ -2045,37 +2266,39 @@ export function createGmlSemanticIndex(
 
             return null;
         },
-        async listDocumentSymbols(document) {
-            const state = await ensureIndex(document);
+        async listDocumentSymbols(document, signal) {
+            const state = await awaitRequestSemanticState(ensureIndex(document), signal);
             if (!state) {
                 return [];
             }
             return (
-                (await withPinnedNavigationSnapshot(
+                (await withPinnedSemanticQueries(
                     getSemanticStore(state.projectRoot),
                     state,
                     document,
                     "documentSymbols",
                     false,
-                    (_snapshot, index) =>
-                        Semantic.listNavigationDocumentSymbols(index, document.filePath).map((occurrence) => ({
-                            name: occurrence.displayName,
-                            kind: gmlSymbolKindToLspSymbolKind(occurrence.kind),
-                            range: offsetsToRange(
-                                document,
-                                occurrence.location.range.start,
-                                occurrence.location.range.end
-                            ),
-                            selectionRange: offsetsToRange(
-                                document,
-                                occurrence.location.range.start,
-                                occurrence.location.range.end
-                            )
+                    signal,
+                    (queries) =>
+                        queries.listDocumentSymbols(document.filePath).map((match) => ({
+                            name: match.symbol.displayName,
+                            kind: gmlSymbolKindToLspSymbolKind(match.symbol.kind),
+                            range: offsetsToRange(document, match.occurrence.start, match.occurrence.end),
+                            selectionRange: offsetsToRange(document, match.occurrence.start, match.occurrence.end)
                         }))
                 )) ?? []
             );
         },
-        async listSemanticHighlights(document) {
+        async listSemanticHighlights(document, signal) {
+            if (signal.aborted) {
+                return [];
+            }
+            const builtIns = Object.entries(getBuiltInsMetadata()).flatMap(([name, descriptor]) => {
+                if (!Core.isObjectLike(descriptor)) return [];
+                const entry = descriptor as Record<string, unknown>;
+                if (typeof entry.type !== "string") return [];
+                return [{ name, type: entry.type, deprecated: entry.deprecated === true }];
+            });
             const cachedState = findCachedStateForDocument(document);
             if (!cachedState) {
                 // Baseline lexical/built-in highlighting must not wait for a
@@ -2083,92 +2306,113 @@ export function createGmlSemanticIndex(
                 void ensureIndex(document);
                 return Semantic.collectGmlSemanticHighlights({
                     sourceText: document.sourceText,
-                    builtIns: Object.entries(getBuiltInsMetadata()).flatMap(([name, descriptor]) => {
-                        if (!Core.isObjectLike(descriptor)) return [];
-                        const entry = descriptor as Record<string, unknown>;
-                        return typeof entry.type === "string"
-                            ? [{ name, type: entry.type, deprecated: entry.deprecated === true }]
-                            : [];
-                    }),
+                    builtIns,
                     projectIdentifiers: [],
                     occurrences: []
                 });
             }
-            const state = await ensureIndex(document);
-            const pinnedIndex =
-                state === null
-                    ? null
-                    : await withPinnedNavigationSnapshot(
-                          getSemanticStore(state.projectRoot),
-                          state,
-                          document,
-                          "semanticTokens",
-                          false,
-                          (_snapshot, index) => index
-                      );
-            const occurrences = staleSemanticDocumentUris.has(document.uri)
-                ? []
-                : (pinnedIndex?.occurrencesByFilePath.get(path.resolve(document.filePath)) ?? []);
-            const builtIns = Object.entries(getBuiltInsMetadata()).flatMap(([name, descriptor]) => {
-                if (!Core.isObjectLike(descriptor)) return [];
-                const entry = descriptor as Record<string, unknown>;
-                if (typeof entry.type !== "string") return [];
-                return [{ name, type: entry.type, deprecated: entry.deprecated === true }];
-            });
-            return Semantic.collectGmlSemanticHighlights({
-                sourceText: document.sourceText,
-                builtIns,
-                projectIdentifiers: pinnedIndex
-                    ? [...pinnedIndex.resourceKindsByName].map(([name, kind]) => ({ name, kind }))
-                    : [],
-                occurrences: occurrences.map((occurrence) => ({
-                    start: occurrence.location.range.start,
-                    end: occurrence.location.range.end,
-                    kind: occurrence.kind,
-                    role: occurrence.role
-                }))
-            });
+            const state = await awaitRequestSemanticState(ensureIndex(document), signal);
+            if (state === null) {
+                return Semantic.collectGmlSemanticHighlights({
+                    sourceText: document.sourceText,
+                    builtIns,
+                    projectIdentifiers: [],
+                    occurrences: []
+                });
+            }
+            return (
+                (await withPinnedSemanticQueries(
+                    getSemanticStore(state.projectRoot),
+                    state,
+                    document,
+                    "semanticTokens",
+                    false,
+                    signal,
+                    (queries) => {
+                        const identifierNames = Object.freeze([
+                            ...new Set(
+                                Parser.tokenizeGmlIdentifierRanges(document.sourceText).map(
+                                    (identifier) => identifier.name
+                                )
+                            )
+                        ]);
+                        return Semantic.collectGmlSemanticHighlights({
+                            sourceText: document.sourceText,
+                            builtIns,
+                            projectIdentifiers: queries.findResourcesByNames(identifierNames).map((resource) => ({
+                                name: resource.name,
+                                kind:
+                                    resource.resourceType === "GMObject"
+                                        ? "object"
+                                        : resource.resourceType === "GMRoom"
+                                          ? "room"
+                                          : "resource"
+                            })),
+                            occurrences: staleSemanticDocumentUris.has(document.uri)
+                                ? []
+                                : queries.listFileOccurrences(document.filePath).map((match) => ({
+                                      start: match.occurrence.start,
+                                      end: match.occurrence.end,
+                                      kind: Semantic.normalizeGmlSemanticSymbolKind(match.symbol.kind),
+                                      role: match.occurrence.role
+                                  }))
+                        });
+                    }
+                )) ??
+                Semantic.collectGmlSemanticHighlights({
+                    sourceText: document.sourceText,
+                    builtIns,
+                    projectIdentifiers: [],
+                    occurrences: []
+                })
+            );
         },
-        async searchWorkspaceSymbols(document, query) {
-            const state = await ensureIndex(document);
+        async searchWorkspaceSymbols(document, query, signal) {
+            const state = await awaitRequestSemanticState(ensureIndex(document), signal);
             if (!state) {
                 return [];
             }
             return (
-                (await withPinnedNavigationSnapshot(
+                (await withPinnedSemanticQueries(
                     getSemanticStore(state.projectRoot),
                     state,
                     document,
                     "workspaceSymbols",
                     false,
-                    async (_snapshot, index) => {
+                    signal,
+                    async (queries) => {
                         const symbols = await Promise.all(
-                            Semantic.searchNavigationWorkspaceSymbols(index, query).map((symbol) =>
-                                symbolToWorkspaceSymbol(document, symbol)
-                            )
+                            queries
+                                .searchWorkspaceSymbols(query, 100)
+                                .map((symbol) => symbolToWorkspaceSymbol(state.projectRoot, document, queries, symbol))
                         );
                         return symbols.filter((symbol): symbol is WorkspaceSymbol => symbol !== null);
                     }
                 )) ?? []
             );
         },
-        async searchCompletions(document, query) {
-            const state = await ensureIndex(document);
+        async searchCompletions(document, query, signal) {
+            const state = await awaitRequestSemanticState(ensureIndex(document), signal);
             const projectSymbols =
                 state === null
                     ? []
-                    : ((await withPinnedNavigationSnapshot(
+                    : ((await withPinnedSemanticQueries(
                           getSemanticStore(state.projectRoot),
                           state,
                           document,
                           "completion",
                           false,
-                          (_snapshot, index) =>
-                              Semantic.searchNavigationWorkspaceSymbols(index, query, 50).map((symbol) => ({
+                          signal,
+                          (queries) =>
+                              queries.searchWorkspaceSymbols(query, 50).map((symbol) => ({
                                   label: symbol.displayName,
                                   kind: gmlSymbolKindToCompletionItemKind(symbol.kind)
                               }))
                       )) ?? []);
+
+            if (signal.aborted) {
+                return [];
+            }
 
             const queryLower = query.toLowerCase();
             const builtIns = getBuiltInsMetadata();
@@ -2190,31 +2434,56 @@ export function createGmlSemanticIndex(
 
             return [...projectSymbols, ...matchingBuiltIns];
         },
-        async planRename(document, offset, identifierName, newName) {
-            const state = await ensureFullIndex(document, "rename");
-            if (!state) {
+        async prepareRename(document, offset, identifierName, signal) {
+            const state = await awaitRequestSemanticState(ensureFullIndex(document, "rename"), signal);
+            if (!state || isIgnoredOffset(document, offset)) {
                 return null;
             }
-            return await withPinnedNavigationSnapshot(
+            return await withPinnedSemanticQueries(
                 getSemanticStore(state.projectRoot),
                 state,
                 document,
                 "renameSafety",
                 true,
-                async (snapshot, index) => {
-                    const symbolId = findSymbolId(
-                        index,
-                        document,
-                        offset,
-                        identifierName,
-                        isIgnoredOffset,
-                        !staleSemanticDocumentUris.has(document.uri)
-                    );
-                    if (!symbolId) {
+                signal,
+                (queries) => {
+                    const match = queries.findSymbolAtPosition(document.filePath, offset);
+                    if (
+                        match === null ||
+                        match.symbol.name !== identifierName ||
+                        match.occurrence.resolution.kind !== "exact" ||
+                        queries.refactor.getRenameSafetyGaps(match.symbol.symbolId).length > 0
+                    ) {
                         return null;
                     }
+                    return offsetsToRange(document, match.occurrence.start, match.occurrence.end);
+                }
+            );
+        },
+        async planRename(document, offset, identifierName, newName, signal) {
+            const state = await awaitRequestSemanticState(ensureFullIndex(document, "rename"), signal);
+            if (!state) {
+                return null;
+            }
+            return await withPinnedSemanticQueries(
+                getSemanticStore(state.projectRoot),
+                state,
+                document,
+                "renameSafety",
+                true,
+                signal,
+                async (queries) => {
+                    const match = queries.findSymbolAtPosition(document.filePath, offset);
+                    if (
+                        match === null ||
+                        match.symbol.name !== identifierName ||
+                        match.occurrence.resolution.kind !== "exact"
+                    ) {
+                        return null;
+                    }
+                    const symbolId = match.symbol.symbolId;
                     const refactorEngine = new Refactor.RefactorEngine({
-                        semantic: Semantic.createSemanticSnapshotRefactorQueries(state.projectRoot, snapshot)
+                        semantic: queries.refactor
                     });
                     return await refactorWorkspaceEditToLspWorkspaceEdit(
                         await refactorEngine.planRename({ symbolId, newName })
@@ -2224,38 +2493,10 @@ export function createGmlSemanticIndex(
         }
     };
 }
-function appendParameterDocumentationMarkdown(
-    markdownValue: string,
-    symbols: ReadonlyArray<NavigationSymbol>,
-    parameter: NavigationSymbol
-): string {
-    const parameterDefinition = parameter.definitions[0] ?? null;
-    if (parameterDefinition === null) {
-        return markdownValue;
-    }
-    const documentation = symbols
-        .flatMap((symbol) =>
-            symbol.definitions.flatMap((definition) => {
-                if (
-                    definition.location.filePath !== parameterDefinition.location.filePath ||
-                    definition.location.range.start > parameterDefinition.location.range.start
-                ) {
-                    return [];
-                }
-                const documentationParameter = symbol.documentation.parameters.find(
-                    (docParameter) => docParameter.name === parameter.name
-                );
-                return documentationParameter === undefined
-                    ? []
-                    : [
-                          Object.freeze({
-                              documentation: documentationParameter,
-                              declarationStart: definition.location.range.start
-                          })
-                      ];
-            })
-        )
-        .toSorted((left, right) => right.declarationStart - left.declarationStart)[0]?.documentation;
+function appendParameterDocumentationMarkdown(markdownValue: string, parameter: SemanticQuerySymbol): string {
+    const documentation = parameter.documentation.parameters.find(
+        (documentationParameter) => documentationParameter.name === parameter.name
+    );
     if (documentation === undefined) {
         return markdownValue;
     }

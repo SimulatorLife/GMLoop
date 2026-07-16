@@ -935,9 +935,9 @@ export class GmGraphToolbar extends LightDomLitElement {
                                           @click=${() => this.#emitRegenerate()}
                                       >
                                           ${renderProcessButtonContent({
-                                          label: "Regenerate",
-                                          pending: this.state.isRegeneratePending
-                                      })}
+                                              label: "Regenerate",
+                                              pending: this.state.isRegeneratePending
+                                          })}
                                       </button>
                                   `
                                 : null

@@ -5,13 +5,24 @@ import { Core } from "@gmloop/core";
 import { openGraphIndexDatabase } from "../graph-index/database.js";
 import { type GraphDatabase, runGraphDatabaseImmediateTransaction } from "../graph-index/sqlite-adapter.js";
 import type { SemanticFileManifest, SemanticFileManifestEntry } from "./semantic-manifest.js";
+import { createSemanticMemorySnapshotQueries } from "./semantic-memory-query.js";
+import { normalizeSemanticFilePath } from "./semantic-path.js";
+import { createSemanticSearchNgrams, normalizeSemanticSearchText } from "./semantic-query-order.js";
+import type { SemanticSnapshotQueries } from "./semantic-query-types.js";
+import { createSemanticSnapshotReaderPool, type SemanticSnapshotReaderPool } from "./semantic-reader-pool.js";
+import {
+    parsePersistedOccurrenceResolution,
+    parsePersistedSemanticDocumentation,
+    parsePersistedUncertainResolution,
+    parseSemanticRecordPayload,
+    parseSemanticScalarRecordPayload
+} from "./semantic-record-codec.js";
 import type {
     SemanticCapability,
     SemanticCoverage,
     SemanticDependency,
     SemanticGeneration,
     SemanticOccurrence,
-    SemanticOccurrenceResolution,
     SemanticRelationship,
     SemanticResource,
     SemanticScope,
@@ -25,14 +36,9 @@ import type {
     SemanticSourceRevision,
     SemanticSymbol,
     SemanticTier,
-    SemanticUncertainResolution,
     SemanticUnresolvedReference
 } from "./semantic-snapshot.js";
-import {
-    createEmptyGmlSymbolDocumentation,
-    type GmlSymbolDocumentation,
-    parseGmlSymbolDocumentation
-} from "./symbol-documentation.js";
+import { createSemanticSqliteSnapshotQueries } from "./semantic-sqlite-query.js";
 
 type SemanticNavigationProjectionRow = Readonly<{
     generation: number;
@@ -119,7 +125,7 @@ export type SemanticIndexStore = Readonly<{
     acquireSemanticSnapshot: (
         requirements: SemanticSnapshotRequirements,
         signal: AbortSignal
-    ) => SemanticSnapshotAcquireResult;
+    ) => Promise<SemanticSnapshotAcquireResult>;
     /** Flushes all accepted semantic publications. */
     flush: () => Promise<void>;
     /** Flushes accepted work and closes the SQLite connection. */
@@ -145,11 +151,6 @@ export type SemanticIndexStore = Readonly<{
     findImmediateDownstreamFiles: (filePath: string) => ReadonlyArray<string>;
     findUnresolvedDependents: (identifierNames: ReadonlyArray<string>) => ReadonlyArray<string>;
 }>;
-
-function normalizeSemanticFilePath(projectRoot: string, filePath: string): string {
-    const relativePath = path.isAbsolute(filePath) ? path.relative(projectRoot, filePath) : filePath;
-    return path.normalize(relativePath).split(path.sep).join("/").replaceAll("\\", "/");
-}
 
 function createAffectedFileSet(
     projectRoot: string,
@@ -178,7 +179,6 @@ function createSnapshotCapabilities(tier: SemanticTier): ReadonlySet<SemanticCap
             : new Set([
                   "completion",
                   "definition",
-                  "diagnostics",
                   "documentSymbols",
                   "hover",
                   "references",
@@ -200,16 +200,134 @@ function createSnapshotCoverage(
     const requiredSourceFiles = [...(manifest?.entries.values() ?? [])]
         .filter((entry) => entry.fileKind === "gml")
         .map((entry) => normalizeSemanticFilePath(projectRoot, entry.relativePath));
-    const status =
-        manifest !== null && requiredSourceFiles.every((filePath) => analyzedFiles.has(filePath))
-            ? "complete"
-            : "partial";
+    if (manifest === null || !requiredSourceFiles.every((filePath) => analyzedFiles.has(filePath))) {
+        return Object.freeze({
+            analyzedFileCount: analyzedFiles.size,
+            analyzedResourceCount: snapshot.resources.length,
+            relationshipStatus: "partial",
+            status: "partial"
+        });
+    }
     return Object.freeze({
-        analyzedFiles: Object.freeze(analyzedFiles),
-        analyzedResources: Object.freeze(new Set(snapshot.resources.map((resource) => resource.resourcePath))),
-        relationshipStatus: snapshot.tier === "full" && status === "complete" ? "complete" : "partial",
-        status
+        analyzedFileCount: analyzedFiles.size,
+        analyzedResourceCount: snapshot.resources.length,
+        relationshipStatus: snapshot.tier === "full" ? "complete" : "partial",
+        status: "complete"
     });
+}
+
+function calculatePersistedSnapshotCoverage(
+    database: GraphDatabase,
+    projectRoot: string,
+    tier: SemanticTier
+): SemanticCoverage {
+    const analyzedFileCount = (
+        database
+            .prepare(
+                "SELECT COUNT(*) AS count FROM (" +
+                    "SELECT file_path FROM semantic_analyzed_files WHERE project_root = ? AND tier = ? " +
+                    "UNION SELECT file_path FROM semantic_occurrences WHERE project_root = ? AND tier = ? " +
+                    "UNION SELECT file_path FROM semantic_scope_files WHERE project_root = ? AND tier = ?" +
+                    ")"
+            )
+            .get(projectRoot, tier, projectRoot, tier, projectRoot, tier) as { count: number }
+    ).count;
+    const analyzedResourceCount = (
+        database
+            .prepare("SELECT COUNT(*) AS count FROM semantic_resources WHERE project_root = ? AND tier = ?")
+            .get(projectRoot, tier) as { count: number }
+    ).count;
+    const manifestEntryCount = (
+        database
+            .prepare("SELECT COUNT(*) AS count FROM semantic_files WHERE project_root = ? AND tier = ?")
+            .get(projectRoot, tier) as { count: number }
+    ).count;
+    const missingAnalyzedFile = database
+        .prepare(
+            "SELECT 1 AS present FROM semantic_files AS files " +
+                "WHERE files.project_root = ? AND files.tier = ? AND files.file_kind = 'gml' " +
+                "AND NOT EXISTS (SELECT 1 FROM semantic_analyzed_files AS analyzed " +
+                "WHERE analyzed.project_root = files.project_root AND analyzed.tier = files.tier " +
+                "AND analyzed.file_path = files.relative_path) " +
+                "AND NOT EXISTS (SELECT 1 FROM semantic_occurrences AS occurrences " +
+                "WHERE occurrences.project_root = files.project_root AND occurrences.tier = files.tier " +
+                "AND occurrences.file_path = files.relative_path) " +
+                "AND NOT EXISTS (SELECT 1 FROM semantic_scope_files AS scope_files " +
+                "WHERE scope_files.project_root = files.project_root AND scope_files.tier = files.tier " +
+                "AND scope_files.file_path = files.relative_path) LIMIT 1"
+        )
+        .get(projectRoot, tier);
+    if (manifestEntryCount > 0 && missingAnalyzedFile === undefined) {
+        return Object.freeze({
+            analyzedFileCount,
+            analyzedResourceCount,
+            relationshipStatus: tier === "full" ? "complete" : "partial",
+            status: "complete"
+        });
+    }
+    return Object.freeze({
+        analyzedFileCount,
+        analyzedResourceCount,
+        relationshipStatus: "partial",
+        status: "partial"
+    });
+}
+
+function readPersistedSnapshotCoverage(
+    database: GraphDatabase,
+    projectRoot: string,
+    tier: SemanticTier
+): SemanticCoverage {
+    const row = database
+        .prepare(
+            "SELECT analyzed_file_count, analyzed_resource_count, coverage_status, relationship_status " +
+                "FROM semantic_slots WHERE project_root = ? AND tier = ?"
+        )
+        .get(projectRoot, tier);
+    if (
+        row !== undefined &&
+        typeof row.analyzed_file_count === "number" &&
+        typeof row.analyzed_resource_count === "number" &&
+        (row.coverage_status === "complete" || row.coverage_status === "partial") &&
+        (row.relationship_status === "complete" || row.relationship_status === "partial")
+    ) {
+        return row.coverage_status === "complete"
+            ? Object.freeze({
+                  analyzedFileCount: row.analyzed_file_count,
+                  analyzedResourceCount: row.analyzed_resource_count,
+                  relationshipStatus: row.relationship_status,
+                  status: "complete"
+              })
+            : Object.freeze({
+                  analyzedFileCount: row.analyzed_file_count,
+                  analyzedResourceCount: row.analyzed_resource_count,
+                  relationshipStatus: "partial",
+                  status: "partial"
+              });
+    }
+    return Object.freeze({
+        analyzedFileCount: 0,
+        analyzedResourceCount: 0,
+        relationshipStatus: "partial",
+        status: "partial"
+    });
+}
+
+function writePersistedSnapshotCoverage(database: GraphDatabase, projectRoot: string, tier: SemanticTier): void {
+    const coverage = calculatePersistedSnapshotCoverage(database, projectRoot, tier);
+    database
+        .prepare(
+            "UPDATE semantic_slots SET analyzed_file_count = ?, analyzed_resource_count = ?, " +
+                "coverage_status = ?, relationship_status = ? WHERE project_root = ? AND tier = ?"
+        )
+        .run(
+            coverage.analyzedFileCount,
+            coverage.analyzedResourceCount,
+            coverage.status,
+            coverage.relationshipStatus,
+            projectRoot,
+            tier
+        );
 }
 
 function createSnapshotIdentity(
@@ -256,6 +374,57 @@ function createSnapshotValidation(snapshot: SemanticSnapshot): SemanticSnapshotI
         });
     }
     return Object.freeze({ status: "valid" });
+}
+
+function createPersistedSnapshotValidation(
+    database: GraphDatabase,
+    projectRoot: string,
+    tier: SemanticTier
+): SemanticSnapshotIdentity["validation"] {
+    const invalidOccurrence = database
+        .prepare(
+            "SELECT 1 AS present FROM semantic_occurrences WHERE project_root = ? AND tier = ? " +
+                "AND end_offset < start_offset LIMIT 1"
+        )
+        .get(projectRoot, tier) as { present: number } | undefined;
+    if (invalidOccurrence !== undefined) {
+        return Object.freeze({
+            reason: "The persisted snapshot contains an invalid semantic occurrence.",
+            status: "invalid"
+        });
+    }
+    const uncertainOccurrence = database
+        .prepare(
+            "SELECT 1 AS present FROM semantic_occurrences WHERE project_root = ? AND tier = ? " +
+                "AND json_extract(resolution_json, '$.kind') <> 'exact' LIMIT 1"
+        )
+        .get(projectRoot, tier) as { present: number } | undefined;
+    const unresolvedReference = database
+        .prepare("SELECT 1 AS present FROM semantic_unresolved_references WHERE project_root = ? AND tier = ? LIMIT 1")
+        .get(projectRoot, tier) as { present: number } | undefined;
+    return uncertainOccurrence !== undefined || unresolvedReference !== undefined
+        ? Object.freeze({
+              affectedCapabilities: Object.freeze(new Set<SemanticCapability>(["references", "renameSafety"])),
+              reason: "The snapshot contains unresolved or uncertain semantic bindings.",
+              status: "degraded"
+          })
+        : Object.freeze({ status: "valid" });
+}
+
+function createPersistedSnapshotIdentity(
+    database: GraphDatabase,
+    projectRoot: string,
+    state: SemanticStoreState
+): SemanticSnapshotIdentity {
+    return Object.freeze({
+        capabilities: createSnapshotCapabilities(state.tier),
+        coverage: readPersistedSnapshotCoverage(database, projectRoot, state.tier),
+        generation: state.generation as SemanticGeneration,
+        overlayVersions: Object.freeze(new Map<string, number>()),
+        projectRevision: state.sourceSignature as SemanticSourceRevision,
+        tier: state.tier,
+        validation: createPersistedSnapshotValidation(database, projectRoot, state.tier)
+    });
 }
 
 function normalizeOverlayVersions(
@@ -305,7 +474,8 @@ function areOverlayVersionsEqual(
 function areSnapshotRequirementsSatisfied(
     projectRoot: string,
     identity: SemanticSnapshotIdentity,
-    requirements: SemanticSnapshotRequirements
+    requirements: SemanticSnapshotRequirements,
+    hasRequiredCoverage: boolean
 ): SemanticSnapshotAcquireFailure | null {
     if (identity.validation.status === "invalid") {
         return Object.freeze({ kind: "invalidSnapshot" });
@@ -319,18 +489,53 @@ function areSnapshotRequirementsSatisfied(
     if (![...requirements.capabilities].every((capability) => identity.capabilities.has(capability))) {
         return Object.freeze({ kind: "missingCapability" });
     }
-    const hasRequiredFileCoverage = [...requirements.requiredFiles].every((filePath) =>
-        identity.coverage.analyzedFiles.has(normalizeSemanticFilePath(projectRoot, filePath))
-    );
-    const hasRequiredResourceCoverage = [...requirements.requiredResources].every((resourcePath) =>
-        identity.coverage.analyzedResources.has(resourcePath)
-    );
-    if (!hasRequiredFileCoverage || !hasRequiredResourceCoverage) {
+    if (!hasRequiredCoverage) {
         return Object.freeze({ kind: "incompleteCoverage" });
     }
     return requirements.requireCompleteProjectRelationships && identity.coverage.relationshipStatus !== "complete"
         ? Object.freeze({ kind: "incompleteRelationships" })
         : null;
+}
+
+function hasPersistedRequiredCoverage(
+    database: GraphDatabase,
+    projectRoot: string,
+    tier: SemanticTier,
+    requirements: SemanticSnapshotRequirements
+): boolean {
+    const findAnalyzedFile = database.prepare(
+        "SELECT 1 AS present WHERE " +
+            "EXISTS (SELECT 1 FROM semantic_analyzed_files WHERE project_root = ? AND tier = ? AND file_path = ?) " +
+            "OR EXISTS (SELECT 1 FROM semantic_occurrences WHERE project_root = ? AND tier = ? AND file_path = ?) " +
+            "OR EXISTS (SELECT 1 FROM semantic_scope_files WHERE project_root = ? AND tier = ? AND file_path = ?)"
+    );
+    for (const filePath of requirements.requiredFiles) {
+        const normalizedFilePath = normalizeSemanticFilePath(projectRoot, filePath);
+        if (
+            findAnalyzedFile.get(
+                projectRoot,
+                tier,
+                normalizedFilePath,
+                projectRoot,
+                tier,
+                normalizedFilePath,
+                projectRoot,
+                tier,
+                normalizedFilePath
+            ) === undefined
+        ) {
+            return false;
+        }
+    }
+    const findResource = database.prepare(
+        "SELECT 1 AS present FROM semantic_resources WHERE project_root = ? AND tier = ? AND resource_path = ? LIMIT 1"
+    );
+    for (const resourcePath of requirements.requiredResources) {
+        if (findResource.get(projectRoot, tier, resourcePath) === undefined) {
+            return false;
+        }
+    }
+    return true;
 }
 
 function readSymbolIdsDefinedByFiles(
@@ -438,14 +643,6 @@ function deleteAffectedRows(
         .run(...parameters);
 }
 
-function parseRecordPayload(payload: string): unknown {
-    try {
-        return JSON.parse(payload) as unknown;
-    } catch {
-        return null;
-    }
-}
-
 function readSemanticManifest(
     database: GraphDatabase,
     projectRoot: string,
@@ -480,52 +677,6 @@ function readSemanticManifest(
     return Object.freeze({ entries, sourceRevision: state.sourceSignature as SemanticFileManifest["sourceRevision"] });
 }
 
-function parsePersistedDocumentation(value: string): GmlSymbolDocumentation {
-    const parsed = parseRecordPayload(value);
-    const record = Core.isObjectLike(parsed) ? Object.fromEntries(Object.entries(parsed)) : null;
-    if (record === null || typeof record.normalizedText !== "string") {
-        return createEmptyGmlSymbolDocumentation();
-    }
-    // The parser remains the single documentation normalization owner. The
-    // persisted structured representation is used when valid and gracefully
-    // repaired from its normalized text when a future schema changes shape.
-    return parseGmlSymbolDocumentation(record.normalizedText);
-}
-
-function parseOccurrenceResolution(value: string): SemanticOccurrenceResolution | null {
-    const parsed = parseRecordPayload(value);
-    if (!Core.isObjectLike(parsed)) {
-        return null;
-    }
-    const record = Object.fromEntries(Object.entries(parsed));
-    if (record.kind === "exact") {
-        return Object.freeze({ kind: "exact" });
-    }
-    const uncertaintyReason = typeof record.uncertaintyReason === "string" ? record.uncertaintyReason : null;
-    if (uncertaintyReason === null) {
-        return null;
-    }
-    if (record.kind === "dynamic" || record.kind === "unresolved" || record.kind === "invalid") {
-        return Object.freeze({ kind: record.kind, uncertaintyReason });
-    }
-    if (record.kind !== "candidate" && record.kind !== "ambiguous") {
-        return null;
-    }
-    const candidateSymbolIds = Array.isArray(record.candidateSymbolIds)
-        ? record.candidateSymbolIds.filter((candidate): candidate is string => typeof candidate === "string")
-        : [];
-    return Object.freeze({
-        candidateSymbolIds: Object.freeze(candidateSymbolIds),
-        kind: record.kind,
-        uncertaintyReason
-    });
-}
-
-function parseUncertainResolution(value: string): SemanticUncertainResolution | null {
-    const resolution = parseOccurrenceResolution(value);
-    return resolution === null || resolution.kind === "exact" ? null : resolution;
-}
-
 /** Read normalized current-schema facts without decoding the optional navigation projection. */
 function readSemanticSnapshot(
     database: GraphDatabase,
@@ -551,7 +702,7 @@ function readSemanticSnapshot(
                       Object.freeze({
                           definingFilePath: typeof row.defining_file_path === "string" ? row.defining_file_path : null,
                           displayName: row.display_name,
-                          documentation: parsePersistedDocumentation(row.documentation_json),
+                          documentation: parsePersistedSemanticDocumentation(row.documentation_json),
                           kind: row.kind,
                           name: row.name,
                           scopeId: typeof row.scope_id === "string" ? row.scope_id : null,
@@ -567,7 +718,9 @@ function readSemanticSnapshot(
         .all(projectRoot, tier)
         .flatMap((row): ReadonlyArray<SemanticOccurrence> => {
             const resolution =
-                typeof row.resolution_json === "string" ? parseOccurrenceResolution(row.resolution_json) : null;
+                typeof row.resolution_json === "string"
+                    ? parsePersistedOccurrenceResolution(row.resolution_json)
+                    : null;
             return typeof row.symbol_id === "string" &&
                 typeof row.file_path === "string" &&
                 (row.role === "definition" || row.role === "reference") &&
@@ -645,7 +798,8 @@ function readSemanticSnapshot(
         )
         .all(projectRoot, tier)
         .flatMap((row): ReadonlyArray<SemanticRelationship> => {
-            const payload = typeof row.payload_json === "string" ? parseRecordPayload(row.payload_json) : null;
+            const payload =
+                typeof row.payload_json === "string" ? parseSemanticScalarRecordPayload(row.payload_json) : null;
             if (
                 typeof row.relationship_id !== "string" ||
                 typeof row.owner_file_path !== "string" ||
@@ -654,16 +808,11 @@ function readSemanticSnapshot(
             ) {
                 return [];
             }
-            const values = Object.entries(payload).flatMap(([key, value]) =>
-                typeof value === "string" || typeof value === "number" || typeof value === "boolean" || value === null
-                    ? [[key, value] as const]
-                    : []
-            );
             return [
                 Object.freeze({
                     kind: row.relationship_kind,
                     ownerFilePath: row.owner_file_path,
-                    payload: Object.freeze(Object.fromEntries(values)),
+                    payload,
                     relationshipId: row.relationship_id
                 })
             ];
@@ -694,7 +843,7 @@ function readSemanticSnapshot(
         .all(projectRoot, tier)
         .flatMap((row): ReadonlyArray<SemanticUnresolvedReference> => {
             const resolution =
-                typeof row.resolution_json === "string" ? parseUncertainResolution(row.resolution_json) : null;
+                typeof row.resolution_json === "string" ? parsePersistedUncertainResolution(row.resolution_json) : null;
             return typeof row.name === "string" &&
                 typeof row.file_path === "string" &&
                 typeof row.start_offset === "number" &&
@@ -842,9 +991,9 @@ function readSemanticNavigationProjection(
         )
         .get(projectRoot, state.tier, state.generation) as SemanticNavigationProjectionRow | undefined;
     if (projection) {
-        const projectedIndex = parseRecordPayload(projection.payload);
-        if (Core.isObjectLike(projectedIndex)) {
-            return projectedIndex as Record<string, unknown>;
+        const projectedIndex = parseSemanticRecordPayload(projection.payload);
+        if (projectedIndex !== null) {
+            return projectedIndex;
         }
     }
 
@@ -920,7 +1069,16 @@ function publishSemanticFacts(
             .run(projectRoot, generation, updatedAt);
         database
             .prepare(
-                "INSERT INTO semantic_slots(project_root, tier, generation, source_revision, base_generation, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(project_root, tier) DO UPDATE SET generation = excluded.generation, source_revision = excluded.source_revision, base_generation = excluded.base_generation, updated_at = excluded.updated_at"
+                "INSERT INTO semantic_slots(" +
+                    "project_root, tier, generation, source_revision, base_generation, analyzed_file_count, " +
+                    "analyzed_resource_count, coverage_status, relationship_status, updated_at" +
+                    ") VALUES (?, ?, ?, ?, ?, 0, 0, 'partial', 'partial', ?) " +
+                    "ON CONFLICT(project_root, tier) DO UPDATE SET generation = excluded.generation, " +
+                    "source_revision = excluded.source_revision, base_generation = excluded.base_generation, " +
+                    "analyzed_file_count = excluded.analyzed_file_count, " +
+                    "analyzed_resource_count = excluded.analyzed_resource_count, " +
+                    "coverage_status = excluded.coverage_status, relationship_status = excluded.relationship_status, " +
+                    "updated_at = excluded.updated_at"
             )
             .run(projectRoot, request.tier, generation, request.sourceRevision, request.baseGeneration, updatedAt);
         database
@@ -964,7 +1122,21 @@ function publishSemanticFacts(
                 .run(projectRoot, request.tier);
         }
         const insertSymbol = database.prepare(
-            "INSERT INTO semantic_symbols(project_root, tier, symbol_id, kind, name, display_name, defining_file_path, scope_id, documentation_json, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(project_root, tier, symbol_id) DO UPDATE SET kind = excluded.kind, name = excluded.name, display_name = excluded.display_name, defining_file_path = excluded.defining_file_path, scope_id = excluded.scope_id, documentation_json = excluded.documentation_json, updated_generation = excluded.updated_generation"
+            "INSERT INTO semantic_symbols(" +
+                "project_root, tier, symbol_id, kind, name, display_name, normalized_display_name, " +
+                "defining_file_path, scope_id, documentation_json, updated_generation" +
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+                "ON CONFLICT(project_root, tier, symbol_id) DO UPDATE SET kind = excluded.kind, " +
+                "name = excluded.name, display_name = excluded.display_name, " +
+                "normalized_display_name = excluded.normalized_display_name, " +
+                "defining_file_path = excluded.defining_file_path, scope_id = excluded.scope_id, " +
+                "documentation_json = excluded.documentation_json, updated_generation = excluded.updated_generation"
+        );
+        const deleteSymbolSearchNgrams = database.prepare(
+            "DELETE FROM semantic_symbol_search_ngrams WHERE project_root = ? AND tier = ? AND symbol_id = ?"
+        );
+        const insertSymbolSearchNgram = database.prepare(
+            "INSERT INTO semantic_symbol_search_ngrams(project_root, tier, symbol_id, search_ngram) VALUES (?, ?, ?, ?)"
         );
         for (const symbol of snapshot.symbols) {
             if (
@@ -973,6 +1145,7 @@ function publishSemanticFacts(
             ) {
                 continue;
             }
+            const normalizedDisplayName = normalizeSemanticSearchText(symbol.displayName);
             insertSymbol.run(
                 projectRoot,
                 request.tier,
@@ -980,11 +1153,16 @@ function publishSemanticFacts(
                 symbol.kind,
                 symbol.name,
                 symbol.displayName,
+                normalizedDisplayName,
                 symbol.definingFilePath,
                 symbol.scopeId,
                 JSON.stringify(symbol.documentation),
                 generation
             );
+            deleteSymbolSearchNgrams.run(projectRoot, request.tier, symbol.symbolId);
+            for (const searchNgram of createSemanticSearchNgrams(normalizedDisplayName)) {
+                insertSymbolSearchNgram.run(projectRoot, request.tier, symbol.symbolId, searchNgram);
+            }
         }
         const insertScope = database.prepare(
             "INSERT INTO semantic_scopes(project_root, tier, scope_id, kind, name, display_name, resource_path, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(project_root, tier, scope_id) DO UPDATE SET kind = excluded.kind, name = excluded.name, display_name = excluded.display_name, resource_path = excluded.resource_path, updated_generation = excluded.updated_generation"
@@ -1154,6 +1332,7 @@ function publishSemanticFacts(
                 );
             }
         }
+        writePersistedSnapshotCoverage(database, projectRoot, request.tier);
         database
             .prepare(
                 "INSERT INTO semantic_navigation_projection(project_root, tier, generation, payload) VALUES (?, ?, ?, ?) ON CONFLICT(project_root, tier) DO UPDATE SET generation = excluded.generation, payload = excluded.payload"
@@ -1192,62 +1371,100 @@ function publishSemanticFacts(
     });
 }
 
-function acquirePersistedSemanticSnapshot(
-    database: GraphDatabase,
+async function acquirePersistedSemanticSnapshot(
+    readerPool: SemanticSnapshotReaderPool,
     projectRoot: string,
     requirements: SemanticSnapshotRequirements,
     signal: AbortSignal,
     registerLease: () => () => void
-): SemanticSnapshotAcquireResult {
+): Promise<SemanticSnapshotAcquireResult> {
     if (signal.aborted) {
         return Object.freeze({ failure: Object.freeze({ kind: "cancelled" }), kind: "failure" });
     }
-    if (requirements.tier === "full" && !readActiveSemanticSlots(database, projectRoot).hasMatchingFull) {
-        return Object.freeze({ failure: Object.freeze({ kind: "missingSnapshot" }), kind: "failure" });
+    const queryDatabase = await readerPool.acquire(signal);
+    if (queryDatabase === null) {
+        return Object.freeze({ failure: Object.freeze({ kind: "cancelled" }), kind: "failure" });
     }
-    const state = readSemanticSlotState(database, projectRoot, requirements.tier);
-    if (state === null) {
-        return Object.freeze({ failure: Object.freeze({ kind: "missingSnapshot" }), kind: "failure" });
+    let retained = false;
+    let transactionOpen = false;
+    const releaseQueryDatabase = (): void => {
+        try {
+            if (transactionOpen) {
+                queryDatabase.exec("ROLLBACK");
+                transactionOpen = false;
+            }
+        } finally {
+            readerPool.release(queryDatabase);
+        }
+    };
+    try {
+        queryDatabase.exec("BEGIN");
+        transactionOpen = true;
+        if (requirements.tier === "full" && !readActiveSemanticSlots(queryDatabase, projectRoot).hasMatchingFull) {
+            return Object.freeze({ failure: Object.freeze({ kind: "missingSnapshot" }), kind: "failure" });
+        }
+        const state = readSemanticSlotState(queryDatabase, projectRoot, requirements.tier);
+        if (state === null) {
+            return Object.freeze({ failure: Object.freeze({ kind: "missingSnapshot" }), kind: "failure" });
+        }
+        const identity = createPersistedSnapshotIdentity(queryDatabase, projectRoot, state);
+        const failure = areSnapshotRequirementsSatisfied(
+            projectRoot,
+            identity,
+            requirements,
+            hasPersistedRequiredCoverage(queryDatabase, projectRoot, state.tier, requirements)
+        );
+        if (failure !== null) {
+            return Object.freeze({ failure, kind: "failure" });
+        }
+        if (signal.aborted) {
+            return Object.freeze({ failure: Object.freeze({ kind: "cancelled" }), kind: "failure" });
+        }
+        retained = true;
+        return createSemanticSnapshotLease(
+            identity,
+            createSemanticSqliteSnapshotQueries(queryDatabase, projectRoot, state.tier),
+            registerLease,
+            releaseQueryDatabase
+        );
+    } finally {
+        if (!retained) {
+            releaseQueryDatabase();
+        }
     }
-    const snapshot = readSemanticSnapshot(database, projectRoot, requirements.tier);
-    if (snapshot === null) {
-        return Object.freeze({ failure: Object.freeze({ kind: "missingSnapshot" }), kind: "failure" });
-    }
-    const identity = createSnapshotIdentity(
-        state.generation,
-        snapshot,
-        createSnapshotCoverage(projectRoot, readSemanticManifest(database, projectRoot, requirements.tier), snapshot)
-    );
-    const failure = areSnapshotRequirementsSatisfied(projectRoot, identity, requirements);
-    if (failure !== null) {
-        return Object.freeze({ failure, kind: "failure" });
-    }
-    return createSemanticSnapshotLease(identity, snapshot, registerLease);
 }
 
 function createSemanticSnapshotLease(
     identity: SemanticSnapshotIdentity,
-    snapshot: SemanticSnapshot,
-    registerLease: () => () => void
+    queries: SemanticSnapshotQueries,
+    registerLease: () => () => void,
+    releaseSnapshot: () => void = () => {}
 ): SemanticSnapshotAcquireResult {
     const unregisterLease = registerLease();
     let released = false;
-    const lease: SemanticSnapshotLease = Object.freeze({
-        identity,
-        release: () => {
-            if (!released) {
-                released = true;
+    const release = (): void => {
+        if (!released) {
+            released = true;
+            try {
+                releaseSnapshot();
+            } finally {
                 unregisterLease();
             }
-        },
-        snapshot
+        }
+    };
+    const lease: SemanticSnapshotLease = Object.freeze({
+        identity,
+        queries,
+        release
     });
     return Object.freeze({ kind: "lease", lease });
 }
 
 type SessionSemanticSnapshot = Readonly<{
+    analyzedFiles: ReadonlySet<string>;
+    analyzedResources: ReadonlySet<string>;
     identity: SemanticSnapshotIdentity;
-    snapshot: SemanticSnapshot;
+    queries: SemanticSnapshotQueries;
 }>;
 
 type SemanticSnapshotLeaseCounter = {
@@ -1289,9 +1506,21 @@ function acquireSessionSemanticSnapshot(
             return Object.freeze({ failure: Object.freeze({ kind: "missingSnapshot" }), kind: "failure" });
         }
     }
-    const failure = areSnapshotRequirementsSatisfied(projectRoot, sessionSnapshot.identity, requirements);
+    const hasRequiredCoverage =
+        [...requirements.requiredFiles].every((filePath) =>
+            sessionSnapshot.analyzedFiles.has(normalizeSemanticFilePath(projectRoot, filePath))
+        ) &&
+        [...requirements.requiredResources].every((resourcePath) =>
+            sessionSnapshot.analyzedResources.has(resourcePath)
+        );
+    const failure = areSnapshotRequirementsSatisfied(
+        projectRoot,
+        sessionSnapshot.identity,
+        requirements,
+        hasRequiredCoverage
+    );
     return failure === null
-        ? createSemanticSnapshotLease(sessionSnapshot.identity, sessionSnapshot.snapshot, registerLease)
+        ? createSemanticSnapshotLease(sessionSnapshot.identity, sessionSnapshot.queries, registerLease)
         : Object.freeze({ failure, kind: "failure" });
 }
 
@@ -1323,7 +1552,23 @@ function publishSessionSemanticSnapshot(
         createSnapshotCoverage(projectRoot, request.manifest, request.snapshot),
         overlayVersions
     );
-    sessionSnapshots.set(request.snapshot.tier, Object.freeze({ identity, snapshot: request.snapshot }));
+    sessionSnapshots.set(
+        request.snapshot.tier,
+        Object.freeze({
+            analyzedFiles: Object.freeze(
+                new Set(
+                    request.snapshot.analyzedFilePaths.map((filePath) =>
+                        normalizeSemanticFilePath(projectRoot, filePath)
+                    )
+                )
+            ),
+            analyzedResources: Object.freeze(
+                new Set(request.snapshot.resources.map((resource) => resource.resourcePath))
+            ),
+            identity,
+            queries: createSemanticMemorySnapshotQueries(projectRoot, request.snapshot)
+        })
+    );
     if (request.snapshot.tier === "definitions") {
         const fullSnapshot = sessionSnapshots.get("full");
         if (
@@ -1340,24 +1585,28 @@ function publishSessionSemanticSnapshot(
 /** Open the canonical project semantic store shared by LSP, CLI, and graph tooling. */
 export function openSemanticIndexStore(projectRoot: string): SemanticIndexStore {
     const resolvedRoot = path.resolve(projectRoot);
-    const database = openGraphIndexDatabase(createStorePath(resolvedRoot));
+    const databasePath = createStorePath(resolvedRoot);
+    const database = openGraphIndexDatabase(databasePath);
+    const readerPool = createSemanticSnapshotReaderPool(databasePath);
     let closePromise: Promise<void> | null = null;
     const leaseCounter: SemanticSnapshotLeaseCounter = { activeLeaseCount: 0 };
     let sessionGeneration = readSemanticProjectHead(database, resolvedRoot).generation;
     const sessionSnapshots = new Map<SemanticTier, SessionSemanticSnapshot>();
-    const closeDatabase = (): Promise<void> =>
-        flushSynchronousSemanticPublications().then(() => {
-            sessionSnapshots.clear();
-            database.close();
-            return undefined;
-        });
+    const closeDatabase = async (): Promise<void> => {
+        await flushSynchronousSemanticPublications();
+        sessionSnapshots.clear();
+        readerPool.close();
+        database.close();
+    };
     return {
         acquireSemanticSnapshot: (requirements, signal) =>
             requirements.overlayVersions.size > 0
-                ? acquireSessionSemanticSnapshot(resolvedRoot, sessionSnapshots, requirements, signal, () =>
-                      registerSemanticSnapshotLease(leaseCounter)
+                ? Promise.resolve(
+                      acquireSessionSemanticSnapshot(resolvedRoot, sessionSnapshots, requirements, signal, () =>
+                          registerSemanticSnapshotLease(leaseCounter)
+                      )
                   )
-                : acquirePersistedSemanticSnapshot(database, resolvedRoot, requirements, signal, () =>
+                : acquirePersistedSemanticSnapshot(readerPool, resolvedRoot, requirements, signal, () =>
                       registerSemanticSnapshotLease(leaseCounter)
                   ),
         applySemanticIncrement: (request) =>

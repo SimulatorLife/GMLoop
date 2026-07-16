@@ -12,7 +12,6 @@ export * from "./concurrency.js";
 export * from "./constants.js";
 export * from "./coordinator.js";
 export * from "./fs-facade.js";
-export * from "./gml-parser-facade.js";
 export * from "./identifier-roles.js";
 export * from "./identifier-sink.js";
 export * from "./identifier-sink-policy.js";
@@ -22,10 +21,26 @@ export * from "./path-normalization.js";
 export * from "./project-file-categories.js";
 export * from "./project-index-logger.js";
 export * from "./project-root.js";
+export type {
+    SemanticProjectDiskChange,
+    SemanticProjectDiskChangeBatch,
+    SemanticProjectOverlayChange,
+    SemanticProjectOverlayChangeBatch,
+    SemanticProjectService,
+    SemanticProjectServiceOptions,
+    SemanticProjectSession
+} from "./project-service/index.js";
+export { createProjectService } from "./project-service/index.js";
 export * from "./project-tree.js";
 export * from "./rename-safety.js";
 export * from "./resource-analysis.js";
 export * from "./semantic-manifest.js";
+export type {
+    SemanticEnumMember,
+    SemanticResourceQueryResult,
+    SemanticSnapshotQueries,
+    SemanticSymbolOccurrenceMatch
+} from "./semantic-query-types.js";
 export type {
     SemanticCapability,
     SemanticCoverage,

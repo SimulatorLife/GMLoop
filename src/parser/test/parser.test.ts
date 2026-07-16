@@ -9,7 +9,7 @@ import { Core } from "@gmloop/core";
 import GameMakerASTBuilder from "../src/ast/gml-ast-builder.js";
 import { GameMakerSyntaxError } from "../src/ast/gml-syntax-error.js";
 import { GMLParser } from "../src/gml-parser.js";
-import { defaultParserOptions, type ParserOptions, type ScopeTracker } from "../src/types/index.js";
+import { defaultParserOptions, type ParserOptions } from "../src/types/index.js";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 const fixturesDirectory = path.join(currentDirectory, "../../test/input");
@@ -1091,37 +1091,25 @@ switch (x) {
         assert.doesNotThrow(() => GMLParser.parse(source));
     });
 
-    void it("throws when scope tracking is enabled without a scope tracker factory", () => {
-        const source = "var value = 1;";
+    void it("returns syntax identifiers without semantic binding metadata", () => {
+        const ast = GMLParser.parse("globalvar score; score = global.score;");
+        const identifiers: Array<Record<string, unknown>> = [];
 
-        assert.throws(
-            () =>
-                parseFixture(source, {
-                    options: {
-                        scopeTrackerOptions: {
-                            enabled: true,
-                            getIdentifierMetadata: false
-                        }
-                    }
-                }),
-            /Invalid createScopeTracker function\./
-        );
-    });
-
-    void it("ignores an invalid scope tracker factory when scope tracking is disabled", () => {
-        const source = "var value = 1;";
-
-        assert.doesNotThrow(() =>
-            parseFixture(source, {
-                options: {
-                    scopeTrackerOptions: {
-                        enabled: false,
-                        getIdentifierMetadata: false,
-                        createScopeTracker: "not-a-function" as unknown as () => ScopeTracker | null
-                    }
+        Core.traverseAst(ast, {
+            enter(node) {
+                if (node.type === "Identifier") {
+                    identifiers.push(node as Record<string, unknown>);
                 }
-            })
-        );
+            }
+        });
+
+        assert.ok(identifiers.length > 0);
+        for (const identifier of identifiers) {
+            assert.equal("classifications" in identifier, false);
+            assert.equal("declaration" in identifier, false);
+            assert.equal("isGlobalIdentifier" in identifier, false);
+            assert.equal("scopeId" in identifier, false);
+        }
     });
 
     void it("allows 'new' to be used as an identifier or function argument", () => {

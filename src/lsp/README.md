@@ -20,9 +20,11 @@ The server should be a thin LSP adapter over the other reusable GMLoop systems/m
 - The refactor layer produces safe code edits.
 - The language server only translates those results into LSP responses.
 
-Rename requests consume the current immutable semantic snapshot through semantic-owned refactor query roles. When Tier 1 is upgraded to Tier 2, the LSP replaces the navigation view and snapshot together, so a request cannot combine declaration-only facts with full rename data.
+Semantic requests acquire one capability-qualified lease from the semantic store and use the indexed query roles on that lease. The lease identity pins the project revision, generation, tier, coverage, validation state, and overlay versions for the duration of the request. Persisted leases query the pinned SQLite generation directly; unsaved-overlay leases expose the same query contract through a session-local in-memory backend. Every request releases its lease when response conversion finishes.
 
-Worker analysis returns its manifest and revision-qualified snapshot as one semantic result. The adapter publishes disk-backed results to the semantic store and unsaved overlays to its bounded session snapshot slots; it does not reconstruct snapshots from the LSP navigation projection.
+Rename requests use the lease's semantic-owned refactor query role and require the full tier. The LSP does not rebuild a whole-project navigation projection for each hover, definition, reference, completion, symbol, token, or rename request.
+
+Worker analysis currently returns its manifest and revision-qualified snapshot as one semantic result. The adapter publishes disk-backed results to the semantic store and unsaved overlays to bounded session snapshot slots. Build scheduling and publication still live in this workspace today; the target direction is to move that orchestration behind a long-lived semantic project service so the LSP retains only protocol, document, cancellation, workspace-routing, progress, and response-conversion responsibilities.
 
 Keep GML business logic out of the protocol layer where possible.
 
@@ -61,7 +63,6 @@ Most intelligence should live in reusable GML systems; the server should only ex
 
 Hover responses describe project symbols and documented runtime built-ins, including functions, properties, symbols, and literals. Constructor-owned instance variables resolve from both bare references and `self`-qualified references inside static methods, and their tooltips link to the defining assignment. Documented callable project symbols, including constructor static methods, expose their description, parameter names and types, and return information. Hovering a user-defined enum, its member declaration, or a resolved member usage includes the complete enum with its members and values. Language keywords such as `function`, `var`, `constructor`, `if`, `else`, and `repeat` are syntax rather than inspectable symbols, so hovering them returns no tooltip.
 
-
 ## Background Semantic Indexing
 
 The LSP server uses a dual-tier semantic analysis orchestration strategy to ensure editor responsiveness while guaranteeing project-wide semantic accuracy:
@@ -79,16 +80,3 @@ gmloop lsp
 ```
 
 To ensure seamless integration with LSP/MCP clients (such as `lsp-mcp-server`) and editor extensions, the server does not require command-line options like `--stdio`. Instead, it defaults to standard I/O (stdio) transport internally by explicitly wiring `process.stdin` and `process.stdout` into the LSP connection.
-
-## TODO
-- **BUG**: For the LSP/semantic/VSCode extension/syntax-highlighting, there are some misses in the semantic highlighting: macros are not highlighted, *some* enum-members (even in the same enum declaration) are not highlighted, some/most function arguments are not highlighted, uses of an enum member are not highlighted, local variables are not highlighted, static-struct members/variables are not highlighted (ex. `get_debug_text` in this snippet: `static get_debug_text = function () {...`)
-- **FEAT**: When hovering over a function/method's parameter, the hover tooltip should show the parameter's type and description (if documented) in addition to its name. For example, hovering over `target` in this snippet:
-  ```gml
-  /// @desc Set a new top priority target
-  /// @param {Struct.AbstractTarget} target The new top-priority target for the AI to consider
-  /// @returns {undefined}
-  static add_priority_target = function (target) {
-    targeting.add_priority_target(target);
-  };
-  ```
-  Currently shows "target\nparameter - local:scope-6:target\ndefined in scripts/aicontroller/aicontroller.gml" but should include the type and description from param's doc-comment, like.

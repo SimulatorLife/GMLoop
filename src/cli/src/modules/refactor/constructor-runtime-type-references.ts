@@ -107,43 +107,45 @@ function collectConstructorRuntimeTypeReferencesFromAst(
     const occurrences: Array<ConstructorRuntimeTypeReferenceOccurrence> = [];
     const seenKeys = new Set<string>();
 
-    Core.walkAst(ast, (node) => {
-        if (isCallExpressionIdentifierMatch(node, "is_instanceof")) {
-            const constructorArg = Core.getCallExpressionArguments(node)[1];
-            pushUniqueOccurrence(occurrences, seenKeys, readIdentifierOccurrence(constructorArg));
-            return;
-        }
+    Core.traverseAst(ast, {
+        enter(node) {
+            if (isCallExpressionIdentifierMatch(node, "is_instanceof")) {
+                const constructorArg = Core.getCallExpressionArguments(node)[1];
+                pushUniqueOccurrence(occurrences, seenKeys, readIdentifierOccurrence(constructorArg));
+                return;
+            }
 
-        if (isCallExpressionIdentifierMatch(node, "static_get")) {
-            const constructorArg = Core.getCallExpressionArguments(node)[0];
-            pushUniqueOccurrence(occurrences, seenKeys, readIdentifierOccurrence(constructorArg));
-            return;
-        }
+            if (isCallExpressionIdentifierMatch(node, "static_get")) {
+                const constructorArg = Core.getCallExpressionArguments(node)[0];
+                pushUniqueOccurrence(occurrences, seenKeys, readIdentifierOccurrence(constructorArg));
+                return;
+            }
 
-        if (isCallExpressionIdentifierMatch(node, "scr_call_static")) {
-            const constructorArg = Core.getCallExpressionArguments(node)[0];
-            pushUniqueOccurrence(occurrences, seenKeys, readIdentifierOccurrence(constructorArg));
-            return;
-        }
+            if (isCallExpressionIdentifierMatch(node, "scr_call_static")) {
+                const constructorArg = Core.getCallExpressionArguments(node)[0];
+                pushUniqueOccurrence(occurrences, seenKeys, readIdentifierOccurrence(constructorArg));
+                return;
+            }
 
-        if (!Core.isBinaryExpressionNode(node)) {
-            return;
-        }
+            if (!Core.isBinaryExpressionNode(node)) {
+                return;
+            }
 
-        const operator = typeof node.operator === "string" ? node.operator : null;
-        if (operator === null || !CONSTRUCTOR_TYPE_COMPARISON_OPERATORS.has(operator)) {
-            return;
-        }
+            const operator = typeof node.operator === "string" ? node.operator : null;
+            if (operator === null || !CONSTRUCTOR_TYPE_COMPARISON_OPERATORS.has(operator)) {
+                return;
+            }
 
-        const leftLiteral = readQuotedLiteralOccurrence(node.left);
-        const rightLiteral = readQuotedLiteralOccurrence(node.right);
+            const leftLiteral = readQuotedLiteralOccurrence(node.left);
+            const rightLiteral = readQuotedLiteralOccurrence(node.right);
 
-        if (leftLiteral !== null && isCallExpressionIdentifierMatch(node.right, "instanceof")) {
-            pushUniqueOccurrence(occurrences, seenKeys, leftLiteral);
-        }
+            if (leftLiteral !== null && isCallExpressionIdentifierMatch(node.right, "instanceof")) {
+                pushUniqueOccurrence(occurrences, seenKeys, leftLiteral);
+            }
 
-        if (rightLiteral !== null && isCallExpressionIdentifierMatch(node.left, "instanceof")) {
-            pushUniqueOccurrence(occurrences, seenKeys, rightLiteral);
+            if (rightLiteral !== null && isCallExpressionIdentifierMatch(node.left, "instanceof")) {
+                pushUniqueOccurrence(occurrences, seenKeys, rightLiteral);
+            }
         }
     });
 

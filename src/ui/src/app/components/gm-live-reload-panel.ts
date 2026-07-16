@@ -315,20 +315,20 @@ export class GmLiveReloadPanel extends LightDomLitElement {
                         : html`
                               <ul class="live-reload-event-list">
                                   ${patches.map(
-                                  (patch) => html`
-                                      <li>
-                                          <strong>${patch.id}</strong>
-                                          <span>${patch.filePath}</span>
-                                          <div class="config-badge-row">
-                                              <gm-badge .label=${formatDurationMs(patch.durationMs)}></gm-badge>
-                                              <gm-badge
-                                                  .label=${`reload:${formatDurationMs(patch.hotReloadLatencyMs)}`}
-                                              ></gm-badge>
-                                              <gm-badge .label=${formatTimestamp(patch.timestamp)}></gm-badge>
-                                          </div>
-                                      </li>
-                                  `
-                              )}
+                                      (patch) => html`
+                                          <li>
+                                              <strong>${patch.id}</strong>
+                                              <span>${patch.filePath}</span>
+                                              <div class="config-badge-row">
+                                                  <gm-badge .label=${formatDurationMs(patch.durationMs)}></gm-badge>
+                                                  <gm-badge
+                                                      .label=${`reload:${formatDurationMs(patch.hotReloadLatencyMs)}`}
+                                                  ></gm-badge>
+                                                  <gm-badge .label=${formatTimestamp(patch.timestamp)}></gm-badge>
+                                              </div>
+                                          </li>
+                                      `
+                                  )}
                               </ul>
                           `
                 }
@@ -345,17 +345,17 @@ export class GmLiveReloadPanel extends LightDomLitElement {
                         : html`
                               <ul class="live-reload-event-list">
                                   ${errors.map(
-                                  (error) => html`
-                                      <li class="live-reload-error-item">
-                                          <strong>${error.filePath}</strong>
-                                          <span>${error.error}</span>
-                                          ${error.recoveryHint ? html`<p>${error.recoveryHint}</p>` : null}
-                                          <div class="config-badge-row">
-                                              <gm-badge .label=${formatTimestamp(error.timestamp)}></gm-badge>
-                                          </div>
-                                      </li>
-                                  `
-                              )}
+                                      (error) => html`
+                                          <li class="live-reload-error-item">
+                                              <strong>${error.filePath}</strong>
+                                              <span>${error.error}</span>
+                                              ${error.recoveryHint ? html`<p>${error.recoveryHint}</p>` : null}
+                                              <div class="config-badge-row">
+                                                  <gm-badge .label=${formatTimestamp(error.timestamp)}></gm-badge>
+                                              </div>
+                                          </li>
+                                      `
+                                  )}
                               </ul>
                           `
                 }

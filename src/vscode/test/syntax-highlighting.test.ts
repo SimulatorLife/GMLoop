@@ -30,6 +30,23 @@ void test("extension manifest registers and packages the GML TextMate grammar", 
     assert.ok(manifest.files.includes("syntaxes"));
 });
 
+void test("extension relies on standard LSP code actions for lint fixes", async () => {
+    const manifest = JSON.parse(await readFile(new URL("package.json", WORKSPACE_ROOT_URL), "utf8")) as {
+        contributes: {
+            commands: Array<{ command: string }>;
+            menus?: Record<string, unknown>;
+        };
+    };
+    const extensionSource = await readFile(new URL("src/extension.ts", WORKSPACE_ROOT_URL), "utf8");
+
+    assert.deepEqual(
+        manifest.contributes.commands.map(({ command }) => command),
+        ["gmloop.restartLanguageServer", "gmloop.showLanguageServerOutput"]
+    );
+    assert.equal(manifest.contributes.menus, undefined);
+    assert.doesNotMatch(extensionSource, /gmloop[./]applyLintFixes/u);
+});
+
 void test("GML TextMate grammar is valid and exposes the registered source scope", async () => {
     const grammar = JSON.parse(await readFile(new URL("syntaxes/gml.tmLanguage.json", WORKSPACE_ROOT_URL), "utf8")) as {
         fileTypes: string[];

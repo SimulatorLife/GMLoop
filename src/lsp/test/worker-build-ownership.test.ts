@@ -12,7 +12,10 @@ void test("LSP semantic orchestration never runs project indexing on the server 
     );
 
     assert.doesNotMatch(identifierIndexSource, /Semantic\.buildProjectNavigationIndex\(/u);
+    assert.doesNotMatch(identifierIndexSource, /createProjectNavigationIndexFromSemanticSnapshot/u);
+    assert.doesNotMatch(identifierIndexSource, /readSemanticSnapshot\(/u);
     assert.match(identifierIndexSource, /buildSemanticIndexInWorker/u);
+    assert.match(identifierIndexSource, /withPinnedSemanticQueries/u);
 });
 
 void test("semantic worker requests and results carry generation and source boundaries", async () => {

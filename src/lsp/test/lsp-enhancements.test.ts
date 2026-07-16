@@ -5,6 +5,32 @@ import path from "node:path";
 import { test } from "node:test";
 
 import { Lsp } from "@gmloop/lsp";
+import type { CodeAction } from "vscode-languageserver/node.js";
+
+const TEST_REQUEST_SIGNAL = new AbortController().signal;
+
+function bindTestRequestSignal<Arguments extends unknown[], Result>(
+    request: (...arguments_: [...Arguments, AbortSignal]) => Promise<Result>
+): (...arguments_: Arguments) => Promise<Result> {
+    return (...arguments_) => request(...arguments_, TEST_REQUEST_SIGNAL);
+}
+
+function createTestSemanticIndex(...parameters: Parameters<typeof Lsp.createGmlSemanticIndex>) {
+    const semanticIndex = Lsp.createGmlSemanticIndex(...parameters);
+    return Object.freeze({
+        ...semanticIndex,
+        findDefinition: bindTestRequestSignal(semanticIndex.findDefinition),
+        findDocumentReferences: bindTestRequestSignal(semanticIndex.findDocumentReferences),
+        findReferences: bindTestRequestSignal(semanticIndex.findReferences),
+        hover: bindTestRequestSignal(semanticIndex.hover),
+        listDocumentSymbols: bindTestRequestSignal(semanticIndex.listDocumentSymbols),
+        listSemanticHighlights: bindTestRequestSignal(semanticIndex.listSemanticHighlights),
+        planRename: bindTestRequestSignal(semanticIndex.planRename),
+        prepareRename: bindTestRequestSignal(semanticIndex.prepareRename),
+        searchCompletions: bindTestRequestSignal(semanticIndex.searchCompletions),
+        searchWorkspaceSymbols: bindTestRequestSignal(semanticIndex.searchWorkspaceSymbols)
+    });
+}
 
 async function createProject(
     projectName: string,
@@ -50,7 +76,7 @@ void test("LSP: custom FsFacade resolves unsaved document edits for semantic que
             text: "function main() {\n    return 0;\n}\nfunction newly_added_unsaved_func() {}\n"
         });
 
-        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        const semanticIndex = createTestSemanticIndex(store);
 
         // Build the index initially
         await semanticIndex.buildForDocument(document);
@@ -88,7 +114,7 @@ void test("LSP: runtime built-ins hover while language keywords do not", async (
             ].join("\n")
         });
 
-        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        const semanticIndex = createTestSemanticIndex(store);
         await semanticIndex.buildForDocument(document);
 
         // Completions
@@ -197,7 +223,7 @@ void test("LSP: enum hover renders commented members on declarations and qualifi
                 "}"
             ].join("\n")
         });
-        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        const semanticIndex = createTestSemanticIndex(store);
         await semanticIndex.buildForDocument(document);
 
         for (const [offset, identifierName] of [
@@ -251,7 +277,7 @@ void test("LSP: static sound helper exposes complete hover and highlighting fact
             version: 1,
             text: sourceText
         });
-        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        const semanticIndex = createTestSemanticIndex(store);
         await semanticIndex.buildForDocument(document);
 
         const hoverText = async (name: string) => {
@@ -289,10 +315,8 @@ void test("LSP: static sound helper exposes complete hover and highlighting fact
                 : "";
         const upgradedState = await semanticIndex.buildForDocument(document);
         assert.equal(upgradedState?.lightweight, false);
-        const soundsOccurrence = upgradedState?.index.occurrencesByFilePath
-            .get(path.resolve(proj.scriptPath))
-            ?.find((occurrence) => occurrence.location.range.start === soundsUseOffset);
-        assert.ok(soundsOccurrence, "expected the full navigation index to contain the sounds reference");
+        const localSoundsOccurrences = await semanticIndex.findDocumentReferences(document, soundsUseOffset, "sounds");
+        assert.ok(localSoundsOccurrences.length >= 2, "expected Tier 1 queries to contain local sounds occurrences");
         const soundsDefinition = await semanticIndex.findDefinition(document, soundsUseOffset, "sounds");
         assert.equal(soundsDefinition?.uri, document.uri);
         assert.deepEqual(soundsDefinition?.range.start, { line: 2, character: 4 });
@@ -335,7 +359,7 @@ void test("LSP: custom FsFacade resolves open document when physical file is mis
             text: "function missing_physical_file_func() {}"
         });
 
-        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        const semanticIndex = createTestSemanticIndex(store);
         const state = await semanticIndex.buildForDocument(document);
         assert.ok(state, "Should resolve navigation state even if file is missing on disk");
     } finally {
@@ -361,7 +385,7 @@ void test("LSP: project cache uses Map-based cache to avoid eviction on multi-ro
             text: "function main() {}"
         });
 
-        const semanticIndex = Lsp.createGmlSemanticIndex(store);
+        const semanticIndex = createTestSemanticIndex(store);
 
         // Build both projects
         const state1 = await semanticIndex.buildForDocument(doc1);
@@ -391,7 +415,7 @@ void test("LSP: project cache uses Map-based cache to avoid eviction on multi-ro
     }
 });
 
-void test("LSP: server handlers return correct folding ranges and selection ranges", async () => {
+void test("LSP: server handlers expose standard ranges and lint code actions", async () => {
     const mockConnection: any = {
         onInitialize: (fn: any) => {
             mockConnection.initialize = fn;
@@ -413,7 +437,6 @@ void test("LSP: server handlers return correct folding ranges and selection rang
         onCodeAction: (fn: any) => {
             mockConnection.codeAction = fn;
         },
-        onRequest: () => {},
         onDocumentHighlight: (fn: any) => {
             mockConnection.documentHighlight = fn;
         },
@@ -441,6 +464,9 @@ void test("LSP: server handlers return correct folding ranges and selection rang
     assert.deepEqual(initializeResult.capabilities.semanticTokensProvider, {
         legend: Lsp.GML_SEMANTIC_TOKEN_LEGEND,
         full: true
+    });
+    assert.deepEqual(initializeResult.capabilities.codeActionProvider, {
+        codeActionKinds: ["quickfix", "source.fixAll"]
     });
     assert.ok(mockConnection.semanticTokens, "Should register semantic token handler");
 
@@ -473,36 +499,134 @@ void test("LSP: server handlers return correct folding ranges and selection rang
     assert.ok(selections[0].range);
     assert.deepEqual(selections[0].range.start, { line: 2, character: 4 });
 
-    // 3. Test code actions (quick fixes)
+    // 3. Test standard lint code actions.
     assert.ok(mockConnection.codeAction, "Should register code action handler");
-    const diagnosticWithFix = {
+    const codeActionPath = path.resolve("tmp/lsp-code-action.gml");
+    const codeActionUri = Lsp.filePathToUri(codeActionPath);
+    const codeActionSource = 'var total = real("5");\n';
+    docStore.open({
+        uri: codeActionUri,
+        languageId: "gml",
+        version: 1,
+        text: codeActionSource
+    });
+    const lintDiagnostic = {
         range: {
-            start: { line: 1, character: 0 },
-            end: { line: 1, character: 10 }
+            start: { line: 0, character: 12 },
+            end: { line: 0, character: 21 }
         },
-        message: "Normalize doc-comment markers",
+        message: "simplifyRealCalls diagnostic.",
         severity: 2,
-        code: "normalize-doc-comment-tags",
-        source: "gmloop-lint",
-        data: {
-            fix: {
-                range: [15, 25],
-                text: "fixedText"
-            }
-        }
+        code: "gml/simplify-real-calls",
+        source: "gmloop-lint"
     };
 
-    const actions = await mockConnection.codeAction({
-        textDocument: { uri },
+    const actions: CodeAction[] = await mockConnection.codeAction({
+        textDocument: { uri: codeActionUri },
+        range: lintDiagnostic.range,
         context: {
-            diagnostics: [diagnosticWithFix]
+            diagnostics: [lintDiagnostic],
+            only: ["quickfix"]
         }
     });
 
-    assert.ok(Array.isArray(actions), "Code actions response should be an array");
-    const localFix = actions.find((a: any) => a.title.startsWith("Fix this:"));
-    assert.ok(localFix, "Should generate a targeted local quick fix");
-    assert.ok(localFix.edit, "Local fix should contain a workspace edit");
+    assert.equal(actions.length, 1);
+    const [localFix] = actions;
+    assert.equal(localFix?.kind, "quickfix");
+    const localChanges = localFix?.edit?.changes;
+    assert.ok(localChanges, "Local fix should contain a workspace edit");
+    assert.deepEqual(Object.keys(localChanges), [codeActionUri]);
+    assert.deepEqual(localChanges[codeActionUri], [
+        {
+            range: lintDiagnostic.range,
+            newText: "5"
+        }
+    ]);
+
+    const fixAllActions: CodeAction[] = await mockConnection.codeAction({
+        textDocument: { uri: codeActionUri },
+        range: lintDiagnostic.range,
+        context: {
+            diagnostics: [],
+            only: ["source.fixAll"]
+        }
+    });
+    assert.equal(fixAllActions.length, 1, "source.fixAll must work without client-supplied diagnostics");
+    const [fixAll] = fixAllActions;
+    assert.equal(fixAll?.kind, "source.fixAll");
+    const fixAllChanges = fixAll?.edit?.changes;
+    assert.ok(fixAllChanges);
+    assert.deepEqual(Object.keys(fixAllChanges), [codeActionUri]);
+    assert.equal(fixAllChanges[codeActionUri]?.[0]?.newText, "var total = 5;\n");
+
+    const forgedDiagnosticActions: CodeAction[] = await mockConnection.codeAction({
+        textDocument: { uri: codeActionUri },
+        range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 1 }
+        },
+        context: {
+            diagnostics: [
+                {
+                    ...lintDiagnostic,
+                    range: {
+                        start: { line: 0, character: 0 },
+                        end: { line: 0, character: 1 }
+                    },
+                    data: {
+                        fix: {
+                            range: [0, codeActionSource.length],
+                            text: "unsafe_client_supplied_edit();",
+                            uri: Lsp.filePathToUri(path.resolve("tmp/other-file.gml"))
+                        }
+                    }
+                }
+            ],
+            only: ["quickfix"]
+        }
+    });
+    assert.deepEqual(
+        forgedDiagnosticActions,
+        [],
+        "Client-provided fix payloads and non-matching ranges must never create local or cross-file edits"
+    );
+
+    const unsafeActionPath = path.resolve("tmp/lsp-unsafe-code-action.gml");
+    const unsafeActionUri = Lsp.filePathToUri(unsafeActionPath);
+    const unsafeDiagnostic = {
+        range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 1 }
+        },
+        message: "noGlobalvar diagnostic.",
+        severity: 2,
+        code: "gml/no-globalvar",
+        source: "gmloop-lint"
+    };
+    docStore.open({
+        uri: unsafeActionUri,
+        languageId: "gml",
+        version: 1,
+        text: "globalvar score;\n"
+    });
+    const unsafeQuickFixes: CodeAction[] = await mockConnection.codeAction({
+        textDocument: { uri: unsafeActionUri },
+        range: unsafeDiagnostic.range,
+        context: {
+            diagnostics: [unsafeDiagnostic],
+            only: ["quickfix"]
+        }
+    });
+    const unsafeFixAllActions: CodeAction[] = await mockConnection.codeAction({
+        textDocument: { uri: unsafeActionUri },
+        range: unsafeDiagnostic.range,
+        context: {
+            diagnostics: [unsafeDiagnostic],
+            only: ["source.fixAll"]
+        }
+    });
+    assert.deepEqual(unsafeQuickFixes, [], "Report-only lint diagnostics must not expose a quick fix");
+    assert.deepEqual(unsafeFixAllActions, [], "Report-only project-aware migrations must not enter source.fixAll");
 });
 
 void test("LSP: server defaults to stdio connection transport explicitly", () => {

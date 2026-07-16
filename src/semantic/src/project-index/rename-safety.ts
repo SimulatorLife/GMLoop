@@ -1,4 +1,10 @@
-import type { SemanticSnapshot, SemanticUncertainResolution } from "./semantic-snapshot.js";
+import type {
+    SemanticSnapshot,
+    SemanticSymbol,
+    SemanticTier,
+    SemanticUncertainResolution,
+    SemanticUnresolvedReference
+} from "./semantic-snapshot.js";
 
 /** A semantic fact that blocks a project-wide rename. */
 export type SemanticRenameSafetyGap =
@@ -60,7 +66,18 @@ export function listSemanticRenameSafetyGaps(
     snapshot: SemanticSnapshot,
     symbolId: string
 ): ReadonlyArray<SemanticRenameSafetyGap> {
-    if (snapshot.tier !== "full") {
+    const targetSymbol = snapshot.symbols.find((symbol) => symbol.symbolId === symbolId) ?? null;
+    return listSemanticRenameSafetyGapsForFacts(snapshot.tier, targetSymbol, snapshot.unresolvedReferences, symbolId);
+}
+
+/** List rename blockers from a pinned tier, target symbol, and bounded unresolved-reference set. */
+export function listSemanticRenameSafetyGapsForFacts(
+    tier: SemanticTier,
+    targetSymbol: SemanticSymbol | null,
+    unresolvedReferences: ReadonlyArray<SemanticUnresolvedReference>,
+    symbolId: string
+): ReadonlyArray<SemanticRenameSafetyGap> {
+    if (tier !== "full") {
         return Object.freeze([
             Object.freeze({
                 kind: "incompleteTier",
@@ -69,8 +86,7 @@ export function listSemanticRenameSafetyGaps(
             })
         ]);
     }
-    const targetSymbol = snapshot.symbols.find((symbol) => symbol.symbolId === symbolId);
-    if (targetSymbol === undefined) {
+    if (targetSymbol === null) {
         return Object.freeze([
             Object.freeze({
                 kind: "incompleteTier",
@@ -80,7 +96,7 @@ export function listSemanticRenameSafetyGaps(
         ]);
     }
     return Object.freeze(
-        snapshot.unresolvedReferences
+        unresolvedReferences
             .filter(
                 (reference) =>
                     reference.name === targetSymbol.name && describesTargetSymbol(reference.resolution, symbolId)

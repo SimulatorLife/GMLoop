@@ -191,19 +191,19 @@ export class GmDocsPanel extends LightDomLitElement {
                               <summary>Arguments and options</summary>
                               <dl class="docs-detail-list">
                                   ${entry.arguments.map(
-                                  (argumentValue) =>
-                                      html`<div class="docs-detail-row">
-                                          <dt><code>${argumentValue.name}</code></dt>
-                                          <dd>${argumentValue.description}</dd>
-                                      </div>`
-                              )}
+                                      (argumentValue) =>
+                                          html`<div class="docs-detail-row">
+                                              <dt><code>${argumentValue.name}</code></dt>
+                                              <dd>${argumentValue.description}</dd>
+                                          </div>`
+                                  )}
                                   ${entry.options.map(
-                                  (optionValue) =>
-                                      html`<div class="docs-detail-row">
-                                          <dt><code>${optionValue.flags}</code></dt>
-                                          <dd>${optionValue.description}</dd>
-                                      </div>`
-                              )}
+                                      (optionValue) =>
+                                          html`<div class="docs-detail-row">
+                                              <dt><code>${optionValue.flags}</code></dt>
+                                              <dd>${optionValue.description}</dd>
+                                          </div>`
+                                  )}
                               </dl>
                           </details>`
                         : null
@@ -238,12 +238,12 @@ export class GmDocsPanel extends LightDomLitElement {
                               <summary>Fields</summary>
                               <dl class="docs-detail-list">
                                   ${entry.fields.map(
-                                  (fieldValue) =>
-                                      html`<div class="docs-detail-row">
-                                          <dt><code>${fieldValue.name}</code></dt>
-                                          <dd>${fieldValue.description}</dd>
-                                      </div>`
-                              )}
+                                      (fieldValue) =>
+                                          html`<div class="docs-detail-row">
+                                              <dt><code>${fieldValue.name}</code></dt>
+                                              <dd>${fieldValue.description}</dd>
+                                          </div>`
+                                  )}
                               </dl>
                           </details>`
                         : null
@@ -277,39 +277,39 @@ export class GmDocsPanel extends LightDomLitElement {
                               <summary>Fields</summary>
                               <dl class="docs-detail-list">
                                   ${entry.fields.map(
-                                  (fieldValue) =>
-                                      html`<div class="docs-detail-row">
-                                          <dt>
-                                              <code>${fieldValue.name}</code>${
+                                      (fieldValue) =>
+                                          html`<div class="docs-detail-row">
+                                              <dt>
+                                                  <code>${fieldValue.name}</code>${
                                                   fieldValue.required
                                                       ? html` <span class="docs-field-required" title="Required"
                                                             >*</span
                                                         >`
                                                       : null
                                               }
-                                          </dt>
-                                          <dd>
-                                              ${fieldValue.description}
-                                              ${
+                                              </dt>
+                                              <dd>
+                                                  ${fieldValue.description}
+                                                  ${
                                                   fieldValue.choices && fieldValue.choices.length > 0
                                                       ? html`<div class="docs-field-choices">
                                                             Choices:
                                                             ${fieldValue.choices
-                                                            .map((c) => html`<code>${c}</code>`)
-                                                            .reduce((acc, x) => html`${acc}, ${x}`)}
+                                                                .map((c) => html`<code>${c}</code>`)
+                                                                .reduce((acc, x) => html`${acc}, ${x}`)}
                                                         </div>`
                                                       : null
                                               }
-                                              ${
+                                                  ${
                                                   fieldValue.default === undefined
                                                       ? null
                                                       : html`<div class="docs-field-default">
                                                             Default: <code>${JSON.stringify(fieldValue.default)}</code>
                                                         </div>`
                                               }
-                                          </dd>
-                                      </div>`
-                              )}
+                                              </dd>
+                                          </div>`
+                                  )}
                               </dl>
                           </details>`
                         : null
@@ -468,11 +468,11 @@ export class GmDocsPanel extends LightDomLitElement {
                                                   type="checkbox"
                                                   .checked=${this.showInternalMcpTools}
                                                   @change=${(event: Event) => {
-                                                  const target = event.target;
-                                                  if (target instanceof HTMLInputElement) {
-                                                      this.showInternalMcpTools = target.checked;
-                                                  }
-                                              }}
+                                                      const target = event.target;
+                                                      if (target instanceof HTMLInputElement) {
+                                                          this.showInternalMcpTools = target.checked;
+                                                      }
+                                                  }}
                                               />
                                               <span>Show internal tools (for reference only)</span>
                                           </label>

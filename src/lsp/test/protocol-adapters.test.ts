@@ -41,6 +41,26 @@ void test("parser errors become LSP diagnostics", () => {
     assert.deepEqual(diagnostic.range.start, { line: 0, character: 4 });
 });
 
+void test("lint diagnostics do not expose client-authoritative fix payloads", () => {
+    const diagnostic = Lsp.eslintMessageToDiagnostic({
+        ruleId: "gml/simplify-real-calls",
+        severity: 1,
+        message: "simplifyRealCalls diagnostic.",
+        line: 1,
+        column: 13,
+        endLine: 1,
+        endColumn: 22,
+        fix: {
+            range: [12, 21],
+            text: "5"
+        }
+    });
+
+    assert.equal(diagnostic.source, "gmloop-lint");
+    assert.equal(diagnostic.code, "gml/simplify-real-calls");
+    assert.equal(diagnostic.data, undefined);
+});
+
 void test("semantic token adapter uses a stable legend and UTF-16 positions", () => {
     const document = Lsp.createGmlDocumentStore().open({
         uri: Lsp.filePathToUri("/tmp/tokens.gml"),

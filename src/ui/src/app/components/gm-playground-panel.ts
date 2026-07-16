@@ -593,9 +593,9 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                                       placeholder="Search ${parameters.label.toLowerCase()}..."
                                       .value=${parameters.searchQuery}
                                       @input=${(event: Event) => {
-                                      const target = event.target as HTMLInputElement;
-                                      parameters.setSearchQuery(target.value);
-                                  }}
+                                          const target = event.target as HTMLInputElement;
+                                          parameters.setSearchQuery(target.value);
+                                      }}
                                   />
                                   <button
                                       type="button"
@@ -622,10 +622,10 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                               </div>
                               <div class="rule-details-footer">
                                   ${
-                                  filteredEntries.length === parameters.entries.length
-                                      ? `${parameters.entries.length} items`
-                                      : `${filteredEntries.length} of ${parameters.entries.length} items`
-                              }
+                                      filteredEntries.length === parameters.entries.length
+                                          ? `${parameters.entries.length} items`
+                                          : `${filteredEntries.length} of ${parameters.entries.length} items`
+                                  }
                               </div>
                           `
                         : null
@@ -649,27 +649,27 @@ export class GmPlaygroundPanel extends LightDomLitElement {
                     formatOptions.length > 0
                         ? html`
                               ${
-                              hasConfiguredFormatOptions
-                                  ? null
-                                  : html`<p class="rule-details-note" role="note">
-                                        Set formatter values in <code>gmloop.json</code> to apply Playground format
-                                        options.
-                                    </p>`
-                          }
+                                  hasConfiguredFormatOptions
+                                      ? null
+                                      : html`<p class="rule-details-note" role="note">
+                                            Set formatter values in <code>gmloop.json</code> to apply Playground format
+                                            options.
+                                        </p>`
+                              }
                               ${this.#renderRuleSection({
-                              entries: formatOptions.map((option) => ({
-                                  description: option.description,
-                                  keyText: option.name,
-                                  onToggle: () => this.#toggleFormatOption(option.name),
-                                  selected: this.#enabledFormatOptions.get(option.name) === true
-                              })),
-                              expanded: this.#showFormatDetails,
-                              label: "Format Options",
-                              searchQuery: this.#formatSearchQuery,
-                              setAllSelected: (enabled) => this.#setAllFormatOptionsEnabled(enabled, formatOptions),
-                              setExpanded: () => this.#toggleFormatDetails(),
-                              setSearchQuery: (value) => this.#setFormatSearchQuery(value)
-                          })}
+                                  entries: formatOptions.map((option) => ({
+                                      description: option.description,
+                                      keyText: option.name,
+                                      onToggle: () => this.#toggleFormatOption(option.name),
+                                      selected: this.#enabledFormatOptions.get(option.name) === true
+                                  })),
+                                  expanded: this.#showFormatDetails,
+                                  label: "Format Options",
+                                  searchQuery: this.#formatSearchQuery,
+                                  setAllSelected: (enabled) => this.#setAllFormatOptionsEnabled(enabled, formatOptions),
+                                  setExpanded: () => this.#toggleFormatDetails(),
+                                  setSearchQuery: (value) => this.#setFormatSearchQuery(value)
+                              })}
                           `
                         : null
                 }

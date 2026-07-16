@@ -53,14 +53,16 @@ function createSelectionRangeChain(document: GmlTextDocument, nodes: ReadonlyArr
 function findAstNodePathAtOffset(rootNode: unknown, offset: number): unknown[] {
     const nodePath: unknown[] = [];
 
-    Core.walkAst(rootNode, (node) => {
-        const range = readAstNodeRange(node);
-        if (!range || offset < range.start || offset > range.end) {
-            return false;
-        }
+    Core.traverseAst(rootNode, {
+        enter(node) {
+            const range = readAstNodeRange(node);
+            if (!range || offset < range.start || offset > range.end) {
+                return false;
+            }
 
-        nodePath.push(node);
-        return true;
+            nodePath.push(node);
+            return true;
+        }
     });
 
     return nodePath;

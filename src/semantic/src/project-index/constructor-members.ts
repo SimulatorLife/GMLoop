@@ -1,6 +1,6 @@
-import { Core } from "@gmloop/core";
+import { Core, type GameMakerAstNode } from "@gmloop/core";
 
-type AstNodeRecord = Record<string, unknown>;
+type AstNodeRecord = GameMakerAstNode & Record<string, unknown>;
 
 /** Static member declaration discovered on a constructor. */
 export type ConstructorStaticMemberDeclarationRecord = {
@@ -31,10 +31,8 @@ export type ConstructorMemberAnalysis = {
     references: Array<ConstructorStaticMemberReferenceRecord>;
 };
 
-const TRAVERSAL_LINK_KEYS = new Set(["parent", "enclosingNode", "precedingNode", "followingNode"]);
-
 function isAstNodeRecord(value: unknown): value is AstNodeRecord {
-    return Core.isObjectLike(value);
+    return Core.isObjectLike(value) && typeof (value as { type?: unknown }).type === "string";
 }
 
 function readIdentifierName(node: unknown): string | null {
@@ -66,86 +64,28 @@ function readConstructorName(node: AstNodeRecord): string | null {
     return readIdentifierName(node.id);
 }
 
-function readNodeChildren(node: AstNodeRecord): Array<AstNodeRecord> {
-    const children: Array<AstNodeRecord> = [];
-
-    for (const [key, value] of Object.entries(node)) {
-        if (TRAVERSAL_LINK_KEYS.has(key)) {
-            continue;
-        }
-
-        if (Array.isArray(value)) {
-            for (const child of value) {
-                if (isAstNodeRecord(child)) {
-                    children.push(child);
-                }
-            }
-            continue;
-        }
-
-        if (isAstNodeRecord(value)) {
-            children.push(value);
-        }
-    }
-
-    return children;
-}
-
-function traverseAstNode(root: unknown, visit: (node: AstNodeRecord) => void): void {
-    if (!isAstNodeRecord(root)) {
-        return;
-    }
-
-    const stack = [root];
-    const seen = new WeakSet<object>();
-
-    while (stack.length > 0) {
-        const node = stack.pop();
-        if (node === undefined || seen.has(node)) {
-            continue;
-        }
-
-        seen.add(node);
-        visit(node);
-
-        const children = readNodeChildren(node);
-        for (let index = children.length - 1; index >= 0; index -= 1) {
-            stack.push(children[index]);
-        }
-    }
-}
-
 function traverseConstructorOwnedBodyNode(root: unknown, visit: (node: AstNodeRecord) => void): void {
-    if (!isAstNodeRecord(root)) {
+    const rootNode = isAstNodeRecord(root) ? root : null;
+    if (rootNode === null) {
         return;
     }
-
-    const stack = [root];
-    const seen = new WeakSet<object>();
-
-    while (stack.length > 0) {
-        const node = stack.pop();
-        if (node === undefined || seen.has(node)) {
-            continue;
+    Core.traverseAst(rootNode, {
+        enter(node) {
+            if (!isAstNodeRecord(node)) {
+                return false;
+            }
+            const typedNode = node;
+            visit(typedNode);
+            if (
+                node !== rootNode &&
+                (node.type === "FunctionDeclaration" ||
+                    node.type === "ConstructorDeclaration" ||
+                    node.type === "StructDeclaration")
+            ) {
+                return false;
+            }
         }
-
-        seen.add(node);
-        visit(node);
-
-        if (
-            node !== root &&
-            (node.type === "FunctionDeclaration" ||
-                node.type === "ConstructorDeclaration" ||
-                node.type === "StructDeclaration")
-        ) {
-            continue;
-        }
-
-        const children = readNodeChildren(node);
-        for (let index = children.length - 1; index >= 0; index -= 1) {
-            stack.push(children[index]);
-        }
-    }
+    });
 }
 
 function collectStaticMemberDeclarations(constructorNode: AstNodeRecord, constructorName: string) {
@@ -424,23 +364,25 @@ export function collectConstructorMemberAnalysis(ast: unknown): ConstructorMembe
     const instanceVariableReferences: Array<ConstructorInstanceVariableOccurrenceRecord> = [];
     const references: Array<ConstructorStaticMemberReferenceRecord> = [];
 
-    traverseAstNode(ast, (node) => {
-        if (node.type !== "ConstructorDeclaration") {
-            return;
-        }
+    Core.traverseAst(ast, {
+        enter(node) {
+            if (!isAstNodeRecord(node) || node.type !== "ConstructorDeclaration") {
+                return;
+            }
 
-        const constructorName = readConstructorName(node);
-        if (constructorName === null) {
-            return;
-        }
+            const constructorName = readConstructorName(node);
+            if (constructorName === null) {
+                return;
+            }
 
-        const constructorInstanceVariableDeclarations = collectInstanceVariableDeclarations(node, constructorName);
-        declarations.push(...collectStaticMemberDeclarations(node, constructorName));
-        instanceVariableDeclarations.push(...constructorInstanceVariableDeclarations);
-        instanceVariableReferences.push(
-            ...collectInstanceVariableReferences(node, constructorName, constructorInstanceVariableDeclarations)
-        );
-        references.push(...collectStaticFunctionReferences(node, collectReceiverTypes(node)));
+            const constructorInstanceVariableDeclarations = collectInstanceVariableDeclarations(node, constructorName);
+            declarations.push(...collectStaticMemberDeclarations(node, constructorName));
+            instanceVariableDeclarations.push(...constructorInstanceVariableDeclarations);
+            instanceVariableReferences.push(
+                ...collectInstanceVariableReferences(node, constructorName, constructorInstanceVariableDeclarations)
+            );
+            references.push(...collectStaticFunctionReferences(node, collectReceiverTypes(node)));
+        }
     });
 
     return { declarations, instanceVariableDeclarations, instanceVariableReferences, references };

@@ -1,5 +1,5 @@
 import { getNodeEndIndex, getNodeStartIndex } from "../locations.js";
-import { walkAst } from "../object-graph.js";
+import { traverseAst } from "../object-graph.js";
 
 /**
  * A single occurrence of a loop-length accessor call (e.g. `array_length(arr)`)
@@ -26,35 +26,41 @@ export function collectLoopLengthAccessorCallsFromAstNode(parameters: {
 }): ReadonlyArray<LoopLengthAccessorCall> {
     const collectedCalls: Array<LoopLengthAccessorCall> = [];
 
-    walkAst(parameters.rootNode, (node) => {
-        if (node?.type !== "CallExpression") {
-            return;
-        }
+    traverseAst(parameters.rootNode, {
+        enter(node) {
+            if (node.type !== "CallExpression") {
+                return;
+            }
 
-        const callTarget = node.object;
-        if (
-            !callTarget ||
-            callTarget.type !== "Identifier" ||
-            typeof callTarget.name !== "string" ||
-            !parameters.enabledFunctionNames.has(callTarget.name)
-        ) {
-            return;
-        }
+            const callTarget = node.object;
+            if (
+                !callTarget ||
+                typeof callTarget !== "object" ||
+                (callTarget as { type?: unknown }).type !== "Identifier" ||
+                typeof (callTarget as { name?: unknown }).name !== "string"
+            ) {
+                return;
+            }
+            const functionName = (callTarget as { name: string }).name;
+            if (!parameters.enabledFunctionNames.has(functionName)) {
+                return;
+            }
 
-        const start = getNodeStartIndex(node);
-        const end = getNodeEndIndex(node);
-        if (typeof start !== "number" || typeof end !== "number") {
-            return;
-        }
+            const start = getNodeStartIndex(node);
+            const end = getNodeEndIndex(node);
+            if (typeof start !== "number" || typeof end !== "number") {
+                return;
+            }
 
-        collectedCalls.push(
-            Object.freeze({
-                functionName: callTarget.name,
-                callStart: start,
-                callEnd: end,
-                callText: parameters.sourceText.slice(start, end)
-            })
-        );
+            collectedCalls.push(
+                Object.freeze({
+                    functionName,
+                    callStart: start,
+                    callEnd: end,
+                    callText: parameters.sourceText.slice(start, end)
+                })
+            );
+        }
     });
 
     return collectedCalls;

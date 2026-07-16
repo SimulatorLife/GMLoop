@@ -10,6 +10,10 @@ The LSP workspace owns protocol transport, document synchronization, range conve
 - `@gmloop/semantic` for project index facts, symbols, definitions, and references.
 - `@gmloop/refactor` for rename/edit safety.
 
+For each semantic request, the server acquires a capability-qualified lease that pins one project revision, generation, tier, coverage summary, validation state, and set of overlay versions. It reads through the lease's indexed semantic query roles and releases the lease after converting the result to LSP data. Persisted requests query the pinned SQLite generation directly; unsaved buffers use the same contract through session-local query state. This avoids rebuilding a whole-project navigation view for each request.
+
+The current LSP still coordinates definitions/full worker builds and semantic publication. The architectural direction is to place that orchestration behind the semantic project service, leaving the LSP responsible for protocol transport, document synchronization, workspace routing, cancellation, progress, and response conversion.
+
 ## Editor Usage
 
 Build the workspace, then run GMLoop's LSP server:
@@ -34,6 +38,8 @@ The extension contributes:
 - `gmloop.serverPath` - path or command name for the GMLoop CLI executable. It defaults to `gmloop`; the extension always appends the fixed `lsp` argument.
 - `GMLoop: Restart Language Server`
 - `GMLoop: Show Language Server Output`
+
+Lint fixes are exposed exclusively through standard LSP code actions. Editors can request `quickfix` for one current lint diagnostic or `source.fixAll` for all safe, single-file fixes produced by `@gmloop/lint`. The VSCode client does not register a custom lint-fix command or JSON-RPC request.
 
 For semantic navigation features such as definitions, references, workspace symbols, and rename, open a folder that contains or is nested under a GameMaker `.yyp` project so the semantic project root can be discovered.
 
@@ -80,14 +86,14 @@ Example MCP configuration:
 
 ```json
 {
-  "mcpServers": {
-    "lsp": {
-      "command": "lsp-mcp-server",
-      "env": {
-        "LSP_LOG_LEVEL": "info"
-      }
+    "mcpServers": {
+        "lsp": {
+            "command": "lsp-mcp-server",
+            "env": {
+                "LSP_LOG_LEVEL": "info"
+            }
+        }
     }
-  }
 }
 ```
 
@@ -95,15 +101,15 @@ Configure the bridge's language-server catalog in `.lsp-mcp.json` or `lsp-mcp.js
 
 ```json
 {
-  "servers": [
-    {
-      "id": "gml",
-      "extensions": [".gml"],
-      "languageIds": ["gml"],
-      "command": "gmloop-lsp",
-      "args": []
-    }
-  ]
+    "servers": [
+        {
+            "id": "gml",
+            "extensions": [".gml"],
+            "languageIds": ["gml"],
+            "command": "gmloop-lsp",
+            "args": []
+        }
+    ]
 }
 ```
 

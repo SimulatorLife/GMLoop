@@ -1,7 +1,5 @@
 import type { ParserRuleContext, Token, TokenStream } from "antlr4";
 
-import type { ScopeTrackerOptions } from "./scope-tracker.js";
-
 export type ParserContext =
     | (ParserRuleContext & {
           [methodName: string]: (...args: Array<unknown>) => unknown;
@@ -21,20 +19,6 @@ export type ParserContextWithMethods = ParserRuleContext & {
 export interface ParserToken extends Token {
     symbol?: Token | null;
 }
-
-// Re-export scope tracker types from the parser's type surface. These
-// contracts are parser-owned because they define the parser/semantic boundary,
-// not the shared AST model owned by Core.
-export type {
-    GlobalIdentifierTracker,
-    IdentifierRoleApplicator,
-    IdentifierRoleCloner,
-    IdentifierRoleContextController,
-    IdentifierRoleManager,
-    ScopeLifecycle,
-    ScopeTracker,
-    ScopeTrackerOptions
-} from "./scope-tracker.js";
 
 /**
  * Comment extraction options.
@@ -85,25 +69,6 @@ export interface LocationMetadataOptions {
      * @default true
      */
     simplifyLocations: boolean;
-}
-
-/**
- * Scope tracking configuration.
- *
- * Controls whether the parser should perform semantic scope analysis
- * during parsing to track variable declarations, references, and
- * identifier roles. Used primarily for advanced semantic analysis.
- */
-export interface ScopeTrackingOptions {
-    /**
-     * Scope tracker configuration.
-     *
-     * When provided, enables scope tracking with the specified options.
-     * When undefined or with enabled:false, scope tracking is disabled.
-     *
-     * @default { enabled: false, getIdentifierMetadata: false }
-     */
-    scopeTrackerOptions?: ScopeTrackerOptions;
 }
 
 /**
@@ -194,15 +159,9 @@ export interface ParserOptions
     extends
         CommentProcessingOptions,
         LocationMetadataOptions,
-        ScopeTrackingOptions,
         DocCommentAttachmentOptions,
         PredictionStrategyOptions,
         OutputFormatOptions {}
-
-const DEFAULT_SCOPE_TRACKER_OPTIONS: ScopeTrackerOptions = Object.freeze({
-    enabled: false,
-    getIdentifierMetadata: false
-});
 
 /**
  * Default maximum source length for which the parser uses the SLL fast path.
@@ -219,7 +178,6 @@ export const defaultParserOptions: ParserOptions = Object.freeze({
     simplifyLocations: true,
     attachFunctionDocComments: true,
     sllPredictionMaxSourceLength: DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH,
-    scopeTrackerOptions: DEFAULT_SCOPE_TRACKER_OPTIONS,
     astFormat: "gml",
     asJSON: false
 });

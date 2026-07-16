@@ -4,22 +4,24 @@ import { Lint } from "@gmloop/lint";
 import { Parser } from "@gmloop/parser";
 import { ESLint, type Linter } from "eslint";
 import {
+    type CancellationToken,
+    type CodeAction,
     CodeActionKind,
     createConnection,
-    Diagnostic,
+    type Diagnostic,
     DidChangeConfigurationNotification,
-    DocumentHighlight,
+    type DocumentHighlight,
     DocumentHighlightKind,
     FileChangeType,
-    InitializeResult,
-    Location,
+    type InitializeResult,
+    type Location,
     ProposedFeatures,
-    Range,
+    type Range,
     SemanticTokensRefreshRequest,
     TextDocumentSyncKind,
     TextEdit,
-    WorkspaceEdit,
-    WorkspaceSymbol
+    type WorkspaceEdit,
+    type WorkspaceSymbol
 } from "vscode-languageserver/node.js";
 
 import {
@@ -166,6 +168,80 @@ async function createLintFixWorkspaceEdit(
     return createSingleDocumentWorkspaceEdit(document, [createWholeDocumentTextEdit(document, fixedText)]);
 }
 
+function areRangesEqual(left: Range, right: Range): boolean {
+    return (
+        left.start.line === right.start.line &&
+        left.start.character === right.start.character &&
+        left.end.line === right.end.line &&
+        left.end.character === right.end.character
+    );
+}
+
+function isCodeActionKindRequested(only: ReadonlyArray<string> | undefined, kind: string): boolean {
+    return (
+        only === undefined ||
+        only.some((requestedKind) => kind === requestedKind || kind.startsWith(`${requestedKind}.`))
+    );
+}
+
+function findRequestedLintDiagnostic(
+    message: Linter.LintMessage,
+    requestedDiagnostics: ReadonlyArray<Diagnostic>
+): Diagnostic | null {
+    const lintDiagnostic = eslintMessageToDiagnostic(message);
+    return (
+        requestedDiagnostics.find(
+            (diagnostic) =>
+                diagnostic.source === lintDiagnostic.source &&
+                diagnostic.code === lintDiagnostic.code &&
+                areRangesEqual(diagnostic.range, lintDiagnostic.range)
+        ) ?? null
+    );
+}
+
+async function createLintQuickFixCodeActions(
+    document: GmlTextDocument,
+    lintRunner: ESLint,
+    requestedDiagnostics: ReadonlyArray<Diagnostic>
+): Promise<CodeAction[]> {
+    if (requestedDiagnostics.length === 0) {
+        return [];
+    }
+    const [result] = await lintRunner.lintText(document.sourceText, {
+        filePath: document.filePath
+    });
+    const actions: CodeAction[] = [];
+    for (const message of result.messages) {
+        const fix = message.fix;
+        if (fix === undefined) {
+            continue;
+        }
+        const [startOffset, endOffset] = fix.range;
+        if (
+            !Number.isInteger(startOffset) ||
+            !Number.isInteger(endOffset) ||
+            startOffset < 0 ||
+            endOffset < startOffset ||
+            endOffset > document.sourceText.length
+        ) {
+            continue;
+        }
+        const diagnostic = findRequestedLintDiagnostic(message, requestedDiagnostics);
+        if (diagnostic === null) {
+            continue;
+        }
+        const range = offsetsToRange(document, startOffset, endOffset);
+        actions.push({
+            title: `Fix this: ${diagnostic.message}`,
+            kind: CodeActionKind.QuickFix,
+            diagnostics: [diagnostic],
+            edit: createSingleDocumentWorkspaceEdit(document, [TextEdit.replace(range, fix.text)]),
+            isPreferred: true
+        });
+    }
+    return actions;
+}
+
 function reportAsyncNotificationError(connection: GmlLanguageServerConnection, error: unknown): void {
     connection.console.warn(Core.getErrorMessageOrFallback(error));
 }
@@ -174,6 +250,22 @@ function runNotificationTask(connection: GmlLanguageServerConnection, task: () =
     void task().catch((error: unknown) => {
         reportAsyncNotificationError(connection, error);
     });
+}
+
+async function withRequestAbortSignal<Result>(
+    cancellationToken: CancellationToken,
+    request: (signal: AbortSignal) => Promise<Result>
+): Promise<Result> {
+    const controller = new AbortController();
+    if (cancellationToken.isCancellationRequested) {
+        controller.abort();
+    }
+    const cancellationSubscription = cancellationToken.onCancellationRequested(() => controller.abort());
+    try {
+        return await request(controller.signal);
+    } finally {
+        cancellationSubscription.dispose();
+    }
 }
 
 function requestSemanticTokenRefresh(connection: GmlLanguageServerConnection): void {
@@ -297,7 +389,7 @@ export function createGmlLanguageServer(
                 prepareProvider: true
             },
             codeActionProvider: {
-                codeActionKinds: [CodeActionKind.QuickFix, CodeActionKind.RefactorRewrite]
+                codeActionKinds: [CodeActionKind.QuickFix, CodeActionKind.SourceFixAll]
             },
             completionProvider: {
                 triggerCharacters: [".", "_"]
@@ -476,7 +568,7 @@ export function createGmlLanguageServer(
         return [createWholeDocumentTextEdit(document, formatted)];
     });
 
-    connection.onDefinition(async ({ textDocument, position }): Promise<Location[]> => {
+    connection.onDefinition(async ({ textDocument, position }, cancellationToken): Promise<Location[]> => {
         cancelPendingSemanticRefresh(textDocument.uri);
         try {
             const document = documents.get(textDocument.uri);
@@ -490,7 +582,9 @@ export function createGmlLanguageServer(
                 return [];
             }
 
-            const definition = await semanticIndex.findDefinition(document, offset, word.name);
+            const definition = await withRequestAbortSignal(cancellationToken, (signal) =>
+                semanticIndex.findDefinition(document, offset, word.name, signal)
+            );
             return definition ? [definition] : [];
         } catch (error) {
             connection.console.error(`Error in onDefinition: ${Core.getErrorMessageOrFallback(error)}`);
@@ -498,7 +592,7 @@ export function createGmlLanguageServer(
         }
     });
 
-    connection.onReferences(async ({ textDocument, position, context }): Promise<Location[]> => {
+    connection.onReferences(async ({ textDocument, position, context }, cancellationToken): Promise<Location[]> => {
         cancelPendingSemanticRefresh(textDocument.uri);
         try {
             const document = documents.get(textDocument.uri);
@@ -509,7 +603,9 @@ export function createGmlLanguageServer(
             const offset = positionToOffset(document, position);
             const word = readGmlIdentifierAtPosition(document, offset);
             return word
-                ? await semanticIndex.findReferences(document, offset, word.name, context.includeDeclaration)
+                ? await withRequestAbortSignal(cancellationToken, (signal) =>
+                      semanticIndex.findReferences(document, offset, word.name, context.includeDeclaration, signal)
+                  )
                 : [];
         } catch (error) {
             connection.console.error(`Error in onReferences: ${Core.getErrorMessageOrFallback(error)}`);
@@ -517,22 +613,31 @@ export function createGmlLanguageServer(
         }
     });
 
-    connection.onDocumentSymbol(async ({ textDocument }) => {
+    connection.onDocumentSymbol(async ({ textDocument }, cancellationToken) => {
         try {
             const document = documents.get(textDocument.uri);
-            return document ? await semanticIndex.listDocumentSymbols(document) : [];
+            return document
+                ? await withRequestAbortSignal(cancellationToken, (signal) =>
+                      semanticIndex.listDocumentSymbols(document, signal)
+                  )
+                : [];
         } catch (error) {
             connection.console.error(`Error in onDocumentSymbol: ${Core.getErrorMessageOrFallback(error)}`);
             return [];
         }
     });
 
-    connection.languages.semanticTokens.on(async ({ textDocument }) => {
+    connection.languages.semanticTokens.on(async ({ textDocument }, cancellationToken) => {
         cancelPendingSemanticRefresh(textDocument.uri);
         try {
             const document = documents.get(textDocument.uri);
             return document
-                ? encodeGmlSemanticTokens(document, await semanticIndex.listSemanticHighlights(document))
+                ? encodeGmlSemanticTokens(
+                      document,
+                      await withRequestAbortSignal(cancellationToken, (signal) =>
+                          semanticIndex.listSemanticHighlights(document, signal)
+                      )
+                  )
                 : { data: [] };
         } catch (error) {
             connection.console.error(`Error in semanticTokens.on: ${Core.getErrorMessageOrFallback(error)}`);
@@ -540,17 +645,21 @@ export function createGmlLanguageServer(
         }
     });
 
-    connection.onWorkspaceSymbol(async ({ query }): Promise<WorkspaceSymbol[]> => {
+    connection.onWorkspaceSymbol(async ({ query }, cancellationToken): Promise<WorkspaceSymbol[]> => {
         try {
             const document = documents.list().find((candidate) => isGmlDocumentPath(candidate.filePath));
-            return document ? await semanticIndex.searchWorkspaceSymbols(document, query) : [];
+            return document
+                ? await withRequestAbortSignal(cancellationToken, (signal) =>
+                      semanticIndex.searchWorkspaceSymbols(document, query, signal)
+                  )
+                : [];
         } catch (error) {
             connection.console.error(`Error in onWorkspaceSymbol: ${Core.getErrorMessageOrFallback(error)}`);
             return [];
         }
     });
 
-    connection.onHover(async ({ textDocument, position }) => {
+    connection.onHover(async ({ textDocument, position }, cancellationToken) => {
         cancelPendingSemanticRefresh(textDocument.uri);
         try {
             const document = documents.get(textDocument.uri);
@@ -564,14 +673,16 @@ export function createGmlLanguageServer(
                 return null;
             }
 
-            return await semanticIndex.hover(document, offset, word.name);
+            return await withRequestAbortSignal(cancellationToken, (signal) =>
+                semanticIndex.hover(document, offset, word.name, signal)
+            );
         } catch (error) {
             connection.console.error(`Error in onHover: ${Core.getErrorMessageOrFallback(error)}`);
             return null;
         }
     });
 
-    connection.onPrepareRename(({ textDocument, position }) => {
+    connection.onPrepareRename(async ({ textDocument, position }, cancellationToken) => {
         cancelPendingSemanticRefresh(textDocument.uri);
         try {
             const document = documents.get(textDocument.uri);
@@ -579,14 +690,20 @@ export function createGmlLanguageServer(
                 return null;
             }
 
-            return readGmlIdentifierAtPosition(document, positionToOffset(document, position))?.range ?? null;
+            const offset = positionToOffset(document, position);
+            const word = readGmlIdentifierAtPosition(document, offset);
+            return word
+                ? await withRequestAbortSignal(cancellationToken, (signal) =>
+                      semanticIndex.prepareRename(document, offset, word.name, signal)
+                  )
+                : null;
         } catch (error) {
             connection.console.error(`Error in onPrepareRename: ${Core.getErrorMessageOrFallback(error)}`);
             return null;
         }
     });
 
-    connection.onRenameRequest(async ({ textDocument, position, newName }) => {
+    connection.onRenameRequest(async ({ textDocument, position, newName }, cancellationToken) => {
         cancelPendingSemanticRefresh(textDocument.uri);
         try {
             const document = documents.get(textDocument.uri);
@@ -599,14 +716,16 @@ export function createGmlLanguageServer(
                 return null;
             }
 
-            return await semanticIndex.planRename(document, positionToOffset(document, position), word.name, newName);
+            return await withRequestAbortSignal(cancellationToken, (signal) =>
+                semanticIndex.planRename(document, positionToOffset(document, position), word.name, newName, signal)
+            );
         } catch (error) {
             connection.console.error(`Error in onRenameRequest: ${Core.getErrorMessageOrFallback(error)}`);
             return null;
         }
     });
 
-    connection.onCompletion(async ({ textDocument, position }) => {
+    connection.onCompletion(async ({ textDocument, position }, cancellationToken) => {
         cancelPendingSemanticRefresh(textDocument.uri);
         try {
             const document = documents.get(textDocument.uri);
@@ -615,7 +734,9 @@ export function createGmlLanguageServer(
             }
 
             const prefix = readGmlIdentifierAtPosition(document, positionToOffset(document, position))?.name ?? "";
-            return await semanticIndex.searchCompletions(document, prefix);
+            return await withRequestAbortSignal(cancellationToken, (signal) =>
+                semanticIndex.searchCompletions(document, prefix, signal)
+            );
         } catch (error) {
             connection.console.error(`Error in onCompletion: ${Core.getErrorMessageOrFallback(error)}`);
             return [];
@@ -624,64 +745,54 @@ export function createGmlLanguageServer(
 
     connection.onCodeAction(async ({ textDocument, context }) => {
         const document = documents.get(textDocument.uri);
-        if (!document || context.diagnostics.length === 0) {
+        if (!document) {
             return [];
         }
 
-        const actions: any[] = [];
-
-        // 1. Generate individual quick fixes for diagnostics that have fix metadata attached
-        for (const diagnostic of context.diagnostics) {
-            const data = diagnostic.data;
-            if (data && data.fix) {
-                const range = offsetsToRange(document, data.fix.range[0], data.fix.range[1]);
-                const edit = createSingleDocumentWorkspaceEdit(document, [TextEdit.replace(range, data.fix.text)]);
-
-                actions.push({
-                    title: `Fix this: ${diagnostic.message}`,
-                    kind: CodeActionKind.QuickFix,
-                    diagnostics: [diagnostic],
-                    edit,
-                    isPreferred: true
-                });
-            }
+        const actions: CodeAction[] = [];
+        if (isCodeActionKindRequested(context.only, CodeActionKind.QuickFix)) {
+            actions.push(...(await createLintQuickFixCodeActions(document, lintRunner, context.diagnostics)));
         }
 
-        // 2. Generate global quick fix to apply all fixable rule violations in the document
-        const globalEdit = await createLintFixWorkspaceEdit(document, lintFixRunner);
-        if (globalEdit) {
-            actions.push({
-                title: "Apply all GMLoop lint fixes",
-                kind: CodeActionKind.QuickFix,
-                diagnostics: context.diagnostics,
-                edit: globalEdit
-            });
+        if (isCodeActionKindRequested(context.only, CodeActionKind.SourceFixAll)) {
+            const fixAllEdit = await createLintFixWorkspaceEdit(document, lintFixRunner);
+            if (fixAllEdit !== null) {
+                actions.push({
+                    title: "Fix all GMLoop lint diagnostics",
+                    kind: CodeActionKind.SourceFixAll,
+                    diagnostics: context.diagnostics.filter((diagnostic) => diagnostic.source === "gmloop-lint"),
+                    edit: fixAllEdit
+                });
+            }
         }
 
         return actions;
     });
 
-    connection.onDocumentHighlight(async ({ textDocument, position }): Promise<DocumentHighlight[]> => {
-        cancelPendingSemanticRefresh(textDocument.uri);
-        const document = documents.get(textDocument.uri);
-        if (!document) {
-            return [];
+    connection.onDocumentHighlight(
+        async ({ textDocument, position }, cancellationToken): Promise<DocumentHighlight[]> => {
+            cancelPendingSemanticRefresh(textDocument.uri);
+            const document = documents.get(textDocument.uri);
+            if (!document) {
+                return [];
+            }
+
+            const offset = positionToOffset(document, position);
+            const word = readGmlIdentifierAtPosition(document, offset);
+            if (!word) {
+                return [];
+            }
+
+            const localReferences = await withRequestAbortSignal(cancellationToken, (signal) =>
+                semanticIndex.findDocumentReferences(document, offset, word.name, signal)
+            );
+
+            return localReferences.map((ref) => ({
+                range: ref.range,
+                kind: DocumentHighlightKind.Text
+            }));
         }
-
-        const offset = positionToOffset(document, position);
-        const word = readGmlIdentifierAtPosition(document, offset);
-        if (!word) {
-            return [];
-        }
-
-        const references = await semanticIndex.findReferences(document, offset, word.name, true);
-        const localReferences = references.filter((loc) => loc.uri === textDocument.uri);
-
-        return localReferences.map((ref) => ({
-            range: ref.range,
-            kind: DocumentHighlightKind.Text
-        }));
-    });
+    );
 
     connection.onFoldingRanges(({ textDocument }) => {
         const document = documents.get(textDocument.uri);
@@ -699,14 +810,6 @@ export function createGmlLanguageServer(
         }
 
         return createGmlSelectionRanges(document, positions);
-    });
-
-    connection.onRequest("gmloop/applyLintFixes", async (params: { uri: string }): Promise<WorkspaceEdit | null> => {
-        const document = documents.get(params.uri);
-        if (!document) {
-            return null;
-        }
-        return await createLintFixWorkspaceEdit(document, lintFixRunner);
     });
 
     return Object.freeze({

@@ -9,6 +9,7 @@ import { lstat, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
+import { Parser } from "@gmloop/parser";
 import { Refactor } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import { Command, Option } from "commander";
@@ -68,6 +69,53 @@ type RefactorContext = {
     verbose: boolean;
 };
 
+type ProjectParseContext = Readonly<{
+    filePath?: string;
+    projectRoot?: string;
+}>;
+
+function readProjectParseContext(context: unknown): ProjectParseContext {
+    if (!Core.isObjectLike(context)) {
+        return {};
+    }
+    return {
+        ...(typeof context.filePath === "string" ? { filePath: context.filePath } : {}),
+        ...(typeof context.projectRoot === "string" ? { projectRoot: context.projectRoot } : {})
+    };
+}
+
+function createTolerantRefactorProjectParser(
+    onWarning: (filePath: string, errorMessage: string) => void
+): NonNullable<Parameters<typeof Semantic.buildProjectIndex>[2]>["parseGml"] {
+    const warnedFilePaths = new Set<string>();
+    return (sourceText, rawContext) => {
+        const context = readProjectParseContext(rawContext);
+        try {
+            return Parser.GMLParser.parse(sourceText, {
+                getComments: true,
+                getLocations: true,
+                simplifyLocations: false
+            });
+        } catch (error) {
+            if (!Core.isSyntaxErrorWithLocation(error)) {
+                throw error;
+            }
+
+            const formattedError = Semantic.formatProjectIndexSyntaxError(error, sourceText, context);
+            const filePath = context.filePath ?? "<unknown>";
+            if (!warnedFilePaths.has(filePath)) {
+                warnedFilePaths.add(filePath);
+                onWarning(filePath, formattedError.message);
+            }
+            return Parser.GMLParser.parse("", {
+                getComments: true,
+                getLocations: true,
+                simplifyLocations: false
+            });
+        }
+    };
+}
+
 type ValidatedRenameOptions = RefactorContext & {
     symbolId?: string;
     oldName?: string;
@@ -119,8 +167,7 @@ async function getOrBuildProjectIndex(
 }> {
     console.log("[refactor] Loading semantic project index...");
 
-    const baseParser = Semantic.getDefaultProjectIndexParser();
-    const tolerantParser = Semantic.createTolerantProjectIndexParser(baseParser, (filePath, errorMessage) => {
+    const tolerantParser = createTolerantRefactorProjectParser((filePath, errorMessage) => {
         console.warn(`Warning: Skipping parse-invalid file during refactor indexing: ${filePath} (${errorMessage})`);
     });
 
@@ -690,15 +737,11 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
                         console.log(`Rebuilding project index after codemod ${summary.id}...`);
                     }
 
-                    const baseParser = Semantic.getDefaultProjectIndexParser();
-                    const tolerantParser = Semantic.createTolerantProjectIndexParser(
-                        baseParser,
-                        (filePath, errorMessage) => {
-                            console.warn(
-                                `Warning: Skipping parse-invalid file during refactor indexing: ${filePath} (${errorMessage})`
-                            );
-                        }
-                    );
+                    const tolerantParser = createTolerantRefactorProjectParser((filePath, errorMessage) => {
+                        console.warn(
+                            `Warning: Skipping parse-invalid file during refactor indexing: ${filePath} (${errorMessage})`
+                        );
+                    });
 
                     const customFsFacade = {
                         ...Core.defaultFsFacade,

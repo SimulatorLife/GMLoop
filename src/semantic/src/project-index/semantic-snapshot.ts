@@ -1,3 +1,4 @@
+import type { SemanticSnapshotQueries } from "./semantic-query-types.js";
 import type { GmlSymbolDocumentation } from "./symbol-documentation.js";
 
 /** A deterministic semantic source revision. */
@@ -13,7 +14,6 @@ export type SemanticTier = "definitions" | "full";
 export type SemanticCapability =
     | "completion"
     | "definition"
-    | "diagnostics"
     | "documentSymbols"
     | "hover"
     | "references"
@@ -21,13 +21,20 @@ export type SemanticCapability =
     | "semanticTokens"
     | "workspaceSymbols";
 
-/** Immutable source-coverage facts associated with an acquired snapshot. */
-export type SemanticCoverage = Readonly<{
-    analyzedFiles: ReadonlySet<string>;
-    analyzedResources: ReadonlySet<string>;
-    relationshipStatus: "complete" | "partial";
-    status: "complete" | "partial";
-}>;
+/** Immutable, bounded source-coverage summary associated with an acquired snapshot. */
+export type SemanticCoverage =
+    | Readonly<{
+          analyzedFileCount: number;
+          analyzedResourceCount: number;
+          relationshipStatus: "complete" | "partial";
+          status: "complete";
+      }>
+    | Readonly<{
+          analyzedFileCount: number;
+          analyzedResourceCount: number;
+          relationshipStatus: "partial";
+          status: "partial";
+      }>;
 
 /** Validation result associated with an acquired snapshot. */
 export type SemanticValidationState =
@@ -64,8 +71,8 @@ export type SemanticSnapshotRequirements = Readonly<{
 /** A request-pinned immutable snapshot. Release it once the request is complete. */
 export type SemanticSnapshotLease = Readonly<{
     identity: SemanticSnapshotIdentity;
+    queries: SemanticSnapshotQueries;
     release: () => void;
-    snapshot: SemanticSnapshot;
 }>;
 
 /** A typed reason why a compatible snapshot could not be acquired. */
