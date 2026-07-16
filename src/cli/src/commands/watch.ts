@@ -875,13 +875,14 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
 
     const extensionMatcher = createExtensionMatcher(options.extensions ?? [".gml", ".yy"]);
     const gmlExtensionMatcher = createExtensionMatcher([".gml"]);
+    const roomExtensionMatcher = createExtensionMatcher([".yy"]);
     const extensionSet = extensionMatcher.extensions;
 
-    const { scriptNames, fileDataCache } = await collectScriptNames(
-        normalizedPath,
-        gmlExtensionMatcher,
-        maxConcurrentDirs
-    );
+    const {
+        scriptNames,
+        fileDataCache,
+        secondaryFilePaths: roomFilePaths
+    } = await collectScriptNames(normalizedPath, gmlExtensionMatcher, maxConcurrentDirs, roomExtensionMatcher);
 
     // Auto-inject hot-reload runtime wrapper if requested
     if (autoInject) {
@@ -937,9 +938,12 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
     let statusServerController: StatusServerHandle | null = null;
     let runtimeServerController: RuntimeStaticServerInstance | null = null;
 
-    const watchedFiles = await collectWatchedFilePaths(normalizedPath, extensionMatcher, maxConcurrentDirs);
+    // Reuse the .yy file paths collected during the startup tree walk instead of doing
+    // a second full traversal just to discover room resources. The combined walk in
+    // collectScriptNames already partitioned both matchers, eliminating one readdir pass
+    // per directory during watch startup.
     await Core.runInParallelWithLimit(
-        watchedFiles.filter((filePath) => path.extname(filePath).toLowerCase() === ".yy"),
+        roomFilePaths,
         (filePath) => primeRoomResource(filePath, runtimeContext, runtimeContext.roomResources),
         maxConcurrentDirs
     );
@@ -1793,25 +1797,31 @@ async function updateFileSnapshot(runtimeContext: FileSnapshotWriter, filePath: 
  * Return value from the initial file cache build step.
  * Provides both the complete set of known script names (for seeding the semantic oracle)
  * and the per-file content + AST cache (for avoiding re-parsing during initial transpilation).
+ * `secondaryFilePaths` carries paths discovered for an additional extension matcher during the
+ * same tree walk (for example `.yy` room resources) so callers do not need a second full scan.
  */
 interface InitialFileScanResult {
     scriptNames: Set<string>;
     fileDataCache: Map<string, InitialFileData>;
+    secondaryFilePaths: Array<string>;
 }
 
 interface ScannedDirectoryEntries {
     files: Array<string>;
     directories: Array<string>;
+    secondaryFiles: Array<string>;
 }
 
 function partitionScannedDirectoryEntries(
     currentPath: string,
     entries: Array<Dirent>,
     extensionMatcher: ExtensionMatcher,
-    watchRoot: string
+    watchRoot: string,
+    secondaryExtensionMatcher?: ExtensionMatcher
 ): ScannedDirectoryEntries {
     const files: Array<string> = [];
     const directories: Array<string> = [];
+    const secondaryFiles: Array<string> = [];
 
     for (const entry of entries) {
         const candidatePath = path.join(currentPath, entry.name);
@@ -1820,39 +1830,49 @@ function partitionScannedDirectoryEntries(
                 continue;
             }
             directories.push(candidatePath);
-        } else if (
-            entry.isFile() &&
-            !shouldIgnoreWatchedPath(candidatePath, watchRoot) &&
-            extensionMatcher.matches(entry.name)
-        ) {
-            files.push(candidatePath);
+        } else if (entry.isFile() && !shouldIgnoreWatchedPath(candidatePath, watchRoot)) {
+            if (extensionMatcher.matches(entry.name)) {
+                files.push(candidatePath);
+            } else if (secondaryExtensionMatcher?.matches(entry.name)) {
+                secondaryFiles.push(candidatePath);
+            }
         }
     }
 
-    return { files, directories };
+    return { files, directories, secondaryFiles };
 }
 
 async function collectScriptNames(
     rootPath: string,
     extensionMatcher: ExtensionMatcher,
-    maxConcurrentDirs: number
+    maxConcurrentDirs: number,
+    secondaryExtensionMatcher?: ExtensionMatcher
 ): Promise<InitialFileScanResult> {
     const scriptNames = new Set<string>();
     const fileDataCache = new Map<string, InitialFileData>();
+    const secondaryFilePaths: Array<string> = [];
 
     async function scan(currentPath: string): Promise<void> {
         const entries = await readdir(currentPath, { withFileTypes: true });
-        const { files, directories } = partitionScannedDirectoryEntries(
+        const { files, directories, secondaryFiles } = partitionScannedDirectoryEntries(
             currentPath,
             entries,
             extensionMatcher,
-            rootPath
+            rootPath,
+            secondaryExtensionMatcher
         );
 
         // Process all files in this directory concurrently for maximum throughput
         await Core.runInParallel(files, async (filePath) => {
             await addScriptNamesFromFile(filePath, scriptNames, fileDataCache);
         });
+
+        // Capture paths discovered for the secondary matcher without re-walking the tree.
+        // Callers (e.g. room-resource priming) need only the absolute paths to schedule
+        // their own follow-up reads, not parsed contents.
+        if (secondaryFiles.length > 0) {
+            secondaryFilePaths.push(...secondaryFiles);
+        }
 
         // Traverse subdirectories with bounded parallelism to reduce startup latency
         // while still respecting file descriptor limits on constrained systems.
@@ -1871,7 +1891,7 @@ async function collectScriptNames(
         // Fail silently; fallback to empty set
     }
 
-    return { scriptNames, fileDataCache };
+    return { scriptNames, fileDataCache, secondaryFilePaths };
 }
 
 async function collectWatchedFilePaths(
