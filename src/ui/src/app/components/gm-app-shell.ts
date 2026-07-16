@@ -99,15 +99,23 @@ export class GmAppShell extends LightDomLitElement {
 
     // ─── Private handlers (access #state and #store via closure) ───────────────
 
+    /**
+     * Route every top-level navigation request through the same reducer path
+     * regardless of whether the destination page already has data behind it.
+     *
+     * Graph Index previously swallowed navigation events when no graph nodes
+     * were loaded, leaving the visible tab button looking clickable while no
+     * route change occurred. The graph surface owns an empty state that
+     * already explains how to load or rebuild a graph, so the shell should
+     * honour an explicit user request to land there and let the panel
+     * decide what to render.
+     */
     #onNavigatePage = (eventValue: Event): void => {
         if (!this.model) {
             return;
         }
 
         const targetPage = (eventValue as CustomEvent<{ page: GraphVisualizationUiPage }>).detail.page;
-        if (targetPage === "graph" && !hasLoadedGraphIndex(this.model)) {
-            return;
-        }
 
         this.#store.dispatch({
             page: targetPage,
