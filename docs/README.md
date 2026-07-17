@@ -140,7 +140,6 @@ retries, memory, budgets, queues, and durable workflow state.
   Configuration contract for the strict GMLoop `build-lint-test` Codex
   subagent: `model = "gpt-5.4-mini"`, `model_reasoning_effort = "medium"`,
   `sandbox_mode = "workspace-write"` with `[sandbox_workspace_write]
-  network_access = false`, an allowlist that exposes only the read-only
-  `gmloop_lint` MCP tool, and developer instructions that limit it to
-  running one assigned `pnpm run` build/lint/test command and reporting
-  exact failure excerpts.
+  network_access = false`, zero reachable MCP servers, and developer
+  instructions that limit it to running one assigned `pnpm run`
+  build/lint/test command and reporting exact verbatim failure excerpts.

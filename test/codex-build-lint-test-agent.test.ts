@@ -11,9 +11,14 @@ const buildLintTestTomlPath = path.join(repoRoot, ".codex", "agents", "build-lin
 const configTomlPath = path.join(repoRoot, ".codex", "config.toml");
 const docsPath = path.join(repoRoot, "docs", "codex-build-lint-test-agent.md");
 
-const REQUIRED_ALLOWED_GMLOOP_TOOLS = Object.freeze(["gmloop_lint"]);
-
-const REQUIRED_FORBIDDEN_MCP_SERVERS = Object.freeze(["gm-cli", "playwright", "lsp", "node_repl", "computer-use"]);
+const REQUIRED_FAIL_CLOSED_MCP_SERVERS = Object.freeze([
+    "gmloop",
+    "gm-cli",
+    "playwright",
+    "lsp",
+    "node_repl",
+    "computer-use"
+]);
 
 // Tools the agent must never have available, regardless of which MCP server
 // they would be exposed on, because the agent is strictly a reporter for
@@ -52,8 +57,8 @@ const REQUIRED_REPORTER_KEY_PHRASES = Object.freeze([
     "do not run git",
     "do not install",
     "do not spawn",
-    "exit or result status",
-    "exact stdout/stderr failure excerpts",
+    "exit status",
+    "exact verbatim stdout/stderr failure excerpts",
     "warnings unless the orchestrator",
     "do not rerun"
 ] as const);
@@ -68,7 +73,7 @@ const REQUIRED_SAFE_COMMAND_PHRASES = Object.freeze([
 ] as const);
 
 const REQUIRED_RUN_ONLY_ASSIGNED_PHRASES = Object.freeze([
-    "run exactly that command",
+    "run exactly those command(s)",
     "do not invent commands",
     "do not fix anything",
     "do not rerun"
@@ -161,98 +166,45 @@ void test("build-lint-test agent TOML pins model, reasoning effort, sandbox, and
     assert.equal(roleTomlText.includes("MiniMax"), false, "Expected build-lint-test.toml to not reference MiniMax.");
 });
 
-void test("build-lint-test agent TOML declares a gmloop allowlist of exactly gmloop_lint", async () => {
+void test("build-lint-test agent TOML fail-closes every inherited MCP server", async () => {
     const roleTomlText = await readFile(buildLintTestTomlPath, "utf8");
 
-    assert.equal(
-        roleTomlText.includes("[mcp_servers.gmloop]"),
-        true,
-        "Expected build-lint-test.toml to declare [mcp_servers.gmloop]."
-    );
-
-    const gmloopBody = findTableBody(roleTomlText, "mcp_servers.gmloop");
-    assert.equal(gmloopBody.includes('command = "gmloop"'), true);
-    assert.equal(gmloopBody.includes('args = ["mcp"]'), true);
-    // The [mcp_servers.gmloop.env] sub-table sits on its own line in this
-    // role file, so it is not part of the parent body's slice above; assert
-    // it against the full role TOML.
-    assert.equal(
-        roleTomlText.includes("[mcp_servers.gmloop.env]") &&
-            roleTomlText.includes('GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS = "true"'),
-        true,
-        "Expected [mcp_servers.gmloop.env] to expose the internal gmloop MCP tooling for the lint MCP surface."
-    );
-
-    const enabledToolsMatch = /enabled_tools\s*=\s*\[([\s\S]*?)\]/.exec(gmloopBody);
-    assert.notEqual(
-        enabledToolsMatch,
-        null,
-        "Expected [mcp_servers.gmloop] to declare enabled_tools as a literal list."
-    );
-    const enabledToolsBlock = enabledToolsMatch?.[1] ?? "";
-    for (const expectedTool of REQUIRED_ALLOWED_GMLOOP_TOOLS) {
-        assert.equal(
-            enabledToolsBlock.includes(`"${expectedTool}"`),
-            true,
-            `Expected gmloop enabled_tools to include "${expectedTool}".`
-        );
-    }
-
-    // enabled_tools must contain *only* the read-only gmloop_lint tool. The
-    // role spec says the gmloop MCP surface is for lint MCP reads only;
-    // every other gmloop_lint-shaped tool name and the write-shape of the
-    // enabled_tools list is forbidden.
-    for (const forbiddenTool of FORBIDDEN_TOOL_NAMES) {
-        assert.equal(
-            enabledToolsBlock.includes(`"${forbiddenTool}"`),
-            false,
-            `Expected gmloop enabled_tools to not include "${forbiddenTool}".`
-        );
-    }
-
-    // `gmloop_lint --write` would mutate the repo. The enabled_tools entry
-    // is the bare tool name, and the agent description makes clear that
-    // build/test commands always go through the shell, not through any
-    // GMLoop tool. The whole role TOML must not advertise gmloop_lint --write.
-    assert.equal(
-        roleTomlText.includes("gmloop_lint --write") || roleTomlText.includes("gmloop_lint --write=true"),
-        false,
-        "Expected build-lint-test.toml to never advertise gmloop_lint --write."
-    );
-});
-
-void test("build-lint-test agent TOML disables every required non-target MCP server with a valid stdio transport", async () => {
-    const roleTomlText = await readFile(buildLintTestTomlPath, "utf8");
-
-    for (const serverName of REQUIRED_FORBIDDEN_MCP_SERVERS) {
+    for (const serverName of REQUIRED_FAIL_CLOSED_MCP_SERVERS) {
         const header = `[mcp_servers.${serverName}]`;
         assert.equal(
             roleTomlText.includes(header),
             true,
-            `Expected build-lint-test.toml to declare ${header} so the inherited server is explicitly disabled.`
+            `Expected build-lint-test.toml to declare ${header} so inherited MCP access is explicitly disabled.`
         );
 
         const body = findTableBody(roleTomlText, `mcp_servers.${serverName}`);
-        assert.equal(
-            body.includes('command = "false"'),
-            true,
-            `Expected ${header} table to declare a valid fail-closed stdio transport (command = "false").`
-        );
-        assert.equal(
-            body.includes("args = []"),
-            true,
-            `Expected ${header} table to declare args = [] so the disabled transport is schema-valid.`
-        );
-        assert.equal(
-            body.includes("enabled = false"),
-            true,
-            `Expected ${header} table to set enabled = false so the reporter cannot reach ${serverName}.`
-        );
+        assert.equal(body.includes('command = "false"'), true, `Expected ${header} to use command = "false".`);
+        assert.equal(body.includes("args = []"), true, `Expected ${header} to use args = [].`);
+        assert.equal(body.includes("enabled = false"), true, `Expected ${header} to set enabled = false.`);
+        assert.equal(body.includes("enabled_tools"), false, `Expected ${header} to have no enabled_tools.`);
     }
 
-    // No enable paths should sneak past the `enabled = false` rows: the agent
-    // must never see a tool entry on a forbidden server, in any other MCP
-    // server table, or in any developer-instructions example.
+    assert.equal(
+        roleTomlText.includes("enabled_tools"),
+        false,
+        "Expected build-lint-test.toml to define no MCP tool allowlists."
+    );
+    assert.equal(
+        roleTomlText.includes("[mcp_servers.gmloop.env]"),
+        false,
+        "Expected build-lint-test.toml to define no gmloop environment table."
+    );
+    assert.equal(
+        roleTomlText.includes("GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS"),
+        false,
+        "Expected build-lint-test.toml to omit the internal MCP exposure environment variable."
+    );
+    assert.equal(
+        roleTomlText.includes("gmloop_lint"),
+        false,
+        "Expected build-lint-test.toml to contain no MCP lint tool name."
+    );
+
     for (const forbiddenTool of FORBIDDEN_TOOL_NAMES) {
         assert.equal(
             roleTomlText.includes(`"${forbiddenTool}"`),
@@ -308,9 +260,14 @@ void test("build-lint-test developer instructions enforce the strict reporter co
         "Expected build-lint-test developer instructions to forbid summarizing or paraphrasing output."
     );
     assert.equal(
-        instructions.includes("without --write") || instructions.includes("without the write"),
+        instructions.includes("no mcp tools are available or permitted"),
         true,
-        "Expected build-lint-test developer instructions to instruct calling gmloop_lint without --write."
+        "Expected build-lint-test developer instructions to make MCP access unavailable and forbidden."
+    );
+    assert.equal(
+        instructions.includes("repository build, lint, and test work uses only the assigned shell command"),
+        true,
+        "Expected build-lint-test developer instructions to require the assigned shell command for repository work."
     );
 });
 
@@ -354,11 +311,12 @@ void test(".codex/config.toml registers the build-lint-test agent and points to 
     assert.equal(configTomlText.includes("max_depth = 1"), true);
 });
 
-void test("docs describe the intentional shell path for build/tests, lint MCP limitation, generated-artifact scope, network restriction, and exact-output reporting", async () => {
+void test("docs describe the zero-MCP shell-only reporter contract", async () => {
     const docsText = await readFile(docsPath, "utf8");
     const lowerDocs = docsText.toLowerCase();
+    const normalizedDocs = lowerDocs.replaceAll(/\s+/g, " ");
 
-    // Intentional shell path for repository build and tests (not via GMLoop tools).
+    // Repository build, lint, and tests use the assigned pnpm command, not MCP.
     assert.equal(
         lowerDocs.includes("pnpm run build:ts"),
         true,
@@ -370,25 +328,28 @@ void test("docs describe the intentional shell path for build/tests, lint MCP li
         "Expected docs to list pnpm run test as one of the safe shell commands."
     );
     assert.equal(
-        lowerDocs.includes("repository build and tests always go through the shell"),
+        normalizedDocs.includes("repository build, lint, and tests always go through the assigned shell command") ||
+            normalizedDocs.includes("repository build, lint, and tests run through the assigned `pnpm` command"),
         true,
-        "Expected docs to make clear that repository build and tests run through the shell, not any GMLoop tool."
-    );
-
-    // Lint MCP limitation: only gmloop_lint (read), no --write, no other lint-shaped tool.
-    assert.equal(docsText.includes("gmloop_lint"), true, "Expected docs to mention the gmloop_lint MCP tool.");
-    assert.equal(
-        lowerDocs.includes("without --write") ||
-            lowerDocs.includes("without the write") ||
-            lowerDocs.includes("without its write"),
-        true,
-        "Expected docs to call out that gmloop_lint must be called without --write."
+        "Expected docs to make clear that repository build, lint, and tests run through the assigned shell command."
     );
     assert.equal(
-        lowerDocs.includes("must call it without") || lowerDocs.includes("called without"),
+        lowerDocs.includes("not gmloop mcp"),
         true,
-        "Expected docs to spell out the no-write lint MCP limitation."
+        "Expected docs to make clear that repository checks do not use GMLoop MCP."
     );
+    assert.equal(
+        normalizedDocs.includes("zero mcp servers are reachable") &&
+            normalizedDocs.includes("every inherited mcp table is explicitly disabled"),
+        true,
+        "Expected docs to describe the zero-MCP fail-closed inheritance contract."
+    );
+    assert.equal(
+        normalizedDocs.includes("none enabled; every inherited mcp table is disabled"),
+        true,
+        "Expected docs configuration table to state that no MCP server is enabled."
+    );
+    assert.equal(docsText.includes("gmloop_lint"), false, "Expected docs to contain no MCP lint tool name.");
 
     // Generated-artifact scope: workspace-write so dist/, cache, and test artifacts can populate.
     assert.equal(
@@ -415,7 +376,7 @@ void test("docs describe the intentional shell path for build/tests, lint MCP li
 
     // Exact-output-only reporting: failure excerpts verbatim, warnings omitted unless asked.
     assert.equal(
-        lowerDocs.includes("exact stdout/stderr failure excerpts") || lowerDocs.includes("exact stdout/stderr"),
+        normalizedDocs.includes("exact verbatim stdout/stderr failure excerpts"),
         true,
         "Expected docs to describe exact-output-only reporting."
     );
