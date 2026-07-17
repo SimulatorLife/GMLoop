@@ -7,6 +7,10 @@ This package implements the GML → JavaScript transpiler for the GMLoop toolcha
 - The transpiler may consume semantic classification data from `@gmloop/semantic`.
 - It does **not** own refactor/rename planning and should not depend on `@gmloop/refactor`.
 - Refactor operations remain in the refactor engine and integration layer (CLI).
+- Compile-time `#macro` expansion belongs here, before JavaScript emission. The
+  CLI supplies the project-wide macro table it builds during its source scan;
+  the refactor macro-dependency module remains responsible only for rename
+  planning metadata.
 
 ## Architecture
 
@@ -36,6 +40,36 @@ const patch = await transpiler.transpileScript({
 //   version: 1730702400000
 // }
 ```
+
+Project-aware callers can expand cross-file macros through the transpiler API:
+
+```javascript
+import { Parser } from "@gmloop/parser";
+
+const macroAst = Parser.GMLParser.parse("#macro UV_WIDTH 8");
+const macros = Transpiler.createProjectMacroDefinitions(
+    new Map([
+        [
+            "scripts/constants.gml",
+            Transpiler.extractMacroDefinitionsFromAst(
+                macroAst,
+                "scripts/constants.gml",
+                "#macro UV_WIDTH 8"
+            )
+        ]
+    ])
+);
+
+const patch = transpiler.transpileScript({
+    sourceText: "function read_width() { return UV_WIDTH; }",
+    symbolId: "gml/script/read_width",
+    macroDefinitions: macros
+});
+```
+
+Expansion handles expression, chained, array/member, statement-style, and
+function-like `#define` macros without mutating the parser AST. Cycles and
+malformed replacements are reported as transpilation errors.
 
 ### GmlEmitter
 

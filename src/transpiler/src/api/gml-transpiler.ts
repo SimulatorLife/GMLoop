@@ -16,6 +16,7 @@ import {
     StringBuilder
 } from "../emitter/index.js";
 import { EventContextOracle } from "../event-context/index.js";
+import { expandProjectMacros, type MacroDefinition } from "../macro-expansion.js";
 import { TranspilerError, TranspilerErrorCode } from "./errors.js";
 
 const SCRIPT_REQUEST_CONTEXT = "script request";
@@ -37,6 +38,8 @@ export interface TranspileScriptRequest {
      * This eliminates redundant parsing when the caller has already parsed the source.
      */
     readonly ast?: unknown;
+    /** Project macro definitions to expand before script emission. */
+    readonly macroDefinitions?: ReadonlyMap<string, MacroDefinition>;
 }
 
 export interface TranspileEventRequest {
@@ -57,6 +60,8 @@ export interface TranspileEventRequest {
      * Defaults to `"self"` when not provided.
      */
     readonly thisName?: string;
+    /** Project macro definitions to expand before event emission. */
+    readonly macroDefinitions?: ReadonlyMap<string, MacroDefinition>;
 }
 
 export interface PatchMetadata {
@@ -126,6 +131,8 @@ export interface TranspileClosureRequest {
      * Eliminates redundant parsing when the caller already has the AST.
      */
     readonly ast?: unknown;
+    /** Project macro definitions to expand before closure emission. */
+    readonly macroDefinitions?: ReadonlyMap<string, MacroDefinition>;
 }
 
 export interface TranspilerDependencies {
@@ -190,6 +197,24 @@ export class GmlTranspiler {
         }
 
         return request.ast as ProgramNode;
+    }
+
+    private resolveExpandedProgramAst(
+        request: TranspileScriptRequest | TranspileEventRequest | TranspileClosureRequest
+    ): ProgramNode {
+        const ast = this.resolveProgramAst(request);
+        const macroDefinitions = request.macroDefinitions;
+        if (macroDefinitions === undefined || macroDefinitions.size === 0) {
+            return ast;
+        }
+
+        const expandedAst = expandProjectMacros(ast, macroDefinitions, request.sourcePath ?? "<inline>");
+        const expandedRecord = Core.isObjectLike(expandedAst) ? (expandedAst as Record<string, unknown>) : null;
+        if (expandedRecord?.type !== "Program" || !Array.isArray(expandedRecord.body)) {
+            throw new TypeError("macro expansion must return a Program AST");
+        }
+
+        return expandedAst as ProgramNode;
     }
 
     private emitFunctionParameterUnpacking(func: FunctionDeclarationNode, emitter: GmlToJsEmitter): string {
@@ -315,7 +340,7 @@ export class GmlTranspiler {
         }
 
         try {
-            const ast = this.resolveProgramAst(request);
+            const ast = this.resolveExpandedProgramAst(request);
             const emitter = new GmlToJsEmitter(this.getSemanticAnalyzers(), this.emitterOptions);
             let jsBody = "";
 
@@ -420,7 +445,7 @@ export class GmlTranspiler {
         }
 
         try {
-            const ast = this.resolveProgramAst(request);
+            const ast = this.resolveExpandedProgramAst(request);
 
             // Pre-collect var-declared locals before building the oracle so the
             // EventContextOracle can distinguish them from instance fields.
@@ -488,7 +513,7 @@ export class GmlTranspiler {
         }
 
         try {
-            const ast = this.resolveProgramAst(request);
+            const ast = this.resolveExpandedProgramAst(request);
             const emitter = new GmlToJsEmitter(this.getSemanticAnalyzers(), this.emitterOptions);
             let jsBody = "";
 

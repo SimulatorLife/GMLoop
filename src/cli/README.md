@@ -267,7 +267,14 @@ Scripts containing multiple top-level functions are split into one patch per
 function and sent as a single websocket batch. This keeps each function bound
 to its generated GameMaker runtime symbol; executable statements outside those
 functions are emitted as a separate file-level patch. Compile-time directives
-such as macros and regions are not treated as runtime function bodies.
+such as macros and regions are not treated as runtime function bodies. The
+startup scan builds one deterministic project-wide macro table, so a function
+patch can use a `#macro` declared in another GML resource. Macro definitions
+and uses are tracked as `gml/macro/<name>` dependencies; changing a macro
+resource, including a replacement-value or chained-definition change,
+retranspiles its dependent patches. A file that combines executable top-level
+statements with a same-named function is rejected because GameMaker has no
+runtime binding for a second file-level initialization patch.
 
 ```bash
 # Basic usage - watch current directory

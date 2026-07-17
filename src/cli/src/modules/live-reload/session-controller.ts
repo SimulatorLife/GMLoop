@@ -5,6 +5,8 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+import { Core } from "@gmloop/core";
+
 import {
     discoverLiveReloadSessionByPath,
     type LiveReloadRegisteredSession,
@@ -14,6 +16,7 @@ import {
 const STARTUP_TIMEOUT_MS = 600_000;
 const STOP_TIMEOUT_MS = 5000;
 const POLL_INTERVAL_MS = 100;
+const SESSION_LOCK_INITIALIZATION_GRACE_MS = 1000;
 
 export type LiveReloadSessionMode = "attached" | "started" | "restarted" | "stopped" | "not-running";
 
@@ -29,6 +32,68 @@ export type EnsureLiveReloadSessionOptions = Readonly<{
     stop: boolean;
     targetPath: string;
 }>;
+
+async function isProcessAlive(processId: number): Promise<boolean> {
+    try {
+        process.kill(processId, 0);
+        return true;
+    } catch (error) {
+        if (Core.isErrorWithCode(error, "ESRCH")) {
+            return false;
+        }
+
+        return true;
+    }
+}
+
+async function isLiveReloadSessionLockActive(lockPath: string): Promise<boolean> {
+    const lockContents = await fs.readFile(lockPath, "utf8").catch(() => null);
+    if (lockContents !== null) {
+        const ownerProcessId = Number(lockContents.trim());
+        if (Number.isSafeInteger(ownerProcessId) && ownerProcessId > 0) {
+            return await isProcessAlive(ownerProcessId);
+        }
+    }
+
+    const lockStats = await fs.stat(lockPath).catch(() => null);
+    return lockStats !== null && Date.now() - lockStats.mtimeMs < SESSION_LOCK_INITIALIZATION_GRACE_MS;
+}
+
+/**
+ * Acquire the project-local live-reload startup lock, recovering locks left by
+ * a process that was terminated before its cleanup handler ran.
+ *
+ * @param lockPath - Project-local lock file path.
+ * @returns The open lock handle, or `null` when another live process owns it.
+ */
+export async function acquireLiveReloadSessionLock(lockPath: string): Promise<fs.FileHandle | null> {
+    await fs.mkdir(path.dirname(lockPath), { recursive: true });
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+        let lock: fs.FileHandle | null = null;
+        try {
+            lock = await fs.open(lockPath, "wx");
+            await lock.writeFile(`${String(process.pid)}\n`, "utf8");
+            return lock;
+        } catch (error) {
+            if (lock !== null) {
+                await lock.close().catch(() => undefined);
+            }
+
+            if (!Core.isErrorWithCode(error, "EEXIST") || attempt === 1) {
+                throw error;
+            }
+
+            if (await isLiveReloadSessionLockActive(lockPath)) {
+                return null;
+            }
+
+            await fs.rm(lockPath, { force: true });
+        }
+    }
+
+    return null;
+}
 
 /** Ensure, replace, or stop the single live-reload worker registered for a project. */
 export async function manageLiveReloadSession(
@@ -63,11 +128,8 @@ async function startManagedLiveReloadSession(
 ): Promise<LiveReloadSessionResult> {
     const identity = await resolveLiveReloadProjectIdentity(options.targetPath);
     const lockPath = path.join(identity.projectRoot, ".gmloop", "live-reload-session.lock");
-    await fs.mkdir(path.dirname(lockPath), { recursive: true });
-    let lock: fs.FileHandle;
-    try {
-        lock = await fs.open(lockPath, "wx");
-    } catch {
+    const lock = await acquireLiveReloadSessionLock(lockPath);
+    if (lock === null) {
         return await waitForConcurrentLiveReloadSession(options.targetPath);
     }
 

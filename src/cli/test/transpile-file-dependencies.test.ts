@@ -76,4 +76,33 @@ function sibling_helper() {
         assert.ok(result.success, "Transpilation should succeed");
         assert.deepStrictEqual(result.patch?.metadata?.dependencies, []);
     });
+
+    void it("keeps each function patch scoped to its own external calls", () => {
+        const context = createContext();
+        const result = transpileFile(
+            context,
+            "/project/scripts/group_callbacks.gml",
+            `function first_helper(callback) {
+    var local_callback;
+    local_callback();
+    callback();
+    first_dependency();
+}
+
+function second_helper() {
+    second_dependency();
+}`,
+            10,
+            { verbose: false, quiet: true }
+        );
+
+        assert.ok(result.success, "Transpilation should succeed");
+        assert.deepStrictEqual(
+            result.patches?.map((patch) => [patch.id, patch.metadata?.dependencies]),
+            [
+                ["gml/script/first_helper", ["gml/script/first_dependency"]],
+                ["gml/script/second_helper", ["gml/script/second_dependency"]]
+            ]
+        );
+    });
 });

@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
 import { createStatusUrl, createWebSocketUrl } from "../src/modules/live-reload/config.js";
+import { acquireLiveReloadSessionLock } from "../src/modules/live-reload/session-controller.js";
 import {
     discoverLiveReloadSessionByPath,
     LIVE_RELOAD_SESSION_REGISTRY_RELATIVE_PATH,
@@ -150,6 +151,57 @@ void test("live-reload discovery returns alive sessions without requiring the ca
         assert.equal(discovery.session?.runtimeUrl, "http://127.0.0.1:50000/");
     } finally {
         await statusServer.stop();
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("live-reload startup recovers a stale session lock", async () => {
+    const projectRoot = await createTemporaryGameMakerProject();
+    const lockPath = path.join(projectRoot, ".gmloop", "live-reload-session.lock");
+
+    try {
+        await mkdir(path.dirname(lockPath), { recursive: true });
+        await writeFile(lockPath, "999999\n", "utf8");
+
+        const lock = await acquireLiveReloadSessionLock(lockPath);
+        assert.ok(lock);
+        await lock.close();
+        await rm(lockPath, { force: true });
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("live-reload startup does not steal an active session lock", async () => {
+    const projectRoot = await createTemporaryGameMakerProject();
+    const lockPath = path.join(projectRoot, ".gmloop", "live-reload-session.lock");
+
+    try {
+        await mkdir(path.dirname(lockPath), { recursive: true });
+        await writeFile(lockPath, `${String(process.pid)}\n`, "utf8");
+
+        const lock = await acquireLiveReloadSessionLock(lockPath);
+        assert.equal(lock, null);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("live-reload startup recovers legacy empty locks after initialization grace", async () => {
+    const projectRoot = await createTemporaryGameMakerProject();
+    const lockPath = path.join(projectRoot, ".gmloop", "live-reload-session.lock");
+
+    try {
+        await mkdir(path.dirname(lockPath), { recursive: true });
+        await writeFile(lockPath, "", "utf8");
+        const oldTime = new Date(Date.now() - 2000);
+        await utimes(lockPath, oldTime, oldTime);
+
+        const lock = await acquireLiveReloadSessionLock(lockPath);
+        assert.ok(lock);
+        await lock.close();
+        await rm(lockPath, { force: true });
+    } finally {
         await rm(projectRoot, { recursive: true, force: true });
     }
 });

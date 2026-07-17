@@ -9,6 +9,7 @@
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
+import type * as TranspilerTypes from "@gmloop/transpiler";
 import { Transpiler } from "@gmloop/transpiler";
 
 import { formatCliError } from "../../cli-core/index.js";
@@ -373,6 +374,18 @@ export interface ScriptRegistry {
 }
 
 /**
+ * Optional project-wide macro state used by watch-mode transpilation.
+ *
+ * Standalone callers may omit this registry when they transpile an isolated
+ * source file. The watch command supplies it after its project-wide parse so
+ * split function patches see macros declared by other resources as well.
+ */
+export interface ProjectMacroRegistry {
+    macroDefinitionsBySourcePath?: TranspilerTypes.MacroDefinitionsBySourcePath;
+    macroDefinitions?: Map<string, TranspilerTypes.MacroDefinition>;
+}
+
+/**
  * Metrics snapshot for display purposes.
  *
  * Provides a read-only view of transpilation metrics without coupling to
@@ -408,7 +421,8 @@ export interface TranspilationContext
         MetricsCollector,
         ErrorCollector,
         PatchBroadcastService,
-        ScriptRegistry {}
+        ScriptRegistry,
+        ProjectMacroRegistry {}
 
 export interface TranspilationOptions {
     verbose: boolean;
@@ -465,6 +479,8 @@ export interface TranspilationResult {
     error?: TranspilationError;
     symbols?: Array<string>;
     references?: Array<string>;
+    /** Effective macro symbols whose definitions changed during this transpilation. */
+    macroDefinitionChanges?: Array<string>;
 }
 
 interface ParsedAstExtractionResult {
@@ -681,6 +697,93 @@ interface ScriptProgramAst {
     readonly body?: ReadonlyArray<ScriptAstNode>;
 }
 
+interface TranspilationPatchPlan {
+    readonly patch: RuntimeTranspilerPatch;
+    readonly ast: unknown;
+}
+
+interface MacroTranspilationResult {
+    readonly effectiveAst: unknown;
+    readonly effectiveSymbols: Array<string>;
+    readonly effectiveReferences: Array<string>;
+    readonly macroDefinitionChanges: Array<string>;
+    readonly candidateDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath | null;
+    readonly macroDefinitions: Map<string, TranspilerTypes.MacroDefinition>;
+}
+
+function prepareMacroTranspilation(
+    context: ProjectMacroRegistry,
+    ast: unknown,
+    filePath: string,
+    content: string,
+    parsedSymbols: ReadonlyArray<string>,
+    parsedReferences: ReadonlyArray<string>
+): MacroTranspilationResult {
+    const localMacroDefinitions = Core.isObjectLike(ast)
+        ? Transpiler.extractMacroDefinitionsFromAst(ast, filePath, content)
+        : new Map<string, TranspilerTypes.MacroDefinition>();
+    const previousMacroDefinitions = context.macroDefinitions ?? new Map<string, TranspilerTypes.MacroDefinition>();
+    let candidateDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath | null = null;
+    let macroDefinitions = new Map(previousMacroDefinitions);
+
+    for (const [name, definition] of localMacroDefinitions) {
+        macroDefinitions.set(name, definition);
+    }
+
+    if (context.macroDefinitionsBySourcePath && Core.isObjectLike(ast)) {
+        candidateDefinitionsBySourcePath = new Map(context.macroDefinitionsBySourcePath);
+        candidateDefinitionsBySourcePath.set(filePath, localMacroDefinitions);
+        macroDefinitions = Transpiler.createProjectMacroDefinitions(candidateDefinitionsBySourcePath);
+    }
+
+    const effectiveAst = Transpiler.expandProjectMacros(ast, macroDefinitions, filePath);
+    const macroReferences = Transpiler.extractMacroReferencesFromAst(ast, macroDefinitions).map(
+        (name) => `gml/macro/${name}`
+    );
+    const effectiveReferences = Array.from(
+        new Set(
+            effectiveAst === ast
+                ? [...parsedReferences, ...macroReferences]
+                : [...extractReferencesFromAst(effectiveAst), ...macroReferences]
+        )
+    );
+    const effectiveSymbols = Array.from(
+        new Set([...parsedSymbols, ...[...localMacroDefinitions.keys()].map((name) => `gml/macro/${name}`)])
+    );
+    const macroDefinitionChanges = Transpiler.findChangedMacroDefinitionNames(
+        previousMacroDefinitions,
+        macroDefinitions
+    ).map((name) => `gml/macro/${name}`);
+
+    return {
+        effectiveAst,
+        effectiveSymbols,
+        effectiveReferences,
+        macroDefinitionChanges,
+        candidateDefinitionsBySourcePath,
+        macroDefinitions
+    };
+}
+
+function commitMacroTranspilation(
+    context: ProjectMacroRegistry,
+    candidateDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath | null,
+    macroDefinitions: Map<string, TranspilerTypes.MacroDefinition>
+): void {
+    if (candidateDefinitionsBySourcePath && context.macroDefinitionsBySourcePath) {
+        context.macroDefinitionsBySourcePath.clear();
+        for (const [source, definitions] of candidateDefinitionsBySourcePath) {
+            context.macroDefinitionsBySourcePath.set(source, definitions);
+        }
+    }
+
+    if (context.macroDefinitions === undefined && candidateDefinitionsBySourcePath === null) {
+        return;
+    }
+
+    context.macroDefinitions = macroDefinitions;
+}
+
 function asScriptProgramAst(ast: unknown): ScriptProgramAst | null {
     if (!Core.isObjectLike(ast)) {
         return null;
@@ -714,8 +817,21 @@ function isScriptCompileTimeNode(node: ScriptAstNode): boolean {
         node.type === "MacroDeclaration" ||
         node.type === "DefineStatement" ||
         node.type === "RegionStatement" ||
-        node.type === "EndRegionStatement"
+        node.type === "EndRegionStatement" ||
+        node.type === "EnumDeclaration"
     );
+}
+
+function createExecutableProgramAst(ast: unknown): unknown {
+    const program = asScriptProgramAst(ast);
+    if (program === null) {
+        return ast;
+    }
+
+    return {
+        type: "Program",
+        body: program.body?.filter((node) => !isScriptCompileTimeNode(node)) ?? []
+    };
 }
 
 /**
@@ -732,10 +848,11 @@ function transpileScriptPatches(
     sourcePath: string,
     ast: unknown,
     parsedSymbols: ReadonlyArray<string>
-): Array<RuntimeTranspilerPatch> {
+): Array<TranspilationPatchPlan> {
     const program = asScriptProgramAst(ast);
     const body = program?.body ?? [];
     const executableNodes = body.filter((node) => !isScriptCompileTimeNode(node));
+    const executableAst = program === null ? ast : { type: "Program", body: executableNodes };
     const functionNodes = executableNodes.filter((node) => node.type === "FunctionDeclaration");
     const topLevelNodes = executableNodes.filter((node) => node.type !== "FunctionDeclaration");
 
@@ -746,11 +863,14 @@ function transpileScriptPatches(
         const symbolId = scriptSymbolId ?? defaultSymbolId;
 
         return [
-            context.transpiler.transpileScript({
-                sourceText,
-                symbolId,
-                ast
-            })
+            {
+                patch: context.transpiler.transpileScript({
+                    sourceText,
+                    symbolId,
+                    ast: executableAst
+                }),
+                ast: executableAst
+            }
         ];
     }
 
@@ -767,11 +887,15 @@ function transpileScriptPatches(
         }
         patchIds.add(symbolId);
 
-        return context.transpiler.transpileScript({
-            sourceText,
-            symbolId,
-            ast: { type: "Program", body: [functionNode] }
-        });
+        const functionAst = { type: "Program", body: [functionNode] };
+        return {
+            patch: context.transpiler.transpileScript({
+                sourceText,
+                symbolId,
+                ast: functionAst
+            }),
+            ast: functionAst
+        };
     });
 
     if (topLevelNodes.length === 0) {
@@ -779,11 +903,22 @@ function transpileScriptPatches(
     }
 
     const fileName = path.basename(sourcePath, path.extname(sourcePath));
-    const topLevelPatch = context.transpiler.transpileScript({
-        sourceText,
-        symbolId: `gml/script/${fileName}`,
-        ast: { type: "Program", body: topLevelNodes }
-    });
+    const topLevelAst = { type: "Program", body: topLevelNodes };
+    const defaultTopLevelPatchId = `gml/script/${fileName}`;
+    if (patchIds.has(defaultTopLevelPatchId)) {
+        throw new TypeError(
+            `Script ${sourcePath} contains top-level executable statements and a function named ${fileName}; split the initialization code into a differently named script`
+        );
+    }
+    const topLevelPatchId = defaultTopLevelPatchId;
+    const topLevelPatch = {
+        patch: context.transpiler.transpileScript({
+            sourceText,
+            symbolId: topLevelPatchId,
+            ast: topLevelAst
+        }),
+        ast: topLevelAst
+    };
 
     return [topLevelPatch, ...functionPatches];
 }
@@ -824,27 +959,37 @@ export function transpileFile(
             cachedReferences
         );
 
-        let patches: Array<RuntimeTranspilerPatch>;
+        const {
+            effectiveAst,
+            effectiveSymbols,
+            effectiveReferences,
+            macroDefinitionChanges,
+            candidateDefinitionsBySourcePath,
+            macroDefinitions
+        } = prepareMacroTranspilation(context, ast, filePath, content, parsedSymbols, parsedReferences);
 
-        if (fileKind.kind === "event") {
-            patches = [
-                context.transpiler.transpileEvent({
-                    sourceText: content,
-                    symbolId: fileKind.symbolId,
-                    ast
-                })
-            ];
-        } else {
-            patches = transpileScriptPatches(context, content, filePath, ast, parsedSymbols);
-        }
+        const transpilationAst = fileKind.kind === "event" ? createExecutableProgramAst(effectiveAst) : effectiveAst;
+        const patchPlans: Array<TranspilationPatchPlan> =
+            fileKind.kind === "event"
+                ? [
+                      {
+                          patch: context.transpiler.transpileEvent({
+                              sourceText: content,
+                              symbolId: fileKind.symbolId,
+                              ast: transpilationAst
+                          }),
+                          ast: transpilationAst
+                      }
+                  ]
+                : transpileScriptPatches(context, content, filePath, transpilationAst, parsedSymbols);
 
-        const patchPayloads = patches.map((patch) => {
+        const patchPayloads = patchPlans.map(({ patch, ast: patchAst }) => {
             const patchWithMetadata = {
                 ...patch,
                 metadata: {
                     ...patch.metadata,
                     sourcePath: filePath,
-                    dependencies: resolvePatchDependencies(parsedReferences, patch.id, parsedSymbols)
+                    dependencies: resolvePatchDependencies(extractReferencesFromAst(patchAst), patch.id, parsedSymbols)
                 }
             };
             const patchPayload =
@@ -863,6 +1008,8 @@ export function transpileFile(
             throw new Error("Transpilation produced no runtime patches");
         }
 
+        commitMacroTranspilation(context, candidateDefinitionsBySourcePath, macroDefinitions);
+
         const durationMs = performance.now() - startTime;
 
         const metrics: TranspilationMetrics = {
@@ -878,7 +1025,7 @@ export function transpileFile(
         addToBoundedCollection(context.metrics, metrics, context.bounds.maxEntries);
 
         if (context.scriptNames && fileKind.kind === "script") {
-            registerScriptNamesFromSymbols(parsedSymbols, context.scriptNames);
+            registerScriptNamesFromSymbols(effectiveSymbols, context.scriptNames);
         }
 
         if (!deliverRuntimePatch) {
@@ -887,8 +1034,9 @@ export function transpileFile(
                 patch: patchPayload,
                 patches: patchPayloads,
                 metrics,
-                symbols: parsedSymbols,
-                references: parsedReferences
+                symbols: effectiveSymbols,
+                references: effectiveReferences,
+                macroDefinitionChanges
             };
         }
 
@@ -964,11 +1112,11 @@ export function transpileFile(
                 if (patchPayload.metadata?.timestamp) {
                     console.log(`  ↳ Generated at: ${new Date(patchPayload.metadata.timestamp).toISOString()}`);
                 }
-                if (parsedSymbols.length > 0) {
-                    console.log(`  ↳ Extracted symbols: ${parsedSymbols.join(", ")}`);
+                if (effectiveSymbols.length > 0) {
+                    console.log(`  ↳ Extracted symbols: ${effectiveSymbols.join(", ")}`);
                 }
-                if (parsedReferences.length > 0) {
-                    console.log(`  ↳ Extracted references: ${parsedReferences.join(", ")}`);
+                if (effectiveReferences.length > 0) {
+                    console.log(`  ↳ Extracted references: ${effectiveReferences.join(", ")}`);
                 }
                 if (parseError) {
                     const message = Core.getErrorMessage(parseError, {
@@ -986,8 +1134,9 @@ export function transpileFile(
             patch: patchPayload,
             patches: patchPayloads,
             metrics,
-            symbols: parsedSymbols,
-            references: parsedReferences
+            symbols: effectiveSymbols,
+            references: effectiveReferences,
+            macroDefinitionChanges
         };
     } catch (error) {
         const classified = classifyTranspilationError(error);

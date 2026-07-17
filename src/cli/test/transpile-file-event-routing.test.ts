@@ -186,6 +186,61 @@ function second_helper() {
         assert.ok(result.patches?.[2]?.js_body.includes("first_helper"));
     });
 
+    void it("rejects an unbindable same-named file-level initialization patch", () => {
+        const context = createContext();
+        const source = `var initialized = true;
+
+function same_name() {
+    return initialized;
+}`;
+
+        const result = transpileFile(context, "/project/scripts/same_name.gml", source, 6, {
+            verbose: false,
+            quiet: true,
+            deliverRuntimePatch: false
+        });
+
+        assert.equal(result.success, false);
+        assert.match(result.error?.error ?? "", /top-level executable statements.*same_name/u);
+    });
+
+    void it("removes compile-time directives before a single script function is emitted", () => {
+        const context = createContext();
+        const source = `#macro UNUSED_VALUE 9
+function only_function() {
+    return 4;
+}`;
+
+        const result = transpileFile(context, "/project/scripts/only_function.gml", source, 4, {
+            verbose: false,
+            quiet: true,
+            deliverRuntimePatch: false
+        });
+
+        assert.equal(result.success, true);
+        assert.ok(result.patch);
+        assert.ok(!result.patch.js_body.includes("UNUSED_VALUE"));
+        assert.ok(!result.patch.js_body.includes("const "));
+    });
+
+    void it("removes compile-time directives before an object event is emitted", () => {
+        const context = createContext();
+        const source = `#macro EVENT_VALUE 3
+x = EVENT_VALUE;`;
+
+        const result = transpileFile(context, "/project/objects/obj_player/Create_0.gml", source, 2, {
+            verbose: false,
+            quiet: true,
+            deliverRuntimePatch: false
+        });
+
+        assert.equal(result.success, true);
+        assert.ok(result.patch);
+        assert.ok(result.patch.js_body.includes("3"));
+        assert.ok(!result.patch.js_body.includes("EVENT_VALUE"));
+        assert.ok(!result.patch.js_body.includes("const "));
+    });
+
     void it("routes a top-level .gml file (not under objects/) to transpileScript", () => {
         const context = createContext();
         const filePath = "/project/scripts/utility.gml";

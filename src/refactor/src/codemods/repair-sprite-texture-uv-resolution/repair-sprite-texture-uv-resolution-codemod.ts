@@ -57,6 +57,35 @@ function isNamedCall(node: unknown, functionNames: ReadonlySet<string>): node is
     return functionNames.has(object.name.toLowerCase());
 }
 
+function findNamedCall(node: unknown, functionNames: ReadonlySet<string>): AstRecord | null {
+    if (isNamedCall(node, functionNames)) {
+        return node;
+    }
+    if (Array.isArray(node)) {
+        for (const child of node) {
+            const match = findNamedCall(child, functionNames);
+            if (match !== null) {
+                return match;
+            }
+        }
+        return null;
+    }
+    if (!isAstRecord(node)) {
+        return null;
+    }
+
+    for (const [key, child] of Object.entries(node)) {
+        if (key === "parent") {
+            continue;
+        }
+        const match = findNamedCall(child, functionNames);
+        if (match !== null) {
+            return match;
+        }
+    }
+    return null;
+}
+
 function getCallArgumentSource(sourceText: string, node: AstRecord): string | null {
     if (!Array.isArray(node.arguments) || node.arguments.length !== 1) {
         return null;
@@ -89,6 +118,62 @@ function getElseSource(sourceText: string, node: AstRecord): string {
     return ` else ${alternateSource}`;
 }
 
+function guardExistingTextureResolutionTest(testSource: string, textureArgument: string): string {
+    if (testSource.includes("is_undefined")) {
+        return testSource;
+    }
+
+    return `(not is_undefined(${textureArgument}) and ${testSource})`;
+}
+
+function getExistingSpriteTextureGuardEdit(
+    sourceText: string,
+    firstBranch: AstRecord,
+    secondBranch: AstRecord
+): SourceEdit | null {
+    const firstTestSource = getNodeSource(sourceText, firstBranch.test)?.trim();
+    const secondTestSource = getNodeSource(sourceText, secondBranch.test)?.trim();
+    if (firstTestSource === null || secondTestSource === null) {
+        return null;
+    }
+
+    const spriteCall = findNamedCall(firstBranch.test, new Set(["scr_sprite_exists", "sprite_exists"]));
+    const textureCall = findNamedCall(secondBranch.test, new Set(["scr_texture_is_valid"]));
+    if (spriteCall === null || textureCall === null) {
+        return null;
+    }
+
+    const spriteArgument = getCallArgumentSource(sourceText, spriteCall);
+    const textureArgument = getCallArgumentSource(sourceText, textureCall);
+    if (spriteArgument === null || textureArgument === null || spriteArgument !== textureArgument) {
+        return null;
+    }
+
+    const firstConsequent = getNodeSource(sourceText, firstBranch.consequent);
+    const secondConsequent = getNodeSource(sourceText, secondBranch.consequent);
+    if (firstConsequent === null || secondConsequent === null) {
+        return null;
+    }
+
+    const firstTest = guardExistingTextureResolutionTest(firstTestSource, textureArgument);
+    const secondTest = guardExistingTextureResolutionTest(secondTestSource, textureArgument);
+    if (firstTest === firstTestSource && secondTest === secondTestSource) {
+        return null;
+    }
+
+    const start = Core.getNodeStartIndex(firstBranch);
+    const end = Core.getNodeEndIndex(firstBranch);
+    if (typeof start !== "number" || typeof end !== "number") {
+        return null;
+    }
+
+    return Object.freeze({
+        start,
+        end,
+        text: `if ${firstTest} ${firstConsequent} else if ${secondTest} ${secondConsequent}${getElseSource(sourceText, secondBranch)}`
+    });
+}
+
 function getSpriteTextureBranchSwapEdit(sourceText: string, node: AstRecord): SourceEdit | null {
     if (node.type !== "IfStatement") {
         return null;
@@ -112,7 +197,7 @@ function getSpriteTextureBranchSwapEdit(sourceText: string, node: AstRecord): So
         isNamedCall(firstCall, new Set(["scr_sprite_exists", "sprite_exists"])) &&
         isNamedCall(secondCall, new Set(["scr_texture_is_valid"]));
     if (!textureFirst && !spriteFirst) {
-        return null;
+        return getExistingSpriteTextureGuardEdit(sourceText, firstBranch, secondBranch);
     }
 
     const textureBranch = textureFirst ? firstBranch : secondBranch;
@@ -135,8 +220,9 @@ function getSpriteTextureBranchSwapEdit(sourceText: string, node: AstRecord): So
         return null;
     }
 
-    const spriteTest = `(is_real(${textureArgument}) and ${textureArgument} >= 0 and ${spriteCallSource})`;
-    const textureTest = `(is_ptr(${textureArgument}) and not is_real(${textureArgument}) and ${textureCallSource})`;
+    const definedArgumentGuard = `not is_undefined(${textureArgument})`;
+    const spriteTest = `(${definedArgumentGuard} and is_real(${textureArgument}) and ${textureArgument} >= 0 and ${spriteCallSource})`;
+    const textureTest = `(${definedArgumentGuard} and is_ptr(${textureArgument}) and not is_real(${textureArgument}) and ${textureCallSource})`;
     const spriteSource = getIfBranchSource(sourceText, spriteBranch, spriteTest);
     const textureSource = getIfBranchSource(sourceText, textureBranch, textureTest);
     if (spriteSource === null || textureSource === null) {
@@ -203,8 +289,10 @@ function collectSpriteTextureBranchSwapEdits(sourceText: string, programNode: un
  * runtime dereference a sprite asset as a texture handle. The codemod swaps
  * only the structurally matching `scr_get_uvs` branches. Sprite lookup is
  * restricted to numeric handles and texture lookup is restricted to non-real pointers,
- * so `pointer_null` cannot reach either native helper. The existing fallback
- * branch and source text inside each branch are preserved.
+ * so `pointer_null` cannot reach either native helper. The explicit undefined
+ * guard is required because HTML5 represents `pointer_null` as an undefined
+ * value while native GameMaker represents it as a pointer sentinel. The
+ * existing fallback branch and source text inside each branch are preserved.
  *
  * @param sourceText - GML source text to transform.
  * @returns The transformed source and applied source edits.

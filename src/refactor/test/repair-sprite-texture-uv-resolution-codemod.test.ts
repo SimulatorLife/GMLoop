@@ -28,9 +28,10 @@ void test("repairSpriteTextureUvResolution resolves sprites before numeric textu
     assert.equal(result.changed, true);
     assert.match(
         result.outputText,
-        /if \(is_real\(st\) and st >= 0 and scr_sprite_exists\(st\)\) \{\n {12}raw_uvs = sprite_get_uvs\(st, subimg\);\n {8}\} else if \(is_ptr\(st\) and not is_real\(st\) and scr_texture_is_valid\(st\)\)/u
+        /if \(not is_undefined\(st\) and is_real\(st\) and st >= 0 and scr_sprite_exists\(st\)\) \{\n {12}raw_uvs = sprite_get_uvs\(st, subimg\);\n {8}\} else if \(not is_undefined\(st\) and is_ptr\(st\) and not is_real\(st\) and scr_texture_is_valid\(st\)\)/u
     );
     assert.match(result.outputText, /else \{\n {12}LOG\.warn\("Unexpected texture value"\);/u);
+    assert.equal((result.outputText.match(/texture_get_uvs\(st\)/gu) ?? []).length, 1);
     assert.equal(result.appliedEdits.length, 1);
 });
 
@@ -55,7 +56,7 @@ void test("repairSpriteTextureUvResolution guards an already sprite-first branch
     assert.equal((result.outputText.match(/scr_texture_is_valid\(st\)/gu) ?? []).length, 1);
     assert.match(
         result.outputText,
-        /if \(is_real\(st\) and st >= 0 and scr_sprite_exists\(st\)\) \{[\s\S]*?else if \(is_ptr\(st\) and not is_real\(st\) and scr_texture_is_valid\(st\)\)/u
+        /if \(not is_undefined\(st\) and is_real\(st\) and st >= 0 and scr_sprite_exists\(st\)\) \{[\s\S]*?else if \(not is_undefined\(st\) and is_ptr\(st\) and not is_real\(st\) and scr_texture_is_valid\(st\)\)/u
     );
 });
 

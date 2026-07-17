@@ -214,6 +214,39 @@ void describe("Reference extraction from AST", () => {
         assert.ok(!refs.includes("gml_Script_name"), "Should not track local variable 'name'");
     });
 
+    void it("should not track local callback variables or parameters as script references", () => {
+        const source = `
+            function invoke_callback(callback) {
+                var local_callback;
+                local_callback();
+                callback();
+                external_script();
+            }
+        `;
+
+        const parser = new Parser.GMLParser(source, {});
+        const ast = parser.parse();
+        const refs = extractReferencesFromAst(ast);
+
+        assert.deepEqual(refs, ["gml_Script_external_script"]);
+    });
+
+    void it("should treat function-valued assignments as local bindings", () => {
+        const source = `
+            function invoke_callback() {
+                callback = function() { return 1; };
+                callback();
+                external_script();
+            }
+        `;
+
+        const parser = new Parser.GMLParser(source, {});
+        const ast = parser.parse();
+        const refs = extractReferencesFromAst(ast);
+
+        assert.deepEqual(refs, ["gml_Script_external_script"]);
+    });
+
     void it("should not create false positives from method call object names", () => {
         const source = `
             function update() {

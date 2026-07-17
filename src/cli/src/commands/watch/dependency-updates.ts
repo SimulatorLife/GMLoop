@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { Core, type DebouncedFunction } from "@gmloop/core";
+import type * as TranspilerTypes from "@gmloop/transpiler";
+import { Transpiler } from "@gmloop/transpiler";
 
 import type { DependencyTracker } from "../../modules/transpilation/dependency-tracker.js";
 import {
@@ -52,9 +54,11 @@ interface FileRemovalCleanupContext extends DependencyUpdateRuntimeContext {
     lastSuccessfulPatches: Map<string, RuntimeTranspilerPatch>;
     sourcePathToPatchIds: Map<string, Set<string>>;
     debouncedHandlers: Map<string, DebouncedFunction<[string, string, FileChangeOptions]>>;
+    macroDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath;
+    macroDefinitions: Map<string, TranspilerTypes.MacroDefinition>;
 }
 
-interface TranspileFileRuntimeContext
+export interface TranspileFileRuntimeContext
     extends Omit<TranspilationContext, "scriptNames">, DependencyUpdateRuntimeContext {}
 
 /**
@@ -121,7 +125,7 @@ export function removeDeletedCachedPatchSources(runtimeContext: FileRemovalClean
     }
 }
 
-async function retranspileDependentFiles(
+export async function retranspileDependentFiles(
     runtimeContext: TranspileFileRuntimeContext,
     filePath: string,
     dependentFiles: ReadonlyArray<string>,
@@ -143,31 +147,6 @@ async function retranspileDependentFiles(
     );
 }
 
-function areSymbolSetsEqual(left: ReadonlyArray<string>, right: ReadonlyArray<string>): boolean {
-    if (left.length === 0 || right.length === 0) {
-        return left.length === right.length;
-    }
-
-    if (left.length === right.length && left.every((symbol, index) => symbol === right[index])) {
-        return true;
-    }
-
-    const leftSet = new Set(left);
-    const rightSet = new Set(right);
-
-    if (leftSet.size !== rightSet.size) {
-        return false;
-    }
-
-    for (const symbol of leftSet) {
-        if (!rightSet.has(symbol)) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 function updateDependencyTrackerForTranspileResult(
     runtimeContext: DependencyUpdateRuntimeContext,
     filePath: string,
@@ -175,7 +154,10 @@ function updateDependencyTrackerForTranspileResult(
 ): DependencyUpdateSummary {
     const previousDefinitions = runtimeContext.dependencyTracker.getFileDefinitions(filePath);
     const nextDefinitions = result.symbols ?? [];
-    const definitionsChanged = !areSymbolSetsEqual(previousDefinitions, nextDefinitions);
+    const changedDefinitions = resolveChangedDefinitions(previousDefinitions, nextDefinitions);
+    const changedMacroDefinitions = result.macroDefinitionChanges ?? [];
+    const allChangedDefinitions = mergeDependentFiles(changedDefinitions, changedMacroDefinitions);
+    const definitionsChanged = allChangedDefinitions.length > 0;
 
     runtimeContext.dependencyTracker.replaceFileDefines(filePath, nextDefinitions);
     runtimeContext.dependencyTracker.replaceFileReferences(filePath, result.references ?? []);
@@ -187,11 +169,15 @@ function updateDependencyTrackerForTranspileResult(
         };
     }
 
-    const changedDefinitions = resolveChangedDefinitions(previousDefinitions, nextDefinitions);
-    const affectedDependents = runtimeContext.dependencyTracker.getFilesReferencingSymbols(
-        changedDefinitions,
+    const directDependents = runtimeContext.dependencyTracker.getFilesReferencingSymbols(
+        allChangedDefinitions,
         filePath
     );
+    const transitiveMacroDependents = runtimeContext.dependencyTracker.getTransitiveFilesReferencingSymbols(
+        changedMacroDefinitions,
+        filePath
+    );
+    const affectedDependents = mergeDependentFiles(directDependents, transitiveMacroDependents);
 
     return {
         definitionsChanged,
@@ -318,8 +304,20 @@ function removeCachedPatchesForFile(
     return removedCount;
 }
 
-export function cleanupRemovedFile(runtimeContext: FileRemovalCleanupContext, filePath: string): void {
+export function cleanupRemovedFile(runtimeContext: FileRemovalCleanupContext, filePath: string): Array<string> {
+    const previousMacroDefinitions = runtimeContext.macroDefinitions;
     unregisterScriptName(filePath, runtimeContext.scriptNames);
+    runtimeContext.macroDefinitionsBySourcePath.delete(filePath);
+    const nextMacroDefinitions = Transpiler.createProjectMacroDefinitions(runtimeContext.macroDefinitionsBySourcePath);
+    const changedMacroDefinitions = Transpiler.findChangedMacroDefinitionNames(
+        previousMacroDefinitions,
+        nextMacroDefinitions
+    ).map((name) => `gml/macro/${name}`);
+    const affectedDependents = mergeDependentFiles(
+        runtimeContext.dependencyTracker.getDependentFiles(filePath),
+        runtimeContext.dependencyTracker.getTransitiveFilesReferencingSymbols(changedMacroDefinitions, filePath)
+    );
+    runtimeContext.macroDefinitions = nextMacroDefinitions;
     runtimeContext.dependencyTracker.removeFile(filePath);
     runtimeContext.fileSnapshots.delete(filePath);
     runtimeContext.fileContentHashes.delete(filePath);
@@ -337,4 +335,6 @@ export function cleanupRemovedFile(runtimeContext: FileRemovalCleanupContext, fi
             removedPatchCount > 0 ? `cleared ${removedPatchCount} cached patch(es)` : "no cached patch found";
         console.log(`  ↳ Removed dependency tracking (${patchMessage})`);
     }
+
+    return affectedDependents;
 }

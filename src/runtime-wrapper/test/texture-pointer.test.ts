@@ -39,6 +39,22 @@ void test("applyHtml5TexturePointerSafetyPatch accepts HTML5 texture handles", (
     assert.equal((scope[pointerFunctionName] as (value: unknown) => boolean)({}), false);
 });
 
+void test("applyHtml5TexturePointerSafetyPatch treats native predicate errors as non-pointers", () => {
+    const scope = createRuntimeScope();
+    const pointerFunctionName = (scope.html5Names as { is_ptr: string }).is_ptr;
+    scope[pointerFunctionName] = (value: unknown): boolean => {
+        if (value === undefined || value === null) {
+            throw new TypeError("native HTML5 is_ptr cannot classify this value");
+        }
+        return false;
+    };
+
+    assert.equal(applyHtml5TexturePointerSafetyPatch(scope), true);
+    const patchedPointer = scope[pointerFunctionName] as (value: unknown) => boolean;
+    assert.equal(patchedPointer(undefined), false);
+    assert.equal(patchedPointer(null), false);
+});
+
 void test("applyHtml5TexturePointerSafetyPatch is idempotent", () => {
     const scope = createRuntimeScope();
 

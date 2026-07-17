@@ -136,6 +136,20 @@ void test("hot-reload builtin resolution augments a native is_ptr predicate", ()
     assert.equal(functions.is_ptr({}), false);
 });
 
+void test("hot-reload builtin resolution treats native predicate errors as non-pointers", () => {
+    const functions = resolveRuntimeBuiltinFunctions({
+        is_ptr(value: unknown): boolean {
+            if (value === undefined || value === null) {
+                throw new TypeError("native HTML5 is_ptr cannot classify this value");
+            }
+            return false;
+        }
+    });
+
+    assert.equal(functions.is_ptr(undefined), false);
+    assert.equal(functions.is_ptr(null), false);
+});
+
 void test("hot-reload builtin resolution discovers minified HTML5 functions", () => {
     const calls: Array<string> = [];
     const globalScope: Record<string, unknown> = {

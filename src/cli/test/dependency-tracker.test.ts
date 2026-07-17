@@ -222,6 +222,18 @@ void describe("DependencyTracker", () => {
             const dependents = tracker.getFilesReferencingSymbols([]);
             assert.deepEqual(dependents, []);
         });
+
+        void it("follows transitive compile-time macro dependencies", () => {
+            const tracker = new DependencyTracker();
+            tracker.registerFileDefines("scripts/constants.gml", ["gml/macro/BASE"]);
+            tracker.registerFileDefines("scripts/derived.gml", ["gml/macro/DERIVED"]);
+            tracker.registerFileReferences("scripts/derived.gml", ["gml/macro/BASE"]);
+            tracker.registerFileReferences("scripts/consumer.gml", ["gml/macro/DERIVED"]);
+
+            const dependents = tracker.getTransitiveFilesReferencingSymbols(["gml/macro/BASE"]);
+
+            assert.deepEqual(dependents, ["scripts/derived.gml", "scripts/consumer.gml"]);
+        });
     });
 
     void describe("removeFile", () => {

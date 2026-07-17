@@ -1,4 +1,4 @@
-import { isHtml5TextureHandle } from "./texture-pointer.js";
+import { evaluateHtml5PointerPredicate, isHtml5TextureHandle } from "./texture-pointer.js";
 
 type RuntimeBuiltinFunction = (...args: Array<unknown>) => unknown;
 
@@ -157,11 +157,7 @@ export function resolveRuntimeBuiltinFunctions(globalScope: Record<string, unkno
             if (name === "is_ptr") {
                 const nativePointerFunction = globalValue;
                 functions[name] = function (this: unknown, ...args: Array<unknown>): boolean {
-                    if (Reflect.apply(nativePointerFunction, this, args) === true) {
-                        return true;
-                    }
-
-                    return isHtml5TextureHandle(args[0]);
+                    return evaluateHtml5PointerPredicate(nativePointerFunction, this, args[0]);
                 };
             } else {
                 functions[name] = globalValue;

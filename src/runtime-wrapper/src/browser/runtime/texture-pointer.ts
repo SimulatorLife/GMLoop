@@ -73,6 +73,38 @@ export function isHtml5TextureHandle(value: unknown): boolean {
 }
 
 /**
+ * Evaluates the HTML5 runtime's native pointer predicate without allowing
+ * unsupported values to escape as runtime errors.
+ *
+ * GameMaker's native HTML5 predicate can throw for `undefined` and `null`,
+ * even though GML code is allowed to pass those values to `is_ptr` and expects
+ * a false result. The wrapper must preserve the native answer for supported
+ * values while treating those unsupported values as non-pointers and still
+ * recognizing object-backed HTML5 texture handles.
+ *
+ * @param pointerFunction - Native HTML5 pointer predicate.
+ * @param thisArg - Receiver used when invoking the native predicate.
+ * @param value - Value to classify.
+ * @returns True when the native predicate or HTML5 texture-handle check accepts the value.
+ */
+export function evaluateHtml5PointerPredicate(
+    pointerFunction: (this: unknown, value: unknown) => unknown,
+    thisArg: unknown,
+    value: unknown
+): boolean {
+    try {
+        if (Reflect.apply(pointerFunction, thisArg, [value]) === true) {
+            return true;
+        }
+    } catch {
+        // The native HTML5 predicate throws for some non-pointer values.
+        // Those values are classified by the safe fallback below.
+    }
+
+    return isHtml5TextureHandle(value);
+}
+
+/**
  * Make GameMaker HTML5 texture handles satisfy the runtime's `is_ptr` test.
  *
  * GameMaker's HTML5 `sprite_get_texture` returns a small object-backed texture
@@ -101,14 +133,9 @@ export function applyHtml5TexturePointerSafetyPatch(globalScope: BrowserGlobalSc
         return false;
     }
 
-    const nativePointerFunction = pointerFunction as (...args: Array<unknown>) => unknown;
+    const nativePointerFunction = pointerFunction as (this: unknown, value: unknown) => unknown;
     const patchedPointerFunction = function (this: unknown, ...args: Array<unknown>): boolean {
-        const value = args[0];
-        if (Reflect.apply(nativePointerFunction, this, args) === true) {
-            return true;
-        }
-
-        return isHtml5TextureHandle(value);
+        return evaluateHtml5PointerPredicate(nativePointerFunction, this, args[0]);
     };
 
     Reflect.set(patchedPointerFunction, TEXTURE_POINTER_PATCH_MARKER, true);

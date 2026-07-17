@@ -1,9 +1,11 @@
 import * as API from "./api/index.js";
 import * as Emitter from "./emitter/index.js";
+import * as MacroExpansion from "./macro-expansion.js";
 
 export const Transpiler = Object.freeze({
     ...API,
-    ...Emitter
+    ...Emitter,
+    ...MacroExpansion
 });
 
 // Re-export TranspilerError and TranspilerErrorCode from the public API surface
@@ -24,3 +26,4 @@ export type {
     TranspileScriptRequest
 } from "./api/index.js";
 export { TranspilerError, TranspilerErrorCode } from "./api/index.js";
+export type { MacroDefinition, MacroDefinitionsBySourcePath } from "./macro-expansion.js";

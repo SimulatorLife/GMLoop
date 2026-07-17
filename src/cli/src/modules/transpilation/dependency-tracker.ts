@@ -176,6 +176,43 @@ export class DependencyTracker {
     }
 
     /**
+     * Get the transitive files affected by a set of changed definitions.
+     *
+     * This is used for compile-time macro changes. A macro can define another
+     * macro, so recompiling only the first direct consumer leaves downstream
+     * macro consumers stale. Ordinary runtime script changes continue to use
+     * the direct lookup above because their already-broadcast patch does not
+     * require every caller to be re-emitted.
+     *
+     * @param symbols Initial changed definition symbols.
+     * @param excludeFilePath Optional source file to omit from the result.
+     * @returns Files that directly or transitively reference the changed symbols.
+     */
+    getTransitiveFilesReferencingSymbols(symbols: ReadonlyArray<string>, excludeFilePath?: string): Array<string> {
+        const pendingSymbols = [...symbols];
+        const visitedSymbols = new Set<string>();
+        const affectedFiles = new Set<string>();
+
+        while (pendingSymbols.length > 0) {
+            const symbol = pendingSymbols.pop();
+            if (symbol === undefined || visitedSymbols.has(symbol)) {
+                continue;
+            }
+            visitedSymbols.add(symbol);
+
+            for (const filePath of this.getFilesReferencingSymbols([symbol], excludeFilePath)) {
+                if (!affectedFiles.add(filePath)) {
+                    continue;
+                }
+
+                pendingSymbols.push(...this.getFileDefinitions(filePath));
+            }
+        }
+
+        return Array.from(affectedFiles);
+    }
+
+    /**
      * Get symbols defined by a file.
      * @param filePath - Path to the file
      * @returns Array of symbols defined in the file

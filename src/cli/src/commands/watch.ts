@@ -17,6 +17,7 @@ import path from "node:path";
 import process from "node:process";
 
 import { Core, type DebouncedFunction } from "@gmloop/core";
+import type * as TranspilerTypes from "@gmloop/transpiler";
 import { Transpiler } from "@gmloop/transpiler";
 import { Command, Option } from "commander";
 
@@ -80,7 +81,8 @@ import {
 import {
     cleanupRemovedFile,
     processTranspileResult,
-    removeDeletedCachedPatchSources
+    removeDeletedCachedPatchSources,
+    retranspileDependentFiles
 } from "./watch/dependency-updates.js";
 import { handleResourceFileChange, primeRoomResource } from "./watch/resource-change-handler.js";
 import {
@@ -320,6 +322,8 @@ interface RuntimeContext
     extensionMatcher: ExtensionMatcher;
     maxConcurrentDirs: number;
     scriptNames: Set<string>;
+    macroDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath;
+    macroDefinitions: Map<string, TranspilerTypes.MacroDefinition>;
     fileSnapshots: Map<string, number>;
     /** SHA-256 prefix of each file's last-transpiled source text.
      * Used to skip transpilation when a file's mtime changes but content is
@@ -890,6 +894,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
     const {
         scriptNames,
         fileDataCache,
+        macroDefinitionsBySourcePath,
         secondaryFilePaths: roomFilePaths
     } = await collectScriptNames(normalizedPath, gmlExtensionMatcher, maxConcurrentDirs, roomExtensionMatcher);
 
@@ -916,6 +921,8 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         noticeLogged: Boolean(verbose),
         transpiler,
         scriptNames,
+        macroDefinitionsBySourcePath,
+        macroDefinitions: Transpiler.createProjectMacroDefinitions(macroDefinitionsBySourcePath),
         patches: [],
         metrics: [],
         errors: [],
@@ -1506,7 +1513,7 @@ async function handleFileChange(
                     console.log(`  ↳ File removed (deleted or renamed away)`);
                 }
                 if (runtimeContext) {
-                    cleanupRemovedFile(runtimeContext, filePath);
+                    await processRemovedWatchedFile(runtimeContext, filePath, fileChangeDetectedAt);
                 }
                 return;
             }
@@ -1525,7 +1532,7 @@ async function handleFileChange(
                 if (verbose && !quiet) {
                     console.log("  ↳ File removed before change event could be processed");
                 }
-                cleanupRemovedFile(runtimeContext, filePath);
+                await processRemovedWatchedFile(runtimeContext, filePath, fileChangeDetectedAt);
                 return;
             }
 
@@ -1601,7 +1608,7 @@ async function handleFileChange(
             await processTranspileResult(runtimeContext, filePath, result, fileChangeDetectedAt);
         } catch (error) {
             if (runtimeContext && isErrorWithCode(error, "ENOENT")) {
-                cleanupRemovedFile(runtimeContext, filePath);
+                await processRemovedWatchedFile(runtimeContext, filePath, fileChangeDetectedAt);
                 if (verbose && !quiet) {
                     console.log("  ↳ File missing during read (deleted before processing)");
                 }
@@ -1622,6 +1629,17 @@ async function handleFileChange(
     }
 }
 
+async function processRemovedWatchedFile(
+    runtimeContext: RuntimeContext,
+    filePath: string,
+    fileChangeDetectedAt: number
+): Promise<void> {
+    const affectedDependents = cleanupRemovedFile(runtimeContext, filePath);
+    if (affectedDependents.length > 0) {
+        await retranspileDependentFiles(runtimeContext, filePath, affectedDependents, fileChangeDetectedAt);
+    }
+}
+
 async function handleUnknownFileChanges(
     runtimeContext: RuntimeContext,
     verbose: boolean,
@@ -1636,11 +1654,14 @@ async function handleUnknownFileChanges(
     );
     const discoveredFiles = new Set(discoveredFilePaths);
 
-    for (const filePath of runtimeContext.fileSnapshots.keys()) {
-        if (!discoveredFiles.has(filePath)) {
-            cleanupRemovedFile(runtimeContext, filePath);
-        }
-    }
+    const removedFilePaths = [...runtimeContext.fileSnapshots.keys()].filter(
+        (filePath) => !discoveredFiles.has(filePath)
+    );
+    await Core.runInParallelWithLimit(
+        removedFilePaths,
+        (filePath) => processRemovedWatchedFile(runtimeContext, filePath, fileChangeDetectedAt),
+        runtimeContext.unknownScanConcurrency
+    );
 
     const changedEntries = await Core.runInParallelWithLimit(
         discoveredFilePaths,
@@ -1658,7 +1679,7 @@ async function handleUnknownFileChanges(
                     eventType: lastModified === undefined ? "rename" : "change"
                 };
             } catch {
-                cleanupRemovedFile(runtimeContext, filePath);
+                await processRemovedWatchedFile(runtimeContext, filePath, fileChangeDetectedAt);
                 return null;
             }
         },
@@ -1814,6 +1835,7 @@ async function updateFileSnapshot(runtimeContext: FileSnapshotWriter, filePath: 
 interface InitialFileScanResult {
     scriptNames: Set<string>;
     fileDataCache: Map<string, InitialFileData>;
+    macroDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath;
     secondaryFilePaths: Array<string>;
 }
 
@@ -1861,6 +1883,7 @@ async function collectScriptNames(
 ): Promise<InitialFileScanResult> {
     const scriptNames = new Set<string>();
     const fileDataCache = new Map<string, InitialFileData>();
+    const macroDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath = new Map();
     const secondaryFilePaths: Array<string> = [];
 
     async function scan(currentPath: string): Promise<void> {
@@ -1875,7 +1898,7 @@ async function collectScriptNames(
 
         // Process all files in this directory concurrently for maximum throughput
         await Core.runInParallel(files, async (filePath) => {
-            await addScriptNamesFromFile(filePath, scriptNames, fileDataCache);
+            await addScriptNamesFromFile(filePath, scriptNames, fileDataCache, macroDefinitionsBySourcePath);
         });
 
         // Capture paths discovered for the secondary matcher without re-walking the tree.
@@ -1902,7 +1925,7 @@ async function collectScriptNames(
         // Fail silently; fallback to empty set
     }
 
-    return { scriptNames, fileDataCache, secondaryFilePaths };
+    return { scriptNames, fileDataCache, macroDefinitionsBySourcePath, secondaryFilePaths };
 }
 
 async function collectWatchedFilePaths(
@@ -1950,6 +1973,7 @@ async function addScriptNamesFromFile(
     filePath: string,
     scriptNames: Set<string>,
     fileDataCache: Map<string, InitialFileData>,
+    macroDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath,
     parseAdapter: GmlParserAdapter = createGmlParserAdapter()
 ): Promise<void> {
     const beforeSize = scriptNames.size;
@@ -1961,6 +1985,7 @@ async function addScriptNamesFromFile(
         // `new Parser.GMLParser(...)` so tests/embedders can swap in a stub
         // parser without monkey-patching the @gmloop/parser namespace.
         const ast = parseAdapter(content);
+        macroDefinitionsBySourcePath.set(filePath, Transpiler.extractMacroDefinitionsFromAst(ast, filePath, content));
         // Extract both symbols and references from the AST in a single traversal.
         // This saves a second walk during transpileFile when the cache is reused.
         const symbols = extractSymbolsFromAst(ast, filePath);
