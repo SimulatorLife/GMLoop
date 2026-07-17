@@ -8,9 +8,9 @@ import { fileURLToPath } from "node:url";
 
 import { Core } from "@gmloop/core";
 
-import { writeGameMakerCliActiveProjectState } from "../src/commands/game-maker-cli.js";
 import { __graphCommandTest__, createGraphCommand } from "../src/commands/graph.js";
 import type { LiveReloadRegisteredSession } from "../src/modules/live-reload/session-registry.js";
+import { writeGameMakerCliActiveProjectState } from "../src/workflow/project-root.js";
 
 const SKIP_CLI_ENV_VAR = "PRETTIER_PLUGIN_GML_SKIP_CLI_RUN";
 const SKIP_CLI_ENV_VALUE = "1";

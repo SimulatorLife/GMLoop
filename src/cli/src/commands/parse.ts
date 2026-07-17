@@ -16,7 +16,7 @@ import {
     createWriteOption
 } from "../cli-core/shared-command-options.js";
 import { formatPathForDisplay } from "../workflow/display-path.js";
-import { resolveExplicitWorkflowTargetPath } from "../workflow/project-root.js";
+import { resolveExplicitWorkflowTargetPath, resolveWorkflowTargetPath } from "../workflow/project-root.js";
 
 const GML_FILE_EXTENSION = ".gml";
 const AST_JSON_EXTENSION = ".ast.json";
@@ -60,12 +60,17 @@ function resolveCommandOptions(command: CommanderCommandLike): ParseCommandOptio
     return command.opts();
 }
 
-function resolveParseCommandSettings(command: CommanderCommandLike): ParseCommandSettings {
+async function resolveParseCommandSettings(command: CommanderCommandLike): Promise<ParseCommandSettings> {
     const options = resolveCommandOptions(command);
     // Positional argument takes precedence over --path option.
     const positionalPath = Array.isArray(command.args) && command.args.length > 0 ? command.args[0] : null;
     const explicitTargetPath = resolveExplicitWorkflowTargetPath(positionalPath ?? options.path);
-    const targetPath = explicitTargetPath ?? path.resolve(process.cwd(), ".");
+    const targetPath =
+        explicitTargetPath ??
+        (await resolveWorkflowTargetPath({
+            fallbackPath: path.resolve(process.cwd(), "."),
+            scope: "file"
+        }));
 
     return {
         targetPath,
@@ -258,7 +263,7 @@ export function createParseCommand(): Command {
  * @returns A promise that resolves after AST output has been printed or written.
  */
 export async function runParseCommand(command: CommanderCommandLike): Promise<void> {
-    const settings = resolveParseCommandSettings(command);
+    const settings = await resolveParseCommandSettings(command);
 
     if (settings.list) {
         printParseCommandSettings(settings);

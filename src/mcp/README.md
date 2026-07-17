@@ -54,7 +54,7 @@ must stay CLI-derived.
 
 - Generate tool names deterministically as `gmloop_<command-name-with-dashes-converted-to-underscores>`, for example `gmloop_format`, `gmloop_lint`, and `gmloop_refactor`.
 - Graph leaf commands follow the same pattern, such as `gmloop_graph_index`, `gmloop_graph_search`, `gmloop_graph_context`, and `gmloop_graph_usages`.
-- Live-reload project session tools are CLI-derived as well. Agents should use `gmloop_live_reload_session` with `path`/`cwd` to attach to or start the project session, `forceStart` to replace it, or `stop` to end it. `gmloop_live_reload_wait_for_patch` waits for a patch from that managed session.
+- Live-reload project session tools are CLI-derived as well. Agents may omit `path` when the shared active-project state is configured; CLI resolution then uses an explicit path, `GMLOOP_GM_CLI_PROJECT_PATH`, the active-project state, and finally `cwd`. Agents should use `gmloop_live_reload_session` with `path`/`cwd` to attach to or start the project session, `forceStart` to replace it, or `stop` to end it. `gmloop_live_reload_wait_for_patch` waits for a patch from that managed session.
 - Generate each tool's input schema from Commander metadata:
     - Include `cwd` as an MCP-only execution context field.
     - Include positional arguments by declared Commander argument name and order.

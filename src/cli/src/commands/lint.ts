@@ -28,7 +28,7 @@ import { formatPathForDisplay } from "../workflow/display-path.js";
 import {
     discoverProjectRoot,
     resolveExistingGmloopConfigPath,
-    resolveExplicitWorkflowTargetPath
+    resolveWorkflowTargetPath
 } from "../workflow/project-root.js";
 
 const FLAT_CONFIG_CANDIDATES = Object.freeze([
@@ -160,18 +160,20 @@ function normalizeFormatterName(formatter: string | undefined): string {
     return formatter.toLowerCase();
 }
 
-function normalizeLintTargets(command: CommanderCommandLike): Array<string> {
+async function normalizeLintTargets(command: CommanderCommandLike): Promise<Array<string>> {
     const args = Array.isArray(command.args) ? command.args : [];
     if (args.length > 0) {
         return args;
     }
 
     const options = (command.opts?.() ?? {}) as { path?: unknown };
-    if (typeof options.path === "string" && options.path.trim().length > 0) {
-        return [resolveExplicitWorkflowTargetPath(options.path.trim()) ?? options.path.trim()];
-    }
-
-    return ["."];
+    return [
+        await resolveWorkflowTargetPath({
+            explicitPath: typeof options.path === "string" ? options.path : undefined,
+            fallbackPath: ".",
+            scope: "file"
+        })
+    ];
 }
 
 function formatLintTargetLocation(targets: ReadonlyArray<string>): string {
@@ -1416,7 +1418,7 @@ export function createLintCommand(): Command {
 
 export async function runLintCommand(command: CommanderCommandLike): Promise<void> {
     const options = resolveCommandOptions(command);
-    const targets = normalizeLintTargets(command);
+    const targets = await normalizeLintTargets(command);
 
     if (options.list) {
         printLintCommandSettings(options, targets);

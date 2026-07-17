@@ -20,6 +20,7 @@ import {
     transpileFile
 } from "../modules/transpilation/index.js";
 import { formatPathForDisplay } from "../workflow/display-path.js";
+import { resolveWorkflowTargetPath } from "../workflow/project-root.js";
 
 const TRANSPILE_COMMAND_CLI_EXAMPLE = "pnpm dlx gmloop transpile --path path/to/script.gml";
 const TRANSPILE_COMMAND_FIX_EXAMPLE = "pnpm dlx gmloop transpile --write --path path/to/project";
@@ -54,18 +55,17 @@ function createUsageError(message: string, command: CommanderCommandLike): CliUs
     return new CliUsageError(message, { usage: command.helpInformation() });
 }
 
-function resolvePathOptionValue(command: CommanderCommandLike): string {
+async function resolvePathOptionValue(command: CommanderCommandLike): Promise<string> {
     const options = (command.opts() ?? {}) as TranspileCommandOptions;
-    const configuredPath = typeof options.path === "string" ? options.path.trim() : "";
-    if (configuredPath.length === 0) {
-        return process.cwd();
-    }
-
-    return path.resolve(configuredPath);
+    return await resolveWorkflowTargetPath({
+        explicitPath: options.path,
+        fallbackPath: process.cwd(),
+        scope: "file"
+    });
 }
 
 async function resolveTranspileTarget(command: CommanderCommandLike): Promise<ResolvedTranspileTarget> {
-    const configuredPath = resolvePathOptionValue(command);
+    const configuredPath = await resolvePathOptionValue(command);
 
     let targetStats: Awaited<ReturnType<typeof stat>>;
     try {

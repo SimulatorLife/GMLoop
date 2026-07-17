@@ -76,7 +76,7 @@ import {
     readMonotonicNanoseconds
 } from "../shared/timing/verbose-timing.js";
 import { formatPathForDisplay } from "../workflow/display-path.js";
-import { resolveExistingGmloopConfigPath } from "../workflow/project-root.js";
+import { resolveExistingGmloopConfigPath, resolveWorkflowTargetPath } from "../workflow/project-root.js";
 import {
     buildNoMatchingFilesMessage,
     buildSkippedDirectorySummaryMessage,
@@ -1796,7 +1796,14 @@ export async function runFormatCommand(command) {
 
     validateTargetPathInput(commandOptions);
 
-    const targetPath = resolveTargetPathFromInput(targetPathInput, {
+    const resolvedTargetPathInput =
+        typeof targetPathInput === "string"
+            ? targetPathInput
+            : await resolveWorkflowTargetPath({
+                  fallbackPath: process.cwd(),
+                  scope: "file"
+              });
+    const targetPath = resolveTargetPathFromInput(resolvedTargetPathInput, {
         rawTargetPathInput
     });
     const projectFormatOverrides = await resolveProjectFormatOverrides(configPath, targetPath);

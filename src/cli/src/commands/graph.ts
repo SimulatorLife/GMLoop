@@ -51,12 +51,13 @@ import {
     createGraphVisualizationProjectConfigurationCatalog
 } from "../modules/ui/index.js";
 import { findRepoRootSync } from "../shared/repo-root.js";
-import { discoverProjectRoot, resolveExplicitWorkflowTargetPath } from "../workflow/project-root.js";
 import {
+    discoverProjectRoot,
     readGameMakerCliActiveProjectStateProjectPath,
+    resolveExplicitWorkflowTargetPath,
     resolveGameMakerCliActiveProjectStatePath,
     writeGameMakerCliActiveProjectState
-} from "./game-maker-cli.js";
+} from "../workflow/project-root.js";
 
 type GraphCommandSharedOptions = {
     config?: string;
@@ -1126,6 +1127,29 @@ async function resolveGraphVisualizationServeStartupState(
     }
 
     try {
+        const statePath = resolveGameMakerCliActiveProjectStatePath({
+            env: process.env,
+            statePathOption: options.projectState
+        });
+        const activeProjectPath = await readGameMakerCliActiveProjectStateProjectPath({ statePath });
+        if (activeProjectPath !== null) {
+            const nextOptions = {
+                ...options,
+                path: activeProjectPath
+            };
+            const context = await resolveGraphContext(nextOptions);
+            await ensureGraphIndexForQuery(nextOptions, context);
+            return {
+                context,
+                selectedPaths: [activeProjectPath],
+                source: "active-project-state"
+            };
+        }
+    } catch {
+        // Ignore state path load failures and continue with normal discovery.
+    }
+
+    try {
         const context = await resolveGraphContext(options);
         await ensureGraphIndexForQuery(options, context);
         return {
@@ -1134,29 +1158,6 @@ async function resolveGraphVisualizationServeStartupState(
             source: "working-directory"
         };
     } catch {
-        try {
-            const statePath = resolveGameMakerCliActiveProjectStatePath({
-                env: process.env,
-                statePathOption: options.projectState
-            });
-            const activeProjectPath = await readGameMakerCliActiveProjectStateProjectPath({ statePath });
-            if (activeProjectPath !== null) {
-                const nextOptions = {
-                    ...options,
-                    path: activeProjectPath
-                };
-                const context = await resolveGraphContext(nextOptions);
-                await ensureGraphIndexForQuery(nextOptions, context);
-                return {
-                    context,
-                    selectedPaths: [activeProjectPath],
-                    source: "active-project-state"
-                };
-            }
-        } catch {
-            // Ignore state path load failures and fall through to demo project
-        }
-
         const defaultServeTargetPath = resolveDefaultGraphVisualizationServeTargetPath();
         if (defaultServeTargetPath === null) {
             return {
@@ -1226,7 +1227,8 @@ async function loadOptionalProjectConfig(
 async function resolveGraphContext(options: GraphCommandSharedOptions): Promise<GraphResolutionContext> {
     const projectRoot = await discoverProjectRoot({
         configPath: options.config,
-        explicitProjectPath: options.path
+        explicitProjectPath: options.path,
+        statePathOption: options.projectState
     });
 
     return Object.freeze({

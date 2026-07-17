@@ -788,12 +788,14 @@ pnpm run cli -- live-reload session --path /path/to/project --format pretty
 
 **Options:**
 
-- `--path <project>` - Project directory or `.yyp` path used to locate `.gmloop/live-reload-session.json`
+- `--path <project>` - Project directory or `.yyp` path used to locate `.gmloop/live-reload-session.json`; when omitted, the CLI uses the shared active-project state before falling back to the working directory
 - `--force-start` - Gracefully replace an active project session
 - `--stop` - Stop an active project session without starting another
 - `--format <format>` - Output format: `json` (default) or `pretty`
 
-Agents use `live-reload session` and `live-reload wait-for-patch` by project path. Through MCP these appear as `gmloop_live_reload_session` and `gmloop_live_reload_wait_for_patch`.
+Agents can use `live-reload session` and `live-reload wait-for-patch` by project path, or omit the path when `tmp/gm-cli-active-project.json` identifies the active project. Through MCP these appear as `gmloop_live_reload_session` and `gmloop_live_reload_wait_for_patch`.
+
+`tmp/gm-cli-active-project.json` is the shared active-target state used by the CLI, UI, and MCP-derived workflows. It stores the required `projectPath` and may also store `activeFilePath` for file-scoped commands. Resolution order is explicit path, `GMLOOP_GM_CLI_PROJECT_PATH`, this shared state, then the working directory; `activeFilePath` is preferred only for file-scoped commands.
 
 MCP starts the detached worker with the explicit worker command environment. The worker does not inherit the parent CLI capture sentinel, so its status endpoint becomes available to the MCP session call instead of waiting for a non-running child.
 

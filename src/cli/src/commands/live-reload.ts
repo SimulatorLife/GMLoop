@@ -43,6 +43,7 @@ import {
     type RuntimeSourceDescriptor,
     type RuntimeSourceResolver
 } from "../modules/runtime/source.js";
+import { resolveWorkflowTargetPath } from "../workflow/project-root.js";
 import {
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_COUNT,
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS,
@@ -249,11 +250,16 @@ export async function runLiveReloadDevCommand(
 
 export async function runLiveReloadSessionCommand(options: LiveReloadSessionCommandOptions = {}): Promise<void> {
     try {
+        const targetPath = await resolveWorkflowTargetPath({
+            explicitPath: options.path,
+            fallbackPath: process.cwd(),
+            scope: "project"
+        });
         const result = await manageLiveReloadSession({
             forceStart: options.forceStart === true,
             startArguments: createLiveReloadWorkerArguments(options),
             stop: options.stop === true,
-            targetPath: options.path ?? process.cwd()
+            targetPath
         });
         const payload = { command: "live-reload session", ok: true, payload: result };
         if (options.format === LIVE_RELOAD_SESSION_OUTPUT_FORMATS.pretty) {
@@ -384,7 +390,11 @@ function delayLiveReloadPatchPoll(pollIntervalMs: number, abortSignal?: AbortSig
 export async function runLiveReloadWaitForPatchCommand(
     options: LiveReloadWaitForPatchCommandOptions = {}
 ): Promise<void> {
-    const targetPath = options.path ?? process.cwd();
+    const targetPath = await resolveWorkflowTargetPath({
+        explicitPath: options.path,
+        fallbackPath: process.cwd(),
+        scope: "project"
+    });
     const identity = await resolveLiveReloadProjectIdentity(targetPath);
     const sessionFileExisted = await Core.readTextFile(identity.registryPath)
         .then(() => true)
@@ -525,11 +535,18 @@ function createLiveReloadBuildSubcommand(): Command {
 
     return command
         .description("Build the configured GameMaker project to the HTML5 output used by live reload.")
-        .argument("[targetPath]", "Project directory or .yyp path to build", process.cwd())
+        .argument("[targetPath]", "Project directory or .yyp path to build")
         .addOption(new Option("--verbose", "Enable verbose logging").default(false))
         .addOption(new Option("--quiet", "Suppress non-essential output").default(false))
-        .action((targetPath: string, options: LiveReloadBuildCommandOptions) =>
-            runLiveReloadBuildCommand(targetPath, options)
+        .action(async (targetPath: string | undefined, options: LiveReloadBuildCommandOptions) =>
+            runLiveReloadBuildCommand(
+                targetPath ??
+                    (await resolveWorkflowTargetPath({
+                        fallbackPath: process.cwd(),
+                        scope: "project"
+                    })),
+                options
+            )
         );
 }
 
@@ -616,7 +633,7 @@ function createLiveReloadSessionSubcommand(): Command {
 
     return applySharedLiveReloadPrepareOptions(command)
         .description("Attach to, start, replace, or stop the project live-reload session.")
-        .addOption(new Option(PROJECT_PATH_OPTION_FLAG, PROJECT_PATH_OPTION_DESCRIPTION).default(process.cwd()))
+        .addOption(new Option(PROJECT_PATH_OPTION_FLAG, PROJECT_PATH_OPTION_DESCRIPTION))
         .addOption(new Option("--gm-temp-root <path>", "Root directory for GameMaker HTML5 temporary outputs."))
         .addOption(new Option("--force-start", "Stop the active session before starting a replacement.").default(false))
         .addOption(new Option("--stop", "Stop the active session without starting another.").default(false))
@@ -634,7 +651,7 @@ function createLiveReloadWaitForPatchSubcommand(): Command {
 
     return command
         .description("Wait until the registered live-reload session reports a new patch.")
-        .addOption(new Option(PROJECT_PATH_OPTION_FLAG, PROJECT_PATH_OPTION_DESCRIPTION).default(process.cwd()))
+        .addOption(new Option(PROJECT_PATH_OPTION_FLAG, PROJECT_PATH_OPTION_DESCRIPTION))
         .addOption(new Option("--since-patch-id <id>", "Existing patch id to wait past."))
         .addOption(
             new Option("--timeout-ms <ms>", "Maximum wait time in milliseconds.")
