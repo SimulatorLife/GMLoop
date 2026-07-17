@@ -2,9 +2,23 @@ import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+import { Core } from "@gmloop/core";
+
 export type GraphDatabase = DatabaseSync;
 
 const SQLITE_BUSY_TIMEOUT_MS = 5000;
+
+/**
+ * Single error code emitted by Node's `node:sqlite` driver for every
+ * SQL-level error. The driver does not expose finer-grained codes, so callers
+ * that need to distinguish between "no such table", "duplicate column", etc.
+ * must inspect the message text. Centralising the constant here keeps every
+ * detector consistent.
+ */
+const SQLITE_ERROR_CODE = "ERR_SQLITE_ERROR" as const;
+
+const NO_SUCH_TABLE_PREFIX = "no such table: " as const;
+const DUPLICATE_COLUMN_PREFIX = "duplicate column name: " as const;
 
 export type GraphDatabaseRuntimeInfo = Readonly<{
     busyTimeoutMs: number;
@@ -134,4 +148,72 @@ export function inspectGraphDatabaseIntegrity(database: GraphDatabase): GraphDat
         ok: quickCheckResult === "ok" && foreignKeyRows.length === 0,
         quickCheckResult
     });
+}
+
+/**
+ * Determine whether {@link error} indicates that a SQLite query referenced a
+ * table that does not exist in the current schema.
+ *
+ * Node's `node:sqlite` driver collapses every SQL-level error into the single
+ * {@link SQLITE_ERROR_CODE}, so callers that want to treat "missing table" as
+ * a benign condition (e.g. reading an optional cache table that has not been
+ * created yet) must inspect the message text. The optional {@link tableName}
+ * argument narrows the match to a specific table; when omitted, any
+ * "no such table" message is accepted.
+ *
+ * @param {unknown} error Candidate error-like value thrown by the driver.
+ * @param {string} [tableName] When provided, only return `true` if the error
+ *   message specifically names this table.
+ * @returns {boolean} `true` when {@link error} is a SQLite "no such table"
+ *   error, optionally narrowed by {@link tableName}.
+ */
+export function isSqliteMissingTableError(error: unknown, tableName?: string): boolean {
+    if (!Core.isErrorWithCode(error, SQLITE_ERROR_CODE)) {
+        return false;
+    }
+
+    const message = Core.getErrorMessage(error);
+    if (!message.startsWith(NO_SUCH_TABLE_PREFIX)) {
+        return false;
+    }
+
+    if (tableName === undefined) {
+        return true;
+    }
+
+    return message === `${NO_SUCH_TABLE_PREFIX}${tableName}`;
+}
+
+/**
+ * Determine whether {@link error} indicates that an `ALTER TABLE ... ADD COLUMN`
+ * statement attempted to add a column that already exists on the target table.
+ *
+ * Mirrors {@link isSqliteMissingTableError} for the duplicate-column case so
+ * idempotent schema migrations can swallow the expected failure without
+ * hiding unrelated database problems (corruption, I/O faults, locked database,
+ * etc.). The optional {@link columnName} argument narrows the match to a
+ * specific column; when omitted, any "duplicate column name" message is
+ * accepted.
+ *
+ * @param {unknown} error Candidate error-like value thrown by the driver.
+ * @param {string} [columnName] When provided, only return `true` if the error
+ *   message specifically names this column.
+ * @returns {boolean} `true` when {@link error} is a SQLite "duplicate column
+ *   name" error, optionally narrowed by {@link columnName}.
+ */
+export function isSqliteDuplicateColumnError(error: unknown, columnName?: string): boolean {
+    if (!Core.isErrorWithCode(error, SQLITE_ERROR_CODE)) {
+        return false;
+    }
+
+    const message = Core.getErrorMessage(error);
+    if (!message.startsWith(DUPLICATE_COLUMN_PREFIX)) {
+        return false;
+    }
+
+    if (columnName === undefined) {
+        return true;
+    }
+
+    return message === `${DUPLICATE_COLUMN_PREFIX}${columnName}`;
 }

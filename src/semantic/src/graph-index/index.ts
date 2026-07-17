@@ -27,6 +27,8 @@ export { exportGraphVisualizationData } from "./export-visualization-data.js";
 export {
     getGraphDatabaseRuntimeInfo,
     inspectGraphDatabaseIntegrity,
+    isSqliteDuplicateColumnError,
+    isSqliteMissingTableError,
     openExistingGraphDatabase,
     openGraphDatabase,
     optimizeGraphDatabase,

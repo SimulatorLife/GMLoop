@@ -36,6 +36,7 @@ import {
     getGraphDatabaseRuntimeInfo,
     type GraphDatabase,
     inspectGraphDatabaseIntegrity,
+    isSqliteMissingTableError,
     optimizeGraphDatabase
 } from "./sqlite-adapter.js";
 import {
@@ -2115,8 +2116,21 @@ async function getOrBuildProjectIndex(projectRoot: string): Promise<ProjectIndex
     let storedManifest;
     try {
         storedManifest = store.readSemanticManifest("full") ?? store.readSemanticManifest("definitions");
-    } catch {
-        // Ignore failure to read manifest
+    } catch (error) {
+        // Reading the cached manifest is a best-effort optimisation: if the
+        // semantic tables have not been created yet (e.g. a fresh project
+        // never indexed) we simply rebuild the manifest from disk. The
+        // bare `catch {}` we used previously also swallowed unrelated
+        // failures (database corruption, locked database, I/O faults); the
+        // helpers from `sqlite-adapter` now let us narrow the swallow to
+        // the documented "missing table" case and surface everything else
+        // with context so the failure can be diagnosed.
+        if (!isSqliteMissingTableError(error)) {
+            throw Core.toContextualError(
+                `Failed to read cached semantic manifest for graph projection at ${projectRoot}`,
+                error
+            );
+        }
     }
     const manifest = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade, [], storedManifest);
     const sourceSignature = manifest.sourceRevision;

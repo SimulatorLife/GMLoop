@@ -1,5 +1,9 @@
+import { Core } from "@gmloop/core";
+
 import {
     type GraphDatabase,
+    isSqliteDuplicateColumnError,
+    isSqliteMissingTableError,
     openExistingGraphDatabase,
     openGraphDatabase,
     runGraphDatabaseTransaction
@@ -470,8 +474,15 @@ function _migrateSemanticIndexSchemaV4ToV5(database: GraphDatabase): void {
 function _ensureSemanticStateSignatureColumn(database: GraphDatabase): void {
     try {
         database.exec("ALTER TABLE semantic_state ADD COLUMN source_signature TEXT NOT NULL DEFAULT ''");
-    } catch {
-        // The column already exists on current databases.
+    } catch (error) {
+        // The ALTER TABLE only fails when the column already exists on the
+        // current database. Any other failure (corruption, locked database,
+        // I/O fault, ...) indicates a real problem and must surface so the
+        // surrounding migration can be diagnosed rather than silently
+        // swallowed by an empty `catch {}`.
+        if (!isSqliteDuplicateColumnError(error, "source_signature")) {
+            throw Core.toContextualError("Failed to ensure semantic_state.source_signature column", error);
+        }
     }
 }
 
@@ -667,7 +678,16 @@ export function readGraphIndexSchemaVersion(database: GraphDatabase): number | n
             { value: string } | undefined;
         const parsedVersion = Number.parseInt(row?.value ?? "", 10);
         return Number.isFinite(parsedVersion) ? parsedVersion : null;
-    } catch {
+    } catch (error) {
+        // A missing schema_meta table indicates the database has not been
+        // initialised yet, which is reported as `null` so callers can treat
+        // the database as fresh. Any other failure (corruption, I/O fault,
+        // unexpected SQL error) is wrapped with context and re-thrown so
+        // the failure is not silently swallowed by the previous empty
+        // `catch {}` block.
+        if (!isSqliteMissingTableError(error, "schema_meta")) {
+            throw Core.toContextualError("Failed to read graph index schema version", error);
+        }
         return null;
     }
 }
