@@ -136,6 +136,18 @@ retries, memory, budgets, queues, and durable workflow state.
   `model_reasoning_effort = "max"`, `sandbox_mode = "read-only"`, and the
   `gmloop` / `gm-cli` / `playwright` MCP allowlists the agent is restricted to.
 
+- [`codex-smart-agent.md`](codex-smart-agent.md) —
+  Configuration contract for the expensive, high-intelligence `smart`
+  Codex specialist: `model = "gpt-5.6-sol"`,
+  `model_reasoning_effort = "high"`, no `model_provider` (inherits the
+  main / orchestrator provider and capabilities), every MCP / shell /
+  sandbox / approval / tool surface inherited from the orchestrator
+  (no explicit allowlist), and a no-spawn `[features]` guard
+  (`multi_agent = false`, `enable_fanout = false`) so the role
+  cannot fan out or invoke child agents despite inheriting the
+  orchestrator's other capabilities. Reserved for complex assignments
+  and used sparingly because of cost.
+
 - [`codex-build-lint-test-agent.md`](codex-build-lint-test-agent.md) —
   Configuration contract for the strict GMLoop `build-lint-test` Codex
   subagent: `model = "gpt-5.4-mini"`, `model_reasoning_effort = "medium"`,
@@ -143,3 +155,9 @@ retries, memory, budgets, queues, and durable workflow state.
   network_access = false`, zero reachable MCP servers, and developer
   instructions that limit it to running one assigned `pnpm run`
   build/lint/test command and reporting exact verbatim failure excerpts.
+
+- [`codex-smart-agent.md`](codex-smart-agent.md) — Configuration contract for
+  the costly `smart` Codex specialist: `model = "gpt-5.6-sol"`,
+  `model_reasoning_effort = "high"`, inherited orchestrator capabilities,
+  and configuration-level guards that prevent subagent spawning. Use it
+  sparingly for complex, high-judgment assignments.
