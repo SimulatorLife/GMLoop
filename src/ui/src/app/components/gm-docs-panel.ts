@@ -19,44 +19,19 @@ import {
     searchLspEntries,
     searchMcpEntries
 } from "./docs-search.js";
-import {
-    GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
-    GRAPH_UI_EVENT_SET_DOCS_VIEW,
-    type GraphUiSetDocsViewDetail
-} from "./events.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
-const DOCS_VIEW_LABELS: Readonly<Record<GraphVisualizationUiDocsView, string>> = Object.freeze({
-    cli: "CLI",
-    lsp: "LSP",
-    codemods: "Codemods",
-    formatting: "Formatting",
-    linting: "Linting",
-    mcp: "MCP"
-});
-
-const DOCS_VIEW_ORDER: ReadonlyArray<GraphVisualizationUiDocsView> = Object.freeze([
-    "cli",
-    "lsp",
-    "mcp",
-    "linting",
-    "formatting",
-    "codemods"
-]);
-
-const DOCS_VIEW_CONTENT_IDS: Readonly<Record<GraphVisualizationUiDocsView, string>> = Object.freeze({
-    cli: "cli-page",
-    lsp: "lsp-page",
-    codemods: "codemods-page",
-    formatting: "formatting-page",
-    linting: "linting-page",
-    mcp: "docs-mcp-page"
-});
 const DOCS_SUBPAGE_CLASS = "docs-subpage";
 const DOCS_HIDDEN_SUBPAGE_CLASS = "docs-subpage hidden";
 
 /**
  * Docs surface for CLI, MCP, linting, formatting, and codemods catalog entries.
+ *
+ * The Docs subview tab strip and search controls live in the page toolbar
+ * (see `GmGraphToolbar#renderDocsSearchControls`) so the search input and
+ * subview tabs stay visually aligned. This panel renders the reference
+ * content for the active subview only.
  */
 export class GmDocsPanel extends LightDomLitElement {
     public static properties = {
@@ -89,73 +64,6 @@ export class GmDocsPanel extends LightDomLitElement {
     public disconnectedCallback(): void {
         this.removeEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
         super.disconnectedCallback();
-    }
-
-    #emitDocsView(docsView: GraphVisualizationUiDocsView): void {
-        this.dispatchEvent(
-            new CustomEvent<GraphUiSetDocsViewDetail>(GRAPH_UI_EVENT_SET_DOCS_VIEW, {
-                bubbles: true,
-                composed: true,
-                detail: { docsView }
-            })
-        );
-    }
-
-    #renderViewButton(
-        activeDocsView: GraphVisualizationUiDocsView,
-        docsView: GraphVisualizationUiDocsView,
-        count: number
-    ) {
-        const isActive = activeDocsView === docsView;
-        return html`
-            <button
-                id=${`docs-view-${docsView}`}
-                class=${isActive ? "docs-nav-button active" : "docs-nav-button"}
-                type="button"
-                role="tab"
-                aria-selected=${isActive}
-                aria-controls=${DOCS_VIEW_CONTENT_IDS[docsView]}
-                tabindex=${isActive ? "0" : "-1"}
-                @click=${() => this.#emitDocsView(docsView)}
-                @keydown=${(event: KeyboardEvent) => {
-                    void this.#onDocsViewKeyDown(event, docsView);
-                }}
-            >
-                <span class="docs-nav-label">${DOCS_VIEW_LABELS[docsView]}</span>
-                <span class="docs-nav-count">${count}</span>
-            </button>
-        `;
-    }
-
-    async #onDocsViewKeyDown(event: KeyboardEvent, docsView: GraphVisualizationUiDocsView): Promise<void> {
-        const nextDocsView = resolveKeyboardDocsView(event.key, docsView);
-        if (nextDocsView === docsView) {
-            return;
-        }
-
-        event.preventDefault();
-        this.#emitDocsView(nextDocsView);
-        await this.updateComplete;
-        this.querySelector<HTMLButtonElement>(`#docs-view-${nextDocsView}`)?.focus();
-    }
-
-    #renderDocsControls(parameters: {
-        activeDocsView: GraphVisualizationUiDocsView;
-        counts: Readonly<Record<GraphVisualizationUiDocsView, number>>;
-    }) {
-        return html`
-            <aside class="docs-sidebar" aria-label="Documentation sections">
-                <div class="docs-sidebar-heading">Reference</div>
-                <div class="docs-nav" role="tablist" aria-label="Documentation view selector">
-                    ${this.#renderViewButton(parameters.activeDocsView, "cli", parameters.counts.cli)}
-                    ${this.#renderViewButton(parameters.activeDocsView, "lsp", parameters.counts.lsp)}
-                    ${this.#renderViewButton(parameters.activeDocsView, "mcp", parameters.counts.mcp)}
-                    ${this.#renderViewButton(parameters.activeDocsView, "linting", parameters.counts.linting)}
-                    ${this.#renderViewButton(parameters.activeDocsView, "formatting", parameters.counts.formatting)}
-                    ${this.#renderViewButton(parameters.activeDocsView, "codemods", parameters.counts.codemods)}
-                </div>
-            </aside>
-        `;
     }
 
     #resolveCliCopyValue(entry: GraphVisualizationCliCatalogEntry): string {
@@ -390,17 +298,6 @@ export class GmDocsPanel extends LightDomLitElement {
             ? docsPanelContent.mcpEntries
             : docsPanelContent.mcpEntries.filter((entry) => !entry.internal);
         const mcpSearchResult = searchMcpEntries(filteredMcpEntries, searchQuery);
-        const lintingSearchResult = searchCatalogEntries(docsPanelContent.lintingEntries, searchQuery);
-        const formattingSearchResult = searchCatalogEntries(docsPanelContent.formattingEntries, searchQuery);
-        const codemodsSearchResult = searchCatalogEntries(docsPanelContent.codemodsEntries, searchQuery);
-        const counts: Readonly<Record<GraphVisualizationUiDocsView, number>> = {
-            cli: cliSearchResult.totalCount,
-            lsp: lspSearchResult.totalCount,
-            codemods: codemodsSearchResult.totalCount,
-            formatting: formattingSearchResult.totalCount,
-            linting: lintingSearchResult.totalCount,
-            mcp: mcpSearchResult.totalCount
-        };
         return html`
             <section id="docs-page" class=${docsPageClassName}>
                 ${
@@ -409,10 +306,6 @@ export class GmDocsPanel extends LightDomLitElement {
                         : null
                 }
                 <div id="docs-content" class="docs-layout">
-                    ${this.#renderDocsControls({
-                        activeDocsView: this.state.activeDocsView,
-                        counts
-                    })}
                     <main class="docs-main" aria-label="Documentation content">
                         <div
                             id="cli-page"
@@ -529,28 +422,4 @@ function quoteShellArgument(argumentValue: string): string {
     }
 
     return `'${argumentValue.replaceAll("'", String.raw`'\''`)}'`;
-}
-
-function resolveKeyboardDocsView(
-    key: string,
-    currentDocsView: GraphVisualizationUiDocsView
-): GraphVisualizationUiDocsView {
-    if (key === "Home") {
-        return DOCS_VIEW_ORDER[0];
-    }
-
-    if (key === "End") {
-        return DOCS_VIEW_ORDER.at(-1) ?? currentDocsView;
-    }
-
-    const currentIndex = DOCS_VIEW_ORDER.indexOf(currentDocsView);
-    if (key === "ArrowDown" || key === "ArrowRight") {
-        return DOCS_VIEW_ORDER[(currentIndex + 1) % DOCS_VIEW_ORDER.length];
-    }
-
-    if (key === "ArrowUp" || key === "ArrowLeft") {
-        return DOCS_VIEW_ORDER[(currentIndex - 1 + DOCS_VIEW_ORDER.length) % DOCS_VIEW_ORDER.length];
-    }
-
-    return currentDocsView;
 }
