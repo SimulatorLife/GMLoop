@@ -332,6 +332,14 @@ interface RuntimeContext
     resourcePatches: Map<string, ResourcePatch>;
     transientEmptyFileReadRetryCount: number;
     transientEmptyFileReadRetryDelayMs: number;
+    /**
+     * Pre-computed `verbose && !quiet` flag for dependency-update helpers.
+     * Set once at runtime-context construction so the watch subcommand does
+     * not have to plumb the `(verbose, quiet)` pair through every helper.
+     */
+    verboseOutputEnabled: boolean;
+    /** Raw `quiet` flag forwarded to helper code that needs to suppress normal logging. */
+    quiet: boolean;
 }
 
 /**
@@ -931,6 +939,8 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         roomResources: new Map(),
         resourcePatches: new Map(),
         dependencyTracker,
+        verboseOutputEnabled: verbose && !quiet,
+        quiet,
         transientEmptyFileReadRetryCount,
         transientEmptyFileReadRetryDelayMs
     };
@@ -979,7 +989,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                     }
                 },
                 prepareInitialMessages: () => {
-                    removeDeletedCachedPatchSources(runtimeContext, verbose, quiet);
+                    removeDeletedCachedPatchSources(runtimeContext);
                     return [
                         ...orderPatchesForReplay(Array.from(runtimeContext.lastSuccessfulPatches.values())),
                         ...runtimeContext.resourcePatches.values()
@@ -1496,7 +1506,7 @@ async function handleFileChange(
                     console.log(`  ↳ File removed (deleted or renamed away)`);
                 }
                 if (runtimeContext) {
-                    cleanupRemovedFile(runtimeContext, filePath, verbose, quiet);
+                    cleanupRemovedFile(runtimeContext, filePath);
                 }
                 return;
             }
@@ -1515,7 +1525,7 @@ async function handleFileChange(
                 if (verbose && !quiet) {
                     console.log("  ↳ File removed before change event could be processed");
                 }
-                cleanupRemovedFile(runtimeContext, filePath, verbose, quiet);
+                cleanupRemovedFile(runtimeContext, filePath);
                 return;
             }
 
@@ -1588,10 +1598,10 @@ async function handleFileChange(
                 fileChangeDetectedAt
             });
 
-            await processTranspileResult(runtimeContext, filePath, result, fileChangeDetectedAt, verbose, quiet);
+            await processTranspileResult(runtimeContext, filePath, result, fileChangeDetectedAt);
         } catch (error) {
             if (runtimeContext && isErrorWithCode(error, "ENOENT")) {
-                cleanupRemovedFile(runtimeContext, filePath, verbose, quiet);
+                cleanupRemovedFile(runtimeContext, filePath);
                 if (verbose && !quiet) {
                     console.log("  ↳ File missing during read (deleted before processing)");
                 }
@@ -1628,7 +1638,7 @@ async function handleUnknownFileChanges(
 
     for (const filePath of runtimeContext.fileSnapshots.keys()) {
         if (!discoveredFiles.has(filePath)) {
-            cleanupRemovedFile(runtimeContext, filePath, verbose, quiet);
+            cleanupRemovedFile(runtimeContext, filePath);
         }
     }
 
@@ -1648,7 +1658,7 @@ async function handleUnknownFileChanges(
                     eventType: lastModified === undefined ? "rename" : "change"
                 };
             } catch {
-                cleanupRemovedFile(runtimeContext, filePath, verbose, quiet);
+                cleanupRemovedFile(runtimeContext, filePath);
                 return null;
             }
         },
