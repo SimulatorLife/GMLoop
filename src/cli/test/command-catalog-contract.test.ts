@@ -111,6 +111,32 @@ void test("developer-only and internal toolchain commands are excluded from MCP 
     assert.equal(toolNames.has("gmloop_graph_doctor"), true);
 });
 
+void test("object event add MCP tool schema includes write mode option and required mutation arguments", () => {
+    const mcpCatalog = getMcpToolCatalogEntries();
+    const entry = mcpCatalog.find((candidate) => candidate.toolName === "gmloop_object_event_add");
+    assert.ok(entry, "Missing MCP tool for object event add.");
+
+    const writeField = entry.fields.find((field) => field.attributeName === "write");
+    assert.ok(writeField, "object event add MCP tool is missing the dry-run/write flag.");
+    assert.equal(writeField.kind, "option");
+    assert.equal(writeField.valueType, "boolean");
+
+    const objectField = entry.fields.find((field) => field.attributeName === "object");
+    assert.ok(objectField, "object event add MCP tool is missing the object argument.");
+    assert.equal(objectField.kind, "argument");
+    assert.equal(objectField.required, true);
+
+    const eventField = entry.fields.find((field) => field.attributeName === "event");
+    assert.ok(eventField, "object event add MCP tool is missing the event argument.");
+    assert.equal(eventField.kind, "argument");
+    assert.equal(eventField.required, true);
+
+    const handlerField = entry.fields.find((field) => field.attributeName === "handler");
+    assert.ok(handlerField, "object event add MCP tool is missing the handler argument.");
+    assert.equal(handlerField.kind, "argument");
+    assert.equal(handlerField.required, true);
+});
+
 void test("object event update MCP tool schema includes write mode option", () => {
     const mcpCatalog = getMcpToolCatalogEntries();
     const entry = mcpCatalog.find((candidate) => candidate.toolName === "gmloop_object_event_update");
