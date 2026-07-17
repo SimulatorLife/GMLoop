@@ -3,10 +3,10 @@ import test from "node:test";
 
 import { applyWebGLSafetyPatches } from "../src/browser/webgl.js";
 
-test("WebGL safety patches hook getContext and shaderSource", () => {
+void test("WebGL safety patches hook getContext and shaderSource", () => {
     // 1. Mocking HTMLCanvasElement prototype
     const mockCanvasProto = {
-        getContext(contextId: string, options?: any) {
+        getContext(_contextId: string, _options?: any) {
             return mockGlContext;
         }
     };

@@ -161,7 +161,7 @@ function awaitRequestSemanticState(
     }
     return new Promise((resolve, reject) => {
         let settled = false;
-        const finish = (result: NavigationState | null, error: unknown | null): void => {
+        const finish = (result: NavigationState | null, error: unknown): void => {
             if (settled) {
                 return;
             }
@@ -170,7 +170,7 @@ function awaitRequestSemanticState(
             if (error === null) {
                 resolve(result);
             } else {
-                reject(error);
+                reject(coerceToError(error));
             }
         };
         const abort = (): void => finish(null, null);
@@ -1068,11 +1068,11 @@ export function createGmlSemanticIndex(
                 sourceRevision: state.manifest.sourceRevision,
                 tier
             } as const;
-            const publication =
+            const pubResult =
                 changedFiles === null || publicationRequest.baseGeneration === null
                     ? store.publishSemanticSnapshot(publicationRequest)
                     : store.applySemanticIncrement({ ...publicationRequest, affectedFiles: changedFiles });
-            if (publication.status === "superseded") {
+            if (pubResult.status === "superseded") {
                 return false;
             }
             return true;
@@ -2498,7 +2498,7 @@ export function createGmlSemanticIndex(
                 "hover",
                 false,
                 signal,
-                async (queries): Promise<Hover | null> => {
+                (queries): Hover | null => {
                     const symbolId = findSymbolId(
                         queries,
                         document,

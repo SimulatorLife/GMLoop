@@ -1003,6 +1003,281 @@ function readSemanticNavigationProjection(
     return null;
 }
 
+function insertAnalyzedFiles(
+    database: GraphDatabase,
+    projectRoot: string,
+    tier: string,
+    analyzedFilePaths: ReadonlyArray<string>,
+    generation: number
+): void {
+    const insertAnalyzedFile = database.prepare(
+        "INSERT INTO semantic_analyzed_files(project_root, tier, file_path, updated_generation) VALUES (?, ?, ?, ?)"
+    );
+    for (const filePath of analyzedFilePaths) {
+        insertAnalyzedFile.run(projectRoot, tier, filePath, generation);
+    }
+}
+
+function insertSemanticSymbols(
+    database: GraphDatabase,
+    projectRoot: string,
+    tier: string,
+    symbols: ReadonlyArray<SemanticSymbol>,
+    affectedFiles: ReadonlySet<string> | null,
+    affectedSymbolIds: ReadonlySet<string>,
+    generation: number
+): void {
+    const insertSymbol = database.prepare(
+        "INSERT INTO semantic_symbols(" +
+            "project_root, tier, symbol_id, kind, name, display_name, normalized_display_name, " +
+            "defining_file_path, scope_id, documentation_json, updated_generation" +
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+            "ON CONFLICT(project_root, tier, symbol_id) DO UPDATE SET kind = excluded.kind, " +
+            "name = excluded.name, display_name = excluded.display_name, " +
+            "normalized_display_name = excluded.normalized_display_name, " +
+            "defining_file_path = excluded.defining_file_path, scope_id = excluded.scope_id, " +
+            "documentation_json = excluded.documentation_json, updated_generation = excluded.updated_generation"
+    );
+    const deleteSymbolSearchNgrams = database.prepare(
+        "DELETE FROM semantic_symbol_search_ngrams WHERE project_root = ? AND tier = ? AND symbol_id = ?"
+    );
+    const insertSymbolSearchNgram = database.prepare(
+        "INSERT INTO semantic_symbol_search_ngrams(project_root, tier, symbol_id, search_ngram) VALUES (?, ?, ?, ?)"
+    );
+    for (const symbol of symbols) {
+        if (
+            !isAffectedSemanticFile(affectedFiles, symbol.definingFilePath) &&
+            !affectedSymbolIds.has(symbol.symbolId)
+        ) {
+            continue;
+        }
+        const normalizedDisplayName = normalizeSemanticSearchText(symbol.displayName);
+        insertSymbol.run(
+            projectRoot,
+            tier,
+            symbol.symbolId,
+            symbol.kind,
+            symbol.name,
+            symbol.displayName,
+            normalizedDisplayName,
+            symbol.definingFilePath,
+            symbol.scopeId,
+            JSON.stringify(symbol.documentation),
+            generation
+        );
+        deleteSymbolSearchNgrams.run(projectRoot, tier, symbol.symbolId);
+        for (const searchNgram of createSemanticSearchNgrams(normalizedDisplayName)) {
+            insertSymbolSearchNgram.run(projectRoot, tier, symbol.symbolId, searchNgram);
+        }
+    }
+}
+
+function insertSemanticScopes(
+    database: GraphDatabase,
+    projectRoot: string,
+    tier: string,
+    scopes: ReadonlyArray<SemanticScope>,
+    affectedFiles: ReadonlySet<string> | null,
+    affectedScopeIds: ReadonlySet<string>,
+    generation: number
+): void {
+    const insertScope = database.prepare(
+        "INSERT INTO semantic_scopes(project_root, tier, scope_id, kind, name, display_name, resource_path, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(project_root, tier, scope_id) DO UPDATE SET kind = excluded.kind, name = excluded.name, display_name = excluded.display_name, resource_path = excluded.resource_path, updated_generation = excluded.updated_generation"
+    );
+    const insertScopeFile = database.prepare(
+        "INSERT INTO semantic_scope_files(project_root, tier, scope_id, file_path, updated_generation) VALUES (?, ?, ?, ?, ?)"
+    );
+    for (const scope of scopes) {
+        if (
+            affectedFiles !== null &&
+            !affectedScopeIds.has(scope.scopeId) &&
+            !isAffectedSemanticFile(affectedFiles, scope.resourcePath)
+        ) {
+            continue;
+        }
+        insertScope.run(
+            projectRoot,
+            tier,
+            scope.scopeId,
+            scope.kind,
+            scope.name,
+            scope.displayName,
+            scope.resourcePath,
+            generation
+        );
+        for (const filePath of scope.filePaths) {
+            if (!isAffectedSemanticFile(affectedFiles, filePath)) {
+                continue;
+            }
+            insertScopeFile.run(projectRoot, tier, scope.scopeId, filePath, generation);
+        }
+    }
+}
+
+function insertSemanticResources(
+    database: GraphDatabase,
+    projectRoot: string,
+    tier: string,
+    resources: ReadonlyArray<SemanticResource>,
+    affectedFiles: ReadonlySet<string> | null,
+    generation: number
+): void {
+    const insertResource = database.prepare(
+        "INSERT INTO semantic_resources(project_root, tier, resource_path, name, resource_type, updated_generation) VALUES (?, ?, ?, ?, ?, ?)"
+    );
+    for (const resource of resources) {
+        if (!isAffectedSemanticFile(affectedFiles, resource.resourcePath)) {
+            continue;
+        }
+        insertResource.run(projectRoot, tier, resource.resourcePath, resource.name, resource.resourceType, generation);
+    }
+}
+
+function insertSemanticRelationships(
+    database: GraphDatabase,
+    projectRoot: string,
+    tier: string,
+    relationships: ReadonlyArray<SemanticRelationship>,
+    affectedFiles: ReadonlySet<string> | null,
+    generation: number
+): void {
+    const insertRelationship = database.prepare(
+        "INSERT INTO semantic_relationships(project_root, tier, relationship_id, owner_file_path, relationship_kind, payload_json, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    );
+    for (const relationship of relationships) {
+        if (!isAffectedSemanticFile(affectedFiles, relationship.ownerFilePath)) {
+            continue;
+        }
+        insertRelationship.run(
+            projectRoot,
+            tier,
+            relationship.relationshipId,
+            relationship.ownerFilePath,
+            relationship.kind,
+            JSON.stringify(relationship.payload),
+            generation
+        );
+    }
+}
+
+function insertSemanticOccurrences(
+    database: GraphDatabase,
+    projectRoot: string,
+    tier: string,
+    occurrences: ReadonlyArray<SemanticOccurrence>,
+    affectedFiles: ReadonlySet<string> | null,
+    generation: number
+): void {
+    const insertOccurrence = database.prepare(
+        "INSERT INTO semantic_occurrences(project_root, tier, symbol_id, file_path, role, start_offset, end_offset, scope_id, resolution_json, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    );
+    for (const occurrence of occurrences) {
+        if (!isAffectedSemanticFile(affectedFiles, occurrence.filePath)) {
+            continue;
+        }
+        insertOccurrence.run(
+            projectRoot,
+            tier,
+            occurrence.symbolId,
+            occurrence.filePath,
+            occurrence.role,
+            occurrence.start,
+            occurrence.end,
+            occurrence.scopeId,
+            JSON.stringify(occurrence.resolution),
+            generation
+        );
+    }
+}
+
+function insertSemanticDependencies(
+    database: GraphDatabase,
+    projectRoot: string,
+    tier: string,
+    dependencies: ReadonlyArray<SemanticDependency>,
+    affectedFiles: ReadonlySet<string> | null,
+    generation: number
+): void {
+    const insertDependency = database.prepare(
+        "INSERT INTO semantic_dependencies(project_root, tier, owner_file_path, dependent_file_path, dependency_kind, symbol_id, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    );
+    for (const dependency of dependencies) {
+        if (
+            !isAffectedSemanticFile(affectedFiles, dependency.ownerFilePath) &&
+            !isAffectedSemanticFile(affectedFiles, dependency.dependentFilePath)
+        ) {
+            continue;
+        }
+        insertDependency.run(
+            projectRoot,
+            tier,
+            dependency.ownerFilePath,
+            dependency.dependentFilePath,
+            dependency.kind,
+            dependency.symbolId,
+            generation
+        );
+    }
+}
+
+function insertSemanticUnresolvedReferences(
+    database: GraphDatabase,
+    projectRoot: string,
+    tier: string,
+    unresolvedReferences: ReadonlyArray<SemanticUnresolvedReference>,
+    affectedFiles: ReadonlySet<string> | null,
+    generation: number
+): void {
+    const insertUnresolved = database.prepare(
+        "INSERT INTO semantic_unresolved_references(project_root, tier, name, file_path, start_offset, end_offset, resolution_json, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    );
+    for (const unresolvedReference of unresolvedReferences) {
+        if (!isAffectedSemanticFile(affectedFiles, unresolvedReference.filePath)) {
+            continue;
+        }
+        insertUnresolved.run(
+            projectRoot,
+            tier,
+            unresolvedReference.name,
+            unresolvedReference.filePath,
+            unresolvedReference.start,
+            unresolvedReference.end,
+            JSON.stringify(unresolvedReference.resolution),
+            generation
+        );
+    }
+}
+
+function insertSemanticManifestFiles(
+    database: GraphDatabase,
+    projectRoot: string,
+    tier: string,
+    manifest: SemanticFileManifest,
+    affectedFiles: ReadonlySet<string> | null,
+    generation: number
+): void {
+    const insertManifestFile = database.prepare(
+        "INSERT INTO semantic_files(project_root, tier, relative_path, file_kind, content_hash, size_bytes, mtime_ms, source_origin, source_version, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    );
+    for (const entry of manifest.entries.values()) {
+        if (!isAffectedSemanticFile(affectedFiles, entry.relativePath)) {
+            continue;
+        }
+        insertManifestFile.run(
+            projectRoot,
+            tier,
+            entry.relativePath,
+            entry.fileKind,
+            entry.contentHash,
+            entry.sizeBytes,
+            entry.mtimeMs,
+            entry.sourceOrigin,
+            entry.sourceVersion,
+            generation
+        );
+    }
+}
+
 function publishSemanticFacts(
     database: GraphDatabase,
     projectRoot: string,
@@ -1084,12 +1359,9 @@ function publishSemanticFacts(
         database
             .prepare("DELETE FROM semantic_analyzed_files WHERE project_root = ? AND tier = ?")
             .run(projectRoot, request.tier);
-        const insertAnalyzedFile = database.prepare(
-            "INSERT INTO semantic_analyzed_files(project_root, tier, file_path, updated_generation) VALUES (?, ?, ?, ?)"
-        );
-        for (const filePath of snapshot.analyzedFilePaths) {
-            insertAnalyzedFile.run(projectRoot, request.tier, filePath, generation);
-        }
+
+        insertAnalyzedFiles(database, projectRoot, request.tier, snapshot.analyzedFilePaths, generation);
+
         const affectedFiles = createAffectedFileSet(projectRoot, request.affectedFiles);
         const affectedSymbolIds = new Set([
             ...readSymbolIdsDefinedByFiles(database, projectRoot, request.tier, affectedFiles),
@@ -1121,80 +1393,27 @@ function publishSemanticFacts(
                 .prepare("DELETE FROM semantic_resources WHERE project_root = ? AND tier = ?")
                 .run(projectRoot, request.tier);
         }
-        const insertSymbol = database.prepare(
-            "INSERT INTO semantic_symbols(" +
-                "project_root, tier, symbol_id, kind, name, display_name, normalized_display_name, " +
-                "defining_file_path, scope_id, documentation_json, updated_generation" +
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
-                "ON CONFLICT(project_root, tier, symbol_id) DO UPDATE SET kind = excluded.kind, " +
-                "name = excluded.name, display_name = excluded.display_name, " +
-                "normalized_display_name = excluded.normalized_display_name, " +
-                "defining_file_path = excluded.defining_file_path, scope_id = excluded.scope_id, " +
-                "documentation_json = excluded.documentation_json, updated_generation = excluded.updated_generation"
+
+        insertSemanticSymbols(
+            database,
+            projectRoot,
+            request.tier,
+            snapshot.symbols,
+            affectedFiles,
+            affectedSymbolIds,
+            generation
         );
-        const deleteSymbolSearchNgrams = database.prepare(
-            "DELETE FROM semantic_symbol_search_ngrams WHERE project_root = ? AND tier = ? AND symbol_id = ?"
+
+        insertSemanticScopes(
+            database,
+            projectRoot,
+            request.tier,
+            snapshot.scopes,
+            affectedFiles,
+            affectedScopeIds,
+            generation
         );
-        const insertSymbolSearchNgram = database.prepare(
-            "INSERT INTO semantic_symbol_search_ngrams(project_root, tier, symbol_id, search_ngram) VALUES (?, ?, ?, ?)"
-        );
-        for (const symbol of snapshot.symbols) {
-            if (
-                !isAffectedSemanticFile(affectedFiles, symbol.definingFilePath) &&
-                !affectedSymbolIds.has(symbol.symbolId)
-            ) {
-                continue;
-            }
-            const normalizedDisplayName = normalizeSemanticSearchText(symbol.displayName);
-            insertSymbol.run(
-                projectRoot,
-                request.tier,
-                symbol.symbolId,
-                symbol.kind,
-                symbol.name,
-                symbol.displayName,
-                normalizedDisplayName,
-                symbol.definingFilePath,
-                symbol.scopeId,
-                JSON.stringify(symbol.documentation),
-                generation
-            );
-            deleteSymbolSearchNgrams.run(projectRoot, request.tier, symbol.symbolId);
-            for (const searchNgram of createSemanticSearchNgrams(normalizedDisplayName)) {
-                insertSymbolSearchNgram.run(projectRoot, request.tier, symbol.symbolId, searchNgram);
-            }
-        }
-        const insertScope = database.prepare(
-            "INSERT INTO semantic_scopes(project_root, tier, scope_id, kind, name, display_name, resource_path, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(project_root, tier, scope_id) DO UPDATE SET kind = excluded.kind, name = excluded.name, display_name = excluded.display_name, resource_path = excluded.resource_path, updated_generation = excluded.updated_generation"
-        );
-        const insertScopeFile = database.prepare(
-            "INSERT INTO semantic_scope_files(project_root, tier, scope_id, file_path, updated_generation) VALUES (?, ?, ?, ?, ?)"
-        );
-        for (const scope of snapshot.scopes) {
-            if (
-                affectedFiles !== null &&
-                !affectedScopeIds.has(scope.scopeId) &&
-                !isAffectedSemanticFile(affectedFiles, scope.resourcePath)
-            ) {
-                continue;
-            }
-            insertScope.run(
-                projectRoot,
-                request.tier,
-                scope.scopeId,
-                scope.kind,
-                scope.name,
-                scope.displayName,
-                scope.resourcePath,
-                generation
-            );
-            for (const filePath of scope.filePaths) {
-                if (!isAffectedSemanticFile(affectedFiles, filePath)) {
-                    continue;
-                }
-                insertScopeFile.run(projectRoot, request.tier, scope.scopeId, filePath, generation);
-            }
-        }
+
         if (affectedFiles !== null && affectedScopeIds.size > 0) {
             const retainedScopeIds = new Set(snapshot.scopes.map((scope) => scope.scopeId));
             const removedScopeIds = [...affectedScopeIds].filter((scopeId) => !retainedScopeIds.has(scopeId));
@@ -1207,59 +1426,20 @@ function publishSemanticFacts(
                     .run(projectRoot, request.tier, ...removedScopeIds);
             }
         }
-        const insertResource = database.prepare(
-            "INSERT INTO semantic_resources(project_root, tier, resource_path, name, resource_type, updated_generation) VALUES (?, ?, ?, ?, ?, ?)"
+
+        insertSemanticResources(database, projectRoot, request.tier, snapshot.resources, affectedFiles, generation);
+
+        insertSemanticRelationships(
+            database,
+            projectRoot,
+            request.tier,
+            snapshot.relationships,
+            affectedFiles,
+            generation
         );
-        for (const resource of snapshot.resources) {
-            if (!isAffectedSemanticFile(affectedFiles, resource.resourcePath)) {
-                continue;
-            }
-            insertResource.run(
-                projectRoot,
-                request.tier,
-                resource.resourcePath,
-                resource.name,
-                resource.resourceType,
-                generation
-            );
-        }
-        const insertRelationship = database.prepare(
-            "INSERT INTO semantic_relationships(project_root, tier, relationship_id, owner_file_path, relationship_kind, payload_json, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?)"
-        );
-        for (const relationship of snapshot.relationships) {
-            if (!isAffectedSemanticFile(affectedFiles, relationship.ownerFilePath)) {
-                continue;
-            }
-            insertRelationship.run(
-                projectRoot,
-                request.tier,
-                relationship.relationshipId,
-                relationship.ownerFilePath,
-                relationship.kind,
-                JSON.stringify(relationship.payload),
-                generation
-            );
-        }
-        const insertOccurrence = database.prepare(
-            "INSERT INTO semantic_occurrences(project_root, tier, symbol_id, file_path, role, start_offset, end_offset, scope_id, resolution_json, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-        );
-        for (const occurrence of snapshot.occurrences) {
-            if (!isAffectedSemanticFile(affectedFiles, occurrence.filePath)) {
-                continue;
-            }
-            insertOccurrence.run(
-                projectRoot,
-                request.tier,
-                occurrence.symbolId,
-                occurrence.filePath,
-                occurrence.role,
-                occurrence.start,
-                occurrence.end,
-                occurrence.scopeId,
-                JSON.stringify(occurrence.resolution),
-                generation
-            );
-        }
+
+        insertSemanticOccurrences(database, projectRoot, request.tier, snapshot.occurrences, affectedFiles, generation);
+
         if (affectedFiles !== null && affectedSymbolIds.size > 0) {
             const symbolIds = [...affectedSymbolIds];
             const placeholders = symbolIds.map(() => "?").join(", ");
@@ -1270,67 +1450,34 @@ function publishSemanticFacts(
                 .run(projectRoot, request.tier, ...symbolIds);
         }
 
-        const insertDependency = database.prepare(
-            "INSERT INTO semantic_dependencies(project_root, tier, owner_file_path, dependent_file_path, dependency_kind, symbol_id, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        insertSemanticDependencies(
+            database,
+            projectRoot,
+            request.tier,
+            snapshot.dependencies,
+            affectedFiles,
+            generation
         );
-        for (const dependency of snapshot.dependencies) {
-            if (
-                !isAffectedSemanticFile(affectedFiles, dependency.ownerFilePath) &&
-                !isAffectedSemanticFile(affectedFiles, dependency.dependentFilePath)
-            ) {
-                continue;
-            }
-            insertDependency.run(
+
+        if (request.tier === "full") {
+            insertSemanticUnresolvedReferences(
+                database,
                 projectRoot,
                 request.tier,
-                dependency.ownerFilePath,
-                dependency.dependentFilePath,
-                dependency.kind,
-                dependency.symbolId,
+                snapshot.unresolvedReferences,
+                affectedFiles,
                 generation
             );
         }
-        if (request.tier === "full") {
-            const insertUnresolved = database.prepare(
-                "INSERT INTO semantic_unresolved_references(project_root, tier, name, file_path, start_offset, end_offset, resolution_json, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-            );
-            for (const unresolvedReference of snapshot.unresolvedReferences) {
-                if (!isAffectedSemanticFile(affectedFiles, unresolvedReference.filePath)) {
-                    continue;
-                }
-                insertUnresolved.run(
-                    projectRoot,
-                    request.tier,
-                    unresolvedReference.name,
-                    unresolvedReference.filePath,
-                    unresolvedReference.start,
-                    unresolvedReference.end,
-                    JSON.stringify(unresolvedReference.resolution),
-                    generation
-                );
-            }
-        }
         if (request.manifest !== null) {
-            const insertManifestFile = database.prepare(
-                "INSERT INTO semantic_files(project_root, tier, relative_path, file_kind, content_hash, size_bytes, mtime_ms, source_origin, source_version, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            insertSemanticManifestFiles(
+                database,
+                projectRoot,
+                request.tier,
+                request.manifest,
+                affectedFiles,
+                generation
             );
-            for (const entry of request.manifest.entries.values()) {
-                if (!isAffectedSemanticFile(affectedFiles, entry.relativePath)) {
-                    continue;
-                }
-                insertManifestFile.run(
-                    projectRoot,
-                    request.tier,
-                    entry.relativePath,
-                    entry.fileKind,
-                    entry.contentHash,
-                    entry.sizeBytes,
-                    entry.mtimeMs,
-                    entry.sourceOrigin,
-                    entry.sourceVersion,
-                    generation
-                );
-            }
         }
         writePersistedSnapshotCoverage(database, projectRoot, request.tier);
         database

@@ -66,14 +66,16 @@ function clearIdentifierBinding(identifier: BindableIdentifierNode): void {
     delete identifier.scopeId;
 }
 
+const DEFAULT_BIND_OPTIONS = Object.freeze({
+    applyRegisteredGlobal: true,
+    markGlobal: false
+});
+
 function bindIdentifier(
     coordinator: ScopeTracker,
     candidate: unknown,
     role: ScopeRole | null = null,
-    options: Readonly<{ applyRegisteredGlobal: boolean; markGlobal: boolean }> = {
-        applyRegisteredGlobal: true,
-        markGlobal: false
-    }
+    options: Readonly<{ applyRegisteredGlobal: boolean; markGlobal: boolean }> = DEFAULT_BIND_OPTIONS
 ): void {
     const identifier = readIdentifier(candidate);
     if (identifier === null) {
