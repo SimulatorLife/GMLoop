@@ -17,19 +17,19 @@ void test("project index parser reports syntax errors with context", async () =>
             (error: unknown) => {
                 assert.ok(Core.isObjectLike(error));
                 const formattedError = error as {
-                    filePath?: unknown;
-                    message?: unknown;
-                    originalMessage?: unknown;
-                    sourceExcerpt?: unknown;
+                    filePath?: string;
+                    message?: string;
+                    originalMessage?: string;
+                    sourceExcerpt?: string;
                 };
                 assert.match(
-                    String(formattedError.message),
+                    formattedError.message ?? "",
                     /Syntax Error \(objects\/example\/Step_0\.gml: line 2, column \d+\): unexpected symbol ';/
                 );
-                assert.match(String(formattedError.message), /2 \| {5}var value = ;/);
+                assert.match(formattedError.message ?? "", /2 \| {5}var value = ;/);
                 assert.equal(formattedError.filePath, "objects/example/Step_0.gml");
                 assert.equal(formattedError.sourceExcerpt, "2 |     var value = ;\n  |                 ^");
-                assert.match(String(formattedError.originalMessage), /Syntax Error/);
+                assert.match(formattedError.originalMessage ?? "", /Syntax Error/);
                 return true;
             }
         );
