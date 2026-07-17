@@ -748,6 +748,9 @@ function normalizeResourceKind(resourceType: string | null): GraphNodeKind | nul
         case "GMTileSet": {
             return "tileset";
         }
+        case "GMTextureGroup": {
+            return "texture_group";
+        }
         case "GMTimeline": {
             return "timeline";
         }
