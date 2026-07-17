@@ -42,7 +42,8 @@ import {
     type RuntimeSourceDescriptor,
     type RuntimeSourceResolver
 } from "../modules/runtime/source.js";
-import { startStatusServer, type StatusServerHandle, type StatusServerLifecycle } from "../modules/status/server.js";
+import { type ServerLifecycle } from "../modules/server/index.js";
+import { startStatusServer, type StatusServerHandle } from "../modules/status/server.js";
 import { DependencyTracker } from "../modules/transpilation/dependency-tracker.js";
 import {
     createGmlParserAdapter,
@@ -272,7 +273,7 @@ interface PatchHistory extends PatchHistoryStore, MetricsCollector, ErrorCollect
  * Extends PatchBroadcastService to demonstrate proper ISP usage.
  */
 interface ServerControllers extends PatchBroadcastService {
-    statusServer: StatusServerLifecycle | null;
+    statusServer: ServerLifecycle | null;
 }
 
 /**

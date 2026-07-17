@@ -6,7 +6,7 @@ import { Core } from "@gmloop/core";
 import { UI } from "@gmloop/ui";
 
 import { tryParseJsonPayload } from "../../shared/error-guards.js";
-import type { ServerEndpoint, ServerLifecycle } from "./server-contracts.js";
+import type { ServerEndpoint, ServerLifecycle } from "./index.js";
 
 type GraphVisualizationServerRenderBundle = (
     isServerMode: boolean

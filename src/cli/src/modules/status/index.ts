@@ -1,12 +1,5 @@
 export type { ServerEndpoint, ServerLifecycle } from "../server/index.js";
-export {
-    startStatusServer,
-    type StatusServerEndpoint,
-    type StatusServerHandle,
-    type StatusServerLifecycle,
-    type StatusServerOptions,
-    type StatusSnapshot
-} from "./server.js";
+export { startStatusServer, type StatusServerHandle, type StatusServerOptions, type StatusSnapshot } from "./server.js";
 export {
     DEFAULT_STATUS_HEALTH_POLICY_CONFIG,
     evaluateReadiness,
