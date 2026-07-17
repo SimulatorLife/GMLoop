@@ -138,7 +138,11 @@ The semantic oracle provides:
 - ✅ Event transpilation:
     - ✅ `transpileEvent()` – produces an `EventPatch` for GML object events
     - ✅ `EventContextOracle` – treats undeclared identifiers as `self.<name>` in event scope
-    - ✅ `collectLocalVariables()` – pre-collects `var`-declared locals to avoid misclassifying them as instance fields
+    - ✅ `collectLocalVariables()` – pre-collects `var`- and `static`-declared locals to avoid misclassifying them as instance fields
+- ✅ Static variables and methods:
+    - ✅ Static initializers are hoisted to function prologues, matching GameMaker's initialize-before-body rule
+    - ✅ Static references use persistent function-owned storage instead of invalid JavaScript `static` declarations
+    - ✅ Unwrapped script, event, and closure patches receive their static storage from the runtime wrapper
 
 ### Planned Features
 

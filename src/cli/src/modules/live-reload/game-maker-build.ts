@@ -6,6 +6,7 @@ import process from "node:process";
 import { Core } from "@gmloop/core";
 
 import { DEFAULT_GM_TEMP_ROOT } from "./config.js";
+import { hasGameMakerHtml5BuildEntitlement } from "./game-maker-license.js";
 
 /**
  * Supported external GameMaker build backends for generating HTML5 exports.
@@ -88,6 +89,12 @@ type MaterializedPrefabProjectReferences = Readonly<{
 type CachedPrefabMaterializationCandidate = Readonly<{
     destinationPath: string;
     sourcePath: string;
+}>;
+
+type GameMakerUserFolderCandidate = Readonly<{
+    licenseFile: string;
+    mtimeMs: number;
+    userFolder: string;
 }>;
 
 /**
@@ -881,8 +888,8 @@ function deriveRuntimeRootFromIgorToolPath(igorToolPath: string): string | null 
 
 async function resolveDefaultGameMakerRuntimeRoot(projectRoot: string | null): Promise<string | null> {
     if (projectRoot !== null) {
-        const projectLocalCandidates = await collectRuntimeRootsFromCacheRoot(
-            path.join(projectRoot, ".gmcache", "runtimes-gms2")
+        const projectLocalCandidates = await selectHtml5CapableRuntimeRoots(
+            await collectRuntimeRootsFromCacheRoot(path.join(projectRoot, ".gmcache", "runtimes-gms2"))
         );
         if (projectLocalCandidates.length > 0) {
             const sortedProjectLocalCandidates = [...projectLocalCandidates].sort(
@@ -896,12 +903,34 @@ async function resolveDefaultGameMakerRuntimeRoot(projectRoot: string | null): P
     const runtimeCandidateGroups = await Promise.all(
         runtimeCacheRoots.map(async (cacheRoot) => await collectRuntimeRootsFromCacheRoot(cacheRoot))
     );
-    const runtimeCandidates = runtimeCandidateGroups.flat();
+    const runtimeCandidates = [...(await selectHtml5CapableRuntimeRoots(runtimeCandidateGroups.flat()))];
 
     runtimeCandidates.sort(
         (left, right) => right.mtimeMs - left.mtimeMs || left.runtimeRoot.localeCompare(right.runtimeRoot)
     );
     return runtimeCandidates[0]?.runtimeRoot ?? null;
+}
+
+async function selectHtml5CapableRuntimeRoots(
+    runtimeCandidates: ReadonlyArray<Readonly<{ mtimeMs: number; runtimeRoot: string }>>
+): Promise<ReadonlyArray<Readonly<{ mtimeMs: number; runtimeRoot: string }>>> {
+    const capableRuntimeCandidates = await Promise.all(
+        runtimeCandidates.map(async (runtimeCandidate) => {
+            const [igorPath, html5RunnerStats] = await Promise.all([
+                resolveIgorExecutableFromIgorDirectory(path.join(runtimeCandidate.runtimeRoot, "bin", "igor")),
+                Core.safeStat(path.join(runtimeCandidate.runtimeRoot, "html5", "scripts.html5.zip"))
+            ]);
+
+            return igorPath !== null && html5RunnerStats?.isFile() === true ? runtimeCandidate : null;
+        })
+    );
+
+    return Object.freeze(
+        capableRuntimeCandidates.filter(
+            (runtimeCandidate): runtimeCandidate is Readonly<{ mtimeMs: number; runtimeRoot: string }> =>
+                runtimeCandidate !== null
+        )
+    );
 }
 
 async function collectRuntimeRootsFromCacheRoot(
@@ -1033,10 +1062,22 @@ async function resolveIgorIdentityPaths(
         });
     }
 
+    const autoDetectedUserFolder = await resolveDefaultGameMakerUserFolder();
+    if (autoDetectedUserFolder !== null) {
+        const autoDetectedLicensePath = path.join(autoDetectedUserFolder, IGOR_LICENSE_PLIST_FILENAME);
+        return Object.freeze({
+            licenseFile: autoDetectedLicensePath,
+            userFolder: autoDetectedUserFolder
+        });
+    }
+
     if (projectRoot !== null) {
         const projectLocalLicensePath = path.join(projectRoot, ".gmcache", "license", IGOR_LICENSE_PLIST_FILENAME);
         const projectLocalLicenseStats = await Core.safeStat(projectLocalLicensePath);
-        if (projectLocalLicenseStats?.isFile()) {
+        if (
+            projectLocalLicenseStats?.isFile() === true &&
+            (await hasGameMakerHtml5BuildEntitlement(projectLocalLicensePath))
+        ) {
             return Object.freeze({
                 licenseFile: projectLocalLicensePath,
                 userFolder: null
@@ -1044,19 +1085,9 @@ async function resolveIgorIdentityPaths(
         }
     }
 
-    const autoDetectedUserFolder = await resolveDefaultGameMakerUserFolder();
-    if (autoDetectedUserFolder === null) {
-        return Object.freeze({
-            licenseFile: null,
-            userFolder: null
-        });
-    }
-
-    const autoDetectedLicensePath = path.join(autoDetectedUserFolder, IGOR_LICENSE_PLIST_FILENAME);
-    const autoDetectedLicenseStats = await Core.safeStat(autoDetectedLicensePath);
     return Object.freeze({
-        licenseFile: autoDetectedLicenseStats?.isFile() ? autoDetectedLicensePath : null,
-        userFolder: autoDetectedUserFolder
+        licenseFile: null,
+        userFolder: null
     });
 }
 
@@ -1066,16 +1097,23 @@ async function resolveDefaultGameMakerUserFolder(): Promise<string | null> {
         userSupportRoots.map(async (supportRoot) => await collectGameMakerUserFoldersFromSupportRoot(supportRoot))
     );
     const userFolderCandidates = userFolderCandidateGroups.flat();
+    const eligibleUserFolderCandidates = (
+        await Promise.all(
+            userFolderCandidates.map(async (candidate) =>
+                (await hasGameMakerHtml5BuildEntitlement(candidate.licenseFile)) ? candidate : null
+            )
+        )
+    ).filter((candidate): candidate is GameMakerUserFolderCandidate => candidate !== null);
 
-    userFolderCandidates.sort(
+    eligibleUserFolderCandidates.sort(
         (left, right) => right.mtimeMs - left.mtimeMs || left.userFolder.localeCompare(right.userFolder)
     );
-    return userFolderCandidates[0]?.userFolder ?? null;
+    return eligibleUserFolderCandidates[0]?.userFolder ?? null;
 }
 
 async function collectGameMakerUserFoldersFromSupportRoot(
     supportRoot: string
-): Promise<ReadonlyArray<Readonly<{ mtimeMs: number; userFolder: string }>>> {
+): Promise<ReadonlyArray<GameMakerUserFolderCandidate>> {
     const supportRootStats = await Core.safeStat(supportRoot);
     if (!supportRootStats?.isDirectory()) {
         return Object.freeze([]);
@@ -1094,6 +1132,7 @@ async function collectGameMakerUserFoldersFromSupportRoot(
                 }
 
                 return Object.freeze({
+                    licenseFile: licensePath,
                     mtimeMs: licenseStats.mtimeMs,
                     userFolder: userFolderPath
                 });
@@ -1102,12 +1141,7 @@ async function collectGameMakerUserFoldersFromSupportRoot(
 
     return Object.freeze(
         userFolderCandidates.filter(
-            (
-                userFolderCandidate
-            ): userFolderCandidate is Readonly<{
-                mtimeMs: number;
-                userFolder: string;
-            }> => userFolderCandidate !== null
+            (userFolderCandidate): userFolderCandidate is GameMakerUserFolderCandidate => userFolderCandidate !== null
         )
     );
 }

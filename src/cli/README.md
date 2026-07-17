@@ -707,12 +707,14 @@ toolchain in this order:
   shared GameMaker runtime caches;
 - Igor under the selected runtime's `bin/igor` directory, then the project's
   `.gmcache/igor` cache;
-- the project-local `.gmcache/license/licence.plist`, then the standard
-  GameMaker user-support folders.
+- an HTML5-entitled licence from the standard GameMaker user-support folders,
+  then an HTML5-entitled project-local `.gmcache/license/licence.plist`.
 
 Explicit `runtimeRoot`, `toolPath`, `licenseFile`, and `userFolder` values keep
-their precedence. On arm64 macOS, an x64 Igor executable is launched through
-Rosetta automatically. The gm-cli cache option is passed as `--cache-dir`.
+their precedence. Automatic licence discovery skips cache or user licences
+without the `HTML5.build_module` entitlement. On arm64 macOS, an x64 Igor
+executable is launched through Rosetta automatically. The gm-cli cache option
+is passed as `--cache-dir`.
 
 ### `live-reload session` - Attach, Start, Replace, Or Stop
 

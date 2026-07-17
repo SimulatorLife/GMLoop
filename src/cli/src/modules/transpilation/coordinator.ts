@@ -452,6 +452,15 @@ export interface TranspilationOptions {
 export interface TranspilationResult {
     success: boolean;
     patch?: RuntimeTranspilerPatch;
+    /**
+     * Every runtime patch produced for the source file, in source order.
+     *
+     * A GameMaker script can contain more than one top-level function. The
+     * browser runtime binds one patch to one generated function, so those
+     * functions must be delivered as a batch instead of being left as local
+     * declarations inside the primary patch body.
+     */
+    patches?: Array<RuntimeTranspilerPatch>;
     metrics?: TranspilationMetrics;
     error?: TranspilationError;
     symbols?: Array<string>;
@@ -646,7 +655,7 @@ function clearStalePatchesForSourcePath(
     lastSuccessfulPatches: Map<string, RuntimeTranspilerPatch>,
     sourcePathToPatchIds: Map<string, Set<string>>,
     sourcePath: string,
-    nextPatchId: string
+    nextPatchIds: ReadonlySet<string>
 ): void {
     const stalePatchIds = sourcePathToPatchIds.get(sourcePath);
     if (!stalePatchIds) {
@@ -654,11 +663,103 @@ function clearStalePatchesForSourcePath(
     }
 
     for (const patchId of stalePatchIds) {
-        if (patchId !== nextPatchId) {
+        if (!nextPatchIds.has(patchId)) {
             lastSuccessfulPatches.delete(patchId);
         }
     }
     stalePatchIds.clear();
+}
+
+interface ScriptAstNode {
+    readonly type?: string;
+    readonly id?: string | ScriptAstNode | null;
+    readonly name?: string;
+}
+
+interface ScriptProgramAst {
+    readonly type?: string;
+    readonly body?: ReadonlyArray<ScriptAstNode>;
+}
+
+function asScriptProgramAst(ast: unknown): ScriptProgramAst | null {
+    if (!Core.isObjectLike(ast)) {
+        return null;
+    }
+
+    const record = ast as Record<string, unknown>;
+    if (record.type !== "Program" || !Array.isArray(record.body)) {
+        return null;
+    }
+
+    return {
+        type: "Program",
+        body: record.body.filter((node): node is ScriptAstNode => Core.isObjectLike(node))
+    };
+}
+
+function getScriptFunctionName(node: ScriptAstNode): string | null {
+    if (typeof node.id === "string") {
+        return node.id;
+    }
+    if (!Core.isObjectLike(node.id)) {
+        return null;
+    }
+
+    const idRecord = node.id as Record<string, unknown>;
+    return typeof idRecord.name === "string" ? idRecord.name : null;
+}
+
+/**
+ * Emits one script patch for each top-level function in a multi-function GML
+ * script. The transpiler unwraps a program containing exactly one function,
+ * which gives the runtime a body it can bind directly to that function's
+ * generated GameMaker symbol.
+ */
+function transpileScriptPatches(
+    context: TranspilationContext,
+    sourceText: string,
+    sourcePath: string,
+    ast: unknown,
+    parsedSymbols: ReadonlyArray<string>
+): Array<RuntimeTranspilerPatch> {
+    const program = asScriptProgramAst(ast);
+    const body = program?.body ?? [];
+    const functionNodes = body.filter((node) => node.type === "FunctionDeclaration");
+
+    if (functionNodes.length < 2 || functionNodes.length !== body.length) {
+        const fileName = path.basename(sourcePath, path.extname(sourcePath));
+        const defaultSymbolId = `gml/script/${fileName}`;
+        const scriptSymbolId = getPrimaryScriptPatchId(parsedSymbols);
+        const symbolId = scriptSymbolId ?? defaultSymbolId;
+
+        return [
+            context.transpiler.transpileScript({
+                sourceText,
+                symbolId,
+                ast
+            })
+        ];
+    }
+
+    const patchIds = new Set<string>();
+    return functionNodes.map((functionNode) => {
+        const functionName = getScriptFunctionName(functionNode);
+        if (!functionName) {
+            throw new TypeError("A top-level script function is missing its identifier");
+        }
+
+        const symbolId = `gml/script/${functionName}`;
+        if (patchIds.has(symbolId)) {
+            throw new TypeError(`A source file defines the script function ${functionName} more than once`);
+        }
+        patchIds.add(symbolId);
+
+        return context.transpiler.transpileScript({
+            sourceText,
+            symbolId,
+            ast: { type: "Program", body: [functionNode] }
+        });
+    });
 }
 
 /**
@@ -697,40 +798,43 @@ export function transpileFile(
             cachedReferences
         );
 
-        let patch: RuntimeTranspilerPatch;
+        let patches: Array<RuntimeTranspilerPatch>;
 
         if (fileKind.kind === "event") {
-            patch = context.transpiler.transpileEvent({
-                sourceText: content,
-                symbolId: fileKind.symbolId,
-                ast
-            });
+            patches = [
+                context.transpiler.transpileEvent({
+                    sourceText: content,
+                    symbolId: fileKind.symbolId,
+                    ast
+                })
+            ];
         } else {
-            const fileName = path.basename(filePath, path.extname(filePath));
-            const defaultSymbolId = `gml/script/${fileName}`;
-            const scriptSymbolId = getPrimaryScriptPatchId(parsedSymbols);
-            const symbolId = scriptSymbolId ?? defaultSymbolId;
-
-            patch = context.transpiler.transpileScript({
-                sourceText: content,
-                symbolId,
-                ast
-            });
+            patches = transpileScriptPatches(context, content, filePath, ast, parsedSymbols);
         }
 
-        const patchWithMetadata = {
-            ...patch,
-            metadata: {
-                ...patch.metadata,
-                sourcePath: filePath,
-                dependencies: resolvePatchDependencies(parsedReferences, patch.id)
-            }
-        };
-        const patchPayload =
-            fileKind.runtimeId === null ? patchWithMetadata : { ...patchWithMetadata, runtimeId: fileKind.runtimeId };
+        const patchPayloads = patches.map((patch) => {
+            const patchWithMetadata = {
+                ...patch,
+                metadata: {
+                    ...patch.metadata,
+                    sourcePath: filePath,
+                    dependencies: resolvePatchDependencies(parsedReferences, patch.id, parsedSymbols)
+                }
+            };
+            const patchPayload =
+                fileKind.runtimeId === null
+                    ? patchWithMetadata
+                    : { ...patchWithMetadata, runtimeId: fileKind.runtimeId };
 
-        if (!validatePatch(patchPayload)) {
-            throw new Error("Generated patch failed validation");
+            if (!validatePatch(patchPayload)) {
+                throw new Error(`Generated patch failed validation: ${patch.id}`);
+            }
+
+            return patchPayload;
+        });
+        const [patchPayload] = patchPayloads;
+        if (!patchPayload) {
+            throw new Error("Transpilation produced no runtime patches");
         }
 
         const durationMs = performance.now() - startTime;
@@ -741,7 +845,7 @@ export function transpileFile(
             patchId: patchPayload.id,
             durationMs,
             sourceSize: content.length,
-            outputSize: patchPayload.js_body.length,
+            outputSize: patchPayloads.reduce((total, nextPatch) => total + nextPatch.js_body.length, 0),
             linesProcessed: lines
         };
 
@@ -755,6 +859,7 @@ export function transpileFile(
             return {
                 success: true,
                 patch: patchPayload,
+                patches: patchPayloads,
                 metrics,
                 symbols: parsedSymbols,
                 references: parsedReferences
@@ -765,24 +870,33 @@ export function transpileFile(
             context.lastSuccessfulPatches,
             context.sourcePathToPatchIds,
             filePath,
-            patchPayload.id
+            new Set(patchPayloads.map((nextPatch) => nextPatch.id))
         );
-        const previousPatch = context.lastSuccessfulPatches.get(patchPayload.id);
-        const runtimePatchChanged = hasRuntimePatchChanged(previousPatch, patchPayload);
-
-        context.lastSuccessfulPatches.set(patchPayload.id, patchPayload);
+        const changedPatches: Array<RuntimeTranspilerPatch> = [];
+        for (const nextPatch of patchPayloads) {
+            const previousPatch = context.lastSuccessfulPatches.get(nextPatch.id);
+            if (hasRuntimePatchChanged(previousPatch, nextPatch)) {
+                changedPatches.push(nextPatch);
+            }
+            context.lastSuccessfulPatches.set(nextPatch.id, nextPatch);
+        }
 
         let patchIdsForSource = context.sourcePathToPatchIds.get(filePath);
         if (!patchIdsForSource) {
             patchIdsForSource = new Set();
             context.sourcePathToPatchIds.set(filePath, patchIdsForSource);
         }
-        patchIdsForSource.add(patchPayload.id);
-        if (runtimePatchChanged) {
-            addToBoundedCollection(context.patches, createPatchSummary(patchPayload), context.bounds.maxEntries);
-            context.totalPatchCount += 1;
+        for (const nextPatch of patchPayloads) {
+            patchIdsForSource.add(nextPatch.id);
+        }
+        if (changedPatches.length > 0) {
+            for (const changedPatch of changedPatches) {
+                addToBoundedCollection(context.patches, createPatchSummary(changedPatch), context.bounds.maxEntries);
+            }
+            context.totalPatchCount += changedPatches.length;
 
-            const broadcastResult = context.websocketServer?.broadcast(patchPayload);
+            const broadcastPayload = changedPatches.length === 1 ? changedPatches[0] : changedPatches;
+            const broadcastResult = context.websocketServer?.broadcast(broadcastPayload);
 
             // Record end-to-end hot-reload latency after the patch has been broadcast.
             // This captures the full pipeline delay (file-change detection → broadcast)
@@ -815,9 +929,12 @@ export function transpileFile(
         if (!quiet) {
             if (verbose) {
                 console.log(
-                    `  ↳ Transpiled to JavaScript (${patchPayload.js_body.length} chars in ${durationMs.toFixed(2)}ms)`
+                    `  ↳ Transpiled to JavaScript (${metrics.outputSize} chars across ${patchPayloads.length} patch(es) in ${durationMs.toFixed(2)}ms)`
                 );
                 console.log(`  ↳ Patch ID: ${patchPayload.id}`);
+                if (patchPayloads.length > 1) {
+                    console.log(`  ↳ Patch IDs: ${patchPayloads.map((nextPatch) => nextPatch.id).join(", ")}`);
+                }
                 if (patchPayload.metadata?.timestamp) {
                     console.log(`  ↳ Generated at: ${new Date(patchPayload.metadata.timestamp).toISOString()}`);
                 }
@@ -833,7 +950,7 @@ export function transpileFile(
                     });
                     console.log(`  ↳ Warning: Could not extract symbols/references from AST: ${message}`);
                 }
-            } else if (runtimePatchChanged) {
+            } else if (changedPatches.length > 0) {
                 console.log(`  ↳ Generated patch: ${patchPayload.id}`);
             }
         }
@@ -841,6 +958,7 @@ export function transpileFile(
         return {
             success: true,
             patch: patchPayload,
+            patches: patchPayloads,
             metrics,
             symbols: parsedSymbols,
             references: parsedReferences
@@ -1022,12 +1140,21 @@ function getPrimaryScriptPatchId(symbols: ReadonlyArray<string>): string | null 
     return null;
 }
 
-function resolvePatchDependencies(references: ReadonlyArray<string>, patchId: string): Array<string> {
+function resolvePatchDependencies(
+    references: ReadonlyArray<string>,
+    patchId: string,
+    definedSymbols: ReadonlyArray<string>
+): Array<string> {
     const dependencies = new Set<string>();
+    const definedPatchIds = new Set(
+        definedSymbols
+            .map((symbol) => runtimeSymbolToPatchId(symbol))
+            .filter((symbolId): symbolId is string => symbolId !== null)
+    );
 
     for (const reference of references) {
         const dependencyPatchId = runtimeSymbolToPatchId(reference);
-        if (!dependencyPatchId || dependencyPatchId === patchId) {
+        if (!dependencyPatchId || dependencyPatchId === patchId || definedPatchIds.has(dependencyPatchId)) {
             continue;
         }
 

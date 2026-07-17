@@ -29,6 +29,16 @@ type GameMakerBuildConfigOverrides = Readonly<{
     userFolder?: GameMakerHtml5BuildConfig["userFolder"];
 }>;
 
+const HTML5_LICENSE_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+    <key>Features</key>
+    <array>
+        <string>HTML5.build_module</string>
+    </array>
+</dict>
+</plist>`;
+
 function createGameMakerBuildConfig(overrides: GameMakerBuildConfigOverrides = {}): GameMakerHtml5BuildConfig {
     return Object.freeze({
         backend: "auto",
@@ -59,6 +69,11 @@ async function createIgorProjectFixtures(
     await fs.writeFile(runtimeIgorPath, "", "utf8");
     await fs.writeFile(licenseFile, "license", "utf8");
     await fs.writeFile(projectPath, JSON.stringify({ name: "Project" }), "utf8");
+}
+
+async function writeHtml5LicenseFixture(licenseFile: string): Promise<void> {
+    await fs.mkdir(path.dirname(licenseFile), { recursive: true });
+    await fs.writeFile(licenseFile, HTML5_LICENSE_XML, "utf8");
 }
 
 function restoreProcessEnvironmentValue(name: "APPDATA" | "HOME" | "USERPROFILE", value: string | undefined): void {
@@ -225,7 +240,10 @@ void test("default GameMaker runtime discovery prefers a project-local gmcache r
     const runtimeRoot = path.join(projectRoot, ".gmcache", "runtimes-gms2", "runtime-2026.0.0.23");
 
     try {
-        await fs.mkdir(runtimeRoot, { recursive: true });
+        await fs.mkdir(path.join(runtimeRoot, "bin", "igor", "osx", "arm64"), { recursive: true });
+        await fs.mkdir(path.join(runtimeRoot, "html5"), { recursive: true });
+        await fs.writeFile(path.join(runtimeRoot, "bin", "igor", "osx", "arm64", "Igor"), "igor", "utf8");
+        await fs.writeFile(path.join(runtimeRoot, "html5", "scripts.html5.zip"), "runner", "utf8");
 
         assert.equal(await gameMakerBuildTest.resolveDefaultGameMakerRuntimeRoot(projectRoot), runtimeRoot);
     } finally {
@@ -254,14 +272,16 @@ void test("Igor discovery prefers the matching runtime tool before the project t
     }
 });
 
-void test("Igor identity discovery uses the project-local gmcache license", async () => {
+void test("Igor identity discovery uses a project-local HTML5 license when no user license is available", async () => {
     const projectRoot = await createTempDirectory("cli-live-reload-local-license-");
+    const homeDirectory = await createTempDirectory("cli-live-reload-local-license-home-");
     const projectPath = path.join(projectRoot, "Project.yyp");
     const licenseFile = path.join(projectRoot, ".gmcache", "license", "licence.plist");
+    const previousHome = process.env.HOME;
 
     try {
-        await fs.mkdir(path.dirname(licenseFile), { recursive: true });
-        await fs.writeFile(licenseFile, "license", "utf8");
+        process.env.HOME = homeDirectory;
+        await writeHtml5LicenseFixture(licenseFile);
 
         const identity = await gameMakerBuildTest.resolveIgorIdentityPaths(
             createGameMakerBuildConfig({ projectPath }),
@@ -270,7 +290,50 @@ void test("Igor identity discovery uses the project-local gmcache license", asyn
 
         assert.deepEqual(identity, { licenseFile, userFolder: null });
     } finally {
+        restoreProcessEnvironmentValue("HOME", previousHome);
         await fs.rm(projectRoot, { force: true, recursive: true });
+        await fs.rm(homeDirectory, { force: true, recursive: true });
+    }
+});
+
+void test("Igor identity discovery skips a project cache license without HTML5 build entitlement", async () => {
+    const projectRoot = await createTempDirectory("cli-live-reload-license-entitlement-");
+    const homeDirectory = await createTempDirectory("cli-live-reload-license-entitlement-home-");
+    const projectPath = path.join(projectRoot, "Project.yyp");
+    const projectLicenseFile = path.join(projectRoot, ".gmcache", "license", "licence.plist");
+    const userLicenseFile = path.join(
+        homeDirectory,
+        "Library",
+        "Application Support",
+        "GameMakerStudio2",
+        "account",
+        "licence.plist"
+    );
+    const previousHome = process.env.HOME;
+
+    try {
+        process.env.HOME = homeDirectory;
+        await fs.mkdir(path.dirname(projectLicenseFile), { recursive: true });
+        await fs.writeFile(
+            projectLicenseFile,
+            '<plist version="1.0"><dict><key>components</key><string>Mac;Mac.build_module</string></dict></plist>',
+            "utf8"
+        );
+        await writeHtml5LicenseFixture(userLicenseFile);
+
+        const identity = await gameMakerBuildTest.resolveIgorIdentityPaths(
+            createGameMakerBuildConfig({ projectPath }),
+            projectRoot
+        );
+
+        assert.deepEqual(identity, {
+            licenseFile: userLicenseFile,
+            userFolder: path.dirname(userLicenseFile)
+        });
+    } finally {
+        restoreProcessEnvironmentValue("HOME", previousHome);
+        await fs.rm(projectRoot, { force: true, recursive: true });
+        await fs.rm(homeDirectory, { force: true, recursive: true });
     }
 });
 

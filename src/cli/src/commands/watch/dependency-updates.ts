@@ -67,7 +67,10 @@ export async function processTranspileResult(
     result: TranspilationResult,
     fileChangeDetectedAt: number | undefined
 ): Promise<void> {
-    if (!result.success || !result.patch) {
+    if (
+        !result.success ||
+        (result.patch === undefined && (result.patches === undefined || result.patches.length === 0))
+    ) {
         return;
     }
 

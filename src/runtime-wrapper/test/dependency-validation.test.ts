@@ -189,13 +189,86 @@ void describe("Dependency Validation", () => {
             id: "gml/event/oSpider/Step_0",
             js_body: "self.distance = point_distance(0, 0, 3, 4);",
             metadata: {
-                dependencies: ["gml/script/point_distance", "gml/script/lerp", "gml/script/array_copy"]
+                dependencies: [
+                    "gml/script/gml_pragma",
+                    "gml/script/point_distance",
+                    "gml/script/lerp",
+                    "gml/script/array_copy"
+                ]
             }
         };
 
         const result = validatePatchDependencies(patch, registry);
         assert.strictEqual(result.satisfied, true);
         assert.strictEqual(result.missingDependencies.length, 0);
+    });
+
+    void test("validatePatchDependencies discovers minified HTML5 builtin mappings", () => {
+        const snapshot = snapshotGlobalProperties(["_HL4", "_texture_is_ready"]);
+        const globals = globalThis as Record<string, unknown>;
+
+        try {
+            globals._HL4 = {
+                self: "self",
+                mouse_x: "_mouse_x",
+                current_time: "_current_time",
+                variable_instance_get: "_variable_instance_get",
+                texture_is_ready: "_texture_is_ready"
+            };
+            globals._texture_is_ready = () => true;
+
+            const patch: Patch = {
+                kind: "script",
+                id: "gml/script/use_texture_readiness",
+                js_body: "return texture_is_ready(0);",
+                metadata: {
+                    dependencies: ["gml/script/texture_is_ready"]
+                }
+            };
+
+            const result = validatePatchDependencies(patch, {
+                scripts: {},
+                events: {},
+                closures: {}
+            });
+            assert.equal(result.satisfied, true);
+            assert.deepEqual(result.missingDependencies, []);
+        } finally {
+            restoreGlobalProperties(snapshot);
+        }
+    });
+
+    void test("validatePatchDependencies discovers minified base script tables", () => {
+        const snapshot = snapshotGlobalProperties(["_b1"]);
+        const globals = globalThis as Record<string, unknown>;
+
+        try {
+            globals._b1 = {
+                _eu3: ["gml_Script_base_runtime_helper"],
+                _fu3: [() => 42]
+            };
+
+            const result = validatePatchDependencies(
+                {
+                    kind: "script",
+                    id: "gml/script/uses_base_runtime_helper",
+                    js_body: "return base_runtime_helper();",
+                    metadata: {
+                        dependencies: ["gml/script/base_runtime_helper"]
+                    }
+                },
+                {
+                    scripts: {},
+                    events: {},
+                    closures: {}
+                }
+            );
+
+            assert.equal(result.satisfied, true);
+            assert.deepEqual(result.missingDependencies, []);
+        } finally {
+            restoreGlobalProperties(snapshot);
+        }
     });
 
     void test("validateBatchPatchDependencies accepts runtime script dependencies during replay", () => {

@@ -56,4 +56,24 @@ void describe("transpileFile patch dependency metadata", () => {
         assert.ok(result.success, "Transpilation should succeed");
         assert.deepStrictEqual(result.patch?.metadata?.dependencies, []);
     });
+
+    void it("omits references to sibling functions defined in the same source file", () => {
+        const context = createContext();
+        const result = transpileFile(
+            context,
+            "/project/scripts/group_helpers.gml",
+            `function primary_helper() {
+    sibling_helper();
+}
+
+function sibling_helper() {
+    return 42;
+}`,
+            4,
+            { verbose: false, quiet: true }
+        );
+
+        assert.ok(result.success, "Transpilation should succeed");
+        assert.deepStrictEqual(result.patch?.metadata?.dependencies, []);
+    });
 });

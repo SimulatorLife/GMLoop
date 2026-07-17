@@ -4,6 +4,19 @@ This package hosts the browser-side runtime wrapper described in
 `../../docs/target-state.md`. It receives transpiler patches from the CLI over a WebSocket
 connection and swaps them into the running GameMaker HTML5 export without restarting the game.
 
+During browser bootstrap it also guards HTML5 audio-emitter creation until the
+Web Audio engine is initialized, preventing partially constructed emitters from
+being dereferenced by the native update loop.
+
+During browser bootstrap it also repairs the HTML5 runtime's pointer predicate
+when a GameMaker build exposes `is_ptr` as ArrayBuffer-only even though
+`sprite_get_texture` returns object-backed `Texture:` handles. The native
+predicate remains authoritative for other pointer values.
+
+Script, event, and closure patches also receive a persistent static-variable
+store. This lets transpiled GML `static` declarations initialize once and keep
+their values across calls and replacements during a live-reload session.
+
 ## Responsibilities
 
 - Maintain the hot registry for scripts, events, and closures.

@@ -1,5 +1,11 @@
 import { type LiveReloadBootstrapConfig, liveReloadBootstrapConfig } from "./config.js";
-import { createRuntimeWrapper, installScriptCallAdapter } from "./runtime/index.js";
+import {
+    applyHtml5AudioEmitterSafetyPatch,
+    applyHtml5FilenameChangeExtSafetyPatch,
+    applyHtml5TexturePointerSafetyPatch,
+    createRuntimeWrapper,
+    installScriptCallAdapter
+} from "./runtime/index.js";
 import { applyWebGLSafetyPatches } from "./webgl.js";
 import { createWebSocketClient } from "./websocket/index.js";
 
@@ -112,6 +118,9 @@ export function initializeLiveReload(
         applyYyGetRealSafetyPatch(globalScope);
         applyMathSafetyPatches(globalScope);
         applyWebGLSafetyPatches(globalScope);
+        applyHtml5AudioEmitterSafetyPatch(globalScope);
+        applyHtml5FilenameChangeExtSafetyPatch(globalScope);
+        applyHtml5TexturePointerSafetyPatch(globalScope);
     }
 
     return wrapper;

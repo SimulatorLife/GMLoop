@@ -1,3 +1,4 @@
+export { applyHtml5AudioEmitterSafetyPatch } from "./audio-emitter.js";
 export { resolveBuiltinConstants } from "./builtin-constants.js";
 export {
     computeErrorAnalytics,
@@ -7,6 +8,7 @@ export {
     computeRegistryHealthCheck,
     computeRegistrySnapshot
 } from "./diagnostics.js";
+export { applyHtml5FilenameChangeExtSafetyPatch } from "./filename-change-ext.js";
 export type {
     ConsoleOutput,
     GeneralLogger,
@@ -27,6 +29,7 @@ export {
 } from "./runtime-defaults.js";
 export { createRuntimeWrapper } from "./runtime-wrapper.js";
 export { installScriptCallAdapter } from "./script-call-adapter.js";
+export { applyHtml5TexturePointerSafetyPatch } from "./texture-pointer.js";
 export type {
     ApplyPatchResult,
     BatchApplyResult,

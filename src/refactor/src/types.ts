@@ -126,6 +126,51 @@ export type RepairTexturePrefetchGuardEdit = CodemodEdit;
 export type RepairTexturePrefetchGuardResult = CodemodResult;
 
 /**
+ * Options for the invalid-texture-pointer guard repair codemod.
+ */
+export type RepairInvalidTexturePointerGuardCodemodOptions = Readonly<Record<string, never>>;
+
+/**
+ * A single text edit produced by the invalid-texture-pointer guard repair codemod.
+ */
+export type RepairInvalidTexturePointerGuardEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by `applyRepairInvalidTexturePointerGuardCodemod`.
+ */
+export type RepairInvalidTexturePointerGuardResult = CodemodResult;
+
+/**
+ * Options for the audio-emitter creation guard codemod.
+ */
+export type RepairAudioEmitterCreationGuardCodemodOptions = Readonly<Record<string, never>>;
+
+/**
+ * A single text edit produced by the audio-emitter creation guard codemod.
+ */
+export type RepairAudioEmitterCreationGuardEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by `applyRepairAudioEmitterCreationGuardCodemod`.
+ */
+export type RepairAudioEmitterCreationGuardResult = CodemodResult;
+
+/**
+ * Options for the sprite-texture UV resolution repair codemod.
+ */
+export type RepairSpriteTextureUvResolutionCodemodOptions = Readonly<Record<string, never>>;
+
+/**
+ * A single text edit produced by the sprite-texture UV resolution repair codemod.
+ */
+export type RepairSpriteTextureUvResolutionEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by `applyRepairSpriteTextureUvResolutionCodemod`.
+ */
+export type RepairSpriteTextureUvResolutionResult = CodemodResult;
+
+/**
  * A single text edit produced by the repair-logical-not codemod.
  */
 export type RepairLogicalNotEdit = CodemodEdit;
@@ -323,7 +368,10 @@ export type RefactorCodemodId =
     | "namingConvention"
     | "repairLogicalNot"
     | "repairArgumentSeparators"
-    | "repairTexturePrefetchGuard";
+    | "repairTexturePrefetchGuard"
+    | "repairInvalidTexturePointerGuard"
+    | "repairAudioEmitterCreationGuard"
+    | "repairSpriteTextureUvResolution";
 
 /**
  * Normalized config payloads keyed by registered codemod id.
@@ -336,6 +384,9 @@ export interface RefactorCodemodConfigMap {
     repairLogicalNot: RepairLogicalNotCodemodOptions;
     repairArgumentSeparators: RepairArgumentSeparatorsCodemodOptions;
     repairTexturePrefetchGuard: RepairTexturePrefetchGuardCodemodOptions;
+    repairInvalidTexturePointerGuard: RepairInvalidTexturePointerGuardCodemodOptions;
+    repairAudioEmitterCreationGuard: RepairAudioEmitterCreationGuardCodemodOptions;
+    repairSpriteTextureUvResolution: RepairSpriteTextureUvResolutionCodemodOptions;
 }
 
 /**

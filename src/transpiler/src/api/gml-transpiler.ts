@@ -228,13 +228,10 @@ export class GmlTranspiler {
 
     private emitUnwrappedFunctionBody(body: ProgramNode["body"][number], emitter: GmlToJsEmitter): string {
         if (!isBlockStatementNode(body)) {
-            return emitter.emit(body).trim();
+            return emitter.emitFunctionBody(body).trim();
         }
 
-        return emitter.emitFragment({
-            type: "Program",
-            body: body.body
-        });
+        return emitter.emitFunctionBody({ type: "Program", body: body.body });
     }
 
     private createTranspileError(contextLabel: string, error: unknown, code?: TranspilerErrorCode): TranspilerError {
@@ -430,7 +427,7 @@ export class GmlTranspiler {
             const localVars = collectLocalVariables(ast);
             const eventOracle = new EventContextOracle(this.getSemanticAnalyzers(), localVars);
             const emitter = new GmlToJsEmitter(eventOracle, this.emitterOptions);
-            const jsBody = emitter.emit(ast);
+            const jsBody = emitter.emitFunctionBody(ast);
 
             const timestamp = Date.now();
             const patch: EventPatch = {
