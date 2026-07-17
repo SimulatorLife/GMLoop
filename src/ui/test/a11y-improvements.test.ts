@@ -115,22 +115,18 @@ void test("GmAppShell error banner has role=alert and tabindex=-1 for keyboard f
     assert.equal(shell.model !== null, true);
 });
 
-void test("GmDocsPanel renders Docs subview tabs with shared selector semantics", () => {
+void test("GmDocsPanel delegates subview tablist rendering to the page toolbar", () => {
     const panel = new TestableGmDocsPanel();
     panel.model = createMockModel();
     panel.state = createMockState();
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /<div class="docs-nav" role="tablist" aria-label="Documentation view selector">/u);
-    assert.match(
-        rendered,
-        /id=docs-view-cli[\s\S]*class=docs-nav-button active[\s\S]*role="tab"[\s\S]*aria-selected=true[\s\S]*aria-controls=cli-page[\s\S]*tabindex=0/u
-    );
-    assert.match(
-        rendered,
-        /id=docs-view-mcp[\s\S]*class=docs-nav-button[\s\S]*role="tab"[\s\S]*aria-selected=false[\s\S]*aria-controls=docs-mcp-page[\s\S]*tabindex=-1/u
-    );
+    assert.doesNotMatch(rendered, /<div class="docs-nav" role="tablist" aria-label="Documentation view selector">/u);
+    assert.doesNotMatch(rendered, /id=docs-view-cli[\s\S]*class=docs-nav-button/u);
+    assert.doesNotMatch(rendered, /id=docs-view-mcp[\s\S]*class=docs-nav-button/u);
+    assert.match(rendered, /id="cli-page"[\s\S]*role="tabpanel"[\s\S]*aria-labelledby="docs-view-cli"/u);
+    assert.match(rendered, /id="docs-mcp-page"[\s\S]*role="tabpanel"[\s\S]*aria-labelledby="docs-view-mcp"/u);
 });
 
 void test("GmDocsPanel uses a dedicated id for MCP docs subview to avoid id collisions", () => {

@@ -3,13 +3,18 @@ import { html } from "lit";
 import type { GraphVisualizationProjectWorkflow } from "../../graph/types.js";
 import { type GraphVisualizationUiModel, hasLoadedGraphIndex, hasLoadedGraphProject } from "../contracts.js";
 import { LIVE_RELOAD_RUNTIME_TAB_TARGET, resolveLiveReloadRuntimeUrl } from "../live-reload-runtime-tab.js";
-import type { GraphVisualizationUiPage, GraphVisualizationUiState } from "../state/types.js";
+import type {
+    GraphVisualizationUiDocsView,
+    GraphVisualizationUiPage,
+    GraphVisualizationUiState
+} from "../state/types.js";
 import { createGraphVisualizationDocsPanelContent } from "./docs-panel-content.js";
 import {
     createSearchResultSummary,
     normalizeCatalogSearchQuery,
     searchCatalogEntries,
     searchCliEntries,
+    searchLspEntries,
     searchMcpEntries
 } from "./docs-search.js";
 import { EventBusManager } from "./event-bus-mixin.js";
@@ -19,6 +24,7 @@ import {
     GRAPH_UI_EVENT_NAVIGATE_PAGE,
     GRAPH_UI_EVENT_RESET_DEFAULTS,
     GRAPH_UI_EVENT_SET_CONFIG_VIEW,
+    GRAPH_UI_EVENT_SET_DOCS_VIEW,
     GRAPH_UI_EVENT_SET_SEARCH_QUERY,
     GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW,
     GRAPH_UI_EVENT_TOGGLE_PLAYGROUND_CONTROLS,
@@ -28,6 +34,7 @@ import {
     GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD,
     type GraphUiNavigatePageDetail,
     type GraphUiSetConfigViewDetail,
+    type GraphUiSetDocsViewDetail,
     type GraphUiSetSearchQueryDetail,
     type GraphUiTriggerFixDetail
 } from "./events.js";
@@ -46,6 +53,33 @@ const CLASS_BTN_CHIP_ACTIVE = "gm-btn--chip active";
 const CLASS_BTN_CHIP = "gm-btn--chip";
 
 const LIVE_RELOAD_PAGE: GraphVisualizationUiPage = "live-reload";
+
+const DOCS_VIEW_LABELS: Readonly<Record<GraphVisualizationUiDocsView, string>> = Object.freeze({
+    cli: "CLI",
+    codemods: "Codemods",
+    formatting: "Formatting",
+    linting: "Linting",
+    lsp: "LSP",
+    mcp: "MCP"
+});
+
+const DOCS_VIEW_ORDER: ReadonlyArray<GraphVisualizationUiDocsView> = Object.freeze([
+    "cli",
+    "lsp",
+    "mcp",
+    "linting",
+    "formatting",
+    "codemods"
+]);
+
+const DOCS_VIEW_CONTENT_IDS: Readonly<Record<GraphVisualizationUiDocsView, string>> = Object.freeze({
+    cli: "cli-page",
+    codemods: "codemods-page",
+    formatting: "formatting-page",
+    linting: "linting-page",
+    lsp: "lsp-page",
+    mcp: "docs-mcp-page"
+});
 
 function formatLiveReloadUptime(uptimeMs: number): string {
     const totalSeconds = Math.max(0, Math.floor(uptimeMs / 1000));
@@ -353,6 +387,16 @@ export class GmGraphToolbar extends LightDomLitElement {
         );
     }
 
+    #emitDocsView(docsView: GraphVisualizationUiDocsView): void {
+        this.dispatchEvent(
+            new CustomEvent<GraphUiSetDocsViewDetail>(GRAPH_UI_EVENT_SET_DOCS_VIEW, {
+                bubbles: true,
+                composed: true,
+                detail: { docsView }
+            })
+        );
+    }
+
     #emitToggleGraphView(): void {
         if (!this.#canUseGraphControls()) {
             return;
@@ -499,6 +543,34 @@ export class GmGraphToolbar extends LightDomLitElement {
         return null;
     }
 
+    #renderDocsSubTabs(
+        activeDocsView: GraphVisualizationUiDocsView,
+        counts: Readonly<Record<GraphVisualizationUiDocsView, number>>
+    ) {
+        return html`
+            <div class="gm-view-selector toolbar-docs-subtabs" role="tablist" aria-label="Documentation view selector">
+                ${DOCS_VIEW_ORDER.map((docsView) => {
+                    const isActive = docsView === activeDocsView;
+                    return html`<button
+                        id=${`docs-view-${docsView}`}
+                        type="button"
+                        class=${isActive ? CLASS_BTN_CHIP_ACTIVE : CLASS_BTN_CHIP}
+                        role="tab"
+                        aria-selected=${isActive}
+                        aria-controls=${DOCS_VIEW_CONTENT_IDS[docsView]}
+                        tabindex=${isActive ? "0" : "-1"}
+                        @click=${() => this.#emitDocsView(docsView)}
+                    >
+                        <span class="toolbar-docs-subtabs-label">${DOCS_VIEW_LABELS[docsView]}</span>
+                        <span class="toolbar-docs-subtabs-count" aria-label=${`${String(counts[docsView])} entries`}
+                            >${counts[docsView]}</span
+                        >
+                    </button>`;
+                })}
+            </div>
+        `;
+    }
+
     #renderDocsSearchControls() {
         if (!this.model || !this.state) {
             return null;
@@ -507,45 +579,50 @@ export class GmGraphToolbar extends LightDomLitElement {
         const docsPanelContent = createGraphVisualizationDocsPanelContent(this.model.documentationCatalogs);
         const searchQuery = normalizeCatalogSearchQuery(this.state.searchQuery);
         const cliSearchResult = searchCliEntries(docsPanelContent.cliEntries, searchQuery);
+        const lspSearchResult = searchLspEntries(docsPanelContent.lspEntries, searchQuery);
         const mcpSearchResult = searchMcpEntries(docsPanelContent.mcpEntries, searchQuery);
         const lintingSearchResult = searchCatalogEntries(docsPanelContent.lintingEntries, searchQuery);
         const formattingSearchResult = searchCatalogEntries(docsPanelContent.formattingEntries, searchQuery);
         const codemodsSearchResult = searchCatalogEntries(docsPanelContent.codemodsEntries, searchQuery);
-        const totalCount =
-            this.state.activeDocsView === "cli"
-                ? cliSearchResult.totalCount
-                : this.state.activeDocsView === "mcp"
-                  ? mcpSearchResult.totalCount
-                  : this.state.activeDocsView === "linting"
-                    ? lintingSearchResult.totalCount
-                    : this.state.activeDocsView === "formatting"
-                      ? formattingSearchResult.totalCount
-                      : codemodsSearchResult.totalCount;
+        const counts: Readonly<Record<GraphVisualizationUiDocsView, number>> = {
+            cli: cliSearchResult.totalCount,
+            codemods: codemodsSearchResult.totalCount,
+            formatting: formattingSearchResult.totalCount,
+            linting: lintingSearchResult.totalCount,
+            lsp: lspSearchResult.totalCount,
+            mcp: mcpSearchResult.totalCount
+        };
+        const totalCount = counts[this.state.activeDocsView];
         const searchResultSummary = createSearchResultSummary(searchQuery, this.state.activeDocsView, totalCount);
 
         return html`
-            <div class="toolbar-docs-search" role="search" aria-label="Filter documentation catalog">
-                <div class="docs-search-controls">
-                    <input
-                        id="docs-search-input"
-                        class="docs-search-input"
-                        type="search"
-                        aria-label="Search current docs view"
-                        .value=${this.state.searchQuery}
-                        aria-describedby="toolbar-subheading docs-search-summary"
-                        placeholder="Search docs"
-                        @input=${this.#onSearchInput}
-                    />
-                    <button
-                        class="docs-search-clear"
-                        type="button"
-                        ?disabled=${this.state.searchQuery.length === 0}
-                        @click=${() => this.#emitSearchQuery("")}
-                    >
-                        Clear
-                    </button>
+            <div class="toolbar-docs-controls" aria-label="Documentation view and search controls">
+                ${this.#renderDocsSubTabs(this.state.activeDocsView, counts)}
+                <div class="toolbar-docs-search" role="search" aria-label="Filter documentation catalog">
+                    <div class="docs-search-controls">
+                        <input
+                            id="docs-search-input"
+                            class="docs-search-input"
+                            type="search"
+                            aria-label="Search current docs view"
+                            .value=${this.state.searchQuery}
+                            aria-describedby="toolbar-subheading docs-search-summary"
+                            placeholder="Search docs"
+                            @input=${this.#onSearchInput}
+                        />
+                        <button
+                            class="docs-search-clear"
+                            type="button"
+                            ?disabled=${this.state.searchQuery.length === 0}
+                            @click=${() => this.#emitSearchQuery("")}
+                        >
+                            Clear
+                        </button>
+                    </div>
+                    <p id="docs-search-summary" class="docs-search-summary" aria-live="polite">
+                        ${searchResultSummary}
+                    </p>
                 </div>
-                <p id="docs-search-summary" class="docs-search-summary" aria-live="polite">${searchResultSummary}</p>
             </div>
         `;
     }

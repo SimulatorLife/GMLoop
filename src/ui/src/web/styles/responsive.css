@@ -48,11 +48,13 @@
 
   .toolbar-control-group,
   .toolbar-search-group,
-  .toolbar-docs-search {
+  .toolbar-docs-search,
+  .toolbar-docs-controls {
     width: 100%;
   }
 
-  .toolbar-heading-row .toolbar-docs-search {
+  .toolbar-heading-row .toolbar-docs-search,
+  .toolbar-heading-row .toolbar-docs-controls {
     flex: 0 1 auto;
     max-width: none;
   }

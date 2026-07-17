@@ -153,3 +153,48 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.toolbar-docs-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-sm);
+  min-width: 0;
+  flex: 1 1 360px;
+  max-width: 560px;
+}
+
+.toolbar-docs-subtabs {
+  flex-wrap: wrap;
+  gap: var(--gm-space-2xs);
+}
+
+.toolbar-docs-subtabs > .gm-btn--chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gm-space-xs);
+  padding: var(--gm-space-2xs) var(--gm-space-sm);
+  font-size: var(--gm-text-xs);
+}
+
+.toolbar-docs-subtabs-label {
+  min-width: 0;
+  font-weight: var(--gm-weight-extrabold);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.toolbar-docs-subtabs-count {
+  padding: 0 var(--gm-space-xs);
+  border-radius: var(--gm-radius-full);
+  background: var(--gm-bg-muted);
+  color: var(--gm-text-subdued);
+  font-size: var(--gm-text-xs);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--gm-leading-none);
+}
+
+.toolbar-docs-subtabs > .gm-btn--chip.active .toolbar-docs-subtabs-count,
+.toolbar-docs-subtabs > .gm-btn--chip[aria-pressed="true"] .toolbar-docs-subtabs-count {
+  background: var(--gm-surface-selected);
+  color: var(--gm-text);
+}

@@ -190,7 +190,7 @@ void test("Fix toolbar identifies the active workflow and disables concurrent pr
     assert.equal(Array.from(rendered.matchAll(/button-spinner/gu)).length, 1);
 });
 
-void test("Docs toolbar owns catalog search but not subcategory controls", () => {
+void test("Docs toolbar owns catalog search and subcategory controls", () => {
     const toolbar = new TestableGmGraphToolbar();
     toolbar.model = createMockModel();
     toolbar.state = createMockState("docs");
@@ -201,8 +201,18 @@ void test("Docs toolbar owns catalog search but not subcategory controls", () =>
     assert.match(rendered, /id="toolbar-subheading"[\s\S]*CLI: Command help is not available right now\./u);
     assert.match(rendered, /role="search" aria-label="Filter documentation catalog"/u);
     assert.match(rendered, /id="docs-search-input"[\s\S]*aria-describedby="toolbar-subheading docs-search-summary"/u);
-    assert.doesNotMatch(rendered, /id="docs-controls"/u);
-    assert.doesNotMatch(rendered, /Documentation view selector/u);
+    assert.match(
+        rendered,
+        /<div class="gm-view-selector toolbar-docs-subtabs" role="tablist" aria-label="Documentation view selector">/u
+    );
+    assert.match(
+        rendered,
+        /id=docs-view-cli[\s\S]*class=gm-btn--chip active[\s\S]*role="tab"[\s\S]*aria-selected=true[\s\S]*aria-controls=cli-page[\s\S]*tabindex=0/u
+    );
+    assert.match(rendered, /id=docs-view-mcp[\s\S]*aria-controls=docs-mcp-page/u);
+    assert.match(rendered, /id=docs-view-linting[\s\S]*aria-controls=linting-page/u);
+    assert.match(rendered, /id=docs-view-formatting[\s\S]*aria-controls=formatting-page/u);
+    assert.match(rendered, /id=docs-view-codemods[\s\S]*aria-controls=codemods-page/u);
 });
 
 void test("graph toolbar renders grouped controls for search, view state, and actions", () => {
@@ -299,10 +309,13 @@ void test("spacing tokens define shared page and toolbar rhythm", () => {
         responsiveSource,
         /main\s*\{[\s\S]*padding:\s*var\(--gm-space-lg\)\s+var\(--gm-space-lg\)\s+var\(--gm-space-lg\);/u
     );
-    assert.match(responsiveSource, /\.toolbar-search-group,[\s\S]*\.toolbar-docs-search\s*\{[\s\S]*width:\s*100%;/u);
     assert.match(
         responsiveSource,
-        /\.toolbar-heading-row\s+\.toolbar-docs-search\s*\{[\s\S]*flex:\s*0 1 auto;[\s\S]*max-width:\s*none;/u
+        /\.toolbar-search-group,[\s\S]*\.toolbar-docs-search,[\s\S]*\.toolbar-docs-controls\s*\{[\s\S]*width:\s*100%;/u
+    );
+    assert.match(
+        responsiveSource,
+        /\.toolbar-heading-row\s+\.toolbar-docs-search,[\s\S]*\.toolbar-docs-controls\s*\{[\s\S]*flex:\s*0 1 auto;[\s\S]*max-width:\s*none;/u
     );
 });
 
@@ -321,16 +334,14 @@ void test("docs stylesheet defines a constrained documentation browser layout", 
     const source = readFileSync(new URL("../../src/web/styles/docs.css", import.meta.url), "utf8");
 
     assert.doesNotMatch(source, /auto-fit/u);
-    assert.match(source, /\.docs-layout\s*\{[\s\S]*grid-template-areas:\s*"sidebar main";/u);
-    assert.match(
-        source,
-        /\.docs-layout\s*\{[\s\S]*grid-template-columns:\s*minmax\(168px,\s*216px\)\s+minmax\(0,\s*1fr\);/u
-    );
+    assert.match(source, /\.docs-layout\s*\{[\s\S]*grid-template-areas:\s*"main";/u);
+    assert.match(source, /\.docs-layout\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\);/u);
+    assert.doesNotMatch(source, /\.docs-nav\s*\{/u);
+    assert.doesNotMatch(source, /\.docs-sidebar\s*\{/u);
     assert.match(source, /\.docs-reference-entry\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\);/u);
     assert.match(source, /\.docs-usage-shell\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/u);
     assert.match(source, /\.docs-usage-copy-button\s+\.gm-copy-button\s*\{[\s\S]*min-width:\s*var\(--gm-height-sm\);/u);
     assert.match(source, /\.docs-usage-copy-button\s+\.gm-copy-button__label\s*\{[\s\S]*clip-path:\s*inset\(50%\);/u);
-    assert.match(source, /\.toolbar-docs-search\s*\{[\s\S]*width:\s*100%;/u);
     assert.match(source, /\.docs-search-summary:empty\s*\{[\s\S]*display:\s*none;/u);
     assert.match(
         source,
@@ -342,7 +353,6 @@ void test("docs stylesheet defines a constrained documentation browser layout", 
         source,
         /\.docs-detail-row\s*\{[\s\S]*grid-template-columns:\s*minmax\(156px,\s*220px\)\s+minmax\(0,\s*1fr\);/u
     );
-    assert.match(source, /@media\s*\(max-width:\s*1100px\)\s*\{[\s\S]*?\.docs-nav\s*\{[\s\S]*overflow-x:\s*auto;/u);
     assert.match(
         source,
         /@media\s*\(max-width:\s*760px\)\s*\{[\s\S]*?\.docs-reference-entry\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\);/u
