@@ -433,6 +433,7 @@ export function createGmlLanguageServer(
                         }
                     }
                 }
+                return undefined;
             })
             .catch((error) => {
                 connection.console.warn(`Unable to query workspace folders: ${Core.getErrorMessageOrFallback(error)}`);

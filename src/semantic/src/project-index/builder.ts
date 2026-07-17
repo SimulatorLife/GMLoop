@@ -3255,6 +3255,168 @@ function finalizeProjectIndexResult({ metricsReporting, options, projectIndex })
     }
     return projectIndex;
 }
+async function prepareIncrementalState(
+    resolvedRoot: string,
+    incremental: NonNullable<ProjectIndexBuildOptions["incremental"]>,
+    fsFacade: ProjectIndexFsFacade,
+    metrics: ReturnType<typeof createProjectIndexMetrics>["recording"],
+    signal: any,
+    ensureNotAborted: () => void,
+    logger: ProjectIndexLogger | null
+) {
+    const { existingIndex, changes } = incremental;
+    const changesByPath = new Map<string, ProjectIndexSemanticFileChange["kind"]>();
+    for (const change of changes as ReadonlyArray<ProjectIndexSemanticFileChange>) {
+        changesByPath.set(path.resolve(change.filePath), change.kind);
+    }
+    const uniqueChanges = [...changesByPath].map(([filePath, kind]) => ({ filePath, kind }));
+
+    const resourceAnalysis = reconstructResourceAnalysis(existingIndex);
+    const changedGmlFiles = await reconcileIncrementalResourceMetadata({
+        changes: uniqueChanges,
+        projectRoot: resolvedRoot,
+        resourceAnalysis,
+        fsFacade,
+        metrics,
+        signal,
+        ensureNotAborted,
+        logger
+    });
+    const state = createProjectIndexAggregationStateFromExisting(existingIndex);
+    const scopeMap = state.scopeMap;
+    const filesMap = state.filesMap;
+    const relationships = state.relationships;
+    const identifierCollections = state.identifierCollections;
+
+    removeChangedFilesFromAggregationState({
+        changedFiles: changedGmlFiles,
+        resolvedRoot,
+        scopeMap,
+        filesMap,
+        identifierCollections,
+        relationships
+    });
+
+    const changedFileDescriptors = changedGmlFiles
+        .filter((change) => change.kind !== "deleted")
+        .map((change) => {
+            const changedFile = change.filePath;
+            const relativeChangedPath = path.relative(resolvedRoot, changedFile);
+            removeFileFromAggregationState(
+                relativeChangedPath,
+                scopeMap,
+                filesMap,
+                identifierCollections,
+                relationships
+            );
+            let fileResourcePath = `scripts/${path.basename(changedFile, ".gml")}/${path.basename(changedFile)}`;
+            for (const [resPath, resRecord] of resourceAnalysis.resourcesMap.entries()) {
+                if (resRecord.gmlFiles.has(relativeChangedPath)) {
+                    fileResourcePath = resPath;
+                    break;
+                }
+            }
+            return {
+                absolutePath: changedFile,
+                relativePath: relativeChangedPath,
+                name: path.basename(changedFile, ".gml"),
+                resourcePath: fileResourcePath
+            };
+        });
+    const changedPathExistence = await Promise.all(
+        changedFileDescriptors.map(async (descriptor) => {
+            const stats = await runWithMissingPathFallback(
+                () => fsFacade.stat(descriptor.absolutePath),
+                () => null
+            );
+            const exists = stats !== null && (typeof stats.isFile !== "function" || stats.isFile());
+            return exists ? descriptor.absolutePath : null;
+        })
+    );
+    const existingChangedPaths = new Set(
+        changedPathExistence.flatMap((filePath) => (filePath === null ? [] : [filePath]))
+    );
+    const orderedGmlFiles = changedFileDescriptors.filter((descriptor) =>
+        existingChangedPaths.has(descriptor.absolutePath)
+    );
+    metrics.counters.increment("files.incrementalSelected", orderedGmlFiles.length);
+
+    return {
+        resourceAnalysis,
+        scopeMap,
+        filesMap,
+        relationships,
+        identifierCollections,
+        orderedGmlFiles
+    };
+}
+
+async function prepareFullBuildState(
+    resolvedRoot: string,
+    options: ProjectIndexBuildOptions,
+    fsFacade: ProjectIndexFsFacade,
+    metrics: ReturnType<typeof createProjectIndexMetrics>["recording"],
+    signal: any,
+    ensureNotAborted: () => void,
+    logger: ProjectIndexLogger | null,
+    recordMemorySample: () => void
+) {
+    const { yyFiles, gmlFiles } = await discoverProjectFilesForIndex({
+        projectRoot: resolvedRoot,
+        fsFacade,
+        metrics,
+        signal,
+        ensureNotAborted,
+        logger
+    });
+    recordMemorySample();
+
+    const resourceAnalysis = await analyseProjectResourcesForIndex({
+        projectRoot: resolvedRoot,
+        yyFiles,
+        fsFacade,
+        metrics,
+        signal,
+        ensureNotAborted,
+        logger
+    });
+    recordMemorySample();
+
+    const state = createProjectIndexAggregationState(resourceAnalysis);
+    const scopeMap = state.scopeMap;
+    const filesMap = state.filesMap;
+    const relationships = state.relationships;
+    const identifierCollections = state.identifierCollections;
+
+    let orderedGmlFiles = gmlFiles;
+    if (options?.priorityFiles) {
+        const prioritySet = new Set(
+            (Array.isArray(options.priorityFiles) ? options.priorityFiles : [options.priorityFiles]).map((f) =>
+                path.resolve(f)
+            )
+        );
+        const priorities: any[] = [];
+        const others: any[] = [];
+        for (const file of gmlFiles) {
+            if (prioritySet.has(path.resolve(file.absolutePath))) {
+                priorities.push(file);
+            } else {
+                others.push(file);
+            }
+        }
+        orderedGmlFiles = [...priorities, ...others];
+    }
+
+    return {
+        resourceAnalysis,
+        scopeMap,
+        filesMap,
+        relationships,
+        identifierCollections,
+        orderedGmlFiles
+    };
+}
+
 export async function buildProjectIndex(
     projectRoot: string,
     fsFacade: ProjectIndexFsFacade = Core.defaultFsFacade,
@@ -3304,138 +3466,29 @@ export async function buildProjectIndex(
     });
     recordMemorySample();
 
-    let resourceAnalysis: any;
-    let scopeMap: Map<string, any>;
-    let filesMap: Map<string, any>;
-    let relationships: any;
-    let identifierCollections: any;
+    const { resourceAnalysis, scopeMap, filesMap, relationships, identifierCollections, orderedGmlFiles } =
+        options.incremental
+            ? await prepareIncrementalState(
+                  resolvedRoot,
+                  options.incremental,
+                  fsFacade,
+                  metrics,
+                  signal,
+                  ensureNotAborted,
+                  logger
+              )
+            : await prepareFullBuildState(
+                  resolvedRoot,
+                  options,
+                  fsFacade,
+                  metrics,
+                  signal,
+                  ensureNotAborted,
+                  logger,
+                  recordMemorySample
+              );
+
     const constructorStaticMemberReferences: any[] = [];
-    let orderedGmlFiles: any[];
-
-    if (options?.incremental) {
-        const { existingIndex, changes } = options.incremental;
-        const changesByPath = new Map<string, ProjectIndexSemanticFileChange["kind"]>();
-        for (const change of changes as ReadonlyArray<ProjectIndexSemanticFileChange>) {
-            changesByPath.set(path.resolve(change.filePath), change.kind);
-        }
-        const uniqueChanges = [...changesByPath].map(([filePath, kind]) => ({ filePath, kind }));
-
-        resourceAnalysis = reconstructResourceAnalysis(existingIndex);
-        const changedGmlFiles = await reconcileIncrementalResourceMetadata({
-            changes: uniqueChanges,
-            projectRoot: resolvedRoot,
-            resourceAnalysis,
-            fsFacade,
-            metrics,
-            signal,
-            ensureNotAborted,
-            logger
-        });
-        const state = createProjectIndexAggregationStateFromExisting(existingIndex);
-        scopeMap = state.scopeMap;
-        filesMap = state.filesMap;
-        relationships = state.relationships;
-        identifierCollections = state.identifierCollections;
-
-        removeChangedFilesFromAggregationState({
-            changedFiles: changedGmlFiles,
-            resolvedRoot,
-            scopeMap,
-            filesMap,
-            identifierCollections,
-            relationships
-        });
-
-        const changedFileDescriptors = changedGmlFiles
-            .filter((change) => change.kind !== "deleted")
-            .map((change) => {
-                const changedFile = change.filePath;
-                const relativeChangedPath = path.relative(resolvedRoot, changedFile);
-                removeFileFromAggregationState(
-                    relativeChangedPath,
-                    scopeMap,
-                    filesMap,
-                    identifierCollections,
-                    relationships
-                );
-                let fileResourcePath = `scripts/${path.basename(changedFile, ".gml")}/${path.basename(changedFile)}`;
-                for (const [resPath, resRecord] of resourceAnalysis.resourcesMap.entries()) {
-                    if (resRecord.gmlFiles.has(relativeChangedPath)) {
-                        fileResourcePath = resPath;
-                        break;
-                    }
-                }
-                return {
-                    absolutePath: changedFile,
-                    relativePath: relativeChangedPath,
-                    name: path.basename(changedFile, ".gml"),
-                    resourcePath: fileResourcePath
-                };
-            });
-        const changedPathExistence = await Promise.all(
-            changedFileDescriptors.map(async (descriptor) => {
-                const stats = await runWithMissingPathFallback(
-                    () => fsFacade.stat(descriptor.absolutePath),
-                    () => null
-                );
-                const exists = stats !== null && (typeof stats.isFile !== "function" || stats.isFile());
-                return exists ? descriptor.absolutePath : null;
-            })
-        );
-        const existingChangedPaths = new Set(
-            changedPathExistence.flatMap((filePath) => (filePath === null ? [] : [filePath]))
-        );
-        orderedGmlFiles = changedFileDescriptors.filter((descriptor) =>
-            existingChangedPaths.has(descriptor.absolutePath)
-        );
-        metrics.counters.increment("files.incrementalSelected", orderedGmlFiles.length);
-    } else {
-        const { yyFiles, gmlFiles } = await discoverProjectFilesForIndex({
-            projectRoot: resolvedRoot,
-            fsFacade,
-            metrics,
-            signal,
-            ensureNotAborted,
-            logger
-        });
-        recordMemorySample();
-
-        resourceAnalysis = await analyseProjectResourcesForIndex({
-            projectRoot: resolvedRoot,
-            yyFiles,
-            fsFacade,
-            metrics,
-            signal,
-            ensureNotAborted,
-            logger
-        });
-        recordMemorySample();
-
-        const state = createProjectIndexAggregationState(resourceAnalysis);
-        scopeMap = state.scopeMap;
-        filesMap = state.filesMap;
-        relationships = state.relationships;
-        identifierCollections = state.identifierCollections;
-
-        orderedGmlFiles = gmlFiles;
-        if (options?.priorityFiles) {
-            const prioritySet = new Set(
-                (Array.isArray(options.priorityFiles) ? options.priorityFiles : [options.priorityFiles]).map((f) =>
-                    path.resolve(f)
-                )
-            );
-            const priorities: any[] = [];
-            const others: any[] = [];
-            for (const file of gmlFiles) {
-                if (prioritySet.has(path.resolve(file.absolutePath))) {
-                    priorities.push(file);
-                } else {
-                    others.push(file);
-                }
-            }
-            orderedGmlFiles = [...priorities, ...others];
-        }
-    }
 
     const { gmlConcurrency, parseProjectSource } = configureGmlProcessing({
         options,

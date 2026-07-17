@@ -2029,25 +2029,27 @@ function readGraphDatabaseIntegrityStatus(database: GraphDatabase): GraphDatabas
     });
 }
 
-function createTolerantGraphProjectParser(): NonNullable<ProjectIndexBuildOptions["parseGml"]> {
-    return (sourceText) => {
-        try {
-            return Parser.GMLParser.parse(sourceText, {
-                getComments: true,
-                getLocations: true,
-                simplifyLocations: false
-            });
-        } catch (error) {
-            if (!Core.isSyntaxErrorWithLocation(error)) {
-                throw error;
-            }
-            return Parser.GMLParser.parse("", {
-                getComments: true,
-                getLocations: true,
-                simplifyLocations: false
-            });
+function tolerantGraphProjectParser(sourceText: string): unknown {
+    try {
+        return Parser.GMLParser.parse(sourceText, {
+            getComments: true,
+            getLocations: true,
+            simplifyLocations: false
+        });
+    } catch (error) {
+        if (!Core.isSyntaxErrorWithLocation(error)) {
+            throw error;
         }
-    };
+        return Parser.GMLParser.parse("", {
+            getComments: true,
+            getLocations: true,
+            simplifyLocations: false
+        });
+    }
+}
+
+function createTolerantGraphProjectParser(): NonNullable<ProjectIndexBuildOptions["parseGml"]> {
+    return tolerantGraphProjectParser;
 }
 
 /**
