@@ -55,6 +55,45 @@ void test("resolveScipSymbol preserves legacy symbol shapes for other identifier
     );
 });
 
+void test("resolveScipSymbol returns null for resource-style node kinds", () => {
+    // Resource-style node kinds do not have a SCIP symbol; they are
+    // addressed by their resource path instead. Before the fix, the
+    // switch statement silently fell through and returned `undefined`,
+    // which would propagate into `createGraphNodeId` and produce
+    // malformed ids such as `project::undefined`. The function now
+    // signals the absence explicitly by returning `null` (matching its
+    // updated return type `string | null`).
+    for (const kind of [
+        "anim_curve",
+        "data_file",
+        "extension",
+        "font",
+        "folder",
+        "note",
+        "object",
+        "object_event",
+        "particle_system",
+        "path",
+        "project",
+        "room",
+        "room_layer",
+        "room_instance",
+        "sequence",
+        "shader",
+        "sound",
+        "sprite",
+        "texture_group",
+        "tileset",
+        "timeline"
+    ] as const) {
+        assert.equal(
+            __graphIndexBuilderTest__.resolveScipSymbol(kind, "AnyName", { name: "AnyName" }),
+            null,
+            `expected resolveScipSymbol(${kind}, ...) to return null`
+        );
+    }
+});
+
 void test("createSafeFtsQuery strips unsafe punctuation and quotes remaining tokens", () => {
     assert.equal(
         __graphIndexBuilderTest__.createSafeFtsQuery('  VisibleState.Active() + "Ready"  '),
