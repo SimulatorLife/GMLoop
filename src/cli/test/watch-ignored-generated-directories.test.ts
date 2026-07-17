@@ -47,6 +47,39 @@ async function startWatchServer(
     return { statusBaseUrl, watchPromise };
 }
 
+/**
+ * Spin up the watch command against a freshly-created project root containing a single
+ * `scr_player.gml` script, wait for the initial scan to finish, and assert that the
+ * legitimate project file is reported as transpiled. The caller owns teardown of the
+ * project directory tree so each test can choose its own root layout.
+ */
+async function assertWatchCommandTranspilesProjectScript(
+    projectRoot: string,
+    cleanupProjectRoot: () => Promise<void>
+): Promise<void> {
+    const projectScriptPath = path.join(projectRoot, "scripts", "scr_player.gml");
+    const abortController = new AbortController();
+    const watchFactory = createMockWatchFactory();
+
+    await mkdir(path.dirname(projectScriptPath), { recursive: true });
+    await writeFile(projectScriptPath, "function scr_player() { return 1; }", "utf8");
+
+    const { statusBaseUrl, watchPromise } = await startWatchServer(projectRoot, abortController, watchFactory);
+
+    try {
+        await waitForStatusReady(statusBaseUrl);
+        await waitForScanComplete(statusBaseUrl);
+
+        const payload = await fetchStatusPayload(statusBaseUrl);
+        assert.equal(payload.patchCount, 1, "project files under the test root should still be transpiled");
+        assert.equal(payload.recentPatches?.[0]?.filePath, path.join("scripts", "scr_player.gml"));
+    } finally {
+        abortController.abort();
+        await watchPromise;
+        await cleanupProjectRoot();
+    }
+}
+
 void describe("watch command ignored generated directories", () => {
     void it("skips .gmcache and cache files during startup scan and status reporting", async () => {
         const testRoot = path.join("/tmp", `watch-ignore-generated-${Date.now()}-${randomUUID()}`);
@@ -150,56 +183,18 @@ void describe("watch command ignored generated directories", () => {
 
     void it("still scans legitimate project files when the project root lives under tmp", async () => {
         const projectRoot = path.join("/tmp", `watch-tmp-root-${Date.now()}-${randomUUID()}`);
-        const projectScriptPath = path.join(projectRoot, "scripts", "scr_player.gml");
-        const abortController = new AbortController();
-        const watchFactory = createMockWatchFactory();
 
-        await mkdir(path.dirname(projectScriptPath), { recursive: true });
-        await writeFile(projectScriptPath, "function scr_player() { return 1; }", "utf8");
-
-        const { statusBaseUrl, watchPromise } = await startWatchServer(projectRoot, abortController, watchFactory);
-
-        try {
-            await waitForStatusReady(statusBaseUrl);
-            await waitForScanComplete(statusBaseUrl);
-
-            const payload = await fetchStatusPayload(statusBaseUrl);
-            assert.equal(
-                payload.patchCount,
-                1,
-                "project files under the external temp root should still be transpiled"
-            );
-            assert.equal(payload.recentPatches?.[0]?.filePath, path.join("scripts", "scr_player.gml"));
-        } finally {
-            abortController.abort();
-            await watchPromise;
+        await assertWatchCommandTranspilesProjectScript(projectRoot, async () => {
             await rm(projectRoot, { force: true, recursive: true });
-        }
+        });
     });
 
     void it("still scans legitimate project files when the project root lives under vendor/3DSpider", async () => {
         const workspaceRoot = path.join("/tmp", `watch-vendor-root-${Date.now()}-${randomUUID()}`);
         const projectRoot = path.join(workspaceRoot, "vendor", "3DSpider");
-        const projectScriptPath = path.join(projectRoot, "scripts", "scr_player.gml");
-        const abortController = new AbortController();
-        const watchFactory = createMockWatchFactory();
 
-        await mkdir(path.dirname(projectScriptPath), { recursive: true });
-        await writeFile(projectScriptPath, "function scr_player() { return 1; }", "utf8");
-
-        const { statusBaseUrl, watchPromise } = await startWatchServer(projectRoot, abortController, watchFactory);
-
-        try {
-            await waitForStatusReady(statusBaseUrl);
-            await waitForScanComplete(statusBaseUrl);
-
-            const payload = await fetchStatusPayload(statusBaseUrl);
-            assert.equal(payload.patchCount, 1, "project files under vendor/3DSpider should still be transpiled");
-            assert.equal(payload.recentPatches?.[0]?.filePath, path.join("scripts", "scr_player.gml"));
-        } finally {
-            abortController.abort();
-            await watchPromise;
+        await assertWatchCommandTranspilesProjectScript(projectRoot, async () => {
             await rm(workspaceRoot, { force: true, recursive: true });
-        }
+        });
     });
 });
