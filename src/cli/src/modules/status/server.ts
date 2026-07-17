@@ -190,26 +190,11 @@ export interface StatusServerOptions {
 }
 
 /**
- * Endpoint metadata for the status server.
- *
- * Keeps address information independent from lifecycle controls so consumers
- * can depend on only what they need.
- */
-export type StatusServerEndpoint = ServerEndpoint;
-
-/**
- * Lifecycle control for the status server.
- *
- * Provides shutdown capability without coupling to endpoint metadata.
- */
-export type StatusServerLifecycle = ServerLifecycle;
-
-/**
  * Combined status server handle.
  *
  * Provided for callers that need both endpoint metadata and lifecycle control.
  */
-export type StatusServerHandle = StatusServerEndpoint & StatusServerLifecycle;
+export type StatusServerHandle = ServerEndpoint & ServerLifecycle;
 
 const DEFAULT_STATUS_HOST = "127.0.0.1";
 const DEFAULT_STATUS_PORT = 17_891;
