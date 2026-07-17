@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -17,6 +16,7 @@ import {
     getRuntimePathSegments,
     resolveScriptFileNameFromSegments
 } from "../../modules/transpilation/runtime-identifiers.js";
+import { pathExistsSync } from "../../shared/path-exists.js";
 import { countSourceLines } from "./source-analysis.js";
 
 const { getErrorMessage } = Core;
@@ -107,6 +107,13 @@ export async function processTranspileResult(
 /**
  * Remove dependency, script-name, source snapshot, and patch-cache state for
  * deleted files that the watch loop previously tracked.
+ *
+ * Source-path existence is probed via {@link pathExistsSync} (the CLI
+ * workspace's modern replacement for the deprecated `fs.existsSync`). The
+ * helper wraps `fs.statSync` in a `try`/`catch` and returns `false` for any
+ * stat failure — missing paths, broken symlinks, or paths the process cannot
+ * read — which preserves the historical `fs.existsSync` contract that this
+ * cleanup loop relied on.
  */
 export function removeDeletedCachedPatchSources(runtimeContext: FileRemovalCleanupContext): void {
     const deletedSourcePaths = new Set<string>();
@@ -115,7 +122,7 @@ export function removeDeletedCachedPatchSources(runtimeContext: FileRemovalClean
         const metadata = Core.isObjectLike(cachedPatch.metadata) ? cachedPatch.metadata : null;
         const sourcePath = Core.isNonEmptyString(metadata?.sourcePath) ? metadata.sourcePath : null;
 
-        if (sourcePath !== null && !existsSync(sourcePath)) {
+        if (sourcePath !== null && !pathExistsSync(sourcePath)) {
             deletedSourcePaths.add(sourcePath);
         }
     }
