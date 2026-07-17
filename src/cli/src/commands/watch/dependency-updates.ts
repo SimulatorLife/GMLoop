@@ -28,6 +28,16 @@ interface DependencyUpdateRuntimeContext {
     dependencyTracker: DependencyTracker;
     dependentRetranspileConcurrency: number;
     scriptNames: Set<string>;
+    /**
+     * Pre-computed `verbose && !quiet` flag. Computed once at runtime-context
+     * construction so dependency-update helpers do not have to plumb the
+     * `(verbose, quiet)` pair through every layer just to derive the same
+     * gating condition.
+     */
+    verboseOutputEnabled: boolean;
+    /** Raw `quiet` flag, retained for callers that need to suppress normal
+     *  logging independently of verbose output. */
+    quiet: boolean;
 }
 
 interface DependencyUpdateSummary {
@@ -35,9 +45,7 @@ interface DependencyUpdateSummary {
     affectedDependents: ReadonlyArray<string>;
 }
 
-interface FileRemovalCleanupContext {
-    scriptNames: Set<string>;
-    dependencyTracker: DependencyTracker;
+interface FileRemovalCleanupContext extends DependencyUpdateRuntimeContext {
     fileSnapshots: Map<string, number>;
     fileContentHashes: Map<string, string>;
     fileContentLengths: Map<string, number>;
@@ -57,9 +65,7 @@ export async function processTranspileResult(
     runtimeContext: TranspileFileRuntimeContext,
     filePath: string,
     result: TranspilationResult,
-    fileChangeDetectedAt: number | undefined,
-    verbose: boolean,
-    quiet: boolean
+    fileChangeDetectedAt: number | undefined
 ): Promise<void> {
     if (!result.success || !result.patch) {
         return;
@@ -67,13 +73,13 @@ export async function processTranspileResult(
 
     const dependencyUpdate = updateDependencyTrackerForTranspileResult(runtimeContext, filePath, result);
 
-    if (verbose && !quiet) {
+    if (runtimeContext.verboseOutputEnabled) {
         const stats = runtimeContext.dependencyTracker.getStatistics();
         console.log(`  ↳ Dependency tracker: ${stats.totalSymbols} symbols tracked across ${stats.totalFiles} files`);
     }
 
     if (!dependencyUpdate.definitionsChanged) {
-        if (verbose && !quiet && dependencyUpdate.affectedDependents.length > 0) {
+        if (runtimeContext.verboseOutputEnabled && dependencyUpdate.affectedDependents.length > 0) {
             console.log("  ↳ Symbol definitions unchanged; skipping dependent retranspilation");
         }
         return;
@@ -84,22 +90,18 @@ export async function processTranspileResult(
         return;
     }
 
-    if (!quiet) {
+    if (!runtimeContext.quiet) {
         console.log(`  ↳ Retranspiling ${dependentFiles.length} dependent file(s)...`);
     }
 
-    await retranspileDependentFiles(runtimeContext, filePath, dependentFiles, fileChangeDetectedAt, verbose, quiet);
+    await retranspileDependentFiles(runtimeContext, filePath, dependentFiles, fileChangeDetectedAt);
 }
 
 /**
  * Remove dependency, script-name, source snapshot, and patch-cache state for
  * deleted files that the watch loop previously tracked.
  */
-export function removeDeletedCachedPatchSources(
-    runtimeContext: FileRemovalCleanupContext,
-    verbose: boolean,
-    quiet: boolean
-): void {
+export function removeDeletedCachedPatchSources(runtimeContext: FileRemovalCleanupContext): void {
     const deletedSourcePaths = new Set<string>();
 
     for (const cachedPatch of runtimeContext.lastSuccessfulPatches.values()) {
@@ -112,7 +114,7 @@ export function removeDeletedCachedPatchSources(
     }
 
     for (const sourcePath of deletedSourcePaths) {
-        cleanupRemovedFile(runtimeContext, sourcePath, verbose, quiet);
+        cleanupRemovedFile(runtimeContext, sourcePath);
     }
 }
 
@@ -120,22 +122,13 @@ async function retranspileDependentFiles(
     runtimeContext: TranspileFileRuntimeContext,
     filePath: string,
     dependentFiles: ReadonlyArray<string>,
-    fileChangeDetectedAt: number | undefined,
-    verbose: boolean,
-    quiet: boolean
+    fileChangeDetectedAt: number | undefined
 ): Promise<void> {
     await Core.runInParallelWithLimit(
         dependentFiles,
         async (dependentFile) => {
             try {
-                await retranspileDependentFile(
-                    runtimeContext,
-                    filePath,
-                    dependentFile,
-                    fileChangeDetectedAt,
-                    verbose,
-                    quiet
-                );
+                await retranspileDependentFile(runtimeContext, filePath, dependentFile, fileChangeDetectedAt);
             } catch (error) {
                 const message = getErrorMessage(error, {
                     fallback: "Unknown file read error"
@@ -241,22 +234,20 @@ async function retranspileDependentFile(
     runtimeContext: TranspileFileRuntimeContext,
     filePath: string,
     dependentFile: string,
-    fileChangeDetectedAt: number | undefined,
-    verbose: boolean,
-    quiet: boolean
+    fileChangeDetectedAt: number | undefined
 ): Promise<void> {
     ensureScriptNameRegistered(dependentFile, runtimeContext.scriptNames);
 
     const dependentContent = await readFile(dependentFile, "utf8");
     const dependentLines = countSourceLines(dependentContent);
 
-    if (verbose && !quiet) {
+    if (runtimeContext.verboseOutputEnabled) {
         console.log(`  ↳ Retranspiling ${path.relative(path.dirname(filePath), dependentFile)}`);
     }
 
     const dependentResult = transpileFile(runtimeContext, dependentFile, dependentContent, dependentLines, {
         verbose: false,
-        quiet,
+        quiet: runtimeContext.quiet,
         fileChangeDetectedAt
     });
 
@@ -324,12 +315,7 @@ function removeCachedPatchesForFile(
     return removedCount;
 }
 
-export function cleanupRemovedFile(
-    runtimeContext: FileRemovalCleanupContext,
-    filePath: string,
-    verbose: boolean,
-    quiet: boolean
-): void {
+export function cleanupRemovedFile(runtimeContext: FileRemovalCleanupContext, filePath: string): void {
     unregisterScriptName(filePath, runtimeContext.scriptNames);
     runtimeContext.dependencyTracker.removeFile(filePath);
     runtimeContext.fileSnapshots.delete(filePath);
@@ -343,7 +329,7 @@ export function cleanupRemovedFile(
         runtimeContext.debouncedHandlers.delete(filePath);
     }
 
-    if (verbose && !quiet) {
+    if (runtimeContext.verboseOutputEnabled) {
         const patchMessage =
             removedPatchCount > 0 ? `cleared ${removedPatchCount} cached patch(es)` : "no cached patch found";
         console.log(`  ↳ Removed dependency tracking (${patchMessage})`);
