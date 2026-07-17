@@ -157,6 +157,35 @@ function second_helper(value) {
         assert.strictEqual((broadcasts[0] as Array<unknown>).length, 2);
     });
 
+    void it("keeps executable top-level script statements in a file-level patch", () => {
+        const context = createContext();
+        const source = `#macro helper_name first_helper
+var group_initialized = true;
+
+function first_helper() {
+    return group_initialized;
+}
+
+function second_helper() {
+    return first_helper();
+}`;
+
+        const result = transpileFile(context, "/project/scripts/group_helpers.gml", source, 9, {
+            verbose: false,
+            quiet: true,
+            deliverRuntimePatch: false
+        });
+
+        assert.ok(result.success, "Transpilation should succeed");
+        assert.deepStrictEqual(
+            result.patches?.map((patch) => patch.id),
+            ["gml/script/group_helpers", "gml/script/first_helper", "gml/script/second_helper"]
+        );
+        assert.ok(result.patches?.[0]?.js_body.includes("group_initialized"));
+        assert.ok(result.patches?.[1]?.js_body.includes("return group_initialized"));
+        assert.ok(result.patches?.[2]?.js_body.includes("first_helper"));
+    });
+
     void it("routes a top-level .gml file (not under objects/) to transpileScript", () => {
         const context = createContext();
         const filePath = "/project/scripts/utility.gml";

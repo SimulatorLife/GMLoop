@@ -263,6 +263,12 @@ Watches GML source files and coordinates the hot-reload development pipeline. Wh
 4. Generates hot-reload patches with script IDs
 5. Streams patches to runtime wrapper via WebSocket
 
+Scripts containing multiple top-level functions are split into one patch per
+function and sent as a single websocket batch. This keeps each function bound
+to its generated GameMaker runtime symbol; executable statements outside those
+functions are emitted as a separate file-level patch. Compile-time directives
+such as macros and regions are not treated as runtime function bodies.
+
 ```bash
 # Basic usage - watch current directory
 pnpm run cli -- watch
@@ -614,6 +620,11 @@ The watch command now integrates with the transpiler module (`src/transpiler`) t
 - `js_body`: Transpiled JavaScript code
 - `sourceText`: Original GML source for debugging
 - `version`: Timestamp of transpilation
+
+When one source file produces several function patches, the websocket payload
+is an array of these patch objects. The runtime wrapper applies the array as a
+dependency-aware batch, while the status server counts each changed function
+patch separately.
 
 **Planned: Semantic Analysis Integration**
 

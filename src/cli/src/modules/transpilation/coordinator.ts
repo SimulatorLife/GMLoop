@@ -709,11 +709,22 @@ function getScriptFunctionName(node: ScriptAstNode): string | null {
     return typeof idRecord.name === "string" ? idRecord.name : null;
 }
 
+function isScriptCompileTimeNode(node: ScriptAstNode): boolean {
+    return (
+        node.type === "MacroDeclaration" ||
+        node.type === "DefineStatement" ||
+        node.type === "RegionStatement" ||
+        node.type === "EndRegionStatement"
+    );
+}
+
 /**
  * Emits one script patch for each top-level function in a multi-function GML
  * script. The transpiler unwraps a program containing exactly one function,
  * which gives the runtime a body it can bind directly to that function's
- * generated GameMaker symbol.
+ * generated GameMaker symbol. Executable top-level statements are kept in a
+ * separate file-level patch so they remain bound to the generated global
+ * script function instead of being accidentally attached to a helper.
  */
 function transpileScriptPatches(
     context: TranspilationContext,
@@ -724,9 +735,11 @@ function transpileScriptPatches(
 ): Array<RuntimeTranspilerPatch> {
     const program = asScriptProgramAst(ast);
     const body = program?.body ?? [];
-    const functionNodes = body.filter((node) => node.type === "FunctionDeclaration");
+    const executableNodes = body.filter((node) => !isScriptCompileTimeNode(node));
+    const functionNodes = executableNodes.filter((node) => node.type === "FunctionDeclaration");
+    const topLevelNodes = executableNodes.filter((node) => node.type !== "FunctionDeclaration");
 
-    if (functionNodes.length < 2 || functionNodes.length !== body.length) {
+    if (functionNodes.length === 0 || (functionNodes.length === 1 && topLevelNodes.length === 0)) {
         const fileName = path.basename(sourcePath, path.extname(sourcePath));
         const defaultSymbolId = `gml/script/${fileName}`;
         const scriptSymbolId = getPrimaryScriptPatchId(parsedSymbols);
@@ -742,7 +755,7 @@ function transpileScriptPatches(
     }
 
     const patchIds = new Set<string>();
-    return functionNodes.map((functionNode) => {
+    const functionPatches = functionNodes.map((functionNode) => {
         const functionName = getScriptFunctionName(functionNode);
         if (!functionName) {
             throw new TypeError("A top-level script function is missing its identifier");
@@ -760,6 +773,19 @@ function transpileScriptPatches(
             ast: { type: "Program", body: [functionNode] }
         });
     });
+
+    if (topLevelNodes.length === 0) {
+        return functionPatches;
+    }
+
+    const fileName = path.basename(sourcePath, path.extname(sourcePath));
+    const topLevelPatch = context.transpiler.transpileScript({
+        sourceText,
+        symbolId: `gml/script/${fileName}`,
+        ast: { type: "Program", body: topLevelNodes }
+    });
+
+    return [topLevelPatch, ...functionPatches];
 }
 
 /**

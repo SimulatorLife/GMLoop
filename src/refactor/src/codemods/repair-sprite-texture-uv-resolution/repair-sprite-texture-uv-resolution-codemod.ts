@@ -136,7 +136,7 @@ function getSpriteTextureBranchSwapEdit(sourceText: string, node: AstRecord): So
     }
 
     const spriteTest = `(is_real(${textureArgument}) and ${textureArgument} >= 0 and ${spriteCallSource})`;
-    const textureTest = `(is_ptr(${textureArgument}) and ${textureCallSource})`;
+    const textureTest = `(is_ptr(${textureArgument}) and not is_real(${textureArgument}) and ${textureCallSource})`;
     const spriteSource = getIfBranchSource(sourceText, spriteBranch, spriteTest);
     const textureSource = getIfBranchSource(sourceText, textureBranch, textureTest);
     if (spriteSource === null || textureSource === null) {
@@ -202,7 +202,7 @@ function collectSpriteTextureBranchSwapEdits(sourceText: string, programNode: un
  * predicate first therefore misclassifies sprites in HTML5 and can make the
  * runtime dereference a sprite asset as a texture handle. The codemod swaps
  * only the structurally matching `scr_get_uvs` branches. Sprite lookup is
- * restricted to numeric handles and texture lookup is restricted to pointers,
+ * restricted to numeric handles and texture lookup is restricted to non-real pointers,
  * so `pointer_null` cannot reach either native helper. The existing fallback
  * branch and source text inside each branch are preserved.
  *

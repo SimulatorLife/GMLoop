@@ -1,6 +1,7 @@
 name = "smart"
 description = "Specialist agent for complex, high-judgment assignments; use sparingly as this agent uses more tokens than others, not for routine/simple/easy work."
 model = "gpt-5.6-sol"
+model_provider = "openai"
 model_reasoning_effort = "high"
 nickname_candidates = ["SolSmart", "DeepSolve", "SolExpert"]
 
