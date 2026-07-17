@@ -1071,3 +1071,6 @@ for (const p of sorted) {
 // parseAndRegisterScopes(tracker, sorted[0]);  // lib.gml first
 // parseAndRegisterScopes(tracker, sorted[1]);  // app.gml second
 ```
+
+## TODO
+- **FEAT**: For determining the file-diffs to trigger a file-level hot-reload and/or semantic re-analysis should/can we use the .git history to determine which files/lines have changed? This would allow us to avoid re-analyzing files that haven't changed, improving performance in large projects. Also we need to be sure that, for things like applying lint-fixes & formatting across a project we don't trigger a rebuild for each file that was changed, but instead we should be able to determine the set of files that were changed at the end of the operation and only re-analyze those files as/if needed. This would be a significant performance improvement for large projects.
