@@ -8,6 +8,7 @@ import { Core } from "@gmloop/core";
 
 import { runCliTestCommand } from "../src/cli.js";
 import {
+    __test__ as gameMakerBuildTest,
     buildGameMakerHtml5Output,
     type GameMakerHtml5BuildConfig,
     resolveLiveReloadProjectBuildSettings
@@ -214,6 +215,114 @@ void test("buildGameMakerHtml5Output prefers gm-cli in auto mode when HTML5 pack
 
         assert.equal(result.backend, "gm-cli");
         assert.deepEqual(executedCommands, ["gm-cli"]);
+    } finally {
+        await fs.rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("default GameMaker runtime discovery prefers a project-local gmcache runtime", async () => {
+    const projectRoot = await createTempDirectory("cli-live-reload-local-runtime-");
+    const runtimeRoot = path.join(projectRoot, ".gmcache", "runtimes-gms2", "runtime-2026.0.0.23");
+
+    try {
+        await fs.mkdir(runtimeRoot, { recursive: true });
+
+        assert.equal(await gameMakerBuildTest.resolveDefaultGameMakerRuntimeRoot(projectRoot), runtimeRoot);
+    } finally {
+        await fs.rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("Igor discovery prefers the matching runtime tool before the project tool cache", async () => {
+    const projectRoot = await createTempDirectory("cli-live-reload-local-igor-");
+    const runtimeRoot = path.join(projectRoot, "runtime-2026.0.0.23");
+    const runtimeIgorPath = path.join(runtimeRoot, "bin", "igor", "osx", "x64", "Igor");
+    const projectIgorPath = path.join(projectRoot, ".gmcache", "igor", "osx", "x64", "Igor");
+
+    try {
+        await fs.mkdir(path.dirname(runtimeIgorPath), { recursive: true });
+        await fs.mkdir(path.dirname(projectIgorPath), { recursive: true });
+        await fs.writeFile(runtimeIgorPath, "runtime", "utf8");
+        await fs.writeFile(projectIgorPath, "project", "utf8");
+
+        assert.equal(
+            await gameMakerBuildTest.resolveIgorExecutablePathFromRuntimeRoot(runtimeRoot, projectRoot),
+            runtimeIgorPath
+        );
+    } finally {
+        await fs.rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("Igor identity discovery uses the project-local gmcache license", async () => {
+    const projectRoot = await createTempDirectory("cli-live-reload-local-license-");
+    const projectPath = path.join(projectRoot, "Project.yyp");
+    const licenseFile = path.join(projectRoot, ".gmcache", "license", "licence.plist");
+
+    try {
+        await fs.mkdir(path.dirname(licenseFile), { recursive: true });
+        await fs.writeFile(licenseFile, "license", "utf8");
+
+        const identity = await gameMakerBuildTest.resolveIgorIdentityPaths(
+            createGameMakerBuildConfig({ projectPath }),
+            projectRoot
+        );
+
+        assert.deepEqual(identity, { licenseFile, userFolder: null });
+    } finally {
+        await fs.rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("Rosetta is selected only for x64 Igor on arm64 macOS", () => {
+    assert.equal(
+        gameMakerBuildTest.shouldUseRosettaForIgor("/tmp/runtime/bin/igor/osx/x64/Igor", "darwin", "arm64"),
+        true
+    );
+    assert.equal(
+        gameMakerBuildTest.shouldUseRosettaForIgor("/tmp/runtime/bin/igor/osx/arm64/Igor", "darwin", "arm64"),
+        false
+    );
+    assert.equal(
+        gameMakerBuildTest.shouldUseRosettaForIgor("/tmp/runtime/bin/igor/osx/x64/Igor", "linux", "arm64"),
+        false
+    );
+    assert.equal(
+        gameMakerBuildTest.shouldUseRosettaForIgor("/tmp/runtime/bin/igor/osx/x64/Igor", "darwin", "x64"),
+        false
+    );
+});
+
+void test("gm-cli receives its documented cache-dir option spelling", async () => {
+    const projectRoot = await createTempDirectory("cli-live-reload-cache-dir-");
+    const outputRoot = path.join(projectRoot, "build", "html5");
+    const projectPath = path.join(projectRoot, "Project.yyp");
+    const cacheDir = path.join(projectRoot, ".gmcache");
+
+    try {
+        await fs.writeFile(projectPath, JSON.stringify({ name: "Project" }), "utf8");
+        const executedArgs: Array<string> = [];
+
+        await buildGameMakerHtml5Output({
+            buildConfig: createGameMakerBuildConfig({
+                backend: "gm-cli",
+                cacheDir,
+                outputRoot,
+                projectPath
+            }),
+            cwd: projectRoot,
+            executeProcess: async (_command, args) => {
+                executedArgs.push(...args);
+                await fs.writeFile(path.join(outputRoot, "index.html"), "<html></html>", "utf8");
+                return Object.freeze({ exitCode: 0, stderr: "", stdout: "gm-cli ok" });
+            }
+        });
+
+        assert.ok(executedArgs.includes(`--cache-dir=${cacheDir}`));
+        assert.equal(
+            executedArgs.some((arg) => arg.startsWith("--cacheDir=")),
+            false
+        );
     } finally {
         await fs.rm(projectRoot, { force: true, recursive: true });
     }

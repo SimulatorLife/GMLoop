@@ -111,6 +111,21 @@ export type RepairLogicalNotCodemodOptions = Readonly<Record<string, never>>;
 export type RepairArgumentSeparatorsCodemodOptions = Readonly<Record<string, never>>;
 
 /**
+ * Options for the texture-prefetch guard repair codemod.
+ */
+export type RepairTexturePrefetchGuardCodemodOptions = Readonly<Record<string, never>>;
+
+/**
+ * A single text edit produced by the texture-prefetch guard repair codemod.
+ */
+export type RepairTexturePrefetchGuardEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by the texture-prefetch guard repair codemod.
+ */
+export type RepairTexturePrefetchGuardResult = CodemodResult;
+
+/**
  * A single text edit produced by the repair-logical-not codemod.
  */
 export type RepairLogicalNotEdit = CodemodEdit;
@@ -307,7 +322,8 @@ export type RefactorCodemodId =
     | "loopLengthHoisting"
     | "namingConvention"
     | "repairLogicalNot"
-    | "repairArgumentSeparators";
+    | "repairArgumentSeparators"
+    | "repairTexturePrefetchGuard";
 
 /**
  * Normalized config payloads keyed by registered codemod id.
@@ -319,6 +335,7 @@ export interface RefactorCodemodConfigMap {
     namingConvention: NamingConventionPolicy;
     repairLogicalNot: RepairLogicalNotCodemodOptions;
     repairArgumentSeparators: RepairArgumentSeparatorsCodemodOptions;
+    repairTexturePrefetchGuard: RepairTexturePrefetchGuardCodemodOptions;
 }
 
 /**

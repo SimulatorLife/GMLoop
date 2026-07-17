@@ -104,6 +104,7 @@ void test("listRegisteredCodemods returns the v1 configured codemod set", () => 
             "scientificNotation",
             "repairLogicalNot",
             "repairArgumentSeparators",
+            "repairTexturePrefetchGuard",
             "globalvarToGlobal",
             "loopLengthHoisting",
             "namingConvention"
@@ -130,6 +131,13 @@ void test("listConfiguredCodemods reports normalized effective config and select
         {
             id: "repairArgumentSeparators",
             description: "Insert missing call argument separators (commas) where omitted.",
+            configured: false,
+            selected: false,
+            effectiveConfig: null
+        },
+        {
+            id: "repairTexturePrefetchGuard",
+            description: "Prefetch texture pages when they are not ready before using their texture pointers.",
             configured: false,
             selected: false,
             effectiveConfig: null

@@ -17,6 +17,7 @@ tools/
 .gmloop/
 .gmcache/
 **/.gmcache/
+cache/
 repomix-output.xml
 
 # We only want extra markdown files in docs/ and README.md files for each workspace

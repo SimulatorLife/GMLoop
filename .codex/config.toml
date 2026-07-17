@@ -124,7 +124,7 @@ description = "Read-only GameMaker runtime and browser tester directed by the or
 config_file = "./agents/tester.toml"
 
 [agents.build-lint-test]
-description = "Strictly GMLoop-internal build, lint, and test reporter that only runs commands explicitly assigned by the orchestrator and returns exact failure excerpts (warnings only when requested)."
+description = "Strictly GMLoop-internal build, lint, and test reporter that runs commands assigned by the orchestrator and returns exact failure excerpts (and warnings only when requested)."
 config_file = "./agents/build-lint-test.toml"
 
 [agents.smart]

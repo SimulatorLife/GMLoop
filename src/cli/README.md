@@ -700,6 +700,20 @@ pnpm run cli -- live-reload build /path/to/project
 - `--verbose` - Print the selected backend command line
 - `--quiet` - Suppress informational output
 
+When build paths are not explicitly configured, GMLoop discovers the GameMaker
+toolchain in this order:
+
+- a project-local `.gmcache/runtimes-gms2/runtime-*` runtime, then the standard
+  shared GameMaker runtime caches;
+- Igor under the selected runtime's `bin/igor` directory, then the project's
+  `.gmcache/igor` cache;
+- the project-local `.gmcache/license/licence.plist`, then the standard
+  GameMaker user-support folders.
+
+Explicit `runtimeRoot`, `toolPath`, `licenseFile`, and `userFolder` values keep
+their precedence. On arm64 macOS, an x64 Igor executable is launched through
+Rosetta automatically. The gm-cli cache option is passed as `--cache-dir`.
+
 ### `live-reload session` - Attach, Start, Replace, Or Stop
 
 Start the full live-reload session for a GameMaker project.

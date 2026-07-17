@@ -175,6 +175,22 @@ configures the `function` category.
 }
 ```
 
+The `repairTexturePrefetchGuard` codemod repairs a common HTML5 portability
+error: it changes a `texture_is_ready(texture)` guard that immediately calls
+`texture_prefetch(texture)` to prefetch only when the texture is not ready. It
+is conservative around user-defined declarations and macros, and can be
+enabled alongside the other configured codemods:
+
+```json
+{
+    "refactor": {
+        "codemods": {
+            "repairTexturePrefetchGuard": {}
+        }
+    }
+}
+```
+
 #### CLI Usage
 
 ```bash

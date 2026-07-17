@@ -6,6 +6,7 @@ import { applyLoopLengthHoistingCodemod } from "./codemods/loop-length-hoisting/
 import { executeNamingConventionCodemod } from "./codemods/naming-convention/index.js";
 import { applyRepairArgumentSeparatorsCodemod } from "./codemods/repair-argument-separators/index.js";
 import { applyRepairLogicalNotCodemod } from "./codemods/repair-logical-not/index.js";
+import { applyRepairTexturePrefetchGuardCodemod } from "./codemods/repair-texture-prefetch-guard/index.js";
 import { applyScientificNotationCodemod } from "./codemods/scientific-notation/index.js";
 import { normalizeNamingConventionPolicy } from "./naming-convention-policy.js";
 import { assertRefactorConfigPlainObjectWithAllowedKeys } from "./refactor-config-assertions.js";
@@ -54,7 +55,12 @@ function isGmlSourceFilePath(candidatePath: string): boolean {
 }
 
 function normalizeEmptyObjectConfig<
-    T extends "scientificNotation" | "loopLengthHoisting" | "repairLogicalNot" | "repairArgumentSeparators"
+    T extends
+        | "scientificNotation"
+        | "loopLengthHoisting"
+        | "repairLogicalNot"
+        | "repairArgumentSeparators"
+        | "repairTexturePrefetchGuard"
 >(value: unknown, context: string): RefactorCodemodConfigEntry<T> {
     if (value === false) {
         return false;
@@ -66,7 +72,12 @@ function normalizeEmptyObjectConfig<
 async function executeSingleFileTextCodemod(
     engine: CodemodEngine,
     request: ConfiguredCodemodRunRequest,
-    codemodId: "scientificNotation" | "loopLengthHoisting" | "repairLogicalNot" | "repairArgumentSeparators",
+    codemodId:
+        | "scientificNotation"
+        | "loopLengthHoisting"
+        | "repairLogicalNot"
+        | "repairArgumentSeparators"
+        | "repairTexturePrefetchGuard",
     warningMessage: string,
     transform: (
         sourceText: string,
@@ -225,6 +236,25 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
                 "repairArgumentSeparators",
                 "No .gml files were selected for argument separator repair.",
                 applyRepairArgumentSeparatorsCodemod
+            );
+        }
+    }),
+
+    repairTexturePrefetchGuard: Object.freeze({
+        id: "repairTexturePrefetchGuard",
+        description: "Prefetch texture pages when they are not ready before using their texture pointers.",
+        requiresSemanticProjectIndex: false,
+        normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
+        execute(
+            _engine: CodemodEngine,
+            request: ConfiguredCodemodRunRequest
+        ): Promise<ConfiguredCodemodExecutionResult> {
+            return executeSingleFileTextCodemod(
+                _engine,
+                request,
+                "repairTexturePrefetchGuard",
+                "No .gml files were selected for texture-prefetch guard repair.",
+                applyRepairTexturePrefetchGuardCodemod
             );
         }
     }),
