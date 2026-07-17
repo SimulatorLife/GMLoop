@@ -69,6 +69,7 @@ const GRAPH_NODE_KIND_LEGEND_CATALOG: ReadonlyArray<GraphVisualizationNodeKind> 
     "sprite",
     "struct",
     "struct_variable",
+    "texture_group",
     "tileset",
     "timeline"
 ]);
@@ -88,6 +89,7 @@ const RESOURCE_CHILD_NODE_KINDS: ReadonlyArray<GraphVisualizationNodeKind> = Obj
     "shader",
     "sound",
     "sprite",
+    "texture_group",
     "tileset",
     "timeline"
 ]);

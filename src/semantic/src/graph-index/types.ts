@@ -67,6 +67,7 @@ export type GraphNodeKind =
     | "sprite"
     | "struct"
     | "struct_variable"
+    | "texture_group"
     | "tileset"
     | "timeline";
 

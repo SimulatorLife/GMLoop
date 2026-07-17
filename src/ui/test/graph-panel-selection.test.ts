@@ -173,6 +173,41 @@ void test("graph panel legend preserves edge line style metadata for readability
     assert.match(rendered, /References/u);
 });
 
+void test("graph panel presents texture groups as a readable resource category", () => {
+    const panel = new TestableGmGraphPanel();
+    const model = createGraphModel();
+    panel.model = {
+        ...model,
+        data: {
+            ...model.data,
+            nodes: [
+                ...model.data.nodes,
+                {
+                    displayName: "Default",
+                    filePath: null,
+                    graphId: "project",
+                    id: "texture-group-node",
+                    kind: "texture_group",
+                    lineEnd: null,
+                    lineStart: null,
+                    name: "Default",
+                    resourcePath: "texturegroups/Default",
+                    scopeId: null,
+                    scipSymbol: null,
+                    snippet: "",
+                    summary: "Texture group 'Default'."
+                }
+            ]
+        }
+    };
+    panel.state = createGraphState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /Texture Group/u);
+    assert.match(rendered, /fill=#43aa8b/u);
+});
+
 void test("graph panel starts with noisy variable categories disabled for clearer default readability", () => {
     const panel = new TestableGmGraphPanel();
     const model = createGraphModel();

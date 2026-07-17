@@ -2244,3 +2244,53 @@ void test("buildGraphIndex projects GameMaker folders as resource nodes for visu
         await fixture.cleanup();
     }
 });
+
+void test("buildGraphIndex projects texture groups with project containment for visualization", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-texture-group-");
+
+    try {
+        await fixture.writeProjectFile(
+            "Project.yyp",
+            JSON.stringify({
+                name: "Project",
+                resourceType: "GMProject",
+                TextureGroups: [{ id: { name: "Default", path: "texturegroups/Default/Default.yy" } }]
+            })
+        );
+        await fixture.writeProjectFile(
+            "texturegroups/Default/Default.yy",
+            JSON.stringify({ name: "Default", resourceType: "GMTextureGroup" })
+        );
+
+        const result = await buildGraphIndex({ projectRoot: fixture.projectRoot });
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const textureGroupNodeId = "project::resource::texturegroups/Default/Default.yy";
+            const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
+
+            assert.ok(
+                visualizationData.nodes.some(
+                    (node) =>
+                        node.id === textureGroupNodeId &&
+                        node.kind === "texture_group" &&
+                        node.displayName === "Default" &&
+                        node.resourcePath === "texturegroups/Default/Default.yy"
+                ),
+                "expected visualization to expose texture groups with their resource identity"
+            );
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) =>
+                        edge.source === "project::resource::Project.yyp" &&
+                        edge.target === textureGroupNodeId &&
+                        edge.type === "contains"
+                ),
+                "expected visualization to connect the project to its texture group"
+            );
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});

@@ -200,11 +200,23 @@ void test("listGraphNodeKindLegendItems nests child kinds under semantic parent 
         "shader",
         "sound",
         "sprite",
+        "texture_group",
         "tileset",
         "timeline"
     ]);
     assert.ok(![...rootKinds].map(String).includes("constructor"));
     assert.ok(!rootKinds.has("file"));
+});
+
+void test("listGraphNodeKindLegendItems groups texture groups under project resources", () => {
+    const legendItems = listGraphNodeKindLegendItems([
+        createNode("project", "project", "Project"),
+        createNode("texture-group", "texture_group", "Default")
+    ]);
+
+    const resourceLegend = legendItems.find((item) => item.kind === "resource");
+    assert.ok(resourceLegend);
+    assert.ok(resourceLegend.children.some((item) => item.kind === "texture_group" && item.level === 1));
 });
 
 void test("resolveEffectiveGraphNodeKinds hides child kinds when their legend parent is disabled", () => {
