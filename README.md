@@ -240,7 +240,7 @@ The core product remains vendor-neutral and coordinator-neutral.
 
 ```bash
 # full validation (format check + lint + tests)
-pnpm run check
+pnpm run format:check && pnpm run lint:quiet && pnpm test
 
 # full test suite
 pnpm test
