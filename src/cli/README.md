@@ -112,6 +112,7 @@ Runs `@gmloop/parser` over a `.gml` file or directory target. Dry-run mode write
 pnpm run cli -- parse --path path/to/script.gml
 pnpm run cli -- parse --path path/to/project > ast.json
 pnpm run cli -- parse --write --path path/to/project
+pnpm run cli -- parse --path path/to/project --on-parse-error skip --write
 ```
 
 **Options:**
@@ -119,7 +120,14 @@ pnpm run cli -- parse --write --path path/to/project
 - `--path <path>` - Target `.gml` file or directory path (defaults to current working directory)
 - `--write` - Write AST JSON files (without this flag, parse prints AST JSON to stdout)
 - `--list` - Print effective command settings and exit
+- `--on-parse-error <mode>` - Parser failure handling: `skip` (continue and report) or `abort` (fail fast). Default: `abort`
 - `--verbose` - Emit per-file parse diagnostics to stderr
+
+When parsing a directory that contains any malformed `.gml` source, the
+command reports the failing file, continues with the well-formed sources, and
+emits a summary of skipped files when `--on-parse-error skip` is set. Without
+that flag, the run aborts on the first parse error so the exit code reflects
+the failure.
 
 ### `lint` - Lint and Auto-Fix GML Files
 
