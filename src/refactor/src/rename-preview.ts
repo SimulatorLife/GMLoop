@@ -160,11 +160,9 @@ export function buildBatchValidationReport(plan: BatchRenamePlanSummary): BatchV
  * handle the absent case explicitly rather than navigating the
  * `plan.cascadeResult` chain repeatedly.
  *
- * The returned value is the existing `HotReloadCascadeResult` — that
- * type already promotes its convenience fields (`totalSymbols`,
- * `maxDistance`, `hasCircular`) to the top level, so downstream code
- * avoids the historical `plan.cascadeResult.metadata.totalSymbols`
- * four-segment chain.
+ * The returned value is the existing `HotReloadCascadeResult`; summary
+ * counters live on its `metadata` field, so downstream code reads
+ * `cascade.metadata.totalSymbols` and friends directly.
  *
  * @param plan - Batch rename plan that may carry a cascade result
  * @returns The cascade result, or null when no cascade exists
@@ -172,7 +170,7 @@ export function buildBatchValidationReport(plan: BatchRenamePlanSummary): BatchV
  * @example
  * const cascade = buildCascadeReport(plan);
  * if (cascade !== null) {
- *     console.log(`Symbols to reload: ${cascade.totalSymbols}`);
+ *     console.log(`Symbols to reload: ${cascade.metadata.totalSymbols}`);
  * }
  */
 export function buildCascadeReport(plan: BatchRenamePlanSummary): HotReloadCascadeResult | null {
@@ -623,15 +621,14 @@ export function formatBatchRenamePlanReport(plan: BatchRenamePlanSummary): strin
     );
 
     if (cascade !== null) {
-        // `HotReloadCascadeResult` exposes top-level convenience aliases
-        // (`totalSymbols`, `maxDistance`, `hasCircular`) so callers avoid
-        // the historical `cascade.metadata.totalSymbols` four-segment
-        // chain.
+        // `HotReloadCascadeResult` keeps its summary counters on the
+        // `metadata` bag; access them through the canonical path so the
+        // report and the cascade result stay in lock-step.
         lines.push(
             "Hot Reload Dependency Cascade:",
-            `  Total Symbols to Reload: ${cascade.totalSymbols}`,
-            `  Max Dependency Distance: ${cascade.maxDistance}`,
-            `  Has Circular Dependencies: ${cascade.hasCircular ? "Yes" : "No"}`
+            `  Total Symbols to Reload: ${cascade.metadata.totalSymbols}`,
+            `  Max Dependency Distance: ${cascade.metadata.maxDistance}`,
+            `  Has Circular Dependencies: ${cascade.metadata.hasCircular ? "Yes" : "No"}`
         );
 
         if (cascade.circular.length > 0) {

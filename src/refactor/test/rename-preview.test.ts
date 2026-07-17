@@ -456,11 +456,7 @@ void describe("formatBatchRenamePlanReport", () => {
                     totalSymbols: 2,
                     maxDistance: 1,
                     hasCircular: true
-                },
-                // Top-level convenience aliases (promoted from metadata)
-                totalSymbols: 2,
-                maxDistance: 1,
-                hasCircular: true
+                }
             }
         };
 
@@ -784,10 +780,7 @@ void describe("buildCascadeReport", () => {
             cascade: [],
             order: ["gml/script/scr_a"],
             circular: [],
-            metadata: { totalSymbols: 1, maxDistance: 0, hasCircular: false },
-            totalSymbols: 1,
-            maxDistance: 0,
-            hasCircular: false
+            metadata: { totalSymbols: 1, maxDistance: 0, hasCircular: false }
         };
         const plan: BatchRenamePlanSummary = {
             workspace: new WorkspaceEdit(),
@@ -807,9 +800,9 @@ void describe("buildCascadeReport", () => {
         const result = buildCascadeReport(plan);
 
         assert.ok(result !== null);
-        assert.equal(result.totalSymbols, 1);
-        assert.equal(result.maxDistance, 0);
-        assert.equal(result.hasCircular, false);
+        assert.equal(result.metadata.totalSymbols, 1);
+        assert.equal(result.metadata.maxDistance, 0);
+        assert.equal(result.metadata.hasCircular, false);
     });
 });
 

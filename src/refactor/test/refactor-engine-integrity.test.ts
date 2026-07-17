@@ -51,11 +51,7 @@ function createHotReloadCoordinatorForValidation(
             cascade: [],
             order: [],
             circular: [],
-            metadata: { totalSymbols: 0, maxDistance: 0, hasCircular: false },
-            // Top-level convenience aliases (promoted from metadata)
-            totalSymbols: 0,
-            maxDistance: 0,
-            hasCircular: false
+            metadata: { totalSymbols: 0, maxDistance: 0, hasCircular: false }
         }),
         computeRenameImpactGraph: async () => createMinimalRenameImpactGraph(symbolId, symbolName),
         checkHotReloadSafety
