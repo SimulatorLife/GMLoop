@@ -204,7 +204,17 @@ function readFirstDeclaration(entry: ProjectIndexIdentifierEntry): Record<string
     return declarations.length > 0 && Core.isObjectLike(declarations[0]) ? declarations[0] : null;
 }
 
-function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectIndexIdentifierEntry): string {
+/**
+ * Build the SCIP-shaped symbol key for a single identifier entry.
+ *
+ * Returns `null` for resource-style node kinds (objects, rooms, sounds,
+ * texture groups, etc.) because they are addressed by their resource
+ * path rather than a SCIP symbol. The return type is therefore
+ * `string | null` so callers cannot mistake a missing symbol for an
+ * empty string and so the absence cannot flow into string-typed
+ * consumers (such as `createGraphNodeId`) as `undefined`.
+ */
+function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectIndexIdentifierEntry): string | null {
     const identifierId = getString(entry.identifierId);
     if (identifierId?.startsWith("gml/")) {
         return identifierId;
@@ -262,8 +272,15 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
         case "shader":
         case "sound":
         case "sprite":
+        case "texture_group":
         case "tileset":
-        case "timeline":
+        case "timeline": {
+            return null;
+        }
+        default: {
+            const _exhaustive: never = kind;
+            return _exhaustive;
+        }
     }
 }
 
@@ -1315,6 +1332,14 @@ function projectIdentifierCollections(context: ProjectionContext): void {
                 getString((Array.isArray(entry.references) ? entry.references[0] : null)?.filePath);
             const resourcePath = getString(entry.resourcePath) ?? resolveResourcePathForFile(context, filePath);
             const scipSymbol = resolveScipSymbol(kind, name, entry);
+            if (!scipSymbol) {
+                // Resource-style identifiers (texture groups, sprites, ...)
+                // do not have a SCIP symbol; they are addressed by their
+                // resource path. Skip node creation rather than feeding
+                // `null` into `createGraphNodeId` and synthesizing a
+                // placeholder id such as `project::symbol::null`.
+                continue;
+            }
             const sourceText = readSourceText(context.rootPath, filePath);
             const displayName = getString(entry.displayName) ?? name;
             const scopeId = getString(entry.scopeId) ?? getString(entry.id);

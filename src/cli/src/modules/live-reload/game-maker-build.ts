@@ -138,6 +138,13 @@ export function isBuildExecutionError(error: unknown): error is BuildExecutionEr
  */
 const BUILD_EXECUTION_ERROR_NAME = "GameMakerBuildExecutionError" as const;
 
+/**
+ * Filename of the per-user Igor (GameMaker) licence plist that lives
+ * inside a user support folder. Extracted so the literal is not
+ * duplicated across the identity-resolution paths.
+ */
+const IGOR_LICENSE_PLIST_FILENAME = "licence.plist" as const;
+
 class GameMakerBuildExecutionError extends Error {
     backend: Exclude<GameMakerBuildBackend, "auto">;
     command: string;
@@ -1018,7 +1025,7 @@ async function resolveIgorIdentityPaths(
     }
 
     if (buildConfig.userFolder !== null) {
-        const inferredLicensePath = path.join(buildConfig.userFolder, "licence.plist");
+        const inferredLicensePath = path.join(buildConfig.userFolder, IGOR_LICENSE_PLIST_FILENAME);
         const inferredLicenseStats = await Core.safeStat(inferredLicensePath);
         return Object.freeze({
             licenseFile: inferredLicenseStats?.isFile() ? inferredLicensePath : null,
@@ -1027,7 +1034,7 @@ async function resolveIgorIdentityPaths(
     }
 
     if (projectRoot !== null) {
-        const projectLocalLicensePath = path.join(projectRoot, ".gmcache", "license", "licence.plist");
+        const projectLocalLicensePath = path.join(projectRoot, ".gmcache", "license", IGOR_LICENSE_PLIST_FILENAME);
         const projectLocalLicenseStats = await Core.safeStat(projectLocalLicensePath);
         if (projectLocalLicenseStats?.isFile()) {
             return Object.freeze({
@@ -1045,7 +1052,7 @@ async function resolveIgorIdentityPaths(
         });
     }
 
-    const autoDetectedLicensePath = path.join(autoDetectedUserFolder, "licence.plist");
+    const autoDetectedLicensePath = path.join(autoDetectedUserFolder, IGOR_LICENSE_PLIST_FILENAME);
     const autoDetectedLicenseStats = await Core.safeStat(autoDetectedLicensePath);
     return Object.freeze({
         licenseFile: autoDetectedLicenseStats?.isFile() ? autoDetectedLicensePath : null,
@@ -1080,7 +1087,7 @@ async function collectGameMakerUserFoldersFromSupportRoot(
             .filter((entry) => entry.isDirectory())
             .map(async (entry) => {
                 const userFolderPath = path.join(supportRoot, entry.name);
-                const licensePath = path.join(userFolderPath, "licence.plist");
+                const licensePath = path.join(userFolderPath, IGOR_LICENSE_PLIST_FILENAME);
                 const licenseStats = await Core.safeStat(licensePath);
                 if (!licenseStats?.isFile()) {
                     return null;
