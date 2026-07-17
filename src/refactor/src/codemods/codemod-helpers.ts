@@ -5,6 +5,12 @@
  * multiple codemods.  Keeping them here allows each codemod to stay focused
  * on its own transformation logic rather than re-implementing common
  * infrastructure.
+ *
+ * Directive-line and GML text scanning helpers used to live here too, but
+ * they have been promoted to `@gmloop/core` (see
+ * `Core.isDirectiveLineAtIndex`, `Core.findNextLineStart`, and the
+ * `argument-separator-detection` module) so the `lint` workspace can share
+ * them without violating the `refactor → lint` boundary.
  */
 
 /**
@@ -69,48 +75,4 @@ export function applySourceTextEdits<T extends CodemodSourceTextEdit>(
 
     result += sourceText.slice(cursor);
     return result;
-}
-
-/**
- * Determines whether the source offset lies on a directive line (a line whose
- * first non-whitespace character is `#`, e.g. `#region`, `#macro`, `#define`).
- *
- * Codemods scanning GML source must skip directive lines because their
- * contents are preprocessor tokens rather than runtime GML expressions;
- * rewriting them produces invalid output.
- *
- * @param sourceText - Full source text being scanned.
- * @param index - Index of the character to test.
- * @returns `true` if the character belongs to a directive line, otherwise `false`.
- */
-export function isDirectiveLineAtIndex(sourceText: string, index: number): boolean {
-    const lineStart = sourceText.lastIndexOf("\n", index - 1) + 1;
-    for (let cursor = lineStart; cursor < sourceText.length; cursor += 1) {
-        const character = sourceText[cursor];
-        if (character === "\n" || character === "\r") {
-            return false;
-        }
-        if (/\s/u.test(character ?? "")) {
-            continue;
-        }
-        return character === "#";
-    }
-    return false;
-}
-
-/**
- * Returns the index of the first character on the line after `index`.
- *
- * Used by codemods that need to advance past a directive line in a single
- * step: pair with {@link isDirectiveLineAtIndex} and resume scanning at the
- * returned offset, which is always one past the next line break or the end of
- * the source text.
- *
- * @param sourceText - Full source text being scanned.
- * @param index - Index of a character on the line whose terminator should be located.
- * @returns Index immediately after the next `\n`, or `sourceText.length` when the line has no terminator.
- */
-export function findNextLineStart(sourceText: string, index: number): number {
-    const nextLineBreak = sourceText.indexOf("\n", index);
-    return nextLineBreak === -1 ? sourceText.length : nextLineBreak + 1;
 }
