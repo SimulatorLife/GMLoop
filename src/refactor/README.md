@@ -191,6 +191,53 @@ enabled alongside the other configured codemods:
 }
 ```
 
+The `repairInvalidTexturePointerGuard` codemod repairs the corresponding
+startup failure when a project throws on an invalid texture pointer even
+though the function already declares a texture-info fallback struct. It
+returns that fallback from the structurally matched guard and leaves guards
+without a declared fallback untouched:
+
+```json
+{
+    "refactor": {
+        "codemods": {
+            "repairInvalidTexturePointerGuard": {}
+        }
+    }
+}
+```
+
+The `repairAudioEmitterCreationGuard` codemod guards zero-argument
+`audio_emitter_create()` calls with `audio_system_is_initialised()` so an
+HTML5 build cannot retain a partially initialized emitter during startup:
+
+```json
+{
+    "refactor": {
+        "codemods": {
+            "repairAudioEmitterCreationGuard": {}
+        }
+    }
+}
+```
+
+The `repairSpriteTextureUvResolution` codemod repairs helpers that test
+`scr_texture_is_valid(sprite)` before `scr_sprite_exists(sprite)`. Native
+GameMaker keeps those asset kinds distinct, but HTML5 represents sprite
+references numerically, so the texture branch can otherwise dereference a
+sprite asset as a texture page. The codemod swaps only the matching branches
+inside a `scr_get_uvs` helper and preserves its fallback branch:
+
+```json
+{
+    "refactor": {
+        "codemods": {
+            "repairSpriteTextureUvResolution": {}
+        }
+    }
+}
+```
+
 #### CLI Usage
 
 ```bash

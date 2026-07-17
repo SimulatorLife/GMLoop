@@ -5,6 +5,8 @@ import test from "node:test";
 
 import { Core } from "@gmloop/core";
 
+import { isRuntimeBuiltinAvailable, resolveRuntimeBuiltinFunctions } from "../src/browser/runtime/builtin-functions.js";
+
 const FUNCTION_DECLARATION_PATTERN = /\bfunction\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/g;
 const FUNCTION_ASSIGNMENT_PATTERN = /\b([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*function\b/g;
 
@@ -101,4 +103,60 @@ void test("HTML5 runtime defines core manual builtins used by hot reload", () =>
         assert.ok(manualFunctions.has(name), `Manual metadata missing '${name}'`);
         assert.ok(runtimeFunctions.has(name), `HTML5 runtime missing '${name}'`);
     }
+});
+
+void test("hot-reload builtin resolution recognizes HTML5 texture handles as pointers", () => {
+    const textureHandle = {
+        WebGLTexture: {},
+        TPE: {},
+        toString(): string {
+            return "Texture:test.png";
+        }
+    };
+    const fallbackFunctions = resolveRuntimeBuiltinFunctions({});
+
+    assert.equal(fallbackFunctions.is_ptr(textureHandle), true);
+    assert.equal(fallbackFunctions.is_ptr(new ArrayBuffer(1)), true);
+    assert.equal(fallbackFunctions.is_ptr({}), false);
+});
+
+void test("hot-reload builtin resolution augments a native is_ptr predicate", () => {
+    const textureHandle = {
+        WebGLTexture: {},
+        TPE: {},
+        toString(): string {
+            return "Texture:test.png";
+        }
+    };
+    const functions = resolveRuntimeBuiltinFunctions({
+        is_ptr: (): boolean => false
+    });
+
+    assert.equal(functions.is_ptr(textureHandle), true);
+    assert.equal(functions.is_ptr({}), false);
+});
+
+void test("hot-reload builtin resolution discovers minified HTML5 functions", () => {
+    const calls: Array<string> = [];
+    const globalScope: Record<string, unknown> = {
+        _HL4: {
+            self: "self",
+            mouse_x: "_mouse_x",
+            current_time: "_current_time",
+            variable_instance_get: "_variable_instance_get",
+            texture_is_ready: "_texture_is_ready"
+        },
+        _texture_is_ready: () => {
+            calls.push("texture_is_ready");
+            return true;
+        }
+    };
+
+    assert.equal(isRuntimeBuiltinAvailable(globalScope, "texture_is_ready"), true);
+    assert.equal(isRuntimeBuiltinAvailable(globalScope, "texture_prefetch"), false);
+
+    const functions = resolveRuntimeBuiltinFunctions(globalScope);
+    assert.equal(typeof functions.gml_pragma, "function");
+    functions.gml_pragma("forceinline");
+    assert.deepEqual(calls, []);
 });

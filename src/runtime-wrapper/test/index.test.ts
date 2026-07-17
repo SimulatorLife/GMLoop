@@ -79,6 +79,23 @@ void test("script patch function executes correctly", () => {
     assert.strictEqual(result, 8);
 });
 
+void test("script patch preserves static storage across calls and replacements", () => {
+    const wrapper = RuntimeWrapper.createRuntimeWrapper();
+    const jsBody =
+        'if (!Object.prototype.hasOwnProperty.call(__gml_static, "count")) { __gml_static["count"] = 0; }\nreturn __gml_static["count"]++;';
+
+    wrapper.applyPatch({ kind: "script", id: "script:counter", js_body: jsBody });
+    const firstFunction = wrapper.getScript("script:counter");
+    assert.ok(firstFunction);
+    assert.equal(firstFunction(null, null, []), 0);
+    assert.equal(firstFunction(null, null, []), 1);
+
+    wrapper.applyPatch({ kind: "script", id: "script:counter", js_body: jsBody });
+    const replacementFunction = wrapper.getScript("script:counter");
+    assert.ok(replacementFunction);
+    assert.equal(replacementFunction(null, null, []), 2);
+});
+
 void test("script patch prefers builtin constants over conflicting globals", () => {
     const wrapper = RuntimeWrapper.createRuntimeWrapper();
     const globalScope = globalThis as Record<string, unknown>;

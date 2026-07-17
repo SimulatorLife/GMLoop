@@ -238,7 +238,7 @@ export interface GlobalVarStatementNode extends BaseNode {
 
 export interface VariableDeclarationNode extends BaseNode {
     readonly type: "VariableDeclaration";
-    readonly kind: "var" | "let" | "const";
+    readonly kind: "var" | "let" | "const" | "static";
     readonly declarations: ReadonlyArray<VariableDeclaratorNode>;
 }
 
@@ -403,6 +403,11 @@ export type GmlNode =
 export interface EmitOptions {
     readonly globalsIdent: string;
     readonly callScriptIdent: string;
+    /**
+     * Identifier supplied by the runtime wrapper for an unwrapped function
+     * body's static-variable storage.
+     */
+    readonly staticIdent: string;
     /**
      * Identifier (or property expression) that resolves `with` targets.
      * Defaults to `globalThis.__resolve_with_targets`.

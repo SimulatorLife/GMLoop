@@ -14,7 +14,7 @@ import { Transpiler } from "@gmloop/transpiler";
 
 import { type TranspilationContext, transpileFile } from "../src/modules/transpilation/coordinator.js";
 
-function createContext(): TranspilationContext {
+function createContext(websocketServer: TranspilationContext["websocketServer"] = null): TranspilationContext {
     return {
         transpiler: new Transpiler.GmlTranspiler(),
         patches: [],
@@ -24,7 +24,7 @@ function createContext(): TranspilationContext {
         sourcePathToPatchIds: new Map(),
         bounds: { maxEntries: 50 },
         totalPatchCount: 0,
-        websocketServer: null
+        websocketServer
     };
 }
 
@@ -118,6 +118,43 @@ void describe("transpileFile event vs script routing", () => {
             result.patch.id.startsWith("gml/script/"),
             `Script patch ID must start with gml/script/; got: ${result.patch.id}`
         );
+    });
+
+    void it("emits and broadcasts one patch per top-level function in a script", () => {
+        const broadcasts: Array<unknown> = [];
+        const context = createContext({
+            broadcast(payload) {
+                broadcasts.push(payload);
+                return { successCount: 1, failureCount: 0, totalClients: 1 };
+            },
+            getClientCount() {
+                return 1;
+            }
+        });
+        const source = `function first_helper(value) {
+    return value + 1;
+}
+
+function second_helper(value) {
+    return value + 2;
+}`;
+
+        const result = transpileFile(context, "/project/scripts/group_helpers.gml", source, 7, {
+            verbose: false,
+            quiet: true
+        });
+
+        assert.ok(result.success, "Transpilation should succeed");
+        assert.strictEqual(result.patches?.length, 2, "Each top-level function must receive its own patch");
+        assert.deepStrictEqual(
+            result.patches?.map((patch) => patch.id),
+            ["gml/script/first_helper", "gml/script/second_helper"]
+        );
+        assert.ok(result.patches?.every((patch) => !patch.js_body.includes("function second_helper")));
+        assert.strictEqual(context.totalPatchCount, 2, "Each changed function patch must count separately");
+        assert.strictEqual(broadcasts.length, 1, "Function patches must be delivered in one websocket message");
+        assert.ok(Array.isArray(broadcasts[0]), "Multiple function patches must be sent as a batch");
+        assert.strictEqual((broadcasts[0] as Array<unknown>).length, 2);
     });
 
     void it("routes a top-level .gml file (not under objects/) to transpileScript", () => {

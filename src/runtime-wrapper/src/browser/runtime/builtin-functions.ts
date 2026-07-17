@@ -1,6 +1,12 @@
+import { isHtml5TextureHandle } from "./texture-pointer.js";
+
 type RuntimeBuiltinFunction = (...args: Array<unknown>) => unknown;
 
 type RuntimeBuiltinFunctionMap = Record<string, RuntimeBuiltinFunction>;
+
+type MinifiedBuiltinMap = Record<string, unknown>;
+
+const MINIFIED_BUILTIN_MAP_SHAPE = Object.freeze(["mouse_x", "current_time", "variable_instance_get"]);
 
 const FALLBACK_RUNTIME_FUNCTIONS: RuntimeBuiltinFunctionMap = Object.freeze({
     array_copy(destination, destinationIndex, source, sourceIndex, length) {
@@ -15,6 +21,14 @@ const FALLBACK_RUNTIME_FUNCTIONS: RuntimeBuiltinFunctionMap = Object.freeze({
             destination[destinationStart + offset] = source[sourceStart + offset];
         }
         return destination;
+    },
+    gml_pragma() {
+        // `gml_pragma` is a compiler directive. The live-reload transpiler
+        // preserves it in JavaScript so the runtime must provide a no-op.
+        return undefined;
+    },
+    is_ptr(value) {
+        return value instanceof ArrayBuffer || isHtml5TextureHandle(value);
     },
     cos(value) {
         return Math.cos(Number(value));
@@ -47,6 +61,82 @@ export function isRuntimeBuiltinFunction(name: string): boolean {
     return Object.hasOwn(FALLBACK_RUNTIME_FUNCTIONS, name);
 }
 
+function isMinifiedBuiltinMap(value: unknown): value is MinifiedBuiltinMap {
+    if (value === null || typeof value !== "object") {
+        return false;
+    }
+
+    const candidate = value as MinifiedBuiltinMap;
+    if (candidate.self === value) {
+        return false;
+    }
+
+    return MINIFIED_BUILTIN_MAP_SHAPE.every((propertyName) => typeof candidate[propertyName] === "string");
+}
+
+function readGlobalProperty(globalScope: Record<string, unknown>, propertyName: string): unknown {
+    try {
+        return globalScope[propertyName];
+    } catch {
+        return undefined;
+    }
+}
+
+function resolveMinifiedBuiltinMap(globalScope: Record<string, unknown>): MinifiedBuiltinMap | null {
+    const preferredMap = readGlobalProperty(globalScope, "_HL4");
+    if (isMinifiedBuiltinMap(preferredMap)) {
+        return preferredMap;
+    }
+
+    for (const propertyName of Object.getOwnPropertyNames(globalScope)) {
+        const candidate = readGlobalProperty(globalScope, propertyName);
+        if (isMinifiedBuiltinMap(candidate)) {
+            return candidate;
+        }
+    }
+
+    return null;
+}
+
+function resolveMappedRuntimeBuiltin(
+    globalScope: Record<string, unknown>,
+    name: string
+): RuntimeBuiltinFunction | undefined {
+    const directValue = readGlobalProperty(globalScope, name);
+    if (typeof directValue === "function") {
+        return directValue as RuntimeBuiltinFunction;
+    }
+
+    const runtimeBuiltins = readGlobalProperty(globalScope, "g_pBuiltIn");
+    if (runtimeBuiltins !== null && typeof runtimeBuiltins === "object") {
+        const builtinValue = readGlobalProperty(runtimeBuiltins as Record<string, unknown>, name);
+        if (typeof builtinValue === "function") {
+            return builtinValue as RuntimeBuiltinFunction;
+        }
+    }
+
+    const minifiedBuiltinMap = resolveMinifiedBuiltinMap(globalScope);
+    const mappedName = minifiedBuiltinMap?.[name];
+    if (typeof mappedName !== "string" || mappedName.length === 0) {
+        return undefined;
+    }
+
+    const mappedValue = readGlobalProperty(globalScope, mappedName);
+    return typeof mappedValue === "function" ? (mappedValue as RuntimeBuiltinFunction) : undefined;
+}
+
+/**
+ * Returns true when the current HTML5 runtime can resolve a canonical builtin
+ * name, including functions hidden behind GameMaker's minified name table.
+ *
+ * @param globalScope Browser global scope for the current runtime.
+ * @param name Canonical GameMaker builtin name.
+ * @returns True when a fallback, canonical, builtin-table, or minified function exists.
+ */
+export function isRuntimeBuiltinAvailable(globalScope: Record<string, unknown>, name: string): boolean {
+    return isRuntimeBuiltinFunction(name) || resolveMappedRuntimeBuiltin(globalScope, name) !== undefined;
+}
+
 /**
  * Resolves the callable builtin surface available to hot-reload patches.
  *
@@ -62,9 +152,20 @@ export function resolveRuntimeBuiltinFunctions(globalScope: Record<string, unkno
     const functions: RuntimeBuiltinFunctionMap = { ...FALLBACK_RUNTIME_FUNCTIONS };
 
     for (const name of Object.keys(FALLBACK_RUNTIME_FUNCTIONS)) {
-        const globalValue = globalScope[name];
-        if (typeof globalValue === "function") {
-            functions[name] = globalValue as RuntimeBuiltinFunction;
+        const globalValue = resolveMappedRuntimeBuiltin(globalScope, name);
+        if (globalValue !== undefined) {
+            if (name === "is_ptr") {
+                const nativePointerFunction = globalValue;
+                functions[name] = function (this: unknown, ...args: Array<unknown>): boolean {
+                    if (Reflect.apply(nativePointerFunction, this, args) === true) {
+                        return true;
+                    }
+
+                    return isHtml5TextureHandle(args[0]);
+                };
+            } else {
+                functions[name] = globalValue;
+            }
         }
     }
 

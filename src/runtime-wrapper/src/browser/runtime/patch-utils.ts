@@ -7,7 +7,7 @@ import {
     readRuntimeObjectPool
 } from "../support/index.js";
 import { resolveBuiltinConstants } from "./builtin-constants.js";
-import { isRuntimeBuiltinFunction, resolveRuntimeBuiltinFunctions } from "./builtin-functions.js";
+import { isRuntimeBuiltinAvailable, resolveRuntimeBuiltinFunctions } from "./builtin-functions.js";
 import { getPatchKindMetadata, isSupportedPatchKind, type RegistryCollectionKey } from "./patch-kind.js";
 import type {
     ApplyPatchResult,
@@ -160,6 +160,22 @@ const OBJECT_EVENT_PREFIX_MAPPINGS: ReadonlyArray<ObjectEventPrefixMapping> = Ob
 let _scriptNamesRef: Array<string> | null = null;
 let _scriptNameIndex: Map<string, number> | null = null;
 let _runtimeBindingSuppressionDepth = 0;
+const _runtimeStaticStores = new WeakMap<RuntimeFunction, Record<string, unknown>>();
+
+function resolveRuntimeStaticStore(previousFunction: RuntimeFunction | undefined): Record<string, unknown> {
+    if (previousFunction !== undefined) {
+        const previousStore = _runtimeStaticStores.get(previousFunction);
+        if (previousStore !== undefined) {
+            return previousStore;
+        }
+    }
+
+    return Object.create(null) as Record<string, unknown>;
+}
+
+function rememberRuntimeStaticStore(functionValue: RuntimeFunction, store: Record<string, unknown>): void {
+    _runtimeStaticStores.set(functionValue, store);
+}
 
 function areRuntimeBindingsSuppressed(): boolean {
     return _runtimeBindingSuppressionDepth > 0;
@@ -1260,15 +1276,27 @@ function hasRuntimeScriptDependency(globalScope: Record<string, unknown>, depend
         return false;
     }
 
-    if (isRuntimeBuiltinFunction(scriptName)) {
+    if (isRuntimeBuiltinAvailable(globalScope, scriptName)) {
         return true;
     }
 
-    return (
+    if (
         hasGlobalFunction(globalScope, scriptName) ||
         hasGlobalFunction(globalScope, `gml_Script_${scriptName}`) ||
         hasGlobalFunction(globalScope, `gml_GlobalScript_${scriptName}`)
+    ) {
+        return true;
+    }
+
+    const runtimeGameData = resolveRuntimeGameData(globalScope);
+    if (runtimeGameData.scriptNames === undefined || runtimeGameData.scripts === undefined) {
+        return false;
+    }
+
+    const scriptIndex = runtimeGameData.scriptNames.findIndex(
+        (runtimeName) => runtimeName === `gml_Script_${scriptName}` || runtimeName === `gml_GlobalScript_${scriptName}`
     );
+    return scriptIndex !== -1 && typeof runtimeGameData.scripts[scriptIndex] === "function";
 }
 
 function hasRuntimeObjectEventDependency(globalScope: Record<string, unknown>, dependencyId: string): boolean {
@@ -1447,6 +1475,7 @@ function requirePatchBody(patch: ScriptPatch | EventPatch | ClosurePatch, label:
 
 function applyScriptPatch(registry: RuntimeRegistry, patch: ScriptPatch): RuntimeRegistry {
     const patchBody = requirePatchBody(patch, "Script");
+    const staticStore = resolveRuntimeStaticStore(registry.scripts[patch.id]);
 
     const rawFn = new Function(
         "self",
@@ -1454,6 +1483,7 @@ function applyScriptPatch(registry: RuntimeRegistry, patch: ScriptPatch): Runtim
         "args",
         "__gml_constants",
         "__gml_builtins",
+        "__gml_static",
         `const __gml_scope = self && typeof self === "object" ? self : Object.create(null);
 const __global_scope = typeof globalThis === "object" && globalThis !== null ? globalThis : null;
 const __html_color_pattern = /^rgba?\\(/;
@@ -1673,9 +1703,10 @@ ${patchBody}
         const globals = globalThis as RuntimeBindingGlobals & Record<string, unknown>;
         const constants = resolveBuiltinConstants(globals);
         const builtins = resolveRuntimeBuiltinScope(globals);
-        return rawFn.call(self, self, other, args, constants, builtins);
+        return rawFn.call(self, self, other, args, constants, builtins, staticStore);
     }) as RuntimeFunction;
     const namedFn = createNamedRuntimeFunction(resolveRuntimeId(patch), fn);
+    rememberRuntimeStaticStore(namedFn, staticStore);
 
     if (!areRuntimeBindingsSuppressed()) {
         applyRuntimeBindings(patch, namedFn);
@@ -1686,6 +1717,7 @@ ${patchBody}
 
 function applyEventPatch(registry: RuntimeRegistry, patch: EventPatch): RuntimeRegistry {
     const patchBody = requirePatchBody(patch, "Event");
+    const staticStore = resolveRuntimeStaticStore(registry.events[patch.id]);
 
     const thisName = patch.this_name || "self";
     const trimmedArgs = patch.js_args?.trim() ?? "";
@@ -1696,6 +1728,7 @@ function applyEventPatch(registry: RuntimeRegistry, patch: EventPatch): RuntimeR
         argsDecl,
         "__gml_constants",
         "__gml_builtins",
+        "__gml_static",
         `const __gml_scope = ${thisName} && typeof ${thisName} === "object" ? ${thisName} : Object.create(null);
 const __global_scope = typeof globalThis === "object" && globalThis !== null ? globalThis : null;
 let __gml_minified_property_map = null;
@@ -1892,10 +1925,11 @@ ${patchBody}
         const globals = globalThis as RuntimeBindingGlobals & Record<string, unknown>;
         const constants = resolveBuiltinConstants(globals);
         const builtins = resolveRuntimeBuiltinScope(globals);
-        return fn.call(self, self, ...forwardedArgs, constants, builtins);
+        return fn.call(self, self, ...forwardedArgs, constants, builtins, staticStore);
     };
 
     const namedFn = createNamedRuntimeFunction(resolveRuntimeId(patch), eventWrapper);
+    rememberRuntimeStaticStore(namedFn, staticStore);
     if (!areRuntimeBindingsSuppressed()) {
         const binding = applyRuntimeBindings(patch, namedFn);
         refreshObjectInstancesAfterEventPatch(binding);
@@ -1906,8 +1940,13 @@ ${patchBody}
 
 function applyClosurePatch(registry: RuntimeRegistry, patch: ClosurePatch): RuntimeRegistry {
     const patchBody = requirePatchBody(patch, "Closure");
+    const staticStore = resolveRuntimeStaticStore(registry.closures[patch.id]);
 
-    const fn = new Function("...args", patchBody) as RuntimeFunction;
+    const rawFn = new Function("__gml_static", "...args", patchBody) as RuntimeFunction;
+    const fn = function (this: unknown, ...args: Array<unknown>) {
+        return rawFn.call(this, staticStore, ...args);
+    } as RuntimeFunction;
+    rememberRuntimeStaticStore(fn, staticStore);
 
     return updateRegistryCollection(registry, "closures", patch.id, fn);
 }

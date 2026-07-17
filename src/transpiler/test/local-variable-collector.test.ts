@@ -4,7 +4,11 @@ import { describe, it } from "node:test";
 import { Parser } from "@gmloop/parser";
 
 import type { ProgramNode } from "../src/emitter/ast.js";
-import { collectGlobalVarNames, collectLocalVariables } from "../src/emitter/local-variable-collector.js";
+import {
+    collectGlobalVarNames,
+    collectLocalVariables,
+    collectStaticVariableDeclarations
+} from "../src/emitter/local-variable-collector.js";
 
 function parseProgram(source: string): ProgramNode {
     return Parser.GMLParser.parse(source);
@@ -22,6 +26,12 @@ void describe("collectLocalVariables", () => {
         const locals = collectLocalVariables(ast);
         strictEqual(locals.has("speed"), true);
         strictEqual(locals.size, 1);
+    });
+
+    void it("collects static-declared names as function locals", () => {
+        const ast = parseProgram("static cached = 5;");
+        const locals = collectLocalVariables(ast);
+        strictEqual(locals.has("cached"), true);
     });
 
     void it("collects multiple var-declared names from separate declarations", () => {
@@ -124,6 +134,23 @@ void describe("collectLocalVariables", () => {
         strictEqual(locals.has("direction"), false, "direction is an instance field, not var-declared");
         strictEqual(locals.has("x"), false, "x is an instance field, not var-declared");
         strictEqual(locals.has("y"), false, "y is an instance field, not var-declared");
+    });
+});
+
+void describe("collectStaticVariableDeclarations", () => {
+    void it("preserves source order and excludes nested function declarations", () => {
+        const ast = parseProgram(
+            "function outer() { static first = 1; if (true) { static second = 2; } function inner() { static ignored = 3; } }"
+        );
+        const outer = ast.body[0];
+        if (outer.type !== "FunctionDeclaration") {
+            throw new Error("Expected a function declaration");
+        }
+
+        const declarations = collectStaticVariableDeclarations(outer.body);
+        strictEqual(declarations.length, 2);
+        strictEqual(declarations[0]?.id.name, "first");
+        strictEqual(declarations[1]?.id.name, "second");
     });
 });
 

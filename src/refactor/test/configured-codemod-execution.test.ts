@@ -105,6 +105,9 @@ void test("listRegisteredCodemods returns the v1 configured codemod set", () => 
             "repairLogicalNot",
             "repairArgumentSeparators",
             "repairTexturePrefetchGuard",
+            "repairInvalidTexturePointerGuard",
+            "repairAudioEmitterCreationGuard",
+            "repairSpriteTextureUvResolution",
             "globalvarToGlobal",
             "loopLengthHoisting",
             "namingConvention"
@@ -138,6 +141,28 @@ void test("listConfiguredCodemods reports normalized effective config and select
         {
             id: "repairTexturePrefetchGuard",
             description: "Prefetch texture pages when they are not ready before using their texture pointers.",
+            configured: false,
+            selected: false,
+            effectiveConfig: null
+        },
+        {
+            id: "repairInvalidTexturePointerGuard",
+            description: "Return a declared texture-info fallback when a texture pointer is not ready during startup.",
+            configured: false,
+            selected: false,
+            effectiveConfig: null
+        },
+        {
+            id: "repairAudioEmitterCreationGuard",
+            description: "Defer audio-emitter creation until the HTML5 audio engine is initialized.",
+            configured: false,
+            selected: false,
+            effectiveConfig: null
+        },
+        {
+            id: "repairSpriteTextureUvResolution",
+            description:
+                "Resolve sprite UVs before numeric texture-page handles in HTML5-compatible scr_get_uvs helpers.",
             configured: false,
             selected: false,
             effectiveConfig: null

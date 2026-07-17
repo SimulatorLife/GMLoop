@@ -5,7 +5,10 @@ import { Core } from "@gmloop/core";
 import { applyLoopLengthHoistingCodemod } from "./codemods/loop-length-hoisting/index.js";
 import { executeNamingConventionCodemod } from "./codemods/naming-convention/index.js";
 import { applyRepairArgumentSeparatorsCodemod } from "./codemods/repair-argument-separators/index.js";
+import { applyRepairAudioEmitterCreationGuardCodemod } from "./codemods/repair-audio-emitter-creation-guard/index.js";
+import { applyRepairInvalidTexturePointerGuardCodemod } from "./codemods/repair-invalid-texture-pointer-guard/index.js";
 import { applyRepairLogicalNotCodemod } from "./codemods/repair-logical-not/index.js";
+import { applyRepairSpriteTextureUvResolutionCodemod } from "./codemods/repair-sprite-texture-uv-resolution/index.js";
 import { applyRepairTexturePrefetchGuardCodemod } from "./codemods/repair-texture-prefetch-guard/index.js";
 import { applyScientificNotationCodemod } from "./codemods/scientific-notation/index.js";
 import { normalizeNamingConventionPolicy } from "./naming-convention-policy.js";
@@ -61,6 +64,9 @@ function normalizeEmptyObjectConfig<
         | "repairLogicalNot"
         | "repairArgumentSeparators"
         | "repairTexturePrefetchGuard"
+        | "repairInvalidTexturePointerGuard"
+        | "repairAudioEmitterCreationGuard"
+        | "repairSpriteTextureUvResolution"
 >(value: unknown, context: string): RefactorCodemodConfigEntry<T> {
     if (value === false) {
         return false;
@@ -77,7 +83,10 @@ async function executeSingleFileTextCodemod(
         | "loopLengthHoisting"
         | "repairLogicalNot"
         | "repairArgumentSeparators"
-        | "repairTexturePrefetchGuard",
+        | "repairTexturePrefetchGuard"
+        | "repairInvalidTexturePointerGuard"
+        | "repairAudioEmitterCreationGuard"
+        | "repairSpriteTextureUvResolution",
     warningMessage: string,
     transform: (
         sourceText: string,
@@ -255,6 +264,63 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
                 "repairTexturePrefetchGuard",
                 "No .gml files were selected for texture-prefetch guard repair.",
                 applyRepairTexturePrefetchGuardCodemod
+            );
+        }
+    }),
+
+    repairInvalidTexturePointerGuard: Object.freeze({
+        id: "repairInvalidTexturePointerGuard",
+        description: "Return a declared texture-info fallback when a texture pointer is not ready during startup.",
+        requiresSemanticProjectIndex: false,
+        normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
+        execute(
+            _engine: CodemodEngine,
+            request: ConfiguredCodemodRunRequest
+        ): Promise<ConfiguredCodemodExecutionResult> {
+            return executeSingleFileTextCodemod(
+                _engine,
+                request,
+                "repairInvalidTexturePointerGuard",
+                "No .gml files were selected for invalid-texture-pointer guard repair.",
+                applyRepairInvalidTexturePointerGuardCodemod
+            );
+        }
+    }),
+
+    repairAudioEmitterCreationGuard: Object.freeze({
+        id: "repairAudioEmitterCreationGuard",
+        description: "Defer audio-emitter creation until the HTML5 audio engine is initialized.",
+        requiresSemanticProjectIndex: false,
+        normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
+        execute(
+            _engine: CodemodEngine,
+            request: ConfiguredCodemodRunRequest
+        ): Promise<ConfiguredCodemodExecutionResult> {
+            return executeSingleFileTextCodemod(
+                _engine,
+                request,
+                "repairAudioEmitterCreationGuard",
+                "No .gml files were selected for audio-emitter creation guard repair.",
+                applyRepairAudioEmitterCreationGuardCodemod
+            );
+        }
+    }),
+
+    repairSpriteTextureUvResolution: Object.freeze({
+        id: "repairSpriteTextureUvResolution",
+        description: "Resolve sprite UVs before numeric texture-page handles in HTML5-compatible scr_get_uvs helpers.",
+        requiresSemanticProjectIndex: false,
+        normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
+        execute(
+            _engine: CodemodEngine,
+            request: ConfiguredCodemodRunRequest
+        ): Promise<ConfiguredCodemodExecutionResult> {
+            return executeSingleFileTextCodemod(
+                _engine,
+                request,
+                "repairSpriteTextureUvResolution",
+                "No .gml files were selected for sprite-texture UV resolution repair.",
+                applyRepairSpriteTextureUvResolutionCodemod
             );
         }
     }),

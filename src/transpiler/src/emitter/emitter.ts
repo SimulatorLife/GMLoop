@@ -61,7 +61,7 @@ import {
 import { lowerEnumDeclaration } from "./enum-lowering.js";
 import { escapeTemplateText, stringifyStructKey } from "./js-string-utils.js";
 import { normalizeGmlNumericLiteral } from "./literal-normalization.js";
-import { collectGlobalVarNames } from "./local-variable-collector.js";
+import { collectGlobalVarNames, collectStaticVariableDeclarations } from "./local-variable-collector.js";
 import { mapBinaryOperator } from "./operator-mapping.js";
 import { ensureStatementTerminated } from "./statement-termination-policy.js";
 import { StringBuilder } from "./string-builder.js";
@@ -80,8 +80,14 @@ const EMPTY_ARGUMENT_LIST: readonly string[] = Object.freeze([]);
 const DEFAULT_OPTIONS: EmitOptions = Object.freeze({
     globalsIdent: "global",
     callScriptIdent: "__call_script",
+    staticIdent: "__gml_static",
     resolveWithTargetsIdent: "globalThis.__resolve_with_targets"
 });
+
+interface StaticScope {
+    readonly identifier: string;
+    readonly names: ReadonlySet<string>;
+}
 
 export class GmlToJsEmitter {
     /**
@@ -106,6 +112,8 @@ export class GmlToJsEmitter {
     private readonly scriptRefs: Set<string>;
     private emitDepth: number;
     private repeatLoopCounter: number;
+    private staticScopeCounter: number;
+    private readonly staticScopes: StaticScope[];
     private readonly visitNode = (node: GmlNode): string => this.visit(node);
 
     constructor(semantic: IdentifierAnalyzer & CallTargetAnalyzer, options: Partial<EmitOptions> = {}) {
@@ -116,6 +124,8 @@ export class GmlToJsEmitter {
         this.scriptRefs = new Set();
         this.emitDepth = 0;
         this.repeatLoopCounter = 0;
+        this.staticScopeCounter = 0;
+        this.staticScopes = [];
     }
 
     /**
@@ -155,6 +165,38 @@ export class GmlToJsEmitter {
         return this.emitWithLifecycle(ast, false);
     }
 
+    /**
+     * Emit a function body that is supplied to the runtime wrapper without its
+     * surrounding JavaScript function declaration.
+     *
+     * The runtime wrapper supplies `options.staticIdent` as a persistent object.
+     * Static declarations are hoisted into the emitted prologue and references
+     * are lowered to properties on that object, preserving GML's initialize-once
+     * behavior for scripts, events, and closures.
+     *
+     * @param body - Function body AST to emit
+     * @returns JavaScript body suitable for a runtime patch
+     */
+    emitFunctionBody(body: GmlNode): string {
+        const declarations = collectStaticVariableDeclarations(body);
+        const names = this.collectStaticNames(declarations);
+        const scope: StaticScope = {
+            identifier: this.options.staticIdent,
+            names
+        };
+
+        this.staticScopes.push(scope);
+        try {
+            const initializers = this.emitStaticInitializers(scope, declarations);
+            const emittedBody = isProgramNode(body)
+                ? this.emitFragment(body)
+                : this.emitFragment({ type: "Program", body: [body] });
+            return this.joinFunctionPrologue(initializers, emittedBody);
+        } finally {
+            this.staticScopes.pop();
+        }
+    }
+
     private emitWithLifecycle(ast: StatementLike, resetTopLevelState: boolean): string {
         if (!ast) {
             return "";
@@ -165,6 +207,8 @@ export class GmlToJsEmitter {
             this.initializedGlobalVars.clear();
             this.scriptRefs.clear();
             this.repeatLoopCounter = 0;
+            this.staticScopeCounter = 0;
+            this.staticScopes.length = 0;
         }
         this.emitDepth += 1;
         try {
@@ -373,8 +417,13 @@ export class GmlToJsEmitter {
     }
 
     private visitIdentifier(ast: IdentifierNode): string {
-        const kind = this.semantic.kindOfIdent(ast);
         const name = this.semantic.nameOfIdent(ast);
+        const staticReference = this.resolveStaticReference(name);
+        if (staticReference !== null) {
+            return staticReference;
+        }
+
+        const kind = this.semantic.kindOfIdent(ast);
         if (this.globalVars.has(name)) {
             return `${this.options.globalsIdent}.${name}`;
         }
@@ -714,16 +763,34 @@ export class GmlToJsEmitter {
 
     private visitVariableDeclaration(ast: VariableDeclarationNode): string {
         const decls = ast.declarations;
+        if (ast.kind === "static") {
+            if (this.staticScopes.length > 0 && decls.every((decl) => this.isCurrentStaticDeclaration(decl))) {
+                return "";
+            }
+
+            // A top-level static declaration is invalid GML, but keeping the
+            // emitted JavaScript valid makes parser recovery safe and leaves the
+            // diagnostic to the language/lint layer that owns that rule.
+            return this.emitVariableDeclarationWithKind("var", decls);
+        }
+
+        return this.emitVariableDeclarationWithKind(ast.kind, decls);
+    }
+
+    private emitVariableDeclarationWithKind(
+        kind: "var" | "let" | "const",
+        decls: ReadonlyArray<VariableDeclaratorNode>
+    ): string {
         // Fast path: single declaration without initialization
         if (decls.length === 1 && !decls[0].init) {
-            return `${ast.kind} ${this.visit(decls[0].id)}`;
+            return `${kind} ${this.visit(decls[0].id)}`;
         }
         // Fast path: single declaration with initialization
         if (decls.length === 1 && decls[0].init) {
             const decl = decls[0];
             const id = this.visit(decl.id);
             const init = this.visit(decl.init);
-            return `${ast.kind} ${id} = ${init}`;
+            return `${kind} ${id} = ${init}`;
         }
         // Multiple declarations: use StringBuilder for efficiency
         const builder = new StringBuilder(decls.length);
@@ -736,7 +803,7 @@ export class GmlToJsEmitter {
                 builder.append(id);
             }
         }
-        return `${ast.kind} ${builder.toString(", ")}`;
+        return `${kind} ${builder.toString(", ")}`;
     }
 
     private visitVariableDeclarator(ast: VariableDeclaratorNode): string {
@@ -907,17 +974,132 @@ export class GmlToJsEmitter {
         body: GmlNode,
         prologueStatement = ""
     ): string {
-        const printedBody = this.wrapFunctionLikeBody(body, prologueStatement);
+        const staticDeclarations = collectStaticVariableDeclarations(body);
+        const staticNames = this.collectStaticNames(staticDeclarations);
+        const hasStaticDeclarations = staticNames.size > 0;
+        const functionName = id || (hasStaticDeclarations ? this.nextStaticFunctionName() : "");
+        const staticScope = hasStaticDeclarations
+            ? {
+                  identifier: this.nextStaticScopeIdentifier(),
+                  names: staticNames
+              }
+            : null;
+
+        if (staticScope) {
+            this.staticScopes.push(staticScope);
+        }
+
+        let printedBody: string;
+        try {
+            const staticPrologue = staticScope
+                ? this.emitStaticFunctionPrologue(functionName, staticScope, staticDeclarations)
+                : "";
+            const combinedPrologue = [prologueStatement, staticPrologue].filter((line) => line.length > 0).join(";\n");
+            printedBody = this.wrapFunctionLikeBody(body, combinedPrologue);
+        } finally {
+            if (staticScope) {
+                this.staticScopes.pop();
+            }
+        }
+
         // Fast path: no parameters
         if (!params || params.length === 0) {
-            return `${keyword} ${id}()${printedBody}`;
+            return `${keyword} ${functionName}()${printedBody}`;
         }
         // Build parameter list with StringBuilder to avoid sparse array allocation
         const builder = new StringBuilder(params.length);
         for (const param of params) {
             builder.append(typeof param === "string" ? param : this.visit(param));
         }
-        return `${keyword} ${id}(${builder.toString(", ")})${printedBody}`;
+        return `${keyword} ${functionName}(${builder.toString(", ")})${printedBody}`;
+    }
+
+    private collectStaticNames(declarations: ReadonlyArray<VariableDeclaratorNode>): ReadonlySet<string> {
+        const names = new Set<string>();
+        for (const declaration of declarations) {
+            const name = this.resolveIdentifierName(declaration.id);
+            if (name) {
+                names.add(name);
+            }
+        }
+        return names;
+    }
+
+    private nextStaticScopeIdentifier(): string {
+        const identifier = `__gmloop_static_scope_${this.staticScopeCounter}`;
+        this.staticScopeCounter += 1;
+        return identifier;
+    }
+
+    private nextStaticFunctionName(): string {
+        const identifier = `__gmloop_static_function_${this.staticScopeCounter}`;
+        this.staticScopeCounter += 1;
+        return identifier;
+    }
+
+    private emitStaticFunctionPrologue(
+        functionName: string,
+        scope: StaticScope,
+        declarations: ReadonlyArray<VariableDeclaratorNode>
+    ): string {
+        const storageReference = functionName ? `${functionName}.__gmloop_static_store` : "Object.create(null)";
+        const storageInitialization = functionName
+            ? `const ${scope.identifier} = ${storageReference} ?? (${storageReference} = Object.create(null))`
+            : `const ${scope.identifier} = ${storageReference}`;
+        const initializers = this.emitStaticInitializers(scope, declarations);
+        return [storageInitialization, initializers].filter((line) => line.length > 0).join(";\n");
+    }
+
+    private emitStaticInitializers(scope: StaticScope, declarations: ReadonlyArray<VariableDeclaratorNode>): string {
+        const lines: string[] = [];
+        const initializedNames = new Set<string>();
+
+        for (const declaration of declarations) {
+            const name = this.resolveIdentifierName(declaration.id);
+            if (!name || initializedNames.has(name)) {
+                continue;
+            }
+
+            initializedNames.add(name);
+            const initializer = declaration.init ? this.visit(declaration.init) : "undefined";
+            const propertyName = JSON.stringify(name);
+            lines.push(
+                `if (!Object.prototype.hasOwnProperty.call(${scope.identifier}, ${propertyName})) { ${scope.identifier}[${propertyName}] = ${initializer}; }`
+            );
+        }
+
+        return lines.join("\n");
+    }
+
+    private joinFunctionPrologue(initializers: string, body: string): string {
+        if (!initializers) {
+            return body;
+        }
+        if (!body) {
+            return initializers;
+        }
+        return `${initializers};\n${body}`;
+    }
+
+    private resolveStaticReference(name: string): string | null {
+        if (!name) {
+            return null;
+        }
+
+        for (let index = this.staticScopes.length - 1; index >= 0; index -= 1) {
+            const scope = this.staticScopes[index];
+            if (scope.names.has(name)) {
+                return `${scope.identifier}[${JSON.stringify(name)}]`;
+            }
+        }
+
+        return null;
+    }
+
+    private isCurrentStaticDeclaration(declaration: VariableDeclaratorNode): boolean {
+        const name = this.resolveIdentifierName(declaration.id);
+        const currentScope = this.staticScopes.at(-1);
+        return name !== null && currentScope.names.has(name);
     }
 
     private wrapFunctionLikeBody(body: GmlNode, prologueStatement: string): string {

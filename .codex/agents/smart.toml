@@ -1,5 +1,5 @@
 name = "smart"
-description = "Costly GPT-5.6 Sol specialist for complex, high-judgment assignments; use sparingly as this agent eats up a lot of tokens, not for routine work. Do not use this role for routine exploration, simple edits, ordinary validation, or work that a normal worker can handle."
+description = "Specialist agent for complex, high-judgment assignments; use sparingly as this agent uses more tokens than others, not for routine/simple/easy work."
 model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
 nickname_candidates = ["SolSmart", "DeepSolve", "SolExpert"]
