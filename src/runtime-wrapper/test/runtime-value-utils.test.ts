@@ -306,6 +306,54 @@ void describe("runtime-value-utils — polymorphism guardrails", () => {
         void it("rejects values outside the tolerance", () => {
             assert.equal(areNumbersApproximatelyEqual(1, 1.5), false);
         });
+
+        void it("treats bit-identical values as equal without tolerance math", () => {
+            // The strict-equality fast path must report `Infinity` and
+            // `-Infinity` as equal to themselves. Without it, the helper
+            // computes `Math.abs(Infinity - Infinity) === NaN`, which fails
+            // the `<=` comparison and yields `false` — a behaviour that
+            // silently misclassifies sentinel comparisons in callers such
+            // as `calculatePercentile`.
+            assert.equal(areNumbersApproximatelyEqual(Infinity, Infinity), true);
+            assert.equal(areNumbersApproximatelyEqual(-Infinity, -Infinity), true);
+        });
+
+        void it("rejects NaN inputs without conflating them with measured values", () => {
+            // NaN is never equal to anything — including itself. The fast
+            // path correctly returns `false` for `NaN === NaN`, and the
+            // non-finite guard rejects any comparison involving NaN so
+            // that callers cannot accidentally accept NaN as a valid
+            // measurement.
+            assert.equal(areNumbersApproximatelyEqual(Number.NaN, 1), false);
+            assert.equal(areNumbersApproximatelyEqual(1, Number.NaN), false);
+            assert.equal(areNumbersApproximatelyEqual(Number.NaN, Number.NaN), false);
+        });
+
+        void it("rejects mixed finite and non-finite inputs", () => {
+            // A finite measurement must never compare equal to a sentinel
+            // value, even though both satisfy the scaled-tolerance
+            // predicate against any other finite number.
+            assert.equal(areNumbersApproximatelyEqual(Infinity, 1), false);
+            assert.equal(areNumbersApproximatelyEqual(-Infinity, 1), false);
+            assert.equal(areNumbersApproximatelyEqual(1, Infinity), false);
+            assert.equal(areNumbersApproximatelyEqual(1, -Infinity), false);
+        });
+
+        void it("absorbs scaled rounding error beyond the bare EPSILON window", () => {
+            // The 4× scaled tolerance must accept values that differ from
+            // their rounded target by up to ~4 × Number.EPSILON × scale.
+            // At scale = 1000, that window is roughly 8.9e-13, which is
+            // enough to absorb the rounding noise that
+            // `(percentile / 100) * (length - 1)` accumulates when the
+            // mathematical result is an integer.
+            const scale = 1000;
+            const drift = Number.EPSILON * scale * 3;
+            assert.equal(
+                areNumbersApproximatelyEqual(scale, scale + drift),
+                true,
+                "scaled tolerance must absorb rounding error within 4× EPSILON × scale"
+            );
+        });
     });
 
     void describe("readCxcDxStore", () => {

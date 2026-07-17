@@ -114,11 +114,46 @@ export function isNonEmptyArray(value: unknown): value is ReadonlyArray<unknown>
     return Array.isArray(value) && value.length > 0;
 }
 
+// The runtime wrapper ships a local `areNumbersApproximatelyEqual` helper
+// instead of importing `@gmloop/core` directly so the file remains usable
+// from the standalone browser bundle that does not pull in the core
+// workspace. The contract must match `Core.areNumbersApproximatelyEqual`
+// (see `contract symmetry with Core probes` in the test suite) so that
+// magnitude-scaled tolerance, sentinel-value rejection, and the strict
+// equality fast path stay consistent across both surfaces.
+const APPROXIMATE_EQUALITY_SCALE_MULTIPLIER = 4;
+
 /**
- * Compares two finite numbers with a small tolerance for floating-point drift.
+ * Compare two numbers using a tolerance scaled to their magnitude so values
+ * derived from filesystem timestamps and percentile indices continue to
+ * match even when floating-point precision differs between platforms or
+ * after compounded rounding error from `(percentile / 100) * (length - 1)`.
+ *
+ * `Number.EPSILON` is scaled to the largest absolute operand and widened a
+ * bit to account for rounding-error accumulation. The fast path returns
+ * `true` for strict equality — including `Infinity` and `-Infinity`, which
+ * must compare equal to themselves — while non-finite inputs other than
+ * the exact `Infinity` / `-Infinity` sentinels (i.e. `NaN`) yield `false`
+ * so sentinel values are never silently conflated with real measurements.
+ *
+ * @param left First number to compare.
+ * @param right Second number to compare.
+ * @returns `true` when both inputs are finite and fall within the dynamic
+ *   tolerance window, or when the two inputs are strictly equal including
+ *   the `±Infinity` sentinels.
  */
 export function areNumbersApproximatelyEqual(left: number, right: number): boolean {
-    return Math.abs(left - right) <= Number.EPSILON * Math.max(1, Math.abs(left), Math.abs(right));
+    if (left === right) {
+        return true;
+    }
+
+    if (!Number.isFinite(left) || !Number.isFinite(right)) {
+        return false;
+    }
+
+    const scale = Math.max(1, Math.abs(left), Math.abs(right));
+    const tolerance = Number.EPSILON * scale * APPROXIMATE_EQUALITY_SCALE_MULTIPLIER;
+    return Math.abs(left - right) <= tolerance;
 }
 
 /**
