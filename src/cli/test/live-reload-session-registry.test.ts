@@ -5,7 +5,10 @@ import path from "node:path";
 import { test } from "node:test";
 
 import { createStatusUrl, createWebSocketUrl } from "../src/modules/live-reload/config.js";
-import { acquireLiveReloadSessionLock } from "../src/modules/live-reload/session-controller.js";
+import {
+    acquireLiveReloadSessionLock,
+    createLiveReloadWorkerEnvironment
+} from "../src/modules/live-reload/session-controller.js";
 import {
     discoverLiveReloadSessionByPath,
     LIVE_RELOAD_SESSION_REGISTRY_RELATIVE_PATH,
@@ -14,6 +17,7 @@ import {
     writeLiveReloadSessionRegistry
 } from "../src/modules/live-reload/session-registry.js";
 import { startStatusServer } from "../src/modules/status/index.js";
+import { SKIP_CLI_RUN_ENV_VAR } from "../src/shared/skip-cli-run.js";
 
 async function createTemporaryGameMakerProject(): Promise<string> {
     const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-live-reload-registry-"));
@@ -204,4 +208,16 @@ void test("live-reload startup recovers legacy empty locks after initialization 
     } finally {
         await rm(projectRoot, { recursive: true, force: true });
     }
+});
+
+void test("MCP-started workers do not inherit the parent CLI skip-run sentinel", () => {
+    const workerEnvironment = createLiveReloadWorkerEnvironment({
+        [SKIP_CLI_RUN_ENV_VAR]: "1",
+        GMLOOP_LIVE_RELOAD_START_SOURCE: "mcp",
+        PATH: "/usr/bin"
+    });
+
+    assert.equal(workerEnvironment[SKIP_CLI_RUN_ENV_VAR], undefined);
+    assert.equal(workerEnvironment.GMLOOP_LIVE_RELOAD_START_SOURCE, "mcp");
+    assert.equal(workerEnvironment.PATH, "/usr/bin");
 });

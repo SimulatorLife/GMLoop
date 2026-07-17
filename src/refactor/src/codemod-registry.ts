@@ -6,6 +6,7 @@ import { applyLoopLengthHoistingCodemod } from "./codemods/loop-length-hoisting/
 import { executeNamingConventionCodemod } from "./codemods/naming-convention/index.js";
 import { applyRepairArgumentSeparatorsCodemod } from "./codemods/repair-argument-separators/index.js";
 import { applyRepairAudioEmitterCreationGuardCodemod } from "./codemods/repair-audio-emitter-creation-guard/index.js";
+import { applyRepairDependentVariableDeclarationsCodemod } from "./codemods/repair-dependent-variable-declarations/index.js";
 import { applyRepairInvalidTexturePointerGuardCodemod } from "./codemods/repair-invalid-texture-pointer-guard/index.js";
 import { applyRepairLogicalNotCodemod } from "./codemods/repair-logical-not/index.js";
 import { applyRepairSpriteTextureUvResolutionCodemod } from "./codemods/repair-sprite-texture-uv-resolution/index.js";
@@ -67,6 +68,7 @@ function normalizeEmptyObjectConfig<
         | "repairInvalidTexturePointerGuard"
         | "repairAudioEmitterCreationGuard"
         | "repairSpriteTextureUvResolution"
+        | "repairDependentVariableDeclarations"
 >(value: unknown, context: string): RefactorCodemodConfigEntry<T> {
     if (value === false) {
         return false;
@@ -86,7 +88,8 @@ async function executeSingleFileTextCodemod(
         | "repairTexturePrefetchGuard"
         | "repairInvalidTexturePointerGuard"
         | "repairAudioEmitterCreationGuard"
-        | "repairSpriteTextureUvResolution",
+        | "repairSpriteTextureUvResolution"
+        | "repairDependentVariableDeclarations",
     warningMessage: string,
     transform: (
         sourceText: string,
@@ -321,6 +324,25 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
                 "repairSpriteTextureUvResolution",
                 "No .gml files were selected for sprite-texture UV resolution repair.",
                 applyRepairSpriteTextureUvResolutionCodemod
+            );
+        }
+    }),
+
+    repairDependentVariableDeclarations: Object.freeze({
+        id: "repairDependentVariableDeclarations",
+        description: "Split dependent comma-separated variable declarations for stable HTML5 initializer order.",
+        requiresSemanticProjectIndex: false,
+        normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
+        execute(
+            _engine: CodemodEngine,
+            request: ConfiguredCodemodRunRequest
+        ): Promise<ConfiguredCodemodExecutionResult> {
+            return executeSingleFileTextCodemod(
+                _engine,
+                request,
+                "repairDependentVariableDeclarations",
+                "No .gml files were selected for dependent-variable declaration repair.",
+                applyRepairDependentVariableDeclarationsCodemod
             );
         }
     }),

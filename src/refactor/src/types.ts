@@ -171,6 +171,21 @@ export type RepairSpriteTextureUvResolutionEdit = CodemodEdit;
 export type RepairSpriteTextureUvResolutionResult = CodemodResult;
 
 /**
+ * Options for the dependent-variable declaration repair codemod.
+ */
+export type RepairDependentVariableDeclarationsCodemodOptions = Readonly<Record<string, never>>;
+
+/**
+ * A single edit produced by the dependent-variable declaration repair codemod.
+ */
+export type RepairDependentVariableDeclarationsEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by `applyRepairDependentVariableDeclarationsCodemod`.
+ */
+export type RepairDependentVariableDeclarationsResult = CodemodResult;
+
+/**
  * A single text edit produced by the repair-logical-not codemod.
  */
 export type RepairLogicalNotEdit = CodemodEdit;
@@ -371,7 +386,8 @@ export type RefactorCodemodId =
     | "repairTexturePrefetchGuard"
     | "repairInvalidTexturePointerGuard"
     | "repairAudioEmitterCreationGuard"
-    | "repairSpriteTextureUvResolution";
+    | "repairSpriteTextureUvResolution"
+    | "repairDependentVariableDeclarations";
 
 /**
  * Normalized config payloads keyed by registered codemod id.
@@ -387,6 +403,7 @@ export interface RefactorCodemodConfigMap {
     repairInvalidTexturePointerGuard: RepairInvalidTexturePointerGuardCodemodOptions;
     repairAudioEmitterCreationGuard: RepairAudioEmitterCreationGuardCodemodOptions;
     repairSpriteTextureUvResolution: RepairSpriteTextureUvResolutionCodemodOptions;
+    repairDependentVariableDeclarations: RepairDependentVariableDeclarationsCodemodOptions;
 }
 
 /**

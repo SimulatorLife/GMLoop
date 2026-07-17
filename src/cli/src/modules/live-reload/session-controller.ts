@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { Core } from "@gmloop/core";
 
+import { SKIP_CLI_RUN_ENV_VAR } from "../../shared/skip-cli-run.js";
 import {
     discoverLiveReloadSessionByPath,
     type LiveReloadRegisteredSession,
@@ -32,6 +33,23 @@ export type EnsureLiveReloadSessionOptions = Readonly<{
     stop: boolean;
     targetPath: string;
 }>;
+
+/**
+ * Create the environment for a detached live-reload worker.
+ *
+ * In-process CLI capture sets the skip-run sentinel to prevent the parent CLI
+ * entrypoint from recursively starting itself. A worker has an explicit
+ * command and must not inherit that sentinel, or MCP-started sessions exit
+ * before registering their status endpoint.
+ *
+ * @param sourceEnvironment - Environment inherited by the worker process.
+ * @returns A copy of the environment with the parent-only sentinel removed.
+ */
+export function createLiveReloadWorkerEnvironment(sourceEnvironment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+    const workerEnvironment = { ...sourceEnvironment };
+    delete workerEnvironment[SKIP_CLI_RUN_ENV_VAR];
+    return workerEnvironment;
+}
 
 async function isProcessAlive(processId: number): Promise<boolean> {
     try {
@@ -152,6 +170,7 @@ async function startManagedLiveReloadSession(
             ],
             {
                 detached: true,
+                env: createLiveReloadWorkerEnvironment(process.env),
                 stdio: ["ignore", log.fd, log.fd]
             }
         );

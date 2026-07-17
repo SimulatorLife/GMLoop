@@ -795,6 +795,8 @@ pnpm run cli -- live-reload session --path /path/to/project --format pretty
 
 Agents use `live-reload session` and `live-reload wait-for-patch` by project path. Through MCP these appear as `gmloop_live_reload_session` and `gmloop_live_reload_wait_for_patch`.
 
+MCP starts the detached worker with the explicit worker command environment. The worker does not inherit the parent CLI capture sentinel, so its status endpoint becomes available to the MCP session call instead of waiting for a non-running child.
+
 **Example Output:**
 
 ```

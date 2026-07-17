@@ -118,12 +118,44 @@ function getElseSource(sourceText: string, node: AstRecord): string {
     return ` else ${alternateSource}`;
 }
 
-function guardExistingTextureResolutionTest(testSource: string, textureArgument: string): string {
-    if (testSource.includes("is_undefined")) {
-        return testSource;
+function stripOuterParentheses(expression: string): string {
+    const trimmedExpression = expression.trim();
+    if (trimmedExpression.startsWith("(") && trimmedExpression.endsWith(")")) {
+        return trimmedExpression.slice(1, -1).trim();
     }
+    return trimmedExpression;
+}
 
-    return `(not is_undefined(${textureArgument}) and ${testSource})`;
+function getTextureArgumentSafetyGuard(textureArgument: string): string {
+    return `not is_undefined(${textureArgument}) and ${textureArgument} != pointer_null and ${textureArgument} != pointer_invalid`;
+}
+
+function parenthesizeDisjunctiveTextureTest(expression: string): string {
+    const normalizedExpression = stripOuterParentheses(expression);
+    return normalizedExpression.includes(" or ") ? `(${normalizedExpression})` : normalizedExpression;
+}
+
+function ensureTextureArgumentSafetyGuard(testSource: string, textureArgument: string): string {
+    const expression = stripOuterParentheses(testSource);
+    const safetyGuard = getTextureArgumentSafetyGuard(textureArgument);
+    const existingUndefinedGuard = `not is_undefined(${textureArgument})`;
+    if (expression.startsWith(existingUndefinedGuard)) {
+        const remainder = expression.slice(existingUndefinedGuard.length).trim();
+        const testExpression = remainder.startsWith("and") ? remainder.slice(3).trim() : remainder;
+        const groupedTestExpression = parenthesizeDisjunctiveTextureTest(testExpression);
+        if (
+            testExpression.includes(`${textureArgument} != pointer_null`) &&
+            testExpression.includes(`${textureArgument} != pointer_invalid`)
+        ) {
+            return testSource;
+        }
+        return `(${safetyGuard} and ${groupedTestExpression})`;
+    }
+    return `(${safetyGuard} and ${parenthesizeDisjunctiveTextureTest(expression)})`;
+}
+
+function guardExistingTextureResolutionTest(testSource: string, textureArgument: string): string {
+    return ensureTextureArgumentSafetyGuard(testSource, textureArgument);
 }
 
 function getExistingSpriteTextureGuardEdit(
@@ -174,6 +206,45 @@ function getExistingSpriteTextureGuardEdit(
     });
 }
 
+function getOuterSpriteTextureResolutionGuardEdit(sourceText: string, node: AstRecord): SourceEdit | null {
+    if (node.type !== "IfStatement") {
+        return null;
+    }
+
+    const testSource = getNodeSource(sourceText, node.test)?.trim();
+    const consequentSource = getNodeSource(sourceText, node.consequent);
+    if (
+        testSource === null ||
+        consequentSource === null ||
+        !testSource.includes("is_real") ||
+        !consequentSource.includes("scr_sprite_exists") ||
+        !consequentSource.includes("scr_texture_is_valid")
+    ) {
+        return null;
+    }
+
+    const textureCall = findNamedCall(node.consequent, new Set(["scr_texture_is_valid"]));
+    const textureArgument = textureCall === null ? null : getCallArgumentSource(sourceText, textureCall);
+    const guardedTest = textureArgument === null ? null : ensureTextureArgumentSafetyGuard(testSource, textureArgument);
+    const testStart = Core.getNodeStartIndex(node.test);
+    const testEnd = Core.getNodeEndIndex(node.test);
+    if (
+        textureArgument === null ||
+        guardedTest === null ||
+        guardedTest === testSource ||
+        typeof testStart !== "number" ||
+        typeof testEnd !== "number"
+    ) {
+        return null;
+    }
+
+    return Object.freeze({
+        start: testStart,
+        end: testEnd,
+        text: guardedTest
+    });
+}
+
 function getSpriteTextureBranchSwapEdit(sourceText: string, node: AstRecord): SourceEdit | null {
     if (node.type !== "IfStatement") {
         return null;
@@ -220,7 +291,7 @@ function getSpriteTextureBranchSwapEdit(sourceText: string, node: AstRecord): So
         return null;
     }
 
-    const definedArgumentGuard = `not is_undefined(${textureArgument})`;
+    const definedArgumentGuard = getTextureArgumentSafetyGuard(textureArgument);
     const spriteTest = `(${definedArgumentGuard} and is_real(${textureArgument}) and ${textureArgument} >= 0 and ${spriteCallSource})`;
     const textureTest = `(${definedArgumentGuard} and is_ptr(${textureArgument}) and not is_real(${textureArgument}) and ${textureCallSource})`;
     const spriteSource = getIfBranchSource(sourceText, spriteBranch, spriteTest);
@@ -259,6 +330,11 @@ function collectSpriteTextureBranchSwapEdits(sourceText: string, programNode: un
         const targetFunction = isFunctionNode(node) && getFunctionName(node) === "scr_get_uvs";
         const shouldVisitChildren = inTargetFunction || targetFunction;
         if (shouldVisitChildren) {
+            const outerGuardEdit = getOuterSpriteTextureResolutionGuardEdit(sourceText, node);
+            if (outerGuardEdit !== null) {
+                edits.push(outerGuardEdit);
+            }
+
             const edit = getSpriteTextureBranchSwapEdit(sourceText, node);
             if (edit !== null) {
                 edits.push(edit);
@@ -288,11 +364,12 @@ function collectSpriteTextureBranchSwapEdits(sourceText: string, programNode: un
  * predicate first therefore misclassifies sprites in HTML5 and can make the
  * runtime dereference a sprite asset as a texture handle. The codemod swaps
  * only the structurally matching `scr_get_uvs` branches. Sprite lookup is
- * restricted to numeric handles and texture lookup is restricted to non-real pointers,
- * so `pointer_null` cannot reach either native helper. The explicit undefined
- * guard is required because HTML5 represents `pointer_null` as an undefined
- * value while native GameMaker represents it as a pointer sentinel. The
- * existing fallback branch and source text inside each branch are preserved.
+ * restricted to numeric handles and texture lookup is restricted to non-real
+ * pointers, so `pointer_null` and `pointer_invalid` cannot reach either native
+ * helper. The outer real-number predicate and both resolution branches are
+ * guarded because HTML5 represents pointer sentinels as values that native
+ * numeric helpers cannot convert. The existing fallback branch and source text
+ * inside each branch are preserved.
  *
  * @param sourceText - GML source text to transform.
  * @returns The transformed source and applied source edits.
