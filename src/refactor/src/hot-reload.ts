@@ -219,10 +219,7 @@ export async function computeHotReloadCascade(
                 totalSymbols: 0,
                 maxDistance: 0,
                 hasCircular: false
-            },
-            totalSymbols: 0,
-            maxDistance: 0,
-            hasCircular: false
+            }
         };
     }
 
@@ -408,15 +405,16 @@ export async function computeHotReloadCascade(
     // If order doesn't include all symbols, we have cycles
     const hasUnorderedSymbols = order.length < cascadeArray.length;
 
-    // Compute max distance before return so shorthand property names are in scope.
-    // Also compute derived convenience properties from metadata; these are promoted
-    // to top-level on HotReloadCascadeResult so callers can access them directly
-    // rather than through `result.metadata.*`. The metadata object is retained for
-    // callers that need the full picture, but the promoted aliases eliminate
-    // four-segment property chains.
-    const maxDistance = cascadeArray.reduce((max, item) => Math.max(max, item.distance), 0);
-    const totalSymbols = cascadeArray.length;
-    const cascadeHasCircular = circular.length > 0 || hasUnorderedSymbols;
+    // Summary counters live on `metadata` so every accessor goes through
+    // one shape. Earlier versions of this function also published them as
+    // top-level aliases on the result; those duplicates were a transitional
+    // layer and have been retired in favour of the canonical metadata bag.
+    // The locals are kept out of the shorthand-name collision with the
+    // metadata fields so the regression guard can scan the producer source
+    // for stray top-level aliases unambiguously.
+    const metadataMaxDistance = cascadeArray.reduce((max, item) => Math.max(max, item.distance), 0);
+    const metadataTotalSymbols = cascadeArray.length;
+    const metadataHasCircular = circular.length > 0 || hasUnorderedSymbols;
 
     // Add any remaining symbols (those in cycles) to the end of the order
     const orderSet = new Set(order);
@@ -432,13 +430,10 @@ export async function computeHotReloadCascade(
         order,
         circular,
         metadata: {
-            totalSymbols,
-            maxDistance,
-            hasCircular: cascadeHasCircular
-        },
-        totalSymbols,
-        maxDistance,
-        hasCircular: cascadeHasCircular
+            totalSymbols: metadataTotalSymbols,
+            maxDistance: metadataMaxDistance,
+            hasCircular: metadataHasCircular
+        }
     };
 }
 

@@ -1870,10 +1870,10 @@ export class RefactorEngine {
      *
      * // Review hot reload cascade to see all affected symbols
      * if (plan.cascadeResult) {
-     *     // Use top-level aliases to avoid `plan.cascadeResult.metadata.totalSymbols` chain
-     *     console.log(`Total symbols to reload: ${plan.cascadeResult.totalSymbols}`);
-     *     console.log(`Max dependency distance: ${plan.cascadeResult.maxDistance}`);
-     *     if (plan.cascadeResult.hasCircular) {
+     *     // Summary counters live on the `metadata` bag.
+     *     console.log(`Total symbols to reload: ${plan.cascadeResult.metadata.totalSymbols}`);
+     *     console.log(`Max dependency distance: ${plan.cascadeResult.metadata.maxDistance}`);
+     *     if (plan.cascadeResult.metadata.hasCircular) {
      *         console.warn("Circular dependencies detected:");
      *         for (const cycle of plan.cascadeResult.circular) {
      *             console.warn("  Cycle:", cycle.join(" → "));

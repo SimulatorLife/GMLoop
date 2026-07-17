@@ -315,11 +315,13 @@ export interface HotReloadCascadeMetadata {
 /**
  * Result of hot reload dependency cascade computation.
  *
- * Includes both structural data (cascade entries, circular dependencies, reload
- * order) and derived convenience properties that callers frequently access via
- * deep navigation (e.g., `result.metadata.totalSymbols`).  Promoting these to
- * top-level eliminates four-segment property chains throughout the codebase and
- * makes the API more self-documenting.
+ * Carries the structural data callers need: cascade entries, reload order,
+ * detected cycles, and the summary numbers (`totalSymbols`, `maxDistance`,
+ * `hasCircular`) on {@link HotReloadCascadeMetadata}. Earlier versions of this
+ * type re-published those numbers at the top level as
+ * "convenience aliases" to dodge the `result.metadata.totalSymbols` chain.
+ * That transitional layer has been retired; the canonical path is
+ * `cascadeResult.metadata.*` so every access goes through one shape.
  */
 export interface HotReloadCascadeResult {
     /** All symbols in the dependency cascade with their traversal metadata. */
@@ -330,22 +332,6 @@ export interface HotReloadCascadeResult {
     circular: Array<Array<string>>;
     /** Detailed metadata about the cascade. */
     metadata: HotReloadCascadeMetadata;
-    /**
-     * Derived: total number of symbols that must be reloaded.
-     * Convenience alias for `metadata.totalSymbols` so callers avoid
-     * the `result.metadata.totalSymbols` four-segment chain.
-     */
-    totalSymbols: number;
-    /**
-     * Derived: longest dependency distance from a changed symbol.
-     * Convenience alias for `metadata.maxDistance`.
-     */
-    maxDistance: number;
-    /**
-     * Derived: whether the cascade contains any circular dependency chains.
-     * Convenience alias for `metadata.hasCircular`.
-     */
-    hasCircular: boolean;
 }
 
 export interface HotReloadSafetySummary {
