@@ -281,32 +281,33 @@ export class GmDocsPanel extends LightDomLitElement {
                                           html`<div class="docs-detail-row">
                                               <dt>
                                                   <code>${fieldValue.name}</code>${
-                                                  fieldValue.required
-                                                      ? html` <span class="docs-field-required" title="Required"
-                                                            >*</span
-                                                        >`
-                                                      : null
-                                              }
+                                                      fieldValue.required
+                                                          ? html` <span class="docs-field-required" title="Required"
+                                                                >*</span
+                                                            >`
+                                                          : null
+                                                  }
                                               </dt>
                                               <dd>
                                                   ${fieldValue.description}
                                                   ${
-                                                  fieldValue.choices && fieldValue.choices.length > 0
-                                                      ? html`<div class="docs-field-choices">
-                                                            Choices:
-                                                            ${fieldValue.choices
+                                                      fieldValue.choices && fieldValue.choices.length > 0
+                                                          ? html`<div class="docs-field-choices">
+                                                                Choices:
+                                                                ${fieldValue.choices
                                                                 .map((c) => html`<code>${c}</code>`)
                                                                 .reduce((acc, x) => html`${acc}, ${x}`)}
-                                                        </div>`
-                                                      : null
-                                              }
+                                                            </div>`
+                                                          : null
+                                                  }
                                                   ${
-                                                  fieldValue.default === undefined
-                                                      ? null
-                                                      : html`<div class="docs-field-default">
-                                                            Default: <code>${JSON.stringify(fieldValue.default)}</code>
-                                                        </div>`
-                                              }
+                                                      fieldValue.default === undefined
+                                                          ? null
+                                                          : html`<div class="docs-field-default">
+                                                                Default:
+                                                                <code>${JSON.stringify(fieldValue.default)}</code>
+                                                            </div>`
+                                                  }
                                               </dd>
                                           </div>`
                                   )}

@@ -130,3 +130,17 @@ retries, memory, budgets, queues, and durable workflow state.
   Decision record for collapsing duplicate read, validation, inspection, and
   lifecycle tools into a smaller set of owner-oriented commands, and letting
   MCP follow the simplified CLI tree.
+
+- [`codex-tester-agent.md`](codex-tester-agent.md) — Configuration contract for
+  the read-only `tester` Codex subagent: `model = "gpt-5.6-luna"`,
+  `model_reasoning_effort = "max"`, `sandbox_mode = "read-only"`, and the
+  `gmloop` / `gm-cli` / `playwright` MCP allowlists the agent is restricted to.
+
+- [`codex-build-lint-test-agent.md`](codex-build-lint-test-agent.md) —
+  Configuration contract for the strict GMLoop `build-lint-test` Codex
+  subagent: `model = "gpt-5.4-mini"`, `model_reasoning_effort = "medium"`,
+  `sandbox_mode = "workspace-write"` with `[sandbox_workspace_write]
+  network_access = false`, an allowlist that exposes only the read-only
+  `gmloop_lint` MCP tool, and developer instructions that limit it to
+  running one assigned `pnpm run` build/lint/test command and reporting
+  exact failure excerpts.

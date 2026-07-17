@@ -104,7 +104,7 @@ writable_roots = [
 ]
 
 [agents]
-max_threads = 5
+max_threads = 3
 max_depth = 1
 
 [agents.explorer]
@@ -118,3 +118,11 @@ config_file = "./agents/worker.toml"
 [agents.validator]
 description = "MiniMax-M3 validation agent for checking assigned changes, running required verification, and reporting failures, regressions, risks, and test gaps to the parent agent."
 config_file = "./agents/validator.toml"
+
+[agents.tester]
+description = "Read-only GameMaker runtime and browser tester directed by the orchestrator; drives GMLoop live reload, gm-cli reads, and Playwright interactions only through the allowlisted MCP tools."
+config_file = "./agents/tester.toml"
+
+[agents.build-lint-test]
+description = "Strict GMLoop build, lint, and test reporter that only runs commands explicitly assigned by the orchestrator and returns exact failure excerpts (warnings only when requested)."
+config_file = "./agents/build-lint-test.toml"
