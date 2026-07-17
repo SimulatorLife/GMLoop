@@ -101,6 +101,19 @@ export {
 } from "./math-numeric-utils.js";
 export { cleanupMultiplicativeIdentityParentheses } from "./math-parentheses-cleanup.js";
 export {
+    ABS_VALUE_THRESHOLD_FOR_EXPONENTIAL,
+    CANONICAL_FORM_EXPONENTIAL_NOTATION_DIGITS,
+    CANONICAL_FORM_FIXED_NOTATION_HIGH_PRECISION,
+    CANONICAL_FORM_FIXED_NOTATION_LOW_PRECISION,
+    CANONICAL_FORM_FIXED_NOTATION_MEDIUM_PRECISION,
+    DEFAULT_MAX_CANONICAL_FORM_VALUE,
+    DEFAULT_NUMERIC_LITERAL_EPSILON,
+    EPSILON_TOLERANCE_MULTIPLIER,
+    MAX_INTEGER_BOUNDARY_FOR_EXACT_REPRESENTATION,
+    MIN_OPTIMIZE_MATH_EPSILON,
+    MIN_OPTIMIZE_MATH_MAX_CANONICAL_FORM_VALUE
+} from "./math-policy-constants.js";
+export {
     attemptCancelReciprocalRatios,
     attemptCollectDistributedScalars,
     attemptCondenseNumericChainWithMultipleBases,

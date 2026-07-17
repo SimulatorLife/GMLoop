@@ -15,12 +15,17 @@ import {
     simplifyZeroDivisionNumerators
 } from "../math/index.js";
 import {
+    MIN_OPTIMIZE_MATH_EPSILON,
+    MIN_OPTIMIZE_MATH_MAX_CANONICAL_FORM_VALUE
+} from "../math/math-policy-constants.js";
+import {
     applySourceTextEdits,
     createCommentTokenRangeIndex,
     createMeta,
     getVariableDeclarator,
     isAstNodeRecord,
     rangeContainsCommentToken,
+    readObjectOption,
     reportFullTextRewrite,
     type SourceTextEdit,
     walkAstNodesWithParent
@@ -30,9 +35,11 @@ import {
     canAstShapeContainMathOptimizationCandidate,
     containsMathOptimizationSyntax,
     DEFAULT_MATH_SIGNAL_PATTERNS,
+    DEFAULT_NUMERIC_LITERAL_POLICY,
     evaluateMathOptimizationCandidate,
     evaluateSkipDecision,
     MATH_OPTIMIZATION_POLICY_CONSTANTS,
+    type NumericLiteralCanonicalFormPolicy,
     resolveMathNumericPolicy
 } from "./optimize-math-skip-evaluator.js";
 
@@ -522,7 +529,11 @@ function tryReadNumericLiteralValue(node: unknown): number | null {
     return Core.getLiteralNumberValue(expression);
 }
 
-function isCanonicalNumericLiteralText(sourceText: string, node: unknown): boolean {
+function isCanonicalNumericLiteralText(
+    sourceText: string,
+    node: unknown,
+    policy: NumericLiteralCanonicalFormPolicy = DEFAULT_NUMERIC_LITERAL_POLICY
+): boolean {
     const expression = unwrapParenthesized(node);
     if (!expression || expression.type !== "Literal") {
         return false;
@@ -534,11 +545,15 @@ function isCanonicalNumericLiteralText(sourceText: string, node: unknown): boole
     }
 
     const literalText = gmlRuleAutofixServices.readNodeText(sourceText, expression);
-    const canonicalText = formatCanonicalNumericLiteral(numericValue);
+    const canonicalText = formatCanonicalNumericLiteralWithPolicy(numericValue, policy);
     return literalText !== null && canonicalText !== null && literalText === canonicalText;
 }
 
-function isCanonicalConstantNumericExpression(sourceText: string, node: unknown): boolean {
+function isCanonicalConstantNumericExpression(
+    sourceText: string,
+    node: unknown,
+    policy: NumericLiteralCanonicalFormPolicy = DEFAULT_NUMERIC_LITERAL_POLICY
+): boolean {
     const expression = unwrapParenthesized(node);
     if (!expression) {
         return false;
@@ -546,14 +561,14 @@ function isCanonicalConstantNumericExpression(sourceText: string, node: unknown)
 
     switch (expression.type) {
         case "Literal": {
-            return isCanonicalNumericLiteralText(sourceText, expression);
+            return isCanonicalNumericLiteralText(sourceText, expression, policy);
         }
         case "UnaryExpression": {
             if (expression.operator !== "-" && expression.operator !== "+") {
                 return false;
             }
 
-            return isCanonicalConstantNumericExpression(sourceText, expression.argument);
+            return isCanonicalConstantNumericExpression(sourceText, expression.argument, policy);
         }
         case "BinaryExpression": {
             if (!["+", "-", "*", "/", "div", "mod", "%"].includes(expression.operator)) {
@@ -561,8 +576,8 @@ function isCanonicalConstantNumericExpression(sourceText: string, node: unknown)
             }
 
             return (
-                isCanonicalConstantNumericExpression(sourceText, expression.left) &&
-                isCanonicalConstantNumericExpression(sourceText, expression.right)
+                isCanonicalConstantNumericExpression(sourceText, expression.left, policy) &&
+                isCanonicalConstantNumericExpression(sourceText, expression.right, policy)
             );
         }
         default: {
@@ -571,8 +586,12 @@ function isCanonicalConstantNumericExpression(sourceText: string, node: unknown)
     }
 }
 
-function tryBuildConstantNumericReplacement(sourceText: string, node: unknown): string | null {
-    if (!isCanonicalConstantNumericExpression(sourceText, node)) {
+function tryBuildConstantNumericReplacement(
+    sourceText: string,
+    node: unknown,
+    policy: NumericLiteralCanonicalFormPolicy = DEFAULT_NUMERIC_LITERAL_POLICY
+): string | null {
+    if (!isCanonicalConstantNumericExpression(sourceText, node, policy)) {
         return null;
     }
 
@@ -581,7 +600,7 @@ function tryBuildConstantNumericReplacement(sourceText: string, node: unknown): 
         return null;
     }
 
-    const replacement = formatCanonicalNumericLiteral(numericValue);
+    const replacement = formatCanonicalNumericLiteralWithPolicy(numericValue, policy);
     if (!replacement) {
         return null;
     }
@@ -758,7 +777,25 @@ function tryMatchRatioMultiplier(node: unknown): RatioMultiplierMatch | null {
     return null;
 }
 
-function formatCanonicalNumericLiteral(value: number): string | null {
+/**
+ * Format a numeric value into the canonical GML literal text using the
+ * supplied {@link NumericLiteralCanonicalFormPolicy}. The policy controls two
+ * distinct thresholds:
+ *
+ * - `epsilon` widens the "close to integer" check so callers can tighten or
+ *   loosen the rounding window that promotes `1.0000000001` → `"1"`.
+ * - `maxCanonicalFormValue` switches the formatter to exponential notation
+ *   for very large magnitudes where fixed notation would lose precision.
+ *
+ * `DEFAULT_NUMERIC_LITERAL_POLICY` matches the previous hardcoded
+ * `Core.areNumbersApproximatelyEqual` behaviour, so callers that have not
+ * opted into the rule's `epsilon` / `maxCanonicalFormValue` options observe
+ * byte-for-byte identical output to the previous implementation.
+ */
+function formatCanonicalNumericLiteralWithPolicy(
+    value: number,
+    policy: NumericLiteralCanonicalFormPolicy
+): string | null {
     if (!Number.isFinite(value)) {
         return null;
     }
@@ -768,14 +805,22 @@ function formatCanonicalNumericLiteral(value: number): string | null {
     }
 
     const roundedInteger = Math.round(value);
-    if (Core.areNumbersApproximatelyEqual(value, roundedInteger)) {
+    if (Math.abs(value - roundedInteger) <= policy.epsilon) {
         return roundedInteger.toString();
+    }
+
+    if (Math.abs(value) > policy.maxCanonicalFormValue) {
+        return value.toExponential(6);
     }
 
     return Number(value.toPrecision(12)).toString();
 }
 
-function tryBuildGroupedRatioProductReplacement(sourceText: string, node: unknown): string | null {
+function tryBuildGroupedRatioProductReplacement(
+    sourceText: string,
+    node: unknown,
+    policy: NumericLiteralCanonicalFormPolicy = DEFAULT_NUMERIC_LITERAL_POLICY
+): string | null {
     const expression = unwrapParenthesized(node);
     if (!expression || expression.type !== "BinaryExpression" || expression.operator !== "/") {
         return null;
@@ -792,7 +837,7 @@ function tryBuildGroupedRatioProductReplacement(sourceText: string, node: unknow
     }
 
     const scaledMultiplier = ratioMultiplierMatch.multiplier / divisorValue;
-    const multiplierText = formatCanonicalNumericLiteral(scaledMultiplier);
+    const multiplierText = formatCanonicalNumericLiteralWithPolicy(scaledMultiplier, policy);
     const ratioText = gmlRuleAutofixServices.readNodeText(sourceText, ratioMultiplierMatch.ratioExpression);
     if (!multiplierText || !ratioText) {
         return null;
@@ -801,13 +846,18 @@ function tryBuildGroupedRatioProductReplacement(sourceText: string, node: unknow
     return `(${trimOuterParentheses(ratioText)}) * ${multiplierText}`;
 }
 
-function applySourceAwareCanonicalMathReplacement(sourceText: string, node: unknown, replacement: string): string {
+function applySourceAwareCanonicalMathReplacement(
+    sourceText: string,
+    node: unknown,
+    replacement: string,
+    policy: NumericLiteralCanonicalFormPolicy = DEFAULT_NUMERIC_LITERAL_POLICY
+): string {
     const halfLengthdirReplacement = tryBuildHalfLengthdirDifferenceReplacement(sourceText, node);
     if (halfLengthdirReplacement) {
         return halfLengthdirReplacement;
     }
 
-    const groupedRatioReplacement = tryBuildGroupedRatioProductReplacement(sourceText, node);
+    const groupedRatioReplacement = tryBuildGroupedRatioProductReplacement(sourceText, node, policy);
     if (groupedRatioReplacement) {
         return groupedRatioReplacement;
     }
@@ -1161,7 +1211,12 @@ function shouldSkipBinaryExpressionCandidate(parentNode: unknown, parentKey: str
     return evaluateSkipDecision(parentNode, parentKey);
 }
 
-function performGeneralExpressionSimplification(node: any, sourceText: string, edits: SourceTextEdit[]) {
+function performGeneralExpressionSimplification(
+    node: any,
+    sourceText: string,
+    edits: SourceTextEdit[],
+    policy: NumericLiteralCanonicalFormPolicy = DEFAULT_NUMERIC_LITERAL_POLICY
+) {
     const normalizedExpressionRanges: SourceTextRange[] = [];
     const commentTokenRangeIndex = createCommentTokenRangeIndex(sourceText);
     const replacementByCandidateText = new Map<string, string | null>();
@@ -1279,7 +1334,7 @@ function performGeneralExpressionSimplification(node: any, sourceText: string, e
                     let shouldApplyCanonicalSourceAwareReplacement = true;
 
                     if (NUMERIC_LITERAL_SIGNAL_PATTERN.test(sourceTextOfNode)) {
-                        replacement = tryBuildConstantNumericReplacement(sourceText, targetNode);
+                        replacement = tryBuildConstantNumericReplacement(sourceText, targetNode, policy);
                     }
 
                     if (!replacement) {
@@ -1320,7 +1375,7 @@ function performGeneralExpressionSimplification(node: any, sourceText: string, e
                     replacement =
                         replacement && replacement !== sourceTextOfNode
                             ? shouldApplyCanonicalSourceAwareReplacement
-                                ? applySourceAwareCanonicalMathReplacement(sourceText, targetNode, replacement)
+                                ? applySourceAwareCanonicalMathReplacement(sourceText, targetNode, replacement, policy)
                                 : replacement
                             : null;
 
@@ -1347,10 +1402,52 @@ function performGeneralExpressionSimplification(node: any, sourceText: string, e
     });
 }
 
+/**
+ * Resolve rule-level `epsilon` / `maxCanonicalFormValue` options into a fully
+ * populated {@link NumericLiteralCanonicalFormPolicy}.
+ *
+ * Both fields are clamped into the same `[minimum, Infinity)` range that the
+ * rule schema enforces, so user-supplied overrides cannot disable the safety
+ * floor by passing zero, negative numbers, or values just above zero. Values
+ * outside the schema's accepted range fall back to the corresponding field
+ * of {@link DEFAULT_NUMERIC_LITERAL_POLICY}, preserving the opt-in
+ * non-breaking contract that the other lint rules use.
+ */
+function resolveOptimizeMathExpressionsPolicyFromOptions(
+    options: Record<string, unknown>
+): NumericLiteralCanonicalFormPolicy {
+    const { epsilon, maxCanonicalFormValue } = options;
+
+    const resolvedEpsilon =
+        typeof epsilon === "number" && Number.isFinite(epsilon) && epsilon >= MIN_OPTIMIZE_MATH_EPSILON
+            ? epsilon
+            : DEFAULT_NUMERIC_LITERAL_POLICY.epsilon;
+
+    const resolvedMaxCanonicalFormValue =
+        typeof maxCanonicalFormValue === "number" &&
+        Number.isFinite(maxCanonicalFormValue) &&
+        maxCanonicalFormValue >= MIN_OPTIMIZE_MATH_MAX_CANONICAL_FORM_VALUE
+            ? maxCanonicalFormValue
+            : DEFAULT_NUMERIC_LITERAL_POLICY.maxCanonicalFormValue;
+
+    if (
+        resolvedEpsilon === DEFAULT_NUMERIC_LITERAL_POLICY.epsilon &&
+        resolvedMaxCanonicalFormValue === DEFAULT_NUMERIC_LITERAL_POLICY.maxCanonicalFormValue
+    ) {
+        return DEFAULT_NUMERIC_LITERAL_POLICY;
+    }
+
+    return Object.freeze({
+        epsilon: resolvedEpsilon,
+        maxCanonicalFormValue: resolvedMaxCanonicalFormValue
+    });
+}
+
 export function createOptimizeMathExpressionsRule(definition: GmlRuleDefinition): Rule.RuleModule {
     return Object.freeze({
         meta: createMeta(definition),
         create(context) {
+            const numericLiteralPolicy = resolveOptimizeMathExpressionsPolicyFromOptions(readObjectOption(context));
             return Object.freeze({
                 Program(node) {
                     const sourceText = context.sourceCode.text;
@@ -1369,7 +1466,7 @@ export function createOptimizeMathExpressionsRule(definition: GmlRuleDefinition)
                         }
                     });
 
-                    performGeneralExpressionSimplification(node, sourceText, edits);
+                    performGeneralExpressionSimplification(node, sourceText, edits, numericLiteralPolicy);
 
                     let rewrittenByAstEdits = sourceText;
                     if (edits.length > 0) {

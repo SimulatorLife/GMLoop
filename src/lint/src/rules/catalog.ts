@@ -2,6 +2,12 @@ import type { Rule } from "eslint";
 
 import { createFeatherRule, featherManifest } from "./feather/index.js";
 import { createGmlRule, type GmlRuleDefinition } from "./gml/index.js";
+import {
+    DEFAULT_MAX_CANONICAL_FORM_VALUE,
+    DEFAULT_NUMERIC_LITERAL_EPSILON,
+    MIN_OPTIMIZE_MATH_EPSILON,
+    MIN_OPTIMIZE_MATH_MAX_CANONICAL_FORM_VALUE
+} from "./gml/math/math-policy-constants.js";
 
 export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freeze([
     {
@@ -336,7 +342,27 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         mapKey: "GmlOptimizeMathExpressions",
         shortName: "optimize-math-expressions",
         fullId: "gml/optimize-math-expressions",
-        messageId: "optimizeMathExpressions"
+        messageId: "optimizeMathExpressions",
+        schema: Object.freeze([
+            {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                    epsilon: {
+                        type: "number",
+                        exclusiveMinimum: 0,
+                        minimum: MIN_OPTIMIZE_MATH_EPSILON,
+                        default: DEFAULT_NUMERIC_LITERAL_EPSILON
+                    },
+                    maxCanonicalFormValue: {
+                        type: "number",
+                        exclusiveMinimum: 0,
+                        minimum: MIN_OPTIMIZE_MATH_MAX_CANONICAL_FORM_VALUE,
+                        default: DEFAULT_MAX_CANONICAL_FORM_VALUE
+                    }
+                }
+            }
+        ])
     },
     {
         description: "Require commas between function arguments and optionally repair missing separators.",

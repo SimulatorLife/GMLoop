@@ -16,6 +16,17 @@
 
 import { Core } from "@gmloop/core";
 
+import {
+    ABS_VALUE_THRESHOLD_FOR_EXPONENTIAL,
+    CANONICAL_FORM_EXPONENTIAL_NOTATION_DIGITS,
+    CANONICAL_FORM_FIXED_NOTATION_HIGH_PRECISION,
+    CANONICAL_FORM_FIXED_NOTATION_LOW_PRECISION,
+    CANONICAL_FORM_FIXED_NOTATION_MEDIUM_PRECISION,
+    DEFAULT_MAX_CANONICAL_FORM_VALUE,
+    DEFAULT_NUMERIC_LITERAL_EPSILON,
+    MAX_INTEGER_BOUNDARY_FOR_EXACT_REPRESENTATION
+} from "../math/math-policy-constants.js";
+
 const {
     unwrapParenthesizedExpression: unwrapParenthesized,
     getLiteralNumberValue,
@@ -349,8 +360,8 @@ export type NumericLiteralCanonicalFormPolicy = Readonly<{
 }>;
 
 export const DEFAULT_NUMERIC_LITERAL_POLICY: NumericLiteralCanonicalFormPolicy = Object.freeze({
-    maxCanonicalFormValue: 1e15,
-    epsilon: 1e-9
+    maxCanonicalFormValue: DEFAULT_MAX_CANONICAL_FORM_VALUE,
+    epsilon: DEFAULT_NUMERIC_LITERAL_EPSILON
 });
 
 /**
@@ -427,7 +438,10 @@ function formatCanonicalNumericLiteralWithConfig(
         return "0";
     }
 
-    if (value === Math.round(value) && Math.abs(value) <= 999_999_999_999_999) {
+    // The integer-boundary check intentionally mirrors `config.maxCanonicalFormValue`
+    // by one less so the formatter agrees with `evaluateCanonicalFormDecision`'s
+    // "value is within canonical-form representation" predicate at every boundary.
+    if (value === Math.round(value) && Math.abs(value) <= MAX_INTEGER_BOUNDARY_FOR_EXACT_REPRESENTATION) {
         return String(Math.trunc(value));
     }
 
@@ -439,15 +453,20 @@ function formatCanonicalNumericLiteralWithConfig(
 
     // Use toPrecision for compact representation of floating-point values
     const absValue = Math.abs(value);
-    if (absValue < 1e-4 || absValue >= 1e15) {
+    if (absValue < ABS_VALUE_THRESHOLD_FOR_EXPONENTIAL || absValue >= config.maxCanonicalFormValue) {
         return value
-            .toExponential(6)
+            .toExponential(CANONICAL_FORM_EXPONENTIAL_NOTATION_DIGITS)
             .replace(/\.?0+e/, "e")
             .replace("e", "e");
     }
 
     // For regular floating point, use fixed notation with appropriate precision
-    const precision = absValue < 1 ? 10 : absValue < 100 ? 8 : 6;
+    const precision =
+        absValue < 1
+            ? CANONICAL_FORM_FIXED_NOTATION_LOW_PRECISION
+            : absValue < 100
+              ? CANONICAL_FORM_FIXED_NOTATION_MEDIUM_PRECISION
+              : CANONICAL_FORM_FIXED_NOTATION_HIGH_PRECISION;
     const fixed = value.toPrecision(precision);
 
     // Remove trailing zeros after decimal point

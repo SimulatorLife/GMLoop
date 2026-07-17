@@ -244,7 +244,26 @@ const expectedRules = Object.freeze([
     {
         shortName: "optimize-math-expressions",
         messageId: "optimizeMathExpressions",
-        schema: [{ type: "object", additionalProperties: false, properties: {} }]
+        schema: [
+            {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                    epsilon: {
+                        type: "number",
+                        exclusiveMinimum: 0,
+                        minimum: 1e-15,
+                        default: 1e-9
+                    },
+                    maxCanonicalFormValue: {
+                        type: "number",
+                        exclusiveMinimum: 0,
+                        minimum: 1e6,
+                        default: 1e15
+                    }
+                }
+            }
+        ]
     },
     {
         shortName: "require-argument-separators",
