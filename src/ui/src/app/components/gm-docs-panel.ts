@@ -295,8 +295,8 @@ export class GmDocsPanel extends LightDomLitElement {
                                                           ? html`<div class="docs-field-choices">
                                                                 Choices:
                                                                 ${fieldValue.choices
-                                                                .map((c) => html`<code>${c}</code>`)
-                                                                .reduce((acc, x) => html`${acc}, ${x}`)}
+                                                                    .map((c) => html`<code>${c}</code>`)
+                                                                    .reduce((acc, x) => html`${acc}, ${x}`)}
                                                             </div>`
                                                           : null
                                                   }

@@ -1,9 +1,10 @@
 # Codex `build-lint-test` agent
 
-The `build-lint-test` agent is a strict GMLoop build, lint, and test reporter
-that the orchestrator delegates a single bounded command to. It runs the
-command and returns exact failure excerpts; it does not fix anything, expand
-scope, or invent commands.
+The `build-lint-test` agent is a strict internal GMLoop repository build, lint,
+and test reporter that the orchestrator delegates one exact bounded shell
+command to. Repository build, lint, and tests run through the assigned `pnpm`
+command, not GMLoop MCP. The agent returns exact verbatim failure excerpts; it
+does not fix anything, expand scope, or invent commands.
 
 It is configured in
 [`.codex/agents/build-lint-test.toml`](../.codex/agents/build-lint-test.toml)
@@ -16,44 +17,28 @@ and registered in [`.codex/config.toml`](../.codex/config.toml) under
   `pnpm run build`, `pnpm run lint:quiet`, `pnpm run test:quiet`,
   `pnpm run test:compiled`, or `pnpm run test`) exactly as the
   orchestrator assigns it.
-- Optionally call the `gmloop_lint` MCP tool without its write option when
-  the orchestrator asks for an MCP lint read. Repository build and tests
-  always go through the shell, never through any GMLoop tool.
-- Report the command or tool name, its exit/result status, and the exact
-  stdout/stderr failure excerpts (file paths, line numbers, rule
-  identifiers) that are already present in the output. Warnings are
-  omitted unless the orchestrator explicitly requests them.
+- Use no MCP tools. Zero MCP servers are reachable because every inherited MCP
+  table is explicitly disabled.
+- Report only the command, its exit status, and exact verbatim stdout/stderr
+  failure excerpts (including file paths, line numbers, and rule identifiers)
+  already present in the output. Warnings are omitted unless the orchestrator
+  explicitly requests them. When status is requested after success, return
+  only a compact no-failures line.
 
 ### Intentional shell path for build and tests
 
-Repository build and tests always go through the shell. The agent never
-uses a GMLoop tool, the GMLoop CLI, the runtime wrapper, the formatter,
-the refactor pipeline, watchers, hot-reload, or the GameMaker runtime to
-run them; the orchestrator-assigned `pnpm run` command in the shell is
-the single authoritative entry point. This keeps lint MCP reads
-(allowing only `gmloop_lint`) and shell-driven build/test runs strictly
-separated.
-
-### Lint MCP limitation
-
-When the orchestrator explicitly assigns `gmloop_lint`, the agent must
-call it without `--write`. The lint MCP surface exposes only the
-diagnostic `gmloop_lint` tool — never any write-side tool — so the
-agent cannot mutate source, fixtures, or configuration via the MCP
-surface. Any content rewrite is the orchestrator's and the worker's
-responsibility, not this reporter's.
+Repository build, lint, and tests always go through the assigned shell
+command. The agent never uses GMLoop MCP, the GMLoop CLI, the runtime wrapper,
+the formatter, the refactor pipeline, watchers, hot-reload, or the GameMaker
+runtime to run them; the orchestrator-assigned `pnpm run` command is the single
+authoritative entry point.
 
 ### Generated-artifact scope
 
-`workspace-write` access exists solely so the assigned `pnpm run` build,
-lint, test, and reporter commands can populate the normal `dist/`,
-`tsconfig.*.tsbuildinfo`, cache, and test artifact directories. The
-agent never writes outside that generated-artifact scope, never edits
-source, tests, configuration, documentation, agents, or fixtures, and
-never touches any user-visible file. The generated artifacts are
-disposable; the role's `[sandbox_workspace_write]` settings intentionally
-constrain that writes are limited to the workspace paths the orchestrator
-expects the assigned commands to need.
+`workspace-write` access exists only for generated artifacts from the assigned
+`pnpm run` command, such as normal `dist/`, cache, and test artifact
+directories. It is not permission to edit source, tests, configuration,
+documentation, agents, or fixtures. The generated artifacts are disposable.
 
 ### Network restriction
 
@@ -75,6 +60,7 @@ emitted and report it back.
 | `sandbox_mode` | `"workspace-write"` |
 | `[sandbox_workspace_write].network_access` | `false` |
 | `model_provider` | *(unset — do not set, do not use MiniMax)* |
+| MCP servers | None enabled; every inherited MCP table is disabled |
 
 `workspace-write` access exists solely so the assigned `pnpm run` build,
 lint, test, and reporter commands can populate the normal `dist/`, cache,
@@ -82,26 +68,13 @@ and test artifact directories. Network access is disabled at the sandbox
 boundary so the agent cannot fetch dependencies, contact registries, or
 reach any external service.
 
-## MCP server allowlists
+## MCP server isolation
 
-Custom-agent allowlists use server-local tool names under
-`[mcp_servers.<server>].enabled_tools`. Each entry is **the only tool** the
-build-lint-test agent may call on that server.
-
-### `gmloop` — lint read only
-
-- `gmloop_lint`. The agent must call it without `--write` (i.e., the lint
-  MCP tool is used for diagnostics, never for content rewrites).
-  Repository build and tests always run through the shell, not through
-  any GMLoop tool.
-
-### Disabled servers
-
-The agent declares `gm-cli`, `playwright`, `lsp`, `node_repl`, and
-`computer-use` as disabled servers. Each table uses
-`command = "false"` and `args = []` so Codex's stdio transport schema is
-still satisfied, the inherited surfaces remain fail-closed, and the agent
-can reach only the `gmloop` MCP server (and only the `gmloop_lint` tool).
+The agent has zero reachable MCP servers and no MCP tools. Custom agent
+configuration layers can inherit parent MCP server entries, so the role keeps
+explicit fail-closed tables for `gmloop`, `gm-cli`, `playwright`, `lsp`,
+`node_repl`, and `computer-use`. Every table uses `command = "false"`,
+`args = []`, and `enabled = false`; no table has an `enabled_tools` allowlist.
 
 ## Explicit prohibitions
 
@@ -116,8 +89,8 @@ can reach only the `gmloop` MCP server (and only the `gmloop_lint` tool).
   HTTP client. Network is disabled at the sandbox boundary.
 - **No formatter, fix, refactor, watch, runtime, or browser actions.**
   Formatters, linters with `--write`/`--fix`, codemods, watchers,
-  hot-reload, runtime inspection, and browser automation are off-limits
-  for this agent.
+  hot-reload, runtime inspection, browser automation, and all MCP actions are
+  off-limits for this agent.
 - **No arbitrary shell commands.** The only shell activity permitted is
   the single command the orchestrator assigned for the current turn,
   plus reading its output. The agent does not chain extra commands or
