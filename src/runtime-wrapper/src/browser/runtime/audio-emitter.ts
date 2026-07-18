@@ -90,14 +90,11 @@ export function applyHtml5AudioEmitterSafetyPatch(globalScope: BrowserGlobalScop
     const nativeCreateFunction = createFunction.function;
     const patchedCreateFunction = function (this: unknown, ...args: Array<unknown>): unknown {
         if (initializedFunction !== null) {
-            let initialized = false;
             try {
-                initialized = Reflect.apply(initializedFunction.function, globalScope, []) === true;
+                if (Reflect.apply(initializedFunction.function, globalScope, []) !== true) {
+                    return undefined;
+                }
             } catch {
-                return undefined;
-            }
-
-            if (!initialized) {
                 return undefined;
             }
         }
