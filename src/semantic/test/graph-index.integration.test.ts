@@ -430,10 +430,21 @@ void test("buildGraphIndex preserves unchanged graph slices across incremental r
             "utf8"
         );
 
+        const incrementalProgress: Array<{ current: number; stage: string; total: number }> = [];
         await buildGraphIndex({
+            onProgress: (progress) => incrementalProgress.push(progress),
             projectRoot: fixture.projectRoot,
             toolsetRoot: fixture.toolsetRoot
         });
+        assert.deepEqual(incrementalProgress.at(-1), { current: 1, stage: "gml-parse", total: 1 });
+
+        const warmProgress: Array<{ current: number; stage: string; total: number }> = [];
+        await buildGraphIndex({
+            onProgress: (progress) => warmProgress.push(progress),
+            projectRoot: fixture.projectRoot,
+            toolsetRoot: fixture.toolsetRoot
+        });
+        assert.deepEqual(warmProgress, [], "an unchanged graph reopen must use the persisted semantic projection");
 
         const rebuiltDatabase = openGraphIndexDatabase(result.databasePath);
         try {

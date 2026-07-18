@@ -9,6 +9,7 @@ import { loadBuiltInIdentifiers } from "../symbols/built-in-identifiers.js";
 import { createProjectIndexAbortGuard, PROJECT_INDEX_BUILD_ABORT_MESSAGE } from "./abort-guard.js";
 import type { ProjectIndexBuildOptions } from "./build-options.js";
 import { clampConcurrency } from "./concurrency.js";
+import { PROJECT_INDEX_SLL_PREDICTION_MAX_SOURCE_LENGTH } from "./constants.js";
 import { collectConstructorMemberAnalysis, type ConstructorMemberAnalysis } from "./constructor-members.js";
 import { createProjectIndexCoordinator as createProjectIndexCoordinatorCore } from "./coordinator.js";
 import { type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
@@ -48,7 +49,11 @@ const PROJECT_INDEX_PARSE_OPTIONS = Object.freeze({
     attachFunctionDocComments: true,
     getComments: true,
     getLocations: true,
-    simplifyLocations: false
+    simplifyLocations: false,
+    // Medium-sized GameMaker scripts are common and are substantially faster
+    // through ANTLR's SLL prediction path. Larger sources still use the
+    // parser's conservative LL path, avoiding an unbounded prediction cache.
+    sllPredictionMaxSourceLength: PROJECT_INDEX_SLL_PREDICTION_MAX_SOURCE_LENGTH
 });
 
 const IDENTIFIER_COLLECTION_NAMES = Object.freeze({

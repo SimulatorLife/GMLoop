@@ -68,6 +68,8 @@ type ProjectTreeFile = Readonly<{
     relativePath: string;
 }>;
 
+const SEMANTIC_MANIFEST_IO_CONCURRENCY = 64;
+
 function createContentHash(sourceText: string): string {
     return createHash("sha256").update(sourceText).digest("hex");
 }
@@ -193,7 +195,7 @@ export async function buildSemanticFileManifest(
                 sourceVersion: isOverlayUnsaved ? (overlay?.documentVersion ?? null) : null
             });
         },
-        16
+        SEMANTIC_MANIFEST_IO_CONCURRENCY
     );
     for (const entry of manifestEntries) {
         entries.set(entry.relativePath, entry);
@@ -262,7 +264,7 @@ export async function updateSemanticFileManifest(
                 })
             });
         },
-        16
+        SEMANTIC_MANIFEST_IO_CONCURRENCY
     );
     for (const change of changes) {
         if (change === null) {

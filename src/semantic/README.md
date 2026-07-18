@@ -44,6 +44,13 @@ Every project-index build returns a metrics snapshot. The currently implemented 
 - `total`, `gml.parse`, and `gml.analyse`: timings used by the synthetic workload tests.
 - `memory.sampledPeakRssBytes` and `memory.sampledPeakHeapUsedBytes`: maxima from process-memory samples taken around project phases and while each parsed AST is still live. They are sampled build peaks, not operating-system high-water marks.
 
+Graph-index refreshes reuse the persisted full project snapshot when the source
+revision is unchanged. When files do change, the graph builder passes the
+manifest change set into the project index's incremental path, so unchanged GML
+files are retained instead of being parsed again. The graph parser also keeps
+ANTLR's faster SLL prediction path enabled for medium-sized scripts and limits
+that optimization to bounded source sizes.
+
 Identifier, script-call, resource, and identifier-sink counters remain available in the same snapshot. These measurements establish the current baseline; cache reuse, recomputed semantic units, propagation boundaries, duplicate work, broad-invalidation causes, and retained generations remain target-state observability requirements rather than currently implemented workload counters.
 
 The serial CI workload generates 500 scripts and approximately 100,000 lines. It exercises cold definitions and full analysis, requires an unchanged warm Tier 1 lease within 500 ms with no GML parses or source reads, and measures warmed indexed position, definition, and document-symbol p95 latency against a 20 ms gate. Workspace and completion search use a 50 ms p95 gate. One hundred acquire/query/release cycles must return the active lease count to zero and, when explicit garbage collection is available, retain no more than 5% additional heap. Full Tier 2 completion remains capped at 30 seconds and sampled peak RSS at 768 MiB. The smaller workload separately verifies deterministic bounded-concurrency output and one-file incremental equivalence.
@@ -1073,4 +1080,5 @@ for (const p of sorted) {
 ```
 
 ## TODO
+
 - **FEAT**: For determining the file-diffs to trigger a file-level hot-reload and/or semantic re-analysis should/can we use the .git history to determine which files/lines have changed? This would allow us to avoid re-analyzing files that haven't changed, improving performance in large projects. Also we need to be sure that, for things like applying lint-fixes & formatting across a project we don't trigger a rebuild for each file that was changed, but instead we should be able to determine the set of files that were changed at the end of the operation and only re-analyze those files as/if needed. This would be a significant performance improvement for large projects.
