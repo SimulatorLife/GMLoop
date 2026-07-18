@@ -298,4 +298,137 @@ void describe("GmlTranspiler.transpileEvent", () => {
             );
         });
     });
+
+    void describe("nested lexical scopes (regression: function (self.x))", () => {
+        void it("emits nested function parameters as bare names, not self.<name>", () => {
+            const transpiler = new Transpiler.GmlTranspiler();
+            const patch = transpiler.transpileEvent({
+                sourceText: "function inner(inner_param) { return inner_param + 1; }",
+                symbolId: "gml/event/obj_player/step"
+            });
+
+            assert.ok(
+                !patch.js_body.includes("self.inner_param"),
+                "nested function parameter must not be emitted as self.inner_param"
+            );
+            assert.ok(
+                !/function\s*\([^)]*\bself\./.test(patch.js_body),
+                "the function parameter list itself must not contain self."
+            );
+            assert.match(patch.js_body, /function\s+inner\s*\(\s*inner_param\s*\)/);
+        });
+
+        void it("emits nested function var declarations as bare names, not self.<name>", () => {
+            const transpiler = new Transpiler.GmlTranspiler();
+            const patch = transpiler.transpileEvent({
+                sourceText: "function inner() { var inner_local = 5; return inner_local; }",
+                symbolId: "gml/event/obj_player/step"
+            });
+
+            assert.ok(!patch.js_body.includes("self.inner_local"), "var inside nested function must remain a local");
+            assert.match(patch.js_body, /var\s+inner_local/);
+            assert.match(patch.js_body, /return\s+inner_local/);
+        });
+
+        void it("emits nested function expression parameters as bare names, not self.<name>", () => {
+            const transpiler = new Transpiler.GmlTranspiler();
+            // The classic bug: `function (self.x) { ... }` — the parameter list itself
+            // contained the bogus `self.` prefix instead of the bare parameter name.
+            const patch = transpiler.transpileEvent({
+                sourceText: "var cb = function (callback_arg) { return callback_arg + 1; };",
+                symbolId: "gml/event/obj_enemy/step"
+            });
+
+            assert.ok(
+                !/function\s*\([^)]*\bself\./.test(patch.js_body),
+                `nested function expression parameter list must not contain self., got: ${patch.js_body}`
+            );
+            assert.ok(!patch.js_body.includes("self.callback_arg"));
+            assert.match(patch.js_body, /function\s*\(\s*callback_arg\s*\)/);
+        });
+
+        void it("emits catch clause parameters as bare names, not self.<name>", () => {
+            const transpiler = new Transpiler.GmlTranspiler();
+            const patch = transpiler.transpileEvent({
+                sourceText: "try { health -= 1; } catch (err) { show_debug_message(err.message); }",
+                symbolId: "gml/event/obj_enemy/step"
+            });
+
+            assert.ok(!/catch\s*\(\s*self\./.test(patch.js_body), "catch parameter must not be emitted as self.<name>");
+            assert.ok(!patch.js_body.includes("self.err"));
+            assert.match(patch.js_body, /catch\s*\(\s*err\s*\)/);
+            assert.match(patch.js_body, /err\.message/);
+        });
+
+        void it("emits var declarations inside a catch body as bare names, not self.<name>", () => {
+            const transpiler = new Transpiler.GmlTranspiler();
+            const patch = transpiler.transpileEvent({
+                sourceText:
+                    "try { x = 0; } catch (caught_err) { var caught_msg = caught_err.message; show_debug_message(caught_msg); }",
+                symbolId: "gml/event/obj_enemy/step"
+            });
+
+            assert.ok(!patch.js_body.includes("self.caught_msg"), "var inside catch body must remain a local");
+            assert.ok(!patch.js_body.includes("self.caught_err"));
+            assert.match(patch.js_body, /var\s+caught_msg/);
+        });
+
+        void it("keeps outer-scope locals visible inside nested functions while nested locals stay lexical", () => {
+            const transpiler = new Transpiler.GmlTranspiler();
+            const patch = transpiler.transpileEvent({
+                sourceText:
+                    "var outer_local = 1; function inner(inner_arg) { var inner_local = outer_local + inner_arg; return inner_local; }",
+                symbolId: "gml/event/obj_player/step"
+            });
+
+            // outer_local is a local in the event body, so references inside the nested
+            // function should also resolve to the bare name (no self. prefix).
+            assert.ok(!patch.js_body.includes("self.outer_local"));
+            assert.ok(!patch.js_body.includes("self.inner_local"));
+            assert.ok(!patch.js_body.includes("self.inner_arg"));
+            assert.match(patch.js_body, /outer_local/);
+            assert.match(patch.js_body, /inner_local/);
+            assert.match(patch.js_body, /inner_arg/);
+        });
+
+        void it("keeps default-parameter bindings bare while resolving instance-field defaults", () => {
+            const transpiler = new Transpiler.GmlTranspiler();
+            const patch = transpiler.transpileEvent({
+                sourceText: "var callback = function (value = health) { return value; };",
+                symbolId: "gml/event/obj_player/create"
+            });
+
+            assert.match(patch.js_body, /function\s*\(value = self\.health\)/);
+            assert.ok(!patch.js_body.includes("self.value"));
+        });
+
+        void it("keeps function-scoped vars declared in catch blocks local after the catch", () => {
+            const transpiler = new Transpiler.GmlTranspiler();
+            const patch = transpiler.transpileEvent({
+                sourceText:
+                    "function inner() { try { health -= 1; } catch (err) { var message = err.message; } return message; }",
+                symbolId: "gml/event/obj_player/step"
+            });
+
+            assert.ok(!patch.js_body.includes("self.err"));
+            assert.ok(!patch.js_body.includes("self.message"));
+            assert.match(patch.js_body, /return\s+message/);
+        });
+
+        void it("emits a syntactically valid patch for nested event callbacks", () => {
+            const transpiler = new Transpiler.GmlTranspiler();
+            const patch = transpiler.transpileEvent({
+                sourceText: [
+                    "var owner = self;",
+                    "callback = function (callback_arg) {",
+                    "    var inner = function (inner_arg) { return owner.value + inner_arg; };",
+                    "    try { return inner(callback_arg); } catch (err) { return err.message; }",
+                    "};"
+                ].join("\n"),
+                symbolId: "gml/event/obj_player/create"
+            });
+
+            assert.doesNotThrow(() => new Function("self", "other", "args", patch.js_body));
+        });
+    });
 });

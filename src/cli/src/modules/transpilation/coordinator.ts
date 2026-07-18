@@ -989,7 +989,12 @@ export function transpileFile(
                 metadata: {
                     ...patch.metadata,
                     sourcePath: filePath,
-                    dependencies: resolvePatchDependencies(extractReferencesFromAst(patchAst), patch.id, parsedSymbols)
+                    dependencies: resolvePatchDependencies(
+                        extractReferencesFromAst(patchAst),
+                        patch.id,
+                        parsedSymbols,
+                        context.scriptNames
+                    )
                 }
             };
             const patchPayload =
@@ -1318,7 +1323,8 @@ function getPrimaryScriptPatchId(symbols: ReadonlyArray<string>): string | null 
 function resolvePatchDependencies(
     references: ReadonlyArray<string>,
     patchId: string,
-    definedSymbols: ReadonlyArray<string>
+    definedSymbols: ReadonlyArray<string>,
+    registeredScriptNames: ReadonlySet<string> | undefined
 ): Array<string> {
     const dependencies = new Set<string>();
     const definedPatchIds = new Set(
@@ -1328,6 +1334,14 @@ function resolvePatchDependencies(
     );
 
     for (const reference of references) {
+        const referencedScriptName = symbolIdToScriptName(reference);
+        if (
+            referencedScriptName === null ||
+            (registeredScriptNames !== undefined && !registeredScriptNames.has(referencedScriptName))
+        ) {
+            continue;
+        }
+
         const dependencyPatchId = runtimeSymbolToPatchId(reference);
         if (!dependencyPatchId || dependencyPatchId === patchId || definedPatchIds.has(dependencyPatchId)) {
             continue;

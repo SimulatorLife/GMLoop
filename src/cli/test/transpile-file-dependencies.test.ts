@@ -41,6 +41,33 @@ void describe("transpileFile patch dependency metadata", () => {
         ]);
     });
 
+    void it("excludes event instance-method calls from registered script dependencies", () => {
+        const scriptNames = new Set(["known_script"]);
+        const context: TranspilationContext = {
+            ...createContext(),
+            scriptNames,
+            transpiler: new Transpiler.GmlTranspiler({
+                semantic: Transpiler.createSemanticOracle({ scriptNames })
+            })
+        };
+        const result = transpileFile(
+            context,
+            "/project/objects/obj_player/Create_0.gml",
+            [
+                "known_script();",
+                "actor_take_damage_type(eDamageType.melee);",
+                "var callback = function (value) { return value; };"
+            ].join("\n"),
+            3,
+            { verbose: false, quiet: true }
+        );
+
+        assert.ok(result.success, "Transpilation should succeed");
+        assert.deepStrictEqual(result.patch?.metadata?.dependencies, ["gml/script/known_script"]);
+        assert.match(result.patch?.js_body ?? "", /self\.actor_take_damage_type/);
+        assert.doesNotMatch(result.patch?.js_body ?? "", /function\s*\(self\.value\)/);
+    });
+
     void it("omits self-references from dependency metadata", () => {
         const context = createContext();
         const result = transpileFile(

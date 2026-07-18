@@ -2,8 +2,11 @@ name = "build-lint-test"
 description = "GMLoop build, lint, and test reporter that only runs explicitly assigned commands and returns exact failure excerpts (warnings only when requested)."
 nickname_candidates = ["BuildProbe", "LintProbe", "TestProbe"]
 
-model = "gpt-5.4-mini"
-model_reasoning_effort = "medium"
+# model = "gpt-5.4-mini"
+# model_reasoning_effort = "medium"
+model_provider = "minimax"
+model = "MiniMax-M3"
+model_reasoning_effort = "high"
 sandbox_mode = "workspace-write"
 
 [sandbox_workspace_write]

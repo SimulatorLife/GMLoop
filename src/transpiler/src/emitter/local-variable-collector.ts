@@ -118,7 +118,7 @@ function collectStaticDeclarationsFromTree(root: unknown, declarations: Variable
  * Traversal stops at nested `FunctionDeclaration` and `ConstructorDeclaration`
  * boundaries so that inner-function locals are not included in the returned set.
  *
- * @param ast - The root `Program` node to walk
+ * @param ast - The event or function-body AST node to walk
  * @returns An immutable set of all `var`-declared variable names in the event body
  *
  * @example
@@ -137,7 +137,7 @@ function collectStaticDeclarationsFromTree(root: unknown, declarations: Variable
  * // locals = Set { "speed", "cached_message", "dx", "msg" }
  * ```
  */
-export function collectLocalVariables(ast: ProgramNode): ReadonlySet<string> {
+export function collectLocalVariables(ast: GmlNode): ReadonlySet<string> {
     const localNames = new Set<string>();
     collectVarDeclarationsFromTree(ast, localNames);
     return localNames;

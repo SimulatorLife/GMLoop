@@ -61,11 +61,16 @@ import {
 import { lowerEnumDeclaration } from "./enum-lowering.js";
 import { escapeTemplateText, stringifyStructKey } from "./js-string-utils.js";
 import { normalizeGmlNumericLiteral } from "./literal-normalization.js";
-import { collectGlobalVarNames, collectStaticVariableDeclarations } from "./local-variable-collector.js";
+import {
+    collectGlobalVarNames,
+    collectLocalVariables,
+    collectStaticVariableDeclarations
+} from "./local-variable-collector.js";
 import { mapBinaryOperator } from "./operator-mapping.js";
 import { ensureStatementTerminated } from "./statement-termination-policy.js";
 import { StringBuilder } from "./string-builder.js";
 import {
+    isDefaultParameterNode,
     isIdentifierNode,
     isIfStatementNode,
     isLiteralNode,
@@ -87,6 +92,22 @@ const DEFAULT_OPTIONS: EmitOptions = Object.freeze({
 interface StaticScope {
     readonly identifier: string;
     readonly names: ReadonlySet<string>;
+}
+
+interface LexicalScopeController {
+    pushScope(localNames: ReadonlySet<string>): void;
+    popScope(): void;
+}
+
+function isLexicalScopeController(
+    semantic: IdentifierAnalyzer & CallTargetAnalyzer
+): semantic is IdentifierAnalyzer & CallTargetAnalyzer & LexicalScopeController {
+    return (
+        "pushScope" in semantic &&
+        typeof semantic.pushScope === "function" &&
+        "popScope" in semantic &&
+        typeof semantic.popScope === "function"
+    );
 }
 
 export class GmlToJsEmitter {
@@ -114,6 +135,7 @@ export class GmlToJsEmitter {
     private repeatLoopCounter: number;
     private staticScopeCounter: number;
     private readonly staticScopes: StaticScope[];
+    private readonly lexicalScopeController: LexicalScopeController | null;
     private readonly visitNode = (node: GmlNode): string => this.visit(node);
 
     constructor(semantic: IdentifierAnalyzer & CallTargetAnalyzer, options: Partial<EmitOptions> = {}) {
@@ -126,6 +148,7 @@ export class GmlToJsEmitter {
         this.repeatLoopCounter = 0;
         this.staticScopeCounter = 0;
         this.staticScopes = [];
+        this.lexicalScopeController = isLexicalScopeController(semantic) ? semantic : null;
     }
 
     /**
@@ -678,8 +701,18 @@ export class GmlToJsEmitter {
     }
 
     private visitCatchClause(ast: CatchClauseNode): string {
-        const param = ast.param ? this.visit(ast.param) : "err";
-        return `catch (${param})${wrapConditionalBody(ast.body, this.visitNode)}`;
+        const paramName = ast.param ? this.resolveCatchParameterName(ast.param) : null;
+        this.pushLexicalScope(paramName ? new Set([paramName]) : new Set());
+        try {
+            const paramText = ast.param ? this.visit(ast.param) : "err";
+            return `catch (${paramText})${wrapConditionalBody(ast.body, this.visitNode)}`;
+        } finally {
+            this.popLexicalScope();
+        }
+    }
+
+    private resolveCatchParameterName(param: GmlNode): string | null {
+        return isIdentifierNode(param) ? param.name : this.resolveIdentifierName(param);
     }
 
     private visitFinallyClause(ast: FinallyClauseNode): string {
@@ -984,34 +1017,44 @@ export class GmlToJsEmitter {
                   names: staticNames
               }
             : null;
-
-        if (staticScope) {
-            this.staticScopes.push(staticScope);
+        const lexicalNames = new Set(this.resolveFunctionParameterNames(params));
+        for (const localName of collectLocalVariables(body)) {
+            lexicalNames.add(localName);
         }
 
-        let printedBody: string;
+        this.pushLexicalScope(lexicalNames);
         try {
-            const staticPrologue = staticScope
-                ? this.emitStaticFunctionPrologue(functionName, staticScope, staticDeclarations)
-                : "";
-            const combinedPrologue = [prologueStatement, staticPrologue].filter((line) => line.length > 0).join(";\n");
-            printedBody = this.wrapFunctionLikeBody(body, combinedPrologue);
-        } finally {
             if (staticScope) {
-                this.staticScopes.pop();
+                this.staticScopes.push(staticScope);
             }
-        }
 
-        // Fast path: no parameters
-        if (!params || params.length === 0) {
-            return `${keyword} ${functionName}()${printedBody}`;
+            let printedBody: string;
+            try {
+                const staticPrologue = staticScope
+                    ? this.emitStaticFunctionPrologue(functionName, staticScope, staticDeclarations)
+                    : "";
+                const combinedPrologue = [prologueStatement, staticPrologue]
+                    .filter((line) => line.length > 0)
+                    .join(";\n");
+                printedBody = this.wrapFunctionLikeBody(body, combinedPrologue);
+            } finally {
+                if (staticScope) {
+                    this.staticScopes.pop();
+                }
+            }
+
+            if (params.length === 0) {
+                return `${keyword} ${functionName}()${printedBody}`;
+            }
+
+            const builder = new StringBuilder(params.length);
+            for (const param of params) {
+                builder.append(typeof param === "string" ? param : this.visit(param));
+            }
+            return `${keyword} ${functionName}(${builder.toString(", ")})${printedBody}`;
+        } finally {
+            this.popLexicalScope();
         }
-        // Build parameter list with StringBuilder to avoid sparse array allocation
-        const builder = new StringBuilder(params.length);
-        for (const param of params) {
-            builder.append(typeof param === "string" ? param : this.visit(param));
-        }
-        return `${keyword} ${functionName}(${builder.toString(", ")})${printedBody}`;
     }
 
     private collectStaticNames(declarations: ReadonlyArray<VariableDeclaratorNode>): ReadonlySet<string> {
@@ -1100,6 +1143,40 @@ export class GmlToJsEmitter {
         const name = this.resolveIdentifierName(declaration.id);
         const currentScope = this.staticScopes.at(-1);
         return name !== null && currentScope.names.has(name);
+    }
+
+    private pushLexicalScope(localNames: ReadonlySet<string>): void {
+        this.lexicalScopeController?.pushScope(localNames);
+    }
+
+    private popLexicalScope(): void {
+        this.lexicalScopeController?.popScope();
+    }
+
+    /**
+     * Extract parameter names from a function/constructor parameter list.
+     *
+     * `params` is `ReadonlyArray<GmlNode | string>`: the AST nodes are typically
+     * `IdentifierNode`, but parameters may also appear as plain strings (e.g. when
+     * callers pass a synthesized parameter list). Names that cannot be resolved are
+     * omitted rather than throwing so that malformed inputs surface downstream.
+     */
+    private resolveFunctionParameterNames(params: ReadonlyArray<GmlNode | string>): ReadonlyArray<string> {
+        const names: string[] = [];
+        for (const param of params) {
+            if (typeof param === "string") {
+                if (param.length > 0) {
+                    names.push(param);
+                }
+                continue;
+            }
+            const target = isDefaultParameterNode(param) ? param.left : param;
+            const resolved = this.resolveIdentifierName(target);
+            if (resolved && resolved.length > 0) {
+                names.push(resolved);
+            }
+        }
+        return names;
     }
 
     private wrapFunctionLikeBody(body: GmlNode, prologueStatement: string): string {
