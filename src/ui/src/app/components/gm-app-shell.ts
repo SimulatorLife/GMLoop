@@ -332,7 +332,7 @@ export class GmAppShell extends LightDomLitElement {
 
         this.#graphIndexProgress = new GraphIndexProgressParticipant({
             callbacks: {
-                canPoll: () => this.model !== null && this.model.isServerMode && hasLoadedGraphProject(this.model),
+                canPoll: () => this.model !== null && this.model.isServerMode && this.model.loadedTarget !== null,
                 onPollError: (error) => {
                     console.error("Error polling semantic graph-index progress:", error);
                 },

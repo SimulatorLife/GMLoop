@@ -232,7 +232,7 @@ The shipped `graph visualize` bundle and development web entry both mount the sa
 Current graph serve-mode host actions are:
 
 - `POST /api/reindex`: force-regenerate the current graph index
-- `POST /api/open`: switch the active UI project globally using a validated `.yyp` path; an omitted path opens the native `.yyp` file picker
+- `POST /api/open`: switch the active UI project globally using a validated `.yyp` path; an omitted path opens the native `.yyp` file picker. The endpoint acknowledges the selected target immediately, while semantic indexing and dependent artifact refresh continue in the background and publish scoped loading/progress state.
 - `POST /api/fix`: run the requested `fix`, `format`, `refactor`, or `lint` project workflow in write mode and return log lines for the Fix tab
 - `GET /api/fix/progress`: return the graph host's local workflow or the shared project `.gmloop/operation-state.json` progress/output for an external CLI or MCP-backed `fix`, `format`, `refactor`, or `lint` operation so the Fix tab stays synchronized across UI hot-reloads and refreshes
 - `GET /api/graph-index/progress`: return the shared semantic-index phase, GML parse progress, output, and completion status for the Graph Index page; this remains readable when the UI attaches after CLI/MCP analysis has started

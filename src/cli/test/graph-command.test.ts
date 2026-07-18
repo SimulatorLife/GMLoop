@@ -102,6 +102,24 @@ async function waitForCondition(predicate: () => boolean, failureMessage: string
     assert.fail(failureMessage);
 }
 
+async function waitForFileContents(filePath: string): Promise<string> {
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+        try {
+            return await fs.readFile(filePath, "utf8");
+        } catch (error: unknown) {
+            const errorCode =
+                typeof error === "object" && error !== null && "code" in error ? Reflect.get(error, "code") : null;
+            if (errorCode !== "ENOENT") {
+                throw error;
+            }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    return assert.fail(`Timed out waiting for ${filePath} to be written.`);
+}
+
 function createLiveReloadStatusPayload(runtimeUrl: string | null): Record<string, unknown> {
     return {
         errorCount: 0,
@@ -1104,7 +1122,7 @@ void test("graph visualize --serve writes active project path to projectState fi
         const result = (await response.json()) as { ok: boolean };
         assert.equal(result.ok, true);
 
-        const stateContents = await fs.readFile(statePath, "utf8");
+        const stateContents = await waitForFileContents(statePath);
         const parsedState = JSON.parse(stateContents) as { projectPath: string };
         assert.equal(path.resolve(parsedState.projectPath), path.resolve(fixture.projectRoot, "Project.yyp"));
     } finally {

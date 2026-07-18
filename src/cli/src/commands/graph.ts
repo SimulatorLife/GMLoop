@@ -1515,17 +1515,22 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
         }
     }
 
-    async function refreshActiveVisualizationArtifacts(context: GraphResolutionContext | null): Promise<void> {
+    async function refreshActiveVisualizationArtifacts(
+        context: GraphResolutionContext | null,
+        isCurrent: () => boolean = () => true
+    ): Promise<void> {
         if (context === null) {
-            activeVisualizationPayload = createEmptyGraphVisualizationData();
-            activeProjectConfigurationCatalog = await createGraphVisualizationProjectConfigurationCatalog(null, {
+            const projectConfigurationCatalog = await createGraphVisualizationProjectConfigurationCatalog(null, {
                 config: options.config
             });
             const [availableVersion, resources] = await Promise.all([
                 AgentPack.readAgentPackVersion(),
                 AgentPack.readAgentPackResourcePreviews()
             ]);
-            activeAutoGamePipeline = createAutoGamePipelineModel(
+            if (!isCurrent()) {
+                return;
+            }
+            const autoGamePipeline = createAutoGamePipelineModel(
                 [],
                 {
                     agentConfigs: Object.freeze([]),
@@ -1536,14 +1541,26 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 },
                 resources
             );
+            activeVisualizationPayload = createEmptyGraphVisualizationData();
+            activeProjectConfigurationCatalog = projectConfigurationCatalog;
+            activeAutoGamePipeline = autoGamePipeline;
             return;
         }
 
-        activeVisualizationPayload = readVisualizationPayloadFromContext(context);
-        activeProjectConfigurationCatalog = await createGraphVisualizationProjectConfigurationCatalog(context, {
+        const visualizationPayload = readVisualizationPayloadFromContext(context);
+        const projectConfigurationCatalog = await createGraphVisualizationProjectConfigurationCatalog(context, {
             config: options.config
         });
-        activeAutoGamePipeline = await createAutoGamePipelineModelForProject(context);
+        if (!isCurrent()) {
+            return;
+        }
+        const autoGamePipeline = await createAutoGamePipelineModelForProject(context);
+        if (!isCurrent()) {
+            return;
+        }
+        activeVisualizationPayload = visualizationPayload;
+        activeProjectConfigurationCatalog = projectConfigurationCatalog;
+        activeAutoGamePipeline = autoGamePipeline;
     }
 
     function createLoadedTarget(): GraphVisualizedLoadedTarget {
@@ -1551,7 +1568,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             (selectedPathValue) => resolveExplicitWorkflowTargetPath(selectedPathValue) ?? selectedPathValue
         );
         const activePath = resolvedSelectedPaths[0] ?? "";
-        const projectRoot = activeContext?.projectRoot ?? "";
+        const projectRoot = activeContext?.projectRoot ?? resolvedSelectedPaths[0] ?? "";
 
         return Object.freeze({
             activePath,
@@ -1737,49 +1754,107 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             })();
         };
 
-        const openProjectTargetPath = async (
+        const openProjectTargetPath = (
             selectedPath: string,
             source: GraphServeSource
-        ): Promise<Readonly<{ changed: boolean; projectChanged: boolean }>> => {
+        ): Readonly<{ changed: boolean; projectChanged: boolean }> => {
             activeServeStartupGeneration += 1;
+            const startupGeneration = activeServeStartupGeneration;
             const previousPayloadString = safeStringifyVisualizationPayload();
             const resolvedSelectedPath = resolveExplicitWorkflowTargetPath(selectedPath) ?? selectedPath;
+            const previousSelectedPath = activeSelectedPaths[0] ?? null;
+            const previousProjectRoot = activeContext?.projectRoot ?? null;
+            const projectChanged = previousProjectRoot !== resolvedSelectedPath;
             const nextOptions = {
                 ...options,
                 path: resolvedSelectedPath
             };
-            const nextContext = await resolveGraphContext(nextOptions);
-            await ensureGraphIndexForQuery(nextOptions, nextContext, true);
-            const currentContext = activeContext;
-            const projectChanged = currentContext?.projectRoot !== nextContext.projectRoot;
-            const previousProjectRoot = currentContext?.projectRoot ?? null;
-            if (projectChanged) {
-                await stopOwnedGraphVisualizationLiveReloadSession(activeLiveReloadSession, previousProjectRoot);
-                resetActiveProjectScopedServeState();
-            }
-            updateActiveContext(nextContext);
+
+            // Publish the selected target and loading state before any semantic
+            // work. The next document render can therefore update the open
+            // widget immediately while the graph-dependent surfaces stay in a
+            // scoped loading state.
+            activeContext = null;
             activeSelectedPaths = [resolvedSelectedPath];
             activeSource = source;
-            await refreshActiveVisualizationArtifacts(nextContext);
-            activeStartupState = null;
-
-            if (source !== "active-project-state") {
-                try {
-                    await writeGameMakerCliActiveProjectState({
-                        env: process.env,
-                        projectPath: resolvedSelectedPath,
-                        statePathOption: options.projectState
-                    });
-                } catch (error) {
-                    console.error(
-                        `[graph visualize] Failed to write active project state: ${Core.getErrorMessage(error)}`
-                    );
-                }
+            activeVisualizationPayload = createEmptyGraphVisualizationData();
+            activeProjectConfigurationCatalog = null;
+            activeAutoGamePipeline = null;
+            activeStartupState = createGraphVisualizationServeLoadingState("Loading project data…", null);
+            if (projectChanged) {
+                resetActiveProjectScopedServeState();
             }
-
-            const nextPayloadString = safeStringifyVisualizationPayload();
             markServeRevisionChanged();
-            return Object.freeze({ changed: previousPayloadString !== nextPayloadString, projectChanged });
+
+            setImmediate(() => {
+                void (async () => {
+                    try {
+                        if (source !== "active-project-state") {
+                            try {
+                                await writeGameMakerCliActiveProjectState({
+                                    env: process.env,
+                                    projectPath: resolvedSelectedPath,
+                                    statePathOption: options.projectState
+                                });
+                            } catch (error) {
+                                console.error(
+                                    `[graph visualize] Failed to write active project state: ${Core.getErrorMessage(error)}`
+                                );
+                            }
+                        }
+
+                        if (projectChanged) {
+                            await stopOwnedGraphVisualizationLiveReloadSession(
+                                activeLiveReloadSession,
+                                previousProjectRoot
+                            );
+                        }
+
+                        const nextContext = await resolveGraphContext(nextOptions);
+                        if (startupGeneration !== activeServeStartupGeneration) {
+                            return;
+                        }
+                        await ensureGraphIndexForQuery(nextOptions, nextContext, true);
+                        if (startupGeneration !== activeServeStartupGeneration) {
+                            return;
+                        }
+
+                        updateActiveContext(nextContext);
+                        await refreshActiveVisualizationArtifacts(
+                            nextContext,
+                            () => startupGeneration === activeServeStartupGeneration
+                        );
+                        if (startupGeneration !== activeServeStartupGeneration) {
+                            return;
+                        }
+                        activeStartupState = null;
+                    } catch (error) {
+                        if (startupGeneration !== activeServeStartupGeneration) {
+                            return;
+                        }
+
+                        activeContext = null;
+                        activeVisualizationPayload = createEmptyGraphVisualizationData();
+                        activeProjectConfigurationCatalog = null;
+                        activeAutoGamePipeline = null;
+                        activeStartupState = createGraphVisualizationServeErrorState(
+                            "Failed to load the selected project.",
+                            Core.getErrorMessage(error, { fallback: "Unknown project loading error" })
+                        );
+                    } finally {
+                        if (startupGeneration === activeServeStartupGeneration) {
+                            markServeRevisionChanged();
+                        }
+                    }
+                })();
+            });
+
+            return Object.freeze({
+                changed:
+                    previousPayloadString !== safeStringifyVisualizationPayload() ||
+                    previousSelectedPath !== resolvedSelectedPath,
+                projectChanged
+            });
         };
 
         let activeProjectStateOpenInProgress = false;

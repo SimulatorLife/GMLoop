@@ -7,7 +7,7 @@ import type {
     GraphVisualizationAutoGamePipelineLlmOutput,
     GraphVisualizationAutoGamePipelineStatus
 } from "../../graph/types.js";
-import type { GraphVisualizationUiModel } from "../contracts.js";
+import { type GraphVisualizationUiModel, hasLoadedGraphProject } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { EventBusManager } from "./event-bus-mixin.js";
 import {
@@ -366,6 +366,7 @@ export class GmAutoGamePanel extends LightDomLitElement {
     }
 
     #renderAiSkills() {
+        const hasLoadedProject = this.model !== null && hasLoadedGraphProject(this.model);
         const skills = this.model?.autoGamePipeline?.skills ?? [];
         const agentPack = this.model?.autoGamePipeline?.agentPack;
         const agentConfigs = agentPack?.agentConfigs ?? [];
@@ -504,9 +505,7 @@ export class GmAutoGamePanel extends LightDomLitElement {
                                       class="gm-btn ${agentPack?.status === "current" ? "" : "gm-btn--primary"}"
                                       type="button"
                                       ?disabled=${
-                                          !this.#hasPipelineController() ||
-                                          this.model?.loadedTarget === null ||
-                                          isSkillMutationPending
+                                          !this.#hasPipelineController() || !hasLoadedProject || isSkillMutationPending
                                       }
                                       aria-busy=${isAgentPackPending ? "true" : "false"}
                                       @click=${() => {
@@ -543,7 +542,7 @@ export class GmAutoGamePanel extends LightDomLitElement {
                         : nothing
                 }
                 ${
-                    this.model?.loadedTarget === null && totalItemsCount > 0
+                    !hasLoadedProject && totalItemsCount > 0
                         ? html`<p class="auto-game-skill-unloaded-notice">
                               Open a GameMaker project to discover its Auto-Game skills.
                           </p>`
@@ -563,9 +562,9 @@ export class GmAutoGamePanel extends LightDomLitElement {
                                   <div class="gm-empty auto-game-skill-empty auto-game-skill-empty--skills">
                                       <p>
                                           ${
-                                              this.model?.loadedTarget === null
-                                                  ? "Open a GameMaker project to discover its Auto-Game skills."
-                                                  : "No Auto-Game skills or templates are available."
+                                              hasLoadedProject
+                                                  ? "No Auto-Game skills or templates are available."
+                                                  : "Open a GameMaker project to discover its Auto-Game skills."
                                           }
                                       </p>
                                   </div>

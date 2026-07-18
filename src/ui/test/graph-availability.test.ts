@@ -204,3 +204,22 @@ void test("hasLoadedGraphProject returns true when a target is loaded", () => {
 
     assert.equal(hasLoadedGraphProject(model), true);
 });
+
+void test("hasLoadedGraphProject returns false while the selected target is still loading", () => {
+    const model: GraphVisualizationUiModel = {
+        ...createUiModel(),
+        loadedTarget: {
+            activePath: "/tmp/test/project.yyp",
+            projectRoot: "/tmp/test",
+            selectedPaths: [],
+            source: "working-directory"
+        },
+        startupState: {
+            detail: null,
+            message: "Loading project data…",
+            phase: "loading"
+        }
+    };
+
+    assert.equal(hasLoadedGraphProject(model), false);
+});

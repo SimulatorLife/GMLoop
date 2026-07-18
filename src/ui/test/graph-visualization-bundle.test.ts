@@ -365,6 +365,12 @@ void test("graph visualization bundle includes a graph empty state for no-projec
 
 void test("graph visualization bundle includes startup-loading shell affordances", async () => {
     const bundle = await renderGraphVisualizationBundle(createBaseData(), {
+        loadedTarget: {
+            activePath: "/tmp/loading-project/Project.yyp",
+            projectRoot: "/tmp/loading-project",
+            selectedPaths: ["/tmp/loading-project"],
+            source: "finder-open"
+        },
         startupState: {
             detail: null,
             message: "Loading project data…",
@@ -376,4 +382,5 @@ void test("graph visualization bundle includes startup-loading shell affordances
     const html = readBundleFileText(bundle, bundle.entryHtmlPath);
 
     assert.match(html, /"startupState":\{"detail":null,"message":"Loading project data…","phase":"loading"\}/u);
+    assert.match(html, /"loadedTarget":\{"activePath":"\/tmp\/loading-project\/Project\.yyp"/u);
 });

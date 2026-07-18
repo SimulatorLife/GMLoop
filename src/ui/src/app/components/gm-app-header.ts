@@ -64,6 +64,7 @@ export class GmAppHeader extends LightDomLitElement {
         const loadedTarget = this.model.loadedTarget;
         const liveReloadPage: GraphVisualizationUiPage = "live-reload";
         const activePath = loadedTarget?.activePath ?? this.model.title;
+        const isProjectLoading = this.model.startupState?.phase === "loading";
         return html`
             <header id="app-header" class="app-header">
                 <div class="topbar-row">
@@ -222,8 +223,13 @@ export class GmAppHeader extends LightDomLitElement {
                                 })}
                             </button>
                         </div>
-                        <div id="loaded-target" class="loaded-path">
+                        <div id="loaded-target" class="loaded-path" aria-busy=${isProjectLoading ? "true" : "false"}>
                             <span class="loaded-path-value">${activePath}</span>
+                            ${
+                                isProjectLoading
+                                    ? html`<span class="loading-spinner loaded-path-spinner" aria-hidden="true"></span>`
+                                    : nothing
+                            }
                         </div>
                     </div>
                 </div>

@@ -149,8 +149,12 @@ export function hasGraphEdges(model: GraphVisualizationUiModel): boolean {
 }
 
 /**
- * Return whether the current UI model is associated with a loaded project target.
+ * Return whether the current UI model is ready for project-dependent actions.
+ *
+ * The host publishes a selected target before semantic loading completes so
+ * the header can show the path immediately. That target is not considered
+ * loaded until its startup state settles.
  */
 export function hasLoadedGraphProject(model: GraphVisualizationUiModel): boolean {
-    return model.loadedTarget !== null;
+    return model.loadedTarget !== null && model.startupState === null;
 }

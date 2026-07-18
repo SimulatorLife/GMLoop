@@ -131,6 +131,38 @@ void test("app header renders grouped identity, actions, and loaded target secti
     assert.match(rendered, /id="tab-auto-game"/u);
 });
 
+void test("app header shows the selected project path while project loading is in progress", () => {
+    const header = new TestableGmAppHeader();
+    header.model = {
+        ...createMockModel(),
+        data: {
+            edges: [],
+            generatedAt: "2026-01-01T00:00:00.000Z",
+            graphs: [],
+            nodes: [],
+            projectRoot: ""
+        },
+        loadedTarget: {
+            activePath: "/tmp/loading-project/Project.yyp",
+            projectRoot: "/tmp/loading-project",
+            selectedPaths: ["/tmp/loading-project"],
+            source: "finder-open"
+        },
+        startupState: {
+            detail: null,
+            message: "Loading project data…",
+            phase: "loading"
+        }
+    };
+    header.state = createMockState("graph");
+
+    const rendered = renderTemplateValue(header.renderForTest());
+
+    assert.match(rendered, /id="loaded-target"[^>]*aria-busy=true/u);
+    assert.match(rendered, /loaded-path-value[\s\S]*\/tmp\/loading-project\/Project\.yyp/u);
+    assert.match(rendered, /class="loading-spinner loaded-path-spinner"/u);
+});
+
 void test("Auto-Game toolbar renders page status in the single shared page toolbar", () => {
     const toolbar = new TestableGmGraphToolbar();
     toolbar.model = createMockModel();
