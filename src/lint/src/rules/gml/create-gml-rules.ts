@@ -22,7 +22,6 @@ import { createNormalizeDocParamSeparatorsRule } from "./rules/normalize-doc-par
 import { createNormalizeDocParamUndefinedDefaultsRule } from "./rules/normalize-doc-param-undefined-defaults-rule.js";
 import { createNormalizeDocReturnsRule } from "./rules/normalize-doc-returns-rule.js";
 import { createNormalizeOperatorAliasesRule } from "./rules/normalize-operator-aliases-rule.js";
-import { createOptimizeLogicalFlowRule } from "./rules/optimize-logical-flow-rule.js";
 import { createOptimizeMathExpressionsRule } from "./rules/optimize-math-expressions-rule.js";
 import { createPreferArrayPushRule } from "./rules/prefer-array-push-rule.js";
 import { createPreferCompoundAssignmentsRule } from "./rules/prefer-compound-assignments-rule.js";
@@ -45,6 +44,7 @@ import {
 } from "./rules/require-gpu-toggle-reset-rule.js";
 import { createRequireRegionPairsRule } from "./rules/require-region-pairs-rule.js";
 import { createSimplifyRealCallsRule } from "./rules/simplify-real-calls-rule.js";
+import { createLogicalNormalizationRule } from "./rules/logical-normalization-rule-factory.js";
 
 type GmlRuleFactory = (definition: GmlRuleDefinition) => Rule.RuleModule;
 
@@ -59,7 +59,27 @@ const gmlRuleFactoriesByShortName = Object.freeze(
         ["prefer-direct-return", createPreferDirectReturnRule],
         ["prefer-direct-boolean-return", createPreferDirectBooleanReturnRule],
         ["no-boolean-literal-comparisons", createNoBooleanLiteralComparisonsRule],
-        ["optimize-logical-flow", createOptimizeLogicalFlowRule],
+        ["no-double-negation", (definition) => createLogicalNormalizationRule(definition, "double-negation")],
+        ["prefer-de-morgan", (definition) => createLogicalNormalizationRule(definition, "de-morgan")],
+        [
+            "no-redundant-negation-parentheses",
+            (definition) => createLogicalNormalizationRule(definition, "negation-parentheses")
+        ],
+        [
+            "no-redundant-logical-operands",
+            (definition) => createLogicalNormalizationRule(definition, "logical-identities")
+        ],
+        ["no-logical-absorption", (definition) => createLogicalNormalizationRule(definition, "logical-absorption")],
+        [
+            "prefer-logical-factorization",
+            (definition) => createLogicalNormalizationRule(definition, "logical-factorization")
+        ],
+        ["no-logical-complements", (definition) => createLogicalNormalizationRule(definition, "logical-complement")],
+        ["prefer-logical-xor", (definition) => createLogicalNormalizationRule(definition, "logical-xor")],
+        [
+            "prefer-conditional-assignment",
+            (definition) => createLogicalNormalizationRule(definition, "conditional-assignment")
+        ],
         ["no-globalvar", createNoGlobalvarRule],
         ["no-multi-var-declarations", createNoMultiVarDeclarationsRule],
         ["no-event-callback-other-references", createNoEventCallbackOtherReferencesRule],

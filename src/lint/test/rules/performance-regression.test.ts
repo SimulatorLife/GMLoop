@@ -109,12 +109,12 @@ void test(
 );
 
 void test(
-    "optimize-logical-flow skips non-logical batches without deep clone overhead",
+    "no-redundant-logical-operands skips non-logical batches without deep clone overhead",
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildNonLogicalConditionBatchSource(1200);
         const timedRun = lintSingleRuleVerifyOnlyWithTiming(
-            "gml/optimize-logical-flow",
+            "gml/no-redundant-logical-operands",
             source,
             "performance-regression.gml"
         );
@@ -122,7 +122,7 @@ void test(
         assert.equal(timedRun.messages.length, 0);
         assert.ok(
             timedRun.ruleMilliseconds < scaleBudget(5000),
-            `expected optimize-logical-flow rule runtime under 5000ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
+            `expected no-redundant-logical-operands rule runtime under 5000ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
         );
         assert.ok(
             timedRun.elapsedMilliseconds < scaleBudget(8000),
@@ -132,12 +132,12 @@ void test(
 );
 
 void test(
-    "optimize-logical-flow avoids deep-cloning large guard bodies that cannot be simplified",
+    "prefer-conditional-assignment avoids deep-cloning large guard bodies that cannot be simplified",
     SEQUENTIAL_PERFORMANCE_TEST_OPTIONS,
     async () => {
         const source = buildHeavyIfGuardBatchSource(300);
         const timedRun = lintSingleRuleVerifyOnlyWithTiming(
-            "gml/optimize-logical-flow",
+            "gml/prefer-conditional-assignment",
             source,
             "performance-regression.gml"
         );
@@ -145,7 +145,7 @@ void test(
         assert.equal(timedRun.messages.length, 0);
         assert.ok(
             timedRun.ruleMilliseconds < scaleBudget(7000),
-            `expected optimize-logical-flow rule runtime under 7000ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
+            `expected prefer-conditional-assignment rule runtime under 7000ms, received ${timedRun.ruleMilliseconds.toFixed(2)}ms`
         );
         assert.ok(
             timedRun.elapsedMilliseconds < scaleBudget(9000),

@@ -41,7 +41,7 @@ async function runAllRuleAutofixes(
     });
 }
 
-void test("optimize-logical-flow preserves block comments while rewriting nested branches", () => {
+void test("prefer-conditional-assignment preserves block comments while rewriting branches", () => {
     const input = [
         "function move_actor() {",
         "    // Verlet integration, figure out the speed from the previous frame based on how far the player has moved",
@@ -68,7 +68,7 @@ void test("optimize-logical-flow preserves block comments while rewriting nested
         ""
     ].join("\n");
 
-    const result = lintWithRule("optimize-logical-flow", input, {});
+    const result = lintWithRule("prefer-conditional-assignment", input, {});
 
     assert.equal(result.messages.length, 1);
     assert.equal(result.output, expected);
@@ -126,7 +126,7 @@ void test("combined auto-fixes preserve comments from the InterplanetaryFootball
     ].join("\n");
 
     const result = await runAllRuleAutofixes(input, {
-        "gml/optimize-logical-flow": "error",
+        "gml/prefer-conditional-assignment": "error",
         "gml/prefer-epsilon-comparisons": "error",
         "gml/optimize-math-expressions": "error",
         "gml/normalize-doc-comments": "error"

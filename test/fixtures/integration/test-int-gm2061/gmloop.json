@@ -1,7 +1,7 @@
 {
   "printWidth": 120,
   "lintRules": {
-    "gml/optimize-logical-flow": "error",
+    "gml/no-double-negation": "error",
     "feather/gm2061": "error"
   },
   "fixture": {

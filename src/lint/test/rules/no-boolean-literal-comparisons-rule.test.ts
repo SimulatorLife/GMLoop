@@ -97,7 +97,7 @@ void test("no-boolean-literal-comparisons converges after one autofix pass", () 
     assertEquals(secondPass.output, expected);
 });
 
-void test("optimize-logical-flow no longer owns boolean literal comparison cleanup", () => {
+void test("no-redundant-logical-operands does not own boolean literal comparison cleanup", () => {
     const input = [
         "if (ready == true) { run(); }",
         "if (ready != false) { run(); }",
@@ -105,7 +105,7 @@ void test("optimize-logical-flow no longer owns boolean literal comparison clean
         ""
     ].join("\n");
 
-    const result = lintWithRule("optimize-logical-flow", input, {});
+    const result = lintWithRule("no-redundant-logical-operands", input, {});
 
     assertEquals(result.messages.length, 0);
     assertEquals(result.output, input);

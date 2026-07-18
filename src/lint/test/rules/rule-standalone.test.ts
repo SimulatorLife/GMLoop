@@ -437,7 +437,15 @@ void test("gml semantic fix rules do not reformat canonical macro declaration sp
         "prefer-compound-assignments",
         "prefer-direct-return",
         "no-boolean-literal-comparisons",
-        "optimize-logical-flow",
+        "no-double-negation",
+        "prefer-de-morgan",
+        "no-redundant-negation-parentheses",
+        "no-redundant-logical-operands",
+        "no-logical-absorption",
+        "prefer-logical-factorization",
+        "no-logical-complements",
+        "prefer-logical-xor",
+        "prefer-conditional-assignment",
         "normalize-doc-comments",
         "normalize-directives",
         "no-empty-regions",
@@ -1855,7 +1863,7 @@ void test("feather/gm2061 rewrites both undefined guard forms to ??=", () => {
     assertEquals(result.output, expected);
 });
 
-void test("optimize-logical-flow does not own Feather GM2061 nullish guard fixes", () => {
+void test("focused logical rules do not own Feather GM2061 nullish guard fixes", () => {
     const input = [
         "function ensure_cache(cache_entry) {",
         "    if (is_undefined(cache_entry)) {",
@@ -1869,7 +1877,7 @@ void test("optimize-logical-flow does not own Feather GM2061 nullish guard fixes
         ""
     ].join("\n");
 
-    const result = lintWithRule("optimize-logical-flow", input, {});
+    const result = lintWithRule("no-redundant-logical-operands", input, {});
     assertEquals(result.messages.length, 0);
     assertEquals(result.output, input);
 });
@@ -1900,24 +1908,24 @@ void test("no-boolean-literal-comparisons simplifies boolean literal comparisons
     assertEquals(result.output, expected);
 });
 
-void test("optimize-logical-flow does not rewrite unchanged struct accessor conditions", () => {
+void test("focused logical rules do not rewrite unchanged struct accessor conditions", () => {
     const input = ["if (!_player_verb_struct[$ _verb_array[_i]].held) {", "    return;", "}", ""].join("\n");
 
-    const result = lintWithRule("optimize-logical-flow", input, {});
+    const result = lintWithRule("no-double-negation", input, {});
     assertEquals(result.messages.length, 0);
     assertEquals(result.output, input);
 });
 
-void test("optimize-logical-flow handles parenthesized logical operands without crashing", () => {
+void test("focused logical rules handle parenthesized logical operands without crashing", () => {
     const input = ["function compare_ranges(a, b, c, d) {", "    return (a > b) || (c < d);", "}", ""].join("\n");
 
-    const result = lintWithRule("optimize-logical-flow", input, {});
+    const result = lintWithRule("no-logical-absorption", input, {});
 
     assertEquals(result.messages.length, 0);
     assertEquals(result.output, input);
 });
 
-void test("optimize-logical-flow preserves else-if assignment chains", () => {
+void test("prefer-conditional-assignment preserves else-if assignment chains", () => {
     const input = [
         "function detect_pad_type(vendor, product, description) {",
         '    if (vendor == "aaa") {',
@@ -1933,13 +1941,13 @@ void test("optimize-logical-flow preserves else-if assignment chains", () => {
         ""
     ].join("\n");
 
-    const result = lintWithRule("optimize-logical-flow", input, {});
+    const result = lintWithRule("prefer-conditional-assignment", input, {});
 
     assertEquals(result.messages.length, 0);
     assertEquals(result.output, input);
 });
 
-void test("optimize-logical-flow parenthesizes nested ternary consequents in autofix output", () => {
+void test("prefer-conditional-assignment parenthesizes nested ternary consequents in autofix output", () => {
     const input = [
         "function build_values(value1, value2, value3, value4) {",
         "    if (ready == true) {",
@@ -1955,9 +1963,9 @@ void test("optimize-logical-flow parenthesizes nested ternary consequents in aut
         ""
     ].join("\n");
 
-    const result = lintWithRule("optimize-logical-flow", input, {});
+    const result = lintWithRule("prefer-conditional-assignment", input, {});
 
-    assert.ok(result.messages.length > 0, "optimize-logical-flow should report diagnostics");
+    assert.ok(result.messages.length > 0, "prefer-conditional-assignment should report diagnostics");
     assert.ok(
         result.output.includes("? (!is_undefined(value4) ?"),
         "Expected nested ternary in the true branch to be wrapped in parentheses."
@@ -1969,7 +1977,7 @@ void test("optimize-logical-flow parenthesizes nested ternary consequents in aut
     );
 });
 
-void test("optimize-logical-flow parenthesizes alternate nested ternaries in assignment ternary autofix", () => {
+void test("prefer-conditional-assignment parenthesizes alternate nested ternaries in autofix", () => {
     const input = [
         "function group_smf(time, ta, tb, tc) {",
         "    if (time < tb) {",
@@ -1982,9 +1990,9 @@ void test("optimize-logical-flow parenthesizes alternate nested ternaries in ass
         ""
     ].join("\n");
 
-    const result = lintWithRule("optimize-logical-flow", input, {});
+    const result = lintWithRule("prefer-conditional-assignment", input, {});
 
-    assert.ok(result.messages.length > 0, "optimize-logical-flow should report diagnostics");
+    assert.ok(result.messages.length > 0, "prefer-conditional-assignment should report diagnostics");
     assert.ok(
         result.output.includes(
             "d = time < tb ? (time - mean(ta, tb)) / (tb - ta) : ((tc == tb) ? 1 : 0.5 + (time - tb) / (tc - tb));"
@@ -1998,7 +2006,7 @@ void test("optimize-logical-flow parenthesizes alternate nested ternaries in ass
     );
 });
 
-void test("optimize-logical-flow preserves same-precedence right operands in assignment ternary autofix", () => {
+void test("prefer-conditional-assignment preserves same-precedence right operands in autofix", () => {
     const input = [
         "function choose_value(flag, a, b, c) {",
         "    if (flag) {",
@@ -2011,9 +2019,9 @@ void test("optimize-logical-flow preserves same-precedence right operands in ass
         ""
     ].join("\n");
 
-    const result = lintWithRule("optimize-logical-flow", input, {});
+    const result = lintWithRule("prefer-conditional-assignment", input, {});
 
-    assert.ok(result.messages.length > 0, "optimize-logical-flow should report diagnostics");
+    assert.ok(result.messages.length > 0, "prefer-conditional-assignment should report diagnostics");
     assert.ok(result.output.includes("value = flag ? a - (b - c) : a / (b / c);"));
 });
 
@@ -2122,51 +2130,4 @@ void test("no-negative-zero does not flag unary minus on non-zero expressions", 
     const result = lintWithRule("no-negative-zero", input, {});
     assertEquals(result.messages.length, 0);
     assertEquals(result.output, input);
-});
-
-void test("optimize-logical-flow accepts the new configurable policy options without crashing", () => {
-    // Smoke-test that the four schema fields the catalog now exposes are
-    // forwarded into the rule as numbers without triggering ESLint's schema
-    // validator. The actual rewrites have their own coverage above; this
-    // test pins the option-plumbing contract for future contributors.
-    const input = [
-        "function resolve(condition) {",
-        "    if (condition) { return true; } else { return false; }",
-        "}",
-        ""
-    ].join("\n");
-
-    const result = lintWithRule("optimize-logical-flow", input, {
-        maxVariablesForTruthTable: 4,
-        maxSimplificationIterations: 8,
-        maxPostProcessingIterations: 2,
-        maxTraversalIterations: 3
-    });
-
-    // Custom options must not crash the rule. The diagnostic count is
-    // intentionally not asserted: the rewrite behaviour is pinned elsewhere,
-    // and the existing fixture mismatch (pre-existing failure tracked
-    // separately) covers the end-to-end golden output.
-    assert.ok(Array.isArray(result.messages), "messages should be an array");
-    assert.ok(typeof result.output === "string", "output should remain a string");
-});
-
-void test("optimize-logical-flow falls back to baseline defaults when an option is missing or invalid", () => {
-    // Mixed valid/invalid options should not crash. Invalid values fall back
-    // to the baseline field via the option reader; valid values take effect.
-    const input = [
-        "function resolve(condition) {",
-        "    if (condition) { return true; } else { return false; }",
-        "}",
-        ""
-    ].join("\n");
-
-    const result = lintWithRule("optimize-logical-flow", input, {
-        maxVariablesForTruthTable: "not-a-number",
-        maxSimplificationIterations: 0,
-        maxTraversalIterations: 5
-    });
-
-    assert.ok(Array.isArray(result.messages));
-    assert.ok(typeof result.output === "string");
 });

@@ -112,43 +112,67 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         messageId: "noBooleanLiteralComparisons"
     },
     {
-        description: "Simplify boolean control flow by removing redundant branches and temporary boolean variables.",
-        mapKey: "GmlOptimizeLogicalFlow",
-        shortName: "optimize-logical-flow",
-        fullId: "gml/optimize-logical-flow",
-        messageId: "optimizeLogicalFlow",
-        schema: Object.freeze([
-            {
-                type: "object",
-                additionalProperties: false,
-                properties: {
-                    maxVariablesForTruthTable: {
-                        type: "integer",
-                        minimum: 1,
-                        maximum: 32,
-                        default: 10
-                    },
-                    maxSimplificationIterations: {
-                        type: "integer",
-                        minimum: 1,
-                        maximum: 1000,
-                        default: 50
-                    },
-                    maxPostProcessingIterations: {
-                        type: "integer",
-                        minimum: 1,
-                        maximum: 100,
-                        default: 5
-                    },
-                    maxTraversalIterations: {
-                        type: "integer",
-                        minimum: 1,
-                        maximum: 100,
-                        default: 10
-                    }
-                }
-            }
-        ])
+        description: "Remove double negation from boolean expressions.",
+        mapKey: "GmlNoDoubleNegation",
+        shortName: "no-double-negation",
+        fullId: "gml/no-double-negation",
+        messageId: "noDoubleNegation"
+    },
+    {
+        description: "Apply De Morgan's law to negated logical expressions.",
+        mapKey: "GmlPreferDeMorgan",
+        shortName: "prefer-de-morgan",
+        fullId: "gml/prefer-de-morgan",
+        messageId: "preferDeMorgan"
+    },
+    {
+        description: "Remove redundant parentheses directly inside logical negation.",
+        mapKey: "GmlNoRedundantNegationParentheses",
+        shortName: "no-redundant-negation-parentheses",
+        fullId: "gml/no-redundant-negation-parentheses",
+        messageId: "noRedundantNegationParentheses"
+    },
+    {
+        description: "Remove identity and short-circuit boolean operands from logical expressions.",
+        mapKey: "GmlNoRedundantLogicalOperands",
+        shortName: "no-redundant-logical-operands",
+        fullId: "gml/no-redundant-logical-operands",
+        messageId: "noRedundantLogicalOperands"
+    },
+    {
+        description: "Remove logical operands subsumed by an absorption law.",
+        mapKey: "GmlNoLogicalAbsorption",
+        shortName: "no-logical-absorption",
+        fullId: "gml/no-logical-absorption",
+        messageId: "noLogicalAbsorption"
+    },
+    {
+        description: "Factor shared terms from equivalent logical branches.",
+        mapKey: "GmlPreferLogicalFactorization",
+        shortName: "prefer-logical-factorization",
+        fullId: "gml/prefer-logical-factorization",
+        messageId: "preferLogicalFactorization"
+    },
+    {
+        description: "Remove complementary logical branches that always reduce to their shared condition.",
+        mapKey: "GmlNoLogicalComplements",
+        shortName: "no-logical-complements",
+        fullId: "gml/no-logical-complements",
+        messageId: "noLogicalComplements"
+    },
+    {
+        description: "Rewrite explicit exclusive-or branches as a boolean expression.",
+        mapKey: "GmlPreferLogicalXor",
+        shortName: "prefer-logical-xor",
+        fullId: "gml/prefer-logical-xor",
+        messageId: "preferLogicalXor"
+    },
+    {
+        description: "Use a conditional expression when both branches assign the same target.",
+        mapKey: "GmlPreferConditionalAssignment",
+        shortName: "prefer-conditional-assignment",
+        fullId: "gml/prefer-conditional-assignment",
+        messageId: "preferConditionalAssignment"
     },
     {
         // Read-only rule with NO auto-fix

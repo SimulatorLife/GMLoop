@@ -9,7 +9,13 @@
     "gml/normalize-operator-aliases": "error",
     "gml/prefer-is-undefined-check": "error",
     "gml/optimize-math-expressions": "error",
-    "gml/optimize-logical-flow": "error"
+    "gml/no-double-negation": "error",
+    "gml/prefer-de-morgan": "error",
+    "gml/no-redundant-logical-operands": "error",
+    "gml/no-logical-absorption": "error",
+    "gml/prefer-logical-factorization": "error",
+    "gml/no-logical-complements": "error",
+    "gml/prefer-logical-xor": "error"
   },
   "fixture": {
     "kind": "integration",

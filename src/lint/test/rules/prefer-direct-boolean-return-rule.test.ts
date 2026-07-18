@@ -11,7 +11,7 @@ function lintPreferDirectBooleanReturn(sourceText: string): ReturnType<typeof li
     return lintWithRule("prefer-direct-boolean-return", sourceText, {});
 }
 
-async function lintWithBooleanReturnAndLogicalFlow(
+async function lintWithBooleanReturnAndNegationRule(
     sourceText: string
 ): Promise<Readonly<{ output: string | undefined; messageRuleIds: ReadonlyArray<string | null> }>> {
     const eslint = new ESLint({
@@ -26,7 +26,7 @@ async function lintWithBooleanReturnAndLogicalFlow(
                 },
                 rules: {
                     "gml/prefer-direct-boolean-return": "error",
-                    "gml/optimize-logical-flow": "error"
+                    "gml/no-double-negation": "error"
                 }
             }
         ]
@@ -175,7 +175,7 @@ void test("prefer-direct-boolean-return skips missing and non-boolean return val
     assertEquals(nonBooleanResult.output, nonBooleanArgument);
 });
 
-void test("optimize-logical-flow alone no longer owns direct boolean return passthroughs", async () => {
+void test("no-double-negation alone does not own direct boolean return passthroughs", async () => {
     const input = [
         "function can_run(ready) {",
         "    if (!!ready) {",
@@ -187,13 +187,13 @@ void test("optimize-logical-flow alone no longer owns direct boolean return pass
         ""
     ].join("\n");
 
-    const result = await lintWithEslintRule(input, { "gml/optimize-logical-flow": "error" });
+    const result = await lintWithEslintRule(input, { "gml/no-double-negation": "error" });
 
     assertEquals(result.messages.length, 0);
-    assertEquals(result.output, input);
+    assertEquals(result.output, input.replace("if (!!ready)", "if (ready)"));
 });
 
-void test("prefer-direct-boolean-return and optimize-logical-flow converge together", async () => {
+void test("prefer-direct-boolean-return and no-double-negation converge together", async () => {
     const input = [
         "function can_run(ready) {",
         "    if (!!ready) {",
@@ -206,11 +206,11 @@ void test("prefer-direct-boolean-return and optimize-logical-flow converge toget
     ].join("\n");
     const expected = ["function can_run(ready) {", "    return ready;", "}", ""].join("\n");
 
-    const firstPass = await lintWithBooleanReturnAndLogicalFlow(input);
+    const firstPass = await lintWithBooleanReturnAndNegationRule(input);
     assertEquals(firstPass.output, expected);
     assertEquals(firstPass.messageRuleIds.length, 0);
 
-    const secondPass = await lintWithBooleanReturnAndLogicalFlow(expected);
+    const secondPass = await lintWithBooleanReturnAndNegationRule(expected);
     assertEquals(secondPass.output, undefined);
     assertEquals(secondPass.messageRuleIds.length, 0);
 });

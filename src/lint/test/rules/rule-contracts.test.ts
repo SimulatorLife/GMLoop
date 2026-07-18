@@ -89,42 +89,21 @@ const expectedRules = Object.freeze([
         messageId: "noBooleanLiteralComparisons",
         schema: [{ type: "object", additionalProperties: false, properties: {} }]
     },
-    {
-        shortName: "optimize-logical-flow",
-        messageId: "optimizeLogicalFlow",
-        schema: [
-            {
-                type: "object",
-                additionalProperties: false,
-                properties: {
-                    maxVariablesForTruthTable: {
-                        type: "integer",
-                        minimum: 1,
-                        maximum: 32,
-                        default: 10
-                    },
-                    maxSimplificationIterations: {
-                        type: "integer",
-                        minimum: 1,
-                        maximum: 1000,
-                        default: 50
-                    },
-                    maxPostProcessingIterations: {
-                        type: "integer",
-                        minimum: 1,
-                        maximum: 100,
-                        default: 5
-                    },
-                    maxTraversalIterations: {
-                        type: "integer",
-                        minimum: 1,
-                        maximum: 100,
-                        default: 10
-                    }
-                }
-            }
-        ]
-    },
+    ...[
+        ["no-double-negation", "noDoubleNegation"],
+        ["prefer-de-morgan", "preferDeMorgan"],
+        ["no-redundant-negation-parentheses", "noRedundantNegationParentheses"],
+        ["no-redundant-logical-operands", "noRedundantLogicalOperands"],
+        ["no-logical-absorption", "noLogicalAbsorption"],
+        ["prefer-logical-factorization", "preferLogicalFactorization"],
+        ["no-logical-complements", "noLogicalComplements"],
+        ["prefer-logical-xor", "preferLogicalXor"],
+        ["prefer-conditional-assignment", "preferConditionalAssignment"]
+    ].map(([shortName, messageId]) => ({
+        shortName,
+        messageId,
+        schema: [{ type: "object", additionalProperties: false, properties: {} }]
+    })),
     {
         shortName: "no-globalvar",
         messageId: "noGlobalvar",

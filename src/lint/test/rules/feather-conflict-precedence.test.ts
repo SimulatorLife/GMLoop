@@ -76,7 +76,7 @@ void test("documentation conflict reports in both namespaces and Feather owns th
 void test("migrated logical-flow nullish fix is owned only by Feather GM2061", async () => {
     const sourceText = ["array = modify_array(array);", "if (array == undefined) array = [];", ""].join("\n");
     const bothRules = {
-        "gml/optimize-logical-flow": "warn",
+        "gml/no-redundant-logical-operands": "warn",
         "feather/gm2061": "warn"
     } as const;
 

@@ -8,6 +8,20 @@ import {
 
 const { isObjectLike, unwrapParenthesizedExpression } = Core;
 
+/** Individual logical rewrites that can be owned by one lint rule. */
+export type LogicalNormalizationKind =
+    | "all"
+    | "double-negation"
+    | "de-morgan"
+    | "negation-parentheses"
+    | "logical-not-call"
+    | "logical-identities"
+    | "logical-absorption"
+    | "logical-factorization"
+    | "logical-complement"
+    | "logical-xor"
+    | "conditional-assignment";
+
 /**
  * Apply logical expression simplifications using AST traversal.
  * Handles De Morgan's laws, double negation, and boolean constant simplification.
@@ -29,7 +43,8 @@ export function applyLogicalNormalization(ast: MutableGameMakerAstNode): Mutable
  */
 export function applyLogicalNormalizationWithChangeMetadata(
     ast: MutableGameMakerAstNode,
-    policy: OptimizeLogicalFlowPolicy = OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE
+    policy: OptimizeLogicalFlowPolicy = OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE,
+    kind: LogicalNormalizationKind = "all"
 ): Readonly<{ ast: MutableGameMakerAstNode; changed: boolean }> {
     if (!isObjectLike(ast)) {
         return Object.freeze({ ast, changed: false });
@@ -38,7 +53,7 @@ export function applyLogicalNormalizationWithChangeMetadata(
     // Repeatedly apply passes until no changes occur, or max limit reached
     let changedAtLeastOnce = false;
     for (let iterations = 0; iterations < policy.maxTraversalIterations; iterations++) {
-        if (!traverseAndSimplify(ast)) break;
+        if (!traverseAndSimplify(ast, kind)) break;
         changedAtLeastOnce = true;
     }
 
@@ -86,7 +101,7 @@ function visitChildNodesPostOrder(node: any, visit: (child: any) => boolean): bo
     return changed;
 }
 
-function traverseAndSimplify(node: any): boolean {
+function traverseAndSimplify(node: any, kind: LogicalNormalizationKind): boolean {
     if (!isObjectLike(node)) {
         return false;
     }
@@ -95,12 +110,15 @@ function traverseAndSimplify(node: any): boolean {
     // the current node. The traversal mechanics live in
     // `visitChildNodesPostOrder`; this function only owns the orchestration
     // of "walk children, then simplify self".
-    const changedInChildren = visitChildNodesPostOrder(node, traverseAndSimplify);
-    return changedInChildren || simplifyNode(node);
+    const changedInChildren = visitChildNodesPostOrder(node, (child) => traverseAndSimplify(child, kind));
+    return changedInChildren || simplifyNode(node, kind);
 }
 
-function simplifyNode(node: any): boolean {
-    if (isLogicalNotCallExpression(node)) {
+function simplifyNode(node: any, kind: LogicalNormalizationKind): boolean {
+    if (
+        (kind === "all" || kind === "logical-not-call" || kind === "de-morgan" || kind === "negation-parentheses") &&
+        isLogicalNotCallExpression(node)
+    ) {
         replaceNode(node, {
             type: "UnaryExpression",
             operator: "!",
@@ -114,16 +132,16 @@ function simplifyNode(node: any): boolean {
     }
 
     if (node.type === "UnaryExpression" && node.operator === "!") {
-        return simplifyNot(node);
+        return simplifyNot(node, kind);
     }
     if (isLogicalBinaryNode(node)) {
-        return simplifyLogical(node);
+        return simplifyLogical(node, kind);
     }
 
-    if (node.type === "IfStatement") {
+    if ((kind === "all" || kind === "conditional-assignment") && node.type === "IfStatement") {
         return simplifyIfStatement(node);
     }
-    if (node.type === "Program" || node.type === "BlockStatement") {
+    if (kind === "all" && (node.type === "Program" || node.type === "BlockStatement")) {
         return simplifyStatementList(node.body);
     }
     return false;
@@ -445,7 +463,7 @@ function negateNode(inner: any): any {
     };
 }
 
-function simplifyNot(node: any): boolean {
+function simplifyNot(node: any, kind: LogicalNormalizationKind): boolean {
     const argument = node.argument;
 
     // Double negation: !!A → A
@@ -467,7 +485,11 @@ function simplifyNot(node: any): boolean {
     // Adding broader transforms (e.g. `!(!(!(A)))` or `!!func()`) requires
     // either a dedicated side-effect detection pass or a broader scope note
     // in this module's documentation.
-    if (argument.type === "UnaryExpression" && argument.operator === "!") {
+    if (
+        (kind === "all" || kind === "double-negation") &&
+        argument.type === "UnaryExpression" &&
+        argument.operator === "!"
+    ) {
         // Replace current node with argument.argument
         // We can't replace the node reference, so we have to copy properties.
         const inner = argument.argument;
@@ -477,7 +499,7 @@ function simplifyNot(node: any): boolean {
 
     // De Morgan's laws: !(A || B) -> !A && !B  /  !(A && B) -> !A || !B
     // Both transforms follow the same structure; only the resulting operator differs.
-    if (isLogicalBinaryNode(argument)) {
+    if ((kind === "all" || kind === "de-morgan") && isLogicalBinaryNode(argument)) {
         const { left, right } = argument;
         const negatedOperator = argument.operator === "||" ? "&&" : "||";
         replaceNode(node, {
@@ -511,7 +533,7 @@ function simplifyNot(node: any): boolean {
     // leaving `!(A)` un-simplified on this pass and any chained simplifications
     // (`!(!A)` → `A`, `!(A && B)` → `!A || !B`, etc.) would silently no-op on
     // inputs that need multiple collapse steps to reach a fixed point.
-    if (argument.type === "ParenthesizedExpression") {
+    if ((kind === "all" || kind === "negation-parentheses") && argument.type === "ParenthesizedExpression") {
         node.argument = argument.expression;
         return true;
     }
@@ -519,7 +541,7 @@ function simplifyNot(node: any): boolean {
     return false;
 }
 
-function simplifyLogical(node: any): boolean {
+function simplifyLogical(node: any, kind: LogicalNormalizationKind): boolean {
     // Simplify: true && A -> A
     // Simplify: false || A -> A
 
@@ -534,53 +556,55 @@ function simplifyLogical(node: any): boolean {
     const leftBool = getBooleanValue(leftNode);
     const rightBool = getBooleanValue(rightNode);
 
-    if (node.operator === "&&") {
-        // true && A -> A
-        if (leftBool === true) {
-            replaceNode(node, node.right);
-            return true;
+    if (kind === "all" || kind === "logical-identities") {
+        if (node.operator === "&&") {
+            // true && A -> A
+            if (leftBool === true) {
+                replaceNode(node, node.right);
+                return true;
+            }
+            // A && true -> A
+            if (rightBool === true) {
+                replaceNode(node, node.left);
+                return true;
+            }
+            // false && A -> false (short circuit)
+            if (leftBool === false) {
+                replaceNode(node, node.left); // Replace with the 'false' literal
+                return true;
+            }
+            // A && false -> false is NOT applied here.
+            //
+            // Unlike `false && A` (where `false` is on the left and the short-circuit
+            // is trivial), `A && false` on the right requires `A` to be evaluated
+            // first to determine whether the result is `false` or something else.
+            // Dropping `A` here would discard any side effects that `A` has (e.g.
+            // `func() && false` — the call must run even though the final result
+            // is `false`).  Unlike the left-side literal cases, evaluating whether
+            // `A` has side effects is non-trivial without a dedicated analysis pass.
+            //
+            // All other branches above preserve side effects or known constants:
+            // `true && A` / `A && true` → A, `false && A` → false, `false || A` /
+            // `A || false` → A, `true || A` → true.  Extending to `A && false`
+            // requires side-effect tracking.
         }
-        // A && true -> A
-        if (rightBool === true) {
-            replaceNode(node, node.left);
-            return true;
-        }
-        // false && A -> false (short circuit)
-        if (leftBool === false) {
-            replaceNode(node, node.left); // Replace with the 'false' literal
-            return true;
-        }
-        // A && false -> false is NOT applied here.
-        //
-        // Unlike `false && A` (where `false` is on the left and the short-circuit
-        // is trivial), `A && false` on the right requires `A` to be evaluated
-        // first to determine whether the result is `false` or something else.
-        // Dropping `A` here would discard any side effects that `A` has (e.g.
-        // `func() && false` — the call must run even though the final result
-        // is `false`).  Unlike the left-side literal cases, evaluating whether
-        // `A` has side effects is non-trivial without a dedicated analysis pass.
-        //
-        // All other branches above preserve side effects or known constants:
-        // `true && A` / `A && true` → A, `false && A` → false, `false || A` /
-        // `A || false` → A, `true || A` → true.  Extending to `A && false`
-        // requires side-effect tracking.
-    }
 
-    if (node.operator === "||") {
-        // false || A -> A
-        if (leftBool === false) {
-            replaceNode(node, node.right);
-            return true;
-        }
-        // A || false -> A
-        if (rightBool === false) {
-            replaceNode(node, node.left);
-            return true;
-        }
-        // true || A -> true
-        if (leftBool === true) {
-            replaceNode(node, node.left);
-            return true;
+        if (node.operator === "||") {
+            // false || A -> A
+            if (leftBool === false) {
+                replaceNode(node, node.right);
+                return true;
+            }
+            // A || false -> A
+            if (rightBool === false) {
+                replaceNode(node, node.left);
+                return true;
+            }
+            // true || A -> true
+            if (leftBool === true) {
+                replaceNode(node, node.left);
+                return true;
+            }
         }
     }
 
@@ -589,6 +613,7 @@ function simplifyLogical(node: any): boolean {
 
     // Check if right is parenthesized, unwrap for inspection
     if (
+        (kind === "all" || kind === "logical-absorption") &&
         node.operator === "||" &&
         isLogicalBinaryNode(rightNode) &&
         rightNode.operator === "&&" &&
@@ -600,6 +625,7 @@ function simplifyLogical(node: any): boolean {
     }
 
     if (
+        (kind === "all" || kind === "logical-absorption") &&
         node.operator === "&&" &&
         isLogicalBinaryNode(rightNode) &&
         rightNode.operator === "||" &&
@@ -612,6 +638,10 @@ function simplifyLogical(node: any): boolean {
 
     // Distributive / Shared Term: (A && B) || (A && C) -> A && (B || C)
     if (
+        (kind === "all" ||
+            kind === "logical-factorization" ||
+            kind === "logical-complement" ||
+            kind === "logical-xor") &&
         node.operator === "||" &&
         isLogicalBinaryNode(leftNode) &&
         leftNode.operator === "&&" &&
@@ -619,7 +649,7 @@ function simplifyLogical(node: any): boolean {
         rightNode.operator === "&&"
     ) {
         // (A && B) || (A && C) -> A && (B || C)
-        if (nodesAreEqual(leftNode.left, rightNode.left)) {
+        if ((kind === "all" || kind === "logical-factorization") && nodesAreEqual(leftNode.left, rightNode.left)) {
             const newRight = {
                 type: node.type,
                 operator: "||",
@@ -641,7 +671,7 @@ function simplifyLogical(node: any): boolean {
         }
 
         // (B && A) || (C && A) -> (B || C) && A
-        if (nodesAreEqual(leftNode.right, rightNode.right)) {
+        if ((kind === "all" || kind === "logical-factorization") && nodesAreEqual(leftNode.right, rightNode.right)) {
             const newLeft = {
                 type: node.type,
                 operator: "||",
@@ -663,19 +693,28 @@ function simplifyLogical(node: any): boolean {
         }
 
         // (A && B) || (A && !B) -> A (Complement/Redundancy)
-        if (nodesAreEqual(leftNode.left, rightNode.left) && areNegations(leftNode.right, rightNode.right)) {
+        if (
+            (kind === "all" || kind === "logical-complement") &&
+            nodesAreEqual(leftNode.left, rightNode.left) &&
+            areNegations(leftNode.right, rightNode.right)
+        ) {
             replaceNode(node, leftNode.left);
             return true;
         }
 
         // (B && A) || (!B && A) -> A
-        if (nodesAreEqual(leftNode.right, rightNode.right) && areNegations(leftNode.left, rightNode.left)) {
+        if (
+            (kind === "all" || kind === "logical-complement") &&
+            nodesAreEqual(leftNode.right, rightNode.right) &&
+            areNegations(leftNode.left, rightNode.left)
+        ) {
             replaceNode(node, leftNode.right);
             return true;
         }
 
         // XOR Pattern: (A && !B) || (!A && B) -> (A || B) && !(A && B)
-        const exclusiveOrOperands = readExclusiveOrOperands(leftNode, rightNode);
+        const exclusiveOrOperands =
+            kind === "all" || kind === "logical-xor" ? readExclusiveOrOperands(leftNode, rightNode) : null;
         if (exclusiveOrOperands) {
             const { leftOperand, rightOperand } = exclusiveOrOperands;
             // Construct (A || B) && !(A && B)
