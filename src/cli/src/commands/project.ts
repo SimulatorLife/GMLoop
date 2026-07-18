@@ -221,7 +221,55 @@ function createEvidenceRecord(parameters: ProjectEvidenceRecord): ProjectEvidenc
     });
 }
 
-async function createProjectReadinessInspection(options: ProjectReadinessOptions): Promise<ProjectReadinessInspection> {
+/**
+ * Snapshot of the GameMaker project manifest and the kind counts derived from
+ * its resources. Returned by `resolveProjectManifestResources` so the rest of
+ * the readiness pipeline can reuse the resolved context without re-running
+ * manifest I/O.
+ */
+type ResolvedProjectManifest = Readonly<{
+    context: Awaited<ReturnType<typeof resolveCommandProjectContext>>;
+    manifest: Awaited<ReturnType<typeof Refactor.resolveProjectManifestFile>>;
+    manifestResources: ReturnType<typeof Refactor.getManifestResources>;
+    resourceKindCounts: Record<string, number>;
+}>;
+
+/**
+ * Snapshot of the locally-installed GMLoop / agent-pack / official gm-cli
+ * tooling reachable from the resolved project root. Returned by
+ * `loadProjectCompanionTooling` so the readiness pipeline can compose
+ * downstream evidence records without re-loading any of these sources.
+ */
+type CompanionToolingSnapshot = Readonly<{
+    agentPack: Awaited<ReturnType<typeof AgentPack.readAgentPackProjectStatus>>;
+    gmloopConfigPath: string;
+    gmloopConfigPresent: boolean;
+    officialCatalog: Awaited<ReturnType<typeof loadGameMakerCliCompanionCatalog>>;
+    skills: ReadonlyArray<Awaited<ReturnType<typeof discoverAutoGameProjectSkills>>[number]>;
+}>;
+
+/**
+ * Inputs required to assemble the per-source readiness evidence records.
+ * `collectProjectReadinessEvidenceRecords` owns only the *shape* of each
+ * record; producing the underlying values is the responsibility of the
+ * upstream helpers.
+ */
+type ProjectReadinessEvidenceInputs = Readonly<{
+    agentPack: CompanionToolingSnapshot["agentPack"];
+    gmloopConfigPath: CompanionToolingSnapshot["gmloopConfigPath"];
+    gmloopConfigPresent: CompanionToolingSnapshot["gmloopConfigPresent"];
+    graphSummary: ProjectReadinessInspection["graph"];
+    manifest: ResolvedProjectManifest["manifest"];
+    manifestResources: ResolvedProjectManifest["manifestResources"];
+    officialCatalog: CompanionToolingSnapshot["officialCatalog"];
+}>;
+
+/**
+ * Resolve the project context, load the GameMaker manifest, and aggregate a
+ * resource-kind histogram. Owns only the manifest I/O and counting; downstream
+ * helpers reuse the returned `context` to avoid redundant resolution.
+ */
+async function resolveProjectManifestResources(options: ProjectReadinessOptions): Promise<ResolvedProjectManifest> {
     const context = await resolveCommandProjectContext(options);
     const manifest = await Refactor.resolveProjectManifestFile(context.projectRoot);
     const manifestDocument = await Refactor.readProjectMetadataDocument(manifest.absolutePath);
@@ -231,6 +279,23 @@ async function createProjectReadinessInspection(options: ProjectReadinessOptions
         incrementCount(resourceKindCounts, readResourceKindFromPath(resource.id.path));
     }
 
+    return Object.freeze({
+        context,
+        manifest,
+        manifestResources,
+        resourceKindCounts
+    });
+}
+
+/**
+ * Load the locally-installed tooling reachable from the project root:
+ * gmloop.json presence, agent-pack install state, project skills, and the
+ * gm-cli / ResourceTool MCP companion catalog. The three independent I/O
+ * sources fan out concurrently because none of them depends on the others.
+ */
+async function loadProjectCompanionTooling(
+    context: ResolvedProjectManifest["context"]
+): Promise<CompanionToolingSnapshot> {
     const gmloopConfigPath = path.join(context.projectRoot, "gmloop.json");
     const gmloopConfigPresent = await fileExists(gmloopConfigPath);
     const [agentPack, skills, officialCatalog] = await Promise.all([
@@ -239,7 +304,25 @@ async function createProjectReadinessInspection(options: ProjectReadinessOptions
         loadGameMakerCliCompanionCatalog({ projectRoot: context.projectRoot })
     ]);
 
-    let graphSummary: ProjectReadinessInspection["graph"];
+    return Object.freeze({
+        agentPack,
+        gmloopConfigPath,
+        gmloopConfigPresent,
+        officialCatalog,
+        skills
+    });
+}
+
+/**
+ * Build the graph index and produce the graph summary used by the readiness
+ * evidence. Owns only the graph projection and a single recovery path that
+ * records a `fail` summary when the index cannot be produced; any other
+ * failure still propagates so callers can react to genuine runtime faults.
+ */
+async function buildGraphInspectionSummary(
+    options: ProjectReadinessOptions,
+    context: ResolvedProjectManifest["context"]
+): Promise<ProjectReadinessInspection["graph"]> {
     try {
         const graphIndex = await runSemanticIndexOperation(context.projectRoot, (onProgress) =>
             Semantic.buildGraphIndex({
@@ -261,130 +344,218 @@ async function createProjectReadinessInspection(options: ProjectReadinessOptions
         for (const result of searchResults) {
             incrementCount(graphKinds, result.kind);
         }
-        graphSummary = Object.freeze({
+        return Object.freeze({
             databasePath: graphIndex.databasePath,
             graphIds: Object.freeze([...graphIndex.graphIds].sort()),
             ok: true,
             resourceKinds: Object.freeze({ ...graphKinds })
         });
     } catch {
-        graphSummary = Object.freeze({
+        return Object.freeze({
             databasePath: null,
             graphIds: Object.freeze([]),
             ok: false,
             resourceKinds: Object.freeze({})
         });
     }
+}
 
-    const evidence = [
-        createEvidenceRecord({
-            artifacts: gmloopConfigPresent ? [gmloopConfigPath] : [],
-            diagnostics: gmloopConfigPresent ? [] : ["No gmloop.json was found at the project root."],
-            kind: "gmloop-config",
-            nextActions: gmloopConfigPresent
-                ? []
-                : ["Create gmloop.json when project-specific GMLoop settings are needed."],
-            source: "gmloop project",
-            status: gmloopConfigPresent ? "pass" : "warn",
-            summary: gmloopConfigPresent ? "Project configuration is present." : "Project configuration is absent."
-        }),
-        createEvidenceRecord({
-            artifacts: [],
-            diagnostics: graphSummary.ok ? [] : ["Graph index could not be built."],
-            kind: "graph-index",
-            nextActions: graphSummary.ok ? [] : ["Run graph doctor or inspect parse/resource diagnostics."],
-            source: "@gmloop/semantic",
-            status: graphSummary.ok ? "pass" : "fail",
-            summary: graphSummary.ok
-                ? `${String(Object.values(graphSummary.resourceKinds).reduce((sum, count) => sum + count, 0))} graph node(s) indexed.`
-                : "Graph index is unavailable."
-        }),
-        createEvidenceRecord({
-            artifacts: [manifest.absolutePath],
-            diagnostics: manifestResources.length === 0 ? ["Project manifest contains no resources."] : [],
-            kind: "resource-inventory",
-            nextActions:
-                manifestResources.length === 0
-                    ? ["Create resources through official ResourceTool MCP or GMLoop companion tools."]
-                    : [],
-            source: "GameMaker project manifest",
-            status: manifestResources.length === 0 ? "warn" : "pass",
-            summary: `${String(manifestResources.length)} resource(s) declared in the project manifest.`
-        }),
-        createEvidenceRecord({
-            artifacts: [],
-            diagnostics: agentPack.status === "current" ? [] : [`Agent pack status is ${agentPack.status}.`],
-            kind: "agent-pack",
-            nextActions:
-                agentPack.status === "current"
-                    ? []
-                    : ["Run gmloop agent-pack init for project-local Auto-Game guidance."],
-            source: "@gmloop/agent-pack",
-            status: agentPack.status === "current" ? "pass" : "warn",
-            summary:
-                agentPack.installedVersion === null
-                    ? "Agent pack is not installed."
-                    : `Agent pack ${agentPack.installedVersion} installed; latest is ${agentPack.availableVersion}.`
-        }),
-        createEvidenceRecord({
-            artifacts: [],
-            diagnostics: officialCatalog.available ? [] : [officialCatalog.error ?? "gm-cli is unavailable."],
-            kind: "official-gm-cli",
-            nextActions: officialCatalog.available
-                ? []
-                : ["Install or configure official gm-cli for GameMaker lifecycle operations."],
-            source: "gm-cli",
-            status: officialCatalog.available ? "pass" : "warn",
-            summary: officialCatalog.available
-                ? `Official gm-cli ${officialCatalog.version ?? "unknown version"} is available.`
-                : "Official gm-cli is unavailable."
-        }),
-        createEvidenceRecord({
-            artifacts: officialCatalog.mcpServer.sourcePath === null ? [] : [officialCatalog.mcpServer.sourcePath],
-            diagnostics: officialCatalog.mcpServer.available
-                ? []
-                : [officialCatalog.mcpServer.error ?? "ResourceTool MCP is not configured or not reachable."],
-            kind: "official-resourcetool-mcp",
-            nextActions: officialCatalog.mcpServer.available
-                ? []
-                : ["Configure gm-cli ResourceTool MCP for official resource mutations when needed."],
-            source: "gm-cli ResourceTool MCP",
-            status: officialCatalog.mcpServer.available ? "pass" : "warn",
-            summary: officialCatalog.mcpServer.available
-                ? `ResourceTool MCP '${officialCatalog.mcpServer.serverId ?? "configured"}' is available.`
-                : "ResourceTool MCP is unavailable."
-        })
+/**
+ * Evidence record describing whether `gmloop.json` exists at the project
+ * root. Owns only the configuration-presence concern; companion tools and
+ * graph state are reported by their own dedicated records below.
+ */
+function createGmloopConfigEvidenceRecord(
+    gmloopConfigPath: string,
+    gmloopConfigPresent: boolean
+): ProjectEvidenceRecord {
+    return createEvidenceRecord({
+        artifacts: gmloopConfigPresent ? [gmloopConfigPath] : [],
+        diagnostics: gmloopConfigPresent ? [] : ["No gmloop.json was found at the project root."],
+        kind: "gmloop-config",
+        nextActions: gmloopConfigPresent
+            ? []
+            : ["Create gmloop.json when project-specific GMLoop settings are needed."],
+        source: "gmloop project",
+        status: gmloopConfigPresent ? "pass" : "warn",
+        summary: gmloopConfigPresent ? "Project configuration is present." : "Project configuration is absent."
+    });
+}
+
+/**
+ * Evidence record describing whether the graph index could be built for the
+ * resolved project. Owns only the graph-availability concern.
+ */
+function createGraphIndexEvidenceRecord(graphSummary: ProjectReadinessInspection["graph"]): ProjectEvidenceRecord {
+    const indexedNodeCount = Object.values(graphSummary.resourceKinds).reduce((sum, count) => sum + count, 0);
+    return createEvidenceRecord({
+        artifacts: [],
+        diagnostics: graphSummary.ok ? [] : ["Graph index could not be built."],
+        kind: "graph-index",
+        nextActions: graphSummary.ok ? [] : ["Run graph doctor or inspect parse/resource diagnostics."],
+        source: "@gmloop/semantic",
+        status: graphSummary.ok ? "pass" : "fail",
+        summary: graphSummary.ok ? `${String(indexedNodeCount)} graph node(s) indexed.` : "Graph index is unavailable."
+    });
+}
+
+/**
+ * Evidence record describing the size of the resource inventory declared in
+ * the GameMaker project manifest. Owns only the resource-inventory concern.
+ */
+function createResourceInventoryEvidenceRecord(
+    manifestAbsolutePath: string,
+    manifestResourceCount: number
+): ProjectEvidenceRecord {
+    const isEmpty = manifestResourceCount === 0;
+    return createEvidenceRecord({
+        artifacts: [manifestAbsolutePath],
+        diagnostics: isEmpty ? ["Project manifest contains no resources."] : [],
+        kind: "resource-inventory",
+        nextActions: isEmpty ? ["Create resources through official ResourceTool MCP or GMLoop companion tools."] : [],
+        source: "GameMaker project manifest",
+        status: isEmpty ? "warn" : "pass",
+        summary: `${String(manifestResourceCount)} resource(s) declared in the project manifest.`
+    });
+}
+
+/**
+ * Evidence record describing the install state of the agent-pack guidance
+ * package for the resolved project. Owns only the agent-pack concern.
+ */
+function createAgentPackEvidenceRecord(agentPack: CompanionToolingSnapshot["agentPack"]): ProjectEvidenceRecord {
+    return createEvidenceRecord({
+        artifacts: [],
+        diagnostics: agentPack.status === "current" ? [] : [`Agent pack status is ${agentPack.status}.`],
+        kind: "agent-pack",
+        nextActions:
+            agentPack.status === "current" ? [] : ["Run gmloop agent-pack init for project-local Auto-Game guidance."],
+        source: "@gmloop/agent-pack",
+        status: agentPack.status === "current" ? "pass" : "warn",
+        summary:
+            agentPack.installedVersion === null
+                ? "Agent pack is not installed."
+                : `Agent pack ${agentPack.installedVersion} installed; latest is ${agentPack.availableVersion}.`
+    });
+}
+
+/**
+ * Evidence record describing whether the official `gm-cli` companion tool
+ * is reachable from the resolved project. Owns only the official gm-cli
+ * concern; the companion ResourceTool MCP is reported separately.
+ */
+function createOfficialGmCliEvidenceRecord(
+    officialCatalog: CompanionToolingSnapshot["officialCatalog"]
+): ProjectEvidenceRecord {
+    return createEvidenceRecord({
+        artifacts: [],
+        diagnostics: officialCatalog.available ? [] : [officialCatalog.error ?? "gm-cli is unavailable."],
+        kind: "official-gm-cli",
+        nextActions: officialCatalog.available
+            ? []
+            : ["Install or configure official gm-cli for GameMaker lifecycle operations."],
+        source: "gm-cli",
+        status: officialCatalog.available ? "pass" : "warn",
+        summary: officialCatalog.available
+            ? `Official gm-cli ${officialCatalog.version ?? "unknown version"} is available.`
+            : "Official gm-cli is unavailable."
+    });
+}
+
+/**
+ * Evidence record describing whether the official gm-cli ResourceTool MCP
+ * server is reachable from the resolved project. Owns only the
+ * official-ResourceTool-MCP concern; the parent gm-cli is reported
+ * separately.
+ */
+function createOfficialResourceToolMcpEvidenceRecord(
+    officialCatalog: CompanionToolingSnapshot["officialCatalog"]
+): ProjectEvidenceRecord {
+    const { mcpServer } = officialCatalog;
+    return createEvidenceRecord({
+        artifacts: mcpServer.sourcePath === null ? [] : [mcpServer.sourcePath],
+        diagnostics: mcpServer.available
+            ? []
+            : [mcpServer.error ?? "ResourceTool MCP is not configured or not reachable."],
+        kind: "official-resourcetool-mcp",
+        nextActions: mcpServer.available
+            ? []
+            : ["Configure gm-cli ResourceTool MCP for official resource mutations when needed."],
+        source: "gm-cli ResourceTool MCP",
+        status: mcpServer.available ? "pass" : "warn",
+        summary: mcpServer.available
+            ? `ResourceTool MCP '${mcpServer.serverId ?? "configured"}' is available.`
+            : "ResourceTool MCP is unavailable."
+    });
+}
+
+/**
+ * Compose the readiness evidence records from the manifest, companion
+ * tooling, and graph summary snapshots. Each per-source record owns a
+ * single change-triggering concern (configuration presence, graph
+ * availability, resource inventory, agent pack state, official gm-cli,
+ * official ResourceTool MCP); the records are sorted by `kind` so
+ * downstream callers receive a stable ordering regardless of evaluation
+ * order.
+ */
+function collectProjectReadinessEvidenceRecords(
+    inputs: ProjectReadinessEvidenceInputs
+): ReadonlyArray<ProjectEvidenceRecord> {
+    return [
+        createGmloopConfigEvidenceRecord(inputs.gmloopConfigPath, inputs.gmloopConfigPresent),
+        createGraphIndexEvidenceRecord(inputs.graphSummary),
+        createResourceInventoryEvidenceRecord(inputs.manifest.absolutePath, inputs.manifestResources.length),
+        createAgentPackEvidenceRecord(inputs.agentPack),
+        createOfficialGmCliEvidenceRecord(inputs.officialCatalog),
+        createOfficialResourceToolMcpEvidenceRecord(inputs.officialCatalog)
     ].sort((left, right) => left.kind.localeCompare(right.kind));
+}
+
+async function createProjectReadinessInspection(options: ProjectReadinessOptions): Promise<ProjectReadinessInspection> {
+    const resolvedManifest = await resolveProjectManifestResources(options);
+    const [companionTooling, graphSummary] = await Promise.all([
+        loadProjectCompanionTooling(resolvedManifest.context),
+        buildGraphInspectionSummary(options, resolvedManifest.context)
+    ]);
+    const evidence = collectProjectReadinessEvidenceRecords({
+        agentPack: companionTooling.agentPack,
+        gmloopConfigPath: companionTooling.gmloopConfigPath,
+        gmloopConfigPresent: companionTooling.gmloopConfigPresent,
+        graphSummary,
+        manifest: resolvedManifest.manifest,
+        manifestResources: resolvedManifest.manifestResources,
+        officialCatalog: companionTooling.officialCatalog
+    });
 
     return Object.freeze({
-        agentPack,
+        agentPack: companionTooling.agentPack,
         configuredOfficialMcp: Object.freeze({
-            available: officialCatalog.mcpServer.available,
-            serverId: officialCatalog.mcpServer.serverId,
-            sourcePath: officialCatalog.mcpServer.sourcePath
+            available: companionTooling.officialCatalog.mcpServer.available,
+            serverId: companionTooling.officialCatalog.mcpServer.serverId,
+            sourcePath: companionTooling.officialCatalog.mcpServer.sourcePath
         }),
         evidence: Object.freeze(evidence),
         gmCli: Object.freeze({
-            available: officialCatalog.available,
-            cliLeafCount: officialCatalog.cliCommands.length,
-            error: officialCatalog.error,
-            invocation: officialCatalog.invocation,
-            mcpToolCount: officialCatalog.mcpTools.length,
-            version: officialCatalog.version
+            available: companionTooling.officialCatalog.available,
+            cliLeafCount: companionTooling.officialCatalog.cliCommands.length,
+            error: companionTooling.officialCatalog.error,
+            invocation: companionTooling.officialCatalog.invocation,
+            mcpToolCount: companionTooling.officialCatalog.mcpTools.length,
+            version: companionTooling.officialCatalog.version
         }),
         gmloopConfig: Object.freeze({
-            path: gmloopConfigPath,
-            present: gmloopConfigPresent
+            path: companionTooling.gmloopConfigPath,
+            present: companionTooling.gmloopConfigPresent
         }),
         graph: graphSummary,
-        projectRoot: context.projectRoot,
+        projectRoot: resolvedManifest.context.projectRoot,
         resources: Object.freeze({
-            count: manifestResources.length,
-            manifestPath: manifest.absolutePath,
-            resourceKinds: Object.freeze({ ...resourceKindCounts })
+            count: resolvedManifest.manifestResources.length,
+            manifestPath: resolvedManifest.manifest.absolutePath,
+            resourceKinds: Object.freeze({ ...resolvedManifest.resourceKindCounts })
         }),
-        skills: Object.freeze([...skills]),
-        yypPath: manifest.absolutePath
+        skills: Object.freeze([...companionTooling.skills]),
+        yypPath: resolvedManifest.manifest.absolutePath
     });
 }
 
