@@ -71,6 +71,17 @@ type WorkerBuildBoundary = Readonly<{
     tier: "definitions" | "full";
 }>;
 
+/**
+ * Retained in-memory bookkeeping counts for the semantic index.
+ *
+ * These counters are intentionally compact so tests and diagnostics can verify
+ * that per-document caches are released without exposing cache contents.
+ */
+export type GmlSemanticIndexMemoryDiagnostics = Readonly<{
+    documentVersionEntries: number;
+    ignoredLexicalRangeEntries: number;
+}>;
+
 function createBuiltNavigationState(
     projectRoot: string,
     checkpoint: Record<string, unknown> | null,
@@ -237,6 +248,10 @@ export type GmlSemanticIndex = Readonly<{
     buildForDocument(document: GmlTextDocument): Promise<NavigationState | null>;
     indexProjectRoot(projectRoot: string): Promise<void>;
     dispose(): Promise<void>;
+    /**
+     * Return compact counters for semantic-index memory diagnostics.
+     */
+    readMemoryDiagnostics(): GmlSemanticIndexMemoryDiagnostics;
     findDefinition(
         document: GmlTextDocument,
         offset: number,
@@ -1114,7 +1129,21 @@ export function createGmlSemanticIndex(
         }
     }
 
+    function releaseClosedDocumentCaches(filePath: string): void {
+        const uri = filePathToUri(path.resolve(filePath));
+        if (documents.get(uri) !== null) {
+            return;
+        }
+        // These caches describe open-buffer text. Once the buffer is closed,
+        // disk-backed refreshes must not keep lexical ranges or edit-version
+        // counters for documents that no longer have session-local contents.
+        documentVersions.delete(uri);
+        lexicalRangesByDocument.delete(uri);
+        staleSemanticDocumentUris.delete(uri);
+    }
+
     async function invalidateKnownFileRoots(filePath: string): Promise<void> {
+        releaseClosedDocumentCaches(filePath);
         const projectRoot = await getProjectRoot(filePath);
         if (projectRoot) {
             invalidateRoot(projectRoot);
@@ -2329,6 +2358,12 @@ export function createGmlSemanticIndex(
             staleSemanticDocumentUris.clear();
         },
         buildForDocument: ensureIndex,
+        readMemoryDiagnostics() {
+            return Object.freeze({
+                documentVersionEntries: documentVersions.size,
+                ignoredLexicalRangeEntries: lexicalRangesByDocument.size
+            });
+        },
         async indexProjectRoot(projectRoot) {
             await ensureProjectRootIndex(projectRoot);
         },

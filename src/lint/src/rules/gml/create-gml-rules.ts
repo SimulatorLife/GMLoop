@@ -1,6 +1,7 @@
 import type { Rule } from "eslint";
 
 import type { GmlRuleDefinition } from "./index.js";
+import { createLogicalNormalizationRule } from "./rules/logical-normalization-rule-factory.js";
 import { createNoAssignmentInConditionRule } from "./rules/no-assignment-in-condition-rule.js";
 import { createNoBooleanLiteralComparisonsRule } from "./rules/no-boolean-literal-comparisons-rule.js";
 import { createNoEmptyCommentsRule } from "./rules/no-empty-comments-rule.js";
@@ -44,7 +45,6 @@ import {
 } from "./rules/require-gpu-toggle-reset-rule.js";
 import { createRequireRegionPairsRule } from "./rules/require-region-pairs-rule.js";
 import { createSimplifyRealCallsRule } from "./rules/simplify-real-calls-rule.js";
-import { createLogicalNormalizationRule } from "./rules/logical-normalization-rule-factory.js";
 
 type GmlRuleFactory = (definition: GmlRuleDefinition) => Rule.RuleModule;
 
