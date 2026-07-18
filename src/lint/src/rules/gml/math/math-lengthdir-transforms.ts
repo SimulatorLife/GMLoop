@@ -19,6 +19,8 @@ import {
 } from "./math-ast-builders.js";
 import {
     type ConvertManualMathTransformOptions,
+    findAssignmentExpressionForRight,
+    findVariableDeclarationByName,
     isSafeOperand,
     markPreviousSiblingForBlankLine,
     removeNodeFromAst,
@@ -33,7 +35,6 @@ import {
 import { identifyTrigCall } from "./math-trig-conversions.js";
 
 const {
-    ASSIGNMENT_EXPRESSION,
     BINARY_EXPRESSION,
     CALL_EXPRESSION,
     IDENTIFIER,
@@ -42,7 +43,6 @@ const {
     MEMBER_INDEX_EXPRESSION,
     PARENTHESIZED_EXPRESSION,
     UNARY_EXPRESSION,
-    VARIABLE_DECLARATION,
     isObjectLike
 } = Core;
 
@@ -696,80 +696,4 @@ export function isIdentityReplacementSafeExpression(node: any): boolean {
 
 function areNodesEquivalent(a: unknown, b: unknown): boolean {
     return Core.areExpressionNodesEquivalentIgnoringParentheses(a, b);
-}
-
-function findAssignmentExpressionForRight(root: any, target: any): any {
-    if (!root || !target) {
-        return null;
-    }
-
-    const stack = [root];
-    const visited = new Set();
-
-    while (stack.length > 0) {
-        const node = stack.pop();
-        if (!node || typeof node !== "object" || visited.has(node)) {
-            continue;
-        }
-        visited.add(node);
-
-        if (node.type === ASSIGNMENT_EXPRESSION && node.right === target) {
-            return node;
-        }
-
-        if (Array.isArray(node)) {
-            for (const element of node) {
-                stack.push(element);
-            }
-            continue;
-        }
-
-        for (const value of Object.values(node)) {
-            if (value && typeof value === "object") {
-                stack.push(value);
-            }
-        }
-    }
-
-    return null;
-}
-
-function findVariableDeclarationByName(root: any, identifierName: string): any {
-    if (!root || !identifierName) {
-        return null;
-    }
-
-    const stack = [root];
-    const visited = new Set();
-
-    while (stack.length > 0) {
-        const node = stack.pop();
-        if (!node || typeof node !== "object" || visited.has(node)) {
-            continue;
-        }
-        visited.add(node);
-
-        if (node.type === VARIABLE_DECLARATION && Array.isArray(node.declarations)) {
-            for (const declarator of node.declarations) {
-                if (Core.isUnwrappedIdentifierWithName(declarator?.id, identifierName)) {
-                    return node;
-                }
-            }
-        }
-
-        if (Array.isArray(node)) {
-            for (const element of node) {
-                stack.push(element);
-            }
-            continue;
-        }
-
-        for (const value of Object.values(node)) {
-            if (value && typeof value === "object") {
-                stack.push(value);
-            }
-        }
-    }
-
-    return null;
 }
