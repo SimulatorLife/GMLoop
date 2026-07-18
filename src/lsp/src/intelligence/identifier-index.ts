@@ -26,6 +26,16 @@ import {
 } from "../documents/index.js";
 import { gmlSymbolKindToCompletionItemKind, gmlSymbolKindToLspSymbolKind } from "../protocol/index.js";
 import { coerceToError } from "./error-normalization.js";
+import {
+    hasExactResolution,
+    readOccurrenceEndFromMatch,
+    readOccurrenceRoleFromMatch,
+    readOccurrenceStartFromMatch,
+    readSymbolDisplayNameFromMatch,
+    readSymbolIdFromMatch,
+    readSymbolKindFromMatch,
+    readSymbolNameFromMatch
+} from "./symbol-occurrence-match.js";
 import { createWorkerOverlayBoundary, isWorkerOverlayBoundaryCurrent } from "./worker-overlay-boundary.js";
 
 type GmlSymbolDocumentation = ReturnType<typeof Semantic.createEmptyGmlSymbolDocumentation>;
@@ -341,7 +351,7 @@ async function occurrenceToLspLocation(
     const targetDocument = await readDocumentForLocation(document, projectRoot, match.occurrence);
     return {
         uri: targetDocument.uri,
-        range: offsetsToRange(targetDocument, match.occurrence.start, match.occurrence.end)
+        range: offsetsToRange(targetDocument, readOccurrenceStartFromMatch(match), readOccurrenceEndFromMatch(match))
     };
 }
 
@@ -444,9 +454,8 @@ function findSymbolId(
         return null;
     }
 
-    const exactSymbolId = allowPositionOccurrence
-        ? (queries.findSymbolAtPosition(document.filePath, offset)?.symbol.symbolId ?? null)
-        : null;
+    const exactMatch = allowPositionOccurrence ? queries.findSymbolAtPosition(document.filePath, offset) : null;
+    const exactSymbolId = exactMatch === null ? null : readSymbolIdFromMatch(exactMatch);
     if (exactSymbolId !== null) {
         return exactSymbolId;
     }
@@ -2472,10 +2481,14 @@ export function createGmlSemanticIndex(
                             ? []
                             : queries
                                   .listFileOccurrences(document.filePath)
-                                  .filter((match) => match.symbol.symbolId === symbolId)
+                                  .filter((match) => readSymbolIdFromMatch(match) === symbolId)
                                   .map((match) => ({
                                       uri: document.uri,
-                                      range: offsetsToRange(document, match.occurrence.start, match.occurrence.end)
+                                      range: offsetsToRange(
+                                          document,
+                                          readOccurrenceStartFromMatch(match),
+                                          readOccurrenceEndFromMatch(match)
+                                      )
                                   }));
                     }
                 )) ?? []
@@ -2610,10 +2623,18 @@ export function createGmlSemanticIndex(
                     signal,
                     (queries) =>
                         queries.listDocumentSymbols(document.filePath).map((match) => ({
-                            name: match.symbol.displayName,
-                            kind: gmlSymbolKindToLspSymbolKind(match.symbol.kind),
-                            range: offsetsToRange(document, match.occurrence.start, match.occurrence.end),
-                            selectionRange: offsetsToRange(document, match.occurrence.start, match.occurrence.end)
+                            name: readSymbolDisplayNameFromMatch(match),
+                            kind: gmlSymbolKindToLspSymbolKind(readSymbolKindFromMatch(match)),
+                            range: offsetsToRange(
+                                document,
+                                readOccurrenceStartFromMatch(match),
+                                readOccurrenceEndFromMatch(match)
+                            ),
+                            selectionRange: offsetsToRange(
+                                document,
+                                readOccurrenceStartFromMatch(match),
+                                readOccurrenceEndFromMatch(match)
+                            )
                         }))
                 )) ?? []
             );
@@ -2680,10 +2701,10 @@ export function createGmlSemanticIndex(
                             occurrences: staleSemanticDocumentUris.has(document.uri)
                                 ? []
                                 : queries.listFileOccurrences(document.filePath).map((match) => ({
-                                      start: match.occurrence.start,
-                                      end: match.occurrence.end,
-                                      kind: Semantic.normalizeGmlSemanticSymbolKind(match.symbol.kind),
-                                      role: match.occurrence.role
+                                      start: readOccurrenceStartFromMatch(match),
+                                      end: readOccurrenceEndFromMatch(match),
+                                      kind: Semantic.normalizeGmlSemanticSymbolKind(readSymbolKindFromMatch(match)),
+                                      role: readOccurrenceRoleFromMatch(match)
                                   }))
                         });
                     }
@@ -2779,13 +2800,17 @@ export function createGmlSemanticIndex(
                     const match = queries.findSymbolAtPosition(document.filePath, offset);
                     if (
                         match === null ||
-                        match.symbol.name !== identifierName ||
-                        match.occurrence.resolution.kind !== "exact" ||
-                        queries.refactor.getRenameSafetyGaps(match.symbol.symbolId).length > 0
+                        readSymbolNameFromMatch(match) !== identifierName ||
+                        !hasExactResolution(match) ||
+                        queries.refactor.getRenameSafetyGaps(readSymbolIdFromMatch(match)).length > 0
                     ) {
                         return null;
                     }
-                    return offsetsToRange(document, match.occurrence.start, match.occurrence.end);
+                    return offsetsToRange(
+                        document,
+                        readOccurrenceStartFromMatch(match),
+                        readOccurrenceEndFromMatch(match)
+                    );
                 }
             );
         },
@@ -2805,12 +2830,12 @@ export function createGmlSemanticIndex(
                     const match = queries.findSymbolAtPosition(document.filePath, offset);
                     if (
                         match === null ||
-                        match.symbol.name !== identifierName ||
-                        match.occurrence.resolution.kind !== "exact"
+                        readSymbolNameFromMatch(match) !== identifierName ||
+                        !hasExactResolution(match)
                     ) {
                         return null;
                     }
-                    const symbolId = match.symbol.symbolId;
+                    const symbolId = readSymbolIdFromMatch(match);
                     const refactorEngine = new Refactor.RefactorEngine({
                         semantic: queries.refactor
                     });
