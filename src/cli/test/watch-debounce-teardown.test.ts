@@ -93,7 +93,6 @@ void describe("Watch debounce handler teardown (resource-leak regression)", () =
                 () =>
                     withTrackedRetrySetTimeout(retryTimerCounterState, TRANSIENT_RETRY_DELAY_MS, async () => {
                         const watchCmdPromise = runWatchCommand(root, {
-                            extensions: [".gml"],
                             quiet: true,
                             verbose: false,
                             runtimeServer: false,

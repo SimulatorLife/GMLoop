@@ -42,7 +42,6 @@ void describe("Hot reload patch metadata", () => {
         const abortController = new AbortController();
 
         const watchPromise = runWatchCommand(testDir, {
-            extensions: [".gml"],
             verbose: false,
             websocketPort,
             websocketHost: "127.0.0.1",

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import vm from "node:vm";
 
 import { Parser } from "@gmloop/parser";
 import { Transpiler } from "@gmloop/transpiler";
@@ -428,7 +429,7 @@ void describe("GmlTranspiler.transpileEvent", () => {
                 symbolId: "gml/event/obj_player/create"
             });
 
-            assert.doesNotThrow(() => new Function("self", "other", "args", patch.js_body));
+            assert.doesNotThrow(() => new vm.Script(`(function(self, other, args) { ${patch.js_body} })`));
         });
     });
 });

@@ -59,7 +59,6 @@ export async function runFileRemovalTest(options: FileRemovalTestOptions): Promi
         },
         async () => {
             const watchPromise = Cli.CLI.Commands.runWatchCommand(root, {
-                extensions: [".gml"],
                 verbose: false,
                 quiet: true,
                 debounceDelay: 0,

@@ -24,7 +24,6 @@ async function startWatchServer(
     let statusBaseUrl = "";
     const watchPromise = runWatchCommand(projectRoot, {
         abortSignal: abortController.signal,
-        extensions: [".gml"],
         onStatusServerReady: (server: StatusServerHandle) => {
             statusBaseUrl = server.url.replace(/\/status$/u, "");
         },

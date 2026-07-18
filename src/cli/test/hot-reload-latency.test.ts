@@ -68,7 +68,6 @@ function launchWatchWithDefaults(
     }
 ): Promise<unknown> {
     return runWatchCommand(fixture.dir, {
-        extensions: [".gml"],
         verbose: false,
         quiet: true,
         websocketServer: false,

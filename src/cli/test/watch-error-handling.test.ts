@@ -11,7 +11,6 @@ void test("runWatchCommand logs the formatted error and exits 1 when the target 
         await assert.rejects(
             () =>
                 runWatchCommand(nonExistentPath, {
-                    extensions: [".gml"],
                     polling: false,
                     pollingInterval: 1000,
                     verbose: false
@@ -33,7 +32,6 @@ void test("runWatchCommand logs and exits 1 when verbose and quiet are combined"
         await assert.rejects(
             () =>
                 runWatchCommand(testDir, {
-                    extensions: [".gml"],
                     polling: false,
                     pollingInterval: 1000,
                     verbose: true,

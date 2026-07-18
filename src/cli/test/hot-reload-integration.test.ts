@@ -76,7 +76,6 @@ void describe("Hot reload integration loop", () => {
         // another test process could bind the port before watch() started.
 
         const watchPromise = runWatchCommand(testDir, {
-            extensions: [".gml"],
             verbose: false,
             websocketPort: 0,
             websocketHost: "127.0.0.1",

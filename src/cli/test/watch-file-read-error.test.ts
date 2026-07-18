@@ -52,7 +52,6 @@ void describe("Watch command file read errors", () => {
             },
             async () => {
                 const watchPromise = runWatchCommand(root, {
-                    extensions: [".gml"],
                     quiet: true,
                     verbose: false,
                     runtimeServer: false,

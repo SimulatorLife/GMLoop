@@ -49,7 +49,6 @@ void describe("Watch command metrics tracking", () => {
         }
 
         const watchPromise = runWatchCommand(fixture.dir, {
-            extensions: [".gml"],
             verbose: false,
             websocketPort,
             websocketHost: "127.0.0.1",

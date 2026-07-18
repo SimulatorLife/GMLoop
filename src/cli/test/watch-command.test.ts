@@ -11,7 +11,8 @@ import { createWatchCommand, runWatchCommand } from "../src/commands/watch.js";
 import {
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_COUNT,
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS,
-    DEFAULT_WATCH_POLLING_INTERVAL_MS
+    DEFAULT_WATCH_POLLING_INTERVAL_MS,
+    WATCHED_GAME_MAKER_EXTENSIONS
 } from "../src/commands/watch/constants.js";
 import {
     countSourceLines,
@@ -23,7 +24,6 @@ import { withTemporaryProperty } from "./test-helpers/temporary-property.js";
 
 function createWatchCommandIntegrationOptions(abortSignal: AbortSignal): Parameters<typeof runWatchCommand>[1] {
     return {
-        extensions: [".gml"],
         polling: false,
         pollingInterval: 1000,
         verbose: false,
@@ -92,12 +92,13 @@ void describe("watch command", () => {
         assert.ok(matcher.matches("event.YY"));
     });
 
-    void it("normalizes extension arguments that include globs or directory prefixes", () => {
-        const matcher = createExtensionMatcher(["scripts/*.gml", String.raw`objects\enemy.YY`]);
+    void it("uses the opinionated GameMaker watch extension defaults", () => {
+        const matcher = createExtensionMatcher(WATCHED_GAME_MAKER_EXTENSIONS);
 
         assert.deepEqual([...matcher.extensions].toSorted(), [".gml", ".yy"]);
         assert.ok(matcher.matches("example.gml"));
         assert.ok(matcher.matches("event.yy"));
+        assert.equal(matcher.matches("notes.txt"), false);
     });
 
     void it("treats dotfiles as extension-less while matching nested paths", () => {
@@ -171,7 +172,6 @@ void describe("watch command integration", () => {
             async () => {
                 try {
                     await runWatchCommand(nonExistentPath, {
-                        extensions: [".gml"],
                         polling: false,
                         pollingInterval: 1000,
                         verbose: false
@@ -183,36 +183,6 @@ void describe("watch command integration", () => {
         );
 
         assert.equal(exitCodeHolder.code, 1, "Should exit with code 1");
-    });
-
-    void it("should normalize file extensions", async () => {
-        // Create a temporary directory for testing
-        const testDir = path.join("/tmp", `watch-test-${Date.now()}-${randomUUID()}`);
-
-        await mkdir(testDir, { recursive: true });
-
-        try {
-            const abortController = new AbortController();
-
-            const watchPromise = runWatchCommand(testDir, {
-                ...createWatchCommandIntegrationOptions(abortController.signal),
-                extensions: ["gml", ".yy"]
-            });
-
-            // Give it a moment to start
-            await sleep(100);
-
-            abortController.abort();
-
-            await watchPromise;
-
-            // Clean up
-            await rm(testDir, { recursive: true, force: true });
-        } catch (error) {
-            // Clean up on error
-            await removeDirectoryWithoutMaskingOriginalError(testDir);
-            throw error;
-        }
     });
 
     void it("uses the default watcher when watchFactory is explicitly undefined", async () => {
