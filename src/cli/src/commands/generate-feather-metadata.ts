@@ -613,6 +613,37 @@ function slugify(text) {
 }
 
 // Split the collected manual blocks into descriptive and trailing sections.
+//
+// GameMaker Feather diagnostics follow a recurring layout inside the manual:
+// a prose description (possibly multiple paragraphs and bullet lists), an
+// "Example" heading that introduces a bad code sample, an optional correction
+// paragraph, a good code sample, and any closing notes. We split on the first
+// such signal because `summariseDiagnosticBlocks` relies on the trailing tail
+// to disambiguate correction prose from a second example.
+//
+// Boundary precedence (matters for the trailing shape — keep stable):
+//   1. An "Example"-style heading wins outright. Everything from the heading
+//      onward, *including* the heading itself, is treated as trailing so that
+//      downstream collectors do not have to re-skip it. The heading remains
+//      dropped (we do not surface it in the structured record).
+//   2. Otherwise, fall back to the first code block: Feather authors sometimes
+//      omit the explicit "Example" heading and lead directly with a snippet.
+//      Starting the trailing region at the first code block (not after it)
+//      matches case (1) and prevents the badExample detector below from
+//      accepting the snippet's surrounding paragraph as description prose.
+//   3. If neither signal is present, the whole block list stays in the
+//      description bucket so we never silently truncate a diagnostic that
+//      lacks examples.
+//
+// What would break if the precedence is reordered: trusting the next code
+// block before an "Example" heading would misclassify the heading's lead-in
+// paragraph as description; trusting description first would either drop the
+// snippet from the trailing region or fold the correction paragraph into the
+// bad example. Both regressions surface as Feather diagnostics that lose
+// either their correction guidance or one of the two code samples.
+//
+// See docs/feather-data-plan.md for the upstream HTML topic layout that these
+// heuristics target (Feather_Messages in vendor/GameMaker-Manual).
 function splitDiagnosticBlocks(blocks) {
     const exampleHeadingIndex = blocks.findIndex(
         (block) => block.type === "heading" && /example/i.test(block.text ?? "")
@@ -689,6 +720,33 @@ function collectDiagnosticTrailingContent(blocks) {
 }
 
 // Convert the raw manual blocks into structured diagnostic metadata.
+//
+// This is the contract surface for the rest of the Feather pipeline:
+// `createDiagnosticMetadataFromHeading` consumes the returned shape verbatim
+// (`description`, `correction`, `badExample`, `goodExample`). The function is
+// a thin orchestrator — `splitDiagnosticBlocks` decides the description/
+// trailing boundary and `collectDiagnosticTrailingContent` walks the trailing
+// region to label each snippet as bad-then-good and to keep correction prose
+// separate from extra description fragments. We then re-attach those trailing
+// description fragments to the description list because Feather authors
+// frequently add a follow-up note *after* the example pair that still belongs
+// to the diagnostic description.
+//
+// Why the trailing scanner yields at most one bad example and N good examples:
+// the manual only ever shows a single bad snippet per diagnostic, but authors
+// sometimes include multiple good snippets when the fix has several variants.
+// Preserving that multiplicity (rather than overwriting or dropping extras)
+// matters for the formatter/feather rule surfaces that key on example parity.
+//
+// What would break if the description/trailing split here were merged into a
+// single pass: the bad-example detector would mis-identify the first sentence
+// of correction prose as a `badExample` whenever a diagnostic opens with a
+// note before its code sample. The correction prose would also fold into
+// `descriptionParts`, hiding the actionable guidance users see in tooling.
+//
+// See `splitDiagnosticBlocks` above for the boundary semantics and
+// docs/feather-data-plan.md (HTML parsing → diagnostics section) for the
+// upstream page layout this orchestration targets.
 function summariseDiagnosticBlocks(blocks) {
     const { descriptionBlocks, trailingBlocks } = splitDiagnosticBlocks(blocks);
     const descriptionParts = collectDiagnosticDescriptionParts(descriptionBlocks);
