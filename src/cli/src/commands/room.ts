@@ -391,7 +391,7 @@ async function runRoomInstanceListAction(roomName: string, options: RoomMutation
         command: "room instance list",
         ok: true,
         payload: {
-            instances: instances.map(toRoomInstanceInspectionPayload),
+            instances: instances.map((instance) => toRoomInstanceInspectionPayload(instance)),
             room: roomName
         }
     });
@@ -444,7 +444,7 @@ async function runRoomLayerListAction(roomName: string, options: RoomMutationOpt
         command: "room layer list",
         ok: true,
         payload: {
-            layers: layers.map(toRoomLayerInspectionPayload),
+            layers: layers.map((layer) => toRoomLayerInspectionPayload(layer)),
             room: roomName
         }
     });
@@ -460,7 +460,7 @@ async function runRoomCameraListAction(roomName: string, options: RoomMutationOp
         command: "room camera list",
         ok: true,
         payload: {
-            cameras: cameras.map(toRoomCameraInspectionPayload),
+            cameras: cameras.map((camera) => toRoomCameraInspectionPayload(camera)),
             room: roomName
         }
     });
