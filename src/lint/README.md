@@ -251,7 +251,7 @@ Performance-sensitive autofix rules also have dedicated regression coverage unde
 ## TODO
 
 - Add an ESLint auto-fix rule that detects simple numeric accumulation loops like `alpha += index` over a fixed range and replaces them with the equivalent arithmetic-series expression. Example: `for index = 0..9` can become `alpha += count * (count - 1) * 0.5`, avoiding unnecessary runtime iteration.
-- Continue splitting the remaining multi-purpose `optimize-logical-flow` behaviors into focused rules; direct boolean return passthroughs and boolean literal comparisons now live in focused rules.
+- Split any/all remaining multi-purpose `optimize-logical-flow` behaviors into focused rules until it is fully decomposed and can be removed (it is too generic a name, contains too many behaviors); we want small, individual, focused rules w/ auto-fixers instead of one large rule that does many things.
 - **BUG**: Lint auto-fix(es) related to doc-comments can produce invalid/duplicate params, ex.:
     ```gml
     -/// @function scr_timeline_play
@@ -264,4 +264,4 @@ Performance-sensitive autofix rules also have dedicated regression coverage unde
     ```
 - `feather/gm1028` only autofixes accessors when constructor evidence proves the data-structure type. Unknown and global multi-coordinate access remains unchanged, and fixes replace the complete accessor prefix.
 - `prefer-epsilon-comparisons` rewrites signed math results with `abs(value) <= eps` for zero checks and leaves strict positivity checks unchanged when the value is proven non-negative, such as a direct `sqrt(...)` result.
-- **FEAT**: A lint rule + auto-fixer to convert legacy 2D array accessors (e.g. `my_array[1, 2]`) to the array convention of `my_array[1][2]` when the array is known to be a 2D array
+- **FEAT**: A lint rule + auto-fixer to convert legacy 2D array accessors (e.g. `my_array[1, 2]`) to the newer array convention of `my_array[1][2]` when the array is known to be a 2D array

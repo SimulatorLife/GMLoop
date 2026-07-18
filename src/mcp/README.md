@@ -95,6 +95,4 @@ must stay CLI-derived.
 ### Assumptions
 
 - v1 supports stdio only. This follows the selected direction and the MCP TypeScript SDK's stdio transport for local process-spawned MCP clients.
-- The MCP implementation uses `registerTool` from the official TypeScript SDK and generates tool schemas from CLI metadata rather than maintaining MCP-local command definitions.
-
-## TODO
+- The MCP implementation uses `registerTool` from the official TypeScript SDK and generates tool schemas from CLI metadata rather than maintaining MCP-local command definitions
