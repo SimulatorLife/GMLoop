@@ -32,6 +32,7 @@ void test("ruleIds contract keeps canonical ids with PascalCase keys", () => {
     }
 
     assertEquals((ruleIds as Record<string, string>).GmlNoGlobalvar, "gml/no-globalvar");
+    assertEquals((ruleIds as Record<string, string>).GmlNoMultiVarDeclarations, "gml/no-multi-var-declarations");
     assertEquals("GmlNoLegacyApi" in (ruleIds as Record<string, string>), false);
     assertEquals((ruleIds as Record<string, string>).GmlPreferArrayPush, "gml/prefer-array-push");
     assertEquals((ruleIds as Record<string, string>).GmlPreferCompoundAssignments, "gml/prefer-compound-assignments");
@@ -239,6 +240,7 @@ void test("Lint.plugin.rules and Lint.featherPlugin.rules are properly populated
     assertEquals(Object.isFrozen(Lint.plugin.rules), true);
     assert.ok(Lint.plugin.rules["prefer-array-push"], "prefer-array-push must be in plugin rules");
     assert.ok(Lint.plugin.rules["no-globalvar"], "no-globalvar must be in plugin rules");
+    assert.ok(Lint.plugin.rules["no-multi-var-declarations"], "no-multi-var-declarations must be in plugin rules");
 
     assert.ok(Lint.featherPlugin.rules, "Lint.featherPlugin.rules must be defined");
     assertEquals(Object.isFrozen(Lint.featherPlugin.rules), true);

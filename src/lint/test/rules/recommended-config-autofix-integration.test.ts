@@ -60,6 +60,46 @@ void test("recommended config auto-fixes simplify-real-calls and feather/gm1017 
     assert.equal(result.messages.length, 0);
 });
 
+void test("recommended config auto-fixes multi-declarator variable statements", async () => {
+    const sourceText = ["var a = 1,", "    b = 2;", ""].join("\n");
+    const eslint = new ESLint({
+        overrideConfigFile: true,
+        fix: true,
+        overrideConfig: createMutableRecommendedConfig()
+    });
+
+    const [result] = await eslint.lintText(sourceText, {
+        filePath: "recommended-config-multi-var-declarations.gml"
+    });
+
+    assert.equal(result.output, ["var a = 1;", "    var b = 2;", ""].join("\n"));
+    assert.equal(result.messages.length, 0);
+});
+
+void test("recommended config preserves global multi-coordinate array accessors", async () => {
+    const sourceText = [
+        "global.camPos[global.camTransform[1, 0]] += global.mouseDx / 2;",
+        "global.camPos[global.camTransform[global.mouseViewInd, 0]] += global.mouseDx * global.camZoom;",
+        ""
+    ].join("\n");
+    const recommendedConfig = createMutableRecommendedConfig();
+    for (const config of recommendedConfig) {
+        config.rules["gml/optimize-math-expressions"] = "off";
+    }
+    const eslint = new ESLint({
+        overrideConfigFile: true,
+        fix: true,
+        overrideConfig: recommendedConfig
+    });
+
+    const [result] = await eslint.lintText(sourceText, {
+        filePath: "recommended-config-global-array-accessors.gml"
+    });
+
+    assert.equal(result.output ?? sourceText, sourceText);
+    assert.equal(result.messages.length, 0);
+});
+
 void test("recommended config auto-fixes gm1051 across multiline macro continuation lines", async () => {
     const sourceText = [
         `${String.raw`#macro __SCRIBBLE_PARSER_WRITE_NEWLINE _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__UNICODE      ] = 0x0A`}${backslash} //ASCII line break (dec = 10)`,

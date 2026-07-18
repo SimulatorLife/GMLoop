@@ -459,7 +459,7 @@ void test("gml semantic fix rules do not reformat canonical macro declaration sp
     }
 });
 
-void test("feather/gm1028 only rewrites invalid multi-coordinate access to grid accessors", () => {
+void test("feather/gm1028 rewrites only proven grid multi-coordinate access", () => {
     const input = [
         "var my_map = ds_map_create();",
         'var value = my_map[| "key"];',
@@ -474,8 +474,8 @@ void test("feather/gm1028 only rewrites invalid multi-coordinate access to grid 
         "var my_map = ds_map_create();",
         'var value = my_map[? "key"];',
         "var item = lst_items[? 0];",
-        "var cell = level_grid[# 1, 2];",
-        "var cell_alt = myGrid[# 1, 2];",
+        "var cell = level_grid[| 1, 2];",
+        "var cell_alt = myGrid[? 1, 2];",
         "var passthrough = some_var[? 0];",
         "var item_alt = map_items[| 0];",
         ""
@@ -483,6 +483,36 @@ void test("feather/gm1028 only rewrites invalid multi-coordinate access to grid 
 
     const result = lintWithRule("gm1028", input, {}, Lint.featherPlugin.rules);
     assertEquals(result.output, expected);
+});
+
+void test("feather/gm1028 preserves ordinary and global array multi-coordinate access", () => {
+    const input = [
+        "global.camPos[global.camTransform[1, 0]] += global.mouseDx / 2;",
+        "global.camPos[global.camTransform[1, 1]] += global.mouseDy / 2;",
+        "global.camPos[global.camTransform[#, 0]] += global.mouseDx * 0.5;",
+        "global.camPos[global.camTransform[#, 1]] += global.mouseDy * 0.5;",
+        "global.camPos[global.camTransform[1, 0]] -= 5 * (keyboard_check(vk_right) - keyboard_check(vk_left));",
+        "global.camPos[global.camTransform[1, 1]] -= 5 * (keyboard_check(vk_down) - keyboard_check(vk_up));",
+        "global.camPos[global.camTransform[#, 0]] -= 5 * (keyboard_check(vk_right) - keyboard_check(vk_left));",
+        "global.camPos[global.camTransform[#, 1]] -= 5 * (keyboard_check(vk_down) - keyboard_check(vk_up));",
+        "global.camPos[global.camTransform[global.mouseViewInd, 0]] += global.mouseDx * global.camZoom;",
+        "global.camPos[global.camTransform[global.mouseViewInd, 1]] -= global.mouseDy * global.camZoom;",
+        "if global.mouseViewInd == 3{global.camPos[global.camTransform[global.mouseViewInd, 0]] += global.mouseDx * global.camZoom;}",
+        "else{global.camPos[global.camTransform[global.mouseViewInd, 0]] -= global.mouseDx * global.camZoom;}",
+        "if global.mouseViewInd == 2{global.camPos[global.camTransform[global.mouseViewInd, 1]] -= global.mouseDy * global.camZoom;}",
+        "else{global.camPos[global.camTransform[global.mouseViewInd, 1]] += global.mouseDy * global.camZoom;}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("gm1028", input, {}, Lint.featherPlugin.rules);
+    assertEquals(result.output, input);
+});
+
+void test("feather/gm1028 replaces the complete default accessor prefix", () => {
+    const input = ["var grid = ds_grid_create();", "var cell = grid[1, 0];", ""].join("\n");
+    const result = lintWithRule("gm1028", input, {}, Lint.featherPlugin.rules);
+
+    assertEquals(result.output, ["var grid = ds_grid_create();", "var cell = grid[#1, 0];", ""].join("\n"));
 });
 
 void test("feather/gm1028 does not keep stale constructor inference after reassignment", () => {

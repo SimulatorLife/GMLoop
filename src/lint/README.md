@@ -106,6 +106,7 @@ Built-in `gml/*` rule short names:
 - `no-boolean-literal-comparisons`
 - `optimize-logical-flow`
 - `no-globalvar`
+- `no-multi-var-declarations`
 - `no-empty-regions`
 - `no-scientific-notation`
 - `no-unary-plus-on-identifier`
@@ -159,6 +160,11 @@ to direct boolean returns. It owns this focused fix instead of the broader
 fix instead of the broader `optimize-logical-flow` rule.
 
 `require-control-flow-braces` reports and autofixes unbraced control-flow statements by inserting structural `{ ... }` blocks. It does not depend on the formatter for that rewrite; the formatter remains responsible only for subsequent layout/canonical rendering.
+
+`no-multi-var-declarations` reports comma-separated variable declarations and
+autofixes ordinary statements by repeating the declaration keyword for each
+declarator. It leaves `for` initializers report-only because splitting those
+declarations requires a control-flow rewrite rather than a local statement fix.
 
 `require-region-pairs` reports malformed `#region` / `#endregion` pairs. The autofix removes standalone `#endregion` directives and appends missing `#endregion` directives at the bottom of the file.
 
@@ -256,33 +262,9 @@ Performance-sensitive autofix rules also have dedicated regression coverage unde
     /// @returns {obj} timeline_controller
     function scr_timeline_play(timeline_to_play, func_callback) { /* ... */ }
     ```
-- **BUG**: Lint auto-fixes introduce this break in GML code:
-  ```
-  -			global.camPos[global.camTransform[1, 0]] += global.mouseDx / 2;
-  -			global.camPos[global.camTransform[1, 1]] += global.mouseDy / 2;
-  +			global.camPos[global.camTransform[#, 0]] += global.mouseDx * 0.5;
-  +			global.camPos[global.camTransform[#, 1]] += global.mouseDy * 0.5;
-  ```
-  Anther example:
-  ```
-  -		global.camPos[global.camTransform[1, 0]] -= 5 * (keyboard_check(vk_right) - keyboard_check(vk_left));
-  -		global.camPos[global.camTransform[1, 1]] -= 5 * (keyboard_check(vk_down) - keyboard_check(vk_up));
-  +		global.camPos[global.camTransform[#, 0]] -= 5 * (keyboard_check(vk_right) - keyboard_check(vk_left));
-  +		global.camPos[global.camTransform[#, 1]] -= 5 * (keyboard_check(vk_down) - keyboard_check(vk_up));
-  ```
-  And this other example:
-  ```
-  -			if global.mouseViewInd == 3{global.camPos[global.camTransform[global.mouseViewInd, 0]] += global.mouseDx * global.camZoom;}
-  -			else{global.camPos[global.camTransform[global.mouseViewInd, 0]] -= global.mouseDx * global.camZoom;}
-  -			if global.mouseViewInd == 2{global.camPos[global.camTransform[global.mouseViewInd, 1]] -= global.mouseDy * global.camZoom;}
-  -			else{global.camPos[global.camTransform[global.mouseViewInd, 1]] += global.mouseDy * global.camZoom;}
-  +			if global.mouseViewInd == 3{global.camPos[global.camTransform[#lobal.mouseViewInd, 0]] += global.mouseDx * global.camZoom;}
-  +			else{global.camPos[global.camTransform[#lobal.mouseViewInd, 0]] -= global.mouseDx * global.camZoom;}
-  +			if global.mouseViewInd == 2{global.camPos[global.camTransform[#lobal.mouseViewInd, 1]] -= global.mouseDy * global.camZoom;}
-  +			else{global.camPos[global.camTransform[#lobal.mouseViewInd, 1]] += global.mouseDy * global.camZoom;}
-  ```
+- `feather/gm1028` only autofixes accessors when constructor evidence proves the data-structure type. Unknown and global multi-coordinate access remains unchanged, and fixes replace the complete accessor prefix.
 - **FEAT**: A lint fixer to convert legacy 2D array accessors (e.g. `my_array[1, 2]`) to the array convention of `my_array[1][2]` when the array is known to be a 2D array
-- **BUG**: Lint auto-fix is producing this changed GML (`dot_product_3d` can be negative):
+- **BUG**: Lint auto-fix is producing this changed GML (but `dot_product_3d` can be negative):
   ```
    	    var dn = dot_product_3d(vx, vy, vz, nx, ny, nz);
   -	    if (dn == 0)
@@ -294,14 +276,4 @@ Performance-sensitive autofix rules also have dedicated regression coverage unde
    	    var l = sqrt(toX * toX + toY * toY + toZ * toZ);
     -	if (l > 0)
     +	if (l > math_get_epsilon())
-  ```
-- **FEAT**: I think this codemods "repairDependentVariableDeclarations" should become a lint auto-fix, not a codemod. The 'dependentVariableDeclarations' *are* valid GML code, using them is a user preference (and also needed for html5 compatibility). Should be called "**no-multi-var-declarations**":
-  ```
-  var a = 1,
-      b = 2;
-  ```
-  becomes:
-  ```
-  var a = 1;
-  var b = 2;
   ```

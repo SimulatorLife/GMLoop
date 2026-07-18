@@ -132,7 +132,8 @@ const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
         ruleName: "gm1028",
         assertOutput: (output) => {
             assertEquals(output.includes('my_map[? "key"]'), true);
-            assertEquals(output.includes("level_grid[# 1, 2]"), true);
+            assertEquals(output.includes("level_grid[| 1, 2]"), true);
+            assertEquals(output.includes("myGrid[? 1, 2]"), true);
             assertEquals(output.includes("lst_instances[| 0]"), true);
             assertEquals(output.includes("passthrough = some_var[? 0]"), true);
         }

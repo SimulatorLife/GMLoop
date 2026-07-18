@@ -24,6 +24,7 @@ const RECOMMENDED_RULES: Readonly<Record<string, LintRuleLevel>> = Object.freeze
     "gml/no-boolean-literal-comparisons": "warn",
     "gml/optimize-logical-flow": "warn",
     "gml/no-globalvar": "warn",
+    "gml/no-multi-var-declarations": "warn",
     "gml/no-empty-regions": "warn",
     "gml/no-empty-comments": "warn",
     "gml/no-scientific-notation": "error",

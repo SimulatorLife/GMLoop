@@ -131,6 +131,11 @@ const expectedRules = Object.freeze([
         schema: []
     },
     {
+        shortName: "no-multi-var-declarations",
+        messageId: "noMultiVarDeclarations",
+        schema: [{ type: "object", additionalProperties: false, properties: {} }]
+    },
+    {
         shortName: "no-empty-regions",
         messageId: "noEmptyRegions",
         schema: [{ type: "object", additionalProperties: false, properties: {} }]

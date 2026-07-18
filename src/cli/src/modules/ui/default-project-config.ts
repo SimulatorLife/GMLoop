@@ -48,7 +48,6 @@ export function createDefaultGmloopProjectConfig(): Readonly<Record<string, unkn
                     })
                 }),
                 repairArgumentSeparators: Object.freeze({}),
-                repairDependentVariableDeclarations: Object.freeze({}),
                 repairLogicalNot: Object.freeze({}),
                 scientificNotation: Object.freeze({})
             })

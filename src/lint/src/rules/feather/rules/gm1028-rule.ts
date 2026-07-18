@@ -36,13 +36,6 @@ function getPropertyCount(node: unknown): number {
     return Array.isArray(node.property) ? node.property.length : 0;
 }
 
-function shouldNormalizeMemberIndexAccessorToGrid(node: unknown): boolean {
-    if (!isMemberIndexExpressionNode(node)) {
-        return false;
-    }
-    return node.accessor !== "[#" && getPropertyCount(node) > 1;
-}
-
 function getNormalizedIdentifierName(node: unknown): string | null {
     if (!isIdentifierNode(node)) {
         return null;
@@ -112,31 +105,24 @@ function resolveProvenAccessorForMemberIndex(
     if (!isMemberIndexExpressionNode(node)) {
         return null;
     }
-    if (shouldNormalizeMemberIndexAccessorToGrid(node)) {
-        return "[#";
-    }
-
-    if (getPropertyCount(node) !== 1) {
-        return null;
-    }
-
     const identifierName = getNormalizedIdentifierName(node.object);
     if (!identifierName) {
         return null;
     }
 
     const trackedAccessor = explicitConstructorAccessorsByIdentifier.get(identifierName);
-    // Return the tracked accessor for all DS types. The multi-coordinate guard above
-    // handles the grid case by returning "[#" early when property count > 1. For
-    // single-coordinate access, we return whatever accessor the variable was last
-    // assigned from a constructor call, even if it's "[#". This means a grid variable
-    // accessed with [| or [? (which is a misuse) will be normalized to [# to match
-    // the constructor's declared accessor.
-    if (trackedAccessor) {
-        return trackedAccessor;
+    if (!trackedAccessor) {
+        return null;
     }
 
-    return null;
+    // A grid constructor proves that multi-coordinate access uses the grid
+    // accessor. Lists and maps only support one coordinate, so do not invent
+    // a fix for multi-coordinate access when their constructor is known.
+    if (trackedAccessor !== MEMBER_ACCESSOR_GRID && getPropertyCount(node) !== 1) {
+        return null;
+    }
+
+    return trackedAccessor;
 }
 
 function findMemberIndexAccessorRange(
@@ -144,6 +130,10 @@ function findMemberIndexAccessorRange(
     memberIndexExpression: unknown
 ): { start: number; end: number } | null {
     if (!isMemberIndexExpressionNode(memberIndexExpression)) {
+        return null;
+    }
+    const accessor = memberIndexExpression.accessor;
+    if (typeof accessor !== "string" || accessor.length === 0) {
         return null;
     }
     const objectEnd = Core.getNodeEndIndex(memberIndexExpression.object);
@@ -165,7 +155,7 @@ function findMemberIndexAccessorRange(
     }
 
     const start = objectEnd + bracketOffset;
-    return { start, end: start + 2 };
+    return { start, end: start + accessor.length };
 }
 
 export function createGm1028Rule(entry: FeatherManifestEntry): Rule.RuleModule {

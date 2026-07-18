@@ -238,22 +238,6 @@ inside a `scr_get_uvs` helper and preserves its fallback branch:
 }
 ```
 
-The `repairDependentVariableDeclarations` codemod splits a comma-separated
-variable declaration when a later initializer reads an earlier declarator.
-GameMaker's HTML5 compiler can reorder those initializers during code
-generation, which turns valid GML such as `var a = 1, b = a` into a runtime
-failure. Independent declarations and `for` initializers are left unchanged:
-
-```json
-{
-    "refactor": {
-        "codemods": {
-            "repairDependentVariableDeclarations": {}
-        }
-    }
-}
-```
-
 #### CLI Usage
 
 ```bash

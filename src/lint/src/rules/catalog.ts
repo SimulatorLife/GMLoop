@@ -161,6 +161,13 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         schema: Object.freeze([])
     },
     {
+        description: "Require each variable declarator to use its own declaration statement.",
+        mapKey: "GmlNoMultiVarDeclarations",
+        shortName: "no-multi-var-declarations",
+        fullId: "gml/no-multi-var-declarations",
+        messageId: "noMultiVarDeclarations"
+    },
+    {
         description: "Report region blocks that do not contain any meaningful code or comments.",
         mapKey: "GmlNoEmptyRegions",
         shortName: "no-empty-regions",

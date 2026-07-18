@@ -1,28 +1,6 @@
 # OpenAI Codex configuration file
 # See https://developers.openai.com/codex/config-basic
 
-developer_instructions = """
-Act primarily as the root coordinator and integrator.
-
-Use configured subagents proactively for most non-trivial tasks. Delegate
-exploration, investigation, implementation, testing, validation, and review
-whenever useful.
-
-Spawn subagents early. Keep multiple subagents working concurrently when
-there are useful independent workstreams. Prefer delegating substantial work
-rather than performing it directly in the root thread.
-
-Use explorer agents for investigation and context gathering, worker agents
-for bounded implementation work, and validator agents for independent review
-and validation.
-
-The root agent should focus on planning, coordination, synthesis, resolving
-conflicts between findings, and making final decisions.
-
-Do not delegate genuinely trivial or atomic tasks where delegation provides
-no useful parallelism or independent verification.
-"""
-
 model_verbosity = "low"
 approval_policy = "never"
 model_supports_reasoning_summaries = true # Force reasoning summary metadata, not reasoning itself
@@ -73,11 +51,11 @@ default_tools_approval_mode = "approve"
 shell_snapshot = true           # Speed up repeated commands
 unified_exec = true
 steer = true
-multi_agent = true
-enable_fanout = true
+multi_agent = false
+enable_fanout = false
 fast_mode = false
 image_generation = false
-memories = false
+memories = true
 
 [analytics]
 enabled = false
@@ -104,7 +82,7 @@ writable_roots = [
 ]
 
 [agents]
-max_threads = 3
+max_threads = 1
 max_depth = 1
 
 [agents.explorer]
