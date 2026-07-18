@@ -20,7 +20,11 @@ import {
     resolveObjectEventPartsFromSegments,
     resolveObjectRuntimeIdFromSegments
 } from "./runtime-identifiers.js";
-import { extractReferencesFromAst, extractSymbolsFromAst } from "./symbol-extraction.js";
+import {
+    extractReferencesFromAst,
+    extractSymbolsAndReferencesFromAst,
+    extractSymbolsFromAst
+} from "./symbol-extraction.js";
 
 /**
  * Default parser adapter used by the coordinator when no override is supplied.
@@ -504,11 +508,12 @@ function addToBoundedCollection<T>(collection: Array<T>, item: T, maxSize: numbe
 /**
  * Extracts symbol declarations and reference identifiers from a parsed GML AST.
  *
- * This function performs a single AST traversal to collect both symbols and
- * references, which is more efficient than calling extraction separately.
- *
- * When pre-extracted values are provided, they are reused to skip redundant
- * work during incremental updates (e.g., when only part of the AST changed).
+ * When both pre-extracted values are provided, they are reused to skip
+ * redundant work during incremental updates (e.g., when the watch command has
+ * already parsed the AST during its startup scan). When neither is provided,
+ * a single combined walk collects both halves in one pass — falling back to
+ * two separate walks only when the caller supplies exactly one of the two
+ * halves (an unusual path that exists for symmetry with the helper APIs).
  */
 function extractMetadataFromAst(
     ast: unknown,
@@ -521,6 +526,11 @@ function extractMetadataFromAst(
             parsedSymbols: Array.from(preExtractedSymbols),
             parsedReferences: Array.from(preExtractedReferences)
         };
+    }
+
+    if (preExtractedSymbols === undefined && preExtractedReferences === undefined) {
+        const { symbols, references } = extractSymbolsAndReferencesFromAst(ast, filePath);
+        return { parsedSymbols: symbols, parsedReferences: references };
     }
 
     const parsedSymbols =

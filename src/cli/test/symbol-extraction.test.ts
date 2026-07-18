@@ -7,7 +7,11 @@ import { describe, it } from "node:test";
 
 import { Parser } from "@gmloop/parser";
 
-import { extractReferencesFromAst, extractSymbolsFromAst } from "../src/modules/transpilation/symbol-extraction.js";
+import {
+    extractReferencesFromAst,
+    extractSymbolsAndReferencesFromAst,
+    extractSymbolsFromAst
+} from "../src/modules/transpilation/symbol-extraction.js";
 
 void describe("Symbol extraction from AST", () => {
     void it("should extract function declaration symbols", () => {
@@ -366,5 +370,139 @@ void describe("Reference extraction from AST", () => {
         assert.ok(refs.includes("gml_Script_try_fn"), "Should track function call in try block");
         assert.ok(refs.includes("gml_Script_catch_fn"), "Should track function call in catch block");
         assert.ok(refs.includes("gml_Script_finally_fn"), "Should track function call in finally block");
+    });
+});
+
+void describe("Combined symbol + reference extraction from AST", () => {
+    void it("returns matching results for files with both symbols and references", () => {
+        const source = `
+            function player_move() {
+                helper_function();
+            }
+
+            function player_jump() {
+                boost();
+                boost();
+            }
+        `;
+
+        const parser = new Parser.GMLParser(source, {});
+        const ast = parser.parse();
+
+        const { symbols, references } = extractSymbolsAndReferencesFromAst(ast, "scripts/player.gml");
+
+        assert.deepStrictEqual(
+            symbols.sort(),
+            ["gml_Script_player_jump", "gml_Script_player_move"],
+            "Should extract the same symbol set as extractSymbolsFromAst"
+        );
+        assert.deepStrictEqual(
+            references.sort(),
+            ["gml_Script_boost", "gml_Script_helper_function"],
+            "Should extract the same reference set as extractReferencesFromAst"
+        );
+    });
+
+    void it("matches the standalone helpers when both are needed", () => {
+        const source = `
+            function outer() {
+                return inner(setup());
+            }
+
+            function setup() {
+                return 1;
+            }
+        `;
+
+        const parser = new Parser.GMLParser(source, {});
+        const ast = parser.parse();
+
+        const standaloneSymbols = extractSymbolsFromAst(ast, "scripts/example.gml").sort();
+        const standaloneReferences = extractReferencesFromAst(ast).sort();
+
+        const combined = extractSymbolsAndReferencesFromAst(ast, "scripts/example.gml");
+
+        assert.deepStrictEqual(
+            combined.symbols.sort(),
+            standaloneSymbols,
+            "Combined symbols must match the standalone extractor"
+        );
+        assert.deepStrictEqual(
+            combined.references.sort(),
+            standaloneReferences,
+            "Combined references must match the standalone extractor"
+        );
+    });
+
+    void it("handles empty files without crashing", () => {
+        const parser = new Parser.GMLParser("", {});
+        const ast = parser.parse();
+
+        const { symbols, references } = extractSymbolsAndReferencesFromAst(ast, "scripts/empty.gml");
+
+        assert.deepStrictEqual(symbols, [], "Empty file should produce no symbols");
+        assert.deepStrictEqual(references, [], "Empty file should produce no references");
+    });
+
+    void it("resolves object event runtime IDs for files inside an objects/ directory", () => {
+        const source = `
+            function onCreate() {
+                helper_fn();
+            }
+        `;
+
+        const parser = new Parser.GMLParser(source, {});
+        const ast = parser.parse();
+
+        const { symbols, references } = extractSymbolsAndReferencesFromAst(ast, "objects/obj_player/Create_0.gml");
+
+        assert.ok(symbols.includes("gml_Object_obj_player_Create_0"), "Should emit object event runtime ID");
+        assert.ok(references.includes("gml_Script_helper_fn"), "Should still track script references");
+    });
+
+    void it("discovers references inside switch/for/try containers in a single pass", () => {
+        const source = `
+            function run() {
+                switch (state()) {
+                    case 0:
+                        case_zero_fn();
+                        break;
+                    default:
+                        default_fn();
+                        break;
+                }
+
+                for (var i = 0; i < length_of(arr); i = step_fn(i)) {
+                    body_fn();
+                }
+
+                try {
+                    try_fn();
+                } catch (e) {
+                    catch_fn();
+                } finally {
+                    finally_fn();
+                }
+            }
+        `;
+
+        const parser = new Parser.GMLParser(source, {});
+        const ast = parser.parse();
+
+        const { references } = extractSymbolsAndReferencesFromAst(ast, "scripts/run.gml");
+
+        for (const reference of [
+            "gml_Script_state",
+            "gml_Script_case_zero_fn",
+            "gml_Script_default_fn",
+            "gml_Script_length_of",
+            "gml_Script_step_fn",
+            "gml_Script_body_fn",
+            "gml_Script_try_fn",
+            "gml_Script_catch_fn",
+            "gml_Script_finally_fn"
+        ]) {
+            assert.ok(references.includes(reference), `Should track ${reference}`);
+        }
     });
 });

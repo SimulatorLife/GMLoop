@@ -552,3 +552,144 @@ export function extractReferencesFromAst(ast: AstNode): Array<string> {
 
     return Array.from(references);
 }
+
+/**
+ * Recursively walks an AST node once, extracting both symbol definitions and
+ * function call references in the same descent.
+ *
+ * This is the single-pass equivalent of calling `extractSymbolsFromAst` and
+ * `extractReferencesFromAst` sequentially. The two helpers above are kept for
+ * callers that genuinely only need one side of the metadata, but the hot-reload
+ * startup scan and the per-file change pipeline always need both — and walking
+ * the AST twice per file roughly doubles the per-file CPU cost of an empty
+ * cache miss.
+ *
+ * The walk mirrors the existing helpers exactly:
+ *   * Symbol extraction fires on `FunctionDeclaration`, function-valued
+ *     `VariableDeclarator`, and function-valued `AssignmentExpression`.
+ *   * Reference extraction fires on `CallExpression` callees, including any
+ *     nested calls reachable through arguments, switch cases, for-loop update
+ *     expressions, and try/catch/finally blocks.
+ *
+ * `filePath` is captured in the closure so the recursive descent does not need
+ * to thread it through every intermediate call site.
+ */
+function buildCombinedWalkNode(
+    filePath: string,
+    symbols: Array<string>,
+    references: Set<string>
+): (node: unknown) => void {
+    function walkNode(node: unknown): void {
+        if (!node || typeof node !== "object") {
+            return;
+        }
+
+        const astNode = node as AstNode;
+
+        // Symbol extraction: emit runtime IDs for function declarations and
+        // function-valued variable declarators / assignments.
+        if (astNode.type === FUNCTION_DECLARATION) {
+            const functionName = extractIdentifierName(astNode.id);
+            if (functionName) {
+                const runtimeId = resolveRuntimeIdFromPath(filePath, functionName);
+                if (runtimeId) {
+                    symbols.push(runtimeId);
+                }
+            }
+        }
+
+        if (astNode.type === VARIABLE_DECLARATOR) {
+            symbols.push(...extractFromVariableDeclarator(astNode, filePath));
+        }
+
+        if (astNode.type === ASSIGNMENT_EXPRESSION) {
+            symbols.push(...extractFromAssignment(astNode, filePath));
+        }
+
+        // Reference extraction: record CallExpression callees plus any nested
+        // calls reachable through arguments.
+        if (astNode.type === "CallExpression") {
+            processCallExpressionReferences(astNode as unknown as CallExpressionNode, references);
+        }
+
+        // Recursively walk body — as a statement array (Program, BlockStatement.body)
+        // or as a nested BlockStatement node (FunctionDeclaration.body).
+        if (Array.isArray(astNode.body)) {
+            for (const child of astNode.body) {
+                walkNode(child);
+            }
+        } else if (astNode.body !== null && astNode.body !== undefined) {
+            walkNode(astNode.body);
+        }
+
+        // Recursively walk declarations array (for VariableDeclaration, etc.)
+        if (Array.isArray(astNode.declarations)) {
+            for (const child of astNode.declarations) {
+                walkNode(child);
+            }
+        }
+
+        // Walk common single-node AST properties that might contain nested function
+        // definitions or call expressions. Includes: SwitchStatement.discriminant,
+        // ForStatement.update, TryStatement.block/handler/finalizer.
+        for (const prop of [
+            "init",
+            "left",
+            "right",
+            "argument",
+            "test",
+            "consequent",
+            "alternate",
+            "expression",
+            "discriminant",
+            "update",
+            "block",
+            "handler",
+            "finalizer"
+        ] as const) {
+            const value = astNode[prop];
+            if (value) {
+                walkNode(value);
+            }
+        }
+
+        // Walk SwitchStatement.cases — an array of SwitchCase nodes that is not
+        // covered by `body` or `declarations`, so it requires its own traversal step.
+        if (Array.isArray(astNode.cases)) {
+            for (const switchCase of astNode.cases) {
+                walkNode(switchCase);
+            }
+        }
+    }
+
+    return walkNode;
+}
+
+/**
+ * Single-pass AST walker that returns both symbol definitions and call references.
+ *
+ * Equivalent to calling {@link extractSymbolsFromAst} and
+ * {@link extractReferencesFromAst} in sequence but only walks the AST once,
+ * halving the per-file traversal cost. Use this from any hot path that always
+ * needs both halves of the metadata (e.g., the watch-mode startup scan and the
+ * per-file change pipeline when no cached values are supplied).
+ *
+ * @param ast - The parsed AST from `Parser.GMLParser`.
+ * @param filePath - The source file path, used to derive runtime IDs for
+ *   script vs. object event files.
+ * @returns Object containing the deduplicated `symbols` array (insertion
+ *   order preserved) and the deduplicated `references` array (Set order).
+ */
+export function extractSymbolsAndReferencesFromAst(
+    ast: AstNode,
+    filePath: string
+): { symbols: Array<string>; references: Array<string> } {
+    const symbols: Array<string> = [];
+    const references = new Set<string>();
+    const walkNode = buildCombinedWalkNode(filePath, symbols, references);
+    walkNode(ast);
+    return {
+        references: Array.from(references),
+        symbols: Core.uniqueArray(symbols) as Array<string>
+    };
+}
