@@ -40,8 +40,7 @@ function isInsideFunctionExpression(lines: ReadonlyArray<string>, index: number)
     let depth = 0;
     for (let i = 0; i <= index; i += 1) {
         const line = lines[i] ?? "";
-        for (let j = 0; j < line.length; j += 1) {
-            const ch = line[j];
+        for (const ch of line) {
             if (ch === "{" && depth >= 0) {
                 depth += 1;
             } else if (ch === "}") {

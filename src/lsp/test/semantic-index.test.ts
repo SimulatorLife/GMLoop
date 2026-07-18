@@ -1227,6 +1227,40 @@ void test("semantic index loads cache from disk on startup and saves updates to 
     }
 });
 
+void test("semantic index releases closed-document lexical and version bookkeeping", async () => {
+    const fixture = await createTwoScriptProject();
+    const store = Lsp.createGmlDocumentStore();
+    const semanticIndex = createTestSemanticIndex(store);
+    try {
+        const document = store.open({
+            uri: Lsp.filePathToUri(fixture.sourcePath),
+            languageId: "gml",
+            version: 1,
+            text: fixture.sourceText
+        });
+
+        semanticIndex.invalidateForDocument(document);
+        await semanticIndex.hover(document, fixture.sourceText.indexOf("target();"), "target");
+        assert.deepEqual(
+            semanticIndex.readMemoryDiagnostics(),
+            { documentVersionEntries: 1, ignoredLexicalRangeEntries: 1 },
+            "Opening and querying one edited document should retain one lexical cache and one version counter."
+        );
+
+        store.close(document.uri);
+        await semanticIndex.refreshForFilePath(fixture.sourcePath);
+
+        assert.deepEqual(
+            semanticIndex.readMemoryDiagnostics(),
+            { documentVersionEntries: 0, ignoredLexicalRangeEntries: 0 },
+            "Closing and refreshing the document should release per-buffer memory instead of growing by URI."
+        );
+    } finally {
+        await semanticIndex.dispose();
+        await fixture.cleanup();
+    }
+});
+
 void test("semantic index reconciles closed-session disk edits through one restarted manifest refresh", async () => {
     const fixture = await createTwoScriptProject();
     try {

@@ -200,7 +200,7 @@ async function getOrBuildProjectIndex(
         buildIndex: async (resolvedRoot, fsFacade, options) => {
             console.log("[refactor] Cache miss. Rebuilding project index...");
             let lastLogTime = Date.now();
-            return await runSemanticIndexOperation(resolvedRoot, async (onProgress) =>
+            return await runSemanticIndexOperation(resolvedRoot, (onProgress) =>
                 buildProjectIndex(resolvedRoot, fsFacade, {
                     ...options,
                     logger: verbose ? console : undefined,

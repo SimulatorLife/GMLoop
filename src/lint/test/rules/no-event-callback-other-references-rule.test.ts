@@ -62,7 +62,7 @@ function makeLinter(
     });
 }
 
-function createStubLinterFor(eventFileName: string): { create: (context: never) => Record<string, unknown> } {
+function createStubLinterFor(_eventFileName: string): { create: (context: never) => Record<string, unknown> } {
     return {
         create: () => {
             return {
