@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { Core } from "@gmloop/core";
 import { Command, InvalidArgumentError, Option } from "commander";
 
+import { isHelpRequest } from "../cli-core/cli-argument-normalization.js";
 import { wrapInvalidArgumentResolver } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { CliUsageError, formatCliError } from "../cli-core/errors.js";
@@ -56,7 +57,6 @@ import {
     trimFormattingCache
 } from "../modules/formatting/index.js";
 import {
-    isHelpRequest,
     resolveTargetPathFromInput,
     resolveTargetStats,
     validateTargetPathInput
