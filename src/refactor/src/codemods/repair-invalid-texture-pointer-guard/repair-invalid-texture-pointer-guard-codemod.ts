@@ -2,15 +2,17 @@ import { Core } from "@gmloop/core";
 import { Parser } from "@gmloop/parser";
 
 import type { RepairInvalidTexturePointerGuardResult } from "../../types.js";
-import { applySourceTextEdits } from "../codemod-helpers.js";
+import {
+    type CodemodAstRecord,
+    createCodemodResultFromEdits,
+    createUnchangedCodemodResult,
+    getNodeSource,
+    isAstRecord,
+    isNamedCall,
+    unwrapParenthesizedExpression
+} from "../codemod-helpers.js";
 
-type AstRecord = Record<string, unknown>;
-
-function isAstRecord(value: unknown): value is AstRecord {
-    return Core.isObjectLike(value);
-}
-
-function isFunctionNode(node: AstRecord): boolean {
+function isFunctionNode(node: CodemodAstRecord): boolean {
     return (
         node.type === "FunctionDeclaration" ||
         node.type === "ConstructorDeclaration" ||
@@ -19,41 +21,13 @@ function isFunctionNode(node: AstRecord): boolean {
     );
 }
 
-function isNamedCall(node: unknown, functionName: string): node is AstRecord {
-    if (!isAstRecord(node) || node.type !== "CallExpression") {
-        return false;
-    }
-
-    const object = node.object;
-    return (
-        isAstRecord(object) &&
-        object.type === "Identifier" &&
-        typeof object.name === "string" &&
-        object.name.toLowerCase() === functionName.toLowerCase()
-    );
-}
-
-function unwrapParenthesizedExpression(node: unknown): AstRecord | null {
-    let current = isAstRecord(node) ? node : null;
-    while (current?.type === "ParenthesizedExpression") {
-        current = isAstRecord(current.expression) ? current.expression : null;
-    }
-    return current;
-}
-
-function getNodeSource(sourceText: string, node: AstRecord): string | null {
-    const start = Core.getNodeStartIndex(node);
-    const end = Core.getNodeEndIndex(node);
-    return typeof start === "number" && typeof end === "number" ? sourceText.slice(start, end).trim() : null;
-}
-
-function getSingleInvalidTextureThrow(node: unknown, sourceText: string): AstRecord | null {
+function getSingleInvalidTextureThrow(node: unknown, sourceText: string): CodemodAstRecord | null {
     const consequent = isAstRecord(node) ? node : null;
     if (consequent === null) {
         return null;
     }
 
-    let candidate: AstRecord | null = null;
+    let candidate: CodemodAstRecord | null = null;
     if (consequent.type === "BlockStatement") {
         const body = consequent.body;
         if (Array.isArray(body) && body.length === 1 && isAstRecord(body[0])) {
@@ -67,11 +41,11 @@ function getSingleInvalidTextureThrow(node: unknown, sourceText: string): AstRec
         return null;
     }
 
-    const message = getNodeSource(sourceText, candidate.argument as AstRecord);
+    const message = getNodeSource(sourceText, candidate.argument as CodemodAstRecord);
     return message !== null && /Invalid or null texture pointer found/u.test(message) ? candidate : null;
 }
 
-function getTextureGuardThrow(node: AstRecord, sourceText: string): AstRecord | null {
+function getTextureGuardThrow(node: CodemodAstRecord, sourceText: string): CodemodAstRecord | null {
     if (node.type !== "IfStatement") {
         return null;
     }
@@ -89,7 +63,7 @@ function getTextureGuardThrow(node: AstRecord, sourceText: string): AstRecord | 
     return getSingleInvalidTextureThrow(node.consequent, sourceText);
 }
 
-function hasTextureProperty(structNode: AstRecord): boolean {
+function hasTextureProperty(structNode: CodemodAstRecord): boolean {
     const properties = structNode.properties;
     if (!Array.isArray(properties)) {
         return false;
@@ -106,7 +80,7 @@ function hasTextureProperty(structNode: AstRecord): boolean {
     });
 }
 
-function getFallbackIdentifier(functionNode: AstRecord, guardStart: number): string | null {
+function getFallbackIdentifier(functionNode: CodemodAstRecord, guardStart: number): string | null {
     const candidates: Array<Readonly<{ name: string; start: number }>> = [];
 
     const visit = (node: unknown): void => {
@@ -159,7 +133,7 @@ function collectGuardRepairEdits(
 ): ReadonlyArray<Readonly<{ start: number; end: number; text: string }>> {
     const edits: Array<Readonly<{ start: number; end: number; text: string }>> = [];
 
-    const visit = (node: unknown, enclosingFunction: AstRecord | null): void => {
+    const visit = (node: unknown, enclosingFunction: CodemodAstRecord | null): void => {
         if (Array.isArray(node)) {
             for (const child of node) {
                 visit(child, enclosingFunction);
@@ -211,25 +185,16 @@ export function applyRepairInvalidTexturePointerGuardCodemod(
     sourceText: string
 ): RepairInvalidTexturePointerGuardResult {
     if (!sourceText.includes("scr_texture_is_valid") || !sourceText.includes("Invalid or null texture pointer found")) {
-        return Object.freeze({ changed: false, outputText: sourceText, appliedEdits: Object.freeze([]) });
+        return createUnchangedCodemodResult(sourceText);
     }
 
     let programNode: unknown;
     try {
         programNode = Parser.GMLParser.parse(sourceText);
     } catch {
-        return Object.freeze({ changed: false, outputText: sourceText, appliedEdits: Object.freeze([]) });
+        return createUnchangedCodemodResult(sourceText);
     }
 
     const appliedEdits = collectGuardRepairEdits(sourceText, programNode);
-    if (appliedEdits.length === 0) {
-        return Object.freeze({ changed: false, outputText: sourceText, appliedEdits: Object.freeze([]) });
-    }
-
-    const outputText = applySourceTextEdits(sourceText, appliedEdits);
-    return Object.freeze({
-        changed: outputText !== sourceText,
-        outputText,
-        appliedEdits: Object.freeze(appliedEdits)
-    });
+    return createCodemodResultFromEdits(sourceText, appliedEdits);
 }
