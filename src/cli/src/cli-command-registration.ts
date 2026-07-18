@@ -92,6 +92,7 @@ function registerDefaultFormattingCommand({
 }: CliDefaultCommandRegistrationContext): void {
     registry.registerDefaultCommand({
         command: createFormatCommand({ name: defaultCommandName }),
+        operationKind: "format",
         run: ({ command }) => runFormatCommand(command),
         onError: createCliCommandErrorHandler({ prefix: "Failed to format project." })
     });
@@ -105,6 +106,7 @@ function registerAnalysisCommands({ registry }: CliCommandRegistryContext): void
 
     registry.registerCommand({
         command: createLintCommand(),
+        operationKind: "lint",
         run: ({ command }) => runLintCommand(command),
         onError: createCliCommandErrorHandler({ prefix: "Lint command failed.", exitCode: 2 })
     });
@@ -117,6 +119,7 @@ function registerAnalysisCommands({ registry }: CliCommandRegistryContext): void
 
     registry.registerCommand({
         command: createFixCommand(),
+        operationKind: "fix",
         run: ({ command }) => runFixCommand(command),
         onError: createCliCommandErrorHandler({ prefix: "Failed to run project fix workflow." })
     });
@@ -161,6 +164,7 @@ function registerProjectWorkflowCommands({ registry }: CliCommandRegistryContext
 
     registry.registerCommand({
         command: createRefactorCommand(),
+        operationKind: "refactor",
         run: ({ command }) => runRefactorCommand(command),
         onError: createCliCommandErrorHandler({ prefix: "Failed to perform refactor operation." })
     });

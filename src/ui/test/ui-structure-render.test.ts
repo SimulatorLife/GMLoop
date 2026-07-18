@@ -119,6 +119,7 @@ void test("app header renders grouped identity, actions, and loaded target secti
     assert.match(rendered, /class="loaded-target-actions"/u);
     assert.equal(Array.from(rendered.matchAll(/id="open-project"/gu)).length, 1);
     assert.match(rendered, /id="open-project"[\s\S]*class="open-button"/u);
+    assert.match(rendered, /Open \.yyp\.\.\./u);
     assert.match(rendered, /id="manual-link"[\s\S]*href="https:\/\/manual\.gamemaker\.io\/"/u);
     assert.match(rendered, /id="manual-link"[\s\S]*class="header-icon-link"/u);
     assert.match(rendered, /id="github-link"[\s\S]*class="header-icon-link"/u);

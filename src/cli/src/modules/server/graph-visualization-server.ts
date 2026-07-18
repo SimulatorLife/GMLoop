@@ -6,6 +6,7 @@ import { Core } from "@gmloop/core";
 import { UI } from "@gmloop/ui";
 
 import { tryParseJsonPayload } from "../../shared/error-guards.js";
+import { isInvalidGameMakerProjectFileError } from "../../workflow/project-file-validation.js";
 import type { ServerEndpoint, ServerLifecycle } from "./index.js";
 
 type GraphVisualizationServerRenderBundle = (
@@ -358,7 +359,9 @@ async function handleOpenProjectTargetsRequest(
         });
         writeJsonResponse(response, 200, createOpenProjectTargetsResponse(selectionResult));
     } catch (error: unknown) {
-        writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });
+        writeJsonResponse(response, isInvalidGameMakerProjectFileError(error) ? 400 : 500, {
+            error: resolveErrorMessage(error)
+        });
     }
 }
 

@@ -49,8 +49,16 @@ async function createDualRootFixture(): Promise<{
         await fs.writeFile(filePath, contents, "utf8");
     };
 
-    await writeFile(projectRoot, "Project.yyp", JSON.stringify({ name: "Project", resourceType: "GMProject" }));
-    await writeFile(toolsetRoot, "Toolset.yyp", JSON.stringify({ name: "Toolset", resourceType: "GMProject" }));
+    await writeFile(
+        projectRoot,
+        "Project.yyp",
+        JSON.stringify({ name: "Project", resourceType: "GMProject", resources: [] })
+    );
+    await writeFile(
+        toolsetRoot,
+        "Toolset.yyp",
+        JSON.stringify({ name: "Toolset", resourceType: "GMProject", resources: [] })
+    );
     await writeFile(
         toolsetRoot,
         "scripts/shared_toolset_fn/shared_toolset_fn.yy",
@@ -1053,9 +1061,40 @@ void test("graph visualize --serve writes active project path to projectState fi
 
         const serverUrl = outputPayload.payload.url;
 
-        const response = await fetch(`${serverUrl}/api/open`, {
+        const invalidProjectPath = path.join(tempStateDir, "NotAProject.yyp");
+        await fs.writeFile(
+            invalidProjectPath,
+            JSON.stringify({ name: "NotAProject", resourceType: "GMScript" }),
+            "utf8"
+        );
+
+        const invalidProjectResponse = await fetch(`${serverUrl}/api/open`, {
+            method: "POST",
+            body: JSON.stringify({ path: invalidProjectPath }),
+            headers: {
+                "Content-Type": "application/json"
+            }
+        });
+
+        assert.equal(invalidProjectResponse.status, 400);
+        const invalidProjectResult = (await invalidProjectResponse.json()) as { error: string };
+        assert.match(invalidProjectResult.error, /valid GameMaker project manifest/u);
+
+        const folderResponse = await fetch(`${serverUrl}/api/open`, {
             method: "POST",
             body: JSON.stringify({ path: fixture.projectRoot }),
+            headers: {
+                "Content-Type": "application/json"
+            }
+        });
+
+        assert.equal(folderResponse.status, 400);
+        const folderResult = (await folderResponse.json()) as { error: string };
+        assert.match(folderResult.error, /selecting its \.yyp file/u);
+
+        const response = await fetch(`${serverUrl}/api/open`, {
+            method: "POST",
+            body: JSON.stringify({ path: path.join(fixture.projectRoot, "Project.yyp") }),
             headers: {
                 "Content-Type": "application/json"
             }

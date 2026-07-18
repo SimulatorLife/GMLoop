@@ -35,6 +35,7 @@ import {
     type LiveReloadRegisteredSession,
     resolveLiveReloadProjectIdentity
 } from "../modules/live-reload/session-registry.js";
+import { runProjectOperation } from "../modules/runtime/project-operation-state.js";
 import { startRuntimeStaticServer } from "../modules/runtime/server.js";
 import {
     DEFAULT_RUNTIME_PACKAGE,
@@ -213,39 +214,50 @@ export async function runLiveReloadDevCommand(
     targetPath: string,
     options: LiveReloadDevCommandOptions = {}
 ): Promise<void> {
-    await startLiveReloadDevSession({
-        targetPath,
-        html5OutputRoot: options.html5Output,
-        gmTempRoot: options.gmTempRoot,
-        bootstrapConfig: createLiveReloadBootstrapConfig(options),
-        sessionId: options.sessionId,
-        startSource: options.startSource ?? "cli",
-        watchOptions: {
-            polling: options.polling,
-            pollingInterval: options.pollingInterval,
-            verbose: options.verbose,
-            quiet: options.quiet,
-            debounceDelay: options.debounceDelay,
-            maxConcurrentDirs: options.maxConcurrentDirs,
-            maxPatchHistory: options.maxPatchHistory,
-            transientEmptyFileReadRetryCount: options.transientEmptyFileReadRetryCount,
-            transientEmptyFileReadRetryDelayMs: options.transientEmptyFileReadRetryDelayMs,
-            websocketPort: options.websocketPort,
-            websocketHost: options.websocketHost,
-            websocketServer: options.websocketServer,
-            statusPort: options.statusPort,
-            statusHost: options.statusHost,
-            statusServer: options.statusServer,
-            abortSignal: options.abortSignal,
-            runtimeRoot: options.runtimeRoot,
-            runtimePackage: options.runtimePackage,
-            runtimeServer: options.runtimeServer,
-            hydrateRuntime: options.hydrateRuntime,
-            runtimeResolver: options.runtimeResolver ?? resolveRuntimeSource,
-            runtimeDescriptor: options.runtimeDescriptor ?? describeRuntimeSource,
-            runtimeServerStarter: options.runtimeServerStarter ?? startRuntimeStaticServer
+    const identity = await resolveLiveReloadProjectIdentity(targetPath);
+    await runProjectOperation(
+        {
+            command: "live-reload",
+            kind: "live-reload",
+            projectRoot: identity.projectRoot
+        },
+        (operation) => {
+            operation.update("starting", "Live Reload is starting.");
+            return startLiveReloadDevSession({
+                targetPath,
+                html5OutputRoot: options.html5Output,
+                gmTempRoot: options.gmTempRoot,
+                bootstrapConfig: createLiveReloadBootstrapConfig(options),
+                sessionId: options.sessionId,
+                startSource: options.startSource ?? "cli",
+                watchOptions: {
+                    polling: options.polling,
+                    pollingInterval: options.pollingInterval,
+                    verbose: options.verbose,
+                    quiet: options.quiet,
+                    debounceDelay: options.debounceDelay,
+                    maxConcurrentDirs: options.maxConcurrentDirs,
+                    maxPatchHistory: options.maxPatchHistory,
+                    transientEmptyFileReadRetryCount: options.transientEmptyFileReadRetryCount,
+                    transientEmptyFileReadRetryDelayMs: options.transientEmptyFileReadRetryDelayMs,
+                    websocketPort: options.websocketPort,
+                    websocketHost: options.websocketHost,
+                    websocketServer: options.websocketServer,
+                    statusPort: options.statusPort,
+                    statusHost: options.statusHost,
+                    statusServer: options.statusServer,
+                    abortSignal: options.abortSignal,
+                    runtimeRoot: options.runtimeRoot,
+                    runtimePackage: options.runtimePackage,
+                    runtimeServer: options.runtimeServer,
+                    hydrateRuntime: options.hydrateRuntime,
+                    runtimeResolver: options.runtimeResolver ?? resolveRuntimeSource,
+                    runtimeDescriptor: options.runtimeDescriptor ?? describeRuntimeSource,
+                    runtimeServerStarter: options.runtimeServerStarter ?? startRuntimeStaticServer
+                }
+            });
         }
-    });
+    );
 }
 
 export async function runLiveReloadSessionCommand(options: LiveReloadSessionCommandOptions = {}): Promise<void> {

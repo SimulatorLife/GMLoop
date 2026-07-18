@@ -40,6 +40,7 @@ import {
     type LiveReloadRegisteredSession
 } from "../modules/live-reload/session-registry.js";
 import { createRefactorBridges } from "../modules/refactor/bridge-factory.js";
+import { readProjectOperationState } from "../modules/runtime/project-operation-state.js";
 import {
     type GraphVisualizationServerPlaygroundFixture,
     openUrlInDefaultBrowser,
@@ -51,6 +52,7 @@ import {
     createGraphVisualizationProjectConfigurationCatalog
 } from "../modules/ui/index.js";
 import { findRepoRootSync } from "../shared/repo-root.js";
+import { validateGameMakerProjectFilePath } from "../workflow/project-file-validation.js";
 import {
     discoverProjectRoot,
     readGameMakerCliActiveProjectStateProjectPath,
@@ -1187,11 +1189,7 @@ async function pickProjectPathUsingNativeDialog(): Promise<string | null> {
     }
 
     const scriptLines = [
-        'set selectionMode to button returned of (display dialog "Open GameMaker project from:" buttons {"Cancel", "Folder", "YYP File"} default button "Folder" cancel button "Cancel")',
-        'if selectionMode is "YYP File" then',
-        '    return POSIX path of (choose file with prompt "Choose a .yyp project file:" of type {"yyp"})',
-        "end if",
-        'return POSIX path of (choose folder with prompt "Choose a GameMaker project folder:")'
+        'return POSIX path of (choose file with prompt "Choose a GameMaker .yyp project file:" of type {"yyp"})'
     ];
 
     try {
@@ -1910,7 +1908,8 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 if (!nextPathFromPicker) {
                     return Object.freeze({ changed: false, projectChanged: false });
                 }
-                return openProjectTargetPath(nextPathFromPicker, "finder-open");
+                const validatedProjectPath = await validateGameMakerProjectFilePath(nextPathFromPicker);
+                return openProjectTargetPath(validatedProjectPath, "finder-open");
             },
             runFix: async ({ workflow }) => {
                 if (!activeContext) {
@@ -1947,12 +1946,41 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 }
             },
             getFixProgress: () =>
-                Object.freeze({
-                    isRunning: isFixWorkflowRunning,
-                    logLines: Object.freeze([...activeFixProgressLogLines]),
-                    status: isFixWorkflowRunning ? "running" : (activeLastFixRun?.status ?? "idle"),
-                    workflow: activeFixWorkflow ?? undefined
-                }),
+                (() => {
+                    const localProgress = Object.freeze({
+                        isRunning: isFixWorkflowRunning,
+                        logLines: Object.freeze([...activeFixProgressLogLines]),
+                        status: isFixWorkflowRunning ? "running" : (activeLastFixRun?.status ?? "idle"),
+                        workflow: activeFixWorkflow ?? undefined
+                    });
+                    if (localProgress.isRunning || activeContext === null) {
+                        return localProgress;
+                    }
+
+                    const sharedState = readProjectOperationState(activeContext.projectRoot);
+                    const sharedOperation = sharedState.active ?? sharedState.recent[0] ?? null;
+                    if (
+                        sharedOperation === null ||
+                        (sharedOperation.kind !== "fix" &&
+                            sharedOperation.kind !== "format" &&
+                            sharedOperation.kind !== "lint" &&
+                            sharedOperation.kind !== "refactor")
+                    ) {
+                        return localProgress;
+                    }
+
+                    return Object.freeze({
+                        isRunning: sharedOperation.status === "running",
+                        logLines: sharedOperation.messages,
+                        status:
+                            sharedOperation.status === "running"
+                                ? "running"
+                                : sharedOperation.status === "succeeded"
+                                  ? "success"
+                                  : "error",
+                        workflow: sharedOperation.kind
+                    });
+                })(),
             clearFixProgress: () => {
                 activeFixProgressLogLines = [];
             },

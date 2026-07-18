@@ -217,7 +217,7 @@ export class GmAppHeader extends LightDomLitElement {
                                 @click=${() => this.#emitOpenProject()}
                             >
                                 ${renderProcessButtonContent({
-                                    label: "Open...",
+                                    label: "Open .yyp...",
                                     pending: this.state.isOpenProjectPending
                                 })}
                             </button>

@@ -343,7 +343,7 @@ export class GmGraphPanel extends LightDomLitElement {
                     ${
                         this.model?.loadedTarget
                             ? "Rebuild the graph data or open another project to keep exploring here."
-                            : "Use Open... to load a project, then return here for graph search, filters, and visualization controls."
+                            : "Use Open .yyp... to load a GameMaker project, then return here for graph search, filters, and visualization controls."
                     }
                 </p>
             </div>

@@ -1,5 +1,10 @@
 import { Core } from "@gmloop/core";
 
+import {
+    type ProjectOperationKind,
+    resolveProjectOperationRoot,
+    runProjectOperation
+} from "../modules/runtime/project-operation-state.js";
 import { DEFAULT_HELP_AFTER_ERROR } from "./command-standard-options.js";
 import { resolveCommandUsage } from "./command-usage.js";
 import {
@@ -23,6 +28,7 @@ export interface CliCommandRegistrationOptions {
     command: CommanderCommandLike;
     run?: CliCommandRunHandler;
     onError?: CliCommandErrorHandler;
+    operationKind?: ProjectOperationKind;
 }
 
 export interface CliCommandRegistry {
@@ -38,6 +44,7 @@ interface CliCommandEntry {
     command: CommanderCommandLike;
     run: CliCommandRunHandler | null;
     handleError: CliCommandErrorHandler;
+    operationKind: ProjectOperationKind | null;
 }
 
 interface CliCommandManagerOptions {
@@ -107,20 +114,22 @@ class CliCommandManager {
         this._captureLastHelpedCommand();
     }
 
-    registerDefaultCommand({ command, run, onError }: CliCommandRegistrationOptions): CliCommandEntry {
+    registerDefaultCommand({ command, run, onError, operationKind }: CliCommandRegistrationOptions): CliCommandEntry {
         const entry = this._registerEntry(command, {
             run,
             handleError: onError,
-            isDefault: true
+            isDefault: true,
+            operationKind
         });
         this._programContract.addCommand(entry.command, { isDefault: true });
         return entry;
     }
 
-    registerCommand({ command, run, onError }: CliCommandRegistrationOptions): CliCommandEntry {
+    registerCommand({ command, run, onError, operationKind }: CliCommandRegistrationOptions): CliCommandEntry {
         const entry = this._registerEntry(command, {
             run,
-            handleError: onError
+            handleError: onError,
+            operationKind
         });
         this._programContract.addCommand(entry.command);
         return entry;
@@ -143,11 +152,13 @@ class CliCommandManager {
         {
             run,
             handleError,
-            isDefault = false
+            isDefault = false,
+            operationKind = null
         }: {
             run?: CliCommandRunHandler;
             handleError?: CliCommandErrorHandler;
             isDefault?: boolean;
+            operationKind?: ProjectOperationKind | null;
         } = {}
     ): CliCommandEntry {
         const commandContract: CommanderCommandContract = createCommanderCommandContract(command, {
@@ -162,7 +173,8 @@ class CliCommandManager {
         const entry: CliCommandEntry = {
             command: normalizedCommand,
             run: run ?? null,
-            handleError: typeof handleError === "function" ? handleError : this._defaultErrorHandler
+            handleError: typeof handleError === "function" ? handleError : this._defaultErrorHandler,
+            operationKind
         };
 
         this._entries.add(entry);
@@ -188,7 +200,11 @@ class CliCommandManager {
             this._activeCommand = contextCommand;
 
             try {
-                const result = await entry.run?.({ command: contextCommand });
+                const execute = (): Promise<number | void> => Promise.resolve(entry.run?.({ command: contextCommand }));
+                const result =
+                    entry.operationKind === null
+                        ? await execute()
+                        : await this._runProjectOperation(entry.operationKind, contextCommand, execute);
                 this._applyCommandResult(result);
             } catch (error) {
                 this._handleCommandError(error, contextCommand);
@@ -196,6 +212,29 @@ class CliCommandManager {
                 this._activeCommand = previousActiveCommand ?? null;
             }
         };
+    }
+
+    private async _runProjectOperation(
+        operationKind: ProjectOperationKind,
+        command: CommanderCommandLike,
+        execute: () => Promise<number | void>
+    ): Promise<number | void> {
+        const projectRoot = await resolveProjectOperationRoot(command);
+        if (projectRoot === null) {
+            return execute();
+        }
+
+        return runProjectOperation(
+            {
+                command: operationKind,
+                kind: operationKind,
+                projectRoot
+            },
+            (operation) => {
+                operation.update("running", `${operationKind} is running.`);
+                return execute();
+            }
+        );
     }
 
     private _applyCommandResult(result: unknown): void {

@@ -50,6 +50,7 @@ export class FixWorkflowReconnectParticipant implements LifecycleParticipant {
     #callbacks: FixWorkflowReconnectParticipantCallbacks;
     #pollIntervalMs: number;
     #reconnectTimer: ReturnType<typeof globalThis.setInterval> | null = null;
+    #observedWorkflow: GraphVisualizationProjectWorkflow | null = null;
 
     public constructor(options: FixWorkflowReconnectParticipantOptions) {
         this.#callbacks = options.callbacks;
@@ -57,14 +58,23 @@ export class FixWorkflowReconnectParticipant implements LifecycleParticipant {
     }
 
     public connect(): void {
-        void this.#reconnectToActiveFixWorkflow();
+        if (this.#reconnectTimer === null) {
+            this.#reconnectTimer = globalThis.setInterval(() => {
+                void this.#pollProjectOperationProgress();
+            }, this.#pollIntervalMs);
+        }
+        void this.#pollProjectOperationProgress();
     }
 
     public disconnect(): void {
         this.#stopPolling();
     }
 
-    async #pollReconnectedFixWorkflowProgress(workflow: GraphVisualizationProjectWorkflow): Promise<void> {
+    async #pollProjectOperationProgress(): Promise<void> {
+        if (this.#observedWorkflow === null && !this.#callbacks.canReconnect()) {
+            return;
+        }
+
         const progressEndpoint = resolveServerRelativeApiEndpoint(FIX_PROGRESS_ENDPOINT_PATHNAME);
         if (progressEndpoint === null) {
             return;
@@ -80,9 +90,20 @@ export class FixWorkflowReconnectParticipant implements LifecycleParticipant {
             }
             const pollProgress = (await pollResponse.json()) as FixWorkflowProgressResponse;
 
+            if (pollProgress.isRunning && pollProgress.workflow) {
+                if (this.#observedWorkflow === null) {
+                    this.#observedWorkflow = pollProgress.workflow;
+                    this.#callbacks.onReconnectStarted(pollProgress.workflow, pollProgress.logLines);
+                }
+                this.#callbacks.onProgress(pollProgress.logLines);
+                return;
+            }
+
             this.#callbacks.onProgress(pollProgress.logLines);
 
-            if (!pollProgress.isRunning) {
+            if (this.#observedWorkflow !== null) {
+                const workflow = this.#observedWorkflow;
+                this.#observedWorkflow = null;
                 this.#stopPolling();
                 this.#callbacks.onFinished(workflow, pollProgress.status === "success" ? "success" : "error");
             }
@@ -91,43 +112,11 @@ export class FixWorkflowReconnectParticipant implements LifecycleParticipant {
         }
     }
 
-    async #reconnectToActiveFixWorkflow(): Promise<void> {
-        if (!this.#callbacks.canReconnect()) {
-            return;
-        }
-
-        const progressEndpoint = resolveServerRelativeApiEndpoint(FIX_PROGRESS_ENDPOINT_PATHNAME);
-        if (progressEndpoint === null) {
-            return;
-        }
-
-        try {
-            const response = await fetch(progressEndpoint, {
-                cache: "no-store",
-                headers: { Accept: "application/json" }
-            });
-            if (!response.ok) {
-                return;
-            }
-            const progress = (await response.json()) as FixWorkflowProgressResponse;
-
-            if (progress.isRunning && progress.workflow) {
-                const workflow = progress.workflow;
-                this.#callbacks.onReconnectStarted(workflow, progress.logLines);
-
-                this.#reconnectTimer = globalThis.setInterval(() => {
-                    void this.#pollReconnectedFixWorkflowProgress(workflow);
-                }, this.#pollIntervalMs);
-            }
-        } catch (error) {
-            this.#callbacks.onReconnectError(error);
-        }
-    }
-
     #stopPolling(): void {
         if (this.#reconnectTimer !== null) {
             globalThis.clearInterval(this.#reconnectTimer);
             this.#reconnectTimer = null;
         }
+        this.#observedWorkflow = null;
     }
 }

@@ -92,7 +92,9 @@ The current graph UI uses a typed bundle-render boundary and a Lit component she
 - the Docs surface includes `CLI`, `MCP`, `Linting`, `Formatting`, and `Codemods` subviews for command, tool, and workspace rule catalogs
 - the Auto-Game surface renders automation history, AI skill readiness, LLM output snippets, and MCP bridge information to observe external agent activity without executing the pipeline or prompt inputs directly
 - loaded project state is shown in one canonical header location and reflects the active graph/config context
+- the Open Project action accepts only a validated GameMaker `.yyp` manifest; project directories and malformed or non-project JSON files are rejected before the active project changes
 - graph/docs/config/fix/playground/auto-game/live-reload page state, docs subview state, graph view mode, label mode, and search query are shareable through URL query params
+- project-wide fix, format, lint, and refactor operations coordinate through `<project>/.gmloop/operation-state.json`; the CLI and MCP-backed CLI paths publish one active operation and the graph UI reads that same progress state
 
 ## Design Rules
 
@@ -230,9 +232,9 @@ The shipped `graph visualize` bundle and development web entry both mount the sa
 Current graph serve-mode host actions are:
 
 - `POST /api/reindex`: force-regenerate the current graph index
-- `POST /api/open`: switch the active UI project globally, optionally using a caller-supplied `path`
+- `POST /api/open`: switch the active UI project globally using a validated `.yyp` path; an omitted path opens the native `.yyp` file picker
 - `POST /api/fix`: run the requested `fix`, `format`, `refactor`, or `lint` project workflow in write mode and return log lines for the Fix tab
-- `GET /api/fix/progress`: return the latest in-flight fix workflow log lines, the running workflow type, and status so the Fix tab can live-update while work is running and automatically reconnect across UI hot-reloads and refreshes
+- `GET /api/fix/progress`: return the graph host's local workflow or the shared project `.gmloop/operation-state.json` progress/output for an external CLI or MCP-backed `fix`, `format`, `refactor`, or `lint` operation so the Fix tab stays synchronized across UI hot-reloads and refreshes
 - `POST /api/live-reload/start`: build and start the configured live-reload pipeline, then return the latest live-reload model
 
 The host serves the bundle entry document and static asset files, while `@gmloop/ui` remains responsible for typed rendering contracts and client presentation behavior.
@@ -274,7 +276,6 @@ New top-level UI additions should:
 
 ## TODO
 
-- **FEAT**: The UI and CLI/MCP should be synchronized so that they share the project's semantic graph/analysis/index, so that the UI can show the same progress/output as the CLI/MCP when fixes, refactors, linting, live-reloading, etc. are running. Should have shared state. This will prevent the UI from being out-of-sync with the CLI/MCP and will allow the user to see the progress of long-running operations in the UI without having to switch to the CLI/MCP. Will also prevent duplicate work from being done if the user starts a fix/refactor/lint operation in the CLI/MCP while the UI is already running it.
 - **BUG**: Selecting _any_ format option in the `Playground` tab/page for the format settings seems to enable the whole/default format settings too, not _just_ that one control. Also not sure if the select-options are actually hooked up to live-update the playground's output view?
 - **FEAT**: For the playground tab/page, user should be able to select _any_ of the 'golden' fixture .gml files to preview/test. Or, maybe this is only true if np project is opened in the UI. If a GameMaker project _is_ opened in the UI, then the user could be able to select on of the .gml files from that project and test applying rules to those instead.
 - **FEAT**: For all raw-JSON displayed in the UI, add a "copy to clipboard" button (single, reusable component) that copies the raw JSON string to the clipboard for easy external use.

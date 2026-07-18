@@ -198,6 +198,24 @@ pnpm run cli -- fix --only namingConvention
 
 `fix` is intentionally project-scoped and write-only. It runs the configured codemod set first so cross-file/project-aware edits happen before single-file lint fixes and final formatting normalization.
 
+### Shared project operation state
+
+Project-scoped `format`, `lint`, `fix`, and `refactor` commands acquire one
+exclusive lease in `<project>/.gmloop/operation-state.lock` and publish their
+active phase, output lines, and completion record in
+`<project>/.gmloop/operation-state.json`. The lock is authoritative across
+processes and concurrent MCP calls, so a second operation reports a conflict
+instead of repeating semantic analysis or mutating the same project in
+parallel.
+
+The CLI, MCP tools that delegate to the CLI runner, and the graph UI host all
+use that project-local state. The UI's `/api/fix/progress` response reads the
+same active operation and output history, while semantic facts remain owned by
+the canonical `<project>/.gmloop/graph-index.sqlite` store. Live Reload keeps
+its long-lived worker/session identity in the related
+`<project>/.gmloop/live-reload-session.json` registry and status endpoint, which
+are likewise shared by the UI, CLI, and MCP session controller.
+
 ### `mcp` - Start MCP Stdio Server
 
 Starts the GMLoop MCP server (`@gmloop/mcp`) over stdio so MCP clients can
@@ -1260,6 +1278,3 @@ Provides ANTLR-based GML parsing used by the transpiler.
     - Added verbose logging for transpilation details
     - Added test coverage for transpilation integration
     - Stores patches in runtime context for future streaming
-
-## TODO
-- **FEAT**: If/when the UI is running and at the same time a "fix" command (e.g. refactor/format/lint-fix/etc.) is run via the CLI for that same, currently-opened-project (ex. `pnpm run cli -- refactor codemod --path /Users/henrykirk/Desktop/CannonFatherSource/cannonfather --only namingConvention`), the UI's "Fix" page/tab should show the progress of that command in real-time, the same way as if it were started via the UI. Similarly, running a "fix" workflow on a GameMaker project should lock/reserve it so that the user cannot start a new "fix" workflow in parallel until the current one is finished (should work across the UI & CLI, since the CLI can also start a fix workflow). This is to prevent multiple fix workflows from running in parallel and potentially conflicting with each other.
