@@ -29,6 +29,14 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         ])
     },
     {
+        description:
+            "Disallow other.<name> references inside function expressions in event bodies. other resolves to undefined inside a closure in the HTML5 runtime, which breaks vertex_submit and other texture-bound calls. Use self.<name> (or capture self into a local before the callback) so the inline function reaches the event instance. The repairEventCallbackOther refactor codemod rewrites the same pattern automatically.",
+        mapKey: "GmlNoEventCallbackOtherReferences",
+        shortName: "no-event-callback-other-references",
+        fullId: "gml/no-event-callback-other-references",
+        messageId: "noEventCallbackOtherReferences"
+    },
+    {
         description: "Detect expressions inside loops that can be calculated once before the loop runs.",
         mapKey: "GmlPreferLoopInvariantExpressions",
         shortName: "prefer-loop-invariant-expressions",

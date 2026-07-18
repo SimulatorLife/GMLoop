@@ -183,6 +183,28 @@ export type RepairDependentVariableDeclarationsEdit = CodemodEdit;
 /**
  * Per-file result returned by `applyRepairDependentVariableDeclarationsCodemod`.
  */
+
+/**
+ * Options for the event-callback other-keyword repair codemod.
+ *
+ * The codemod only runs on event files (paths that match
+ * `objects/<objectName>/<eventName>.gml`); the `sourcePath` is used to
+ * determine the file kind and to keep the codemod a no-op on
+ * script/library files that may legitimately use `other.<name>`.
+ */
+export type RepairEventCallbackOtherCodemodOptions = Readonly<{
+    readonly sourcePath?: string;
+}>;
+
+/**
+ * A single text edit produced by the event-callback other-keyword repair codemod.
+ */
+export type RepairEventCallbackOtherEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by `applyRepairEventCallbackOtherCodemod`.
+ */
+export type RepairEventCallbackOtherResult = CodemodResult;
 export type RepairDependentVariableDeclarationsResult = CodemodResult;
 
 /**
@@ -387,7 +409,8 @@ export type RefactorCodemodId =
     | "repairInvalidTexturePointerGuard"
     | "repairAudioEmitterCreationGuard"
     | "repairSpriteTextureUvResolution"
-    | "repairDependentVariableDeclarations";
+    | "repairDependentVariableDeclarations"
+    | "repairEventCallbackOther";
 
 /**
  * Normalized config payloads keyed by registered codemod id.
@@ -404,6 +427,7 @@ export interface RefactorCodemodConfigMap {
     repairAudioEmitterCreationGuard: RepairAudioEmitterCreationGuardCodemodOptions;
     repairSpriteTextureUvResolution: RepairSpriteTextureUvResolutionCodemodOptions;
     repairDependentVariableDeclarations: RepairDependentVariableDeclarationsCodemodOptions;
+    repairEventCallbackOther: RepairEventCallbackOtherCodemodOptions;
 }
 
 /**

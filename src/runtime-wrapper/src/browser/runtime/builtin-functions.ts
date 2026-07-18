@@ -27,6 +27,16 @@ const FALLBACK_RUNTIME_FUNCTIONS: RuntimeBuiltinFunctionMap = Object.freeze({
         // preserves it in JavaScript so the runtime must provide a no-op.
         return undefined;
     },
+    event_inherited() {
+        // The GML `event_inherited()` builtin invokes the same event on the
+        // parent object. The live-reload patch replaces a single event
+        // function in isolation, so there is no parent event to dispatch to
+        // here. Returning a no-op keeps the patch from throwing
+        // "event_inherited is not defined" on the first event that uses
+        // it; callers that need the parent behaviour can request a full
+        // live-reload restart.
+        return undefined;
+    },
     is_ptr(value) {
         return value instanceof ArrayBuffer || isHtml5TextureHandle(value);
     },

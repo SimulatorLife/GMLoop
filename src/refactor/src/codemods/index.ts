@@ -5,6 +5,7 @@ export * as NamingConvention from "./naming-convention/index.js";
 export * as RepairArgumentSeparators from "./repair-argument-separators/index.js";
 export * as RepairAudioEmitterCreationGuard from "./repair-audio-emitter-creation-guard/index.js";
 export * as RepairDependentVariableDeclarations from "./repair-dependent-variable-declarations/index.js";
+export * as RepairEventCallbackOther from "./repair-event-callback-other/index.js";
 export * as RepairInvalidTexturePointerGuard from "./repair-invalid-texture-pointer-guard/index.js";
 export * as RepairLogicalNot from "./repair-logical-not/index.js";
 export * as RepairSpriteTextureUvResolution from "./repair-sprite-texture-uv-resolution/index.js";

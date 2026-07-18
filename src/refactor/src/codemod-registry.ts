@@ -9,6 +9,7 @@ import { applyRepairAudioEmitterCreationGuardCodemod } from "./codemods/repair-a
 import { applyRepairDependentVariableDeclarationsCodemod } from "./codemods/repair-dependent-variable-declarations/index.js";
 import { applyRepairInvalidTexturePointerGuardCodemod } from "./codemods/repair-invalid-texture-pointer-guard/index.js";
 import { applyRepairLogicalNotCodemod } from "./codemods/repair-logical-not/index.js";
+import { applyRepairEventCallbackOtherCodemod } from "./codemods/repair-event-callback-other/index.js";
 import { applyRepairSpriteTextureUvResolutionCodemod } from "./codemods/repair-sprite-texture-uv-resolution/index.js";
 import { applyRepairTexturePrefetchGuardCodemod } from "./codemods/repair-texture-prefetch-guard/index.js";
 import { applyScientificNotationCodemod } from "./codemods/scientific-notation/index.js";
@@ -58,6 +59,21 @@ function isGmlSourceFilePath(candidatePath: string): boolean {
     return path.extname(candidatePath.trim()).toLowerCase() === ".gml";
 }
 
+function normalizeRepairEventCallbackOtherConfig(
+    value: unknown,
+    context: string
+): RefactorCodemodConfigEntry<"repairEventCallbackOther"> {
+    if (value === false) {
+        return false;
+    }
+    assertRefactorConfigPlainObjectWithAllowedKeys(value, new Set(["sourcePath"]), context);
+    const record = value as { sourcePath?: unknown };
+    if (record.sourcePath !== undefined && typeof record.sourcePath !== "string") {
+        throw new TypeError(`${context}.sourcePath must be a string path`);
+    }
+    return { sourcePath: typeof record.sourcePath === "string" ? record.sourcePath : undefined };
+}
+
 function normalizeEmptyObjectConfig<
     T extends
         | "scientificNotation"
@@ -89,7 +105,8 @@ async function executeSingleFileTextCodemod(
         | "repairInvalidTexturePointerGuard"
         | "repairAudioEmitterCreationGuard"
         | "repairSpriteTextureUvResolution"
-        | "repairDependentVariableDeclarations",
+        | "repairDependentVariableDeclarations"
+        | "repairEventCallbackOther",
     warningMessage: string,
     transform: (
         sourceText: string,
@@ -347,6 +364,32 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
         }
     }),
 
+    repairEventCallbackOther: Object.freeze({
+        id: "repairEventCallbackOther",
+        description:
+            "Rewrite `other.<name>` references inside inline function expressions in event bodies to `self.<name>` so the closure reaches the event instance. Outside of inline callbacks the original `other` access is preserved because the GameMaker HTML5 runtime correctly supplies the calling instance for top-level event references.",
+        requiresSemanticProjectIndex: false,
+        normalizeConfig: (value: unknown, context: string) => normalizeRepairEventCallbackOtherConfig(value, context),
+        execute(
+            _engine: CodemodEngine,
+            request: ConfiguredCodemodRunRequest
+        ): Promise<ConfiguredCodemodExecutionResult> {
+            return executeSingleFileTextCodemod(
+                _engine,
+                request,
+                "repairEventCallbackOther",
+                "No .gml files were selected for event-callback `other` repair.",
+                (sourceText) => {
+                    const filePath = request.gmlFilePaths[0] ?? "";
+                    return applyRepairEventCallbackOtherCodemod(
+                        sourceText,
+                        { type: "Program" },
+                        { sourcePath: filePath }
+                    );
+                }
+            );
+        }
+    }),
     globalvarToGlobal: Object.freeze({
         id: "globalvarToGlobal",
         description:

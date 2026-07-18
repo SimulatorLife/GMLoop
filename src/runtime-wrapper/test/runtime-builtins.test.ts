@@ -120,6 +120,17 @@ void test("hot-reload builtin resolution recognizes HTML5 texture handles as poi
     assert.equal(fallbackFunctions.is_ptr({}), false);
 });
 
+void test("hot-reload builtin resolution provides a no-op event_inherited fallback", () => {
+    // GML `event_inherited()` invokes the same event on the parent object.
+    // The live-reload patch replaces a single event function in isolation,
+    // so the runtime wrapper provides a no-op fallback instead of letting
+    // the call throw "event_inherited is not defined" on the first event
+    // that uses it.
+    const functions = resolveRuntimeBuiltinFunctions({});
+    assert.equal(typeof functions.event_inherited, "function");
+    assert.equal(functions.event_inherited(), undefined);
+});
+
 void test("hot-reload builtin resolution augments a native is_ptr predicate", () => {
     const textureHandle = {
         WebGLTexture: {},

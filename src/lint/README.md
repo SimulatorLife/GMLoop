@@ -295,3 +295,13 @@ Performance-sensitive autofix rules also have dedicated regression coverage unde
     -	if (l > 0)
     +	if (l > math_get_epsilon())
   ```
+- **FEAT**: I think this codemods "repairDependentVariableDeclarations" should become a lint auto-fix, not a codemod. The 'dependentVariableDeclarations' *are* valid GML code, using them is a user preference (and also needed for html5 compatibility). Should be called "**no-multi-var-declarations**":
+  ```
+  var a = 1,
+      b = 2;
+  ```
+  becomes:
+  ```
+  var a = 1;
+  var b = 2;
+  ```

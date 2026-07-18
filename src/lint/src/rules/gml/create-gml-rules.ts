@@ -3,6 +3,7 @@ import type { Rule } from "eslint";
 import type { GmlRuleDefinition } from "./index.js";
 import { createNoAssignmentInConditionRule } from "./rules/no-assignment-in-condition-rule.js";
 import { createNoBooleanLiteralComparisonsRule } from "./rules/no-boolean-literal-comparisons-rule.js";
+import { createNoEventCallbackOtherReferencesRule } from "./rules/no-event-callback-other-references-rule.js";
 import { createNoEmptyCommentsRule } from "./rules/no-empty-comments-rule.js";
 import { createNoEmptyRegionsRule } from "./rules/no-empty-regions-rule.js";
 import { createNoGlobalvarRule } from "./rules/no-globalvar-rule.js";
@@ -59,6 +60,7 @@ const gmlRuleFactoriesByShortName = Object.freeze(
         ["no-boolean-literal-comparisons", createNoBooleanLiteralComparisonsRule],
         ["optimize-logical-flow", createOptimizeLogicalFlowRule],
         ["no-globalvar", createNoGlobalvarRule],
+        ["no-event-callback-other-references", createNoEventCallbackOtherReferencesRule],
         ["no-empty-comments", createNoEmptyCommentsRule],
         ["no-empty-regions", createNoEmptyRegionsRule],
         ["no-scientific-notation", createNoScientificNotationRule],
