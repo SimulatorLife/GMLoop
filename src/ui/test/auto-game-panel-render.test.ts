@@ -4,6 +4,7 @@ import test from "node:test";
 import type { PropertyValues } from "lit";
 
 import {
+    GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
     GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK,
     GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED
 } from "../src/app/components/events.js";
@@ -719,4 +720,53 @@ void test("GmAutoGamePanel renders agent-pack resources even when no project is 
     assert.match(rendered, /templates\/project-agents\.md/u);
     assert.match(rendered, /# Autonomous Game Guidance/u);
     assert.match(rendered, /Open a GameMaker project to discover its Auto-Game skills\./u);
+});
+
+void test("GmAutoGamePanel does not override Lit lifecycle hooks for event wiring", () => {
+    // The composition refactor moved the gm-error-banner-dismiss listener
+    // into an EventBusManager registered through LifecycleParticipantsController.
+    // The host must not re-introduce lifecycle overrides that duplicate that
+    // wiring. Reading own properties (not the prototype chain) keeps this
+    // assertion stable against inherited LitElement hooks.
+    const prototype = GmAutoGamePanel.prototype as unknown as Record<string, unknown>;
+    const hasOwn = Object.prototype.hasOwnProperty;
+
+    assert.equal(
+        hasOwn.call(prototype, "connectedCallback"),
+        false,
+        "Expected GmAutoGamePanel to drop its connectedCallback override."
+    );
+    assert.equal(
+        hasOwn.call(prototype, "disconnectedCallback"),
+        false,
+        "Expected GmAutoGamePanel to drop its disconnectedCallback override."
+    );
+});
+
+void test("GmAutoGamePanel propagates gm-error-banner-dismiss via composition", () => {
+    // With the composition refactor the EventBusManager registered in the
+    // constructor owns the gm-error-banner-dismiss subscription. The panel
+    // must still translate that dismissal into a GRAPH_UI_EVENT_CLEAR_PAGE_ERROR
+    // custom event so the surrounding app shell can clear the auto-game error
+    // state. Invoking the inherited LitElement connectedCallback/disconnectedCallback
+    // drives the LifecycleParticipantsController in the same way the DOM would.
+    const panel = new GmAutoGamePanel();
+    let observedPage: string | null = null;
+    const listener = (event: Event): void => {
+        const customEvent = event as CustomEvent<{ page: string }>;
+        if (customEvent.detail?.page !== undefined) {
+            observedPage = customEvent.detail.page;
+        }
+    };
+    panel.addEventListener(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, listener);
+
+    try {
+        panel.connectedCallback();
+        panel.dispatchEvent(new CustomEvent("gm-error-banner-dismiss", { bubbles: true }));
+
+        assert.equal(observedPage, "auto-game");
+    } finally {
+        panel.disconnectedCallback();
+        panel.removeEventListener(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, listener);
+    }
 });

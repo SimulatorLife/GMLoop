@@ -4,7 +4,7 @@ import test from "node:test";
 
 import type { PropertyValues } from "lit";
 
-import { GRAPH_UI_EVENT_SAVE_CONFIG } from "../src/app/components/events.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, GRAPH_UI_EVENT_SAVE_CONFIG } from "../src/app/components/events.js";
 import { GmAppShell } from "../src/app/components/gm-app-shell.js";
 import { GmConfigPanel } from "../src/app/components/gm-config-panel.js";
 import { GmGraphToolbar } from "../src/app/components/gm-graph-toolbar.js";
@@ -374,4 +374,53 @@ void test("app shell routes config save events through the host callback", async
     shell.disconnectedCallback();
 
     assert.deepEqual(savedConfig, { lintRuleset: "recommended", printWidth: 100 });
+});
+
+void test("GmConfigPanel does not override Lit lifecycle hooks for event wiring", () => {
+    // The composition refactor moved the gm-error-banner-dismiss listener
+    // into an EventBusManager registered through LifecycleParticipantsController.
+    // The host must not re-introduce lifecycle overrides that duplicate that
+    // wiring. Reading own properties (not the prototype chain) keeps this
+    // assertion stable against inherited LitElement hooks.
+    const prototype = GmConfigPanel.prototype as unknown as Record<string, unknown>;
+    const hasOwn = Object.prototype.hasOwnProperty;
+
+    assert.equal(
+        hasOwn.call(prototype, "connectedCallback"),
+        false,
+        "Expected GmConfigPanel to drop its connectedCallback override."
+    );
+    assert.equal(
+        hasOwn.call(prototype, "disconnectedCallback"),
+        false,
+        "Expected GmConfigPanel to drop its disconnectedCallback override."
+    );
+});
+
+void test("GmConfigPanel propagates gm-error-banner-dismiss via composition", () => {
+    // With the composition refactor the EventBusManager registered in the
+    // constructor owns the gm-error-banner-dismiss subscription. The panel
+    // must still translate that dismissal into a GRAPH_UI_EVENT_CLEAR_PAGE_ERROR
+    // custom event so the surrounding app shell can clear the config error state.
+    // Invoking the inherited LitElement connectedCallback/disconnectedCallback
+    // drives the LifecycleParticipantsController in the same way the DOM would.
+    const panel = new GmConfigPanel();
+    let observedPage: string | null = null;
+    const listener = (event: Event): void => {
+        const customEvent = event as CustomEvent<{ page: string }>;
+        if (customEvent.detail?.page !== undefined) {
+            observedPage = customEvent.detail.page;
+        }
+    };
+    panel.addEventListener(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, listener);
+
+    try {
+        panel.connectedCallback();
+        panel.dispatchEvent(new CustomEvent("gm-error-banner-dismiss", { bubbles: true }));
+
+        assert.equal(observedPage, "config");
+    } finally {
+        panel.disconnectedCallback();
+        panel.removeEventListener(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, listener);
+    }
 });

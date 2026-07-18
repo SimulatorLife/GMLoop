@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "../src/app/components/events.js";
 import { GmDocsPanel } from "../src/app/components/gm-docs-panel.js";
 import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
@@ -625,4 +626,53 @@ void test("GmDocsPanel renders the LSP tools subview and tool metadata when sele
     assert.match(rendered, /lsp_diagnostics/u);
     assert.match(rendered, /Choices:[\s\S]*all[\s\S]*error[\s\S]*warning/u);
     assert.match(rendered, /Default:[\s\S]*"all"/u);
+});
+
+void test("GmDocsPanel does not override Lit lifecycle hooks for event wiring", () => {
+    // The composition refactor moved the gm-error-banner-dismiss listener
+    // into an EventBusManager registered through LifecycleParticipantsController.
+    // The host must not re-introduce lifecycle overrides that duplicate that
+    // wiring. Reading own properties (not the prototype chain) keeps this
+    // assertion stable against inherited LitElement hooks.
+    const prototype = GmDocsPanel.prototype as unknown as Record<string, unknown>;
+    const hasOwn = Object.prototype.hasOwnProperty;
+
+    assert.equal(
+        hasOwn.call(prototype, "connectedCallback"),
+        false,
+        "Expected GmDocsPanel to drop its connectedCallback override."
+    );
+    assert.equal(
+        hasOwn.call(prototype, "disconnectedCallback"),
+        false,
+        "Expected GmDocsPanel to drop its disconnectedCallback override."
+    );
+});
+
+void test("GmDocsPanel propagates gm-error-banner-dismiss via composition", () => {
+    // With the composition refactor the EventBusManager registered in the
+    // constructor owns the gm-error-banner-dismiss subscription. The panel
+    // must still translate that dismissal into a GRAPH_UI_EVENT_CLEAR_PAGE_ERROR
+    // custom event so the surrounding app shell can clear the docs error state.
+    // Invoking the inherited LitElement connectedCallback/disconnectedCallback
+    // drives the LifecycleParticipantsController in the same way the DOM would.
+    const panel = new GmDocsPanel();
+    let observedPage: string | null = null;
+    const listener = (event: Event): void => {
+        const customEvent = event as CustomEvent<{ page: string }>;
+        if (customEvent.detail?.page !== undefined) {
+            observedPage = customEvent.detail.page;
+        }
+    };
+    panel.addEventListener(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, listener);
+
+    try {
+        panel.connectedCallback();
+        panel.dispatchEvent(new CustomEvent("gm-error-banner-dismiss", { bubbles: true }));
+
+        assert.equal(observedPage, "docs");
+    } finally {
+        panel.disconnectedCallback();
+        panel.removeEventListener(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, listener);
+    }
 });

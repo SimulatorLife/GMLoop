@@ -9,12 +9,14 @@ import type {
 } from "../../graph/types.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
+import { EventBusManager } from "./event-bus-mixin.js";
 import {
     GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
     GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK,
     GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED,
     type GraphUiInitializeAutoGameAgentPackDetail
 } from "./events.js";
+import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 import type { GmBadgeTone } from "./primitives/gm-badge.js";
 import { renderProcessButtonContent } from "./primitives/gm-button.js";
@@ -55,6 +57,17 @@ function getPipelineStatusBadgeTone(status: GraphVisualizationAutoGamePipelineSt
 
 /**
  * Auto-game creation surface that displays pipeline, AI skill, LLM, and MCP activity.
+ *
+ * Lifecycle wiring is delegated to injected collaborators so this class
+ * does not deepen the {@link LightDomLitElement} subclass with
+ * `connectedCallback` / `disconnectedCallback` overrides. The
+ * `gm-error-banner-dismiss` subscription is owned by an
+ * {@link EventBusManager} registered through a
+ * {@link LifecycleParticipantsController}, matching the pattern used by
+ * `GmGraphToolbar`, `GmLiveReloadPanel`, and the other workspace panels.
+ * The class therefore keeps only the `render` override that Lit
+ * requires, and the public connect/disconnect behaviour is identical to
+ * the previous hand-rolled lifecycle methods.
  */
 export class GmAutoGamePanel extends LightDomLitElement {
     public static properties = {
@@ -87,14 +100,11 @@ export class GmAutoGamePanel extends LightDomLitElement {
         );
     };
 
-    public connectedCallback(): void {
-        super.connectedCallback();
-        this.addEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
-    }
-
-    public disconnectedCallback(): void {
-        this.removeEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
-        super.disconnectedCallback();
+    public constructor() {
+        super();
+        new LifecycleParticipantsController(this, [
+            new EventBusManager(this, [{ event: "gm-error-banner-dismiss", handler: this.#onDismissErrorBanner }])
+        ]);
     }
 
     #hasPipelineController(): boolean {
