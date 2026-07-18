@@ -37,7 +37,6 @@ void describe("Hot reload replay for late subscribers", () => {
         const statusPort = await findAvailablePort();
 
         const watchPromise = runWatchCommand(testDir, {
-            extensions: [".gml"],
             verbose: false,
             websocketPort,
             websocketHost: "127.0.0.1",
@@ -92,7 +91,6 @@ void describe("Hot reload replay for late subscribers", () => {
         const watchFactory = createMockWatchFactory(listenerCapture);
 
         const watchPromise = runWatchCommand(replayDir, {
-            extensions: [".gml"],
             verbose: false,
             websocketPort,
             websocketHost: "127.0.0.1",
@@ -158,7 +156,6 @@ void describe("Hot reload replay for late subscribers", () => {
         const watchFactory = createMockWatchFactory(listenerCapture);
 
         const watchPromise = runWatchCommand(replayDir, {
-            extensions: [".gml"],
             verbose: false,
             websocketPort,
             websocketHost: "127.0.0.1",

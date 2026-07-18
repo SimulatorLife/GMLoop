@@ -76,7 +76,10 @@ import {
     DEFAULT_WATCH_IGNORED_DIRECTORY_NAMES,
     DEFAULT_WATCH_MAX_CONCURRENT_DIRS,
     DEFAULT_WATCH_MAX_PATCH_HISTORY,
-    DEFAULT_WATCH_POLLING_INTERVAL_MS
+    DEFAULT_WATCH_POLLING_INTERVAL_MS,
+    WATCHED_GAME_MAKER_EXTENSIONS,
+    WATCHED_GML_EXTENSION,
+    WATCHED_YY_EXTENSION
 } from "./watch/constants.js";
 import {
     cleanupRemovedFile,
@@ -130,11 +133,6 @@ const noopAbortListener = () => {};
  * Controls which files to monitor and how to detect changes.
  */
 interface FileWatchingConfig {
-    /**
-     * Legacy programmatic hook retained for internal tests/integration wiring.
-     * CLI input is intentionally fixed to `.gml` to keep watch behavior opinionated.
-     */
-    extensions?: Array<string>;
     polling?: boolean;
     pollingInterval?: number;
     debounceDelay?: number;
@@ -886,9 +884,9 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
 
     const normalizedPath = await validateTargetPath(targetPath);
 
-    const extensionMatcher = createExtensionMatcher(options.extensions ?? [".gml", ".yy"]);
-    const gmlExtensionMatcher = createExtensionMatcher([".gml"]);
-    const roomExtensionMatcher = createExtensionMatcher([".yy"]);
+    const extensionMatcher = createExtensionMatcher(WATCHED_GAME_MAKER_EXTENSIONS);
+    const gmlExtensionMatcher = createExtensionMatcher([WATCHED_GML_EXTENSION]);
+    const roomExtensionMatcher = createExtensionMatcher([WATCHED_YY_EXTENSION]);
     const extensionSet = extensionMatcher.extensions;
 
     const {

@@ -31,7 +31,6 @@ void describe("Watch command watcher error handling", () => {
         };
 
         await runWatchCommand(root, {
-            extensions: [".gml"],
             polling: false,
             verbose: false,
             websocketServer: false,
@@ -82,7 +81,6 @@ void describe("Watch command watcher error handling", () => {
         await writeFile(scriptPath, "function scr_player() { return 1; }", "utf8");
 
         const watchPromise = runWatchCommand(root, {
-            extensions: [".gml"],
             polling: false,
             pollingInterval: 100,
             verbose: false,

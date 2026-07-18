@@ -17,9 +17,7 @@ import { availableParallelism } from "node:os";
 
 import { Core } from "@gmloop/core";
 
-import { normalizeExtensions } from "./extension-normalizer.js";
-
-const { clamp, getLineBreakCount, toNormalizedInteger } = Core;
+const { clamp, getLineBreakCount, normalizeExtensionSuffix, toNormalizedInteger, uniqueArray } = Core;
 
 // ---------------------------------------------------------------------------
 // Extension matching
@@ -34,12 +32,17 @@ export interface ExtensionMatcher {
 }
 
 /**
- * Creates a matcher for file extensions that normalizes case and ensures each
- * entry begins with a leading dot. The matcher exposes the normalized set for
- * logging while providing a case-insensitive predicate for incoming filenames.
+ * Creates a matcher for the command-owned extension set. Inputs are expected
+ * to be narrow internal constants, not user-provided glob patterns; watch mode
+ * deliberately keeps extension policy fixed to GameMaker-owned file types.
  */
 export function createExtensionMatcher(extensions: ReadonlyArray<string>): ExtensionMatcher {
-    const normalized = normalizeExtensions(extensions);
+    const normalized = uniqueArray(
+        extensions.map((extension) => normalizeExtensionSuffix(extension)),
+        {
+            freeze: false
+        }
+    ) as Array<string>;
     const normalizedSet = new Set(normalized);
 
     return {

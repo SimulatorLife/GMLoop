@@ -74,7 +74,6 @@ void describe("Watch command auto-inject flag", () => {
         const configPath = path.join(html5OutputDir, ".gml-hot-reload", LIVE_RELOAD_BOOTSTRAP_CONFIG_RELATIVE_PATH);
 
         const watchPromise = runWatchCommand(testDir, {
-            extensions: [".gml"],
             verbose: false,
             quiet: true,
             websocketServer: false,
@@ -133,7 +132,6 @@ void describe("Watch command auto-inject flag", () => {
         const configPath = path.join(html5OutputDir, ".gml-hot-reload", LIVE_RELOAD_BOOTSTRAP_CONFIG_RELATIVE_PATH);
 
         const watchPromise = runWatchCommand(testDir, {
-            extensions: [".gml"],
             verbose: false,
             quiet: true,
             websocketServer: false,
@@ -179,7 +177,6 @@ void describe("Watch command auto-inject flag", () => {
         const abortController = new AbortController();
 
         const watchPromise = runWatchCommand(testDir, {
-            extensions: [".gml"],
             verbose: false,
             quiet: true,
             websocketServer: false,

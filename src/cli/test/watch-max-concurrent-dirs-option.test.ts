@@ -47,7 +47,6 @@ async function startWatchCommandWithStatusServer(
     let statusBaseUrl = "";
     const watchPromise = runWatchCommand(projectRoot, {
         abortSignal: abortController.signal,
-        extensions: [".gml"],
         maxConcurrentDirs: 1,
         onStatusServerReady: (server: StatusServerHandle) => {
             statusBaseUrl = server.url.replace(/\/status$/u, "");

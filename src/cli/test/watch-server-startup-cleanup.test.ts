@@ -54,7 +54,6 @@ void describe("Watch command server startup cleanup", () => {
             async () => {
                 try {
                     await runWatchCommand(root, {
-                        extensions: [".gml"],
                         polling: false,
                         verbose: false,
                         quiet: true,
@@ -96,7 +95,6 @@ void describe("Watch command server startup cleanup", () => {
             async () => {
                 try {
                     await runWatchCommand(root, {
-                        extensions: [".gml"],
                         polling: false,
                         verbose: false,
                         quiet: true,

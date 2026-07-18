@@ -80,7 +80,6 @@ void describe("Hot reload incremental transpilation", () => {
 
         // Start the watch command
         const watchPromise = runWatchCommand(testDir, {
-            extensions: [".gml"],
             verbose: false,
             quiet: true,
             websocketPort,
@@ -207,7 +206,6 @@ void describe("Hot reload targeted dependent retranspilation on definition chang
         const statusUrl = `http://127.0.0.1:${statusPort}`;
 
         const watchPromise = runWatchCommand(testDir, {
-            extensions: [".gml"],
             verbose: false,
             quiet: true,
             websocketPort,
@@ -301,7 +299,6 @@ shared_symbol = function () {
         const statusUrl = `http://127.0.0.1:${statusPort}`;
 
         const watchPromise = runWatchCommand(duplicateSymbolsDir, {
-            extensions: [".gml"],
             verbose: false,
             quiet: true,
             websocketPort,
@@ -384,7 +381,6 @@ shared_symbol = function () {
         const statusUrl = `http://127.0.0.1:${statusPort}`;
 
         const watchPromise = runWatchCommand(missingReferenceDir, {
-            extensions: [".gml"],
             verbose: false,
             quiet: true,
             websocketPort,

@@ -59,7 +59,7 @@ export function isHtml5TextureHandle(value: unknown): boolean {
         return false;
     }
 
-    const toStringFunction = Reflect.get(value, "toString") as unknown;
+    const toStringFunction = Reflect.get(value, "toString");
     if (typeof toStringFunction !== "function") {
         return false;
     }

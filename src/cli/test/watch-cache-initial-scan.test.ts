@@ -77,7 +77,6 @@ void describe("Cache-based initial scan", () => {
         const statusPort = await findAvailablePort();
 
         const watchPromise = runWatchCommand(testDir, {
-            extensions: [".gml"],
             verbose: false,
             quiet: true,
             websocketPort,

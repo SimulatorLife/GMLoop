@@ -32,7 +32,6 @@ export async function runWatchTest(
         const statusPort = await findAvailablePort();
 
         const mergedOptions = {
-            extensions: [".gml"],
             polling: false,
             verbose: false,
             quiet: true,

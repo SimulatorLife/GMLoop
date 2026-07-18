@@ -46,7 +46,6 @@ void describe("Watch command patch history limit", () => {
         const watchFactory = createMockWatchFactory(listenerCapture);
 
         const watchPromise = runWatchCommand(fixture.dir, {
-            extensions: [".gml"],
             verbose: false,
             maxPatchHistory: maxHistory,
             websocketServer: false,
