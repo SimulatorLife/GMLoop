@@ -25,6 +25,7 @@ import {
     GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
     GRAPH_UI_EVENT_CYCLE_LABEL_MODE,
     GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK,
+    GRAPH_UI_EVENT_LIVE_RELOAD_STATUS_CHANGED,
     GRAPH_UI_EVENT_NAVIGATE_PAGE,
     GRAPH_UI_EVENT_RESET_DEFAULTS,
     GRAPH_UI_EVENT_SAVE_CONFIG,
@@ -42,6 +43,7 @@ import {
     GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD,
     type GraphUiClearPageErrorDetail,
     type GraphUiInitializeAutoGameAgentPackDetail,
+    type GraphUiLiveReloadStatusChangedDetail,
     type GraphUiSaveConfigDetail,
     type GraphUiSetAutoGameSkillEnabledDetail,
     type GraphUiSetConfigViewDetail,
@@ -256,6 +258,22 @@ export class GmAppShell extends LightDomLitElement {
         this.#store.dispatch({ page: customEvent.detail.page, type: "clear-page-error" });
     };
 
+    #onLiveReloadStatusChanged = (event: Event): void => {
+        const status = (event as CustomEvent<GraphUiLiveReloadStatusChangedDetail>).detail.status;
+        const liveReload = this.model?.liveReload;
+        if (liveReload === undefined || liveReload === null) {
+            return;
+        }
+
+        this.model = {
+            ...this.model,
+            liveReload: {
+                ...liveReload,
+                statusSnapshot: status
+            }
+        };
+    };
+
     public constructor() {
         super();
         this.#store = new GraphVisualizationUiStore(readGraphVisualizationUiStateFromCurrentUrl());
@@ -279,6 +297,7 @@ export class GmAppShell extends LightDomLitElement {
 
             { event: GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK, handler: this.#onInitializeAutoGameAgentPack },
             { event: GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED, handler: this.#onSetAutoGameSkillEnabled },
+            { event: GRAPH_UI_EVENT_LIVE_RELOAD_STATUS_CHANGED, handler: this.#onLiveReloadStatusChanged },
             { event: GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, handler: this.#onClearPageError },
             { event: GRAPH_UI_EVENT_TOGGLE_PLAYGROUND_CONTROLS, handler: this.#onTogglePlaygroundControls },
             { event: "dismiss", handler: this.#onDismissErrorBanner }

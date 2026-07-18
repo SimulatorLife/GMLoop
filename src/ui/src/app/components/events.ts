@@ -1,4 +1,7 @@
-import type { GraphVisualizationProjectWorkflow } from "../../graph/types.js";
+import type {
+    GraphVisualizationLiveReloadStatusSnapshot,
+    GraphVisualizationProjectWorkflow
+} from "../../graph/types.js";
 import type {
     GraphVisualizationUiConfigView,
     GraphVisualizationUiDocsView,
@@ -24,6 +27,7 @@ export const GRAPH_UI_EVENT_SET_CONFIG_VIEW = "gmloop-set-config-view";
 export const GRAPH_UI_EVENT_RESET_DEFAULTS = "gmloop-reset-defaults";
 export const GRAPH_UI_EVENT_CLEAR_PAGE_ERROR = "gmloop-clear-page-error";
 export const GRAPH_UI_EVENT_TOGGLE_PLAYGROUND_CONTROLS = "gmloop-toggle-playground-controls";
+export const GRAPH_UI_EVENT_LIVE_RELOAD_STATUS_CHANGED = "gmloop-live-reload-status-changed";
 
 export type GraphUiNavigatePageDetail = Readonly<{ page: GraphVisualizationUiPage }>;
 export type GraphUiSetDocsViewDetail = Readonly<{ docsView: GraphVisualizationUiDocsView }>;
@@ -31,6 +35,10 @@ export type GraphUiSetConfigViewDetail = Readonly<{ configView: GraphVisualizati
 export type GraphUiSaveConfigDetail = Readonly<{ config: Readonly<Record<string, unknown>> }>;
 export type GraphUiSetSearchQueryDetail = Readonly<{ searchQuery: string }>;
 export type GraphUiClearPageErrorDetail = Readonly<{ page: GraphVisualizationUiPage }>;
+/** Latest status snapshot polled from the live-reload status endpoint. */
+export type GraphUiLiveReloadStatusChangedDetail = Readonly<{
+    status: GraphVisualizationLiveReloadStatusSnapshot | null;
+}>;
 export type GraphUiTriggerFixDetail = Readonly<{ workflow: GraphVisualizationProjectWorkflow }>;
 export type GraphUiInitializeAutoGameAgentPackDetail = Readonly<{
     agentTargets: ReadonlyArray<"codex" | "gemini" | "qwen">;

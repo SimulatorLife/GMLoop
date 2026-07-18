@@ -274,6 +274,7 @@ New top-level UI additions should:
 
 ## TODO
 
+- **FEAT**: The UI and CLI/MCP should be synchronized so that they share the project's semantic graph/analysis/index, so that the UI can show the same progress/output as the CLI/MCP when fixes, refactors, linting, live-reloading, etc. are running. Should have shared state. This will prevent the UI from being out-of-sync with the CLI/MCP and will allow the user to see the progress of long-running operations in the UI without having to switch to the CLI/MCP. Will also prevent duplicate work from being done if the user starts a fix/refactor/lint operation in the CLI/MCP while the UI is already running it.
 - **BUG**: Selecting _any_ format option in the `Playground` tab/page for the format settings seems to enable the whole/default format settings too, not _just_ that one control. Also not sure if the select-options are actually hooked up to live-update the playground's output view?
 - **FEAT**: For the playground tab/page, user should be able to select _any_ of the 'golden' fixture .gml files to preview/test. Or, maybe this is only true if np project is opened in the UI. If a GameMaker project _is_ opened in the UI, then the user could be able to select on of the .gml files from that project and test applying rules to those instead.
 - **FEAT**: For all raw-JSON displayed in the UI, add a "copy to clipboard" button (single, reusable component) that copies the raw JSON string to the clipboard for easy external use.

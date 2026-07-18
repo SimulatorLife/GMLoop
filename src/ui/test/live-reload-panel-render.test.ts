@@ -6,6 +6,7 @@ import {
     GmGraphToolbar,
     GmLiveReloadPanel,
     GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
+    GRAPH_UI_EVENT_LIVE_RELOAD_STATUS_CHANGED,
     GRAPH_UI_EVENT_TRIGGER_FIX,
     GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD,
     GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD
@@ -71,6 +72,14 @@ function createStatusSnapshot(): GraphVisualizationLiveReloadStatusSnapshot {
         uptimeMs: 65_000,
         watcherStatus: "running",
         websocketClients: 1
+    };
+}
+
+function createScanningStatusSnapshot(): GraphVisualizationLiveReloadStatusSnapshot {
+    return {
+        ...createStatusSnapshot(),
+        scanComplete: false,
+        watcherStatus: "scanning"
     };
 }
 
@@ -155,6 +164,35 @@ void test("GmLiveReloadPanel renders configured live-reload dashboard sections",
     assert.match(rendered, /Connection Details/u);
     assert.match(rendered, /http:\/\/127\.0\.0\.1:17891\/status/u);
     assert.match(rendered, /ws:\/\/127\.0\.0\.1:17890/u);
+});
+
+void test("GmAppShell shares polled live-reload status with the toolbar and panel", () => {
+    const shell = new TestableGmAppShell();
+    shell.model = createMockModel(createScanningStatusSnapshot());
+    shell.connectedCallback();
+
+    const completedStatus = createStatusSnapshot();
+    shell.dispatchEvent(
+        new CustomEvent(GRAPH_UI_EVENT_LIVE_RELOAD_STATUS_CHANGED, {
+            bubbles: true,
+            composed: true,
+            detail: { status: completedStatus }
+        })
+    );
+
+    assert.equal(shell.model?.liveReload?.statusSnapshot, completedStatus);
+
+    const toolbar = new TestableGmGraphToolbar();
+    toolbar.model = shell.model;
+    toolbar.state = createMockState();
+    assert.match(renderTemplateValue(toolbar.renderForTest()), /Uptime 1m 05s with scan complete\./u);
+
+    const panel = new TestableGmLiveReloadPanel();
+    panel.model = shell.model;
+    panel.state = createMockState();
+    assert.match(renderTemplateValue(panel.renderForTest()), /Scan complete/u);
+
+    shell.disconnectedCallback();
 });
 
 void test("GmLiveReloadPanel offers accessible copy controls for configured endpoints", () => {

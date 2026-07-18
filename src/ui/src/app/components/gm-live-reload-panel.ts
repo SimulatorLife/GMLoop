@@ -10,7 +10,11 @@ import type {
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { EventBusManager } from "./event-bus-mixin.js";
-import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "./events.js";
+import {
+    GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
+    GRAPH_UI_EVENT_LIVE_RELOAD_STATUS_CHANGED,
+    type GraphUiLiveReloadStatusChangedDetail
+} from "./events.js";
 import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 import { LiveReloadPollingController } from "./live-reload-polling-controller.js";
@@ -143,6 +147,16 @@ export class GmLiveReloadPanel extends LightDomLitElement {
                 },
                 onStatusChange: (status: GraphVisualizationLiveReloadStatusSnapshot | null): void => {
                     this.#polledStatus = status;
+                    this.dispatchEvent(
+                        new CustomEvent<GraphUiLiveReloadStatusChangedDetail>(
+                            GRAPH_UI_EVENT_LIVE_RELOAD_STATUS_CHANGED,
+                            {
+                                bubbles: true,
+                                composed: true,
+                                detail: { status }
+                            }
+                        )
+                    );
                 },
                 requestUpdate: (): void => {
                     this.requestUpdate();
