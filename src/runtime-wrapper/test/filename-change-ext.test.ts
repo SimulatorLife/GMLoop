@@ -10,8 +10,11 @@ function createRuntimeScope(): Record<string, unknown> {
             filename_change_ext: "changeExtension"
         },
         changeExtension: (filename: unknown, newExtension: unknown): string => {
-            if (typeof filename !== "string" || typeof newExtension !== "string") {
-                return String(filename);
+            if (typeof filename !== "string") {
+                return "";
+            }
+            if (typeof newExtension !== "string") {
+                return filename;
             }
 
             const lastDot = filename.lastIndexOf(".");

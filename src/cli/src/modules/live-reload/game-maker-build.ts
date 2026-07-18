@@ -1097,13 +1097,14 @@ async function resolveDefaultGameMakerUserFolder(): Promise<string | null> {
         userSupportRoots.map(async (supportRoot) => await collectGameMakerUserFoldersFromSupportRoot(supportRoot))
     );
     const userFolderCandidates = userFolderCandidateGroups.flat();
-    const eligibleUserFolderCandidates = (
-        await Promise.all(
-            userFolderCandidates.map(async (candidate) =>
-                (await hasGameMakerHtml5BuildEntitlement(candidate.licenseFile)) ? candidate : null
-            )
+    const nullableEligibleUserFolderCandidates = await Promise.all(
+        userFolderCandidates.map(async (candidate) =>
+            (await hasGameMakerHtml5BuildEntitlement(candidate.licenseFile)) ? candidate : null
         )
-    ).filter((candidate): candidate is GameMakerUserFolderCandidate => candidate !== null);
+    );
+    const eligibleUserFolderCandidates = nullableEligibleUserFolderCandidates.filter(
+        (candidate): candidate is GameMakerUserFolderCandidate => candidate !== null
+    );
 
     eligibleUserFolderCandidates.sort(
         (left, right) => right.mtimeMs - left.mtimeMs || left.userFolder.localeCompare(right.userFolder)

@@ -51,7 +51,7 @@ export function createLiveReloadWorkerEnvironment(sourceEnvironment: NodeJS.Proc
     return workerEnvironment;
 }
 
-async function isProcessAlive(processId: number): Promise<boolean> {
+function isProcessAlive(processId: number): boolean {
     try {
         process.kill(processId, 0);
         return true;
@@ -69,12 +69,36 @@ async function isLiveReloadSessionLockActive(lockPath: string): Promise<boolean>
     if (lockContents !== null) {
         const ownerProcessId = Number(lockContents.trim());
         if (Number.isSafeInteger(ownerProcessId) && ownerProcessId > 0) {
-            return await isProcessAlive(ownerProcessId);
+            return isProcessAlive(ownerProcessId);
         }
     }
 
     const lockStats = await fs.stat(lockPath).catch(() => null);
     return lockStats !== null && Date.now() - lockStats.mtimeMs < SESSION_LOCK_INITIALIZATION_GRACE_MS;
+}
+
+async function tryAcquireLiveReloadSessionLock(lockPath: string, attempt: number): Promise<fs.FileHandle | null> {
+    let lock: fs.FileHandle | null = null;
+    try {
+        lock = await fs.open(lockPath, "wx");
+        await lock.writeFile(`${String(process.pid)}\n`, "utf8");
+        return lock;
+    } catch (error) {
+        if (lock !== null) {
+            await lock.close().catch(() => undefined);
+        }
+
+        if (!Core.isErrorWithCode(error, "EEXIST") || attempt === 1) {
+            throw error;
+        }
+
+        if (await isLiveReloadSessionLockActive(lockPath)) {
+            return null;
+        }
+
+        await fs.rm(lockPath, { force: true });
+        return await tryAcquireLiveReloadSessionLock(lockPath, attempt + 1);
+    }
 }
 
 /**
@@ -86,31 +110,7 @@ async function isLiveReloadSessionLockActive(lockPath: string): Promise<boolean>
  */
 export async function acquireLiveReloadSessionLock(lockPath: string): Promise<fs.FileHandle | null> {
     await fs.mkdir(path.dirname(lockPath), { recursive: true });
-
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-        let lock: fs.FileHandle | null = null;
-        try {
-            lock = await fs.open(lockPath, "wx");
-            await lock.writeFile(`${String(process.pid)}\n`, "utf8");
-            return lock;
-        } catch (error) {
-            if (lock !== null) {
-                await lock.close().catch(() => undefined);
-            }
-
-            if (!Core.isErrorWithCode(error, "EEXIST") || attempt === 1) {
-                throw error;
-            }
-
-            if (await isLiveReloadSessionLockActive(lockPath)) {
-                return null;
-            }
-
-            await fs.rm(lockPath, { force: true });
-        }
-    }
-
-    return null;
+    return await tryAcquireLiveReloadSessionLock(lockPath, 0);
 }
 
 /** Ensure, replace, or stop the single live-reload worker registered for a project. */

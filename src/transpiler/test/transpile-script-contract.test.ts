@@ -13,6 +13,7 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { compileFunction } from "node:vm";
 
 import { Transpiler } from "@gmloop/transpiler";
 
@@ -55,7 +56,7 @@ void describe("transpileScript source text contract", () => {
         assert.doesNotMatch(patch.js_body, /\bstatic\s+count\b/);
         assert.match(patch.js_body, /__gml_static\["count"\]/);
 
-        const run = new Function("__gml_static", patch.js_body) as (store: Record<string, unknown>) => number;
+        const run = compileFunction(patch.js_body, ["__gml_static"]) as (store: Record<string, unknown>) => number;
         const staticStore: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
         assert.equal(run(staticStore), 0);
         assert.equal(run(staticStore), 1);
