@@ -2111,7 +2111,10 @@ function createTolerantProjectIndexCoordinator(): ProjectIndexCoordinatorInstanc
  * `createTolerantProjectIndexCoordinator`, and this function owns only the
  * three-step orchestration plus resource cleanup.
  */
-async function getOrBuildProjectIndex(projectRoot: string): Promise<ProjectIndexSnapshot> {
+async function getOrBuildProjectIndex(
+    projectRoot: string,
+    onProgress: GraphIndexBuildOptions["onProgress"]
+): Promise<ProjectIndexSnapshot> {
     const store = openSemanticIndexStore(projectRoot);
     let storedManifest;
     try {
@@ -2144,6 +2147,7 @@ async function getOrBuildProjectIndex(projectRoot: string): Promise<ProjectIndex
     try {
         const parser = createTolerantGraphProjectParser();
         const index = (await buildProjectIndex(projectRoot, Core.defaultFsFacade, {
+            onProgress,
             parseGml: parser
         })) as ProjectIndexSnapshot;
         const publication = publishSemanticTwoTierSnapshot(store, {
@@ -2184,7 +2188,7 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
             ensureGraphEmbeddingModelAssets(config.embeddings);
         }
         const buildStart = performance.now();
-        const projectIndex = await getOrBuildProjectIndex(config.projectRoot);
+        const projectIndex = await getOrBuildProjectIndex(config.projectRoot, options.onProgress);
         const projectContext = createProjectionContext("project", config.projectRoot, projectIndex);
         projectResources(projectContext);
         projectObjectEventScopes(projectContext);
@@ -2196,7 +2200,7 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
 
         let toolsetContext: ProjectionContext | null = null;
         if (config.toolsetRoot) {
-            const toolsetIndex = await getOrBuildProjectIndex(config.toolsetRoot);
+            const toolsetIndex = await getOrBuildProjectIndex(config.toolsetRoot, options.onProgress);
             toolsetContext = createProjectionContext("toolset", config.toolsetRoot, toolsetIndex);
             projectResources(toolsetContext);
             projectObjectEventScopes(toolsetContext);

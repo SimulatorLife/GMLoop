@@ -1,4 +1,4 @@
-import type { GraphVisualizationProjectWorkflow } from "../../graph/types.js";
+import type { GraphVisualizationGraphIndexProgress, GraphVisualizationProjectWorkflow } from "../../graph/types.js";
 
 /**
  * Top-level page surfaces in the graph visualization UI.
@@ -60,6 +60,7 @@ export type GraphVisualizationUiState = Readonly<{
     pendingActionCount: number;
     searchQuery: string;
     graphErrorMessage: string | null;
+    graphIndexProgress: GraphVisualizationGraphIndexProgress | null;
     docsErrorMessage: string | null;
     configErrorMessage: string | null;
     playgroundErrorMessage: string | null;
@@ -99,6 +100,7 @@ export type GraphVisualizationUiAction =
       }>
     | Readonly<{ errorMessage: string | null; type: "set-live-reload-error" }>
     | Readonly<{ errorMessage: string | null; type: "set-error" }>
+    | Readonly<{ progress: GraphVisualizationGraphIndexProgress; type: "set-graph-index-progress" }>
     | Readonly<{ errorMessage: string | null; page: GraphVisualizationUiPage; type: "set-page-error" }>
     | Readonly<{ page: GraphVisualizationUiPage; type: "clear-page-error" }>
     | Readonly<{ type: "clear-error" }>

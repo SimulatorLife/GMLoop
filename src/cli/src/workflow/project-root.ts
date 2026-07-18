@@ -5,6 +5,7 @@ import path from "node:path";
 import { Core } from "@gmloop/core";
 import { Semantic } from "@gmloop/semantic";
 
+import { runSemanticIndexOperation } from "../modules/runtime/semantic-index-operation.js";
 import { resolveFromRepoRoot } from "../shared/workspace-paths.js";
 
 const { findProjectRoot } = Semantic;
@@ -338,13 +339,16 @@ export async function ensureProjectGraphIndex(options: SharedProjectContextOptio
     projectRoot: string;
 }> {
     const context = await resolveCommandProjectContext(options);
-    await Semantic.buildGraphIndex({
-        databasePath: options.databasePath,
-        projectConfig: context.projectConfig,
-        projectRoot: context.projectRoot,
-        rebuild: options.force === true,
-        toolsetRoot: options.toolsetRoot
-    });
+    await runSemanticIndexOperation(context.projectRoot, (onProgress) =>
+        Semantic.buildGraphIndex({
+            databasePath: options.databasePath,
+            onProgress,
+            projectConfig: context.projectConfig,
+            projectRoot: context.projectRoot,
+            rebuild: options.force === true,
+            toolsetRoot: options.toolsetRoot
+        })
+    );
     return context;
 }
 

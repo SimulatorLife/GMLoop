@@ -63,6 +63,7 @@ void test("GmAppShell delegates fix workflow reconnect without lifecycle overrid
 
 void test("GmAppShell reconnects to in-flight fix workflow on connection and polls until finished", async (t) => {
     let fetchCount = 0;
+    let fixFetchCount = 0;
     const fetchCalls: string[] = [];
 
     globalThis.fetch = async (input) => {
@@ -70,8 +71,21 @@ void test("GmAppShell reconnects to in-flight fix workflow on connection and pol
         const url = String(input);
         fetchCalls.push(url);
 
+        if (url.includes("/api/graph-index/progress")) {
+            return Response.json({
+                current: 4,
+                isRunning: true,
+                logLines: ["Parsing GML files... (4/9)"],
+                ok: true,
+                stage: "gml-parse",
+                status: "running",
+                total: 9
+            });
+        }
+
         if (url.includes("/api/fix/progress")) {
-            if (fetchCount === 1) {
+            fixFetchCount++;
+            if (fixFetchCount === 1) {
                 return Response.json({
                     isRunning: true,
                     logLines: ["Starting format...", "Reformatting files..."],
@@ -127,9 +141,17 @@ void test("GmAppShell reconnects to in-flight fix workflow on connection and pol
     assert.equal(stateAfterConnect.isFixPending, true);
     assert.equal(stateAfterConnect.fixWorkflow, "format");
     assert.deepEqual(stateAfterConnect.fixLogLines, ["Starting format...", "Reformatting files..."]);
+    assert.deepEqual(stateAfterConnect.graphIndexProgress, {
+        current: 4,
+        isRunning: true,
+        logLines: ["Parsing GML files... (4/9)"],
+        stage: "gml-parse",
+        status: "running",
+        total: 9
+    });
 
-    assert.equal(fetchCount, 1);
-    assert.equal(fetchCalls[0], "http://127.0.0.1:3000/api/fix/progress");
+    assert.equal(fetchCount, 2);
+    assert.equal(fetchCalls[1], "http://127.0.0.1:3000/api/fix/progress");
     assert.notEqual(timerCallback, null);
     assert.equal(timerInterval, 1000);
 

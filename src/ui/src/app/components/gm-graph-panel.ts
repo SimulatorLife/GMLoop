@@ -350,6 +350,43 @@ export class GmGraphPanel extends LightDomLitElement {
         `;
     }
 
+    #renderSemanticIndexProgress() {
+        const progress = this.state?.graphIndexProgress;
+        if (progress === null || progress === undefined || progress.status === "idle") {
+            return null;
+        }
+
+        const isRunning = progress.status === "running";
+        const title = isRunning
+            ? "Semantic analysis in progress"
+            : progress.status === "success"
+              ? "Semantic analysis complete"
+              : "Semantic analysis failed";
+        const detail =
+            progress.current !== null && progress.total !== null
+                ? `Parsing GML files: ${String(progress.current)} / ${String(progress.total)}`
+                : "Preparing the shared semantic index…";
+        const recentLogLines = progress.logLines.slice(-3);
+        return html`
+            <div
+                class="graph-index-progress"
+                role="status"
+                aria-live="polite"
+                aria-busy=${isRunning ? "true" : "false"}
+            >
+                <strong>${title}</strong>
+                <span>${detail}</span>
+                ${
+                    recentLogLines.length > 0
+                        ? html`<ul>
+                              ${recentLogLines.map((line) => html`<li>${line}</li>`)}
+                          </ul>`
+                        : null
+                }
+            </div>
+        `;
+    }
+
     #renderLegendNodeItem(item: GraphNodeKindLegendItem) {
         const childContent =
             item.children.length === 0
@@ -499,6 +536,7 @@ export class GmGraphPanel extends LightDomLitElement {
                           `
                         : null
                 }
+                ${this.#renderSemanticIndexProgress()}
                 ${hasLoadedGraphIndex(this.model) ? null : this.#renderEmptyState()}
                 <svg
                     id="graph"

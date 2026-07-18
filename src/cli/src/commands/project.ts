@@ -18,7 +18,8 @@ import {
     readArtifactJson,
     resolveArtifactDirectory,
     type RunnerProjectBinder,
-    type RunnerSnapshotReader
+    type RunnerSnapshotReader,
+    runSemanticIndexOperation
 } from "../modules/runtime/index.js";
 import { discoverProjectRoot, printProjectPayload, resolveCommandProjectContext } from "../workflow/project-root.js";
 
@@ -240,12 +241,15 @@ async function createProjectReadinessInspection(options: ProjectReadinessOptions
 
     let graphSummary: ProjectReadinessInspection["graph"];
     try {
-        const graphIndex = await Semantic.buildGraphIndex({
-            databasePath: options.databasePath,
-            projectConfig: context.projectConfig,
-            projectRoot: context.projectRoot,
-            toolsetRoot: options.toolsetRoot
-        });
+        const graphIndex = await runSemanticIndexOperation(context.projectRoot, (onProgress) =>
+            Semantic.buildGraphIndex({
+                databasePath: options.databasePath,
+                onProgress,
+                projectConfig: context.projectConfig,
+                projectRoot: context.projectRoot,
+                toolsetRoot: options.toolsetRoot
+            })
+        );
         const searchResults = Semantic.searchGraphIndex({
             databasePath: options.databasePath,
             projectConfig: context.projectConfig,

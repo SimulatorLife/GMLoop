@@ -122,6 +122,28 @@ void test("graph panel uses the shared light content page surface", () => {
     assert.match(rendered, /id="graph-page"[\s\S]*class=page content-page active/u);
 });
 
+void test("graph panel renders shared semantic-index progress in the graph page body", () => {
+    const panel = new TestableGmGraphPanel();
+    panel.model = createGraphModel();
+    panel.state = {
+        ...createGraphState(),
+        graphIndexProgress: {
+            current: 4,
+            isRunning: true,
+            logLines: ["Parsing GML files... (4/9)"],
+            stage: "gml-parse",
+            status: "running",
+            total: 9
+        }
+    };
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /Semantic analysis in progress/u);
+    assert.match(rendered, /Parsing GML files: 4 \/ 9/u);
+    assert.match(rendered, /Parsing GML files\.\.\. \(4\/9\)/u);
+});
+
 void test("graph panel keeps clicked node details visible when filters hide the node", () => {
     const panel = new TestableGmGraphPanel();
     panel.model = createGraphModel();

@@ -1,3 +1,5 @@
+import type { ProjectIndexBuildProgress } from "../project-index/build-options.js";
+
 export type GraphIndexScope = "project" | "toolset";
 
 export type GraphEmbeddingsConfig = Readonly<{
@@ -34,6 +36,7 @@ export type GraphIndexBuildOptions = Readonly<{
     rebuild?: boolean;
     projectConfig?: Record<string, unknown> | null;
     projectRoot: string;
+    onProgress?: (progress: ProjectIndexBuildProgress) => void;
     toolsetRoot?: string | null;
 }>;
 

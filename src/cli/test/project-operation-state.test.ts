@@ -10,6 +10,7 @@ import {
     resolveProjectOperationStatePath,
     runProjectOperation
 } from "../src/modules/runtime/project-operation-state.js";
+import { runSemanticIndexOperation } from "../src/modules/runtime/semantic-index-operation.js";
 
 async function createTemporaryProject(): Promise<string> {
     return mkdtemp(path.join(os.tmpdir(), "gmloop-project-operation-state-"));
@@ -33,12 +34,14 @@ void test("project operations persist shared progress and recent completion", as
             assert.equal(activeState.active?.status, "running");
 
             operation.update("scanning", "Scanning project files.");
+            operation.updateSemanticIndexProgress({ current: 3, stage: "gml-parse", total: 8 });
             console.log("Building shared semantic graph.");
             operation.appendMessage("Found 3 files to analyze.");
             await Promise.resolve();
 
             const progressState = readProjectOperationState(projectRoot);
-            assert.equal(progressState.active?.phase, "scanning");
+            assert.equal(progressState.active?.phase, "semantic-index");
+            assert.deepEqual(progressState.active?.semanticIndex, { current: 3, stage: "gml-parse", total: 8 });
             assert.deepEqual(progressState.active?.messages.slice(-3), [
                 "Scanning project files.",
                 "Building shared semantic graph.",
@@ -175,4 +178,29 @@ void test("concurrent operations in one MCP process still contend for the projec
 
     releaseFirstOperation();
     await firstOperation;
+});
+
+void test("nested semantic indexing publishes progress through its parent operation", async (context) => {
+    const projectRoot = await createTemporaryProject();
+    context.after(async () => {
+        await rm(projectRoot, { force: true, recursive: true });
+    });
+
+    await runProjectOperation(
+        {
+            command: "refactor",
+            kind: "refactor",
+            projectRoot
+        },
+        async () => {
+            await runSemanticIndexOperation(projectRoot, async (onProgress) => {
+                onProgress({ current: 1, stage: "gml-parse", total: 2 });
+                const state = readProjectOperationState(projectRoot);
+                assert.equal(state.active?.kind, "refactor");
+                assert.deepEqual(state.active?.semanticIndex, { current: 1, stage: "gml-parse", total: 2 });
+            });
+
+            assert.equal(readProjectOperationState(projectRoot).active?.semanticIndex, null);
+        }
+    );
 });

@@ -200,9 +200,9 @@ pnpm run cli -- fix --only namingConvention
 
 ### Shared project operation state
 
-Project-scoped `format`, `lint`, `fix`, and `refactor` commands acquire one
+Project-scoped `format`, `lint`, `fix`, `refactor`, and semantic-index builds acquire one
 exclusive lease in `<project>/.gmloop/operation-state.lock` and publish their
-active phase, output lines, and completion record in
+active phase, semantic parse progress, output lines, and completion record in
 `<project>/.gmloop/operation-state.json`. The lock is authoritative across
 processes and concurrent MCP calls, so a second operation reports a conflict
 instead of repeating semantic analysis or mutating the same project in
@@ -210,8 +210,12 @@ parallel.
 
 The CLI, MCP tools that delegate to the CLI runner, and the graph UI host all
 use that project-local state. The UI's `/api/fix/progress` response reads the
-same active operation and output history, while semantic facts remain owned by
-the canonical `<project>/.gmloop/graph-index.sqlite` store. Live Reload keeps
+same active operation and output history, and the Graph Index page's
+`/api/graph-index/progress` response reads the same semantic-analysis phase and
+`current/total` parse progress. Opening the UI during an existing build
+attaches to that operation and does not start duplicate analysis. Semantic
+facts remain owned by the canonical `<project>/.gmloop/graph-index.sqlite`
+store. Live Reload keeps
 its long-lived worker/session identity in the related
 `<project>/.gmloop/live-reload-session.json` registry and status endpoint, which
 are likewise shared by the UI, CLI, and MCP session controller.

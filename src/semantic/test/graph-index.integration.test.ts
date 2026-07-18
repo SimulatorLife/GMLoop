@@ -63,10 +63,18 @@ void test("buildGraphIndex creates dual-root graphs and cross-graph toolset edge
     const fixture = await createDualRootFixture();
 
     try {
+        const progress: Array<{ current: number; stage: string; total: number }> = [];
         const result = await buildGraphIndex({
+            onProgress: (snapshot) => {
+                progress.push(snapshot);
+            },
             projectRoot: fixture.projectRoot,
             toolsetRoot: fixture.toolsetRoot
         });
+
+        assert.ok(progress.length > 0);
+        assert.equal(progress.at(-1)?.stage, "gml-parse");
+        assert.equal(progress.at(-1)?.current, progress.at(-1)?.total);
 
         const search = searchGraphIndex({
             projectRoot: fixture.projectRoot,

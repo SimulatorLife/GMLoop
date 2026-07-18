@@ -50,6 +50,7 @@ import {
     type GraphUiTriggerFixDetail
 } from "./events.js";
 import { FixWorkflowReconnectParticipant } from "./fix-workflow-reconnect-participant.js";
+import { GraphIndexProgressParticipant } from "./graph-index-progress-participant.js";
 import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
@@ -98,6 +99,8 @@ export class GmAppShell extends LightDomLitElement {
     #eventBus: EventBusManager;
 
     #fixWorkflowReconnect: FixWorkflowReconnectParticipant;
+
+    #graphIndexProgress: GraphIndexProgressParticipant;
 
     // ─── Private handlers (access #state and #store via closure) ───────────────
 
@@ -327,6 +330,18 @@ export class GmAppShell extends LightDomLitElement {
             }
         });
 
+        this.#graphIndexProgress = new GraphIndexProgressParticipant({
+            callbacks: {
+                canPoll: () => this.model !== null && this.model.isServerMode && hasLoadedGraphProject(this.model),
+                onPollError: (error) => {
+                    console.error("Error polling semantic graph-index progress:", error);
+                },
+                onProgress: (progress) => {
+                    this.#store.dispatch({ progress, type: "set-graph-index-progress" });
+                }
+            }
+        });
+
         // Subscribe to store and persist URL state on changes
         const unsubscribeStore = this.#store.subscribe((nextState) => {
             this.#state = nextState;
@@ -337,6 +352,7 @@ export class GmAppShell extends LightDomLitElement {
         new LifecycleParticipantsController(this, [
             createStoreUnsubscribeParticipant(unsubscribeStore),
             this.#eventBus,
+            this.#graphIndexProgress,
             this.#fixWorkflowReconnect
         ]);
     }

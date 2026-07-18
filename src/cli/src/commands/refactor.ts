@@ -27,6 +27,7 @@ import {
 import { createRefactorBridges } from "../modules/refactor/bridge-factory.js";
 import { isRefactorGmlSourcePath } from "../modules/refactor/gml-resource-path.js";
 import { GmlSemanticBridge } from "../modules/refactor/index.js";
+import { runSemanticIndexOperation } from "../modules/runtime/semantic-index-operation.js";
 import {
     discoverProjectRoot,
     resolveExistingGmloopConfigPath,
@@ -199,21 +200,24 @@ async function getOrBuildProjectIndex(
         buildIndex: async (resolvedRoot, fsFacade, options) => {
             console.log("[refactor] Cache miss. Rebuilding project index...");
             let lastLogTime = Date.now();
-            return await buildProjectIndex(resolvedRoot, fsFacade, {
-                ...options,
-                logger: verbose ? console : undefined,
-                parseGml: tolerantParser,
-                onProgress: (progress) => {
-                    if (progress.stage === "gml-parse" && progress.current && progress.total) {
-                        const now = Date.now();
-                        // Throttle logging to once per 500ms or when complete to avoid flooding
-                        if (now - lastLogTime > 500 || progress.current === progress.total) {
-                            console.log(`[refactor] Parsing GML files... (${progress.current}/${progress.total})`);
-                            lastLogTime = now;
+            return await runSemanticIndexOperation(resolvedRoot, async (onProgress) =>
+                buildProjectIndex(resolvedRoot, fsFacade, {
+                    ...options,
+                    logger: verbose ? console : undefined,
+                    onProgress: (progress) => {
+                        onProgress(progress);
+                        if (progress.stage === "gml-parse" && progress.current && progress.total) {
+                            const now = Date.now();
+                            // Throttle logging to once per 500ms or when complete to avoid flooding
+                            if (now - lastLogTime > 500 || progress.current === progress.total) {
+                                console.log(`[refactor] Parsing GML files... (${progress.current}/${progress.total})`);
+                                lastLogTime = now;
+                            }
                         }
-                    }
-                }
-            });
+                    },
+                    parseGml: tolerantParser
+                })
+            );
         }
     });
 
@@ -784,22 +788,28 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
                         initialProjectIndex.files &&
                         Object.keys(initialProjectIndex.files).length > 0
                     ) {
-                        currentProjectIndex = await Semantic.buildProjectIndex(projectRoot, customFsFacade, {
-                            logger: verbose ? console : undefined,
-                            parseGml: tolerantParser,
-                            incremental: {
-                                changes: impactedFiles.map((changedFile) => ({
-                                    filePath: path.resolve(projectRoot, changedFile),
-                                    kind: "modified" as const
-                                })),
-                                existingIndex: initialProjectIndex
-                            }
-                        });
+                        currentProjectIndex = await runSemanticIndexOperation(projectRoot, (onProgress) =>
+                            Semantic.buildProjectIndex(projectRoot, customFsFacade, {
+                                logger: verbose ? console : undefined,
+                                onProgress,
+                                parseGml: tolerantParser,
+                                incremental: {
+                                    changes: impactedFiles.map((changedFile) => ({
+                                        filePath: path.resolve(projectRoot, changedFile),
+                                        kind: "modified" as const
+                                    })),
+                                    existingIndex: initialProjectIndex
+                                }
+                            })
+                        );
                     } else {
-                        currentProjectIndex = await Semantic.buildProjectIndex(projectRoot, customFsFacade, {
-                            logger: verbose ? console : undefined,
-                            parseGml: tolerantParser
-                        });
+                        currentProjectIndex = await runSemanticIndexOperation(projectRoot, (onProgress) =>
+                            Semantic.buildProjectIndex(projectRoot, customFsFacade, {
+                                logger: verbose ? console : undefined,
+                                onProgress,
+                                parseGml: tolerantParser
+                            })
+                        );
                     }
 
                     if (semanticBridge && typeof semanticBridge.updateProjectIndex === "function") {
@@ -829,15 +839,18 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
             const changedFiles = [...new Set(result.summaries.flatMap((summary) => summary.changedFiles))];
             if (semanticBridge && changedFiles.length > 0) {
                 const impactedFiles = await Semantic.resolveSemanticImpactFilePaths(projectRoot, changedFiles, []);
-                const refreshedProjectIndex = await Semantic.buildProjectIndex(projectRoot, Core.defaultFsFacade, {
-                    incremental: {
-                        changes: impactedFiles.map((changedFile) => ({
-                            filePath: path.resolve(projectRoot, changedFile),
-                            kind: "modified" as const
-                        })),
-                        existingIndex: semanticBridge.getProjectIndex()
-                    }
-                });
+                const refreshedProjectIndex = await runSemanticIndexOperation(projectRoot, (onProgress) =>
+                    Semantic.buildProjectIndex(projectRoot, Core.defaultFsFacade, {
+                        onProgress,
+                        incremental: {
+                            changes: impactedFiles.map((changedFile) => ({
+                                filePath: path.resolve(projectRoot, changedFile),
+                                kind: "modified" as const
+                            })),
+                            existingIndex: semanticBridge.getProjectIndex()
+                        }
+                    })
+                );
                 await Semantic.publishBuiltProjectIndexIncrement(projectRoot, refreshedProjectIndex, impactedFiles);
             }
             console.log("\nSuccess! Configured codemods applied.");

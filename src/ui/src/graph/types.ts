@@ -120,6 +120,16 @@ export type GraphVisualizationStartupState = Readonly<{
     phase: "error" | "loading";
 }>;
 
+/** Shared semantic-index progress snapshot polled by the graph-index page. */
+export type GraphVisualizationGraphIndexProgress = Readonly<{
+    current: number | null;
+    isRunning: boolean;
+    logLines: ReadonlyArray<string>;
+    stage: "gml-parse" | null;
+    status: "idle" | "running" | "success" | "error";
+    total: number | null;
+}>;
+
 /**
  * Most recent project fix workflow result known by the visualization host.
  */

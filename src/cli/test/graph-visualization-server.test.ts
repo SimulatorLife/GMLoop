@@ -105,6 +105,14 @@ void test("graph visualization server serves UI-rendered HTML and exposes regene
                 return { logLines: fixProgressLogLines };
             },
             getFixProgress: () => ({ isRunning: false, logLines: fixProgressLogLines }),
+            getSemanticIndexProgress: () => ({
+                current: 2,
+                isRunning: true,
+                logLines: ["Parsing GML files... (2/4)"],
+                stage: "gml-parse",
+                status: "running",
+                total: 4
+            }),
             clearFixProgress: () => {
                 fixProgressLogLines = [];
             },
@@ -159,6 +167,18 @@ void test("graph visualization server serves UI-rendered HTML and exposes regene
             isRunning: false,
             logLines: ["[1/3 Refactor Codemods]"],
             ok: true
+        });
+
+        const graphIndexProgressResponse = await fetch(`${handle.url}/api/graph-index/progress`);
+        assert.equal(graphIndexProgressResponse.status, 200);
+        assert.deepEqual(await graphIndexProgressResponse.json(), {
+            current: 2,
+            isRunning: true,
+            logLines: ["Parsing GML files... (2/4)"],
+            ok: true,
+            stage: "gml-parse",
+            status: "running",
+            total: 4
         });
 
         const fixResponse = await fetch(`${handle.url}/api/fix`, {

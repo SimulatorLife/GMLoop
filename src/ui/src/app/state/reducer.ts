@@ -27,6 +27,7 @@ export function createInitialGraphVisualizationUiState(): GraphVisualizationUiSt
         pendingActionCount: 0,
         searchQuery: "",
         graphErrorMessage: null,
+        graphIndexProgress: null,
         docsErrorMessage: null,
         configErrorMessage: null,
         playgroundErrorMessage: null,
@@ -103,6 +104,12 @@ export function reduceGraphVisualizationUiState(
             return {
                 ...state,
                 searchQuery: action.searchQuery
+            };
+        }
+        case "set-graph-index-progress": {
+            return {
+                ...state,
+                graphIndexProgress: action.progress
             };
         }
         case "toggle-graph-view": {
@@ -278,6 +285,7 @@ export function reduceGraphVisualizationUiState(
                 liveReloadErrorMessage: null,
                 searchQuery: "",
                 graphErrorMessage: null,
+                graphIndexProgress: null,
                 docsErrorMessage: null,
                 configErrorMessage: null,
                 playgroundErrorMessage: null,

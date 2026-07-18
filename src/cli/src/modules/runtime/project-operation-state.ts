@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -11,10 +12,18 @@ const OPERATION_STATE_FILE_NAME = "operation-state.json";
 const OPERATION_LOCK_FILE_NAME = "operation-state.lock";
 const OPERATION_STATE_VERSION = 1;
 const MAX_OPERATION_MESSAGES = 200;
+const SEMANTIC_INDEX_PROGRESS_PERSIST_INTERVAL_MS = 100;
 const PARENT_PROJECT_OPERATION_ENVIRONMENT_VARIABLE = "GMLOOP_PARENT_PROJECT_OPERATION_ID";
 
 /** Operations that coordinate project-wide work through the shared state file. */
-export type ProjectOperationKind = "fix" | "format" | "lint" | "refactor" | "live-reload";
+export type ProjectOperationKind = "fix" | "format" | "lint" | "refactor" | "live-reload" | "semantic-index";
+
+/** Progress emitted while the semantic project index parses project sources. */
+export type ProjectSemanticIndexProgress = Readonly<{
+    current: number;
+    stage: "gml-parse";
+    total: number;
+}>;
 
 /** Lifecycle status persisted for a project operation. */
 export type ProjectOperationStatus = "running" | "succeeded" | "failed";
@@ -29,6 +38,7 @@ export type ProjectOperationRecord = Readonly<{
     phase: string;
     pid: number;
     projectRoot: string;
+    semanticIndex: ProjectSemanticIndexProgress | null;
     startedAt: number;
     status: ProjectOperationStatus;
     updatedAt: number;
@@ -60,7 +70,10 @@ export type ProjectOperationLease = Readonly<{
     complete: (status: Exclude<ProjectOperationStatus, "running">) => void;
     id: string;
     ownsProjectLock: boolean;
+    projectRoot: string;
     update: (phase: string, message?: string) => void;
+    updateSemanticIndexProgress: (progress: ProjectSemanticIndexProgress) => void;
+    clearSemanticIndexProgress: () => void;
 }>;
 
 /** Descriptor used to acquire a project operation lease. */
@@ -94,6 +107,8 @@ const EMPTY_PROJECT_OPERATION_STATE: ProjectOperationState = Object.freeze({
     recent: Object.freeze([]),
     version: OPERATION_STATE_VERSION
 });
+
+const PROJECT_OPERATION_CONTEXT = new AsyncLocalStorage<ProjectOperationLease>();
 
 function readPersistedObject(value: unknown): PersistedObject | null {
     return Core.isObjectLike(value) ? (value as PersistedObject) : null;
@@ -129,7 +144,12 @@ function normalizeOperationRecord(value: unknown): ProjectOperationRecord | null
         return null;
     }
     if (
-        (kind !== "fix" && kind !== "format" && kind !== "lint" && kind !== "refactor" && kind !== "live-reload") ||
+        (kind !== "fix" &&
+            kind !== "format" &&
+            kind !== "lint" &&
+            kind !== "refactor" &&
+            kind !== "live-reload" &&
+            kind !== "semantic-index") ||
         (status !== "running" && status !== "succeeded" && status !== "failed") ||
         typeof record.command !== "string" ||
         typeof record.id !== "string" ||
@@ -152,10 +172,31 @@ function normalizeOperationRecord(value: unknown): ProjectOperationRecord | null
         phase: record.phase,
         pid: record.pid,
         projectRoot: record.projectRoot,
+        semanticIndex:
+            record.semanticIndex === null || record.semanticIndex === undefined
+                ? null
+                : normalizeSemanticIndexProgress(record.semanticIndex),
         startedAt: record.startedAt,
         status,
         updatedAt: record.updatedAt
     });
+}
+
+function normalizeSemanticIndexProgress(value: unknown): ProjectSemanticIndexProgress | null {
+    const record = readPersistedObject(value);
+    if (
+        record === null ||
+        typeof record.current !== "number" ||
+        !Number.isInteger(record.current) ||
+        record.current < 0 ||
+        typeof record.total !== "number" ||
+        !Number.isInteger(record.total) ||
+        record.total < 0 ||
+        record.stage !== "gml-parse"
+    ) {
+        return null;
+    }
+    return Object.freeze({ current: record.current, stage: "gml-parse", total: record.total });
 }
 
 function normalizeProjectOperationState(value: unknown): ProjectOperationState {
@@ -248,6 +289,7 @@ function createOperationRecord(descriptor: ProjectOperationDescriptor): ProjectO
         phase: "starting",
         pid: process.pid,
         projectRoot: path.resolve(descriptor.projectRoot),
+        semanticIndex: null,
         startedAt: now,
         status: "running",
         updatedAt: now
@@ -301,6 +343,7 @@ function startProjectOperationOutputCapture(operation: ProjectOperationLease): P
 function createLease(record: ProjectOperationRecord, ownsProjectLock: boolean): ProjectOperationLease {
     let currentRecord = record;
     let completed = record.status !== "running";
+    let lastSemanticIndexProgressPersistAt = 0;
 
     const persist = (): void => {
         writeActiveOperation(currentRecord.projectRoot, currentRecord);
@@ -344,6 +387,40 @@ function createLease(record: ProjectOperationRecord, ownsProjectLock: boolean): 
         persist();
     };
 
+    const updateSemanticIndexProgress = (progress: ProjectSemanticIndexProgress): void => {
+        if (completed) {
+            return;
+        }
+        refreshCurrentRecord();
+        currentRecord = Object.freeze({
+            ...currentRecord,
+            phase: "semantic-index",
+            semanticIndex: Object.freeze({ ...progress }),
+            updatedAt: Date.now()
+        });
+        const now = Date.now();
+        const shouldPersist =
+            progress.current === progress.total ||
+            now - lastSemanticIndexProgressPersistAt >= SEMANTIC_INDEX_PROGRESS_PERSIST_INTERVAL_MS;
+        if (shouldPersist) {
+            lastSemanticIndexProgressPersistAt = now;
+            persist();
+        }
+    };
+
+    const clearSemanticIndexProgress = (): void => {
+        if (completed) {
+            return;
+        }
+        refreshCurrentRecord();
+        currentRecord = Object.freeze({
+            ...currentRecord,
+            semanticIndex: null,
+            updatedAt: Date.now()
+        });
+        persist();
+    };
+
     const complete = (status: Exclude<ProjectOperationStatus, "running">): void => {
         if (completed) {
             return;
@@ -375,7 +452,10 @@ function createLease(record: ProjectOperationRecord, ownsProjectLock: boolean): 
         complete,
         id: record.id,
         ownsProjectLock,
-        update
+        projectRoot: record.projectRoot,
+        update,
+        updateSemanticIndexProgress,
+        clearSemanticIndexProgress
     });
 }
 
@@ -443,7 +523,7 @@ export async function runProjectOperation<TValue>(
     }
     try {
         operation.update("running", `${descriptor.command} started.`);
-        const result = await execute(operation);
+        const result = await PROJECT_OPERATION_CONTEXT.run(operation, () => execute(operation));
         outputCapture.restore();
         if (operation.ownsProjectLock) {
             operation.complete("succeeded");
@@ -465,6 +545,11 @@ export async function runProjectOperation<TValue>(
             }
         }
     }
+}
+
+/** Return the operation currently running in this async execution context. */
+export function getCurrentProjectOperation(): ProjectOperationLease | null {
+    return PROJECT_OPERATION_CONTEXT.getStore() ?? null;
 }
 
 function resolveCommandCandidatePath(command: CommanderCommandLike): string | undefined {

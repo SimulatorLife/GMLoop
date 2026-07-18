@@ -40,7 +40,11 @@ import {
     type LiveReloadRegisteredSession
 } from "../modules/live-reload/session-registry.js";
 import { createRefactorBridges } from "../modules/refactor/bridge-factory.js";
-import { readProjectOperationState } from "../modules/runtime/project-operation-state.js";
+import {
+    ProjectOperationConflictError,
+    readProjectOperationState
+} from "../modules/runtime/project-operation-state.js";
+import { runSemanticIndexOperation } from "../modules/runtime/semantic-index-operation.js";
 import {
     type GraphVisualizationServerPlaygroundFixture,
     openUrlInDefaultBrowser,
@@ -98,6 +102,7 @@ type GraphVisualizationExportResult = Readonly<{
 }>;
 
 type GraphVisualizationProjectWorkflow = (typeof UI.PROJECT_WORKFLOWS)[number];
+const SEMANTIC_INDEX_OPERATION_KIND = "semantic-index";
 
 function createAutoGamePipelineModel(
     skills: ReadonlyArray<AutoGameProjectSkill>,
@@ -1120,7 +1125,7 @@ async function resolveGraphVisualizationServeStartupState(
 ): Promise<GraphVisualizationStartupState> {
     if (initialSelectedPath !== null) {
         const context = await resolveGraphContext(options);
-        await ensureGraphIndexForQuery(options, context);
+        await ensureGraphIndexForQuery(options, context, true);
         return {
             context,
             selectedPaths: [initialSelectedPath],
@@ -1140,7 +1145,7 @@ async function resolveGraphVisualizationServeStartupState(
                 path: activeProjectPath
             };
             const context = await resolveGraphContext(nextOptions);
-            await ensureGraphIndexForQuery(nextOptions, context);
+            await ensureGraphIndexForQuery(nextOptions, context, true);
             return {
                 context,
                 selectedPaths: [activeProjectPath],
@@ -1153,7 +1158,7 @@ async function resolveGraphVisualizationServeStartupState(
 
     try {
         const context = await resolveGraphContext(options);
-        await ensureGraphIndexForQuery(options, context);
+        await ensureGraphIndexForQuery(options, context, true);
         return {
             context,
             selectedPaths: [context.projectRoot],
@@ -1174,7 +1179,7 @@ async function resolveGraphVisualizationServeStartupState(
             path: defaultServeTargetPath
         };
         const context = await resolveGraphContext(nextOptions);
-        await ensureGraphIndexForQuery(nextOptions, context);
+        await ensureGraphIndexForQuery(nextOptions, context, true);
         return {
             context,
             selectedPaths: [defaultServeTargetPath],
@@ -1248,25 +1253,46 @@ function ensureGraphIndex(
     options: GraphCommandSharedOptions,
     context: GraphResolutionContext
 ): Promise<Awaited<ReturnType<typeof Semantic.buildGraphIndex>>> {
-    return Semantic.buildGraphIndex({
-        databasePath: options.databasePath,
-        projectConfig: context.projectConfig,
-        projectRoot: context.projectRoot,
-        rebuild: options.force === true,
-        toolsetRoot: options.toolsetRoot
-    });
+    return runSemanticIndexOperation(context.projectRoot, (onProgress) =>
+        Semantic.buildGraphIndex({
+            databasePath: options.databasePath,
+            onProgress,
+            projectConfig: context.projectConfig,
+            projectRoot: context.projectRoot,
+            rebuild: options.force === true,
+            toolsetRoot: options.toolsetRoot
+        })
+    );
 }
 
 async function ensureGraphIndexForQuery(
     options: GraphCommandSharedOptions,
-    context: GraphResolutionContext
+    context: GraphResolutionContext,
+    allowExistingSemanticBuild: boolean = false
 ): Promise<void> {
     // Graph tables are a projection of the canonical semantic store. Reconcile
     // the projection on every query so visualization, search, and LSP facts
     // always share the same persisted project snapshot. The semantic builder
     // restores from SQLite and only parses sources when that snapshot is absent
     // or stale, so this does not reintroduce a second source-of-truth scan.
-    await ensureGraphIndex(options, context);
+    try {
+        await ensureGraphIndex(options, context);
+    } catch (error: unknown) {
+        if (!allowExistingSemanticBuild || !(error instanceof ProjectOperationConflictError)) {
+            throw error;
+        }
+        const activeOperation = readProjectOperationState(context.projectRoot).active;
+        if (
+            activeOperation?.kind !== SEMANTIC_INDEX_OPERATION_KIND &&
+            activeOperation?.phase !== SEMANTIC_INDEX_OPERATION_KIND &&
+            activeOperation?.semanticIndex === null
+        ) {
+            throw error;
+        }
+        // Another CLI/MCP process already owns the semantic build. The UI can
+        // attach to its progress endpoint and render the last published graph
+        // snapshot without starting duplicate analysis.
+    }
 }
 
 function createGraphEnvelope<TPayload>(
@@ -1473,11 +1499,19 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             projectRoot: context.projectRoot,
             toolsetRoot: options.toolsetRoot
         });
-        const database = Semantic.openExistingGraphIndexDatabase(activeConfig.databasePath);
         try {
-            return Semantic.exportGraphVisualizationData(database, activeConfig.projectRoot);
-        } finally {
-            database.close();
+            const database = Semantic.openExistingGraphIndexDatabase(activeConfig.databasePath);
+            try {
+                return Semantic.exportGraphVisualizationData(database, activeConfig.projectRoot);
+            } finally {
+                database.close();
+            }
+        } catch (error: unknown) {
+            const activeOperation = readProjectOperationState(context.projectRoot).active;
+            if (activeOperation?.phase !== SEMANTIC_INDEX_OPERATION_KIND) {
+                throw error;
+            }
+            return createEmptyGraphVisualizationData();
         }
     }
 
@@ -1715,7 +1749,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 path: resolvedSelectedPath
             };
             const nextContext = await resolveGraphContext(nextOptions);
-            await ensureGraphIndexForQuery(nextOptions, nextContext);
+            await ensureGraphIndexForQuery(nextOptions, nextContext, true);
             const currentContext = activeContext;
             const projectChanged = currentContext?.projectRoot !== nextContext.projectRoot;
             const previousProjectRoot = currentContext?.projectRoot ?? null;
@@ -1981,6 +2015,51 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                         workflow: sharedOperation.kind
                     });
                 })(),
+            getSemanticIndexProgress: () => {
+                if (activeContext === null) {
+                    return Object.freeze({
+                        current: null,
+                        isRunning: false,
+                        logLines: Object.freeze([]),
+                        stage: null,
+                        status: "idle" as const,
+                        total: null
+                    });
+                }
+
+                const sharedState = readProjectOperationState(activeContext.projectRoot);
+                const activeOperation = sharedState.active;
+                const operation =
+                    activeOperation?.kind === SEMANTIC_INDEX_OPERATION_KIND ||
+                    activeOperation?.phase === SEMANTIC_INDEX_OPERATION_KIND ||
+                    activeOperation?.semanticIndex !== null
+                        ? activeOperation
+                        : (sharedState.recent.find((entry) => entry.kind === SEMANTIC_INDEX_OPERATION_KIND) ?? null);
+                if (operation === null) {
+                    return Object.freeze({
+                        current: null,
+                        isRunning: false,
+                        logLines: Object.freeze([]),
+                        stage: null,
+                        status: "idle" as const,
+                        total: null
+                    });
+                }
+
+                return Object.freeze({
+                    current: operation.semanticIndex?.current ?? null,
+                    isRunning: operation.status === "running",
+                    logLines: operation.messages,
+                    stage: operation.semanticIndex?.stage ?? null,
+                    status:
+                        operation.status === "running"
+                            ? ("running" as const)
+                            : operation.status === "succeeded"
+                              ? ("success" as const)
+                              : ("error" as const),
+                    total: operation.semanticIndex?.total ?? null
+                });
+            },
             clearFixProgress: () => {
                 activeFixProgressLogLines = [];
             },

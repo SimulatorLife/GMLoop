@@ -68,6 +68,16 @@ type GraphVisualizationServerFixProgress = Readonly<{
     workflow?: GraphVisualizationProjectWorkflow;
 }>;
 type GraphVisualizationServerGetFixProgress = () => GraphVisualizationServerFixProgress;
+/** Shared semantic-index progress payload returned by the graph server. */
+export type GraphVisualizationServerSemanticIndexProgress = Readonly<{
+    current: number | null;
+    isRunning: boolean;
+    logLines: ReadonlyArray<string>;
+    stage: "gml-parse" | null;
+    status: "idle" | "running" | "success" | "error";
+    total: number | null;
+}>;
+type GraphVisualizationServerGetSemanticIndexProgress = () => GraphVisualizationServerSemanticIndexProgress;
 type GraphVisualizationServerClearFixProgress = () => void;
 type GraphVisualizationServerCreateConfig = () => Promise<GraphVisualizationServerRegenerationResult>;
 type GraphVisualizationServerSaveConfig = (
@@ -94,6 +104,7 @@ export type GraphVisualizationServerOptions = Readonly<{
     processPlayground?: GraphVisualizationServerProcessPlayground;
     runFix?: GraphVisualizationServerRunFix;
     getFixProgress?: GraphVisualizationServerGetFixProgress;
+    getSemanticIndexProgress?: GraphVisualizationServerGetSemanticIndexProgress;
     clearFixProgress?: GraphVisualizationServerClearFixProgress;
     startLiveReload?: GraphVisualizationServerStartLiveReload;
     stopLiveReload?: GraphVisualizationServerStopLiveReload;
@@ -193,6 +204,10 @@ async function routeGraphVisualizationServerRequest(
     }
 
     if (handleFixProgressRequest(request, response, options)) {
+        return;
+    }
+
+    if (handleSemanticIndexProgressRequest(request, response, options)) {
         return;
     }
 
@@ -630,6 +645,19 @@ function handleFixProgressRequest(
     }
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ ...options.getFixProgress(), ok: true }));
+    return true;
+}
+
+function handleSemanticIndexProgressRequest(
+    request: http.IncomingMessage,
+    response: http.ServerResponse<http.IncomingMessage>,
+    options: GraphVisualizationServerOptions
+): boolean {
+    if (request.method !== "GET" || request.url !== "/api/graph-index/progress" || !options.getSemanticIndexProgress) {
+        return false;
+    }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ ...options.getSemanticIndexProgress(), ok: true }));
     return true;
 }
 

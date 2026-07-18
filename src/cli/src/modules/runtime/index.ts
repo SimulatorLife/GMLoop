@@ -1,6 +1,7 @@
 export * from "./artifact-store.js";
 export * from "./lifecycle.js";
 export * from "./project-operation-state.js";
+export * from "./semantic-index-operation.js";
 export { getRunnerController } from "./runner-controller.js";
 export {
     getRunnerStateStore,
