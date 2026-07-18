@@ -8,8 +8,38 @@ import { Core } from "@gmloop/core";
 
 import GameMakerASTBuilder from "../src/ast/gml-ast-builder.js";
 import { GameMakerSyntaxError } from "../src/ast/gml-syntax-error.js";
-import { GMLParser } from "../src/gml-parser.js";
+import { extractGmlFunctionNames, GMLParser } from "../src/gml-parser.js";
 import { defaultParserOptions, type ParserOptions } from "../src/types/index.js";
+
+void describe("parser prediction state lifecycle", () => {
+    void it("parses distinct precedence-heavy sources after each parse releases ANTLR state", () => {
+        for (let index = 0; index < 12; index += 1) {
+            const source = `${`function prediction_state_${index}() {
+                var value = ${index};
+                value = value + (value > 0 ? 1 : 0);
+                return value;
+            }`}
+${"\n".repeat(8_001)}`;
+
+            const ast = GMLParser.parse(source, { getComments: false, getLocations: false });
+            assert.equal(ast.type, "Program");
+            assert.equal(ast.body.length, 1);
+        }
+    });
+});
+
+void describe("lightweight GML metadata", () => {
+    void it("extracts named functions without treating comments or constructors as declarations", () => {
+        const source = `// function ignored_comment() {}
+function first_name() {
+    return function (value) { return value; };
+}
+function second_name() {}
+`;
+
+        assert.deepEqual(extractGmlFunctionNames(source), ["first_name", "second_name"]);
+    });
+});
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 const fixturesDirectory = path.join(currentDirectory, "../../test/input");

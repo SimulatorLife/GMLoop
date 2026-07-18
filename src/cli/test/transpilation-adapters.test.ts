@@ -43,6 +43,7 @@ void describe("createGmlParserAdapter", () => {
         assert.equal(DEFAULT_PARSER_ADAPTER_OPTIONS.getLocations, true);
         assert.equal(DEFAULT_PARSER_ADAPTER_OPTIONS.simplifyLocations, true);
         assert.equal(DEFAULT_PARSER_ADAPTER_OPTIONS.attachFunctionDocComments, false);
+        assert.equal(DEFAULT_PARSER_ADAPTER_OPTIONS.sllPredictionMaxSourceLength, 1_000_000);
     });
 
     void it("accepts option overrides and forwards them to the underlying parser", () => {

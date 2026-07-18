@@ -15,8 +15,10 @@ import { type Dirent, type FSWatcher, type Stats, watch, type WatchListener, typ
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { setImmediate as scheduleImmediate, setTimeout as scheduleTimeout } from "node:timers";
 
 import { Core, type DebouncedFunction } from "@gmloop/core";
+import { Parser } from "@gmloop/parser";
 import type * as TranspilerTypes from "@gmloop/transpiler";
 import { Transpiler } from "@gmloop/transpiler";
 import { Command, Option } from "commander";
@@ -47,16 +49,14 @@ import { type ServerLifecycle } from "../modules/server/index.js";
 import { startStatusServer, type StatusServerHandle } from "../modules/status/server.js";
 import { DependencyTracker } from "../modules/transpilation/dependency-tracker.js";
 import {
-    createGmlParserAdapter,
     createGmlTranspilerAdapter,
+    analyzeFileMetadata,
     displayTranspilationStatistics,
     type ErrorCollector,
-    type GmlParserAdapter,
     type MetricsCollector,
     orderPatchesForReplay,
     type PatchBroadcastService,
     type PatchHistoryStore,
-    registerScriptNamesFromSymbols,
     type ResourcePatch,
     type TranspilationContext,
     type TranspilationCounter,
@@ -67,7 +67,6 @@ import {
     getRuntimePathSegments,
     resolveScriptFileNameFromSegments
 } from "../modules/transpilation/runtime-identifiers.js";
-import { extractReferencesFromAst, extractSymbolsFromAst } from "../modules/transpilation/symbol-extraction.js";
 import { type PatchWebSocketServer, startPatchWebSocketServer } from "../modules/websocket/server.js";
 import {
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_COUNT,
@@ -104,7 +103,21 @@ import {
 const { debounce, getErrorMessage, isErrorWithCode } = Core;
 const IGNORED_WATCH_DIRECTORY_NAMES = new Set(DEFAULT_WATCH_IGNORED_DIRECTORY_NAMES);
 
+// ANTLR can allocate hundreds of megabytes while parsing CannonFather-sized
+// resources. Keep parser-heavy startup work tightly bounded so directory
+// traversal parallelism cannot multiply that peak beyond the process memory
+// budget. Two workers preserve useful throughput without recreating the
+// unbounded parser concurrency that exhausted large projects.
+const MAX_CONCURRENT_STARTUP_FILES = 2;
 type RuntimeDescriptorFormatter = (source: RuntimeSourceDescriptor) => string;
+
+function yieldToEventLoop(): Promise<void> {
+    return new Promise((resolve) => {
+        scheduleImmediate(() => {
+            scheduleTimeout(resolve, 1);
+        });
+    });
+}
 
 type WatchFactory = (
     path: string,
@@ -556,16 +569,13 @@ async function performInitialScan(
 
     async function processFile(fullPath: string): Promise<void> {
         try {
-            // Reuse the cached content and AST from the script-name collection pass when
-            // available. This avoids a second disk read and a second ANTLR parse for every
-            // file that was already processed during startup, cutting initial scan overhead
-            // roughly in half for typical GML projects.
+            // Reuse cached source content and metadata when available. ASTs are intentionally
+            // reparsed in this pass: retaining the complete project AST set during startup can
+            // exhaust memory before the watch servers start for large GameMaker projects.
             const cached = takeInitialFileData(fileDataCache, fullPath);
             const currentStats = await stat(fullPath);
             const canUseCachedFileData = cached !== undefined && cached.mtimeMs === currentStats.mtimeMs;
             const content = canUseCachedFileData ? cached.content : await readFile(fullPath, "utf8");
-            const cachedAst = canUseCachedFileData ? cached.ast : undefined;
-            const lines = countSourceLines(content);
             runtimeContext.fileSnapshots.set(fullPath, currentStats.mtimeMs);
 
             // Store the initial content hash so that change events immediately after
@@ -575,23 +585,15 @@ async function performInitialScan(
 
             ensureScriptNameRegistered(fullPath, runtimeContext.scriptNames);
 
-            // Transpile the file (quietly unless verbose mode is on)
-            // Pass cached symbols and references when available to skip a second
-            // full AST traversal in transpileFile (one already happened during
-            // collectScriptNames). This halves AST-walk overhead during startup.
-            const result = transpileFile(runtimeContext, fullPath, content, lines, {
-                verbose: false,
-                quiet: true,
-                cachedAst,
-                cachedSymbols: canUseCachedFileData ? cached.symbols : undefined,
-                cachedReferences: canUseCachedFileData ? cached.references : undefined,
-                deliverRuntimePatch: false
-            });
+            // Build dependency metadata without emitting JavaScript. The native HTML5 build
+            // already contains the initial code; startup needs the graph, not duplicate patches.
+            await yieldToEventLoop();
+            const result = analyzeFileMetadata(runtimeContext, fullPath, content);
 
             // Track symbols and references
             if (result.success) {
-                runtimeContext.dependencyTracker.replaceFileDefines(fullPath, result.symbols ?? []);
-                runtimeContext.dependencyTracker.replaceFileReferences(fullPath, result.references ?? []);
+                runtimeContext.dependencyTracker.replaceFileDefines(fullPath, result.symbols);
+                runtimeContext.dependencyTracker.replaceFileReferences(fullPath, result.references);
             }
         } catch (error) {
             if (verbose && !quiet) {
@@ -605,6 +607,7 @@ async function performInitialScan(
 
     async function scanDirectory(currentPath: string): Promise<void> {
         try {
+            await yieldToEventLoop();
             const entries = await readdir(currentPath, { withFileTypes: true });
 
             // Delegate low-level entry partitioning so this orchestration flow
@@ -617,9 +620,7 @@ async function performInitialScan(
             );
 
             // Process all files in this directory concurrently for maximum throughput
-            await Core.runInParallel(files, async (filePath) => {
-                await processFile(filePath);
-            });
+            await Core.runInParallelWithLimit(files, processFile, MAX_CONCURRENT_STARTUP_FILES);
 
             // Traverse subdirectories with bounded parallelism to balance throughput
             // and resource usage. Limit concurrent directory operations to avoid
@@ -647,7 +648,7 @@ async function performInitialScan(
     // Files that failed to read or parse in collectScriptNames are not in the cache;
     // they will be processed on their first watch event instead.
     await (fileDataCache !== undefined && fileDataCache.size > 0
-        ? Core.runInParallelWithLimit(Array.from(fileDataCache.keys()), processFile, maxConcurrentDirs)
+        ? Core.runInParallelWithLimit(Array.from(fileDataCache.keys()), processFile, MAX_CONCURRENT_STARTUP_FILES)
         : scanDirectory(dirPath));
 
     const stats = runtimeContext.dependencyTracker.getStatistics();
@@ -889,12 +890,13 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
     const roomExtensionMatcher = createExtensionMatcher([WATCHED_YY_EXTENSION]);
     const extensionSet = extensionMatcher.extensions;
 
-    const {
-        scriptNames,
-        fileDataCache,
-        macroDefinitionsBySourcePath,
-        secondaryFilePaths: roomFilePaths
-    } = await collectScriptNames(normalizedPath, gmlExtensionMatcher, maxConcurrentDirs, roomExtensionMatcher);
+    // Keep the semantic-oracle collection mutable so the watch servers can be
+    // started before the project-wide startup walk. Large projects must remain
+    // observable while their source metadata is being collected.
+    const scriptNames = new Set<string>();
+    let fileDataCache = new Map<string, InitialFileData>();
+    let roomFilePaths: Array<string> = [];
+    const macroDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath = new Map();
 
     // Auto-inject hot-reload runtime wrapper if requested
     if (autoInject) {
@@ -953,16 +955,6 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
     let websocketServerController: PatchWebSocketServer | null = null;
     let statusServerController: StatusServerHandle | null = null;
     let runtimeServerController: RuntimeStaticServerInstance | null = null;
-
-    // Reuse the .yy file paths collected during the startup tree walk instead of doing
-    // a second full traversal just to discover room resources. The combined walk in
-    // collectScriptNames already partitioned both matchers, eliminating one readdir pass
-    // per directory during watch startup.
-    await Core.runInParallelWithLimit(
-        roomFilePaths,
-        (filePath) => primeRoomResource(filePath, runtimeContext, runtimeContext.roomResources),
-        maxConcurrentDirs
-    );
 
     if (shouldServeRuntime) {
         const runtimeSource = await runtimeResolver({
@@ -1112,6 +1104,33 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         verbose,
         websocketServerController
     });
+
+    // The servers are intentionally live before this project-wide walk. The
+    // collection uses lexer and source-directive passes, but a large project
+    // still consumes enough CPU to starve an otherwise-ready status endpoint.
+    const startupScan = await collectScriptNames(
+        normalizedPath,
+        gmlExtensionMatcher,
+        maxConcurrentDirs,
+        roomExtensionMatcher
+    );
+    for (const scriptName of startupScan.scriptNames) {
+        scriptNames.add(scriptName);
+    }
+    fileDataCache = startupScan.fileDataCache;
+    roomFilePaths = startupScan.secondaryFilePaths;
+    for (const [sourcePath, definitions] of startupScan.macroDefinitionsBySourcePath) {
+        macroDefinitionsBySourcePath.set(sourcePath, definitions);
+    }
+    runtimeContext.macroDefinitions = Transpiler.createProjectMacroDefinitions(macroDefinitionsBySourcePath);
+
+    // Reuse the .yy file paths collected during the startup tree walk instead of
+    // doing a second full traversal just to discover room resources.
+    await Core.runInParallelWithLimit(
+        roomFilePaths,
+        (filePath) => primeRoomResource(filePath, runtimeContext, runtimeContext.roomResources),
+        maxConcurrentDirs
+    );
 
     await writeLiveReloadSessionAfterStartup({
         liveReloadSession,
@@ -1826,7 +1845,9 @@ async function updateFileSnapshot(runtimeContext: FileSnapshotWriter, filePath: 
 /**
  * Return value from the initial file cache build step.
  * Provides both the complete set of known script names (for seeding the semantic oracle)
- * and the per-file content + AST cache (for avoiding re-parsing during initial transpilation).
+ * and the per-file source content + metadata cache used between startup passes.
+ * The cache intentionally excludes ASTs so large projects do not retain every parsed
+ * tree until the watcher is ready.
  * `secondaryFilePaths` carries paths discovered for an additional extension matcher during the
  * same tree walk (for example `.yy` room resources) so callers do not need a second full scan.
  */
@@ -1864,13 +1885,17 @@ function partitionScannedDirectoryEntries(
         } else if (entry.isFile() && !shouldIgnoreWatchedPath(candidatePath, watchRoot)) {
             if (extensionMatcher.matches(entry.name)) {
                 files.push(candidatePath);
-            } else if (secondaryExtensionMatcher?.matches(entry.name)) {
+            } else if (secondaryExtensionMatcher?.matches(entry.name) && isRoomResourcePath(candidatePath)) {
                 secondaryFiles.push(candidatePath);
             }
         }
     }
 
     return { files, directories, secondaryFiles };
+}
+
+function isRoomResourcePath(filePath: string): boolean {
+    return path.normalize(filePath).split(path.sep).includes("rooms");
 }
 
 async function collectScriptNames(
@@ -1884,43 +1909,48 @@ async function collectScriptNames(
     const macroDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath = new Map();
     const secondaryFilePaths: Array<string> = [];
 
-    async function scan(currentPath: string): Promise<void> {
-        const entries = await readdir(currentPath, { withFileTypes: true });
-        const { files, directories, secondaryFiles } = partitionScannedDirectoryEntries(
-            currentPath,
-            entries,
-            extensionMatcher,
-            rootPath,
-            secondaryExtensionMatcher
-        );
+    let pendingDirectories: Array<string> = [rootPath];
+    while (pendingDirectories.length > 0) {
+        const currentBatch = pendingDirectories;
+        pendingDirectories = [];
 
-        // Process all files in this directory concurrently for maximum throughput
-        await Core.runInParallel(files, async (filePath) => {
-            await addScriptNamesFromFile(filePath, scriptNames, fileDataCache, macroDefinitionsBySourcePath);
-        });
-
-        // Capture paths discovered for the secondary matcher without re-walking the tree.
-        // Callers (e.g. room-resource priming) need only the absolute paths to schedule
-        // their own follow-up reads, not parsed contents.
-        if (secondaryFiles.length > 0) {
-            secondaryFilePaths.push(...secondaryFiles);
-        }
-
-        // Traverse subdirectories with bounded parallelism to reduce startup latency
-        // while still respecting file descriptor limits on constrained systems.
         await Core.runInParallelWithLimit(
-            directories,
-            async (subDirPath) => {
-                await scan(subDirPath);
-            },
-            maxConcurrentDirs
-        );
-    }
+            currentBatch,
+            async (currentPath) => {
+                await yieldToEventLoop();
 
-    try {
-        await scan(rootPath);
-    } catch {
-        // Fail silently; fallback to empty set
+                try {
+                    const entries = await readdir(currentPath, { withFileTypes: true });
+                    const { files, directories, secondaryFiles } = partitionScannedDirectoryEntries(
+                        currentPath,
+                        entries,
+                        extensionMatcher,
+                        rootPath,
+                        secondaryExtensionMatcher
+                    );
+
+                    // Keep lexer and source-directive work globally bounded by
+                    // the same worker limit as directory traversal.
+                    for (const filePath of files) {
+                        await addScriptNamesFromFile(
+                            filePath,
+                            scriptNames,
+                            fileDataCache,
+                            macroDefinitionsBySourcePath
+                        );
+                    }
+
+                    // Capture paths discovered for the secondary matcher without
+                    // re-walking the tree during watch startup.
+                    secondaryFilePaths.push(...secondaryFiles);
+                    pendingDirectories.push(...directories);
+                } catch {
+                    // Ignore per-directory read errors; the watcher can still use
+                    // file-name fallback and process later change events.
+                }
+            },
+            Math.min(maxConcurrentDirs, MAX_CONCURRENT_STARTUP_FILES)
+        );
     }
 
     return { scriptNames, fileDataCache, macroDefinitionsBySourcePath, secondaryFilePaths };
@@ -1935,6 +1965,7 @@ async function collectWatchedFilePaths(
 
     async function scan(currentPath: string): Promise<void> {
         try {
+            await yieldToEventLoop();
             const entries = await readdir(currentPath, { withFileTypes: true });
             const { files, directories } = partitionScannedDirectoryEntries(
                 currentPath,
@@ -1971,25 +2002,24 @@ async function addScriptNamesFromFile(
     filePath: string,
     scriptNames: Set<string>,
     fileDataCache: Map<string, InitialFileData>,
-    macroDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath,
-    parseAdapter: GmlParserAdapter = createGmlParserAdapter()
+    macroDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath
 ): Promise<void> {
     const beforeSize = scriptNames.size;
 
     try {
         const content = await readFile(filePath, "utf8");
         const { mtimeMs } = await stat(filePath);
-        // Use the dependency-inverted parser adapter seam rather than
-        // `new Parser.GMLParser(...)` so tests/embedders can swap in a stub
-        // parser without monkey-patching the @gmloop/parser namespace.
-        const ast = parseAdapter(content);
-        macroDefinitionsBySourcePath.set(filePath, Transpiler.extractMacroDefinitionsFromAst(ast, filePath, content));
-        // Extract both symbols and references from the AST in a single traversal.
-        // This saves a second walk during transpileFile when the cache is reused.
-        const symbols = extractSymbolsFromAst(ast, filePath);
-        const references = extractReferencesFromAst(ast);
-        registerScriptNamesFromSymbols(symbols, scriptNames);
-        fileDataCache.set(filePath, { content, ast, mtimeMs, symbols, references });
+        await yieldToEventLoop();
+        for (const functionName of Parser.extractGmlFunctionNames(content)) {
+            scriptNames.add(`gml_Script_${functionName}`);
+        }
+
+        if (sourceCanDeclareMacroMetadata(content)) {
+            macroDefinitionsBySourcePath.set(filePath, Transpiler.extractMacroDefinitionsFromSource(content, filePath));
+        }
+
+        fileDataCache.set(filePath, { content, mtimeMs, symbols: [], references: [] });
+        await yieldToEventLoop();
     } catch {
         // Ignore parse errors; fallback to file-name based script
     }
@@ -2000,4 +2030,8 @@ async function addScriptNamesFromFile(
             scriptNames.add(scriptName);
         }
     }
+}
+
+function sourceCanDeclareMacroMetadata(content: string): boolean {
+    return content.includes("#macro") || content.includes("#define");
 }

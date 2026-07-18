@@ -130,10 +130,7 @@ void describe("watch command max-concurrent-dirs option", () => {
             await waitForScanComplete(statusBaseUrl, 10_000, 25);
             const status = await fetchStatusPayload(statusBaseUrl);
             assert.equal(status.scanComplete, true, "Initial scan should complete");
-            assert.ok(
-                (status.patchCount ?? 0) >= gmlFiles.length,
-                "Initial scan should transpile discovered files with bounded concurrency"
-            );
+            assert.strictEqual(status.patchCount, 0, "Initial metadata scan should not emit runtime patches");
         } finally {
             abortController.abort();
 

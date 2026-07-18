@@ -66,7 +66,11 @@ export const DEFAULT_PARSER_ADAPTER_OPTIONS: Readonly<ParserOptions> = Object.fr
     getLocations: true,
     simplifyLocations: true,
     attachFunctionDocComments: false,
-    sllPredictionMaxSourceLength: 8000,
+    // CLI workflows parse whole-project sources during watch and refactor startup.
+    // Keeping large files on ANTLR's SLL path avoids the much larger LL prediction
+    // state retained across a project scan; the parser still falls back to LL when
+    // SLL cannot decide a valid parse.
+    sllPredictionMaxSourceLength: 1_000_000,
     astFormat: "gml",
     asJSON: false
 });

@@ -236,31 +236,29 @@ export function computeHotReloadLatencyStats(
 // ---------------------------------------------------------------------------
 
 /**
- * Pre-read source text and AST cached during the initial startup scan.
+ * Pre-read source text and metadata cached during the initial startup scan.
  */
 export interface InitialFileData {
     content: string;
-    ast: unknown;
     /** File modification time captured with the cached source. */
     mtimeMs: number;
-    /** Cached symbol definitions extracted during the startup scan.
-     *  Reusing them avoids a second AST traversal in transpileFile. */
+    /** Symbol definitions extracted during the startup scan. */
     symbols: Array<string>;
-    /** Cached symbol references extracted during the startup scan.
-     *  Reusing them avoids a second AST traversal in transpileFile. */
+    /** Symbol references extracted during the startup scan. */
     references: Array<string>;
 }
 
 /**
- * Returns and removes cached startup data for a file.
+ * Returns and removes cached startup metadata for a file.
  *
- * The watch command only needs the pre-read source text and AST once during the
- * initial scan. Deleting the cache entry immediately after retrieval reduces the
- * peak memory footprint of large startup scans without changing the transpilation
- * work performed for each file.
+ * The watch command caches source text and extracted metadata between its two
+ * startup passes. Deleting each entry immediately after the initial scan reduces
+ * the peak memory footprint of large projects. Parsed ASTs are deliberately not
+ * retained here because the complete project AST set can exceed available memory
+ * before the watcher has started serving runtime patches.
  *
  * @param fileDataCache - Startup cache keyed by absolute file path.
- * @param filePath - File whose cached source text and AST should be consumed.
+ * @param filePath - File whose cached source text and metadata should be consumed.
  * @returns Cached startup data when present.
  */
 export function takeInitialFileData(
@@ -282,9 +280,8 @@ export function takeInitialFileData(
 /**
  * Clears any remaining startup file cache entries after the initial scan finishes.
  *
- * During startup, cached source text and AST objects are reused to avoid duplicate
- * reads/parses. Once the initial scan completes (or fails), retaining leftover entries
- * only increases steady-state memory usage.
+ * Once the initial scan completes (or fails), retaining leftover source and metadata
+ * entries only increases steady-state memory usage.
  *
  * @param fileDataCache - Startup cache to clear.
  */

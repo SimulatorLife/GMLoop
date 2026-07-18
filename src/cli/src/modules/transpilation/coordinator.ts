@@ -483,6 +483,14 @@ export interface TranspilationResult {
     macroDefinitionChanges?: Array<string>;
 }
 
+/** Result of building dependency metadata without emitting runtime JavaScript. */
+export interface FileMetadataAnalysisResult {
+    readonly success: boolean;
+    readonly symbols: Array<string>;
+    readonly references: Array<string>;
+    readonly error?: TranspilationError;
+}
+
 interface ParsedAstExtractionResult {
     ast: unknown;
     parseError: unknown;
@@ -529,6 +537,59 @@ function extractMetadataFromAst(
         preExtractedReferences === undefined ? extractReferencesFromAst(ast) : Array.from(preExtractedReferences);
 
     return { parsedSymbols, parsedReferences };
+}
+
+/**
+ * Parses one source file and extracts dependency metadata without running the
+ * emitter. Watch startup uses this path because the native HTML5 build already
+ * contains the initial JavaScript; startup only needs the dependency graph.
+ */
+export function analyzeFileMetadata(
+    context: ProjectMacroRegistry,
+    filePath: string,
+    content: string,
+    parseAdapter: GmlParserAdapter = defaultParserAdapter
+): FileMetadataAnalysisResult {
+    try {
+        const { ast, parseError, parsedSymbols, parsedReferences } = parseAstAndExtractMetadata(
+            content,
+            filePath,
+            undefined,
+            undefined,
+            undefined,
+            parseAdapter
+        );
+        if (parseError !== null) {
+            throw parseError;
+        }
+
+        const { effectiveSymbols, effectiveReferences } = prepareMacroTranspilation(
+            context,
+            ast,
+            filePath,
+            content,
+            parsedSymbols,
+            parsedReferences
+        );
+        return { success: true, symbols: effectiveSymbols, references: effectiveReferences };
+    } catch (error) {
+        const classified = classifyTranspilationError(error);
+        return {
+            success: false,
+            symbols: [],
+            references: [],
+            error: {
+                timestamp: Date.now(),
+                filePath,
+                error: classified.message,
+                sourceSize: content.length,
+                category: classified.category,
+                line: classified.line,
+                column: classified.column,
+                recoveryHint: classified.recoveryHint
+            }
+        };
+    }
 }
 
 /**

@@ -91,6 +91,103 @@ export function extractMacroDefinitionsFromAst(
 }
 
 /**
+ * Extracts macro declarations directly from source directives.
+ *
+ * This metadata form preserves replacement text while avoiding a full AST
+ * allocation during project startup. Full AST extraction remains available
+ * for callers that already have a parsed program.
+ *
+ * @param sourceText Original GML source text.
+ * @param sourcePath Absolute path of the source file owning the declarations.
+ * @returns Macro definitions keyed by macro name.
+ */
+export function extractMacroDefinitionsFromSource(
+    sourceText: string,
+    sourcePath: string
+): Map<string, MacroDefinition> {
+    const definitions = new Map<string, MacroDefinition>();
+    const lines = sourceText.split(/(?<=\n)/u);
+    let inBlockComment = false;
+
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+        const line = lines[lineIndex];
+        const directive = findSourceMacroDirective(line, inBlockComment);
+        inBlockComment = directive.inBlockComment;
+        if (directive.match === null) {
+            continue;
+        }
+
+        let declarationText = directive.match[0];
+        while (hasMacroContinuationLine(declarationText) && lineIndex + 1 < lines.length) {
+            lineIndex += 1;
+            declarationText += lines[lineIndex];
+        }
+
+        const keyword = directive.match[1];
+        const name = directive.match[2];
+        const replacement = parseMacroReplacementText(declarationText, keyword, name);
+        if (replacement !== null) {
+            definitions.set(name, {
+                name,
+                parameters: replacement.parameters,
+                value: replacement.value,
+                sourcePath
+            });
+        }
+    }
+
+    return definitions;
+}
+
+interface SourceMacroDirectiveMatch {
+    readonly inBlockComment: boolean;
+    readonly match: RegExpExecArray | null;
+}
+
+function findSourceMacroDirective(line: string, initialBlockCommentState: boolean): SourceMacroDirectiveMatch {
+    let remaining = line;
+    let inBlockComment = initialBlockCommentState;
+
+    while (true) {
+        if (inBlockComment) {
+            const blockEnd = remaining.indexOf("*/");
+            if (blockEnd < 0) {
+                return { inBlockComment: true, match: null };
+            }
+            remaining = remaining.slice(blockEnd + 2);
+            inBlockComment = false;
+        }
+
+        const blockStart = remaining.indexOf("/*");
+        const lineCommentStart = remaining.indexOf("//");
+        if (lineCommentStart >= 0 && (blockStart < 0 || lineCommentStart < blockStart)) {
+            remaining = remaining.slice(0, lineCommentStart);
+        }
+
+        if (blockStart < 0 || blockStart >= remaining.length) {
+            break;
+        }
+
+        const blockEnd = remaining.indexOf("*/", blockStart + 2);
+        if (blockEnd < 0) {
+            remaining = remaining.slice(0, blockStart);
+            inBlockComment = true;
+            break;
+        }
+        remaining = `${remaining.slice(0, blockStart)}${remaining.slice(blockEnd + 2)}`;
+    }
+
+    return {
+        inBlockComment,
+        match: /^\s*#(macro|define)[ \t]+([A-Za-z_]\w*)[^\r\n]*(?:\r?\n|$)/u.exec(remaining)
+    };
+}
+
+function hasMacroContinuationLine(declarationText: string): boolean {
+    return /\\[ \t]*(?:\r?\n)?$/u.test(declarationText);
+}
+
+/**
  * Creates a deterministic project-wide macro table from per-file definitions.
  *
  * GameMaker projects can contain macro declarations in any GML resource. The
