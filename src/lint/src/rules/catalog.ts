@@ -210,7 +210,7 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         messageId: "normalizeDocComments"
     },
     {
-        description: "Convert legacy return description lines into canonical @returns doc-comment metadata.",
+        description: "Convert return description lines into canonical @returns doc-comment metadata.",
         mapKey: "GmlNormalizeDocReturns",
         shortName: "normalize-doc-returns",
         fullId: "gml/normalize-doc-returns",
@@ -224,7 +224,7 @@ export const gmlRuleDefinitions: ReadonlyArray<GmlRuleDefinition> = Object.freez
         messageId: "normalizeDocParamDefaults"
     },
     {
-        description: "Remove legacy separator hyphens from @param description text.",
+        description: "Remove separator hyphens from @param description text.",
         mapKey: "GmlNormalizeDocParamSeparators",
         shortName: "normalize-doc-param-separators",
         fullId: "gml/normalize-doc-param-separators",

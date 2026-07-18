@@ -256,3 +256,42 @@ Performance-sensitive autofix rules also have dedicated regression coverage unde
     /// @returns {obj} timeline_controller
     function scr_timeline_play(timeline_to_play, func_callback) { /* ... */ }
     ```
+- **BUG**: Lint auto-fixes introduce this break in GML code:
+  ```
+  -			global.camPos[global.camTransform[1, 0]] += global.mouseDx / 2;
+  -			global.camPos[global.camTransform[1, 1]] += global.mouseDy / 2;
+  +			global.camPos[global.camTransform[#, 0]] += global.mouseDx * 0.5;
+  +			global.camPos[global.camTransform[#, 1]] += global.mouseDy * 0.5;
+  ```
+  Anther example:
+  ```
+  -		global.camPos[global.camTransform[1, 0]] -= 5 * (keyboard_check(vk_right) - keyboard_check(vk_left));
+  -		global.camPos[global.camTransform[1, 1]] -= 5 * (keyboard_check(vk_down) - keyboard_check(vk_up));
+  +		global.camPos[global.camTransform[#, 0]] -= 5 * (keyboard_check(vk_right) - keyboard_check(vk_left));
+  +		global.camPos[global.camTransform[#, 1]] -= 5 * (keyboard_check(vk_down) - keyboard_check(vk_up));
+  ```
+  And this other example:
+  ```
+  -			if global.mouseViewInd == 3{global.camPos[global.camTransform[global.mouseViewInd, 0]] += global.mouseDx * global.camZoom;}
+  -			else{global.camPos[global.camTransform[global.mouseViewInd, 0]] -= global.mouseDx * global.camZoom;}
+  -			if global.mouseViewInd == 2{global.camPos[global.camTransform[global.mouseViewInd, 1]] -= global.mouseDy * global.camZoom;}
+  -			else{global.camPos[global.camTransform[global.mouseViewInd, 1]] += global.mouseDy * global.camZoom;}
+  +			if global.mouseViewInd == 3{global.camPos[global.camTransform[#lobal.mouseViewInd, 0]] += global.mouseDx * global.camZoom;}
+  +			else{global.camPos[global.camTransform[#lobal.mouseViewInd, 0]] -= global.mouseDx * global.camZoom;}
+  +			if global.mouseViewInd == 2{global.camPos[global.camTransform[#lobal.mouseViewInd, 1]] -= global.mouseDy * global.camZoom;}
+  +			else{global.camPos[global.camTransform[#lobal.mouseViewInd, 1]] += global.mouseDy * global.camZoom;}
+  ```
+- **FEAT**: A lint fixer to convert legacy 2D array accessors (e.g. `my_array[1, 2]`) to the array convention of `my_array[1][2]` when the array is known to be a 2D array
+- **BUG**: Lint auto-fix is producing this changed GML (`dot_product_3d` can be negative):
+  ```
+   	    var dn = dot_product_3d(vx, vy, vz, nx, ny, nz);
+  -	    if (dn == 0)
+  +	    var eps = math_get_epsilon();
+  +	    if (dn <= eps)
+  ```
+  It also does *not* need to change this, as `if (l > 0)` is already safe:
+  ```
+   	    var l = sqrt(toX * toX + toY * toY + toZ * toZ);
+    -	if (l > 0)
+    +	if (l > math_get_epsilon())
+  ```
