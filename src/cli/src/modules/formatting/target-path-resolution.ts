@@ -170,18 +170,6 @@ function describeTargetPathInput(value: unknown): string {
 }
 
 /**
- * Checks if the given input looks like a help flag or help command.
- */
-export function isHelpRequest(input: unknown): boolean {
-    if (typeof input !== "string") {
-        return false;
-    }
-
-    const normalized = input.trim().toLowerCase();
-    return normalized === "--help" || normalized === "-h" || normalized === "help";
-}
-
-/**
  * Validate command input to ensure the caller supplied a usable target path.
  */
 export function validateTargetPathInput({
