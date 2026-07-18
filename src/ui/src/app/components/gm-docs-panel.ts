@@ -19,7 +19,9 @@ import {
     searchLspEntries,
     searchMcpEntries
 } from "./docs-search.js";
+import { EventBusManager } from "./event-bus-mixin.js";
 import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "./events.js";
+import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 const DOCS_SUBPAGE_CLASS = "docs-subpage";
@@ -32,6 +34,17 @@ const DOCS_HIDDEN_SUBPAGE_CLASS = "docs-subpage hidden";
  * (see `GmGraphToolbar#renderDocsSearchControls`) so the search input and
  * subview tabs stay visually aligned. This panel renders the reference
  * content for the active subview only.
+ *
+ * Lifecycle wiring is delegated to injected collaborators so this class
+ * does not deepen the {@link LightDomLitElement} subclass with
+ * `connectedCallback` / `disconnectedCallback` overrides. The
+ * `gm-error-banner-dismiss` subscription is owned by an
+ * {@link EventBusManager} registered through a
+ * {@link LifecycleParticipantsController}, matching the pattern used by
+ * `GmGraphToolbar`, `GmLiveReloadPanel`, and the other workspace panels.
+ * The class therefore keeps only the `render` override that Lit
+ * requires, and the public connect/disconnect behaviour is identical to
+ * the previous hand-rolled lifecycle methods.
  */
 export class GmDocsPanel extends LightDomLitElement {
     public static properties = {
@@ -56,14 +69,11 @@ export class GmDocsPanel extends LightDomLitElement {
         );
     };
 
-    public connectedCallback(): void {
-        super.connectedCallback();
-        this.addEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
-    }
-
-    public disconnectedCallback(): void {
-        this.removeEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
-        super.disconnectedCallback();
+    public constructor() {
+        super();
+        new LifecycleParticipantsController(this, [
+            new EventBusManager(this, [{ event: "gm-error-banner-dismiss", handler: this.#onDismissErrorBanner }])
+        ]);
     }
 
     #resolveCliCopyValue(entry: GraphVisualizationCliCatalogEntry): string {

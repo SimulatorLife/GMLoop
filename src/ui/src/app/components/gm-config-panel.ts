@@ -9,6 +9,7 @@ import type {
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import { getUiErrorMessage } from "../error-message.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
+import { EventBusManager } from "./event-bus-mixin.js";
 import {
     GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
     GRAPH_UI_EVENT_CONFIG_DRAFT_CHANGED,
@@ -16,6 +17,7 @@ import {
     GRAPH_UI_EVENT_TRIGGER_CREATE_CONFIG,
     type GraphUiSaveConfigDetail
 } from "./events.js";
+import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 import { getLintFixableBadgeLabel } from "./lint-rule-labels.js";
 import {
@@ -147,6 +149,17 @@ function renderBadge(label: string, tone: GmBadgeTone = "neutral") {
 
 /**
  * Config surface that renders and edits active workspace configuration catalogs.
+ *
+ * Lifecycle wiring is delegated to injected collaborators so this class
+ * does not deepen the {@link LightDomLitElement} subclass with
+ * `connectedCallback` / `disconnectedCallback` overrides. The
+ * `gm-error-banner-dismiss` subscription is owned by an
+ * {@link EventBusManager} registered through a
+ * {@link LifecycleParticipantsController}, mirroring the pattern used by
+ * `GmGraphToolbar` and `GmLiveReloadPanel`. The class retains only the
+ * `render` override that Lit requires, so its public behaviour and the
+ * order in which listeners connect and disconnect stay identical to the
+ * previous hand-rolled lifecycle methods.
  */
 export class GmConfigPanel extends LightDomLitElement {
     public static properties = {
@@ -174,14 +187,11 @@ export class GmConfigPanel extends LightDomLitElement {
         );
     };
 
-    public connectedCallback(): void {
-        super.connectedCallback();
-        this.addEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
-    }
-
-    public disconnectedCallback(): void {
-        this.removeEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
-        super.disconnectedCallback();
+    public constructor() {
+        super();
+        new LifecycleParticipantsController(this, [
+            new EventBusManager(this, [{ event: "gm-error-banner-dismiss", handler: this.#onDismissErrorBanner }])
+        ]);
     }
 
     #emitCreateConfig = (): void => {
