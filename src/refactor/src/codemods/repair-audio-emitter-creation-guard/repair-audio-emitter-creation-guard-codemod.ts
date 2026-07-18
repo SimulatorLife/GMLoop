@@ -2,65 +2,22 @@ import { Core } from "@gmloop/core";
 import { Parser } from "@gmloop/parser";
 
 import type { RepairAudioEmitterCreationGuardResult } from "../../types.js";
-import { applySourceTextEdits } from "../codemod-helpers.js";
+import {
+    type CodemodAstRecord,
+    containsBuiltinNameDeclaration,
+    createCodemodResultFromEdits,
+    hasBuiltinNameMacro,
+    isAstRecord,
+    isNamedCall
+} from "../codemod-helpers.js";
 
-type AstRecord = Record<string, unknown>;
+const AUDIO_BUILTIN_NAMES: ReadonlySet<string> = new Set(["audio_emitter_create", "audio_system_is_initialised"]);
 
-function isAstRecord(value: unknown): value is AstRecord {
-    return Core.isObjectLike(value);
-}
-
-function isNamedCall(node: unknown, functionName: string): node is AstRecord {
-    if (!isAstRecord(node) || node.type !== "CallExpression") {
-        return false;
-    }
-
-    const object = node.object;
-    return (
-        isAstRecord(object) &&
-        object.type === "Identifier" &&
-        typeof object.name === "string" &&
-        object.name.toLowerCase() === functionName
-    );
-}
-
-function hasNoArguments(node: AstRecord): boolean {
+function hasNoArguments(node: CodemodAstRecord): boolean {
     return Array.isArray(node.arguments) && node.arguments.length === 0;
 }
 
-function hasAudioBuiltinMacro(sourceText: string): boolean {
-    return [...sourceText.matchAll(/^\s*#macro\s+([A-Za-z_][A-Za-z0-9_]*)\b/gmu)].some((match) => {
-        const macroName = match[1]?.toLowerCase();
-        return macroName === "audio_emitter_create" || macroName === "audio_system_is_initialised";
-    });
-}
-
-function containsAudioBuiltinDeclaration(node: unknown): boolean {
-    if (Array.isArray(node)) {
-        return node.some((entry) => containsAudioBuiltinDeclaration(entry));
-    }
-    if (!isAstRecord(node)) {
-        return false;
-    }
-
-    if (node.type === "FunctionDeclaration" || node.type === "ConstructorDeclaration") {
-        const id = typeof node.id === "string" ? node.id.toLowerCase() : null;
-        if (id === "audio_emitter_create" || id === "audio_system_is_initialised") {
-            return true;
-        }
-    }
-
-    if (node.type === "VariableDeclarator") {
-        const id = Core.getIdentifierName(node.id)?.toLowerCase();
-        if (id === "audio_emitter_create" || id === "audio_system_is_initialised") {
-            return true;
-        }
-    }
-
-    return Object.entries(node).some(([key, child]) => key !== "parent" && containsAudioBuiltinDeclaration(child));
-}
-
-function getCallEdit(node: AstRecord): Readonly<{ start: number; end: number; text: string }> | null {
+function getCallEdit(node: CodemodAstRecord): Readonly<{ start: number; end: number; text: string }> | null {
     const start = Core.getNodeStartIndex(node);
     const end = Core.getNodeEndIndex(node);
     if (typeof start !== "number" || typeof end !== "number") {
@@ -136,19 +93,13 @@ export function applyRepairAudioEmitterCreationGuardCodemod(sourceText: string):
         return Object.freeze({ changed: false, outputText: sourceText, appliedEdits: Object.freeze([]) });
     }
 
-    if (hasAudioBuiltinMacro(sourceText) || containsAudioBuiltinDeclaration(programNode)) {
+    if (
+        hasBuiltinNameMacro(sourceText, AUDIO_BUILTIN_NAMES) ||
+        containsBuiltinNameDeclaration(programNode, AUDIO_BUILTIN_NAMES)
+    ) {
         return Object.freeze({ changed: false, outputText: sourceText, appliedEdits: Object.freeze([]) });
     }
 
     const appliedEdits = collectAudioEmitterGuardEdits(programNode);
-    if (appliedEdits.length === 0) {
-        return Object.freeze({ changed: false, outputText: sourceText, appliedEdits: Object.freeze([]) });
-    }
-
-    const outputText = applySourceTextEdits(sourceText, appliedEdits);
-    return Object.freeze({
-        changed: outputText !== sourceText,
-        outputText,
-        appliedEdits: Object.freeze(appliedEdits)
-    });
+    return createCodemodResultFromEdits(sourceText, appliedEdits);
 }
