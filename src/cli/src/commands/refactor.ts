@@ -37,6 +37,7 @@ import { createCodemodExecutionOrderTracker } from "./refactor-codemod-execution
 const { buildProjectIndex } = Semantic;
 const {
     RefactorEngine,
+    buildRenameImpactReport,
     formatRenamePlanReport,
     generateRenamePreview,
     listConfiguredCodemods,
@@ -537,7 +538,13 @@ async function performRename(options: ValidatedRenameOptions): Promise<void> {
         console.log(`\n${formatRenamePlanReport(plan)}`);
 
         if (verbose) {
-            const preview = generateRenamePreview(plan.workspace, plan.analysis.summary.oldName, newName);
+            // Use the rename-impact facade so this verbose branch talks to a
+            // single immediate neighbour instead of walking
+            // `plan.analysis.summary.oldName` four segments deep. The facade
+            // mirrors the existing `RenameImpactSummary` contract verbatim,
+            // so the generated preview stays byte-for-byte equivalent.
+            const impact = buildRenameImpactReport(plan.analysis);
+            const preview = generateRenamePreview(plan.workspace, impact.oldName, newName);
             console.log("\nDetailed File Changes:");
             for (const file of preview.files) {
                 console.log(`  ${file.filePath}: ${file.editCount} edits`);
