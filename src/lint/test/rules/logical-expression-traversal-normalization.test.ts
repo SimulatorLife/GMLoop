@@ -4,8 +4,8 @@ import { test } from "node:test";
 import { type MutableGameMakerAstNode } from "@gmloop/core";
 
 import {
-    OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE,
-    type OptimizeLogicalFlowPolicy
+    LOGICAL_NORMALIZATION_POLICY_BASELINE,
+    type LogicalNormalizationPolicy
 } from "../../src/rules/gml/transforms/logical-expression-condensation-policy.js";
 import { applyLogicalNormalizationWithChangeMetadata } from "../../src/rules/gml/transforms/logical-expression-traversal-normalization.js";
 
@@ -515,7 +515,7 @@ void test("applyLogicalNormalizationWithChangeMetadata falls back to the baselin
 
     applyLogicalNormalizationWithChangeMetadata(ast);
     assert.strictEqual(
-        OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE.maxTraversalIterations,
+        LOGICAL_NORMALIZATION_POLICY_BASELINE.maxTraversalIterations,
         10,
         "baseline traversal cap stays at 10 for backwards compatibility"
     );
@@ -542,8 +542,8 @@ void test("applyLogicalNormalizationWithChangeMetadata honours a custom maxTrave
         ]
     };
 
-    const reducedPolicy: OptimizeLogicalFlowPolicy = Object.freeze({
-        ...OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE,
+    const reducedPolicy: LogicalNormalizationPolicy = Object.freeze({
+        ...LOGICAL_NORMALIZATION_POLICY_BASELINE,
         maxTraversalIterations: 2
     });
 
@@ -566,8 +566,8 @@ void test("applyLogicalNormalizationWithChangeMetadata accepts a minimal iterati
         body: [{ type: "ExpressionStatement", expression: { type: "Identifier", name: "noop" } }]
     };
 
-    const minimumPolicy: OptimizeLogicalFlowPolicy = Object.freeze({
-        ...OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE,
+    const minimumPolicy: LogicalNormalizationPolicy = Object.freeze({
+        ...LOGICAL_NORMALIZATION_POLICY_BASELINE,
         maxTraversalIterations: 1
     });
 

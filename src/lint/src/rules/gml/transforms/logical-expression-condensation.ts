@@ -33,8 +33,8 @@ import {
 import { TRAVERSAL_IGNORED_KEYS } from "./logical-expression-condensation-key.js";
 import {
     evaluateTruthTablePolicy,
-    OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE,
-    type OptimizeLogicalFlowPolicy,
+    LOGICAL_NORMALIZATION_POLICY_BASELINE,
+    type LogicalNormalizationPolicy,
     type TruthTablePolicy
 } from "./logical-expression-condensation-policy.js";
 import {
@@ -53,12 +53,12 @@ const { cloneAstNode, cloneLocation, forEachNodeChild, getBooleanLiteralValue, i
  * @param ast The AST to condense in place.
  * @param policy Optional policy overriding the baseline truth-table cap and
  *   simplification iteration limits. Defaults to
- *   `OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE` so existing callers that don't
+ *   `LOGICAL_NORMALIZATION_POLICY_BASELINE` so existing callers that don't
  *   expose the option continue to behave exactly as before.
  */
 export function applyLogicalExpressionCondensation(
     ast: any,
-    policy: OptimizeLogicalFlowPolicy = OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE
+    policy: LogicalNormalizationPolicy = LOGICAL_NORMALIZATION_POLICY_BASELINE
 ) {
     if (!isNode(ast)) {
         return ast;
@@ -68,7 +68,7 @@ export function applyLogicalExpressionCondensation(
     return ast;
 }
 
-function visit(node, policy: OptimizeLogicalFlowPolicy = OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE) {
+function visit(node, policy: LogicalNormalizationPolicy = LOGICAL_NORMALIZATION_POLICY_BASELINE) {
     // Walk child nodes and attempt to collapse boolean branches into normalized boolean formulas.
     if (!isNode(node)) {
         return;
@@ -111,7 +111,7 @@ function visit(node, policy: OptimizeLogicalFlowPolicy = OPTIMIZE_LOGICAL_FLOW_P
  */
 function condenseWithinStatements(
     statements,
-    policy: OptimizeLogicalFlowPolicy = OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE
+    policy: LogicalNormalizationPolicy = LOGICAL_NORMALIZATION_POLICY_BASELINE
 ) {
     if (!isNonEmptyArray(statements)) {
         return;
@@ -182,7 +182,7 @@ function tryExtractEarlyExitGuardClause(statements, index) {
 function tryCondenseIfStatement(
     statements,
     index,
-    policy: OptimizeLogicalFlowPolicy = OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE
+    policy: LogicalNormalizationPolicy = LOGICAL_NORMALIZATION_POLICY_BASELINE
 ) {
     const statement = statements[index];
     if (!statement || statement.type !== "IfStatement") {

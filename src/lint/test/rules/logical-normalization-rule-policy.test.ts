@@ -1,5 +1,5 @@
 /**
- * Unit tests for the optimize-logical-flow-policy module.
+ * Unit tests for the shared logical-normalization policy module.
  *
  * These tests verify that the policy evaluation logic is correct and
  * independent from the mechanism code that applies rewrites.  Each test
@@ -27,8 +27,8 @@ import {
     evaluateIsIfNodeInElseIfChain,
     evaluateLogicalFlowCandidate,
     evaluateUnsafeCommentSyntax,
-    optimizeLogicalFlowPolicy
-} from "../../src/rules/gml/rules/optimize-logical-flow-policy.js";
+    logicalNormalizationRulePolicy
+} from "../../src/rules/gml/rules/logical-normalization-rule-policy.js";
 
 // ---------------------------------------------------------------------------
 // evaluateHasLogicalNormalizationSignal
@@ -463,10 +463,10 @@ void test("evaluateLogicalFlowCandidate returns frozen evaluation objects", () =
 });
 
 // ---------------------------------------------------------------------------
-// optimizeLogicalFlowPolicy namespace
+// logicalNormalizationRulePolicy namespace
 // ---------------------------------------------------------------------------
 
-void test("optimizeLogicalFlowPolicy namespace exposes the expected evaluators", () => {
+void test("logicalNormalizationRulePolicy namespace exposes the expected evaluators", () => {
     const expectedKeys = [
         "evaluateLogicalFlowCandidate",
         "evaluateUnsafeCommentSyntax",
@@ -481,24 +481,27 @@ void test("optimizeLogicalFlowPolicy namespace exposes the expected evaluators",
     ] as const;
 
     for (const key of expectedKeys) {
-        assert.ok(Object.hasOwn(optimizeLogicalFlowPolicy, key), `optimizeLogicalFlowPolicy.${key} should be exported`);
+        assert.ok(
+            Object.hasOwn(logicalNormalizationRulePolicy, key),
+            `logicalNormalizationRulePolicy.${key} should be exported`
+        );
     }
 
     // Each evaluator should be the exact function the rule mechanism imports.
-    assert.strictEqual(optimizeLogicalFlowPolicy.evaluateIsIfNodeInElseIfChain, evaluateIsIfNodeInElseIfChain);
+    assert.strictEqual(logicalNormalizationRulePolicy.evaluateIsIfNodeInElseIfChain, evaluateIsIfNodeInElseIfChain);
     assert.strictEqual(
-        optimizeLogicalFlowPolicy.evaluateCanIfStatementBenefitFromNormalization,
+        logicalNormalizationRulePolicy.evaluateCanIfStatementBenefitFromNormalization,
         evaluateCanIfStatementBenefitFromNormalization
     );
-    assert.strictEqual(optimizeLogicalFlowPolicy.evaluateUnsafeCommentSyntax, evaluateUnsafeCommentSyntax);
+    assert.strictEqual(logicalNormalizationRulePolicy.evaluateUnsafeCommentSyntax, evaluateUnsafeCommentSyntax);
     assert.strictEqual(
-        optimizeLogicalFlowPolicy.DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS,
+        logicalNormalizationRulePolicy.DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS,
         DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS
     );
 });
 
-void test("optimizeLogicalFlowPolicy is frozen", () => {
-    assert.ok(Object.isFrozen(optimizeLogicalFlowPolicy));
+void test("logicalNormalizationRulePolicy is frozen", () => {
+    assert.ok(Object.isFrozen(logicalNormalizationRulePolicy));
 });
 
 // ---------------------------------------------------------------------------

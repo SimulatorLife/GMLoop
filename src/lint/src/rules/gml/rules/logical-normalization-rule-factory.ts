@@ -12,7 +12,7 @@ import {
     evaluateIsElsePrefixedIfAtIndex,
     evaluateIsIfNodeInElseIfChain,
     evaluateUnsafeCommentSyntax
-} from "./optimize-logical-flow-policy.js";
+} from "./logical-normalization-rule-policy.js";
 
 type SourceTextRange = Readonly<{ start: number; end: number }>;
 
@@ -81,6 +81,10 @@ export function createLogicalNormalizationRule(
                     }
 
                     const cloned = Core.cloneAstNode(node) as MutableGameMakerAstNode;
+                    if (!cloned) {
+                        return;
+                    }
+
                     const result = applyLogicalNormalizationWithChangeMetadata(cloned, undefined, kind);
                     if (!result.changed) {
                         return;

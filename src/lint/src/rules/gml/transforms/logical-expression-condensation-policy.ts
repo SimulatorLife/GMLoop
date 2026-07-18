@@ -67,10 +67,10 @@ export type SimplificationPolicy = Readonly<{
 }>;
 
 /**
- * Combined policy for the `gml/optimize-logical-flow` lint rule.
+ * Combined policy for the focused logical normalization transforms.
  *
  * This bundles the truth-table cap and the simplification iteration limits so
- * a rule can resolve a single `OptimizeLogicalFlowPolicy` value and thread it
+ * a rule can resolve a single `LogicalNormalizationPolicy` value and thread it
  * through every condensation entry point without callers having to assemble
  * the individual `TruthTablePolicy` and `SimplificationPolicy` parts.
  *
@@ -81,7 +81,7 @@ export type SimplificationPolicy = Readonly<{
  * @see TruthTablePolicy
  * @see SimplificationPolicy
  */
-export type OptimizeLogicalFlowPolicy = Readonly<
+export type LogicalNormalizationPolicy = Readonly<
     TruthTablePolicy &
         SimplificationPolicy & {
             /**
@@ -101,20 +101,22 @@ export type OptimizeLogicalFlowPolicy = Readonly<
 /**
  * Resolved policy combining all condensation configuration values.
  */
-export type ResolvedOptimizeLogicalFlowPolicy = Readonly<{
+export type ResolvedLogicalNormalizationPolicy = Readonly<{
     truthTable: TruthTablePolicy;
     simplification: SimplificationPolicy;
     traversal: Readonly<{ maxTraversalIterations: number }>;
 }>;
 
 /**
- * Split a {@link OptimizeLogicalFlowPolicy} into its constituent narrower
+ * Split a {@link LogicalNormalizationPolicy} into its constituent narrower
  * policy bags so internal helpers can consume just the slice they need
  * (for example `applyLogicalNormalizationWithChangeMetadata` only needs the
  * traversal cap, while `applyLogicalExpressionCondensation` only cares about
  * the truth-table cap and indirectly about simplification iteration limits).
  */
-export function resolveOptimizeLogicalFlowPolicy(policy: OptimizeLogicalFlowPolicy): ResolvedOptimizeLogicalFlowPolicy {
+export function resolveLogicalNormalizationPolicy(
+    policy: LogicalNormalizationPolicy
+): ResolvedLogicalNormalizationPolicy {
     return Object.freeze({
         truthTable: Object.freeze({ maxVariablesForTruthTable: policy.maxVariablesForTruthTable }),
         simplification: Object.freeze({
@@ -152,7 +154,7 @@ export const SIMPLIFICATION_POLICY_BASELINE: SimplificationPolicy = Object.freez
  * default keeps the existing behaviour for callers that never opt into a
  * custom policy.
  */
-export const OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE: OptimizeLogicalFlowPolicy = Object.freeze({
+export const LOGICAL_NORMALIZATION_POLICY_BASELINE: LogicalNormalizationPolicy = Object.freeze({
     ...TRUTH_TABLE_POLICY_BASELINE,
     ...SIMPLIFICATION_POLICY_BASELINE,
     maxTraversalIterations: 10

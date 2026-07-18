@@ -102,8 +102,8 @@ export { stripCommentsTransform };
 // makes the public surface of the transforms directory honest.
 export {
     evaluateTruthTablePolicy,
-    OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE,
-    resolveOptimizeLogicalFlowPolicy,
+    LOGICAL_NORMALIZATION_POLICY_BASELINE,
+    resolveLogicalNormalizationPolicy,
     SIMPLIFICATION_POLICY_BASELINE,
     TRUTH_TABLE_POLICY_BASELINE
 } from "./logical-expression-condensation-policy.js";

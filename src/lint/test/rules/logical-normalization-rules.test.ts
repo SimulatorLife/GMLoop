@@ -38,7 +38,7 @@ void test("focused logical rules do not cross-own another rule's rewrite", () =>
 });
 
 void test("focused logical rules skip comment-bearing expressions", () => {
-    const input = "var ready = true && condition /* preserve this comment */;\n";
+    const input = "var ready = true /* preserve this comment */ && condition;\n";
     const result = lintWithRule("no-redundant-logical-operands", input, {});
 
     assert.equal(result.messages.length, 0);

@@ -2,8 +2,8 @@ import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
 
 import { replaceNode } from "../math/index.js";
 import {
-    OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE,
-    type OptimizeLogicalFlowPolicy
+    LOGICAL_NORMALIZATION_POLICY_BASELINE,
+    type LogicalNormalizationPolicy
 } from "./logical-expression-condensation-policy.js";
 
 const { isObjectLike, unwrapParenthesizedExpression } = Core;
@@ -38,12 +38,12 @@ export function applyLogicalNormalization(ast: MutableGameMakerAstNode): Mutable
  *   orchestrator's `maxTraversalIterations` cap is the only setting consulted
  *   here — inner truth-table and simplification iteration limits live closer
  *   to the condensation entry point. Defaults to
- *   `OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE` so callers that never opt into a
+ *   `LOGICAL_NORMALIZATION_POLICY_BASELINE` so callers that never opt into a
  *   custom policy keep the historical 10-pass ceiling.
  */
 export function applyLogicalNormalizationWithChangeMetadata(
     ast: MutableGameMakerAstNode,
-    policy: OptimizeLogicalFlowPolicy = OPTIMIZE_LOGICAL_FLOW_POLICY_BASELINE,
+    policy: LogicalNormalizationPolicy = LOGICAL_NORMALIZATION_POLICY_BASELINE,
     kind: LogicalNormalizationKind = "all"
 ): Readonly<{ ast: MutableGameMakerAstNode; changed: boolean }> {
     if (!isObjectLike(ast)) {

@@ -10,7 +10,7 @@ import {
     evaluateIsElsePrefixedIfAtIndex,
     evaluateIsIfNodeInElseIfChain,
     evaluateUnsafeCommentSyntax
-} from "./optimize-logical-flow-policy.js";
+} from "./logical-normalization-rule-policy.js";
 
 type SourceTextRange = Readonly<{ start: number; end: number }>;
 type ReturnStatementNode = Readonly<{ type: "ReturnStatement"; argument: unknown }> & Record<string, unknown>;

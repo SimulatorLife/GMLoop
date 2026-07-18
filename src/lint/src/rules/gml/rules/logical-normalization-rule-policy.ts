@@ -1,5 +1,5 @@
 /**
- * Policy evaluator for the `gml/optimize-logical-flow` lint rule.
+ * Shared policy predicates for focused logical-normalization rules.
  *
  * This module isolates the **policy decisions** (signal patterns, candidate
  * eligibility heuristics, skip conditions) from the **mechanism** that
@@ -14,7 +14,7 @@
  *    evaluators while leaving the mechanism code unchanged.
  *
  * The policy exposes a small set of pure predicates grouped under the
- * `optimizeLogicalFlowPolicy` namespace, plus a typed decision shape for
+ * `logicalNormalizationRulePolicy` namespace, plus a typed decision shape for
  * nodes that need a richer multi-flag evaluation result.
  */
 
@@ -472,12 +472,11 @@ function readAssignmentExpr(statement: unknown): { left: unknown; right: unknown
 }
 
 /**
- * Namespace bundling the policy layer of the `gml/optimize-logical-flow`
- * rule.  Importers should reach for these predicates instead of
- * re-implementing eligibility checks inline; the mechanism code is in
- * `optimize-logical-flow-rule.ts`.
+ * Namespace bundling the shared policy predicates for focused logical rules.
+ * Importers should reach for these predicates instead of re-implementing
+ * eligibility checks inline.
  */
-export const optimizeLogicalFlowPolicy = Object.freeze({
+export const logicalNormalizationRulePolicy = Object.freeze({
     evaluateLogicalFlowCandidate,
     evaluateUnsafeCommentSyntax,
     evaluateHasLogicalNormalizationSignal,

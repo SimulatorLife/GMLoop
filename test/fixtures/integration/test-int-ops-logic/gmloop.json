@@ -15,7 +15,8 @@
     "gml/no-logical-absorption": "error",
     "gml/prefer-logical-factorization": "error",
     "gml/no-logical-complements": "error",
-    "gml/prefer-logical-xor": "error"
+    "gml/prefer-logical-xor": "error",
+    "gml/prefer-conditional-assignment": "error"
   },
   "fixture": {
     "kind": "integration",
