@@ -929,14 +929,14 @@ void test("prefer-epsilon-comparisons reuses existing epsilon declarations in a 
 
 void test("prefer-epsilon-comparisons rewrites positive zero checks for math-sensitive variables", () => {
     const input = [
-        "var m = dot_product_3d(mx, my, mz, mx, my, mz);",
+        "var m = dot_product_3d(mx, my, mz, nx, ny, nz);",
         "if (m > 0) {",
         "    m = intersectionRadius / sqrt(m);",
         "}",
         ""
     ].join("\n");
     const expected = [
-        "var m = dot_product_3d(mx, my, mz, mx, my, mz);",
+        "var m = dot_product_3d(mx, my, mz, nx, ny, nz);",
         "if (m > math_get_epsilon()) {",
         "    m = intersectionRadius / sqrt(m);",
         "}",
@@ -945,6 +945,36 @@ void test("prefer-epsilon-comparisons rewrites positive zero checks for math-sen
 
     const result = lintWithRule("prefer-epsilon-comparisons", input, {});
     assertEquals(result.output, expected);
+});
+
+void test("prefer-epsilon-comparisons preserves the sign of signed math results", () => {
+    const input = [
+        "var dn = dot_product_3d(vx, vy, vz, nx, ny, nz);",
+        "if (dn == 0) {",
+        "    return false;",
+        "}",
+        ""
+    ].join("\n");
+    const expected = [
+        "var dn = dot_product_3d(vx, vy, vz, nx, ny, nz);",
+        "var eps = math_get_epsilon();",
+        "if (abs(dn) <= eps) {",
+        "    return false;",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("prefer-epsilon-comparisons", input, {});
+    assertEquals(result.output, expected);
+});
+
+void test("prefer-epsilon-comparisons preserves strict positivity for non-negative lengths", () => {
+    const input = ["var l = sqrt(toX * toX + toY * toY + toZ * toZ);", "if (l > 0) {", "    return l;", "}", ""].join(
+        "\n"
+    );
+
+    const result = lintWithRule("prefer-epsilon-comparisons", input, {});
+    assertEquals(result.output, input);
 });
 
 void test("prefer-epsilon-comparisons treats trig-builtin variables as math-sensitive", () => {
@@ -956,7 +986,7 @@ void test("prefer-epsilon-comparisons treats trig-builtin variables as math-sens
     const expected = [
         "var sine = sin(angle);",
         "var eps = math_get_epsilon();",
-        "if (sine <= eps) {",
+        "if (abs(sine) <= eps) {",
         "    return false;",
         "}",
         ""

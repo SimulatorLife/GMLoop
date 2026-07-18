@@ -263,17 +263,5 @@ Performance-sensitive autofix rules also have dedicated regression coverage unde
     function scr_timeline_play(timeline_to_play, func_callback) { /* ... */ }
     ```
 - `feather/gm1028` only autofixes accessors when constructor evidence proves the data-structure type. Unknown and global multi-coordinate access remains unchanged, and fixes replace the complete accessor prefix.
-- **FEAT**: A lint fixer to convert legacy 2D array accessors (e.g. `my_array[1, 2]`) to the array convention of `my_array[1][2]` when the array is known to be a 2D array
-- **BUG**: Lint auto-fix is producing this changed GML (but `dot_product_3d` can be negative):
-  ```
-   	    var dn = dot_product_3d(vx, vy, vz, nx, ny, nz);
-  -	    if (dn == 0)
-  +	    var eps = math_get_epsilon();
-  +	    if (dn <= eps)
-  ```
-  It also does *not* need to change this, as `if (l > 0)` is already safe:
-  ```
-   	    var l = sqrt(toX * toX + toY * toY + toZ * toZ);
-    -	if (l > 0)
-    +	if (l > math_get_epsilon())
-  ```
+- `prefer-epsilon-comparisons` rewrites signed math results with `abs(value) <= eps` for zero checks and leaves strict positivity checks unchanged when the value is proven non-negative, such as a direct `sqrt(...)` result.
+- **FEAT**: A lint rule + auto-fixer to convert legacy 2D array accessors (e.g. `my_array[1, 2]`) to the array convention of `my_array[1][2]` when the array is known to be a 2D array

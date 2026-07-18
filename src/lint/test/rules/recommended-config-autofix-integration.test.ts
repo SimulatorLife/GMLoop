@@ -100,6 +100,50 @@ void test("recommended config preserves global multi-coordinate array accessors"
     assert.equal(result.messages.length, 0);
 });
 
+void test("recommended config keeps signed zero checks sign-safe and preserves length positivity", async () => {
+    const sourceText = [
+        "var dn = dot_product_3d(vx, vy, vz, nx, ny, nz);",
+        "if (dn == 0) {",
+        "    return false;",
+        "}",
+        "var l = sqrt(toX * toX + toY * toY + toZ * toZ);",
+        "if (l > 0) {",
+        "    return l;",
+        "}",
+        ""
+    ].join("\n");
+    const recommendedConfig = createMutableRecommendedConfig();
+    for (const config of recommendedConfig) {
+        config.rules["gml/optimize-math-expressions"] = "off";
+    }
+    const eslint = new ESLint({
+        overrideConfigFile: true,
+        fix: true,
+        overrideConfig: recommendedConfig
+    });
+
+    const [result] = await eslint.lintText(sourceText, {
+        filePath: "recommended-config-epsilon-sign-safety.gml"
+    });
+
+    assert.equal(
+        result.output,
+        [
+            "var dn = dot_product_3d(vx, vy, vz, nx, ny, nz);",
+            "var eps = math_get_epsilon();",
+            "if (abs(dn) <= eps) {",
+            "    return false;",
+            "}",
+            "var l = sqrt(toX * toX + toY * toY + toZ * toZ);",
+            "if (l > 0) {",
+            "    return l;",
+            "}",
+            ""
+        ].join("\n")
+    );
+    assert.equal(result.messages.length, 0);
+});
+
 void test("recommended config auto-fixes gm1051 across multiline macro continuation lines", async () => {
     const sourceText = [
         `${String.raw`#macro __SCRIBBLE_PARSER_WRITE_NEWLINE _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__UNICODE      ] = 0x0A`}${backslash} //ASCII line break (dec = 10)`,

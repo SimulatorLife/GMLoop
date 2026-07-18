@@ -9,7 +9,9 @@ import { createMeta, reportFullTextRewrite } from "../rule-base-helpers.js";
 // (directly or transitively through a sub-expression) is considered
 // "math-sensitive": a direct `== 0` or `> 0` check on such a value can produce
 // incorrect branch decisions when the true result is a tiny non-zero number
-// produced by floating-point arithmetic.
+// produced by floating-point arithmetic. Equality rewrites must use an absolute
+// value because signed math results can be negative. Strict positivity rewrites
+// are limited to values whose sign is not known to be non-negative.
 //
 // This set is deliberately aligned with the comprehensive
 // `MATH_CALL_NAMES` catalog used by `optimize-math-expressions` so that both
@@ -51,15 +53,23 @@ const MATH_SENSITIVE_FUNCTION_NAMES: ReadonlySet<string> = new Set([
     "tan"
 ]);
 
+const NON_NEGATIVE_MATH_FUNCTION_NAMES: ReadonlySet<string> = new Set([
+    "point_distance",
+    "point_distance_3d",
+    "sqr",
+    "sqrt"
+]);
+
 const FUNCTION_CALL_NAME_PATTERN = /[A-Za-z_][A-Za-z0-9_]*/gu;
 
-function expressionLooksMathSensitive(expression: string): boolean {
+function readMathSensitiveFunctionNames(expression: string): Array<string> {
     // Scan the initializer for any identifier immediately followed by `(` so
     // we only treat actual function-call forms as math-sensitive. The previous
     // substring-based check missed several categories of math builtins
     // (trig, exp/log, degree conversions, etc.) and produced false positives
     // for any identifier that happened to begin with the searched prefix.
     const normalized = expression.toLowerCase();
+    const functionNames: Array<string> = [];
     for (const match of normalized.matchAll(FUNCTION_CALL_NAME_PATTERN)) {
         const nextIndex = match.index + match[0].length;
         if (
@@ -67,11 +77,43 @@ function expressionLooksMathSensitive(expression: string): boolean {
             normalized[nextIndex] === "(" &&
             MATH_SENSITIVE_FUNCTION_NAMES.has(match[0])
         ) {
-            return true;
+            functionNames.push(match[0]);
         }
     }
 
-    return false;
+    return functionNames;
+}
+
+function hasRepeatedDotProductOperands(expression: string): boolean {
+    const callMatch = /^(?<functionName>dot_product(?:_3d)?)\s*\((?<arguments>.*)\)$/u.exec(expression.trim());
+    if (!callMatch?.groups) {
+        return false;
+    }
+
+    const functionName = callMatch.groups.functionName;
+    const argumentsList = callMatch.groups.arguments.split(",").map((argument) => argument.trim());
+    const expectedArgumentCount = functionName === "dot_product_3d" ? 6 : 4;
+    if (argumentsList.length !== expectedArgumentCount) {
+        return false;
+    }
+
+    const half = expectedArgumentCount / 2;
+    return argumentsList.slice(0, half).every((argument, index) => argument === argumentsList[index + half]);
+}
+
+function expressionIsKnownNonNegativeMath(expression: string, functionNames: ReadonlyArray<string>): boolean {
+    if (expression.includes("-")) {
+        return false;
+    }
+
+    if (hasRepeatedDotProductOperands(expression)) {
+        return true;
+    }
+
+    return (
+        functionNames.length > 0 &&
+        functionNames.every((functionName) => NON_NEGATIVE_MATH_FUNCTION_NAMES.has(functionName))
+    );
 }
 
 type ZeroComparisonOperator = "==" | ">";
@@ -107,6 +149,7 @@ export function createPreferEpsilonComparisonsRule(definition: GmlRuleDefinition
                     const lineEnding = Core.dominantLineEnding(sourceText);
                     const lines = sourceText.split(/\r?\n/u);
                     const mathSensitiveVariables = new Set<string>();
+                    const nonNegativeMathSensitiveVariables = new Set<string>();
 
                     for (const line of lines) {
                         const declarationMatch = /^\s*var\s+([A-Za-z_]\w*)\s*=\s*(.+?);\s*$/u.exec(line);
@@ -116,8 +159,12 @@ export function createPreferEpsilonComparisonsRule(definition: GmlRuleDefinition
 
                         const variableName = declarationMatch[1] ?? "";
                         const expression = declarationMatch[2] ?? "";
-                        if (expressionLooksMathSensitive(expression)) {
+                        const functionNames = readMathSensitiveFunctionNames(expression);
+                        if (functionNames.length > 0) {
                             mathSensitiveVariables.add(variableName);
+                            if (expressionIsKnownNonNegativeMath(expression, functionNames)) {
+                                nonNegativeMathSensitiveVariables.add(variableName);
+                            }
                         }
                     }
 
@@ -141,6 +188,11 @@ export function createPreferEpsilonComparisonsRule(definition: GmlRuleDefinition
                         }
 
                         if (operator === ">") {
+                            if (nonNegativeMathSensitiveVariables.has(variableName)) {
+                                rewrittenLines.push(line);
+                                continue;
+                            }
+
                             rewrittenLines.push(`${indentation}if (${variableName} > math_get_epsilon())${suffix}`);
                             continue;
                         }
@@ -150,7 +202,10 @@ export function createPreferEpsilonComparisonsRule(definition: GmlRuleDefinition
                             insertedEpsilonDeclaration = true;
                         }
 
-                        rewrittenLines.push(`${indentation}if (${variableName} <= eps)${suffix}`);
+                        const zeroComparisonVariable = nonNegativeMathSensitiveVariables.has(variableName)
+                            ? variableName
+                            : `abs(${variableName})`;
+                        rewrittenLines.push(`${indentation}if (${zeroComparisonVariable} <= eps)${suffix}`);
                     }
 
                     const rewrittenText = rewrittenLines.join(lineEnding);
