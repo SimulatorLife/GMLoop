@@ -22,6 +22,19 @@ export const PROJECT_INDEX_GML_WORKER_MAX_CONCURRENCY_BASELINE = 16;
  */
 export const PROJECT_INDEX_GML_WORKER_POOL_MIN_FILES = 32;
 
+/**
+ * Minimum files assigned to each worker. Each worker pays a large fixed cost
+ * just from spawning (loading and compiling the ANTLR-generated parser and the
+ * rest of the semantic-analysis module graph into its own isolated heap —
+ * measured at roughly 60-80MB per worker, independent of how many files it
+ * actually processes). Spawning `os.cpus().length` workers for a batch just
+ * above {@link PROJECT_INDEX_GML_WORKER_POOL_MIN_FILES} would mean each worker
+ * does only a handful of files while still paying full price to spin up, so
+ * the effective worker count is capped to keep each worker's batch worth that
+ * fixed cost.
+ */
+export const PROJECT_INDEX_GML_WORKER_POOL_MIN_FILES_PER_WORKER = 40;
+
 const PROJECT_MANIFEST_EXTENSION_LOWER = PROJECT_MANIFEST_EXTENSION.toLowerCase();
 
 /**

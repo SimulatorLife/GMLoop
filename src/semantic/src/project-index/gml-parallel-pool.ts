@@ -5,7 +5,10 @@ import { type AbortSignalLike, Core } from "@gmloop/core";
 
 import { PROJECT_INDEX_BUILD_ABORT_MESSAGE } from "./abort-guard.js";
 import type { ProjectIndexBuildProgress } from "./build-options.js";
-import { PROJECT_INDEX_GML_WORKER_POOL_MIN_FILES } from "./constants.js";
+import {
+    PROJECT_INDEX_GML_WORKER_POOL_MIN_FILES,
+    PROJECT_INDEX_GML_WORKER_POOL_MIN_FILES_PER_WORKER
+} from "./constants.js";
 import type { ProjectIndexFsFacade } from "./fs-facade.js";
 import type {
     GmlParallelAccumulatorRecord,
@@ -338,7 +341,16 @@ export async function runProjectGmlFilesWithWorkerPool({
     Core.throwIfAborted(signal, PROJECT_INDEX_BUILD_ABORT_MESSAGE);
 
     const cpuCount = Core.toFiniteNumber(os.cpus().length) ?? 1;
-    const batches = partitionGmlFiles(gmlFiles, Core.clamp(workerConcurrency, 1, Math.max(1, cpuCount)));
+    const maxWorkersForFileCount = Math.max(
+        1,
+        Math.floor(gmlFiles.length / PROJECT_INDEX_GML_WORKER_POOL_MIN_FILES_PER_WORKER)
+    );
+    const effectiveWorkerCount = Core.clamp(
+        workerConcurrency,
+        1,
+        Math.min(Math.max(1, cpuCount), maxWorkersForFileCount)
+    );
+    const batches = partitionGmlFiles(gmlFiles, effectiveWorkerCount);
     metrics.metadata.setMetadata("gmlWorkerPool.batchCount", batches.length);
 
     const total = gmlFiles.length;
