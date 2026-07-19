@@ -12,6 +12,7 @@ import {
     listGraphNodeKinds,
     resolveEffectiveGraphNodeKinds
 } from "../../graph/graph-layout.js";
+import { projectGraphLayoutForSemanticZoom } from "../../graph/graph-semantic-zoom.js";
 import { EDGE_LINE_VISUAL_STYLES, NODE_VISUAL_STYLES } from "../../graph/graph-visualization-style-metadata.js";
 import type { GraphVisualizationEdgeType, GraphVisualizationNodeKind } from "../../graph/types.js";
 import {
@@ -34,6 +35,8 @@ const DEFAULT_DISABLED_NODE_KINDS = new Set<GraphLegendNodeKind>([
     "note",
     "room_layer"
 ]);
+const FOCUSED_NODE_ZOOM_SCALE = 2.4;
+const FOCUS_CLEAR_ZOOM_SCALE = 0.55;
 
 function formatNodeKindLabel(kind: string): string {
     return kind
@@ -111,6 +114,7 @@ export class GmGraphPanel extends LightDomLitElement {
     #enabledNodeKinds = new Set<GraphLegendNodeKind>();
     #enabledEdgeTypes = new Set<GraphVisualizationEdgeType>();
     #selectedNodeId: string | null = null;
+    #focusedNodeId: string | null = null;
     #lastModelReference: GraphVisualizationUiModel | null = null;
     #initializedFiltersForModel = false;
 
@@ -135,6 +139,7 @@ export class GmGraphPanel extends LightDomLitElement {
         this.#panY = 0;
         this.#zoomScale = 1;
         this.#selectedNodeId = null;
+        this.#focusedNodeId = null;
         this.#cachedVisibleLayout = null;
         this.requestUpdate();
     };
@@ -249,6 +254,9 @@ export class GmGraphPanel extends LightDomLitElement {
         this.#panX = mouseX - (mouseX - this.#panX) * (finalScale / this.#zoomScale);
         this.#panY = mouseY - (mouseY - this.#panY) * (finalScale / this.#zoomScale);
         this.#zoomScale = finalScale;
+        if (finalScale <= FOCUS_CLEAR_ZOOM_SCALE) {
+            this.#focusedNodeId = null;
+        }
 
         this.requestUpdate();
     };
@@ -297,6 +305,26 @@ export class GmGraphPanel extends LightDomLitElement {
         this.#selectedNodeId = nodeId;
         this.requestUpdate();
     }
+
+    protected focusNode(nodeId: string): void {
+        const node = this.#cachedLayout?.nodes.find((candidate) => candidate.id === nodeId);
+        if (!node) {
+            return;
+        }
+
+        const targetScale = Math.max(this.#zoomScale, FOCUSED_NODE_ZOOM_SCALE);
+        this.#selectedNodeId = nodeId;
+        this.#focusedNodeId = nodeId;
+        this.#panX = -node.x * targetScale;
+        this.#panY = -node.y * targetScale;
+        this.#zoomScale = targetScale;
+        this.requestUpdate();
+    }
+
+    #clearFocus = (): void => {
+        this.#focusedNodeId = null;
+        this.requestUpdate();
+    };
 
     #matchesSearch(node: GraphLayoutNode): boolean {
         const query = this.state?.searchQuery.trim().toLowerCase() ?? "";
@@ -453,6 +481,7 @@ export class GmGraphPanel extends LightDomLitElement {
 
         const pathLabel = readGraphNodePathLabel(node);
         const locationLabel = readGraphNodeLocationLabel(node);
+        const isFocused = this.#focusedNodeId === node.id;
         return html`
             <div id="tooltip" class="visible" role="dialog" aria-live="polite" data-selected-node-id=${node.id}>
                 <h3>${node.displayName}</h3>
@@ -463,6 +492,11 @@ export class GmGraphPanel extends LightDomLitElement {
                 ${locationLabel ? html`<div>${locationLabel}</div>` : null}
                 ${node.summary ? html`<p>${node.summary}</p>` : null}
                 ${node.snippet ? html`<pre>${node.snippet}</pre>` : null}
+                ${
+                    isFocused
+                        ? html`<button type="button" @click=${this.#clearFocus}>Exit focused view</button>`
+                        : html`<div>Double-click the node to zoom into its semantic hierarchy.</div>`
+                }
             </div>
         `;
     }
@@ -484,6 +518,9 @@ export class GmGraphPanel extends LightDomLitElement {
             this.#cachedNodeItems = listGraphNodeKindLegendItems(graphNodes);
             this.#cachedEdgeTypes = listGraphEdgeTypes(graphEdges);
             this.#cachedVisibleLayout = null;
+            if (this.#focusedNodeId && !this.#cachedLayout.nodes.some((node) => node.id === this.#focusedNodeId)) {
+                this.#focusedNodeId = null;
+            }
         }
 
         const query = this.state.searchQuery.trim().toLowerCase();
@@ -507,11 +544,22 @@ export class GmGraphPanel extends LightDomLitElement {
         const layout = this.#cachedLayout;
         const nodeItems = this.#cachedNodeItems;
         const edgeTypes = this.#cachedEdgeTypes;
-        const { edges: visibleEdges, nodes: visibleNodes } = this.#cachedVisibleLayout;
+        const filteredLayout = this.#cachedVisibleLayout;
+        const semanticLayout = projectGraphLayoutForSemanticZoom({
+            displayLayout: filteredLayout,
+            focusNodeId: this.#focusedNodeId,
+            sourceLayout: layout,
+            zoomScale: this.#zoomScale
+        });
+        const { edges: visibleEdges, nodes: visibleNodes } = semanticLayout;
         const selectedNode = layout.nodes.find((node) => node.id === this.#selectedNodeId) ?? null;
 
         if (this.#cachedJsonValue === null) {
-            this.#cachedJsonValue = JSON.stringify({ edges: visibleEdges, nodes: visibleNodes }, null, 2);
+            this.#cachedJsonValue = JSON.stringify(
+                { edges: filteredLayout.edges, nodes: filteredLayout.nodes },
+                null,
+                2
+            );
         }
         const jsonValue = this.#cachedJsonValue;
 
@@ -574,11 +622,13 @@ export class GmGraphPanel extends LightDomLitElement {
                             return svg`
                                 <line
                                     class="link"
+                                    data-aggregate-count=${String(edge.aggregateCount)}
                                     x1=${String(geom.x1)}
                                     y1=${String(geom.y1)}
                                     x2=${String(geom.x2)}
                                     y2=${String(geom.y2)}
                                     stroke=${getEdgeColor(edge.type)}
+                                    stroke-width=${String(Math.min(6, 1 + Math.log2(edge.aggregateCount)))}
                                     stroke-dasharray=${getEdgeDashArray(edge.type)}
                                     marker-end=${`url(#${readEdgeArrowMarkerId(edge.type)})`}
                                 ></line>
@@ -598,6 +648,10 @@ export class GmGraphPanel extends LightDomLitElement {
                                             event.stopPropagation();
                                         }}
                                         @click=${() => this.selectNode(node.id)}
+                                        @dblclick=${(event: MouseEvent) => {
+                                            event.stopPropagation();
+                                            this.focusNode(node.id);
+                                        }}
                                         @keydown=${(event: KeyboardEvent) => {
                                             if (event.key === "Enter" || event.key === " ") {
                                                 event.preventDefault();
