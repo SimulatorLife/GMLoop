@@ -223,6 +223,42 @@ void test("Fix toolbar identifies the active workflow and disables concurrent pr
     assert.equal(Array.from(rendered.matchAll(/button-spinner/gu)).length, 1);
 });
 
+void test("Fix toolbar keeps its workflow buttons visible but disabled while a project is still opening", () => {
+    const toolbar = new TestableGmGraphToolbar();
+    toolbar.model = {
+        ...createMockModel(),
+        startupState: {
+            detail: null,
+            message: "Loading project data…",
+            phase: "loading"
+        }
+    };
+    toolbar.state = createMockState("fix");
+
+    const rendered = renderTemplateValue(toolbar.renderForTest());
+
+    assert.match(rendered, /id=run-fix[\s\S]*Fix/u);
+    assert.match(rendered, /id=run-format[\s\S]*Format/u);
+    assert.match(rendered, /id=run-refactor[\s\S]*Refactor \/ Codemods/u);
+    assert.match(rendered, /id=run-lint[\s\S]*Lint/u);
+    const fixControlsMatch = /toolbar-fix-controls">(?<body>[\s\S]*?)<\/div>\s*<\/div>/u.exec(rendered);
+    assert.ok(fixControlsMatch?.groups, "expected to find the fix controls group in the rendered toolbar");
+    assert.equal(Array.from(fixControlsMatch.groups.body.matchAll(/\?disabled=true/gu)).length, 4);
+});
+
+void test("Fix toolbar enables its workflow buttons once the project finishes opening", () => {
+    const toolbar = new TestableGmGraphToolbar();
+    toolbar.model = createMockModel();
+    toolbar.state = createMockState("fix");
+
+    const rendered = renderTemplateValue(toolbar.renderForTest());
+
+    assert.match(rendered, /id=run-fix[\s\S]*Fix/u);
+    const fixControlsMatch = /toolbar-fix-controls">(?<body>[\s\S]*?)<\/div>\s*<\/div>/u.exec(rendered);
+    assert.ok(fixControlsMatch?.groups, "expected to find the fix controls group in the rendered toolbar");
+    assert.equal(Array.from(fixControlsMatch.groups.body.matchAll(/\?disabled=true/gu)).length, 0);
+});
+
 void test("Docs toolbar owns catalog search and subcategory controls", () => {
     const toolbar = new TestableGmGraphToolbar();
     toolbar.model = createMockModel();

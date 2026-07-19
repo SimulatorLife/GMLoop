@@ -40,6 +40,12 @@ function normalizeLabel(label) {
  * @property {(label: string) => () => void} startTimer
  * @property {(label: string, callback: () => any) => any} timeSync
  * @property {(label: string, callback: () => Promise<any>) => Promise<any>} timeAsync
+ * @property {(label: string, durationMs: number) => void} recordDuration Record a
+ *   duration measured elsewhere (for example inside a worker thread) as if it
+ *   had been captured by `startTimer`/`timeSync`. Lets callers that aggregate
+ *   pre-measured timings from another execution context (a worker thread, a
+ *   remote process) fold them into this tracker's `timings` snapshot without
+ *   re-executing the timed work.
  */
 
 /**
@@ -344,7 +350,8 @@ export function createMetricsTracker({
     const timingTools = Object.freeze({
         startTimer,
         timeSync,
-        timeAsync
+        timeAsync,
+        recordDuration: recordTiming
     });
 
     const counterTools = Object.freeze({

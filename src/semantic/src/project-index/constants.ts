@@ -6,6 +6,22 @@ export const PROJECT_INDEX_GML_CONCURRENCY_BASELINE = 4;
 export const PROJECT_INDEX_GML_MAX_CONCURRENCY_BASELINE = 16;
 export const PROJECT_INDEX_SLL_PREDICTION_MAX_SOURCE_LENGTH = 128_000;
 
+/**
+ * Upper bound applied to the GML project-index worker-thread pool. Real OS
+ * threads are considerably more expensive than the promise-based
+ * `gmlConcurrency` lanes, so the ceiling stays modest even on machines with a
+ * very large core count.
+ */
+export const PROJECT_INDEX_GML_WORKER_MAX_CONCURRENCY_BASELINE = 16;
+
+/**
+ * Minimum number of discovered `.gml` files required before the worker-thread
+ * pool is worth its spawn/serialize/merge overhead. Smaller batches stay on
+ * the single-threaded path, which is already fast enough that pool overhead
+ * would dominate.
+ */
+export const PROJECT_INDEX_GML_WORKER_POOL_MIN_FILES = 32;
+
 const PROJECT_MANIFEST_EXTENSION_LOWER = PROJECT_MANIFEST_EXTENSION.toLowerCase();
 
 /**

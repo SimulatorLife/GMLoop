@@ -8,11 +8,12 @@ import { annotateSemanticBindings } from "../scopes/semantic-binding.js";
 import { loadBuiltInIdentifiers } from "../symbols/built-in-identifiers.js";
 import { createProjectIndexAbortGuard, PROJECT_INDEX_BUILD_ABORT_MESSAGE } from "./abort-guard.js";
 import type { ProjectIndexBuildOptions } from "./build-options.js";
-import { clampConcurrency } from "./concurrency.js";
+import { clampConcurrency, clampWorkerConcurrency } from "./concurrency.js";
 import { PROJECT_INDEX_SLL_PREDICTION_MAX_SOURCE_LENGTH } from "./constants.js";
 import { collectConstructorMemberAnalysis, type ConstructorMemberAnalysis } from "./constructor-members.js";
 import { createProjectIndexCoordinator as createProjectIndexCoordinatorCore } from "./coordinator.js";
 import { type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
+import { isGmlParallelPoolEligible, runProjectGmlFilesWithWorkerPool } from "./gml-parallel-pool.js";
 import { assertValidIdentifierRole, IdentifierRole } from "./identifier-roles.js";
 import { createIdentifierSink, type IdentifierSink, type IdentifierSinkRole } from "./identifier-sink.js";
 import { createProjectIndexMetrics, finalizeProjectIndexMetrics } from "./metrics.js";
@@ -362,7 +363,7 @@ function assignIdentifierEntryMetadata(entry, metadata) {
     }
     return entry;
 }
-function createIdentifierCollections() {
+export function createIdentifierCollections() {
     return {
         scripts: new Map(),
         functions: new Map(),
@@ -3080,8 +3081,10 @@ function configureGmlProcessing({ options, metrics }) {
     const concurrencySettings = options?.concurrency ?? {};
     const gmlConcurrency = clampConcurrency(concurrencySettings.gml ?? concurrencySettings.gmlParsing);
     metrics.metadata.setMetadata("gmlParseConcurrency", gmlConcurrency);
+    const workerConcurrency = clampWorkerConcurrency(concurrencySettings.worker);
+    metrics.metadata.setMetadata("gmlWorkerPoolConcurrency", workerConcurrency);
     const parseProjectSource = options?.parseGml;
-    return { gmlConcurrency, parseProjectSource };
+    return { gmlConcurrency, workerConcurrency, parseProjectSource };
 }
 
 type ProjectIndexSemanticFileChange = Readonly<{
@@ -3190,7 +3193,19 @@ async function reconcileIncrementalResourceMetadata({
         .toSorted((left, right) => left.filePath.localeCompare(right.filePath));
 }
 
-async function processProjectGmlFilesForIndex({
+/**
+ * Process a batch of GML files sequentially (subject to the promise-based
+ * `gmlConcurrency` I/O overlap), appending results into the caller-supplied
+ * `scopeMap`/`filesMap`/`identifierCollections`/`relationships`/
+ * `constructorStaticMemberReferences` accumulators.
+ *
+ * Exported so the GML worker-thread pool (`gml-parallel-worker.ts`) can reuse
+ * this exact function — unmodified — to process its own file batch against a
+ * local, empty set of accumulators. Keeping a single implementation means the
+ * sequential and parallel project-index paths can never drift from one
+ * another; only the accumulators and file list differ between the two.
+ */
+export async function processProjectGmlFilesForIndex({
     gmlFiles,
     gmlConcurrency,
     parseProjectSource,
@@ -3495,34 +3510,80 @@ export async function buildProjectIndex(
 
     const constructorStaticMemberReferences: any[] = [];
 
-    const { gmlConcurrency, parseProjectSource } = configureGmlProcessing({
+    const { gmlConcurrency, workerConcurrency, parseProjectSource } = configureGmlProcessing({
         options,
         metrics
     });
 
     const definitionsOnly = options?.definitionsOnly === true;
     try {
-        await processProjectGmlFilesForIndex({
+        const runSequentialGmlProcessing = () =>
+            processProjectGmlFilesForIndex({
+                gmlFiles: orderedGmlFiles,
+                gmlConcurrency,
+                parseProjectSource,
+                fsFacade,
+                metrics,
+                ensureNotAborted,
+                resourceAnalysis,
+                scopeMap,
+                filesMap,
+                identifierCollections,
+                relationships,
+                builtInNames,
+                projectRoot: resolvedRoot,
+                signal,
+                identifierSink,
+                constructorStaticMemberReferences,
+                recordMemorySample,
+                onProgress: options?.onProgress,
+                definitionsOnly
+            });
+
+        const canUseWorkerPool = isGmlParallelPoolEligible({
             gmlFiles: orderedGmlFiles,
-            gmlConcurrency,
-            parseProjectSource,
             fsFacade,
-            metrics,
-            ensureNotAborted,
-            resourceAnalysis,
-            scopeMap,
-            filesMap,
-            identifierCollections,
-            relationships,
-            builtInNames,
-            projectRoot: resolvedRoot,
-            signal,
+            parseProjectSource,
             identifierSink,
-            constructorStaticMemberReferences,
-            recordMemorySample,
-            onProgress: options?.onProgress,
-            definitionsOnly
+            workerConcurrency
         });
+
+        if (canUseWorkerPool) {
+            try {
+                await runProjectGmlFilesWithWorkerPool({
+                    gmlFiles: orderedGmlFiles,
+                    workerConcurrency,
+                    gmlConcurrency,
+                    resourceAnalysis,
+                    scopeMap,
+                    filesMap,
+                    identifierCollections,
+                    relationships,
+                    builtInNames,
+                    projectRoot: resolvedRoot,
+                    signal,
+                    metrics,
+                    pendingConstructorStaticMemberReferences: constructorStaticMemberReferences,
+                    onProgress: options?.onProgress,
+                    definitionsOnly
+                });
+            } catch (poolError) {
+                if (Core.isAbortError(poolError)) {
+                    throw poolError;
+                }
+                // Parallelism is an optimization, not a required behavior: any
+                // failure in the worker pool's setup, IPC, or merge logic falls
+                // back to the sequential path rather than failing a build that
+                // would otherwise have succeeded. Nothing has been mutated on
+                // the shared accumulators yet (the pool only merges after every
+                // worker succeeds), so re-running sequentially from scratch is
+                // safe.
+                metrics.counters.increment("gmlWorkerPool.fallbackToSequential");
+                await runSequentialGmlProcessing();
+            }
+        } else {
+            await runSequentialGmlProcessing();
+        }
         recordMemorySample();
 
         registerPendingConstructorStaticMemberReferences({

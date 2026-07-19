@@ -17,7 +17,7 @@ export type ProjectIndexBuildProgress = Readonly<{
 
 /** Explicit options accepted by the canonical project-index builder. */
 export type ProjectIndexBuildOptions = Readonly<{
-    concurrency?: Readonly<{ gml: number; gmlParsing: number }> | null;
+    concurrency?: Readonly<{ gml: number; gmlParsing: number; worker?: number }> | null;
     definitionsOnly?: boolean;
     identifierSink?: IdentifierSinkOptions;
     incremental?: Readonly<{

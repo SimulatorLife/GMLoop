@@ -222,7 +222,7 @@ void test("serial 500-file workload stays within warm Tier 1, query, retention, 
     try {
         const definitionsStartedAt = performance.now();
         const definitionsIndex: InstrumentedProjectIndex = await buildProjectIndex(workspace.projectRoot, undefined, {
-            concurrency: { gml: 1, gmlParsing: 1 },
+            concurrency: { gml: 1, gmlParsing: 1, worker: 1 },
             definitionsOnly: true
         });
         const definitionsDurationMs = performance.now() - definitionsStartedAt;
@@ -326,7 +326,7 @@ void test("serial 500-file workload stays within warm Tier 1, query, retention, 
 
         const fullStartedAt = performance.now();
         const fullIndex: InstrumentedProjectIndex = await buildProjectIndex(workspace.projectRoot, undefined, {
-            concurrency: { gml: 1, gmlParsing: 1 }
+            concurrency: { gml: 1, gmlParsing: 1, worker: 1 }
         });
         const fullDurationMs = performance.now() - fullStartedAt;
         assertBuildMeasurements(fullIndex, {

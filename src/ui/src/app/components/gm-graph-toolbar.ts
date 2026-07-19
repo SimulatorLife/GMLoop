@@ -713,12 +713,16 @@ export class GmGraphToolbar extends LightDomLitElement {
     }
 
     #renderFixControls() {
-        if (!this.model?.isServerMode || !hasLoadedGraphProject(this.model)) {
+        if (!this.model?.isServerMode) {
             return null;
         }
 
         const isPending = this.state?.isFixPending === true;
         const isCancelPending = this.state?.isFixCancelPending === true;
+        // A project can be selected (and shown in the header) before its startup
+        // settles; fixes genuinely cannot run until then. Once loaded, this stays
+        // false so the buttons never sit disabled for longer than necessary.
+        const isProjectStillOpening = !hasLoadedGraphProject(this.model);
         const activeWorkflow = isPending ? (this.state?.fixWorkflow ?? null) : null;
         const workflows = [
             { id: "run-fix", label: "Fix", workflow: "fix" },
@@ -739,7 +743,7 @@ export class GmGraphToolbar extends LightDomLitElement {
                             id=${entry.id}
                             type="button"
                             class=${index === 0 ? "gm-btn gm-btn--primary" : "gm-btn"}
-                            ?disabled=${isPending}
+                            ?disabled=${isPending || isProjectStillOpening}
                             aria-busy=${activeWorkflow === entry.workflow ? "true" : "false"}
                             @click=${() => this.#emitFix(entry.workflow)}
                         >
