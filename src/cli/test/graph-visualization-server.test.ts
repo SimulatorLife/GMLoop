@@ -256,6 +256,56 @@ void test("graph visualization server rejects unknown project workflows", async 
     );
 });
 
+void test("graph visualization server routes POST /api/fix/cancel to the cancelFix callback", async (testContext) => {
+    let cancelFixCallCount = 0;
+
+    await withGraphVisualizationServer(
+        testContext,
+        {
+            cancelFix: async () => {
+                cancelFixCallCount += 1;
+                return { cancelled: true };
+            },
+            regenerate: async () => ({ changed: false }),
+            runFix: async () => ({ logLines: [] }),
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                })
+        },
+        async (handle) => {
+            const response = await fetch(`${handle.url}/api/fix/cancel`, { method: "POST" });
+
+            assert.equal(response.status, 200);
+            assert.deepEqual(await response.json(), { cancelled: true, ok: true });
+            assert.equal(cancelFixCallCount, 1);
+        }
+    );
+});
+
+void test("graph visualization server reports no in-flight fix workflow when cancelFix declines to cancel", async (testContext) => {
+    await withGraphVisualizationServer(
+        testContext,
+        {
+            cancelFix: async () => ({ cancelled: false }),
+            regenerate: async () => ({ changed: false }),
+            runFix: async () => ({ logLines: [] }),
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                })
+        },
+        async (handle) => {
+            const response = await fetch(`${handle.url}/api/fix/cancel`, { method: "POST" });
+
+            assert.equal(response.status, 200);
+            assert.deepEqual(await response.json(), { cancelled: false, ok: true });
+        }
+    );
+});
+
 void test("graph visualization server keeps the current view accessible while regeneration is pending", async (testContext) => {
     let finishRegeneration: (() => void) | null = null;
     const regenerationComplete = new Promise<void>((resolve) => {

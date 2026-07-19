@@ -15,6 +15,7 @@ export type GraphVisualizationAppBootstrapDependencies = Readonly<{
         onCreateConfig?: GraphVisualizationUiCallbacks["onCreateConfig"];
         onSaveConfig?: GraphVisualizationUiCallbacks["onSaveConfig"];
         onRunFix?: GraphVisualizationUiCallbacks["onRunFix"];
+        onCancelFix?: GraphVisualizationUiCallbacks["onCancelFix"];
         onStartLiveReload?: GraphVisualizationUiCallbacks["onStartLiveReload"];
         onStopLiveReload?: GraphVisualizationUiCallbacks["onStopLiveReload"];
         onInitializeAutoGameAgentPack?: GraphVisualizationUiCallbacks["onInitializeAutoGameAgentPack"];
@@ -38,6 +39,7 @@ export function bootstrapGraphVisualizationLitApp(dependencies: GraphVisualizati
         onCreateConfig: dependencies.callbacks?.onCreateConfig ?? defaultCallbacks.onCreateConfig,
         onSaveConfig: dependencies.callbacks?.onSaveConfig ?? defaultCallbacks.onSaveConfig,
         onRunFix: dependencies.callbacks?.onRunFix ?? defaultCallbacks.onRunFix,
+        onCancelFix: dependencies.callbacks?.onCancelFix ?? defaultCallbacks.onCancelFix,
         onStartLiveReload: dependencies.callbacks?.onStartLiveReload ?? defaultCallbacks.onStartLiveReload,
         onStopLiveReload: dependencies.callbacks?.onStopLiveReload ?? defaultCallbacks.onStopLiveReload,
         onInitializeAutoGameAgentPack:

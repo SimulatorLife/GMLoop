@@ -641,7 +641,13 @@ export class GmConfigPanel extends LightDomLitElement {
                     <span class="config-rule-description">${entry.description}</span>
                     ${
                         hasOptions
-                            ? html`<pre class="config-inline-json">${serializeConfigurationValue(entry.options)}</pre>`
+                            ? html`<gm-json-viewer
+                                  class="config-inline-json"
+                                  .value=${entry.options}
+                                  copyAccessibleLabel=${`Copy ${entry.ruleId} options to clipboard`}
+                                  copyLabel="Copy JSON"
+                                  compact
+                              ></gm-json-viewer>`
                             : nothing
                     }
                 </div>

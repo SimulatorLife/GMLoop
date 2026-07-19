@@ -138,7 +138,8 @@ async function runGraphVisualizationProjectWorkflow(
     context: GraphResolutionContext,
     configPath: string | undefined,
     workflow: GraphVisualizationProjectWorkflow,
-    onLogLine: ((logLine: string) => void) | null = null
+    onLogLine: ((logLine: string) => void) | null = null,
+    onProcessStart: ((childProcess: ChildProcessWithoutNullStreams) => void) | null = null
 ): Promise<Readonly<{ logLines: ReadonlyArray<string> }>> {
     const cliEntryPath = fileURLToPath(new URL("../../index.js", import.meta.url));
     const args = ["--disable-warning=ExperimentalWarning"];
@@ -164,6 +165,7 @@ async function runGraphVisualizationProjectWorkflow(
         cwd: context.projectRoot,
         stdio: ["ignore", "pipe", "pipe"]
     });
+    onProcessStart?.(childProcess);
 
     const stdoutPromise = streamProcessOutputByLine(childProcess.stdout, appendLogLine);
     const stderrPromise = streamProcessOutputByLine(childProcess.stderr, appendLogLine);
@@ -1450,6 +1452,8 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
     let activeFixProgressLogLines = new Array<string>();
     let isFixWorkflowRunning = false;
     let activeFixWorkflow: GraphVisualizationProjectWorkflow | null = null;
+    let activeFixChildProcess: ChildProcessWithoutNullStreams | null = null;
+    let isFixCancelRequested = false;
     const activeLiveReloadSession = createGraphVisualizationLiveReloadSessionState();
 
     if (options.serve !== true) {
@@ -2028,6 +2032,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 activeFixProgressLogLines = [];
                 activeFixWorkflow = workflow;
                 isFixWorkflowRunning = true;
+                isFixCancelRequested = false;
                 try {
                     const result = await runGraphVisualizationProjectWorkflow(
                         activeContext,
@@ -2035,6 +2040,9 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                         workflow,
                         (logLine) => {
                             activeFixProgressLogLines.push(logLine);
+                        },
+                        (childProcess) => {
+                            activeFixChildProcess = childProcess;
                         }
                     );
                     activeLastFixRun = Object.freeze({
@@ -2049,10 +2057,28 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                     activeFixProgressLogLines.push("Fix workflow post-processing complete.");
                     markServeRevisionChanged();
                     return result;
+                } catch (error) {
+                    if (isFixCancelRequested) {
+                        const cancelledMessage = "Fix workflow was cancelled.";
+                        activeFixProgressLogLines.push(cancelledMessage);
+                        throw new Error(cancelledMessage);
+                    }
+                    throw error;
                 } finally {
                     isFixWorkflowRunning = false;
                     activeFixWorkflow = null;
+                    activeFixChildProcess = null;
                 }
+            },
+            cancelFix: async () => {
+                if (!isFixWorkflowRunning || activeFixChildProcess === null) {
+                    return Object.freeze({ cancelled: false });
+                }
+
+                isFixCancelRequested = true;
+                activeFixProgressLogLines.push("Cancelling fix workflow...");
+                activeFixChildProcess.kill("SIGTERM");
+                return Object.freeze({ cancelled: true });
             },
             getFixProgress: () =>
                 (() => {

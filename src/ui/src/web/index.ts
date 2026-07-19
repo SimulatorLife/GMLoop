@@ -37,6 +37,12 @@ type MutationApiResponse = Readonly<{
     projectChanged?: boolean;
 }>;
 
+type CancelFixApiResponse = Readonly<{
+    cancelled?: boolean;
+    error?: string;
+    ok?: boolean;
+}>;
+
 type LiveReloadStartApiResponse = Readonly<{
     error?: string;
     liveReload?: GraphVisualizationLiveReloadModel;
@@ -332,6 +338,13 @@ export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
                 } finally {
                     globalThis.clearInterval(progressPollInterval);
                     await pollFixProgress();
+                }
+            },
+            onCancelFix: async () => {
+                const response = await fetch("/api/fix/cancel", { method: "POST" });
+                const result = await readJsonResponse<CancelFixApiResponse>(response);
+                if (!response.ok || result.ok !== true) {
+                    throw new Error(result.error ?? "Fix workflow cancellation failed.");
                 }
             },
             onStartLiveReload: () => startLiveReloadFromServer(),

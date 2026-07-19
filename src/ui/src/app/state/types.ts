@@ -52,6 +52,7 @@ export type GraphVisualizationUiState = Readonly<{
     isLiveReloadStopPending: boolean;
     isConfigSavePending: boolean;
     isFixPending: boolean;
+    isFixCancelPending: boolean;
     isOpenProjectPending: boolean;
     isRegeneratePending: boolean;
     labelMode: GraphVisualizationUiLabelMode;
@@ -87,6 +88,7 @@ export type GraphVisualizationUiAction =
           type: "set-fix-pending";
           workflow: GraphVisualizationProjectWorkflow;
       }>
+    | Readonly<{ pending: boolean; type: "set-fix-cancel-pending" }>
     | Readonly<{ errorMessage: string | null; type: "set-fix-error" }>
     | Readonly<{ logLines: ReadonlyArray<string>; type: "set-fix-log-lines" }>
     | Readonly<{ status: GraphVisualizationUiState["fixStatus"]; type: "set-fix-status" }>

@@ -17,6 +17,7 @@ export function createInitialGraphVisualizationUiState(): GraphVisualizationUiSt
         autoGamePendingOperation: null,
         isConfigSavePending: false,
         isFixPending: false,
+        isFixCancelPending: false,
         isLiveReloadStartPending: false,
         isLiveReloadStopPending: false,
         isOpenProjectPending: false,
@@ -147,10 +148,17 @@ export function reduceGraphVisualizationUiState(
         case "set-fix-pending": {
             return {
                 ...state,
+                isFixCancelPending: action.pending ? state.isFixCancelPending : false,
                 isFixPending: action.pending,
                 fixStatus: action.pending ? "running" : state.fixStatus,
                 fixWorkflow: action.workflow,
                 pendingActionCount: computePendingActionCount({ ...state, isFixPending: action.pending })
+            };
+        }
+        case "set-fix-cancel-pending": {
+            return {
+                ...state,
+                isFixCancelPending: action.pending
             };
         }
         case "set-fix-error": {
@@ -282,6 +290,7 @@ export function reduceGraphVisualizationUiState(
                 fixLogLines: [],
                 fixStatus: "idle",
                 fixWorkflow: null,
+                isFixCancelPending: false,
                 liveReloadErrorMessage: null,
                 searchQuery: "",
                 graphErrorMessage: null,

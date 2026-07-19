@@ -61,6 +61,7 @@ export type GraphVisualizationUiCallbacks = Readonly<{
     onRunFix: (
         options: GraphVisualizationFixRunOptions
     ) => GraphVisualizationFixRunResult | Promise<GraphVisualizationFixRunResult>;
+    onCancelFix?: () => void | Promise<void>;
     onStartLiveReload: () =>
         GraphVisualizationLiveReloadModel | null | Promise<GraphVisualizationLiveReloadModel | null>;
     onStopLiveReload: () => void | Promise<void>;
@@ -108,6 +109,7 @@ export function createNoopGraphVisualizationUiCallbacks(): GraphVisualizationUiC
         onCreateConfig: () => {},
         onSaveConfig: () => {},
         onRunFix: () => ({ logLines: ["Fix workflow is unavailable in this host."], status: "success" }),
+        onCancelFix: () => {},
         onStartLiveReload: () => null,
         onStopLiveReload: () => {},
 

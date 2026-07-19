@@ -61,6 +61,7 @@ type GraphVisualizationProjectWorkflow = (typeof UI.PROJECT_WORKFLOWS)[number];
 type GraphVisualizationServerRunFix = (
     input: Readonly<{ workflow: GraphVisualizationProjectWorkflow }>
 ) => Promise<Readonly<{ logLines: ReadonlyArray<string> }>>;
+type GraphVisualizationServerCancelFix = () => Promise<Readonly<{ cancelled: boolean }>>;
 type GraphVisualizationServerFixProgress = Readonly<{
     isRunning: boolean;
     logLines: ReadonlyArray<string>;
@@ -103,6 +104,7 @@ export type GraphVisualizationServerOptions = Readonly<{
     openProjectTargets?: GraphVisualizationServerOpenProjectTargets;
     processPlayground?: GraphVisualizationServerProcessPlayground;
     runFix?: GraphVisualizationServerRunFix;
+    cancelFix?: GraphVisualizationServerCancelFix;
     getFixProgress?: GraphVisualizationServerGetFixProgress;
     getSemanticIndexProgress?: GraphVisualizationServerGetSemanticIndexProgress;
     clearFixProgress?: GraphVisualizationServerClearFixProgress;
@@ -231,6 +233,11 @@ async function routeGraphVisualizationServerRequest(
         return;
     }
 
+    if (request.method === "POST" && request.url === "/api/fix/cancel" && options.cancelFix) {
+        await handleCancelFixRequest(options.cancelFix, response);
+        return;
+    }
+
     if (request.method === "POST" && request.url === "/api/open" && options.openProjectTargets) {
         await handleOpenProjectTargetsRequest(options.openProjectTargets, request, response);
         return;
@@ -349,6 +356,18 @@ async function handleRunFixRequest(
     } catch (error: unknown) {
         writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });
         clearFixProgress?.();
+    }
+}
+
+async function handleCancelFixRequest(
+    cancelFix: GraphVisualizationServerCancelFix,
+    response: http.ServerResponse<http.IncomingMessage>
+): Promise<void> {
+    try {
+        const cancelResult = await cancelFix();
+        writeJsonResponse(response, 200, { cancelled: cancelResult.cancelled, ok: true });
+    } catch (error: unknown) {
+        writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });
     }
 }
 

@@ -12,6 +12,7 @@ import {
     GmFixPanel,
     GmGraphPanel,
     GmGraphToolbar,
+    GmJsonViewer,
     GmLiveReloadPanel,
     GmPlaygroundPanel,
     GmStatusChip
@@ -32,6 +33,7 @@ export function registerGraphVisualizationCustomElements(): void {
     defineCustomElementOnce("gm-badge", GmBadge);
     defineCustomElementOnce("gm-copy-button", GmCopyButton);
     defineCustomElementOnce("gm-error-banner", GmErrorBanner);
+    defineCustomElementOnce("gm-json-viewer", GmJsonViewer);
     defineCustomElementOnce("gm-status-chip", GmStatusChip);
     defineCustomElementOnce("gm-app-header", GmAppHeader);
     defineCustomElementOnce("gm-page-toolbar", GmGraphToolbar);

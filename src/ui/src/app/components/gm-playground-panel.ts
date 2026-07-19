@@ -202,7 +202,12 @@ export class GmPlaygroundPanel extends LightDomLitElement {
             }
             return html`<div class="playground-output" aria-live="polite">${unsafeHTML(highlighted)}</div>`;
         }
-        return html`<pre class="playground-output" aria-live="polite">${astJson}</pre>`;
+        return html`<gm-json-viewer
+            class="playground-output"
+            .value=${astJson}
+            copyAccessibleLabel="Copy AST JSON to clipboard"
+            copyLabel="Copy JSON"
+        ></gm-json-viewer>`;
     }
 
     #toggleFormatOption(optionName: string): void {

@@ -35,6 +35,7 @@ import {
     GRAPH_UI_EVENT_SET_SEARCH_QUERY,
     GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW,
     GRAPH_UI_EVENT_TOGGLE_PLAYGROUND_CONTROLS,
+    GRAPH_UI_EVENT_TRIGGER_CANCEL_FIX,
     GRAPH_UI_EVENT_TRIGGER_CREATE_CONFIG,
     GRAPH_UI_EVENT_TRIGGER_FIX,
     GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT,
@@ -57,6 +58,7 @@ import { LightDomLitElement } from "./light-dom-lit-element.js";
 const LIVE_RELOAD_ERROR_ACTION_TYPE = "set-live-reload-error";
 const FIX_LOG_LINES_ACTION_TYPE = "set-fix-log-lines";
 const FIX_PENDING_ACTION_TYPE = "set-fix-pending";
+const FIX_CANCEL_PENDING_ACTION_TYPE = "set-fix-cancel-pending";
 const FIX_STATUS_ACTION_TYPE = "set-fix-status";
 const FIX_ERROR_ACTION_TYPE = "set-fix-error";
 const PAGE_ERROR_ACTION_TYPE = "set-page-error";
@@ -221,6 +223,10 @@ export class GmAppShell extends LightDomLitElement {
         void this.#runFixWorkflow(workflow);
     };
 
+    #onTriggerCancelFix = (): void => {
+        void this.#cancelFixWorkflow();
+    };
+
     #onTriggerStartLiveReload = (): void => {
         void this.#startLiveReload();
     };
@@ -295,6 +301,7 @@ export class GmAppShell extends LightDomLitElement {
             { event: GRAPH_UI_EVENT_SAVE_CONFIG, handler: this.#onSaveConfig },
             { event: GRAPH_UI_EVENT_SET_CONFIG_VIEW, handler: this.#onSetConfigView },
             { event: GRAPH_UI_EVENT_TRIGGER_FIX, handler: this.#onTriggerFix },
+            { event: GRAPH_UI_EVENT_TRIGGER_CANCEL_FIX, handler: this.#onTriggerCancelFix },
             { event: GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD, handler: this.#onTriggerStartLiveReload },
             { event: GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD, handler: this.#onTriggerStopLiveReload },
 
@@ -509,6 +516,22 @@ export class GmAppShell extends LightDomLitElement {
         } finally {
             clearInterval(fixWorkflowProgressTimer);
             this.#store.dispatch({ pending: false, type: FIX_PENDING_ACTION_TYPE, workflow });
+        }
+    }
+
+    async #cancelFixWorkflow(): Promise<void> {
+        if (!this.#state.isFixPending || this.#state.isFixCancelPending || !this.callbacks.onCancelFix) {
+            return;
+        }
+
+        try {
+            this.#store.dispatch({ pending: true, type: FIX_CANCEL_PENDING_ACTION_TYPE });
+            await this.callbacks.onCancelFix();
+        } catch (error) {
+            const message = getUiErrorMessage(error, "Unknown fix cancellation error");
+            this.#store.dispatch({ errorMessage: message, type: FIX_ERROR_ACTION_TYPE });
+        } finally {
+            this.#store.dispatch({ pending: false, type: FIX_CANCEL_PENDING_ACTION_TYPE });
         }
     }
 

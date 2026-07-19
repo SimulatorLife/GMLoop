@@ -503,26 +503,21 @@ void test("playground panel output does not have leading whitespace nodes", () =
 });
 
 /**
- * Verify the AST output path is also free of leading whitespace text nodes.
+ * Verify the AST output path renders a `<gm-json-viewer>` primitive instead of a raw
+ * `<pre>` block, so the AST JSON gets collapsible/expandable tree rendering and a copy
+ * button like every other raw-JSON view in the app.
  *
- * The AST pane uses a <pre> element with white-space: pre so any leading whitespace
- * inside it would be rendered visibly. The same template rule from #renderOutput
- * applies here — keep the html template on a single line.
+ * `#viewMode` and `#astJson` are only ever set from the `/api/playground/process`
+ * response handler, so — as with the previous `<pre>`-based assertion this replaces —
+ * the template is verified against the compiled source rather than a live render.
  */
-void test("playground panel AST output does not have leading whitespace nodes", () => {
-    const panel = new TestableGmPlaygroundPanel();
-    panel.model = createMockModel();
-    panel.state = createMockState();
-    panel.renderForTest();
-    // The compiled JS is in dist/src/app/components/ from the test dist directory.
-    // We verify the <pre> template is structurally sound by checking the compiled source.
+void test("playground panel AST output renders a gm-json-viewer with the AST JSON", () => {
     const source = readFileSync(new URL("../src/app/components/gm-playground-panel.js", import.meta.url), "utf8");
-    // The AST output is rendered inside #renderOutput. The html template for the <pre>
-    // element must be on a single line with no leading whitespace inside the tags.
-    assert.match(source, /html `<pre class="playground-output" aria-live="polite">\$\{astJson\}<\/pre>`/u);
-    // Verify the <pre> template does not span multiple lines with indentation.
-    // A multiline template with leading whitespace would break the whitespace test.
-    assert.doesNotMatch(source, /html `<pre class="playground-output" aria-live="polite">\s*\n\s*\$\{astJson\}/u);
+
+    assert.match(source, /html `<gm-json-viewer\s+class="playground-output"\s+\.value=\$\{astJson\}/u);
+    assert.match(source, /copyAccessibleLabel="Copy AST JSON to clipboard"/u);
+    assert.match(source, /copyLabel="Copy JSON"/u);
+    assert.doesNotMatch(source, /<pre class="playground-output" aria-live="polite">\$\{astJson\}/u);
 });
 
 void test("playground panel input uses a highlighted overlay with synchronized textarea", () => {

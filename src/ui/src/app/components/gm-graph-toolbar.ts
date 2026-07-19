@@ -28,6 +28,7 @@ import {
     GRAPH_UI_EVENT_SET_SEARCH_QUERY,
     GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW,
     GRAPH_UI_EVENT_TOGGLE_PLAYGROUND_CONTROLS,
+    GRAPH_UI_EVENT_TRIGGER_CANCEL_FIX,
     GRAPH_UI_EVENT_TRIGGER_FIX,
     GRAPH_UI_EVENT_TRIGGER_REGENERATE,
     GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD,
@@ -503,6 +504,15 @@ export class GmGraphToolbar extends LightDomLitElement {
         );
     }
 
+    #emitCancelFix(): void {
+        this.dispatchEvent(
+            new CustomEvent(GRAPH_UI_EVENT_TRIGGER_CANCEL_FIX, {
+                bubbles: true,
+                composed: true
+            })
+        );
+    }
+
     #renderPendingBadge() {
         if (!this.state || this.state.pendingActionCount === 0) {
             return null;
@@ -708,6 +718,7 @@ export class GmGraphToolbar extends LightDomLitElement {
         }
 
         const isPending = this.state?.isFixPending === true;
+        const isCancelPending = this.state?.isFixCancelPending === true;
         const activeWorkflow = isPending ? (this.state?.fixWorkflow ?? null) : null;
         const workflows = [
             { id: "run-fix", label: "Fix", workflow: "fix" },
@@ -739,6 +750,26 @@ export class GmGraphToolbar extends LightDomLitElement {
                         </button>
                     `
                 )}
+                ${
+                    isPending
+                        ? html`
+                              <button
+                                  id="cancel-fix"
+                                  type="button"
+                                  class="gm-btn gm-btn--destructive"
+                                  title="Stop the in-flight fix workflow"
+                                  ?disabled=${isCancelPending}
+                                  aria-busy=${isCancelPending ? "true" : "false"}
+                                  @click=${() => this.#emitCancelFix()}
+                              >
+                                  ${renderProcessButtonContent({
+                                      label: isCancelPending ? "Cancelling…" : "Cancel",
+                                      pending: isCancelPending
+                                  })}
+                              </button>
+                          `
+                        : null
+                }
             </div>
         `;
     }

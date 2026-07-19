@@ -197,7 +197,6 @@ text {
   position: absolute;
   inset: 0;
   display: none;
-  overflow: auto;
   margin: 0;
   padding: var(--gm-space-lg) var(--gm-space-xl) var(--gm-space-xl);
   font-size: var(--gm-text-sm);
@@ -225,13 +224,6 @@ text {
   inset: auto;
   width: 100%;
   height: 100%;
-}
-
-.json-view-copy-button {
-  position: absolute;
-  top: var(--gm-space-md);
-  right: var(--gm-space-md);
-  z-index: 5;
 }
 
 #legend {

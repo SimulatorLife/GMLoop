@@ -445,7 +445,7 @@ void test("graph panel resource filter overrides concrete resource node filters"
     assert.doesNotMatch(rendered, /object-node/u);
 });
 
-void test("graph panel renders a copy button inside the JSON view shell", () => {
+void test("graph panel renders a collapsible JSON viewer with a copy button inside the JSON view shell", () => {
     const panel = new TestableGmGraphPanel();
     panel.model = createGraphModel();
     panel.state = {
@@ -456,10 +456,10 @@ void test("graph panel renders a copy button inside the JSON view shell", () => 
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /id="json-view-shell"[\s\S]*class=visible>/u);
-    assert.match(rendered, /id="copy-graph-json"[\s\S]*class="json-view-copy-button"/u);
-    assert.match(rendered, /accessibleLabel="Copy graph JSON to clipboard"/u);
-    assert.match(rendered, /label="Copy JSON"/u);
-    assert.match(rendered, /<pre id="json-view">/u);
+    assert.match(rendered, /<gm-json-viewer[\s\S]*id="json-view"/u);
+    assert.match(rendered, /copyAccessibleLabel="Copy graph JSON to clipboard"/u);
+    assert.match(rendered, /copyLabel="Copy JSON"/u);
+    assert.doesNotMatch(rendered, /<pre id="json-view">/u);
 });
 
 void test("graph panel script filter does not override standalone function, global, or macro filters", () => {
