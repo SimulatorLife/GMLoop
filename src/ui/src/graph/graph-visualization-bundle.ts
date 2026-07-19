@@ -20,7 +20,6 @@ const GRAPH_VISUALIZATION_ENTRY_HTML_PATH = "index.html";
 const GRAPH_VISUALIZATION_WEB_ENTRY_RELATIVE_PATH = path.join("src", "web", GRAPH_VISUALIZATION_ENTRY_HTML_PATH);
 const UTF8_CONTENT_TYPE_SUFFIX = "; charset=utf-8";
 let staticWebBundleFilesPromise: Promise<ReadonlyArray<GraphVisualizationBundleFile>> | null = null;
-let staticWebBundleRefreshPromise: Promise<boolean> | null = null;
 
 function resolveUiWorkspaceRoot(): string {
     const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -371,55 +370,7 @@ function getGraphVisualizationWebBundleFiles(
     staticWebBundleFilesPromise ??= createGraphVisualizationWebBundleFiles({
         allowStalePrebuilt: options?.isServerMode === true
     });
-    if (options?.isServerMode === true) {
-        void refreshGraphVisualizationBundleCache().catch((error: unknown) => {
-            console.error("Failed to refresh graph visualization web bundle in background:", error);
-        });
-    }
     return staticWebBundleFilesPromise;
-}
-
-/**
- * Refresh the cached web assets without making an existing server-mode bundle wait for a Vite build.
- *
- * Server mode is allowed to serve the last prebuilt shell immediately. This method checks that shell
- * against the workspace sources in the background and replaces the in-memory asset cache only after
- * a fresh build is ready.
- */
-export function refreshGraphVisualizationBundleCache(): Promise<boolean> {
-    if (isGraphVisualizationBundleTestEnvironment()) {
-        return Promise.resolve(false);
-    }
-
-    staticWebBundleRefreshPromise ??= (async () => {
-        const prebuiltWebDirectory = resolvePrebuiltWebDirectory();
-        const hasPrebuiltEntry =
-            prebuiltWebDirectory !== null &&
-            existsSync(path.join(prebuiltWebDirectory.path, GRAPH_VISUALIZATION_ENTRY_HTML_PATH));
-        if (!hasPrebuiltEntry && staticWebBundleFilesPromise !== null) {
-            await staticWebBundleFilesPromise;
-            return false;
-        }
-        if (
-            hasPrebuiltEntry &&
-            prebuiltWebDirectory !== null &&
-            (prebuiltWebDirectory.workspaceRoot === null ||
-                (await isWorkspaceWebBundleFresh(prebuiltWebDirectory.workspaceRoot, prebuiltWebDirectory.path)))
-        ) {
-            if (staticWebBundleFilesPromise === null) {
-                staticWebBundleFilesPromise = loadPrebuiltWebBundleFiles(prebuiltWebDirectory.path);
-            }
-            return false;
-        }
-
-        const freshBundleFiles = await createGraphVisualizationWebBundleFiles();
-        staticWebBundleFilesPromise = Promise.resolve(freshBundleFiles);
-        return true;
-    })().finally(() => {
-        staticWebBundleRefreshPromise = null;
-    });
-
-    return staticWebBundleRefreshPromise;
 }
 
 /**
