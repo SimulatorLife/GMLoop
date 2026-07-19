@@ -46,6 +46,7 @@ repomix-output.xml
 # Ignore JS (except in src/parser/generated/)
 src/**/*.js
 !src/parser/generated/*.js
+!**/stylelint.config.js
 
 # Make sure we keep the ESLint config file which is intentionally committed
 !/eslint.config.js
