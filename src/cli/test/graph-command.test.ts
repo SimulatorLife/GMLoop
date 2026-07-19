@@ -398,13 +398,18 @@ void test("graph visualize builds a missing database before exporting an HTML+as
         assert.equal(payload.payload.entryHtmlPath, "index.html");
         await fs.access(databasePath);
         const assetNames = await fs.readdir(path.join(outputDirectory, "assets"));
-        const scriptAsset = assetNames.find((assetName) => assetName.endsWith(".js"));
+        const scriptAssets = assetNames.filter((assetName) => assetName.endsWith(".js"));
         const styleAsset = assetNames.find((assetName) => assetName.endsWith(".css"));
-        assert.ok(scriptAsset);
+        assert.ok(scriptAssets.length > 0);
         assert.ok(styleAsset);
         const html = await fs.readFile(path.join(outputDirectory, "index.html"), "utf8");
-        const script = await fs.readFile(path.join(outputDirectory, "assets", scriptAsset), "utf8");
-        assert.match(script, /gm-app-shell/u);
+        const scripts = await Promise.all(
+            scriptAssets.map((scriptAsset) => fs.readFile(path.join(outputDirectory, "assets", scriptAsset), "utf8"))
+        );
+        assert.ok(
+            scripts.some((script) => /gm-app-shell/u.test(script)),
+            "Expected a bundle script asset to register the gm-app-shell element."
+        );
         assert.match(html, /shared_toolset_fn/u);
         assert.match(html, /gmloop_format/u);
         assert.match(html, /Format GameMaker Language files using the prettier plugin\./u);
@@ -983,14 +988,21 @@ void test("resolveGraphVisualizationServeStartupState reads active project path 
             statePathOption: statePath
         });
 
+        const resolvedTargets = new Array<{ selectedPaths: ReadonlyArray<string>; source: string }>();
         const startupState = await __graphCommandTest__.resolveGraphVisualizationServeStartupState(
             {
                 projectState: statePath
             },
-            null
+            null,
+            (target) => {
+                resolvedTargets.push(target);
+            }
         );
 
         assert.equal(startupState.source, "active-project-state");
+        assert.equal(resolvedTargets.length, 1);
+        assert.equal(resolvedTargets[0]?.source, "active-project-state");
+        assert.deepEqual(resolvedTargets[0]?.selectedPaths, startupState.selectedPaths);
         assert.equal(startupState.selectedPaths.length, 1);
         assert.equal(path.resolve(startupState.selectedPaths[0]), path.resolve(fixture.projectRoot, "Project.yyp"));
         assert.notEqual(startupState.context, null);

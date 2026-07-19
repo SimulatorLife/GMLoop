@@ -21,10 +21,7 @@ import {
     shouldRenderGraphLabels,
     type GraphViewportBounds
 } from "../../graph/graph-render-viewport.js";
-import {
-    projectGraphLayoutForSemanticZoom,
-    resolveGraphSemanticZoomLevel
-} from "../../graph/graph-semantic-zoom.js";
+import { projectGraphLayoutForSemanticZoom, resolveGraphSemanticZoomLevel } from "../../graph/graph-semantic-zoom.js";
 import { EDGE_LINE_VISUAL_STYLES, NODE_VISUAL_STYLES } from "../../graph/graph-visualization-style-metadata.js";
 import type {
     GraphVisualizationEdgeType,
@@ -795,7 +792,8 @@ export class GmGraphPanel extends LightDomLitElement {
         const layout = this.#cachedLayout;
         const nodeItems = this.#cachedNodeItems;
         const edgeTypes = this.#cachedEdgeTypes;
-        const selectedNode = this.#selectedNodeId === null ? null : (this.#cachedLayoutNodeById.get(this.#selectedNodeId) ?? null);
+        const selectedNode =
+            this.#selectedNodeId === null ? null : (this.#cachedLayoutNodeById.get(this.#selectedNodeId) ?? null);
         const isVisualView = this.state.activeGraphView === "visual";
 
         let renderedLayout = this.#cachedRenderedLayout;

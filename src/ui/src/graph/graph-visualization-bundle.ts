@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
-import os from "node:os";
+import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -266,11 +265,7 @@ function isGraphVisualizationBundleTestEnvironment(): boolean {
     );
 }
 
-async function createGraphVisualizationWebBundleFiles(
-    options: {
-        allowStalePrebuilt?: boolean;
-    } = {}
-): Promise<ReadonlyArray<GraphVisualizationBundleFile>> {
+async function createGraphVisualizationWebBundleFiles(): Promise<ReadonlyArray<GraphVisualizationBundleFile>> {
     const prebuiltWebDirectory = resolvePrebuiltWebDirectory();
     const hasPrebuiltEntry =
         prebuiltWebDirectory !== null &&
@@ -278,8 +273,7 @@ async function createGraphVisualizationWebBundleFiles(
     if (
         hasPrebuiltEntry &&
         prebuiltWebDirectory !== null &&
-        (options.allowStalePrebuilt === true ||
-            prebuiltWebDirectory.workspaceRoot === null ||
+        (prebuiltWebDirectory.workspaceRoot === null ||
             (await isWorkspaceWebBundleFresh(prebuiltWebDirectory.workspaceRoot, prebuiltWebDirectory.path)))
     ) {
         return loadPrebuiltWebBundleFiles(prebuiltWebDirectory.path);
@@ -345,33 +339,15 @@ async function createGraphVisualizationWebBundleFiles(
         ]);
     }
 
-    const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "gmloop-ui-bundle-"));
-
-    try {
-        await createViteWebBundle(outputDirectory);
-        const relativePaths = await listBundleFiles(outputDirectory);
-        const files = await Promise.all(
-            relativePaths.map(async (relativePath) =>
-                createGraphVisualizationBundleFile(
-                    relativePath,
-                    resolveContentType(relativePath),
-                    await readFile(path.join(outputDirectory, relativePath))
-                )
-            )
-        );
-
-        return Object.freeze(files);
-    } finally {
-        await rm(outputDirectory, { force: true, recursive: true });
-    }
+    // Build into the workspace's dist/web so the bundle persists across
+    // launches; the prebuilt path above then serves it until sources change.
+    const outputDirectory = path.join(resolveUiWorkspaceRoot(), "dist", "web");
+    await createViteWebBundle(outputDirectory);
+    return loadPrebuiltWebBundleFiles(outputDirectory);
 }
 
-function getGraphVisualizationWebBundleFiles(
-    options?: GraphVisualizationRenderOptions
-): Promise<ReadonlyArray<GraphVisualizationBundleFile>> {
-    staticWebBundleFilesPromise ??= createGraphVisualizationWebBundleFiles({
-        allowStalePrebuilt: options?.isServerMode === true
-    });
+function getGraphVisualizationWebBundleFiles(): Promise<ReadonlyArray<GraphVisualizationBundleFile>> {
+    staticWebBundleFilesPromise ??= createGraphVisualizationWebBundleFiles();
     return staticWebBundleFilesPromise;
 }
 
@@ -389,7 +365,7 @@ export async function renderGraphVisualizationBundle(
     data: GraphVisualizationData,
     options: GraphVisualizationRenderOptions
 ): Promise<GraphVisualizationBundleArtifact> {
-    const webBundleFiles = await getGraphVisualizationWebBundleFiles(options);
+    const webBundleFiles = await getGraphVisualizationWebBundleFiles();
     const files = webBundleFiles.map((file) => {
         const content =
             file.relativePath === GRAPH_VISUALIZATION_ENTRY_HTML_PATH

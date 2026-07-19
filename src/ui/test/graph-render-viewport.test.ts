@@ -33,7 +33,11 @@ function createNode(id: string, x: number, y: number): GraphLayoutNode {
     };
 }
 
-function createEdge(sourceNode: GraphLayoutNode, targetNode: GraphLayoutNode, type: GraphLayoutEdge["type"]): GraphLayoutEdge {
+function createEdge(
+    sourceNode: GraphLayoutNode,
+    targetNode: GraphLayoutNode,
+    type: GraphLayoutEdge["type"]
+): GraphLayoutEdge {
     return {
         source: sourceNode.id,
         sourceNode,

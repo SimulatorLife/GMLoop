@@ -40,10 +40,7 @@ import {
     type LiveReloadRegisteredSession
 } from "../modules/live-reload/session-registry.js";
 import { createRefactorBridges } from "../modules/refactor/bridge-factory.js";
-import {
-    ProjectOperationConflictError,
-    readProjectOperationState
-} from "../modules/runtime/project-operation-state.js";
+import { readProjectOperationState } from "../modules/runtime/project-operation-state.js";
 import { runSemanticIndexOperation } from "../modules/runtime/semantic-index-operation.js";
 import {
     type GraphVisualizationServerPlaygroundFixture,
@@ -202,6 +199,93 @@ function createGraphVisualizationWorkflowArguments(
         case "refactor": {
             return ["refactor", "codemod", projectRoot, "--write", "--path", projectRoot];
         }
+    }
+}
+
+function isSemanticIndexBuildActiveForProject(projectRoot: string): boolean {
+    const activeOperation = readProjectOperationState(projectRoot).active;
+    return (
+        activeOperation !== null &&
+        activeOperation.status === "running" &&
+        (activeOperation.kind === SEMANTIC_INDEX_OPERATION_KIND ||
+            activeOperation.phase === SEMANTIC_INDEX_OPERATION_KIND ||
+            activeOperation.semanticIndex !== null)
+    );
+}
+
+async function runGraphIndexBuildInChildProcess(
+    options: GraphCommandSharedOptions,
+    projectRoot: string,
+    force: boolean
+): Promise<void> {
+    const cliEntryPath = fileURLToPath(new URL("../../index.js", import.meta.url));
+    const args = ["--disable-warning=ExperimentalWarning", cliEntryPath, "graph", "index", "--path", projectRoot];
+    if (force) {
+        args.push("--force");
+    }
+    if (options.config) {
+        args.push("--config", options.config);
+    }
+    if (options.databasePath) {
+        args.push("--database-path", options.databasePath);
+    }
+    if (options.toolsetRoot) {
+        args.push("--toolset-root", options.toolsetRoot);
+    }
+
+    const logLines = new Array<string>();
+    const appendLogLine = (logLine: string): void => {
+        if (logLine.trim().length > 0) {
+            logLines.push(logLine.trimEnd());
+        }
+    };
+
+    // The target project is passed explicitly via --path, so the child
+    // inherits this process's working directory instead of depending on the
+    // project root being usable as a cwd.
+    const childProcess = spawn(process.execPath, args, {
+        stdio: ["ignore", "pipe", "pipe"]
+    });
+    const stdoutPromise = streamProcessOutputByLine(childProcess.stdout, appendLogLine);
+    const stderrPromise = streamProcessOutputByLine(childProcess.stderr, appendLogLine);
+    const exitCode = await awaitChildProcessExitCode(childProcess);
+    await Promise.all([stdoutPromise, stderrPromise]);
+
+    if (exitCode !== 0) {
+        throw new Error(
+            logLines.length > 0
+                ? logLines.join("\n")
+                : `Graph index process exited with code ${exitCode === null ? "unknown" : String(exitCode)}.`
+        );
+    }
+}
+
+/**
+ * Build the graph index for the serve UI without blocking its event loop.
+ *
+ * The synchronous SQLite persistence inside an in-process build starves the
+ * visualization server on large projects, so serve mode delegates the build to
+ * a `graph index` child process. Progress flows back through the shared
+ * project operation-state file, which the serve progress endpoint already
+ * polls. When another process owns the semantic build, this attaches to that
+ * build's shared progress instead of starting duplicate analysis.
+ */
+async function ensureGraphIndexForServe(
+    options: GraphCommandSharedOptions,
+    context: GraphResolutionContext,
+    force: boolean
+): Promise<void> {
+    if (isSemanticIndexBuildActiveForProject(context.projectRoot)) {
+        return;
+    }
+
+    try {
+        await runGraphIndexBuildInChildProcess(options, context.projectRoot, force);
+    } catch (error: unknown) {
+        if (isSemanticIndexBuildActiveForProject(context.projectRoot)) {
+            return;
+        }
+        throw error;
     }
 }
 
@@ -704,14 +788,16 @@ function startGraphVisualizationActiveProjectStateWatcher({
     env,
     intervalMs = 500,
     onError,
-    onProjectPathChanged
+    onProjectPathChanged,
+    statePathOption
 }: Readonly<{
     env: NodeJS.ProcessEnv;
     intervalMs?: number;
     onError: (error: unknown) => void;
     onProjectPathChanged: (projectPath: string) => Promise<void> | void;
+    statePathOption?: string;
 }>): GraphVisualizationActiveProjectStateWatcher {
-    const statePath = resolveGameMakerCliActiveProjectStatePath({ env });
+    const statePath = resolveGameMakerCliActiveProjectStatePath({ env, statePathOption });
     let stopped = false;
     let observedProjectPath: string | null = null;
     let pollTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
@@ -1124,16 +1210,15 @@ function resolveDefaultGraphVisualizationServeTargetPath(startDirectory: string 
 
 async function resolveGraphVisualizationServeStartupState(
     options: GraphCommandSharedOptions,
-    initialSelectedPath: string | null
+    initialSelectedPath: string | null,
+    onTargetResolved: (target: Readonly<{ selectedPaths: ReadonlyArray<string>; source: GraphServeSource }>) => void
 ): Promise<GraphVisualizationStartupState> {
     if (initialSelectedPath !== null) {
         const context = await resolveGraphContext(options);
-        await ensureGraphIndexForQuery(options, context, true);
-        return {
-            context,
-            selectedPaths: [initialSelectedPath],
-            source: "cli-path"
-        };
+        const target = { selectedPaths: [initialSelectedPath], source: "cli-path" as const };
+        onTargetResolved(target);
+        await ensureGraphIndexForServe(options, context, false);
+        return { context, ...target };
     }
 
     try {
@@ -1148,12 +1233,10 @@ async function resolveGraphVisualizationServeStartupState(
                 path: activeProjectPath
             };
             const context = await resolveGraphContext(nextOptions);
-            await ensureGraphIndexForQuery(nextOptions, context, true);
-            return {
-                context,
-                selectedPaths: [activeProjectPath],
-                source: "active-project-state"
-            };
+            const target = { selectedPaths: [activeProjectPath], source: "active-project-state" as const };
+            onTargetResolved(target);
+            await ensureGraphIndexForServe(nextOptions, context, false);
+            return { context, ...target };
         }
     } catch {
         // Ignore state path load failures and continue with normal discovery.
@@ -1161,20 +1244,16 @@ async function resolveGraphVisualizationServeStartupState(
 
     try {
         const context = await resolveGraphContext(options);
-        await ensureGraphIndexForQuery(options, context, true);
-        return {
-            context,
-            selectedPaths: [context.projectRoot],
-            source: "working-directory"
-        };
+        const target = { selectedPaths: [context.projectRoot], source: "working-directory" as const };
+        onTargetResolved(target);
+        await ensureGraphIndexForServe(options, context, false);
+        return { context, ...target };
     } catch {
         const defaultServeTargetPath = resolveDefaultGraphVisualizationServeTargetPath();
         if (defaultServeTargetPath === null) {
-            return {
-                context: null,
-                selectedPaths: [],
-                source: "working-directory"
-            };
+            const target = { selectedPaths: [], source: "working-directory" as const };
+            onTargetResolved(target);
+            return { context: null, ...target };
         }
 
         const nextOptions = {
@@ -1182,12 +1261,10 @@ async function resolveGraphVisualizationServeStartupState(
             path: defaultServeTargetPath
         };
         const context = await resolveGraphContext(nextOptions);
-        await ensureGraphIndexForQuery(nextOptions, context, true);
-        return {
-            context,
-            selectedPaths: [defaultServeTargetPath],
-            source: "demo-project"
-        };
+        const target = { selectedPaths: [defaultServeTargetPath], source: "demo-project" as const };
+        onTargetResolved(target);
+        await ensureGraphIndexForServe(nextOptions, context, false);
+        return { context, ...target };
     }
 }
 
@@ -1270,32 +1347,14 @@ function ensureGraphIndex(
 
 async function ensureGraphIndexForQuery(
     options: GraphCommandSharedOptions,
-    context: GraphResolutionContext,
-    allowExistingSemanticBuild: boolean = false
+    context: GraphResolutionContext
 ): Promise<void> {
     // Graph tables are a projection of the canonical semantic store. Reconcile
     // the projection on every query so visualization, search, and LSP facts
     // always share the same persisted project snapshot. The semantic builder
     // restores from SQLite and only parses sources when that snapshot is absent
     // or stale, so this does not reintroduce a second source-of-truth scan.
-    try {
-        await ensureGraphIndex(options, context);
-    } catch (error: unknown) {
-        if (!allowExistingSemanticBuild || !(error instanceof ProjectOperationConflictError)) {
-            throw error;
-        }
-        const activeOperation = readProjectOperationState(context.projectRoot).active;
-        if (
-            activeOperation?.kind !== SEMANTIC_INDEX_OPERATION_KIND &&
-            activeOperation?.phase !== SEMANTIC_INDEX_OPERATION_KIND &&
-            activeOperation?.semanticIndex === null
-        ) {
-            throw error;
-        }
-        // Another CLI/MCP process already owns the semantic build. The UI can
-        // attach to its progress endpoint and render the last published graph
-        // snapshot without starting duplicate analysis.
-    }
+    await ensureGraphIndex(options, context);
 }
 
 function createGraphEnvelope<TPayload>(
@@ -1630,6 +1689,36 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
     }
 
     async function runServeVisualizationMode(): Promise<void> {
+        const renderServeBundle = async (isServerMode: boolean) => {
+            Core.clearFeatherMetadataCache();
+
+            const renderRevision = activeServeRevision;
+            if (isServerMode && activeServeBundleCache?.revision === renderRevision) {
+                return activeServeBundleCache.bundle;
+            }
+
+            const freshDocumentationCatalogs = createDocumentationCatalogs();
+
+            const bundle = await UI.renderGraphVisualizationBundle(exportVisualizationPayload(), {
+                autoGamePipeline: activeAutoGamePipeline ?? undefined,
+                documentationCatalogs: freshDocumentationCatalogs,
+                isServerMode,
+                lastFixRun: activeLastFixRun ?? undefined,
+                liveReload: activeLiveReloadSession.model ?? undefined,
+                loadedTarget: activeSelectedPaths.length > 0 || activeContext ? createLoadedTarget() : undefined,
+                mcpServerStatus: "not-started",
+                projectConfigurationCatalog: activeProjectConfigurationCatalog ?? undefined,
+                startupState: activeStartupState ?? undefined,
+                title: activeContext?.projectRoot ?? "No project loaded"
+            });
+
+            if (isServerMode) {
+                cacheServeBundleForRevision(renderRevision, bundle);
+            }
+
+            return bundle;
+        };
+
         const repoRoot = findRepoRootSync(path.dirname(fileURLToPath(import.meta.url)));
         const featherMetadataPath = path.resolve(repoRoot, "resources/feather-metadata.json");
         let featherMetadataWatcher: GraphVisualizationFeatherMetadataWatcher | null = null;
@@ -1664,6 +1753,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 await runUiWorkspaceTypeBuildForServe();
                 UI.clearGraphVisualizationBundleCache();
                 markServeRevisionChanged();
+                await renderServeBundle(true);
                 console.log(`[graph visualize] UI source changed. Reload revision: ${String(activeServeRevision)}`);
             } catch (error) {
                 console.error(
@@ -1736,7 +1826,20 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             const startupGeneration = activeServeStartupGeneration;
             void (async () => {
                 try {
-                    const startupState = await resolveGraphVisualizationServeStartupState(options, initialSelectedPath);
+                    const startupState = await resolveGraphVisualizationServeStartupState(
+                        options,
+                        initialSelectedPath,
+                        (target) => {
+                            if (startupGeneration !== activeServeStartupGeneration) {
+                                return;
+                            }
+                            // Publish the startup target before the semantic
+                            // build so progress endpoints can resolve the
+                            // project's shared operation state immediately.
+                            activeSelectedPaths = [...target.selectedPaths];
+                            activeSource = target.source;
+                        }
+                    );
                     if (startupGeneration !== activeServeStartupGeneration) {
                         return;
                     }
@@ -1834,7 +1937,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                         if (startupGeneration !== activeServeStartupGeneration) {
                             return;
                         }
-                        await ensureGraphIndexForQuery(nextOptions, nextContext, true);
+                        await ensureGraphIndexForServe(nextOptions, nextContext, false);
                         if (startupGeneration !== activeServeStartupGeneration) {
                             return;
                         }
@@ -1996,7 +2099,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 if (!activeContext) {
                     return Object.freeze({ changed: false });
                 }
-                await ensureGraphIndex({ ...options, force: true }, activeContext);
+                await ensureGraphIndexForServe(options, activeContext, true);
                 await refreshActiveVisualizationArtifacts(activeContext);
                 const nextPayloadString = safeStringifyVisualizationPayload();
                 markServeRevisionChanged();
@@ -2067,7 +2170,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                         status: "success"
                     });
                     activeFixProgressLogLines.push("Rebuilding SQLite graph index database...");
-                    await ensureGraphIndex({ ...options, force: true }, activeContext);
+                    await ensureGraphIndexForServe(options, activeContext, true);
                     activeFixProgressLogLines.push("Refreshing graph visualization artifacts...");
                     await refreshActiveVisualizationArtifacts(activeContext);
                     activeFixProgressLogLines.push("Fix workflow post-processing complete.");
@@ -2133,7 +2236,11 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                     });
                 })(),
             getSemanticIndexProgress: () => {
-                if (activeContext === null) {
+                // Fall back to the selected target so the initial project
+                // open (which runs before activeContext exists) still reports
+                // the child build's shared progress.
+                const progressProjectRoot = activeContext?.projectRoot ?? createLoadedTarget().projectRoot;
+                if (progressProjectRoot === "") {
                     return Object.freeze({
                         current: null,
                         isRunning: false,
@@ -2145,7 +2252,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                     });
                 }
 
-                const sharedState = readProjectOperationState(activeContext.projectRoot);
+                const sharedState = readProjectOperationState(progressProjectRoot);
                 const activeOperation = sharedState.active;
                 const operation =
                     activeOperation?.kind === SEMANTIC_INDEX_OPERATION_KIND ||
@@ -2279,35 +2386,18 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 );
                 markServeRevisionChanged();
             },
-            renderBundle: async (isServerMode) => {
-                Core.clearFeatherMetadataCache();
+            renderBundle: renderServeBundle
+        });
 
-                const renderRevision = activeServeRevision;
-                if (isServerMode && activeServeBundleCache?.revision === renderRevision) {
-                    return activeServeBundleCache.bundle;
-                }
-
-                const freshDocumentationCatalogs = createDocumentationCatalogs();
-
-                const bundle = await UI.renderGraphVisualizationBundle(exportVisualizationPayload(), {
-                    autoGamePipeline: activeAutoGamePipeline ?? undefined,
-                    documentationCatalogs: freshDocumentationCatalogs,
-                    isServerMode,
-                    lastFixRun: activeLastFixRun ?? undefined,
-                    liveReload: activeLiveReloadSession.model ?? undefined,
-                    loadedTarget: activeSelectedPaths.length > 0 || activeContext ? createLoadedTarget() : undefined,
-                    mcpServerStatus: "not-started",
-                    projectConfigurationCatalog: activeProjectConfigurationCatalog ?? undefined,
-                    startupState: activeStartupState ?? undefined,
-                    title: activeContext?.projectRoot ?? "No project loaded"
-                });
-
-                if (isServerMode) {
-                    cacheServeBundleForRevision(renderRevision, bundle);
-                }
-
-                return bundle;
-            }
+        // Warm the web bundle before the browser's first request arrives so a
+        // stale or missing dist/web build overlaps with browser startup
+        // instead of blocking the first page load.
+        void renderServeBundle(true).catch((error: unknown) => {
+            console.error(
+                `[graph visualize] Failed to prepare the UI bundle: ${Core.getErrorMessage(error, {
+                    fallback: "Unknown UI bundle build failure"
+                })}`
+            );
         });
 
         initializeServeStateInBackground();
@@ -2322,7 +2412,8 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                         )}`
                     );
                 },
-                onProjectPathChanged: requestActiveProjectStateOpen
+                onProjectPathChanged: requestActiveProjectStateOpen,
+                statePathOption: options.projectState
             });
 
         printGraphOutput(
