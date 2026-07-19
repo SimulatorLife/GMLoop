@@ -42,6 +42,14 @@ export type SemanticFileManifest = Readonly<{
     sourceRevision: SemanticSourceRevision;
 }>;
 
+/** How many manifest entries a `buildSemanticFileManifest` call reused vs. read fresh. Ephemeral scan statistics, not part of the manifest's persisted content identity. */
+export type SemanticFileManifestCacheStats = Readonly<{
+    /** Files reused from `previousManifest` via an mtime match, without reading or re-hashing their contents. */
+    cacheHitCount: number;
+    /** Files whose contents were read and hashed fresh (new, changed, or no previous manifest was available). */
+    cacheMissCount: number;
+}>;
+
 /** Kind of physical or overlay-backed source change. */
 export type SemanticFileChangeKind = "added" | "deleted" | "metadataChanged" | "modified";
 
@@ -145,7 +153,8 @@ export async function buildSemanticFileManifest(
     projectRoot: string,
     fsFacade: ProjectIndexFsFacade,
     overlays: ReadonlyArray<SemanticOpenBufferOverlay> = [],
-    previousManifest?: SemanticFileManifest | null
+    previousManifest?: SemanticFileManifest | null,
+    onCacheStats?: (stats: SemanticFileManifestCacheStats) => void
 ): Promise<SemanticFileManifest> {
     const resolvedRoot = path.resolve(projectRoot);
     const overlayByAbsolutePath = createOverlayMap(overlays);
@@ -156,7 +165,7 @@ export async function buildSemanticFileManifest(
         (left, right) => left.relativePath.localeCompare(right.relativePath)
     );
 
-    const manifestEntries = await Core.runInParallelWithLimit(
+    const manifestResults = await Core.runInParallelWithLimit(
         files,
         async (file) => {
             const absolutePath = path.resolve(file.absolutePath);
@@ -172,7 +181,7 @@ export async function buildSemanticFileManifest(
                 previousEntry.mtimeMs !== null &&
                 file.mtimeMs === previousEntry.mtimeMs
             ) {
-                return previousEntry;
+                return { entry: previousEntry, wasCacheHit: true };
             }
 
             const sourceText = overlay ? overlay.sourceText : await fsFacade.readFile(absolutePath, "utf8");
@@ -185,21 +194,32 @@ export async function buildSemanticFileManifest(
                     isOverlayUnsaved = true;
                 }
             }
-            return Object.freeze({
-                contentHash: overlay?.contentHash ?? createContentHash(sourceText),
-                fileKind: classifyManifestFile(relativePath),
-                mtimeMs: file.mtimeMs,
-                relativePath,
-                sizeBytes: Buffer.byteLength(sourceText, "utf8"),
-                sourceOrigin: isOverlayUnsaved ? "openBuffer" : "disk",
-                sourceVersion: isOverlayUnsaved ? (overlay?.documentVersion ?? null) : null
-            });
+            return {
+                entry: Object.freeze({
+                    contentHash: overlay?.contentHash ?? createContentHash(sourceText),
+                    fileKind: classifyManifestFile(relativePath),
+                    mtimeMs: file.mtimeMs,
+                    relativePath,
+                    sizeBytes: Buffer.byteLength(sourceText, "utf8"),
+                    sourceOrigin: isOverlayUnsaved ? "openBuffer" : "disk",
+                    sourceVersion: isOverlayUnsaved ? (overlay?.documentVersion ?? null) : null
+                }),
+                wasCacheHit: false
+            };
         },
         SEMANTIC_MANIFEST_IO_CONCURRENCY
     );
-    for (const entry of manifestEntries) {
-        entries.set(entry.relativePath, entry);
+    let cacheHitCount = 0;
+    let cacheMissCount = 0;
+    for (const result of manifestResults) {
+        entries.set(result.entry.relativePath, result.entry);
+        if (result.wasCacheHit) {
+            cacheHitCount += 1;
+        } else {
+            cacheMissCount += 1;
+        }
     }
+    onCacheStats?.({ cacheHitCount, cacheMissCount });
 
     return Object.freeze({ entries, sourceRevision: createSourceRevision(entries) });
 }

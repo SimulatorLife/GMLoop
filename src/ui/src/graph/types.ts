@@ -121,12 +121,21 @@ export type GraphVisualizationStartupState = Readonly<{
 }>;
 
 /** Shared semantic-index progress snapshot polled by the graph-index page. */
+/** Slowest-file/cache-hit summary reported once a semantic index build completes. */
+export type GraphVisualizationGraphIndexBuildSummary = Readonly<{
+    cacheHitCount: number;
+    cacheMissCount: number;
+    slowestFiles: ReadonlyArray<Readonly<{ relativePath: string; durationMs: number }>>;
+    totalDurationMs: number;
+}>;
+
 export type GraphVisualizationGraphIndexProgress = Readonly<{
     current: number | null;
     isRunning: boolean;
     logLines: ReadonlyArray<string>;
-    stage: "gml-parse" | null;
+    stage: "gml-parse" | "complete" | null;
     status: "idle" | "running" | "success" | "error";
+    summary: GraphVisualizationGraphIndexBuildSummary | null;
     total: number | null;
 }>;
 

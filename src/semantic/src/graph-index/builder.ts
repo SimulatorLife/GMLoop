@@ -17,7 +17,8 @@ import {
     publishSemanticTwoTierSnapshot,
     reconcileSemanticManifests
 } from "../project-index/index.js";
-import type { SemanticFileManifest } from "../project-index/semantic-manifest.js";
+import type { MetricsSnapshot } from "../project-index/metrics.js";
+import type { SemanticFileManifest, SemanticFileManifestCacheStats } from "../project-index/semantic-manifest.js";
 import { createSemanticSnapshotFromProjectIndex } from "../project-index/semantic-snapshot-codec.js";
 import { getGmlSymbolKindForIdentifierCollection } from "../symbols/taxonomy.js";
 import { resolveGraphIndexConfig } from "./config.js";
@@ -59,7 +60,9 @@ import type {
     GraphEdgeType,
     GraphEmbeddingsConfig,
     GraphIndexBuildOptions,
+    GraphIndexBuildProgress,
     GraphIndexBuildResult,
+    GraphIndexBuildSummary,
     GraphIndexHandle,
     GraphIndexScope,
     GraphNeighborRecord,
@@ -123,11 +126,22 @@ type ProjectIndexSnapshot = {
         }
     >;
     scopes?: Record<string, ProjectIndexScopeRecord>;
+    metrics?: MetricsSnapshot;
 };
 
 type ProjectIndexBuildSnapshot = Readonly<{
     manifest: SemanticFileManifest;
+    manifestCacheStats: SemanticFileManifestCacheStats;
     projectIndex: ProjectIndexSnapshot | null;
+    /**
+     * Whether `projectIndex` was parsed/analyzed in this call, as opposed to a
+     * stored projection reused as-is. A reused projection is the same object
+     * that was persisted the last time it *was* freshly built, so it still
+     * carries that earlier build's own `.metrics` (including its
+     * `gmlFileTimings`) — reading those back on a later, unrelated reuse would
+     * misreport stale work as having just happened.
+     */
+    wasFreshlyBuilt: boolean;
 }>;
 
 type ProjectionContext = {
@@ -2211,7 +2225,10 @@ async function getOrBuildProjectIndex(
             );
         }
     }
-    const manifest = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade, [], storedManifest);
+    let manifestCacheStats: SemanticFileManifestCacheStats = { cacheHitCount: 0, cacheMissCount: 0 };
+    const manifest = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade, [], storedManifest, (stats) => {
+        manifestCacheStats = stats;
+    });
     const sourceSignature = manifest.sourceRevision;
     const storedState = store.readActiveSemanticSlots().full;
     if (
@@ -2220,13 +2237,13 @@ async function getOrBuildProjectIndex(
         isGraphProjectionCurrentForManifest(database, graphId, projectRoot, manifest, embeddingsConfig)
     ) {
         await store.close();
-        return Object.freeze({ manifest, projectIndex: null });
+        return Object.freeze({ manifest, manifestCacheStats, projectIndex: null, wasFreshlyBuilt: false });
     }
 
     const storedIndex = store.readSemanticNavigationProjection("full");
     if (storedIndex && storedState?.sourceSignature === sourceSignature) {
         await store.close();
-        return Object.freeze({ manifest, projectIndex: storedIndex });
+        return Object.freeze({ manifest, manifestCacheStats, projectIndex: storedIndex, wasFreshlyBuilt: false });
     }
 
     try {
@@ -2262,10 +2279,63 @@ async function getOrBuildProjectIndex(
         if (publication.status === "superseded") {
             throw new Error(`Semantic graph-index publication was superseded for ${projectRoot}.`);
         }
-        return Object.freeze({ manifest, projectIndex: index });
+        return Object.freeze({ manifest, manifestCacheStats, projectIndex: index, wasFreshlyBuilt: true });
     } finally {
         await store.close();
     }
+}
+
+const BUILD_SUMMARY_SLOWEST_FILES_LIMIT = 10;
+
+/**
+ * Read the per-file parse/analyze durations a build recorded into its
+ * metrics, if any. Only meaningful for a freshly-built `projectIndex` — a
+ * reused stored projection is the same object persisted the last time it
+ * *was* freshly built, so it still carries that earlier build's own
+ * `.metrics`; reading those back on a later, unrelated reuse would misreport
+ * stale work as having just happened.
+ */
+function readFileTimings(
+    build: ProjectIndexBuildSnapshot
+): ReadonlyArray<Readonly<{ relativePath: string; durationMs: number }>> {
+    if (!build.wasFreshlyBuilt) {
+        return [];
+    }
+    const timings = build.projectIndex?.metrics?.metadata.gmlFileTimings;
+    return Array.isArray(timings)
+        ? (timings as ReadonlyArray<Readonly<{ relativePath: string; durationMs: number }>>)
+        : [];
+}
+
+/**
+ * Combine one or more `getOrBuildProjectIndex` results (project + optional
+ * toolset) into the single summary reported to `onProgress` once a build
+ * completes. Surfaces data the build already computed — the per-file timings
+ * recorded during parsing/analysis and the manifest's cache hit/miss counts —
+ * rather than tracking anything new.
+ *
+ * Returns `null` when no root was actually rebuilt (every root reused its
+ * stored projection unchanged) — nothing happened worth reporting.
+ */
+function createGraphIndexBuildSummary(
+    totalDurationMs: number,
+    builds: ReadonlyArray<ProjectIndexBuildSnapshot>
+): GraphIndexBuildSummary | null {
+    if (!builds.some((build) => build.wasFreshlyBuilt)) {
+        return null;
+    }
+
+    const allFileTimings = builds.flatMap((build) => readFileTimings(build));
+
+    const slowestFiles = allFileTimings
+        .toSorted((left, right) => right.durationMs - left.durationMs)
+        .slice(0, BUILD_SUMMARY_SLOWEST_FILES_LIMIT);
+    return Object.freeze({
+        cacheHitCount: builds.reduce((sum, build) => sum + build.manifestCacheStats.cacheHitCount, 0),
+        cacheMissCount: builds.reduce((sum, build) => sum + build.manifestCacheStats.cacheMissCount, 0),
+        slowestFiles,
+        totalDurationMs
+    });
 }
 
 /**
@@ -2338,6 +2408,13 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
         }
 
         const buildDurationMs = performance.now() - buildStart;
+        const buildSummary = createGraphIndexBuildSummary(
+            buildDurationMs,
+            toolsetBuild ? [projectBuild, toolsetBuild] : [projectBuild]
+        );
+        if (buildSummary) {
+            options.onProgress?.({ stage: "complete", summary: buildSummary });
+        }
         rebuildGraphProjectionIfNeeded(database, projectContext, config.embeddings, buildDurationMs);
         if (toolsetContext) {
             rebuildGraphProjectionIfNeeded(database, toolsetContext, config.embeddings, buildDurationMs);

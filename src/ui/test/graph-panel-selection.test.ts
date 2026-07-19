@@ -133,6 +133,7 @@ void test("graph panel renders shared semantic-index progress in the graph page 
             logLines: ["Parsing GML files... (4/9)"],
             stage: "gml-parse",
             status: "running",
+            summary: null,
             total: 9
         }
     };

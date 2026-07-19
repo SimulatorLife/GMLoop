@@ -14,7 +14,11 @@ import {
 } from "../../graph/graph-layout.js";
 import { projectGraphLayoutForSemanticZoom } from "../../graph/graph-semantic-zoom.js";
 import { EDGE_LINE_VISUAL_STYLES, NODE_VISUAL_STYLES } from "../../graph/graph-visualization-style-metadata.js";
-import type { GraphVisualizationEdgeType, GraphVisualizationNodeKind } from "../../graph/types.js";
+import type {
+    GraphVisualizationEdgeType,
+    GraphVisualizationGraphIndexBuildSummary,
+    GraphVisualizationNodeKind
+} from "../../graph/types.js";
 import {
     type GraphVisualizationUiModel,
     hasLoadedGraphIndex,
@@ -378,6 +382,46 @@ export class GmGraphPanel extends LightDomLitElement {
         `;
     }
 
+    #renderSemanticIndexBuildSummary(summary: GraphVisualizationGraphIndexBuildSummary) {
+        const totalFiles = summary.cacheHitCount + summary.cacheMissCount;
+        const cacheDetail =
+            totalFiles > 0
+                ? `${String(summary.cacheHitCount)} of ${String(totalFiles)} files reused from cache, ${String(summary.cacheMissCount)} parsed fresh`
+                : null;
+        const slowestFiles = summary.slowestFiles.slice(0, 5);
+        return html`
+            <div class="graph-index-progress-summary">
+                <span
+                    >Indexed in
+                    ${Math.round(summary.totalDurationMs).toLocaleString()}ms${cacheDetail ? ` — ${cacheDetail}` : ""}</span
+                >
+                ${
+                    slowestFiles.length > 0
+                        ? html`
+                              <details class="graph-index-progress-slowest-files">
+                                  <summary>Slowest files</summary>
+                                  <ul>
+                                      ${slowestFiles.map(
+                                          (file) => html`
+                                              <li>
+                                                  <span class="graph-index-progress-slowest-file-path"
+                                                      >${file.relativePath}</span
+                                                  >
+                                                  <span class="graph-index-progress-slowest-file-duration"
+                                                      >${Math.round(file.durationMs).toLocaleString()}ms</span
+                                                  >
+                                              </li>
+                                          `
+                                      )}
+                                  </ul>
+                              </details>
+                          `
+                        : null
+                }
+            </div>
+        `;
+    }
+
     #renderSemanticIndexProgress() {
         const progress = this.state?.graphIndexProgress;
         if (progress === null || progress === undefined || progress.status === "idle") {
@@ -411,6 +455,7 @@ export class GmGraphPanel extends LightDomLitElement {
                           </ul>`
                         : null
                 }
+                ${progress.summary ? this.#renderSemanticIndexBuildSummary(progress.summary) : null}
             </div>
         `;
     }

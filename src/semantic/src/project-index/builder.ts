@@ -3229,6 +3229,7 @@ export async function processProjectGmlFilesForIndex({
 }) {
     let processed = 0;
     const total = gmlFiles.length;
+    const fileTimings: Array<{ relativePath: string; durationMs: number }> = [];
     await processWithConcurrency(
         gmlFiles,
         gmlConcurrency,
@@ -3239,6 +3240,7 @@ export async function processProjectGmlFilesForIndex({
             await new Promise<void>((resolve) => {
                 setImmediate(resolve);
             });
+            const fileStartedAt = performance.now();
             await processProjectGmlFile({
                 file,
                 fsFacade,
@@ -3258,6 +3260,7 @@ export async function processProjectGmlFilesForIndex({
                 definitionsOnly,
                 recordReferences
             });
+            fileTimings.push({ relativePath: file.relativePath, durationMs: performance.now() - fileStartedAt });
             processed += 1;
             if (onProgress) {
                 onProgress({ stage: "gml-parse", current: processed, total });
@@ -3266,6 +3269,7 @@ export async function processProjectGmlFilesForIndex({
         { signal }
     );
     ensureNotAborted();
+    metrics.metadata.setMetadata("gmlFileTimings", fileTimings);
 }
 function finalizeProjectIndexResult({ metricsReporting, options, projectIndex }) {
     const metricsReport = finalizeProjectIndexMetrics(metricsReporting);

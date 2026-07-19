@@ -2,6 +2,24 @@ import type { ProjectIndexBuildProgress } from "../project-index/build-options.j
 
 export type GraphIndexScope = "project" | "toolset";
 
+/**
+ * Summary reported once a graph-index build finishes: which files were
+ * slowest to parse and analyze, and how much of the file set was reused from
+ * the previous manifest (via an mtime match) versus read and hashed fresh.
+ * Surfaces data the indexer already computes — it does not track anything new
+ * on top of each root's own per-file timings and manifest cache-hit counting.
+ */
+export type GraphIndexBuildSummary = Readonly<{
+    cacheHitCount: number;
+    cacheMissCount: number;
+    slowestFiles: ReadonlyArray<Readonly<{ relativePath: string; durationMs: number }>>;
+    totalDurationMs: number;
+}>;
+
+/** Per-file parse progress, or the final summary once the whole build (project + optional toolset) completes. */
+export type GraphIndexBuildProgress =
+    ProjectIndexBuildProgress | Readonly<{ stage: "complete"; summary: GraphIndexBuildSummary }>;
+
 export type GraphEmbeddingsConfig = Readonly<{
     dimensions: number;
     enabled: boolean;
@@ -36,7 +54,7 @@ export type GraphIndexBuildOptions = Readonly<{
     rebuild?: boolean;
     projectConfig?: Record<string, unknown> | null;
     projectRoot: string;
-    onProgress?: (progress: ProjectIndexBuildProgress) => void;
+    onProgress?: (progress: GraphIndexBuildProgress) => void;
     toolsetRoot?: string | null;
 }>;
 

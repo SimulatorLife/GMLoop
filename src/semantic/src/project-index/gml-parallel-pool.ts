@@ -390,6 +390,7 @@ export async function runProjectGmlFilesWithWorkerPool({
         Core.throwIfAborted(signal, PROJECT_INDEX_BUILD_ABORT_MESSAGE);
 
         const workerPeakMemory: Array<{ peakRss: number; peakHeapUsed: number }> = [];
+        const mergedFileTimings: Array<{ relativePath: string; durationMs: number }> = [];
         for (const outcome of outcomes) {
             for (const [key, value] of outcome.scopeMap) {
                 scopeMap.set(key, value);
@@ -402,8 +403,13 @@ export async function runProjectGmlFilesWithWorkerPool({
             pendingConstructorStaticMemberReferences.push(...outcome.pendingConstructorStaticMemberReferences);
             mergeWorkerMetricsSnapshot(metrics, outcome.metrics);
             workerPeakMemory.push({ peakRss: outcome.peakRss, peakHeapUsed: outcome.peakHeapUsed });
+            const outcomeFileTimings = outcome.metrics.metadata.gmlFileTimings;
+            if (Array.isArray(outcomeFileTimings)) {
+                mergedFileTimings.push(...(outcomeFileTimings as Array<{ relativePath: string; durationMs: number }>));
+            }
         }
         metrics.metadata.setMetadata("gmlWorkerPool.workerPeakMemory", workerPeakMemory);
+        metrics.metadata.setMetadata("gmlFileTimings", mergedFileTimings);
     } finally {
         signal?.removeEventListener?.("abort", abortListener);
         await Promise.all(

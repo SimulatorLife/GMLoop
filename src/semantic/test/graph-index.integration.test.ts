@@ -63,7 +63,7 @@ void test("buildGraphIndex creates dual-root graphs and cross-graph toolset edge
     const fixture = await createDualRootFixture();
 
     try {
-        const progress: Array<{ current: number; stage: string; total: number }> = [];
+        const progress: Array<Readonly<{ current?: number; stage: string; total?: number }>> = [];
         const result = await buildGraphIndex({
             onProgress: (snapshot) => {
                 progress.push(snapshot);
@@ -73,8 +73,10 @@ void test("buildGraphIndex creates dual-root graphs and cross-graph toolset edge
         });
 
         assert.ok(progress.length > 0);
-        assert.equal(progress.at(-1)?.stage, "gml-parse");
-        assert.equal(progress.at(-1)?.current, progress.at(-1)?.total);
+        assert.equal(progress.at(-1)?.stage, "complete");
+        const parseEvents = progress.filter((event) => event.stage === "gml-parse");
+        assert.ok(parseEvents.length > 0);
+        assert.equal(parseEvents.at(-1)?.current, parseEvents.at(-1)?.total);
 
         const search = searchGraphIndex({
             projectRoot: fixture.projectRoot,
@@ -430,15 +432,17 @@ void test("buildGraphIndex preserves unchanged graph slices across incremental r
             "utf8"
         );
 
-        const incrementalProgress: Array<{ current: number; stage: string; total: number }> = [];
+        const incrementalProgress: Array<Readonly<{ current?: number; stage: string; total?: number }>> = [];
         await buildGraphIndex({
             onProgress: (progress) => incrementalProgress.push(progress),
             projectRoot: fixture.projectRoot,
             toolsetRoot: fixture.toolsetRoot
         });
-        assert.deepEqual(incrementalProgress.at(-1), { current: 1, stage: "gml-parse", total: 1 });
+        const incrementalParseEvents = incrementalProgress.filter((event) => event.stage === "gml-parse");
+        assert.deepEqual(incrementalParseEvents.at(-1), { current: 1, stage: "gml-parse", total: 1 });
+        assert.equal(incrementalProgress.at(-1)?.stage, "complete");
 
-        const warmProgress: Array<{ current: number; stage: string; total: number }> = [];
+        const warmProgress: Array<Readonly<{ current?: number; stage: string; total?: number }>> = [];
         await buildGraphIndex({
             onProgress: (progress) => warmProgress.push(progress),
             projectRoot: fixture.projectRoot,

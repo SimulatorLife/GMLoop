@@ -7,26 +7,12 @@ import {
     runProjectOperation
 } from "./project-operation-state.js";
 
-type SemanticIndexProgress = Readonly<{
-    current: number;
-    stage: "gml-parse";
-    total: number;
-}>;
-
-type SemanticIndexProgressCallback = (progress: SemanticIndexProgress) => void;
+type SemanticIndexProgressCallback = (progress: ProjectSemanticIndexProgress) => void;
 const SEMANTIC_INDEX_OPERATION_KIND = "semantic-index";
-
-function toSharedSemanticIndexProgress(progress: SemanticIndexProgress): ProjectSemanticIndexProgress {
-    return Object.freeze({
-        current: progress.current,
-        stage: progress.stage,
-        total: progress.total
-    });
-}
 
 function createProgressReporter(operation: ProjectOperationLease): SemanticIndexProgressCallback {
     return (progress): void => {
-        operation.updateSemanticIndexProgress(toSharedSemanticIndexProgress(progress));
+        operation.updateSemanticIndexProgress(progress);
     };
 }
 

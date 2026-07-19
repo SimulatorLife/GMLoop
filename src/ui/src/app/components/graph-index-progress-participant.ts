@@ -1,4 +1,7 @@
-import type { GraphVisualizationGraphIndexProgress } from "../../graph/types.js";
+import type {
+    GraphVisualizationGraphIndexBuildSummary,
+    GraphVisualizationGraphIndexProgress
+} from "../../graph/types.js";
 import type { LifecycleParticipant } from "./lifecycle-participants-controller.js";
 
 const DEFAULT_GRAPH_INDEX_PROGRESS_POLL_INTERVAL_MS = 1000;
@@ -27,6 +30,26 @@ function resolveServerRelativeApiEndpoint(pathname: string): string | null {
     }
 }
 
+function isGraphIndexBuildSummary(value: unknown): value is GraphVisualizationGraphIndexBuildSummary {
+    if (value === null || typeof value !== "object") {
+        return false;
+    }
+    const record = value as Record<string, unknown>;
+    return (
+        typeof record.cacheHitCount === "number" &&
+        typeof record.cacheMissCount === "number" &&
+        typeof record.totalDurationMs === "number" &&
+        Array.isArray(record.slowestFiles) &&
+        record.slowestFiles.every((entry) => {
+            if (entry === null || typeof entry !== "object") {
+                return false;
+            }
+            const fileEntry = entry as Record<string, unknown>;
+            return typeof fileEntry.relativePath === "string" && typeof fileEntry.durationMs === "number";
+        })
+    );
+}
+
 function isGraphIndexProgress(value: unknown): value is GraphVisualizationGraphIndexProgress {
     if (value === null || typeof value !== "object") {
         return false;
@@ -37,11 +60,12 @@ function isGraphIndexProgress(value: unknown): value is GraphVisualizationGraphI
         typeof record.isRunning === "boolean" &&
         Array.isArray(record.logLines) &&
         record.logLines.every((line) => typeof line === "string") &&
-        (record.stage === null || record.stage === "gml-parse") &&
+        (record.stage === null || record.stage === "gml-parse" || record.stage === "complete") &&
         (record.status === "idle" ||
             record.status === "running" ||
             record.status === "success" ||
             record.status === "error") &&
+        (record.summary === null || isGraphIndexBuildSummary(record.summary)) &&
         (record.total === null || typeof record.total === "number")
     );
 }
@@ -101,6 +125,7 @@ export class GraphIndexProgressParticipant implements LifecycleParticipant {
                 logLines: payload.logLines,
                 stage: payload.stage,
                 status: payload.status,
+                summary: payload.summary,
                 total: payload.total
             });
             if (payload.isRunning) {

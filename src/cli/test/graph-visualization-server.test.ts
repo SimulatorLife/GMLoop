@@ -111,6 +111,7 @@ void test("graph visualization server serves UI-rendered HTML and exposes regene
                 logLines: ["Parsing GML files... (2/4)"],
                 stage: "gml-parse",
                 status: "running",
+                summary: null,
                 total: 4
             }),
             clearFixProgress: () => {
@@ -178,6 +179,7 @@ void test("graph visualization server serves UI-rendered HTML and exposes regene
             ok: true,
             stage: "gml-parse",
             status: "running",
+            summary: null,
             total: 4
         });
 

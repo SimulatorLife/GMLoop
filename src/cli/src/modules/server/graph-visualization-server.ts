@@ -69,13 +69,21 @@ type GraphVisualizationServerFixProgress = Readonly<{
     workflow?: GraphVisualizationProjectWorkflow;
 }>;
 type GraphVisualizationServerGetFixProgress = () => GraphVisualizationServerFixProgress;
+/** Slowest-file/cache-hit summary reported once a semantic index build completes. */
+export type GraphVisualizationServerSemanticIndexBuildSummary = Readonly<{
+    cacheHitCount: number;
+    cacheMissCount: number;
+    slowestFiles: ReadonlyArray<Readonly<{ relativePath: string; durationMs: number }>>;
+    totalDurationMs: number;
+}>;
 /** Shared semantic-index progress payload returned by the graph server. */
 export type GraphVisualizationServerSemanticIndexProgress = Readonly<{
     current: number | null;
     isRunning: boolean;
     logLines: ReadonlyArray<string>;
-    stage: "gml-parse" | null;
+    stage: "gml-parse" | "complete" | null;
     status: "idle" | "running" | "success" | "error";
+    summary: GraphVisualizationServerSemanticIndexBuildSummary | null;
     total: number | null;
 }>;
 type GraphVisualizationServerGetSemanticIndexProgress = () => GraphVisualizationServerSemanticIndexProgress;

@@ -2140,6 +2140,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                         logLines: Object.freeze([]),
                         stage: null,
                         status: "idle" as const,
+                        summary: null,
                         total: null
                     });
                 }
@@ -2159,22 +2160,25 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                         logLines: Object.freeze([]),
                         stage: null,
                         status: "idle" as const,
+                        summary: null,
                         total: null
                     });
                 }
 
+                const semanticIndex = operation.semanticIndex;
                 return Object.freeze({
-                    current: operation.semanticIndex?.current ?? null,
+                    current: semanticIndex?.stage === "gml-parse" ? semanticIndex.current : null,
                     isRunning: operation.status === "running",
                     logLines: operation.messages,
-                    stage: operation.semanticIndex?.stage ?? null,
+                    stage: semanticIndex?.stage ?? null,
                     status:
                         operation.status === "running"
                             ? ("running" as const)
                             : operation.status === "succeeded"
                               ? ("success" as const)
                               : ("error" as const),
-                    total: operation.semanticIndex?.total ?? null
+                    summary: semanticIndex?.stage === "complete" ? semanticIndex.summary : null,
+                    total: semanticIndex?.stage === "gml-parse" ? semanticIndex.total : null
                 });
             },
             clearFixProgress: () => {

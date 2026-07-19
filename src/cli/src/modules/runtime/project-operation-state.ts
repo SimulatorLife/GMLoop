@@ -18,12 +18,18 @@ const PARENT_PROJECT_OPERATION_ENVIRONMENT_VARIABLE = "GMLOOP_PARENT_PROJECT_OPE
 /** Operations that coordinate project-wide work through the shared state file. */
 export type ProjectOperationKind = "fix" | "format" | "lint" | "refactor" | "live-reload" | "semantic-index";
 
-/** Progress emitted while the semantic project index parses project sources. */
-export type ProjectSemanticIndexProgress = Readonly<{
-    current: number;
-    stage: "gml-parse";
-    total: number;
+/** Summary reported once a semantic index build finishes: slowest files and manifest cache hit/miss counts. */
+export type ProjectSemanticIndexBuildSummary = Readonly<{
+    cacheHitCount: number;
+    cacheMissCount: number;
+    slowestFiles: ReadonlyArray<Readonly<{ relativePath: string; durationMs: number }>>;
+    totalDurationMs: number;
 }>;
+
+/** Progress emitted while the semantic project index parses project sources, or the final summary once it completes. */
+export type ProjectSemanticIndexProgress =
+    | Readonly<{ current: number; stage: "gml-parse"; total: number }>
+    | Readonly<{ stage: "complete"; summary: ProjectSemanticIndexBuildSummary }>;
 
 /** Lifecycle status persisted for a project operation. */
 export type ProjectOperationStatus = "running" | "succeeded" | "failed";
@@ -182,10 +188,43 @@ function normalizeOperationRecord(value: unknown): ProjectOperationRecord | null
     });
 }
 
-function normalizeSemanticIndexProgress(value: unknown): ProjectSemanticIndexProgress | null {
+function normalizeSemanticIndexBuildSummary(value: unknown): ProjectSemanticIndexBuildSummary | null {
     const record = readPersistedObject(value);
     if (
         record === null ||
+        typeof record.cacheHitCount !== "number" ||
+        typeof record.cacheMissCount !== "number" ||
+        typeof record.totalDurationMs !== "number" ||
+        !Array.isArray(record.slowestFiles)
+    ) {
+        return null;
+    }
+    const slowestFiles = record.slowestFiles.flatMap((entry) => {
+        const fileRecord = readPersistedObject(entry);
+        return fileRecord !== null &&
+            typeof fileRecord.relativePath === "string" &&
+            typeof fileRecord.durationMs === "number"
+            ? [Object.freeze({ relativePath: fileRecord.relativePath, durationMs: fileRecord.durationMs })]
+            : [];
+    });
+    return Object.freeze({
+        cacheHitCount: record.cacheHitCount,
+        cacheMissCount: record.cacheMissCount,
+        slowestFiles,
+        totalDurationMs: record.totalDurationMs
+    });
+}
+
+function normalizeSemanticIndexProgress(value: unknown): ProjectSemanticIndexProgress | null {
+    const record = readPersistedObject(value);
+    if (record === null) {
+        return null;
+    }
+    if (record.stage === "complete") {
+        const summary = normalizeSemanticIndexBuildSummary(record.summary);
+        return summary === null ? null : Object.freeze({ stage: "complete" as const, summary });
+    }
+    if (
         typeof record.current !== "number" ||
         !Number.isInteger(record.current) ||
         record.current < 0 ||
@@ -196,7 +235,7 @@ function normalizeSemanticIndexProgress(value: unknown): ProjectSemanticIndexPro
     ) {
         return null;
     }
-    return Object.freeze({ current: record.current, stage: "gml-parse", total: record.total });
+    return Object.freeze({ current: record.current, stage: "gml-parse" as const, total: record.total });
 }
 
 function normalizeProjectOperationState(value: unknown): ProjectOperationState {
@@ -400,6 +439,7 @@ function createLease(record: ProjectOperationRecord, ownsProjectLock: boolean): 
         });
         const now = Date.now();
         const shouldPersist =
+            progress.stage === "complete" ||
             progress.current === progress.total ||
             now - lastSemanticIndexProgressPersistAt >= SEMANTIC_INDEX_PROGRESS_PERSIST_INTERVAL_MS;
         if (shouldPersist) {
