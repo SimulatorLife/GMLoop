@@ -256,24 +256,34 @@ async function loadPrebuiltWebBundleFiles(webDir: string): Promise<ReadonlyArray
     return Object.freeze(files);
 }
 
-async function createGraphVisualizationWebBundleFiles(): Promise<ReadonlyArray<GraphVisualizationBundleFile>> {
+function isGraphVisualizationBundleTestEnvironment(): boolean {
+    return Boolean(
+        process.env.CI ||
+        process.env.NODE_ENV === "test" ||
+        process.env.GMLOOP_TEST === "1" ||
+        process.execArgv.some((argument) => argument.includes("test")) ||
+        process.argv.some((argument) => argument.includes("test"))
+    );
+}
+
+async function createGraphVisualizationWebBundleFiles(options: {
+    allowStalePrebuilt?: boolean;
+} = {}): Promise<ReadonlyArray<GraphVisualizationBundleFile>> {
     const prebuiltWebDirectory = resolvePrebuiltWebDirectory();
-    if (
+    const hasPrebuiltEntry =
         prebuiltWebDirectory !== null &&
-        (prebuiltWebDirectory.workspaceRoot === null ||
+        existsSync(path.join(prebuiltWebDirectory.path, GRAPH_VISUALIZATION_ENTRY_HTML_PATH));
+    if (
+        hasPrebuiltEntry &&
+        prebuiltWebDirectory !== null &&
+        (options.allowStalePrebuilt === true ||
+            prebuiltWebDirectory.workspaceRoot === null ||
             (await isWorkspaceWebBundleFresh(prebuiltWebDirectory.workspaceRoot, prebuiltWebDirectory.path)))
     ) {
         return loadPrebuiltWebBundleFiles(prebuiltWebDirectory.path);
     }
 
-    const isTest =
-        process.env.CI ||
-        process.env.NODE_ENV === "test" ||
-        process.env.GMLOOP_TEST === "1" ||
-        process.execArgv.some((a) => a.includes("test")) ||
-        process.argv.some((a) => a.includes("test"));
-
-    if (isTest) {
+    if (isGraphVisualizationBundleTestEnvironment()) {
         const mockHtml = [
             "<!DOCTYPE html>",
             "<html>",
@@ -355,9 +365,11 @@ async function createGraphVisualizationWebBundleFiles(): Promise<ReadonlyArray<G
 }
 
 function getGraphVisualizationWebBundleFiles(
-    _options?: GraphVisualizationRenderOptions
+    options?: GraphVisualizationRenderOptions
 ): Promise<ReadonlyArray<GraphVisualizationBundleFile>> {
-    staticWebBundleFilesPromise ??= createGraphVisualizationWebBundleFiles();
+    staticWebBundleFilesPromise ??= createGraphVisualizationWebBundleFiles({
+        allowStalePrebuilt: options?.isServerMode === true
+    });
     return staticWebBundleFilesPromise;
 }
 

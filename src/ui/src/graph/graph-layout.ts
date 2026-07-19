@@ -130,6 +130,28 @@ function getSimulationNodeForLayout(nodeId: string, simNodeById: Map<string, Sim
     return simNode;
 }
 
+/**
+ * Attach renderer-only node references without making them part of serialized graph data.
+ *
+ * The visual graph needs direct node references for fast edge geometry, but enumerating those
+ * references causes JSON.stringify() to duplicate both endpoint nodes for every edge. Large
+ * semantic graphs can therefore spend substantial startup time and memory serializing data that
+ * is already present in the top-level node list. Non-enumerable references keep runtime access
+ * unchanged while the JSON view remains the compact source/target/type graph representation.
+ */
+function createLayoutEdge(
+    edge: GraphVisualizationEdgeRecord,
+    sourceNode: GraphLayoutNode,
+    targetNode: GraphLayoutNode
+): GraphLayoutEdge {
+    const layoutEdge = { ...edge } as GraphLayoutEdge;
+    Object.defineProperties(layoutEdge, {
+        sourceNode: { value: sourceNode },
+        targetNode: { value: targetNode }
+    });
+    return layoutEdge;
+}
+
 function createLayoutEdges(
     layoutNodes: ReadonlyArray<GraphLayoutNode>,
     edges: ReadonlyArray<GraphVisualizationEdgeRecord>
@@ -142,7 +164,7 @@ function createLayoutEdges(
             return [];
         }
 
-        return [{ ...edge, sourceNode, targetNode }];
+        return [createLayoutEdge(edge, sourceNode, targetNode)];
     });
 }
 
@@ -257,13 +279,17 @@ export function filterGraphLayoutForDisplay(parameters: {
         }
 
         visibleEdgeKeys.add(edgeKey);
-        visibleEdges.push({
-            source: sourceNode.id,
-            sourceNode,
-            target: targetNode.id,
-            targetNode,
-            type: edge.type
-        });
+        visibleEdges.push(
+            createLayoutEdge(
+                {
+                    source: sourceNode.id,
+                    target: targetNode.id,
+                    type: edge.type
+                },
+                sourceNode,
+                targetNode
+            )
+        );
     }
 
     return Object.freeze({

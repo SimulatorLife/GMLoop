@@ -11,6 +11,8 @@ const CONNECTION_RADIUS_WEIGHT = 1.8;
 const MIN_NODE_DISTANCE_PADDING = 80;
 const CLOSE_NODE_REPULSION = 520;
 const DISTANT_NODE_REPULSION = 1800;
+const ALL_PAIRS_REPULSION_NODE_LIMIT = 180;
+const LARGE_GRAPH_REPULSION_CELL_SIZE = 320;
 const OVERLAP_RESOLUTION_PASSES = 90;
 // Pushing exactly the measured overlap converges asymptotically for densely-coupled clusters
 // (each pass only fixes one constraint at a time, re-creating tiny overlaps elsewhere).
@@ -94,13 +96,23 @@ function resetSimulationVelocities(simNodes: Array<SimulationNode>): void {
 }
 
 function applyPairRepulsion(simNodes: Array<SimulationNode>): void {
-    for (let i = 0; i < simNodes.length; i++) {
-        const nodeI = simNodes[i];
-        for (let j = i + 1; j < simNodes.length; j++) {
-            const nodeJ = simNodes[j];
-            applyRepulsiveForce(nodeI, nodeJ);
+    if (simNodes.length <= ALL_PAIRS_REPULSION_NODE_LIMIT) {
+        for (let i = 0; i < simNodes.length; i++) {
+            const nodeI = simNodes[i];
+            for (let j = i + 1; j < simNodes.length; j++) {
+                const nodeJ = simNodes[j];
+                applyRepulsiveForce(nodeI, nodeJ);
+            }
         }
+        return;
     }
+
+    // Large semantic graphs can contain thousands of symbols. Applying distant
+    // repulsion to every pair for every simulation iteration dominates startup
+    // time while contributing only a tiny force between already-separated nodes.
+    // Reuse the deterministic spatial grid so large layouts only evaluate local
+    // neighborhoods; edge attraction and gravity continue to provide global shape.
+    forEachNearbySimulationNodePair(simNodes, LARGE_GRAPH_REPULSION_CELL_SIZE, applyRepulsiveForce);
 }
 
 function applyRepulsiveForce(nodeA: SimulationNode, nodeB: SimulationNode): void {
