@@ -13,6 +13,8 @@ const CLOSE_NODE_REPULSION = 520;
 const DISTANT_NODE_REPULSION = 1800;
 const ALL_PAIRS_REPULSION_NODE_LIMIT = 180;
 const LARGE_GRAPH_REPULSION_CELL_SIZE = 320;
+const MIN_FORCE_ITERATIONS = 20;
+const SETTLED_MOVEMENT_THRESHOLD = 0.05;
 const OVERLAP_RESOLUTION_PASSES = 90;
 // Pushing exactly the measured overlap converges asymptotically for densely-coupled clusters
 // (each pass only fixes one constraint at a time, re-creating tiny overlaps elsewhere).
@@ -84,7 +86,10 @@ export function applyForceDirectedRefinement(
         applyPairRepulsion(simNodes);
         applyEdgeAttraction(edges, simNodeById);
         applyGravity(simNodes, gravityCoeff);
-        updateSimulationPositions(simNodes, maxStep);
+        const maxMovement = updateSimulationPositions(simNodes, maxStep);
+        if (iter >= MIN_FORCE_ITERATIONS && maxMovement < SETTLED_MOVEMENT_THRESHOLD) {
+            return;
+        }
     }
 }
 
@@ -339,9 +344,12 @@ function applyGravity(simNodes: Array<SimulationNode>, gravityCoeff: number): vo
     }
 }
 
-function updateSimulationPositions(simNodes: Array<SimulationNode>, maxStep: number): void {
+function updateSimulationPositions(simNodes: Array<SimulationNode>, maxStep: number): number {
+    let maxMovement = 0;
     for (const simNode of simNodes) {
         const stepLen = Math.hypot(simNode.vx, simNode.vy);
+        const movement = Math.min(stepLen, maxStep);
+        maxMovement = Math.max(maxMovement, movement);
         if (stepLen > maxStep) {
             simNode.x += (simNode.vx / stepLen) * maxStep;
             simNode.y += (simNode.vy / stepLen) * maxStep;
@@ -350,6 +358,8 @@ function updateSimulationPositions(simNodes: Array<SimulationNode>, maxStep: num
             simNode.y += simNode.vy;
         }
     }
+
+    return maxMovement;
 }
 
 export function centerSimulationNodes(

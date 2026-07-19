@@ -12,7 +12,19 @@ import {
     listGraphNodeKinds,
     resolveEffectiveGraphNodeKinds
 } from "../../graph/graph-layout.js";
-import { projectGraphLayoutForSemanticZoom } from "../../graph/graph-semantic-zoom.js";
+import {
+    buildGraphEdgeBatches,
+    createGraphRenderBounds,
+    cullGraphLayoutToViewport,
+    isGraphViewportCovered,
+    shouldBatchGraphEdges,
+    shouldRenderGraphLabels,
+    type GraphViewportBounds
+} from "../../graph/graph-render-viewport.js";
+import {
+    projectGraphLayoutForSemanticZoom,
+    resolveGraphSemanticZoomLevel
+} from "../../graph/graph-semantic-zoom.js";
 import { EDGE_LINE_VISUAL_STYLES, NODE_VISUAL_STYLES } from "../../graph/graph-visualization-style-metadata.js";
 import type {
     GraphVisualizationEdgeType,
@@ -78,6 +90,11 @@ function readEdgeArrowMarkerId(type: GraphVisualizationEdgeType): string {
     return `arrow-${type}`;
 }
 
+function readGraphEdgeAggregateCount(edge: GraphLayout["edges"][number]): number {
+    const aggregateCount = Reflect.get(edge, "aggregateCount");
+    return typeof aggregateCount === "number" && aggregateCount > 0 ? aggregateCount : 1;
+}
+
 function readGraphNodePathLabel(node: GraphLayoutNode): string | null {
     if (node.filePath !== null && node.resourcePath !== null) {
         return `${node.filePath} (resource: ${node.resourcePath})`;
@@ -124,9 +141,12 @@ export class GmGraphPanel extends LightDomLitElement {
 
     #cachedModel: GraphVisualizationUiModel | null = null;
     #cachedLayout: GraphLayout | null = null;
+    #cachedLayoutNodeById = new Map<string, GraphLayoutNode>();
     #cachedNodeItems: ReadonlyArray<GraphNodeKindLegendItem> | null = null;
     #cachedEdgeTypes: ReadonlyArray<GraphVisualizationEdgeType> | null = null;
     #cachedVisibleLayout: GraphLayout | null = null;
+    #cachedRenderedLayout: GraphLayout | null = null;
+    #cachedRenderBounds: GraphViewportBounds | null = null;
     #cachedJsonValue: string | null = null;
     #lastSearchQuery = "";
 
@@ -145,6 +165,7 @@ export class GmGraphPanel extends LightDomLitElement {
         this.#selectedNodeId = null;
         this.#focusedNodeId = null;
         this.#cachedVisibleLayout = null;
+        this.#invalidateRenderedViewport();
         this.requestUpdate();
     };
 
@@ -170,6 +191,38 @@ export class GmGraphPanel extends LightDomLitElement {
         this.removeEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
         this.#eventBus.disconnect();
         super.disconnectedCallback();
+    }
+
+    #getViewportTransform() {
+        return {
+            panX: this.#panX,
+            panY: this.#panY,
+            zoomScale: this.#zoomScale
+        };
+    }
+
+    #invalidateRenderedViewport(): void {
+        this.#cachedRenderedLayout = null;
+        this.#cachedRenderBounds = null;
+    }
+
+    #applyViewportTransform(): void {
+        const container = this.querySelector<SVGGElement>("g#container");
+        if (container) {
+            container.setAttribute(
+                "transform",
+                `translate(${String(this.#panX)},${String(this.#panY)}) scale(${String(this.#zoomScale)})`
+            );
+        }
+    }
+
+    #refreshViewportRenderIfNeeded(): void {
+        if (isGraphViewportCovered(this.#getViewportTransform(), this.#cachedRenderBounds)) {
+            return;
+        }
+
+        this.#invalidateRenderedViewport();
+        this.requestUpdate();
     }
 
     #syncFilterDefaults(force = false): void {
@@ -203,6 +256,7 @@ export class GmGraphPanel extends LightDomLitElement {
                 }
             }
             this.#cachedVisibleLayout = null;
+            this.#invalidateRenderedViewport();
         }
     }
 
@@ -226,7 +280,8 @@ export class GmGraphPanel extends LightDomLitElement {
 
         this.#panX = event.clientX - this.#startX;
         this.#panY = event.clientY - this.#startY;
-        this.requestUpdate();
+        this.#applyViewportTransform();
+        this.#refreshViewportRenderIfNeeded();
     };
 
     #onPointerUp = (event: PointerEvent): void => {
@@ -243,13 +298,19 @@ export class GmGraphPanel extends LightDomLitElement {
         event.preventDefault();
 
         const svgElement = this.querySelector("svg#graph");
-        if (!svgElement) {
+        if (!svgElement || !this.state) {
             return;
         }
 
         const rect = svgElement.getBoundingClientRect();
         const mouseX = event.clientX - rect.left - rect.width / 2;
         const mouseY = event.clientY - rect.top - rect.height / 2;
+        const previousScale = this.#zoomScale;
+        const previousSemanticLevel = resolveGraphSemanticZoomLevel(previousScale);
+        const previousLabelsVisible = shouldRenderGraphLabels(this.state.labelMode, previousScale);
+        const renderedEdgeCount = this.#cachedRenderedLayout?.edges.length ?? 0;
+        const previousBatchMode = shouldBatchGraphEdges(previousScale, renderedEdgeCount);
+        const hadFocus = this.#focusedNodeId !== null;
 
         const zoomFactor = 1.1;
         const newScale = event.deltaY < 0 ? this.#zoomScale * zoomFactor : this.#zoomScale / zoomFactor;
@@ -261,8 +322,22 @@ export class GmGraphPanel extends LightDomLitElement {
         if (finalScale <= FOCUS_CLEAR_ZOOM_SCALE) {
             this.#focusedNodeId = null;
         }
+        this.#applyViewportTransform();
 
-        this.requestUpdate();
+        const semanticLevelChanged = previousSemanticLevel !== resolveGraphSemanticZoomLevel(finalScale);
+        const focusChanged = hadFocus && this.#focusedNodeId === null;
+        if (semanticLevelChanged || focusChanged) {
+            this.#invalidateRenderedViewport();
+            this.requestUpdate();
+            return;
+        }
+
+        const labelsVisible = shouldRenderGraphLabels(this.state.labelMode, finalScale);
+        const batchMode = shouldBatchGraphEdges(finalScale, renderedEdgeCount);
+        if (labelsVisible !== previousLabelsVisible || batchMode !== previousBatchMode) {
+            this.requestUpdate();
+        }
+        this.#refreshViewportRenderIfNeeded();
     };
 
     #getEdgeIntersection(source: GraphLayoutNode, target: GraphLayoutNode) {
@@ -292,6 +367,7 @@ export class GmGraphPanel extends LightDomLitElement {
             this.#enabledNodeKinds.add(kind);
         }
         this.#cachedVisibleLayout = null;
+        this.#invalidateRenderedViewport();
         this.requestUpdate();
     }
 
@@ -302,6 +378,7 @@ export class GmGraphPanel extends LightDomLitElement {
             this.#enabledEdgeTypes.add(type);
         }
         this.#cachedVisibleLayout = null;
+        this.#invalidateRenderedViewport();
         this.requestUpdate();
     }
 
@@ -311,7 +388,7 @@ export class GmGraphPanel extends LightDomLitElement {
     }
 
     protected focusNode(nodeId: string): void {
-        const node = this.#cachedLayout?.nodes.find((candidate) => candidate.id === nodeId);
+        const node = this.#cachedLayoutNodeById.get(nodeId);
         if (!node) {
             return;
         }
@@ -322,11 +399,13 @@ export class GmGraphPanel extends LightDomLitElement {
         this.#panX = -node.x * targetScale;
         this.#panY = -node.y * targetScale;
         this.#zoomScale = targetScale;
+        this.#invalidateRenderedViewport();
         this.requestUpdate();
     }
 
     #clearFocus = (): void => {
         this.#focusedNodeId = null;
+        this.#invalidateRenderedViewport();
         this.requestUpdate();
     };
 
@@ -492,9 +571,8 @@ export class GmGraphPanel extends LightDomLitElement {
         nodeItems: ReadonlyArray<GraphNodeKindLegendItem>,
         edgeTypes: ReadonlyArray<GraphVisualizationEdgeType>
     ) {
-        const legendClassName = this.state?.activeGraphView === "visual" ? "" : "hidden";
         return html`
-            <aside id="legend" class=${legendClassName} aria-label="Graph filters">
+            <aside id="legend" aria-label="Graph filters">
                 <div class="filter-section">
                     <strong>Nodes</strong>
                     ${nodeItems.map((item) => this.#renderLegendNodeItem(item))}
@@ -546,6 +624,128 @@ export class GmGraphPanel extends LightDomLitElement {
         `;
     }
 
+    #renderGraphEdges(layout: GraphLayout) {
+        if (shouldBatchGraphEdges(this.#zoomScale, layout.edges.length)) {
+            return buildGraphEdgeBatches(layout.edges).map(
+                (batch) => svg`
+                    <path
+                        class="link link-batch"
+                        d=${batch.pathData}
+                        fill="none"
+                        stroke=${getEdgeColor(batch.type)}
+                        stroke-dasharray=${getEdgeDashArray(batch.type)}
+                        data-edge-count=${String(batch.edgeCount)}
+                        data-edge-type=${batch.type}
+                    ></path>
+                `
+            );
+        }
+
+        return layout.edges.map((edge) => {
+            const geometry = this.#getEdgeIntersection(edge.sourceNode, edge.targetNode);
+            const aggregateCount = readGraphEdgeAggregateCount(edge);
+            return svg`
+                <line
+                    class="link"
+                    data-aggregate-count=${String(aggregateCount)}
+                    x1=${String(geometry.x1)}
+                    y1=${String(geometry.y1)}
+                    x2=${String(geometry.x2)}
+                    y2=${String(geometry.y2)}
+                    stroke=${getEdgeColor(edge.type)}
+                    stroke-width=${String(Math.min(6, 1 + Math.log2(aggregateCount)))}
+                    stroke-dasharray=${getEdgeDashArray(edge.type)}
+                    marker-end=${`url(#${readEdgeArrowMarkerId(edge.type)})`}
+                ></line>
+            `;
+        });
+    }
+
+    #renderGraphSurface(layout: GraphLayout) {
+        if (!this.state) {
+            return html``;
+        }
+
+        const renderLabels = shouldRenderGraphLabels(this.state.labelMode, this.#zoomScale);
+        return html`
+            <svg
+                id="graph"
+                viewBox="-900 -700 1800 1400"
+                role="img"
+                aria-label="GameMaker project graph"
+                style="touch-action: none;"
+                @pointerdown=${this.#onPointerDown}
+                @pointermove=${this.#onPointerMove}
+                @pointerup=${this.#onPointerUp}
+                @pointercancel=${this.#onPointerUp}
+                @wheel=${this.#onWheel}
+            >
+                <defs>
+                    ${EDGE_LINE_VISUAL_STYLES.map(
+                        (edgeStyle) => svg`
+                            <marker
+                                id=${readEdgeArrowMarkerId(edgeStyle.type)}
+                                viewBox="0 -5 10 10"
+                                refX="10"
+                                refY="0"
+                                markerWidth="6"
+                                markerHeight="6"
+                                orient="auto"
+                            >
+                                <path d="M0,-5L10,0L0,5" fill=${edgeStyle.color}></path>
+                            </marker>
+                        `
+                    )}
+                </defs>
+                <g id="container" transform=${`translate(${this.#panX},${this.#panY}) scale(${this.#zoomScale})`}>
+                    ${this.#renderGraphEdges(layout)}
+                    ${layout.nodes.map(
+                        (node) => svg`
+                            <g class="node-group" transform=${`translate(${node.x},${node.y})`}>
+                                <circle
+                                    class=${`node node-${node.kind}${node.graphId === "toolset" ? " toolset" : ""}${this.#selectedNodeId === node.id ? " highlighted" : ""}`}
+                                    r=${String(node.radius)}
+                                    fill=${getNodeColor(node.kind)}
+                                    tabindex="0"
+                                    role="button"
+                                    aria-label=${node.displayName}
+                                    @pointerdown=${(event: PointerEvent) => {
+                                        event.stopPropagation();
+                                    }}
+                                    @click=${() => this.selectNode(node.id)}
+                                    @dblclick=${(event: MouseEvent) => {
+                                        event.stopPropagation();
+                                        this.focusNode(node.id);
+                                    }}
+                                    @keydown=${(event: KeyboardEvent) => {
+                                        if (event.key === "Enter" || event.key === " ") {
+                                            event.preventDefault();
+                                            this.selectNode(node.id);
+                                        }
+                                    }}
+                                ></circle>
+                                ${renderLabels ? svg`<text x=${String(node.radius + 5)} y="4">${node.displayName}</text>` : null}
+                            </g>
+                        `
+                    )}
+                </g>
+            </svg>
+        `;
+    }
+
+    #renderJsonView(jsonValue: string) {
+        return html`
+            <div id="json-view-shell" class="visible">
+                <gm-json-viewer
+                    id="json-view"
+                    .value=${jsonValue}
+                    copyAccessibleLabel="Copy graph JSON to clipboard"
+                    copyLabel="Copy JSON"
+                ></gm-json-viewer>
+            </div>
+        `;
+    }
+
     protected render() {
         if (!this.model || !this.state) {
             return html``;
@@ -560,10 +760,13 @@ export class GmGraphPanel extends LightDomLitElement {
             this.#cachedModel = this.model;
             this.layoutCalculationCount++;
             this.#cachedLayout = createGraphLayout(graphNodes, graphEdges);
+            this.#cachedLayoutNodeById = new Map(this.#cachedLayout.nodes.map((node) => [node.id, node]));
             this.#cachedNodeItems = listGraphNodeKindLegendItems(graphNodes);
             this.#cachedEdgeTypes = listGraphEdgeTypes(graphEdges);
             this.#cachedVisibleLayout = null;
-            if (this.#focusedNodeId && !this.#cachedLayout.nodes.some((node) => node.id === this.#focusedNodeId)) {
+            this.#cachedJsonValue = null;
+            this.#invalidateRenderedViewport();
+            if (this.#focusedNodeId && !this.#cachedLayoutNodeById.has(this.#focusedNodeId)) {
                 this.#focusedNodeId = null;
             }
         }
@@ -572,6 +775,8 @@ export class GmGraphPanel extends LightDomLitElement {
         if (query !== this.#lastSearchQuery) {
             this.#lastSearchQuery = query;
             this.#cachedVisibleLayout = null;
+            this.#cachedJsonValue = null;
+            this.#invalidateRenderedViewport();
         }
 
         if (this.#cachedVisibleLayout === null) {
@@ -583,30 +788,43 @@ export class GmGraphPanel extends LightDomLitElement {
                 matchesNode: (node) => this.#matchesSearch(node)
             });
             this.#cachedJsonValue = null;
+            this.#invalidateRenderedViewport();
         }
 
         const graphPageClassName = this.state.activePage === "graph" ? "page content-page active" : "page content-page";
         const layout = this.#cachedLayout;
         const nodeItems = this.#cachedNodeItems;
         const edgeTypes = this.#cachedEdgeTypes;
-        const filteredLayout = this.#cachedVisibleLayout;
-        const semanticLayout = projectGraphLayoutForSemanticZoom({
-            displayLayout: filteredLayout,
-            focusNodeId: this.#focusedNodeId,
-            sourceLayout: layout,
-            zoomScale: this.#zoomScale
-        });
-        const { edges: visibleEdges, nodes: visibleNodes } = semanticLayout;
-        const selectedNode = layout.nodes.find((node) => node.id === this.#selectedNodeId) ?? null;
+        const selectedNode = this.#selectedNodeId === null ? null : (this.#cachedLayoutNodeById.get(this.#selectedNodeId) ?? null);
+        const isVisualView = this.state.activeGraphView === "visual";
 
-        if (this.#cachedJsonValue === null) {
-            this.#cachedJsonValue = JSON.stringify(
-                { edges: filteredLayout.edges, nodes: filteredLayout.nodes },
-                null,
-                2
-            );
+        let renderedLayout = this.#cachedRenderedLayout;
+        if (
+            isVisualView &&
+            (renderedLayout === null || !isGraphViewportCovered(this.#getViewportTransform(), this.#cachedRenderBounds))
+        ) {
+            const semanticLayout = projectGraphLayoutForSemanticZoom({
+                displayLayout: this.#cachedVisibleLayout,
+                focusNodeId: this.#focusedNodeId,
+                sourceLayout: layout,
+                zoomScale: this.#zoomScale
+            });
+            this.#cachedRenderBounds = createGraphRenderBounds(this.#getViewportTransform());
+            renderedLayout = cullGraphLayoutToViewport(semanticLayout, this.#cachedRenderBounds);
+            this.#cachedRenderedLayout = renderedLayout;
         }
-        const jsonValue = this.#cachedJsonValue;
+
+        let jsonValue = "";
+        if (!isVisualView) {
+            if (this.#cachedJsonValue === null) {
+                this.#cachedJsonValue = JSON.stringify(
+                    { edges: this.#cachedVisibleLayout.edges, nodes: this.#cachedVisibleLayout.nodes },
+                    null,
+                    2
+                );
+            }
+            jsonValue = this.#cachedJsonValue;
+        }
 
         return html`
             <section id="graph-page" class=${graphPageClassName}>
@@ -631,98 +849,9 @@ export class GmGraphPanel extends LightDomLitElement {
                 }
                 ${this.#renderSemanticIndexProgress()}
                 ${hasLoadedGraphIndex(this.model) ? null : this.#renderEmptyState()}
-                <svg
-                    id="graph"
-                    class=${this.state.activeGraphView === "visual" ? "" : "hidden"}
-                    viewBox="-900 -700 1800 1400"
-                    role="img"
-                    aria-label="GameMaker project graph"
-                    style="touch-action: none;"
-                    @pointerdown=${this.#onPointerDown}
-                    @pointermove=${this.#onPointerMove}
-                    @pointerup=${this.#onPointerUp}
-                    @pointercancel=${this.#onPointerUp}
-                    @wheel=${this.#onWheel}
-                >
-                    <defs>
-                        ${EDGE_LINE_VISUAL_STYLES.map(
-                            (edgeStyle) => svg`
-                                <marker
-                                    id=${readEdgeArrowMarkerId(edgeStyle.type)}
-                                    viewBox="0 -5 10 10"
-                                    refX="10"
-                                    refY="0"
-                                    markerWidth="6"
-                                    markerHeight="6"
-                                    orient="auto"
-                                >
-                                    <path d="M0,-5L10,0L0,5" fill=${edgeStyle.color}></path>
-                                </marker>
-                            `
-                        )}
-                    </defs>
-                    <g id="container" transform=${`translate(${this.#panX},${this.#panY}) scale(${this.#zoomScale})`}>
-                        ${visibleEdges.map((edge) => {
-                            const geom = this.#getEdgeIntersection(edge.sourceNode, edge.targetNode);
-                            return svg`
-                                <line
-                                    class="link"
-                                    data-aggregate-count=${String(edge.aggregateCount)}
-                                    x1=${String(geom.x1)}
-                                    y1=${String(geom.y1)}
-                                    x2=${String(geom.x2)}
-                                    y2=${String(geom.y2)}
-                                    stroke=${getEdgeColor(edge.type)}
-                                    stroke-width=${String(Math.min(6, 1 + Math.log2(edge.aggregateCount)))}
-                                    stroke-dasharray=${getEdgeDashArray(edge.type)}
-                                    marker-end=${`url(#${readEdgeArrowMarkerId(edge.type)})`}
-                                ></line>
-                            `;
-                        })}
-                        ${visibleNodes.map(
-                            (node) => svg`
-                                <g class="node-group" transform=${`translate(${node.x},${node.y})`}>
-                                    <circle
-                                        class=${`node node-${node.kind}${node.graphId === "toolset" ? " toolset" : ""}${this.#selectedNodeId === node.id ? " highlighted" : ""}`}
-                                        r=${String(node.radius)}
-                                        fill=${getNodeColor(node.kind)}
-                                        tabindex="0"
-                                        role="button"
-                                        aria-label=${node.displayName}
-                                        @pointerdown=${(event: PointerEvent) => {
-                                            event.stopPropagation();
-                                        }}
-                                        @click=${() => this.selectNode(node.id)}
-                                        @dblclick=${(event: MouseEvent) => {
-                                            event.stopPropagation();
-                                            this.focusNode(node.id);
-                                        }}
-                                        @keydown=${(event: KeyboardEvent) => {
-                                            if (event.key === "Enter" || event.key === " ") {
-                                                event.preventDefault();
-                                                this.selectNode(node.id);
-                                            }
-                                        }}
-                                    ></circle>
-                                    ${
-                                        this.state.labelMode === "hidden"
-                                            ? null
-                                            : svg`<text x=${String(node.radius + 5)} y="4">${node.displayName}</text>`
-                                    }
-                                </g>
-                            `
-                        )}
-                    </g>
-                </svg>
-                <div id="json-view-shell" class=${this.state.activeGraphView === "json" ? "visible" : ""}>
-                    <gm-json-viewer
-                        id="json-view"
-                        .value=${jsonValue}
-                        copyAccessibleLabel="Copy graph JSON to clipboard"
-                        copyLabel="Copy JSON"
-                    ></gm-json-viewer>
-                </div>
-                ${this.#renderLegend(nodeItems, edgeTypes)} ${this.#renderSelectedNode(selectedNode)}
+                ${isVisualView && renderedLayout ? this.#renderGraphSurface(renderedLayout) : this.#renderJsonView(jsonValue)}
+                ${isVisualView ? this.#renderLegend(nodeItems, edgeTypes) : null}
+                ${isVisualView ? this.#renderSelectedNode(selectedNode) : null}
             </section>
         `;
     }
