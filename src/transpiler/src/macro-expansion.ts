@@ -151,7 +151,7 @@ function findSourceMacroDirective(line: string, initialBlockCommentState: boolea
     while (true) {
         if (inBlockComment) {
             const blockEnd = remaining.indexOf("*/");
-            if (blockEnd < 0) {
+            if (blockEnd === -1) {
                 return { inBlockComment: true, match: null };
             }
             remaining = remaining.slice(blockEnd + 2);
@@ -160,16 +160,16 @@ function findSourceMacroDirective(line: string, initialBlockCommentState: boolea
 
         const blockStart = remaining.indexOf("/*");
         const lineCommentStart = remaining.indexOf("//");
-        if (lineCommentStart >= 0 && (blockStart < 0 || lineCommentStart < blockStart)) {
+        if (lineCommentStart !== -1 && (blockStart === -1 || lineCommentStart < blockStart)) {
             remaining = remaining.slice(0, lineCommentStart);
         }
 
-        if (blockStart < 0 || blockStart >= remaining.length) {
+        if (blockStart === -1 || blockStart >= remaining.length) {
             break;
         }
 
         const blockEnd = remaining.indexOf("*/", blockStart + 2);
-        if (blockEnd < 0) {
+        if (blockEnd === -1) {
             remaining = remaining.slice(0, blockStart);
             inBlockComment = true;
             break;

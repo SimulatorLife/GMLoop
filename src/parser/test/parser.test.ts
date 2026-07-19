@@ -19,7 +19,7 @@ void describe("parser prediction state lifecycle", () => {
                 value = value + (value > 0 ? 1 : 0);
                 return value;
             }`}
-${"\n".repeat(8_001)}`;
+${"\n".repeat(8001)}`;
 
             const ast = GMLParser.parse(source, { getComments: false, getLocations: false });
             assert.equal(ast.type, "Program");

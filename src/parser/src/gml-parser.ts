@@ -16,7 +16,7 @@ const PredictionMode =
     (antlr4 as any).PredictionMode ??
     (antlr4 as any).atn?.PredictionMode;
 
-const PREDICTION_CACHE_RELEASE_SOURCE_LENGTH = 8_000;
+const PREDICTION_CACHE_RELEASE_SOURCE_LENGTH = 8000;
 const PREDICTION_CACHE_RELEASE_INTERVAL = 16;
 let parserInvocationCount = 0;
 

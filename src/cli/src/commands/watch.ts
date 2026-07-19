@@ -49,8 +49,8 @@ import { type ServerLifecycle } from "../modules/server/index.js";
 import { startStatusServer, type StatusServerHandle } from "../modules/status/server.js";
 import { DependencyTracker } from "../modules/transpilation/dependency-tracker.js";
 import {
-    createGmlTranspilerAdapter,
     analyzeFileMetadata,
+    createGmlTranspilerAdapter,
     displayTranspilationStatistics,
     type ErrorCollector,
     type MetricsCollector,

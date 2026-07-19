@@ -6,10 +6,10 @@ import { extractMacroDefinitionsFromSource } from "../src/macro-expansion.js";
 void describe("source macro metadata", () => {
     void it("extracts macro and define directives without parsing unrelated source", () => {
         const definitions = extractMacroDefinitionsFromSource(
-            `/* #macro ignored 0 */
+            String.raw`/* #macro ignored 0 */
 #macro VALUE 42
 #define alias(value) value + 1
-#macro MULTILINE \\
+#macro MULTILINE \
     VALUE
 `,
             "/project/macros.gml"
