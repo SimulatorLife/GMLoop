@@ -2,14 +2,12 @@ import { GmAppHeader } from "../app/components/gm-app-header.js";
 import { GmAppShell } from "../app/components/gm-app-shell.js";
 import { GmGraphPanel } from "../app/components/gm-graph-panel.js";
 import { GmGraphToolbar } from "../app/components/gm-graph-toolbar.js";
-import {
-    GmBadge,
-    GmButton,
-    GmCard,
-    GmCopyButton,
-    GmErrorBanner,
-    GmStatusChip
-} from "../app/components/primitives/index.js";
+import { GmBadge } from "../app/components/primitives/gm-badge.js";
+import { GmButton } from "../app/components/primitives/gm-button.js";
+import { GmCard } from "../app/components/primitives/gm-card.js";
+import { GmCopyButton } from "../app/components/primitives/gm-copy-button.js";
+import { GmErrorBanner } from "../app/components/primitives/gm-error-banner.js";
+import { GmStatusChip } from "../app/components/primitives/gm-status-chip.js";
 
 function defineCustomElementOnce(name: string, constructorValue: CustomElementConstructor): void {
     if (!customElements.get(name)) {
