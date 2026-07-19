@@ -45,11 +45,7 @@ void test("graph layout JSON does not duplicate renderer-only edge endpoint node
 
 void test("filtered promoted edges keep endpoint references non-enumerable", () => {
     const layout = createGraphLayout(
-        [
-            createNode("project", "project"),
-            createNode("script", "script"),
-            createNode("function", "function")
-        ],
+        [createNode("project", "project"), createNode("script", "script"), createNode("function", "function")],
         [
             { source: "project", target: "script", type: "contains" },
             { source: "script", target: "function", type: "defines" }

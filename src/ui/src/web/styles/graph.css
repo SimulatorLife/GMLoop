@@ -292,6 +292,45 @@ text {
   cursor: pointer;
 }
 
+.graph-index-progress-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-xs);
+  margin-top: var(--gm-space-xs);
+}
+
+.graph-index-progress-slowest-files {
+  font-size: var(--gm-text-sm);
+}
+
+.graph-index-progress-slowest-files summary {
+  cursor: pointer;
+  color: var(--gm-text-subdued);
+}
+
+.graph-index-progress-slowest-files ul {
+  margin: var(--gm-space-xs) 0 0;
+  padding-left: var(--gm-space-lg);
+}
+
+.graph-index-progress-slowest-files li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--gm-space-md);
+}
+
+.graph-index-progress-slowest-file-path {
+  font-family: var(--gm-font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-index-progress-slowest-file-duration {
+  color: var(--gm-text-subdued);
+  flex-shrink: 0;
+}
+
 .sub-filter {
   margin-left: var(--gm-space-lg);
 }

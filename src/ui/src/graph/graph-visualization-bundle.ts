@@ -266,9 +266,11 @@ function isGraphVisualizationBundleTestEnvironment(): boolean {
     );
 }
 
-async function createGraphVisualizationWebBundleFiles(options: {
-    allowStalePrebuilt?: boolean;
-} = {}): Promise<ReadonlyArray<GraphVisualizationBundleFile>> {
+async function createGraphVisualizationWebBundleFiles(
+    options: {
+        allowStalePrebuilt?: boolean;
+    } = {}
+): Promise<ReadonlyArray<GraphVisualizationBundleFile>> {
     const prebuiltWebDirectory = resolvePrebuiltWebDirectory();
     const hasPrebuiltEntry =
         prebuiltWebDirectory !== null &&

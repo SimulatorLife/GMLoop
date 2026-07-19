@@ -79,6 +79,7 @@ void test("GmAppShell reconnects to in-flight fix workflow on connection and pol
                 ok: true,
                 stage: "gml-parse",
                 status: "running",
+                summary: null,
                 total: 9
             });
         }
@@ -147,6 +148,7 @@ void test("GmAppShell reconnects to in-flight fix workflow on connection and pol
         logLines: ["Parsing GML files... (4/9)"],
         stage: "gml-parse",
         status: "running",
+        summary: null,
         total: 9
     });
 

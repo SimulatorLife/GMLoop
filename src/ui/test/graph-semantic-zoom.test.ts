@@ -2,10 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createGraphLayout } from "../src/graph/graph-layout.js";
-import {
-    projectGraphLayoutForSemanticZoom,
-    resolveGraphSemanticZoomLevel
-} from "../src/graph/graph-semantic-zoom.js";
+import { projectGraphLayoutForSemanticZoom, resolveGraphSemanticZoomLevel } from "../src/graph/graph-semantic-zoom.js";
 import type { GraphVisualizationNodeKind, GraphVisualizationNodeRecord } from "../src/graph/types.js";
 
 function createNode(id: string, kind: GraphVisualizationNodeKind, name: string): GraphVisualizationNodeRecord {

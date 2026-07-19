@@ -27,6 +27,7 @@ void test("graph-index progress participant attaches to a running build and relo
             ok: true,
             stage: "gml-parse",
             status: "running",
+            summary: null,
             total: 4
         },
         {
@@ -36,6 +37,7 @@ void test("graph-index progress participant attaches to a running build and relo
             ok: true,
             stage: "gml-parse",
             status: "success",
+            summary: null,
             total: 4
         }
     ];
@@ -48,6 +50,7 @@ void test("graph-index progress participant attaches to a running build and relo
                 ok: true,
                 stage: "gml-parse",
                 status: "success",
+                summary: null,
                 total: 4
             }
         );

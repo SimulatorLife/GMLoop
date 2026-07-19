@@ -60,7 +60,6 @@ import type {
     GraphEdgeType,
     GraphEmbeddingsConfig,
     GraphIndexBuildOptions,
-    GraphIndexBuildProgress,
     GraphIndexBuildResult,
     GraphIndexBuildSummary,
     GraphIndexHandle,
