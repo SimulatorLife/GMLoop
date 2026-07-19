@@ -231,6 +231,49 @@ void test("config panel defaults to rendered view and exposes configuration deta
     assert.doesNotMatch(rendered, /config-severity-badge/u);
 });
 
+void test("config panel renders a compact gm-json-viewer for a lint rule's options", () => {
+    const baseModel = createMockModel();
+    const panel = new TestableGmConfigPanel();
+    panel.model = {
+        ...baseModel,
+        projectConfigurationCatalog: {
+            ...baseModel.projectConfigurationCatalog,
+            lint: {
+                ...baseModel.projectConfigurationCatalog.lint,
+                rules: [
+                    {
+                        description: "Cap line length inside comments.",
+                        fixable: null,
+                        level: "warn",
+                        options: { max: 80 },
+                        ruleId: "gml/comment-length"
+                    }
+                ]
+            }
+        }
+    };
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /<gm-json-viewer\s+class="config-inline-json"/u);
+    assert.match(rendered, /copyAccessibleLabel=Copy gml\/comment-length options to clipboard/u);
+    assert.match(rendered, /copyLabel="Copy JSON"/u);
+    assert.match(rendered, /gm-json-viewer[\s\S]*compact/u);
+    assert.doesNotMatch(rendered, /<pre class="config-inline-json"/u);
+});
+
+void test("config panel omits the options viewer for lint rules with no options", () => {
+    const panel = new TestableGmConfigPanel();
+    panel.model = createMockModel();
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    // The default mock catalog's rules both have empty `options` objects.
+    assert.doesNotMatch(rendered, /class="config-inline-json"/u);
+});
+
 void test("config builder sections are collapsible panels and collapsed by default", () => {
     const panel = new TestableGmConfigPanel();
     panel.model = createMockModel();

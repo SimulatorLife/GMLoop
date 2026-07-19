@@ -40,6 +40,17 @@ const DEEP_HIERARCHY_RADIUS = 95;
 const MIN_NODE_DISTANCE_PADDING = 80;
 const CLOSE_NODE_REPULSION = 520;
 const DISTANT_NODE_REPULSION = 1800;
+// Force beyond this range is negligible (<0.01 px/iteration) — capping the search radius lets
+// repulsion use a spatial grid instead of checking every pair, without changing the result.
+const REPULSION_INTERACTION_CUTOFF = 500;
+const OVERLAP_RESOLUTION_PASSES = 120;
+// Pushing exactly the measured overlap converges asymptotically for densely-coupled clusters
+// (each pass only fixes one constraint at a time, re-creating tiny overlaps elsewhere).
+// Overshooting the correction converges in a bounded number of passes instead.
+const OVERLAP_RESOLUTION_OVERSHOOT = 1.5;
+// Final coordinates are rounded to integers for rendering, which can pull two nodes up to
+// ~1.5px closer together; targeting a slightly larger gap here absorbs that rounding.
+const OVERLAP_RESOLUTION_ROUNDING_MARGIN = 2;
 const PROMOTABLE_HIERARCHY_EDGE_TYPES = new Set<GraphVisualizationEdgeType>(["contains", "defines"]);
 const GRAPH_NODE_KIND_LEGEND_CATALOG: ReadonlyArray<GraphVisualizationNodeKind> = Object.freeze([
     "anim_curve",
@@ -325,19 +336,17 @@ function resetSimulationVelocities(simNodes: Array<SimulationNode>): void {
 }
 
 function applyPairRepulsion(simNodes: Array<SimulationNode>): void {
-    for (let i = 0; i < simNodes.length; i++) {
-        const nodeI = simNodes[i];
-        for (let j = i + 1; j < simNodes.length; j++) {
-            const nodeJ = simNodes[j];
-            applyRepulsiveForce(nodeI, nodeJ);
-        }
-    }
+    forEachNearbySimulationNodePair(simNodes, REPULSION_INTERACTION_CUTOFF, applyRepulsiveForce);
 }
 
 function applyRepulsiveForce(nodeA: SimulationNode, nodeB: SimulationNode): void {
     const dx = nodeA.x - nodeB.x;
     const dy = nodeA.y - nodeB.y;
     const distSq = dx * dx + dy * dy;
+    if (distSq > REPULSION_INTERACTION_CUTOFF * REPULSION_INTERACTION_CUTOFF) {
+        return;
+    }
+
     const dist = Math.sqrt(distSq) || 1;
     const minDist = nodeA.radius + nodeB.radius + MIN_NODE_DISTANCE_PADDING;
     const force =
@@ -349,6 +358,124 @@ function applyRepulsiveForce(nodeA: SimulationNode, nodeB: SimulationNode): void
     nodeA.vy += fy;
     nodeB.vx -= fx;
     nodeB.vy -= fy;
+}
+
+/**
+ * Buckets nodes into a uniform grid keyed by cell coordinates, sized so that any two nodes
+ * within `cellSize` of each other always land in the same or an adjacent cell.
+ */
+function buildSpatialGrid(
+    simNodes: ReadonlyArray<SimulationNode>,
+    cellSize: number
+): Map<string, Array<SimulationNode>> {
+    const grid = new Map<string, Array<SimulationNode>>();
+    for (const node of simNodes) {
+        const key = spatialGridCellKey(Math.floor(node.x / cellSize), Math.floor(node.y / cellSize));
+        const cell = grid.get(key);
+        if (cell) {
+            cell.push(node);
+        } else {
+            grid.set(key, [node]);
+        }
+    }
+
+    return grid;
+}
+
+function spatialGridCellKey(cellX: number, cellY: number): string {
+    return `${String(cellX)}:${String(cellY)}`;
+}
+
+/**
+ * Visits each pair of nodes that could plausibly be within `cellSize` of one another exactly
+ * once, without checking every pair — turns the O(n^2) all-pairs scan into an O(n) grid lookup.
+ */
+function forEachNearbySimulationNodePair(
+    simNodes: ReadonlyArray<SimulationNode>,
+    cellSize: number,
+    visit: (nodeA: SimulationNode, nodeB: SimulationNode) => void
+): void {
+    const grid = buildSpatialGrid(simNodes, cellSize);
+    const visitedPairKeys = new Set<string>();
+
+    for (const node of simNodes) {
+        const cellX = Math.floor(node.x / cellSize);
+        const cellY = Math.floor(node.y / cellSize);
+
+        for (let neighborCellX = cellX - 1; neighborCellX <= cellX + 1; neighborCellX++) {
+            for (let neighborCellY = cellY - 1; neighborCellY <= cellY + 1; neighborCellY++) {
+                const neighborCell = grid.get(spatialGridCellKey(neighborCellX, neighborCellY));
+                if (!neighborCell) {
+                    continue;
+                }
+
+                for (const otherNode of neighborCell) {
+                    if (otherNode === node) {
+                        continue;
+                    }
+
+                    const pairKey = node.id < otherNode.id ? `${node.id} ${otherNode.id}` : `${otherNode.id} ${node.id}`;
+                    if (visitedPairKeys.has(pairKey)) {
+                        continue;
+                    }
+
+                    visitedPairKeys.add(pairKey);
+                    visit(node, otherNode);
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Deterministically separates any nodes still closer than their minimum allowed distance after
+ * the spring simulation settles. The spring forces only tend toward non-overlapping positions;
+ * this pass guarantees it, which matters most for large graphs where 80 iterations may not
+ * fully converge.
+ */
+function resolveOverlappingSimulationNodes(simNodes: Array<SimulationNode>): void {
+    if (simNodes.length < 2) {
+        return;
+    }
+
+    const maxRadius = simNodes.reduce((max, node) => Math.max(max, node.radius), 0);
+    const cellSize = maxRadius * 2 + MIN_NODE_DISTANCE_PADDING + OVERLAP_RESOLUTION_ROUNDING_MARGIN;
+
+    for (let pass = 0; pass < OVERLAP_RESOLUTION_PASSES; pass++) {
+        let didResolveOverlap = false;
+
+        forEachNearbySimulationNodePair(simNodes, cellSize, (nodeA, nodeB) => {
+            if (separateOverlappingNodePair(nodeA, nodeB)) {
+                didResolveOverlap = true;
+            }
+        });
+
+        if (!didResolveOverlap) {
+            return;
+        }
+    }
+}
+
+function separateOverlappingNodePair(nodeA: SimulationNode, nodeB: SimulationNode): boolean {
+    const dx = nodeB.x - nodeA.x;
+    const dy = nodeB.y - nodeA.y;
+    const dist = Math.hypot(dx, dy);
+    const minDist = nodeA.radius + nodeB.radius + MIN_NODE_DISTANCE_PADDING + OVERLAP_RESOLUTION_ROUNDING_MARGIN;
+    if (dist >= minDist) {
+        return false;
+    }
+
+    const angle = dist > 0 ? Math.atan2(dy, dx) : 0;
+    const push = ((minDist - dist) / 2) * OVERLAP_RESOLUTION_OVERSHOOT;
+    const pushX = Math.cos(angle) * push;
+    const pushY = Math.sin(angle) * push;
+
+    nodeA.x -= pushX;
+    nodeA.y -= pushY;
+    nodeB.x += pushX;
+    nodeB.y += pushY;
+
+    return true;
 }
 
 function applyEdgeAttraction(
@@ -512,7 +639,12 @@ export function createGraphLayout(
     const initialPositions = seedInitialGraphPositions(nodes, hierarchy);
     const simNodes = createSimulationNodes(nodes, connectionCounts, initialPositions);
     const simNodeById = new Map(simNodes.map((node) => [node.id, node]));
+    console.time("applyForceDirectedRefinement");
     applyForceDirectedRefinement(simNodes, simNodeById, edges);
+    console.timeEnd("applyForceDirectedRefinement");
+    console.time("resolveOverlappingSimulationNodes");
+    resolveOverlappingSimulationNodes(simNodes);
+    console.timeEnd("resolveOverlappingSimulationNodes");
     centerSimulationNodes(simNodes, simNodeById, hierarchy.projectNodes);
     const layoutNodes = createLayoutNodes(nodes, simNodeById);
 

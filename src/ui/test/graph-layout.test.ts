@@ -314,3 +314,46 @@ void test("createGraphLayout keeps dense sibling nodes separated for readable la
 
     assert.ok(Math.min(...distances) >= 70);
 });
+
+void test("createGraphLayout guarantees minimum spacing across a large, deeply nested graph", () => {
+    const nodes: Array<GraphVisualizationNodeRecord> = [createNode("project", "project", "Game")];
+    const edges: Array<{ source: string; target: string; type: GraphVisualizationEdgeType }> = [];
+    const scriptCount = 25;
+    const functionsPerScript = 12;
+
+    for (let scriptIndex = 0; scriptIndex < scriptCount; scriptIndex++) {
+        const scriptId = `script-${String(scriptIndex)}`;
+        nodes.push(createNode(scriptId, "script", `script_${String(scriptIndex)}`));
+        edges.push({ source: "project", target: scriptId, type: "contains" });
+
+        for (let functionIndex = 0; functionIndex < functionsPerScript; functionIndex++) {
+            const functionId = `${scriptId}-fn-${String(functionIndex)}`;
+            nodes.push(createNode(functionId, "function", `fn_${String(functionIndex)}`));
+            edges.push({ source: scriptId, target: functionId, type: "defines" });
+        }
+    }
+
+    const startTimeMs = performance.now();
+    const layout = createGraphLayout(nodes, edges);
+    const elapsedMs = performance.now() - startTimeMs;
+
+    assert.equal(layout.nodes.length, 1 + scriptCount + scriptCount * functionsPerScript);
+    assert.ok(elapsedMs < 5000, `layout took ${String(elapsedMs)}ms, expected under 5000ms`);
+
+    for (let leftIndex = 0; leftIndex < layout.nodes.length; leftIndex++) {
+        for (let rightIndex = leftIndex + 1; rightIndex < layout.nodes.length; rightIndex++) {
+            const left = layout.nodes[leftIndex];
+            const right = layout.nodes[rightIndex];
+            if (!left || !right) {
+                continue;
+            }
+
+            const dist = Math.hypot(left.x - right.x, left.y - right.y);
+            const minDist = left.radius + right.radius + 80;
+            assert.ok(
+                dist >= minDist - 1,
+                `nodes '${left.id}' and '${right.id}' are ${String(dist)}px apart, expected at least ${String(minDist)}px`
+            );
+        }
+    }
+});

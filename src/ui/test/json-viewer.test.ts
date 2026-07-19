@@ -78,7 +78,10 @@ void test("GmJsonViewer renders object keys, string/number/boolean/null values, 
 
     const rendered = renderTemplateValue(viewer.renderForTest());
 
-    assert.match(rendered, /<span class="gm-json-viewer__key">"count"<\/span>/u);
+    // The key/colon boundary may render with the closing `>` shifted onto the
+    // next line (a whitespace-avoidance trick applied by the repo's Lit
+    // template formatter), so this only asserts on the opening tag + text.
+    assert.match(rendered, /<span class="gm-json-viewer__key">"count"/u);
     assert.match(rendered, /<span class="gm-json-viewer__number">2<\/span>/u);
     assert.match(rendered, /<span class="gm-json-viewer__boolean">false<\/span>/u);
     assert.match(rendered, /<span class="gm-json-viewer__string">"hi"<\/span>/u);
@@ -134,7 +137,7 @@ void test("GmJsonViewer collapses and expands an individual node when its toggle
 
     const initial = renderTemplateValue(viewer.renderForTest());
     assert.match(initial, /"inner"/u);
-    assert.match(initial, /aria-expanded="true"/u);
+    assert.match(initial, /aria-expanded=true/u);
 
     // Document order: the "collapse all" toolbar button comes first, then the
     // root object's toggle, then the nested object's toggle.
@@ -145,7 +148,10 @@ void test("GmJsonViewer collapses and expands an individual node when its toggle
     nestedToggleHandler();
 
     const afterCollapse = renderTemplateValue(viewer.renderForTest());
-    assert.doesNotMatch(afterCollapse, /"inner"/u);
+    // The copy button always keeps the full raw JSON (including "inner") so copying
+    // is unaffected by collapse state; assert against the tree's key markup instead
+    // of raw text presence so this only checks what the tree itself renders.
+    assert.doesNotMatch(afterCollapse, /gm-json-viewer__key">"inner"/u);
     assert.match(afterCollapse, /1 key/u);
 
     const handlersAfterCollapse = collectClickHandlers(viewer.renderForTest());
@@ -160,22 +166,24 @@ void test('GmJsonViewer "Collapse all" / "Expand all" toggles every container at
     viewer.value = { nested: { inner: 1 }, top: "value" };
 
     const initial = renderTemplateValue(viewer.renderForTest());
-    assert.match(initial, />Collapse all</u);
+    assert.match(initial, />\s*Collapse all\s*</u);
     assert.match(initial, /"inner"/u);
 
     const collapseAllHandler = collectClickHandlers(viewer.renderForTest())[0];
     collapseAllHandler();
 
     const collapsed = renderTemplateValue(viewer.renderForTest());
-    assert.match(collapsed, />Expand all</u);
-    assert.doesNotMatch(collapsed, /"inner"/u);
-    assert.doesNotMatch(collapsed, /"top"/u);
+    assert.match(collapsed, />\s*Expand all\s*</u);
+    // As above: check the tree's key markup rather than raw text, since the copy
+    // button's value always retains the full JSON regardless of collapse state.
+    assert.doesNotMatch(collapsed, /gm-json-viewer__key">"inner"/u);
+    assert.doesNotMatch(collapsed, /gm-json-viewer__key">"top"/u);
 
     const expandAllHandler = collectClickHandlers(viewer.renderForTest())[0];
     expandAllHandler();
 
     const expanded = renderTemplateValue(viewer.renderForTest());
-    assert.match(expanded, />Collapse all</u);
+    assert.match(expanded, />\s*Collapse all\s*</u);
     assert.match(expanded, /"inner"/u);
 });
 

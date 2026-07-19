@@ -224,22 +224,6 @@ function extractParamsFromLine(line: string): Array<{ name: string; defaultVal?:
     });
 }
 
-function countNamedFunctionParameters(functionNode: AstNodeWithType): number {
-    const params = Reflect.get(functionNode, "params");
-    if (!Array.isArray(params)) {
-        return 0;
-    }
-
-    let count = 0;
-    for (const param of params) {
-        if (resolveParameterName(param) !== undefined) {
-            count += 1;
-        }
-    }
-
-    return count;
-}
-
 function isSingleLineDefaultValueText(defaultValueText: string): boolean {
     return !/[\r\n]/u.test(defaultValueText);
 }
@@ -1549,7 +1533,6 @@ export function createNormalizeDocCommentsRule(definition: GmlRuleDefinition): R
                     const lineStartOffsets = computeLineStartOffsets(text);
                     const functionNodesByLineIndex = collectFunctionNodesByStartLine(programNode, lineStartOffsets);
                     const rewrittenLines: Array<string> = [];
-                    const deferredDocBlocksByLineIndex = new Map<number, Array<string>>();
 
                     let pendingDocBlock: Array<string> = [];
                     let pendingGapLinesAfterDocBlock: Array<string> = [];
@@ -1619,18 +1602,8 @@ export function createNormalizeDocCommentsRule(definition: GmlRuleDefinition): R
                                       lineIndex
                                   });
 
-                            const deferredSynthesisHandled = handleDeferredDocSynthesis(
-                                astFunctionCandidate,
-                                synthesized ?? [],
-                                text,
-                                hasLeadingIndentation,
-                                processedBlock,
-                                lineStartOffsets,
-                                deferredDocBlocksByLineIndex
-                            );
-
                             if (synthesized !== null) {
-                                if (synthesized.length > 0 && !deferredSynthesisHandled) {
+                                if (synthesized.length > 0) {
                                     if (
                                         shouldSeparateTopLevelSynthesizedDocBlock(
                                             rewrittenLines,
@@ -1659,10 +1632,6 @@ export function createNormalizeDocCommentsRule(definition: GmlRuleDefinition): R
                         }
 
                         rewrittenLines.push(normalizeDocCommentPrefixLine(line));
-                        const deferredDocBlock = deferredDocBlocksByLineIndex.get(lineIndex);
-                        if (deferredDocBlock && deferredDocBlock.length > 0) {
-                            rewrittenLines.push(...deferredDocBlock);
-                        }
                     }
 
                     if (pendingDocBlock.length > 0) {
@@ -1769,92 +1738,19 @@ function determineIfShouldSynthesizeReturnLine({
     );
 }
 
-function handleDeferredDocSynthesis(
-    astFunctionCandidate: any,
-    synthesized: ReadonlyArray<string>,
-    text: string,
-    hasLeadingIndentation: boolean,
-    processedBlock: ReadonlyArray<string>,
-    lineStartOffsets: number[],
-    deferredDocBlocksByLineIndex: Map<number, Array<string>>
-): boolean {
-    if (
-        astFunctionCandidate &&
-        synthesized &&
-        synthesized.length > 0 &&
-        astFunctionCandidate.assignmentStyle &&
-        !hasLeadingIndentation &&
-        processedBlock.length === 0 &&
-        countNamedFunctionParameters(astFunctionCandidate.functionNode) > 0
-    ) {
-        const assignmentReturnSummary = inferReturnDocTypeFromFunctionNode(
-            astFunctionCandidate.functionNode,
-            new Set<string>(),
-            new Map<string, string>()
-        );
-        if (!assignmentReturnSummary.hasReturnStatement) {
-            const assignmentStartIndex = getNodeStartIndex(astFunctionCandidate.sourceNode);
-            const assignmentEndIndex = Core.getNodeEndIndex(astFunctionCandidate.sourceNode);
-            if (
-                typeof assignmentStartIndex === "number" &&
-                typeof assignmentEndIndex === "number" &&
-                assignmentEndIndex > assignmentStartIndex
-            ) {
-                let assignmentSliceEndIndex = assignmentEndIndex;
-                if (text[assignmentSliceEndIndex] === ";") {
-                    assignmentSliceEndIndex += 1;
-                }
-
-                const assignmentText = text.slice(assignmentStartIndex, assignmentSliceEndIndex);
-                const assignmentLines = assignmentText.split(/\r?\n/u);
-                const assignmentEndLineIndex = getLineIndexForOffset(lineStartOffsets, assignmentEndIndex - 1);
-                const deferredLines = ["", ...synthesized, ...assignmentLines];
-                if (
-                    hasMaterializedDeferredDocumentedAssignmentAfterSourceText(
-                        text,
-                        assignmentSliceEndIndex,
-                        synthesized,
-                        assignmentLines
-                    )
-                ) {
-                    return true;
-                }
-                const existingDeferredLines = deferredDocBlocksByLineIndex.get(assignmentEndLineIndex) ?? [];
-                existingDeferredLines.push(...deferredLines);
-                deferredDocBlocksByLineIndex.set(assignmentEndLineIndex, existingDeferredLines);
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-function hasMaterializedDeferredDocumentedAssignmentAfterSourceText(
-    sourceText: string,
-    assignmentSliceEndIndex: number,
-    synthesizedDocLines: ReadonlyArray<string>,
-    assignmentLines: ReadonlyArray<string>
-): boolean {
-    const followingLines = sourceText.slice(assignmentSliceEndIndex).split(/\r?\n/u);
-    let lineIndex = 0;
-    while (lineIndex < followingLines.length && followingLines[lineIndex].trim().length === 0) {
-        lineIndex += 1;
-    }
-
-    if (lineIndex === 0) {
-        return false;
-    }
-
-    const expectedLines = [...synthesizedDocLines, ...assignmentLines];
-    if (followingLines.length - lineIndex < expectedLines.length) {
-        return false;
-    }
-
-    for (const [expectedIndex, expectedLine] of expectedLines.entries()) {
-        if (followingLines[lineIndex + expectedIndex] !== expectedLine) {
-            return false;
-        }
-    }
-
-    return true;
-}
+// NOTE: This rule previously deferred doc-comment synthesis for top-level,
+// unindented `var name = function (...) {...};` assignments that had named
+// params but no return statement (see the removed `handleDeferredDocSynthesis`
+// / `hasMaterializedDeferredDocumentedAssignmentAfterSourceText` helpers).
+// That mechanism captured the synthesized `/// @param`/`/// @returns` lines
+// together with a *second copy* of the entire assignment's source text and
+// re-inserted that combined block immediately after the original,
+// unmodified declaration. The net effect was that GMLoop's autofix silently
+// duplicated the function declaration in the source file every time this
+// rule ran against such a function (see the `burst_confetti` regression
+// covered by the fixtures/tests for `normalize-doc-comments`). There was no
+// scenario where duplicating the declaration was actually desired, so the
+// mechanism was removed outright: these functions now go through the same
+// code path as every other function candidate, which synthesizes the doc
+// comment block once and inserts it directly above the existing
+// declaration in place.
