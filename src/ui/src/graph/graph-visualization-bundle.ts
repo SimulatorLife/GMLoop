@@ -371,6 +371,11 @@ function getGraphVisualizationWebBundleFiles(
     staticWebBundleFilesPromise ??= createGraphVisualizationWebBundleFiles({
         allowStalePrebuilt: options?.isServerMode === true
     });
+    if (options?.isServerMode === true) {
+        void refreshGraphVisualizationBundleCache().catch((error: unknown) => {
+            console.error("Failed to refresh graph visualization web bundle in background:", error);
+        });
+    }
     return staticWebBundleFilesPromise;
 }
 
@@ -379,7 +384,7 @@ function getGraphVisualizationWebBundleFiles(
  *
  * Server mode is allowed to serve the last prebuilt shell immediately. This method checks that shell
  * against the workspace sources in the background and replaces the in-memory asset cache only after
- * a fresh build is ready. The caller can bump its UI revision when `true` is returned.
+ * a fresh build is ready.
  */
 export function refreshGraphVisualizationBundleCache(): Promise<boolean> {
     if (isGraphVisualizationBundleTestEnvironment()) {
@@ -391,6 +396,10 @@ export function refreshGraphVisualizationBundleCache(): Promise<boolean> {
         const hasPrebuiltEntry =
             prebuiltWebDirectory !== null &&
             existsSync(path.join(prebuiltWebDirectory.path, GRAPH_VISUALIZATION_ENTRY_HTML_PATH));
+        if (!hasPrebuiltEntry && staticWebBundleFilesPromise !== null) {
+            await staticWebBundleFilesPromise;
+            return false;
+        }
         if (
             hasPrebuiltEntry &&
             prebuiltWebDirectory !== null &&
