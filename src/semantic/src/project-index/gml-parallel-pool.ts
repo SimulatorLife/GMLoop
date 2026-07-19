@@ -1,7 +1,7 @@
 import os from "node:os";
 import { Worker } from "node:worker_threads";
 
-import { Core, type AbortSignalLike } from "@gmloop/core";
+import { type AbortSignalLike, Core } from "@gmloop/core";
 
 import { PROJECT_INDEX_BUILD_ABORT_MESSAGE } from "./abort-guard.js";
 import type { ProjectIndexBuildProgress } from "./build-options.js";
@@ -121,7 +121,7 @@ function partitionGmlFiles(
     for (let index = 0; index < effectiveWorkerCount; index++) {
         const size = baseSize + (index < remainder ? 1 : 0);
         if (size > 0) {
-            batches.push(gmlFiles.slice(cursor, cursor + size) as GmlParallelFileDescriptor[]);
+            batches.push(gmlFiles.slice(cursor, cursor + size));
         }
         cursor += size;
     }
@@ -136,7 +136,24 @@ function partitionGmlFiles(
  * sequential path); `declarations`/`references` are unioned by
  * concatenation; `declarationKinds` is unioned without duplicates.
  */
-function mergeIdentifierCollectionEntry(
+/** Union `incomingKinds` into `existingEntry.declarationKinds` without duplicates, matching `Core.pushUnique`'s semantics. */
+function mergeDeclarationKinds(existingEntry: GmlParallelIdentifierCollectionEntry, incomingKinds: unknown[]): void {
+    const existingKinds = Array.isArray(existingEntry.declarationKinds) ? existingEntry.declarationKinds : [];
+    existingEntry.declarationKinds = existingKinds;
+    for (const kind of incomingKinds as string[]) {
+        if (!existingKinds.includes(kind)) {
+            existingKinds.push(kind);
+        }
+    }
+}
+
+/**
+ * Backfill scalar/metadata fields onto `existingEntry` from `incomingEntry`,
+ * mirroring `assignIdentifierEntryMetadata`'s "only fill unset fields"
+ * first-writer-wins semantics. `declarations`/`references` are handled
+ * separately (concatenated, not overwritten) by the caller.
+ */
+function mergeIdentifierCollectionMetadataFields(
     existingEntry: GmlParallelIdentifierCollectionEntry,
     incomingEntry: GmlParallelIdentifierCollectionEntry
 ): void {
@@ -146,13 +163,7 @@ function mergeIdentifierCollectionEntry(
         }
 
         if (field === "declarationKinds" && Array.isArray(value)) {
-            const existingKinds = Array.isArray(existingEntry.declarationKinds) ? existingEntry.declarationKinds : [];
-            existingEntry.declarationKinds = existingKinds;
-            for (const kind of value as string[]) {
-                if (!existingKinds.includes(kind)) {
-                    existingKinds.push(kind);
-                }
-            }
+            mergeDeclarationKinds(existingEntry, value);
             continue;
         }
 
@@ -160,6 +171,13 @@ function mergeIdentifierCollectionEntry(
             existingEntry[field] = value;
         }
     }
+}
+
+function mergeIdentifierCollectionEntry(
+    existingEntry: GmlParallelIdentifierCollectionEntry,
+    incomingEntry: GmlParallelIdentifierCollectionEntry
+): void {
+    mergeIdentifierCollectionMetadataFields(existingEntry, incomingEntry);
 
     if (Array.isArray(incomingEntry.declarations) && incomingEntry.declarations.length > 0) {
         existingEntry.declarations = [...(existingEntry.declarations ?? []), ...incomingEntry.declarations];

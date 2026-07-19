@@ -192,8 +192,8 @@ export class GmJsonViewer extends LightDomLitElement {
                           ><span class="gm-json-viewer__bracket">${closeBracket}</span>`
                     : html`<div class="gm-json-viewer__children">
                               ${entries.map(([key, entryValue], index) =>
-                              this.#renderEntry(key, entryValue, path, isArray, depth, index === entries.length - 1)
-                          )}
+                                  this.#renderEntry(key, entryValue, path, isArray, depth, index === entries.length - 1)
+                              )}
                           </div>
                           <span class="gm-json-viewer__bracket gm-json-viewer__bracket--close">${closeBracket}</span>`
             }

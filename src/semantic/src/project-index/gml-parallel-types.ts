@@ -1,4 +1,4 @@
-import { createIdentifierCollections } from "./builder.js";
+import type { createIdentifierCollections } from "./builder.js";
 import type { MetricsSnapshot } from "./metrics.js";
 
 /**

@@ -28,6 +28,80 @@ function computeDefaultProjectIndexGmlWorkerConcurrencyBaseline(): number {
 
 const PROJECT_INDEX_GML_WORKER_CONCURRENCY_BASELINE = computeDefaultProjectIndexGmlWorkerConcurrencyBaseline();
 
+function normalizeConcurrencyValue(
+    value: unknown,
+    {
+        min = MIN_CONCURRENCY,
+        max = Number.MAX_SAFE_INTEGER,
+        fallback,
+        onInvalid = min
+    }: {
+        min?: number;
+        max?: number;
+        fallback?: unknown;
+        onInvalid?: number;
+    } = {}
+) {
+    const source = value ?? fallback;
+
+    if (source == null) {
+        return onInvalid;
+    }
+
+    const normalized = typeof source === "string" ? source.trim() : source;
+
+    if (normalized === "") {
+        return onInvalid;
+    }
+
+    const numeric = Core.toFiniteNumber(normalized);
+    if (numeric === null) {
+        return onInvalid;
+    }
+
+    return Core.clamp(numeric, min, max);
+}
+
+/**
+ * Shared clamp-against-a-limit logic used by both `clampConcurrency` and
+ * `clampWorkerConcurrency`: normalize the fallback against `[min, limit]`
+ * first, then normalize the candidate value against the same range, falling
+ * back to the normalized fallback when the candidate is missing or invalid.
+ */
+function clampConcurrencyAgainstLimit(
+    value: unknown,
+    { min = MIN_CONCURRENCY, max, fallback }: { min?: number; max: number; fallback: unknown }
+) {
+    const limit = Math.max(min, max);
+    const normalizedFallback = normalizeConcurrencyValue(fallback, {
+        min,
+        max: limit,
+        fallback: limit,
+        onInvalid: limit
+    });
+
+    return normalizeConcurrencyValue(value, {
+        min,
+        max: limit,
+        fallback: normalizedFallback,
+        onInvalid: normalizedFallback
+    });
+}
+
+/**
+ * Shared `resolve` callback for the "value" half of a concurrency config
+ * pair (`projectIndexConcurrencyConfig`/`projectIndexWorkerConcurrencyConfig`):
+ * both settings clamp against their own limit config's current value, so the
+ * only thing that differs between the two is which limit getter to consult.
+ */
+function resolveConcurrencyAgainstLimitGetter(
+    value: unknown,
+    { fallback }: { fallback: unknown },
+    getLimit: () => number
+) {
+    return clampConcurrencyAgainstLimit(value, { max: Math.max(MIN_CONCURRENCY, getLimit()), fallback });
+}
+
 const projectIndexConcurrencyLimitConfig = Core.createEnvConfiguredValueWithFallback({
     defaultValue: PROJECT_INDEX_GML_MAX_CONCURRENCY_BASELINE,
     envVar: PROJECT_INDEX_GML_MAX_CONCURRENCY_ENV_VAR,
@@ -44,22 +118,8 @@ const projectIndexConcurrencyLimitConfig = Core.createEnvConfiguredValueWithFall
 const projectIndexConcurrencyConfig = Core.createEnvConfiguredValueWithFallback({
     defaultValue: PROJECT_INDEX_GML_CONCURRENCY_BASELINE,
     envVar: PROJECT_INDEX_GML_CONCURRENCY_ENV_VAR,
-    resolve: (value, { fallback }) => {
-        const limit = Math.max(MIN_CONCURRENCY, getDefaultProjectIndexGmlConcurrencyLimit());
-        const normalizedFallback = normalizeConcurrencyValue(fallback, {
-            min: MIN_CONCURRENCY,
-            max: limit,
-            fallback: limit,
-            onInvalid: limit
-        });
-
-        return normalizeConcurrencyValue(value, {
-            min: MIN_CONCURRENCY,
-            max: limit,
-            fallback: normalizedFallback,
-            onInvalid: normalizedFallback
-        });
-    },
+    resolve: (value, context) =>
+        resolveConcurrencyAgainstLimitGetter(value, context, getDefaultProjectIndexGmlConcurrencyLimit),
     computeFallback: ({ defaultValue }) => defaultValue
 });
 
@@ -79,20 +139,7 @@ function clampConcurrency(
         fallback = getDefaultProjectIndexGmlConcurrency()
     }: { min?: number; max?: number; fallback?: unknown } = {}
 ) {
-    const limit = Math.max(min, max);
-    const normalizedFallback = normalizeConcurrencyValue(fallback, {
-        min,
-        max: limit,
-        fallback: limit,
-        onInvalid: limit
-    });
-
-    return normalizeConcurrencyValue(value, {
-        min,
-        max: limit,
-        fallback: normalizedFallback,
-        onInvalid: normalizedFallback
-    });
+    return clampConcurrencyAgainstLimit(value, { min, max, fallback });
 }
 
 function setDefaultProjectIndexGmlConcurrency(concurrency: unknown) {
@@ -134,22 +181,8 @@ const projectIndexWorkerConcurrencyLimitConfig = Core.createEnvConfiguredValueWi
 const projectIndexWorkerConcurrencyConfig = Core.createEnvConfiguredValueWithFallback({
     defaultValue: PROJECT_INDEX_GML_WORKER_CONCURRENCY_BASELINE,
     envVar: PROJECT_INDEX_GML_WORKER_CONCURRENCY_ENV_VAR,
-    resolve: (value, { fallback }) => {
-        const limit = Math.max(MIN_CONCURRENCY, getDefaultProjectIndexGmlWorkerConcurrencyLimit());
-        const normalizedFallback = normalizeConcurrencyValue(fallback, {
-            min: MIN_CONCURRENCY,
-            max: limit,
-            fallback: limit,
-            onInvalid: limit
-        });
-
-        return normalizeConcurrencyValue(value, {
-            min: MIN_CONCURRENCY,
-            max: limit,
-            fallback: normalizedFallback,
-            onInvalid: normalizedFallback
-        });
-    },
+    resolve: (value, context) =>
+        resolveConcurrencyAgainstLimitGetter(value, context, getDefaultProjectIndexGmlWorkerConcurrencyLimit),
     computeFallback: ({ defaultValue }) => defaultValue
 });
 
@@ -175,20 +208,7 @@ function clampWorkerConcurrency(
         fallback = getDefaultProjectIndexGmlWorkerConcurrency()
     }: { min?: number; max?: number; fallback?: unknown } = {}
 ) {
-    const limit = Math.max(min, max);
-    const normalizedFallback = normalizeConcurrencyValue(fallback, {
-        min,
-        max: limit,
-        fallback: limit,
-        onInvalid: limit
-    });
-
-    return normalizeConcurrencyValue(value, {
-        min,
-        max: limit,
-        fallback: normalizedFallback,
-        onInvalid: normalizedFallback
-    });
+    return clampConcurrencyAgainstLimit(value, { min, max, fallback });
 }
 
 function setDefaultProjectIndexGmlWorkerConcurrency(concurrency: unknown) {
@@ -213,40 +233,6 @@ const DEFAULT_PROJECT_INDEX_GML_WORKER_CONCURRENCY_LIMIT = getDefaultProjectInde
 applyProjectIndexWorkerConcurrencyEnvOverride();
 
 const DEFAULT_PROJECT_INDEX_GML_WORKER_CONCURRENCY = getDefaultProjectIndexGmlWorkerConcurrency();
-
-function normalizeConcurrencyValue(
-    value: unknown,
-    {
-        min = MIN_CONCURRENCY,
-        max = getDefaultProjectIndexGmlConcurrencyLimit(),
-        fallback,
-        onInvalid = min
-    }: {
-        min?: number;
-        max?: number;
-        fallback?: unknown;
-        onInvalid?: number;
-    } = {}
-) {
-    const source = value ?? fallback;
-
-    if (source == null) {
-        return onInvalid;
-    }
-
-    const normalized = typeof source === "string" ? source.trim() : source;
-
-    if (normalized === "") {
-        return onInvalid;
-    }
-
-    const numeric = Core.toFiniteNumber(normalized);
-    if (numeric === null) {
-        return onInvalid;
-    }
-
-    return Core.clamp(numeric, min, max);
-}
 
 export {
     applyProjectIndexConcurrencyEnvOverride,
