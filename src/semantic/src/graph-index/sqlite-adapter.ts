@@ -40,6 +40,12 @@ function configureGraphDatabase(database: GraphDatabase): void {
     database.exec("PRAGMA synchronous = NORMAL;");
     database.exec(`PRAGMA busy_timeout = ${String(SQLITE_BUSY_TIMEOUT_MS)};`);
     database.exec("PRAGMA foreign_keys = ON;");
+    // A no-op on a database that already has tables until the next VACUUM, but
+    // takes effect immediately on a freshly created one. Without this, freed
+    // pages (from incremental rebuilds, deleted files, etc.) accumulate in the
+    // freelist forever instead of shrinking the file, since the default mode
+    // (NONE) never reclaims space on its own.
+    database.exec("PRAGMA auto_vacuum = INCREMENTAL;");
 }
 
 /**
@@ -95,12 +101,49 @@ export function runGraphDatabaseImmediateTransaction(database: GraphDatabase, op
     }
 }
 
+// Bounds how many freelist pages a single maintenance pass reclaims (a page is
+// 4KB by default, so this caps a pass at a few MB) so it stays fast enough to
+// run after every write batch rather than needing a separate slow VACUUM.
+const INCREMENTAL_VACUUM_PAGE_LIMIT = 1024;
+
 /**
  * Run lightweight maintenance passes after graph writes.
  */
 export function optimizeGraphDatabase(database: GraphDatabase): void {
     database.exec("ANALYZE;");
     database.exec("PRAGMA optimize;");
+    // Only reclaims space when auto_vacuum is already INCREMENTAL (see
+    // configureGraphDatabase); a no-op otherwise, so this is always safe to call.
+    database.exec(`PRAGMA incremental_vacuum(${String(INCREMENTAL_VACUUM_PAGE_LIMIT)});`);
+}
+
+/**
+ * Percentage of the database file made up of reclaimable (freelist) pages, or
+ * `null` when the database is empty. Databases created before auto_vacuum was
+ * enabled (see {@link configureGraphDatabase}) can only shed this bloat via a
+ * full {@link vacuumGraphDatabase} pass.
+ */
+export function readGraphDatabaseBloatPercent(database: GraphDatabase): number | null {
+    const pageCountRow = database.prepare("PRAGMA page_count").get() as { page_count?: number } | undefined;
+    const freelistRow = database.prepare("PRAGMA freelist_count").get() as { freelist_count?: number } | undefined;
+    const pageCount = pageCountRow?.page_count ?? 0;
+    const freelistCount = freelistRow?.freelist_count ?? 0;
+    if (pageCount === 0) {
+        return null;
+    }
+
+    return Math.round((freelistCount / pageCount) * 100);
+}
+
+/**
+ * Rewrite the database file to reclaim all freelist pages and switch it onto
+ * incremental auto-vacuum going forward. This is a full-file rewrite (needs
+ * roughly as much free disk space as the database itself and an exclusive
+ * lock), so it must only run when a caller explicitly requests it, never as
+ * part of routine indexing.
+ */
+export function vacuumGraphDatabase(database: GraphDatabase): void {
+    database.exec("VACUUM;");
 }
 
 /**

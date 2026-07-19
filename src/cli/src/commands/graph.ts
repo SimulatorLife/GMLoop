@@ -80,6 +80,7 @@ type GraphCommandSharedOptions = {
     serve?: boolean;
     liveReload?: boolean;
     projectState?: string;
+    vacuum?: boolean;
 };
 
 type GraphResolutionContext = Readonly<{
@@ -1354,6 +1355,21 @@ async function runGraphSearchAction(queryText: string, options: GraphCommandShar
 
 async function runGraphDoctorAction(options: GraphCommandSharedOptions): Promise<void> {
     const context = await resolveGraphContext(options);
+    if (options.vacuum) {
+        const result = Semantic.vacuumGraphIndex({
+            databasePath: options.databasePath,
+            projectConfig: context.projectConfig,
+            projectRoot: context.projectRoot,
+            toolsetRoot: options.toolsetRoot
+        });
+        printGraphOutput(
+            createGraphEnvelope("graph doctor", context, options, result),
+            options.json === true,
+            `Compacted graph database at ${result.databasePath} (${String(result.bloatPercentBefore ?? 0)}% -> ${String(result.bloatPercentAfter ?? 0)}% reclaimable space).`
+        );
+        return;
+    }
+
     const report = Semantic.doctorGraphIndex({
         databasePath: options.databasePath,
         projectConfig: context.projectConfig,
@@ -2460,6 +2476,11 @@ export function createGraphCommand(): Command {
     const doctorCommand = addGraphSharedOptions(
         applyStandardCommandOptions(new Command("doctor")).description("Inspect graph-index health and configuration."),
         {}
+    ).addOption(
+        new Option(
+            "--vacuum",
+            "Compact the graph database, reclaiming free space left by incremental rebuilds"
+        ).default(false)
     );
     doctorCommand.action(async function graphDoctorCommandAction() {
         await runGraphCommandAction(async () => {

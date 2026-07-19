@@ -39,7 +39,9 @@ import {
     type GraphDatabase,
     inspectGraphDatabaseIntegrity,
     isSqliteMissingTableError,
-    optimizeGraphDatabase
+    optimizeGraphDatabase,
+    readGraphDatabaseBloatPercent,
+    vacuumGraphDatabase
 } from "./sqlite-adapter.js";
 import {
     createGraphAliases,
@@ -2584,6 +2586,11 @@ export function getGraphUsages(
     }
 }
 
+// Databases created before incremental auto-vacuum was enabled can only shed
+// bloat via a full VACUUM; below this threshold it isn't worth recommending
+// one, since a small freelist is normal churn rather than a real problem.
+const GRAPH_DB_BLOAT_WARNING_PERCENT = 10;
+
 /**
  * Inspect the graph database and report high-signal health issues.
  */
@@ -2711,6 +2718,15 @@ export function doctorGraphIndex(options: GraphIndexBuildOptions): GraphDoctorRe
             });
         }
 
+        const bloatPercent = readGraphDatabaseBloatPercent(database);
+        if (bloatPercent !== null && bloatPercent >= GRAPH_DB_BLOAT_WARNING_PERCENT) {
+            issues.push({
+                code: "GRAPH_DB_BLOAT",
+                message: `Graph database has ${String(bloatPercent)}% reclaimable free space. Run 'gmloop graph doctor --vacuum' to compact it.`,
+                severity: "warning"
+            });
+        }
+
         return Object.freeze({
             databasePath: config.databasePath,
             graphs,
@@ -2718,6 +2734,28 @@ export function doctorGraphIndex(options: GraphIndexBuildOptions): GraphDoctorRe
             issues,
             runtime
         });
+    } finally {
+        database.close();
+    }
+}
+
+/**
+ * Compact the graph database file, reclaiming all freelist space and
+ * switching it onto incremental auto-vacuum going forward (see
+ * {@link readGraphDatabaseBloatPercent}). This rewrites the whole file, so it
+ * is exposed as an explicit, user-triggered operation rather than something
+ * that runs automatically during indexing.
+ */
+export function vacuumGraphIndex(
+    options: GraphIndexBuildOptions
+): Readonly<{ bloatPercentAfter: number | null; bloatPercentBefore: number | null; databasePath: string }> {
+    const config = resolveGraphIndexConfig(options);
+    const database = openExistingGraphIndexDatabase(config.databasePath);
+    try {
+        const bloatPercentBefore = readGraphDatabaseBloatPercent(database);
+        vacuumGraphDatabase(database);
+        const bloatPercentAfter = readGraphDatabaseBloatPercent(database);
+        return Object.freeze({ bloatPercentAfter, bloatPercentBefore, databasePath: config.databasePath });
     } finally {
         database.close();
     }

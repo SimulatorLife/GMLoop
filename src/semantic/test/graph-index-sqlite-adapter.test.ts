@@ -7,7 +7,9 @@ import { describe, it } from "node:test";
 import {
     isSqliteDuplicateColumnError,
     isSqliteMissingTableError,
-    openGraphDatabase
+    openGraphDatabase,
+    readGraphDatabaseBloatPercent,
+    vacuumGraphDatabase
 } from "../src/graph-index/sqlite-adapter.js";
 
 void describe("isSqliteMissingTableError", () => {
@@ -78,6 +80,51 @@ void describe("isSqliteMissingTableError", () => {
             code: "ERR_SQLITE_ERROR"
         });
         assert.equal(isSqliteMissingTableError(duplicateColumn), false);
+    });
+});
+
+void describe("readGraphDatabaseBloatPercent and vacuumGraphDatabase", () => {
+    void it("returns 0 for a freshly created database with no reclaimable pages", () => {
+        const database = openGraphDatabase(":memory:");
+
+        try {
+            assert.equal(readGraphDatabaseBloatPercent(database), 0);
+        } finally {
+            database.close();
+        }
+    });
+
+    void it("reports reclaimable space after bulk deletes, and vacuum reclaims it", () => {
+        const tempRoot = mkdtempSync(path.join(os.tmpdir(), "gmloop-sqlite-bloat-"));
+        const databasePath = path.join(tempRoot, "graph.sqlite");
+        const database = openGraphDatabase(databasePath);
+
+        try {
+            database.exec("CREATE TABLE bulk_rows(id INTEGER PRIMARY KEY, payload TEXT NOT NULL)");
+            const insertRow = database.prepare("INSERT INTO bulk_rows(payload) VALUES (?)");
+            const payload = "x".repeat(1024);
+            for (let i = 0; i < 3000; i++) {
+                insertRow.run(payload);
+            }
+            database.exec("DELETE FROM bulk_rows WHERE id % 10 != 0");
+
+            const bloatPercentAfterDelete = readGraphDatabaseBloatPercent(database);
+            assert.ok(
+                bloatPercentAfterDelete !== null && bloatPercentAfterDelete > 0,
+                `expected reclaimable space after deleting most rows, got ${String(bloatPercentAfterDelete)}`
+            );
+
+            vacuumGraphDatabase(database);
+
+            const bloatPercentAfterVacuum = readGraphDatabaseBloatPercent(database);
+            assert.ok(
+                bloatPercentAfterVacuum !== null && bloatPercentAfterVacuum < bloatPercentAfterDelete,
+                `expected vacuum to reduce reclaimable space below ${String(bloatPercentAfterDelete)}%, got ${String(bloatPercentAfterVacuum)}`
+            );
+        } finally {
+            database.close();
+            rmSync(tempRoot, { recursive: true, force: true });
+        }
     });
 });
 

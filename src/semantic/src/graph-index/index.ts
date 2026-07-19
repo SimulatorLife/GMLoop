@@ -6,7 +6,8 @@ export {
     getGraphNode,
     getGraphUsages,
     openGraphIndex,
-    searchGraphIndex
+    searchGraphIndex,
+    vacuumGraphIndex
 } from "./builder.js";
 export { resolveGraphIndexConfig } from "./config.js";
 export {
