@@ -1,11 +1,11 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
 import { isRecord } from "../../shared/error-guards.js";
 
-const { parseJsonWithContext, stringifyJsonForFile } = Core;
+const { readJsonFileSyncOrDefault, stringifyJsonForFile } = Core;
 
 type RunnerLifecycleState = "paused" | "running" | "stopped";
 
@@ -207,18 +207,11 @@ function normalizeRunnerState(value: unknown): PersistedRunnerState {
 }
 
 function readPersistedRunnerState(projectRoot: string): PersistedRunnerState {
-    const statePath = resolveRunnerStatePath(projectRoot);
-    let raw: string;
-    try {
-        raw = readFileSync(statePath, "utf8");
-    } catch {
-        return DEFAULT_PERSISTED_STATE;
-    }
-    try {
-        return normalizeRunnerState(parseJsonWithContext(raw, { source: statePath, description: "runner state" }));
-    } catch {
-        return DEFAULT_PERSISTED_STATE;
-    }
+    return readJsonFileSyncOrDefault(
+        resolveRunnerStatePath(projectRoot),
+        normalizeRunnerState,
+        DEFAULT_PERSISTED_STATE
+    );
 }
 
 function writePersistedRunnerState(projectRoot: string, state: PersistedRunnerState): void {

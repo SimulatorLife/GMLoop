@@ -175,6 +175,33 @@ export function writeTextFileSync(filePath: string, content: string): void {
 }
 
 /**
+ * Read a JSON state file synchronously, normalizing the parsed payload and
+ * falling back to a default value when the file is missing, unreadable, or
+ * contains invalid JSON.
+ *
+ * Centralizes the "read + JSON.parse + normalize, swallow any failure" shape
+ * that several synchronous state stores (CLI runtime/project-operation
+ * persistence) previously reimplemented with their own `try`/`catch` blocks.
+ * Since the fallback path discards the failure entirely, callers do not need
+ * detailed parse-error context here.
+ *
+ * @param {string} filePath Absolute or relative path to the JSON state file.
+ * @param {(value: unknown) => T} normalize Converts the parsed JSON value
+ *        into the caller's canonical shape. Receives `unknown` so callers can
+ *        also reject unexpected shapes by throwing from within `normalize`.
+ * @param {T} defaultValue Value returned when the file is absent, unreadable,
+ *        not valid JSON, or `normalize` throws.
+ * @returns {T} The normalized state, or `defaultValue` on any failure.
+ */
+export function readJsonFileSyncOrDefault<T>(filePath: string, normalize: (value: unknown) => T, defaultValue: T): T {
+    try {
+        return normalize(JSON.parse(fsReadFileSync(filePath, "utf8")));
+    } catch {
+        return defaultValue;
+    }
+}
+
+/**
  * Read directory entries safely, returning an empty array when the directory
  * does not exist or is inaccessible. Errors other than "not a directory" are
  * re-thrown so callers can distinguish benign ENOENT/ENOTDIR cases from
