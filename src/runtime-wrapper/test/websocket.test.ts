@@ -316,7 +316,30 @@ void test("WebSocket client clears readiness timer on close with pending patches
     client.disconnect();
 });
 
-void test("WebSocket client defers patch batches until runtime readiness", async () => {
+void test("WebSocket client defers patch batches until runtime readiness", async (t) => {
+    // === Determinism notes ===
+    // The previous version of this test scheduled three real wall-clock
+    // waits: `await wait(50)` to wait for the MockWebSocket's setImmediate
+    // "open", `await wait(50)` between simulateMessage and the "not yet
+    // applied" assertion, and `await wait(100)` to wait for the production
+    // code's setInterval-based readiness polling (DEFAULT_READINESS_POLL_INTERVAL_MS
+    // = 50ms) to actually detect the ready state. Under heavy CI load those
+    // windows raced against event-loop latency, occasionally producing
+    // flaky "expected pending patches to remain queued" or "expected
+    // pending patches to flush" failures.
+    //
+    // The fix uses Node's `mock.timers.enable({ apis: ["setInterval"] })`
+    // (matching the pattern already established by the reconnect-timer and
+    // patch-queue tests below) so the readiness poll fires at deterministic
+    // moments under test control. The `flush()` helper replaces the
+    // setImmediate-driven `wait(50)` (one setImmediate tick is sufficient
+    // for MockWebSocket to dispatch "open"), and the middle `wait(50)` is
+    // removed entirely because `simulateMessage` synchronously delivers
+    // the message through the registered handler, so the "queued but not
+    // applied" state is observable without any real wait. Net effect:
+    // the assertion becomes a strict post-condition on a synchronous
+    // pipeline plus a single deterministic timer tick rather than a race
+    // against three independent wall-clock intervals.
     const wrapper = RuntimeWrapper.createRuntimeWrapper();
 
     globalWithWebSocket.WebSocket = MockWebSocket;
@@ -331,13 +354,20 @@ void test("WebSocket client defers patch batches until runtime readiness", async
         Scripts: [null]
     };
 
+    // Capture the readiness-poll setInterval so we can drive it via the mock
+    // clock. `setImmediate` is intentionally left un-mocked because
+    // MockWebSocket still relies on it to dispatch the open event.
+    t.mock.timers.enable({ apis: ["setInterval"] });
+
     const client = RuntimeWrapper.createWebSocketClient({
         wrapper,
         autoConnect: true
     });
 
     try {
-        await wait(50);
+        // MockWebSocket dispatches `open` via setImmediate; one immediate
+        // tick drains it deterministically instead of waiting 50ms.
+        await flush();
 
         const ws = client.getWebSocket();
         assert.ok(ws, "WebSocket should be available");
@@ -350,25 +380,35 @@ void test("WebSocket client defers patch batches until runtime readiness", async
 
         mockSocket.simulateMessage(JSON.stringify(pendingPatches));
 
-        await wait(50);
-
+        // simulateMessage drives the message handler synchronously, so the
+        // "queued but not yet applied" state is observable immediately.
         assert.strictEqual(wrapper.hasScript("script:pending_one"), false);
         assert.strictEqual(wrapper.hasScript("script:pending_two"), false);
 
         globalWithJson.JSON_game = readyJsonGame;
 
-        await wait(100);
+        // One readiness-poll tick (DEFAULT_READINESS_POLL_INTERVAL_MS = 50)
+        // detects the now-ready JSON_game and flushes the pending patches
+        // synchronously inside the interval callback.
+        t.mock.timers.tick(50);
 
         assert.ok(wrapper.hasScript("script:pending_one"));
         assert.ok(wrapper.hasScript("script:pending_two"));
     } finally {
+        t.mock.timers.reset();
         client.disconnect();
         globalWithJson.JSON_game = readyJsonGame;
         delete globalWithWebSocket.WebSocket;
     }
 });
 
-void test("WebSocket client deduplicates deferred patches before runtime readiness flush", async () => {
+void test("WebSocket client deduplicates deferred patches before runtime readiness flush", async (t) => {
+    // === Determinism notes ===
+    // Replaces the original `wait(50)` / `wait(40)` / `wait(120)` wall-clock
+    // windows with `flush()` plus a single deterministic `setInterval` tick.
+    // Mirrors the same mock-clock pattern as the neighbouring readiness
+    // tests so every "deferred until ready" assertion observes the queue
+    // state synchronously rather than racing the Node event loop.
     const wrapper = RuntimeWrapper.createRuntimeWrapper();
 
     globalWithWebSocket.WebSocket = MockWebSocket;
@@ -383,13 +423,15 @@ void test("WebSocket client deduplicates deferred patches before runtime readine
         Scripts: [null]
     };
 
+    t.mock.timers.enable({ apis: ["setInterval"] });
+
     const client = RuntimeWrapper.createWebSocketClient({
         wrapper,
         autoConnect: true
     });
 
     try {
-        await wait(50);
+        await flush();
 
         const ws = client.getWebSocket();
         assert.ok(ws, "WebSocket should be available");
@@ -417,13 +459,15 @@ void test("WebSocket client deduplicates deferred patches before runtime readine
             })
         );
 
-        await wait(40);
-
+        // All three messages are delivered synchronously, so the queued-only
+        // state is observable without polling.
         assert.strictEqual(wrapper.hasScript("script:deferred_duplicate"), false);
 
         globalWithJson.JSON_game = readyJsonGame;
 
-        await wait(120);
+        // Advance the readiness poll once; it detects the ready state and
+        // drains the queue, deduplicating the three identical IDs into one.
+        t.mock.timers.tick(50);
 
         assert.strictEqual(wrapper.hasScript("script:deferred_duplicate"), true);
         assert.strictEqual(wrapper.getRegistrySnapshot().scriptCount, 1);
@@ -435,13 +479,21 @@ void test("WebSocket client deduplicates deferred patches before runtime readine
         const history = wrapper.getPatchById("script:deferred_duplicate");
         assert.strictEqual(history.length, 1);
     } finally {
+        t.mock.timers.reset();
         client.disconnect();
         globalWithJson.JSON_game = readyJsonGame;
         delete globalWithWebSocket.WebSocket;
     }
 });
 
-void test("WebSocket client bounds deferred patches before runtime readiness", async () => {
+void test("WebSocket client bounds deferred patches before runtime readiness", async (t) => {
+    // === Determinism notes ===
+    // Same pattern as the other readiness tests: replace the wall-clock
+    // windows (`wait(50)` / `wait(40)` / `wait(120)`) with `flush()` plus a
+    // single deterministic `setInterval` tick once JSON_game becomes ready.
+    // The 120 synchronous `simulateMessage` calls still execute synchronously
+    // so the bound-by-`maxQueueSize` assertion can check the "queue depth
+    // capped at 100, indices 0-19 dropped" state immediately.
     const wrapper = RuntimeWrapper.createRuntimeWrapper();
 
     globalWithWebSocket.WebSocket = MockWebSocket;
@@ -456,13 +508,15 @@ void test("WebSocket client bounds deferred patches before runtime readiness", a
         Scripts: [null]
     };
 
+    t.mock.timers.enable({ apis: ["setInterval"] });
+
     const client = RuntimeWrapper.createWebSocketClient({
         wrapper,
         autoConnect: true
     });
 
     try {
-        await wait(50);
+        await flush();
 
         const ws = client.getWebSocket();
         assert.ok(ws, "WebSocket should be available");
@@ -478,14 +532,16 @@ void test("WebSocket client bounds deferred patches before runtime readiness", a
             );
         }
 
-        await wait(40);
-
+        // Queue is full but nothing has been applied yet (runtime still
+        // unready), so the bounded-queue expectations hold without polling.
         assert.strictEqual(wrapper.hasScript("script:deferred_0"), false);
         assert.strictEqual(wrapper.hasScript("script:deferred_119"), false);
 
         globalWithJson.JSON_game = readyJsonGame;
 
-        await wait(120);
+        // Drain the readiness poll once; the queued batch (cap = 100)
+        // flushes, leaving indices 20-119 installed and 0-19 dropped.
+        t.mock.timers.tick(50);
 
         const snapshot = wrapper.getRegistrySnapshot();
         assert.strictEqual(snapshot.scriptCount, 100);
@@ -494,13 +550,22 @@ void test("WebSocket client bounds deferred patches before runtime readiness", a
         assert.ok(wrapper.hasScript("script:deferred_20"));
         assert.ok(wrapper.hasScript("script:deferred_119"));
     } finally {
+        t.mock.timers.reset();
         client.disconnect();
         globalWithJson.JSON_game = readyJsonGame;
         delete globalWithWebSocket.WebSocket;
     }
 });
 
-void test("WebSocket client routes deferred patches through patch queue after runtime readiness", async () => {
+void test("WebSocket client routes deferred patches through patch queue after runtime readiness", async (t) => {
+    // === Determinism notes ===
+    // This test exercises two timer surfaces: the readiness-poll `setInterval`
+    // (DEFAULT_READINESS_POLL_INTERVAL_MS = 50) plus the patch-queue flush
+    // `setTimeout` (configured to 10ms via the client options). Both are
+    // mocked through `apis: ["setInterval", "setTimeout"]` and advanced
+    // deterministically with `tick`, replacing the original 50ms / 50ms /
+    // 120ms wall-clock windows. `setImmediate` is left un-mocked because
+    // MockWebSocket still uses it to dispatch its "open" event.
     const wrapper = RuntimeWrapper.createRuntimeWrapper();
     const runtimeGlobals = globalThis as unknown as { JSON_game: unknown };
     const originalJsonGame = runtimeGlobals.JSON_game;
@@ -511,6 +576,8 @@ void test("WebSocket client routes deferred patches through patch queue after ru
         ScriptNames: ["gml_Script_bootstrap"],
         Scripts: [null]
     });
+
+    t.mock.timers.enable({ apis: ["setInterval", "setTimeout"] });
 
     const client = RuntimeWrapper.createWebSocketClient({
         wrapper,
@@ -523,7 +590,7 @@ void test("WebSocket client routes deferred patches through patch queue after ru
     });
 
     try {
-        await wait(50);
+        await flush();
 
         const ws = client.getWebSocket();
         assert.ok(ws, "WebSocket should be available");
@@ -537,8 +604,9 @@ void test("WebSocket client routes deferred patches through patch queue after ru
             })
         );
 
-        await wait(50);
-
+        // Runtime is still not ready, so the patch is parked in
+        // `pendingPatches` and nothing has entered the bounded flush queue
+        // yet — observable synchronously.
         assert.strictEqual(wrapper.hasScript("script:deferred_with_queue"), false);
         assert.strictEqual(client.getPatchQueueMetrics()?.totalQueued ?? 0, 0);
 
@@ -547,7 +615,12 @@ void test("WebSocket client routes deferred patches through patch queue after ru
             Scripts: [() => void 0]
         });
 
-        await wait(120);
+        // One readiness poll: detects the ready state, moves the pending
+        // patch into the bounded flush queue, and schedules the 10ms flush.
+        t.mock.timers.tick(50);
+        // Advance through the queue's configured flushIntervalMs so the
+        // setTimeout fires and the patch reaches applyPatch.
+        t.mock.timers.tick(10);
 
         assert.strictEqual(wrapper.hasScript("script:deferred_with_queue"), true);
 
@@ -556,6 +629,7 @@ void test("WebSocket client routes deferred patches through patch queue after ru
         assert.ok(metrics.totalQueued >= 1);
         assert.ok(metrics.totalFlushed >= 1);
     } finally {
+        t.mock.timers.reset();
         client.disconnect();
         Reflect.set(runtimeGlobals, "JSON_game", originalJsonGame);
         delete globalWithWebSocket.WebSocket;
@@ -664,7 +738,16 @@ void test("WebSocket client applies patches when script tables are ready without
     }
 });
 
-void test("WebSocket client waits for JSON_game before applying patches", async () => {
+void test("WebSocket client waits for JSON_game before applying patches", async (t) => {
+    // === Determinism notes ===
+    // Replaces the wall-clock windows (`wait(50)` / `wait(20)` / `wait(150)`)
+    // with `flush()` plus a single deterministic `setInterval` tick. The
+    // pre-ready "Patch should wait for JSON_game" assertion no longer needs a
+    // real wait because the message handler queues synchronously and the
+    // queued-only state is observable immediately. The 150ms wait that
+    // originally bridged readiness detection collapses to one 50ms tick of
+    // the mocked readiness clock. `setImmediate` is intentionally left
+    // un-mocked so MockWebSocket can still dispatch its "open" event.
     const wrapper = RuntimeWrapper.createRuntimeWrapper();
     globalWithWebSocket.WebSocket = MockWebSocket;
 
@@ -683,13 +766,15 @@ void test("WebSocket client waits for JSON_game before applying patches", async 
 
     let client: ReturnType<typeof RuntimeWrapper.createWebSocketClient> | null = null;
 
+    t.mock.timers.enable({ apis: ["setInterval"] });
+
     try {
         client = RuntimeWrapper.createWebSocketClient({
             wrapper,
             autoConnect: true
         });
 
-        await wait(50);
+        await flush();
 
         const patch = {
             kind: "script",
@@ -701,8 +786,9 @@ void test("WebSocket client waits for JSON_game before applying patches", async 
         assert.ok(ws, "WebSocket should be available");
         (ws as MockWebSocket).simulateMessage(JSON.stringify(patch));
 
-        await wait(20);
-
+        // The message handler queues the patch synchronously against the
+        // not-yet-ready JSON_game, so the "should wait" assertion holds
+        // without any wall-clock delay.
         assert.ok(!wrapper.hasScript(patch.id), "Patch should wait for JSON_game");
 
         globals.JSON_game = {
@@ -716,7 +802,9 @@ void test("WebSocket client waits for JSON_game before applying patches", async 
             ]
         };
 
-        await wait(150);
+        // One readiness-poll tick (DEFAULT_READINESS_POLL_INTERVAL_MS = 50)
+        // promotes the queued patch to applied via the production flush path.
+        t.mock.timers.tick(50);
 
         assert.ok(wrapper.hasScript(patch.id));
         const fn = wrapper.getScript(patch.id);
@@ -724,6 +812,7 @@ void test("WebSocket client waits for JSON_game before applying patches", async 
         const result = fn(null, null, []) as number;
         assert.strictEqual(result, -1);
     } finally {
+        t.mock.timers.reset();
         client?.disconnect();
 
         if (savedBuiltins === undefined) {
