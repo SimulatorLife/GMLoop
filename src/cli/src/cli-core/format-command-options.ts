@@ -15,6 +15,7 @@
  */
 import { Core } from "@gmloop/core";
 
+import { PrettierLogLevel } from "../commands/prettier-log-level.js";
 import type { CommanderCommandLike } from "./commander-types.js";
 
 const { getNonEmptyTrimmedString } = Core;
@@ -51,9 +52,9 @@ interface PrettierConfigurationOptions {
  * Normalized Prettier-facing configuration derived from a single options bag.
  *
  * The collector is the single source of truth for the verbose/log-level
- * interaction (verbose forces `prettierLogLevel = "debug"` regardless of
- * the supplied `--log-level`) and for the `--write` → `dryRunMode`
- * inversion the rest of the CLI relies on.
+ * interaction (verbose forces `prettierLogLevel = PrettierLogLevel.DEBUG`
+ * regardless of the supplied `--log-level`) and for the `--write` →
+ * `dryRunMode` inversion the rest of the CLI relies on.
  */
 interface ResolvedPrettierConfiguration {
     /** Effective Prettier log level, or `undefined` to defer to Prettier's own default. */
@@ -156,7 +157,7 @@ function resolvePrettierConfiguration(
     const verbose = Boolean(source.verbose);
 
     return {
-        prettierLogLevel: verbose ? "debug" : ((source.logLevel as string) ?? defaultPrettierLogLevel),
+        prettierLogLevel: verbose ? PrettierLogLevel.DEBUG : ((source.logLevel as string) ?? defaultPrettierLogLevel),
         onParseError: (source.onParseError as string) ?? defaultParseErrorAction,
         dryRunMode: source.write !== true,
         verbose,
