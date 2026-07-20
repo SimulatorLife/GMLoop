@@ -3,7 +3,7 @@
     "manualRoot": "vendor/GameMaker-Manual",
     "packageName": null,
     "packageVersion": null,
-    "manualCommitHash": "c3e5852e0baa0c5334e2322c2c4e6e12ec8ad674"
+    "manualCommitHash": "64d6150700ac0caeaaa5fe9b4056b597c8de48e8"
   },
   "identifiers": {
     "abs": {
@@ -60675,7 +60675,7 @@
           {
             "description": "The handle of the layer to target",
             "name": "layer_id",
-            "type": "String or Layer ID"
+            "type": "String or Layer"
           },
           {
             "description": "The x position in the room to create the sequence at",
