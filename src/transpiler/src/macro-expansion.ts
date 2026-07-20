@@ -179,7 +179,12 @@ function findSourceMacroDirective(line: string, initialBlockCommentState: boolea
 
     return {
         inBlockComment,
-        match: /^\s*#(macro|define)[ \t]+([A-Za-z_]\w*)[^\r\n]*(?:\r?\n|$)/u.exec(remaining)
+        // The `\b` between the name and the rest-of-line capture is required, not cosmetic:
+        // without it, `\w*` and `[^\r\n]*` overlap (word chars are a subset of non-newline
+        // chars), so the engine can split the match at many equivalent points and backtrack
+        // through all of them on failure. Anchoring on the word boundary forces `\w*` to
+        // consume the full identifier before `[^\r\n]*` begins, removing the ambiguity.
+        match: /^\s*#(macro|define)[ \t]+([A-Za-z_]\w*)\b[^\r\n]*(?:\r?\n|$)/u.exec(remaining)
     };
 }
 

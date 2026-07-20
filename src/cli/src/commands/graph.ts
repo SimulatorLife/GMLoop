@@ -1982,7 +1982,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
 
         let activeProjectStateOpenInProgress = false;
         let pendingActiveProjectStateProjectPath: string | null = null;
-        const openNextPendingActiveProjectStatePath = async (): Promise<void> => {
+        const openNextPendingActiveProjectStatePath = (): void => {
             const nextProjectPath = pendingActiveProjectStateProjectPath;
             pendingActiveProjectStateProjectPath = null;
             if (nextProjectPath === null) {
@@ -1991,7 +1991,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
             }
 
             try {
-                await openProjectTargetPath(nextProjectPath, "active-project-state");
+                openProjectTargetPath(nextProjectPath, "active-project-state");
             } catch (error) {
                 console.error(
                     `[graph visualize] Failed to open gm-cli active project: ${Core.getErrorMessage(error, {
@@ -2000,7 +2000,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                 );
             }
 
-            void openNextPendingActiveProjectStatePath();
+            openNextPendingActiveProjectStatePath();
         };
 
         const requestActiveProjectStateOpen = (projectPath: string): void => {
@@ -2180,7 +2180,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                     if (isFixCancelRequested) {
                         const cancelledMessage = "Fix workflow was cancelled.";
                         activeFixProgressLogLines.push(cancelledMessage);
-                        throw new Error(cancelledMessage);
+                        throw new Error(cancelledMessage, { cause: error });
                     }
                     throw error;
                 } finally {
@@ -2189,15 +2189,19 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                     activeFixChildProcess = null;
                 }
             },
-            cancelFix: async () => {
+            // This never awaits anything internally (killing the child process is
+            // synchronous), so it stays a plain function returning a resolved promise
+            // instead of `async`, satisfying both the `GraphVisualizationServerCancelFix`
+            // contract and the require-await lint rule.
+            cancelFix: () => {
                 if (!isFixWorkflowRunning || activeFixChildProcess === null) {
-                    return Object.freeze({ cancelled: false });
+                    return Promise.resolve(Object.freeze({ cancelled: false }));
                 }
 
                 isFixCancelRequested = true;
                 activeFixProgressLogLines.push("Cancelling fix workflow...");
                 activeFixChildProcess.kill("SIGTERM");
-                return Object.freeze({ cancelled: true });
+                return Promise.resolve(Object.freeze({ cancelled: true }));
             },
             getFixProgress: () =>
                 (() => {

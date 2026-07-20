@@ -1,5 +1,5 @@
-import { buildGraphHierarchy } from "./graph-layout-hierarchy.js";
 import type { GraphLayout, GraphLayoutEdge, GraphLayoutNode } from "./graph-layout.js";
+import { buildGraphHierarchy } from "./graph-layout-hierarchy.js";
 
 export type GraphSemanticZoomLevel = "overview" | "resource" | "symbol" | "detail";
 

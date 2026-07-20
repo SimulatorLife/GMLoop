@@ -16,10 +16,10 @@ import {
     buildGraphEdgeBatches,
     createGraphRenderBounds,
     cullGraphLayoutToViewport,
+    type GraphViewportBounds,
     isGraphViewportCovered,
     shouldBatchGraphEdges,
-    shouldRenderGraphLabels,
-    type GraphViewportBounds
+    shouldRenderGraphLabels
 } from "../../graph/graph-render-viewport.js";
 import { projectGraphLayoutForSemanticZoom, resolveGraphSemanticZoomLevel } from "../../graph/graph-semantic-zoom.js";
 import { EDGE_LINE_VISUAL_STYLES, NODE_VISUAL_STYLES } from "../../graph/graph-visualization-style-metadata.js";

@@ -228,7 +228,17 @@ export class GmJsonViewer extends LightDomLitElement {
         if (typeof value === "boolean") {
             return html`<span class="gm-json-viewer__boolean">${value}</span>`;
         }
-        return html`<span class="gm-json-viewer__unknown">${String(value)}</span>`;
+        // `value` here is whatever remains after the null/string/number/boolean checks above:
+        // undefined, bigint, symbol, or a non-JSON object. Each is stringified explicitly
+        // (rather than a catch-all String(value)) so a plain object never renders as the
+        // unhelpful "[object Object]".
+        if (typeof value === "bigint" || typeof value === "symbol") {
+            return html`<span class="gm-json-viewer__unknown">${value.toString()}</span>`;
+        }
+        if (value === undefined) {
+            return html`<span class="gm-json-viewer__unknown">undefined</span>`;
+        }
+        return html`<span class="gm-json-viewer__unknown">${JSON.stringify(value)}</span>`;
     }
 
     #resolveRawText(): string {
