@@ -895,7 +895,6 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
     // observable while their source metadata is being collected.
     const scriptNames = new Set<string>();
     let fileDataCache = new Map<string, InitialFileData>();
-    let roomFilePaths: Array<string> = [];
     const macroDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath = new Map();
 
     // Auto-inject hot-reload runtime wrapper if requested
@@ -1118,10 +1117,15 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         scriptNames.add(scriptName);
     }
     fileDataCache = startupScan.fileDataCache;
-    roomFilePaths = startupScan.secondaryFilePaths;
+    const roomFilePaths: Array<string> = startupScan.secondaryFilePaths;
     for (const [sourcePath, definitions] of startupScan.macroDefinitionsBySourcePath) {
         macroDefinitionsBySourcePath.set(sourcePath, definitions);
     }
+    // runtimeContext already escaped to the watch servers started above, so eslint's
+    // require-atomic-updates rule conservatively flags this write after the preceding
+    // await. Nothing else writes runtimeContext.macroDefinitions while collectScriptNames()
+    // is pending, so this is the deliberate "compute macros once at startup" design, not a race.
+    // eslint-disable-next-line require-atomic-updates -- no concurrent writer exists; see comment above
     runtimeContext.macroDefinitions = Transpiler.createProjectMacroDefinitions(macroDefinitionsBySourcePath);
 
     // Reuse the .yy file paths collected during the startup tree walk instead of
@@ -1914,6 +1918,10 @@ async function collectScriptNames(
         const currentBatch = pendingDirectories;
         pendingDirectories = [];
 
+        // Each iteration processes one BFS level of the directory tree; the next
+        // level's `pendingDirectories` isn't known until this level's scan finishes,
+        // so the await is a genuine sequential dependency, not an accidental serialization.
+        // eslint-disable-next-line no-await-in-loop -- level-by-level BFS traversal; see comment above
         await Core.runInParallelWithLimit(
             currentBatch,
             async (currentPath) => {
@@ -1932,6 +1940,7 @@ async function collectScriptNames(
                     // Keep lexer and source-directive work globally bounded by
                     // the same worker limit as directory traversal.
                     for (const filePath of files) {
+                        // eslint-disable-next-line no-await-in-loop -- intentionally serialized to respect maxConcurrentDirs; see comment above
                         await addScriptNamesFromFile(
                             filePath,
                             scriptNames,

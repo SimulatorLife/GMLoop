@@ -36,7 +36,7 @@ void test("graph layout JSON does not duplicate renderer-only edge endpoint node
     assert.ok(edge);
     assert.equal(edge.sourceNode.id, "project");
     assert.equal(edge.targetNode.id, "script");
-    assert.deepEqual(JSON.parse(JSON.stringify(edge)), {
+    assert.deepEqual(structuredClone(edge), {
         source: "project",
         target: "script",
         type: "contains"
@@ -62,7 +62,7 @@ void test("filtered promoted edges keep endpoint references non-enumerable", () 
     assert.ok(edge);
     assert.equal(edge.sourceNode.id, "project");
     assert.equal(edge.targetNode.id, "function");
-    assert.deepEqual(JSON.parse(JSON.stringify(edge)), {
+    assert.deepEqual(structuredClone(edge), {
         source: "project",
         target: "function",
         type: "defines"
