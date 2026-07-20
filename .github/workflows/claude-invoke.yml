@@ -31,7 +31,7 @@ jobs:
       agent_command: |
         set -euo pipefail
 
-        export ANTHROPIC_API_KEY="${OPENAI_API_KEY}"
+        export CLAUDE_CODE_OAUTH_TOKEN="${OPENAI_API_KEY}"
         export DISABLE_AUTOUPDATER=1
         export DISABLE_TELEMETRY=1
         export NODE_OPTIONS="--max-old-space-size=4096"
