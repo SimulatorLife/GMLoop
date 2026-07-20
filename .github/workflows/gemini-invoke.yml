@@ -28,6 +28,7 @@ jobs:
       pr_number: ${{ github.event.issue.number }}
       additional_context: ${{ github.event.comment.body }}
       agent: gemini
+      openai_base_url: 'https://generativelanguage.googleapis.com'
       agent_setup_command: |
         mkdir -p "$HOME/.gemini/policies"
         if [ -f ".gemini/policies/tools.toml" ]; then

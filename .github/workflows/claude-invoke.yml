@@ -28,6 +28,7 @@ jobs:
       pr_number: ${{ github.event.issue.number }}
       additional_context: ${{ github.event.comment.body }}
       agent: claude
+      openai_base_url: 'https://api.anthropic.com'
       agent_command: |
         set -euo pipefail
 
