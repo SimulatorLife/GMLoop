@@ -16,7 +16,7 @@ import {
     StringBuilder
 } from "../emitter/index.js";
 import { EventContextOracle } from "../event-context/index.js";
-import { expandProjectMacros, type MacroDefinition } from "../macro-expansion.js";
+import { expandProjectMacros, type MacroDefinition } from "../macros/macro-expansion.js";
 import { TranspilerError, TranspilerErrorCode } from "./errors.js";
 
 const SCRIPT_REQUEST_CONTEXT = "script request";
