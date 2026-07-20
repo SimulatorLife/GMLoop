@@ -658,7 +658,7 @@ export class GmGraphPanel extends LightDomLitElement {
         });
     }
 
-    #renderGraphSurface(layout: GraphLayout) {
+    #renderGraphSurface(layout: GraphLayout, isVisualView: boolean) {
         if (!this.state) {
             return html``;
         }
@@ -667,6 +667,7 @@ export class GmGraphPanel extends LightDomLitElement {
         return html`
             <svg
                 id="graph"
+                class=${isVisualView ? "" : "hidden"}
                 viewBox="-900 -700 1800 1400"
                 role="img"
                 aria-label="GameMaker project graph"
@@ -730,9 +731,9 @@ export class GmGraphPanel extends LightDomLitElement {
         `;
     }
 
-    #renderJsonView(jsonValue: string) {
+    #renderJsonView(jsonValue: string, isVisualView: boolean) {
         return html`
-            <div id="json-view-shell" class="visible">
+            <div id="json-view-shell" class=${isVisualView ? "" : "visible"}>
                 <gm-json-viewer
                     id="json-view"
                     .value=${jsonValue}
@@ -798,8 +799,8 @@ export class GmGraphPanel extends LightDomLitElement {
 
         let renderedLayout = this.#cachedRenderedLayout;
         if (
-            isVisualView &&
-            (renderedLayout === null || !isGraphViewportCovered(this.#getViewportTransform(), this.#cachedRenderBounds))
+            renderedLayout === null ||
+            !isGraphViewportCovered(this.#getViewportTransform(), this.#cachedRenderBounds)
         ) {
             const semanticLayout = projectGraphLayoutForSemanticZoom({
                 displayLayout: this.#cachedVisibleLayout,
@@ -812,17 +813,14 @@ export class GmGraphPanel extends LightDomLitElement {
             this.#cachedRenderedLayout = renderedLayout;
         }
 
-        let jsonValue = "";
-        if (!isVisualView) {
-            if (this.#cachedJsonValue === null) {
-                this.#cachedJsonValue = JSON.stringify(
-                    { edges: this.#cachedVisibleLayout.edges, nodes: this.#cachedVisibleLayout.nodes },
-                    null,
-                    2
-                );
-            }
-            jsonValue = this.#cachedJsonValue;
+        if (this.#cachedJsonValue === null) {
+            this.#cachedJsonValue = JSON.stringify(
+                { edges: this.#cachedVisibleLayout.edges, nodes: this.#cachedVisibleLayout.nodes },
+                null,
+                2
+            );
         }
+        const jsonValue = this.#cachedJsonValue;
 
         return html`
             <section id="graph-page" class=${graphPageClassName}>
@@ -847,7 +845,8 @@ export class GmGraphPanel extends LightDomLitElement {
                 }
                 ${this.#renderSemanticIndexProgress()}
                 ${hasLoadedGraphIndex(this.model) ? null : this.#renderEmptyState()}
-                ${isVisualView && renderedLayout ? this.#renderGraphSurface(renderedLayout) : this.#renderJsonView(jsonValue)}
+                ${this.#renderGraphSurface(renderedLayout, isVisualView)}
+                ${this.#renderJsonView(jsonValue, isVisualView)}
                 ${isVisualView ? this.#renderLegend(nodeItems, edgeTypes) : null}
                 ${isVisualView ? this.#renderSelectedNode(selectedNode) : null}
             </section>
