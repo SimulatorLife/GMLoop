@@ -467,6 +467,12 @@
       "name": "agent-108-autonomous-game-creation",
       "category": "code",
       "complexity": 3
+    },
+    {
+      "weight": 0.2,
+      "name": "agent-109-semantic-lsp-graph-unification",
+      "category": "code",
+      "complexity": 3
     }
   ]
 }

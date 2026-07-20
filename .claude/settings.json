@@ -19,7 +19,7 @@
   "skipWebFetchPreflight": true,
   "disableClaudeAiConnectors": true,
   "disableArtifact": true,
-  "disableRemoteControl": true
+  "disableRemoteControl": true,
   "permissions": {
     "allow": [
       "Read",

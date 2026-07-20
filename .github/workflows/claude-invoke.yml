@@ -1,4 +1,4 @@
-name: '▶️ Claude Invoke'
+name: "▶️ Claude Invoke"
 
 on:
   issue_comment:
@@ -10,19 +10,19 @@ permissions:
   issues: write
 
 concurrency:
-  group: '${{ github.workflow }}-invoke-${{ github.event_name }}-${{ github.event.issue.number }}'
+  group: "${{ github.workflow }}-invoke-${{ github.event_name }}-${{ github.event.issue.number }}"
   cancel-in-progress: false
 
 defaults:
   run:
-    shell: 'bash'
+    shell: "bash"
 
 jobs:
   invoke:
     if: ${{ github.event.issue.pull_request && contains(github.event.comment.body || '', '@claude') }}
     uses: ./.github/workflows/agent-invoke.yml
     secrets:
-      OPENAI_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
       GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
     with:
       pr_number: ${{ github.event.issue.number }}
