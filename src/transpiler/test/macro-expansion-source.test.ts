@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { extractMacroDefinitionsFromSource } from "../src/macro-expansion.js";
+import { extractMacroDefinitionsFromSource } from "../src/macros/macro-expansion.js";
 
 void describe("source macro metadata", () => {
     void it("extracts macro and define directives without parsing unrelated source", () => {
