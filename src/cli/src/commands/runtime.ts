@@ -1,5 +1,6 @@
-import { Command } from "commander";
+import { Command, Option } from "commander";
 
+import { wrapInvalidArgumentResolver } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import {
     getRunnerStateStore,
@@ -12,6 +13,12 @@ import {
     type RuntimeProjectState,
     writeRuntimeProjectState
 } from "../modules/runtime/project-state-store.js";
+import {
+    coerceRuntimeScope,
+    DEFAULT_RUNTIME_SCOPE,
+    RUNTIME_SCOPES,
+    type RuntimeScope
+} from "../modules/runtime/scope.js";
 import { discoverProjectRoot } from "../workflow/project-root.js";
 
 type RuntimeOptions = Readonly<{
@@ -23,7 +30,7 @@ type RuntimeOptions = Readonly<{
     method?: string;
     path?: string;
     project?: string;
-    scope?: "global" | "instance";
+    scope?: RuntimeScope;
     value?: string;
 }>;
 
@@ -45,7 +52,7 @@ function appendRuntimeLog(state: RuntimeProjectState, message: string): RuntimeP
 }
 
 function resolveRuntimeScopeStore(state: RuntimeProjectState, options: RuntimeOptions): RuntimeStateRecord {
-    if (options.scope === "global") {
+    if (options.scope === RUNTIME_SCOPES.global) {
         return state.globals;
     }
     const instanceId = options.instanceId ?? DEFAULT_INSTANCE_ID;
@@ -56,6 +63,21 @@ function resolveRuntimeScopeStore(state: RuntimeProjectState, options: RuntimeOp
     const created: RuntimeStateRecord = {};
     state.instances[instanceId] = created;
     return created;
+}
+
+/**
+ * Build the shared `--scope` option used by `runtime get` and `runtime set`.
+ *
+ * Centralising the option here keeps the description, default, and
+ * {@link coerceRuntimeScope} validator identical across the subcommands so
+ * call sites cannot drift. The `argParser` wraps the coercer so invalid
+ * inputs surface as Commander `InvalidArgumentError` instances before any
+ * action handler runs.
+ */
+function createRuntimeScopeOption(): Option {
+    return new Option("--scope <scope>", "Scope: instance or global.")
+        .argParser(wrapInvalidArgumentResolver(coerceRuntimeScope))
+        .default(DEFAULT_RUNTIME_SCOPE);
 }
 
 /**
@@ -218,7 +240,7 @@ async function runRuntimeGetAction(options: RuntimeOptions): Promise<void> {
     printRuntimePayload("runtime get", {
         ok: propertyPath.length > 0 && value !== undefined,
         path: propertyPath,
-        scope: options.scope ?? "instance",
+        scope: options.scope ?? DEFAULT_RUNTIME_SCOPE,
         value
     });
 }
@@ -231,12 +253,12 @@ async function runRuntimeSetAction(options: RuntimeOptions): Promise<void> {
     const runtimeState = readRuntimeProjectState(projectRoot);
     const scopeStore = resolveRuntimeScopeStore(runtimeState, options);
     scopeStore[propertyPath] = sanitizeRuntimeValue(propertyPath, parsedValue);
-    const nextState = appendRuntimeLog(runtimeState, `Set ${options.scope ?? "instance"}:${propertyPath}`);
+    const nextState = appendRuntimeLog(runtimeState, `Set ${options.scope ?? DEFAULT_RUNTIME_SCOPE}:${propertyPath}`);
     writeRuntimeProjectState(projectRoot, nextState);
     printRuntimePayload("runtime set", {
         ok: true,
         path: propertyPath,
-        scope: options.scope ?? "instance",
+        scope: options.scope ?? DEFAULT_RUNTIME_SCOPE,
         value: parsedValue
     });
 }
@@ -367,7 +389,7 @@ export function createRuntimeCommand(): Command {
         applyStandardCommandOptions(new Command("get"))
             .description("Read a runtime value.")
             .option("--path <path>", "Property path.")
-            .option("--scope <scope>", "Scope: instance or global.", "instance")
+            .addOption(createRuntimeScopeOption())
             .option(runtimeInstanceIdOptionName, runtimeInstanceIdOptionDescription)
     );
     get.action(async function runtimeGetAction() {
@@ -379,7 +401,7 @@ export function createRuntimeCommand(): Command {
             .description("Set a runtime value.")
             .requiredOption("--path <path>", "Property path.")
             .requiredOption("--value <value>", "New value.")
-            .option("--scope <scope>", "Scope: instance or global.", "instance")
+            .addOption(createRuntimeScopeOption())
             .option(runtimeInstanceIdOptionName, runtimeInstanceIdOptionDescription)
     );
     set.action(async function runtimeSetAction() {
