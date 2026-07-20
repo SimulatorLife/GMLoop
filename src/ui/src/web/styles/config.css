@@ -244,15 +244,14 @@
   white-space: pre-wrap;
 }
 
-.config-builder-section summary,
-.config-codemod-row summary,
+.config-builder-section .gm-collapsible__summary,
+.config-codemod-row .gm-collapsible__summary,
 .config-tool-group summary,
 .config-tool-details summary {
   display: flex;
   gap: var(--gm-space-md);
   align-items: center;
   justify-content: space-between;
-  cursor: pointer;
 }
 
 .config-toggle-label {
@@ -380,35 +379,21 @@
   }
 }
 
-.config-builder-section summary {
+.config-builder-section .gm-collapsible__summary {
   justify-content: flex-start;
 }
 
-.config-builder-section summary::before {
-  content: "▶";
-  color: var(--gm-text-subdued);
-  font-size: var(--gm-text-xs);
-  transition: transform var(--gm-transition);
-  flex-shrink: 0;
-}
-
-.config-builder-section[open] summary::before {
-  transform: rotate(90deg);
-}
-
-.config-builder-section summary > .config-section-heading,
-.config-builder-section summary > .config-section-heading--split {
+.config-builder-section .gm-collapsible__summary > .config-section-heading,
+.config-builder-section .gm-collapsible__summary > .config-section-heading--split {
   margin-bottom: 0;
   flex-grow: 1;
 }
 
-.config-builder-section[open] summary {
+.config-builder-section .gm-collapsible[open] .gm-collapsible__summary {
   margin-bottom: var(--gm-space-md);
 }
 
-.config-builder-section summary:focus-visible {
-  outline: none;
-  box-shadow: var(--gm-shadow-focus);
+.config-builder-section .gm-collapsible__summary:focus-visible {
   border-radius: var(--gm-radius-sm);
 }
 

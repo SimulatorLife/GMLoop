@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "gmloop-serve",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["run", "serve"],
+      "port": 4173
+    }
+  ]
+}

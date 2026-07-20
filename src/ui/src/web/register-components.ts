@@ -5,6 +5,7 @@ import { GmGraphToolbar } from "../app/components/gm-graph-toolbar.js";
 import { GmBadge } from "../app/components/primitives/gm-badge.js";
 import { GmButton } from "../app/components/primitives/gm-button.js";
 import { GmCard } from "../app/components/primitives/gm-card.js";
+import { GmCollapsible } from "../app/components/primitives/gm-collapsible.js";
 import { GmCopyButton } from "../app/components/primitives/gm-copy-button.js";
 import { GmErrorBanner } from "../app/components/primitives/gm-error-banner.js";
 import { GmStatusChip } from "../app/components/primitives/gm-status-chip.js";
@@ -52,6 +53,7 @@ async function registerDeferredGraphVisualizationCustomElements(): Promise<void>
 export function registerGraphVisualizationCustomElements(): void {
     defineCustomElementOnce("gm-button", GmButton);
     defineCustomElementOnce("gm-card", GmCard);
+    defineCustomElementOnce("gm-collapsible", GmCollapsible);
     defineCustomElementOnce("gm-badge", GmBadge);
     defineCustomElementOnce("gm-copy-button", GmCopyButton);
     defineCustomElementOnce("gm-error-banner", GmErrorBanner);

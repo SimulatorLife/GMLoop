@@ -230,18 +230,19 @@ export class GmAutoGamePanel extends LightDomLitElement {
     #renderUnifiedTemplate(template: GraphVisualizationAutoGameAgentPackResource) {
         return html`
             <li class="auto-game-skill-item auto-game-template-item">
-                <details class="auto-game-resource-preview">
-                    <summary>
+                <gm-collapsible
+                    class="auto-game-resource-preview"
+                    .summary=${html`
                         <span>
                             <strong>${template.targetPath}</strong>
                             <code>${template.packagePath}</code>
                         </span>
                         <gm-badge .label=${"Template"} .tone=${"neutral"}></gm-badge>
-                    </summary>
-                    <pre
+                    `}
+                    .content=${html`<pre
                         aria-label=${`${template.targetPath} packaged source preview`}
-                    ><code>${template.content}</code></pre>
-                </details>
+                    ><code>${template.content}</code></pre>`}
+                ></gm-collapsible>
             </li>
         `;
     }
@@ -548,15 +549,16 @@ export class GmAutoGamePanel extends LightDomLitElement {
                           </p>`
                         : nothing
                 }
-                <details class="auto-game-skill-disclosure">
-                    <summary>
+                <gm-collapsible
+                    class="auto-game-skill-disclosure"
+                    .summary=${html`
                         <span>
                             <strong>Packaged Skills & Guidance Templates</strong>
                             <small>Review templates and choose which skills are active.</small>
                         </span>
                         <gm-badge .label=${String(totalItemsCount)}></gm-badge>
-                    </summary>
-                    ${
+                    `}
+                    .content=${
                         totalItemsCount === 0
                             ? html`
                                   <div class="gm-empty auto-game-skill-empty auto-game-skill-empty--skills">
@@ -574,7 +576,7 @@ export class GmAutoGamePanel extends LightDomLitElement {
                                   ${templateItems.map((template) => this.#renderUnifiedTemplate(template))}
                               </ul>`
                     }
-                </details>
+                ></gm-collapsible>
             </article>
         `;
     }

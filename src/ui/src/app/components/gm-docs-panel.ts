@@ -105,9 +105,10 @@ export class GmDocsPanel extends LightDomLitElement {
                 </div>
                 ${
                     entry.arguments.length > 0 || entry.options.length > 0
-                        ? html`<details class="docs-detail-container">
-                              <summary>Arguments and options</summary>
-                              <dl class="docs-detail-list">
+                        ? html`<gm-collapsible
+                              class="docs-detail-container"
+                              .summary=${"Arguments and options"}
+                              .content=${html`<dl class="docs-detail-list">
                                   ${entry.arguments.map(
                                       (argumentValue) =>
                                           html`<div class="docs-detail-row">
@@ -122,8 +123,8 @@ export class GmDocsPanel extends LightDomLitElement {
                                               <dd>${optionValue.description}</dd>
                                           </div>`
                                   )}
-                              </dl>
-                          </details>`
+                              </dl>`}
+                          ></gm-collapsible>`
                         : null
                 }
             </article>
@@ -152,9 +153,10 @@ export class GmDocsPanel extends LightDomLitElement {
                 </div>
                 ${
                     entry.fields.length > 0
-                        ? html`<details class="docs-detail-container">
-                              <summary>Fields</summary>
-                              <dl class="docs-detail-list">
+                        ? html`<gm-collapsible
+                              class="docs-detail-container"
+                              .summary=${"Fields"}
+                              .content=${html`<dl class="docs-detail-list">
                                   ${entry.fields.map(
                                       (fieldValue) =>
                                           html`<div class="docs-detail-row">
@@ -162,8 +164,8 @@ export class GmDocsPanel extends LightDomLitElement {
                                               <dd>${fieldValue.description}</dd>
                                           </div>`
                                   )}
-                              </dl>
-                          </details>`
+                              </dl>`}
+                          ></gm-collapsible>`
                         : null
                 }
             </article>
@@ -191,9 +193,10 @@ export class GmDocsPanel extends LightDomLitElement {
                 </div>
                 ${
                     entry.fields.length > 0
-                        ? html`<details class="docs-detail-container">
-                              <summary>Fields</summary>
-                              <dl class="docs-detail-list">
+                        ? html`<gm-collapsible
+                              class="docs-detail-container"
+                              .summary=${"Fields"}
+                              .content=${html`<dl class="docs-detail-list">
                                   ${entry.fields.map(
                                       (fieldValue) =>
                                           html`<div class="docs-detail-row">
@@ -229,8 +232,8 @@ export class GmDocsPanel extends LightDomLitElement {
                                               </dd>
                                           </div>`
                                   )}
-                              </dl>
-                          </details>`
+                              </dl>`}
+                          ></gm-collapsible>`
                         : null
                 }
             </article>

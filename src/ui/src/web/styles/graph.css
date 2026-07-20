@@ -303,8 +303,7 @@ text {
   font-size: var(--gm-text-sm);
 }
 
-.graph-index-progress-slowest-files summary {
-  cursor: pointer;
+.graph-index-progress-slowest-files .gm-collapsible__summary {
   color: var(--gm-text-subdued);
 }
 

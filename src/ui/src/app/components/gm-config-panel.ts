@@ -417,17 +417,21 @@ export class GmConfigPanel extends LightDomLitElement {
     #renderFormatBuilder(catalog: GraphVisualizationProjectConfigurationCatalog, draftConfig: ConfigJsonObject) {
         const entries = catalog.format.entries.filter((entry) => FORMAT_BUILDER_OPTION_NAMES.has(entry.name));
         return html`
-            <details class="config-builder-section" aria-labelledby="config-format-heading">
-                <summary>
+            <gm-collapsible
+                class="config-builder-section"
+                .labelledBy=${"config-format-heading"}
+                .summary=${html`
                     <div class="config-section-heading">
                         <h3 id="config-format-heading">Format</h3>
                         <p>Formatter-owned options saved at the top level of <code>gmloop.json</code>.</p>
                     </div>
-                </summary>
-                <div class="config-form-grid">
-                    ${entries.map((entry) => this.#renderFormatControl(entry, draftConfig))}
-                </div>
-            </details>
+                `}
+                .content=${html`
+                    <div class="config-form-grid">
+                        ${entries.map((entry) => this.#renderFormatControl(entry, draftConfig))}
+                    </div>
+                `}
+            ></gm-collapsible>
         `;
     }
 
@@ -512,8 +516,10 @@ export class GmConfigPanel extends LightDomLitElement {
             typeof draftConfig.lintRuleset === "string" ? draftConfig.lintRuleset : catalog.lint.ruleset;
 
         return html`
-            <details class="config-builder-section" aria-labelledby="config-lint-heading">
-                <summary>
+            <gm-collapsible
+                class="config-builder-section"
+                .labelledBy=${"config-lint-heading"}
+                .summary=${html`
                     <div
                         class="config-section-heading config-section-heading--split"
                         @click=${(e: Event) => e.stopPropagation()}
@@ -535,20 +541,22 @@ export class GmConfigPanel extends LightDomLitElement {
                             </select>
                         </label>
                     </div>
-                </summary>
-                ${this.#renderLintFilters(catalog)}
-                <div class="config-rule-table" role="table" aria-label="Lint rule configuration">
-                    <div class="config-rule-table-header" role="row">
-                        <span role="columnheader">Rule</span>
-                        <span role="columnheader">Severity</span>
+                `}
+                .content=${html`
+                    ${this.#renderLintFilters(catalog)}
+                    <div class="config-rule-table" role="table" aria-label="Lint rule configuration">
+                        <div class="config-rule-table-header" role="row">
+                            <span role="columnheader">Rule</span>
+                            <span role="columnheader">Severity</span>
+                        </div>
+                        ${
+                            filteredLintRules.length === 0
+                                ? html`<p class="config-empty">No lint rules match these filters.</p>`
+                                : filteredLintRules.map((entry) => this.#renderLintRuleRow(entry, draftConfig, catalog))
+                        }
                     </div>
-                    ${
-                        filteredLintRules.length === 0
-                            ? html`<p class="config-empty">No lint rules match these filters.</p>`
-                            : filteredLintRules.map((entry) => this.#renderLintRuleRow(entry, draftConfig, catalog))
-                    }
-                </div>
-            </details>
+                `}
+            ></gm-collapsible>
         `;
     }
 
@@ -679,17 +687,21 @@ export class GmConfigPanel extends LightDomLitElement {
 
     #renderRefactorBuilder(catalog: GraphVisualizationProjectConfigurationCatalog, draftConfig: ConfigJsonObject) {
         return html`
-            <details class="config-builder-section" aria-labelledby="config-refactor-heading">
-                <summary>
+            <gm-collapsible
+                class="config-builder-section"
+                .labelledBy=${"config-refactor-heading"}
+                .summary=${html`
                     <div class="config-section-heading">
                         <h3 id="config-refactor-heading">Refactor</h3>
                         <p>Enable project codemods and inspect per-codemod JSON payloads.</p>
                     </div>
-                </summary>
-                <div class="config-codemod-table">
-                    ${catalog.refactor.codemods.map((codemod) => this.#renderCodemodRow(codemod, draftConfig))}
-                </div>
-            </details>
+                `}
+                .content=${html`
+                    <div class="config-codemod-table">
+                        ${catalog.refactor.codemods.map((codemod) => this.#renderCodemodRow(codemod, draftConfig))}
+                    </div>
+                `}
+            ></gm-collapsible>
         `;
     }
 
@@ -703,8 +715,9 @@ export class GmConfigPanel extends LightDomLitElement {
             rawCodemodConfig === null || rawCodemodConfig === false ? (entry.config ?? {}) : rawCodemodConfig;
 
         return html`
-            <details class="config-codemod-row">
-                <summary>
+            <gm-collapsible
+                class="config-codemod-row"
+                .summary=${html`
                     <label class="config-toggle-label">
                         <input
                             type="checkbox"
@@ -728,21 +741,23 @@ export class GmConfigPanel extends LightDomLitElement {
                             entry.requiresSemanticProjectIndex ? "warning" : "muted"
                         )}
                     </span>
-                </summary>
-                <label class="config-json-field">
-                    <span>${entry.id} config JSON</span>
-                    <textarea
-                        spellcheck="false"
-                        .value=${serializeConfigurationValue(configValue)}
-                        @change=${(event: Event) => {
-                            const target = event.target;
-                            if (target instanceof HTMLTextAreaElement) {
-                                this.#setCodemodConfig(entry.id, target.value);
-                            }
-                        }}
-                    ></textarea>
-                </label>
-            </details>
+                `}
+                .content=${html`
+                    <label class="config-json-field">
+                        <span>${entry.id} config JSON</span>
+                        <textarea
+                            spellcheck="false"
+                            .value=${serializeConfigurationValue(configValue)}
+                            @change=${(event: Event) => {
+                                const target = event.target;
+                                if (target instanceof HTMLTextAreaElement) {
+                                    this.#setCodemodConfig(entry.id, target.value);
+                                }
+                            }}
+                        ></textarea>
+                    </label>
+                `}
+            ></gm-collapsible>
         `;
     }
 

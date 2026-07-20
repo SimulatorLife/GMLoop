@@ -474,23 +474,26 @@ export class GmGraphPanel extends LightDomLitElement {
                 ${
                     slowestFiles.length > 0
                         ? html`
-                              <details class="graph-index-progress-slowest-files">
-                                  <summary>Slowest files</summary>
-                                  <ul>
-                                      ${slowestFiles.map(
-                                          (file) => html`
-                                              <li>
-                                                  <span class="graph-index-progress-slowest-file-path"
-                                                      >${file.relativePath}</span
-                                                  >
-                                                  <span class="graph-index-progress-slowest-file-duration"
-                                                      >${Math.round(file.durationMs).toLocaleString()}ms</span
-                                                  >
-                                              </li>
-                                          `
-                                      )}
-                                  </ul>
-                              </details>
+                              <gm-collapsible
+                                  class="graph-index-progress-slowest-files"
+                                  .summary=${"Slowest files"}
+                                  .content=${html`
+                                      <ul>
+                                          ${slowestFiles.map(
+                                              (file) => html`
+                                                  <li>
+                                                      <span class="graph-index-progress-slowest-file-path"
+                                                          >${file.relativePath}</span
+                                                      >
+                                                      <span class="graph-index-progress-slowest-file-duration"
+                                                          >${Math.round(file.durationMs).toLocaleString()}ms</span
+                                                      >
+                                                  </li>
+                                              `
+                                          )}
+                                      </ul>
+                                  `}
+                              ></gm-collapsible>
                           `
                         : null
                 }

@@ -187,16 +187,15 @@
     background: var(--gm-bg-subtle);
 }
 
-.docs-detail-container summary {
+.docs-detail-container .gm-collapsible__summary {
     min-height: var(--gm-height-sm);
     padding: var(--gm-space-sm) var(--gm-space-md);
     color: var(--gm-text-secondary);
     font-size: var(--gm-text-sm);
     font-weight: var(--gm-weight-extrabold);
-    cursor: pointer;
 }
 
-.docs-detail-container summary:focus-visible {
+.docs-detail-container .gm-collapsible__summary:focus-visible {
     outline: 2px solid var(--gm-accent-strong);
     outline-offset: 2px;
 }

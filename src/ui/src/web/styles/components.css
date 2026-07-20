@@ -31,6 +31,44 @@
   display: none;
 }
 
+/* ─── Collapsible panels ─────────────────────────────────── */
+.gm-collapsible {
+  display: block;
+}
+
+.gm-collapsible__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--gm-space-sm);
+  cursor: pointer;
+  list-style: none;
+}
+
+.gm-collapsible__summary::-webkit-details-marker {
+  display: none;
+}
+
+.gm-collapsible__summary::before {
+  content: "▶";
+  flex-shrink: 0;
+  color: var(--gm-text-subdued);
+  font-size: var(--gm-text-xs);
+  transition: transform var(--gm-transition);
+}
+
+.gm-collapsible[open] > .gm-collapsible__summary::before {
+  transform: rotate(90deg);
+}
+
+.gm-collapsible__summary:focus-visible {
+  outline: none;
+  box-shadow: var(--gm-shadow-focus);
+}
+
+.gm-collapsible__body {
+  min-width: 0;
+}
+
 /* ─── Badges ─────────────────────────────────────────────── */
 .gm-badge {
   display: inline-flex;

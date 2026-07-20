@@ -106,59 +106,39 @@
   background: var(--gm-bg-subtle);
 }
 
-.auto-game-skill-disclosure > summary,
-.auto-game-resource-preview > summary {
+.auto-game-skill-disclosure .gm-collapsible__summary,
+.auto-game-resource-preview .gm-collapsible__summary {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--gm-space-md);
   padding: var(--gm-space-md);
   color: var(--gm-text);
-  cursor: pointer;
 }
 
-.auto-game-skill-disclosure > summary::before,
-.auto-game-resource-preview > summary::before {
-  content: ">";
-  color: var(--gm-text-subdued);
-  font-family: var(--gm-font-mono);
-  transition: transform var(--gm-transition);
-}
-
-.auto-game-skill-disclosure[open] > summary::before,
-.auto-game-resource-preview[open] > summary::before {
-  transform: rotate(90deg);
-}
-
-.auto-game-skill-disclosure > summary:hover,
-.auto-game-resource-preview > summary:hover {
+.auto-game-skill-disclosure .gm-collapsible__summary:hover,
+.auto-game-resource-preview .gm-collapsible__summary:hover {
   background: var(--gm-bg-muted);
 }
 
-.auto-game-skill-disclosure > summary:focus-visible,
-.auto-game-resource-preview > summary:focus-visible {
-  outline: none;
-  box-shadow: var(--gm-shadow-focus);
-}
-
-.auto-game-skill-disclosure > summary > span,
-.auto-game-resource-preview > summary > span {
+.auto-game-skill-disclosure .gm-collapsible__summary > span,
+.auto-game-resource-preview .gm-collapsible__summary > span {
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: var(--gm-space-xs);
 }
 
-.auto-game-skill-disclosure > summary small,
-.auto-game-resource-preview > summary code {
+.auto-game-skill-disclosure .gm-collapsible__summary small,
+.auto-game-resource-preview .gm-collapsible__summary code {
   color: var(--gm-text-subdued);
   font-size: var(--gm-text-xs);
   line-height: var(--gm-leading-normal);
   overflow-wrap: anywhere;
 }
 
-.auto-game-skill-disclosure > .auto-game-skill-list,
-.auto-game-skill-disclosure > .auto-game-skill-empty {
+.auto-game-skill-disclosure .auto-game-skill-list,
+.auto-game-skill-disclosure .auto-game-skill-empty {
   margin: 0;
   padding: 0 var(--gm-space-md) var(--gm-space-md);
 }
