@@ -861,7 +861,7 @@ jobs:
           fi
 
           case "${head_ref}" in
-            codex/task-*|copilot/task-*|gemini/task-*|qwen/task-*|qwen-local/task-*)
+            claude/task-*|codex/task-*|copilot/task-*|gemini/task-*|qwen/task-*|qwen-local/task-*)
               ;;
             *)
               echo "[agent] Branch '${head_ref}' is not an expected empty agent branch; leaving PR and branch open."
