@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
@@ -266,11 +266,11 @@ function writeProjectOperationState(projectRoot: string, state: ProjectOperation
 }
 
 function readPersistedProjectOperationState(projectRoot: string): ProjectOperationState {
-    try {
-        return normalizeProjectOperationState(JSON.parse(readFileSync(resolveOperationStatePath(projectRoot), "utf8")));
-    } catch {
-        return EMPTY_PROJECT_OPERATION_STATE;
-    }
+    return Core.readJsonFileSyncOrDefault(
+        resolveOperationStatePath(projectRoot),
+        normalizeProjectOperationState,
+        EMPTY_PROJECT_OPERATION_STATE
+    );
 }
 
 /** Return the current operation state for a project, or an empty state when absent. */
@@ -283,17 +283,16 @@ export function resolveProjectOperationStatePath(projectRoot: string): string {
     return resolveOperationStatePath(projectRoot);
 }
 
-function readOperationLock(projectRoot: string): PersistedOperationLock | null {
-    try {
-        const parsed = JSON.parse(readFileSync(resolveOperationLockPath(projectRoot), "utf8")) as unknown;
-        const record = readPersistedObject(parsed);
-        if (record === null || typeof record.id !== "string" || typeof record.pid !== "number") {
-            return null;
-        }
-        return Object.freeze({ id: record.id, pid: record.pid });
-    } catch {
+function normalizeOperationLock(value: unknown): PersistedOperationLock | null {
+    const record = readPersistedObject(value);
+    if (record === null || typeof record.id !== "string" || typeof record.pid !== "number") {
         return null;
     }
+    return Object.freeze({ id: record.id, pid: record.pid });
+}
+
+function readOperationLock(projectRoot: string): PersistedOperationLock | null {
+    return Core.readJsonFileSyncOrDefault(resolveOperationLockPath(projectRoot), normalizeOperationLock, null);
 }
 
 function isProcessAlive(pid: number): boolean {
