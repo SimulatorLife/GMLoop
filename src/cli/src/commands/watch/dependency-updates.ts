@@ -287,23 +287,47 @@ function getSymbolIdFromFilePath(filePath: string): string {
     return `gml/script/${fileName}`;
 }
 
-function removeCachedPatchesForFile(
+/**
+ * Remove every cached patch entry that is keyed by the file's symbol id or that
+ * carries matching `metadata.sourcePath` data.
+ *
+ * The function deliberately collects the doomed keys in a separate pass before
+ * mutating `lastSuccessfulPatches`. Calling `Map.prototype.delete` while
+ * iterating `Map.prototype.entries()` works in V8 today, but it leans on
+ * spec-defined iterator semantics ("deletion of a not-yet-yielded entry is
+ * silently skipped") that are easy to break with a future refactor. Walking a
+ * snapshot of keys first keeps the loop's contract trivially obvious and lets
+ * the deletion step run in a single, side-effect-free pass.
+ *
+ * Exported so unit tests can drive the helper directly without standing up the
+ * full watch pipeline.
+ */
+export function removeCachedPatchesForFile(
     runtimeContext: Pick<FileRemovalCleanupContext, "lastSuccessfulPatches" | "sourcePathToPatchIds">,
     filePath: string
 ): number {
     const symbolId = getSymbolIdFromFilePath(filePath);
-    let removedCount = runtimeContext.lastSuccessfulPatches.delete(symbolId) ? 1 : 0;
+    const keysToDelete: Array<string> = [];
 
-    for (const [patchId, cachedPatch] of runtimeContext.lastSuccessfulPatches.entries()) {
-        const metadata = Core.isObjectLike(cachedPatch.metadata) ? cachedPatch.metadata : null;
-        const sourcePath = Core.isNonEmptyString(metadata?.sourcePath) ? metadata.sourcePath : null;
-
-        if (sourcePath !== filePath) {
+    for (const [patchId, cachedPatch] of runtimeContext.lastSuccessfulPatches) {
+        if (patchId === symbolId) {
+            keysToDelete.push(patchId);
             continue;
         }
 
-        runtimeContext.lastSuccessfulPatches.delete(patchId);
-        removedCount += 1;
+        const metadata = Core.isObjectLike(cachedPatch.metadata) ? cachedPatch.metadata : null;
+        const sourcePath = Core.isNonEmptyString(metadata?.sourcePath) ? metadata.sourcePath : null;
+
+        if (sourcePath === filePath) {
+            keysToDelete.push(patchId);
+        }
+    }
+
+    let removedCount = 0;
+    for (const patchId of keysToDelete) {
+        if (runtimeContext.lastSuccessfulPatches.delete(patchId)) {
+            removedCount += 1;
+        }
     }
 
     runtimeContext.sourcePathToPatchIds.delete(filePath);
