@@ -17,6 +17,7 @@ export {
     type RunnerSnapshotReader,
     type RunnerStateStore
 } from "./runner-state.js";
+export * from "./scope.js";
 export * from "./semantic-index-operation.js";
 export {
     type RuntimeServerProperties,
