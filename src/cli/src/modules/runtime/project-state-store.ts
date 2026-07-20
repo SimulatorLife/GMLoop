@@ -1,11 +1,11 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
 import { isRecord } from "../../shared/error-guards.js";
 
-const { sortObjectKeys, stringifyJsonForFile } = Core;
+const { readJsonFileSyncOrDefault, sortObjectKeys, stringifyJsonForFile } = Core;
 
 /**
  * Persisted runtime log entry scoped to one project.
@@ -88,12 +88,7 @@ function normalizeRuntimeState(value: unknown): RuntimeProjectState {
 export function readRuntimeProjectState(projectRoot: string): RuntimeProjectState {
     const statePath = resolveRuntimeStatePath(path.resolve(projectRoot));
 
-    try {
-        const raw = readFileSync(statePath, "utf8");
-        return normalizeRuntimeState(JSON.parse(raw) as unknown);
-    } catch {
-        return EMPTY_RUNTIME_STATE;
-    }
+    return readJsonFileSyncOrDefault(statePath, normalizeRuntimeState, EMPTY_RUNTIME_STATE);
 }
 
 /**
