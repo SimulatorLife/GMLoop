@@ -1,5 +1,4 @@
-import { html, nothing } from "lit";
-import type { TemplateResult } from "lit";
+import { html, nothing, type TemplateResult } from "lit";
 
 import { LightDomLitElement } from "../light-dom-lit-element.js";
 
