@@ -151,3 +151,53 @@ void test("parse accepts a .yyp target path and parses project .gml files", asyn
         await access(path.join(temporaryDirectory, "scripts", "demo", "demo.gml.ast.json"));
     });
 });
+
+void test("parse --help output warns that the command never defaults to the current working directory", async () => {
+    const { stdout, stderr, exitCode } = await runCliTestCommand({ argv: ["parse", "--help"] });
+
+    assert.equal(exitCode, 0);
+    assert.equal(stderr, "");
+    assert.match(stdout, /Parse never defaults to the current working directory/);
+    assert.match(stdout, /node_modules/);
+    assert.match(stdout, /--path or a\npositional \.gml file, directory, or \.yyp path/);
+});
+
+void test("parse with no target prints a usage error and never recurses the working directory", async () => {
+    await withTemporaryDirectory(async (temporaryDirectory) => {
+        // Seed the working directory with a deeply-nested `.gml` file that
+        // would otherwise be parsed if the command fell back to the cwd.
+        const nestedDirectory = path.join(temporaryDirectory, "src", "scripts");
+        await mkdir(nestedDirectory, { recursive: true });
+        const nestedSourcePath = path.join(nestedDirectory, "hidden.gml");
+        await writeFile(nestedSourcePath, "var hidden = 1;\n", "utf8");
+
+        const result = await runCliTestCommand({
+            argv: ["parse"],
+            cwd: temporaryDirectory
+        });
+
+        assert.equal(result.exitCode, 1);
+        assert.match(result.stderr, /A target \.gml file, directory, or \.yyp path is required\./);
+        assert.match(result.stderr, /Parse never defaults to the current working directory/);
+        assert.match(result.stderr, /pnpm dlx gmloop parse --path path\/to\/script\.gml/);
+        assert.match(result.stderr, /Usage: gmloop parse/);
+        // The nested `.gml` source must remain untouched — no AST JSON file
+        // should have been written, no AST should have been printed to stdout.
+        assert.equal(result.stdout, "");
+        await assert.rejects(access(`${nestedSourcePath}.ast.json`));
+    });
+});
+
+void test("parse --list with no target still reports a (none) target instead of recursing", async () => {
+    await withTemporaryDirectory(async (temporaryDirectory) => {
+        const result = await runCliTestCommand({
+            argv: ["parse", "--list"],
+            cwd: temporaryDirectory
+        });
+
+        assert.equal(result.exitCode, 0);
+        assert.equal(result.stderr, "");
+        assert.match(result.stdout, /Target path: \(none\)/);
+        assert.match(result.stdout, /Execution mode: dry-run \(stdout AST JSON\)/);
+    });
+});
