@@ -469,7 +469,10 @@ export function createWatchCommand(): Command {
                 .default(DEFAULT_WATCH_MAX_CONCURRENT_DIRS)
         )
         .addOption(
-            new Option("--max-patch-history <count>", "Maximum number of patches to retain in memory")
+            new Option(
+                "--max-patch-history <count>",
+                "Maximum number of patches to retain in memory (must be a positive integer)"
+            )
                 .argParser(createMinimumValueValidator(1, "Max patch history must be a positive integer"))
                 .default(DEFAULT_WATCH_MAX_PATCH_HISTORY)
         )
