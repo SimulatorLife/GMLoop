@@ -1,4 +1,4 @@
-import { access, readdir, rm } from "node:fs/promises";
+import { access, rm } from "node:fs/promises";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
@@ -116,30 +116,8 @@ function readResourceKindFromPath(resourcePath: string): string {
     return resourceDirectory && resourceDirectory.length > 0 ? resourceDirectory : "unknown";
 }
 
-async function collectGmlFilePaths(directory: string): Promise<ReadonlyArray<string>> {
-    const entries = await Core.safeReaddirDirent({ readDir: readdir }, directory);
-    const nested = await Promise.all(
-        entries.map(async (entry) => {
-            if (
-                entry.name === ".git" ||
-                entry.name === ".gmloop" ||
-                entry.name === "node_modules" ||
-                entry.name === "dist"
-            ) {
-                return [] as Array<string>;
-            }
-            const absolutePath = path.join(directory, entry.name);
-            if (entry.isDirectory()) {
-                return [...(await collectGmlFilePaths(absolutePath))];
-            }
-            return entry.isFile() && entry.name.toLowerCase().endsWith(".gml") ? [absolutePath] : [];
-        })
-    );
-    return Object.freeze(nested.flat().sort((left, right) => left.localeCompare(right)));
-}
-
 async function collectParseEvidence(projectRoot: string): Promise<ProjectEvidenceRecord> {
-    const gmlFilePaths = await collectGmlFilePaths(projectRoot);
+    const gmlFilePaths = await Core.listProjectGmlFilePaths(projectRoot);
     const diagnosticResults = await Promise.all(
         gmlFilePaths.map(async (filePath) => {
             try {

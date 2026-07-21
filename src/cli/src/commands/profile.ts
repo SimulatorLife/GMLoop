@@ -1,4 +1,4 @@
-import { readdir, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
@@ -53,38 +53,13 @@ function addProfileSharedOptions(command: Command): Command {
 async function collectProjectProfileMetrics(
     projectRoot: string
 ): Promise<{ gmlFileCount: number; totalGmlBytes: number }> {
-    const gmlFilePaths = await collectGmlFilePaths(projectRoot);
+    const gmlFilePaths = await Core.listProjectGmlFilePaths(projectRoot);
     const gmlFileCount = gmlFilePaths.length;
 
     const stats = await Promise.all(gmlFilePaths.map(async (filePath) => await stat(filePath).catch(() => null)));
     const totalGmlBytes = stats.reduce((accumulator, fileStats) => accumulator + (fileStats?.size ?? 0), 0);
 
     return { gmlFileCount, totalGmlBytes };
-}
-
-async function collectGmlFilePaths(directory: string): Promise<Array<string>> {
-    const entries = await Core.safeReaddirDirent({ readDir: readdir }, directory);
-    const nestedPaths = await Promise.all(
-        entries.map(async (entry) => {
-            if (
-                entry.name === "node_modules" ||
-                entry.name === ".git" ||
-                entry.name === ".gmloop" ||
-                entry.name === "dist"
-            ) {
-                return [] as Array<string>;
-            }
-            const resolved = path.join(directory, entry.name);
-            if (entry.isDirectory()) {
-                return await collectGmlFilePaths(resolved);
-            }
-            if (entry.isFile() && entry.name.toLowerCase().endsWith(".gml")) {
-                return [resolved];
-            }
-            return [] as Array<string>;
-        })
-    );
-    return nestedPaths.flat();
 }
 
 async function resolveProfileProjectRoot(options: ProfileOptions): Promise<string> {
