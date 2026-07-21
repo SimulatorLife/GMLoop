@@ -1,3 +1,5 @@
+import { Core } from "@gmloop/core";
+
 import { handleComments, printComment } from "../comments/index.js";
 import { LogicalOperatorsStyle } from "../options/logical-operators-style.js";
 import { gmlParserAdapter } from "../parsers/index.js";
@@ -26,15 +28,33 @@ export type GmlFormatPrettierDefaults = Readonly<{
 export type { GmlPrinterLayoutDefaults } from "./printer-layout-defaults.js";
 
 /**
+ * Comment-classification predicates forwarded into the Prettier printer
+ * bundle (`Printer.isBlockComment` and `Printer.canAttachComment`).
+ *
+ * These callables decide where Prettier is allowed to attach comments in
+ * the AST, which makes them part of the dependency-inversion surface for
+ * the formatter's high-level glue. Keeping them behind the resolver means
+ * the orchestration layer never imports the concrete implementations
+ * (`Core.isBlockComment`, `Core.canAttachComment`) directly; consumers
+ * and tests can swap in alternative predicates by overriding the
+ * resolver.
+ */
+export type GmlFormatCommentPredicates = Readonly<{
+    isBlockComment: (node: unknown) => boolean;
+    canAttachComment: (node: unknown) => boolean;
+}>;
+
+/**
  * Dependency-inversion seam for the concrete adapters that back the
  * default GML format provider.
  *
  * The high-level orchestration layer (`default-format-components.ts`) and
  * `format-entry.ts` previously reached into low-level directories
- * (`../parsers/`, `../printer/`, `../comments/`) directly to assemble the
- * Prettier plugin. That coupling violated the dependency-inversion
- * principle: orchestration code should depend on abstractions, not on
- * concrete adapter implementations.
+ * (`../parsers/`, `../printer/`, `../comments/`) and into
+ * `@gmloop/core` (for the comment-classification predicates) directly
+ * when assembling the Prettier plugin. That coupling violated the
+ * dependency-inversion principle: orchestration code should depend on
+ * abstractions, not on concrete adapter implementations.
  *
  * Resolvers own the concrete selection so the orchestration layer can
  * stay free of those low-level imports. The default implementation lives
@@ -50,6 +70,7 @@ export type GmlFormatAdapterResolver = Readonly<{
     resolvePrettierDefaults: () => GmlFormatPrettierDefaults;
     resolvePrinterLayoutDefaults: () => GmlPrinterLayoutDefaults;
     resolveNormalizeFormattedOutput: () => (formatted: string) => string;
+    resolveCommentPredicates: () => GmlFormatCommentPredicates;
 }>;
 
 const DEFAULT_PRETTIER_OPTIONS: GmlFormatPrettierDefaults = Object.freeze({
@@ -70,13 +91,23 @@ const DEFAULT_ADAPTERS: GmlFormatComponentContract = Object.freeze({
     LogicalOperatorsStyle
 });
 
+const DEFAULT_COMMENT_PREDICATES: GmlFormatCommentPredicates = Object.freeze({
+    // Sourced from `@gmloop/core` so the canonical classification rules
+    // remain the single source of truth. Keeping the imports here keeps
+    // the high-level orchestration module free of direct `@gmloop/core`
+    // reach-ins for adapter-shaped concerns.
+    isBlockComment: Core.isBlockComment,
+    canAttachComment: Core.canAttachComment
+});
+
 /**
  * Default concrete-adapter resolver used by the high-level Prettier
  * plugin wiring.
  *
  * Every low-level import from `../parsers/`, `../printer/`,
- * `../comments/`, and `../options/logical-operators-style.js` is scoped
- * to this module so the orchestration layer can depend on the
+ * `../comments/`, `../options/logical-operators-style.js`, and
+ * `@gmloop/core` (for the comment-classification predicates) is
+ * scoped to this module so the orchestration layer can depend on the
  * `GmlFormatAdapterResolver` contract instead. Keeping the concrete
  * selections in one place also makes it obvious where an embedder or
  * test would swap in an alternative resolver.
@@ -85,5 +116,6 @@ export const defaultGmlFormatAdapterResolver: GmlFormatAdapterResolver = Object.
     resolveAdapters: () => DEFAULT_ADAPTERS,
     resolvePrettierDefaults: () => DEFAULT_PRETTIER_OPTIONS,
     resolvePrinterLayoutDefaults: () => DEFAULT_PRINTER_LAYOUT_DEFAULTS,
-    resolveNormalizeFormattedOutput: () => normalizeFormattedOutput
+    resolveNormalizeFormattedOutput: () => normalizeFormattedOutput,
+    resolveCommentPredicates: () => DEFAULT_COMMENT_PREDICATES
 });

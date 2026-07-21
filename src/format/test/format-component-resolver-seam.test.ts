@@ -63,6 +63,21 @@ void test("default-format-components.ts does not import concrete adapters direct
         /from\s+["']\.\.\/comments\//u,
         "default-format-components.ts must not import from ../comments/; the resolver owns adapter selection"
     );
+    // Comment-classification predicates (Printer.isBlockComment,
+    // Printer.canAttachComment) are adapter-shaped concerns owned by the
+    // resolver. The glue module must consume them via
+    // `resolveCommentPredicates()` rather than reaching into
+    // `@gmloop/core` directly.
+    assert.doesNotMatch(
+        source,
+        /from\s+["']@gmloop\/core["']/u,
+        "default-format-components.ts must not import from @gmloop/core; the resolver owns adapter selection"
+    );
+    assert.doesNotMatch(
+        source,
+        /\bCore\.\w+\b/u,
+        "default-format-components.ts must not reference concrete Core helpers; route them through the resolver"
+    );
 });
 
 void test("default-format-components.ts depends on the resolver abstraction", async () => {
@@ -119,7 +134,8 @@ void test("createDefaultGmlFormatComponents honours an injected resolver", () =>
             singleQuote: true
         }),
         resolvePrinterLayoutDefaults: () => customLayoutDefaults,
-        resolveNormalizeFormattedOutput: () => noopNormalizer
+        resolveNormalizeFormattedOutput: () => noopNormalizer,
+        resolveCommentPredicates: () => defaultGmlFormatAdapterResolver.resolveCommentPredicates()
     };
 
     const components = createDefaultGmlFormatComponents(resolver);
