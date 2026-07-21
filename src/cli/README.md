@@ -116,10 +116,12 @@ pnpm run cli -- parse --write --path path/to/project
 
 **Options:**
 
-- `--path <path>` - Target `.gml` file or directory path (defaults to current working directory)
+- `--path <path>` - Target `.gml` file, GameMaker project directory, or `.yyp` path. **Required** when no positional path is given.
 - `--write` - Write AST JSON files (without this flag, parse prints AST JSON to stdout)
 - `--list` - Print effective command settings and exit
 - `--verbose` - Emit per-file parse diagnostics to stderr
+
+`parse` does not default to the current working directory. Without `--path` (or a positional path) and without an active game/cli project context, the command exits with a usage error that points at the missing-target example above. This avoids silently recursing into `node_modules`, `vendor`, and other large trees and emitting a multi-megabyte AST JSON blob to stdout.
 
 ### `lint` - Lint and Auto-Fix GML Files
 

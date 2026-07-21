@@ -16,12 +16,17 @@ import {
     createWriteOption
 } from "../cli-core/shared-command-options.js";
 import { formatPathForDisplay } from "../workflow/display-path.js";
-import { resolveExplicitWorkflowTargetPath, resolveWorkflowTargetPath } from "../workflow/project-root.js";
+import { resolveExplicitWorkflowTargetPath, resolveGameMakerCliActiveTargetPath } from "../workflow/project-root.js";
 
 const GML_FILE_EXTENSION = ".gml";
 const AST_JSON_EXTENSION = ".ast.json";
 const PARSE_COMMAND_CLI_EXAMPLE = "pnpm dlx gmloop parse --path path/to/script.gml";
 const PARSE_COMMAND_FIX_EXAMPLE = "pnpm dlx gmloop parse --write --path path/to/project";
+const PARSE_COMMAND_MISSING_TARGET_MESSAGE =
+    "A target .gml file, directory, or .yyp path is required. " +
+    "Parse never defaults to the current working directory because that would silently recurse into " +
+    "node_modules, vendor, and other large trees and dump them to stdout. " +
+    `Pass --path or a positional path, for example: ${PARSE_COMMAND_CLI_EXAMPLE}.`;
 
 type ParseCommandOptions = {
     write?: boolean;
@@ -31,7 +36,7 @@ type ParseCommandOptions = {
 };
 
 type ParseCommandSettings = {
-    targetPath: string;
+    targetPath: string | null;
     writeMode: boolean;
     list: boolean;
     verbose: boolean;
@@ -62,13 +67,15 @@ function resolveCommandOptions(command: CommanderCommandLike): ParseCommandOptio
 
 async function resolveParseCommandSettings(command: CommanderCommandLike): Promise<ParseCommandSettings> {
     const options = resolveCommandOptions(command);
-    // Positional argument takes precedence over --path option.
     const positionalPath = Array.isArray(command.args) && command.args.length > 0 ? command.args[0] : null;
     const explicitTargetPath = resolveExplicitWorkflowTargetPath(positionalPath ?? options.path);
+    // The cwd fallback is intentionally omitted: falling back to the working
+    // directory would silently recurse into node_modules, vendor, and other
+    // large trees and emit a multi-megabyte AST JSON blob to stdout.
     const targetPath =
         explicitTargetPath ??
-        (await resolveWorkflowTargetPath({
-            fallbackPath: path.resolve(process.cwd(), "."),
+        (await resolveGameMakerCliActiveTargetPath({
+            env: process.env,
             scope: "file"
         }));
 
@@ -81,7 +88,7 @@ async function resolveParseCommandSettings(command: CommanderCommandLike): Promi
 }
 
 function printParseCommandSettings(settings: ParseCommandSettings): void {
-    console.log(`Target path: ${formatPathForDisplay(settings.targetPath)}`);
+    console.log(`Target path: ${settings.targetPath ? formatPathForDisplay(settings.targetPath) : "(none)"}`);
     console.log(
         `Execution mode: ${settings.writeMode ? "write AST JSON files (--write)" : "dry-run (stdout AST JSON)"}`
     );
@@ -236,12 +243,35 @@ function printNoMatchingFilesMessage(targetPath: string): void {
 }
 
 /**
+ * Build the after-help text shown beneath the option list.
+ *
+ * Centralized so the message stays in sync with the no-target guard
+ * enforced by {@link runParseCommand}.
+ *
+ * @returns The after-help block describing the explicit-path requirement
+ *        and the canonical examples.
+ */
+function buildParseCommandAfterHelp(): string {
+    return [
+        "",
+        "Parse never defaults to the current working directory. Pass --path or a",
+        "positional .gml file, directory, or .yyp path so the command never recurses",
+        "into node_modules, vendor, or other large trees and dumps them to stdout.",
+        "",
+        "Examples:",
+        `  ${PARSE_COMMAND_CLI_EXAMPLE}`,
+        `  ${PARSE_COMMAND_FIX_EXAMPLE}`,
+        ""
+    ].join("\n");
+}
+
+/**
  * Create the CLI command that exposes `@gmloop/parser` AST output.
  *
  * @returns Commander command definition for parsing `.gml` targets.
  */
 export function createParseCommand(): Command {
-    return applyStandardCommandOptions(
+    const command = applyStandardCommandOptions(
         new Command("parse")
             .usage("[path] [options]")
             .description("Parse GameMaker Language files to AST JSON using @gmloop/parser.")
@@ -250,10 +280,9 @@ export function createParseCommand(): Command {
             .addOption(createWriteOption())
             .addOption(createListOption())
             .addOption(createVerboseOption())
-            .addHelpText("after", () =>
-                ["", "Examples:", `  ${PARSE_COMMAND_CLI_EXAMPLE}`, `  ${PARSE_COMMAND_FIX_EXAMPLE}`, ""].join("\n")
-            )
     );
+    command.addHelpText("after", () => buildParseCommandAfterHelp());
+    return command;
 }
 
 /**
@@ -268,6 +297,12 @@ export async function runParseCommand(command: CommanderCommandLike): Promise<vo
     if (settings.list) {
         printParseCommandSettings(settings);
         return;
+    }
+
+    if (settings.targetPath === null) {
+        throw new CliUsageError(PARSE_COMMAND_MISSING_TARGET_MESSAGE, {
+            usage: command.helpInformation()
+        });
     }
 
     const filePaths = await collectParseTargetFilePaths(settings.targetPath, command.helpInformation());
