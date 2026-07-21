@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdir, readdir } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
@@ -148,34 +148,17 @@ async function findTestFiles(projectRoot: string, pattern: string | undefined): 
     return filteredResults.sort((left, right) => left.localeCompare(right));
 }
 
+const TEST_FILE_EXCLUDED_DIRECTORY_NAMES = new Set(Core.DEFAULT_PROJECT_EXCLUDES.directoryNames);
+
 async function collectTestFilePaths(directory: string): Promise<Array<string>> {
-    const entries = await Core.safeReaddirDirent({ readDir: readdir }, directory);
-    const nestedPaths = await Promise.all(
-        entries.map(async (entry) => {
-            if (
-                entry.name === "node_modules" ||
-                entry.name === ".git" ||
-                entry.name === "dist" ||
-                entry.name === ".gmloop"
-            ) {
-                return [] as Array<string>;
-            }
-
-            const resolved = path.join(directory, entry.name);
-            if (entry.isDirectory()) {
-                return await collectTestFilePaths(resolved);
-            }
-
-            if (!entry.isFile()) {
-                return [] as Array<string>;
-            }
-
-            const lowered = entry.name.toLowerCase();
-            const isTestFile = lowered.endsWith(".test.ts") || lowered.endsWith(".test.js");
-            return isTestFile ? [resolved] : [];
-        })
-    );
-    return nestedPaths.flat();
+    const relativeFilePaths = await Core.listRelativeFilePathsRecursively(directory, {
+        shouldEnterDirectory: ({ entryName }) => !TEST_FILE_EXCLUDED_DIRECTORY_NAMES.has(entryName),
+        includeFile: ({ entryName }) => {
+            const lowered = entryName.toLowerCase();
+            return lowered.endsWith(".test.ts") || lowered.endsWith(".test.js");
+        }
+    });
+    return relativeFilePaths.map((relativeFilePath) => path.join(directory, relativeFilePath));
 }
 
 function parseNodeTestSummary(output: string): { failed: number; passed: number; skipped: number } {
