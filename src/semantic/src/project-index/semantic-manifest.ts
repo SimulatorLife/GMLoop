@@ -230,6 +230,52 @@ export function createSemanticContentHash(sourceText: string): string {
 }
 
 /**
+ * Determine whether the manifest carries at least one entry whose source
+ * content comes from an open in-memory buffer rather than disk.
+ *
+ * Session-local overlays require the session snapshot publication path and
+ * cannot be served from the persisted tier, so callers use this helper as a
+ * boolean gate instead of reaching into the manifest's internal entry map.
+ */
+export function hasOpenBufferOverlay(manifest: SemanticFileManifest | null): boolean {
+    if (manifest === null) {
+        return false;
+    }
+    for (const entry of manifest.entries.values()) {
+        if (entry.sourceOrigin === "openBuffer") {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Collect the relative path → source version mapping for every manifest entry
+ * sourced from an open in-memory buffer.
+ *
+ * Entries without a recorded document version are skipped; callers that need
+ * the stricter "all overlays must be versioned" invariant should keep using
+ * their own validation. A `null` manifest yields an empty map so callers can
+ * pass either shape through the same call site.
+ */
+export function collectOpenBufferOverlayVersions(manifest: SemanticFileManifest | null): ReadonlyMap<string, number> {
+    const overlayVersions = new Map<string, number>();
+    if (manifest === null) {
+        return overlayVersions;
+    }
+    for (const entry of manifest.entries.values()) {
+        if (entry.sourceOrigin !== "openBuffer") {
+            continue;
+        }
+        if (entry.sourceVersion === null) {
+            continue;
+        }
+        overlayVersions.set(entry.relativePath, entry.sourceVersion);
+    }
+    return overlayVersions;
+}
+
+/**
  * Apply known filesystem or open-buffer changes to a persisted manifest
  * without rediscovering every project file. Full inventory reconciliation is
  * intentionally kept separate for restart and metadata-inventory paths.
