@@ -98,3 +98,24 @@ void test("require-zwrite-enabled-reset stays silent when the source contains no
     assertEquals(result.messages.length, 0);
     assertEquals(result.output, input);
 });
+
+void test("require-ztest-enabled-reset reports disable calls without a trailing semicolon", () => {
+    // GML permits statement calls without a terminating semicolon, so the
+    // rule must still treat `gpu_set_ztestenable(false)` as a disable call
+    // that demands a paired `gpu_set_ztestenable(true)` reset.
+    const input = ["gpu_set_ztestenable(false)", ""].join("\n");
+    const expected = ["gpu_set_ztestenable(false)", "gpu_set_ztestenable(true);", ""].join("\n");
+
+    const result = lintWithRule("require-ztest-enabled-reset", input, {}, gmlRules);
+    assertEquals(result.messages.length, 1);
+    assertEquals(result.output, expected);
+});
+
+void test("require-zwrite-enabled-reset reports disable calls without a trailing semicolon", () => {
+    const input = ["gpu_set_zwriteenable(false)", ""].join("\n");
+    const expected = ["gpu_set_zwriteenable(false)", "gpu_set_zwriteenable(true);", ""].join("\n");
+
+    const result = lintWithRule("require-zwrite-enabled-reset", input, {}, gmlRules);
+    assertEquals(result.messages.length, 1);
+    assertEquals(result.output, expected);
+});
