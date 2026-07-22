@@ -1,4 +1,4 @@
-import { lstat, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
@@ -89,27 +89,6 @@ function printParseCommandSettings(settings: ParseCommandSettings): void {
     console.log(`Output: ${settings.writeMode ? `sibling *${AST_JSON_EXTENSION} files` : "stdout"}`);
 }
 
-async function collectGmlFilePathsFromDirectory(directoryPath: string): Promise<Array<string>> {
-    const entries = await readdir(directoryPath, { withFileTypes: true });
-    const sortedEntries = [...entries].sort((left, right) => left.name.localeCompare(right.name));
-    const discoveredFiles: Array<string> = [];
-
-    await Core.runSequentially(sortedEntries, async (entry) => {
-        const entryPath = path.join(directoryPath, entry.name);
-
-        if (entry.isDirectory()) {
-            discoveredFiles.push(...(await collectGmlFilePathsFromDirectory(entryPath)));
-            return;
-        }
-
-        if (entry.isFile() && path.extname(entry.name).toLowerCase() === GML_FILE_EXTENSION) {
-            discoveredFiles.push(entryPath);
-        }
-    });
-
-    return discoveredFiles;
-}
-
 async function collectParseTargetFilePaths(targetPath: string, usage: string): Promise<Array<string>> {
     let targetStats;
     try {
@@ -126,7 +105,7 @@ async function collectParseTargetFilePaths(targetPath: string, usage: string): P
     }
 
     if (targetStats.isDirectory()) {
-        return collectGmlFilePathsFromDirectory(targetPath);
+        return [...(await Core.listProjectGmlFilePaths(targetPath))];
     }
 
     if (targetStats.isFile() && path.extname(targetPath).toLowerCase() === GML_FILE_EXTENSION) {
