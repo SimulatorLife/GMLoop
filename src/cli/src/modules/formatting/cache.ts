@@ -19,14 +19,20 @@ const formattingCache = new Map<string, string>();
 /**
  * Trims the formatting cache to the specified limit using LRU eviction.
  * If limit is not finite, the cache is left unchanged.
- * If limit is 0 or negative, the cache is cleared entirely.
+ *
+ * A limit of exactly `0` is treated as "disabled" to match the documented
+ * contract (`PRETTIER_PLUGIN_GML_MAX_FORMATTING_CACHE_ENTRIES=0` advertises
+ * "Provide 0 to disable the limit"). Without this guard, `storeFormattingCacheEntry`
+ * would clear the cache after every single insert, silently defeating caching
+ * entirely whenever an operator configured the limit to 0 expecting unbounded
+ * caching instead.
  */
 export function trimFormattingCache(limit = getDefaultMaxFormattingCacheEntries()): void {
-    if (!Number.isFinite(limit)) {
+    if (!Number.isFinite(limit) || limit === 0) {
         return;
     }
 
-    if (limit <= 0) {
+    if (limit < 0) {
         formattingCache.clear();
         return;
     }

@@ -66,4 +66,16 @@ void describe("formatting cache", () => {
         assert.equal(stats.size, 2);
         assert.deepEqual(getFormattingCacheKeysForTests(), ["key-2", "key-3"]);
     });
+
+    void it("treats a cache entry cap of 0 as disabling the limit, not clearing every insert", () => {
+        setDefaultMaxFormattingCacheEntries(0);
+
+        setFormattingCacheEntryForTests("key-1", "formatted-1");
+        setFormattingCacheEntryForTests("key-2", "formatted-2");
+
+        const stats = getFormattingCacheStatsForTests();
+        assert.equal(stats.maxEntries, 0);
+        assert.equal(stats.size, 2);
+        assert.deepEqual(getFormattingCacheKeysForTests(), ["key-1", "key-2"]);
+    });
 });
