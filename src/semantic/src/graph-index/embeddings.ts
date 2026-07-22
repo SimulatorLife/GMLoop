@@ -6,12 +6,6 @@ import { Core } from "@gmloop/core";
 
 import type { GraphEmbeddingsConfig } from "./types.js";
 
-export interface GraphEmbeddingProvider {
-    readonly dimensions: number;
-    readonly providerId: string;
-    embedText: (text: string) => Float32Array;
-}
-
 function normalizeEmbeddingText(text: string): Array<string> {
     return text
         .toLowerCase()
@@ -44,7 +38,12 @@ function normalizeVectorMagnitude(vector: Float32Array): Float32Array {
     return vector;
 }
 
-class LocalTokenHashEmbeddingProvider implements GraphEmbeddingProvider {
+/**
+ * Deterministic local embedding provider used by the graph index. Hashes normalized
+ * tokens into fixed-size buckets so identical text always produces identical vectors
+ * without depending on an external embedding model.
+ */
+export class LocalTokenHashEmbeddingProvider {
     public readonly dimensions: number;
     public readonly providerId: string;
 
@@ -84,13 +83,6 @@ export function ensureGraphEmbeddingModelAssets(config: GraphEmbeddingsConfig): 
         )}\n`,
         "utf8"
     );
-}
-
-/**
- * Create the local embedding provider used by the graph index.
- */
-export function createGraphEmbeddingProvider(config: GraphEmbeddingsConfig): GraphEmbeddingProvider {
-    return new LocalTokenHashEmbeddingProvider(config);
 }
 
 /**
