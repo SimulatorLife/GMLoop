@@ -1,4 +1,4 @@
-import type { GraphVisualizationGraphIndexProgress, GraphVisualizationProjectWorkflow } from "../../graph/types.js";
+import type { GraphVisualizationGraphIndexProgress, GraphVisualizationProjectWorkflow } from "../../graph/index.js";
 
 /**
  * Top-level page surfaces in the graph visualization UI.

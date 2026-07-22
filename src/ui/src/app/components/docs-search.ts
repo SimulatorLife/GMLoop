@@ -2,7 +2,7 @@ import type {
     GraphVisualizationCliCatalogEntry,
     GraphVisualizationLspToolCatalogEntry,
     GraphVisualizationMcpToolCatalogEntry
-} from "../../graph/types.js";
+} from "../../graph/index.js";
 import type { GraphVisualizationUiDocsView } from "../state/types.js";
 import type { GraphVisualizationDocsPanelCatalogEntry } from "./docs-panel-content.js";
 

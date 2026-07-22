@@ -3,7 +3,7 @@ import type {
     GraphVisualizationDocumentationCatalogs,
     GraphVisualizationLspToolCatalogEntry,
     GraphVisualizationMcpToolCatalogEntry
-} from "../../graph/types.js";
+} from "../../graph/index.js";
 import { getLintFixableBadgeLabel } from "./lint-rule-labels.js";
 
 export type GraphVisualizationDocsPanelCatalogEntry = Readonly<{

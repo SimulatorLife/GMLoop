@@ -12,7 +12,7 @@ import type {
     GraphVisualizationProjectWorkflow,
     GraphVisualizationRenderOptions,
     GraphVisualizationStartupState
-} from "../graph/types.js";
+} from "../graph/index.js";
 
 export type GraphVisualizationFixRunResult = Readonly<{
     logLines: ReadonlyArray<string>;

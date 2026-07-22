@@ -1,7 +1,7 @@
 import type {
     GraphVisualizationLiveReloadStatusSnapshot,
     GraphVisualizationProjectWorkflow
-} from "../../graph/types.js";
+} from "../../graph/index.js";
 import type {
     GraphVisualizationUiConfigView,
     GraphVisualizationUiDocsView,

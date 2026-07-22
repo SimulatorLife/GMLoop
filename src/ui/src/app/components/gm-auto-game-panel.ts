@@ -6,7 +6,7 @@ import type {
     GraphVisualizationAutoGamePipelineEvent,
     GraphVisualizationAutoGamePipelineLlmOutput,
     GraphVisualizationAutoGamePipelineStatus
-} from "../../graph/types.js";
+} from "../../graph/index.js";
 import { type GraphVisualizationUiModel, hasLoadedGraphProject } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { EventBusManager } from "./event-bus-mixin.js";

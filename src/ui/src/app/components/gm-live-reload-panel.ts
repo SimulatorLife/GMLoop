@@ -6,7 +6,7 @@ import type {
     GraphVisualizationLiveReloadRuntimeHealth,
     GraphVisualizationLiveReloadStatusSnapshot,
     GraphVisualizationLiveReloadWatcherStatus
-} from "../../graph/types.js";
+} from "../../graph/index.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { EventBusManager } from "./event-bus-mixin.js";

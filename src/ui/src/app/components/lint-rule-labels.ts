@@ -1,4 +1,4 @@
-import type { GraphVisualizationProjectConfigurationLintRuleEntry } from "../../graph/types.js";
+import type { GraphVisualizationProjectConfigurationLintRuleEntry } from "../../graph/index.js";
 
 /**
  * Returns the canonical badge label for lint rule fixability.

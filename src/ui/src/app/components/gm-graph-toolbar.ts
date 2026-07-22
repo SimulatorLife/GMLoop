@@ -1,6 +1,6 @@
 import { html } from "lit";
 
-import type { GraphVisualizationProjectWorkflow } from "../../graph/types.js";
+import type { GraphVisualizationProjectWorkflow } from "../../graph/index.js";
 import { type GraphVisualizationUiModel, hasLoadedGraphIndex, hasLoadedGraphProject } from "../contracts.js";
 import { LIVE_RELOAD_RUNTIME_TAB_TARGET, resolveLiveReloadRuntimeUrl } from "../live-reload-runtime-tab.js";
 import type {

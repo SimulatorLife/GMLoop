@@ -1,7 +1,7 @@
 import type {
     GraphVisualizationGraphIndexBuildSummary,
     GraphVisualizationGraphIndexProgress
-} from "../../graph/types.js";
+} from "../../graph/index.js";
 import type { LifecycleParticipant } from "./lifecycle-participants-controller.js";
 
 const DEFAULT_GRAPH_INDEX_PROGRESS_POLL_INTERVAL_MS = 1000;

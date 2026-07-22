@@ -1,4 +1,4 @@
-import type { GraphVisualizationLiveReloadModel } from "../graph/types.js";
+import type { GraphVisualizationLiveReloadModel } from "../graph/index.js";
 
 /**
  * Stable browser target used for the GameMaker runtime page opened by Live Reload.
