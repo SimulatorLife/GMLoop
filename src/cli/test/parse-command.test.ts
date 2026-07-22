@@ -151,3 +151,31 @@ void test("parse accepts a .yyp target path and parses project .gml files", asyn
         await access(path.join(temporaryDirectory, "scripts", "demo", "demo.gml.ast.json"));
     });
 });
+
+void test("parse skips project-wide excluded directories when scanning a tree", async () => {
+    await withTemporaryDirectory(async (temporaryDirectory) => {
+        await writeFile(path.join(temporaryDirectory, "script.gml"), "var root = 1;\n", "utf8");
+        await mkdir(path.join(temporaryDirectory, "node_modules", "vendor"), { recursive: true });
+        await writeFile(
+            path.join(temporaryDirectory, "node_modules", "vendor", "vendor.gml"),
+            "var vendored = 1;\n",
+            "utf8"
+        );
+        await mkdir(path.join(temporaryDirectory, ".git", "hooks"), { recursive: true });
+        await writeFile(path.join(temporaryDirectory, ".git", "hooks", "git-hook.gml"), "var hook = 1;\n", "utf8");
+        await mkdir(path.join(temporaryDirectory, "scripts"));
+        await writeFile(path.join(temporaryDirectory, "scripts", "real.gml"), "var real = 1;\n", "utf8");
+
+        const writeResult = await runCliTestCommand({
+            argv: ["parse", "--path", ".", "--write"],
+            cwd: temporaryDirectory
+        });
+
+        assert.equal(writeResult.exitCode, 0);
+        assert.match(writeResult.stdout, /Wrote script\.gml\.ast\.json/);
+        assert.match(writeResult.stdout, /Wrote scripts[\\/]real\.gml\.ast\.json/);
+        assert.match(writeResult.stdout, /Parsed and wrote 2 AST JSON files\./);
+        await assert.rejects(access(path.join(temporaryDirectory, "node_modules", "vendor", "vendor.gml.ast.json")));
+        await assert.rejects(access(path.join(temporaryDirectory, ".git", "hooks", "git-hook.gml.ast.json")));
+    });
+});
