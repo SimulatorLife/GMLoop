@@ -15,7 +15,10 @@ import {
     createProjectIndexCoordinator,
     openSemanticIndexStore,
     publishSemanticTwoTierSnapshot,
-    reconcileSemanticManifests
+    reconcileSemanticManifests,
+    type SemanticIndexLifecycle,
+    type SemanticIndexPublisher,
+    type SemanticIndexStateReader
 } from "../project-index/index.js";
 import type { MetricsSnapshot } from "../project-index/metrics.js";
 import type { SemanticFileManifest, SemanticFileManifestCacheStats } from "../project-index/semantic-manifest.js";
@@ -2204,7 +2207,12 @@ async function getOrBuildProjectIndex(
     graphId: GraphIndexScope,
     embeddingsConfig: GraphEmbeddingsConfig
 ): Promise<ProjectIndexBuildSnapshot> {
-    const store = openSemanticIndexStore(projectRoot);
+    // This flow only reads persisted tier/manifest/navigation state, publishes
+    // the two-tier snapshot, and closes the connection; it never leases a
+    // snapshot or queries dependencies, so it depends on the narrow reader +
+    // publisher + lifecycle roles instead of the full SemanticIndexStore.
+    const store: SemanticIndexStateReader & SemanticIndexPublisher & SemanticIndexLifecycle =
+        openSemanticIndexStore(projectRoot);
     let storedManifest;
     try {
         storedManifest = store.readSemanticManifest("full") ?? store.readSemanticManifest("definitions");

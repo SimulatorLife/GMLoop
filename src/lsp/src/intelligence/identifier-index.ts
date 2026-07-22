@@ -42,6 +42,13 @@ type GmlSymbolDocumentation = ReturnType<typeof Semantic.createEmptyGmlSymbolDoc
 type SemanticFileManifest = Awaited<ReturnType<typeof Semantic.buildSemanticFileManifest>>;
 type SemanticSnapshot = ReturnType<typeof Semantic.createSemanticSnapshotFromProjectIndex>;
 type SemanticIndexStore = ReturnType<typeof Semantic.openSemanticIndexStore>;
+/**
+ * Narrow snapshot-lease-acquisition role, mirroring the
+ * `SemanticSnapshotLeaseAcquirer` role type exported by `@gmloop/semantic`.
+ * `withPinnedSemanticQueries` only ever leases a snapshot, so it depends on
+ * this slice of `SemanticIndexStore` rather than the full store contract.
+ */
+type SemanticSnapshotLeaseAcquirer = Pick<SemanticIndexStore, "acquireSemanticSnapshot">;
 type SemanticSnapshotAcquireResult = Awaited<ReturnType<SemanticIndexStore["acquireSemanticSnapshot"]>>;
 type SemanticSnapshotLease = Extract<SemanticSnapshotAcquireResult, Readonly<{ kind: "lease" }>>["lease"];
 type SemanticSnapshotQueries = SemanticSnapshotLease["queries"];
@@ -151,7 +158,7 @@ function createNavigationSnapshotRequirements(
 }
 
 async function withPinnedSemanticQueries<Result>(
-    store: SemanticIndexStore,
+    store: SemanticSnapshotLeaseAcquirer,
     state: NavigationState,
     document: GmlTextDocument,
     capability: RequiredSemanticCapability,
