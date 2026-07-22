@@ -73,7 +73,15 @@ void test("default implementation bundle surfaces only the keys the high-level P
     // high-level Prettier plugin entry point in
     // `format-entry.ts`. The set of keys here must match the keys the
     // Prettier plugin wiring and the `printers` bundle require.
-    const expectedKeys = ["LogicalOperatorsStyle", "gmlParserAdapter", "handleComments", "print", "printComment"];
+    const expectedKeys = [
+        "LogicalOperatorsStyle",
+        "canAttachComment",
+        "gmlParserAdapter",
+        "handleComments",
+        "isBlockComment",
+        "print",
+        "printComment"
+    ];
 
     assert.deepStrictEqual(
         Object.keys(defaultGmlFormatComponentImplementations).toSorted(),

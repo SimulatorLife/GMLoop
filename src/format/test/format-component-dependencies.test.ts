@@ -26,7 +26,15 @@ void test("dependency bundle is frozen and exposes expected contract keys", () =
     // dependency-injection surface honest. (target-state.md §2.3, §3.2)
     assert.deepStrictEqual(
         Object.keys(dependencyBundle).toSorted(),
-        ["LogicalOperatorsStyle", "gmlParserAdapter", "handleComments", "print", "printComment"].toSorted()
+        [
+            "LogicalOperatorsStyle",
+            "canAttachComment",
+            "gmlParserAdapter",
+            "handleComments",
+            "isBlockComment",
+            "print",
+            "printComment"
+        ].toSorted()
     );
 });
 

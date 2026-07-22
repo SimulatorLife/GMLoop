@@ -100,6 +100,8 @@ void test("createDefaultGmlFormatComponents honours an injected resolver", () =>
     });
     const noopNormalizer = (_formatted: string) => "noop";
     const customLayoutDefaults = Object.freeze({ printWidth: 100, tabWidth: 2 });
+    const customCanAttachComment: GmlFormatComponentContract["canAttachComment"] = () => true;
+    const customIsBlockComment: GmlFormatComponentContract["isBlockComment"] = () => false;
     const resolver = {
         resolveAdapters: () => {
             resolveCalls += 1;
@@ -108,6 +110,8 @@ void test("createDefaultGmlFormatComponents honours an injected resolver", () =>
                 print,
                 handleComments,
                 printComment,
+                canAttachComment: customCanAttachComment,
+                isBlockComment: customIsBlockComment,
                 LogicalOperatorsStyle: customLogicalOperatorsStyle
             } satisfies GmlFormatComponentContract;
         },
@@ -127,6 +131,8 @@ void test("createDefaultGmlFormatComponents honours an injected resolver", () =>
     assert.strictEqual(resolveCalls, 1, "factory should consult the injected resolver exactly once");
     assert.strictEqual(components.parsers["gml-parse"], gmlParserAdapter);
     assert.strictEqual(components.printers["gml-ast"].print, print);
+    assert.strictEqual(components.printers["gml-ast"].canAttachComment, customCanAttachComment);
+    assert.strictEqual(components.printers["gml-ast"].isBlockComment, customIsBlockComment);
 
     const logicalOperatorsStyleOption = components.options.logicalOperatorsStyle as {
         default: unknown;

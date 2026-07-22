@@ -11,7 +11,13 @@ void test("format entry consumes the abstract provider instead of low-level form
     // Verify high-level orchestration (format-entry.ts) does not directly
     // import concrete adapter subdirectories.
     assert.doesNotMatch(source, /from "\.\/?(?:parsers|printer|comments)\//);
-    // Verify format-entry.ts uses the component contract via the barrel.
+    // Comment predicates must be supplied through the provider boundary rather
+    // than imported by the high-level formatter composition module.
+    const componentsSource = await readFile(
+        new URL("../../src/components/default-format-components.ts", import.meta.url),
+        "utf8"
+    );
+    assert.doesNotMatch(componentsSource, /from "@gmloop\/core"/);
     assert.match(source, /from "\.\/components\/index\.js"/);
     assert.match(source, /GmlFormatProvider/, "format-entry should depend on the provider abstraction");
 });

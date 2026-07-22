@@ -13,6 +13,8 @@ export type GmlPrinter = Printer<GmlAst>;
 export type GmlPrintFunction = NonNullable<GmlPrinter["print"]>;
 export type GmlPrintCommentFunction = NonNullable<GmlPrinter["printComment"]>;
 export type GmlHandleComments = NonNullable<GmlPrinter["handleComments"]>;
+export type GmlCanAttachComment = NonNullable<GmlPrinter["canAttachComment"]>;
+export type GmlIsBlockComment = NonNullable<GmlPrinter["isBlockComment"]>;
 
 export type LogicalOperatorsStyleMap = Readonly<{
     KEYWORDS: string;
@@ -21,19 +23,13 @@ export type LogicalOperatorsStyleMap = Readonly<{
 
 /**
  * Minimal dependency-injection contract for the formatter's high-level
- * Prettier plugin wiring. The contract now only surfaces the helpers
- * that the Prettier plugin entry point (`createGmlFormat`) and the
- * `printers` bundle require: the parser adapter, the printer entry
- * point, the `printComment`/`handleComments` Prettier callbacks, and
- * the `LogicalOperatorsStyle` map.
+ * Prettier plugin wiring. The contract only surfaces the helpers required to
+ * compose the parser and printer bundles. Concrete AST comment predicates stay
+ * behind this boundary alongside the parser, printer, and comment callbacks.
  *
  * Helpers that the printer workspace consumes internally — the dangling
  * comment printers — are imported directly from
  * `../comments/comment-printer.js` by the high-level printer modules.
- * The previous indirection through `options.gml` (resolved by
- * `printer/comment-print-boundary.ts`) was a backward-compatibility
- * shim with no remaining callers and has been removed; the contract no
- * longer lists those helpers.
  * (target-state.md §2.3, §3.2)
  */
 export type GmlFormatComponentContract = Readonly<{
@@ -41,6 +37,8 @@ export type GmlFormatComponentContract = Readonly<{
     print: GmlPrintFunction;
     handleComments: GmlHandleComments;
     printComment: GmlPrintCommentFunction;
+    canAttachComment: GmlCanAttachComment;
+    isBlockComment: GmlIsBlockComment;
     LogicalOperatorsStyle: LogicalOperatorsStyleMap;
 }>;
 

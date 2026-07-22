@@ -1,3 +1,5 @@
+import { Core } from "@gmloop/core";
+
 import { handleComments, printComment } from "../comments/index.js";
 import { LogicalOperatorsStyle } from "../options/logical-operators-style.js";
 import { gmlParserAdapter } from "../parsers/index.js";
@@ -67,6 +69,8 @@ const DEFAULT_ADAPTERS: GmlFormatComponentContract = Object.freeze({
     print,
     handleComments,
     printComment,
+    canAttachComment: Core.canAttachComment,
+    isBlockComment: Core.isBlockComment,
     LogicalOperatorsStyle
 });
 
