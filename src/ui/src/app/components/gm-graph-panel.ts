@@ -1,18 +1,6 @@
 import { html, svg } from "lit";
 
 import {
-    createGraphLayout,
-    filterGraphLayoutForDisplay,
-    type GraphLayout,
-    type GraphLayoutNode,
-    type GraphLegendNodeKind,
-    type GraphNodeKindLegendItem,
-    listGraphEdgeTypes,
-    listGraphNodeKindLegendItems,
-    listGraphNodeKinds,
-    resolveEffectiveGraphNodeKinds
-} from "../../graph/graph-layout.js";
-import {
     buildGraphEdgeBatches,
     createGraphRenderBounds,
     cullGraphLayoutToViewport,
@@ -23,11 +11,21 @@ import {
 } from "../../graph/graph-render-viewport.js";
 import { projectGraphLayoutForSemanticZoom, resolveGraphSemanticZoomLevel } from "../../graph/graph-semantic-zoom.js";
 import { EDGE_LINE_VISUAL_STYLES, NODE_VISUAL_STYLES } from "../../graph/graph-visualization-style-metadata.js";
-import type {
-    GraphVisualizationEdgeType,
-    GraphVisualizationGraphIndexBuildSummary,
-    GraphVisualizationNodeKind
-} from "../../graph/types.js";
+import {
+    createGraphLayout,
+    filterGraphLayoutForDisplay,
+    type GraphLayout,
+    type GraphLayoutNode,
+    type GraphLegendNodeKind,
+    type GraphNodeKindLegendItem,
+    type GraphVisualizationEdgeType,
+    type GraphVisualizationGraphIndexBuildSummary,
+    type GraphVisualizationNodeKind,
+    listGraphEdgeTypes,
+    listGraphNodeKindLegendItems,
+    listGraphNodeKinds,
+    resolveEffectiveGraphNodeKinds
+} from "../../graph/index.js";
 import {
     type GraphVisualizationUiModel,
     hasLoadedGraphIndex,

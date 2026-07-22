@@ -4,7 +4,7 @@ import type {
     GraphVisualizationCliCatalogEntry,
     GraphVisualizationLspToolCatalogEntry,
     GraphVisualizationMcpToolCatalogEntry
-} from "../../graph/types.js";
+} from "../../graph/index.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import type { GraphVisualizationUiDocsView, GraphVisualizationUiState } from "../state/types.js";
 import {

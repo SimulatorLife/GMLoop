@@ -4,7 +4,7 @@ import type {
     GraphVisualizationLiveReloadRecentError,
     GraphVisualizationLiveReloadRecentPatch,
     GraphVisualizationLiveReloadStatusSnapshot
-} from "../../graph/types.js";
+} from "../../graph/index.js";
 import { getUiNetworkErrorMessage } from "../error-message.js";
 
 const DEFAULT_POLL_INTERVAL_MS = 2000;

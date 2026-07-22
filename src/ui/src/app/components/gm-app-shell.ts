@@ -1,6 +1,6 @@
 import { html } from "lit";
 
-import type { GraphVisualizationProjectWorkflow } from "../../graph/types.js";
+import type { GraphVisualizationProjectWorkflow } from "../../graph/index.js";
 import {
     createNoopGraphVisualizationUiCallbacks,
     type GraphVisualizationUiCallbacks,

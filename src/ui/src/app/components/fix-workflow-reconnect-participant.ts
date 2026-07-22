@@ -1,4 +1,4 @@
-import type { GraphVisualizationProjectWorkflow } from "../../graph/types.js";
+import type { GraphVisualizationProjectWorkflow } from "../../graph/index.js";
 import type { LifecycleParticipant } from "./lifecycle-participants-controller.js";
 
 const DEFAULT_FIX_RECONNECT_POLL_INTERVAL_MS = 1000;

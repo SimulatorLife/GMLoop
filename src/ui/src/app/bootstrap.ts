@@ -1,4 +1,4 @@
-import type { GraphVisualizationData, GraphVisualizationRenderOptions } from "../graph/types.js";
+import type { GraphVisualizationData, GraphVisualizationRenderOptions } from "../graph/index.js";
 import {
     createGraphVisualizationUiModel,
     createNoopGraphVisualizationUiCallbacks,

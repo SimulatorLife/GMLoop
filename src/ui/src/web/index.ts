@@ -13,7 +13,7 @@ import type {
     GraphVisualizationLiveReloadModel,
     GraphVisualizationProjectWorkflow,
     GraphVisualizationRenderOptions
-} from "../graph/types.js";
+} from "../graph/index.js";
 import { registerGraphVisualizationCustomElements } from "./register-components.js";
 
 type FixApiResponse = Readonly<{

@@ -5,7 +5,7 @@ import type {
     GraphVisualizationProjectConfigurationEntry,
     GraphVisualizationProjectConfigurationLintRuleEntry,
     GraphVisualizationProjectConfigurationRefactorCodemodEntry
-} from "../../graph/types.js";
+} from "../../graph/index.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import { getUiErrorMessage } from "../error-message.js";
 import type { GraphVisualizationUiState } from "../state/types.js";

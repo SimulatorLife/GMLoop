@@ -1,4 +1,4 @@
-import type { GraphVisualizationProjectWorkflow } from "../graph/types.js";
+import type { GraphVisualizationProjectWorkflow } from "../graph/index.js";
 
 const WORKFLOW_LABELS: Readonly<
     Record<GraphVisualizationProjectWorkflow, Readonly<{ progress: string; start: string }>>

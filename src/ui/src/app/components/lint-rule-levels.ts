@@ -1,4 +1,4 @@
-import type { GraphVisualizationProjectConfigurationLintRuleEntry } from "../../graph/types.js";
+import type { GraphVisualizationProjectConfigurationLintRuleEntry } from "../../graph/index.js";
 
 /**
  * Severity level for a lint rule, sourced from the catalog of supported
