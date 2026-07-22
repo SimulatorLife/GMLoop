@@ -19,9 +19,9 @@ export {
 } from "./database.js";
 export {
     cosineSimilarity,
-    createGraphEmbeddingProvider,
     deserializeEmbeddingVector,
     ensureGraphEmbeddingModelAssets,
+    LocalTokenHashEmbeddingProvider,
     serializeEmbeddingVector
 } from "./embeddings.js";
 export { exportGraphVisualizationData } from "./export-visualization-data.js";

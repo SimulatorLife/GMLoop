@@ -30,9 +30,9 @@ import {
 } from "./database.js";
 import {
     cosineSimilarity,
-    createGraphEmbeddingProvider,
     deserializeEmbeddingVector,
     ensureGraphEmbeddingModelAssets,
+    LocalTokenHashEmbeddingProvider,
     serializeEmbeddingVector
 } from "./embeddings.js";
 import {
@@ -1772,7 +1772,7 @@ function persistProjection(
     embeddingsConfig: GraphEmbeddingsConfig,
     buildDurationMs: number
 ): void {
-    const embeddingProvider = embeddingsConfig.enabled ? createGraphEmbeddingProvider(embeddingsConfig) : null;
+    const embeddingProvider = embeddingsConfig.enabled ? new LocalTokenHashEmbeddingProvider(embeddingsConfig) : null;
 
     insertGraph(database, context.graphId, context.rootPath);
 
@@ -1962,7 +1962,7 @@ function rankSemanticMatches(
         return;
     }
 
-    const queryVector = createGraphEmbeddingProvider(embeddingsConfig).embedText(query);
+    const queryVector = new LocalTokenHashEmbeddingProvider(embeddingsConfig).embedText(query);
     const embeddingRows = database
         .prepare("SELECT node_id AS nodeId, vector_blob AS vectorBlob FROM embeddings")
         .all() as Array<{ nodeId: string; vectorBlob: Buffer }>;
