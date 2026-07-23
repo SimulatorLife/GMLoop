@@ -66,38 +66,37 @@ function validateOptionalEnumValue<ValueType extends string>(
     context: string,
     propertyName: string
 ): ValueType | undefined {
-    if (value === undefined) {
-        return undefined;
-    }
-
-    if (typeof value !== "string" || !validValues.has(value as ValueType)) {
+    if (value !== undefined && (typeof value !== "string" || !validValues.has(value as ValueType))) {
         throw new TypeError(`${context}.${propertyName} must be one of ${[...validValues].join(", ")}.`);
     }
 
-    return value as ValueType;
+    return value as ValueType | undefined;
 }
 
 function validateExpectedTextFile(value: unknown, context: string): string | undefined {
+    let result: string | undefined;
     if (value === undefined) {
-        return undefined;
+        result = undefined;
+    } else {
+        if (typeof value !== "string" || value.trim().length === 0) {
+            throw new TypeError(`${context}.expectedTextFile must be a non-empty string.`);
+        }
+
+        if (
+            value !== path.basename(value) ||
+            value.includes("\\") ||
+            value === "gmloop.json" ||
+            value === "input.gml" ||
+            value === "expected.gml" ||
+            value.endsWith(".gml")
+        ) {
+            throw new TypeError(`${context}.expectedTextFile must name a non-GML file in the fixture case directory.`);
+        }
+
+        result = value;
     }
 
-    if (typeof value !== "string" || value.trim().length === 0) {
-        throw new TypeError(`${context}.expectedTextFile must be a non-empty string.`);
-    }
-
-    if (
-        value !== path.basename(value) ||
-        value.includes("\\") ||
-        value === "gmloop.json" ||
-        value === "input.gml" ||
-        value === "expected.gml" ||
-        value.endsWith(".gml")
-    ) {
-        throw new TypeError(`${context}.expectedTextFile must name a non-GML file in the fixture case directory.`);
-    }
-
-    return value;
+    return result;
 }
 
 function validateFixtureProfile(value: unknown, context: string): NonNullable<FixtureProjectConfigMetadata["profile"]> {
