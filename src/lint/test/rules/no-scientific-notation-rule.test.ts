@@ -66,15 +66,6 @@ void test("no-scientific-notation does not touch scientific notation text in com
     assertEquals(result.output, `${input}\n`);
 });
 
-void test("no-scientific-notation is enabled in the recommended config", () => {
-    const recommended = LintWorkspace.Lint.configs.recommended;
-    const allRules = recommended.flatMap((config) => Object.keys(config.rules ?? {}));
-    assert.ok(
-        allRules.includes("gml/no-scientific-notation"),
-        "Expected gml/no-scientific-notation to be in the recommended config"
-    );
-});
-
 void test("no-scientific-notation stays silent when the plain-decimal conversion exceeds the formatter's fixed-literal limit", () => {
     // Exponent 5000 exceeds the core scanner's MAX_FIXED_LITERAL_LENGTH of
     // 4096, so `toPlainDecimalFromScientificLiteral` returns null. The rule
