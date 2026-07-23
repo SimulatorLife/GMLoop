@@ -19,7 +19,7 @@ import {
 import { pathExistsSync } from "../../shared/path-exists.js";
 import { countSourceLines } from "./source-analysis.js";
 
-const { getErrorMessage } = Core;
+const { getErrorMessage, uniqueArray } = Core;
 
 interface FileChangeOptions {
     verbose?: boolean;
@@ -219,11 +219,17 @@ function subtractSymbolSets(left: ReadonlyArray<string>, right: ReadonlyArray<st
     return difference;
 }
 
+/**
+ * Merges two dependent-file lists into an order-preserving, de-duplicated
+ * array. Uses a `Set`-backed dedup rather than `indexOf` scanning so
+ * retranspiling a widely-referenced symbol (many dependents) stays O(n)
+ * instead of O(n^2) in the hot-reload dependency-update path.
+ */
 function mergeDependentFiles(
     previousDependents: ReadonlyArray<string>,
     updatedDependents: ReadonlyArray<string>
 ): Array<string> {
-    return [...previousDependents, ...updatedDependents].filter((item, index, arr) => arr.indexOf(item) === index);
+    return uniqueArray([...previousDependents, ...updatedDependents]) as Array<string>;
 }
 
 async function retranspileDependentFile(
