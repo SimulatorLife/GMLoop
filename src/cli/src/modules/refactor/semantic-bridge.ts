@@ -3586,20 +3586,6 @@ export class GmlSemanticBridge {
         return (this.getScriptResourceIndexes().scriptEntriesByResourcePath.get(resourcePath)?.length ?? 0) > 0;
     }
 
-    private isCoupledSingleFunctionScriptCallable(entry: SemanticIdentifierEntry, declarationName: string): boolean {
-        if (typeof entry?.resourcePath !== "string") {
-            return false;
-        }
-
-        const resource = this.resources?.[entry.resourcePath];
-        if (resource?.resourceType !== "GMScript" || resource?.name !== declarationName) {
-            return false;
-        }
-
-        const declarations = this.getScriptCallableDeclarationsForResource(entry.resourcePath);
-        return declarations.length === 1 && declarations[0]?.declaration?.name === declarationName;
-    }
-
     private hasSingleCallableDeclaration(entry: SemanticIdentifierEntry): boolean {
         return this.getScriptCallableDeclarations(entry).length === 1;
     }
