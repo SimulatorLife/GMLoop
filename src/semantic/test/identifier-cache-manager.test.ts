@@ -69,6 +69,32 @@ void test("IdentifierCacheManager treats 0 for maxScopesPerName as fallback to d
     assert.strictEqual(cache.read("name-B", "scope-1"), null);
 });
 
+void test("IdentifierCacheManager invalidateScopes removes only entries for the given scopes", () => {
+    const cache = new IdentifierCacheManager();
+
+    cache.write("name-A", "scope-1", null);
+    cache.write("name-A", "scope-2", null);
+    cache.write("name-B", "scope-1", null);
+    cache.write("name-B", "scope-3", null);
+    cache.write("name-C", "scope-3", null);
+
+    cache.invalidateScopes(["scope-1"]);
+
+    // scope-1 entries are gone for both name-A and name-B.
+    assert.strictEqual(cache.read("name-A", "scope-1"), undefined);
+    assert.strictEqual(cache.read("name-B", "scope-1"), undefined);
+    // Entries for other scopes are untouched.
+    assert.strictEqual(cache.read("name-A", "scope-2"), null);
+    assert.strictEqual(cache.read("name-B", "scope-3"), null);
+    assert.strictEqual(cache.read("name-C", "scope-3"), null);
+    assert.strictEqual(cache.countRetainedEntries(), 3);
+
+    cache.invalidateScopes(["scope-2", "scope-3"]);
+
+    // Everything is now gone since every remaining entry pointed at scope-2 or scope-3.
+    assert.strictEqual(cache.countRetainedEntries(), 0);
+});
+
 void test("IdentifierCacheManager accepts Infinity for maxScopesPerName to disable per-name eviction", () => {
     const cache = new IdentifierCacheManager({ maxTrackedNames: 2, maxScopesPerName: Infinity });
 
