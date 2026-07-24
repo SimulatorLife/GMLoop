@@ -16,6 +16,17 @@ import {
 } from "../modules/runtime/index.js";
 import { isRecord } from "../shared/error-guards.js";
 import { discoverProjectRoot } from "../workflow/project-root.js";
+import {
+    computeReplayEventCountDelta,
+    countReplayTraceEvents,
+    getLastReplayTraceEvent,
+    hasMinimumReplayTraceEvents,
+    hasReplayStartEvent,
+    REPLAY_EVENT_TYPES,
+    type ReplayArtifact,
+    type ReplayEvent,
+    type ReplayEventType
+} from "./replay-helpers.js";
 
 type ReplayOptions = Readonly<{
     baseline?: string;
@@ -25,20 +36,6 @@ type ReplayOptions = Readonly<{
     json?: boolean;
     name?: string;
     path?: string;
-}>;
-
-type ReplayEvent = Readonly<{ payload: string; step: number; type: string }>;
-
-type ReplayArtifact = Readonly<{
-    artifactId: string;
-    checksum: string;
-    createdAt: string;
-    input: string;
-    name: string;
-    projectRoot: string;
-    trace: {
-        events: ReadonlyArray<ReplayEvent>;
-    };
 }>;
 
 /**
@@ -90,8 +87,8 @@ function isReplayEvent(value: unknown): value is ReplayEvent {
  * Without this guard, a hand-edited, truncated, or version-mismatched
  * artifact file would survive `readArtifactJson` (it returns whatever the
  * file contains) and only crash later when the run/compare/assert paths
- * attempted to read `artifact.trace.events[i].type` or compute arithmetic on
- * `trace.events.length`. Returning `false` causes
+ * asked the {@link ./replay-helpers.ts} helpers to read `trace.events[i].type`
+ * or compute arithmetic on `trace.events.length`. Returning `false` causes
  * {@link readValidatedArtifactJson} to resolve to `null` so the failure is
  * reported via the structured `reason` field rather than as an unhandled
  * `TypeError`.
@@ -159,7 +156,7 @@ function buildReplayArtifactSeed(
     input: string;
     name: string;
     projectRoot: string;
-    trace: { events: Array<{ payload: string; step: number; type: string }> };
+    trace: { events: Array<{ payload: string; step: number; type: ReplayEventType }> };
 } {
     return {
         input,
@@ -167,9 +164,9 @@ function buildReplayArtifactSeed(
         projectRoot,
         trace: {
             events: [
-                { payload: name, step: 1, type: "start" },
-                { payload: input, step: 2, type: "input" },
-                { payload: `${name}:${input.length}`, step: 3, type: "complete" }
+                { payload: name, step: 1, type: REPLAY_EVENT_TYPES.start },
+                { payload: input, step: 2, type: REPLAY_EVENT_TYPES.input },
+                { payload: `${name}:${input.length}`, step: 3, type: REPLAY_EVENT_TYPES.complete }
             ]
         }
     };
@@ -246,8 +243,8 @@ async function runReplayRunAction(options: ReplayOptions): Promise<void> {
 
     const output = {
         checksum: artifact.checksum,
-        eventCount: artifact.trace.events.length,
-        finalPayload: artifact.trace.events.at(-1)?.payload ?? ""
+        eventCount: countReplayTraceEvents(artifact),
+        finalPayload: getLastReplayTraceEvent(artifact)?.payload ?? ""
     };
 
     printReplayPayload({
@@ -265,7 +262,7 @@ function createReplayDiff(
 } {
     return {
         checksumChanged: baseline.checksum !== candidate.checksum,
-        eventCountDelta: candidate.trace.events.length - baseline.trace.events.length
+        eventCountDelta: computeReplayEventCountDelta(baseline, candidate)
     };
 }
 
@@ -335,14 +332,14 @@ async function runReplayAssertAction(options: ReplayOptions): Promise<void> {
         return;
     }
 
-    const passed = artifact.trace.events.length >= 3 && artifact.trace.events[0]?.type === "start";
+    const passed = hasMinimumReplayTraceEvents(artifact) && hasReplayStartEvent(artifact);
     printReplayPayload({
         command: "replay assert",
         payload: {
             artifactId: artifact.artifactId,
             assertions: {
                 hasDeterministicEventFlow: passed,
-                minimumEventCount: artifact.trace.events.length >= 3
+                minimumEventCount: hasMinimumReplayTraceEvents(artifact)
             },
             ok: passed,
             projectRoot
