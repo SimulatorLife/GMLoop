@@ -19,8 +19,8 @@ import {
 } from "./events.js";
 import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
-import { getLintFixableBadgeLabel } from "./lint-rule-labels.js";
 import {
+    getLintFixableBadgeLabel,
     isLintLevel,
     isLintLevelFilter,
     LINT_LEVEL_LABELS,
