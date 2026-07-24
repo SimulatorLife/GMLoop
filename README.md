@@ -47,7 +47,7 @@ Lint (`lint --write`) does single-file-scoped semantic/content rewrites (rule-ow
 
 ### 1) Prerequisites
 
-- Node.js `>=25.0.0` (matches the pinned workspace default in `.nvmrc`)
+- Node.js `25.0.0` for repository development (the version pinned in `.nvmrc`; run `nvm install` and `nvm use`)
 - pnpm (`corepack enable pnpm`)
 
 ### 2) Clone and install
@@ -56,6 +56,7 @@ Lint (`lint --write`) does single-file-scoped semantic/content rewrites (rule-ow
 git clone https://github.com/SimulatorLife/GMLoop.git
 cd GMLoop
 git submodule update --init --recursive
+nvm install
 nvm use
 pnpm install
 pnpm run cli -- --help
