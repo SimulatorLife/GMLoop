@@ -12,6 +12,7 @@ import {
     applyManualMathNormalization,
     applyScalarCondensing,
     cleanupMultiplicativeIdentityParentheses,
+    isLiteralNumber,
     simplifyZeroDivisionNumerators
 } from "../math/index.js";
 import {
@@ -464,15 +465,11 @@ function extractHalfLengthdirRotationExpression(node: any, variableName: string,
     ) {
         const rleft = unwrapParenthesized(right.left);
         const rright = unwrapParenthesized(right.right);
-        if (rleft?.type === "Literal" && rleft.value === 1 && rright?.type === "CallExpression") {
+        if (rleft?.type === "Literal" && isLiteralNumber(rleft, 1) && rright?.type === "CallExpression") {
             const callee = rright.object;
             if (isIdentifierNode(callee) && callee.name === "lengthdir_x") {
                 const args = rright.arguments;
-                if (
-                    args.length === 2 &&
-                    unwrapParenthesized(args[0])?.type === "Literal" &&
-                    unwrapParenthesized(args[0])?.value === 1
-                ) {
+                if (args.length === 2 && isLiteralNumber(unwrapParenthesized(args[0]), 1)) {
                     return gmlRuleAutofixServices.readNodeText(sourceText, args[1]);
                 }
             }
