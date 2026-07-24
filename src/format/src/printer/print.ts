@@ -558,7 +558,13 @@ function printArrayExpressionNode(node, path, options, print) {
 }
 
 function printNewExpressionNode(node, path, options, print) {
-    if (node.arguments.length === 0) {
+    // Guard against malformed AST nodes where `arguments` is missing or not
+    // an array. Without this guard `node.arguments.length` would throw
+    // `TypeError: Cannot read properties of undefined (reading 'length')`.
+    // Mirrors the safe pattern used by `buildCallLikeArgumentDocs`.
+    const newExpressionArguments = Array.isArray(node.arguments) ? node.arguments : [];
+
+    if (newExpressionArguments.length === 0) {
         return concat(["new ", print("expression"), printEmptyParens(path, options)]);
     }
 

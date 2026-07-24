@@ -252,17 +252,24 @@ function hasLineBreakBetweenArguments(
  * @returns The argument-list docs (including the surrounding parens).
  */
 export function buildCallLikeArgumentDocs(
-    node: { arguments: Array<{ type?: string }> },
+    node: { arguments?: Array<{ type?: string }> },
     path: unknown,
     options: unknown,
     print: (...args: Array<unknown>) => unknown,
     { forceInline = false }: { forceInline?: boolean } = {}
 ): unknown[] {
-    if (node.arguments.length === 0) {
+    // Guard against malformed AST nodes where `arguments` is missing or not
+    // an array. Without this guard `node.arguments.length` would throw
+    // `TypeError: Cannot read properties of undefined (reading 'length')`,
+    // which `printEmptyParens` then cannot recover from. Treating the
+    // missing/null case as an empty list mirrors the safe pattern used
+    // by `classifyCallLikeArguments` and `countLeadingSimpleCallArguments`.
+    const args = Array.isArray(node.arguments) ? node.arguments : [];
+
+    if (args.length === 0) {
         return [printEmptyParens(path, options)];
     }
 
-    const args = node.arguments;
     const { callbackArguments, structArguments, structArgumentsToBreak } = classifyCallLikeArguments(node, options);
 
     for (const argument of structArgumentsToBreak) {
