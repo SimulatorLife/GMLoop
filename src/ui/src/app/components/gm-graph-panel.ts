@@ -35,6 +35,7 @@ import {
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { EventBusManager } from "./event-bus-mixin.js";
 import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, GRAPH_UI_EVENT_RESET_DEFAULTS } from "./events.js";
+import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 const NODE_STYLE_BY_KIND = new Map(NODE_VISUAL_STYLES.map((style) => [style.kind, style]));
@@ -112,6 +113,18 @@ function readGraphNodeLocationLabel(node: GraphLayoutNode): string | null {
 
 /**
  * Graph surface with Lit-owned SVG rendering, filtering, search, JSON, and legend state.
+ *
+ * Lifecycle wiring is delegated to injected collaborators so this class
+ * does not deepen the {@link LightDomLitElement} subclass with
+ * `connectedCallback` / `disconnectedCallback` overrides. The two event
+ * subscriptions — the `gmloop-reset-defaults` page-level event and the
+ * `gm-error-banner-dismiss` element-local event — are owned by an
+ * {@link EventBusManager} registered through a
+ * {@link LifecycleParticipantsController}, matching the pattern used by
+ * `GmGraphToolbar`, `GmLiveReloadPanel`, and the other workspace panels.
+ * The class therefore keeps only the `render` override that Lit
+ * requires, and the public connect/disconnect behaviour is identical to
+ * the previous hand-rolled lifecycle methods.
  */
 export class GmGraphPanel extends LightDomLitElement {
     public static properties = {
@@ -164,8 +177,6 @@ export class GmGraphPanel extends LightDomLitElement {
         this.requestUpdate();
     };
 
-    #eventBus = new EventBusManager(this, [{ event: GRAPH_UI_EVENT_RESET_DEFAULTS, handler: this.#onResetDefaults }]);
-
     #onDismissErrorBanner = (): void => {
         this.dispatchEvent(
             new CustomEvent(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, {
@@ -176,16 +187,14 @@ export class GmGraphPanel extends LightDomLitElement {
         );
     };
 
-    public connectedCallback(): void {
-        super.connectedCallback();
-        this.#eventBus.connect();
-        this.addEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
-    }
-
-    public disconnectedCallback(): void {
-        this.removeEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
-        this.#eventBus.disconnect();
-        super.disconnectedCallback();
+    public constructor() {
+        super();
+        new LifecycleParticipantsController(this, [
+            new EventBusManager(this, [
+                { event: GRAPH_UI_EVENT_RESET_DEFAULTS, handler: this.#onResetDefaults },
+                { event: "gm-error-banner-dismiss", handler: this.#onDismissErrorBanner }
+            ])
+        ]);
     }
 
     #getViewportTransform() {

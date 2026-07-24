@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "../src/app/components/events.js";
+import { GmGraphPanel } from "../src/app/components/gm-graph-panel.js";
 import { createGraphModel, createGraphState, TestableGmGraphPanel } from "./graph-panel-test-harness.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
 
@@ -440,4 +442,55 @@ void test("graph panel script filter does not override standalone function, glob
     assert.match(rendered, /function-node/u);
     assert.match(rendered, /macro-node/u);
     assert.match(rendered, /global-node/u);
+});
+
+void test("GmGraphPanel does not override Lit lifecycle hooks for event wiring", () => {
+    // The composition refactor moved the gm-error-banner-dismiss listener
+    // and the gmloop-reset-defaults subscription into an EventBusManager
+    // registered through LifecycleParticipantsController. The host must
+    // not re-introduce lifecycle overrides that duplicate that wiring.
+    // Reading own properties (not the prototype chain) keeps this assertion
+    // stable against inherited LitElement hooks.
+    const prototype = GmGraphPanel.prototype as unknown as Record<string, unknown>;
+    const hasOwn = Object.prototype.hasOwnProperty;
+
+    assert.equal(
+        hasOwn.call(prototype, "connectedCallback"),
+        false,
+        "Expected GmGraphPanel to drop its connectedCallback override."
+    );
+    assert.equal(
+        hasOwn.call(prototype, "disconnectedCallback"),
+        false,
+        "Expected GmGraphPanel to drop its disconnectedCallback override."
+    );
+});
+
+void test("GmGraphPanel propagates gm-error-banner-dismiss via composition", () => {
+    // With the composition refactor the EventBusManager registered in the
+    // constructor owns the gm-error-banner-dismiss subscription. The panel
+    // must still translate that dismissal into a GRAPH_UI_EVENT_CLEAR_PAGE_ERROR
+    // custom event so the surrounding app shell can clear the graph error
+    // state. Invoking the inherited LitElement connectedCallback/
+    // disconnectedCallback drives the LifecycleParticipantsController in the
+    // same way the DOM would.
+    const panel = new GmGraphPanel();
+    let observedPage: string | null = null;
+    const listener = (event: Event): void => {
+        const customEvent = event as CustomEvent<{ page: string }>;
+        if (customEvent.detail?.page !== undefined) {
+            observedPage = customEvent.detail.page;
+        }
+    };
+    panel.addEventListener(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, listener);
+
+    try {
+        panel.connectedCallback();
+        panel.dispatchEvent(new CustomEvent("gm-error-banner-dismiss", { bubbles: true }));
+
+        assert.equal(observedPage, "graph");
+    } finally {
+        panel.disconnectedCallback();
+        panel.removeEventListener(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, listener);
+    }
 });
