@@ -17,63 +17,14 @@ import { test } from "node:test";
 import { Core } from "@gmloop/core";
 
 import {
-    DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS,
     evaluateAreComparableAssignmentTargetsEquivalent,
     evaluateCanIfStatementBenefitFromNormalization,
     evaluateCanLogicalExpressionBenefitFromNormalization,
     evaluateCanUnaryExpressionBenefitFromNormalization,
-    evaluateHasLogicalNormalizationSignal,
     evaluateIsElsePrefixedIfAtIndex,
     evaluateIsIfNodeInElseIfChain,
-    evaluateLogicalFlowCandidate,
-    evaluateUnsafeCommentSyntax,
-    logicalNormalizationRulePolicy
+    evaluateUnsafeCommentSyntax
 } from "../../src/rules/gml/rules/logical-normalization-rule-policy.js";
-
-// ---------------------------------------------------------------------------
-// evaluateHasLogicalNormalizationSignal
-// ---------------------------------------------------------------------------
-
-void test("evaluateHasLogicalNormalizationSignal detects symbolic and keyword operators", () => {
-    const positiveSamples = [
-        "a && b",
-        "a || b",
-        "!ready",
-        "ready and done",
-        "ready or done",
-        "not ready",
-        "if (true)",
-        "if (false)"
-    ];
-
-    for (const sample of positiveSamples) {
-        assert.strictEqual(
-            evaluateHasLogicalNormalizationSignal(sample),
-            true,
-            `Expected '${sample}' to be detected as containing a logical signal`
-        );
-    }
-});
-
-void test("evaluateHasLogicalNormalizationSignal returns false for arithmetic-only expressions", () => {
-    const negativeSamples = ["a + b", "a * b", "x - y", "x / y", "(a + b) * c", "value", "42"];
-
-    for (const sample of negativeSamples) {
-        assert.strictEqual(
-            evaluateHasLogicalNormalizationSignal(sample),
-            false,
-            `Expected '${sample}' to NOT be detected as containing a logical signal`
-        );
-    }
-});
-
-void test("DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS exposes the expected regex shapes", () => {
-    assert.ok(Object.isFrozen(DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS));
-    assert.ok(DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS.logicalNormalizationSignal instanceof RegExp);
-    assert.ok(DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS.commentSequence instanceof RegExp);
-    assert.strictEqual(DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS.logicalNormalizationSignal.flags, "u");
-    assert.strictEqual(DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS.commentSequence.flags, "u");
-});
 
 // ---------------------------------------------------------------------------
 // evaluateUnsafeCommentSyntax
@@ -85,6 +36,11 @@ void test("evaluateUnsafeCommentSyntax returns false when no comment markers are
     for (const sample of samples) {
         assert.strictEqual(evaluateUnsafeCommentSyntax(sample), false);
     }
+});
+
+void test("evaluateUnsafeCommentSyntax short-circuits without scanning empty input", () => {
+    // Empty input must not allocate a scan state and must not throw.
+    assert.strictEqual(evaluateUnsafeCommentSyntax(""), false);
 });
 
 void test("evaluateUnsafeCommentSyntax returns true for line comments", () => {
@@ -419,95 +375,14 @@ void test("evaluateCanIfStatementBenefitFromNormalization rejects a no-shape if"
 });
 
 // ---------------------------------------------------------------------------
-// evaluateLogicalFlowCandidate
+// Regression: the surviving policy evaluators must keep the same call
+// surface the rule mechanism depends on (positional string argument, no
+// longer accepts a polymorphic signal-pattern parameter).
 // ---------------------------------------------------------------------------
 
-void test("evaluateLogicalFlowCandidate returns both flags off for arithmetic-only text", () => {
-    const evaluation = evaluateLogicalFlowCandidate({
-        fullSourceText: "var x = 1 + 2;",
-        sourceText: "1 + 2",
-        nodeStartIndex: 8
-    });
-    assert.deepStrictEqual(evaluation, {
-        hasLogicalSignal: false,
-        hasUnsafeComment: false
-    });
+void test("evaluateUnsafeCommentSyntax has the simplified single-argument signature", () => {
+    assert.strictEqual(evaluateUnsafeCommentSyntax.length, 1);
 });
-
-void test("evaluateLogicalFlowCandidate returns hasLogicalSignal=true for a boolean comparison", () => {
-    const evaluation = evaluateLogicalFlowCandidate({
-        fullSourceText: "if (x == true) {}",
-        sourceText: "x == true",
-        nodeStartIndex: 4
-    });
-    assert.strictEqual(evaluation.hasLogicalSignal, true);
-    assert.strictEqual(evaluation.hasUnsafeComment, false);
-});
-
-void test("evaluateLogicalFlowCandidate returns hasUnsafeComment=true when a comment is present", () => {
-    const evaluation = evaluateLogicalFlowCandidate({
-        fullSourceText: "if (a && b // comment\n) {}",
-        sourceText: "a && b // comment",
-        nodeStartIndex: 4
-    });
-    assert.strictEqual(evaluation.hasUnsafeComment, true);
-});
-
-void test("evaluateLogicalFlowCandidate returns frozen evaluation objects", () => {
-    const evaluation = evaluateLogicalFlowCandidate({
-        fullSourceText: "x && y",
-        sourceText: "x && y",
-        nodeStartIndex: 0
-    });
-    assert.ok(Object.isFrozen(evaluation));
-});
-
-// ---------------------------------------------------------------------------
-// logicalNormalizationRulePolicy namespace
-// ---------------------------------------------------------------------------
-
-void test("logicalNormalizationRulePolicy namespace exposes the expected evaluators", () => {
-    const expectedKeys = [
-        "evaluateLogicalFlowCandidate",
-        "evaluateUnsafeCommentSyntax",
-        "evaluateHasLogicalNormalizationSignal",
-        "evaluateIsElsePrefixedIfAtIndex",
-        "evaluateIsIfNodeInElseIfChain",
-        "evaluateCanIfStatementBenefitFromNormalization",
-        "evaluateCanUnaryExpressionBenefitFromNormalization",
-        "evaluateCanLogicalExpressionBenefitFromNormalization",
-        "evaluateAreComparableAssignmentTargetsEquivalent",
-        "DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS"
-    ] as const;
-
-    for (const key of expectedKeys) {
-        assert.ok(
-            Object.hasOwn(logicalNormalizationRulePolicy, key),
-            `logicalNormalizationRulePolicy.${key} should be exported`
-        );
-    }
-
-    // Each evaluator should be the exact function the rule mechanism imports.
-    assert.strictEqual(logicalNormalizationRulePolicy.evaluateIsIfNodeInElseIfChain, evaluateIsIfNodeInElseIfChain);
-    assert.strictEqual(
-        logicalNormalizationRulePolicy.evaluateCanIfStatementBenefitFromNormalization,
-        evaluateCanIfStatementBenefitFromNormalization
-    );
-    assert.strictEqual(logicalNormalizationRulePolicy.evaluateUnsafeCommentSyntax, evaluateUnsafeCommentSyntax);
-    assert.strictEqual(
-        logicalNormalizationRulePolicy.DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS,
-        DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS
-    );
-});
-
-void test("logicalNormalizationRulePolicy is frozen", () => {
-    assert.ok(Object.isFrozen(logicalNormalizationRulePolicy));
-});
-
-// ---------------------------------------------------------------------------
-// Smoke check: the policy helpers coexist with the existing Core helpers
-// used by the mechanism code (no accidental shadowing).
-// ---------------------------------------------------------------------------
 
 void test("the policy evaluators consume the same Core helpers the mechanism uses", () => {
     // If this ever changes, the policy's behaviour will diverge from the
