@@ -461,6 +461,66 @@ async function runTestCaseCreateAction(
     );
 }
 
+async function runTestCaseListAction(options: TestOptions, target: string | undefined): Promise<void> {
+    const projectRoot = await resolveTestProjectRoot(options);
+    const manifest = await readTestCaseManifest(projectRoot);
+    const cases = target === undefined ? manifest.cases : manifest.cases.filter((entry) => entry.target === target);
+
+    printTestPayload(
+        {
+            command: "test case list",
+            payload: {
+                cases,
+                count: cases.length,
+                ok: true,
+                projectRoot
+            }
+        },
+        options.json === true
+    );
+}
+
+async function runTestCaseDeleteAction(options: TestCaseMutationOptions, target: string, name: string): Promise<void> {
+    const projectRoot = await resolveTestProjectRoot(options);
+    const manifest = await readTestCaseManifest(projectRoot);
+    const writeMode = options.write === true;
+    const existingIndex = findTestCaseEntryIndex(manifest, target, name);
+
+    if (existingIndex === -1) {
+        printTestPayload(
+            {
+                command: "test case delete",
+                payload: {
+                    case: { name, target },
+                    mode: writeMode ? "apply" : "dry-run",
+                    ok: false,
+                    reason: "test_case_not_found"
+                }
+            },
+            options.json === true
+        );
+        return;
+    }
+
+    const remainingCases = manifest.cases.filter((_entry, index) => index !== existingIndex);
+    const nextManifest = createTestCaseManifest(remainingCases);
+    const manifestPath = writeMode ? await writeTestCaseManifest(projectRoot, nextManifest) : null;
+
+    printTestPayload(
+        {
+            command: "test case delete",
+            payload: {
+                case: { name, target },
+                manifestPath,
+                mode: writeMode ? "apply" : "dry-run",
+                ok: true,
+                projectRoot
+            }
+        },
+        options.json === true
+    );
+}
+
 async function runTestCaseUpdateAction(
     options: TestCaseMutationOptions,
     target: string,
@@ -536,6 +596,15 @@ export function createTestCommand(): Command {
     });
 
     const testCase = applyStandardCommandOptions(new Command("case")).description("Manage test cases.");
+    const testCaseList = addTestSharedOptions(
+        applyStandardCommandOptions(new Command("list"))
+            .description("List test cases.")
+            .option("--target <value>", "Only include cases for this target function/script identifier.")
+    );
+    testCaseList.action(async function testCaseListAction() {
+        const options = this.opts<TestOptions & Readonly<{ target?: string }>>();
+        await runTestCaseListAction(options, options.target);
+    });
     const testCaseCreate = addTestSharedOptions(
         applyStandardCommandOptions(new Command("create"))
             .description("Create a test case.")
@@ -560,8 +629,21 @@ export function createTestCommand(): Command {
         const options = this.opts<TestCaseMutationOptions>();
         await runTestCaseUpdateAction(options, target, name, options.expected);
     });
+    const testCaseDelete = addTestSharedOptions(
+        applyStandardCommandOptions(new Command("delete"))
+            .description("Delete a test case.")
+            .argument("<target>", "Target function/script identifier under test.")
+            .argument("<name>", "Stable test case name.")
+            .addOption(createWriteOption())
+    );
+    testCaseDelete.action(async function testCaseDeleteAction(target: string, name: string) {
+        const options = this.opts<TestCaseMutationOptions>();
+        await runTestCaseDeleteAction(options, target, name);
+    });
+    testCase.addCommand(testCaseList);
     testCase.addCommand(testCaseCreate);
     testCase.addCommand(testCaseUpdate);
+    testCase.addCommand(testCaseDelete);
 
     command.addCommand(run);
     command.addCommand(list);
