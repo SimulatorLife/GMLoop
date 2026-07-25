@@ -1009,52 +1009,95 @@ function logCliErrorWithHeader(error, header) {
     console.error(`${header}\n${indented}`);
 }
 
-async function reportAndTrackFormattingError(error, filePath) {
-    // Decide whether the error should count as a formatting failure.
-    // Treat parser syntax errors as non-fatal when configured to SKIP so
-    // repo-wide formatting runs (e.g., in CI/test) don't fail due to
-    // intentionally malformed fixtures.
-    const isParseError = Core.isGmlParseError(error);
+/**
+ * Decide whether the current parse-error-action policy should suppress both
+ * the failure counters and the stderr output for a given error.
+ *
+ * Treats parser syntax errors as non-fatal when `--parse-error-action=SKIP`
+ * is configured so repo-wide formatting runs (e.g. CI/test fixtures) do not
+ * fail due to intentionally malformed GML files. Other modes (REVERT and
+ * ABORT) preserve the original behavior of logging errors and updating
+ * counters because they signal that parse failures are actionable.
+ */
+function shouldSuppressParseErrorTracking(error) {
+    return parseErrorAction === ParseErrorAction.SKIP && Core.isGmlParseError(error);
+}
 
-    // When the user specifies `--parse-error-action=SKIP`, they're explicitly opting
-    // into a workflow where parse errors are treated as non-fatal: the CLI should
-    // quietly skip files with syntax issues rather than halting or printing error
-    // diagnostics. Incrementing `formattingErrorCount` or emitting stderr messages
-    // would violate that contract and confuse users who expect a clean, silent run
-    // when malformed files are present. This guard ensures that SKIP mode suppresses
-    // both the failure counter and the user-facing error output, preserving backward
-    // compatibility with test suites that rely on quiet runs when parse errors are
-    // expected. Other modes (REVERT and ABORT) preserve the original behavior of
-    // logging errors and updating counters, since they signal that parse failures
-    // should be treated as actionable problems rather than ignorable noise.
+/**
+ * Record that a formatting error occurred for the run-level summary.
+ *
+ * Increments the failure counter and flips the boolean so `finalizeFormattingRun`
+ * can emit the "Formatting failed for N files" summary line and pick the
+ * correct exit code.
+ */
+function recordFormattingError() {
+    encounteredFormattingError = true;
+    formattingErrorCount += 1;
+}
+
+/**
+ * Emit the formatted error to stderr with a stable per-file header.
+ */
+function logFormattingError(error, filePath) {
     const header = `Failed to format ${filePath}`;
-    if (parseErrorAction === ParseErrorAction.SKIP && isParseError) {
-        // Suppress parse-error counting and stderr logging when SKIP mode is active.
-        // Tests expect quiet runs in this configuration, and incrementing failure
-        // counters would incorrectly signal formatting issues for files we deliberately
-        // ignored. Return early without updating `encounteredFormattingError` or
-        // `formattingErrorCount` so the CLI exit code reflects only genuine failures.
+    logCliErrorWithHeader(error, header);
+}
+
+/**
+ * Trigger the REVERT-mode recovery flow exactly once per session.
+ *
+ * Idempotent: subsequent invocations are no-ops so a single failed file does
+ * not cause the revert pipeline to run twice. When invoked for the first
+ * time, it flags the run as aborted and asynchronously rewrites the snapshot
+ * of every file we have already formatted.
+ */
+async function triggerFormattingRevert() {
+    if (revertTriggered) {
         return;
     }
 
-    encounteredFormattingError = true;
-    formattingErrorCount += 1;
-    logCliErrorWithHeader(error, header);
+    revertTriggered = true;
+    abortRequested = true;
+    await revertFormattedFiles();
+}
 
+/**
+ * Mark the current formatting run as aborted without unwinding written files.
+ */
+function requestFormattingAbort() {
+    abortRequested = true;
+}
+
+/**
+ * Dispatch the configured parse-error-action policy for a tracked formatting
+ * failure. REVERT triggers the snapshot-driven recovery; ABORT only flags
+ * the run for early exit so the next file loop check stops the walker.
+ */
+async function applyFormattingErrorPolicy() {
     if (parseErrorAction === ParseErrorAction.REVERT) {
-        if (revertTriggered) {
-            return;
-        }
-
-        revertTriggered = true;
-        abortRequested = true;
-        await revertFormattedFiles();
+        await triggerFormattingRevert();
         return;
     }
 
     if (parseErrorAction === ParseErrorAction.ABORT) {
-        abortRequested = true;
+        requestFormattingAbort();
     }
+}
+
+/**
+ * Orchestrate the per-file formatting-error response. The function itself
+ * owns the sequencing; each step is delegated to a single-responsibility
+ * helper so the suppression rule, the counter update, the stderr output,
+ * and the policy-driven side effects can evolve independently.
+ */
+async function reportAndTrackFormattingError(error, filePath) {
+    if (shouldSuppressParseErrorTracking(error)) {
+        return;
+    }
+
+    recordFormattingError();
+    logFormattingError(error, filePath);
+    await applyFormattingErrorPolicy();
 }
 
 async function detectNegatedIgnoreRules(ignoreFilePath) {
@@ -2003,5 +2046,29 @@ export const __formatTest__ = Object.freeze({
     enforceSnapshotMemoryLimitForTests: enforceSnapshotMemoryLimit,
     performPeriodicMemoryCleanupForTests: performPeriodicMemoryCleanup,
     configureConsoleMethodsForTests: configureConsoleMethods,
-    getDefaultPrettierLogLevelForTests: () => DEFAULT_PRETTIER_LOG_LEVEL
+    getDefaultPrettierLogLevelForTests: () => DEFAULT_PRETTIER_LOG_LEVEL,
+    shouldSuppressParseErrorTrackingForTests: shouldSuppressParseErrorTracking,
+    recordFormattingErrorForTests: recordFormattingError,
+    logFormattingErrorForTests: logFormattingError,
+    triggerFormattingRevertForTests: triggerFormattingRevert,
+    requestFormattingAbortForTests: requestFormattingAbort,
+    applyFormattingErrorPolicyForTests: applyFormattingErrorPolicy,
+    reportAndTrackFormattingErrorForTests: reportAndTrackFormattingError,
+    resetFormattingErrorTrackingForTests: () => {
+        encounteredFormattingError = false;
+        formattingErrorCount = 0;
+        abortRequested = false;
+        revertTriggered = false;
+        parseErrorAction = DEFAULT_PARSE_ERROR_ACTION;
+    },
+    setParseErrorActionForTests: (action) => {
+        parseErrorAction = action;
+    },
+    getFormattingErrorTrackingForTests: () => ({
+        encounteredFormattingError,
+        formattingErrorCount,
+        abortRequested,
+        revertTriggered,
+        parseErrorAction
+    })
 });
