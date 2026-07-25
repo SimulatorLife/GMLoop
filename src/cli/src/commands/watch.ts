@@ -26,7 +26,15 @@ import { Command, Option } from "commander";
 import { createMinimumValueValidator, portValidator } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { formatCliError, handleCliError } from "../cli-core/errors.js";
-import { createStatusUrl, createWebSocketUrl, DEFAULT_GM_TEMP_ROOT } from "../modules/live-reload/config.js";
+import {
+    createStatusUrl,
+    createWebSocketUrl,
+    DEFAULT_GM_TEMP_ROOT,
+    DEFAULT_LIVE_RELOAD_STATUS_HOST,
+    DEFAULT_LIVE_RELOAD_STATUS_PORT,
+    DEFAULT_LIVE_RELOAD_WEBSOCKET_HOST,
+    DEFAULT_LIVE_RELOAD_WEBSOCKET_PORT
+} from "../modules/live-reload/config.js";
 import { prepareLiveReload } from "../modules/live-reload/session.js";
 import {
     type LiveReloadRegisteredSession,
@@ -497,20 +505,22 @@ export function createWatchCommand(): Command {
         .addOption(
             new Option("--websocket-port <port>", "WebSocket server port for streaming patches")
                 .argParser(portValidator)
-                .default(17_890)
+                .default(DEFAULT_LIVE_RELOAD_WEBSOCKET_PORT)
         )
         .addOption(
-            new Option("--websocket-host <host>", "WebSocket server host for streaming patches").default("127.0.0.1")
+            new Option("--websocket-host <host>", "WebSocket server host for streaming patches").default(
+                DEFAULT_LIVE_RELOAD_WEBSOCKET_HOST
+            )
         )
         .option("--no-websocket-server", "Disable starting the WebSocket server for patch streaming.")
         .addOption(
             new Option("--status-port <port>", "HTTP status server port for querying watch command status")
                 .argParser(portValidator)
-                .default(17_891)
+                .default(DEFAULT_LIVE_RELOAD_STATUS_PORT)
         )
         .addOption(
             new Option("--status-host <host>", "HTTP status server host for querying watch command status").default(
-                "127.0.0.1"
+                DEFAULT_LIVE_RELOAD_STATUS_HOST
             )
         )
         .option("--no-status-server", "Disable starting the HTTP status server.")
@@ -857,11 +867,11 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         maxPatchHistory = DEFAULT_WATCH_MAX_PATCH_HISTORY,
         transientEmptyFileReadRetryCount = DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_COUNT,
         transientEmptyFileReadRetryDelayMs = DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS,
-        websocketPort = 17_890,
-        websocketHost = "127.0.0.1",
+        websocketPort = DEFAULT_LIVE_RELOAD_WEBSOCKET_PORT,
+        websocketHost = DEFAULT_LIVE_RELOAD_WEBSOCKET_HOST,
         websocketServer: enableWebSocket = true,
-        statusPort = 17_891,
-        statusHost = "127.0.0.1",
+        statusPort = DEFAULT_LIVE_RELOAD_STATUS_PORT,
+        statusHost = DEFAULT_LIVE_RELOAD_STATUS_HOST,
         statusServer: enableStatus = true,
         abortSignal,
         onWebSocketServerReady,
