@@ -1,21 +1,11 @@
 /**
  * Shared policy predicates for focused logical-normalization rules.
  *
- * This module isolates the **policy decisions** (signal patterns, candidate
- * eligibility heuristics, skip conditions) from the **mechanism** that
- * applies logical normalization to AST nodes.  By keeping the two layers
- * separate:
- *
- * 1. Policy logic is testable in isolation without touching the rule's
- *    visitor, autofix reporting, or source-text rewriting.
- * 2. Signal patterns and eligibility thresholds can be inspected and
- *    overridden by callers without coupling them to the rewrite path.
- * 3. Future contributors can extend the rule by composing new policy
- *    evaluators while leaving the mechanism code unchanged.
- *
- * The policy exposes a small set of pure predicates grouped under the
- * `logicalNormalizationRulePolicy` namespace, plus a typed decision shape for
- * nodes that need a richer multi-flag evaluation result.
+ * This module isolates the **policy decisions** (candidate eligibility
+ * heuristics, skip conditions) from the **mechanism** that applies
+ * logical normalization to AST nodes.  By keeping the two layers separate
+ * the policy logic is testable in isolation without touching the rule's
+ * visitor, autofix reporting, or source-text rewriting.
  */
 
 import { Core } from "@gmloop/core";
@@ -23,90 +13,19 @@ import { Core } from "@gmloop/core";
 import { findPreviousNonWhitespaceIndex } from "../rule-base-helpers.js";
 
 /**
- * Signal patterns that mark source text as a candidate for logical-flow
- * normalization.  These are compiled once at module-evaluation time and
- * reused across all calls.  Centralising them here makes it trivial to
- * extend the recognised operator vocabulary without touching the rule.
+ * Matches the leading characters of a comment (`//` or `/*`); used as a
+ * cheap pre-check before the more expensive comment scan.
  */
-export type LogicalFlowSignalPatterns = Readonly<{
-    /**
-     * Matches any character or keyword that signals logical syntax
-     * (e.g., `&&`, `||`, `^^`, `and`, `or`, `xor`).
-     */
-    logicalNormalizationSignal: RegExp;
-    /**
-     * Matches the leading characters of a comment (`//` or `/*`); used as
-     * a cheap pre-check before the more expensive comment scan.
-     */
-    commentSequence: RegExp;
-}>;
-
-/**
- * Default signal patterns for logical-flow candidate detection.  The set of
- * recognised operators is the GML canonical logical vocabulary: the C-style
- * symbolic forms (`&&`, `||`, `^^`) plus their keyword aliases (`and`, `or`,
- * `xor`) and the boolean literals (`true`, `false`).
- */
-export const DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS: LogicalFlowSignalPatterns = Object.freeze({
-    logicalNormalizationSignal: /!|&&|\|\||\^\^|\b(?:and|or|xor|not|true|false)\b/u,
-    commentSequence: /\/\/|\/\*/u
-});
-
-/**
- * Input shape for a source-text-only logical-flow evaluation.
- */
-export type LogicalFlowSourceTextContext = Readonly<{
-    /** Full source text of the file under inspection. */
-    fullSourceText: string;
-    /** Slised source text of the candidate node (within `fullSourceText`). */
-    sourceText: string;
-    /** Start offset of the candidate within `fullSourceText`. */
-    nodeStartIndex: number;
-}>;
-
-/**
- * Result of evaluating whether a source-text slice is a viable candidate
- * for logical-flow normalization.
- *
- * The fields are intentionally independent so the mechanism code can read
- * only the decisions it needs (typically `hasLogicalSignal` for the cheap
- * gate and `hasUnsafeComment` for the rejection gate).
- */
-export type LogicalFlowCandidateEvaluation = Readonly<{
-    /** Whether the slice contains a recognized logical operator or boolean literal. */
-    hasLogicalSignal: boolean;
-    /** Whether the slice contains a comment that would be unsafe to rewrite. */
-    hasUnsafeComment: boolean;
-}>;
-
-/**
- * Pure evaluator: decides whether a candidate source-text slice is worth
- * handing to the normalization transform.
- *
- * This is the cheap "should we even consider this node?" gate.  It performs
- * no AST mutations and is safe to call for every node the visitor visits.
- */
-export function evaluateLogicalFlowCandidate(
-    context: LogicalFlowSourceTextContext,
-    signalPatterns: LogicalFlowSignalPatterns = DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS
-): LogicalFlowCandidateEvaluation {
-    const hasLogicalSignal = signalPatterns.logicalNormalizationSignal.test(context.sourceText);
-    const hasUnsafeComment = evaluateUnsafeCommentSyntax(context.sourceText, signalPatterns.commentSequence);
-
-    return Object.freeze({ hasLogicalSignal, hasUnsafeComment });
-}
+const COMMENT_START_PATTERN = /\/\/|\/\*/u;
 
 /**
  * Pure evaluator: returns `true` when `sourceText` contains a real
  * comment that would make normalization unsafe.  The pre-check on
- * `commentSequence` is purely a fast path — if no `//` or `/*` is present
- * the function short-circuits without scanning.
+ * `COMMENT_START_PATTERN` is purely a fast path — if no `//` or `/*` is
+ * present the function short-circuits without scanning.
  */
-export function evaluateUnsafeCommentSyntax(
-    sourceText: string,
-    commentSequence: RegExp = DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS.commentSequence
-): boolean {
-    if (!commentSequence.test(sourceText)) {
+export function evaluateUnsafeCommentSyntax(sourceText: string): boolean {
+    if (!COMMENT_START_PATTERN.test(sourceText)) {
         return false;
     }
 
@@ -127,18 +46,6 @@ export function evaluateUnsafeCommentSyntax(
     }
 
     return false;
-}
-
-/**
- * Pure evaluator: returns `true` when the source text contains a logical
- * operator or boolean literal that the normalization transform knows how
- * to simplify.
- */
-export function evaluateHasLogicalNormalizationSignal(
-    sourceText: string,
-    signalPatterns: LogicalFlowSignalPatterns = DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS
-): boolean {
-    return signalPatterns.logicalNormalizationSignal.test(sourceText);
 }
 
 /**
@@ -470,22 +377,3 @@ function readAssignmentExpr(statement: unknown): { left: unknown; right: unknown
 
     return null;
 }
-
-/**
- * Namespace bundling the shared policy predicates for focused logical rules.
- * Importers should reach for these predicates instead of re-implementing
- * eligibility checks inline.
- */
-export const logicalNormalizationRulePolicy = Object.freeze({
-    evaluateLogicalFlowCandidate,
-    evaluateUnsafeCommentSyntax,
-    evaluateHasLogicalNormalizationSignal,
-    evaluateIsElsePrefixedIfAtIndex,
-    evaluateIsIfNodeInElseIfChain,
-    evaluateCanIfStatementBenefitFromNormalization,
-    evaluateCanDirectBooleanReturnBenefitFromNormalization,
-    evaluateCanUnaryExpressionBenefitFromNormalization,
-    evaluateCanLogicalExpressionBenefitFromNormalization,
-    evaluateAreComparableAssignmentTargetsEquivalent,
-    DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS
-});
