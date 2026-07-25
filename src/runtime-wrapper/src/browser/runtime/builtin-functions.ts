@@ -1,3 +1,4 @@
+import { isArrayBufferLike } from "../support/runtime-value-utils.js";
 import { evaluateHtml5PointerPredicate, isHtml5TextureHandle } from "./texture-pointer.js";
 
 type RuntimeBuiltinFunction = (...args: Array<unknown>) => unknown;
@@ -38,7 +39,15 @@ const FALLBACK_RUNTIME_FUNCTIONS: RuntimeBuiltinFunctionMap = Object.freeze({
         return undefined;
     },
     is_ptr(value) {
-        return value instanceof ArrayBuffer || isHtml5TextureHandle(value);
+        // Use the duck-typed `isArrayBufferLike` capability probe rather than
+        // `value instanceof ArrayBuffer` so the runtime recognises cross-realm
+        // buffers and duck-typed substitutes (e.g. browser shims, test doubles,
+        // and `Proxy` wrappers) that expose the documented `byteLength` and
+        // `slice` surface without sharing the realm-local `ArrayBuffer`
+        // constructor. This keeps the `is_ptr` contract aligned with the
+        // shared `Core.isArrayBufferLike` probe and the local mirror in
+        // `support/runtime-value-utils.ts`.
+        return isArrayBufferLike(value) || isHtml5TextureHandle(value);
     },
     cos(value) {
         return Math.cos(Number(value));
