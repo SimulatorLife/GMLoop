@@ -9,6 +9,7 @@ This repository is the source monorepo for various GameMaker Language tools, inc
 - HTML5-runtime live reloading ([`@gmloop/runtime-wrapper`](src/runtime-wrapper))
 - a standalone Auto-Game Agent Skills and project-guidance package ([`@gmloop/agent-pack`](src/agent-pack))
 - an LSP language server for editors and `lsp-mcp-server` bridges ([`@gmloop/lsp`](src/lsp))
+- a first-party VSCode language client ([`@gmloop/vscode`](src/vscode))
 - [parser](src/parser), [semantic analysis](src/semantic), [CLI](src/cli), and [MCP](src/mcp) workspaces
 
 ## Table of contents
@@ -137,10 +138,8 @@ pnpm run cli -- transpile --write --path /absolute/path/to/MyGame
 ### Language server from a local clone
 
 `@gmloop/lsp` exposes GML code intelligence through a standard Language
-Server Protocol server that speaks JSON-RPC over stdio. The workspace
-builds the `gmloop-lsp` binary and is consumed by editor integrations
-and by `lsp-mcp-server` bridges — the language server is not wrapped by
-the `gmloop` CLI:
+Server Protocol server that speaks JSON-RPC over stdio. Editors and
+`lsp-mcp-server` bridges can launch it through the supported CLI command:
 
 ```bash
 # build the LSP workspace and run its test suite once
@@ -148,11 +147,14 @@ pnpm --filter @gmloop/lsp run build:types
 pnpm run test:lsp
 
 # run the language server over stdio (launched by an editor or MCP bridge)
-pnpm --filter @gmloop/lsp exec gmloop-lsp
+pnpm run cli -- lsp
 ```
 
-For bridge configuration (`.lsp-mcp.json`, editor wiring) see
-[`docs/gml-lsp.md`](docs/gml-lsp.md) and [`src/lsp/README.md`](src/lsp/README.md).
+The first-party VSCode extension bundles a version-matched server, so its users
+do not need a separate global `gmloop` installation. For CLI bridge
+configuration and extension development, see [`docs/gml-lsp.md`](docs/gml-lsp.md),
+[`src/lsp/README.md`](src/lsp/README.md), and
+[`src/vscode/README.md`](src/vscode/README.md).
 
 ## Architecture overview
 
@@ -161,12 +163,14 @@ For bridge configuration (`.lsp-mcp.json`, editor wiring) see
 | `@gmloop/format` | `src/format/` | Formatter-only Prettier plugin surface |
 | `@gmloop/lint` | `src/lint/` | ESLint v9 language plugin + lint rules |
 | `@gmloop/refactor` | `src/refactor/` | Cross-file refactor planning/application |
-| `@gmloop/lsp` | `src/lsp/` | LSP language server bridge for editors and `lsp-mcp-server` |
+| `@gmloop/lsp` | `src/lsp/` | Editor-agnostic LSP server for editors and `lsp-mcp-server` |
+| `@gmloop/vscode` | `src/vscode/` | First-party VSCode language client and syntax integration |
 | `@gmloop/parser` | `src/parser/` | GML parsing (ANTLR + AST construction) |
 | `@gmloop/semantic` | `src/semantic/` | Project indexing, symbol resolution, and semantic analysis |
 | `@gmloop/transpiler` | `src/transpiler/` | GML -> JavaScript emission |
 | `@gmloop/runtime-wrapper` | `src/runtime-wrapper/` | HTML5 runtime hot-reload bridge |
 | `@gmloop/core` | `src/core/` | Shared AST/types/helpers and static GameMaker language metadata |
+| `@gmloop/syntax-highlight` | `src/syntax-highlight/` | Shared GML syntax-highlighting definitions used by editor and UI surfaces |
 | `@gmloop/fixture-runner` | `src/fixture-runner/` | Shared fixture discovery, execution, assertion, and profiling framework used by format/lint/refactor/integration suites |
 | `@gmloop/cli` | `src/cli/` | Unified command-line entrypoints |
 | `@gmloop/mcp` | `src/mcp/` | MCP server surface for AI tooling integrations |
@@ -431,7 +435,7 @@ Start here for deeper context and plans:
 - [`src/agent-pack/README.md`](src/agent-pack/README.md) (Auto-Game Agent Skills and portable project guidance)
 - [`src/ui/README.md`](src/ui/README.md) (graph, docs, fix, live-reload, and playground UI surfaces)
 - [`src/mcp/README.md`](src/mcp/README.md) (MCP server surface for AI tooling)
-- [`src/lsp/README.md`](src/lsp/README.md) (LSP language server surface) and [`docs/gml-lsp.md`](docs/gml-lsp.md) (LSP usage notes)
+- [`src/lsp/README.md`](src/lsp/README.md) (editor-agnostic LSP server), [`src/vscode/README.md`](src/vscode/README.md) (first-party VSCode client), and [`docs/gml-lsp.md`](docs/gml-lsp.md) (LSP setup notes)
 - [`src/fixture-runner/README.md`](src/fixture-runner/README.md) (shared fixture discovery, execution, and profiling framework)
 - [GitHub Releases](https://github.com/SimulatorLife/GMLoop/releases) (project changelog and release notes)
 
