@@ -288,14 +288,9 @@ function toSafeString(value: unknown): string {
     // plain objects so callers receive "[object Object]" rather than silently
     // dropping to a generic string that masks the actual type.
     const obj = value as object;
-    if (
-        "toString" in obj &&
-        typeof (obj as unknown as { toString(): string }).toString === "function" &&
-        (obj as unknown as { toString(): string }).toString !== Object.prototype.toString
-    ) {
-        // Invoking the custom toString after confirming it differs from Object.prototype.toString.
-        // eslint-disable-next-line @typescript-eslint/no-base-to-string -- the guard above confirms this is a custom toString
-        return obj.toString();
+    const toString = (obj as { toString?: () => string }).toString;
+    if (typeof toString === "function" && toString !== Object.prototype.toString) {
+        return toString.call(obj);
     }
     // Plain object: fall back to the generic tag. The preceding guard ensures
     // method is Object.prototype.toString here, so using it directly is safe.
