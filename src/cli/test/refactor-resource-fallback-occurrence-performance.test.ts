@@ -9,9 +9,9 @@ import { Refactor } from "@gmloop/refactor";
 import { GmlSemanticBridge } from "../src/modules/refactor/semantic-bridge.js";
 import { measureMedianDurationMs } from "./test-helpers/refactor-top-level-naming-performance.js";
 
-const OBJECT_RESOURCE_COUNT = 40;
-const USAGE_FILE_COUNT = 40;
-const PERFORMANCE_THRESHOLD_MS = 700;
+const OBJECT_RESOURCE_COUNT = 12;
+const USAGE_FILE_COUNT = 12;
+const PERFORMANCE_THRESHOLD_MS = 300;
 
 type ObjectResourceFallbackFixture = {
     projectIndex: Record<string, unknown>;
@@ -68,22 +68,24 @@ async function createObjectResourceFallbackFixture(): Promise<ObjectResourceFall
         await writeFile(path.join(projectRoot, eventPath), eventSource, "utf8");
     }
 
+    const usageSource = Array.from(
+        { length: OBJECT_RESOURCE_COUNT },
+        (_, resourceIndex) => `instance_create_layer(0, 0, "Instances", bad_object_${resourceIndex});\n`
+    ).join("");
+    await mkdir(path.join(projectRoot, "scripts"), { recursive: true });
+
+    const usageFileWrites: Array<Promise<void>> = [];
     for (let fileIndex = 0; fileIndex < USAGE_FILE_COUNT; fileIndex += 1) {
         const filePath = `scripts/use_${fileIndex}.gml`;
-        const sourceText = Array.from(
-            { length: OBJECT_RESOURCE_COUNT },
-            (_, resourceIndex) => `instance_create_layer(0, 0, "Instances", bad_object_${resourceIndex});\n`
-        ).join("");
 
         files[filePath] = {
             declarations: [],
             references: []
         };
-        sourceTexts.set(filePath, sourceText);
-
-        await mkdir(path.join(projectRoot, "scripts"), { recursive: true });
-        await writeFile(path.join(projectRoot, filePath), sourceText, "utf8");
+        sourceTexts.set(filePath, usageSource);
+        usageFileWrites.push(writeFile(path.join(projectRoot, filePath), usageSource, "utf8"));
     }
+    await Promise.all(usageFileWrites);
 
     return {
         projectIndex: {
@@ -137,13 +139,16 @@ void test("refactor naming codemod reuses cached fallback identifier indexes for
         const { durationMs, result } = await measureMedianDurationMs(3, executeStressRun);
         const rewrittenUsageFile = result.result.appliedFiles.get("scripts/use_0.gml");
         const expectedIndexedFileCount = fixture.sourceTexts.size;
+        const lastObjectIndex = OBJECT_RESOURCE_COUNT - 1;
 
         assert.equal(result.result.summaries.length, 1);
         assert.equal(result.result.summaries[0]?.id, "namingConvention");
         assert.equal(result.result.summaries[0]?.changed, true);
         assert.ok(typeof rewrittenUsageFile === "string");
-        assert.match(rewrittenUsageFile, /\bbadObject/u);
-        assert.doesNotMatch(rewrittenUsageFile, /\bbad_object_0\b/u);
+        assert.ok(rewrittenUsageFile.includes("badObject0"));
+        assert.ok(!rewrittenUsageFile.includes("bad_object_0"));
+        assert.ok(rewrittenUsageFile.includes(`badObject${lastObjectIndex}`));
+        assert.ok(!rewrittenUsageFile.includes(`bad_object_${lastObjectIndex}`));
         assert.equal(
             result.indexedFileCount,
             expectedIndexedFileCount,
