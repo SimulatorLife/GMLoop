@@ -1030,7 +1030,9 @@ export function createGmlSemanticIndex(
             }
         })()
             .catch((error: unknown) => {
-                console.error(`Failed to reconcile semantic manifest for ${resolvedRoot}:`, error);
+                console.error(
+                    `Failed to reconcile semantic manifest for ${resolvedRoot}: ${Core.getErrorMessageOrFallback(error)}`
+                );
             })
             .finally(() => {
                 manifestReconciliations.delete(resolvedRoot);
@@ -1104,7 +1106,9 @@ export function createGmlSemanticIndex(
         const queuedWrite = publication
             .then(() => undefined)
             .catch((error: unknown) => {
-                console.error(`Failed to persist semantic index for ${resolvedRoot}:`, error);
+                console.error(
+                    `Failed to persist semantic index for ${resolvedRoot}: ${Core.getErrorMessageOrFallback(error)}`
+                );
                 return undefined;
             });
         pendingCacheWrites.set(resolvedRoot, queuedWrite);
