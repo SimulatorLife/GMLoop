@@ -5,12 +5,19 @@
  */
 import { Core } from "@gmloop/core";
 
+import { EPSILON_TOLERANCE_MULTIPLIER } from "./math-policy-constants.js";
+
 const { BINARY_EXPRESSION, CALL_EXPRESSION, IDENTIFIER, LITERAL, UNARY_EXPRESSION, isApproximatelyZero, isObjectLike } =
     Core;
 
 /**
  * Return an epsilon-scaled tolerance for the given expected magnitude.
  * An optional explicit tolerance can be supplied to bypass auto-scaling.
+ *
+ * The tolerance is `Number.EPSILON * max(1, |expected|) *
+ * EPSILON_TOLERANCE_MULTIPLIER`. The multiplier widens the raw epsilon gap
+ * to absorb floating-point rounding drift introduced by chained
+ * operations without masking genuine inequality.
  */
 export function computeNumericTolerance(expected: number, providedTolerance?: number): number {
     if (typeof providedTolerance === "number") {
@@ -18,7 +25,7 @@ export function computeNumericTolerance(expected: number, providedTolerance?: nu
     }
 
     const magnitude = Math.max(1, Math.abs(expected));
-    return Number.EPSILON * magnitude * 4;
+    return Number.EPSILON * magnitude * EPSILON_TOLERANCE_MULTIPLIER;
 }
 
 /**
