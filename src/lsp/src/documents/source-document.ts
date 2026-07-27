@@ -1,5 +1,6 @@
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { Core } from "@gmloop/core";
 import type { Position, Range, TextDocumentContentChangeEvent } from "vscode-languageserver/node.js";
 
 /**
@@ -76,11 +77,16 @@ export function createLineStarts(sourceText: string): ReadonlyArray<number> {
 }
 
 function clampLine(lineStarts: ReadonlyArray<number>, line: number): number {
-    if (lineStarts.length === 0 || !Number.isFinite(line)) {
+    if (lineStarts.length === 0) {
         return 0;
     }
 
-    return Math.max(0, Math.min(Math.trunc(line), lineStarts.length - 1));
+    const normalized = Core.toNormalizedInteger(line);
+    if (normalized === null) {
+        return 0;
+    }
+
+    return Core.clamp(normalized, 0, lineStarts.length - 1);
 }
 
 /**
@@ -94,7 +100,7 @@ export function positionToOffset(
     const lineStart = document.lineStarts[line] ?? 0;
     const nextLineStart = document.lineStarts[line + 1] ?? document.sourceText.length;
     const lineEnd = Math.max(lineStart, nextLineStart);
-    return Math.max(lineStart, Math.min(lineStart + Math.max(0, position.character), lineEnd));
+    return lineStart + Core.clamp(position.character, 0, lineEnd - lineStart);
 }
 
 /**
@@ -104,7 +110,7 @@ export function offsetToPosition(
     document: Pick<GmlTextDocument, "lineStarts" | "sourceText">,
     offset: number
 ): Position {
-    const normalizedOffset = Math.max(0, Math.min(Math.trunc(offset), document.sourceText.length));
+    const normalizedOffset = Core.clamp(Math.trunc(offset), 0, document.sourceText.length);
     let low = 0;
     let high = document.lineStarts.length - 1;
 
