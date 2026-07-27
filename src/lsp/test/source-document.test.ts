@@ -19,6 +19,21 @@ void test("source document positions use UTF-16 columns", () => {
     assert.equal(Lsp.positionToOffset(document, position), emojiOffset + 2);
 });
 
+void test("source document conversions clamp positions and offsets to document bounds", () => {
+    const sourceText = "alpha\nomega";
+    const document = Lsp.createGmlDocumentStore().open({
+        uri: Lsp.filePathToUri("/tmp/bounded.gml"),
+        languageId: "gml",
+        version: 1,
+        text: sourceText
+    });
+
+    assert.equal(Lsp.positionToOffset(document, { line: -1, character: -1 }), 0);
+    assert.equal(Lsp.positionToOffset(document, { line: 100, character: 100 }), sourceText.length);
+    assert.deepEqual(Lsp.offsetToPosition(document, -1), { line: 0, character: 0 });
+    assert.deepEqual(Lsp.offsetToPosition(document, sourceText.length + 1), { line: 1, character: 5 });
+});
+
 void test("LSP identifier lookup uses lexer-owned Unicode ranges", () => {
     const sourceText = "var café = 1;\n😀 café;\n";
     const document = Lsp.createGmlDocumentStore().open({
