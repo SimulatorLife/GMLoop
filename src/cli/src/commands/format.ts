@@ -86,6 +86,13 @@ import {
     type SkippedDirectorySummary,
     type SkippedFileSummary
 } from "./format-summary.js";
+import {
+    DEFAULT_PRETTIER_LOG_LEVEL,
+    formatPrettierLogLevelList,
+    PrettierLogLevel,
+    prettierLogLevelOption,
+    type PrettierLogLevelValue
+} from "./prettier-log-level.js";
 
 const {
     compactArray,
@@ -119,12 +126,8 @@ const ParseErrorAction = Object.freeze({
 type ParseErrorActionValue = (typeof ParseErrorAction)[keyof typeof ParseErrorAction];
 
 const VALID_PARSE_ERROR_ACTIONS = new Set(Object.values(ParseErrorAction));
-const VALID_PRETTIER_LOG_LEVELS = new Set(["debug", "info", "warn", "error", "silent"]);
 
 const parseErrorActionOption = createEnumeratedOptionHelpers(VALID_PARSE_ERROR_ACTIONS, {
-    formatError: (list) => `Must be one of: ${list}`
-});
-const logLevelOption = createEnumeratedOptionHelpers(VALID_PRETTIER_LOG_LEVELS, {
     formatError: (list) => `Must be one of: ${list}`
 });
 
@@ -316,9 +319,6 @@ async function normalizeFormattedOutputWithFormat(formatted: string, source: str
 // environment settings.
 const DEFAULT_PARSE_ERROR_ACTION: ParseErrorActionValue = ParseErrorAction.ABORT;
 
-const DEFAULT_PRETTIER_LOG_LEVEL =
-    logLevelOption.normalize(process.env.PRETTIER_PLUGIN_GML_LOG_LEVEL, "warn") ?? "warn";
-
 // Save the original console.debug, console.error, console.warn, console.log
 // and console.info so we can
 // toggle or filter them when the configured Prettier log level requests
@@ -376,11 +376,14 @@ export function isDiagnosticStdoutMessage(message) {
  * Configure console methods based on the requested log level.
  * Handles silencing diagnostic messages and toggling debug output.
  *
- * @param logLevel - The Prettier log level (debug|info|warn|error|silent)
+ * @param logLevel - A validated {@link PrettierLogLevelValue}; callers are
+ *   responsible for normalising raw user input (e.g. the
+ *   `PRETTIER_PLUGIN_GML_LOG_LEVEL` environment variable) via
+ *   {@link prettierLogLevelOption} before invoking this function.
  */
-function configureConsoleMethods(logLevel: string): void {
-    const silent = logLevel === "silent";
-    const debug = logLevel === "debug";
+function configureConsoleMethods(logLevel: PrettierLogLevelValue): void {
+    const silent = logLevel === PrettierLogLevel.SILENT;
+    const debug = logLevel === PrettierLogLevel.DEBUG;
 
     // Disable console.debug unless the log level is explicitly set to debug.
     // This ensures internal tracing and diagnostic output is hidden by default.
@@ -420,8 +423,15 @@ function configureConsoleMethods(logLevel: string): void {
 }
 
 // Initialize console methods based on the environment or default log level.
-// This ensures console.debug is disabled early on if requested.
-configureConsoleMethods(process.env.PRETTIER_PLUGIN_GML_LOG_LEVEL ?? DEFAULT_PRETTIER_LOG_LEVEL);
+// This ensures console.debug is disabled early on if requested. Invalid env
+// values fall back to the default rather than reaching `configureConsoleMethods`,
+// which only accepts validated `PrettierLogLevelValue`s. The cast narrows the
+// generic `string` return from the enumerated helper down to the typed enum
+// subset; the helper's valueSet guarantees the cast is safe.
+configureConsoleMethods(
+    (prettierLogLevelOption.normalize(process.env.PRETTIER_PLUGIN_GML_LOG_LEVEL, DEFAULT_PRETTIER_LOG_LEVEL) ??
+        DEFAULT_PRETTIER_LOG_LEVEL) as PrettierLogLevelValue
+);
 
 export function createFormatCommand({ name = "gmloop" } = {}) {
     const { option: skippedDirectorySampleLimitOption } = createConfiguredSampleLimitOption({
@@ -462,8 +472,8 @@ export function createFormatCommand({ name = "gmloop" } = {}) {
         .addOption(unsupportedExtensionSampleLimitOption)
         .option(
             "--log-level <level>",
-            "Prettier log level: debug|info|warn|error|silent. Default: warn",
-            (value) => logLevelOption.requireValue(value, InvalidArgumentError),
+            `Prettier log level: ${formatPrettierLogLevelList()}. Default: ${DEFAULT_PRETTIER_LOG_LEVEL}`,
+            (value) => prettierLogLevelOption.requireValue(value, InvalidArgumentError),
             DEFAULT_PRETTIER_LOG_LEVEL
         )
         .option(
@@ -548,13 +558,18 @@ function configurePrettierOptions({
 }: {
     logLevel?: unknown;
 } = {}) {
-    const normalized = logLevelOption.normalize(logLevel, DEFAULT_PRETTIER_LOG_LEVEL) ?? DEFAULT_PRETTIER_LOG_LEVEL;
-    options.logLevel = normalized;
+    const normalized =
+        prettierLogLevelOption.normalize(logLevel, DEFAULT_PRETTIER_LOG_LEVEL) ?? DEFAULT_PRETTIER_LOG_LEVEL;
+    // The enumerated helper returns a generic `string` even though the
+    // valueSet only contains `PrettierLogLevelValue`s; narrow it back down
+    // before storing or forwarding to `configureConsoleMethods`.
+    const validatedLevel = normalized as PrettierLogLevelValue;
+    options.logLevel = validatedLevel;
     // Toggle console.debug and filter console.error based on the configured
     // Prettier log level so internal debug and diagnostic output is suppressed
     // when requested. We filter diagnostic lines to avoid hiding genuine
     // runtime errors while keeping repo-wide runs deterministic in tests.
-    configureConsoleMethods(normalized);
+    configureConsoleMethods(validatedLevel);
 }
 
 const skippedFileSummary: SkippedFileSummary = {
