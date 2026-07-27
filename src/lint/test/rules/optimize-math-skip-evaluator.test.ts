@@ -1,9 +1,16 @@
 /**
- * Unit tests for the optimize-math-skip-evaluator module.
+ * Unit tests for the math skip-evaluator module.
  *
  * These tests verify that the policy evaluation logic is correct and
  * independent from the mechanism code that applies rewrites. Each test
  * case documents the expected behavior of the policy decision.
+ *
+ * The module was previously named `optimize-math-skip-evaluator` and lived
+ * under `gml/rules/`. It is pure GML math-policy code (signal patterns,
+ * built-in math call names, length-thresholds, AST-shape candidate tests),
+ * so it now sits alongside the other math helpers in `gml/math/` where its
+ * peers (`math-numeric-policy.ts`, `math-scalar-condensing.ts`, etc.)
+ * already live.
  */
 
 import assert from "node:assert/strict";
@@ -22,7 +29,7 @@ import {
     formatCanonicalNumericLiteral,
     MATH_OPTIMIZATION_POLICY_CONSTANTS,
     STRONG_MATH_BINARY_OPERATORS
-} from "../../src/rules/gml/rules/optimize-math-skip-evaluator.js";
+} from "../../src/rules/gml/math/math-skip-evaluator.js";
 
 void test("evaluateSkipDecision returns true for nested expression parents", () => {
     const parents = [
