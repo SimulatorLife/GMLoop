@@ -22,6 +22,11 @@ void test("PrettierLogLevel exposes every supported level as a frozen enum entry
     assert.strictEqual(Object.isFrozen(PrettierLogLevel), true);
 });
 
+void test("PrettierLogLevel values remain unique", () => {
+    const values = Object.values(PrettierLogLevel);
+    assert.strictEqual(new Set(values).size, values.length);
+});
+
 void test("PrettierLogLevel values round-trip through the validation helper", () => {
     // The helper returned by createEnumeratedOptionHelpers is what the CLI
     // option parser uses to fail fast on user-supplied values. Each canonical
@@ -38,7 +43,7 @@ void test("PrettierLogLevel helper accepts case-insensitive variants of valid le
     // drift silently.
     for (const level of Object.values(PrettierLogLevel)) {
         const upper = level.toUpperCase();
-        const titled = level[0].toUpperCase() + level.slice(1);
+        const titled = `${level.charAt(0).toUpperCase()}${level.slice(1)}`;
         assert.strictEqual(prettierLogLevelOptionForTests.requireValue(upper), level);
         assert.strictEqual(prettierLogLevelOptionForTests.requireValue(titled), level);
     }
