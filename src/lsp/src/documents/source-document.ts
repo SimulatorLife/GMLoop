@@ -77,11 +77,16 @@ export function createLineStarts(sourceText: string): ReadonlyArray<number> {
 }
 
 function clampLine(lineStarts: ReadonlyArray<number>, line: number): number {
-    if (lineStarts.length === 0 || !Number.isFinite(line)) {
+    if (lineStarts.length === 0) {
         return 0;
     }
 
-    return Core.clamp(Math.trunc(line), 0, lineStarts.length - 1);
+    const normalized = Core.toNormalizedInteger(line);
+    if (normalized === null) {
+        return 0;
+    }
+
+    return Core.clamp(normalized, 0, lineStarts.length - 1);
 }
 
 /**
@@ -95,7 +100,7 @@ export function positionToOffset(
     const lineStart = document.lineStarts[line] ?? 0;
     const nextLineStart = document.lineStarts[line + 1] ?? document.sourceText.length;
     const lineEnd = Math.max(lineStart, nextLineStart);
-    return Core.clamp(lineStart + Math.max(0, position.character), lineStart, lineEnd);
+    return lineStart + Core.clamp(position.character, 0, lineEnd - lineStart);
 }
 
 /**

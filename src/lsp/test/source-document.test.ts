@@ -19,21 +19,6 @@ void test("source document positions use UTF-16 columns", () => {
     assert.equal(Lsp.positionToOffset(document, position), emojiOffset + 2);
 });
 
-void test("source document conversions clamp positions and offsets to document bounds", () => {
-    const sourceText = "alpha\nomega";
-    const document = Lsp.createGmlDocumentStore().open({
-        uri: Lsp.filePathToUri("/tmp/bounded.gml"),
-        languageId: "gml",
-        version: 1,
-        text: sourceText
-    });
-
-    assert.equal(Lsp.positionToOffset(document, { line: -1, character: -1 }), 0);
-    assert.equal(Lsp.positionToOffset(document, { line: 100, character: 100 }), sourceText.length);
-    assert.deepEqual(Lsp.offsetToPosition(document, -1), { line: 0, character: 0 });
-    assert.deepEqual(Lsp.offsetToPosition(document, sourceText.length + 1), { line: 1, character: 5 });
-});
-
 void test("LSP identifier lookup uses lexer-owned Unicode ranges", () => {
     const sourceText = "var café = 1;\n😀 café;\n";
     const document = Lsp.createGmlDocumentStore().open({
@@ -75,4 +60,59 @@ void test("source document store applies incremental multiline changes", () => {
 
     assert.ok(updated);
     assert.equal(updated.sourceText, "var value = 2;\ntrace(value);\n");
+});
+
+void test("positionToOffset clamps line and character to source bounds", () => {
+    const store = Lsp.createGmlDocumentStore();
+    const document = store.open({
+        uri: Lsp.filePathToUri("/tmp/clamp.gml"),
+        languageId: "gml",
+        version: 1,
+        text: "ab\ncd\n"
+    });
+
+    const lineStart0 = 0;
+    const lineStart1 = 3;
+    const lineEnd1 = 6;
+
+    assert.equal(
+        Lsp.positionToOffset(document, { line: -100, character: -100 }),
+        lineStart0,
+        "negative line clamps to first line and negative character clamps to its start"
+    );
+    assert.equal(
+        Lsp.positionToOffset(document, { line: 999, character: 999 }),
+        lineEnd1,
+        "out-of-range line clamps to last line and oversize character clamps to its end"
+    );
+    assert.equal(
+        Lsp.positionToOffset(document, { line: 1.9, character: 1 }),
+        lineStart1 + 1,
+        "fractional line is truncated to the integer row before clamping"
+    );
+    assert.equal(
+        Lsp.positionToOffset(document, { line: 0, character: 1.7 }),
+        lineStart0 + 1.7,
+        "characters within range pass through unclamped while the line is still clamped to a real row"
+    );
+});
+
+void test("offsetToPosition clamps the offset into the source range", () => {
+    const store = Lsp.createGmlDocumentStore();
+    const document = store.open({
+        uri: Lsp.filePathToUri("/tmp/clamp-offset.gml"),
+        languageId: "gml",
+        version: 1,
+        text: "ab\ncd"
+    });
+
+    const sourceLength = document.sourceText.length;
+    const tailLineStart = document.lineStarts[1] ?? 0;
+
+    assert.deepEqual(Lsp.offsetToPosition(document, -10), { line: 0, character: 0 });
+    assert.deepEqual(Lsp.offsetToPosition(document, sourceLength + 50), {
+        line: 1,
+        character: sourceLength - tailLineStart
+    });
+    assert.deepEqual(Lsp.offsetToPosition(document, 1.9), { line: 0, character: 1 });
 });
