@@ -10,6 +10,13 @@ export interface CommanderConfigureOutputOptions {
     outputError?: (...args: Array<unknown>) => unknown;
 }
 
+export interface CommanderOptionLike {
+    long?: string;
+    short?: string;
+    flags?: string;
+    description?: string;
+}
+
 export interface CommanderUsageProvider {
     helpInformation?: () => string;
     usage?: () => string;
@@ -85,4 +92,7 @@ export interface CommanderOptionSetter {
  * interface they need (CommanderExecutor, CommanderConfigurator,
  * CommanderOptionSetter) rather than this composite interface when possible.
  */
-export interface CommanderCommandLike extends CommanderExecutor, CommanderConfigurator, CommanderOptionSetter {}
+export interface CommanderCommandLike extends CommanderExecutor, CommanderConfigurator, CommanderOptionSetter {
+    name?: () => string;
+    options?: ReadonlyArray<CommanderOptionLike>;
+}
