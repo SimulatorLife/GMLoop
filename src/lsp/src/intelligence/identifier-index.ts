@@ -2948,7 +2948,7 @@ export function createGmlSemanticIndex(
                         return null;
                     }
                     const symbolId = readSymbolIdFromMatch(match);
-                    const refactorEngine = new Refactor.RefactorEngine({
+                    const refactorEngine = Refactor.createRefactorEngine({
                         semantic: queries.refactor
                     });
                     return await refactorWorkspaceEditToLspWorkspaceEdit(
