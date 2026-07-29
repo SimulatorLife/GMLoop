@@ -25,6 +25,13 @@ export class IdentifierCacheManager {
      * associated resolution results (or null if not found in that scope).
      */
     private readonly cache = new Map<string, Map<string, ScopeSymbolMetadata | null>>();
+    /**
+     * Reverse index from scope ID to the set of identifier names that have an
+     * entry for that scope. This lets `invalidateScopes` — the hot path hit on
+     * every scope removal during hot-reload — visit only the entries actually
+     * affected instead of scanning the whole cache.
+     */
+    private readonly namesByScope = new Map<string, Set<string>>();
     private readonly maxTrackedNames: number;
     private readonly maxScopesPerName: number;
 
@@ -73,22 +80,55 @@ export class IdentifierCacheManager {
             scopeResults = newScopeResults;
         }
 
-        if (!scopeResults.has(scopeId) && scopeResults.size >= this.maxScopesPerName) {
+        const isNewScopeEntry = !scopeResults.has(scopeId);
+        if (isNewScopeEntry && scopeResults.size >= this.maxScopesPerName) {
             const oldestScopeIdIter = scopeResults.keys();
             const oldestScopeId = oldestScopeIdIter.next().value;
             if (oldestScopeId !== undefined) {
                 scopeResults.delete(oldestScopeId);
+                this.unlinkNameFromScope(name, oldestScopeId);
             }
         }
 
         scopeResults.set(scopeId, declaration);
+        if (isNewScopeEntry) {
+            this.linkNameToScope(name, scopeId);
+        }
 
         if (this.cache.size > this.maxTrackedNames) {
             const oldestNameIter = this.cache.keys();
             const oldestName = oldestNameIter.next().value;
             if (oldestName !== undefined) {
+                const evictedScopeResults = this.cache.get(oldestName);
                 this.cache.delete(oldestName);
+                if (evictedScopeResults) {
+                    for (const evictedScopeId of evictedScopeResults.keys()) {
+                        this.unlinkNameFromScope(oldestName, evictedScopeId);
+                    }
+                }
             }
+        }
+    }
+
+    /** Records that `scopeId` now has a cached entry for `name`. */
+    private linkNameToScope(name: string, scopeId: string): void {
+        let names = this.namesByScope.get(scopeId);
+        if (!names) {
+            names = new Set<string>();
+            this.namesByScope.set(scopeId, names);
+        }
+        names.add(name);
+    }
+
+    /** Removes the record that `scopeId` has a cached entry for `name`. */
+    private unlinkNameFromScope(name: string, scopeId: string): void {
+        const names = this.namesByScope.get(scopeId);
+        if (!names) {
+            return;
+        }
+        names.delete(name);
+        if (names.size === 0) {
+            this.namesByScope.delete(scopeId);
         }
     }
 
@@ -100,18 +140,23 @@ export class IdentifierCacheManager {
      *                  If omitted or null, all cached results for this identifier name are cleared.
      */
     public invalidate(name: string, scopeIds?: Iterable<string> | null): void {
-        if (!scopeIds) {
-            this.cache.delete(name);
-            return;
-        }
-
         const scopeResults = this.cache.get(name);
         if (!scopeResults) {
             return;
         }
 
+        if (!scopeIds) {
+            for (const scopeId of scopeResults.keys()) {
+                this.unlinkNameFromScope(name, scopeId);
+            }
+            this.cache.delete(name);
+            return;
+        }
+
         for (const scopeId of scopeIds) {
-            scopeResults.delete(scopeId);
+            if (scopeResults.delete(scopeId)) {
+                this.unlinkNameFromScope(name, scopeId);
+            }
         }
 
         if (scopeResults.size === 0) {
@@ -122,24 +167,28 @@ export class IdentifierCacheManager {
     /**
      * Invalidates every cached resolution result that started from one of the given scopes.
      *
+     * Uses the scope-to-names reverse index to touch only the entries affected
+     * by the removed scopes, rather than scanning the entire cache — this keeps
+     * per-edit invalidation cost proportional to the edit, not to cache size.
+     *
      * @param scopeIds - Scope IDs whose cached resolution entries should be removed.
      */
     public invalidateScopes(scopeIds: Iterable<string>): void {
-        const scopeIdsToRemove = new Set(scopeIds);
-        if (scopeIdsToRemove.size === 0) {
-            return;
-        }
+        for (const scopeId of scopeIds) {
+            const names = this.namesByScope.get(scopeId);
+            if (!names) {
+                continue;
+            }
 
-        for (const [name, scopeResults] of this.cache) {
-            for (const scopeId of scopeResults.keys()) {
-                if (scopeIdsToRemove.has(scopeId)) {
-                    scopeResults.delete(scopeId);
+            for (const name of names) {
+                const scopeResults = this.cache.get(name);
+                scopeResults?.delete(scopeId);
+                if (scopeResults && scopeResults.size === 0) {
+                    this.cache.delete(name);
                 }
             }
 
-            if (scopeResults.size === 0) {
-                this.cache.delete(name);
-            }
+            this.namesByScope.delete(scopeId);
         }
     }
 

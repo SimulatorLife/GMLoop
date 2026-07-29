@@ -23,9 +23,9 @@ const ERROR_LABEL = "Copy failed";
  * Accepts the text to copy through the `value` property so the parent
  * component keeps ownership of the source payload and the button stays a
  * presentation-only collaborator. The primitive writes through the
- * asynchronous Clipboard API when available and falls back to a hidden
- * textarea + `document.execCommand("copy")` so older browsers and
- * non-secure-context test environments still receive the value.
+ * asynchronous Clipboard API. Browsers that do not expose the API in the
+ * current secure context, or that reject clipboard permission, surface the
+ * button's error feedback state.
  *
  * The feedback state machine (idle / success / error) and the badge reset
  * timer are delegated to an injected {@link CopyFeedbackController}, so
