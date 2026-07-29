@@ -20,9 +20,9 @@
  * Normalize a GML parameter name by stripping the doc-comment prefixes that
  * `/// @param` tags may carry.
  *
- * The helper removes, in order:
- *   1. any run of leading `*` characters (the by-reference marker); and
- *   2. any run of leading `_` characters (the private/internal marker).
+ * The helper removes any leading run made from `*` and `_` characters. This
+ * accepts both conventional `*_name` prefixes and malformed-but-recoverable
+ * mixed runs such as `_*name`, while leaving internal characters untouched.
  *
  * Anything that follows the prefixes is returned unchanged, so the canonical
  * identifier is preserved verbatim for lookups against function declarations
@@ -41,5 +41,5 @@
  * normalizeDocParamName("items")            // "items"
  */
 export function normalizeDocParamName(name: string): string {
-    return name.replace(/^\*+/u, "").replace(/^_+/u, "");
+    return name.replace(/^[*_]+/u, "");
 }
