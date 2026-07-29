@@ -91,6 +91,54 @@ export function createMissingResetRule(
     });
 }
 
+/**
+ * Builds a feather rule that reports a single "missing project context"
+ * diagnostic at the first match of `detectionPattern` in the source text.
+ *
+ * This consolidates the report-only body that used to be copy-pasted into
+ * the project-context-required feather rule factories
+ * (`createGm1021Rule`, `createGm1064Rule`, `createGm2025Rule`,
+ * `createGm2040Rule`, and `createGm2064Rule`). Each factory now declares
+ * only its detection pattern; the meta wiring, source-text extraction,
+ * `RegExp.exec` short-circuit, and the resolved-loc `report` call all live
+ * here so the rule bodies stay one-liners.
+ *
+ * The helper is intentionally report-only: project-context feather rules
+ * never carry a fix, and `createFeatherRule` strips `fixable` from the
+ * report-only rule shell. Emitting a single diagnostic without a `fix`
+ * keeps the helper consistent with that contract.
+ *
+ * @param entry The manifest entry describing the rule.
+ * @param detectionPattern Regex used to detect the call site. When the
+ *   pattern does not match, the rule reports nothing.
+ * @returns A `Rule.RuleModule` that reports a single `missingProjectContext`
+ *   diagnostic anchored at the start of the first match.
+ */
+export function createMissingProjectContextRule(
+    entry: FeatherManifestEntry,
+    detectionPattern: RegExp
+): Rule.RuleModule {
+    return Object.freeze({
+        meta: createFeatherRuleMeta(entry),
+        create(context) {
+            return Object.freeze({
+                Program() {
+                    const sourceText = context.sourceCode.text;
+                    const match = detectionPattern.exec(sourceText);
+                    if (!match) {
+                        return;
+                    }
+
+                    context.report({
+                        loc: resolveLocFromIndex(context, sourceText, match.index),
+                        messageId: "missingProjectContext"
+                    });
+                }
+            });
+        }
+    });
+}
+
 export function extractFunctionParameterNames(parameterListText: string): Array<string> {
     return parameterListText
         .split(",")
