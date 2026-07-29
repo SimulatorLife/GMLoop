@@ -5,6 +5,7 @@ import {
     appendLineIfMissing,
     createFeatherRuleMeta,
     createFullTextRewriteRule,
+    createMissingProjectContextRule,
     createMissingResetRule
 } from "../feather-rule-helpers.js";
 import {
@@ -193,24 +194,7 @@ export function createGm2023Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 }
 
 export function createGm2025Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return Object.freeze({
-        meta: createFeatherRuleMeta(entry),
-        create(context) {
-            return Object.freeze({
-                Program() {
-                    const sourceText = context.sourceCode.text;
-                    const eventMatch = /\bevent_user\s*\(/u.exec(sourceText);
-                    if (!eventMatch) {
-                        return;
-                    }
-                    context.report({
-                        loc: resolveLocFromIndex(context, sourceText, eventMatch.index),
-                        messageId: "missingProjectContext"
-                    });
-                }
-            });
-        }
-    });
+    return createMissingProjectContextRule(entry, /\bevent_user\s*\(/u);
 }
 
 export function createGm2026Rule(entry: FeatherManifestEntry): Rule.RuleModule {
@@ -342,24 +326,7 @@ export function createGm2035Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 }
 
 export function createGm2040Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return Object.freeze({
-        meta: createFeatherRuleMeta(entry),
-        create(context) {
-            return Object.freeze({
-                Program() {
-                    const sourceText = context.sourceCode.text;
-                    const inheritedMatch = /\bevent_inherited\s*\(\s*\)/u.exec(sourceText);
-                    if (!inheritedMatch) {
-                        return;
-                    }
-                    context.report({
-                        loc: resolveLocFromIndex(context, sourceText, inheritedMatch.index),
-                        messageId: "missingProjectContext"
-                    });
-                }
-            });
-        }
-    });
+    return createMissingProjectContextRule(entry, /\bevent_inherited\s*\(\s*\)/u);
 }
 
 export function createGm2042Rule(entry: FeatherManifestEntry): Rule.RuleModule {
@@ -618,22 +585,5 @@ export function createGm2063Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 }
 
 export function createGm2064Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return Object.freeze({
-        meta: createFeatherRuleMeta(entry),
-        create(context) {
-            return Object.freeze({
-                Program() {
-                    const sourceText = context.sourceCode.text;
-                    const instanceCreateMatch = /\binstance_create_(?:depth|layer)\s*\([^;]*\{/u.exec(sourceText);
-                    if (!instanceCreateMatch) {
-                        return;
-                    }
-                    context.report({
-                        loc: resolveLocFromIndex(context, sourceText, instanceCreateMatch.index),
-                        messageId: "missingProjectContext"
-                    });
-                }
-            });
-        }
-    });
+    return createMissingProjectContextRule(entry, /\binstance_create_(?:depth|layer)\s*\([^;]*\{/u);
 }
