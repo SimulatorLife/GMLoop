@@ -91,6 +91,22 @@ function resolveEndpointLabel(value: string | null | undefined): string {
 }
 
 /**
+ * Format a recent live-reload error as plain text so it can be pasted whole
+ * into a bug report or chat message.
+ */
+function formatRecentErrorDetails(error: GraphVisualizationLiveReloadRecentError): string {
+    const lines = [`File: ${error.filePath}`, `Error: ${error.error}`];
+
+    if (error.recoveryHint) {
+        lines.push(`Recovery hint: ${error.recoveryHint}`);
+    }
+
+    lines.push(`Time: ${formatTimestamp(error.timestamp)}`);
+
+    return lines.join("\n");
+}
+
+/**
  * Live-reload observability surface for watcher, patch stream, and runtime-wrapper status.
  *
  * The panel no longer overrides `connectedCallback`, `disconnectedCallback`,
@@ -361,7 +377,16 @@ export class GmLiveReloadPanel extends LightDomLitElement {
                                   ${errors.map(
                                       (error) => html`
                                           <li class="live-reload-error-item">
-                                              <strong>${error.filePath}</strong>
+                                              <div class="live-reload-error-header">
+                                                  <strong>${error.filePath}</strong>
+                                                  <gm-copy-button
+                                                      class="live-reload-error-copy"
+                                                      .value=${formatRecentErrorDetails(error)}
+                                                      accessibleLabel=${`Copy error details for ${error.filePath}`}
+                                                      label="Copy"
+                                                      hideLabel
+                                                  ></gm-copy-button>
+                                              </div>
                                               <span>${error.error}</span>
                                               ${error.recoveryHint ? html`<p>${error.recoveryHint}</p>` : null}
                                               <div class="config-badge-row">
