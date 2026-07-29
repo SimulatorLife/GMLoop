@@ -50,7 +50,7 @@ void describe("singleQuote option", () => {
             `singleQuote description should call out the no-op contract; received: "${entry?.description}"`
         );
         // The description must clarify that verbatim strings may use either
-        // quote style — plain single-quoted strings are invalid GML, but
+        // quote style; plain single-quoted strings are invalid GML, but
         // verbatim strings such as `@'…'` are valid and must be preserved.
         assert.ok(
             entry?.description.includes("double quotes") && entry?.description.includes("verbatim"),
