@@ -242,33 +242,16 @@ export type GmlSemanticAnalysisFinish = Readonly<{
 }>;
 
 /**
- * Lifecycle and diagnostics surface for the semantic index.
- *
- * Consumers that only need to (re)build the index, tear it down, prewarm it,
- * or read compact in-memory counters can depend on this role alone, keeping
- * unrelated LSP handlers free of the navigation, symbol, rename, and search
- * capabilities the rest of the index exposes.
+ * Query facade used by the LSP layer to consume semantic navigation facts.
  */
-export interface GmlSemanticIndexLifecycle {
+export type GmlSemanticIndex = Readonly<{
     buildForDocument(document: GmlTextDocument): Promise<NavigationState | null>;
     indexProjectRoot(projectRoot: string): Promise<void>;
     dispose(): Promise<void>;
-    preload(): void;
     /**
      * Return compact counters for semantic-index memory diagnostics.
      */
     readMemoryDiagnostics(): GmlSemanticIndexMemoryDiagnostics;
-}
-
-/**
- * Definition/references/hover navigation surface for the semantic index.
- *
- * LSP handlers that resolve go-to-definition, references, document-local
- * references, or hover information should depend on this role alone and not
- * drag in the symbol-listing, rename, cache-management, or search
- * capabilities the index also provides.
- */
-export interface GmlSemanticNavigator {
     findDefinition(
         document: GmlTextDocument,
         offset: number,
@@ -294,32 +277,13 @@ export interface GmlSemanticNavigator {
         identifierName: string,
         signal: AbortSignal
     ): Promise<Hover | null>;
-}
-
-/**
- * Document-symbol and semantic-highlight listing surface for the semantic
- * index.
- *
- * Handlers that only project the AST into outline-style or token-level views
- * can depend on this role alone without coupling to navigation, rename,
- * cache, or search machinery.
- */
-export interface GmlSemanticDocumentSymbolProvider {
+    invalidateForDocument(document: GmlTextDocument): void;
+    invalidateForFilePath(filePath: string): Promise<void>;
     listDocumentSymbols(document: GmlTextDocument, signal: AbortSignal): Promise<DocumentSymbol[]>;
     listSemanticHighlights(
         document: GmlTextDocument,
         signal: AbortSignal
     ): Promise<ReturnType<typeof Semantic.collectGmlSemanticHighlights>>;
-}
-
-/**
- * Rename preparation and planning surface for the semantic index.
- *
- * LSP handlers that drive `textDocument/prepareRename` and
- * `textDocument/rename` should depend on this role alone instead of the full
- * index, so unrelated navigation or search code is not in their contract.
- */
-export interface GmlSemanticRenameSupport {
     planRename(
         document: GmlTextDocument,
         offset: number,
@@ -333,54 +297,13 @@ export interface GmlSemanticRenameSupport {
         identifierName: string,
         signal: AbortSignal
     ): Promise<ReturnType<typeof offsetsToRange> | null>;
-}
-
-/**
- * Cache invalidation and refresh surface for the semantic index.
- *
- * File-watcher and document-sync handlers that only need to keep cached
- * navigation state in step with disk edits can depend on this role alone,
- * leaving navigation, symbol, rename, and search concerns to their own
- * dedicated roles.
- */
-export interface GmlSemanticCacheManager {
-    invalidateForDocument(document: GmlTextDocument): void;
-    invalidateForFilePath(filePath: string): Promise<void>;
+    preload(): void;
     refreshForDocument(document: GmlTextDocument): Promise<NavigationState | null>;
     refreshForFilePath(filePath: string): Promise<NavigationState | null>;
     refreshForFileChanges(changes: ReadonlyArray<GmlSemanticFileChange>): Promise<void>;
-}
-
-/**
- * Completion and workspace-symbol search surface for the semantic index.
- *
- * Handlers that resolve completions or `workspace/symbol` queries should
- * depend on this role alone instead of the full index, so unrelated
- * navigation or rename code is not in their contract.
- */
-export interface GmlSemanticSearchProvider {
     searchCompletions(document: GmlTextDocument, query: string, signal: AbortSignal): Promise<CompletionItem[]>;
     searchWorkspaceSymbols(document: GmlTextDocument, query: string, signal: AbortSignal): Promise<WorkspaceSymbol[]>;
-}
-
-/**
- * Composite query facade used by the LSP layer to consume semantic navigation
- * facts.
- *
- * The composite intentionally extends the role interfaces above so callers
- * that genuinely need every capability (the canonical `createGmlSemanticIndex`
- * factory, the existing LSP handler wiring) can resolve a single object, while
- * new call sites are encouraged to depend on the narrower role they actually
- * use. Each role models one cohesive responsibility and exposes only the
- * members its consumers require, which is the Interface Segregation Principle
- * in practice.
- */
-export type GmlSemanticIndex = GmlSemanticIndexLifecycle &
-    GmlSemanticNavigator &
-    GmlSemanticDocumentSymbolProvider &
-    GmlSemanticRenameSupport &
-    GmlSemanticCacheManager &
-    GmlSemanticSearchProvider;
+}>;
 
 function formatGmlDocComment(documentation: GmlSymbolDocumentation): string {
     if (documentation.normalizedText.length === 0) {
