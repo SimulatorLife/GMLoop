@@ -12,6 +12,7 @@ import {
     readArtifactJson,
     readValidatedArtifactJson,
     resolveArtifactDirectory,
+    resolveBaselineAndCandidateTargets,
     writeArtifactJson
 } from "../modules/runtime/index.js";
 import { isRecord } from "../shared/error-guards.js";
@@ -271,26 +272,21 @@ function createReplayDiff(
 
 async function runReplayCompareAction(options: ReplayOptions): Promise<void> {
     const projectRoot = await resolveReplayProjectRoot(options);
-    const ids = await listReplayArtifactIds(projectRoot);
-    const baselineId = options.baseline ?? ids.at(-2) ?? "";
-    const candidateId = options.candidate ?? ids.at(-1) ?? "";
-    const baseline = baselineId.length > 0 ? await resolveReplayArtifact(projectRoot, baselineId) : null;
-    const candidate = candidateId.length > 0 ? await resolveReplayArtifact(projectRoot, candidateId) : null;
+    const { availableIds, baseline, baselineId, baselineReason, candidate, candidateId, candidateReason } =
+        await resolveBaselineAndCandidateTargets<ReplayArtifact>({
+            classifyMissing: classifyReplayArtifactLookupFailure,
+            explicitBaselineId: options.baseline,
+            explicitCandidateId: options.candidate,
+            listAvailableIds: listReplayArtifactIds,
+            loadRecord: resolveReplayArtifact,
+            projectRoot
+        });
 
     if (!baseline || !candidate) {
-        const baselineReason =
-            baselineId.length > 0 && !baseline
-                ? await classifyReplayArtifactLookupFailure(projectRoot, baselineId)
-                : null;
-        const candidateReason =
-            candidateId.length > 0 && !candidate
-                ? await classifyReplayArtifactLookupFailure(projectRoot, candidateId)
-                : null;
-
         printReplayPayload({
             command: "replay compare",
             payload: {
-                availableArtifactIds: ids,
+                availableArtifactIds: [...availableIds],
                 baselineReason,
                 candidateReason,
                 ok: false,

@@ -3,7 +3,6 @@ import path from "node:path";
 import process from "node:process";
 
 import { Core } from "@gmloop/core";
-import * as ParserWorkspace from "@gmloop/parser";
 import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
@@ -15,6 +14,7 @@ import {
     createVerboseOption,
     createWriteOption
 } from "../cli-core/shared-command-options.js";
+import { createGmlParserAdapter, type GmlParserAdapter } from "../modules/transpilation/adapters.js";
 import { formatPathForDisplay } from "../workflow/display-path.js";
 import { resolveExplicitWorkflowTargetPath, resolveWorkflowTargetPath } from "../workflow/project-root.js";
 
@@ -118,12 +118,25 @@ async function collectParseTargetFilePaths(targetPath: string, usage: string): P
     );
 }
 
+/**
+ * Parser adapter used by the parse command.
+ *
+ * The parse command is high-level CLI orchestration: it must not depend on
+ * the concrete `@gmloop/parser` workspace. The CLI exposes
+ * `createGmlParserAdapter` as the single dependency-inversion seam for parser
+ * instantiation, so this command consumes that factory and keeps the
+ * concrete `Parser.GMLParser` import in `modules/transpilation/adapters.ts`
+ * where it belongs. Tests can override the factory to swap in a stubbed
+ * parser without touching this module.
+ */
+const parseAdapter: GmlParserAdapter = createGmlParserAdapter();
+
 async function parseFileToAst(filePath: string): Promise<ParsedFileAst> {
     const source = await readFile(filePath, "utf8");
     return {
         sourcePath: filePath,
         displayPath: formatPathForDisplay(filePath),
-        ast: ParserWorkspace.Parser.GMLParser.parse(source) as ParsedGmlAst
+        ast: parseAdapter(source) as ParsedGmlAst
     };
 }
 

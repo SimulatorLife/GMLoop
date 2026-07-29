@@ -308,6 +308,98 @@ void test("missing required subcommand on a registered subcommand also recovers 
     assert.doesNotMatch(captured.stderr, /\(outputHelp\)/u);
 });
 
+void test("positional path arguments are translated into an actionable --path suggestion", async () => {
+    const program = applyStandardCommandOptions(new Command()).exitOverride();
+    const { registry, runner } = createCliCommandManager({
+        program,
+        onUnhandledError: () => {}
+    });
+
+    const capturedErrors = [];
+    const formatCommand = applyStandardCommandOptions(new Command("format")).description(
+        "Format GameMaker Language files using the prettier plugin."
+    );
+    formatCommand.option("--path <path>", "Target .gml file or directory path.");
+    formatCommand.option("--write", "Apply changes to files.");
+
+    registry.registerDefaultCommand({
+        command: formatCommand,
+        onError: (error, context) => {
+            capturedErrors.push({ error, command: context.command });
+        }
+    });
+
+    await runner.run(["format", "/tmp/project"]);
+
+    assert.strictEqual(capturedErrors.length, 1);
+    const [{ error }] = capturedErrors;
+    assert.ok(error instanceof CliUsageError);
+    assert.match(error.message, /'format' command does not accept a positional path argument/);
+    assert.match(error.message, /--path \/tmp\/project/);
+    assert.doesNotMatch(error.message, /too many arguments for 'format'/u);
+});
+
+void test("positional path arguments without a --path option use the generic guidance", async () => {
+    const program = applyStandardCommandOptions(new Command()).exitOverride();
+    const { registry, runner } = createCliCommandManager({
+        program,
+        onUnhandledError: () => {}
+    });
+
+    const capturedErrors = [];
+    const statsCommand = applyStandardCommandOptions(new Command("collect-stats")).description(
+        "Collect project health statistics."
+    );
+    statsCommand.option("--json", "Emit machine-readable JSON output.");
+
+    registry.registerCommand({
+        command: statsCommand,
+        onError: (error, context) => {
+            capturedErrors.push({ error, command: context.command });
+        }
+    });
+
+    await runner.run(["collect-stats", "/tmp/project"]);
+
+    assert.strictEqual(capturedErrors.length, 1);
+    const [{ error }] = capturedErrors;
+    assert.ok(error instanceof CliUsageError);
+    assert.match(error.message, /'collect-stats' command does not accept positional arguments/);
+    assert.match(error.message, /'\/tmp\/project'/);
+    assert.match(error.message, /--help/);
+    assert.doesNotMatch(error.message, /--path/u);
+});
+
+void test("multiple positional arguments on a --path command explain the single-target rule", async () => {
+    const program = applyStandardCommandOptions(new Command()).exitOverride();
+    const { registry, runner } = createCliCommandManager({
+        program,
+        onUnhandledError: () => {}
+    });
+
+    const capturedErrors = [];
+    const fixCommand = applyStandardCommandOptions(new Command("fix")).description(
+        "Run project codemods, lint fixes, and formatting in sequence."
+    );
+    fixCommand.option("--path <path>", "Target .gml file or directory path.");
+
+    registry.registerCommand({
+        command: fixCommand,
+        onError: (error, context) => {
+            capturedErrors.push({ error, command: context.command });
+        }
+    });
+
+    await runner.run(["fix", "/tmp/project", "/tmp/other"]);
+
+    assert.strictEqual(capturedErrors.length, 1);
+    const [{ error }] = capturedErrors;
+    assert.ok(error instanceof CliUsageError);
+    assert.match(error.message, /'\/tmp\/project'/);
+    assert.match(error.message, /'\/tmp\/other'/);
+    assert.match(error.message, /single '--path <target>'/);
+});
+
 interface CapturedStreams {
     stdout: string;
     stderr: string;

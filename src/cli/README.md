@@ -75,14 +75,12 @@ specific LLM vendor, MCP server, provider adapter, or tool command name.
 
 ### `format` - Format GML Files
 
-Wraps the Prettier plugin to format GameMaker Language files with enhanced diagnostics and error handling (targets `.gml` files only).
+Wraps the Prettier plugin to format GameMaker Language files with enhanced diagnostics and error handling (targets `.gml` files only). The target is supplied via `--path`; positional paths are rejected with an actionable error message that points at the correct flag.
 
 ```bash
-pnpm run cli -- format path/to/project
-# Implicit format mode with path-only input
-pnpm run cli -- path/to/project
-# Show format command options while using path-only invocation style
-pnpm run cli -- path/to/project --help
+pnpm run cli -- format --path path/to/project
+# Show format command options for the path-only invocation style
+pnpm run cli -- format --path path/to/project --help
 ```
 
 Normal format runs now keep output focused on results and diagnostics. Use `--list` when you want a full dump of resolved command settings before execution.

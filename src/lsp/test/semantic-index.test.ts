@@ -7,6 +7,16 @@ import { test } from "node:test";
 import { Lsp } from "@gmloop/lsp";
 import { Semantic } from "@gmloop/semantic";
 
+import type { GmlTextDocument } from "../src/documents/source-document.js";
+import type {
+    GmlSemanticCacheManager,
+    GmlSemanticDocumentSymbolProvider,
+    GmlSemanticIndex,
+    GmlSemanticIndexLifecycle,
+    GmlSemanticNavigator,
+    GmlSemanticRenameSupport,
+    GmlSemanticSearchProvider
+} from "../src/intelligence/identifier-index.js";
 import type { GmlSemanticAnalysisStart } from "../src/intelligence/index.js";
 
 const TEST_REQUEST_SIGNAL = new AbortController().signal;
@@ -1339,5 +1349,58 @@ void test("semantic index exposes indexProjectRoot to perform background project
     } finally {
         await semanticIndex.dispose();
         await fixture.cleanup();
+    }
+});
+
+/**
+ * Exercise the role-focused interfaces that compose {@link GmlSemanticIndex}.
+ *
+ * The runtime assertions stay trivial — they only confirm the factory returns a
+ * non-null composite — because the real segregation guarantee is provided by the
+ * type system: each role interface narrows the composite to the members its
+ * consumers actually use. Removing a member from a role interface, or breaking
+ * the composite contract, is caught at compile time when this test fails to
+ * type-check.
+ */
+void test("semantic index composite exposes every role interface to segregated consumers", async () => {
+    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gmloop-lsp-roles-"));
+    try {
+        const store = Lsp.createGmlDocumentStore();
+        const semanticIndex: GmlSemanticIndex = Lsp.createGmlSemanticIndex(store);
+
+        // Each role assignment is a compile-time check that the composite
+        // contract satisfies every role interface, and that handlers may
+        // depend on the narrowest role their operations require.
+        const lifecycle: GmlSemanticIndexLifecycle = semanticIndex;
+        const navigator: GmlSemanticNavigator = semanticIndex;
+        const symbolProvider: GmlSemanticDocumentSymbolProvider = semanticIndex;
+        const renameSupport: GmlSemanticRenameSupport = semanticIndex;
+        const cacheManager: GmlSemanticCacheManager = semanticIndex;
+        const searchProvider: GmlSemanticSearchProvider = semanticIndex;
+
+        assert.ok(lifecycle, "Lifecycle role should project the composite without runtime data.");
+        assert.ok(navigator, "Navigator role should project the composite without runtime data.");
+        assert.ok(symbolProvider, "Document-symbol role should project the composite without runtime data.");
+        assert.ok(renameSupport, "Rename role should project the composite without runtime data.");
+        assert.ok(cacheManager, "Cache manager role should project the composite without runtime data.");
+        assert.ok(searchProvider, "Search provider role should project the composite without runtime data.");
+
+        // A handler that only resolves navigation facts should depend on the
+        // navigator role alone — invoking `dispose()` on it would be a type
+        // error, demonstrating the segregation.
+        async function runNavigatorSample(
+            target: GmlSemanticNavigator,
+            document: GmlTextDocument,
+            signal: AbortSignal
+        ) {
+            return await target.findDefinition(document, 0, "sample", signal);
+        }
+
+        assert.equal(typeof runNavigatorSample, "function");
+        void runNavigatorSample;
+
+        await semanticIndex.dispose();
+    } finally {
+        await fs.rm(projectRoot, { recursive: true, force: true }).catch(() => {});
     }
 });

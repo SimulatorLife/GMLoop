@@ -2519,17 +2519,29 @@ function removeFileFromAggregationState(
     identifierCollections: any,
     relationships: any
 ): void {
-    // 1. Delete file record
+    // 1. Delete file record. `Map.prototype.delete` is safe to call before any
+    // iteration begins on `scopeMap`/`identifierCollections`, so this step does
+    // not need to participate in the snapshot pass below.
     filesMap.delete(relativeChangedPath);
 
-    // 2. Delete scope records
+    // 2. Delete scope records. We collect the doomed keys (and replacement
+    // entries for the copy-on-write global/project scopes) in a first pass and
+    // apply them in a second pass so the loop never mutates the Map it is
+    // iterating over. The previous implementation called `scopeMap.delete`
+    // inside `scopeMap.entries()`, which leans on spec-defined iterator
+    // semantics where deletion of not-yet-yielded entries is implementation
+    // defined; it is currently well-defined in V8 but the contract is easy to
+    // break with a future refactor and obscures the intent of the loop.
+    const scopeIdsToRemove: Array<string> = [];
+    const scopeUpdates: Array<{ scopeId: string; nextEntry: any }> = [];
+
     for (const [scopeId, scopeRecord] of scopeMap.entries()) {
         if (
             scopeId.startsWith(`file:${relativeChangedPath}`) ||
             (scopeRecord.filePaths && scopeRecord.filePaths.includes(relativeChangedPath))
         ) {
             if (scopeId !== "global" && scopeId !== "project") {
-                scopeMap.delete(scopeId);
+                scopeIdsToRemove.push(scopeId);
             } else {
                 // Perform copy-on-write for global/project scopes
                 const filePaths = (scopeRecord.filePaths || []).filter((p: string) => p !== relativeChangedPath);
@@ -2545,21 +2557,38 @@ function removeFileFromAggregationState(
                 const scriptCalls = (scopeRecord.scriptCalls || []).filter(
                     (c: any) => c.from?.filePath !== relativeChangedPath
                 );
-                scopeMap.set(scopeId, {
-                    ...scopeRecord,
-                    filePaths,
-                    declarations,
-                    references,
-                    ignoredIdentifiers,
-                    scriptCalls
+                scopeUpdates.push({
+                    scopeId,
+                    nextEntry: {
+                        ...scopeRecord,
+                        filePaths,
+                        declarations,
+                        references,
+                        ignoredIdentifiers,
+                        scriptCalls
+                    }
                 });
             }
         }
     }
 
-    // 3. Filter occurrences in identifier collections
+    for (const scopeId of scopeIdsToRemove) {
+        scopeMap.delete(scopeId);
+    }
+    for (const { scopeId, nextEntry } of scopeUpdates) {
+        scopeMap.set(scopeId, nextEntry);
+    }
+
+    // 3. Filter occurrences in identifier collections. Same snapshot discipline
+    // as the scope-map loop above: collect the keys to delete and the updated
+    // entries during iteration, then apply them afterwards so the inner
+    // `Map.entries()` loop is never asked to walk a collection that we are
+    // actively mutating.
     for (const collectionVal of Object.values(identifierCollections)) {
         const collection = collectionVal as Map<string, any>;
+        const collectionKeysToRemove: Array<string> = [];
+        const collectionUpdates: Array<{ key: string; nextEntry: any }> = [];
+
         for (const [key, entry] of collection.entries()) {
             const decls = entry.declarations || [];
             const refs = entry.references || [];
@@ -2569,15 +2598,25 @@ function removeFileFromAggregationState(
                 const declarations = declarationsFilterForRemove(decls, relativeChangedPath);
                 const references = referencesFilterForRemove(refs, relativeChangedPath);
                 if (declarations.length === 0 && references.length === 0) {
-                    collection.delete(key);
+                    collectionKeysToRemove.push(key);
                 } else {
-                    collection.set(key, {
-                        ...entry,
-                        declarations,
-                        references
+                    collectionUpdates.push({
+                        key,
+                        nextEntry: {
+                            ...entry,
+                            declarations,
+                            references
+                        }
                     });
                 }
             }
+        }
+
+        for (const key of collectionKeysToRemove) {
+            collection.delete(key);
+        }
+        for (const { key, nextEntry } of collectionUpdates) {
+            collection.set(key, nextEntry);
         }
     }
 
@@ -3136,10 +3175,22 @@ async function reconcileIncrementalResourceMetadata({
         resourceAnalysis.assetReferences = resourceAnalysis.assetReferences.filter(
             (reference) => reference.fromResourcePath !== relativeMetadataPath
         );
+        // Collect the keys to evict in a first pass and apply the deletions
+        // afterwards so the loop never mutates the Map it is iterating over.
+        // The previous in-loop `gmlScopeMap.delete(gmlFile)` call leans on
+        // spec-defined iterator semantics where deletion of not-yet-yielded
+        // entries is implementation defined; it currently works under V8 but
+        // is fragile to future runtime refactors and hides the loop's
+        // intent. The same loop body is used as a small, focused fix here
+        // for consistency with `removeFileFromAggregationState`.
+        const gmlFilesToEvict: Array<string> = [];
         for (const [gmlFile, descriptor] of resourceAnalysis.gmlScopeMap) {
             if (descriptor.resourcePath === relativeMetadataPath) {
-                resourceAnalysis.gmlScopeMap.delete(gmlFile);
+                gmlFilesToEvict.push(gmlFile);
             }
+        }
+        for (const gmlFile of gmlFilesToEvict) {
+            resourceAnalysis.gmlScopeMap.delete(gmlFile);
         }
     }
     const metadataFileCandidates = await Promise.all(
@@ -3794,3 +3845,13 @@ export async function publishBuiltProjectIndexIncrement(
         await store.close();
     }
 }
+
+/**
+ * Test-only surface for `removeFileFromAggregationState` and the supporting
+ * aggregation-state helpers. Exported as a frozen object so unit tests can
+ * exercise the snapshot-pattern mutation logic directly without standing up
+ * the full project-index pipeline.
+ */
+export const __projectIndexBuilderTest__ = Object.freeze({
+    removeFileFromAggregationState
+});

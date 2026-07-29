@@ -91,6 +91,54 @@ export function createMissingResetRule(
     });
 }
 
+/**
+ * Builds a feather rule that emits a single `missingProjectContext`
+ * diagnostic when a detection pattern matches anywhere in the source.
+ *
+ * This consolidates the "if pattern → report project-context-only
+ * diagnostic" body that used to be copy-pasted across Feather rules that
+ * are intentionally project-context-only (`GM1021`, `GM1064`, `GM2025`,
+ * `GM2040`, and `GM2064`). Each of those factories used the same 14-line
+ * `Object.freeze` / `Program` / `context.report` scaffold and differed only
+ * in the detection regex, so the bodies drifted independently even though
+ * they were functionally identical. Routing them through this helper keeps
+ * the report-only scaffold in a single place and makes the per-rule
+ * difference (the regex) obvious at the call site.
+ *
+ * The diagnostic carries no fix, which matches the contract the manifest
+ * records for these rules via `fixability: "none"`.
+ *
+ * @param entry The manifest entry describing the rule.
+ * @param detectionPattern Regex used to detect the construct the rule
+ *   cares about. When the pattern does not match, no diagnostic is emitted.
+ * @returns A `Rule.RuleModule` that emits a single `missingProjectContext`
+ *   diagnostic at the match index when the pattern matches.
+ */
+export function createMissingProjectContextRule(
+    entry: FeatherManifestEntry,
+    detectionPattern: RegExp
+): Rule.RuleModule {
+    return Object.freeze({
+        meta: createFeatherRuleMeta(entry),
+        create(context) {
+            return Object.freeze({
+                Program() {
+                    const sourceText = context.sourceCode.text;
+                    const match = detectionPattern.exec(sourceText);
+                    if (!match) {
+                        return;
+                    }
+
+                    context.report({
+                        loc: resolveLocFromIndex(context, sourceText, match.index ?? 0),
+                        messageId: "missingProjectContext"
+                    });
+                }
+            });
+        }
+    });
+}
+
 export function extractFunctionParameterNames(parameterListText: string): Array<string> {
     return parameterListText
         .split(",")
