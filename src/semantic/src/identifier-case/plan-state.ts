@@ -89,11 +89,16 @@ function tryResolveRenameTarget(
                     return renameMap.get(fileKey) ?? null;
                 }
             } catch {
-                /* ignore */
+                // File-qualified lookup is the secondary path for plans keyed
+                // with a filepath. A malformed location or custom map-like
+                // implementation must behave like a missing rename; propagating
+                // the error would abort formatting for an optional case fix.
             }
         }
     } catch {
-        /* ignore */
+        // Rename maps cross the provider boundary and may only be map-like.
+        // Treat a throwing membership probe as an unavailable plan so identifier
+        // case correction cannot turn otherwise printable GML into a hard failure.
     }
 
     return null;
