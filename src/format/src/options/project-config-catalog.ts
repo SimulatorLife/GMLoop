@@ -80,7 +80,7 @@ export function createProjectFormatOptionCatalog(
         Object.freeze({
             defaultValue: false,
             description:
-                "GML strings must use double quotes only, so the formatter preserves the source's original quote style and this option has no effect on string literal output.",
+                "GML normal and template strings must use double quotes; verbatim strings (`@\"…\"` or `@'…'`) may use either. The formatter always preserves the source's original quote style, so this option has no effect on string literal output.",
             name: "singleQuote"
         }),
         Object.freeze({

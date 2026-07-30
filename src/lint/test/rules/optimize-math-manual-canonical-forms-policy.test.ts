@@ -1,6 +1,6 @@
 /**
- * Unit tests for the post-rewrite canonical-form pass that runs after the
- * AST-level optimizations in `optimize-math-expressions`.
+ * Unit tests for the math manual-canonical-forms-policy module that runs
+ * after the AST-level optimizations in `optimize-math-expressions`.
  *
  * The pass used to live as a tangle of inline `replaceAll` calls inside the
  * rule body. The tests below verify that the extracted policy module:
@@ -17,18 +17,30 @@
  * was responsible for handling; behaviour is asserted against the *same*
  * source/expected pairs that the in-tree `optimize-math-expressions-fast-path`
  * fixture suite relies on, so this module stays a drop-in replacement.
+ *
+ * The module was previously named `optimize-math-manual-canonical-forms-policy`
+ * and lived under `gml/rules/`. It is pure GML math-policy code (canonical-
+ * form regex catalogue, per-rule evaluators, default policy list), so it now
+ * sits alongside the other math helpers in `gml/math/` where its peers
+ * (`math-numeric-policy.ts`, `math-scalar-condensing.ts`, etc.) already live.
  */
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+// Import via the curated `math/index.js` barrel rather than reaching into
+// `math-manual-canonical-forms-policy.js` directly. The barrel is the stable
+// public surface for the math helpers; deep-relative imports into specific
+// implementation files couple this test to the internal layout of
+// `gml/math/`. If a helper is moved or split across files, only the barrel
+// needs updating.
 import {
     applyManualMathCanonicalForms,
     evaluateShouldApplyManualMathCanonicalForms,
     findManualMathCanonicalFormRuleById,
     getDefaultManualMathCanonicalFormsPolicy,
     type ManualMathCanonicalFormsPolicy
-} from "../../src/rules/gml/rules/optimize-math-manual-canonical-forms-policy.js";
+} from "../../src/rules/gml/math/index.js";
 
 const DEFAULT_POLICY = getDefaultManualMathCanonicalFormsPolicy();
 
