@@ -13,7 +13,19 @@ type WorkerOverlayBoundaryEntry = Readonly<{
     version: number;
 }>;
 
-/** Captures every open-buffer version and hash used as worker input. */
+/**
+ * Captures every open-buffer version and content hash used as worker input.
+ *
+ * Keys are `path.resolve`'d absolute file paths so the map is robust to
+ * callers passing relative paths. The stored `version` is the LSP document
+ * version at snapshot time; the `contentHash` mirrors the semantic content
+ * hash the worker compares against, so any source-text drift is detected
+ * even when a client forgets to bump the version number.
+ *
+ * @param documents Open buffers to snapshot. Order is irrelevant; the
+ *   resulting map is keyed by absolute path.
+ * @returns Read-only map from absolute path to `{ version, contentHash }`.
+ */
 export function createWorkerOverlayBoundary(
     documents: ReadonlyArray<WorkerOverlayDocument>
 ): ReadonlyMap<string, WorkerOverlayBoundaryEntry> {
@@ -28,7 +40,18 @@ export function createWorkerOverlayBoundary(
     );
 }
 
-/** Returns whether the complete open-buffer set still matches a worker boundary. */
+/**
+ * Returns whether the complete open-buffer set still matches a worker boundary.
+ *
+ * The check is strict: both the document count AND every path's version and
+ * content hash must agree with `boundary`. Adding, removing, editing, or
+ * even merely renaming a buffer invalidates the snapshot, so callers should
+ * treat a `false` result as "rebuild the worker overlay from scratch".
+ *
+ * @param boundary Snapshot previously produced by `createWorkerOverlayBoundary`.
+ * @param documents Current open buffers to compare against the snapshot.
+ * @returns `true` only when every entry matches by path, version, and content hash.
+ */
 export function isWorkerOverlayBoundaryCurrent(
     boundary: ReadonlyMap<string, WorkerOverlayBoundaryEntry>,
     documents: ReadonlyArray<WorkerOverlayDocument>
