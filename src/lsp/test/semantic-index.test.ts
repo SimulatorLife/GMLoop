@@ -9,7 +9,9 @@ import { Semantic } from "@gmloop/semantic";
 
 import type { GmlTextDocument } from "../src/documents/source-document.js";
 import type {
+    GmlSemanticCacheInvalidator,
     GmlSemanticCacheManager,
+    GmlSemanticCacheRefresher,
     GmlSemanticDocumentSymbolProvider,
     GmlSemanticIndex,
     GmlSemanticIndexLifecycle,
@@ -1375,6 +1377,8 @@ void test("semantic index composite exposes every role interface to segregated c
         const navigator: GmlSemanticNavigator = semanticIndex;
         const symbolProvider: GmlSemanticDocumentSymbolProvider = semanticIndex;
         const renameSupport: GmlSemanticRenameSupport = semanticIndex;
+        const cacheInvalidator: GmlSemanticCacheInvalidator = semanticIndex;
+        const cacheRefresher: GmlSemanticCacheRefresher = semanticIndex;
         const cacheManager: GmlSemanticCacheManager = semanticIndex;
         const searchProvider: GmlSemanticSearchProvider = semanticIndex;
 
@@ -1382,6 +1386,8 @@ void test("semantic index composite exposes every role interface to segregated c
         assert.ok(navigator, "Navigator role should project the composite without runtime data.");
         assert.ok(symbolProvider, "Document-symbol role should project the composite without runtime data.");
         assert.ok(renameSupport, "Rename role should project the composite without runtime data.");
+        assert.ok(cacheInvalidator, "Cache invalidator role should project the composite without runtime data.");
+        assert.ok(cacheRefresher, "Cache refresher role should project the composite without runtime data.");
         assert.ok(cacheManager, "Cache manager role should project the composite without runtime data.");
         assert.ok(searchProvider, "Search provider role should project the composite without runtime data.");
 
@@ -1396,8 +1402,26 @@ void test("semantic index composite exposes every role interface to segregated c
             return await target.findDefinition(document, 0, "sample", signal);
         }
 
+        // Document-sync handlers only need to drop cached navigation state,
+        // so they should depend on the invalidator role alone. Invoking
+        // `refreshForFilePath` on the invalidator would be a type error.
+        function runInvalidatorSample(target: GmlSemanticCacheInvalidator, document: GmlTextDocument): void {
+            target.invalidateForDocument(document);
+        }
+
+        // File-watcher handlers only need to rebuild state from disk, so they
+        // should depend on the refresher role alone. Invoking
+        // `invalidateForFilePath` on the refresher would be a type error.
+        async function runRefresherSample(target: GmlSemanticCacheRefresher, filePath: string): Promise<void> {
+            await target.refreshForFilePath(filePath);
+        }
+
         assert.equal(typeof runNavigatorSample, "function");
+        assert.equal(typeof runInvalidatorSample, "function");
+        assert.equal(typeof runRefresherSample, "function");
         void runNavigatorSample;
+        void runInvalidatorSample;
+        void runRefresherSample;
 
         await semanticIndex.dispose();
     } finally {
