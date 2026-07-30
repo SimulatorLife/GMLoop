@@ -76,15 +76,17 @@ If you're planning architecture or boundary changes, read [`docs/target-state.md
 
 ### Format from a local clone
 
-Use the repo CLI wrapper to format any GameMaker project path:
+Use the repo CLI wrapper to format any GameMaker project path. The `format`
+command (and the related `fix` and `transpile` commands) take their target
+exclusively via the `--path` option — passing a positional path no longer
+works and produces an actionable usage error that points at `--path`.
 
 ```bash
-# format writes changes (positional path or --path option)
-pnpm run cli -- format /absolute/path/to/MyGame
+# format writes changes (use --path for the target)
 pnpm run cli -- format --path /absolute/path/to/MyGame
 
 # check mode (no writes)
-pnpm run cli -- format /absolute/path/to/MyGame --check
+pnpm run cli -- format --path /absolute/path/to/MyGame
 ```
 
 `format:gml` now targets `.gml` files only. The old `--extensions` option and

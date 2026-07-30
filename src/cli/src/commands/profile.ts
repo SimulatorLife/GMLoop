@@ -12,6 +12,7 @@ import {
     listJsonBasenames,
     readArtifactJson,
     resolveArtifactDirectory,
+    resolveBaselineAndCandidateTargets,
     writeArtifactJson
 } from "../modules/runtime/index.js";
 import { discoverProjectRoot } from "../workflow/project-root.js";
@@ -177,18 +178,21 @@ function createSnapshotDelta(
 
 async function runProfileCompareAction(options: ProfileOptions): Promise<void> {
     const projectRoot = await resolveProfileProjectRoot(options);
-    const ids = await listSnapshotIds(projectRoot);
-    const baselineId = options.baseline ?? ids.at(-2) ?? "";
-    const candidateId = options.candidate ?? ids.at(-1) ?? "";
-    const baseline = baselineId.length > 0 ? await resolveSnapshot(projectRoot, baselineId) : null;
-    const candidate = candidateId.length > 0 ? await resolveSnapshot(projectRoot, candidateId) : null;
+    const { availableIds, baseline, baselineId, candidate, candidateId } =
+        await resolveBaselineAndCandidateTargets<ProfileSnapshot>({
+            explicitBaselineId: options.baseline,
+            explicitCandidateId: options.candidate,
+            listAvailableIds: listSnapshotIds,
+            loadRecord: resolveSnapshot,
+            projectRoot
+        });
 
     if (!baseline || !candidate) {
         printProfilePayload(
             {
                 command: "profile compare",
                 payload: {
-                    availableSnapshotIds: ids,
+                    availableSnapshotIds: [...availableIds],
                     ok: false,
                     reason: "missing_snapshots"
                 }
