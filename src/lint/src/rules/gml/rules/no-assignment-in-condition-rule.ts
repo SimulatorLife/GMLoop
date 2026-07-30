@@ -6,10 +6,11 @@ import { createMeta, reportFullTextRewrite, rewriteSourceLines } from "../rule-b
 function normalizeConditionAssignments(conditionText: string): string {
     // The lookbehind set enumerates every GML operator whose terminal `=`
     // must NOT be rewritten: `==`, `!=`, `<=`, `>=`, `+=`, `-=`, `*=`, `/=`,
-    // `%=`, `<<=`, `>>=`, plus the bitwise compound forms `&=`, `^=`, `|=`.
-    // Omitting the bitwise characters mangles `if (x |= y)` into the
-    // syntactically invalid `if (x |== y)`.
-    return conditionText.replaceAll(/(?<![=!<>+\-*/%&|^])=(?![=])/g, "==");
+    // `%=`, `<<=`, `>>=`, `??=`, plus the bitwise compound forms `&=`, `^=`,
+    // `|=`. Omitting the bitwise characters mangles `if (x |= y)` into the
+    // syntactically invalid `if (x |== y)`, and omitting `?` mangles
+    // `if (x ??= y)` into the equally invalid `if (x ??== y)`.
+    return conditionText.replaceAll(/(?<![=!<>+\-*/%&|^?])=(?![=])/g, "==");
 }
 
 function rewriteControlConditionAssignments(sourceText: string): string {
