@@ -14,7 +14,13 @@ import {
     createCommanderProgramContract,
     isCommanderCommandLike
 } from "./commander-contract.js";
-import { isCommanderErrorLike, isCommanderHelpError, isCommanderHelpLikeError } from "./commander-error-utils.js";
+import {
+    isCommanderErrorLike,
+    isCommanderExcessArgumentsError,
+    isCommanderHelpError,
+    isCommanderHelpLikeError,
+    parseCommanderExcessArgumentsMessage
+} from "./commander-error-utils.js";
 import type { CommanderCommandLike, CommanderExecutor } from "./commander-types.js";
 import { CliUsageError, handleCliError } from "./errors.js";
 
@@ -261,7 +267,9 @@ class CliCommandManager {
         const commanderError = error;
         const commandFromError = commanderError.command ?? this._activeCommand ?? this._program;
         const resolvedCommand = this._resolveCommandFromCommanderError(commandFromError);
-        const usageError = this._createUsageErrorFromCommanderError(commanderError, resolvedCommand);
+        const usageError = isCommanderExcessArgumentsError(commanderError)
+            ? this._createExcessArgumentsUsageError(commanderError, resolvedCommand)
+            : this._createUsageErrorFromCommanderError(commanderError, resolvedCommand);
         this._handleCommandError(usageError, resolvedCommand ?? this._program);
         return true;
     }
@@ -342,6 +350,105 @@ class CliCommandManager {
             usage: normalizedUsage
         });
     }
+
+    /**
+     * Build a friendlier `CliUsageError` when Commander rejects positional
+     * arguments for a command that declared none.
+     *
+     * Commander's default message ("too many arguments for 'X'. Expected 0
+     * arguments but got 1: /tmp.") is technically accurate but opaque: the
+     * most common cause is a user following `lint <path>` / `parse <path>`
+     * muscle memory for a sibling command (`format`, `fix`, `transpile`)
+     * that takes its target via `--path` instead. When the resolved command
+     * exposes a `--path` option, surface that distinction explicitly.
+     */
+    private _createExcessArgumentsUsageError(
+        error: Error & { message: string },
+        resolvedCommand: CommanderCommandLike | null
+    ): CliUsageError {
+        const { commandName, excessArguments } = parseCommanderExcessArgumentsMessage(error.message);
+        const fallbackName = this._resolveCommandName(resolvedCommand);
+        const displayName = commandName ?? fallbackName ?? "the requested command";
+        const usage = resolveCommandUsage(resolvedCommand, {
+            fallback: () => this._programContract.getUsage() ?? ""
+        });
+        const normalizedUsage = composeUsageHelpMessage({
+            defaultHelpText: DEFAULT_HELP_AFTER_ERROR,
+            usage
+        });
+
+        const acceptsPathOption = this._commandHasPathOption(resolvedCommand);
+        const message = buildExcessArgumentsMessage({
+            commandName: displayName,
+            excessArguments,
+            acceptsPathOption
+        });
+
+        return new CliUsageError(message, { usage: normalizedUsage });
+    }
+
+    private _resolveCommandName(command: CommanderCommandLike | null): string | null {
+        if (!command) {
+            return null;
+        }
+        if (typeof command.name === "function") {
+            const value = command.name();
+            return typeof value === "string" && value.length > 0 ? value : null;
+        }
+        return null;
+    }
+
+    private _commandHasPathOption(command: CommanderCommandLike | null): boolean {
+        if (!command || !Array.isArray(command.options)) {
+            return false;
+        }
+        return command.options.some((option) => option?.long === "--path");
+    }
+}
+
+function buildExcessArgumentsMessage({
+    commandName,
+    excessArguments,
+    acceptsPathOption
+}: {
+    commandName: string;
+    excessArguments: ReadonlyArray<string>;
+    acceptsPathOption: boolean;
+}): string {
+    const receivedLine = formatReceivedArgumentsLine(excessArguments);
+
+    if (acceptsPathOption && excessArguments.length === 1) {
+        const onlyArgument = excessArguments[0] ?? "";
+        return [
+            `The '${commandName}' command does not accept a positional path argument.`,
+            receivedLine,
+            `Pass the target via '--path' instead, for example: --path ${onlyArgument}`
+        ].join("\n");
+    }
+
+    if (acceptsPathOption) {
+        return [
+            `The '${commandName}' command does not accept positional arguments; pass a single '--path <target>' value instead.`,
+            receivedLine,
+            `Multiple positional arguments were received; '--path' takes a single target.`
+        ].join("\n");
+    }
+
+    return [
+        `The '${commandName}' command does not accept positional arguments.`,
+        receivedLine,
+        `Run with --help to see supported options.`
+    ].join("\n");
+}
+
+function formatReceivedArgumentsLine(excessArguments: ReadonlyArray<string>): string {
+    if (excessArguments.length === 0) {
+        return "No positional arguments were captured from the failed parse.";
+    }
+
+    const label = excessArguments.length === 1 ? "positional argument" : "positional arguments";
+    const formattedList = excessArguments.map((argument) => `'${argument}'`).join(", ");
+    return `Received ${excessArguments.length} unexpected ${label}: ${formattedList}.`;
 }
 
 export { CliCommandManager };

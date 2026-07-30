@@ -1076,7 +1076,7 @@ function createGraphPlaygroundFormatOptions(
 
 function createRefactorEngineForPlayground(activeProjectRoot: string) {
     const bridges = createRefactorBridges({}, activeProjectRoot);
-    return new Refactor.RefactorEngine({
+    return Refactor.createRefactorEngine({
         formatter: bridges.formatter,
         parser: bridges.parser,
         semantic: bridges.semantic

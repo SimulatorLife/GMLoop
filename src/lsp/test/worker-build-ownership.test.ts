@@ -18,6 +18,26 @@ void test("LSP semantic orchestration never runs project indexing on the server 
     assert.match(identifierIndexSource, /withPinnedSemanticQueries/u);
 });
 
+void test("semantic index failures normalize unknown thrown values before logging", async () => {
+    const identifierIndexSource = await readFile(
+        path.join(REPOSITORY_ROOT, "src/lsp/src/intelligence/identifier-index.ts"),
+        "utf8"
+    );
+
+    assert.match(
+        identifierIndexSource,
+        /Failed to reconcile semantic manifest for \$\{resolvedRoot\}: \$\{Core\.getErrorMessageOrFallback\(error\)\}/u
+    );
+    assert.match(
+        identifierIndexSource,
+        /Failed to persist semantic index for \$\{resolvedRoot\}: \$\{Core\.getErrorMessageOrFallback\(error\)\}/u
+    );
+    assert.doesNotMatch(
+        identifierIndexSource,
+        /Failed to (?:reconcile semantic manifest|persist semantic index)[^\n]*`, error\)/u
+    );
+});
+
 void test("semantic worker requests and results carry generation and source boundaries", async () => {
     const workerSource = await readFile(
         path.join(REPOSITORY_ROOT, "src/lsp/src/intelligence/project-index-worker.ts"),
