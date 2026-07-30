@@ -586,22 +586,34 @@ async function performInitialScan(
             // reparsed in this pass: retaining the complete project AST set during startup can
             // exhaust memory before the watch servers start for large GameMaker projects.
             const cached = takeInitialFileData(fileDataCache, fullPath);
-            const currentStats = await stat(fullPath);
+            // Pipeline the stat with the conditional file read so the per-file
+            // cost tracks the slower of stat-vs-read instead of their sum on
+            // the cache miss path. Cache hits keep the read off the wire.
+            const currentStatsPromise = stat(fullPath);
+            const freshContentPromise = cached === undefined ? readFile(fullPath, "utf8") : null;
+            const currentStats = await currentStatsPromise;
             const canUseCachedFileData = cached !== undefined && cached.mtimeMs === currentStats.mtimeMs;
-            const content = canUseCachedFileData ? cached.content : await readFile(fullPath, "utf8");
+            let resolvedContent: string;
+            if (canUseCachedFileData) {
+                resolvedContent = cached.content;
+            } else if (freshContentPromise === null) {
+                resolvedContent = await readFile(fullPath, "utf8");
+            } else {
+                resolvedContent = await freshContentPromise;
+            }
             runtimeContext.fileSnapshots.set(fullPath, currentStats.mtimeMs);
 
             // Store the initial content hash so that change events immediately after
             // startup are skipped if the file content has not actually changed.
-            runtimeContext.fileContentHashes.set(fullPath, hashSourceContent(content));
-            runtimeContext.fileContentLengths.set(fullPath, content.length);
+            runtimeContext.fileContentHashes.set(fullPath, hashSourceContent(resolvedContent));
+            runtimeContext.fileContentLengths.set(fullPath, resolvedContent.length);
 
             ensureScriptNameRegistered(fullPath, runtimeContext.scriptNames);
 
             // Build dependency metadata without emitting JavaScript. The native HTML5 build
             // already contains the initial code; startup needs the graph, not duplicate patches.
             await yieldToEventLoop();
-            const result = analyzeFileMetadata(runtimeContext, fullPath, content);
+            const result = analyzeFileMetadata(runtimeContext, fullPath, resolvedContent);
 
             // Track symbols and references
             if (result.success) {
@@ -2029,8 +2041,12 @@ async function addScriptNamesFromFile(
     const beforeSize = scriptNames.size;
 
     try {
-        const content = await readFile(filePath, "utf8");
-        const { mtimeMs } = await stat(filePath);
+        // `readFile` and `stat` are independent I/O operations; pipeline them so
+        // the per-file startup cost tracks the slower of the two instead of the
+        // sum. The pipelined `try` still catches a stat failure alongside the
+        // read failure, preserving the original "ignore parse errors" fallback
+        // behavior used by the directory walk.
+        const [content, stats] = await Promise.all([readFile(filePath, "utf8"), stat(filePath)]);
         await yieldToEventLoop();
         for (const functionName of Parser.extractGmlFunctionNames(content)) {
             scriptNames.add(`gml_Script_${functionName}`);
@@ -2040,7 +2056,7 @@ async function addScriptNamesFromFile(
             macroDefinitionsBySourcePath.set(filePath, Transpiler.extractMacroDefinitionsFromSource(content, filePath));
         }
 
-        fileDataCache.set(filePath, { content, mtimeMs, symbols: [], references: [] });
+        fileDataCache.set(filePath, { content, mtimeMs: stats.mtimeMs, symbols: [], references: [] });
         await yieldToEventLoop();
     } catch {
         // Ignore parse errors; fallback to file-name based script
