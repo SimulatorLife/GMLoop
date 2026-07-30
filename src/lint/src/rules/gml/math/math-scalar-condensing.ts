@@ -16,11 +16,7 @@ import {
 } from "./math-ast-builders.js";
 import type { ConvertManualMathTransformOptions } from "./math-ast-mutation.js";
 import * as AST from "./math-ast-mutation.js";
-import {
-    isSafeReciprocalCancellationOperand,
-    matchScaledOperand,
-    unwrapEnclosingParentheses
-} from "./math-lengthdir-transforms.js";
+import { isSafeReciprocalCancellationOperand, matchScaledOperand } from "./math-lengthdir-transforms.js";
 import {
     computeIntegerGcd,
     computeNumericTolerance,
@@ -779,7 +775,7 @@ function applyScalarProductIdentityCollapse(
         return false;
     }
 
-    unwrapEnclosingParentheses(node, context);
+    AST.unwrapEnclosingParentheses(node, context);
 
     return true;
 }

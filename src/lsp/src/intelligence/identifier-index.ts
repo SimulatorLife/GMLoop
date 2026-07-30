@@ -336,20 +336,54 @@ export interface GmlSemanticRenameSupport {
 }
 
 /**
- * Cache invalidation and refresh surface for the semantic index.
+ * Cache invalidation surface for the semantic index.
  *
- * File-watcher and document-sync handlers that only need to keep cached
- * navigation state in step with disk edits can depend on this role alone,
- * leaving navigation, symbol, rename, and search concerns to their own
- * dedicated roles.
+ * Document-sync handlers that only need to drop stale cached navigation
+ * state for a freshly edited document can depend on this role alone,
+ * leaving refresh, navigation, symbol, rename, and search concerns to
+ * their own dedicated roles. Keeping invalidation separate from refresh
+ * matches the call-site reality: an LSP `onDidChangeTextDocument` handler
+ * invalidates and lets the next query trigger a refresh, while file-watcher
+ * and save handlers refresh directly from disk.
  */
-export interface GmlSemanticCacheManager {
+export interface GmlSemanticCacheInvalidator {
     invalidateForDocument(document: GmlTextDocument): void;
     invalidateForFilePath(filePath: string): Promise<void>;
+}
+
+/**
+ * Cache refresh surface for the semantic index.
+ *
+ * File-watcher and save handlers that need to rebuild cached navigation
+ * state from disk can depend on this role alone, leaving invalidation,
+ * navigation, symbol, rename, and search concerns to their own dedicated
+ * roles. Refreshing without invalidating first is the intended pattern
+ * here: callers that need both should depend on the composite
+ * {@link GmlSemanticCacheManager} instead.
+ */
+export interface GmlSemanticCacheRefresher {
     refreshForDocument(document: GmlTextDocument): Promise<NavigationState | null>;
     refreshForFilePath(filePath: string): Promise<NavigationState | null>;
     refreshForFileChanges(changes: ReadonlyArray<GmlSemanticFileChange>): Promise<void>;
 }
+
+/**
+ * Composite cache-management surface for the semantic index.
+ *
+ * Combines the invalidation and refresh roles so callers that genuinely
+ * need both capabilities — for example integration tests that exercise
+ * the full cache lifecycle end-to-end — can declare a single dependency.
+ * Handlers that only need to invalidate (document-sync) or only need to
+ * refresh (file-watcher, save, close) should depend on the narrower role
+ * interface directly to keep their contract honest.
+ *
+ * This split mirrors the Interface Segregation Principle: each role models
+ * a single cohesive cache responsibility and exposes only the members its
+ * consumers require, preventing accidental coupling between the
+ * "drop stale state" and "rebuild state from disk" subsystems of the
+ * semantic index.
+ */
+export interface GmlSemanticCacheManager extends GmlSemanticCacheInvalidator, GmlSemanticCacheRefresher {}
 
 /**
  * Completion and workspace-symbol search surface for the semantic index.
@@ -379,7 +413,8 @@ export type GmlSemanticIndex = GmlSemanticIndexLifecycle &
     GmlSemanticNavigator &
     GmlSemanticDocumentSymbolProvider &
     GmlSemanticRenameSupport &
-    GmlSemanticCacheManager &
+    GmlSemanticCacheInvalidator &
+    GmlSemanticCacheRefresher &
     GmlSemanticSearchProvider;
 
 function formatGmlDocComment(documentation: GmlSymbolDocumentation): string {
@@ -1107,7 +1142,9 @@ export function createGmlSemanticIndex(
             }
         })()
             .catch((error: unknown) => {
-                console.error(`Failed to reconcile semantic manifest for ${resolvedRoot}:`, error);
+                console.error(
+                    `Failed to reconcile semantic manifest for ${resolvedRoot}: ${Core.getErrorMessageOrFallback(error)}`
+                );
             })
             .finally(() => {
                 manifestReconciliations.delete(resolvedRoot);
@@ -1181,7 +1218,9 @@ export function createGmlSemanticIndex(
         const queuedWrite = publication
             .then(() => undefined)
             .catch((error: unknown) => {
-                console.error(`Failed to persist semantic index for ${resolvedRoot}:`, error);
+                console.error(
+                    `Failed to persist semantic index for ${resolvedRoot}: ${Core.getErrorMessageOrFallback(error)}`
+                );
                 return undefined;
             });
         pendingCacheWrites.set(resolvedRoot, queuedWrite);
@@ -2948,7 +2987,7 @@ export function createGmlSemanticIndex(
                         return null;
                     }
                     const symbolId = readSymbolIdFromMatch(match);
-                    const refactorEngine = new Refactor.RefactorEngine({
+                    const refactorEngine = Refactor.createRefactorEngine({
                         semantic: queries.refactor
                     });
                     return await refactorWorkspaceEditToLspWorkspaceEdit(
