@@ -20,6 +20,7 @@ export {
 } from "./runner-state.js";
 export * from "./scope.js";
 export * from "./semantic-index-operation.js";
+export * from "./semantic-index-progress.js";
 export {
     type RuntimeServerProperties,
     type RuntimeStaticServerHandle,

@@ -7,29 +7,28 @@ import { Core } from "@gmloop/core";
 
 import type { CommanderCommandLike } from "../../cli-core/commander-types.js";
 import { discoverProjectRoot } from "../../workflow/project-root.js";
+import {
+    createSemanticIndexProgressController,
+    normalizeProjectSemanticIndexProgress,
+    type ProjectSemanticIndexProgress,
+    type SemanticIndexLeaseBinding,
+    type SemanticIndexMutableRecord
+} from "./semantic-index-progress.js";
 
 const OPERATION_STATE_FILE_NAME = "operation-state.json";
 const OPERATION_LOCK_FILE_NAME = "operation-state.lock";
 const OPERATION_STATE_VERSION = 1;
 const MAX_OPERATION_MESSAGES = 200;
-const SEMANTIC_INDEX_PROGRESS_PERSIST_INTERVAL_MS = 100;
 const PARENT_PROJECT_OPERATION_ENVIRONMENT_VARIABLE = "GMLOOP_PARENT_PROJECT_OPERATION_ID";
 
 /** Operations that coordinate project-wide work through the shared state file. */
 export type ProjectOperationKind = "fix" | "format" | "lint" | "refactor" | "live-reload" | "semantic-index";
 
-/** Summary reported once a semantic index build finishes: slowest files and manifest cache hit/miss counts. */
-export type ProjectSemanticIndexBuildSummary = Readonly<{
-    cacheHitCount: number;
-    cacheMissCount: number;
-    slowestFiles: ReadonlyArray<Readonly<{ relativePath: string; durationMs: number }>>;
-    totalDurationMs: number;
-}>;
-
-/** Progress emitted while the semantic project index parses project sources, or the final summary once it completes. */
-export type ProjectSemanticIndexProgress =
-    | Readonly<{ current: number; stage: "gml-parse"; total: number }>
-    | Readonly<{ stage: "complete"; summary: ProjectSemanticIndexBuildSummary }>;
+/**
+ * Re-exported so consumers that imported the semantic-index progress types
+ * from this module continue to work after the concern was extracted into
+ * `semantic-index-progress.ts`.
+ */
 
 /** Lifecycle status persisted for a project operation. */
 export type ProjectOperationStatus = "running" | "succeeded" | "failed";
@@ -181,61 +180,11 @@ function normalizeOperationRecord(value: unknown): ProjectOperationRecord | null
         semanticIndex:
             record.semanticIndex === null || record.semanticIndex === undefined
                 ? null
-                : normalizeSemanticIndexProgress(record.semanticIndex),
+                : normalizeProjectSemanticIndexProgress(record.semanticIndex),
         startedAt: record.startedAt,
         status,
         updatedAt: record.updatedAt
     });
-}
-
-function normalizeSemanticIndexBuildSummary(value: unknown): ProjectSemanticIndexBuildSummary | null {
-    const record = readPersistedObject(value);
-    if (
-        record === null ||
-        typeof record.cacheHitCount !== "number" ||
-        typeof record.cacheMissCount !== "number" ||
-        typeof record.totalDurationMs !== "number" ||
-        !Array.isArray(record.slowestFiles)
-    ) {
-        return null;
-    }
-    const slowestFiles = record.slowestFiles.flatMap((entry) => {
-        const fileRecord = readPersistedObject(entry);
-        return fileRecord !== null &&
-            typeof fileRecord.relativePath === "string" &&
-            typeof fileRecord.durationMs === "number"
-            ? [Object.freeze({ relativePath: fileRecord.relativePath, durationMs: fileRecord.durationMs })]
-            : [];
-    });
-    return Object.freeze({
-        cacheHitCount: record.cacheHitCount,
-        cacheMissCount: record.cacheMissCount,
-        slowestFiles,
-        totalDurationMs: record.totalDurationMs
-    });
-}
-
-function normalizeSemanticIndexProgress(value: unknown): ProjectSemanticIndexProgress | null {
-    const record = readPersistedObject(value);
-    if (record === null) {
-        return null;
-    }
-    if (record.stage === "complete") {
-        const summary = normalizeSemanticIndexBuildSummary(record.summary);
-        return summary === null ? null : Object.freeze({ stage: "complete" as const, summary });
-    }
-    if (
-        typeof record.current !== "number" ||
-        !Number.isInteger(record.current) ||
-        record.current < 0 ||
-        typeof record.total !== "number" ||
-        !Number.isInteger(record.total) ||
-        record.total < 0 ||
-        record.stage !== "gml-parse"
-    ) {
-        return null;
-    }
-    return Object.freeze({ current: record.current, stage: "gml-parse" as const, total: record.total });
 }
 
 function normalizeProjectOperationState(value: unknown): ProjectOperationState {
@@ -381,7 +330,6 @@ function startProjectOperationOutputCapture(operation: ProjectOperationLease): P
 function createLease(record: ProjectOperationRecord, ownsProjectLock: boolean): ProjectOperationLease {
     let currentRecord = record;
     let completed = record.status !== "running";
-    let lastSemanticIndexProgressPersistAt = 0;
 
     const persist = (): void => {
         writeActiveOperation(currentRecord.projectRoot, currentRecord);
@@ -425,40 +373,32 @@ function createLease(record: ProjectOperationRecord, ownsProjectLock: boolean): 
         persist();
     };
 
-    const updateSemanticIndexProgress = (progress: ProjectSemanticIndexProgress): void => {
-        if (completed) {
-            return;
-        }
-        refreshCurrentRecord();
-        currentRecord = Object.freeze({
-            ...currentRecord,
-            phase: "semantic-index",
-            semanticIndex: Object.freeze({ ...progress }),
-            updatedAt: Date.now()
-        });
-        const now = Date.now();
-        const shouldPersist =
-            progress.stage === "complete" ||
-            progress.current === progress.total ||
-            now - lastSemanticIndexProgressPersistAt >= SEMANTIC_INDEX_PROGRESS_PERSIST_INTERVAL_MS;
-        if (shouldPersist) {
-            lastSemanticIndexProgressPersistAt = now;
-            persist();
+    // Delegate the semantic-index progress channel to a dedicated controller so
+    // the lease only owns the cross-cutting persistence and locking concerns.
+    // The binding adapts the lease's mutable record to the structural shape
+    // the controller expects, keeping the controller free of any knowledge
+    // about `ProjectOperationRecord`.
+    const semanticIndexBinding: SemanticIndexLeaseBinding = {
+        getCurrentRecord(): SemanticIndexMutableRecord {
+            return currentRecord;
+        },
+        isCompleted(): boolean {
+            return completed;
+        },
+        persist,
+        refreshCurrentRecord,
+        setCurrentRecord(next: SemanticIndexMutableRecord): void {
+            currentRecord = Object.freeze({
+                ...currentRecord,
+                ...next
+            });
         }
     };
+    const semanticIndexProgress = createSemanticIndexProgressController(semanticIndexBinding);
 
-    const clearSemanticIndexProgress = (): void => {
-        if (completed) {
-            return;
-        }
-        refreshCurrentRecord();
-        currentRecord = Object.freeze({
-            ...currentRecord,
-            semanticIndex: null,
-            updatedAt: Date.now()
-        });
-        persist();
-    };
+    const updateSemanticIndexProgress = (progress: ProjectSemanticIndexProgress): void =>
+        semanticIndexProgress.update(progress);
+    const clearSemanticIndexProgress = (): void => semanticIndexProgress.clear();
 
     const complete = (status: Exclude<ProjectOperationStatus, "running">): void => {
         if (completed) {
@@ -615,3 +555,5 @@ export async function resolveProjectOperationRoot(command: CommanderCommandLike)
         return null;
     }
 }
+
+export { type ProjectSemanticIndexBuildSummary, type ProjectSemanticIndexProgress } from "./semantic-index-progress.js";

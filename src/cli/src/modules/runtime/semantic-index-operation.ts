@@ -3,9 +3,9 @@ import path from "node:path";
 import {
     getCurrentProjectOperation,
     type ProjectOperationLease,
-    type ProjectSemanticIndexProgress,
     runProjectOperation
 } from "./project-operation-state.js";
+import type { ProjectSemanticIndexProgress } from "./semantic-index-progress.js";
 
 type SemanticIndexProgressCallback = (progress: ProjectSemanticIndexProgress) => void;
 const SEMANTIC_INDEX_OPERATION_KIND = "semantic-index";
