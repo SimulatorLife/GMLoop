@@ -82,7 +82,12 @@ export class GmDocsPanel extends LightDomLitElement {
             return entry.usage;
         }
 
-        return `gmloop ${entry.commandPath.join(" ")} --path ${quoteShellArgument(projectRoot)}`;
+        const baseCommand = `gmloop ${entry.commandPath.join(" ")}`;
+        if (!hasPathOption(entry)) {
+            return baseCommand;
+        }
+
+        return `${baseCommand} --path ${quoteShellArgument(projectRoot)}`;
     }
 
     #renderCliEntry(entry: GraphVisualizationCliCatalogEntry) {
@@ -435,4 +440,19 @@ function quoteShellArgument(argumentValue: string): string {
     }
 
     return `'${argumentValue.replaceAll("'", String.raw`'\''`)}'`;
+}
+
+/**
+ * Return whether a CLI command catalog entry declares a `--path` option.
+ *
+ * Some commands (`format`, `fix`, `graph index`, etc.) take their target via
+ * `--path`; others (`generate-feather-metadata`, `generate-gml-identifiers`,
+ * …) use different flags or no target flag at all. The docs panel renders
+ * runnable commands for copy/paste, so it must only append `--path` when the
+ * underlying command will actually accept it — appending `--path` to a
+ * command that does not declare it produces a copy/paste command that
+ * Commander rejects with `unknown option '--path'`.
+ */
+function hasPathOption(entry: GraphVisualizationCliCatalogEntry): boolean {
+    return entry.options.some((option) => option.long === "--path");
 }

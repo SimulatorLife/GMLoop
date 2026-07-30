@@ -78,6 +78,14 @@ export {
     matchScaledOperand,
     promoteLengthdirHalfDifference
 } from "./math-lengthdir-transforms.js";
+export {
+    applyManualMathCanonicalForms,
+    evaluateShouldApplyManualMathCanonicalForms,
+    findManualMathCanonicalFormRuleById,
+    getDefaultManualMathCanonicalFormsPolicy,
+    type ManualMathCanonicalFormRule,
+    type ManualMathCanonicalFormsPolicy
+} from "./math-manual-canonical-forms-policy.js";
 export type { MathNumericPolicy } from "./math-numeric-policy.js";
 export { DEFAULT_MATH_NUMERIC_POLICY, resolveMathNumericPolicy } from "./math-numeric-policy.js";
 export {
@@ -117,6 +125,31 @@ export {
     compareIndexProperties,
     extractScalarAdditionTerm
 } from "./math-scalar-condensing.js";
+export {
+    ADDITIVE_MATH_BINARY_OPERATORS,
+    areExpressionsSemanticallyEquivalent,
+    canAstShapeContainMathOptimizationCandidate,
+    containsMathOptimizationSyntax,
+    DEFAULT_CANDIDATE_POLICY_CONFIG,
+    DEFAULT_MATH_CALL_NAMES,
+    DEFAULT_MATH_SIGNAL_PATTERNS,
+    DEFAULT_NUMERIC_LITERAL_POLICY,
+    DEFAULT_TEXT_LENGTH_POLICY,
+    evaluateCanonicalFormDecision,
+    evaluateMathOptimizationCandidate,
+    evaluateSkipDecision,
+    formatCanonicalNumericLiteral,
+    MATH_OPTIMIZATION_POLICY_CONSTANTS,
+    type MathOptimizationCandidateContext,
+    type MathOptimizationCandidateEvaluation,
+    type MathOptimizationCandidatePolicyConfig,
+    type MathOptimizationSignalPatterns,
+    type MathOptimizationTextLengthPolicy,
+    type NumericLiteralCanonicalFormPolicy,
+    shouldSkipNodeFromTraversal,
+    STRONG_MATH_BINARY_OPERATORS,
+    tryEvaluateNumericOperand
+} from "./math-skip-evaluator.js";
 export { applyManualMathNormalization } from "./math-traversal-normalization.js";
 export {
     attemptConvertDegreesToRadians,

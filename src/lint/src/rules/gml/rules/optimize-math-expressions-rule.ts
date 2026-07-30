@@ -14,6 +14,16 @@ import {
     cleanupMultiplicativeIdentityParentheses,
     simplifyZeroDivisionNumerators
 } from "../math/index.js";
+import { applyManualMathCanonicalForms } from "../math/math-manual-canonical-forms-policy.js";
+import {
+    canAstShapeContainMathOptimizationCandidate,
+    containsMathOptimizationSyntax,
+    DEFAULT_MATH_SIGNAL_PATTERNS,
+    evaluateMathOptimizationCandidate,
+    evaluateSkipDecision,
+    MATH_OPTIMIZATION_POLICY_CONSTANTS,
+    resolveMathNumericPolicy
+} from "../math/math-skip-evaluator.js";
 import {
     applySourceTextEdits,
     createCommentTokenRangeIndex,
@@ -25,16 +35,6 @@ import {
     type SourceTextEdit,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
-import { applyManualMathCanonicalForms } from "./optimize-math-manual-canonical-forms-policy.js";
-import {
-    canAstShapeContainMathOptimizationCandidate,
-    containsMathOptimizationSyntax,
-    DEFAULT_MATH_SIGNAL_PATTERNS,
-    evaluateMathOptimizationCandidate,
-    evaluateSkipDecision,
-    MATH_OPTIMIZATION_POLICY_CONSTANTS,
-    resolveMathNumericPolicy
-} from "./optimize-math-skip-evaluator.js";
 
 const {
     getNodeStartIndex,
@@ -487,9 +487,10 @@ function rewriteManualMathCanonicalForms(sourceText: string): string {
     // (which patterns to rewrite into which canonical forms) and the
     // mechanism (iterating the rule list over the buffer) had become
     // inseparable. Both responsibilities are now owned by
-    // `optimize-math-manual-canonical-forms-policy.ts`; this function is a
-    // thin mechanism wrapper that delegates to the policy module so the
-    // rule body stays focused on AST-level concerns.
+    // `math/math-manual-canonical-forms-policy.ts` (the math-domain policy
+    // module); this function is a thin mechanism wrapper that delegates to
+    // the policy module so the rule body stays focused on AST-level
+    // concerns.
     return applyManualMathCanonicalForms(sourceText);
 }
 
