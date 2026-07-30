@@ -34,6 +34,26 @@ import type {
 const DEFAULT_MAX_QUEUE_SIZE = 100;
 const DEFAULT_FLUSH_INTERVAL_MS = 50;
 /**
+ * Default hot-reload WebSocket endpoint used when no `url` is supplied.
+ *
+ * This mirrors the CLI's default watcher WebSocket port (see
+ * `DEFAULT_LIVE_RELOAD_WEBSOCKET_PORT` in the `cli` workspace's
+ * `modules/live-reload/config.ts`). It is only a fallback for callers that
+ * construct a client directly (e.g. tests); the CLI overwrites the injected
+ * `browser/config.ts` bootstrap asset with the deployment-specific URL before
+ * the runtime wrapper loads in the browser.
+ */
+export const DEFAULT_WEBSOCKET_URL = "ws://127.0.0.1:17890";
+/**
+ * Default delay (milliseconds) before attempting to reconnect after the
+ * WebSocket connection closes unexpectedly.
+ *
+ * 800 ms balances fast recovery against flooding the dev server with
+ * reconnect attempts during a GameMaker runtime restart, when the socket may
+ * flap several times before the game finishes reloading.
+ */
+export const DEFAULT_RECONNECT_DELAY_MS = 800;
+/**
  * Default interval (milliseconds) between readiness polls when waiting for the
  * GameMaker runtime to become ready before flushing pending patches.
  *
@@ -150,12 +170,12 @@ function applyIncomingPatchInternal(
 }
 
 export function createWebSocketClient({
-    url = "ws://127.0.0.1:17890",
+    url = DEFAULT_WEBSOCKET_URL,
     wrapper = null,
     onConnect,
     onDisconnect,
     onError,
-    reconnectDelay = 800,
+    reconnectDelay = DEFAULT_RECONNECT_DELAY_MS,
     autoConnect = true,
     patchQueue,
     logger
