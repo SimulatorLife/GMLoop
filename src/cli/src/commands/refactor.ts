@@ -37,7 +37,7 @@ import { createCodemodExecutionOrderTracker } from "./refactor-codemod-execution
 
 const { buildProjectIndex } = Semantic;
 const {
-    RefactorEngine,
+    createRefactorEngine,
     buildRenameImpactReport,
     formatRenamePlanReport,
     generateRenamePreview,
@@ -461,14 +461,14 @@ function createRefactorEngineForProject(
     projectRoot: string,
     projectIndex: object | null,
     includeSemanticBridge: boolean = projectIndex !== null
-): InstanceType<typeof RefactorEngine> {
+): ReturnType<typeof createRefactorEngine> {
     const semanticBridge = includeSemanticBridge ? new GmlSemanticBridge(projectIndex ?? {}, projectRoot) : undefined;
 
     recordRefactorSemanticBridge(semanticBridge ?? null);
 
     const bridges = createRefactorBridges({ semantic: semanticBridge }, projectRoot);
 
-    return new RefactorEngine({
+    return createRefactorEngine({
         semantic: semanticBridge ?? null,
         parser: bridges.parser,
         formatter: bridges.formatter

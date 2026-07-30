@@ -1040,7 +1040,7 @@ function getRuleLevel(value: unknown): unknown {
     return value;
 }
 
-function isOffLevel(level: unknown): boolean {
+function isRuleLevelOff(level: unknown): boolean {
     if (typeof level === "string") {
         return level.trim().toLowerCase() === "off";
     }
@@ -1048,36 +1048,18 @@ function isOffLevel(level: unknown): boolean {
     return level === 0;
 }
 
-function isAppliedLevel(level: unknown): boolean {
-    if (typeof level === "string") {
-        const normalizedLevel = level.trim().toLowerCase();
-        if (normalizedLevel === "warn" || normalizedLevel === "error") {
-            return true;
-        }
-    }
-
-    if (level === "warn" || level === "error") {
-        return true;
-    }
-
-    if (level === 1 || level === 2) {
-        return true;
-    }
-
-    return false;
-}
-
+/**
+ * Determine whether an ESLint rule is active in a resolved config entry.
+ *
+ * ESLint only treats the literal string `"off"` (case-insensitive, ignoring
+ * surrounding whitespace) and the numeric `0` as the "off" sentinel; every
+ * other shape — including malformed or unrecognized inputs that callers may
+ * surface from hand-edited configs — is conservatively treated as an applied
+ * rule so that malformed overlays are flagged by {@link hasOverlayRuleApplied}
+ * rather than silently skipped.
+ */
 function isAppliedRuleValue(value: unknown): boolean {
-    const level = getRuleLevel(value);
-    if (isOffLevel(level)) {
-        return false;
-    }
-
-    if (isAppliedLevel(level)) {
-        return true;
-    }
-
-    return true;
+    return !isRuleLevelOff(getRuleLevel(value));
 }
 
 function hasOverlayRuleApplied(config: ResolvedConfigLike): boolean {

@@ -1,4 +1,3 @@
-import type { LintPluginShape } from "../contracts/index.js";
 import {
     ALL_RULE_LEVELS,
     FEATHER_RULE_LEVELS,
@@ -22,6 +21,16 @@ export {
     createLintRuleEntriesFromProjectConfig,
     createLintRuleEntriesFromProjectConfigOrNull
 } from "./rule-entries.js";
+
+/**
+ * Minimal runtime shape for the lint plugin objects consumed by lint config
+ * presets. Lives next to the configs that consume it so the config layer has
+ * a single, direct dependency without a separate contract module.
+ */
+export type LintPluginShape = Readonly<{
+    rules: Record<string, unknown>;
+    languages?: Record<string, unknown>;
+}>;
 
 /**
  * Represents a pinned lint flat-config entry exposed by the lint namespace.

@@ -1,4 +1,5 @@
 export * from "./artifact-store.js";
+export * from "./compare-targets.js";
 export * from "./lifecycle.js";
 export * from "./project-operation-state.js";
 export { getRunnerController } from "./runner-controller.js";
@@ -19,6 +20,7 @@ export {
 } from "./runner-state.js";
 export * from "./scope.js";
 export * from "./semantic-index-operation.js";
+export * from "./semantic-index-progress.js";
 export {
     type RuntimeServerProperties,
     type RuntimeStaticServerHandle,
