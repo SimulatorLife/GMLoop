@@ -9,8 +9,24 @@
   line-height: var(--gm-leading-tight);
 }
 
+.fix-log-header {
+  display: flex;
+  gap: var(--gm-space-md);
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--gm-space-sm);
+}
+
+.fix-log-header h2 {
+  margin: 0;
+}
+
 .fix-log-card .gm-card {
   padding: var(--gm-space-sm);
+}
+
+.fix-log-copy-button {
+  flex-shrink: 0;
 }
 
 .fix-log {

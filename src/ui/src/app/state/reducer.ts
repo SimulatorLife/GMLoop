@@ -1,4 +1,9 @@
-import type { GraphVisualizationUiAction, GraphVisualizationUiLabelMode, GraphVisualizationUiState } from "./types.js";
+import type {
+    GraphVisualizationUiAction,
+    GraphVisualizationUiLabelMode,
+    GraphVisualizationUiPage,
+    GraphVisualizationUiState
+} from "./types.js";
 
 /**
  * Build the default UI state for graph/docs/config views.
@@ -67,6 +72,39 @@ function getNextLabelMode(currentLabelMode: GraphVisualizationUiLabelMode): Grap
     }
 
     return "auto";
+}
+
+function setPageError(
+    state: GraphVisualizationUiState,
+    page: GraphVisualizationUiPage,
+    errorMessage: string | null
+): GraphVisualizationUiState {
+    switch (page) {
+        case "graph": {
+            return { ...state, graphErrorMessage: errorMessage };
+        }
+        case "docs": {
+            return { ...state, docsErrorMessage: errorMessage };
+        }
+        case "config": {
+            return { ...state, configErrorMessage: errorMessage };
+        }
+        case "playground": {
+            return { ...state, playgroundErrorMessage: errorMessage };
+        }
+        case "auto-game": {
+            return { ...state, autoGameErrorMessage: errorMessage };
+        }
+        case "fix": {
+            return { ...state, fixErrorMessage: errorMessage };
+        }
+        case "live-reload": {
+            return { ...state, liveReloadErrorMessage: errorMessage };
+        }
+        default: {
+            return state;
+        }
+    }
 }
 
 /**
@@ -221,60 +259,11 @@ export function reduceGraphVisualizationUiState(
             };
         }
         case "set-page-error": {
-            switch (action.page) {
-                case "graph": {
-                    return { ...state, graphErrorMessage: action.errorMessage };
-                }
-                case "docs": {
-                    return { ...state, docsErrorMessage: action.errorMessage };
-                }
-                case "config": {
-                    return { ...state, configErrorMessage: action.errorMessage };
-                }
-                case "playground": {
-                    return { ...state, playgroundErrorMessage: action.errorMessage };
-                }
-                case "auto-game": {
-                    return { ...state, autoGameErrorMessage: action.errorMessage };
-                }
-                case "fix": {
-                    return { ...state, fixErrorMessage: action.errorMessage };
-                }
-                case "live-reload": {
-                    return { ...state, liveReloadErrorMessage: action.errorMessage };
-                }
-                default: {
-                    return state;
-                }
-            }
+            return setPageError(state, action.page, action.errorMessage);
         }
         case "clear-page-error": {
-            switch (action.page) {
-                case "graph": {
-                    return { ...state, errorMessage: null, graphErrorMessage: null };
-                }
-                case "docs": {
-                    return { ...state, docsErrorMessage: null };
-                }
-                case "config": {
-                    return { ...state, configErrorMessage: null };
-                }
-                case "playground": {
-                    return { ...state, playgroundErrorMessage: null };
-                }
-                case "auto-game": {
-                    return { ...state, autoGameErrorMessage: null };
-                }
-                case "fix": {
-                    return { ...state, fixErrorMessage: null };
-                }
-                case "live-reload": {
-                    return { ...state, liveReloadErrorMessage: null };
-                }
-                default: {
-                    return state;
-                }
-            }
+            const clearedState = setPageError(state, action.page, null);
+            return action.page === "graph" ? { ...clearedState, errorMessage: null } : clearedState;
         }
         case "clear-error": {
             return {

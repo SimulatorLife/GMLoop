@@ -4,9 +4,11 @@ import { describe, it } from "node:test";
 import {
     COMMANDER_HELP_CODES,
     isCommanderErrorLike,
+    isCommanderExcessArgumentsError,
     isCommanderHelpDisplayedError,
     isCommanderHelpError,
-    isCommanderHelpLikeError
+    isCommanderHelpLikeError,
+    parseCommanderExcessArgumentsMessage
 } from "../src/cli-core/commander-error-utils.js";
 
 void describe("commander error utils", () => {
@@ -72,5 +74,36 @@ void describe("commander error utils", () => {
 
     void it("exposes the canonical commander help code list", () => {
         assert.deepEqual([...COMMANDER_HELP_CODES], ["commander.helpDisplayed", "commander.help"]);
+    });
+
+    void it("identifies the commander.excessArguments error code", () => {
+        const error: Error & { code?: string; exitCode?: number } = new Error(
+            "error: too many arguments for 'format'. Expected 0 arguments but got 1: /tmp."
+        );
+        error.code = "commander.excessArguments";
+        error.exitCode = 1;
+
+        assert.equal(isCommanderExcessArgumentsError(error), true);
+        assert.equal(isCommanderErrorLike(error), true);
+        assert.equal(isCommanderHelpLikeError(error), false);
+    });
+
+    void it("parses a single excess argument message", () => {
+        const result = parseCommanderExcessArgumentsMessage(
+            "error: too many arguments for 'format'. Expected 0 arguments but got 1: /tmp."
+        );
+        assert.deepEqual(result, { commandName: "format", excessArguments: ["/tmp"] });
+    });
+
+    void it("parses multiple excess arguments from a comma-separated message", () => {
+        const result = parseCommanderExcessArgumentsMessage(
+            "error: too many arguments for 'fix'. Expected 0 arguments but got 2: /tmp, /var."
+        );
+        assert.deepEqual(result, { commandName: "fix", excessArguments: ["/tmp", "/var"] });
+    });
+
+    void it("returns empty data when the message is not an excess-arguments error", () => {
+        const result = parseCommanderExcessArgumentsMessage("error: unknown option '--bad-flag'");
+        assert.deepEqual(result, { commandName: null, excessArguments: [] });
     });
 });
