@@ -2721,31 +2721,24 @@ export function createGmlSemanticIndex(
                 if (info.type === "keyword") {
                     return null;
                 }
-                const hoverInfo = Core.isObjectLike(info.hover) ? (info.hover as Record<string, unknown>) : null;
+                const hoverInfo = Core.getBuiltInHoverInfo(identifierName);
                 const type = typeof info.type === "string" ? info.type : "unknown";
-                const signature =
-                    hoverInfo && typeof hoverInfo.signature === "string" ? hoverInfo.signature : identifierName;
+                const signature = hoverInfo?.signature ?? identifierName;
                 let markdown = `\`${signature}\`\n\nBuilt-in ${type}`;
-                if (hoverInfo && typeof hoverInfo.description === "string" && hoverInfo.description.length > 0) {
+                if (hoverInfo && hoverInfo.description !== null) {
                     markdown += `\n\n${hoverInfo.description}`;
                 }
-                if (hoverInfo && Array.isArray(hoverInfo.parameters) && hoverInfo.parameters.length > 0) {
+                if (hoverInfo && hoverInfo.parameters.length > 0) {
                     const parameters = hoverInfo.parameters.flatMap((parameter) => {
-                        if (!Core.isObjectLike(parameter) || typeof parameter.name !== "string") {
-                            return [];
-                        }
-                        const parameterType = typeof parameter.type === "string" ? ` (\`${parameter.type}\`)` : "";
-                        const description =
-                            typeof parameter.description === "string" && parameter.description.length > 0
-                                ? ` — ${parameter.description}`
-                                : "";
+                        const parameterType = parameter.type === null ? "" : ` (\`${parameter.type}\`)`;
+                        const description = parameter.description === null ? "" : ` — ${parameter.description}`;
                         return [`* \`${parameter.name}\`${parameterType}${description}`];
                     });
                     if (parameters.length > 0) {
                         markdown += `\n\n**Parameters:**\n${parameters.join("\n")}`;
                     }
                 }
-                if (hoverInfo && typeof hoverInfo.returnType === "string" && hoverInfo.returnType.length > 0) {
+                if (hoverInfo && hoverInfo.returnType !== null) {
                     markdown += `\n\n*Returns* \`${hoverInfo.returnType}\``;
                 }
                 if (typeof info.manualUrl === "string" && info.manualUrl.length > 0) {
