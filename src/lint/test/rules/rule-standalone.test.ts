@@ -1050,6 +1050,20 @@ void test("no-assignment-in-condition preserves bitwise compound assignments ins
     assertEquals(result.output, expected);
 });
 
+void test("no-assignment-in-condition preserves nullish compound assignments inside conditions", () => {
+    // GML supports the nullish compound assignment `??=` (NullCoalescingAssign).
+    // A prior implementation that omitted `?` from its lookbehind set rewrote
+    // `if (cache ??= default)` into the syntactically invalid `if (cache ??== default)`.
+    // The rule must leave the nullish compound assignment untouched while still
+    // rewriting a bare `=` next to it on the same line.
+    const input = ["if (cache ??= default) act();", "if (legacy = fallback) act();", ""].join("\n");
+    const expected = ["if (cache ??= default) act();", "if (legacy == fallback) act();", ""].join("\n");
+
+    const result = lintWithRule("no-assignment-in-condition", input, {});
+    assertEquals(result.messages.length > 0, true);
+    assertEquals(result.output, expected);
+});
+
 void test("no-globalvar diagnoses declared globals", () => {
     const input = [
         "globalvar score;",

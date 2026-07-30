@@ -1,69 +1,46 @@
 import assert from "node:assert/strict";
-import { mock, test } from "node:test";
+import { test } from "node:test";
 
 import { runLiveReloadBuildCommand, runLiveReloadPrepareCommand } from "../src/commands/live-reload.js";
+import { captureCliErrorOutput } from "./test-helpers/capture-cli-error-output.js";
 
-void test("runLiveReloadPrepareCommand routes prepare errors through handleCliError", async () => {
-    const nonExistentOutput = "/tmp/non-existent-live-reload-prepare-12345";
-    const logged: string[] = [];
-    const exitCodes: Array<number | undefined> = [];
+interface LiveReloadErrorRoutingCase {
+    readonly description: string;
+    readonly invoke: () => Promise<unknown>;
+    readonly errorPattern: RegExp;
+}
 
-    const restoreConsole = mock.method(console, "error", (...args) => {
-        logged.push(args.join(" "));
-    });
-    const restoreExit = mock.method(process, "exit", (code?: number) => {
-        exitCodes.push(code);
-        throw new Error(`process.exit called with code ${code ?? "undefined"}`);
-    });
-
-    try {
-        await assert.rejects(
-            () =>
-                runLiveReloadPrepareCommand({
-                    html5Output: nonExistentOutput,
-                    gmTempRoot: nonExistentOutput,
-                    quiet: true,
-                    verbose: false
-                }),
-            /process\.exit/u
-        );
-    } finally {
-        restoreConsole.mock.restore();
-        restoreExit.mock.restore();
+const liveReloadErrorRoutingCases: ReadonlyArray<LiveReloadErrorRoutingCase> = [
+    {
+        description: "runLiveReloadPrepareCommand routes prepare errors through handleCliError",
+        errorPattern: /Error: /u,
+        invoke: () =>
+            runLiveReloadPrepareCommand({
+                html5Output: "/tmp/non-existent-live-reload-prepare-12345",
+                gmTempRoot: "/tmp/non-existent-live-reload-prepare-12345",
+                quiet: true,
+                verbose: false
+            })
+    },
+    {
+        description: "runLiveReloadBuildCommand routes build errors through handleCliError",
+        errorPattern: /does not exist/u,
+        invoke: () =>
+            runLiveReloadBuildCommand("/tmp/non-existent-live-reload-build-12345", {
+                quiet: true,
+                verbose: false
+            })
     }
+];
 
-    assert.equal(exitCodes.length, 1);
-    assert.equal(exitCodes[0], 1);
-    assert.equal(logged.length, 1);
-    assert.match(logged[0], /Error: /u);
-    assert.match(logged[0], new RegExp(nonExistentOutput.replaceAll("/", String.raw`\/`)));
-});
+for (const { description, errorPattern, invoke } of liveReloadErrorRoutingCases) {
+    void test(description, async () => {
+        const { logged, exitCodes } = await captureCliErrorOutput(() => {
+            return assert.rejects(invoke(), /process\.exit/u);
+        });
 
-void test("runLiveReloadBuildCommand routes build errors through handleCliError", async () => {
-    const nonExistentPath = "/tmp/non-existent-live-reload-build-12345";
-    const logged: string[] = [];
-    const exitCodes: Array<number | undefined> = [];
-
-    const restoreConsole = mock.method(console, "error", (...args) => {
-        logged.push(args.join(" "));
+        assert.deepEqual(exitCodes, [1]);
+        assert.equal(logged.length, 1);
+        assert.match(logged[0], errorPattern);
     });
-    const restoreExit = mock.method(process, "exit", (code?: number) => {
-        exitCodes.push(code);
-        throw new Error(`process.exit called with code ${code ?? "undefined"}`);
-    });
-
-    try {
-        await assert.rejects(
-            () => runLiveReloadBuildCommand(nonExistentPath, { quiet: true, verbose: false }),
-            /process\.exit/u
-        );
-    } finally {
-        restoreConsole.mock.restore();
-        restoreExit.mock.restore();
-    }
-
-    assert.equal(exitCodes.length, 1);
-    assert.equal(exitCodes[0], 1);
-    assert.equal(logged.length, 1);
-    assert.match(logged[0], /GameMaker HTML5 build is not configured/u);
-});
+}

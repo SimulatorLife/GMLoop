@@ -210,6 +210,21 @@ void test("GmLiveReloadPanel offers accessible copy controls for configured endp
     assert.match(rendered, /hideLabel/u);
 });
 
+void test("GmLiveReloadPanel offers an accessible copy control for each recent error", () => {
+    const panel = new TestableGmLiveReloadPanel();
+    panel.model = createMockModel(createStatusSnapshot());
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /class="live-reload-error-copy"/u);
+    assert.match(rendered, /accessibleLabel=Copy error details for scripts\/scr_error\.gml/u);
+    assert.match(
+        rendered,
+        /value=File: scripts\/scr_error\.gml\nError: Unexpected symbol\nRecovery hint: Check the changed line\.\nTime: /u
+    );
+});
+
 void test("GmLiveReloadPanel omits endpoint copy controls when endpoint values are not configured", () => {
     const panel = new TestableGmLiveReloadPanel();
     const model = createMockModel(createStatusSnapshot());

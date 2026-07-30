@@ -123,37 +123,43 @@ void test("CopyFeedbackController.trigger is a no-op when the value is empty", a
     assert.equal(harness.host.requestUpdateCallCount, 0);
 });
 
-void test("CopyFeedbackController returns to idle after the feedback duration elapses", async () => {
-    const harness = createHarness({ feedbackDurationMs: 25 });
-    harness.host.connect();
+void test("CopyFeedbackController returns to idle after the feedback duration elapses", async (context) => {
+    context.mock.timers.enable({ apis: ["setTimeout"] });
+    try {
+        const harness = createHarness({ feedbackDurationMs: 25 });
+        harness.host.connect();
 
-    await harness.controller.trigger();
-    assert.equal(harness.controller.status, "success");
+        await harness.controller.trigger();
+        assert.equal(harness.controller.status, "success");
 
-    await new Promise((resolve) => {
-        globalThis.setTimeout(resolve, 60);
-    });
+        context.mock.timers.tick(24);
+        assert.equal(harness.controller.status, "success");
 
-    assert.equal(harness.controller.status, "idle");
-    assert.equal(harness.host.requestUpdateCallCount, 2);
+        context.mock.timers.tick(1);
+        assert.equal(harness.controller.status, "idle");
+        assert.equal(harness.host.requestUpdateCallCount, 2);
+    } finally {
+        context.mock.timers.reset();
+    }
 });
 
-void test("CopyFeedbackController cancels the reset timer on disconnect", async () => {
-    const harness = createHarness({ feedbackDurationMs: 25 });
-    harness.host.connect();
+void test("CopyFeedbackController cancels the reset timer on disconnect", async (context) => {
+    context.mock.timers.enable({ apis: ["setTimeout"] });
+    try {
+        const harness = createHarness({ feedbackDurationMs: 25 });
+        harness.host.connect();
 
-    await harness.controller.trigger();
-    assert.equal(harness.controller.status, "success");
+        await harness.controller.trigger();
+        assert.equal(harness.controller.status, "success");
 
-    harness.host.disconnect();
-    await new Promise((resolve) => {
-        globalThis.setTimeout(resolve, 60);
-    });
+        harness.host.disconnect();
+        context.mock.timers.tick(25);
 
-    // Without the disconnect clear, the timer would have fired by now and
-    // reset status to idle. The cancel must keep the status pinned so a
-    // later reconnect does not blink back to idle.
-    assert.equal(harness.controller.status, "success");
+        assert.equal(harness.controller.status, "success");
+        assert.equal(harness.host.requestUpdateCallCount, 1);
+    } finally {
+        context.mock.timers.reset();
+    }
 });
 
 void test("CopyFeedbackController.hostUpdate resets to idle when the value changes", async () => {
@@ -188,18 +194,23 @@ void test("CopyFeedbackController.hostUpdate is a no-op when the value has not c
     assert.equal(harness.host.requestUpdateCallCount, 1);
 });
 
-void test("CopyFeedbackController uses the default 1500ms feedback window when not overridden", async () => {
-    const harness = createHarness();
-    harness.host.connect();
+void test("CopyFeedbackController uses the default 1500ms feedback window when not overridden", async (context) => {
+    context.mock.timers.enable({ apis: ["setTimeout"] });
+    try {
+        const harness = createHarness();
+        harness.host.connect();
 
-    await harness.controller.trigger();
-    assert.equal(harness.controller.status, "success");
+        await harness.controller.trigger();
+        assert.equal(harness.controller.status, "success");
 
-    // Just under the default — should still be success.
-    await new Promise((resolve) => {
-        globalThis.setTimeout(resolve, 100);
-    });
-    assert.equal(harness.controller.status, "success");
+        context.mock.timers.tick(1499);
+        assert.equal(harness.controller.status, "success");
+
+        context.mock.timers.tick(1);
+        assert.equal(harness.controller.status, "idle");
+    } finally {
+        context.mock.timers.reset();
+    }
 });
 
 void test("CopyFeedbackController.status only emits the closed set of strings", () => {

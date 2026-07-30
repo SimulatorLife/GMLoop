@@ -1,4 +1,5 @@
 export * from "./artifact-store.js";
+export * from "./compare-targets.js";
 export * from "./lifecycle.js";
 export * from "./project-operation-state.js";
 export { getRunnerController } from "./runner-controller.js";
