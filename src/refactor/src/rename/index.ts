@@ -16,3 +16,4 @@ export {
     validateCrossFileConsistency,
     validateRenameStructure
 } from "./rename-validation.js";
+export { loadRefactorReservedIdentifierNames } from "./reserved-identifiers.js";
