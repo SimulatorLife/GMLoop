@@ -125,7 +125,10 @@ void test("reset-project-scoped-state clears project-specific workflow and filte
 });
 
 void test("reduceGraphVisualizationUiState with set-page-error and clear-page-error sets and clears page-specific errors", () => {
-    const initial = createInitialGraphVisualizationUiState();
+    const initial = {
+        ...createInitialGraphVisualizationUiState(),
+        errorMessage: "Global error"
+    };
 
     const graphError = reduceGraphVisualizationUiState(initial, {
         errorMessage: "Graph failed",
@@ -147,6 +150,7 @@ void test("reduceGraphVisualizationUiState with set-page-error and clear-page-er
         type: "clear-page-error"
     });
     assert.equal(clearedGraph.graphErrorMessage, null);
+    assert.equal(clearedGraph.errorMessage, null);
     assert.equal(clearedGraph.configErrorMessage, "Config failed");
 
     const clearedConfig = reduceGraphVisualizationUiState(clearedGraph, {
