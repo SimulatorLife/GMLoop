@@ -67,6 +67,13 @@ void describe("Watch command metrics tracking", () => {
                 retryIntervalMs: 25
             });
 
+            // The WebSocket server can accept connections before the filesystem
+            // watcher has finished its initial scan. Give the watcher a moment to
+            // become ready so the first write cannot be lost under CI load.
+            await new Promise<void>((resolve) => {
+                setTimeout(resolve, WATCH_READY_DELAY_MS);
+            });
+
             // Serialize the writes and observations so filesystem event coalescing
             // cannot collapse two intended transpilations into one under CI load.
             await writeFile(fixture.script1, "var x = 100; // Modified", "utf8");
@@ -83,10 +90,6 @@ void describe("Watch command metrics tracking", () => {
                 minCount: 1,
                 predicate: (patch: HotReloadScriptPatch): patch is HotReloadScriptPatch =>
                     patch.id.includes("script2")
-            });
-
-            await new Promise<void>((resolve) => {
-                setTimeout(resolve, WATCH_READY_DELAY_MS);
             });
         } finally {
             // Stop the watcher

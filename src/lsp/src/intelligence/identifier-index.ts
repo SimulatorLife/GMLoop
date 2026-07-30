@@ -1107,7 +1107,9 @@ export function createGmlSemanticIndex(
             }
         })()
             .catch((error: unknown) => {
-                console.error(`Failed to reconcile semantic manifest for ${resolvedRoot}:`, error);
+                console.error(
+                    `Failed to reconcile semantic manifest for ${resolvedRoot}: ${Core.getErrorMessageOrFallback(error)}`
+                );
             })
             .finally(() => {
                 manifestReconciliations.delete(resolvedRoot);
@@ -1181,7 +1183,9 @@ export function createGmlSemanticIndex(
         const queuedWrite = publication
             .then(() => undefined)
             .catch((error: unknown) => {
-                console.error(`Failed to persist semantic index for ${resolvedRoot}:`, error);
+                console.error(
+                    `Failed to persist semantic index for ${resolvedRoot}: ${Core.getErrorMessageOrFallback(error)}`
+                );
                 return undefined;
             });
         pendingCacheWrites.set(resolvedRoot, queuedWrite);
@@ -2948,7 +2952,7 @@ export function createGmlSemanticIndex(
                         return null;
                     }
                     const symbolId = readSymbolIdFromMatch(match);
-                    const refactorEngine = new Refactor.RefactorEngine({
+                    const refactorEngine = Refactor.createRefactorEngine({
                         semantic: queries.refactor
                     });
                     return await refactorWorkspaceEditToLspWorkspaceEdit(
