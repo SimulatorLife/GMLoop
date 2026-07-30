@@ -35,32 +35,12 @@ void describe("mapBinaryOperator", () => {
         assert.strictEqual(mapBinaryOperator("!="), "!==");
     });
 
-    void it("preserves bitwise AND operator &", () => {
-        assert.strictEqual(mapBinaryOperator("&"), "&");
-    });
-
-    void it("preserves bitwise OR operator |", () => {
-        assert.strictEqual(mapBinaryOperator("|"), "|");
-    });
-
-    void it("preserves left shift operator <<", () => {
-        assert.strictEqual(mapBinaryOperator("<<"), "<<");
-    });
-
-    void it("preserves right shift operator >>", () => {
-        assert.strictEqual(mapBinaryOperator(">>"), ">>");
-    });
-
     void it("passes through standard JavaScript operators unchanged", () => {
-        assert.strictEqual(mapBinaryOperator("+"), "+");
-        assert.strictEqual(mapBinaryOperator("-"), "-");
-        assert.strictEqual(mapBinaryOperator("*"), "*");
-        assert.strictEqual(mapBinaryOperator("/"), "/");
-        assert.strictEqual(mapBinaryOperator("%"), "%");
-        assert.strictEqual(mapBinaryOperator("<"), "<");
-        assert.strictEqual(mapBinaryOperator(">"), ">");
-        assert.strictEqual(mapBinaryOperator("<="), "<=");
-        assert.strictEqual(mapBinaryOperator(">="), ">=");
+        const operators = ["+", "-", "*", "/", "%", "<", ">", "<=", ">=", "&", "|", "<<", ">>"];
+
+        for (const operator of operators) {
+            assert.strictEqual(mapBinaryOperator(operator), operator);
+        }
     });
 
     void it("passes through unknown operators unchanged", () => {
