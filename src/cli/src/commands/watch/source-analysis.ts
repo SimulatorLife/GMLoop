@@ -2,10 +2,10 @@
  * Stateless source-file analysis utilities for the watch command.
  *
  * These pure functions handle file extension matching, content hashing, line
- * counting, concurrency resolution, retry scheduling, and latency statistics.
- * They carry no mutable state and are safe to call from any context, making
- * them independently testable and reusable across the watch lifecycle without
- * coupling to the command's internal runtime context.
+ * counting, concurrency resolution, retry scheduling, latency statistics, and
+ * script-name registration. They carry no mutable state and are safe to call
+ * from any context, making them independently testable and reusable across the
+ * watch lifecycle without coupling to the command's internal runtime context.
  *
  * Extracted from watch.ts to keep the command orchestration module focused on
  * lifecycle coordination while analysis primitives live in a dedicated module.
@@ -17,7 +17,62 @@ import { availableParallelism } from "node:os";
 
 import { Core } from "@gmloop/core";
 
+import {
+    getRuntimePathSegments,
+    resolveScriptFileNameFromSegments
+} from "../../modules/transpilation/runtime-identifiers.js";
+
 const { clamp, getLineBreakCount, normalizeExtensionSuffix, toNormalizedInteger, uniqueArray } = Core;
+
+// ---------------------------------------------------------------------------
+// Script-name registration
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolves the canonical runtime script name for a source file path.
+ *
+ * Returns `null` for files that do not live under a recognised scripts/object
+ * directory layout. Centralised here so the watch command and its dependency
+ * update helpers share a single implementation.
+ *
+ * @param filePath Absolute path of the source file.
+ * @returns Runtime script name (e.g. `gml_Script_foo`) or `null` when the path
+ *   does not map to a scriptable resource.
+ */
+export function getScriptNameFromPath(filePath: string): string | null {
+    const segments = getRuntimePathSegments(filePath);
+    return resolveScriptFileNameFromSegments(segments);
+}
+
+/**
+ * Registers the canonical runtime script name for a source file into the
+ * shared script-name set when the path maps to a scriptable resource.
+ *
+ * @param filePath Absolute path of the source file.
+ * @param scriptNames Shared set collecting every script name the watcher has
+ *   observed; the resolved name is added when non-null.
+ */
+export function ensureScriptNameRegistered(filePath: string, scriptNames: Set<string>): void {
+    const scriptName = getScriptNameFromPath(filePath);
+    if (scriptName) {
+        scriptNames.add(scriptName);
+    }
+}
+
+/**
+ * Removes the canonical runtime script name for a source file from the shared
+ * script-name set, mirroring `ensureScriptNameRegistered` for file deletions.
+ *
+ * @param filePath Absolute path of the removed source file.
+ * @param scriptNames Shared set collecting every script name the watcher has
+ *   observed; the resolved name is removed when non-null.
+ */
+export function unregisterScriptName(filePath: string, scriptNames: Set<string>): void {
+    const scriptName = getScriptNameFromPath(filePath);
+    if (scriptName) {
+        scriptNames.delete(scriptName);
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Extension matching
