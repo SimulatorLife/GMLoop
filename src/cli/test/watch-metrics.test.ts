@@ -80,16 +80,14 @@ void describe("Watch command metrics tracking", () => {
             await websocketClient.waitForPatches({
                 timeoutMs: WATCH_PATCH_TIMEOUT_MS,
                 minCount: 1,
-                predicate: (patch: HotReloadScriptPatch): patch is HotReloadScriptPatch =>
-                    patch.id.includes("script1")
+                predicate: (patch: HotReloadScriptPatch): patch is HotReloadScriptPatch => patch.id.includes("script1")
             });
 
             await writeFile(fixture.script2, "var y = 200; // Modified", "utf8");
             await websocketClient.waitForPatches({
                 timeoutMs: WATCH_PATCH_TIMEOUT_MS,
                 minCount: 1,
-                predicate: (patch: HotReloadScriptPatch): patch is HotReloadScriptPatch =>
-                    patch.id.includes("script2")
+                predicate: (patch: HotReloadScriptPatch): patch is HotReloadScriptPatch => patch.id.includes("script2")
             });
         } finally {
             // Stop the watcher
