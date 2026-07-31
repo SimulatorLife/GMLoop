@@ -685,6 +685,21 @@ function tryPrintLiteralNode(node, path, options, print) {
 
             let value = node.value;
 
+            // Guard against non-string `value` (e.g. `null`, primitive number, or
+            // boolean) before reaching the string-only branches below. The
+            // `isUndefinedSentinel` check above only normalizes the primitive
+            // `undefined` and the string "undefined" — a `null` value (which can
+            // appear on a Literal node produced during parser recovery mode or by
+            // a synthetic AST fixture) would otherwise reach `value.startsWith` and
+            // throw `TypeError: Cannot read properties of null (reading
+            // 'startsWith')`, aborting the entire format pass. Falling back to
+            // `concat(value)` lets the existing doc sanitiser render a safe empty
+            // for nullish values and pass numbers/booleans through unchanged
+            // instead of crashing.
+            if (typeof value !== STRING_TYPE) {
+                return concat(value);
+            }
+
             if (!value.startsWith('"')) {
                 if (value.startsWith(".")) {
                     // Normalize shorthand decimals like `.5` to `0.5` so the printer
