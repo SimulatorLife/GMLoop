@@ -103,6 +103,25 @@ function createStubCommand(name) {
     };
 }
 
+function createGraphSubcommandGroupFixture() {
+    const program = applyStandardCommandOptions(new Command());
+    const { registry, runner } = createCliCommandManager({ program });
+    const capturedErrors = [];
+
+    const graphCommand = applyStandardCommandOptions(new Command("graph")).description("graph index");
+    graphCommand.command("index").action(() => {});
+    graphCommand.command("search").action(() => {});
+
+    registry.registerCommand({
+        command: graphCommand,
+        onError: (error, context) => {
+            capturedErrors.push({ error, command: context.command });
+        }
+    });
+
+    return { registry, runner, capturedErrors };
+}
+
 void test("default command usage is reported for option parsing errors", async () => {
     const program = applyStandardCommandOptions(new Command());
     const unhandledErrors = [];
@@ -216,26 +235,10 @@ void test("command manager prefers parseAsync when available on Commander execut
 });
 
 void test("missing required subcommand prints the command help and exits cleanly", async () => {
-    const program = applyStandardCommandOptions(new Command());
-    const { registry, runner } = createCliCommandManager({ program });
-
-    const unhandledErrors = [];
-    const capturedErrors = [];
-
-    const graphCommand = applyStandardCommandOptions(new Command("graph")).description("graph index");
-    graphCommand.command("index").action(() => {});
-    graphCommand.command("search").action(() => {});
-
-    registry.registerCommand({
-        command: graphCommand,
-        onError: (error, context) => {
-            capturedErrors.push({ error, command: context.command });
-        }
-    });
+    const { runner, capturedErrors } = createGraphSubcommandGroupFixture();
 
     const captured = await captureStdIO(() => runner.run(["graph"]));
 
-    assert.deepStrictEqual(unhandledErrors, []);
     assert.deepStrictEqual(capturedErrors, []);
 
     assert.match(captured.stdout, /Usage: [^\n]+\bgraph\b/);
@@ -248,21 +251,7 @@ void test("missing required subcommand prints the command help and exits cleanly
 });
 
 void test("explicit --help on a subcommand-group still renders help without error noise", async () => {
-    const program = applyStandardCommandOptions(new Command());
-    const { registry, runner } = createCliCommandManager({ program });
-
-    const capturedErrors = [];
-
-    const graphCommand = applyStandardCommandOptions(new Command("graph")).description("graph index");
-    graphCommand.command("index").action(() => {});
-    graphCommand.command("search").action(() => {});
-
-    registry.registerCommand({
-        command: graphCommand,
-        onError: (error, context) => {
-            capturedErrors.push({ error, command: context.command });
-        }
-    });
+    const { runner, capturedErrors } = createGraphSubcommandGroupFixture();
 
     const captured = await captureStdIO(() => runner.run(["graph", "--help"]));
 
