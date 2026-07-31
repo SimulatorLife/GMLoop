@@ -237,3 +237,35 @@ void test("hot-reload builtin resolution discovers minified HTML5 functions", ()
     functions.gml_pragma("forceinline");
     assert.deepEqual(calls, []);
 });
+
+function fakeCos(): number {
+    return 1;
+}
+
+function fakeSin(): number {
+    return -1;
+}
+
+void test("resolveRuntimeBuiltinFunctions memoizes on the runtime's builtin table identity", () => {
+    // Patched script/event/closure functions call resolveRuntimeBuiltinFunctions
+    // on every invocation (see patch-utils.ts), which can happen up to 60 times
+    // per second per hot-reloaded function once the game is running. Once the
+    // runtime's builtin table (`g_pBuiltIn`) is installed, repeated calls with
+    // the same table reference must reuse the previously resolved map instead
+    // of reallocating and re-scanning the global scope on every call.
+    const globalScope: Record<string, unknown> = {
+        g_pBuiltIn: { cos: fakeCos }
+    };
+
+    const first = resolveRuntimeBuiltinFunctions(globalScope);
+    const second = resolveRuntimeBuiltinFunctions(globalScope);
+    assert.equal(first, second, "same g_pBuiltIn reference must return the cached map");
+    assert.equal(first.cos, fakeCos);
+
+    const otherGlobalScope: Record<string, unknown> = {
+        g_pBuiltIn: { sin: fakeSin }
+    };
+    const third = resolveRuntimeBuiltinFunctions(otherGlobalScope);
+    assert.notEqual(third, first, "a different g_pBuiltIn reference must resolve a fresh map");
+    assert.equal(third.sin, fakeSin);
+});
