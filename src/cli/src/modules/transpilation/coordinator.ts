@@ -14,7 +14,7 @@ import { Transpiler } from "@gmloop/transpiler";
 
 import { formatCliError } from "../../cli-core/index.js";
 import type { PatchBroadcaster } from "../websocket/server.js";
-import { createGmlParserAdapter, createGmlTranspilerAdapter, type GmlParserAdapter } from "./adapters.js";
+import { createGmlParserAdapter, type createGmlTranspilerAdapter, type GmlParserAdapter } from "./adapters.js";
 import {
     getRuntimePathSegments,
     resolveObjectEventPartsFromSegments,

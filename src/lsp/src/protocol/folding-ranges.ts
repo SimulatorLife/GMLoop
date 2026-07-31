@@ -1,4 +1,4 @@
-import { FoldingRange, FoldingRangeKind } from "vscode-languageserver/node.js";
+import { type FoldingRange, FoldingRangeKind } from "vscode-languageserver/node.js";
 
 /**
  * Create LSP folding ranges for lightweight GML block and region structure.
