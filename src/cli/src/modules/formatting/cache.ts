@@ -8,6 +8,7 @@
 
 import { createHash } from "node:crypto";
 
+import { evaluateFormattingCacheEvictionPolicy } from "./cache-eviction-policy.js";
 import { getDefaultMaxFormattingCacheEntries } from "./format-memory-options.js";
 
 /**
@@ -17,27 +18,26 @@ import { getDefaultMaxFormattingCacheEntries } from "./format-memory-options.js"
 const formattingCache = new Map<string, string>();
 
 /**
- * Trims the formatting cache to the specified limit using LRU eviction.
- * If limit is not finite, the cache is left unchanged.
- *
- * A limit of exactly `0` is treated as "disabled" to match the documented
- * contract (`PRETTIER_PLUGIN_GML_MAX_FORMATTING_CACHE_ENTRIES=0` advertises
- * "Provide 0 to disable the limit"). Without this guard, `storeFormattingCacheEntry`
- * would clear the cache after every single insert, silently defeating caching
- * entirely whenever an operator configured the limit to 0 expecting unbounded
- * caching instead.
+ * Applies the formatting-cache eviction policy to the mutable LRU cache.
+ * Capacity rules remain in the pure policy evaluator; this function owns only
+ * the cache mutations needed to carry out its decision.
  */
 export function trimFormattingCache(limit = getDefaultMaxFormattingCacheEntries()): void {
-    if (!Number.isFinite(limit) || limit === 0) {
+    const decision = evaluateFormattingCacheEvictionPolicy({
+        currentCacheSize: formattingCache.size,
+        maxEntries: limit
+    });
+
+    if (decision.action === "retain") {
         return;
     }
 
-    if (limit < 0) {
+    if (decision.action === "clear") {
         formattingCache.clear();
         return;
     }
 
-    while (formattingCache.size > limit) {
+    for (let entriesEvicted = 0; entriesEvicted < decision.entriesToEvict; entriesEvicted += 1) {
         const { value: oldestKey, done } = formattingCache.keys().next();
         if (done) {
             break;

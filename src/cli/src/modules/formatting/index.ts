@@ -9,6 +9,7 @@ export {
     storeFormattingCacheEntry,
     trimFormattingCache
 } from "./cache.js";
+export * from "./cache-eviction-policy.js";
 export * from "./format-memory-constants.js";
 export * from "./format-memory-options.js";
 export * from "./ignore-rules-negation-tracker.js";
