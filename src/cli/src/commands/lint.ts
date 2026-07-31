@@ -1,4 +1,4 @@
-import { constants, existsSync, readdirSync, statSync } from "node:fs";
+import { constants, readdirSync, statSync } from "node:fs";
 import { access } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -19,6 +19,7 @@ import {
     WRITE_OPTION_DESCRIPTION,
     WRITE_OPTION_FLAGS
 } from "../cli-core/shared-command-options.js";
+import { pathExistsSync } from "../shared/path-exists.js";
 import {
     calculateElapsedNanoseconds,
     formatElapsedNanosecondsAsMilliseconds,
@@ -137,7 +138,12 @@ function discoverFlatConfig(cwd: string): DiscoveryResult {
             const absolutePath = path.join(directory, candidate);
             searchedPaths.push(absolutePath);
 
-            if (existsSync(absolutePath)) {
+            // `pathExistsSync` is the CLI workspace's modern replacement for
+            // the deprecated `fs.existsSync`. The helper wraps `fs.statSync`
+            // in a `try`/`catch` so missing or unreadable paths return `false`
+            // without surfacing an exception — the same contract the lint
+            // command has always relied on for the flat-config lookup.
+            if (pathExistsSync(absolutePath)) {
                 return {
                     selectedConfigPath: absolutePath,
                     searchedPaths
@@ -299,7 +305,10 @@ async function resolveForcedProjectRootFromPathOption(forcedProjectPath: string 
 
     const resolvedPath = path.resolve(forcedProjectPath);
     if (resolvedPath.toLowerCase().endsWith(".yyp")) {
-        if (!existsSync(resolvedPath)) {
+        // Use `pathExistsSync` rather than the deprecated `fs.existsSync` so
+        // missing paths surface as a clear CLI validation error instead of an
+        // uncaught ENOENT thrown by the surrounding `statSync` call.
+        if (!pathExistsSync(resolvedPath)) {
             return {
                 forcedProjectRoot: null,
                 validationError: `Forced project .yyp path does not exist: ${resolvedPath}`
@@ -332,7 +341,9 @@ async function resolveForcedProjectRootFromPathOption(forcedProjectPath: string 
     }
 
     let resolvedStats: ReturnType<typeof statSync>;
-    if (!existsSync(resolvedPath)) {
+    // Same rationale as the `.yyp` branch above: route through the shared
+    // `pathExistsSync` helper instead of the deprecated `fs.existsSync`.
+    if (!pathExistsSync(resolvedPath)) {
         return {
             forcedProjectRoot: null,
             validationError: `Forced project path does not exist: ${resolvedPath}`
@@ -491,7 +502,11 @@ function expandLintTargetsForRecovery(parameters: {
 
     for (const target of parameters.targets) {
         const absoluteTarget = path.resolve(parameters.cwd, target);
-        if (!existsSync(absoluteTarget)) {
+        // Use the shared `pathExistsSync` helper instead of the deprecated
+        // `fs.existsSync`. Glob patterns and other unresolved targets fall
+        // through to the passthrough bucket, mirroring the historical
+        // `existsSync === false` contract.
+        if (!pathExistsSync(absoluteTarget)) {
             passthroughTargets.push(target);
             continue;
         }

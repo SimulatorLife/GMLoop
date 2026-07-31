@@ -1,5 +1,5 @@
-import * as Graph from "./graph/index.js";
 import * as GraphVisualizationBundle from "./graph/graph-visualization-bundle.js";
+import * as Graph from "./graph/index.js";
 import * as Surfaces from "./surfaces/index.js";
 
 /**
