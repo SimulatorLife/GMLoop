@@ -20,6 +20,7 @@ import {
 import type { MetricsSnapshot } from "../project-index/metrics.js";
 import type { SemanticFileManifest, SemanticFileManifestCacheStats } from "../project-index/semantic-manifest.js";
 import { createSemanticSnapshotFromProjectIndex } from "../project-index/semantic-snapshot-codec.js";
+import type { SemanticIndexStore, SemanticStoreState } from "../project-index/semantic-store.js";
 import { getGmlSymbolKindForIdentifierCollection } from "../symbols/taxonomy.js";
 import { resolveGraphIndexConfig } from "./config.js";
 import {
@@ -2188,26 +2189,19 @@ function createTolerantProjectIndexCoordinator(): ProjectIndexCoordinatorInstanc
 }
 
 /**
- * Get-or-build a project index snapshot for graph projection.
+ * Read the most-recently-cached semantic manifest from the project store,
+ * returning `null` when the persistent tables have not been created yet
+ * (typical for a project that has never been indexed). Database corruption,
+ * locked database, or I/O faults are surfaced with context so they can be
+ * diagnosed instead of silently swallowed.
  *
- * Single responsibility: orchestrate the cache-aware get-or-build flow used
- * by graph projection. Input collection is delegated to
- * `collectProjectIndexMtimes`, build configuration is delegated to
- * `createTolerantProjectIndexCoordinator`, and this function owns only the
- * three-step orchestration plus resource cleanup.
+ * Single responsibility: bridge between the underlying store's read API and
+ * the graph projection callers, translating the documented "missing table"
+ * case into a `null` result.
  */
-async function getOrBuildProjectIndex(
-    projectRoot: string,
-    onProgress: GraphIndexBuildOptions["onProgress"],
-    skipProjectionWhenCurrent: boolean,
-    database: GraphDatabase,
-    graphId: GraphIndexScope,
-    embeddingsConfig: GraphEmbeddingsConfig
-): Promise<ProjectIndexBuildSnapshot> {
-    const store = openSemanticIndexStore(projectRoot);
-    let storedManifest;
+function loadCachedSemanticManifest(store: SemanticIndexStore, projectRoot: string): SemanticFileManifest | null {
     try {
-        storedManifest = store.readSemanticManifest("full") ?? store.readSemanticManifest("definitions");
+        return store.readSemanticManifest("full") ?? store.readSemanticManifest("definitions");
     } catch (error) {
         // Reading the cached manifest is a best-effort optimisation: if the
         // semantic tables have not been created yet (e.g. a fresh project
@@ -2223,62 +2217,190 @@ async function getOrBuildProjectIndex(
                 error
             );
         }
+        return null;
     }
+}
+
+/**
+ * Build the current file manifest from disk, threading the cache hit/miss
+ * counters the builder records back to the caller.
+ *
+ * Single responsibility: own the `buildSemanticFileManifest` invocation and
+ * the cache stats callback wiring.
+ */
+async function loadCurrentManifestWithCacheStats(
+    projectRoot: string,
+    cachedManifest: SemanticFileManifest | null
+): Promise<{ manifest: SemanticFileManifest; manifestCacheStats: SemanticFileManifestCacheStats }> {
     let manifestCacheStats: SemanticFileManifestCacheStats = { cacheHitCount: 0, cacheMissCount: 0 };
-    const manifest = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade, [], storedManifest, (stats) => {
+    const manifest = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade, [], cachedManifest, (stats) => {
         manifestCacheStats = stats;
     });
-    const sourceSignature = manifest.sourceRevision;
-    const storedState = store.readActiveSemanticSlots().full;
+    return { manifest, manifestCacheStats };
+}
+
+/**
+ * Decide whether the cached projection can be reused for this build call.
+ *
+ * Two reuse paths exist:
+ *   - "skip-when-current" returns a snapshot with `projectIndex: null` so the
+ *     caller can short-circuit further work when the on-disk projection is
+ *     already in sync with the manifest.
+ *   - "reuse-stored" returns a snapshot presenting the stored index as
+ *     `projectIndex` when its source signature matches the freshly built
+ *     manifest, avoiding a fresh parse+analyze pass.
+ *
+ * Returns `null` when neither reuse path applies and the caller must rebuild.
+ *
+ * Single responsibility: apply the cache-reuse policy. The orchestrator
+ * `getOrBuildProjectIndex` owns the rebuild path (`buildAndPublishProjectIndexSnapshot`).
+ */
+function tryReuseStoredProjectionSnapshot({
+    database,
+    embeddingsConfig,
+    graphId,
+    manifest,
+    manifestCacheStats,
+    projectRoot,
+    skipProjectionWhenCurrent,
+    sourceSignature,
+    storedIndex,
+    storedState
+}: {
+    database: GraphDatabase;
+    embeddingsConfig: GraphEmbeddingsConfig;
+    graphId: GraphIndexScope;
+    manifest: SemanticFileManifest;
+    manifestCacheStats: SemanticFileManifestCacheStats;
+    projectRoot: string;
+    skipProjectionWhenCurrent: boolean;
+    sourceSignature: string;
+    storedIndex: Record<string, unknown> | null;
+    storedState: SemanticStoreState | null;
+}): ProjectIndexBuildSnapshot | null {
     if (
         skipProjectionWhenCurrent &&
         storedState?.sourceSignature === sourceSignature &&
         isGraphProjectionCurrentForManifest(database, graphId, projectRoot, manifest, embeddingsConfig)
     ) {
-        await store.close();
         return Object.freeze({ manifest, manifestCacheStats, projectIndex: null, wasFreshlyBuilt: false });
     }
-
-    const storedIndex = store.readSemanticNavigationProjection("full");
     if (storedIndex && storedState?.sourceSignature === sourceSignature) {
-        await store.close();
         return Object.freeze({ manifest, manifestCacheStats, projectIndex: storedIndex, wasFreshlyBuilt: false });
     }
+    return null;
+}
 
+/**
+ * Build a fresh project index (full or incremental) and publish the
+ * resulting two-tier semantic snapshot.
+ *
+ * Single responsibility: own the build + publish pipeline. The cache-reuse
+ * path lives in `tryReuseStoredProjectionSnapshot`; the orchestrator
+ * `getOrBuildProjectIndex` decides which path to take.
+ */
+async function buildAndPublishProjectIndexSnapshot({
+    manifest,
+    manifestCacheStats,
+    onProgress,
+    projectRoot,
+    storedIndex,
+    storedManifest,
+    store
+}: {
+    manifest: SemanticFileManifest;
+    manifestCacheStats: SemanticFileManifestCacheStats;
+    onProgress: GraphIndexBuildOptions["onProgress"];
+    projectRoot: string;
+    storedIndex: Record<string, unknown> | null;
+    storedManifest: SemanticFileManifest | null;
+    store: SemanticIndexStore;
+}): Promise<ProjectIndexBuildSnapshot> {
+    const parser = createTolerantGraphProjectParser();
+    const reconciliation = reconcileSemanticManifests(storedManifest, manifest);
+    const index = (await buildProjectIndex(
+        projectRoot,
+        Core.defaultFsFacade,
+        storedIndex && reconciliation.changedFiles.length > 0
+            ? {
+                  incremental: {
+                      changes: reconciliation.changedFiles.map((change) => ({
+                          filePath: path.resolve(projectRoot, change.relativePath),
+                          kind: change.kind
+                      })),
+                      existingIndex: storedIndex
+                  },
+                  onProgress,
+                  parseGml: parser
+              }
+            : {
+                  onProgress,
+                  parseGml: parser
+              }
+    )) as ProjectIndexSnapshot;
+    const publication = publishSemanticTwoTierSnapshot(store, {
+        definitionsSnapshot: createSemanticSnapshotFromProjectIndex(index, "definitions", manifest.sourceRevision),
+        fullSnapshot: createSemanticSnapshotFromProjectIndex(index, "full", manifest.sourceRevision),
+        manifest,
+        navigationProjection: index,
+        sourceRevision: manifest.sourceRevision
+    });
+    if (publication.status === "superseded") {
+        throw new Error(`Semantic graph-index publication was superseded for ${projectRoot}.`);
+    }
+    return Object.freeze({ manifest, manifestCacheStats, projectIndex: index, wasFreshlyBuilt: true });
+}
+
+/**
+ * Get-or-build a project index snapshot for graph projection.
+ *
+ * Single responsibility: orchestrate the cache-aware get-or-build flow used
+ * by graph projection. Manifest loading is delegated to
+ * `loadCachedSemanticManifest` and `loadCurrentManifestWithCacheStats`,
+ * reuse policy to `tryReuseStoredProjectionSnapshot`, and the build+publish
+ * path to `buildAndPublishProjectIndexSnapshot`. This function owns only the
+ * three-step orchestration plus resource cleanup.
+ */
+async function getOrBuildProjectIndex(
+    projectRoot: string,
+    onProgress: GraphIndexBuildOptions["onProgress"],
+    skipProjectionWhenCurrent: boolean,
+    database: GraphDatabase,
+    graphId: GraphIndexScope,
+    embeddingsConfig: GraphEmbeddingsConfig
+): Promise<ProjectIndexBuildSnapshot> {
+    const store = openSemanticIndexStore(projectRoot);
     try {
-        const parser = createTolerantGraphProjectParser();
-        const reconciliation = reconcileSemanticManifests(storedManifest, manifest);
-        const index = (await buildProjectIndex(
-            projectRoot,
-            Core.defaultFsFacade,
-            storedIndex && reconciliation.changedFiles.length > 0
-                ? {
-                      incremental: {
-                          changes: reconciliation.changedFiles.map((change) => ({
-                              filePath: path.resolve(projectRoot, change.relativePath),
-                              kind: change.kind
-                          })),
-                          existingIndex: storedIndex
-                      },
-                      onProgress,
-                      parseGml: parser
-                  }
-                : {
-                      onProgress,
-                      parseGml: parser
-                  }
-        )) as ProjectIndexSnapshot;
-        const publication = publishSemanticTwoTierSnapshot(store, {
-            definitionsSnapshot: createSemanticSnapshotFromProjectIndex(index, "definitions", manifest.sourceRevision),
-            fullSnapshot: createSemanticSnapshotFromProjectIndex(index, "full", manifest.sourceRevision),
+        const storedManifest = loadCachedSemanticManifest(store, projectRoot);
+        const { manifest, manifestCacheStats } = await loadCurrentManifestWithCacheStats(projectRoot, storedManifest);
+        const sourceSignature = manifest.sourceRevision;
+        const storedState = store.readActiveSemanticSlots().full;
+        const storedIndex = store.readSemanticNavigationProjection("full");
+
+        const reusedSnapshot = tryReuseStoredProjectionSnapshot({
+            database,
+            embeddingsConfig,
+            graphId,
             manifest,
-            navigationProjection: index,
-            sourceRevision: sourceSignature
+            manifestCacheStats,
+            projectRoot,
+            skipProjectionWhenCurrent,
+            sourceSignature,
+            storedIndex,
+            storedState
         });
-        if (publication.status === "superseded") {
-            throw new Error(`Semantic graph-index publication was superseded for ${projectRoot}.`);
+        if (reusedSnapshot) {
+            return reusedSnapshot;
         }
-        return Object.freeze({ manifest, manifestCacheStats, projectIndex: index, wasFreshlyBuilt: true });
+        return await buildAndPublishProjectIndexSnapshot({
+            manifest,
+            manifestCacheStats,
+            onProgress,
+            projectRoot,
+            storedIndex,
+            storedManifest,
+            store
+        });
     } finally {
         await store.close();
     }
