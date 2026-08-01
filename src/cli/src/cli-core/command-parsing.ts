@@ -17,25 +17,28 @@ export interface ParseCommandLineResult {
     usage: string;
 }
 
-export const coercePositiveInteger: typeof Core.coercePositiveInteger = Core.coercePositiveInteger;
-export const coerceNonNegativeInteger: typeof Core.coerceNonNegativeInteger = Core.coerceNonNegativeInteger;
-export const resolveIntegerOption: typeof Core.resolveIntegerOption = Core.resolveIntegerOption;
+function parseIntegerWithBounds(
+    value: string,
+    bounds: Readonly<{ errorMessage: string; maximum: number; minimum: number }>
+): number {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isNaN(parsed) || parsed < bounds.minimum || parsed > bounds.maximum) {
+        throw new Error(bounds.errorMessage);
+    }
+    return parsed;
+}
 
 /**
- * Create an argParser for Commander.js options that validates port numbers.
- * Ports must be integers in the range 1-65535.
- *
- * @returns {(value: string) => number} An argParser function for Commander.js
+ * An argParser for Commander.js options that validates port numbers.
+ * Ports must be integers in the range 1–65535.
  */
-export function createPortValidator() {
-    return wrapInvalidArgumentResolver((value: string) => {
-        const parsed = Number.parseInt(value);
-        if (Number.isNaN(parsed) || parsed < 1 || parsed > 65_535) {
-            throw new Error("Port must be between 1 and 65535");
-        }
-        return parsed;
+export const portValidator = wrapInvalidArgumentResolver((value: string) => {
+    return parseIntegerWithBounds(value, {
+        errorMessage: "Port must be between 1 and 65535",
+        maximum: 65_535,
+        minimum: 1
     });
-}
+});
 
 /**
  * Create an argParser for Commander.js options that validates integers against
@@ -47,11 +50,11 @@ export function createPortValidator() {
  */
 export function createMinimumValueValidator(min: number, errorMessage: string) {
     return wrapInvalidArgumentResolver((value: string) => {
-        const parsed = Number.parseInt(value);
-        if (Number.isNaN(parsed) || parsed < min) {
-            throw new Error(errorMessage);
-        }
-        return parsed;
+        return parseIntegerWithBounds(value, {
+            errorMessage,
+            maximum: Number.POSITIVE_INFINITY,
+            minimum: min
+        });
     });
 }
 

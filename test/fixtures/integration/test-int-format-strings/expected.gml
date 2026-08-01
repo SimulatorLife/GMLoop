@@ -6,22 +6,19 @@ for (var i = 0; i < num; i++) {
 }
 
 function TestStruct() constructor {
-    
     /// @returns {undefined}
     static clearSubdiv = function () {
-        if (spHash < 0) {
-            return;
+        if (spHash >= 0) {
+            // Clears any data structures related to the subdivision of the colmesh
+            var region = ds_map_find_first(spHash);
+            while (!is_undefined(region)) {
+                ds_list_destroy(spHash[? region]);
+                region = ds_map_find_next(spHash, region);
+            }
+            ds_map_destroy(spHash);
+            spHash = -1;
         }
-        // Clears any data structures related to the subdivision of the colmesh
-        var region = ds_map_find_first(spHash);
-        while (!is_undefined(region)) {
-            ds_list_destroy(spHash[? region]);
-            region = ds_map_find_next(spHash, region);
-        }
-        ds_map_destroy(spHash);
-        spHash = -1;
     };
-
 }
 
 var myWidth = 14;
@@ -30,12 +27,12 @@ var halfWidth = myWidth * 0.5;
 enum eStates {
     STATE_IDLE = 0,
     STATE_WALK = 1,
-    STATE_RUN = 2
+    STATE_RUN  = 2
 }
 
 var currState = eStates.STATE_IDLE;
 
-/// @param {real} [newState=eStates.STATE_IDLE]
+/// @param [newState=eStates.STATE_IDLE]
 /// @returns {undefined}
 function changeState(newState = eStates.STATE_IDLE) {
     currState = newState;
@@ -63,10 +60,12 @@ with (enemy) {
 
 #endregion
 
-/// @description Add 2 numbers
-/// @param {real} n1
-/// @param {real} n2
-/// @returns {real}
+/// @param {Real} n1
+/// @param n1
+/// @desc Add 2 numbers
+/// @param {Real} n2
+/// @param n2
+/// @returns {any}
 function func_add(n1, n2) {
     return n1 + n2;
 }
@@ -74,10 +73,10 @@ function func_add(n1, n2) {
 var myTemplateString = $"5 plus 7 is {func_add(5, 7)}";
 show_debug_message(myTemplateString);
 
-/// @description Subtract 2 numbers
-/// @param {real} n1
-/// @param {real} n2
-/// @returns {real}
+/// @desc Subtract 2 numbers
+/// @param n1
+/// @param n2
+/// @returns {any}
 function func_sub(n1, n2) {
     return n1 - n2;
 }
@@ -86,7 +85,7 @@ func_sub(0.5, 9);
 
 var testStringShouldNotHaveLeadingZero = ".5";
 
-var testComplicatedString = "This is a string with a \"quote\" in it";
+var testComplicatedString = $"This is a string with a \"quote\" in it";
 
 // This is an inline comment without a space after the slashes
 if (global.disableDraw) {
@@ -94,7 +93,7 @@ if (global.disableDraw) {
 }
 
 if (
-    is_debug_mode // this is an inline comment
+    is_debug_mode //this is an inline comment
 ) {
     show_debug_message("Test console message");
 }

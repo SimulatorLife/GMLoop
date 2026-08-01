@@ -1,3 +1,4 @@
+import { getNodeEndIndex, getNodeStartIndex } from "../ast/locations.js";
 import { isObjectLike } from "../utils/object.js";
 
 /**
@@ -82,6 +83,49 @@ export function isLineComment(node: unknown): node is CommentLineNode {
  */
 export function isBlockComment(node: unknown): node is CommentBlockNode {
     return commentTypeMatches(node, "CommentBlock");
+}
+
+/**
+ * AST node kinds that Prettier cannot attach comments to via the
+ * `Printer.canAttachComment` contract. The set is intentionally tiny:
+ * comment nodes already own their own leading/trailing placements, and
+ * `EmptyStatement` has no source range worth attaching a comment to.
+ */
+const NON_ATTACHABLE_NODE_TYPES: ReadonlySet<string> = Object.freeze(new Set(["EmptyStatement"]));
+
+/**
+ * Decide whether Prettier may attach a comment to the given AST node.
+ *
+ * The helper mirrors the shape Prettier expects from
+ * {@link Printer.canAttachComment}: the comment system must be able to walk
+ * both the node and any neighbouring nodes in search of an attachable slot.
+ * Empty statements and the comment nodes themselves cannot carry additional
+ * comments, so they are excluded explicitly.
+ *
+ * Centralising this rule in `@gmloop/core` lets every Prettier adapter
+ * (formatter, linter, refactor) share the same boundary without each
+ * workspace re-implementing the predicate inline. The check stays defensive
+ * against non-object input so callers can pass loose values from parser
+ * adapters without sprinkling `?.` chains at every call site.
+ *
+ * @param node Candidate AST node to evaluate.
+ * @returns `true` when Prettier should consider this node attachable.
+ */
+export function canAttachComment(node: unknown): boolean {
+    if (!isObjectLike(node)) {
+        return false;
+    }
+
+    const type = (node as { type?: unknown }).type;
+    if (typeof type !== "string" || type.length === 0) {
+        return false;
+    }
+
+    if (type.includes("Comment")) {
+        return false;
+    }
+
+    return !NON_ATTACHABLE_NODE_TYPES.has(type);
 }
 
 /**
@@ -200,6 +244,121 @@ export function getCommentBoundaryIndex(comment: unknown, boundaryName: "start" 
 
     const boundary = (comment as { start?: unknown; end?: unknown })[boundaryName];
     return normalizeCommentBoundaryIndex(boundary);
+}
+
+/**
+ * Extracts the raw text of a line comment node with optional source-text lookup.
+ *
+ * When `originalText` is supplied and the comment carries valid boundary indices,
+ * the function slices the source directly—this preserves exact whitespace and
+ * slashes from the original file (including non-standard patterns like `////`).
+ * Without source text it falls back to `leadingText`, then `raw`, and finally
+ * reconstructs `//` + `value` as a baseline.
+ *
+ * This function is primarily used by the formatter and linter to work with
+ * pre-existing comment formatting rather than guessing how to render it.
+ *
+ * @param comment - Line comment node to extract text from.
+ * @param options - Supports `{ originalText?: string }` for source-text slicing.
+ * @returns The raw comment text.
+ */
+export function getLineCommentRawText(comment: unknown, options: { originalText?: string } = {}): string {
+    const commentStart = getCommentBoundaryIndex(comment, "start");
+    const commentEnd = getCommentBoundaryIndex(comment, "end");
+
+    if (options.originalText && commentStart !== null && commentEnd !== null) {
+        return options.originalText.slice(commentStart, commentEnd + 1);
+    }
+
+    if (!isObjectLike(comment)) {
+        return "";
+    }
+
+    const { leadingText, raw, value } = comment as { leadingText?: string; raw?: string; value?: unknown };
+    if (leadingText !== undefined) {
+        return leadingText;
+    }
+
+    if (raw !== undefined) {
+        return raw;
+    }
+
+    // Only reconstruct from value if it's a string; non-string values indicate
+    // malformed input and should not be stringified (which would produce
+    // "[object Object]" noise in the output).
+    if (typeof value !== "string") {
+        return "";
+    }
+
+    return `//${value}`;
+}
+
+type InlineCommentSourceContext = {
+    originalText?: string;
+    sourceText?: string;
+};
+
+function resolveInlineCommentSourceText(sourceContext: string | InlineCommentSourceContext | null | undefined): string {
+    if (typeof sourceContext === "string") {
+        return sourceContext;
+    }
+
+    if (!isObjectLike(sourceContext)) {
+        return "";
+    }
+
+    if (typeof sourceContext.originalText === "string") {
+        return sourceContext.originalText;
+    }
+
+    return typeof sourceContext.sourceText === "string" ? sourceContext.sourceText : "";
+}
+
+function containsTokenBetween(sourceText: string, token: string, startIndex: number, endIndex: number): boolean {
+    const tokenIndex = sourceText.indexOf(token, startIndex);
+    return tokenIndex !== -1 && tokenIndex < endIndex;
+}
+
+/**
+ * Detects whether source text contains an inline comment between two node ranges.
+ *
+ * AST transforms use this helper before rewriting binary expressions so comments
+ * anchored between operands keep their original placement instead of being
+ * dropped or moved. The check stays text-based because parser comment arrays
+ * are attached to nodes, not to every token boundary between sibling nodes.
+ *
+ * @param left Left-side AST node.
+ * @param right Right-side AST node.
+ * @param sourceContext Source text string or object containing `originalText`
+ *        / `sourceText`.
+ * @returns `true` when the text slice between the nodes contains line, block,
+ *          or directive-style comments.
+ */
+export function hasInlineCommentBetween(
+    left: unknown,
+    right: unknown,
+    sourceContext: string | InlineCommentSourceContext | null | undefined
+): boolean {
+    const sourceText = resolveInlineCommentSourceText(sourceContext);
+    if (sourceText.length === 0) {
+        return false;
+    }
+
+    const leftEnd = getNodeEndIndex(left);
+    const rightStart = getNodeStartIndex(right);
+
+    if (leftEnd == null || rightStart == null || rightStart <= leftEnd || rightStart > sourceText.length) {
+        return false;
+    }
+
+    // Hot-path optimization: avoid allocating an intermediate substring for
+    // every sibling-node check. Direct index scans on the original source text
+    // preserve behavior while reducing allocations during repeated AST walks.
+    return (
+        containsTokenBetween(sourceText, "/*", leftEnd, rightStart) ||
+        containsTokenBetween(sourceText, "//", leftEnd, rightStart) ||
+        containsTokenBetween(sourceText, "#", leftEnd, rightStart)
+    );
 }
 
 /**
@@ -357,32 +516,24 @@ export function collectCommentNodes(root) {
         }
 
         // PERFORMANCE OPTIMIZATION: Inline child value enqueueing instead of calling
-        // a helper function, and use for...in instead of Object.values to avoid
-        // allocating an intermediate array for every visited node.
+        // a helper function, and use Object.keys instead of Object.values/Object.entries
+        // to avoid allocating intermediate value or tuple arrays for every visited node.
         //
         // CONTEXT: This traversal visits every node in the AST to collect comments.
         // The original implementation called `enqueueObjectChildValues(stack, current)`
         // on every object node, which added function call overhead on a hot path.
         //
         // SOLUTION: Inline the logic directly here to eliminate ~12-14% of the runtime
-        // cost in micro-benchmarks with typical AST structures. Additionally, replace
-        // Object.values() with for...in to avoid allocating a temporary array for each
-        // object node's properties, yielding an additional ~32% improvement in tight
-        // traversal loops. The trade-off is slightly more verbose code, but the
-        // performance gain is measurable in large codebases.
-        //
-        // WHAT WOULD BREAK: Reverting to a helper function or Object.values would
-        // reduce performance for large files or projects with many comments. The current
-        // inline for...in approach is worth the extra lines.
+        // cost in micro-benchmarks with typical AST structures. Additionally, use
+        // Object.keys() (which yields only own enumerable property names) rather than
+        // Object.values() or Object.entries() so no intermediate value/tuple arrays are
+        // allocated on each node visit. The trade-off is slightly more verbose code, but
+        // the performance gain is measurable in large codebases.
         //
         // NOTE: The truthy check `if (value && typeof value === "object")` matches the
         // original helper's `!value || typeof value !== "object"` guard (inverted logic).
         // Array items use the stricter `!== null` check to match the original behavior.
-        for (const key in current) {
-            if (!Object.hasOwn(current, key)) {
-                continue;
-            }
-
+        for (const key of Object.keys(current)) {
             const value = current[key];
             if (!value || typeof value !== "object") {
                 continue;
@@ -503,19 +654,21 @@ export function hasCommentImmediatelyBefore(text: unknown, index: unknown) {
     const first = normalizedText.charCodeAt(lineStart);
     const second = lineStart + 1 <= lineEnd ? normalizedText.charCodeAt(lineStart + 1) : -1;
 
+    // Line comment: // or /-
     if (first === 47) {
-        if (second === 47 || second === 42) {
-            return true;
-        }
-    } else if (first === 42) {
-        return true;
+        return second === 47 || second === 42;
     }
 
-    return (
-        lineEnd >= lineStart + 1 &&
-        normalizedText.charCodeAt(lineEnd) === 47 &&
-        normalizedText.charCodeAt(lineEnd - 1) === 42
-    );
+    // Block comment start: /*
+    if (first === 42) {
+        return (
+            lineEnd >= lineStart + 1 &&
+            normalizedText.charCodeAt(lineEnd) === 47 &&
+            normalizedText.charCodeAt(lineEnd - 1) === 42
+        );
+    }
+
+    return false;
 }
 
 /**

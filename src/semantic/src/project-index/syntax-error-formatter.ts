@@ -74,9 +74,9 @@ function extractBaseDescription(message) {
         return "";
     }
 
-    const match = normalizedMessage.match(/^Syntax Error[^:]*:(.*)$/s);
-    if (match) {
-        return match[1].trim();
+    const match = normalizedMessage.match(/^Syntax Error[^:]*:(?<description>.*)$/s);
+    if (match?.groups?.description) {
+        return match.groups.description.trim();
     }
 
     return normalizedMessage.trim();

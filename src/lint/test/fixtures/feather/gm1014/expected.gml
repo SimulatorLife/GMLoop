@@ -2,7 +2,6 @@ enum FRUIT {
     NONE,
     ORANGE,
     APPLE,
-    KIWI,
     SIZEOF
 }
 

@@ -23,7 +23,7 @@
  * ```
  */
 
-import { hasType } from "./node-helpers.js";
+import { hasType } from "./node-helpers/index.js";
 import {
     ARROW_FUNCTION_EXPRESSION,
     ASSIGNMENT_EXPRESSION,
@@ -425,6 +425,29 @@ export function isIncDecStatementNode(node: unknown): node is MutableGameMakerAs
 }
 
 /**
+ * Type guard for any increment/decrement node — expression or statement form.
+ *
+ * In GML, `++` and `--` can appear either as expressions (e.g. `x++`) or as
+ * standalone statements (e.g. `x++;`). Both share the same semantic effect and
+ * are commonly checked together throughout the lint/transform pipeline.
+ * This helper consolidates the duplicated `type === "IncDecExpression" || type === "IncDecStatement"`
+ * pattern that independently appears in multiple files.
+ *
+ * Call sites updated:
+ *  - `prefer-loop-invariant-expressions-rule.ts` (mutation collection + disallowed-context check)
+ *  - `logical-expression-optimize-logical-expressions.ts` (assigned-identifiers collection)
+ *  - `prefer-string-interpolation-rule.ts` (unsafe-mutation detection)
+ */
+export function isIncDecNode(node: unknown): node is MutableGameMakerAstNode {
+    if (node == null || typeof node !== "object") {
+        return false;
+    }
+
+    const type = (node as { type?: unknown }).type;
+    return type === INC_DEC_EXPRESSION || type === INC_DEC_STATEMENT;
+}
+
+/**
  * Type guard for variable declaration nodes.
  *
  * Variable declarations represent `var`, `static`, or `global` declarations.
@@ -563,6 +586,48 @@ export function isControlFlowExitStatement(node: unknown): node is MutableGameMa
 
     const type = (node as { type?: unknown }).type;
     return typeof type === "string" && CONTROL_FLOW_EXIT_STATEMENT_TYPES.has(type);
+}
+
+/**
+ * Frozen Set of AST node type strings that represent traditional iteration-based
+ * loop constructs. Built once at module load so `isLoopLikeNode` can perform a
+ * single O(1) `Set.has()` lookup rather than four chained string comparisons.
+ *
+ * WithStatement is intentionally absent: although it iterates over object
+ * instances in GML, its scope-change semantics differ from pure loops and make
+ * it unsuitable for generic loop optimisations such as condition hoisting or
+ * loop-invariant code motion. Callers that also need WithStatement should add
+ * their own `|| isWithStatementNode(node)` check on top of this guard.
+ */
+const LOOP_LIKE_NODE_TYPES = new Set<string>([FOR_STATEMENT, WHILE_STATEMENT, DO_UNTIL_STATEMENT, REPEAT_STATEMENT]);
+
+/**
+ * Type guard for traditional iteration-based loop nodes.
+ *
+ * Returns `true` when the node is a ForStatement, WhileStatement,
+ * DoUntilStatement, or RepeatStatement — the four loop constructs in GML that
+ * carry a loop condition and support `break`/`continue` control flow.
+ *
+ * This helper was extracted to eliminate duplicate loop-type classification
+ * logic that independently appeared in:
+ *  - `logical-expression-optimize-logical-expressions.ts` (`isLoopStatement`)
+ *  - `prefer-loop-invariant-expressions-rule.ts` (`LOOP_NODE_TYPES` + `isLoopNode`)
+ *
+ * @example
+ * ```ts
+ * if (Core.isLoopLikeNode(node)) {
+ *   // node is guaranteed to be ForStatement | WhileStatement |
+ *   // DoUntilStatement | RepeatStatement
+ * }
+ * ```
+ */
+export function isLoopLikeNode(node: unknown): node is MutableGameMakerAstNode {
+    if (node == null || typeof node !== "object") {
+        return false;
+    }
+
+    const type = (node as { type?: unknown }).type;
+    return typeof type === "string" && LOOP_LIKE_NODE_TYPES.has(type);
 }
 
 /**

@@ -7,13 +7,15 @@
  */
 
 import assert from "node:assert";
+import type { WatchListener } from "node:fs";
 import { mkdir, rm, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
 
 import { runWatchCommand } from "../src/commands/watch.js";
 import { findAvailablePort } from "./test-helpers/free-port.js";
-import { waitForPatchCount } from "./test-helpers/status-polling.js";
+import { waitForPatchCount, waitForScanComplete } from "./test-helpers/status-polling.js";
+import { createMockWatchFactory } from "./test-helpers/watch-fixtures.js";
 import { connectToHotReloadWebSocket } from "./test-helpers/websocket-client.js";
 
 void describe("Hot reload replay for late subscribers", () => {
@@ -35,7 +37,6 @@ void describe("Hot reload replay for late subscribers", () => {
         const statusPort = await findAvailablePort();
 
         const watchPromise = runWatchCommand(testDir, {
-            extensions: [".gml"],
             verbose: false,
             websocketPort,
             websocketHost: "127.0.0.1",
@@ -80,27 +81,37 @@ void describe("Hot reload replay for late subscribers", () => {
     });
 
     void it("does not replay deleted file patches to new WebSocket clients", async () => {
+        const replayDir = path.join(process.cwd(), "tmp", `hot-reload-replay-deleted-${Date.now()}`);
+        await mkdir(replayDir, { recursive: true });
+
         const abortController = new AbortController();
         const websocketPort = await findAvailablePort();
         const statusPort = await findAvailablePort();
+        const listenerCapture: { listener: WatchListener<string> | undefined } = { listener: undefined };
+        const watchFactory = createMockWatchFactory(listenerCapture);
 
-        const watchPromise = runWatchCommand(testDir, {
-            extensions: [".gml"],
+        const watchPromise = runWatchCommand(replayDir, {
             verbose: false,
             websocketPort,
             websocketHost: "127.0.0.1",
             statusPort,
             runtimeServer: false,
             statusServer: true,
-            abortSignal: abortController.signal
+            abortSignal: abortController.signal,
+            debounceDelay: 0,
+            watchFactory
         });
 
-        const deletedFilePath = path.join(testDir, "deleted_before_connect.gml");
+        const deletedFilePath = path.join(replayDir, "deleted_before_connect.gml");
         let websocketClient: Awaited<ReturnType<typeof connectToHotReloadWebSocket>> | null = null;
 
         try {
+            const statusBaseUrl = `http://127.0.0.1:${statusPort}`;
+            await waitForScanComplete(statusBaseUrl, 5000, 25);
+
             await writeFile(deletedFilePath, "// first version\nvar deleted_value = 1;", "utf8");
-            await waitForPatchCount(`http://127.0.0.1:${statusPort}`, 1, 5000, 25);
+            listenerCapture.listener?.("change", path.basename(deletedFilePath));
+            await waitForPatchCount(statusBaseUrl, 1, 5000, 25);
 
             await unlink(deletedFilePath);
 
@@ -109,12 +120,13 @@ void describe("Hot reload replay for late subscribers", () => {
                 retryIntervalMs: 25
             });
 
-            const receivedPatches = await websocketClient.waitForPatches({
-                timeoutMs: 1500,
-                minCount: 1
+            await new Promise((resolve) => {
+                setTimeout(resolve, 150);
             });
 
-            const replayedDeletedPatch = receivedPatches.find((patch) => patch.id.includes("deleted_before_connect"));
+            const replayedDeletedPatch = websocketClient.receivedPatches.find((patch) =>
+                patch.id.includes("deleted_before_connect")
+            );
             assert.equal(replayedDeletedPatch, undefined, "Deleted files should not replay cached patches");
         } finally {
             abortController.abort();
@@ -128,6 +140,82 @@ void describe("Hot reload replay for late subscribers", () => {
             } catch {
                 // Expected when aborting
             }
+
+            await rm(replayDir, { recursive: true, force: true });
+        }
+    });
+
+    void it("prunes deleted cached patches before replay when deletion events have not been processed", async () => {
+        const replayDir = path.join(process.cwd(), "tmp", `hot-reload-replay-stale-cache-${Date.now()}`);
+        await mkdir(replayDir, { recursive: true });
+
+        const abortController = new AbortController();
+        const websocketPort = await findAvailablePort();
+        const statusPort = await findAvailablePort();
+        const listenerCapture: { listener: WatchListener<string> | undefined } = { listener: undefined };
+        const watchFactory = createMockWatchFactory(listenerCapture);
+
+        const watchPromise = runWatchCommand(replayDir, {
+            verbose: false,
+            websocketPort,
+            websocketHost: "127.0.0.1",
+            statusPort,
+            runtimeServer: false,
+            statusServer: true,
+            abortSignal: abortController.signal,
+            debounceDelay: 0,
+            watchFactory
+        });
+
+        const liveFilePath = path.join(replayDir, "still_present_after_codemod.gml");
+        const deletedFilePath = path.join(replayDir, "removed_by_codemod_rename.gml");
+        let websocketClient: Awaited<ReturnType<typeof connectToHotReloadWebSocket>> | null = null;
+
+        try {
+            const statusBaseUrl = `http://127.0.0.1:${statusPort}`;
+            await waitForScanComplete(statusBaseUrl, 5000, 25);
+
+            await writeFile(liveFilePath, "var still_present_value = 1;", "utf8");
+            listenerCapture.listener?.("change", path.basename(liveFilePath));
+            await waitForPatchCount(statusBaseUrl, 1, 5000, 25);
+
+            await writeFile(deletedFilePath, "var removed_by_codemod_value = 1;", "utf8");
+            listenerCapture.listener?.("change", path.basename(deletedFilePath));
+            await waitForPatchCount(statusBaseUrl, 2, 5000, 25);
+
+            await unlink(deletedFilePath);
+
+            websocketClient = await connectToHotReloadWebSocket(`ws://127.0.0.1:${websocketPort}`, {
+                connectionTimeoutMs: 4000,
+                retryIntervalMs: 25
+            });
+
+            const receivedPatches = await websocketClient.waitForPatches({
+                timeoutMs: 1500,
+                minCount: 1
+            });
+
+            assert.ok(
+                receivedPatches.some((patch) => patch.id.includes("still_present_after_codemod")),
+                "Existing files should still replay cached patches"
+            );
+
+            const replayedDeletedPatch = receivedPatches.find((patch) => patch.id.includes("removed_by_codemod"));
+            assert.equal(replayedDeletedPatch, undefined, "Deleted files should be pruned before replay");
+        } finally {
+            abortController.abort();
+
+            if (websocketClient) {
+                await websocketClient.disconnect();
+            }
+
+            try {
+                await watchPromise;
+            } catch {
+                // Expected when aborting
+            }
+
+            await rm(replayDir, { recursive: true, force: true });
         }
     });
 });

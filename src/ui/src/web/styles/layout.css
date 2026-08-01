@@ -1,0 +1,54 @@
+#root,
+#app-shell {
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+main {
+  position: relative;
+  flex: 1;
+  min-height: calc(100vh - 260px);
+  padding: var(--gm-space-lg) var(--gm-space-xl) var(--gm-space-xl);
+}
+
+.page {
+  position: relative;
+  width: 100%;
+  min-height: calc(100vh - 300px);
+  display: none;
+}
+
+.page.active {
+  display: block;
+}
+
+.content-page {
+  overflow: visible;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  z-index: 9999;
+  padding: var(--gm-space-md) var(--gm-space-lg);
+  border-radius: 0 0 var(--gm-radius-md) var(--gm-radius-md);
+  background: var(--gm-accent-strong);
+  color: var(--gm-action-primary-text);
+  font-size: var(--gm-text-lg);
+  font-weight: var(--gm-weight-extrabold);
+  text-decoration: none;
+}
+
+.skip-link:focus {
+  left: var(--gm-space-xl);
+  top: 0;
+  outline: 3px solid var(--gm-focus-ring);
+  outline-offset: 2px;
+}

@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { Refactor } from "../index.js";
+import {
+    type NamingCaseStyle,
+    type NamingCategory,
+    type NamingConventionPolicy,
+    Refactor,
+    type ResolvedNamingConventionRules,
+    type ResolvedNamingRule
+} from "../index.js";
 
 void test("resolveNamingConventionRules applies inheritance and explicit disablement", () => {
     const policy = Refactor.normalizeNamingConventionPolicy({
@@ -36,6 +43,7 @@ void test("resolveNamingConventionRules applies inheritance and explicit disable
     assert.deepEqual(resolved.globalVariable?.bannedPrefixes, ["_"]);
     assert.deepEqual(resolved.globalVariable?.bannedSuffixes, []);
     assert.equal(resolved.structDeclaration?.caseStyle, "pascal");
+    assert.equal(resolved.constructorFunction?.caseStyle, "pascal");
     assert.equal(resolved.enum?.caseStyle, "pascal");
     assert.equal(resolved.enumMember?.suffix, "_member");
     assert.equal(resolved.loopIndexVariable, undefined);
@@ -63,6 +71,30 @@ void test("evaluateNamingConvention suggests case and prefix fixes", () => {
     assert.equal(evaluation.compliant, false);
     assert.equal(evaluation.suggestedName, "g_playerHp");
     assert.match(evaluation.message ?? "", /camel case/);
+});
+
+void test("evaluateNamingConvention capitalizes the core when camel case uses an attached prefix", () => {
+    const policy = Refactor.normalizeNamingConventionPolicy({
+        rules: {
+            enum: {
+                prefix: "e",
+                caseStyle: "camel"
+            }
+        }
+    });
+    const resolved = Refactor.resolveNamingConventionRules(policy);
+
+    const underscored = Refactor.evaluateNamingConvention("INPUT_VIRTUAL_TYPE", "enum", policy, resolved);
+    assert.equal(underscored.compliant, false);
+    assert.equal(underscored.suggestedName, "eInputVirtualType");
+
+    const alreadyAttached = Refactor.evaluateNamingConvention("einputVirtualType", "enum", policy, resolved);
+    assert.equal(alreadyAttached.compliant, false);
+    assert.equal(alreadyAttached.suggestedName, "eInputVirtualType");
+
+    const compliant = Refactor.evaluateNamingConvention("eInputVirtualType", "enum", policy, resolved);
+    assert.equal(compliant.compliant, true);
+    assert.equal(compliant.suggestedName, "eInputVirtualType");
 });
 
 void test("evaluateNamingConvention blocks automatic renames when min or max length is violated", () => {
@@ -139,6 +171,203 @@ void test("evaluateNamingConvention strips banned affixes before applying case s
     assert.match(withBannedSuffix.message ?? "", /banned suffix/);
 });
 
+void test("formatNamingCaseStyle preserves allowed underscore affixes", () => {
+    assert.equal(Refactor.formatNamingCaseStyle("__input_error", "lower_snake"), "__input_error");
+    assert.equal(Refactor.formatNamingCaseStyle("_TargetShader", "lower_snake"), "_target_shader");
+    assert.equal(Refactor.formatNamingCaseStyle("__Vector3", "pascal"), "__Vector3");
+});
+
+void test("formatNamingCaseStyle preserves compact digit-uppercase tokens in upper snake case", () => {
+    assert.equal(Refactor.formatNamingCaseStyle("DPAD_4DIR", "upper_snake"), "DPAD_4DIR");
+    assert.equal(Refactor.formatNamingCaseStyle("L2R", "upper_snake"), "L2R");
+    assert.equal(Refactor.formatNamingCaseStyle("L2R_DEVANAGARI", "upper_snake"), "L2R_DEVANAGARI");
+    assert.equal(Refactor.formatNamingCaseStyle("ONE_OVER_1M", "upper_snake"), "ONE_OVER_1M");
+    assert.equal(
+        Refactor.formatNamingCaseStyle("__INPUT_2D_CHECKER_STATIC_RESULT", "upper_snake"),
+        "__INPUT_2D_CHECKER_STATIC_RESULT"
+    );
+});
+
+void test("formatNamingCaseStyle fast-path preserves simple lower snake cores", () => {
+    assert.equal(Refactor.formatNamingCaseStyle("already_snake_case", "lower_snake"), "already_snake_case");
+    assert.equal(Refactor.formatNamingCaseStyle("already_snake_case", "camel"), "alreadySnakeCase");
+});
+
+// --- Type-coverage tests migrated from naming-convention-policy-types.test.ts ---
+
+void test("NamingCaseStyle supports all documented literals", () => {
+    const styles: Array<NamingCaseStyle> = ["lower", "upper", "camel", "lower_snake", "upper_snake", "pascal"];
+    assert.equal(styles.length, 6);
+});
+
+void test("NamingCategory includes variable naming categories from the policy plan", () => {
+    const categories: ReadonlySet<NamingCategory> = new Set([
+        "variable",
+        "localVariable",
+        "globalVariable",
+        "instanceVariable",
+        "staticVariable",
+        "argument",
+        "catchArgument",
+        "loopIndexVariable"
+    ]);
+
+    assert.ok(categories.has("globalVariable"));
+    assert.ok(categories.has("loopIndexVariable"));
+    // Verify that eventHandlerFunction is intentionally excluded from the variable-category subset.
+    // Cast to string to avoid a TS2345 narrowing error (the whole point of this test is to confirm it IS absent).
+    assert.equal(categories.has("eventHandlerFunction" as unknown as NamingCategory), false);
+});
+
+void test("NamingConventionPolicy supports category rules and explicit disablement", () => {
+    const policy: NamingConventionPolicy = {
+        rules: {
+            variable: {
+                caseStyle: "camel",
+                minChars: 2,
+                maxChars: 32,
+                bannedPrefixes: ["_"],
+                bannedSuffixes: ["_"]
+            },
+            globalVariable: {
+                caseStyle: "lower_snake",
+                prefix: "g_"
+            },
+            loopIndexVariable: false
+        },
+        exclusivePrefixes: {
+            g_: "globalVariable"
+        }
+    };
+
+    assert.equal(policy.rules.loopIndexVariable, false);
+    assert.equal(policy.exclusivePrefixes?.g_, "globalVariable");
+
+    const globalVariableRule = policy.rules.globalVariable;
+    assert.notEqual(globalVariableRule, undefined);
+    assert.notEqual(globalVariableRule, false);
+
+    if (globalVariableRule !== false && globalVariableRule !== undefined) {
+        assert.equal(globalVariableRule.caseStyle, "lower_snake");
+        assert.equal(globalVariableRule.prefix, "g_");
+    }
+});
+
+void test("ResolvedNamingRule requires normalized non-optional fields", () => {
+    const resolvedRule: ResolvedNamingRule = {
+        prefix: "g_",
+        suffix: "",
+        caseStyle: "lower_snake",
+        minChars: 2,
+        maxChars: 32,
+        bannedPrefixes: ["_"],
+        bannedSuffixes: ["_"]
+    };
+
+    const resolvedRules: ResolvedNamingConventionRules = {
+        globalVariable: resolvedRule
+    };
+
+    assert.equal(resolvedRules.globalVariable?.prefix, "g_");
+    assert.equal(resolvedRules.globalVariable?.caseStyle, "lower_snake");
+    assert.equal(resolvedRules.globalVariable?.minChars, 2);
+});
+
+// --- Remaining evaluateNamingConvention tests ---
+
+void test("evaluateNamingConvention preserves allowed leading underscores when enforcing case style", () => {
+    const policy = Refactor.normalizeNamingConventionPolicy({
+        rules: {
+            resource: {
+                caseStyle: "lower_snake"
+            }
+        }
+    });
+    const resolved = Refactor.resolveNamingConventionRules(policy);
+
+    const compliant = Refactor.evaluateNamingConvention("__input_error", "scriptResourceName", policy, resolved);
+    assert.equal(compliant.compliant, true);
+    assert.equal(compliant.suggestedName, "__input_error");
+
+    const needsCaseFix = Refactor.evaluateNamingConvention("_TargetShader", "shaderResourceName", policy, resolved);
+    assert.equal(needsCaseFix.compliant, false);
+    assert.equal(needsCaseFix.suggestedName, "_target_shader");
+});
+
+void test("evaluateNamingConvention replaces underscore resource prefixes for shader resources", () => {
+    const policy = Refactor.normalizeNamingConventionPolicy({
+        rules: {
+            resource: {
+                caseStyle: "lower_snake"
+            },
+            shaderResourceName: {
+                prefix: "shd_"
+            }
+        }
+    });
+    const resolved = Refactor.resolveNamingConventionRules(policy);
+
+    const evaluation = Refactor.evaluateNamingConvention("sh_cm_debug", "shaderResourceName", policy, resolved);
+    assert.equal(evaluation.compliant, false);
+    assert.equal(evaluation.suggestedName, "shd_cm_debug");
+});
+
+void test("evaluateNamingConvention replaces legacy single-letter resource prefixes when target prefix extends them", () => {
+    // Legacy resource prefixes such as "o" and "s" should be replaced (not duplicated)
+    // when the configured target prefix extends them (for example "obj_" or "spr_").
+    const policy = Refactor.normalizeNamingConventionPolicy({
+        rules: {
+            resource: {
+                caseStyle: "lower_snake"
+            },
+            objectResourceName: {
+                prefix: "obj_"
+            },
+            spriteResourceName: {
+                prefix: "spr_"
+            }
+        }
+    });
+    const resolved = Refactor.resolveNamingConventionRules(policy);
+
+    const camera = Refactor.evaluateNamingConvention("oCamera", "objectResourceName", policy, resolved);
+    assert.equal(camera.compliant, false);
+    assert.equal(camera.suggestedName, "obj_camera");
+
+    const compound = Refactor.evaluateNamingConvention("oColmesh2DemoCylinder", "objectResourceName", policy, resolved);
+    assert.equal(compound.compliant, false);
+    assert.equal(compound.suggestedName, "obj_colmesh2demo_cylinder");
+
+    const sprite = Refactor.evaluateNamingConvention("sSpiderHead", "spriteResourceName", policy, resolved);
+    assert.equal(sprite.compliant, false);
+    assert.equal(sprite.suggestedName, "spr_spider_head");
+
+    // Underscore-separated prefix "o_" IS stripped (that's a real prefix, not a word).
+    const underscorePrefixed = Refactor.evaluateNamingConvention("o_camera", "objectResourceName", policy, resolved);
+    assert.equal(underscorePrefixed.compliant, false);
+    assert.equal(underscorePrefixed.suggestedName, "obj_camera");
+});
+
+void test("evaluateNamingConvention fast-path handles simple case-style-only rules", () => {
+    const policy = Refactor.normalizeNamingConventionPolicy({
+        rules: {
+            localVariable: {
+                caseStyle: "camel"
+            }
+        }
+    });
+    const resolved = Refactor.resolveNamingConventionRules(policy);
+
+    const compliant = Refactor.evaluateNamingConvention("alreadyCamel", "localVariable", policy, resolved);
+    assert.equal(compliant.compliant, true);
+    assert.equal(compliant.suggestedName, "alreadyCamel");
+
+    const needsRewrite = Refactor.evaluateNamingConvention("bad_name", "localVariable", policy, resolved);
+    assert.equal(needsRewrite.compliant, false);
+    assert.equal(needsRewrite.suggestedName, "badName");
+    assert.match(needsRewrite.message ?? "", /camel case/);
+});
+
 void test("normalizeNamingConventionPolicy rejects unsupported naming categories", () => {
     assert.throws(
         () =>
@@ -212,4 +441,98 @@ void test("resolveNamingConventionRules supports sequence, tileset, particle, no
     assert.equal(resolved.particleSystemResourceName?.caseStyle, "lower");
     assert.equal(resolved.noteResourceName?.caseStyle, "lower");
     assert.equal(resolved.extensionResourceName?.caseStyle, "lower");
+});
+
+// --- Typed enum / fail-fast regression tests ---
+
+void test("NamingCaseStyle constant object exposes every supported literal", () => {
+    assert.deepEqual(Refactor.NAMING_CASE_STYLES, ["lower", "upper", "camel", "lower_snake", "upper_snake", "pascal"]);
+    assert.equal(Refactor.NamingCaseStyle.CAMEL, "camel");
+    assert.equal(Refactor.NamingCaseStyle.LOWER_SNAKE, "lower_snake");
+    assert.equal(Refactor.NamingCaseStyle.UPPER_SNAKE, "upper_snake");
+    assert.equal(Refactor.NamingCaseStyle.PASCAL, "pascal");
+    assert.equal(Refactor.NamingCaseStyle.LOWER, "lower");
+    assert.equal(Refactor.NamingCaseStyle.UPPER, "upper");
+});
+
+void test("isNamingCaseStyle accepts every documented style and rejects unknown values", () => {
+    for (const style of Refactor.NAMING_CASE_STYLES) {
+        assert.equal(Refactor.isNamingCaseStyle(style), true, `expected ${style} to be valid`);
+    }
+    assert.equal(Refactor.isNamingCaseStyle("garbage"), false);
+    assert.equal(Refactor.isNamingCaseStyle(""), false);
+    assert.equal(Refactor.isNamingCaseStyle("CAMEL"), false);
+    assert.equal(Refactor.isNamingCaseStyle(undefined), false);
+    assert.equal(Refactor.isNamingCaseStyle(null), false);
+    assert.equal(Refactor.isNamingCaseStyle(42), false);
+});
+
+void test("parseNamingCaseStyle returns the canonical value or null", () => {
+    assert.equal(Refactor.parseNamingCaseStyle("camel"), "camel");
+    assert.equal(Refactor.parseNamingCaseStyle("lower_snake"), "lower_snake");
+    assert.equal(Refactor.parseNamingCaseStyle("nonsense"), null);
+});
+
+void test("requireNamingCaseStyle throws on invalid input and returns the value otherwise", () => {
+    assert.equal(Refactor.requireNamingCaseStyle("camel"), "camel");
+    assert.equal(Refactor.requireNamingCaseStyle("upper_snake"), "upper_snake");
+    assert.throws(
+        () => Refactor.requireNamingCaseStyle("unknown", "naming rule caseStyle"),
+        (error: Error) => {
+            assert.ok(error instanceof TypeError, "expected TypeError");
+            assert.match(error.message, /Invalid naming case style/);
+            assert.match(error.message, /"unknown"/);
+            assert.match(error.message, /\(in naming rule caseStyle\)/);
+            return true;
+        }
+    );
+    assert.throws(
+        () => Refactor.requireNamingCaseStyle(42),
+        (error: Error) => error instanceof TypeError
+    );
+});
+
+void test("formatNamingCaseStyle keeps producing the same output for every supported style", () => {
+    // Acts as a regression test: the new typed dispatch table must yield
+    // the same outputs the previous nested-ternary implementation did.
+    assert.equal(Refactor.formatNamingCaseStyle("hello_world", "lower"), "helloworld");
+    assert.equal(Refactor.formatNamingCaseStyle("hello_world", "upper"), "HELLOWORLD");
+    assert.equal(Refactor.formatNamingCaseStyle("hello_world", "camel"), "helloWorld");
+    assert.equal(Refactor.formatNamingCaseStyle("hello_world", "pascal"), "HelloWorld");
+    assert.equal(Refactor.formatNamingCaseStyle("hello_world", "lower_snake"), "hello_world");
+    assert.equal(Refactor.formatNamingCaseStyle("hello_world", "upper_snake"), "HELLO_WORLD");
+    // Fast path for already-conforming simple-lower-snake cores.
+    assert.equal(Refactor.formatNamingCaseStyle("already_snake_case", "lower_snake"), "already_snake_case");
+});
+
+void test("formatNamingCaseStyle fails fast on unknown case styles instead of silently producing a fallback", () => {
+    // The previous nested-ternary implementation silently fell through to an
+    // implicit "upper snake" branch for any unrecognised string. The new
+    // dispatch validates the input at the public boundary and throws so
+    // misconfiguration is caught immediately at the call site.
+    assert.throws(
+        () =>
+            Refactor.formatNamingCaseStyle(
+                "helloWorld",
+                // Force a runtime invalid value past the type checker.
+                "garbage" as unknown as NamingCaseStyle
+            ),
+        (error: Error) => {
+            assert.ok(error instanceof TypeError, "expected TypeError");
+            assert.match(error.message, /Invalid naming case style/);
+            assert.match(error.message, /"garbage"/);
+            assert.match(error.message, /formatNamingCaseStyle/);
+            return true;
+        }
+    );
+});
+
+void test("NamingCaseStyle is the source of truth for the dispatched formatters", () => {
+    // Exhaustively cover the new typed dispatch table. If a new style is
+    // added to the const object, this test forces the implementer to
+    // register a formatter entry as well.
+    for (const style of Refactor.NAMING_CASE_STYLES) {
+        const formatted = Refactor.formatNamingCaseStyle("hello_world", style);
+        assert.ok(formatted.length > 0, `expected ${style} to produce a non-empty string`);
+    }
 });

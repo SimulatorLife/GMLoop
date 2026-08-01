@@ -46,6 +46,15 @@ void test("leading and trailing underscores are stable across conversions", () =
     );
 });
 
+void test("all-underscore identifiers preserve edge underscore metadata", () => {
+    const normalized = normalizeIdentifierCase("___");
+
+    assert.strictEqual(normalized.leadingUnderscores, "___");
+    assert.strictEqual(normalized.trailingUnderscores, "___");
+    assert.deepStrictEqual(normalized.tokens, []);
+    assert.strictEqual(formatIdentifierCase(normalized, "camel"), "______");
+});
+
 void test("mixed alphanumeric identifiers join digits intelligently in snake cases", () => {
     const normalized = normalizeIdentifierCase("hp2DMax");
 

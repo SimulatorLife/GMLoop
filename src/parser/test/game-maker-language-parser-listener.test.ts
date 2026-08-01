@@ -99,6 +99,21 @@ void test("non-function method handlers are ignored", () => {
     assert.equal(delegateCalls, 1);
 });
 
+void test("empty handler bags fall back to the delegate", () => {
+    let delegateCalls = 0;
+
+    const listener = new GameMakerLanguageParserListener({
+        listenerDelegate: () => {
+            delegateCalls += 1;
+        },
+        listenerHandlers: {}
+    });
+
+    listener.enterProgram({});
+
+    assert.equal(delegateCalls, 1);
+});
+
 void test("non-function listener delegates fall back to the default no-op delegate", () => {
     const listener = new GameMakerLanguageParserListener({
         listenerDelegate: "not callable" as never

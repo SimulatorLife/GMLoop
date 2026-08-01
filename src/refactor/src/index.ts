@@ -6,31 +6,48 @@ import * as NamingConventionPolicy from "./naming-convention-policy.js";
 import * as OccurrenceAnalysis from "./occurrence-analysis.js";
 import * as ProjectAnalysisProvider from "./project-analysis-provider.js";
 import * as ProjectConfig from "./project-config.js";
+import * as ProjectResources from "./project-resources/index.js";
+import {
+    APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT,
+    CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES,
+    CODEMOD_READ_THROUGH_CACHE_MIN_ENTRIES,
+    DUPLICATE_EDIT_CHECK_MAX_SET_SIZE,
+    RENAME_VALIDATION_CACHE_MAX_SIZE
+} from "./refactor-constants.js";
 import * as RefactorEngineAPI from "./refactor-engine.js";
+import * as Validation from "./rename/rename-validation.js";
 import * as RenamePreview from "./rename-preview.js";
 import { RenameValidationCache } from "./rename-validation-cache.js";
 import { SemanticQueryCache } from "./semantic-cache.js";
 import {
+    ConflictSeverity,
     ConflictType,
+    isConflictSeverity,
     isConflictType,
+    isNamingCaseStyle,
     isOccurrenceKind,
     isSymbolKind,
+    NamingCaseStyle,
     OccurrenceKind,
+    parseConflictSeverity,
     parseConflictType,
+    parseNamingCaseStyle,
     parseOccurrenceKind,
     parseSymbolKind,
+    requireConflictSeverity,
     requireConflictType,
+    requireNamingCaseStyle,
     requireOccurrenceKind,
     requireSymbolKind,
     SymbolKind
 } from "./types.js";
-import * as Validation from "./validation.js";
 import { WorkspaceEdit } from "./workspace-edit.js";
 
 export const Refactor = Object.freeze({
     ...RefactorEngineAPI,
     ...ProjectAnalysisProvider,
     ...ProjectConfig,
+    ...ProjectResources,
     ...NamingConventionPolicy,
     ...CodemodRegistry,
     ...Codemods,
@@ -46,6 +63,14 @@ export const Refactor = Object.freeze({
     isConflictType,
     parseConflictType,
     requireConflictType,
+    ConflictSeverity,
+    isConflictSeverity,
+    parseConflictSeverity,
+    requireConflictSeverity,
+    NamingCaseStyle,
+    isNamingCaseStyle,
+    parseNamingCaseStyle,
+    requireNamingCaseStyle,
     OccurrenceKind,
     isOccurrenceKind,
     parseOccurrenceKind,
@@ -53,19 +78,23 @@ export const Refactor = Object.freeze({
     SymbolKind,
     isSymbolKind,
     parseSymbolKind,
-    requireSymbolKind
+    requireSymbolKind,
+    // Performance and sizing constants
+    APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT,
+    CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES,
+    CODEMOD_READ_THROUGH_CACHE_MIN_ENTRIES,
+    DUPLICATE_EDIT_CHECK_MAX_SET_SIZE,
+    RENAME_VALIDATION_CACHE_MAX_SIZE
 });
 
 export * as Backends from "./backends/index.js";
-export { executeRegisteredCodemods, listConfiguredCodemods, listRegisteredCodemods } from "./codemod-registry.js";
+export {
+    executeRegisteredCodemods,
+    listConfiguredCodemods,
+    listRegisteredCodemods,
+    listSemanticProjectIndexDependentCodemodIds
+} from "./codemod-registry.js";
 export * as Codemods from "./codemods/index.js";
-export type {
-    LoopLengthHoistFunctionSuffixes,
-    LoopLengthHoistingCodemodOptions,
-    LoopLengthHoistingCodemodResult,
-    LoopLengthHoistingEdit
-} from "./codemods/loop-length-hoisting/index.js";
-export { applyLoopLengthHoistingCodemod } from "./codemods/loop-length-hoisting/index.js";
 export { executeNamingConventionCodemod, planNamingConventionCodemod } from "./codemods/naming-convention/index.js";
 export {
     checkHotReloadSafety,
@@ -91,8 +120,99 @@ export {
     groupOccurrencesByFile
 } from "./occurrence-analysis.js";
 export { DEFAULT_PROJECT_ANALYSIS_PROVIDER } from "./project-analysis-provider.js";
-export { normalizeRefactorProjectConfig } from "./project-config.js";
+export { normalizeRefactorProjectConfig, normalizeRefactorProjectConfigOrNull } from "./project-config.js";
+export type {
+    AddObjectEventRequest,
+    AddProjectResourceRequest,
+    AddRoomInstanceRequest,
+    CreateRoomLayerRequest,
+    CreateSolidColorPngRequest,
+    DeleteObjectEventRequest,
+    DeleteRoomInstanceRequest,
+    DeleteRoomLayerRequest,
+    DuplicateProjectResourceRequest,
+    FrameRoomCameraRequest,
+    InspectRoomInstanceRequest,
+    ListRoomInstancesRequest,
+    MoveProjectResourceRequest,
+    ObjectEventDescriptor,
+    ObjectEventInspectionResult,
+    ObjectEventMutationResult,
+    ObjectEventParseSummary,
+    ProjectResourceKindValue,
+    ProjectResourceMutationResult,
+    RemoveProjectResourceRequest,
+    RenameProjectResourceRequest,
+    ReorderRoomLayerRequest,
+    RepairRoomRequest,
+    RgbaColor,
+    RoomCameraInspectionResult,
+    RoomCameraMutationResult,
+    RoomInstanceInspectionResult,
+    RoomInstanceMutationResult,
+    RoomLayerInspectionResult,
+    RoomLayerMutationResult,
+    RoomRepairAppliedRepair,
+    RoomRepairDiagnostic,
+    RoomRepairResult,
+    UpdateObjectEventRequest,
+    UpdateRoomCameraRequest,
+    UpdateRoomInstanceRequest,
+    UpdateRoomLayerRequest
+} from "./project-resources/index.js";
+export * as ProjectResources from "./project-resources/index.js";
+export {
+    addObjectEvent,
+    addProjectResource,
+    addRoomInstance,
+    createRoomLayer,
+    createSolidColorPng,
+    deleteObjectEvent,
+    deleteRoomInstance,
+    deleteRoomLayer,
+    duplicateProjectResource,
+    frameRoomCamera,
+    inspectObjectEvent,
+    inspectRoomCamera,
+    inspectRoomInstance,
+    inspectRoomLayer,
+    listObjectEvents,
+    listRoomCameras,
+    listRoomInstances,
+    listRoomLayers,
+    moveProjectResource,
+    parseColor,
+    removeProjectResource,
+    renameProjectResource,
+    reorderRoomLayer,
+    repairRoom,
+    updateObjectEvent,
+    updateRoomCamera,
+    updateRoomInstance,
+    updateRoomLayer
+} from "./project-resources/index.js";
+export {
+    isProjectResourceKind,
+    parseProjectResourceKind,
+    ProjectResourceKind,
+    requireProjectResourceKind
+} from "./project-resources/index.js";
 export { RefactorEngine } from "./refactor-engine.js";
+export type {
+    CrossRenameConfusion,
+    DuplicateSymbolIdEntry,
+    DuplicateTargetNameEntry
+} from "./rename/rename-validation.js";
+export {
+    batchValidateScopeConflicts,
+    detectCircularRenames,
+    detectCrossRenameNameConfusion,
+    detectDuplicateSourceSymbolIds,
+    detectDuplicateTargetNames,
+    detectRenameConflicts,
+    validateCrossFileConsistency,
+    validateRenameStructure
+} from "./rename/rename-validation.js";
 export type { FilePreview, RenamePreview } from "./rename-preview.js";
 export {
     formatBatchRenamePlanReport,
@@ -107,38 +227,52 @@ export type {
 } from "./rename-validation-cache.js";
 export { RenameValidationCache } from "./rename-validation-cache.js";
 export type { CacheStats, SemanticCacheConfig } from "./semantic-cache.js";
-export { SemanticQueryCache } from "./semantic-cache.js";
+export type { OccurrenceCachePolicy } from "./semantic-cache.js";
+export { DefaultOccurrenceCachePolicy, PermissiveOccurrenceCachePolicy, SemanticQueryCache } from "./semantic-cache.js";
+export { readExclusiveSemanticLocationIndex, readSemanticLocationIndex } from "./semantic-index-helpers.js";
 export type {
     ApplyWorkspaceEditOptions,
     AstNode,
     BatchRenamePlanSummary,
     BatchRenameValidation,
     CascadeEntry,
+    CodemodCacheController,
+    CodemodEngine,
     CodemodExecutionTelemetry,
+    CodemodRenameOperations,
+    CodemodSemanticProvider,
+    CodemodTransformExecutor,
+    CodemodWorkspaceEditor,
     ConfiguredCodemodRunRequest,
     ConfiguredCodemodRunResult,
     ConfiguredCodemodSummary,
     ConflictEntry,
+    ConflictSeverityValue,
     ConflictTypeValue,
     DependencyAnalyzer,
     DependentSymbol,
     EditValidator,
     ExecuteBatchRenameRequest,
-    ExecuteLoopLengthHoistingCodemodRequest,
-    ExecuteLoopLengthHoistingCodemodResult,
+    ExecuteGlobalvarToGlobalCodemodRequest,
+    ExecuteGlobalvarToGlobalCodemodResult,
     ExecuteRenameRequest,
     ExecuteRenameResult,
+    FeatherRenamePlanner,
     FileSymbol,
     FileSymbolProvider,
+    GlobalVarRewriteAssessor,
+    GlobalvarToGlobalFileSummary,
     HotReloadCascadeMetadata,
     HotReloadCascadeResult,
     HotReloadSafetySummary,
     HotReloadUpdate,
     HotReloadValidationOptions,
+    IdentifierOccupancyChecker,
     KeywordProvider,
-    LoopLengthHoistingFileSummary,
+    LoopHoistIdentifierResolver,
+    MacroExpansionDependency,
+    MacroExpansionDependencyProvider,
     MaybePromise,
-    NamingCaseStyle,
     NamingCategory,
     NamingConventionCodemodPlan,
     NamingConventionPolicy,
@@ -157,6 +291,8 @@ export type {
     RefactorCodemodConfigMap,
     RefactorCodemodId,
     RefactorEngineDependencies,
+    RefactorHotReloadCoordinator,
+    RefactorProjectAnalysisContext,
     RefactorProjectAnalysisProvider,
     RefactorProjectConfig,
     RegisteredCodemod,
@@ -167,6 +303,9 @@ export type {
     RenameImpactSummary,
     RenamePlanSummary,
     RenameRequest,
+    RepairSpriteTextureUvResolutionCodemodOptions,
+    RepairSpriteTextureUvResolutionEdit,
+    RepairSpriteTextureUvResolutionResult,
     ResolvedNamingConventionRules,
     ResolvedNamingRule,
     SemanticAnalyzer,
@@ -185,12 +324,25 @@ export type {
 } from "./types.js";
 export { isSymbolKind, parseSymbolKind, requireSymbolKind, SymbolKind } from "./types.js";
 export { ConflictType, isConflictType, parseConflictType, requireConflictType } from "./types.js";
+export { ConflictSeverity, isConflictSeverity, parseConflictSeverity, requireConflictSeverity } from "./types.js";
+export { isNamingCaseStyle, NamingCaseStyle, parseNamingCaseStyle, requireNamingCaseStyle } from "./types.js";
 export { isOccurrenceKind, OccurrenceKind, parseOccurrenceKind, requireOccurrenceKind } from "./types.js";
+export type { WorkspaceRevisionProvider } from "./workspace-edit.js";
+export type {
+    FileRename,
+    GroupedTextEdits,
+    MetadataEdit,
+    TextEdit,
+    WorkspaceEditTelemetry,
+    WorkspaceLike
+} from "./workspace-edit.js";
 export {
-    batchValidateScopeConflicts,
-    detectCircularRenames,
-    detectRenameConflicts,
-    validateCrossFileConsistency,
-    validateRenameStructure
-} from "./validation.js";
-export { WorkspaceEdit } from "./workspace-edit.js";
+    getWorkspaceArrays,
+    getWorkspaceEditRevision,
+    getWorkspaceEditTelemetry,
+    isWorkspaceEditLike,
+    mergeWorkspaceEditInto,
+    validateFileRenameOperations,
+    WORKSPACE_EDIT_REVISION_TOKEN,
+    WorkspaceEdit
+} from "./workspace-edit.js";

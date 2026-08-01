@@ -3,6 +3,35 @@ import { describe, it } from "node:test";
 
 import { ScopeTracker } from "../src/scopes/scope-tracker.js";
 
+function toOccurrenceQueryShape({
+    scopeId,
+    scopeKind,
+    kind,
+    occurrence
+}: {
+    scopeId: string;
+    scopeKind: string;
+    kind: string;
+    occurrence: {
+        kind: string;
+        name: string;
+        scopeId: string | null | undefined;
+        usageContext?: object;
+    };
+}) {
+    return {
+        scopeId,
+        scopeKind,
+        kind,
+        occurrence: {
+            kind: occurrence.kind,
+            name: occurrence.name,
+            scopeId: occurrence.scopeId,
+            usageContext: occurrence.usageContext
+        }
+    };
+}
+
 void describe("ScopeTracker unsafe accessors", () => {
     void describe("getSymbolOccurrencesUnsafe", () => {
         void it("returns occurrences without cloning", () => {
@@ -198,7 +227,7 @@ void describe("ScopeTracker unsafe accessors", () => {
             tracker.enterScope("program");
             tracker.declare("valid", { name: "valid" });
 
-            const results = tracker.getBatchSymbolOccurrencesUnsafe([null as any, undefined as any, "valid"]);
+            const results = tracker.getBatchSymbolOccurrencesUnsafe([null, undefined, "valid"]);
 
             assert.equal(results.size, 1);
             assert.ok(results.has("valid"));
@@ -430,6 +459,24 @@ void describe("ScopeTracker unsafe accessors", () => {
 
             assert.deepStrictEqual(writes, []);
         });
+
+        void it("matches the safe write query results while preserving internal references", () => {
+            const tracker = new ScopeTracker({ enabled: true });
+
+            tracker.enterScope("program");
+            tracker.declare("myVar", { name: "myVar" });
+            tracker.reference("myVar", { name: "myVar", isAssignmentTarget: true });
+            tracker.reference("myVar", { name: "myVar" });
+
+            const safeWrites = tracker.getSymbolWrites("myVar");
+            const unsafeWrites = tracker.getSymbolWritesUnsafe("myVar");
+
+            assert.deepStrictEqual(
+                safeWrites.map((write) => toOccurrenceQueryShape(write)),
+                unsafeWrites.map((write) => toOccurrenceQueryShape(write))
+            );
+            assert.notStrictEqual(safeWrites[0].occurrence, unsafeWrites[0].occurrence);
+        });
     });
 
     void describe("getSymbolReadsUnsafe", () => {
@@ -491,6 +538,24 @@ void describe("ScopeTracker unsafe accessors", () => {
 
             assert.equal(reads.length, 2);
             assert.ok(reads.every((r) => r.occurrence.usageContext?.isRead));
+        });
+
+        void it("matches the safe read query results while preserving internal references", () => {
+            const tracker = new ScopeTracker({ enabled: true });
+
+            tracker.enterScope("program");
+            tracker.declare("shared", { name: "shared" });
+            tracker.reference("shared", { name: "shared" });
+            tracker.reference("shared", { name: "shared", isAssignmentTarget: true });
+
+            const safeReads = tracker.getSymbolReads("shared");
+            const unsafeReads = tracker.getSymbolReadsUnsafe("shared");
+
+            assert.deepStrictEqual(
+                safeReads.map((read) => toOccurrenceQueryShape(read)),
+                unsafeReads.map((read) => toOccurrenceQueryShape(read))
+            );
+            assert.notStrictEqual(safeReads[0].occurrence, unsafeReads[0].occurrence);
         });
     });
 });

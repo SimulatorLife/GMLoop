@@ -1,3 +1,4 @@
+export * from "./bounded-sample-collector.js";
 export {
     clearFormattingCache,
     createFormattingCacheKey,
@@ -8,4 +9,8 @@ export {
     storeFormattingCacheEntry,
     trimFormattingCache
 } from "./cache.js";
+export * from "./cache-eviction-policy.js";
+export * from "./format-memory-constants.js";
+export * from "./format-memory-options.js";
 export * from "./ignore-rules-negation-tracker.js";
+export * from "./target-path-resolution.js";

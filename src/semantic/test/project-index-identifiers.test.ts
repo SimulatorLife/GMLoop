@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
-import { promises as fs } from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import test from "node:test";
 
 import { buildProjectIndex } from "../src/project-index/index.js";
+import { createTempProjectWorkspace, recordValues } from "./test-project-helpers.js";
 
 type IdentifierIndexEntry = {
     identifierId?: string;
@@ -23,24 +21,13 @@ type IdentifierCollections = {
 
 type ProjectIndexSnapshot = { identifiers: IdentifierCollections };
 
-function valuesAs<T>(record: Record<string, T>): T[] {
-    return Object.values(record);
-}
-
-async function writeFile(rootDir: string, relativePath: string, contents: string) {
-    const absolutePath = path.join(rootDir, relativePath);
-    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-    await fs.writeFile(absolutePath, contents, "utf8");
-}
-
 void test("buildProjectIndex assigns identifier ids for each scope", async () => {
-    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gml-index-scope-"));
+    const { projectRoot, writeProjectFile, cleanup } = await createTempProjectWorkspace("gml-index-scope-");
 
     try {
-        await writeFile(tempRoot, "MyGame.yyp", JSON.stringify({ name: "MyGame", resourceType: "GMProject" }));
+        await writeProjectFile("MyGame.yyp", JSON.stringify({ name: "MyGame", resourceType: "GMProject" }));
 
-        await writeFile(
-            tempRoot,
+        await writeProjectFile(
             "scripts/scopeCollision/scopeCollision.yy",
             JSON.stringify({
                 resourceType: "GMScript",
@@ -48,8 +35,7 @@ void test("buildProjectIndex assigns identifier ids for each scope", async () =>
             })
         );
 
-        await writeFile(
-            tempRoot,
+        await writeProjectFile(
             "scripts/scopeCollision/scopeCollision.gml",
             [
                 "#macro MACRO_VALUE 10",
@@ -71,8 +57,7 @@ void test("buildProjectIndex assigns identifier ids for each scope", async () =>
             ].join("\n")
         );
 
-        await writeFile(
-            tempRoot,
+        await writeProjectFile(
             "objects/obj_tracker/obj_tracker.yy",
             JSON.stringify({
                 resourceType: "GMObject",
@@ -91,13 +76,12 @@ void test("buildProjectIndex assigns identifier ids for each scope", async () =>
             })
         );
 
-        await writeFile(
-            tempRoot,
+        await writeProjectFile(
             "objects/obj_tracker/obj_tracker_Create_0.gml",
             ["speed_bonus = 1;", "SpeedBonus = speed_bonus + 1;", "speedBonus = SpeedBonus + 1;", ""].join("\n")
         );
 
-        const index = (await buildProjectIndex(tempRoot)) as ProjectIndexSnapshot;
+        const index = (await buildProjectIndex(projectRoot)) as ProjectIndexSnapshot;
 
         const scriptEntry = index.identifiers.scripts["scope:script:scopeCollision"];
         assert.ok(scriptEntry);
@@ -113,18 +97,18 @@ void test("buildProjectIndex assigns identifier ids for each scope", async () =>
         const globalUpper = index.identifiers.globalVariables.GLOBAL_RATE;
         assert.equal(globalUpper.identifierId, "global:GLOBAL_RATE");
 
-        const enumEntries = valuesAs<IdentifierIndexEntry>(index.identifiers.enums);
+        const enumEntries = recordValues<IdentifierIndexEntry>(index.identifiers.enums);
         assert.ok(enumEntries.length > 0);
         for (const entry of enumEntries) {
             assert.ok(entry.identifierId?.startsWith("enum:"));
         }
 
-        const instanceEntries = valuesAs<IdentifierIndexEntry>(index.identifiers.instanceVariables);
+        const instanceEntries = recordValues<IdentifierIndexEntry>(index.identifiers.instanceVariables);
         const instanceIds = instanceEntries.map((entry) => entry.identifierId);
         assert.ok(instanceIds.every((id) => id?.startsWith("instance:")));
         const uniqueInstanceIds = new Set(instanceIds);
         assert.ok(uniqueInstanceIds.size >= 3);
     } finally {
-        await fs.rm(tempRoot, { recursive: true, force: true });
+        await cleanup();
     }
 });

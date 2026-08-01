@@ -1,0 +1,51 @@
+name: "Agent 106 - Bad Test Remediation"
+on:
+  workflow_dispatch:
+    inputs:
+      agent:
+        description: "Optional agent override."
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  run:
+    uses: ./.github/workflows/_agent-open-pr-and-ping.yml
+    secrets: inherit
+    with:
+      agent: ${{ inputs.agent }}
+      pr_title: "Agent: Bad Test Remediation"
+      prompt: >-
+        Identify one genuinely bad automated test or one small cluster of closely related bad tests and repair them so they validate
+        the intended contract more directly, robustly, and readably. Focus on tests that currently create noise, fragility, or false
+        confidence rather than tests that merely need routine cleanup.
+
+        Good candidates include tests that:
+        - couple too tightly to exact wording in logs, warnings, or error messages when the contract is broader;
+        - assert implementation details instead of externally visible behavior;
+        - duplicate production logic rather than independently validating outcomes;
+        - require fragile setup that breaks when unrelated internals change;
+        - depend on test execution order, global state, timing, randomness, or the current environment;
+        - overuse mocks in ways that only prove the mock was called rather than that the system works;
+        - rely on broad snapshots where unrelated output churn causes failures;
+        - assert too many things at once, making failures hard to diagnose;
+        - encode incidental constants, file paths, object ordering, or formatting that are not part of the contract;
+        - pass only because they mirror the current bug or current implementation;
+        - are hard to read, hard to maintain, or obscure the behavior being tested;
+        - fail intermittently or require retries to pass.
+
+        Requirements:
+        - Keep scope tight: fix one cohesive test area rather than launching a broad suite rewrite.
+        - Prefer stronger contract-focused assertions, clearer setup, and deterministic behavior over preserving incidental structure.
+        - Do not weaken coverage; the repaired test should still prove the supported behavior and should usually improve failure signal.
+        - Only change production code when a small test-support seam is genuinely required to make the test validate behavior correctly.
+        - If the old test encoded a bug or implementation detail, replace it with assertions about the intended public behavior instead.
+        - Add or update focused tests as needed so the repaired area is easier to understand, less flaky, and less coupled to internals.
+
+        In the PR summary, identify why the original test was "bad", explain the new contract-focused shape, and report the validation
+        commands you ran to confirm the repaired tests remain reliable.

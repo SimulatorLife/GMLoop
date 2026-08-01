@@ -1,0 +1,183 @@
+/**
+ * CLI-command timing and verbose-logging utilities.
+ *
+ * Previously lived in `@gmloop/core` (`src/core/src/utils/time.ts`) even though the
+ * only consumers were two CLI generator commands (`generate-gml-identifiers` and
+ * `generate-feather-metadata`).  Core is intentionally kept to AST types, traversal
+ * helpers, and workspace-agnostic primitives — timing utilities that surface verbose
+ * progress messages to a CLI user do not belong there.  Moving this module here keeps
+ * core lean and co-locates the timing helpers with the CLI commands that rely on them.
+ */
+
+const MILLISECOND_PER_SECOND = 1000;
+const SUB_SECOND_THRESHOLD_TOLERANCE_MS = 1e-6;
+
+const NANOSECONDS_PER_MILLISECOND = 1_000_000n;
+const NANOSECONDS_PER_CENTI_MILLISECOND = 10_000n;
+
+interface VerboseFlagOptions {
+    parsing?: boolean;
+}
+
+interface VerboseLogger {
+    log?: (message: string) => void;
+}
+
+export type { VerboseFlagOptions };
+
+export interface VerboseDurationLoggerOptions {
+    verbose?: VerboseFlagOptions;
+    formatMessage?: string | ((duration: string) => string);
+    logger?: VerboseLogger;
+}
+
+export interface TimeSyncOptions {
+    verbose?: VerboseFlagOptions;
+    logger?: VerboseLogger;
+}
+
+export interface ResolveVerboseFlagOptions {
+    quiet?: boolean;
+}
+
+/**
+ * Translate a boolean `quiet` flag into the structured {@link VerboseFlagOptions}
+ * object consumed by {@link createVerboseDurationLogger}, {@link timeSync}, and
+ * other verbose-aware helpers. Centralising the mapping keeps generator
+ * commands from re-implementing the `quiet ? … : { parsing: true }` ternary
+ * in multiple places.
+ *
+ * @param options - Source `quiet` flag (defaults to `false`).
+ * @returns A {@link VerboseFlagOptions} with `parsing` set to the negation of `quiet`.
+ */
+export function resolveVerboseFlag({ quiet = false }: ResolveVerboseFlagOptions = {}): VerboseFlagOptions {
+    return { parsing: !quiet };
+}
+
+/**
+ * Format the elapsed time since `startTime` as a human-readable string.
+ *
+ * Returns milliseconds for sub-second durations (e.g. `"200ms"`) and
+ * seconds with one decimal place for longer durations (e.g. `"1.5s"`).
+ *
+ * @param startTime - Epoch millisecond timestamp returned by `Date.now()`.
+ * @returns Human-readable elapsed-time string.
+ */
+export function formatDuration(startTime: number): string {
+    const deltaMs = Date.now() - startTime;
+    const isEffectivelySubSecond =
+        deltaMs < MILLISECOND_PER_SECOND && deltaMs < MILLISECOND_PER_SECOND - SUB_SECOND_THRESHOLD_TOLERANCE_MS;
+
+    if (isEffectivelySubSecond) {
+        return `${deltaMs}ms`;
+    }
+
+    return `${(deltaMs / MILLISECOND_PER_SECOND).toFixed(1)}s`;
+}
+
+/**
+ * Create a zero-argument callback that, when invoked, logs the elapsed
+ * time since the call to `createVerboseDurationLogger`.
+ *
+ * Logging is gated behind `verbose.parsing` so callers can pass the flag
+ * through unchanged and the helper decides silently whether to emit output.
+ *
+ * @param options - Optional logger, format message, and verbose flag.
+ * @returns A callback that emits the duration log line when called.
+ */
+export function createVerboseDurationLogger({
+    verbose,
+    formatMessage,
+    logger = console
+}: VerboseDurationLoggerOptions = {}): () => void {
+    const startTime = Date.now();
+
+    return () => {
+        if (!verbose?.parsing) {
+            return;
+        }
+
+        const duration = formatDuration(startTime);
+        const message =
+            typeof formatMessage === "function"
+                ? formatMessage(duration)
+                : (formatMessage ?? `Completed in ${duration}.`);
+
+        if (typeof logger?.log === "function") {
+            logger.log(message);
+        }
+    };
+}
+
+/**
+ * Run `callback` synchronously, optionally printing a start/end banner when
+ * `verbose.parsing` is enabled, and return the callback's result.
+ *
+ * @param label - Short description of the work being timed.
+ * @param callback - Synchronous work to time.
+ * @param options - Optional verbose flag and logger.
+ * @returns Whatever `callback` returns.
+ */
+export function timeSync<TResult>(
+    label: string,
+    callback: () => TResult,
+    { verbose, logger = console }: TimeSyncOptions = {}
+): TResult {
+    if (verbose?.parsing && typeof logger?.log === "function") {
+        logger.log(`→ ${label}`);
+    }
+
+    const logCompletion = createVerboseDurationLogger({
+        verbose,
+        formatMessage: (duration) => `  ${label} completed in ${duration}.`,
+        logger
+    });
+    const result = callback();
+
+    logCompletion();
+
+    return result;
+}
+
+// Nanosecond-precision monotonic timing helpers used by CLI commands to report
+// per-file and overall processing durations.
+
+/**
+ * Read the current monotonic timestamp in nanoseconds.
+ *
+ * Monotonic time avoids wall-clock jumps (NTP, DST, manual changes) so
+ * duration measurements remain stable across long-running operations.
+ *
+ * @returns {bigint} Monotonic timestamp in nanoseconds.
+ */
+export function readMonotonicNanoseconds(): bigint {
+    return process.hrtime.bigint();
+}
+
+/**
+ * Calculate elapsed nanoseconds between two monotonic timestamps.
+ *
+ * @param {{ startedAtNanoseconds: bigint, completedAtNanoseconds: bigint }} parameters
+ * @returns {bigint} Non-negative elapsed nanoseconds.
+ */
+export function calculateElapsedNanoseconds(parameters: {
+    startedAtNanoseconds: bigint;
+    completedAtNanoseconds: bigint;
+}): bigint {
+    const elapsedNanoseconds = parameters.completedAtNanoseconds - parameters.startedAtNanoseconds;
+    return elapsedNanoseconds > 0n ? elapsedNanoseconds : 0n;
+}
+
+/**
+ * Render nanoseconds as millisecond text with two decimal digits.
+ *
+ * @param {bigint} elapsedNanoseconds
+ * @returns {string} Millisecond string such as "12.34ms".
+ */
+export function formatElapsedNanosecondsAsMilliseconds(elapsedNanoseconds: bigint): string {
+    const normalizedElapsedNanoseconds = elapsedNanoseconds > 0n ? elapsedNanoseconds : 0n;
+    const wholeMilliseconds = normalizedElapsedNanoseconds / NANOSECONDS_PER_MILLISECOND;
+    const fractionalHundredths =
+        (normalizedElapsedNanoseconds % NANOSECONDS_PER_MILLISECOND) / NANOSECONDS_PER_CENTI_MILLISECOND;
+    return `${wholeMilliseconds.toString()}.${fractionalHundredths.toString().padStart(2, "0")}ms`;
+}

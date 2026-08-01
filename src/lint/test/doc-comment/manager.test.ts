@@ -9,7 +9,7 @@ import {
     resolveDocCommentUpdateService
 } from "../../src/doc-comment/index.js";
 
-void test("doc comment services expose segregated contracts", () => {
+void test("doc comment services are frozen and expose required methods", () => {
     const ast = { type: "Program", body: [] };
 
     const traversal = resolveDocCommentTraversalService(ast);
@@ -24,17 +24,17 @@ void test("doc comment services expose segregated contracts", () => {
     assert.ok(Object.isFrozen(descriptions));
     assert.ok(Object.isFrozen(updates));
 
-    assert.deepStrictEqual(Object.keys(traversal), ["forEach"]);
-    assert.deepStrictEqual(Object.keys(collection), ["getComments"]);
-    assert.deepStrictEqual(Object.keys(presence), ["hasDocComment"]);
-    assert.deepStrictEqual(Object.keys(descriptions), ["extractDescription"]);
-    assert.deepStrictEqual(Object.keys(updates), ["applyUpdates"]);
-
     assert.strictEqual(typeof traversal.forEach, "function");
     assert.strictEqual(typeof collection.getComments, "function");
     assert.strictEqual(typeof presence.hasDocComment, "function");
     assert.strictEqual(typeof descriptions.extractDescription, "function");
     assert.strictEqual(typeof updates.applyUpdates, "function");
+
+    // All resolvers return the same cached manager — no per-facet wrappers.
+    assert.strictEqual(traversal, collection);
+    assert.strictEqual(collection, presence);
+    assert.strictEqual(presence, descriptions);
+    assert.strictEqual(descriptions, updates);
 });
 
 void test("doc comment services reuse cached views and tolerate missing AST", () => {

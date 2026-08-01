@@ -38,4 +38,23 @@ void describe("gml parser adapter", () => {
         const source = ["if (do_generic(0, 1 2, 3)) {", "    return 2;", "}"].join("\n");
         assert.throws(() => gmlParserAdapter.parse(source));
     });
+
+    void it("does not opt into parser-owned function doc-comment attachment during formatter parsing", async () => {
+        const source = [
+            "// @function legacy_doc_alias(arg0)",
+            "function legacy_doc_alias(arg0) {",
+            "    return arg0;",
+            "}"
+        ].join("\n");
+
+        const ast = gmlParserAdapter.parse(source) as { body?: Array<{ type?: string; docComments?: unknown[] }> };
+        const functionDeclaration = (ast.body ?? []).find((node) => node?.type === "FunctionDeclaration");
+
+        assert.ok(functionDeclaration, "Expected a FunctionDeclaration node in the parsed AST.");
+        assert.equal(
+            (functionDeclaration?.docComments ?? []).length,
+            0,
+            "Formatter parser path must remain layout-only and avoid parser doc-tag attachment heuristics."
+        );
+    });
 });

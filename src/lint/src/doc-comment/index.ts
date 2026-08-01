@@ -4,6 +4,7 @@ export * from "./documented-params.js";
 export * from "./legacy.js";
 export * from "./manager.js";
 export * from "./metadata.js";
+export * from "./normalize-param-name.js";
 export * from "./synthetic-generation.js";
 export * from "./synthetic-helpers.js";
 export * from "./synthetic-merge.js";

@@ -1,18 +1,142 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import type { GmlRuleDefinition } from "../../catalog.js";
+import type { GmlRuleDefinition } from "../index.js";
 import { createMeta, reportFullTextRewrite } from "../rule-base-helpers.js";
 
-function expressionLooksMathSensitive(expression: string): boolean {
+// GML built-in functions whose result is a floating-point value subject to
+// rounding error. Any variable whose initializer calls one of these functions
+// (directly or transitively through a sub-expression) is considered
+// "math-sensitive": a direct `== 0` or `> 0` check on such a value can produce
+// incorrect branch decisions when the true result is a tiny non-zero number
+// produced by floating-point arithmetic. Equality rewrites must use an absolute
+// value because signed math results can be negative. Strict positivity rewrites
+// are limited to values whose sign is not known to be non-negative.
+//
+// This set is deliberately aligned with the comprehensive
+// `MATH_CALL_NAMES` catalog used by `optimize-math-expressions` so that both
+// rules agree on what counts as a math call, and the same coverage is offered
+// to every floating-point math builtin in the language.
+const MATH_SENSITIVE_FUNCTION_NAMES: ReadonlySet<string> = new Set([
+    "arccos",
+    "arcsin",
+    "arctan",
+    "arctan2",
+    "cos",
+    "darccos",
+    "darcsin",
+    "darctan",
+    "darctan2",
+    "dcos",
+    "degtorad",
+    "dot_product",
+    "dot_product_3d",
+    "dot_product_3d_normalize",
+    "dot_product_normalize",
+    "dsin",
+    "dtan",
+    "exp",
+    "lengthdir_x",
+    "lengthdir_y",
+    "ln",
+    "log2",
+    "log10",
+    "mean",
+    "point_direction",
+    "point_distance",
+    "point_distance_3d",
+    "power",
+    "radtodeg",
+    "sin",
+    "sqr",
+    "sqrt",
+    "tan"
+]);
+
+const NON_NEGATIVE_MATH_FUNCTION_NAMES: ReadonlySet<string> = new Set([
+    "point_distance",
+    "point_distance_3d",
+    "sqr",
+    "sqrt"
+]);
+
+const FUNCTION_CALL_NAME_PATTERN = /[A-Za-z_][A-Za-z0-9_]*/gu;
+
+function readMathSensitiveFunctionNames(expression: string): Array<string> {
+    // Scan the initializer for any identifier immediately followed by `(` so
+    // we only treat actual function-call forms as math-sensitive. The previous
+    // substring-based check missed several categories of math builtins
+    // (trig, exp/log, degree conversions, etc.) and produced false positives
+    // for any identifier that happened to begin with the searched prefix.
     const normalized = expression.toLowerCase();
+    const functionNames: Array<string> = [];
+    for (const match of normalized.matchAll(FUNCTION_CALL_NAME_PATTERN)) {
+        const nextIndex = match.index + match[0].length;
+        if (
+            nextIndex < normalized.length &&
+            normalized[nextIndex] === "(" &&
+            MATH_SENSITIVE_FUNCTION_NAMES.has(match[0])
+        ) {
+            functionNames.push(match[0]);
+        }
+    }
+
+    return functionNames;
+}
+
+function hasRepeatedDotProductOperands(expression: string): boolean {
+    const callMatch = /^(?<functionName>dot_product(?:_3d)?)\s*\((?<arguments>.*)\)$/u.exec(expression.trim());
+    if (!callMatch?.groups) {
+        return false;
+    }
+
+    const functionName = callMatch.groups.functionName;
+    const argumentsList = callMatch.groups.arguments.split(",").map((argument) => argument.trim());
+    const expectedArgumentCount = functionName === "dot_product_3d" ? 6 : 4;
+    if (argumentsList.length !== expectedArgumentCount) {
+        return false;
+    }
+
+    const half = expectedArgumentCount / 2;
+    return argumentsList.slice(0, half).every((argument, index) => argument === argumentsList[index + half]);
+}
+
+function expressionIsKnownNonNegativeMath(expression: string, functionNames: ReadonlyArray<string>): boolean {
+    if (expression.includes("-")) {
+        return false;
+    }
+
+    if (hasRepeatedDotProductOperands(expression)) {
+        return true;
+    }
+
     return (
-        normalized.includes("sqr(") ||
-        normalized.includes("sqrt(") ||
-        normalized.includes("point_distance") ||
-        normalized.includes("lengthdir_") ||
-        normalized.includes("math_")
+        functionNames.length > 0 &&
+        functionNames.every((functionName) => NON_NEGATIVE_MATH_FUNCTION_NAMES.has(functionName))
     );
+}
+
+type ZeroComparisonOperator = "==" | ">";
+
+type IfZeroComparisonMatch = Readonly<{
+    indentation: string;
+    variableName: string;
+    operator: ZeroComparisonOperator;
+    suffix: string;
+}>;
+
+function readIfZeroComparisonMatch(line: string): IfZeroComparisonMatch | null {
+    const match = /^(\s*)if\s*\(\s*([A-Za-z_]\w*)\s*(==|>)\s*0\s*\)(.*)$/u.exec(line);
+    if (!match) {
+        return null;
+    }
+
+    return Object.freeze({
+        indentation: match[1] ?? "",
+        variableName: match[2] ?? "",
+        operator: (match[3] as ZeroComparisonOperator | undefined) ?? "==",
+        suffix: match[4] ?? ""
+    });
 }
 
 export function createPreferEpsilonComparisonsRule(definition: GmlRuleDefinition): Rule.RuleModule {
@@ -25,6 +149,7 @@ export function createPreferEpsilonComparisonsRule(definition: GmlRuleDefinition
                     const lineEnding = Core.dominantLineEnding(sourceText);
                     const lines = sourceText.split(/\r?\n/u);
                     const mathSensitiveVariables = new Set<string>();
+                    const nonNegativeMathSensitiveVariables = new Set<string>();
 
                     for (const line of lines) {
                         const declarationMatch = /^\s*var\s+([A-Za-z_]\w*)\s*=\s*(.+?);\s*$/u.exec(line);
@@ -34,8 +159,12 @@ export function createPreferEpsilonComparisonsRule(definition: GmlRuleDefinition
 
                         const variableName = declarationMatch[1] ?? "";
                         const expression = declarationMatch[2] ?? "";
-                        if (expressionLooksMathSensitive(expression)) {
+                        const functionNames = readMathSensitiveFunctionNames(expression);
+                        if (functionNames.length > 0) {
                             mathSensitiveVariables.add(variableName);
+                            if (expressionIsKnownNonNegativeMath(expression, functionNames)) {
+                                nonNegativeMathSensitiveVariables.add(variableName);
+                            }
                         }
                     }
 
@@ -46,17 +175,25 @@ export function createPreferEpsilonComparisonsRule(definition: GmlRuleDefinition
                     const rewrittenLines: Array<string> = [];
                     let insertedEpsilonDeclaration = hasEpsilonDeclaration;
                     for (const line of lines) {
-                        const zeroCheckMatch = /^(\s*)if\s*\(\s*([A-Za-z_]\w*)\s*==\s*0\s*\)(.*)$/u.exec(line);
-                        if (!zeroCheckMatch) {
+                        const ifZeroComparisonMatch = readIfZeroComparisonMatch(line);
+                        if (!ifZeroComparisonMatch) {
                             rewrittenLines.push(line);
                             continue;
                         }
 
-                        const indentation = zeroCheckMatch[1] ?? "";
-                        const variableName = zeroCheckMatch[2] ?? "";
-                        const suffix = zeroCheckMatch[3] ?? "";
+                        const { indentation, variableName, operator, suffix } = ifZeroComparisonMatch;
                         if (!mathSensitiveVariables.has(variableName)) {
                             rewrittenLines.push(line);
+                            continue;
+                        }
+
+                        if (operator === ">") {
+                            if (nonNegativeMathSensitiveVariables.has(variableName)) {
+                                rewrittenLines.push(line);
+                                continue;
+                            }
+
+                            rewrittenLines.push(`${indentation}if (${variableName} > math_get_epsilon())${suffix}`);
                             continue;
                         }
 
@@ -65,7 +202,10 @@ export function createPreferEpsilonComparisonsRule(definition: GmlRuleDefinition
                             insertedEpsilonDeclaration = true;
                         }
 
-                        rewrittenLines.push(`${indentation}if (${variableName} <= eps)${suffix}`);
+                        const zeroComparisonVariable = nonNegativeMathSensitiveVariables.has(variableName)
+                            ? variableName
+                            : `abs(${variableName})`;
+                        rewrittenLines.push(`${indentation}if (${zeroComparisonVariable} <= eps)${suffix}`);
                     }
 
                     const rewrittenText = rewrittenLines.join(lineEnding);

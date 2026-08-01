@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { shouldSkipTraversal } from "../src/ast/node-helpers.js";
+import { shouldSkipTraversal } from "../src/ast/node-helpers/index.js";
 
 void describe("shouldSkipTraversal", () => {
     void it("returns true for null", () => {

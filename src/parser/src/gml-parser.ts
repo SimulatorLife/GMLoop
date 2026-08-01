@@ -7,14 +7,85 @@ import { convertToESTree } from "./ast/estree-converter.js";
 import GameMakerASTBuilder from "./ast/gml-ast-builder.js";
 import createGameMakerParseErrorListener, { createGameMakerLexerErrorListener } from "./ast/gml-syntax-error.js";
 import { createHiddenNodeProcessor } from "./ast/hidden-node-processor.js";
-import { normalizeFunctionDocCommentAttachments } from "./ast/normalize-function-doc-comment-attachments.js";
+import { assertNestedTernaryConsequentsAreParenthesized } from "./ast/ternary-expression-grouping-validation.js";
 import { installRecognitionExceptionLikeGuard } from "./runtime/index.js";
-import { defaultParserOptions, type ParserOptions } from "./types/index.js";
+import { DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH, defaultParserOptions, type ParserOptions } from "./types/index.js";
 
 const PredictionMode =
     (antlr4 as unknown as { atn?: { PredictionMode: unknown } }).atn?.PredictionMode ??
     (antlr4 as any).PredictionMode ??
     (antlr4 as any).atn?.PredictionMode;
+
+const PREDICTION_CACHE_RELEASE_SOURCE_LENGTH = 8000;
+const PREDICTION_CACHE_RELEASE_INTERVAL = 16;
+let parserInvocationCount = 0;
+
+type AntlrHashTable = {
+    buckets: Array<unknown>;
+    itemCount: number;
+};
+
+type AntlrDfa = {
+    _states?: AntlrHashTable;
+    precedenceDfa?: boolean;
+    s0?: object | null;
+};
+
+type AntlrInterpreter = {
+    sharedContextCache?: {
+        cache?: AntlrHashTable;
+    };
+    decisionToDFA?: Array<AntlrDfa>;
+};
+
+type AntlrRecognizerWithInterpreter = {
+    _interp?: AntlrInterpreter;
+};
+
+function clearAntlrHashTable(table: AntlrHashTable | undefined): void {
+    if (!table) {
+        return;
+    }
+
+    table.buckets = [];
+    table.itemCount = 0;
+}
+
+/**
+ * Releases prediction state retained by the generated ANTLR recognizers.
+ *
+ * The generated parser intentionally shares its prediction cache and DFA
+ * states across recognizer instances. That is useful for a single long-lived
+ * parse, but a project watch scan creates hundreds of recognizers for unique
+ * large source files. Clearing the reusable tables for those files keeps parser
+ * memory proportional to the file currently being processed while allowing
+ * small sources to reuse the warmed grammar automaton.
+ */
+function clearAntlrPredictionCaches(recognizer: AntlrRecognizerWithInterpreter, clearDecisionAutomata: boolean): void {
+    const interpreter = recognizer._interp;
+    if (!interpreter) {
+        return;
+    }
+
+    clearAntlrHashTable(interpreter.sharedContextCache?.cache);
+
+    if (!clearDecisionAutomata) {
+        return;
+    }
+
+    for (const dfa of interpreter.decisionToDFA ?? []) {
+        clearAntlrHashTable(dfa._states);
+        dfa.s0 = dfa.precedenceDfa ? { edges: [] } : null;
+    }
+}
+
+function shouldReleaseAntlrPredictionCaches(sourceText: string): boolean {
+    parserInvocationCount += 1;
+    return (
+        sourceText.length > PREDICTION_CACHE_RELEASE_SOURCE_LENGTH ||
+        parserInvocationCount % PREDICTION_CACHE_RELEASE_INTERVAL === 0
+    );
+}
 
 installRecognitionExceptionLikeGuard();
 
@@ -31,7 +102,11 @@ installRecognitionExceptionLikeGuard();
  */
 function mergeParserOptions(baseOptions: ParserOptions, overrides: Partial<ParserOptions> | undefined): ParserOptions {
     const overrideObject = Core.isObjectLike(overrides) ? overrides : {};
-    return Object.assign({}, baseOptions, overrideObject) as ParserOptions;
+    const mergedOptions = Object.assign({}, baseOptions, overrideObject);
+    mergedOptions.sllPredictionMaxSourceLength = normalizeSllPredictionMaxSourceLength(
+        mergedOptions.sllPredictionMaxSourceLength
+    );
+    return mergedOptions;
 }
 
 function getNodeIndex(node: Record<string, unknown>, prop: "start" | "end"): number | undefined {
@@ -54,10 +129,121 @@ function getPredictionMode(modeName: "SLL" | "LL"): unknown {
     return mode;
 }
 
-const MAX_SOURCE_LENGTH_FOR_SLL_PARSING = 8000;
+function throwNormalizedParserError(error: unknown): never {
+    if (!error) {
+        throw new Error("Unknown syntax error while parsing GML source.");
+    }
 
-function shouldUseSllPredictionMode(sourceText: string): boolean {
-    return sourceText.length <= MAX_SOURCE_LENGTH_FOR_SLL_PARSING;
+    if (Core.isErrorLike(error)) {
+        throw error;
+    }
+
+    throw new Error(Core.getErrorMessageOrFallback(error));
+}
+
+function parseProgramWithLlPredictionMode(sourceText: string, releasePredictionCaches: boolean): unknown {
+    try {
+        const llChars = new antlr4.InputStream(sourceText);
+        const llLexer = new GameMakerLanguageLexer(llChars);
+        llLexer.removeErrorListeners();
+        llLexer.addErrorListener(createGameMakerLexerErrorListener());
+        llLexer.strictMode = false;
+
+        const llTokens = new antlr4.CommonTokenStream(llLexer);
+        const llParser = new GameMakerLanguageParser(llTokens);
+        llParser.removeErrorListeners();
+        llParser.addErrorListener(createGameMakerParseErrorListener());
+        llParser._interp.predictionMode = getPredictionMode("LL");
+        const tree = llParser.program();
+        if (releasePredictionCaches) {
+            clearAntlrPredictionCaches(llLexer, true);
+            clearAntlrPredictionCaches(llParser, true);
+        }
+        return tree;
+    } catch (error) {
+        throwNormalizedParserError(error);
+    }
+}
+
+function normalizeSllPredictionMaxSourceLength(value: unknown): number {
+    return Core.coercePositiveIntegerOption(value, DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH);
+}
+
+function shouldUseSllPredictionMode(sourceText: string, maxSourceLength: number): boolean {
+    return sourceText.length <= maxSourceLength;
+}
+
+/** A source-preserving identifier token emitted by the GML lexer. */
+export type GmlIdentifierTokenRange = Readonly<{
+    end: number;
+    name: string;
+    start: number;
+}>;
+
+/**
+ * Extracts named function declarations from GML without building an AST.
+ *
+ * The lexer is sufficient for startup metadata such as the set of script
+ * functions known to a project. Keeping this operation separate from
+ * {@link GMLParser.parse} avoids allocating a complete AST when a consumer
+ * only needs declaration names.
+ *
+ * @param sourceText GML source text to inspect.
+ * @returns Function names in their first-seen source order, without duplicates.
+ */
+export function extractGmlFunctionNames(sourceText: string): string[] {
+    const lexer = new GameMakerLanguageLexer(new antlr4.InputStream(sourceText));
+    lexer.removeErrorListeners();
+    lexer.strictMode = false;
+    const tokenStream = new antlr4.CommonTokenStream(lexer);
+    const lexerTokenStream = tokenStream as unknown as {
+        fill(): void;
+        tokens: Array<{ channel: number; start: number; stop: number; type: number }>;
+    };
+    lexerTokenStream.fill();
+
+    const functionNames = new Set<string>();
+    const tokens = lexerTokenStream.tokens;
+    for (let index = 0; index < tokens.length; index += 1) {
+        const token = tokens[index];
+        if (token.type !== GameMakerLanguageLexer.Function_ || token.channel !== 0) {
+            continue;
+        }
+
+        let nameTokenIndex = index + 1;
+        while (nameTokenIndex < tokens.length && tokens[nameTokenIndex]?.channel !== 0) {
+            nameTokenIndex += 1;
+        }
+
+        const nameToken = tokens[nameTokenIndex];
+        if (
+            nameToken?.type === GameMakerLanguageLexer.Identifier &&
+            nameToken.start >= 0 &&
+            nameToken.stop >= nameToken.start
+        ) {
+            functionNames.add(sourceText.slice(nameToken.start, nameToken.stop + 1));
+        }
+    }
+
+    return [...functionNames];
+}
+
+/** Tokenize identifier ranges without invoking the parser or requiring valid complete GML. */
+export function tokenizeGmlIdentifierRanges(sourceText: string): GmlIdentifierTokenRange[] {
+    const lexer = new GameMakerLanguageLexer(new antlr4.InputStream(sourceText));
+    lexer.removeErrorListeners();
+    lexer.strictMode = false;
+    const tokenStream = new antlr4.CommonTokenStream(lexer);
+    const lexerTokenStream = tokenStream as unknown as {
+        fill(): void;
+        tokens: Array<{ start: number; stop: number; type: number }>;
+    };
+    lexerTokenStream.fill();
+    const tokens = lexerTokenStream.tokens;
+    return tokens.flatMap((token) => {
+        if (token.type !== GameMakerLanguageLexer.Identifier || token.start < 0 || token.stop < token.start) return [];
+        return [{ start: token.start, end: token.stop + 1, name: sourceText.slice(token.start, token.stop + 1) }];
+    });
 }
 
 /**
@@ -154,7 +340,8 @@ export class GMLParser {
     constructor(text: string, options: Partial<ParserOptions> = {}) {
         const validatedText = Core.validateSourceText(text);
         this.originalText = validatedText;
-        this.text = Core.normalizeSimpleEscapeCase(validatedText);
+        const normalizedEscapes = Core.normalizeSimpleEscapeCase(validatedText);
+        this.text = projectLogicalNotAliasesForRecovery(normalizedEscapes);
         this.whitespaces = [];
         this.comments = [];
         const parserConstructor = (this.constructor as typeof GMLParser | undefined) ?? GMLParser;
@@ -224,6 +411,7 @@ export class GMLParser {
      *   the first pass cannot decide between valid alternatives.
      */
     parse() {
+        const releasePredictionCaches = shouldReleaseAntlrPredictionCaches(this.text);
         const chars = new antlr4.InputStream(this.text);
         const lexer = new GameMakerLanguageLexer(chars);
         lexer.removeErrorListeners();
@@ -236,61 +424,23 @@ export class GMLParser {
         parser.addErrorListener(createGameMakerParseErrorListener());
 
         let tree;
-        if (shouldUseSllPredictionMode(this.text)) {
+        if (shouldUseSllPredictionMode(this.text, this.options.sllPredictionMaxSourceLength)) {
             try {
                 parser._interp.predictionMode = getPredictionMode("SLL");
                 tree = parser.program();
             } catch (error) {
+                if (releasePredictionCaches) {
+                    clearAntlrPredictionCaches(lexer, true);
+                    clearAntlrPredictionCaches(parser, true);
+                }
                 try {
-                    const llChars = new antlr4.InputStream(this.text);
-                    const llLexer = new GameMakerLanguageLexer(llChars);
-                    llLexer.removeErrorListeners();
-                    llLexer.addErrorListener(createGameMakerLexerErrorListener());
-                    llLexer.strictMode = false;
-
-                    const llTokens = new antlr4.CommonTokenStream(llLexer);
-                    const llParser = new GameMakerLanguageParser(llTokens);
-                    llParser.removeErrorListeners();
-                    llParser.addErrorListener(createGameMakerParseErrorListener());
-                    llParser._interp.predictionMode = getPredictionMode("LL");
-                    tree = llParser.program();
+                    tree = parseProgramWithLlPredictionMode(this.text, releasePredictionCaches);
                 } catch {
-                    if (!error) {
-                        throw new Error("Unknown syntax error while parsing GML source.");
-                    }
-
-                    if (Core.isErrorLike(error)) {
-                        throw error;
-                    }
-
-                    throw new Error(String(error));
+                    throwNormalizedParserError(error);
                 }
             }
         } else {
-            try {
-                const llChars = new antlr4.InputStream(this.text);
-                const llLexer = new GameMakerLanguageLexer(llChars);
-                llLexer.removeErrorListeners();
-                llLexer.addErrorListener(createGameMakerLexerErrorListener());
-                llLexer.strictMode = false;
-
-                const llTokens = new antlr4.CommonTokenStream(llLexer);
-                const llParser = new GameMakerLanguageParser(llTokens);
-                llParser.removeErrorListeners();
-                llParser.addErrorListener(createGameMakerParseErrorListener());
-                llParser._interp.predictionMode = getPredictionMode("LL");
-                tree = llParser.program();
-            } catch (error) {
-                if (!error) {
-                    throw new Error("Unknown syntax error while parsing GML source.");
-                }
-
-                if (Core.isErrorLike(error)) {
-                    throw error;
-                }
-
-                throw new Error(String(error));
-            }
+            tree = parseProgramWithLlPredictionMode(this.text, releasePredictionCaches);
         }
 
         if (this.options.getComments) {
@@ -314,12 +464,13 @@ export class GMLParser {
         const builder = new GameMakerASTBuilder(this.options, this.whitespaces);
         let astTree;
         astTree = builder.build(tree);
+        assertNestedTernaryConsequentsAreParenthesized(this.text, astTree);
 
         if (this.options.getComments) {
             astTree.comments = this.comments;
 
             if (this.options.attachFunctionDocComments) {
-                normalizeFunctionDocCommentAttachments(astTree, this.comments, this.text);
+                Core.normalizeFunctionDocCommentAttachments(astTree, this.comments, this.text);
             }
         }
 
@@ -342,6 +493,11 @@ export class GMLParser {
                 includeRange: this.options.getLocations && this.options.simplifyLocations,
                 includeComments: this.options.getComments
             });
+        }
+
+        if (releasePredictionCaches) {
+            clearAntlrPredictionCaches(lexer, true);
+            clearAntlrPredictionCaches(parser, true);
         }
 
         if (this.options.asJSON) {
@@ -468,12 +624,65 @@ export class GMLParser {
     }
 }
 
-/**
- * Re-exported utility function for counting line breaks in a string.
- *
- * @remarks
- * This convenience export allows consumers to access Core.getLineBreakCount
- * directly from the parser module without importing @gmloop/core.
- * Useful for calculating line metrics or validating source spans.
- */
-export const getLineBreakCount: typeof Core.getLineBreakCount = Core.getLineBreakCount;
+function projectLogicalNotAliasesForRecovery(sourceText: string): string {
+    const chunks: Array<string> = [];
+    const scanState = Core.createStringCommentScanState();
+    const sourceLength = sourceText.length;
+
+    let copiedThrough = 0;
+    let index = 0;
+
+    let isAtLineStart = true;
+    let isOnDirectiveLine = false;
+
+    while (index < sourceLength) {
+        const scannedIndex = Core.advanceStringCommentScan(sourceText, sourceLength, index, scanState, true);
+        if (scannedIndex !== index) {
+            const skippedText = sourceText.slice(index, scannedIndex);
+            const lastNewlineIndex = Math.max(skippedText.lastIndexOf("\n"), skippedText.lastIndexOf("\r"));
+            if (lastNewlineIndex === -1) {
+                if (skippedText.length > 0) {
+                    isAtLineStart = false;
+                }
+            } else {
+                isAtLineStart = false;
+                isOnDirectiveLine = false;
+            }
+            index = scannedIndex;
+            continue;
+        }
+
+        const char = sourceText[index] ?? "";
+        if (char === "\n" || char === "\r") {
+            isAtLineStart = true;
+            isOnDirectiveLine = false;
+        } else if (isAtLineStart && char !== " " && char !== "\t") {
+            if (char === "#") {
+                isOnDirectiveLine = true;
+            }
+            isAtLineStart = false;
+        }
+
+        if (isOnDirectiveLine) {
+            index += 1;
+            continue;
+        }
+
+        const word = sourceText.slice(index, index + 3);
+        if (word.toLowerCase() === "not" && Core.isLogicalNotOperatorAliasAt(sourceText, index)) {
+            chunks.push(sourceText.slice(copiedThrough, index), "!  ");
+            index += 3;
+            copiedThrough = index;
+            isAtLineStart = false;
+            continue;
+        }
+        index += 1;
+    }
+
+    if (copiedThrough === 0) {
+        return sourceText;
+    }
+
+    chunks.push(sourceText.slice(copiedThrough));
+    return chunks.join("");
+}

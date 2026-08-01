@@ -2,9 +2,6 @@ import { Core } from "@gmloop/core";
 
 const { toTrimmedString } = Core;
 
-const hasCommentImmediatelyBefore: (text: unknown, index: unknown) => boolean = Core.hasCommentImmediatelyBefore;
-const isDocLikeLeadingLine: (value: unknown) => boolean = Core.isDocLikeLeadingLine;
-
 const STRING_TYPE = "string";
 
 const DOC_COMMENT_TAG_PATTERN = /^\s*\/+\s*@/i;
@@ -111,5 +108,3 @@ export function parseDocCommentMetadata(line: unknown): DocCommentMetadata | nul
 
     return { tag, name: remainder };
 }
-
-export { hasCommentImmediatelyBefore, isDocLikeLeadingLine };

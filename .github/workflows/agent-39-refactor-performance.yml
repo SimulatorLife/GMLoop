@@ -1,0 +1,36 @@
+name: "Agent 39 - Refactor Performance Lock-In"
+on:
+  workflow_dispatch:
+    inputs:
+      agent:
+        description: "Optional agent override."
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  run:
+    uses: ./.github/workflows/_agent-open-pr-and-ping.yml
+    secrets: inherit
+    with:
+      agent: ${{ inputs.agent }}
+      pr_title: "Agent: Refactor Performance Lock-In"
+      prompt: >-
+        Focus on the `@gml-modules/refactor` workspace and the CLI `refactor-codemod --write`
+        path on realistic GameMaker projects. Establish a reproducible baseline first by running
+        a performance measurement before any code changes, then profile or instrument the slow
+        path to identify the dominant bottleneck(s). Apply behavior-preserving optimizations that
+        materially improve runtime, such as eliminating repeated AST traversals, redundant
+        semantic queries, unnecessary allocations, or inefficient data structures, while keeping
+        the work centered on one cohesive refactor-performance slice rather than broad cleanup.
+
+        Requirements:
+        - Add automated performance coverage that exercises a large or stress-style sample and
+          locks in the improvement with a concrete threshold or regression guard that runs in CI.
+        - Run the same performance measurement before and after the optimization and include the
+          results in the PR description and/or commit message.

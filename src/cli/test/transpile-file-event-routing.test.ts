@@ -14,16 +14,17 @@ import { Transpiler } from "@gmloop/transpiler";
 
 import { type TranspilationContext, transpileFile } from "../src/modules/transpilation/coordinator.js";
 
-function createContext(): TranspilationContext {
+function createContext(websocketServer: TranspilationContext["websocketServer"] = null): TranspilationContext {
     return {
         transpiler: new Transpiler.GmlTranspiler(),
         patches: [],
         metrics: [],
         errors: [],
         lastSuccessfulPatches: new Map(),
-        maxPatchHistory: 50,
+        sourcePathToPatchIds: new Map(),
+        bounds: { maxEntries: 50 },
         totalPatchCount: 0,
-        websocketServer: null
+        websocketServer
     };
 }
 
@@ -117,6 +118,127 @@ void describe("transpileFile event vs script routing", () => {
             result.patch.id.startsWith("gml/script/"),
             `Script patch ID must start with gml/script/; got: ${result.patch.id}`
         );
+    });
+
+    void it("emits and broadcasts one patch per top-level function in a script", () => {
+        const broadcasts: Array<unknown> = [];
+        const context = createContext({
+            broadcast(payload) {
+                broadcasts.push(payload);
+                return { successCount: 1, failureCount: 0, totalClients: 1 };
+            },
+            getClientCount() {
+                return 1;
+            }
+        });
+        const source = `function first_helper(value) {
+    return value + 1;
+}
+
+function second_helper(value) {
+    return value + 2;
+}`;
+
+        const result = transpileFile(context, "/project/scripts/group_helpers.gml", source, 7, {
+            verbose: false,
+            quiet: true
+        });
+
+        assert.ok(result.success, "Transpilation should succeed");
+        assert.strictEqual(result.patches?.length, 2, "Each top-level function must receive its own patch");
+        assert.deepStrictEqual(
+            result.patches?.map((patch) => patch.id),
+            ["gml/script/first_helper", "gml/script/second_helper"]
+        );
+        assert.ok(result.patches?.every((patch) => !patch.js_body.includes("function second_helper")));
+        assert.strictEqual(context.totalPatchCount, 2, "Each changed function patch must count separately");
+        assert.strictEqual(broadcasts.length, 1, "Function patches must be delivered in one websocket message");
+        assert.ok(Array.isArray(broadcasts[0]), "Multiple function patches must be sent as a batch");
+        assert.strictEqual((broadcasts[0] as Array<unknown>).length, 2);
+    });
+
+    void it("keeps executable top-level script statements in a file-level patch", () => {
+        const context = createContext();
+        const source = `#macro helper_name first_helper
+var group_initialized = true;
+
+function first_helper() {
+    return group_initialized;
+}
+
+function second_helper() {
+    return first_helper();
+}`;
+
+        const result = transpileFile(context, "/project/scripts/group_helpers.gml", source, 9, {
+            verbose: false,
+            quiet: true,
+            deliverRuntimePatch: false
+        });
+
+        assert.ok(result.success, "Transpilation should succeed");
+        assert.deepStrictEqual(
+            result.patches?.map((patch) => patch.id),
+            ["gml/script/group_helpers", "gml/script/first_helper", "gml/script/second_helper"]
+        );
+        assert.ok(result.patches?.[0]?.js_body.includes("group_initialized"));
+        assert.ok(result.patches?.[1]?.js_body.includes("return group_initialized"));
+        assert.ok(result.patches?.[2]?.js_body.includes("first_helper"));
+    });
+
+    void it("rejects an unbindable same-named file-level initialization patch", () => {
+        const context = createContext();
+        const source = `var initialized = true;
+
+function same_name() {
+    return initialized;
+}`;
+
+        const result = transpileFile(context, "/project/scripts/same_name.gml", source, 6, {
+            verbose: false,
+            quiet: true,
+            deliverRuntimePatch: false
+        });
+
+        assert.equal(result.success, false);
+        assert.match(result.error?.error ?? "", /top-level executable statements.*same_name/u);
+    });
+
+    void it("removes compile-time directives before a single script function is emitted", () => {
+        const context = createContext();
+        const source = `#macro UNUSED_VALUE 9
+function only_function() {
+    return 4;
+}`;
+
+        const result = transpileFile(context, "/project/scripts/only_function.gml", source, 4, {
+            verbose: false,
+            quiet: true,
+            deliverRuntimePatch: false
+        });
+
+        assert.equal(result.success, true);
+        assert.ok(result.patch);
+        assert.ok(!result.patch.js_body.includes("UNUSED_VALUE"));
+        assert.ok(!result.patch.js_body.includes("const "));
+    });
+
+    void it("removes compile-time directives before an object event is emitted", () => {
+        const context = createContext();
+        const source = `#macro EVENT_VALUE 3
+x = EVENT_VALUE;`;
+
+        const result = transpileFile(context, "/project/objects/obj_player/Create_0.gml", source, 2, {
+            verbose: false,
+            quiet: true,
+            deliverRuntimePatch: false
+        });
+
+        assert.equal(result.success, true);
+        assert.ok(result.patch);
+        assert.ok(result.patch.js_body.includes("3"));
+        assert.ok(!result.patch.js_body.includes("EVENT_VALUE"));
+        assert.ok(!result.patch.js_body.includes("const "));
     });
 
     void it("routes a top-level .gml file (not under objects/) to transpileScript", () => {

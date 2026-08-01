@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { getSingleVariableDeclarator } from "../src/ast/node-helpers.js";
+import { getSingleVariableDeclarator } from "../src/ast/node-helpers/index.js";
 
 void describe("getSingleVariableDeclarator", () => {
     void it("returns null for non-variable declarations", () => {

@@ -26,13 +26,9 @@
 /**
  * Semantic kind classification for identifiers and call targets.
  *
- * SOURCE OF TRUTH: @gmloop/semantic (src/symbols/sem-oracle.ts)
- * This is a re-declaration maintained for transpiler use. The canonical definition
- * lives in the semantic package. Keep this in sync with that definition.
- *
- * NOTE: This duplication exists because the Semantic package exports a const namespace
- * which cannot be referenced in type position. A future architecture improvement would
- * export both the namespace and a separate type-only export to enable direct imports.
+ * This is the canonical definition owned by the transpiler. The semantic package
+ * (BasicSemanticOracle) uses a structurally compatible but independently declared
+ * version of this type so that it does not create a dependency on the transpiler.
  */
 export type SemKind = "local" | "self_field" | "other_field" | "global_field" | "builtin" | "script";
 
@@ -242,7 +238,7 @@ export interface GlobalVarStatementNode extends BaseNode {
 
 export interface VariableDeclarationNode extends BaseNode {
     readonly type: "VariableDeclaration";
-    readonly kind: "var" | "let" | "const";
+    readonly kind: "var" | "let" | "const" | "static";
     readonly declarations: ReadonlyArray<VariableDeclaratorNode>;
 }
 
@@ -298,12 +294,18 @@ export interface FunctionDeclarationNode extends BaseNode {
     readonly body: GmlNode;
 }
 
+export interface ConstructorParentClauseNode extends BaseNode {
+    readonly type: "ConstructorParentClause";
+    readonly id: GmlNode | string | null;
+    readonly params: ReadonlyArray<GmlNode>;
+}
+
 export interface ConstructorDeclarationNode extends BaseNode {
     readonly type: "ConstructorDeclaration";
     readonly id?: string | null;
     readonly params: ReadonlyArray<GmlNode | string>;
     readonly body: GmlNode;
-    readonly parent?: GmlNode | string | null;
+    readonly parent?: ConstructorParentClauseNode | null;
 }
 
 export interface BreakStatementNode extends BaseNode {
@@ -395,11 +397,17 @@ export type GmlNode =
     | VariableDeclaratorNode
     | CatchClauseNode
     | FinallyClauseNode
-    | TemplateStringTextNode;
+    | TemplateStringTextNode
+    | ConstructorParentClauseNode;
 
 export interface EmitOptions {
     readonly globalsIdent: string;
     readonly callScriptIdent: string;
+    /**
+     * Identifier supplied by the runtime wrapper for an unwrapped function
+     * body's static-variable storage.
+     */
+    readonly staticIdent: string;
     /**
      * Identifier (or property expression) that resolves `with` targets.
      * Defaults to `globalThis.__resolve_with_targets`.

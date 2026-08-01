@@ -4,10 +4,14 @@ import { describe, it } from "node:test";
 import { Parser } from "@gmloop/parser";
 
 import type { ProgramNode } from "../src/emitter/ast.js";
-import { collectLocalVariables } from "../src/emitter/local-variable-collector.js";
+import {
+    collectGlobalVarNames,
+    collectLocalVariables,
+    collectStaticVariableDeclarations
+} from "../src/emitter/local-variable-collector.js";
 
 function parseProgram(source: string): ProgramNode {
-    return Parser.GMLParser.parse(source) as unknown as ProgramNode;
+    return Parser.GMLParser.parse(source);
 }
 
 void describe("collectLocalVariables", () => {
@@ -22,6 +26,12 @@ void describe("collectLocalVariables", () => {
         const locals = collectLocalVariables(ast);
         strictEqual(locals.has("speed"), true);
         strictEqual(locals.size, 1);
+    });
+
+    void it("collects static-declared names as function locals", () => {
+        const ast = parseProgram("static cached = 5;");
+        const locals = collectLocalVariables(ast);
+        strictEqual(locals.has("cached"), true);
     });
 
     void it("collects multiple var-declared names from separate declarations", () => {
@@ -73,6 +83,42 @@ void describe("collectLocalVariables", () => {
         strictEqual(locals.has("uninit"), true);
     });
 
+    void it("handles deeply nested AST nodes without recursion overflow", () => {
+        const nestingDepth = 20_000;
+
+        const root: Record<string, unknown> = {
+            type: "Program",
+            body: []
+        };
+
+        let cursor = root;
+        for (let index = 0; index < nestingDepth; index += 1) {
+            const next: Record<string, unknown> = {
+                type: "BlockStatement",
+                body: []
+            };
+            cursor.body = [next];
+            cursor = next;
+        }
+
+        cursor.body = [
+            {
+                type: "VariableDeclaration",
+                kind: "var",
+                declarations: [
+                    {
+                        type: "VariableDeclarator",
+                        id: { type: "Identifier", name: "deep_local" },
+                        init: null
+                    }
+                ]
+            }
+        ];
+
+        const locals = collectLocalVariables(root as unknown as ProgramNode);
+        strictEqual(locals.has("deep_local"), true);
+    });
+
     void it("handles a realistic event body with mixed declarations", () => {
         const source = [
             "var spd = 5;",
@@ -88,5 +134,74 @@ void describe("collectLocalVariables", () => {
         strictEqual(locals.has("direction"), false, "direction is an instance field, not var-declared");
         strictEqual(locals.has("x"), false, "x is an instance field, not var-declared");
         strictEqual(locals.has("y"), false, "y is an instance field, not var-declared");
+    });
+});
+
+void describe("collectStaticVariableDeclarations", () => {
+    void it("preserves source order and excludes nested function declarations", () => {
+        const ast = parseProgram(
+            "function outer() { static first = 1; if (true) { static second = 2; } function inner() { static ignored = 3; } }"
+        );
+        const outer = ast.body[0];
+        if (outer.type !== "FunctionDeclaration") {
+            throw new Error("Expected a function declaration");
+        }
+
+        const declarations = collectStaticVariableDeclarations(outer.body);
+        strictEqual(declarations.length, 2);
+        strictEqual(declarations[0]?.id.name, "first");
+        strictEqual(declarations[1]?.id.name, "second");
+    });
+});
+
+void describe("collectGlobalVarNames", () => {
+    void it("returns empty set when there are no globalvar declarations", () => {
+        const ast = parseProgram("x = 10; var local = 5;");
+        const globals = collectGlobalVarNames(ast);
+        strictEqual(globals.size, 0);
+    });
+
+    void it("collects a single globalvar-declared name", () => {
+        const ast = parseProgram("globalvar score;");
+        const globals = collectGlobalVarNames(ast);
+        strictEqual(globals.has("score"), true);
+        strictEqual(globals.size, 1);
+    });
+
+    void it("collects multiple names from a single globalvar declaration", () => {
+        const ast = parseProgram("globalvar hp, mp, xp;");
+        const globals = collectGlobalVarNames(ast);
+        strictEqual(globals.has("hp"), true);
+        strictEqual(globals.has("mp"), true);
+        strictEqual(globals.has("xp"), true);
+        strictEqual(globals.size, 3);
+    });
+
+    void it("collects names from multiple globalvar declarations", () => {
+        const ast = parseProgram("globalvar foo;\nglobalvar bar;");
+        const globals = collectGlobalVarNames(ast);
+        strictEqual(globals.has("foo"), true);
+        strictEqual(globals.has("bar"), true);
+        strictEqual(globals.size, 2);
+    });
+
+    void it("collects globalvar names that appear after usage (forward reference)", () => {
+        // This is the core use case: `foo` is used before its globalvar declaration.
+        const ast = parseProgram("foo = 1;\nglobalvar foo;");
+        const globals = collectGlobalVarNames(ast);
+        strictEqual(globals.has("foo"), true, "foo must be collected even though declaration comes after usage");
+    });
+
+    void it("crosses function declaration boundaries (globalvar is always global-scoped)", () => {
+        const ast = parseProgram("function init() { globalvar settings; }");
+        const globals = collectGlobalVarNames(ast);
+        strictEqual(globals.has("settings"), true, "globalvar inside a function is still global-scoped");
+    });
+
+    void it("does not include var-declared names", () => {
+        const ast = parseProgram("var local = 1;\nglobalvar g;");
+        const globals = collectGlobalVarNames(ast);
+        strictEqual(globals.has("local"), false, "var-declared names should not be in global set");
+        strictEqual(globals.has("g"), true);
     });
 });

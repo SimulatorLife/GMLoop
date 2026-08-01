@@ -1,25 +1,18 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import type { GmlRuleDefinition } from "../../catalog.js";
+import type { GmlRuleDefinition } from "../index.js";
 import {
     type AstNodeRecord,
     type AstNodeWithType,
     createMeta,
     findFirstAstNodeBy,
     getLineStartOffset,
-    getNodeEndIndex,
-    getNodeStartIndex,
     isAstNodeRecord,
     isAstNodeWithType,
+    isIdentifierNode,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
-
-type IdentifierNode = AstNodeRecord &
-    Readonly<{
-        type: "Identifier";
-        name: string;
-    }>;
 
 type VariableDeclaratorNode = AstNodeRecord &
     Readonly<{
@@ -52,10 +45,6 @@ type DirectReturnCandidate = Readonly<{
     replacementEnd: number;
     replacementText: string;
 }>;
-
-function isIdentifierNode(node: unknown): node is IdentifierNode {
-    return isAstNodeRecord(node) && node.type === "Identifier" && typeof node.name === "string";
-}
 
 function isVariableDeclaratorNode(node: unknown): node is VariableDeclaratorNode {
     return (
@@ -148,7 +137,11 @@ function buildDirectReturnCandidate(
     bodyContainerNode: BodyContainerNode,
     declarationIndex: number
 ): DirectReturnCandidate | null {
-    if (Core.toNormalizedLowerCaseString(variableDeclarationNode.kind) !== "var") {
+    const declarationKind = Core.toNormalizedLowerCaseString(variableDeclarationNode.kind);
+    // Only accept `var` declarations. Collapsing `static` declarations into a direct return
+    // is invalid because static variables are evaluated once and persist across calls (e.g. for singletons/caching).
+    // Collapsing them would re-evaluate the initializer expression and return a new instance on every call.
+    if (declarationKind !== "var") {
         return null;
     }
 
@@ -170,11 +163,11 @@ function buildDirectReturnCandidate(
         return null;
     }
 
-    const declarationStart = getNodeStartIndex(variableDeclarationNode);
-    const nextStatementStart = getNodeStartIndex(nextStatement);
-    const returnEnd = getNodeEndIndex(nextStatement);
-    const initializerStart = getNodeStartIndex(declarator.init);
-    const initializerEnd = getNodeEndIndex(declarator.init);
+    const declarationStart = Core.getNodeStartIndex(variableDeclarationNode);
+    const nextStatementStart = Core.getNodeStartIndex(nextStatement);
+    const returnEnd = Core.getNodeEndIndex(nextStatement);
+    const initializerStart = Core.getNodeStartIndex(declarator.init);
+    const initializerEnd = Core.getNodeEndIndex(declarator.init);
     if (
         typeof declarationStart !== "number" ||
         typeof nextStatementStart !== "number" ||

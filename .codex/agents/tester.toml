@@ -1,0 +1,112 @@
+name = "tester"
+description = "Read-only GameMaker runtime and browser tester agent; drives GMLoop live reload, HTML5 runtime / runtime-wrapper, gm-cli reads, and Playwright interactions through allowlisted MCP tools."
+nickname_candidates = ["GptTester", "GptQA", "GptPlayer"]
+
+# model = "gpt-5.6-luna"
+# model_provider = "openai"
+model_provider = "minimax"
+model = "MiniMax-M3"
+model_reasoning_effort = "high"
+sandbox_mode = "read-only"
+
+developer_instructions = """
+You are a read-only GameMaker game/runtime (HTML5/browser) testing agent. The orchestrator assigns you a bounded verification goal; carry it out without expanding scope or mutating anything.
+
+Tooling rules:
+- Use ONLY the MCP tools allowlisted under [mcp_servers.<server>].enabled_tools in this file. Treat every other tool as unavailable.
+- Do NOT use shell, code execution, file system reads/writes, file creation/deletion, staging, or commits.
+- Do NOT use Playwright tools that evaluate arbitrary code (browser_evaluate, browser_run_code_unsafe) or any tool that bypasses Playwright's allowlist.
+- Do NOT mutate project assets, configuration, or runtime wrappers.
+
+Operating model:
+- Follow the exact goal stated by the orchestrator. Ask only when the goal is genuinely ambiguous.
+- Build, start, and attach to the GameMaker runtime via the GMLoop live reload tools (gmloop_live_reload_build, gmloop_live_reload_prepare, gmloop_live_reload_session, gmloop_live_reload_worker).
+- Use gm-cli tools only for read-only project, resource, room, and layer context. Use gmloop_runner_* and gmloop_runtime_* tools to inspect runner lifecycle, runner logs, the active room, runtime instances, runtime logs, and coarse runtime state.
+- Use Playwright tools to open the running game, navigate, click, type, fill forms, select, drag, hover, press keys, resize, wait, snapshot, screenshot, read console messages, and read network requests. Handle dialogs only via browser_handle_dialog.
+- Collect browser console and network evidence plus GMLoop runner and runtime evidence before reporting. Cite tool names and observed values.
+
+Reporting:
+- Report the exact success or failure of the assigned goal, the evidence you collected, and recommendations for next actions the orchestrator should take.
+- Do not modify, stage, commit, push, or open pull requests. Do not spawn additional agents.
+"""
+
+[mcp_servers.gmloop]
+command = "gmloop"
+args = ["mcp"]
+enabled_tools = [
+    "gmloop_project_inspect",
+    "gmloop_project_validate",
+    "gmloop_live_reload_build",
+    "gmloop_live_reload_prepare",
+    "gmloop_live_reload_worker",
+    "gmloop_live_reload_session",
+    "gmloop_runner_lifecycle",
+    "gmloop_runner_logs",
+    "gmloop_runner_room_current",
+    "gmloop_runner_status",
+    "gmloop_runtime_inspect",
+    "gmloop_runtime_instances",
+    "gmloop_runtime_logs",
+    "gmloop_runtime_state",
+]
+
+[mcp_servers.gmloop.env]
+GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS = "true"
+
+[mcp_servers.gm-cli]
+command = "gmloop"
+args = ["gm-cli", "mcp"]
+enabled_tools = [
+    "status",
+    "resource_list",
+    "resource_info",
+    "room_list",
+    "room_item_list",
+    "room_layer_list",
+]
+
+[mcp_servers.gm-cli.env]
+GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS = "true"
+
+[mcp_servers.playwright]
+command = "npx"
+args = ["-y", "@playwright/mcp@latest"]
+enabled_tools = [
+    "browser_navigate",
+    "browser_tabs",
+    "browser_snapshot",
+    "browser_take_screenshot",
+    "browser_click",
+    "browser_type",
+    "browser_fill_form",
+    "browser_press_key",
+    "browser_wait_for",
+    "browser_console_messages",
+    "browser_network_requests",
+    "browser_network_request",
+    "browser_find",
+    "browser_hover",
+    "browser_select_option",
+    "browser_drag",
+    "browser_handle_dialog",
+    "browser_resize",
+    "browser_close",
+]
+
+# Inherited servers the tester does not need: explicitly disabled so the agent
+# only sees gmloop / gm-cli / playwright. They are listed defensively for any
+# Codex surface that may try to inherit them through the parent config.
+[mcp_servers.lsp]
+command = "false"
+args = []
+enabled = false
+
+[mcp_servers.node_repl]
+command = "false"
+args = []
+enabled = false
+
+[mcp_servers.computer-use]
+command = "false"
+args = []
+enabled = false

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { ScopeTracker } from "../src/scopes/scope-tracker.js";
+import { wrapNormalizedPathSpy } from "./scope-tracker-helpers.js";
 
 /**
  * Tests for `ScopeTracker.getFilePathsDeclaringSymbol`.
@@ -12,27 +13,20 @@ import { ScopeTracker } from "../src/scopes/scope-tracker.js";
  * needs refreshing.
  */
 void describe("ScopeTracker.getFilePathsDeclaringSymbol", () => {
-    void it("returns empty set for null or undefined name", () => {
+    void it("returns empty set for null, undefined, or unknown symbol names", () => {
         const tracker = new ScopeTracker({ enabled: true });
         tracker.enterScope("program", { path: "/project/foo.gml" });
         tracker.declare("x", { name: "x" });
 
         assert.equal(tracker.getFilePathsDeclaringSymbol(null).size, 0);
         assert.equal(tracker.getFilePathsDeclaringSymbol(undefined).size, 0);
+        assert.equal(tracker.getFilePathsDeclaringSymbol("unknown").size, 0);
     });
 
     void it("returns empty set when tracker is disabled", () => {
         const tracker = new ScopeTracker({ enabled: false });
 
         assert.equal(tracker.getFilePathsDeclaringSymbol("x").size, 0);
-    });
-
-    void it("returns empty set for an unknown symbol", () => {
-        const tracker = new ScopeTracker({ enabled: true });
-        tracker.enterScope("program", { path: "/project/foo.gml" });
-        tracker.declare("y", { name: "y" });
-
-        assert.equal(tracker.getFilePathsDeclaringSymbol("unknown").size, 0);
     });
 
     void it("returns the path of the scope that declares the symbol", () => {
@@ -179,5 +173,44 @@ void describe("ScopeTracker.getBatchFilePathsDeclaringSymbols", () => {
         const disabledTracker = new ScopeTracker({ enabled: false });
         const disabledResults = disabledTracker.getBatchFilePathsDeclaringSymbols(["util"]);
         assert.equal(disabledResults.size, 0);
+    });
+
+    void it("accepts Set inputs for declaration symbol batches", () => {
+        const tracker = new ScopeTracker({ enabled: true });
+
+        tracker.enterScope("file", { path: "/project/scripts/shared.gml" });
+        tracker.declare("alpha", { name: "alpha" });
+        tracker.declare("beta", { name: "beta" });
+        tracker.exitScope();
+
+        const symbolSet = new Set(["alpha", "beta"]);
+        const results = tracker.getBatchFilePathsDeclaringSymbols(symbolSet);
+
+        assert.deepEqual([...(results.get("alpha") ?? [])], ["/project/scripts/shared.gml"]);
+        assert.deepEqual([...(results.get("beta") ?? [])], ["/project/scripts/shared.gml"]);
+    });
+
+    void it("reuses normalized-path computations across declaration symbol batches", () => {
+        const tracker = new ScopeTracker({ enabled: true });
+
+        tracker.enterScope("file", { path: String.raw`C:\project\scripts\shared.gml` });
+        tracker.declare("alpha", { name: "alpha" });
+        tracker.declare("beta", { name: "beta" });
+        tracker.exitScope();
+
+        tracker.enterScope("file", { path: String.raw`C:\project\scripts\extra.gml` });
+        tracker.declare("beta", { name: "beta" });
+        tracker.exitScope();
+
+        const { tracker: instrumented, repeatedPathNormalizations } = wrapNormalizedPathSpy(tracker);
+
+        const results = instrumented.getBatchFilePathsDeclaringSymbols(["alpha", "beta"]);
+
+        assert.deepEqual([...(results.get("alpha") ?? [])], ["C:/project/scripts/shared.gml"]);
+        assert.deepEqual(
+            [...(results.get("beta") ?? [])],
+            ["C:/project/scripts/shared.gml", "C:/project/scripts/extra.gml"]
+        );
+        assert.equal(repeatedPathNormalizations, 0, "each source path should be normalized at most once per batch");
     });
 });

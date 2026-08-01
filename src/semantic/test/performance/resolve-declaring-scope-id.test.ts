@@ -225,4 +225,25 @@ void describe("hot-reload invalidation performance", () => {
             `Warm call (${warmElapsed.toFixed(2)}ms) should not be significantly slower than cold (${coldElapsed.toFixed(2)}ms)`
         );
     });
+
+    void it("sortPathsForReanalysis scales to large independent path sets without queue churn", () => {
+        const tracker = new ScopeTracker({ enabled: true });
+        const inputPaths: string[] = [];
+
+        for (let index = 0; index < 5000; index += 1) {
+            const path = `/independent_${String(index).padStart(4, "0")}.gml`;
+            inputPaths.push(path);
+            tracker.enterScope("file", { path, name: `independent_${index}` });
+            tracker.declare(`symbol_${index}`, { name: `symbol_${index}` });
+            tracker.exitScope();
+        }
+
+        const start = performance.now();
+        const sorted = tracker.sortPathsForReanalysis(inputPaths.toReversed());
+        const elapsed = performance.now() - start;
+
+        assert.equal(sorted.length, inputPaths.length, "All independent paths must be returned");
+        assert.deepEqual(sorted, inputPaths, "Independent paths should still sort lexicographically");
+        assert.ok(elapsed < 250, `sortPathsForReanalysis took ${elapsed.toFixed(2)}ms, expected < 250ms`);
+    });
 });

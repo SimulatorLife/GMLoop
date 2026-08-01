@@ -1,32 +1,164 @@
 {
+  "$version": 4,
   "model": {
+    "name": "MiniMax-M3",
     "skipLoopDetection": true,
-    "chatCompression": {
-      "contextPercentageThreshold": 0.8
-    },
-    "sessionTokenLimit": 128000
+    "skipStartupContext": false,
+    "maxSessionTurns": 900,
+    "enableOpenAILogging": true,
+    "openAILoggingDir": ".qwen/openai-logs",
+    "maxSubagentDepth": 1,
+    "maxToolCallsPerTurn": 0
   },
   "tools": {
     "approvalMode": "yolo",
-    "autoAccept": true,
-    "exclude": [
+    "computerUse": {
+      "enabled": false
+    }
+  },
+  "security": {
+    "auth": {
+      "selectedType": "openai"
+    }
+  },
+  "modelProviders": {
+    "openai": [
+      {
+        "id": "qwen3:1.7b",
+        "name": "Qwen3 1.7B via Ollama",
+        "envKey": "OPENAI_API_KEY",
+        "baseUrl": "http://127.0.0.1:11434/v1",
+        "generationConfig": {
+          "timeout": 900000,
+          "maxRetries": 2,
+          "contextWindowSize": 32768,
+          "samplingParams": {
+            "max_tokens": 1536
+          }
+        }
+      },
+      {
+        "id": "MiniMax-M3",
+        "envKey": "OPENAI_API_KEY",
+        "baseUrl": "https://api.minimax.io/v1",
+        "generationConfig": {
+          "timeout": 300000,
+          "enableCacheControl": true,
+          "contextWindowSize": 524288,
+          "maxRetries": 3,
+          "samplingParams": {
+            "top_p": 0.9,
+            "temperature": 0.2
+          },
+          "extra_body": {
+            "enable_thinking": true,
+            "reasoning_split": false,
+            "thinking": {
+              "type": "adaptive"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+      "Grep",
+      "ListFiles",
+      "Glob",
+      "Skill",
+      "Bash(pwd)",
+      "Bash(ls *)",
+      "Bash(cd *)",
+      "Bash(mkdir *)",
+      "Bash(mv *)",
+      "Bash(cp *)",
+      "Bash(rg *)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(find *)",
+      "Bash(sed -n *)",
+      "Bash(jq *)",
+      "Bash(test *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git rev-parse *)",
+      "Bash(git ls-files *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(pnpm *)"
+    ],
+    "deny": [
       "web_search",
-      "web_fetch"
+      "WebFetch",
+      "ask_user_question",
+      "Agent",
+      "Bash(git checkout*)",
+      "Bash(git switch*)",
+      "Bash(git restore*)",
+      "Bash(git reset*)",
+      "Bash(git clean*)",
+      "Bash(git branch*)",
+      "Bash(git tag*)",
+      "Bash(chmod *)",
+      "Bash(chown *)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(bash *)",
+      "Bash(sh *)",
+      "Bash(zsh *)",
+      "Bash(fish *)",
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "Bash(perl *)",
+      "Bash(ruby *)",
+      "Read(/dist/**)",
+      "Read(/**/dist/**)",
+      "Edit(/dist/**)",
+      "Edit(/**/dist/**)",
+      "Read(/node_modules/**)",
+      "Read(/**/node_modules/**)",
+      "Edit(/node_modules/**)",
+      "Edit(/**/node_modules/**)",
+      "Read(/.pnpm-store/**)",
+      "Read(/**/.pnpm-store/**)",
+      "Edit(/.pnpm-store/**)",
+      "Edit(/**/.pnpm-store/**)",
+      "Read(/*.gml)",
+      "Read(/**/*.gml)",
+      "Edit(/*.gml)",
+      "Edit(/**/*.gml)",
+      "Edit(/*.yy)",
+      "Edit(/**/*.yy)",
+      "Edit(/*.yyp)",
+      "Edit(/**/*.yyp)",
+      "Edit(/src/parser/.antlr/**)",
+      "Edit(resources/**)",
+      "Edit(/src/parser/generated/**)",
+      "Read(resources/antlr/**)",
+      "Edit(vendor/**)",
+      "Read(scripts/**)",
+      "Edit(scripts/**)"
     ]
   },
   "general": {
+    "enableAutoUpdate": true,
     "checkpointing": {
       "enabled": true
     }
-  },
-  "experimental": {
-    "vlmSwitchMode": "persist",
-    "visionModelPreview": false
   },
   "privacy": {
     "usageStatisticsEnabled": false
   },
   "context": {
+    "autoCompactThreshold": 0.6,
     "fileName": [
       "AGENTS.md",
       "docs/README.md"
@@ -34,11 +166,57 @@
   },
   "ui": {
     "accessibility": {
-      "disableLoadingPhrases": true
+      "enableLoadingPhrases": false
     }
   },
-  "$version": 3,
   "advanced": {
-    "excludedEnvVars": []
+    "excludedEnvVars": [
+      "DEBUG",
+      "DEBUG_MODE"
+    ]
+  },
+  "mcpServers": {
+    "lsp": {
+      "command": "pnpm",
+      "args": [
+        "exec",
+        "lsp-mcp-server"
+      ],
+      "timeout": 600000,
+      "trust": true
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest"
+      ],
+      "timeout": 600000,
+      "trust": true,
+      "excludeTools": [
+        "browser_run_code_unsafe"
+      ]
+    },
+    "gmloop": {
+      "command": "gmloop",
+      "args": [
+        "mcp"
+      ],
+      "trust": true,
+      "env": {
+        "GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS": true
+      }
+    },
+    "gm-cli": {
+      "command": "gmloop",
+      "args": [
+        "gm-cli",
+        "mcp"
+      ],
+      "trust": true,
+      "env": {
+        "GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS": true
+      }
+    }
   }
 }

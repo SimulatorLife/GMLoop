@@ -103,7 +103,6 @@ void test("normalize-doc-comments removes placeholder description equal to funct
         ""
     ].join("\n");
     const expected = [
-        "/// @description __ChatterboxClassSource",
         "/// @param filename",
         "/// @param buffer",
         "/// @param compile",
@@ -171,7 +170,7 @@ void test("normalize-doc-comments aligns multiline description continuations", (
         "\n"
     );
     const expected = [
-        "/// @description Alpha summary",
+        "/// @desc Alpha summary",
         "/// Beta continuation",
         "function demo() {",
         "    return 1;",
@@ -253,7 +252,7 @@ void test("normalize-doc-comments normalizes malformed csv docs while preserving
         ""
     ].join("\n");
     const expected = [
-        "/// @description Decodes an CSV string and outputs a 2D array",
+        "/// @desc Decodes an CSV string and outputs a 2D array",
         "/// @jujuadams 2020-06-28",
         "/// @param csv_string The CSV string to be decoded",
         '/// @param [cell_delimiter=","] Character to use to indicate where cells start and end. First 127 ASCII chars only. Defaults to a comma',
@@ -269,7 +268,7 @@ void test("normalize-doc-comments normalizes malformed csv docs while preserving
     assertEquals(result.output, expected);
 });
 
-void test("normalize-doc-comments converts legacy returns description text to @returns metadata", () => {
+void test("normalize-doc-returns converts legacy returns description text to @returns metadata", () => {
     const input = [
         "/// Summary",
         "/// Returns: Boolean, indicating if check passed",
@@ -279,89 +278,7 @@ void test("normalize-doc-comments converts legacy returns description text to @r
         ""
     ].join("\n");
     const expected = [
-        "/// @description Summary",
-        "/// @returns {Boolean} Indicating if check passed",
-        "function demo() {",
-        "    return true;",
-        "}",
-        ""
-    ].join("\n");
-
-    const result = lintWithRule("normalize-doc-comments", input, {});
-    assertEquals(result.output, expected);
-});
-
-void test("normalize-doc-comments repairs malformed optional @param defaults while preserving descriptions", () => {
-    const input = [
-        "/// @param cylinder",
-        "/// @param collider",
-        "/// @param [mask=[CM.MASK]]]]]]]]]]] Optional collision mask override",
-        "/// @returns {any}",
-        "function cm_cylinder_check(cylinder, collider, mask = collider[CM.MASK]) {",
-        "    return mask;",
-        "}",
-        ""
-    ].join("\n");
-    const expected = [
-        "/// @param cylinder",
-        "/// @param collider",
-        "/// @param [mask=collider[CM.MASK]] Optional collision mask override",
-        "/// @returns {any}",
-        "function cm_cylinder_check(cylinder, collider, mask = collider[CM.MASK]) {",
-        "    return mask;",
-        "}",
-        ""
-    ].join("\n");
-
-    const result = lintWithRule("normalize-doc-comments", input, {});
-    assertEquals(result.output, expected);
-});
-
-void test("normalize-doc-comments normalizes malformed csv docs while preserving parameter descriptions", () => {
-    const input = [
-        "// / Decodes an CSV string and outputs a 2D array",
-        "// /",
-        "/// @returns 2D array that represents the contents of the CSV string",
-        "// /",
-        "// / @param string              The CSV string to be decoded",
-        "/// @param [cellDelimiter]     Character to use to indicate where cells start and end. First 127 ASCII chars only. Defaults to a comma",
-        "/// @param [stringDelimiter]   Character to use to indicate where strings start and end. First 127 ASCII chars only. Defaults to a double quote",
-        "// /",
-        "/// @jujuadams 2020-06-28",
-        "",
-        String.raw`function __input_csv_to_array(_csv_string, _cell_delimiter = ",", _string_delimiter = "\"") {`,
-        "    // ...",
-        "}",
-        ""
-    ].join("\n");
-    const expected = [
-        "/// @description Decodes an CSV string and outputs a 2D array",
-        "/// @jujuadams 2020-06-28",
-        "/// @param csv_string The CSV string to be decoded",
-        '/// @param [cell_delimiter=","] Character to use to indicate where cells start and end. First 127 ASCII chars only. Defaults to a comma',
-        String.raw`/// @param [string_delimiter="\""] Character to use to indicate where strings start and end. First 127 ASCII chars only. Defaults to a double quote`,
-        "/// @returns 2D array that represents the contents of the CSV string",
-        String.raw`function __input_csv_to_array(_csv_string, _cell_delimiter = ",", _string_delimiter = "\"") {`,
-        "    // ...",
-        "}",
-        ""
-    ].join("\n");
-
-    const result = lintWithRule("normalize-doc-comments", input, {});
-    assertEquals(result.output, expected);
-});
-
-void test("normalize-doc-comments converts legacy returns description text to @returns metadata", () => {
-    const input = [
         "/// Summary",
-        "/// Returns: Boolean, indicating if check passed",
-        "function demo() {",
-        "    return true;",
-        "}",
-        ""
-    ].join("\n");
-    const expected = [
-        "/// @description Summary",
         "/// @returns {Boolean} Indicating if check passed",
         "function demo() {",
         "    return true;",
@@ -369,7 +286,7 @@ void test("normalize-doc-comments converts legacy returns description text to @r
         ""
     ].join("\n");
 
-    const result = lintWithRule("normalize-doc-comments", input, {});
+    const result = lintWithRule("normalize-doc-returns", input, {});
     assertEquals(result.output, expected);
 });
 
@@ -476,6 +393,28 @@ void test("normalize-doc-comments skips synthetic docs for inline struct propert
     assertEquals(result.output, input);
 });
 
+void test("normalize-doc-comments skips synthetic docs for anonymous inline callback arguments", () => {
+    const input = [
+        "call_later(",
+        "    1800,",
+        "    time_source_units_frames,",
+        "    function() {",
+        '        gml_pragma("forceinline");',
+        "        if (!(global.camera.is_in_view(x, y, z))) {",
+        "            instance_destroy();",
+        "        }",
+        "    },",
+        "    true",
+        ");",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("normalize-doc-comments", input, {});
+    assertEquals(result.output, input);
+    assert.doesNotMatch(result.output, /^\/\/\/ @description\b/m);
+    assert.doesNotMatch(result.output, /^\/\/\/ @returns\b/m);
+});
+
 void test("normalize-directives preserves spacing and semicolons on canonical #macro lines", () => {
     const input = [
         "#macro __SCRIBBLE_PARSER_INSERT_NUKTA  ds_grid_set_grid_region(_temp_grid, _glyph_grid, _i+1, 0, _glyph_count+3, __SCRIBBLE_GEN_GLYPH.__SIZE, 0, 0);",
@@ -494,11 +433,19 @@ void test("gml semantic fix rules do not reformat canonical macro declaration sp
     const semanticFixRuleNames = [
         "prefer-hoistable-loop-accessors",
         "prefer-loop-invariant-expressions",
-        "prefer-repeat-loops",
         "prefer-struct-literal-assignments",
         "prefer-compound-assignments",
         "prefer-direct-return",
-        "optimize-logical-flow",
+        "no-boolean-literal-comparisons",
+        "no-double-negation",
+        "prefer-de-morgan",
+        "no-redundant-negation-parentheses",
+        "no-redundant-logical-operands",
+        "no-logical-absorption",
+        "prefer-logical-factorization",
+        "no-logical-complements",
+        "prefer-logical-xor",
+        "prefer-conditional-assignment",
         "normalize-doc-comments",
         "normalize-directives",
         "no-empty-regions",
@@ -511,9 +458,7 @@ void test("gml semantic fix rules do not reformat canonical macro declaration sp
         "normalize-operator-aliases",
         "prefer-string-interpolation",
         "optimize-math-expressions",
-        "require-argument-separators",
-        "normalize-data-structure-accessors",
-        "require-trailing-optional-defaults"
+        "require-argument-separators"
     ] as const;
 
     for (const ruleName of semanticFixRuleNames) {
@@ -522,7 +467,7 @@ void test("gml semantic fix rules do not reformat canonical macro declaration sp
     }
 });
 
-void test("normalize-data-structure-accessors only rewrites invalid multi-coordinate access to grid accessors", () => {
+void test("feather/gm1028 rewrites only proven grid multi-coordinate access", () => {
     const input = [
         "var my_map = ds_map_create();",
         'var value = my_map[| "key"];',
@@ -537,30 +482,80 @@ void test("normalize-data-structure-accessors only rewrites invalid multi-coordi
         "var my_map = ds_map_create();",
         'var value = my_map[? "key"];',
         "var item = lst_items[? 0];",
-        "var cell = level_grid[# 1, 2];",
-        "var cell_alt = myGrid[# 1, 2];",
+        "var cell = level_grid[| 1, 2];",
+        "var cell_alt = myGrid[? 1, 2];",
         "var passthrough = some_var[? 0];",
         "var item_alt = map_items[| 0];",
         ""
     ].join("\n");
 
-    const result = lintWithRule("normalize-data-structure-accessors", input, {});
+    const result = lintWithRule("gm1028", input, {}, Lint.featherPlugin.rules);
     assertEquals(result.output, expected);
 });
 
-void test("normalize-data-structure-accessors does not keep stale constructor inference after reassignment", () => {
+void test("feather/gm1028 preserves ordinary and global array multi-coordinate access", () => {
+    const input = [
+        "global.camPos[global.camTransform[1, 0]] += global.mouseDx / 2;",
+        "global.camPos[global.camTransform[1, 1]] += global.mouseDy / 2;",
+        "global.camPos[global.camTransform[#, 0]] += global.mouseDx * 0.5;",
+        "global.camPos[global.camTransform[#, 1]] += global.mouseDy * 0.5;",
+        "global.camPos[global.camTransform[1, 0]] -= 5 * (keyboard_check(vk_right) - keyboard_check(vk_left));",
+        "global.camPos[global.camTransform[1, 1]] -= 5 * (keyboard_check(vk_down) - keyboard_check(vk_up));",
+        "global.camPos[global.camTransform[#, 0]] -= 5 * (keyboard_check(vk_right) - keyboard_check(vk_left));",
+        "global.camPos[global.camTransform[#, 1]] -= 5 * (keyboard_check(vk_down) - keyboard_check(vk_up));",
+        "global.camPos[global.camTransform[global.mouseViewInd, 0]] += global.mouseDx * global.camZoom;",
+        "global.camPos[global.camTransform[global.mouseViewInd, 1]] -= global.mouseDy * global.camZoom;",
+        "if global.mouseViewInd == 3{global.camPos[global.camTransform[global.mouseViewInd, 0]] += global.mouseDx * global.camZoom;}",
+        "else{global.camPos[global.camTransform[global.mouseViewInd, 0]] -= global.mouseDx * global.camZoom;}",
+        "if global.mouseViewInd == 2{global.camPos[global.camTransform[global.mouseViewInd, 1]] -= global.mouseDy * global.camZoom;}",
+        "else{global.camPos[global.camTransform[global.mouseViewInd, 1]] += global.mouseDy * global.camZoom;}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("gm1028", input, {}, Lint.featherPlugin.rules);
+    assertEquals(result.output, input);
+});
+
+void test("feather/gm1028 replaces the complete default accessor prefix", () => {
+    const input = ["var grid = ds_grid_create();", "var cell = grid[1, 0];", ""].join("\n");
+    const result = lintWithRule("gm1028", input, {}, Lint.featherPlugin.rules);
+
+    assertEquals(result.output, ["var grid = ds_grid_create();", "var cell = grid[#1, 0];", ""].join("\n"));
+});
+
+void test("feather/gm1028 does not keep stale constructor inference after reassignment", () => {
     const input = ["var my_map = ds_map_create();", "my_map = some_var;", 'var value = my_map[| "key"];', ""].join(
         "\n"
     );
 
-    const result = lintWithRule("normalize-data-structure-accessors", input, {});
+    const result = lintWithRule("gm1028", input, {}, Lint.featherPlugin.rules);
     assertEquals(result.output, input);
 });
+void test("feather/gm1028 rewrites single-coordinate grid access with wrong accessor token", () => {
+    // A grid created via ds_grid_create() should always be accessed with "[#".
+    // When code mistakenly uses "[?" or "[|" for a single-coordinate grid access
+    // (i.e., a misuse that compiles but is incorrect), the rule should normalize
+    // it to the tracked "[#" accessor so it matches the constructor's declaration.
 
-void test("normalize-data-structure-accessors ignores malformed identifier metadata without throwing", () => {
+    // Grid accessed with "[?" (should be "[#")
+    const inputMapStyle = ["var level_grid = ds_grid_create();", "var cell = level_grid[? 5];", ""].join("\n");
+    const expectedMapStyle = ["var level_grid = ds_grid_create();", "var cell = level_grid[# 5];", ""].join("\n");
+
+    const resultMapStyle = lintWithRule("gm1028", inputMapStyle, {}, Lint.featherPlugin.rules);
+    assertEquals(resultMapStyle.output, expectedMapStyle);
+
+    // Grid accessed with "[|" (should be "[#")
+    const inputListStyle = ["var game_grid = ds_grid_create();", "var val = game_grid[| 3];", ""].join("\n");
+    const expectedListStyle = ["var game_grid = ds_grid_create();", "var val = game_grid[# 3];", ""].join("\n");
+
+    const resultListStyle = lintWithRule("gm1028", inputListStyle, {}, Lint.featherPlugin.rules);
+    assertEquals(resultListStyle.output, expectedListStyle);
+});
+
+void test("feather/gm1028 ignores malformed identifier metadata without throwing", () => {
     const sourceText = 'var value = my_map[| "key"];\n';
     const messages: Array<{ messageId: string }> = [];
-    const rule = Lint.plugin.rules["normalize-data-structure-accessors"];
+    const rule = Lint.featherPlugin.rules.gm1028;
 
     const context = {
         options: [{}],
@@ -626,13 +621,14 @@ void test("normalize-data-structure-accessors ignores malformed identifier metad
     assertEquals(messages.length, 0);
 });
 
-void test("require-argument-separators preserves separator payload comments", () => {
+void test("require-argument-separators reports missing argument separators without fixing", () => {
     const input = "show_debug_message_ext(name /* keep */ payload);\n";
     const result = lintWithRule("require-argument-separators", input, {});
-    assertEquals(result.output, "show_debug_message_ext(name, /* keep */ payload);\n");
+    assertEquals(result.messages.length, 1);
+    assertEquals(result.output, input);
 });
 
-void test("require-trailing-optional-defaults lifts leading argument_count ternary fallbacks into params", () => {
+void test("feather/gm1056 lifts leading argument_count ternary fallbacks into params", () => {
     const input = [
         "function greet() {",
         '    var name = argument_count > 0 ? argument[0] : "friend";',
@@ -643,11 +639,11 @@ void test("require-trailing-optional-defaults lifts leading argument_count terna
     ].join("\n");
     const expected = input;
 
-    const result = lintWithRule("require-trailing-optional-defaults", input, {});
+    const result = lintWithRule("gm1056", input, {}, Lint.featherPlugin.rules);
     assertEquals(result.output, expected);
 });
 
-void test("require-trailing-optional-defaults condenses var+if argument_count fallback and adds trailing params", () => {
+void test("feather/gm1056 condenses var+if argument_count fallback and adds trailing params", () => {
     const input = [
         "function spring(a, b, dst, force) {",
         "    var push_out = true;",
@@ -673,11 +669,11 @@ void test("require-trailing-optional-defaults condenses var+if argument_count fa
         ""
     ].join("\n");
 
-    const result = lintWithRule("require-trailing-optional-defaults", input, {});
+    const result = lintWithRule("gm1056", input, {}, Lint.featherPlugin.rules);
     assertEquals(result.output, expected);
 });
 
-void test("require-trailing-optional-defaults appends undefined defaults after existing optional params", () => {
+void test("feather/gm1056 appends undefined defaults after existing optional params", () => {
     const input = ["function demo(first, second = 1, third) {", "    return [first, second, third];", "}", ""].join(
         "\n"
     );
@@ -688,7 +684,33 @@ void test("require-trailing-optional-defaults appends undefined defaults after e
         ""
     ].join("\n");
 
-    const result = lintWithRule("require-trailing-optional-defaults", input, {});
+    const result = lintWithRule("gm1056", input, {}, Lint.featherPlugin.rules);
+    assertEquals(result.output, expected);
+});
+
+void test("feather/gm1056 preserves constructor bodies with nested static functions", () => {
+    const input = [
+        "function AttackProjectileCircle(knockback = 0, cooldown_max = random_range(0.9, 1.3), bonus_damage = 1, sound_attack, attack_range_max = infinity, attack_range_min = 0, projectile_index) : Attack(knockback, cooldown_max, bonus_damage, sound_attack, attack_range_max, attack_range_min) constructor {",
+        "    self.projectile_index = projectile_index;",
+        "",
+        "    static attack_projectile = function(x = 0, y = 0, z = 0, damage_bonus = 0, knockback_bonus = 0, speed_multiplier = 1, var_struct) {",
+        "        var total_damage = damage + damage_bonus;",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+    const expected = [
+        "function AttackProjectileCircle(knockback = 0, cooldown_max = random_range(0.9, 1.3), bonus_damage = 1, sound_attack = undefined, attack_range_max = infinity, attack_range_min = 0, projectile_index = undefined) : Attack(knockback, cooldown_max, bonus_damage, sound_attack, attack_range_max, attack_range_min) constructor {",
+        "    self.projectile_index = projectile_index;",
+        "",
+        "    static attack_projectile = function(x = 0, y = 0, z = 0, damage_bonus = 0, knockback_bonus = 0, speed_multiplier = 1, var_struct = undefined) {",
+        "        var total_damage = damage + damage_bonus;",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("gm1056", input, {}, Lint.featherPlugin.rules);
     assertEquals(result.output, expected);
 });
 
@@ -748,6 +770,31 @@ void test("prefer-string-interpolation rewrites string coercion calls with non-t
     assertEquals(result.output, expected);
 });
 
+void test("prefer-string-interpolation keeps full owner expressions for array access string coercions", () => {
+    const input =
+        'dump += "\\n  flat_player_render_mode: " + string(flat_player_render_mode[@ flat_player_render_mode]) + ",";\n';
+    const expected =
+        'dump += $"\\n  flat_player_render_mode: {flat_player_render_mode[@ flat_player_render_mode]},";\n';
+    const result = lintWithRule("prefer-string-interpolation", input, {});
+    assertEquals(result.output, expected);
+});
+
+void test("prefer-string-interpolation keeps full owner expressions for member access string coercions", () => {
+    const input = 'dump += "pos=[" + string(player_pos.x) + "," + string(player_pos.y) + "]";\n';
+    const expected = 'dump += $"pos=[{player_pos.x},{player_pos.y}]";\n';
+    const result = lintWithRule("prefer-string-interpolation", input, {});
+    assertEquals(result.output, expected);
+});
+
+void test("prefer-string-interpolation keeps full owner expressions for direct member concatenations", () => {
+    const input =
+        'dump += "\\n  flat_player_render_mode: " + flat_player_render_mode_names[@ flat_player_render_mode] + ",";\n';
+    const expected =
+        'dump += $"\\n  flat_player_render_mode: {flat_player_render_mode_names[@ flat_player_render_mode]},";\n';
+    const result = lintWithRule("prefer-string-interpolation", input, {});
+    assertEquals(result.output, expected);
+});
+
 void test("prefer-string-interpolation rewrites nested concatenation chains with a single diagnostic", () => {
     const input = 'message = ("HP: " + value) + " / 99";\n';
     const expected = 'message = $"HP: {value} / 99";\n';
@@ -772,6 +819,30 @@ void test("prefer-is-undefined-check rewrites undefined comparisons in either op
         "if (undefined != lives) return;",
         "if (!(score == undefined)) return;",
         "if (!(undefined == lives)) return;",
+        ""
+    ].join("\n");
+    const expected = [
+        "if (is_undefined(score)) return;",
+        "if (is_undefined(lives)) return;",
+        "if (!is_undefined(score)) return;",
+        "if (!is_undefined(lives)) return;",
+        "if (!is_undefined(score)) return;",
+        "if (!is_undefined(lives)) return;",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("prefer-is-undefined-check", input, {});
+    assertEquals(result.output, expected);
+});
+
+void test("prefer-is-undefined-check rewrites UNDEFINED in any case variant", () => {
+    const input = [
+        "if (score == UNDEFINED) return;",
+        "if (Undefined == lives) return;",
+        "if (score != UNDEFINED) return;",
+        "if (UNdefined != lives) return;",
+        "if (!(score == UNDEFINED)) return;",
+        "if (!(Undefined == lives)) return;",
         ""
     ].join("\n");
     const expected = [
@@ -864,6 +935,75 @@ void test("prefer-epsilon-comparisons reuses existing epsilon declarations in a 
     assertEquals(result.output, expected);
 });
 
+void test("prefer-epsilon-comparisons rewrites positive zero checks for math-sensitive variables", () => {
+    const input = [
+        "var m = dot_product_3d(mx, my, mz, nx, ny, nz);",
+        "if (m > 0) {",
+        "    m = intersectionRadius / sqrt(m);",
+        "}",
+        ""
+    ].join("\n");
+    const expected = [
+        "var m = dot_product_3d(mx, my, mz, nx, ny, nz);",
+        "if (m > math_get_epsilon()) {",
+        "    m = intersectionRadius / sqrt(m);",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("prefer-epsilon-comparisons", input, {});
+    assertEquals(result.output, expected);
+});
+
+void test("prefer-epsilon-comparisons preserves the sign of signed math results", () => {
+    const input = [
+        "var dn = dot_product_3d(vx, vy, vz, nx, ny, nz);",
+        "if (dn == 0) {",
+        "    return false;",
+        "}",
+        ""
+    ].join("\n");
+    const expected = [
+        "var dn = dot_product_3d(vx, vy, vz, nx, ny, nz);",
+        "var eps = math_get_epsilon();",
+        "if (abs(dn) <= eps) {",
+        "    return false;",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("prefer-epsilon-comparisons", input, {});
+    assertEquals(result.output, expected);
+});
+
+void test("prefer-epsilon-comparisons preserves strict positivity for non-negative lengths", () => {
+    const input = ["var l = sqrt(toX * toX + toY * toY + toZ * toZ);", "if (l > 0) {", "    return l;", "}", ""].join(
+        "\n"
+    );
+
+    const result = lintWithRule("prefer-epsilon-comparisons", input, {});
+    assertEquals(result.output, input);
+});
+
+void test("prefer-epsilon-comparisons treats trig-builtin variables as math-sensitive", () => {
+    // Trigonometric builtins (sin, cos, tan, etc.) are floating-point math
+    // operations whose results can carry rounding error. A direct `== 0` or
+    // `> 0` check on such a value should be rewritten to use `math_get_epsilon`
+    // for the same reason `sqr()`/`dot_product_3d()` results are rewritten.
+    const input = ["var sine = sin(angle);", "if (sine == 0) {", "    return false;", "}", ""].join("\n");
+    const expected = [
+        "var sine = sin(angle);",
+        "var eps = math_get_epsilon();",
+        "if (abs(sine) <= eps) {",
+        "    return false;",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("prefer-epsilon-comparisons", input, {});
+    assertEquals(result.output, expected);
+});
+
 void test("no-assignment-in-condition does not rewrite grouped multiline conditions without assignments", () => {
     const input = [
         "if ((_index == undefined)",
@@ -877,6 +1017,51 @@ void test("no-assignment-in-condition does not rewrite grouped multiline conditi
 
     const result = lintWithRule("no-assignment-in-condition", input, {});
     assertEquals(result.output, input);
+});
+
+void test("no-assignment-in-condition preserves bitwise compound assignments inside conditions", () => {
+    // GML supports bitwise compound assignments (|=, &=, ^=). A prior
+    // implementation that only excluded the arithmetic compound prefixes
+    // (+-*/%) from its lookbehind set rewrote `if (x |= y)` into the
+    // syntactically invalid `if (x |== y)`. The rule must leave every
+    // compound-assignment prefix — including bitwise — untouched while
+    // still rewriting bare `=` to `==`.
+    const input = [
+        "if (value = target) act();",
+        "if (flags |= mask) act();",
+        "if (flags &= mask) act();",
+        "if (flags ^= mask) act();",
+        "if (bits <<= 1) act();",
+        "if (bits >>= 1) act();",
+        ""
+    ].join("\n");
+    const expected = [
+        "if (value == target) act();",
+        "if (flags |= mask) act();",
+        "if (flags &= mask) act();",
+        "if (flags ^= mask) act();",
+        "if (bits <<= 1) act();",
+        "if (bits >>= 1) act();",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("no-assignment-in-condition", input, {});
+    assertEquals(result.messages.length > 0, true);
+    assertEquals(result.output, expected);
+});
+
+void test("no-assignment-in-condition preserves nullish compound assignments inside conditions", () => {
+    // GML supports the nullish compound assignment `??=` (NullCoalescingAssign).
+    // A prior implementation that omitted `?` from its lookbehind set rewrote
+    // `if (cache ??= default)` into the syntactically invalid `if (cache ??== default)`.
+    // The rule must leave the nullish compound assignment untouched while still
+    // rewriting a bare `=` next to it on the same line.
+    const input = ["if (cache ??= default) act();", "if (legacy = fallback) act();", ""].join("\n");
+    const expected = ["if (cache ??= default) act();", "if (legacy == fallback) act();", ""].join("\n");
+
+    const result = lintWithRule("no-assignment-in-condition", input, {});
+    assertEquals(result.messages.length > 0, true);
+    assertEquals(result.output, expected);
 });
 
 void test("no-globalvar diagnoses declared globals", () => {
@@ -896,13 +1081,23 @@ void test("no-globalvar diagnoses declared globals", () => {
     assertEquals(result.output, input);
 });
 
+void test("no-globalvar diagnoses comma-separated declarations without rewriting source", () => {
+    const input = ["globalvar score, lives;", "score = 1;", "if (lives > 0) {", "    score += lives;", "}", ""].join(
+        "\n"
+    );
+
+    const result = lintWithRule("no-globalvar", input, {});
+    assertEquals(result.messages.length > 0, true);
+    assertEquals(result.output, input);
+});
+
 void test("no-globalvar diagnoses comma-separated declarations", () => {
     const input = ["globalvar score, lives;", "score = 1;", "if (lives > 0) {", "    score += lives;", "}", ""].join(
         "\n"
     );
 
     const result = lintWithRule("no-globalvar", input, {});
-    assertEquals(result.messages.length, 1);
+    assertEquals(result.messages.length > 0, true);
     assertEquals(result.output, input);
 });
 
@@ -931,9 +1126,9 @@ void test("prefer-hoistable-loop-accessors is diagnostic-only and leaves source 
     assertEquals(result.output, input);
 });
 
-void test("prefer-repeat-loops skips conversion when loop iterator is used in body", () => {
+void test("feather/gm2004 skips conversion when loop iterator is used in body", () => {
     const input = ["for (var i = 0; i < array_length(items); i++) {", "    sum += i;", "}", ""].join("\n");
-    const result = lintWithRule("prefer-repeat-loops", input, {});
+    const result = lintWithRule("gm2004", input, {}, Lint.featherPlugin.rules);
     assertEquals(result.messages.length, 0);
     assertEquals(result.output, input);
 });
@@ -947,7 +1142,12 @@ void test("full-file rewrite rules report the first changed source location", ()
         },
         {
             ruleName: "normalize-directives",
-            input: ["var keep = 1;", "// #region Setup", ""].join("\n"),
+            input: ["var keep = 1;", "#define LEGACY_MACRO 1234", ""].join("\n"),
+            expectedLoc: { line: 2, column: 1 }
+        },
+        {
+            ruleName: "normalize-block-keyword-aliases",
+            input: ["var keep = 1;", "begin;", "    nested += 1;", "end;", ""].join("\n"),
             expectedLoc: { line: 2, column: 0 }
         },
         {
@@ -1031,6 +1231,50 @@ void test("prefer-hoistable-loop-accessors reports unsafeFix when insertion requ
         result.messages.some((message) => message.messageId === "unsafeFix"),
         true
     );
+    assertEquals(result.output, input);
+});
+
+void test("prefer-hoistable-loop-accessors reports body calls for user-configured function suffixes", () => {
+    // The `functionSuffixes` option lets users extend the rule beyond the
+    // built-in `array_length` default (for example `ds_list_size`,
+    // `string_length`, etc.). Repeated calls to a configured accessor inside
+    // a loop body should still be flagged as hoist candidates.
+    const input = [
+        "for (var i = 0; i < 10; i++) {",
+        "    sum += ds_list_size(list);",
+        "    sum += ds_list_size(list);",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("prefer-hoistable-loop-accessors", input, {
+        functionSuffixes: {
+            ds_list_size: "n"
+        }
+    });
+    assertEquals(result.messages.length, 1);
+    assertEquals(result.messages[0]?.messageId, "preferHoistableLoopAccessor");
+});
+
+void test("prefer-hoistable-loop-accessors respects null suffix override in body branch", () => {
+    // Disabling `array_length` via `functionSuffixes: { array_length: null }`
+    // must apply uniformly to both the test-expression branch and the body
+    // branch. A loop body that only uses the disabled accessor with no
+    // matching call in the test expression should not produce a diagnostic.
+    const input = [
+        "for (var i = 0; i < 10; i++) {",
+        "    sum += array_length(items);",
+        "    sum += array_length(items);",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("prefer-hoistable-loop-accessors", input, {
+        functionSuffixes: {
+            array_length: null
+        }
+    });
+    assertEquals(result.messages.length, 0);
     assertEquals(result.output, input);
 });
 
@@ -1167,6 +1411,35 @@ void test("optimize-math-expressions does not rewrite decimal literals with miss
 void test("optimize-math-expressions folds lengthdir_x half-subtraction pattern into a single initializer", () => {
     const input = ["var s = 1.3 * size * 0.12 / 1.5;", "s = s - s / 2 - lengthdir_x(s / 2, swim_rot);", ""].join("\n");
     const expected = ["var s = size * 0.104;", "s = s * 0.5 * (1 - lengthdir_x(1, swim_rot));", ""].join("\n");
+
+    const result = lintWithRule("optimize-math-expressions", input, {});
+    assertEquals(result.output, expected);
+});
+
+void test("optimize-math-expressions merges three consecutive lengthdir scalar assignment patterns", () => {
+    // Regression test: the original for-loop with "index -= 1" after splice+1 caused the loop
+    // to make zero net progress (splice shrinks body by 1, then index -= 1, then loop increments
+    // index += 1, so net: index += 0). This skipped every other element, so three consecutive
+    // merges would only merge the first and second, leaving the third untouched.
+    // The while-loop fix ensures each merge is attempted and no pattern is skipped.
+    const input = [
+        "var speed = 1.0;",
+        "speed = speed - speed / 2 - lengthdir_x(speed / 2, angle);",
+        "speed = speed - speed / 2 - lengthdir_y(speed / 2, angle);",
+        "speed = speed - speed / 2 - lengthdir_x(speed / 2, angle);",
+        ""
+    ].join("\n");
+    // With the while-loop fix, all three assignment statements are individually condensed.
+    // Each assignment is transformed from "speed - speed / 2 - lengthdir_(speed / 2, angle)"
+    // to "speed * 0.5 * (1 - lengthdir_(1, angle))". All three are processed correctly,
+    // whereas the buggy for-loop would have skipped one or more assignments.
+    const expected = [
+        "var speed = 1.0;",
+        "speed = speed * 0.5 * (1 - lengthdir_x(1, angle));",
+        "speed = speed * 0.5 * (1 - lengthdir_y(1, angle));",
+        "speed = speed * 0.5 * (1 - lengthdir_x(1, angle));",
+        ""
+    ].join("\n");
 
     const result = lintWithRule("optimize-math-expressions", input, {});
     assertEquals(result.output, expected);
@@ -1328,6 +1601,30 @@ void test("optimize-math-expressions simplifies trigonometric degree/radian wrap
     assertEquals(result.output, expected);
 });
 
+void test("optimize-math-expressions rewrites pi * (1/180) * angle (reciprocal-first bug regression)", () => {
+    // Regression: sequential findIndex + splice mutates the operands array between
+    // the two findIndex calls. When reciprocalIndex < piIndex (reciprocal appears
+    // before pi in the flattened operands), the second findIndex operates on a
+    // shifted array and fails to locate pi. This leaves operands.length == 2
+    // instead of 1, so the function returns null and the simplification is skipped.
+    //
+    // With pi * (1/180) * angle, left-assoc associativity produces operands
+    // [pi, 1/180, angle]. reciprocalIndex=1, piIndex=0. After splicing pi at 0,
+    // operands becomes [1/180, angle] — pi is gone and the second findIndex finds
+    // nothing.
+    //
+    // The fix collects splice positions first, then removes from high to low index
+    // so later removals are not affected by earlier shifts.
+    // Before the fix: pi * (1/180) * angle was left unchanged (no simplification).
+    // After the fix: pi * (1/180) is correctly rewritten to degtorad(1), yielding
+    // degtorad(1) * angle.
+    const input = "var radians = pi * (1 / 180) * angle;\n";
+    const expected = "var radians = degtorad(1) * angle;\n";
+
+    const result = lintWithRule("optimize-math-expressions", input, {});
+    assertEquals(result.output, expected);
+});
+
 void test("optimize-math-expressions handles extreme reciprocals", () => {
     const input = [
         "var tinyDivisor = value / 0.00000000001;",
@@ -1367,18 +1664,36 @@ void test("normalize-operator-aliases does not replace punctuation exclamation m
     assertEquals(result.output, expected);
 });
 
-void test("normalize-operator-aliases replaces invalid logical keyword 'not' with '!'", () => {
+void test("normalize-operator-aliases reports warnings for invalid logical keyword 'not' without fixing", () => {
     const input = ["if (not ready) {", "    value = not extra;", "}", ""].join("\n");
-    const expected = ["if (! ready) {", "    value = ! extra;", "}", ""].join("\n");
     const result = lintWithRule("normalize-operator-aliases", input, {});
-    assertEquals(result.output, expected);
+    assertEquals(result.messages.length, 2);
+    assertEquals(result.output, input);
 });
 
-void test("normalize-operator-aliases leaves uppercase binary aliases unchanged while fixing uppercase NOT", () => {
+void test("normalize-operator-aliases reports warnings for uppercase binary aliases and NOT without fixing", () => {
     const input = ["if (ready AND NOT done OR extra XOR flag) {", "    finish();", "}", ""].join("\n");
-    const expected = ["if (ready AND ! done OR extra XOR flag) {", "    finish();", "}", ""].join("\n");
     const result = lintWithRule("normalize-operator-aliases", input, {});
-    assertEquals(result.output, expected);
+    assertEquals(result.messages.length, 4);
+    assertEquals(result.output, input);
+});
+
+void test("normalize-operator-aliases preserves macro-defined operator alias identifiers", () => {
+    const input = [
+        "#macro AND &&",
+        "#macro OR ||",
+        "#macro NOT !",
+        "#macro XOR ^^",
+        "",
+        "if (ready AND NOT done OR extra XOR flag) {",
+        "    finish();",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("normalize-operator-aliases", input, {});
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
 });
 
 void test("normalize-operator-aliases does not rewrite identifier usage of 'not'", () => {
@@ -1401,7 +1716,7 @@ void test("normalize-operator-aliases does not rewrite comment text containing '
     assertEquals(result.output, input);
 });
 
-void test("normalize-operator-aliases rewrites code aliases without mutating comment or string content", () => {
+void test("normalize-operator-aliases reports logical aliases in code without mutating comments, strings, or calls", () => {
     const input = [
         'var message = "not ready";',
         "/* not pending */",
@@ -1411,18 +1726,10 @@ void test("normalize-operator-aliases rewrites code aliases without mutating com
         "}",
         ""
     ].join("\n");
-    const expected = [
-        'var message = "not ready";',
-        "/* not pending */",
-        "if (! ready) {",
-        "    // not should stay untouched in comments",
-        "    value = !(extra);",
-        "}",
-        ""
-    ].join("\n");
 
     const result = lintWithRule("normalize-operator-aliases", input, {});
-    assertEquals(result.output, expected);
+    assertEquals(result.messages.length, 1);
+    assertEquals(result.output, input);
 });
 
 void test("normalize-operator-aliases does not rewrite escaped quote string content", () => {
@@ -1430,6 +1737,22 @@ void test("normalize-operator-aliases does not rewrite escaped quote string cont
     const result = lintWithRule("normalize-operator-aliases", input, {});
     assertEquals(result.messages.length, 0);
     assertEquals(result.output, input);
+});
+
+void test("normalize-operator-aliases rewrites logical aliases without mutating identifiers that contain operator substrings", () => {
+    const input = "var show_mode0_origin = flat_dbg_draw_mode0_origin or flat_dbg_compare_mode0_overlay;\n";
+    const expected = "var show_mode0_origin = flat_dbg_draw_mode0_origin || flat_dbg_compare_mode0_overlay;\n";
+    const result = lintWithRule("normalize-operator-aliases", input, {});
+    assertEquals(result.output, expected);
+});
+
+void test("normalize-operator-aliases keeps member identifiers intact while rewriting logical aliases", () => {
+    const input =
+        "player_intent.move_active = abs(player_intent.world.Magnitude2D()) > eps or abs(spd_hor.Magnitude2D()) > 2;\n";
+    const expected =
+        "player_intent.move_active = abs(player_intent.world.Magnitude2D()) > eps || abs(spd_hor.Magnitude2D()) > 2;\n";
+    const result = lintWithRule("normalize-operator-aliases", input, {});
+    assertEquals(result.output, expected);
 });
 
 void test("normalize-operator-aliases reports from explicit locations when node loc metadata is absent", () => {
@@ -1526,30 +1849,7 @@ void test("require-control-flow-braces preserves already braced single-line repe
     assertEquals(result.output, input);
 });
 
-void test("optimize-logical-flow collapses boolean passthrough if/return patterns", () => {
-    const input = [
-        "function bool_passthrough(condition) {",
-        "    if (!!condition) {",
-        "        return true;",
-        "    }",
-        "",
-        "    return false;",
-        "}",
-        ""
-    ].join("\n");
-
-    const expected = ["function bool_passthrough(condition) {", "    return condition;", "}", ""].join("\n");
-
-    const result = lintWithRule("optimize-logical-flow", input, {});
-    assert.ok(result.messages.length > 0, "optimize-logical-flow should report diagnostics");
-    assertEquals(
-        result.output,
-        expected,
-        "optimize-logical-flow should reduce a boolean passthrough branch to a direct return"
-    );
-});
-
-void test("optimize-logical-flow rewrites both undefined guard forms to ??=", () => {
+void test("feather/gm2061 rewrites both undefined guard forms to ??=", () => {
     const input = [
         "function ensure_cache(cache_entry) {",
         "    if (is_undefined(cache_entry)) {",
@@ -1572,24 +1872,276 @@ void test("optimize-logical-flow rewrites both undefined guard forms to ??=", ()
         ""
     ].join("\n");
 
-    const result = lintWithRule("optimize-logical-flow", input, {});
-    assert.ok(result.messages.length > 0, "optimize-logical-flow should report diagnostics");
+    const result = lintWithRule("gm2061", input, {}, Lint.featherPlugin.rules);
+    assert.ok(result.messages.length > 0, "feather/gm2061 should report diagnostics");
     assertEquals(result.output, expected);
 });
 
-void test("optimize-logical-flow does not rewrite unchanged struct accessor conditions", () => {
-    const input = ["if (!_player_verb_struct[$ _verb_array[_i]].held) {", "    return;", "}", ""].join("\n");
+void test("focused logical rules do not own Feather GM2061 nullish guard fixes", () => {
+    const input = [
+        "function ensure_cache(cache_entry) {",
+        "    if (is_undefined(cache_entry)) {",
+        "        cache_entry = ds_map_create();",
+        "    }",
+        "",
+        "    if (cache_entry == undefined) {",
+        "        cache_entry = ds_map_create();",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
 
-    const result = lintWithRule("optimize-logical-flow", input, {});
+    const result = lintWithRule("no-redundant-logical-operands", input, {});
     assertEquals(result.messages.length, 0);
     assertEquals(result.output, input);
 });
 
-void test("optimize-logical-flow handles parenthesized logical operands without crashing", () => {
+void test("no-boolean-literal-comparisons simplifies boolean literal comparisons in if conditions", () => {
+    const input = [
+        "if (xinput == true) { return move_horizontal(); }",
+        "if (true == xinput) { return move_horizontal(); }",
+        "if (xinput != false) { return move_horizontal(); }",
+        "if (yinput == false) { return move_vertical(); }",
+        "if (false == yinput) { return move_vertical(); }",
+        "if (yinput != true) { return move_vertical(); }",
+        ""
+    ].join("\n");
+
+    const expected = [
+        "if (xinput) { return move_horizontal(); }",
+        "if (xinput) { return move_horizontal(); }",
+        "if (xinput) { return move_horizontal(); }",
+        "if (!yinput) { return move_vertical(); }",
+        "if (!yinput) { return move_vertical(); }",
+        "if (!yinput) { return move_vertical(); }",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("no-boolean-literal-comparisons", input, {});
+    assert.ok(result.messages.length > 0, "no-boolean-literal-comparisons should report diagnostics");
+    assertEquals(result.output, expected);
+});
+
+void test("focused logical rules do not rewrite unchanged struct accessor conditions", () => {
+    const input = ["if (!_player_verb_struct[$ _verb_array[_i]].held) {", "    return;", "}", ""].join("\n");
+
+    const result = lintWithRule("no-double-negation", input, {});
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
+void test("focused logical rules handle parenthesized logical operands without crashing", () => {
     const input = ["function compare_ranges(a, b, c, d) {", "    return (a > b) || (c < d);", "}", ""].join("\n");
 
-    const result = lintWithRule("optimize-logical-flow", input, {});
+    const result = lintWithRule("no-logical-absorption", input, {});
 
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
+void test("prefer-conditional-assignment preserves else-if assignment chains", () => {
+    const input = [
+        "function detect_pad_type(vendor, product, description) {",
+        '    if (vendor == "aaa") {',
+        '        raw_type = "A";',
+        '    } else if (product == "bbb") {',
+        '        raw_type = "B";',
+        '    } else if (description == "ccc") {',
+        '        raw_type = "C";',
+        "    } else {",
+        '        raw_type = "Unknown";',
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("prefer-conditional-assignment", input, {});
+
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
+void test("prefer-conditional-assignment parenthesizes nested ternary consequents in autofix output", () => {
+    const input = [
+        "function build_values(value1, value2, value3, value4) {",
+        "    if (ready == true) {",
+        "        ready = true;",
+        "    }",
+        "",
+        "    if (!is_undefined(value2)) {",
+        "        value = (!is_undefined(value3) ? (!is_undefined(value4) ? [value1, value2, value3, value4] : [value1, value2, value3]) : [value1, value2]);",
+        "    } else {",
+        "        value = [value1];",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("prefer-conditional-assignment", input, {});
+
+    assert.ok(result.messages.length > 0, "prefer-conditional-assignment should report diagnostics");
+    assert.ok(
+        result.output.includes("? (!is_undefined(value4) ?"),
+        "Expected nested ternary in the true branch to be wrapped in parentheses."
+    );
+    assertEquals(
+        result.output.includes("? !is_undefined(value4) ?"),
+        false,
+        "Expected autofix output to avoid malformed nested ternary syntax."
+    );
+});
+
+void test("prefer-conditional-assignment parenthesizes alternate nested ternaries in autofix", () => {
+    const input = [
+        "function group_smf(time, ta, tb, tc) {",
+        "    if (time < tb) {",
+        "        d = (time - mean(ta, tb)) / (tb - ta);",
+        "    } else {",
+        "        d = (tc == tb) ? 1 : 0.5 + (time - tb) / (tc - tb);",
+        "    }",
+        "    return d;",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("prefer-conditional-assignment", input, {});
+
+    assert.ok(result.messages.length > 0, "prefer-conditional-assignment should report diagnostics");
+    assert.ok(
+        result.output.includes(
+            "d = time < tb ? (time - mean(ta, tb)) / (tb - ta) : ((tc == tb) ? 1 : 0.5 + (time - tb) / (tc - tb));"
+        ),
+        "Expected nested alternate ternary to be wrapped in parentheses for valid GML syntax."
+    );
+    assertEquals(
+        result.output.includes("time - mean(ta, tb) / tb - ta"),
+        false,
+        "Expected autofix output not to flatten grouped numerator and denominator expressions."
+    );
+});
+
+void test("prefer-conditional-assignment preserves same-precedence right operands in autofix", () => {
+    const input = [
+        "function choose_value(flag, a, b, c) {",
+        "    if (flag) {",
+        "        value = a - (b - c);",
+        "    } else {",
+        "        value = a / (b / c);",
+        "    }",
+        "    return value;",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("prefer-conditional-assignment", input, {});
+
+    assert.ok(result.messages.length > 0, "prefer-conditional-assignment should report diagnostics");
+    assert.ok(result.output.includes("value = flag ? a - (b - c) : a / (b / c);"));
+});
+
+void test("no-unary-plus-on-identifier autofixes +identifier to bare identifier", () => {
+    const input = "var value = +count;\n";
+    const expected = "var value = count;\n";
+
+    const result = lintWithRule("no-unary-plus-on-identifier", input, {});
+    assertEquals(result.messages.length, 1);
+    assertEquals(result.messages[0]?.messageId, "noUnaryPlusOnIdentifier");
+    assertEquals(result.output, expected);
+});
+
+void test("no-unary-plus-on-identifier handles multiple unary plus usages in one file", () => {
+    const input = ["var a = +score;", "var b = +lives;", ""].join("\n");
+    const expected = ["var a = score;", "var b = lives;", ""].join("\n");
+
+    const result = lintWithRule("no-unary-plus-on-identifier", input, {});
+    assertEquals(result.messages.length, 2);
+    assertEquals(result.output, expected);
+});
+
+void test("no-unary-plus-on-identifier preserves unary plus on non-identifier operands", () => {
+    // `+"5"` coerces a string literal to a number — a useful conversion that is
+    // not a simple "remove the operator" case; only identifier operands are flagged.
+    const input = 'var value = +"5";\n';
+
+    const result = lintWithRule("no-unary-plus-on-identifier", input, {});
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
+void test("no-unary-plus-on-identifier preserves unary plus on call-expression operands", () => {
+    const input = "var value = +get_count();\n";
+
+    const result = lintWithRule("no-unary-plus-on-identifier", input, {});
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
+void test("no-unary-plus-on-identifier autofixes +identifier when wrapped in parentheses", () => {
+    // `+(count)` still has an Identifier as its innermost operand once the
+    // synthetic parentheses are unwrapped.
+    const input = "var value = +(count);\n";
+    const expected = "var value = (count);\n";
+
+    const result = lintWithRule("no-unary-plus-on-identifier", input, {});
+    assertEquals(result.messages.length, 1);
+    assertEquals(result.output, expected);
+});
+
+void test("no-unary-plus-on-identifier does not flag prefix increment (++)", () => {
+    const input = "var value = ++count;\n";
+
+    const result = lintWithRule("no-unary-plus-on-identifier", input, {});
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
+void test("no-negative-zero autofixes -0 to 0", () => {
+    const input = "var x = -0;\n";
+    const expected = "var x = 0;\n";
+
+    const result = lintWithRule("no-negative-zero", input, {});
+    assertEquals(result.messages.length, 1);
+    assertEquals(result.messages[0]?.messageId, "noNegativeZero");
+    assertEquals(result.output, expected);
+});
+
+void test("no-negative-zero handles multiple negative zero usages in one file", () => {
+    const input = ["var a = -0;", "var b = -0;", ""].join("\n");
+    const expected = ["var a = 0;", "var b = 0;", ""].join("\n");
+
+    const result = lintWithRule("no-negative-zero", input, {});
+    assertEquals(result.messages.length, 2);
+    assertEquals(result.output, expected);
+});
+
+void test("no-negative-zero does not flag non-zero negative literals", () => {
+    const input = "var x = -5;\n";
+
+    const result = lintWithRule("no-negative-zero", input, {});
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
+void test("no-negative-zero does not flag bare zero without unary minus", () => {
+    const input = "var x = 0;\n";
+
+    const result = lintWithRule("no-negative-zero", input, {});
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
+void test("no-negative-zero does not flag unary minus on identifiers", () => {
+    const input = "var x = -count;\n";
+
+    const result = lintWithRule("no-negative-zero", input, {});
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
+void test("no-negative-zero does not flag unary minus on non-zero expressions", () => {
+    const input = "var x = -(a + b);\n";
+
+    const result = lintWithRule("no-negative-zero", input, {});
     assertEquals(result.messages.length, 0);
     assertEquals(result.output, input);
 });

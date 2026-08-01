@@ -6,7 +6,7 @@ import {
     extractSymbolName,
     parseSymbolIdParts,
     tryNormalizeIdentifierName
-} from "../src/validation-utils.js";
+} from "../src/rename/index.js";
 
 void describe("assertValidIdentifierName", () => {
     void test("accepts valid identifier", () => {
@@ -43,7 +43,7 @@ void describe("assertValidIdentifierName", () => {
     });
 
     void test("rejects non-string input", () => {
-        assert.throws(() => assertValidIdentifierName(123 as unknown as string), {
+        assert.throws(() => assertValidIdentifierName(123), {
             name: "TypeError"
         });
     });

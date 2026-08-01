@@ -5,9 +5,27 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 
-import { delayFileReadRetry, runWatchCommand } from "../src/commands/watch.js";
+import { runWatchCommand } from "../src/commands/watch.js";
+import { DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS } from "../src/commands/watch/constants.js";
+import { delayFileReadRetry } from "../src/commands/watch/source-analysis.js";
 import { withTemporaryProperty } from "./test-helpers/temporary-property.js";
 import { createMockWatchFactory } from "./test-helpers/watch-fixtures.js";
+
+async function waitForWatchListenerRegistration(listenerCapture: {
+    listener: WatchListener<string> | undefined;
+}): Promise<void> {
+    const deadlineMs = Date.now() + 5000;
+    while (Date.now() < deadlineMs) {
+        if (listenerCapture.listener) {
+            return;
+        }
+        await new Promise<void>((resolve) => {
+            setImmediate(resolve);
+        });
+    }
+
+    throw new Error("watch listener was not registered");
+}
 
 void describe("Watch command file read errors", () => {
     void it("logs read failures even in quiet mode", async () => {
@@ -34,7 +52,6 @@ void describe("Watch command file read errors", () => {
             },
             async () => {
                 const watchPromise = runWatchCommand(root, {
-                    extensions: [".gml"],
                     quiet: true,
                     verbose: false,
                     runtimeServer: false,
@@ -45,11 +62,9 @@ void describe("Watch command file read errors", () => {
                     debounceDelay: 0
                 });
 
-                await new Promise((resolve) => setTimeout(resolve, 50));
-
+                await waitForWatchListenerRegistration(listenerCapture);
                 listenerCapture.listener?.("change", path.basename(problematicDir));
-
-                await Promise.race([errorLogged, new Promise((resolve) => setTimeout(resolve, 500))]);
+                await errorLogged;
 
                 abortController.abort();
                 await watchPromise;
@@ -76,12 +91,8 @@ void describe("Watch command file read errors", () => {
             globalThis,
             "setTimeout",
             ((handler: (...args: Array<unknown>) => void, timeout?: number, ...args: Array<unknown>) => {
-                const timeoutId = originalSetTimeout(
-                    handler as (...handlerArgs: Array<unknown>) => void,
-                    timeout,
-                    ...args
-                );
-                if (timeout === 25) {
+                const timeoutId = originalSetTimeout(handler, timeout, ...args);
+                if (timeout === DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS) {
                     retryTimerIds.add(timeoutId);
                     originalSetTimeout(() => {
                         abortController.abort();
@@ -100,7 +111,8 @@ void describe("Watch command file read errors", () => {
                         }
                         return originalClearTimeout(timeoutId);
                     }) as typeof clearTimeout,
-                    async () => delayFileReadRetry(25, abortController.signal)
+                    async () =>
+                        delayFileReadRetry(DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS, abortController.signal)
                 )
         );
 

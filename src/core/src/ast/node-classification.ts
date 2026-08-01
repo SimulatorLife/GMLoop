@@ -1,4 +1,4 @@
-import { getNodeType } from "./node-helpers.js";
+import { getNodeType } from "./node-helpers/index.js";
 import {
     ASSIGNMENT_EXPRESSION,
     CONSTRUCTOR_DECLARATION,
@@ -6,7 +6,8 @@ import {
     EXPRESSION_STATEMENT,
     FUNCTION_DECLARATION,
     FUNCTION_EXPRESSION,
-    MACRO_DECLARATION
+    MACRO_DECLARATION,
+    STRUCT_FUNCTION_DECLARATION
 } from "./node-types.js";
 import type { DefineStatementNode, GameMakerAstNode } from "./types.js";
 
@@ -16,7 +17,8 @@ import type { DefineStatementNode, GameMakerAstNode } from "./types.js";
 export const FUNCTION_LIKE_DECLARATION_TYPES = new Set([
     FUNCTION_DECLARATION,
     CONSTRUCTOR_DECLARATION,
-    FUNCTION_EXPRESSION
+    FUNCTION_EXPRESSION,
+    STRUCT_FUNCTION_DECLARATION
 ]);
 
 const DEFINE_REPLACEMENT_DIRECTIVE_MAP = Object.freeze({

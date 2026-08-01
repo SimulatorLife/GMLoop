@@ -85,3 +85,11 @@ void test("auto-merge workflows keep narrowed golden fixture guard paths", async
         assert.doesNotMatch(source, /f\.filename\.includes\('\/test\/'\)/u);
     }
 });
+
+void test("automerge regression agent comment includes quality report regression summary context", async () => {
+    const automergeWorkflowPath = path.resolve(process.cwd(), ".github/workflows/automerge-prs.yml");
+    const source = await readFile(automergeWorkflowPath, "utf8");
+
+    assert.match(source, /Regression summary from the Quality Report:/u);
+    assert.match(source, /line\.trim\(\)\.startsWith\('❌ Test regressions detected\.'\)/u);
+});

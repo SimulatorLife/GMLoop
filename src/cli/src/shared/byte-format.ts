@@ -17,6 +17,8 @@ const {
 const BYTE_UNITS = Object.freeze(["B", "KB", "MB", "GB", "TB", "PB"]);
 const DEFAULT_BYTE_FORMAT_RADIX = 1024;
 const BYTE_FORMAT_RADIX_ENV_VAR = "PRETTIER_PLUGIN_GML_BYTE_FORMAT_RADIX";
+const MAX_DISPLAYABLE_BYTE_COUNT = 2 ** 63;
+const MAX_DISPLAYABLE_BYTE_COUNT_BIGINT = 2n ** 63n;
 
 const createRadixErrorMessage = (received: unknown): string =>
     `Byte format radix must be a positive integer (received ${describeValueForError(received)}).`;
@@ -85,20 +87,22 @@ export interface FormatByteSizeDisplayOptions {
 
 function normalizeByteCount(value: NumericLike): number {
     if (typeof value === "bigint") {
-        const numericValue = Number(value);
-
-        if (!isFiniteNumber(numericValue)) {
+        if (value <= 0n) {
             return 0;
         }
 
-        return clamp(numericValue, 0, Number.POSITIVE_INFINITY);
+        if (value >= MAX_DISPLAYABLE_BYTE_COUNT_BIGINT) {
+            return MAX_DISPLAYABLE_BYTE_COUNT;
+        }
+
+        return Number(value);
     }
 
     if (!isFiniteNumber(value)) {
         return 0;
     }
 
-    return clamp(value, 0, Number.POSITIVE_INFINITY);
+    return clamp(value, 0, MAX_DISPLAYABLE_BYTE_COUNT);
 }
 
 function resolveRadixOverride(radix: number | string | undefined, defaultRadix: number): number {
@@ -115,6 +119,14 @@ function resolveRadixOverride(radix: number | string | undefined, defaultRadix: 
     );
 }
 
+function normalizeDecimalPlaces(value: number): number {
+    if (!isFiniteNumber(value)) {
+        return 0;
+    }
+
+    return clamp(value, 0, Number.POSITIVE_INFINITY);
+}
+
 function formatByteSize(
     bytes: NumericLike,
     { decimals = 1, decimalsForBytes = 0, separator = "", trimTrailingZeros = false, radix }: FormatByteSizeOptions = {}
@@ -129,12 +141,12 @@ function formatByteSize(
         value /= resolvedRadix;
     }
 
-    const decimalPlaces = clamp(unitIndex === 0 ? decimalsForBytes : decimals, 0, Number.POSITIVE_INFINITY);
+    const decimalPlaces = normalizeDecimalPlaces(unitIndex === 0 ? decimalsForBytes : decimals);
 
     let formattedValue = value.toFixed(decimalPlaces);
 
     if (trimTrailingZeros && decimalPlaces > 0) {
-        formattedValue = formattedValue.replace(/(?:\.0+|(\.\d*?[1-9])0+)$/, "$1");
+        formattedValue = formattedValue.replace(/(?:\.0+|(?<trim>\.\d*?[1-9])0+)$/, "$<trim>");
     }
 
     const unitSeparator = typeof separator === "string" ? separator : "";

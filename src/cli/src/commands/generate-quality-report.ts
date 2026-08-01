@@ -11,17 +11,18 @@ import { XMLParser } from "fast-xml-parser";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { CliUsageError, handleCliError } from "../cli-core/errors.js";
 import { ParseResultStatus, ScanStatus, TestCaseStatus } from "../modules/quality-report/index.js";
+import { scanProjectHealth } from "../modules/quality-report/project-health.js";
 import { traverseDirectoryEntries } from "../shared/directory-traversal.js";
-import { scanProjectHealth } from "../shared/project-health.js";
+import { pathExistsSync } from "../shared/path-exists.js";
 
 const {
     assertArray,
     compactArray,
     ensureMap,
     getErrorMessageOrFallback,
-    isNonEmptyArray,
     isNonEmptyTrimmedString,
     isObjectLike,
+    parseJsonWithContext,
     readTextFileSync,
     toArray,
     toTrimmedString
@@ -31,6 +32,29 @@ const parser = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: ""
 });
+
+const NON_WORKSPACE_PATH_SEGMENTS = new Set(["dist", "test", "tests", "reports", "report", "node_modules"]);
+const NON_WORKSPACE_PATH_PATTERNS = [/^report-/u];
+const GENERIC_REPORT_FILE_STEMS = new Set([
+    "junit",
+    "junit-report",
+    "report",
+    "results",
+    "root",
+    "suite",
+    "test",
+    "test-results",
+    "tests"
+]);
+
+function xmlContainsPotentialTestElements(xml: string): boolean {
+    const lowered = xml.toLowerCase();
+    return lowered.includes("<testsuite") || lowered.includes("<testsuites") || lowered.includes("<testcase");
+}
+
+function xmlLooksLikeCheckstyle(xml: string): boolean {
+    return xml.toLowerCase().includes("<checkstyle");
+}
 
 function hasAnyOwn(object: Record<string, unknown>, keys: string[]): boolean {
     return keys.some((key) => Object.hasOwn(object, key));
@@ -166,13 +190,55 @@ function resolveNextSuitePath(node, suitePath, { hasTestcase, hasTestsuite }) {
     return pushNormalizedSuiteSegments([...suitePath], normalizedSuiteName);
 }
 
+function extractWorkspaceNameFromPath(candidatePath: string): string {
+    if (!candidatePath) {
+        return "";
+    }
+    const normalized = candidatePath.replaceAll("\\", "/");
+    const segments = normalized.split("/");
+    const srcIndex = segments.indexOf("src");
+    if (srcIndex !== -1 && srcIndex + 1 < segments.length) {
+        return segments[srcIndex + 1];
+    }
+    return "";
+}
+
+function extractWorkspaceNameFromReportPath(reportFilePath: string): string {
+    if (!reportFilePath) {
+        return "";
+    }
+
+    const normalized = reportFilePath.replaceAll("\\", "/");
+    const workspaceFromDirectory = extractWorkspaceNameFromPath(normalized);
+    if (workspaceFromDirectory) {
+        return workspaceFromDirectory;
+    }
+
+    const reportFileStem = path.basename(normalized, path.extname(normalized));
+    if (reportFileStem && !GENERIC_REPORT_FILE_STEMS.has(reportFileStem)) {
+        return reportFileStem;
+    }
+
+    const parentDirectoryName = path.basename(path.dirname(normalized));
+    if (
+        !parentDirectoryName ||
+        NON_WORKSPACE_PATH_SEGMENTS.has(parentDirectoryName) ||
+        NON_WORKSPACE_PATH_PATTERNS.some((pattern) => pattern.test(parentDirectoryName))
+    ) {
+        return "";
+    }
+    return parentDirectoryName;
+}
+
 /**
  * Record a single testcase result in the aggregate list.
  */
-function recordSuiteTestCase(cases, node, suitePath) {
+function recordSuiteTestCase(cases, node, suitePath, reportFilePath = "") {
     const key = buildTestKey(node, suitePath);
     const displayName = describeTestCase(node, suitePath) || key;
     const time = Number.parseFloat(node.time) || 0;
+    const workspace =
+        extractWorkspaceNameFromPath(toTrimmedString(node.file)) || extractWorkspaceNameFromReportPath(reportFilePath);
 
     cases.push({
         node,
@@ -180,7 +246,9 @@ function recordSuiteTestCase(cases, node, suitePath) {
         key,
         status: computeStatus(node),
         displayName,
-        time
+        time,
+        reportFilePath,
+        workspace
     });
     return cases;
 }
@@ -208,7 +276,7 @@ function processTraversalQueue<T>(queue: T[], visitor: (item: T, queue: T[]) => 
     }
 }
 
-function collectTestCases(root) {
+function collectTestCases(root, { reportFilePath = "" }: { reportFilePath?: string } = {}) {
     const cases = [];
     const queue = createTestTraversalQueue(root);
 
@@ -234,7 +302,7 @@ function collectTestCases(root) {
         });
 
         if (looksLikeTestCase(node)) {
-            recordSuiteTestCase(cases, node, suitePath);
+            recordSuiteTestCase(cases, node, suitePath, reportFilePath);
         }
 
         if (hasTestcase) {
@@ -335,15 +403,16 @@ function readCheckstyle(checkstyleFiles) {
 function normalizeLocator(testCase) {
     const node = testCase?.node || {};
     const rawFile = typeof node.file === "string" ? node.file.trim() : "";
+    const testName = typeof node.name === "string" ? node.name.trim() : "";
+    if (!testName) {
+        return null;
+    }
     if (rawFile) {
-        return `file:${path.normalize(rawFile).replaceAll("\\", "/").toLowerCase()}`;
+        return `file:${path.normalize(rawFile).replaceAll("\\", "/").toLowerCase()}${FILE_NAME_SEPARATOR}${testName}`;
     }
     const className = typeof node.classname === "string" ? node.classname.trim() : "";
     if (className) {
-        return `class:${className}`.toLowerCase();
-    }
-    if (isNonEmptyArray(testCase?.suitePath)) {
-        return `suite:${testCase.suitePath.join("::")}`.toLowerCase();
+        return `class:${className}${FILE_NAME_SEPARATOR}${testName}`.toLowerCase();
     }
     return null;
 }
@@ -375,13 +444,69 @@ function collectCaseDifferences(baseResults, targetResults) {
 }
 
 function collectMissingCases(sourceResults, comparisonResults) {
+    const comparableReportNames = collectComparableReportNames(sourceResults, comparisonResults);
+    const comparisonIdentities = collectComparableRecordIdentities(comparisonResults, comparableReportNames);
     const missing = [];
     for (const [key, record] of sourceResults.results.entries()) {
-        if (!comparisonResults.results.has(key)) {
+        if (
+            !comparisonResults.results.has(key) &&
+            isComparableReportRecord(record, comparableReportNames) &&
+            !comparisonIdentities.has(normalizeLocator(record))
+        ) {
             missing.push(record);
         }
     }
     return missing;
+}
+
+function collectComparableRecordIdentities(resultSet, comparableReportNames) {
+    const identities = new Set();
+    for (const record of resultSet.results.values()) {
+        if (!isComparableReportRecord(record, comparableReportNames)) {
+            continue;
+        }
+
+        const identity = normalizeLocator(record);
+        if (identity) {
+            identities.add(identity);
+        }
+    }
+    return identities;
+}
+
+function collectComparableReportNames(sourceResults, comparisonResults) {
+    const sourceReportNames = collectReportNames(sourceResults);
+    const comparisonReportNames = collectReportNames(comparisonResults);
+    const commonReportNames = new Set();
+
+    for (const reportName of sourceReportNames) {
+        if (comparisonReportNames.has(reportName)) {
+            commonReportNames.add(reportName);
+        }
+    }
+
+    return commonReportNames;
+}
+
+function collectReportNames(resultSet) {
+    const reportNames = new Set();
+    for (const record of resultSet.results.values()) {
+        const reportName = normalizeReportFileName(record);
+        if (reportName) {
+            reportNames.add(reportName);
+        }
+    }
+    return reportNames;
+}
+
+function normalizeReportFileName(record) {
+    const reportFilePath = typeof record?.reportFilePath === "string" ? record.reportFilePath : "";
+    return path.basename(reportFilePath).trim().toLowerCase();
+}
+
+function isComparableReportRecord(record, comparableReportNames) {
+    const reportName = normalizeReportFileName(record);
+    return !reportName || comparableReportNames.has(reportName);
 }
 
 function countRenamedCases(newCases, removedCases) {
@@ -488,7 +613,10 @@ function readDuplicates(files) {
     const file = files[0];
     try {
         const content = readTextFileSync(file);
-        const data = JSON.parse(content);
+        const data = parseJsonWithContext(content, {
+            source: file,
+            description: "JSCPD report"
+        });
         return data.statistics?.total || null;
     } catch {
         return null;
@@ -502,14 +630,17 @@ function readProjectHealth(files) {
     const file = files[0];
     try {
         const content = readTextFileSync(file);
-        return JSON.parse(content);
+        return parseJsonWithContext(content, {
+            source: file,
+            description: "project health report"
+        });
     } catch {
         return null;
     }
 }
 
 function isExistingDirectory(resolvedPath) {
-    return fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isDirectory();
+    return pathExistsSync(resolvedPath, (stat) => stat.isDirectory());
 }
 
 /**
@@ -621,7 +752,7 @@ function collectTestCasesFromXmlFile(filePath, displayPath) {
         return { cases: [], notes: [] };
     }
 
-    const parseResult = parseXmlTestCases(xml, displayPath);
+    const parseResult = parseXmlTestCases(xml, displayPath, filePath);
     if (parseResult.status === ParseResultStatus.ERROR) {
         return { cases: [], notes: [parseResult.note] };
     }
@@ -648,7 +779,21 @@ function readXmlFile(filePath, displayPath) {
     }
 }
 
-function parseXmlTestCases(xml, displayPath) {
+function parseXmlTestCases(xml, displayPath, reportFilePath = "") {
+    if (!xmlContainsPotentialTestElements(xml)) {
+        if (xmlLooksLikeCheckstyle(xml)) {
+            return {
+                status: ParseResultStatus.IGNORED,
+                note: `Ignoring checkstyle report ${displayPath}; no test cases found.`
+            };
+        }
+
+        return {
+            status: ParseResultStatus.ERROR,
+            note: `Parsed ${displayPath} but it does not contain any test suites or cases.`
+        };
+    }
+
     try {
         const data = parser.parse(xml);
         if (isCheckstyleDocument(data)) {
@@ -663,7 +808,10 @@ function parseXmlTestCases(xml, displayPath) {
                 note: `Parsed ${displayPath} but it does not contain any test suites or cases.`
             };
         }
-        return { status: ParseResultStatus.OK, cases: collectTestCases(data) };
+        return {
+            status: ParseResultStatus.OK,
+            cases: collectTestCases(data, { reportFilePath })
+        };
     } catch (error) {
         const message = getErrorMessageOrFallback(error);
         return {
@@ -739,21 +887,104 @@ function enqueueObjectChildValues(queue, object) {
 }
 
 function recordTestCases(aggregates, testCases) {
-    const { results, stats } = aggregates;
+    const { results } = aggregates;
 
     for (const testCase of testCases) {
-        results.set(testCase.key, testCase);
-        stats.total += 1;
-        stats.time += testCase.time || 0;
+        const existingRecord = results.get(testCase.key);
+        const preferredRecord = choosePreferredTestRecord(existingRecord, testCase);
+        results.set(testCase.key, preferredRecord);
+    }
+}
 
-        if (testCase.status === TestCaseStatus.FAILED) {
+function removeNonCanonicalRecordsDuplicatedByCanonicalIdentity(results: Map<string, AggregatedTestRecord>): void {
+    const canonicalIdentities = collectCanonicalTestRecordIdentities(results);
+    if (canonicalIdentities.size === 0) {
+        return;
+    }
+
+    for (const [key, record] of results.entries()) {
+        const identityKey = buildTestRecordIdentityKey(record);
+        if (!identityKey || isCanonicalTestRecord(record) || !canonicalIdentities.has(identityKey)) {
+            continue;
+        }
+
+        results.delete(key);
+    }
+}
+
+function collectCanonicalTestRecordIdentities(results: Map<string, AggregatedTestRecord>): Set<string> {
+    const identities = new Set<string>();
+
+    for (const record of results.values()) {
+        if (!isCanonicalTestRecord(record)) {
+            continue;
+        }
+
+        const identityKey = buildTestRecordIdentityKey(record);
+        if (identityKey) {
+            identities.add(identityKey);
+        }
+    }
+
+    return identities;
+}
+
+function computeAggregateStatsFromResults(results: Map<string, AggregatedTestRecord>) {
+    const stats = { total: 0, passed: 0, failed: 0, skipped: 0, time: 0 };
+    for (const record of results.values()) {
+        stats.total += 1;
+        stats.time += Number(record.time) || 0;
+        if (record.status === TestCaseStatus.FAILED) {
             stats.failed += 1;
-        } else if (testCase.status === TestCaseStatus.SKIPPED) {
+        } else if (record.status === TestCaseStatus.SKIPPED) {
             stats.skipped += 1;
         } else {
             stats.passed += 1;
         }
     }
+    return stats;
+}
+
+type AggregatedTestRecord = TestRecordEntry & {
+    key?: string;
+    displayName?: string;
+    time?: number;
+    reportFilePath: string;
+};
+
+function isCanonicalTestsXmlReportPath(reportFilePath: string): boolean {
+    const reportPath = toTrimmedString(reportFilePath);
+    if (!reportPath) {
+        return false;
+    }
+    return path.basename(reportPath).toLowerCase() === "tests.xml";
+}
+
+function buildTestRecordIdentityKey(record: TestRecordEntry): string {
+    const { fileLowerCase, name } = getNormalizedTestRecordIdentity(record);
+    return fileLowerCase && name ? `${fileLowerCase}${FILE_NAME_SEPARATOR}${name}` : "";
+}
+
+function choosePreferredTestRecord(
+    existingRecord: AggregatedTestRecord | undefined,
+    incomingRecord: AggregatedTestRecord
+): AggregatedTestRecord {
+    if (!existingRecord) {
+        return incomingRecord;
+    }
+
+    const existingIsCanonical = isCanonicalTestsXmlReportPath(existingRecord.reportFilePath);
+    const incomingIsCanonical = isCanonicalTestsXmlReportPath(incomingRecord.reportFilePath);
+
+    if (existingIsCanonical && !incomingIsCanonical) {
+        return existingRecord;
+    }
+
+    if (incomingIsCanonical && !existingIsCanonical) {
+        return incomingRecord;
+    }
+
+    return incomingRecord;
 }
 
 function createResultAggregates() {
@@ -802,7 +1033,7 @@ function resolveDuplicatesWithFallback(scan: { duplicates: unknown }, directory:
     }
 
     const parentFile = path.join(directory.resolved, "..", "jscpd-report.json");
-    if (fs.existsSync(parentFile)) {
+    if (pathExistsSync(parentFile)) {
         return readDuplicates([parentFile]);
     }
 
@@ -830,6 +1061,15 @@ function recordScanDiagnostics(
     }
 }
 
+function hasUsableReportPayload(scan: {
+    coverage: unknown;
+    lint: { warnings?: number; errors?: number } | null;
+    duplicates: unknown;
+    health: unknown;
+}): boolean {
+    return Boolean(scan.coverage || scan.duplicates || scan.health || scan.lint);
+}
+
 function readTestResults(candidateDirs, { workspace }: DetectTestResultsOptions = {}) {
     const workspaceRoot = workspace || process.env.GITHUB_WORKSPACE || process.cwd();
     const directories = normalizeResultDirectories(candidateDirs, workspaceRoot);
@@ -843,23 +1083,27 @@ function readTestResults(candidateDirs, { workspace }: DetectTestResultsOptions 
 
         recordScanDiagnostics(scan, directory, { notes, missingDirs, emptyDirs });
 
-        if (scan.status === ScanStatus.MISSING || scan.status === ScanStatus.EMPTY) {
+        if (scan.status === ScanStatus.MISSING || (scan.status === ScanStatus.EMPTY && !hasUsableReportPayload(scan))) {
             continue;
         }
 
         recordTestCases(aggregates, scan.cases);
+        removeNonCanonicalRecordsDuplicatedByCanonicalIdentity(aggregates.results);
 
         const duplicates = resolveDuplicatesWithFallback(scan, directory);
+        const stats = computeAggregateStatsFromResults(aggregates.results);
 
         return {
             ...aggregates,
+            stats,
             usedDir: directory.resolved,
             displayDir: directory.display,
             notes,
             coverage: scan.coverage,
             lint: scan.lint,
             duplicates,
-            health: scan.health
+            health: scan.health,
+            cases: scan.cases
         };
     }
 
@@ -878,10 +1122,6 @@ function readTestResults(candidateDirs, { workspace }: DetectTestResultsOptions 
     };
 }
 
-function shouldSkipRegressionDetection(baseStats, targetStats) {
-    return baseStats && targetStats && baseStats.total === targetStats.total && targetStats.failed <= baseStats.failed;
-}
-
 /**
  * Normalize result-set inputs so downstream helpers can rely on Map semantics.
  */
@@ -892,31 +1132,91 @@ function resolveResultsMap(resultSet) {
 
 /** Shared record shape for test-case entries in the results maps. */
 type TestRecordNode = { file?: string; name?: string };
-type TestRecordEntry = { status?: string; node?: TestRecordNode };
+type TestRecordEntry = { status?: string; node?: TestRecordNode; reportFilePath?: string };
 
 /** Separator used when combining file path and test name into a lookup key. */
 const FILE_NAME_SEPARATOR = "::";
 
 /**
- * Build a secondary lookup of base failures keyed by `(file, testName)`.
- *
- * This is used to detect when a failing target test corresponds to an already-failing
- * base test that was "renamed" due to a change in the JUnit XML suite hierarchy (e.g.,
- * a malformed `<undefined>` wrapper produced by node's JUnit reporter when a test file
- * triggers an IPC-deserialization error). Without this check, such a renamed failure
- * would incorrectly appear as a brand-new regression.
+ * Normalize file/name identity fields from a parsed test record.
  */
-function buildBaseFailuresByFileAndName(baseResults: Map<string, unknown>): Set<string> {
-    const index = new Set<string>();
+function getNormalizedTestRecordIdentity(record: TestRecordEntry): {
+    file: string;
+    fileLowerCase: string;
+    name: string;
+} {
+    const file = typeof record.node?.file === "string" ? record.node.file.trim() : "";
+    const name = typeof record.node?.name === "string" ? record.node.name.trim() : "";
+
+    return {
+        file,
+        fileLowerCase: file.toLowerCase(),
+        name
+    };
+}
+
+/**
+ * Build a secondary lookup of base test statuses keyed by `(file, testName)`.
+ *
+ * This is used to match target failures against base results when the JUnit suite
+ * hierarchy changes and test keys are renamed (for example due to malformed wrappers).
+ * Matching by `(file, testName)` lets us distinguish genuinely new failing tests
+ * (which should be ignored) from renamed pre-existing tests (which should keep their
+ * original base status).
+ */
+function buildBaseStatusesByFileAndName(baseResults: Map<string, unknown>): Map<string, string> {
+    const index = new Map<string, string>();
     for (const record of baseResults.values()) {
         const r = record as TestRecordEntry;
-        if (r.status !== TestCaseStatus.FAILED) {
+        if (
+            r.status !== TestCaseStatus.FAILED &&
+            r.status !== TestCaseStatus.PASSED &&
+            r.status !== TestCaseStatus.SKIPPED
+        ) {
             continue;
         }
-        const file = typeof r.node?.file === "string" ? r.node.file.trim() : "";
-        const name = typeof r.node?.name === "string" ? r.node.name.trim() : "";
-        if (file && name) {
-            index.add(`${file.toLowerCase()}${FILE_NAME_SEPARATOR}${name}`);
+        const { fileLowerCase, name } = getNormalizedTestRecordIdentity(r);
+        if (fileLowerCase && name) {
+            index.set(`${fileLowerCase}${FILE_NAME_SEPARATOR}${name}`, r.status);
+        }
+    }
+    return index;
+}
+
+/**
+ * Return true when a record originated from canonical `tests.xml`.
+ */
+function isCanonicalTestRecord(record: TestRecordEntry): boolean {
+    return typeof record.reportFilePath === "string" && isCanonicalTestsXmlReportPath(record.reportFilePath);
+}
+
+/**
+ * Build a lookup of target statuses from canonical `tests.xml` keyed by
+ * `(file, testName)`.
+ *
+ * When auxiliary XML reports carry malformed suite wrappers, the same logical
+ * test may appear under a different key and look like a new failure. Canonical
+ * `tests.xml` output is authoritative when present, so regression detection
+ * should ignore auxiliary duplicates that map back to an existing canonical
+ * identity.
+ */
+function buildCanonicalTargetStatusesByFileAndName(targetResults: Map<string, unknown>): Map<string, string> {
+    const index = new Map<string, string>();
+    for (const record of targetResults.values()) {
+        const r = record as TestRecordEntry;
+        if (!isCanonicalTestRecord(r)) {
+            continue;
+        }
+        if (
+            r.status !== TestCaseStatus.FAILED &&
+            r.status !== TestCaseStatus.PASSED &&
+            r.status !== TestCaseStatus.SKIPPED
+        ) {
+            continue;
+        }
+        const { fileLowerCase, name } = getNormalizedTestRecordIdentity(r);
+        if (fileLowerCase && name) {
+            index.set(`${fileLowerCase}${FILE_NAME_SEPARATOR}${name}`, r.status);
         }
     }
     return index;
@@ -937,9 +1237,9 @@ function buildTargetFilesWithPassingTests(targetResults: Map<string, unknown>): 
     for (const record of targetResults.values()) {
         const r = record as TestRecordEntry;
         if (r.status === TestCaseStatus.PASSED) {
-            const file = typeof r.node?.file === "string" ? r.node.file.trim().toLowerCase() : "";
-            if (file) {
-                passingFiles.add(file);
+            const { fileLowerCase } = getNormalizedTestRecordIdentity(r);
+            if (fileLowerCase) {
+                passingFiles.add(fileLowerCase);
             }
         }
     }
@@ -958,13 +1258,12 @@ function buildTargetFilesWithPassingTests(targetResults: Map<string, unknown>): 
  * crash is an infrastructure artifact that should not block auto-merge.
  */
 function isNodeRunnerFileLevelCrash(targetRecord: TestRecordEntry, targetFilesWithPassingTests: Set<string>): boolean {
-    const file = typeof targetRecord.node?.file === "string" ? targetRecord.node.file.trim() : "";
-    const name = typeof targetRecord.node?.name === "string" ? targetRecord.node.name.trim() : "";
+    const { file, fileLowerCase, name } = getNormalizedTestRecordIdentity(targetRecord);
     if (!file || !name) {
         return false;
     }
     // The synthetic record's name is the relative path portion of the absolute file path.
-    if (!file.toLowerCase().endsWith(name.toLowerCase())) {
+    if (!fileLowerCase.endsWith(name.toLowerCase())) {
         return false;
     }
     // Confirm it looks like a test file path.
@@ -972,28 +1271,37 @@ function isNodeRunnerFileLevelCrash(targetRecord: TestRecordEntry, targetFilesWi
         return false;
     }
     // If passing inner tests exist for this file, the crash is a runner artefact.
-    return targetFilesWithPassingTests.has(file.toLowerCase());
+    return targetFilesWithPassingTests.has(fileLowerCase);
 }
 
 function createRegressionRecord({
     baseResults,
     key,
     targetRecord,
-    baseFailuresByFileAndName,
+    baseStatusesByFileAndName,
+    canonicalTargetStatusesByFileAndName,
     targetFilesWithPassingTests
 }: {
     baseResults: Map<string, unknown>;
     key: string;
     targetRecord: TestRecordEntry | null | undefined;
-    baseFailuresByFileAndName: Set<string>;
+    baseStatusesByFileAndName: Map<string, string>;
+    canonicalTargetStatusesByFileAndName: Map<string, string>;
     targetFilesWithPassingTests: Set<string>;
 }): { key: string; from: string; to: string; detail: unknown } | null {
     if (!targetRecord || targetRecord.status !== TestCaseStatus.FAILED) {
         return null;
     }
 
+    const { fileLowerCase, name } = getNormalizedTestRecordIdentity(targetRecord);
+    const identityKey = fileLowerCase && name ? `${fileLowerCase}${FILE_NAME_SEPARATOR}${name}` : "";
+    const canonicalTargetStatus = identityKey ? canonicalTargetStatusesByFileAndName.get(identityKey) : undefined;
+    if (!isCanonicalTestRecord(targetRecord) && canonicalTargetStatus) {
+        return null;
+    }
+
     const baseRecord = baseResults.get(key) as { status?: string } | undefined;
-    const baseStatus = baseRecord?.status;
+    let baseStatus = baseRecord?.status;
     if (baseStatus === TestCaseStatus.FAILED) {
         return null;
     }
@@ -1004,9 +1312,15 @@ function createRegressionRecord({
     // (e.g., `<undefined>` wrapper tags), causing the suite-path prefix of existing
     // tests to change. Those renamed failures must not be reported as new regressions.
     if (baseStatus === undefined) {
-        const file = typeof targetRecord.node?.file === "string" ? targetRecord.node.file.trim() : "";
-        const name = typeof targetRecord.node?.name === "string" ? targetRecord.node.name.trim() : "";
-        if (file && name && baseFailuresByFileAndName.has(`${file.toLowerCase()}${FILE_NAME_SEPARATOR}${name}`)) {
+        // Newly introduced tests are intentionally excluded from regression checks.
+        // Only renamed tests that map back to an existing base status are eligible.
+        const renamedBaseStatus = identityKey ? baseStatusesByFileAndName.get(identityKey) : undefined;
+        if (!renamedBaseStatus) {
+            return null;
+        }
+
+        baseStatus = renamedBaseStatus;
+        if (baseStatus === TestCaseStatus.FAILED) {
             return null;
         }
         // Detect node test runner file-level crash records: synthetic testcases where
@@ -1031,7 +1345,8 @@ function createRegressionRecord({
  */
 function collectRegressions({ baseResults, targetResults }) {
     const regressions = [];
-    const baseFailuresByFileAndName = buildBaseFailuresByFileAndName(baseResults);
+    const baseStatusesByFileAndName = buildBaseStatusesByFileAndName(baseResults);
+    const canonicalTargetStatusesByFileAndName = buildCanonicalTargetStatusesByFileAndName(targetResults);
     const targetFilesWithPassingTests = buildTargetFilesWithPassingTests(targetResults);
 
     for (const [key, targetRecord] of targetResults.entries()) {
@@ -1039,7 +1354,8 @@ function collectRegressions({ baseResults, targetResults }) {
             baseResults,
             key,
             targetRecord,
-            baseFailuresByFileAndName,
+            baseStatusesByFileAndName,
+            canonicalTargetStatusesByFileAndName,
             targetFilesWithPassingTests
         });
 
@@ -1093,10 +1409,6 @@ function collectResolvedFailures({ baseResults, targetResults }) {
 }
 
 function detectRegressions(baseResults, targetResults) {
-    if (shouldSkipRegressionDetection(baseResults?.stats, targetResults?.stats)) {
-        return [];
-    }
-
     return collectRegressions({
         baseResults: resolveResultsMap(baseResults),
         targetResults: resolveResultsMap(targetResults)
@@ -1190,14 +1502,72 @@ export function runGenerateQualityReport({ command }: any = {}) {
 
     if (exitCode !== 0) {
         process.exitCode = exitCode;
-        throw new CliUsageError("Test regressions detected.");
+        throw new CliUsageError(exitCode === 11 ? "Lint errors detected." : "Test regressions detected.");
     }
+
+    return 0;
 }
 
 type ReportTableState = {
     testRows: Array<string>;
     qualityRows: Array<string>;
+    workspaceRows: Array<string>;
 };
+/**
+ * Compute test statistics broken down by workspace/module from test cases.
+ *
+ * This enables the quality report to show per-workspace test metrics,
+ * helping identify which parts of the codebase have test failures.
+ */
+function computeWorkspaceBreakdown(
+    cases: Array<{ time: number; status: string; workspace?: string }>
+): Map<string, { total: number; passed: number; failed: number; skipped: number; time: number }> {
+    const workspaceStats = new Map<
+        string,
+        { total: number; passed: number; failed: number; skipped: number; time: number }
+    >();
+
+    for (const testCase of cases) {
+        const workspace = testCase.workspace;
+        if (!workspace) {
+            continue;
+        }
+        let stats = workspaceStats.get(workspace);
+        if (!stats) {
+            stats = { total: 0, passed: 0, failed: 0, skipped: 0, time: 0 };
+            workspaceStats.set(workspace, stats);
+        }
+        stats.total += 1;
+        stats.time += testCase.time;
+        switch (testCase.status) {
+            case TestCaseStatus.PASSED: {
+                stats.passed += 1;
+                break;
+            }
+            case TestCaseStatus.FAILED: {
+                stats.failed += 1;
+                break;
+            }
+            case TestCaseStatus.SKIPPED: {
+                stats.skipped += 1;
+                break;
+            }
+        }
+    }
+
+    return workspaceStats;
+}
+
+/**
+ * Format a single workspace row for the report table.
+ */
+function generateWorkspaceRow(
+    workspace: string,
+    stats: { total: number; passed: number; failed: number; skipped: number; time: number }
+): string {
+    const duration = fmtTime(stats.time);
+    return `| ${workspace} | ${stats.total} | ${stats.passed} | ${stats.failed} | ${stats.skipped} | ${duration} |`;
+}
 
 /**
  * Create the report table containers with their headings pre-populated.
@@ -1207,14 +1577,20 @@ function createQualityReportTables(): ReportTableState {
         testRows: [
             "#### Test Results",
             "",
-            "| Target | Total | Passed | Failed | Skipped | New | Removed | Renamed | Duration | Coverage |",
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+            "| Target | Total | Passed | Failed | Failed (Pre-existing) | Failed (New) | Skipped | New | Removed | Renamed | Duration | Coverage |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
         ],
         qualityRows: [
             "#### Code Quality",
             "",
             "| Target | Lint Warnings | Lint Errors | Duplicated Code | Build Size | Files > 1k LoC | TODOs |",
             "| --- | ---: | ---: | ---: | ---: | ---: | ---: |"
+        ],
+        workspaceRows: [
+            "#### Test Results by Workspace",
+            "",
+            "| Workspace | Total | Passed | Failed | Skipped | Duration |",
+            "| --- | ---: | ---: | ---: | ---: | ---: |"
         ]
     };
 }
@@ -1229,20 +1605,40 @@ function addReportRowForResultSet(
         label,
         results,
         diffStats,
-        healthStats = null
+        failureBreakdown,
+        healthStats = null,
+        includeWorkspaceBreakdown = false
     }: {
         label: string;
-        results: { usedDir?: string | null; lint?: unknown; duplicates?: unknown; health?: unknown };
+        results: {
+            usedDir?: string | null;
+            lint?: unknown;
+            duplicates?: unknown;
+            health?: unknown;
+            cases?: Array<{ time: number; status: string; workspace?: string }>;
+        };
         diffStats: any;
+        failureBreakdown: unknown;
         healthStats?: unknown;
+        includeWorkspaceBreakdown?: boolean;
     }
 ): void {
     if (!results?.usedDir) {
         return;
     }
 
-    tables.testRows.push(generateTestRow(label, results, diffStats));
+    tables.testRows.push(generateTestRow(label, results, diffStats, failureBreakdown));
     tables.qualityRows.push(generateQualityRow(label, results, healthStats));
+
+    // Compute and append workspace breakdown rows
+    if (includeWorkspaceBreakdown && results.cases && results.cases.length > 0) {
+        const workspaceStats = computeWorkspaceBreakdown(results.cases);
+        // Sort workspaces alphabetically for consistent output
+        const sortedWorkspaces = Array.from(workspaceStats.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+        for (const [workspace, stats] of sortedWorkspaces) {
+            tables.workspaceRows.push(generateWorkspaceRow(workspace, stats));
+        }
+    }
 }
 
 /**
@@ -1277,8 +1673,45 @@ function resolveHeadReportLabel({ base, merged }) {
 /**
  * Format the final report markdown table with the test and quality sections.
  */
-function formatQualityReportTable({ testRows, qualityRows }: ReportTableState): string {
-    return [...testRows, "", ...qualityRows].join("\n");
+function formatQualityReportTable({ testRows, qualityRows, workspaceRows }: ReportTableState): string {
+    const parts: string[] = [...testRows, "", ...qualityRows];
+    // Only include workspace section if it has more than header rows
+    if (workspaceRows.length > 2) {
+        parts.push("", ...workspaceRows);
+    }
+    return parts.join("\n");
+}
+
+function formatRegressionComparisonFlow({
+    base,
+    head,
+    merged
+}: {
+    base: { usedDir?: string | null };
+    head: { usedDir?: string | null };
+    merged: { usedDir?: string | null };
+}): string {
+    const lines = [
+        "#### Regression Comparison Flow",
+        "",
+        "- Base: baseline snapshot used as the source of truth for historical pass/fail state.",
+        "- PR (Head): pull request head commit snapshot."
+    ];
+
+    if (merged.usedDir) {
+        lines.push(
+            "- Merged: synthetic merge snapshot for this PR event (`base.sha + head.sha`).",
+            "- Regression gate target: **Merged**."
+        );
+    } else {
+        lines.push("- Merged: unavailable for this run.", "- Regression gate target: **PR (Head)**.");
+    }
+
+    if (!base.usedDir && !head.usedDir && !merged.usedDir) {
+        lines.push("- Regression gate target: unavailable (missing required artifacts).");
+    }
+
+    return lines.join("\n");
 }
 
 function runCli(options: any = {}) {
@@ -1303,6 +1736,11 @@ function runCli(options: any = {}) {
         head: computeTestDiff(base, head),
         merge: computeTestDiff(base, merged)
     };
+    const failureBreakdowns = {
+        base: calculateFailureBreakdown(base, base),
+        head: calculateFailureBreakdown(base, head),
+        merge: calculateFailureBreakdown(base, merged)
+    };
 
     const healthStats = scanProjectHealth(workspaceRoot);
 
@@ -1311,40 +1749,56 @@ function runCli(options: any = {}) {
     addReportRowForResultSet(reportTables, {
         label: "Base",
         results: base,
-        diffStats: diffStats.base
+        diffStats: diffStats.base,
+        failureBreakdown: failureBreakdowns.base
     });
 
     addReportRowForResultSet(reportTables, {
         label: resolveHeadReportLabel({ base, merged }),
         results: head,
         diffStats: diffStats.head,
-        healthStats
+        failureBreakdown: failureBreakdowns.head,
+        healthStats,
+        includeWorkspaceBreakdown: true
     });
 
     addReportRowForResultSet(reportTables, {
         label: "Merged",
         results: merged,
-        diffStats: diffStats.merge
+        diffStats: diffStats.merge,
+        failureBreakdown: failureBreakdowns.merge
     });
 
     const table = formatQualityReportTable(reportTables);
+    const comparisonFlow = formatRegressionComparisonFlow({
+        base,
+        head,
+        merged
+    });
     console.log(table);
+    console.log(`\n${comparisonFlow}`);
 
     let exitCode = 0;
     let statusLine;
+    const lintErrorCount = Number(target.lint?.errors ?? 0);
+    const hasLintErrors = Number.isFinite(lintErrorCount) && lintErrorCount > 0;
 
-    if (base.usedDir && target.usedDir) {
+    if (hasLintErrors) {
+        exitCode = 11;
+        statusLine = `❌ Lint errors detected on gate target (${usingMerged ? "Merged" : "PR (Head)"}): ${String(lintErrorCount)}.`;
+    } else if (base.usedDir && target.usedDir) {
         const regressions = detectRegressions(base, target);
+        const gateLabel = usingMerged ? "Base → Merged" : "Base → PR (Head)";
         if (regressions.length > 0) {
             exitCode = 10;
             const cause = describeRegressionCause(regressions, diffStats[usingMerged ? "merge" : "head"]);
             const summary = summarizeRegressedTests(regressions);
-            statusLine = `❌ Test regressions detected. ${summary}. Cause: ${cause}`;
+            statusLine = `❌ Test regressions detected (${gateLabel}). ${summary}. Cause: ${cause}`;
         } else {
-            statusLine = "✅ No test regressions detected.";
+            statusLine = `✅ No test regressions detected (${gateLabel}).`;
         }
     } else {
-        statusLine = "⚠️ Unable to compare base and target results.";
+        statusLine = "⚠️ Unable to compare base and target results (missing artifacts for gate target).";
     }
 
     console.log(`\n${statusLine}`);
@@ -1355,6 +1809,8 @@ function runCli(options: any = {}) {
             "### Quality Report Summary",
             "",
             table,
+            "",
+            comparisonFlow,
             "",
             statusLine
         ].join("\n");
@@ -1418,7 +1874,72 @@ function formatDiffValue(value) {
     return value == null ? "—" : `${Math.max(0, value)}`;
 }
 
-function generateTestRow(label, results, diffStats) {
+function calculateFailureBreakdown(baseResults, targetResults) {
+    if (!baseResults?.usedDir || !targetResults?.usedDir) {
+        return null;
+    }
+
+    const baseResultMap = resolveResultsMap(baseResults);
+    const targetResultMap = resolveResultsMap(targetResults);
+
+    const baseFailedKeys = new Set();
+    const baseFailedIdentities = new Set();
+    for (const [key, baseRecord] of baseResultMap.entries()) {
+        const record = baseRecord as TestRecordEntry;
+        if (record.status !== TestCaseStatus.FAILED) {
+            continue;
+        }
+
+        baseFailedKeys.add(key);
+        const identity = buildTestRecordIdentityKey(record);
+        if (identity) {
+            baseFailedIdentities.add(identity);
+        }
+    }
+
+    let preExistingFailures = 0;
+    let newFailures = 0;
+
+    for (const [key, targetRecord] of targetResultMap.entries()) {
+        const record = targetRecord as TestRecordEntry;
+        if (record.status !== TestCaseStatus.FAILED) {
+            continue;
+        }
+
+        if (baseFailedKeys.has(key)) {
+            preExistingFailures += 1;
+            continue;
+        }
+
+        const identity = buildTestRecordIdentityKey(record);
+        if (identity && baseFailedIdentities.has(identity)) {
+            preExistingFailures += 1;
+        } else {
+            newFailures += 1;
+        }
+    }
+
+    return {
+        preExistingFailures,
+        newFailures
+    };
+}
+
+function formatFailureBreakdown(failureBreakdown) {
+    if (!failureBreakdown) {
+        return {
+            preExistingFailures: "—",
+            newFailures: "—"
+        };
+    }
+
+    return {
+        preExistingFailures: formatDiffValue(failureBreakdown.preExistingFailures),
+        newFailures: formatDiffValue(failureBreakdown.newFailures)
+    };
+}
+
+function generateTestRow(label, results, diffStats, failureBreakdown) {
     const totals = results.stats || {};
     const hasAny = totals.total > 0;
     const coverageCell = fmtCoverage(results.coverage);
@@ -1429,11 +1950,12 @@ function generateTestRow(label, results, diffStats) {
               renamedTests: formatDiffValue(diffStats.renamedTests)
           }
         : { newTests: "—", removedTests: "—", renamedTests: "—" };
+    const failureCells = formatFailureBreakdown(failureBreakdown);
 
     if (!hasAny) {
-        return `| ${label} | — | — | — | — | ${diff.newTests} | ${diff.removedTests} | ${diff.renamedTests} | — | ${coverageCell} |`;
+        return `| ${label} | — | — | — | ${failureCells.preExistingFailures} | ${failureCells.newFailures} | — | ${diff.newTests} | ${diff.removedTests} | ${diff.renamedTests} | — | ${coverageCell} |`;
     }
-    return `| ${label} | ${totals.total} | ${totals.passed} | ${totals.failed} | ${totals.skipped} | ${diff.newTests} | ${diff.removedTests} | ${diff.renamedTests} | ${fmtTime(totals.time)} | ${coverageCell} |`;
+    return `| ${label} | ${totals.total} | ${totals.passed} | ${totals.failed} | ${failureCells.preExistingFailures} | ${failureCells.newFailures} | ${totals.skipped} | ${diff.newTests} | ${diff.removedTests} | ${diff.renamedTests} | ${fmtTime(totals.time)} | ${coverageCell} |`;
 }
 
 function generateQualityRow(label, results, healthStats = null) {

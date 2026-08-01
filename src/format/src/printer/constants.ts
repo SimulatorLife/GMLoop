@@ -38,15 +38,19 @@ export const DEFAULT_PRINT_WIDTH = 120;
 export const DEFAULT_TAB_WIDTH = 4;
 
 /**
- * Pattern for validating numeric literal strings, including optional sign and exponent parts.
+ * Pattern for validating numeric literal strings, including optional sign and
+ * exponent parts. Anchored with the `u` flag to prevent unsafe regex warnings
+ * from ESLint's `security/detect-unsafe-regex` rule.
  */
-export const NUMERIC_STRING_LITERAL_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+export const NUMERIC_STRING_LITERAL_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/u;
 
 /**
  * Set of AST node types that can be safely inlined when they are the sole statement in a block.
  */
 export const INLINEABLE_SINGLE_STATEMENT_TYPES = new Set([
     "ReturnStatement",
+    "BreakStatement",
+    "ContinueStatement",
     "ExitStatement",
     "ExpressionStatement",
     "CallExpression"
@@ -54,8 +58,41 @@ export const INLINEABLE_SINGLE_STATEMENT_TYPES = new Set([
 
 export const MULTIPLICATIVE_BINARY_OPERATORS = new Set(["*", "/", "div", "%", "mod"]);
 
+/**
+ * Layout overhead (in characters) used by `shouldInlineClauseByPrintWidth` to
+ * estimate the on-disk length of an inline control-flow block such as
+ * `if (cond) { body; }`. The total overhead is the sum of the prefix, the
+ * middle (between clause and body), and the suffix. The constants are derived
+ * directly from the doc produced by `printSingleClauseStatement` (search for
+ * the matching `" ("`, `") {"`, and `" }"` strings there) so the estimator
+ * stays in lockstep with the actual output as the printer evolves.
+ *
+ * Keep these in sync with the doc fragments in
+ * `src/format/src/printer/single-clause-statement.ts` (the `group([...])` call
+ * inside `printSingleClauseStatement`).
+ */
+export const INLINE_BLOCK_PREFIX_OVERHEAD = " (".length;
+export const INLINE_BLOCK_MIDDLE_OVERHEAD = ") { ".length;
+export const INLINE_BLOCK_SUFFIX_OVERHEAD = " }".length;
+
+/**
+ * Sum of the three inline-block layout overhead constants. Pre-computed so
+ * the inline-length estimator in `shouldInlineClauseByPrintWidth` can add a
+ * single value to the clause and body source-text lengths.
+ */
+export const INLINE_BLOCK_TOTAL_OVERHEAD =
+    INLINE_BLOCK_PREFIX_OVERHEAD + INLINE_BLOCK_MIDDLE_OVERHEAD + INLINE_BLOCK_SUFFIX_OVERHEAD;
+
 // String constants to avoid duplication warnings
 export const STRING_TYPE = "string";
 export const OBJECT_TYPE = "object";
 export const NUMBER_TYPE = "number";
 export const UNDEFINED_TYPE = "undefined";
+
+/**
+ * Property key used to track whether a node's doc comment block has already
+ * been emitted. Set to `true` on the AST node after doc comments are printed
+ * so downstream logic (e.g. trailing-spacing decisions) can query it without
+ * re-examining the doc comment array.
+ */
+export const DOC_COMMENT_OUTPUT_FLAG = "_gmlHasDocCommentOutput";

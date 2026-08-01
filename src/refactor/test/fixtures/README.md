@@ -12,15 +12,15 @@ Example:
 
 ```json
 {
-  "refactor": {
-    "codemods": {
-      "loopLengthHoisting": {}
+    "refactor": {
+        "codemods": {
+            "loopLengthHoisting": {}
+        }
+    },
+    "fixture": {
+        "kind": "refactor",
+        "assertion": "project-tree"
     }
-  },
-  "fixture": {
-    "kind": "refactor",
-    "assertion": "project-tree"
-  }
 }
 ```
 

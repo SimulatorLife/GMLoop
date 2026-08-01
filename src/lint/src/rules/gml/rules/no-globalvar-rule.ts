@@ -1,18 +1,11 @@
-import * as CoreWorkspace from "@gmloop/core";
+import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import type { GmlRuleDefinition } from "../../catalog.js";
-import { createMeta, getNodeEndIndex, getNodeStartIndex, isAstNodeRecord } from "../rule-base-helpers.js";
-import { isIdentifier } from "../rule-helpers.js";
+import type { GmlRuleDefinition } from "../index.js";
+import { createMeta, isAstNodeRecord, resolveLocFromIndex } from "../rule-base-helpers.js";
 
-type GlobalVarStatementRange = Readonly<{
-    start: number;
-    end: number;
-    names: ReadonlyArray<string>;
-}>;
-
-function collectGlobalVarStatements(programNode: unknown): ReadonlyArray<GlobalVarStatementRange> {
-    const statements: Array<GlobalVarStatementRange> = [];
+function collectGlobalVarStatementStartOffsets(programNode: unknown): ReadonlyArray<number> {
+    const statementStartOffsets: Array<number> = [];
 
     const visit = (node: unknown): void => {
         if (Array.isArray(node)) {
@@ -27,47 +20,41 @@ function collectGlobalVarStatements(programNode: unknown): ReadonlyArray<GlobalV
         }
 
         if (node.type === "GlobalVarStatement") {
-            const start = getNodeStartIndex(node);
-            const endExclusive = getNodeEndIndex(node);
-            if (typeof start === "number" && typeof endExclusive === "number") {
-                const declarations = CoreWorkspace.Core.asArray<Record<string, unknown>>(node.declarations);
-                const names = declarations
-                    .map((declaration) => CoreWorkspace.Core.getIdentifierText(declaration.id ?? null))
-                    .filter((name): name is string => isIdentifier(name));
-
-                if (names.length > 0) {
-                    statements.push(
-                        Object.freeze({
-                            start,
-                            end: endExclusive,
-                            names
-                        })
-                    );
-                }
+            const start = Core.getNodeStartIndex(node);
+            if (typeof start === "number") {
+                statementStartOffsets.push(start);
             }
         }
 
-        CoreWorkspace.Core.forEachNodeChild(node, (childNode) => visit(childNode));
+        Core.forEachNodeChild(node, (childNode) => visit(childNode));
     };
 
     visit(programNode);
-    return statements;
+    return statementStartOffsets;
 }
 
 export function createNoGlobalvarRule(definition: GmlRuleDefinition): Rule.RuleModule {
     return Object.freeze({
-        meta: createMeta(definition),
+        meta: createMeta(definition, { includeFixableDefault: false }),
         create(context) {
             const listener: Rule.RuleListener = {
                 Program(programNode) {
-                    const globalVarStatements = collectGlobalVarStatements(programNode);
-
-                    for (const statement of globalVarStatements) {
-                        context.report({
-                            loc: context.sourceCode.getLocFromIndex(statement.start),
-                            messageId: definition.messageId
-                        });
+                    const globalVarStatementStartOffsets = collectGlobalVarStatementStartOffsets(programNode);
+                    if (globalVarStatementStartOffsets.length === 0) {
+                        return;
                     }
+
+                    const sourceText = context.sourceCode.text;
+                    const firstViolationLoc = resolveLocFromIndex(
+                        context,
+                        sourceText,
+                        globalVarStatementStartOffsets[0] ?? 0
+                    );
+
+                    context.report({
+                        loc: firstViolationLoc,
+                        messageId: definition.messageId
+                    });
                 }
             };
 

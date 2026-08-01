@@ -4,10 +4,9 @@ import { afterEach, describe, it, mock } from "node:test";
 import {
     disposeProgressBars,
     type ProgressBarLike,
-    type ProgressBarStream,
     renderProgressBar,
     resetProgressBarRegistryForTesting
-} from "../src/runtime-options/progress-bar.js";
+} from "../src/shared/progress-bar.js";
 
 const ESCAPE_PREFIX = String.fromCharCode(0x1b);
 const ANSI_ESCAPE_SEQUENCE_PATTERN = new RegExp(String.raw`${ESCAPE_PREFIX}\[[0-9;?]*[A-Za-z]`, "g");
@@ -48,13 +47,13 @@ void describe("manual CLI helpers", () => {
         };
 
         renderProgressBar("Task", 0, 3, 5, {
-            stdout: stdout as ProgressBarStream
+            stdout
         });
         renderProgressBar("Task", 1, 3, 5, {
-            stdout: stdout as ProgressBarStream
+            stdout
         });
         renderProgressBar("Task", 3, 3, 5, {
-            stdout: stdout as ProgressBarStream
+            stdout
         });
 
         const sanitized = writes.join("").replaceAll(ANSI_ESCAPE_SEQUENCE_PATTERN, "").replaceAll("\r", "\n");
@@ -62,6 +61,19 @@ void describe("manual CLI helpers", () => {
         assert.match(sanitized, /Task \[[^\]]*\] 0\/3/);
         assert.match(sanitized, /Task \[[^\]]*\] 1\/3/);
         assert.match(sanitized, /Task \[[^\]]*\] 3\/3/);
+    });
+
+    void it("keeps rendered fill width bounded when progress values overshoot", () => {
+        const stdout = createMockStdout();
+        const writes = [];
+        stdout.write = (chunk) => {
+            writes.push(chunk);
+        };
+
+        renderProgressBar("Task", 10, 3, 5, { stdout });
+
+        const sanitized = writes.join("").replaceAll(ANSI_ESCAPE_SEQUENCE_PATTERN, "").replaceAll("\r", "\n");
+        assert.match(sanitized, /Task \[█████\] 3\/3/);
     });
 
     void it("throws when createBar is not a function", () => {

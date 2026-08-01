@@ -9,6 +9,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Socket } from "node:net";
 
+import { DEFAULT_LIVE_RELOAD_STATUS_HOST, DEFAULT_LIVE_RELOAD_STATUS_PORT } from "../live-reload/config.js";
 import type { ServerEndpoint, ServerLifecycle } from "../server/index.js";
 import {
     DEFAULT_STATUS_HEALTH_POLICY_CONFIG,
@@ -18,13 +19,28 @@ import {
 
 export interface StatusSnapshot {
     uptime: number;
+    /** Number of patches in the bounded metrics window (capped at maxPatchHistory). */
     patchCount: number;
+    /** Cumulative count of all patches broadcast since startup (not bounded). */
+    totalPatchCount?: number;
+    /** Number of patch summaries currently retained in the history ring. */
+    patchHistorySize?: number;
+    /** Maximum number of patches retained in the history ring. */
+    maxPatchHistory?: number;
     errorCount: number;
     recentPatches: Array<{
         id: string;
         timestamp: number;
         durationMs: number;
         filePath: string;
+        /** End-to-end hot-reload latency from file-change detection to patch broadcast, when available. */
+        hotReloadLatencyMs?: number;
+        patchResult?: {
+            delivered: boolean;
+            failureCount: number;
+            successCount: number;
+            totalClients: number;
+        };
     }>;
     recentErrors: Array<{
         timestamp: number;
@@ -32,6 +48,42 @@ export interface StatusSnapshot {
         error: string;
     }>;
     websocketClients: number;
+    /** Whether the initial file scan has completed. */
+    scanComplete?: boolean;
+    /** Runtime static server URL for clients that need to reconnect after UI reloads. */
+    runtimeUrl?: string | null;
+    statusUrl?: string;
+    watchedRoot?: string;
+    websocketConnectionCount?: number;
+    websocketUrl?: string;
+    lastChangedFile?: string | null;
+    lastPatchId?: string | null;
+    lastPatchResult?: {
+        delivered: boolean;
+        failureCount: number;
+        successCount: number;
+        totalClients: number;
+    } | null;
+    transpileErrors?: Array<{
+        error: string;
+        filePath: string;
+        timestamp: number;
+    }>;
+    runtimeErrors?: Array<{
+        error: string;
+        filePath: string;
+        timestamp: number;
+    }>;
+    /** Average end-to-end hot-reload latency (ms) across all patches in the current metrics window. */
+    avgHotReloadLatencyMs?: number;
+    /** 95th-percentile end-to-end hot-reload latency (ms) across all patches in the current metrics window. */
+    p95HotReloadLatencyMs?: number;
+    /** Identity of the managed live-reload worker, present only for project sessions. */
+    liveReloadSession?: {
+        processId: number;
+        projectRoot: string;
+        sessionId: string;
+    };
 }
 
 /**
@@ -139,29 +191,14 @@ export interface StatusServerOptions {
 }
 
 /**
- * Endpoint metadata for the status server.
- *
- * Keeps address information independent from lifecycle controls so consumers
- * can depend on only what they need.
- */
-export type StatusServerEndpoint = ServerEndpoint;
-
-/**
- * Lifecycle control for the status server.
- *
- * Provides shutdown capability without coupling to endpoint metadata.
- */
-export type StatusServerLifecycle = ServerLifecycle;
-
-/**
  * Combined status server handle.
  *
  * Provided for callers that need both endpoint metadata and lifecycle control.
  */
-export type StatusServerHandle = StatusServerEndpoint & StatusServerLifecycle;
+export type StatusServerHandle = ServerEndpoint & ServerLifecycle;
 
-const DEFAULT_STATUS_HOST = "127.0.0.1";
-const DEFAULT_STATUS_PORT = 17_891;
+const DEFAULT_STATUS_HOST = DEFAULT_LIVE_RELOAD_STATUS_HOST;
+const DEFAULT_STATUS_PORT = DEFAULT_LIVE_RELOAD_STATUS_PORT;
 
 function sendJsonResponse(res: ServerResponse, statusCode: number, data: unknown): void {
     res.writeHead(statusCode, {
@@ -380,10 +417,22 @@ export async function startStatusServer({
         stop() {
             return new Promise<void>((resolve, reject) => {
                 for (const socket of activeSockets) {
+                    // Clean up individual socket listeners before destroying so the
+                    // removeSocket closure does not fire against a socket that has
+                    // already been destroyed. This prevents potential errors in the
+                    // socket event handlers during shutdown.
+                    socket.removeAllListeners("close");
+                    socket.removeAllListeners("error");
                     socket.destroy();
                 }
                 activeSockets.clear();
 
+                // Remove the "connection" listener before closing so the server
+                // stops accepting new sockets and the handler does not fire again
+                // during or after server.close(). Node emits "close" only after all
+                // existing connections have been destroyed and no more can be
+                // accepted, but the handler should not remain registered regardless.
+                server.removeAllListeners("connection");
                 server.close((err) => {
                     if (err) {
                         reject(err);

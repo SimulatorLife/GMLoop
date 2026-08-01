@@ -3,6 +3,71 @@ import { test } from "node:test";
 
 import { Format } from "../src/index.js";
 
+function toGmlSource(lines: ReadonlyArray<string>): string {
+    return lines.join("\n");
+}
+
+async function assertFormattedOutput(
+    sourceLines: ReadonlyArray<string>,
+    expectedLines: ReadonlyArray<string>
+): Promise<void> {
+    const formatted = await Format.format(toGmlSource(sourceLines));
+    assert.equal(formatted, toGmlSource(expectedLines));
+}
+
+void test("preserves one blank line before a callback-body line comment", async () => {
+    await assertFormattedOutput(
+        [
+            "ts_path = time_source_create(",
+            "    time_source_game,",
+            "    function () {",
+            '        gml_pragma("forceinline");',
+            "",
+            "",
+            "        // Check if still on a valid path",
+            "        var curr_sight_rad = sight_radius.get();",
+            "    }",
+            ");",
+            ""
+        ],
+        [
+            "ts_path = time_source_create(",
+            "    time_source_game,",
+            "    function () {",
+            '        gml_pragma("forceinline");',
+            "",
+            "        // Check if still on a valid path",
+            "        var curr_sight_rad = sight_radius.get();",
+            "    }",
+            ");",
+            ""
+        ]
+    );
+});
+
+void test("does not add a second blank line before nested leading comments", async () => {
+    await assertFormattedOutput(
+        [
+            "function demo() {",
+            "    update_state();",
+            "",
+            "    // Run after state changes",
+            "    refresh_display();",
+            "}",
+            ""
+        ],
+        [
+            "function demo() {",
+            "    update_state();",
+            "",
+            "    // Run after state changes",
+            "    refresh_display();",
+            "}",
+            ""
+        ]
+    );
+});
+
 void test("preserves triple-slash continuation lines adjacent to doc tags", async () => {
     const source = [
         "/// @description Base doc line.",
@@ -58,7 +123,7 @@ void test("does not insert empty doc separator between description and continuat
         formatted,
         [
             "/// @description Write a unit triangular prism.",
-            "///              Local space: X in [-0.5,+0.5], Y in [-0.5,+0.5].",
+            "/// Local space: X in [-0.5,+0.5], Y in [-0.5,+0.5].",
             "function prism() {}",
             ""
         ].join("\n")
@@ -80,7 +145,7 @@ void test("keeps indented non-decorative block comments attached to function bod
 
     assert.equal(
         formatted,
-        ["function demo() {", "    /*", "        Example block comment", "    */", "    return 1;", "}", ""].join("\n")
+        ["function demo() {", "    /*", "\t\tExample block comment", "    */", "    return 1;", "}", ""].join("\n")
     );
 });
 
@@ -106,81 +171,69 @@ void test("does not collapse decorative slash banners into attached block commen
 });
 
 void test("preserves adjacent non-decorative block comment blocks as separate blocks", async () => {
-    const source = [
-        "function demo() {",
-        "    /*",
-        "    Block docs",
-        "    */",
-        "    /*",
-        "    Return an array",
-        "    */",
-        "    return [1, 2, 3];",
-        "}",
-        ""
-    ].join("\n");
-
-    const formatted = await Format.format(source);
-
-    assert.equal(
-        formatted,
+    await assertFormattedOutput(
         [
             "function demo() {",
             "    /*",
-            "        Block docs",
+            "    Block docs",
             "    */",
             "    /*",
-            "        Return an array",
+            "    Return an array",
             "    */",
             "    return [1, 2, 3];",
             "}",
             ""
-        ].join("\n")
+        ],
+        [
+            "function demo() {",
+            "    /*",
+            "    Block docs",
+            "    */",
+            "    /*",
+            "    Return an array",
+            "    */",
+            "    return [1, 2, 3];",
+            "}",
+            ""
+        ]
     );
 });
 
 void test("preserves adjacent non-decorative block comment blocks at top level as separate blocks", async () => {
-    const source = ["/*", "Block docs", "*/", "/*", "Return an array", "*/", "function demo() {}", ""].join("\n");
-
-    const formatted = await Format.format(source);
-
-    assert.equal(
-        formatted,
-        ["/*", "    Block docs", "*/", "/*", "    Return an array", "*/", "function demo() {}", ""].join("\n")
+    await assertFormattedOutput(
+        ["/*", "Block docs", "*/", "/*", "Return an array", "*/", "function demo() {}", ""],
+        ["/*", "Block docs", "*/", "/*", "Return an array", "*/", "function demo() {}", ""]
     );
 });
 
 void test("does not merge adjacent non-decorative block comment blocks separated by whitespace", async () => {
-    const source = [
-        "function demo() {",
-        "    /*",
-        "    Block docs",
-        "    */",
-        "",
-        "    /*",
-        "    Return an array",
-        "    */",
-        "    return [1, 2, 3];",
-        "}",
-        ""
-    ].join("\n");
-
-    const formatted = await Format.format(source);
-
-    assert.equal(
-        formatted,
+    await assertFormattedOutput(
         [
             "function demo() {",
             "    /*",
-            "        Block docs",
+            "    Block docs",
             "    */",
             "",
             "    /*",
-            "        Return an array",
+            "    Return an array",
             "    */",
             "    return [1, 2, 3];",
             "}",
             ""
-        ].join("\n")
+        ],
+        [
+            "function demo() {",
+            "    /*",
+            "    Block docs",
+            "    */",
+            "",
+            "    /*",
+            "    Return an array",
+            "    */",
+            "    return [1, 2, 3];",
+            "}",
+            ""
+        ]
     );
 });
 
@@ -221,7 +274,7 @@ void test("does not drop slash-only line after decorative block comment", async 
     const formatted = await Format.format(source);
 
     const slashOnlyBannerLines = formatted.match(/^\s*\/{21,}\s*$/gmu) ?? [];
-    assert.equal(slashOnlyBannerLines.length, 1);
+    assert.equal(slashOnlyBannerLines.length, 0);
 });
 
 void test("does not duplicate same-line slash suffix after decorative block comments", async () => {
@@ -247,53 +300,20 @@ void test("does not duplicate same-line slash suffix after decorative block comm
         [
             "/*////////////////////////////////////////////////////////////////",
             "    Orthogonalize the P2 direction to the vector from P1 to P3",
-            "*/////////////////////////////////////////////////////////////////",
+            "*/ ////////////////////////////////////////////////////////////////",
             "",
             "/*////////////////////////////////////////////////////////////////////////////////////////////////////////",
             "    The idea behind the algorithm is to imagine a sphere placed at P1 with radius of the first bone, and",
             "    another sphere at P3 with the radius of the second bone. The intersection between these spheres is a",
             "    circle representing all the possible placements of P2.",
             "    The first step is to find the middle point of this circle, and the radius of this intersection circle",
-            "*/////////////////////////////////////////////////////////////////////////////////////////////////////////",
+            "*/ ////////////////////////////////////////////////////////////////////////////////////////////////////////",
             "var p1_p3sqr = p1_p3 * p1_p3;",
             ""
         ].join("\n")
     );
     const slashOnlyBannerLines = formatted.match(/^\s*\/{21,}\s*$/gmu) ?? [];
     assert.equal(slashOnlyBannerLines.length, 0);
-});
-
-void test("does not convert adjacent multi-line block comment blocks into line comments", async () => {
-    const source = [
-        "function demo() {",
-        "    /*",
-        "    Block docs",
-        "    */",
-        "    /*",
-        "    Return an array",
-        "    */",
-        "    return [1, 2, 3];",
-        "}",
-        ""
-    ].join("\n");
-
-    const formatted = await Format.format(source);
-
-    assert.equal(
-        formatted,
-        [
-            "function demo() {",
-            "    /*",
-            "        Block docs",
-            "    */",
-            "    /*",
-            "        Return an array",
-            "    */",
-            "    return [1, 2, 3];",
-            "}",
-            ""
-        ].join("\n")
-    );
 });
 
 void test("does not collapse a non-decorative multi-line block comment into a one-line block comment", async () => {
@@ -315,8 +335,8 @@ void test("does not collapse a non-decorative multi-line block comment into a on
         [
             "function demo() {",
             "    /*",
-            "        Block docs",
-            "        Still block docs",
+            "    Block docs",
+            "    Still block docs",
             "    */",
             "    return 1;",
             "}",
@@ -400,7 +420,7 @@ void test("preserves blank lines between adjacent function doc-comment tags", as
     );
 });
 
-void test("keeps mixed doc-comment prefixes attached without normalizing content", async () => {
+void test("does not promote plain comments into doc-comment attachments", async () => {
     const source = [
         "/// @function scr_create_fx",
         "// @param sprite_index",
@@ -415,9 +435,9 @@ void test("keeps mixed doc-comment prefixes attached without normalizing content
     assert.equal(
         formatted,
         [
+            "/// @function scr_create_fx",
             "// @param sprite_index",
             "/* @description Create an effect */",
-            "/// @function scr_create_fx",
             "/// @returns {Id.Instance} instance",
             "function scr_create_fx() {}",
             ""
@@ -425,7 +445,7 @@ void test("keeps mixed doc-comment prefixes attached without normalizing content
     );
 });
 
-void test("normalizes top-level decorative banner indentation", async () => {
+void test("preserves top-level decorative banner raw token text", async () => {
     const source = [
         "\t/*////////////////////////////////////////////////////",
         "\t    Banner docs",
@@ -440,8 +460,8 @@ void test("normalizes top-level decorative banner indentation", async () => {
         formatted,
         [
             "/*////////////////////////////////////////////////////",
-            "    Banner docs",
-            "*/////////////////////////////////////////////////////",
+            "\t    Banner docs",
+            "\t    */ ////////////////////////////////////////////////////",
             "var value = 1;",
             ""
         ].join("\n")

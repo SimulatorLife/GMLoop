@@ -1,7 +1,9 @@
 enum FRUIT {
     APPLE,
     BANANA,
+    BANANA,
     CHERRY,
+    DATE,
     DATE = 5
 }
 

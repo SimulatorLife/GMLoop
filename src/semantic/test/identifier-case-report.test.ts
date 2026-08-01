@@ -7,7 +7,7 @@ import { describe, it } from "node:test";
 import {
     clearIdentifierCaseDryRunContexts,
     setIdentifierCaseDryRunContext
-} from "../src/identifier-case/identifier-case-context.js";
+} from "../src/identifier-case/identifier-case-helpers.js";
 import {
     maybeReportIdentifierCaseDryRun,
     summarizeIdentifierCasePlan
@@ -368,5 +368,58 @@ void describe("summarizeIdentifierCasePlan sort ordering", () => {
         assert.equal(refs[0].filePath, "objects/a_object.gml");
         assert.equal(refs[1].filePath, "scripts/m_script.gml");
         assert.equal(refs[2].filePath, "scripts/z_script.gml");
+    });
+
+    void it("preserves caller-owned operation, conflict, and reference ordering while returning sorted copies", () => {
+        const references = [
+            { filePath: "scripts/z_script.gml", occurrences: 1 },
+            { filePath: "objects/a_object.gml", occurrences: 2 }
+        ];
+        const operations = [
+            {
+                id: "op-z",
+                scope: { displayName: "z.scope" },
+                from: { name: "zeta" },
+                to: { name: "Zeta" },
+                references
+            },
+            {
+                id: "op-a",
+                scope: { displayName: "a.scope" },
+                from: { name: "alpha" },
+                to: { name: "Alpha" },
+                references: []
+            }
+        ];
+        const conflicts = [
+            {
+                severity: "warning",
+                message: "warning message",
+                scope: { displayName: "scope.b" },
+                suggestions: []
+            },
+            {
+                severity: "error",
+                message: "error message",
+                scope: { displayName: "scope.a" },
+                suggestions: []
+            }
+        ];
+
+        const result = summarizeIdentifierCasePlan({ renamePlan: { operations }, conflicts });
+
+        assert.equal(operations[0].id, "op-z");
+        assert.equal(operations[1].id, "op-a");
+        assert.equal(references[0].filePath, "scripts/z_script.gml");
+        assert.equal(references[1].filePath, "objects/a_object.gml");
+        assert.equal(conflicts[0].severity, "warning");
+        assert.equal(conflicts[1].severity, "error");
+
+        assert.equal(result.operations[0].id, "op-a");
+        assert.equal(result.operations[1].id, "op-z");
+        assert.equal(result.operations[1].references[0].filePath, "objects/a_object.gml");
+        assert.equal(result.operations[1].references[1].filePath, "scripts/z_script.gml");
+        assert.equal(result.conflicts[0].severity, "error");
+        assert.equal(result.conflicts[1].severity, "warning");
     });
 });

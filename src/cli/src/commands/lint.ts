@@ -6,15 +6,30 @@ import process from "node:process";
 import { Core } from "@gmloop/core";
 import * as LintWorkspace from "@gmloop/lint";
 import { Command } from "commander";
-import { ESLint } from "eslint";
+import { ESLint, type Linter } from "eslint";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import type { CommanderCommandLike } from "../cli-core/commander-types.js";
 import {
+    createConfigOption,
+    createListOption,
+    createPathOption,
+    createVerboseOption,
+    PATH_OPTION_FLAGS,
+    WRITE_OPTION_DESCRIPTION,
+    WRITE_OPTION_FLAGS
+} from "../cli-core/shared-command-options.js";
+import {
     calculateElapsedNanoseconds,
     formatElapsedNanosecondsAsMilliseconds,
     readMonotonicNanoseconds
-} from "../shared/elapsed-time.js";
+} from "../shared/timing/verbose-timing.js";
+import { formatPathForDisplay } from "../workflow/display-path.js";
+import {
+    discoverProjectRoot,
+    resolveExistingGmloopConfigPath,
+    resolveWorkflowTargetPath
+} from "../workflow/project-root.js";
 
 const FLAT_CONFIG_CANDIDATES = Object.freeze([
     "eslint.config.js",
@@ -29,22 +44,68 @@ const SUPPORTED_FORMATTERS = new Set(["stylish", "json", "checkstyle"]);
 const GML_FILE_EXTENSION = ".gml";
 const LINT_RUNTIME_ERROR_RULE_ID = "gml/internal-runtime-error";
 
-const LINT_COMMAND_CLI_EXAMPLE = "pnpm dlx prettier-plugin-gml lint path/to/project";
-const LINT_COMMAND_FIX_EXAMPLE = "pnpm dlx prettier-plugin-gml lint --fix path/to/project";
-const LINT_COMMAND_CI_EXAMPLE = `pnpm dlx prettier-plugin-gml lint --max-warnings 0 path/to/script${GML_FILE_EXTENSION}`;
+/**
+ * Enumerate all directory paths under a root by walking breadth-first.
+ *
+ * The search uses a mutable queue internally (the same primitive used for
+ * tree-level directory traversal) but is wrapped in a pure interface so
+ * callers are isolated from the bookkeeping state. Each yielded path has been
+ * confirmed as a directory via `readdirSync`.
+ *
+ * @param rootDirectoryPath - The topmost directory to search.
+ * @yields Absolute paths of every directory at or beneath `rootDirectoryPath`.
+ */
+function* walkDirectoryTree(rootDirectoryPath: string): Generator<string> {
+    const pending: Array<string> = [rootDirectoryPath];
+
+    while (pending.length > 0) {
+        const currentDirectory = pending.shift();
+        if (!currentDirectory) {
+            continue;
+        }
+
+        let entries: Array<{ name: string; isDirectory(): boolean }>;
+        try {
+            entries = readdirSync(currentDirectory, { withFileTypes: true });
+        } catch {
+            continue;
+        }
+
+        for (const entry of entries) {
+            if (!entry.isDirectory()) {
+                continue;
+            }
+
+            if (Core.DEFAULT_PROJECT_EXCLUDES.directoryNames.includes(entry.name)) {
+                continue;
+            }
+
+            const entryPath = path.join(currentDirectory, entry.name);
+            pending.push(entryPath);
+            yield entryPath;
+        }
+    }
+}
+
+const LINT_COMMAND_CLI_EXAMPLE = "pnpm dlx gmloop lint path/to/project";
+const LINT_COMMAND_FIX_EXAMPLE = `pnpm dlx gmloop lint ${WRITE_OPTION_FLAGS} path/to/project`;
+const LINT_COMMAND_CI_EXAMPLE = `pnpm dlx gmloop lint --max-warnings 0 path/to/script${GML_FILE_EXTENSION}`;
 
 const LINT_NAMESPACE = LintWorkspace.Lint;
 
 type LintCommandOptions = {
-    fix?: boolean;
+    write?: boolean;
+    warnIgnored?: boolean;
     formatter?: string;
     maxWarnings?: number;
     quiet?: boolean;
     config?: string;
     noDefaultConfig?: boolean;
     verbose?: boolean;
-    project?: string;
+    path?: string;
     projectStrict?: boolean;
+    allowParseErrors?: boolean;
+    list?: boolean;
 };
 
 type DiscoveryResult = {
@@ -99,9 +160,65 @@ function normalizeFormatterName(formatter: string | undefined): string {
     return formatter.toLowerCase();
 }
 
-function normalizeLintTargets(command: CommanderCommandLike): Array<string> {
+async function normalizeLintTargets(command: CommanderCommandLike): Promise<Array<string>> {
     const args = Array.isArray(command.args) ? command.args : [];
-    return args.length > 0 ? args : ["."];
+    if (args.length > 0) {
+        return args;
+    }
+
+    const options = (command.opts?.() ?? {}) as { path?: unknown };
+    return [
+        await resolveWorkflowTargetPath({
+            explicitPath: typeof options.path === "string" ? options.path : undefined,
+            fallbackPath: ".",
+            scope: "file"
+        })
+    ];
+}
+
+function formatLintTargetLocation(targets: ReadonlyArray<string>): string {
+    if (targets.length === 0) {
+        return "for the provided paths";
+    }
+
+    if (targets.length === 1) {
+        return `in ${targets[0]}`;
+    }
+
+    return `across ${targets.length} paths`;
+}
+
+function emitNoLintableFilesMessage(targets: ReadonlyArray<string>): void {
+    const location = formatLintTargetLocation(targets);
+    console.warn(
+        `No ${GML_FILE_EXTENSION} files were linted ${location}. ` +
+            `Lint only processes ${GML_FILE_EXTENSION} sources. ` +
+            "Provide a file or directory containing .gml files, for example: " +
+            "pnpm dlx gmloop lint path/to/project."
+    );
+}
+
+/**
+ * Render the error surfaced when the user passes a path that points at an
+ * existing file which is not a `.gml` source. The lint command is scoped to
+ * GameMaker Language files, so accepting other extensions would silently run
+ * ESLint with whatever config the caller happens to have on disk (often a
+ * TypeScript or JavaScript config), reporting misleading diagnostics under
+ * the "lint" banner. Reject those paths explicitly so users get an immediate,
+ * actionable error instead.
+ *
+ * @param rejectedPaths - File paths the user supplied that exist on disk but
+ *   do not end in `.gml`.
+ * @returns A multi-line error message that names each offending path, lists
+ *   the supported extensions, and points the caller at the fix.
+ */
+function formatRejectedNonGmlPathsMessage(rejectedPaths: ReadonlyArray<string>): string {
+    const pathSummary = rejectedPaths.length === 1 ? rejectedPaths[0] : rejectedPaths.join("\n");
+    return [
+        `The 'lint' command only processes ${GML_FILE_EXTENSION} files, but the following path(s) point to other file types:`,
+        pathSummary,
+        `Pass a ${GML_FILE_EXTENSION} file, a directory containing ${GML_FILE_EXTENSION} sources, or use '--path' to point at a GameMaker project (.yyp) or directory. Use a regular ESLint invocation to lint non-${GML_FILE_EXTENSION} sources.`
+    ].join("\n");
 }
 
 function shouldPreferBundledDefaultsForExternalTargets(parameters: {
@@ -115,6 +232,9 @@ function shouldPreferBundledDefaultsForExternalTargets(parameters: {
     const cwdAbsolute = path.resolve(parameters.cwd);
     return parameters.targets.every((target) => {
         const absoluteTarget = path.resolve(parameters.cwd, target);
+        if (absoluteTarget.includes(`${path.sep}vendor${path.sep}`)) {
+            return true;
+        }
         return !Core.isPathInside(absoluteTarget, cwdAbsolute);
     });
 }
@@ -166,37 +286,90 @@ function resolveEslintCwd(parameters: { cwd: string; targets: ReadonlyArray<stri
     return findCommonAncestorDirectory(targetDirectories);
 }
 
-function validateForcedProjectPath(forcedProjectPath: string | null): string | null {
+async function resolveForcedProjectRootFromPathOption(forcedProjectPath: string | null): Promise<{
+    forcedProjectRoot: string | null;
+    validationError: string | null;
+}> {
     if (!forcedProjectPath) {
-        return null;
+        return {
+            forcedProjectRoot: null,
+            validationError: null
+        };
     }
 
     const resolvedPath = path.resolve(forcedProjectPath);
-    if (!existsSync(resolvedPath)) {
-        return `Forced project path does not exist: ${resolvedPath}`;
+    if (resolvedPath.toLowerCase().endsWith(".yyp")) {
+        if (!existsSync(resolvedPath)) {
+            return {
+                forcedProjectRoot: null,
+                validationError: `Forced project .yyp path does not exist: ${resolvedPath}`
+            };
+        }
+
+        let yypStats: ReturnType<typeof statSync>;
+        try {
+            yypStats = statSync(resolvedPath);
+        } catch (error) {
+            return {
+                forcedProjectRoot: null,
+                validationError: `Unable to inspect forced project .yyp path ${resolvedPath}: ${Core.getErrorMessage(
+                    error
+                )}`
+            };
+        }
+
+        if (!yypStats.isFile()) {
+            return {
+                forcedProjectRoot: null,
+                validationError: `Forced project .yyp path must be a file: ${resolvedPath}`
+            };
+        }
+
+        return {
+            forcedProjectRoot: path.dirname(resolvedPath),
+            validationError: null
+        };
     }
 
     let resolvedStats: ReturnType<typeof statSync>;
+    if (!existsSync(resolvedPath)) {
+        return {
+            forcedProjectRoot: null,
+            validationError: `Forced project path does not exist: ${resolvedPath}`
+        };
+    }
+
     try {
         resolvedStats = statSync(resolvedPath);
     } catch (error) {
-        return `Unable to inspect forced project path ${resolvedPath}: ${
-            Core.isErrorLike(error) ? error.message : String(error)
-        }`;
+        return {
+            forcedProjectRoot: null,
+            validationError: `Unable to inspect forced project path ${resolvedPath}: ${Core.getErrorMessage(error)}`
+        };
     }
 
-    if (resolvedPath.toLowerCase().endsWith(".yyp")) {
-        if (!resolvedStats.isFile()) {
-            return `Forced project .yyp path must be a file: ${resolvedPath}`;
-        }
-        return null;
+    if (resolvedStats.isDirectory()) {
+        return {
+            forcedProjectRoot: resolvedPath,
+            validationError: null
+        };
     }
 
-    if (!resolvedStats.isDirectory()) {
-        return `Forced project path must be a directory or .yyp file: ${resolvedPath}`;
+    if (resolvedStats.isFile() && resolvedPath.toLowerCase().endsWith(GML_FILE_EXTENSION)) {
+        const forcedProjectRoot = await discoverProjectRoot({
+            explicitProjectPath: resolvedPath
+        });
+
+        return {
+            forcedProjectRoot,
+            validationError: null
+        };
     }
 
-    return null;
+    return {
+        forcedProjectRoot: null,
+        validationError: `Forced project path must be a directory, .yyp file, or ${GML_FILE_EXTENSION} file: ${resolvedPath}`
+    };
 }
 
 type LintRuntimeFailureLocation = Readonly<{
@@ -257,51 +430,64 @@ type LintTargetCompletionHandler = (completion: {
 
 type LintProgressLineWriter = (line: string) => void;
 
+/**
+ * Collect all .gml file paths under a root directory.
+ *
+ * Delegates breadth-first tree traversal to `walkDirectoryTree` so this
+ * function is responsible only for the file-filter step — no queue bookkeeping
+ * lives inline here.
+ *
+ * @param directoryPath - Root directory to search recursively.
+ * @returns Sorted array of absolute file paths with the `.gml` extension.
+ */
 function collectGmlFilesFromDirectory(directoryPath: string): Array<string> {
     const discoveredFilePaths: Array<string> = [];
-    const pendingDirectories = [directoryPath];
 
-    while (pendingDirectories.length > 0) {
-        const currentDirectory = pendingDirectories.pop();
-        if (!currentDirectory) {
-            continue;
-        }
+    // walkDirectoryTree yields subdirectories; the root itself must be scanned
+    // for files before the generator descends into its children.
+    scanDirectoryForGmlFiles(directoryPath, discoveredFilePaths);
 
-        let entries: Array<{ name: string; isDirectory(): boolean; isFile(): boolean }>;
-        try {
-            entries = readdirSync(currentDirectory, { withFileTypes: true });
-        } catch {
-            continue;
-        }
-
-        for (const entry of entries) {
-            const entryPath = path.join(currentDirectory, entry.name);
-            if (entry.isDirectory()) {
-                pendingDirectories.push(entryPath);
-                continue;
-            }
-
-            if (!entry.isFile()) {
-                continue;
-            }
-
-            if (!entry.name.toLowerCase().endsWith(GML_FILE_EXTENSION)) {
-                continue;
-            }
-
-            discoveredFilePaths.push(entryPath);
-        }
+    for (const currentDirectory of walkDirectoryTree(directoryPath)) {
+        scanDirectoryForGmlFiles(currentDirectory, discoveredFilePaths);
     }
 
     return discoveredFilePaths.sort((leftPath, rightPath) => leftPath.localeCompare(rightPath));
 }
 
+/**
+ * Scan a single directory for `.gml` files and push their absolute paths into `out`.
+ *
+ * Separated from `collectGmlFilesFromDirectory` so the root directory and each
+ * discovered subdirectory are handled by the same file-scanning logic.
+ */
+function scanDirectoryForGmlFiles(directoryPath: string, out: Array<string>): void {
+    let entries: Array<{ name: string; isFile(): boolean }>;
+    try {
+        entries = readdirSync(directoryPath, { withFileTypes: true });
+    } catch {
+        return;
+    }
+
+    for (const entry of entries) {
+        if (!entry.isFile()) {
+            continue;
+        }
+
+        if (!entry.name.toLowerCase().endsWith(GML_FILE_EXTENSION)) {
+            continue;
+        }
+
+        out.push(path.join(directoryPath, entry.name));
+    }
+}
+
 function expandLintTargetsForRecovery(parameters: {
     cwd: string;
     targets: ReadonlyArray<string>;
-}): Readonly<{ fileTargets: Array<string>; passthroughTargets: Array<string> }> {
+}): Readonly<{ fileTargets: Array<string>; passthroughTargets: Array<string>; rejectedPaths: Array<string> }> {
     const fileTargetSet = new Set<string>();
     const passthroughTargets: Array<string> = [];
+    const rejectedPaths: Array<string> = [];
 
     for (const target of parameters.targets) {
         const absoluteTarget = path.resolve(parameters.cwd, target);
@@ -329,7 +515,7 @@ function expandLintTargetsForRecovery(parameters: {
             if (absoluteTarget.toLowerCase().endsWith(GML_FILE_EXTENSION)) {
                 fileTargetSet.add(absoluteTarget);
             } else {
-                passthroughTargets.push(target);
+                rejectedPaths.push(target);
             }
             continue;
         }
@@ -339,7 +525,8 @@ function expandLintTargetsForRecovery(parameters: {
 
     return Object.freeze({
         fileTargets: [...fileTargetSet.values()],
-        passthroughTargets: [...new Set(passthroughTargets).values()]
+        passthroughTargets: [...new Set(passthroughTargets).values()],
+        rejectedPaths: [...new Set(rejectedPaths).values()]
     });
 }
 
@@ -548,21 +735,41 @@ function normalizeMaxWarnings(rawValue: unknown): number {
 
 function resolveCommandOptions(command: CommanderCommandLike): Required<Omit<LintCommandOptions, "config">> & {
     config: string | null;
-    project: string | null;
+    path: string | null;
 } {
     const options = (command.opts() ?? {}) as LintCommandOptions;
 
     return {
-        fix: options.fix === true,
+        write: options.write === true,
+        warnIgnored: options.warnIgnored === true,
         formatter: normalizeFormatterName(options.formatter),
         maxWarnings: normalizeMaxWarnings(options.maxWarnings),
         quiet: options.quiet === true,
         config: typeof options.config === "string" && options.config.length > 0 ? options.config : null,
         noDefaultConfig: options.noDefaultConfig === true,
         verbose: options.verbose === true,
-        project: typeof options.project === "string" && options.project.length > 0 ? options.project : null,
-        projectStrict: options.projectStrict === true
+        path: typeof options.path === "string" && options.path.length > 0 ? options.path : null,
+        list: options.list === true,
+        projectStrict: options.projectStrict === true,
+        allowParseErrors: options.allowParseErrors === true
     };
+}
+
+function printLintCommandSettings(
+    options: ReturnType<typeof resolveCommandOptions>,
+    targets: ReadonlyArray<string>
+): void {
+    const targetSummary = targets.length > 0 ? targets.join(", ") : ".";
+    console.log(`Targets: ${targetSummary}`);
+    console.log(`Path override: ${options.path ?? "(auto-discover from cwd/targets)"}`);
+    console.log(`Project strict mode: ${options.projectStrict ? "enabled" : "disabled"}`);
+    console.log(`Fix mode: ${options.write ? "enabled (--write)" : "disabled (preview/default)"}`);
+    console.log(`Formatter: ${options.formatter}`);
+    console.log(`Max warnings: ${String(options.maxWarnings)}`);
+    console.log(`Config path: ${options.config ?? "(auto-discover or bundled default)"}`);
+    console.log(`Default config fallback: ${options.noDefaultConfig ? "disabled" : "enabled"}`);
+    console.log(`Warn ignored files: ${options.warnIgnored ? "enabled" : "disabled"}`);
+    console.log(`Verbose mode: ${options.verbose ? "enabled" : "disabled"}`);
 }
 
 function printFallbackMessageIfNeeded(parameters: { quiet: boolean; searchedPaths: Array<string> }): void {
@@ -620,6 +827,21 @@ type LintTotals = {
 
 /** Minimal shape of a lint result needed for aggregating totals. */
 type LintResultCountFields = Pick<ESLint.LintResult, "errorCount" | "fatalErrorCount" | "warningCount">;
+type LintResultMessageFields = Pick<ESLint.LintResult, "messages">;
+type LintAggregateOptions = {
+    allowParseErrors: boolean;
+};
+
+function countFatalParseMessages(result: LintResultMessageFields): number {
+    const messages = Array.isArray(result.messages) ? result.messages : [];
+    return messages.filter((message) => {
+        if (message?.fatal !== true) {
+            return false;
+        }
+
+        return typeof message.message === "string" && message.message.startsWith("Parsing error:");
+    }).length;
+}
 
 /** Minimal shape of a lint result needed for path-based filtering. */
 type LintResultPathField = Pick<ESLint.LintResult, "filePath">;
@@ -629,12 +851,20 @@ type LintResultPathField = Pick<ESLint.LintResult, "filePath">;
  * `fatalErrorCount` (parse failures) is folded into `errorCount` because
  * ESLint itself treats fatal errors as errors when computing exit codes.
  */
-function aggregateLintTotals(results: ReadonlyArray<LintResultCountFields>): LintTotals {
+function aggregateLintTotals(
+    results: ReadonlyArray<LintResultCountFields & LintResultMessageFields>,
+    options: LintAggregateOptions
+): LintTotals {
     return results.reduce<LintTotals>(
-        (accumulator, result) => ({
-            errorCount: accumulator.errorCount + result.errorCount + result.fatalErrorCount,
-            warningCount: accumulator.warningCount + result.warningCount
-        }),
+        (accumulator, result) => {
+            const ignoredParseErrorCount = options.allowParseErrors ? countFatalParseMessages(result) : 0;
+            const effectiveErrorCount = Math.max(0, result.errorCount - ignoredParseErrorCount);
+            const effectiveFatalErrorCount = Math.max(0, result.fatalErrorCount - ignoredParseErrorCount);
+            return {
+                errorCount: accumulator.errorCount + effectiveErrorCount + effectiveFatalErrorCount,
+                warningCount: accumulator.warningCount + result.warningCount
+            };
+        },
         { errorCount: 0, warningCount: 0 }
     );
 }
@@ -644,19 +874,9 @@ function setProcessExitCode(code: number): void {
 }
 
 function toLintProgressDisplayPath(parameters: { cwd: string; filePath: string }): string {
-    const absoluteFilePath = path.resolve(parameters.filePath);
-    const absoluteCwd = path.resolve(parameters.cwd);
-    const relativePath = path.relative(absoluteCwd, absoluteFilePath);
-
-    if (absoluteFilePath === absoluteCwd) {
-        return ".";
-    }
-
-    if (relativePath.length > 0 && !relativePath.startsWith("..") && !path.isAbsolute(relativePath)) {
-        return relativePath;
-    }
-
-    return absoluteFilePath;
+    return formatPathForDisplay(parameters.filePath, {
+        cwd: parameters.cwd
+    });
 }
 
 function emitLintFixProgressForResults(parameters: {
@@ -731,6 +951,22 @@ function emitVerboseLintRunTimingSummary(parameters: {
     );
 }
 
+/**
+ * Print a confirmation message when all linted files pass with no diagnostics.
+ *
+ * The message mirrors the `format` command's "All matched files are already
+ * formatted." signal, giving users and CI pipelines an unambiguous success
+ * indicator instead of a silent exit.  It is intentionally suppressed when:
+ * - the ESLint formatter already produced visible output (e.g. the `json` and
+ *   `checkstyle` formatters always emit content, so they don't need an extra
+ *   line); or
+ * - `--quiet` is active (callers have explicitly opted for minimal output).
+ */
+function emitLintCleanSummary(fileCount: number): void {
+    const fileLabel = fileCount === 1 ? "file" : "files";
+    console.log(`✓ ${fileCount} ${fileLabel} checked, no problems found.`);
+}
+
 function toEslintOverrideConfig(): NonNullable<ConstructorParameters<typeof ESLint>[0]>["overrideConfig"] {
     const entries = LINT_NAMESPACE.configs.recommended.map((entry) => ({
         ...entry,
@@ -740,8 +976,52 @@ function toEslintOverrideConfig(): NonNullable<ConstructorParameters<typeof ESLi
     return entries as NonNullable<ConstructorParameters<typeof ESLint>[0]>["overrideConfig"];
 }
 
+function mergeProjectLintRuleEntriesIntoRecommendedConfig(
+    lintRuleEntries: Readonly<Record<string, Linter.RuleEntry>>
+): NonNullable<ConstructorParameters<typeof ESLint>[0]>["overrideConfig"] {
+    const mergedOverrideEntries = LINT_NAMESPACE.configs.recommended.map((entry) => {
+        if (!entry.rules) {
+            return entry;
+        }
+
+        return {
+            ...entry,
+            rules: {
+                ...entry.rules,
+                ...lintRuleEntries
+            }
+        };
+    });
+
+    return mergedOverrideEntries as NonNullable<ConstructorParameters<typeof ESLint>[0]>["overrideConfig"];
+}
+
+async function loadGmloopProjectLintOverrideConfig(
+    gmloopConfigPath: string
+): Promise<NonNullable<ConstructorParameters<typeof ESLint>[0]>["overrideConfig"]> {
+    const gmloopConfig = await Core.loadGmloopProjectConfig(gmloopConfigPath);
+    const lintRuleEntries = LINT_NAMESPACE.configs.createLintRuleEntriesFromProjectConfig(gmloopConfig);
+    return mergeProjectLintRuleEntriesIntoRecommendedConfig(lintRuleEntries);
+}
+
+function resolveOptionalGmloopConfigPath(searchRoot: string): string | null {
+    for (const directory of Core.walkAncestorDirectories(searchRoot, { includeSelf: true })) {
+        const candidatePath = path.join(directory, "gmloop.json");
+        try {
+            const stats = statSync(candidatePath);
+            if (stats.isFile()) {
+                return candidatePath;
+            }
+        } catch {
+            // Keep walking ancestors until a project config is found.
+        }
+    }
+
+    return null;
+}
+
 function isCanonicalGmlWiring(config: ResolvedConfigLike): boolean {
-    return config.plugins?.gml === LINT_NAMESPACE.plugin && config.language === "gml/gml";
+    return config.plugins?.gml === LINT_NAMESPACE.plugin && config.language === LINT_NAMESPACE.plugin.languages?.gml;
 }
 
 function readArrayFirstEntry(value: unknown): unknown {
@@ -760,7 +1040,7 @@ function getRuleLevel(value: unknown): unknown {
     return value;
 }
 
-function isOffLevel(level: unknown): boolean {
+function isRuleLevelOff(level: unknown): boolean {
     if (typeof level === "string") {
         return level.trim().toLowerCase() === "off";
     }
@@ -768,36 +1048,18 @@ function isOffLevel(level: unknown): boolean {
     return level === 0;
 }
 
-function isAppliedLevel(level: unknown): boolean {
-    if (typeof level === "string") {
-        const normalizedLevel = level.trim().toLowerCase();
-        if (normalizedLevel === "warn" || normalizedLevel === "error") {
-            return true;
-        }
-    }
-
-    if (level === "warn" || level === "error") {
-        return true;
-    }
-
-    if (level === 1 || level === 2) {
-        return true;
-    }
-
-    return false;
-}
-
+/**
+ * Determine whether an ESLint rule is active in a resolved config entry.
+ *
+ * ESLint only treats the literal string `"off"` (case-insensitive, ignoring
+ * surrounding whitespace) and the numeric `0` as the "off" sentinel; every
+ * other shape — including malformed or unrecognized inputs that callers may
+ * surface from hand-edited configs — is conservatively treated as an applied
+ * rule so that malformed overlays are flagged by {@link hasOverlayRuleApplied}
+ * rather than silently skipped.
+ */
 function isAppliedRuleValue(value: unknown): boolean {
-    const level = getRuleLevel(value);
-    if (isOffLevel(level)) {
-        return false;
-    }
-
-    if (isAppliedLevel(level)) {
-        return true;
-    }
-
-    return true;
+    return !isRuleLevelOff(getRuleLevel(value));
 }
 
 function hasOverlayRuleApplied(config: ResolvedConfigLike): boolean {
@@ -814,7 +1076,7 @@ function hasOverlayRuleApplied(config: ResolvedConfigLike): boolean {
             return true;
         }
 
-        if (LINT_NAMESPACE.services.performanceOverrideRuleIds.includes(ruleId)) {
+        if (LINT_NAMESPACE.performanceOverrideRuleIds.includes(ruleId)) {
             return true;
         }
     }
@@ -826,7 +1088,12 @@ function formatOverlayWarning(paths: Array<string>): string {
     const sample = paths.slice(0, OVERLAY_WARNING_MAX_PATH_SAMPLE);
     const remainderCount = paths.length - sample.length;
     const suffix = remainderCount > 0 ? `\nand ${remainderCount} more...` : "";
-    return `${OVERLAY_WARNING_CODE}: overlay rules applied without required language wiring.\n${sample.join("\n")}${suffix}`;
+    const guidance = [
+        `${OVERLAY_WARNING_CODE}: Your ESLint config enables GML overlay rules, but the matching config entry is missing the canonical GML language wiring.`,
+        'Add `plugins: { gml: Lint.plugin }` and `language: "gml/gml"` to that config entry, or remove the overlay rules from it.',
+        "Affected files:"
+    ].join("\n");
+    return `${guidance}\n${sample.join("\n")}${suffix}`;
 }
 
 async function collectOverlayWithoutLanguageWiringPaths(parameters: {
@@ -949,51 +1216,62 @@ async function loadRequestedFormatter(
     };
 }
 
-function createEslintConstructorOptions(cwd: string, fix: boolean): ConstructorParameters<typeof ESLint>[0] {
+function createEslintConstructorOptions(
+    cwd: string,
+    write: boolean,
+    warnIgnored: boolean
+): ConstructorParameters<typeof ESLint>[0] {
     return {
         cwd,
-        fix
+        fix: write,
+        warnIgnored
     };
 }
 
 async function configureLintConfig(parameters: {
     eslintConstructorOptions: ConstructorParameters<typeof ESLint>[0];
     cwd: string;
+    eslintCwd: string;
     targets: ReadonlyArray<string>;
     configPath: string | null;
     noDefaultConfig: boolean;
     quiet: boolean;
 }): Promise<number> {
-    if (parameters.configPath) {
+    const { eslintConstructorOptions, cwd, eslintCwd, targets, configPath, noDefaultConfig, quiet } = parameters;
+
+    if (configPath) {
+        let resolvedGmloopConfigPath: string;
         try {
-            await validateExplicitConfigPath(parameters.configPath);
-        } catch (error) {
-            console.error(
-                `Failed to read eslint config at ${parameters.configPath}: ${Core.isErrorLike(error) ? error.message : String(error)}`
-            );
-            return 2;
-        }
+            resolvedGmloopConfigPath = await resolveExistingGmloopConfigPath(cwd, configPath);
+        } catch {
+            const fallbackEslintConfigPath = path.resolve(configPath);
+            try {
+                await validateExplicitConfigPath(fallbackEslintConfigPath);
+            } catch (configPathError) {
+                console.error(
+                    `Failed to read config at ${fallbackEslintConfigPath}: ${Core.getErrorMessage(configPathError)}`
+                );
+                return 2;
+            }
 
-        parameters.eslintConstructorOptions.overrideConfigFile = parameters.configPath;
-        return 0;
-    }
-
-    const preferBundledDefaults = shouldPreferBundledDefaultsForExternalTargets({
-        cwd: parameters.cwd,
-        targets: parameters.targets
-    });
-    if (preferBundledDefaults) {
-        parameters.eslintConstructorOptions.overrideConfigFile = true;
-
-        if (parameters.noDefaultConfig) {
+            eslintConstructorOptions.overrideConfigFile = fallbackEslintConfigPath;
             return 0;
         }
 
-        parameters.eslintConstructorOptions.overrideConfig = toEslintOverrideConfig();
-        return 0;
+        try {
+            const overrideConfig = await loadGmloopProjectLintOverrideConfig(resolvedGmloopConfigPath);
+            eslintConstructorOptions.overrideConfigFile = true;
+            eslintConstructorOptions.overrideConfig = overrideConfig;
+            return 0;
+        } catch (error) {
+            console.error(
+                `Failed to load gmloop config at ${resolvedGmloopConfigPath}: ${Core.getErrorMessage(error)}`
+            );
+            return 2;
+        }
     }
 
-    const discoveryResult = discoverFlatConfig(parameters.cwd);
+    const discoveryResult = discoverFlatConfig(eslintCwd);
     if (discoveryResult.selectedConfigPath) {
         // Intentionally let ESLint resolve and select the active config file natively.
         // This preserves ESLint's sibling-config precedence rules and avoids CLI-side
@@ -1001,16 +1279,46 @@ async function configureLintConfig(parameters: {
         return 0;
     }
 
-    if (parameters.noDefaultConfig) {
-        parameters.eslintConstructorOptions.overrideConfigFile = true;
-        printNoConfigMessageIfNeeded({ quiet: parameters.quiet, searchedPaths: discoveryResult.searchedPaths });
+    const discoveredGmloopConfigPath = resolveOptionalGmloopConfigPath(eslintCwd);
+    if (discoveredGmloopConfigPath) {
+        try {
+            const overrideConfig = await loadGmloopProjectLintOverrideConfig(discoveredGmloopConfigPath);
+            eslintConstructorOptions.overrideConfigFile = true;
+            eslintConstructorOptions.overrideConfig = overrideConfig;
+            return 0;
+        } catch (error) {
+            console.error(
+                `Failed to load gmloop config at ${discoveredGmloopConfigPath}: ${Core.getErrorMessage(error)}`
+            );
+            return 2;
+        }
+    }
+
+    const preferBundledDefaults = shouldPreferBundledDefaultsForExternalTargets({
+        cwd,
+        targets
+    });
+    if (preferBundledDefaults) {
+        eslintConstructorOptions.overrideConfigFile = true;
+
+        if (noDefaultConfig) {
+            return 0;
+        }
+
+        eslintConstructorOptions.overrideConfig = toEslintOverrideConfig();
         return 0;
     }
 
-    parameters.eslintConstructorOptions.overrideConfigFile = true;
-    parameters.eslintConstructorOptions.overrideConfig = toEslintOverrideConfig();
+    if (noDefaultConfig) {
+        eslintConstructorOptions.overrideConfigFile = true;
+        printNoConfigMessageIfNeeded({ quiet, searchedPaths: discoveryResult.searchedPaths });
+        return 0;
+    }
+
+    eslintConstructorOptions.overrideConfigFile = true;
+    eslintConstructorOptions.overrideConfig = toEslintOverrideConfig();
     printFallbackMessageIfNeeded({
-        quiet: parameters.quiet,
+        quiet,
         searchedPaths: discoveryResult.searchedPaths
     });
 
@@ -1037,15 +1345,6 @@ function collectOutOfRootFilePaths(
         .filter((filePath) => !Core.isPathWithinBoundary(path.resolve(filePath), forcedProjectRoot));
 }
 
-function resolveForcedProjectRoot(forcedProjectPath: string | null): string | null {
-    if (!forcedProjectPath) {
-        return null;
-    }
-
-    const resolvedPath = path.resolve(forcedProjectPath);
-    return resolvedPath.toLowerCase().endsWith(".yyp") ? path.dirname(resolvedPath) : resolvedPath;
-}
-
 /**
  * Render up to `OUT_OF_ROOT_DISPLAY_LIMIT` paths as a newline-separated
  * string, appending "and N more…" when the list is truncated.
@@ -1069,18 +1368,25 @@ export function createLintCommand(): Command {
     return applyStandardCommandOptions(
         new Command("lint")
             .description("Lint GameMaker Language files using @gmloop/lint")
-            .argument("[paths...]", "File or directory paths to lint")
-            .option("--fix", "Apply automatic fixes", false)
+            .argument("[paths...]", `.${GML_FILE_EXTENSION.slice(1)} file or directory paths to lint`)
+            .option(WRITE_OPTION_FLAGS, WRITE_OPTION_DESCRIPTION, false)
+            .option("--warn-ignored", "Report ignored-file warnings from ESLint output", false)
             .option("--formatter <name>", "Formatter output (stylish|json|checkstyle)", "stylish")
             .option("--max-warnings <count>", "Maximum warning count before exit code 1", "-1")
-            .option("--config <path>", "Explicit eslint flat config path")
+            .addOption(createConfigOption())
             .option("--no-default-config", "Disable bundled default config fallback")
-            .option("--project <path>", "Force a project root directory or .yyp file path")
-            .option("--project-strict", "Fail when lint targets fall outside forced --project root", false)
+            .addOption(createPathOption())
+            .option("--project-strict", `Fail when lint targets fall outside forced ${PATH_OPTION_FLAGS} root`, false)
+            .addOption(createListOption())
             .option("--quiet", "Suppress fallback warnings", false)
-            .option("--verbose", "Enable verbose command output and timing diagnostics", false)
+            .addOption(createVerboseOption())
             .addHelpText("after", () =>
                 [
+                    "",
+                    "Only existing .gml files and directories containing .gml sources are processed.",
+                    "Non-.gml file paths are rejected with exit code 2; use '--path' to point at",
+                    "a GameMaker project (.yyp) or directory, or invoke ESLint directly for other",
+                    "file types.",
                     "",
                     "Examples:",
                     `  ${LINT_COMMAND_CLI_EXAMPLE}`,
@@ -1094,10 +1400,25 @@ export function createLintCommand(): Command {
 
 export async function runLintCommand(command: CommanderCommandLike): Promise<void> {
     const options = resolveCommandOptions(command);
-    const targets = normalizeLintTargets(command);
+    const targets = await normalizeLintTargets(command);
+
+    if (options.list) {
+        printLintCommandSettings(options, targets);
+        return;
+    }
+
     const commandCwd = process.cwd();
+    const preflightExpansion = expandLintTargetsForRecovery({
+        cwd: commandCwd,
+        targets
+    });
+    if (preflightExpansion.rejectedPaths.length > 0) {
+        console.error(formatRejectedNonGmlPathsMessage(preflightExpansion.rejectedPaths));
+        setProcessExitCode(2);
+        return;
+    }
     const eslintCwd = resolveEslintCwd({ cwd: commandCwd, targets });
-    const eslintConstructorOptions = createEslintConstructorOptions(eslintCwd, options.fix);
+    const eslintConstructorOptions = createEslintConstructorOptions(eslintCwd, options.write, options.warnIgnored);
 
     if (!isSupportedFormatter(options.formatter)) {
         console.error(
@@ -1110,6 +1431,7 @@ export async function runLintCommand(command: CommanderCommandLike): Promise<voi
     const configExitCode = await configureLintConfig({
         eslintConstructorOptions,
         cwd: commandCwd,
+        eslintCwd,
         targets,
         configPath: options.config,
         noDefaultConfig: options.noDefaultConfig,
@@ -1121,25 +1443,26 @@ export async function runLintCommand(command: CommanderCommandLike): Promise<voi
         return;
     }
 
-    const forcedProjectValidationError = validateForcedProjectPath(options.project);
+    const { forcedProjectRoot, validationError: forcedProjectValidationError } =
+        await resolveForcedProjectRootFromPathOption(options.path);
     if (forcedProjectValidationError) {
         console.error(forcedProjectValidationError);
         setProcessExitCode(2);
         return;
     }
-    const forcedProjectRoot = resolveForcedProjectRoot(options.project);
 
     let eslint: ESLint;
     try {
         eslint = new ESLint(eslintConstructorOptions);
     } catch (error) {
-        console.error(Core.isErrorLike(error) ? error.message : String(error));
+        console.error(Core.getErrorMessage(error));
         setProcessExitCode(2);
         return;
     }
 
     const lintRunStartedAtNanoseconds = readMonotonicNanoseconds();
     let lintedFileCount = 0;
+    let lastLogTime = 0;
 
     let results: Array<ESLint.LintResult>;
     try {
@@ -1150,6 +1473,12 @@ export async function runLintCommand(command: CommanderCommandLike): Promise<voi
             createExecutorForTarget: () => new ESLint(eslintConstructorOptions),
             onTargetCompleted: async ({ target, targetResults, elapsedNanoseconds }) => {
                 lintedFileCount += targetResults.length;
+
+                const now = Date.now();
+                if (now - lastLogTime > 1000 && !options.quiet) {
+                    process.stderr.write(`[lint] Checking GML files... (${lintedFileCount} processed)\n`);
+                    lastLogTime = now;
+                }
 
                 if (options.verbose) {
                     emitVerboseLintTargetTiming({
@@ -1163,7 +1492,7 @@ export async function runLintCommand(command: CommanderCommandLike): Promise<voi
                     });
                 }
 
-                if (!options.fix) {
+                if (!options.write) {
                     return;
                 }
 
@@ -1178,13 +1507,23 @@ export async function runLintCommand(command: CommanderCommandLike): Promise<voi
             }
         });
     } catch (error) {
-        console.error(Core.isErrorLike(error) ? error.message : String(error));
+        console.error(Core.getErrorMessage(error));
         setProcessExitCode(2);
         return;
     }
 
+    if (lintedFileCount > 0 && !options.quiet) {
+        process.stderr.write(`[lint] Checking GML files... (${lintedFileCount} processed)\n`);
+    }
+
     try {
         await warnOverlayWithoutLanguageWiringIfNeeded({ eslint, results, quiet: options.quiet });
+
+        if (results.length === 0) {
+            emitNoLintableFilesMessage(targets);
+            setProcessExitCode(0);
+            return;
+        }
 
         const processorPolicy = await enforceProcessorPolicyForGmlFiles({
             eslint,
@@ -1226,21 +1565,40 @@ export async function runLintCommand(command: CommanderCommandLike): Promise<voi
             if (formatterOutput.length > 0) {
                 process.stdout.write(`${formatterOutput}\n`);
             }
-        } catch (error) {
-            console.error(Core.isErrorLike(error) ? error.message : String(error));
-            setProcessExitCode(2);
-            return;
-        }
 
-        const totals = aggregateLintTotals(results);
+            const totals = aggregateLintTotals(results, {
+                allowParseErrors: options.allowParseErrors
+            });
 
-        setProcessExitCode(
-            resolveExitCode({
+            const exitCode = resolveExitCode({
                 errorCount: totals.errorCount,
                 warningCount: totals.warningCount,
                 maxWarnings: options.maxWarnings
-            })
-        );
+            });
+
+            // When the stylish formatter produces no output it means no
+            // diagnostics were reported.  Emit a single confirmation line so
+            // users and CI pipelines get an explicit success signal rather
+            // than a silent zero exit, consistent with the format command's
+            // "All matched files are already formatted." message.
+            //
+            // This condition is intentionally formatter-agnostic: the `json`
+            // and `checkstyle` formatters always emit non-empty output even
+            // for clean runs (a JSON array, an XML document), so
+            // `formatterOutput.length === 0` is only true when using `stylish`
+            // or any other formatter that is deliberately silent on success.
+            // We do not check `options.formatter` by name to avoid hardcoding
+            // that assumption and to remain compatible with future formatters
+            // that follow the same silent-on-success convention.
+            if (exitCode === 0 && formatterOutput.length === 0 && results.length > 0 && !options.quiet) {
+                emitLintCleanSummary(results.length);
+            }
+
+            setProcessExitCode(exitCode);
+        } catch (error) {
+            console.error(Core.getErrorMessage(error));
+            setProcessExitCode(2);
+        }
     } finally {
         if (options.verbose) {
             const elapsedNanoseconds = calculateElapsedNanoseconds({
@@ -1266,14 +1624,17 @@ export const __lintCommandTest__ = Object.freeze({
     hasOverlayRuleApplied,
     formatOverlayWarning,
     discoverFlatConfig,
+    expandLintTargetsForRecovery,
     extractLintRuntimeFailureLocation,
     createRecoverableLintTargets,
     appendRetainedLintResults,
     lintTargetsWithRuntimeRecovery,
     createRetainedLintResult,
+    formatRejectedNonGmlPathsMessage,
     toLintProgressDisplayPath,
     emitLintFixProgressForResults,
     resolveEslintCwd,
+    createEslintConstructorOptions,
     shouldPreferBundledDefaultsForExternalTargets,
     normalizeFormatterName,
     isSupportedFormatter,
@@ -1288,5 +1649,6 @@ export const __lintCommandTest__ = Object.freeze({
     collectOutOfRootFilePaths,
     formatPathSample,
     formatOutOfRootWarning,
-    OUT_OF_ROOT_DISPLAY_LIMIT
+    OUT_OF_ROOT_DISPLAY_LIMIT,
+    emitLintCleanSummary
 });

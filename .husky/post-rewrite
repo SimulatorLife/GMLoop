@@ -5,3 +5,5 @@ if [ -x "$HOME/.githooks/post-rewrite" ]; then
   chain=$((chain + 1))
   GIT_HOOK_CHAIN="$chain" "$HOME/.githooks/post-rewrite" "$@" || true
 fi
+
+pnpm run skill:repomix

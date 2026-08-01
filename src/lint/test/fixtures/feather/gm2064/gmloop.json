@@ -1,6 +1,7 @@
 {
   "lintRules": {
-    "feather/gm2064": "error"
+    "feather/gm2064": "error",
+    "gml/require-ztest-enabled-reset": "error"
   },
   "fixture": {
     "kind": "lint",

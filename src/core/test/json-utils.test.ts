@@ -61,7 +61,7 @@ void describe("parseJsonWithContext", () => {
     });
 
     void it("honours explicit JsonParseError capability branding", () => {
-        const brand = Symbol.for("prettier-plugin-gml.json-parse-error");
+        const brand = Symbol.for("gmloop.json-parse-error");
         const facade = {
             message: "boom",
             cause: new Error("boom"),

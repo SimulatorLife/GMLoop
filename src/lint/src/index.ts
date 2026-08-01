@@ -1,14 +1,42 @@
-import { createLintRuleEntriesFromProjectConfig, normalizeLintRulesConfig } from "./configs/index.js";
+import { Core } from "@gmloop/core";
+
+import { normalizeDocParamName } from "./doc-comment/normalize-param-name.js";
+import { gmlLanguage } from "./language/gml-language.js";
 import { configs, featherPlugin, plugin } from "./plugin.js";
-import { ruleIds } from "./rules/catalog.js";
 import { services } from "./services/index.js";
 
+const { performanceOverrideRuleIds } = services;
+
+/**
+ * Flattened lint namespace that exposes frequently-accessed properties directly
+ * alongside the nested namespaces (plugin, configs, services).
+ *
+ * This flattens the hierarchy by exposing `gmlLanguage`,
+ * `performanceOverrideRuleIds`, and the malformed helpers directly on `Lint`
+ * rather than nested under deeper paths. This reduces chain depth from 3
+ * segments to 1 segment, improving discoverability and reducing verbosity for
+ * high-traffic access patterns.
+ */
 export const Lint = Object.freeze({
     plugin,
     featherPlugin,
     configs,
-    normalizeLintRulesConfig,
-    createLintRuleEntriesFromProjectConfig,
-    ruleIds,
-    services
+    services,
+
+    // Flattened aliases for high-traffic access patterns
+    gmlLanguage,
+    performanceOverrideRuleIds,
+
+    // Shared utilities (from doc-comment)
+    normalizeDocParamName,
+
+    // Malformed-source helpers (from core — avoids deep "../.." imports)
+    forEachScientificNotationToken: Core.forEachScientificNotationToken,
+    toPlainDecimalFromScientificLiteral: Core.toPlainDecimalFromScientificLiteral
 });
+
+// Direct exports of rule catalog functions for consumers who prefer explicit
+// imports over namespace access. The functions are defined in the rules/
+// subdirectory and re-exported here for convenience.
+export { ruleIds } from "./rules/catalog.js";
+export { listLintRuleCatalogEntries } from "./rules/rule-catalog.js";

@@ -1,0 +1,279 @@
+import { lstat, mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import process from "node:process";
+
+import { Core } from "@gmloop/core";
+import { Command } from "commander";
+
+import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
+import type { CommanderCommandLike } from "../cli-core/commander-types.js";
+import { CliUsageError } from "../cli-core/errors.js";
+import {
+    createListOption,
+    createPathOption,
+    createVerboseOption,
+    createWriteOption
+} from "../cli-core/shared-command-options.js";
+import { createGmlParserAdapter, type GmlParserAdapter } from "../modules/transpilation/adapters.js";
+import { formatPathForDisplay } from "../workflow/display-path.js";
+import { resolveExplicitWorkflowTargetPath, resolveWorkflowTargetPath } from "../workflow/project-root.js";
+
+const GML_FILE_EXTENSION = ".gml";
+const AST_JSON_EXTENSION = ".ast.json";
+const PARSE_COMMAND_CLI_EXAMPLE = "pnpm dlx gmloop parse --path path/to/script.gml";
+const PARSE_COMMAND_FIX_EXAMPLE = "pnpm dlx gmloop parse --write --path path/to/project";
+
+type ParseCommandOptions = {
+    write?: boolean;
+    list?: boolean;
+    path?: string;
+    verbose?: boolean;
+};
+
+type ParseCommandSettings = {
+    targetPath: string;
+    writeMode: boolean;
+    list: boolean;
+    verbose: boolean;
+};
+
+type ParsedGmlAst = Record<string, unknown>;
+
+type ParsedFileAst = {
+    sourcePath: string;
+    displayPath: string;
+    ast: ParsedGmlAst;
+};
+
+type DryRunDirectoryEntry = {
+    path: string;
+    ast: ParsedFileAst["ast"];
+};
+
+type DryRunPayload =
+    | ParsedGmlAst
+    | {
+          files: Array<DryRunDirectoryEntry>;
+      };
+
+function resolveCommandOptions(command: CommanderCommandLike): ParseCommandOptions {
+    return command.opts();
+}
+
+async function resolveParseCommandSettings(command: CommanderCommandLike): Promise<ParseCommandSettings> {
+    const options = resolveCommandOptions(command);
+    // Positional argument takes precedence over --path option.
+    const positionalPath = Array.isArray(command.args) && command.args.length > 0 ? command.args[0] : null;
+    const explicitTargetPath = resolveExplicitWorkflowTargetPath(positionalPath ?? options.path);
+    const targetPath =
+        explicitTargetPath ??
+        (await resolveWorkflowTargetPath({
+            fallbackPath: path.resolve(process.cwd(), "."),
+            scope: "file"
+        }));
+
+    return {
+        targetPath,
+        writeMode: Boolean(options.write),
+        list: Boolean(options.list),
+        verbose: Boolean(options.verbose)
+    };
+}
+
+function printParseCommandSettings(settings: ParseCommandSettings): void {
+    console.log(`Target path: ${formatPathForDisplay(settings.targetPath)}`);
+    console.log(
+        `Execution mode: ${settings.writeMode ? "write AST JSON files (--write)" : "dry-run (stdout AST JSON)"}`
+    );
+    console.log(`Verbose mode: ${settings.verbose ? "enabled" : "disabled"}`);
+    console.log(`Output: ${settings.writeMode ? `sibling *${AST_JSON_EXTENSION} files` : "stdout"}`);
+}
+
+async function collectParseTargetFilePaths(targetPath: string, usage: string): Promise<Array<string>> {
+    let targetStats;
+    try {
+        targetStats = await lstat(targetPath);
+    } catch (error) {
+        const details = Core.getErrorMessageOrFallback(error);
+        throw new CliUsageError(`Unable to access ${formatPathForDisplay(targetPath)}: ${details}.`, { usage });
+    }
+
+    if (targetStats.isSymbolicLink()) {
+        throw new CliUsageError(`Parse target cannot be a symbolic link: ${formatPathForDisplay(targetPath)}.`, {
+            usage
+        });
+    }
+
+    if (targetStats.isDirectory()) {
+        return [...(await Core.listProjectGmlFilePaths(targetPath))];
+    }
+
+    if (targetStats.isFile() && path.extname(targetPath).toLowerCase() === GML_FILE_EXTENSION) {
+        return [targetPath];
+    }
+
+    throw new CliUsageError(
+        `Parse target must be a ${GML_FILE_EXTENSION} file or a directory containing ${GML_FILE_EXTENSION} files: ${formatPathForDisplay(targetPath)}.`,
+        { usage }
+    );
+}
+
+/**
+ * Parser adapter used by the parse command.
+ *
+ * The parse command is high-level CLI orchestration: it must not depend on
+ * the concrete `@gmloop/parser` workspace. The CLI exposes
+ * `createGmlParserAdapter` as the single dependency-inversion seam for parser
+ * instantiation, so this command consumes that factory and keeps the
+ * concrete `Parser.GMLParser` import in `modules/transpilation/adapters.ts`
+ * where it belongs. Tests can override the factory to swap in a stubbed
+ * parser without touching this module.
+ */
+const parseAdapter: GmlParserAdapter = createGmlParserAdapter();
+
+async function parseFileToAst(filePath: string): Promise<ParsedFileAst> {
+    const source = await readFile(filePath, "utf8");
+    return {
+        sourcePath: filePath,
+        displayPath: formatPathForDisplay(filePath),
+        ast: parseAdapter(source) as ParsedGmlAst
+    };
+}
+
+function serializeAstJson(payload: DryRunPayload): string {
+    return Core.stringifyJsonForFile(payload, {
+        space: 2,
+        includeTrailingNewline: true
+    });
+}
+
+function resolveAstJsonOutputPath(filePath: string): string {
+    return `${filePath}${AST_JSON_EXTENSION}`;
+}
+
+async function writeParsedAstJsonFile(parsedFile: ParsedFileAst): Promise<string> {
+    const outputPath = resolveAstJsonOutputPath(parsedFile.sourcePath);
+    await mkdir(path.dirname(outputPath), { recursive: true });
+    await writeFile(outputPath, serializeAstJson(parsedFile.ast), "utf8");
+    return outputPath;
+}
+
+function createDryRunPayload(parsedFiles: ReadonlyArray<ParsedFileAst>): DryRunPayload {
+    if (parsedFiles.length === 1) {
+        const firstFile = parsedFiles[0];
+        if (!firstFile) {
+            throw new Error("Expected a parsed file before creating single-file parse output.");
+        }
+        return firstFile.ast;
+    }
+
+    return {
+        files: parsedFiles.map((parsedFile) => ({
+            path: parsedFile.displayPath,
+            ast: parsedFile.ast
+        }))
+    };
+}
+
+async function mapSequentially<Input, Output>(
+    values: ReadonlyArray<Input>,
+    mapper: (value: Input) => Promise<Output>
+): Promise<Array<Output>> {
+    const mappedValues: Array<Output> = [];
+
+    await Core.runSequentially(values, async (value) => {
+        mappedValues.push(await mapper(value));
+    });
+
+    return mappedValues;
+}
+
+function logVerboseParseSummary(filePath: string): void {
+    console.error(`Parsed ${formatPathForDisplay(filePath)}`);
+}
+
+async function parseAndLogTargetFile(filePath: string, verbose: boolean): Promise<ParsedFileAst> {
+    const parsedFile = await parseFileToAst(filePath);
+    if (verbose) {
+        logVerboseParseSummary(filePath);
+    }
+    return parsedFile;
+}
+
+function parseTargetFiles(filePaths: ReadonlyArray<string>, verbose: boolean): Promise<Array<ParsedFileAst>> {
+    return mapSequentially(filePaths, (filePath) => parseAndLogTargetFile(filePath, verbose));
+}
+
+function writeParsedAstJsonFiles(parsedFiles: ReadonlyArray<ParsedFileAst>): Promise<Array<string>> {
+    return mapSequentially(parsedFiles, writeParsedAstJsonFile);
+}
+
+function printDryRunAstJson(parsedFiles: ReadonlyArray<ParsedFileAst>): void {
+    process.stdout.write(serializeAstJson(createDryRunPayload(parsedFiles)));
+}
+
+function printWriteModeSummary(outputPaths: ReadonlyArray<string>): void {
+    for (const outputPath of outputPaths) {
+        console.log(`Wrote ${formatPathForDisplay(outputPath)}`);
+    }
+
+    const label = outputPaths.length === 1 ? "AST JSON file" : "AST JSON files";
+    console.log(`Parsed and wrote ${outputPaths.length} ${label}.`);
+}
+
+function printNoMatchingFilesMessage(targetPath: string): void {
+    console.log(
+        `No ${GML_FILE_EXTENSION} files were found in ${formatPathForDisplay(targetPath)}. Provide a ${GML_FILE_EXTENSION} file or directory target.`
+    );
+}
+
+/**
+ * Create the CLI command that exposes `@gmloop/parser` AST output.
+ *
+ * @returns Commander command definition for parsing `.gml` targets.
+ */
+export function createParseCommand(): Command {
+    return applyStandardCommandOptions(
+        new Command("parse")
+            .usage("[path] [options]")
+            .description("Parse GameMaker Language files to AST JSON using @gmloop/parser.")
+            .argument("[path]", "Target .gml file, GameMaker project directory, or .yyp path")
+            .addOption(createPathOption())
+            .addOption(createWriteOption())
+            .addOption(createListOption())
+            .addOption(createVerboseOption())
+            .addHelpText("after", () =>
+                ["", "Examples:", `  ${PARSE_COMMAND_CLI_EXAMPLE}`, `  ${PARSE_COMMAND_FIX_EXAMPLE}`, ""].join("\n")
+            )
+    );
+}
+
+/**
+ * Run the parser CLI command for a file or directory target.
+ *
+ * @param command Commander command instance containing parse options.
+ * @returns A promise that resolves after AST output has been printed or written.
+ */
+export async function runParseCommand(command: CommanderCommandLike): Promise<void> {
+    const settings = await resolveParseCommandSettings(command);
+
+    if (settings.list) {
+        printParseCommandSettings(settings);
+        return;
+    }
+
+    const filePaths = await collectParseTargetFilePaths(settings.targetPath, command.helpInformation());
+    if (filePaths.length === 0) {
+        printNoMatchingFilesMessage(settings.targetPath);
+        return;
+    }
+
+    const parsedFiles = await parseTargetFiles(filePaths, settings.verbose);
+    if (!settings.writeMode) {
+        printDryRunAstJson(parsedFiles);
+        return;
+    }
+
+    const outputPaths = await writeParsedAstJsonFiles(parsedFiles);
+    printWriteModeSummary(outputPaths);
+}

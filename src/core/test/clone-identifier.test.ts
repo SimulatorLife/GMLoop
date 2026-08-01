@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { cloneIdentifier } from "../src/ast/node-helpers.js";
+import { cloneIdentifier } from "../src/ast/node-helpers/index.js";
 
 void describe("cloneIdentifier", () => {
     void it("returns null for non-identifiers", () => {

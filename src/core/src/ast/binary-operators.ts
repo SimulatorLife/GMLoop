@@ -40,7 +40,6 @@ export const BINARY_OPERATORS: Record<string, BinaryOperatorInfo> = {
     "~": { prec: 14, assoc: "right", type: "unary", style: "symbol" },
     "!": { prec: 14, assoc: "right", type: "unary", style: "symbol" },
     not: { prec: 14, assoc: "right", type: "unary", style: "keyword", canonical: "!" },
-    // "-": { prec: 14, assoc: "left", type: "unary" }, // Negate
     "*": { prec: 13, assoc: "left", type: "arithmetic", style: "symbol" },
     "/": { prec: 13, assoc: "left", type: "arithmetic", style: "symbol" },
     div: { prec: 13, assoc: "left", type: "arithmetic", style: "keyword" }, // Note: `div` is integer division in GML; it is not an alias for `/`
@@ -74,8 +73,10 @@ export const BINARY_OPERATORS: Record<string, BinaryOperatorInfo> = {
     "%=": { prec: 1, assoc: "right", type: "assign", style: "symbol" },
     "+=": { prec: 1, assoc: "right", type: "assign", style: "symbol" },
     "-=": { prec: 1, assoc: "right", type: "assign", style: "symbol" },
-    "<<=": { prec: 1, assoc: "right", type: "assign", style: "symbol" },
-    ">>=": { prec: 1, assoc: "right", type: "assign", style: "symbol" },
+    // Intentionally omit `<<=` / `>>=`. GML supports `<<` and `>>`, but not
+    // the shift-compound assignment forms. Keeping them out of the canonical
+    // operator table prevents formatter/lint/refactor code from advertising
+    // those invalid tokens as first-class GML operators.
     "&=": { prec: 1, assoc: "right", type: "assign", style: "symbol" },
     "^=": { prec: 1, assoc: "right", type: "assign", style: "symbol" },
     "|=": { prec: 1, assoc: "right", type: "assign", style: "symbol" },
@@ -97,21 +98,47 @@ for (const [token, info] of Object.entries(BINARY_OPERATORS)) {
     }
 }
 
+// Precomputed per-style operator-variant lookup, built once at module init.
+//
+// `getOperatorVariant` runs on the formatter hot path — every BinaryExpression
+// and LogicalExpression in the formatted source triggers a call from
+// `printBinaryExpressionNode`. The previous implementation walked the
+// BINARY_OPERATORS entry, derived `canonical`, branched on style, and looked
+// up `CANONICAL_TO_KEYWORD` for the keyword path: up to three dependent
+// object property accesses and one string compare per call. Flattening both
+// styles into their own dense maps lets the call site resolve to a single
+// two-step index access (`table[operator] ?? operator`), which V8 can inline
+// cache far more reliably because each map has a stable shape across calls.
+//
+// Object.create(null) keeps the keys off the Object.prototype chain so the
+// monomorphic `??` fallback below is the only branch the JIT has to consider
+// on a miss.
+const OPERATOR_VARIANTS_BY_STYLE: Readonly<Record<BinaryOperatorStyle, Readonly<Record<string, string>>>> =
+    Object.freeze({
+        symbol: Object.freeze(buildOperatorVariantMap("symbol")),
+        keyword: Object.freeze(buildOperatorVariantMap("keyword"))
+    });
+
+function buildOperatorVariantMap(style: BinaryOperatorStyle): Record<string, string> {
+    const table: Record<string, string> = Object.create(null);
+    for (const token in BINARY_OPERATORS) {
+        const info = BINARY_OPERATORS[token];
+        const canonical = info.canonical ?? token;
+        if (style === "symbol") {
+            table[token] = canonical;
+        } else {
+            table[token] = CANONICAL_TO_KEYWORD[canonical] ?? token;
+        }
+    }
+    return table;
+}
+
 export function getOperatorInfo(operator: string): BinaryOperatorInfo | undefined {
     return BINARY_OPERATORS[operator];
 }
 
 export function getOperatorVariant(operator: string, style: BinaryOperatorStyle): string {
-    const info = BINARY_OPERATORS[operator];
-    if (!info) return operator;
-
-    const canonical = info.canonical ?? operator;
-
-    if (style === "symbol") {
-        return canonical;
-    }
-
-    return CANONICAL_TO_KEYWORD[canonical] ?? operator;
+    return OPERATOR_VARIANTS_BY_STYLE[style][operator] ?? operator;
 }
 
 /**

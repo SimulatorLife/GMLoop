@@ -1,4 +1,4 @@
-import type { FixtureAdapter } from "@gmloop/fixture-runner";
+import { type FixtureAdapter, FixtureRunner } from "@gmloop/fixture-runner";
 
 import { Format } from "../src/format-entry.js";
 
@@ -21,11 +21,30 @@ export function createFormatFixtureAdapter(): FixtureAdapter {
                 "format",
                 async () => await Format.format(inputText ?? "", formatOptions)
             );
+            const normalized = Format.normalizeFormattedOutput(formatted);
             return {
                 resultKind: "text" as const,
-                outputText: formatted,
-                changed: formatted !== (inputText ?? "")
+                outputText: normalized,
+                changed: normalized !== (inputText ?? "")
             };
         }
+    });
+}
+
+/**
+ * Create the canonical format fixture suite definition shared by workspace and
+ * aggregate fixture runs.
+ *
+ * @returns Format fixture suite registration metadata.
+ */
+export function createFormatFixtureSuiteDefinition() {
+    return FixtureRunner.createFixtureSuiteDefinition({
+        workspaceName: "format",
+        suiteName: "formatter fixtures",
+        compiledWorkspaceTestFilePath: "src/format/dist/test/formatter-fixtures.test.js",
+        moduleUrl: import.meta.url,
+        sourceRelativeSegments: ["fixtures"],
+        distRelativeSegments: ["..", "..", "test", "fixtures"],
+        adapter: createFormatFixtureAdapter()
     });
 }

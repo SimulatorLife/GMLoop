@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { Parser } from "@gmloop/parser";
-
-import { Transpiler } from "../index.js";
+import { Transpiler } from "@gmloop/transpiler";
 
 void test("GmlToJsEmitter emits undefined for missing optional arguments", () => {
     const source = "func(, arg2);";

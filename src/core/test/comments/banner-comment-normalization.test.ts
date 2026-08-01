@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { Core } from "../../src/index.js";
+import { Core } from "../../index.js";
 
 void describe("normalizeBannerCommentText", () => {
     void it("remains stable across repeated calls for single-decoration banners", () => {

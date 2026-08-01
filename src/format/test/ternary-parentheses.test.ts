@@ -12,3 +12,41 @@ void test("does not wrap ternary initializers in parentheses", async () => {
 
     assert.strictEqual(formatted, expected, "Expected ternary variable initializers not to be wrapped in parentheses.");
 });
+
+void test("omits redundant assignment parentheses around commented ternary expressions", async () => {
+    const source = [
+        "function choose_shader(part_type) {",
+        "    shader = (/*emitterMesh ? emitter_mesh_shader : */ (part_type.mesh_enabled ? mesh_shader : regular_shader));",
+        "}",
+        ""
+    ].join("\n");
+
+    const formatted = await Format.format(source, { parser: "gml-parse" });
+
+    assert.strictEqual(
+        formatted,
+        [
+            "function choose_shader(part_type) {",
+            "    shader = /*emitterMesh ? emitter_mesh_shader : */ part_type.mesh_enabled ? mesh_shader : regular_shader;",
+            "}",
+            ""
+        ].join("\n")
+    );
+});
+
+void test("preserves parentheses around nested ternary expressions in true branches", async () => {
+    const source = [
+        "function build_values(value1, value2, value3) {",
+        "    value = !is_undefined(value1) ? (!is_undefined(value2) ? [value1, value2] : [value1]) : [value3];",
+        "}",
+        ""
+    ].join("\n");
+
+    const formatted = await Format.format(source, { parser: "gml-parse" });
+
+    assert.match(
+        formatted,
+        /\?\s*\(\s*!is_undefined\(value2\)\s*\?/u,
+        "Expected formatter output to keep required parentheses around nested true-branch ternary expressions."
+    );
+});

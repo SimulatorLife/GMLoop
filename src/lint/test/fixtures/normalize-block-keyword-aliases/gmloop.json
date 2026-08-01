@@ -1,0 +1,9 @@
+{
+  "lintRules": {
+    "gml/normalize-block-keyword-aliases": "error"
+  },
+  "fixture": {
+    "kind": "lint",
+    "assertion": "transform"
+  }
+}

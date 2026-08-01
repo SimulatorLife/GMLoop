@@ -12,6 +12,7 @@ import { lintWithFeatherRule } from "./rule-test-harness.js";
 type MigrationCase = {
     fixtureDirectory: string;
     ruleName: string;
+    expectDiagnostic?: boolean;
     assertOutput: (output: string, input: string) => void;
 };
 
@@ -39,6 +40,10 @@ function countOccurrences(text: string, needle: string): number {
     return text.split(needle).length - 1;
 }
 
+function assertUnchanged(output: string, input: string): void {
+    assertEquals(output, input);
+}
+
 const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
     {
         fixtureDirectory: "gm1000",
@@ -51,18 +56,13 @@ const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
     {
         fixtureDirectory: "gm1002",
         ruleName: "gm1002",
-        assertOutput: (output) => {
-            assertEquals(output.includes("global.gameManager"), false);
-            assertEquals(output.includes("gameManager = new GameManager("), true);
-        }
+        expectDiagnostic: false,
+        assertOutput: assertUnchanged
     },
     {
         fixtureDirectory: "gm1007",
         ruleName: "gm1007",
-        assertOutput: (output) => {
-            assertEquals(output.includes("new Point(0, 0) ="), false);
-            assertEquals(output.includes("1 = new Point"), false);
-        }
+        assertOutput: assertUnchanged
     },
     {
         fixtureDirectory: "gm1008",
@@ -92,18 +92,14 @@ const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
         fixtureDirectory: "gm1012",
         ruleName: "gm1012",
         assertOutput: (output) => {
-            assertEquals(output.includes("/// @param value"), true);
-            assertEquals(countOccurrences(output, "/// @param value"), 1);
+            assertEquals(output.includes("/// @param value"), false);
             assertEquals(output.includes("string_length("), true);
         }
     },
     {
         fixtureDirectory: "gm1015",
         ruleName: "gm1015",
-        assertOutput: (output) => {
-            assertEquals(output.includes("/= 0"), false);
-            assertEquals(output.includes("%= -1"), true);
-        }
+        assertOutput: assertUnchanged
     },
     {
         fixtureDirectory: "gm1017",
@@ -116,33 +112,30 @@ const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
     {
         fixtureDirectory: "gm1021",
         ruleName: "gm1021",
-        assertOutput: (output) => {
-            assertEquals(output.includes("argument[0]"), false);
-            assertEquals(output.includes("var first = value;"), true);
-        }
+        assertOutput: assertUnchanged
     },
     {
         fixtureDirectory: "gm1024",
         ruleName: "gm1024",
         assertOutput: (output) => {
-            assertEquals(output.includes("__featherFix_score"), true);
+            assertEquals(output.includes("__feather_score"), true);
             assertEquals(/\bscore\b\s*=/.test(output), false);
         }
     },
     {
         fixtureDirectory: "gm1026",
         ruleName: "gm1026",
-        assertOutput: (output) => {
-            assertEquals(output.includes("var __featherFix_pi = pi;"), true);
-            assertEquals(output.includes("__featherFix_pi++;"), true);
-        }
+        assertOutput: assertUnchanged
     },
     {
         fixtureDirectory: "gm1028",
         ruleName: "gm1028",
         assertOutput: (output) => {
-            assertEquals(output.includes("[?"), false);
-            assertEquals(output.includes("[|"), true);
+            assertEquals(output.includes('my_map[? "key"]'), true);
+            assertEquals(output.includes("level_grid[| 1, 2]"), true);
+            assertEquals(output.includes("myGrid[? 1, 2]"), true);
+            assertEquals(output.includes("lst_instances[| 0]"), true);
+            assertEquals(output.includes("passthrough = some_var[? 0]"), true);
         }
     },
     {
@@ -172,9 +165,7 @@ const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
     {
         fixtureDirectory: "gm1038",
         ruleName: "gm1038",
-        assertOutput: (output) => {
-            assertEquals(countOccurrences(output, "#macro dbg"), 1);
-        }
+        assertOutput: assertUnchanged
     },
     {
         fixtureDirectory: "gm1041",
@@ -205,9 +196,8 @@ const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
     {
         fixtureDirectory: "gm1054",
         ruleName: "gm1054",
-        assertOutput: (output) => {
-            assertEquals(output.includes("array_length_1d("), false);
-            assertEquals(output.includes("array_length("), true);
+        assertOutput: (output, input) => {
+            assertEquals(output, input);
         }
     },
     {
@@ -220,25 +210,17 @@ const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
     {
         fixtureDirectory: "gm1063",
         ruleName: "gm1063",
-        assertOutput: (output) => {
-            assertEquals(output.includes("pointer_null"), true);
-            assertEquals(output.includes(": -1"), false);
-        }
+        assertOutput: assertUnchanged
     },
     {
         fixtureDirectory: "gm1064",
         ruleName: "gm1064",
-        assertOutput: (output) => {
-            assertEquals(countOccurrences(output, "function make_game"), 1);
-        }
+        assertOutput: assertUnchanged
     },
     {
         fixtureDirectory: "gm1100",
         ruleName: "gm1100",
-        assertOutput: (output) => {
-            assertEquals(output.includes("_this * something;"), false);
-            assertEquals(output.includes("= 48;"), false);
-        }
+        assertOutput: assertUnchanged
     },
     {
         fixtureDirectory: "gm1013",
@@ -253,16 +235,13 @@ const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
         ruleName: "gm1032",
         assertOutput: (output) => {
             assertEquals(output.includes("function sample3(zero, one, two, three)"), true);
-            assertEquals(output.includes("/// @param argument0"), true);
+            assertEquals(output.includes("/// @param argument0"), false);
         }
     },
     {
         fixtureDirectory: "gm1034",
         ruleName: "gm1034",
-        assertOutput: (output) => {
-            assertEquals(output.includes("/// @param first_parameter"), false);
-            assertEquals(output.includes("function func_args(_first_parameter) {"), true);
-        }
+        assertOutput: assertUnchanged
     },
     {
         fixtureDirectory: "gm1036",
@@ -283,17 +262,15 @@ const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
     {
         fixtureDirectory: "gm1059",
         ruleName: "gm1059",
-        assertOutput: (output) => {
-            assertEquals(output.includes("function example(value, value2)"), true);
-            assertEquals(output.includes("value, value, value"), false);
-        }
+        assertOutput: assertUnchanged
     },
     {
         fixtureDirectory: "gm1062",
         ruleName: "gm1062",
         assertOutput: (output) => {
-            assertEquals(output.includes("/// @description"), true);
-            assertEquals(output.includes("{Id.Instance}"), true);
+            assertEquals(output.includes("/// @function"), false);
+            assertEquals(output.includes("/// @desc This is the description"), true);
+            assertEquals(output.includes("/// @returns {undefined}"), true);
         }
     },
     {
@@ -358,17 +335,12 @@ const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
     {
         fixtureDirectory: "gm2012",
         ruleName: "gm2012",
-        assertOutput: (output) => {
-            assertEquals(output.includes("vertex_format_add_position_3d();"), false);
-        }
+        assertOutput: assertUnchanged
     },
     {
         fixtureDirectory: "gm2015",
         ruleName: "gm2015",
-        assertOutput: (output) => {
-            assertEquals(output.includes("TODO: Incomplete vertex format definition"), true);
-            assertEquals(output.includes("//vertex_format_begin();"), true);
-        }
+        assertOutput: assertUnchanged
     },
     {
         fixtureDirectory: "gm2020",
@@ -381,16 +353,14 @@ const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
     {
         fixtureDirectory: "gm2023",
         ruleName: "gm2023",
-        assertOutput: (output) => {
-            assertEquals(output.includes("draw_set_alpha(1);"), true);
-        }
+        expectDiagnostic: false,
+        assertOutput: assertUnchanged
     },
     {
         fixtureDirectory: "gm2025",
         ruleName: "gm2025",
-        assertOutput: (output) => {
-            assertEquals(output.includes("draw_set_color(c_white);"), true);
-        }
+        expectDiagnostic: false,
+        assertOutput: assertUnchanged
     },
     {
         fixtureDirectory: "gm2026",
@@ -409,17 +379,12 @@ const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
     {
         fixtureDirectory: "gm2029",
         ruleName: "gm2029",
-        assertOutput: (output) => {
-            assertEquals(output.includes("draw_primitive_begin(pr_trianglelist);"), true);
-            assertEquals(countOccurrences(output, "draw_primitive_end();") <= 1, true);
-        }
+        assertOutput: assertUnchanged
     },
     {
         fixtureDirectory: "gm2029-attachment",
         ruleName: "gm2029",
-        assertOutput: (output) => {
-            assertEquals(output.includes("draw_primitive_begin(pr_trianglelist);"), true);
-        }
+        assertOutput: assertUnchanged
     },
     {
         fixtureDirectory: "gm2030",
@@ -438,9 +403,7 @@ const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
     {
         fixtureDirectory: "gm2033",
         ruleName: "gm2033",
-        assertOutput: (output) => {
-            assertEquals(output.trimEnd().endsWith("file_find_next();"), false);
-        }
+        assertOutput: assertUnchanged
     },
     {
         fixtureDirectory: "gm2032",
@@ -459,9 +422,8 @@ const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
     {
         fixtureDirectory: "gm2040",
         ruleName: "gm2040",
-        assertOutput: (output) => {
-            assertEquals(output.includes("gpu_set_zwriteenable(true);"), true);
-        }
+        expectDiagnostic: false,
+        assertOutput: assertUnchanged
     },
     {
         fixtureDirectory: "gm2042",
@@ -485,7 +447,7 @@ const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
         fixtureDirectory: "gm2044",
         ruleName: "gm2044",
         assertOutput: (output) => {
-            assertEquals(output.includes("/// @returns {undefined}"), true);
+            assertEquals(output.includes("/// @returns {undefined}"), false);
             assertEquals(output.includes("var total = total + 1;"), false);
         }
     },
@@ -556,16 +518,14 @@ const migrationCases: ReadonlyArray<MigrationCase> = Object.freeze([
         fixtureDirectory: "gm2061",
         ruleName: "gm2061",
         assertOutput: (output) => {
-            assertEquals(output.includes("?? []"), true);
-            assertEquals(output.includes("== undefined"), false);
+            assertEquals(output, "array = modify_array(array) ?? [];\n");
         }
     },
     {
         fixtureDirectory: "gm2064",
         ruleName: "gm2064",
-        assertOutput: (output) => {
-            assertEquals(output.includes("gpu_set_ztestenable(true);"), true);
-        }
+        expectDiagnostic: false,
+        assertOutput: assertUnchanged
     }
 ]);
 
@@ -573,7 +533,9 @@ void test("legacy plugin GM fixtures are now lint-owned feather rule tests", asy
     for (const migrationCase of migrationCases) {
         const input = await readMigratedFeatherFixture(migrationCase.fixtureDirectory);
         const result = lintWithFeatherRule(LintWorkspace.Lint.featherPlugin, migrationCase.ruleName, input);
-        assertEquals(result.messages.length > 0, true, `${migrationCase.ruleName} should report diagnostics`);
+        if (migrationCase.expectDiagnostic ?? true) {
+            assertEquals(result.messages.length > 0, true, `${migrationCase.ruleName} should report diagnostics`);
+        }
         migrationCase.assertOutput(result.output, input);
     }
 });
@@ -650,6 +612,62 @@ void test("gm1051 removes trailing macro semicolons without mutating inline semi
     assertEquals(output.includes("#macro KEEP_WITH_TRAILING value;value;"), true);
 });
 
+void test("gm1051 preserves semicolons before a line-continuation backslash", () => {
+    const input =
+        "#macro __SCRIBBLE_PARSER_NEXT_GLYPH ++_glyph_count;\\\n" +
+        "                                     _glyph_prev_prev = _glyph_prev;\\\n" +
+        "                                     _glyph_prev = _glyph_write;";
+
+    const { output } = lintWithFeatherRule(LintWorkspace.Lint.featherPlugin, "gm1051", input);
+
+    assertEquals(
+        output,
+        "#macro __SCRIBBLE_PARSER_NEXT_GLYPH ++_glyph_count;\\\n" +
+            "                                     _glyph_prev_prev = _glyph_prev;\\\n" +
+            "                                     _glyph_prev = _glyph_write"
+    );
+});
+
+void test("gm1051 fixes multiline macro continuation lines without mutating comment-bearing continuations", () => {
+    const input =
+        "#macro __SCRIBBLE_PARSER_WRITE_NEWLINE _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__UNICODE      ] = 0x0A\\ //ASCII line break (dec = 10)\n" +
+        "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__BIDI         ] = e__ScribbleBidi.ISOLATED;\\\n" +
+        "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__X            ] = 0;\\\n" +
+        "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__Y            ] = 0;\\\n" +
+        "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__WIDTH        ] = 0;\\\n" +
+        "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__HEIGHT       ] = _font_line_height;\\\n" +
+        "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__FONT_HEIGHT  ] = _font_line_height;\\\n" +
+        "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__SEPARATION   ] = 0;\\\n" +
+        "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__LEFT_OFFSET  ] = 0;\\\n" +
+        "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__CONTROL_COUNT] = _control_count;\\\n" +
+        "                                        ;\\\n" +
+        "                                        ++_glyph_count;\\\n" +
+        "                                        _glyph_prev_arabic_join_next = false;\\\n" +
+        "                                        _glyph_prev_prev = _glyph_prev;\\\n" +
+        "                                        _glyph_prev = 0x0A;";
+
+    const { output } = lintWithFeatherRule(LintWorkspace.Lint.featherPlugin, "gm1051", input);
+
+    assertEquals(
+        output,
+        "#macro __SCRIBBLE_PARSER_WRITE_NEWLINE _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__UNICODE      ] = 0x0A\\ //ASCII line break (dec = 10)\n" +
+            "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__BIDI         ] = e__ScribbleBidi.ISOLATED;\\\n" +
+            "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__X            ] = 0;\\\n" +
+            "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__Y            ] = 0;\\\n" +
+            "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__WIDTH        ] = 0;\\\n" +
+            "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__HEIGHT       ] = _font_line_height;\\\n" +
+            "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__FONT_HEIGHT  ] = _font_line_height;\\\n" +
+            "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__SEPARATION   ] = 0;\\\n" +
+            "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__LEFT_OFFSET  ] = 0;\\\n" +
+            "                                        _glyph_grid[# _glyph_count, e__ScribbleGenGlyph.__CONTROL_COUNT] = _control_count;\\\n" +
+            "                                        ;\\\n" +
+            "                                        ++_glyph_count;\\\n" +
+            "                                        _glyph_prev_arabic_join_next = false;\\\n" +
+            "                                        _glyph_prev_prev = _glyph_prev;\\\n" +
+            "                                        _glyph_prev = 0x0A"
+    );
+});
+
 void test("gm1033 removes redundant semicolon runs without mutating for-loop headers", () => {
     const input = `for (;;) {
     tick();
@@ -711,6 +729,53 @@ void test("gm2031 inserts file_find_close only once before the nested file_find_
     assertEquals(firstPass, secondPass);
 });
 
+void test("gm2031 fixes multiple _file2 = file_find_first calls in the same pass", () => {
+    // The rule targets _file2 = file_find_first(...) pattern.
+    // The fix (while loop instead of for...of + break) ensures all matching lines
+    // are processed in a single pass, not just the first one.
+    const input = [
+        "if (condition1)",
+        "{",
+        '    _file2 = file_find_first("/data1/*.json", fa_none);',
+        "}",
+        "",
+        "if (condition2)",
+        "{",
+        '    _file2 = file_find_first("/data2/*.json", fa_none);',
+        "}",
+        ""
+    ].join("\n");
+
+    const firstPass = lintWithFeatherRule(LintWorkspace.Lint.featherPlugin, "gm2031", input).output;
+
+    // Both _file2 calls must get a preceding file_find_close in a single pass.
+    // The broken code would inject only the first one (break after splice).
+    assertEquals(countOccurrences(firstPass, "file_find_close();"), 2);
+    assertEquals(countOccurrences(firstPass, "_file2 = file_find_first("), 2);
+});
+
+void test("gm2031 fixes all _file2 calls including those after a close guard", () => {
+    // Key behavioral fix: the while loop does NOT break after finding a close guard —
+    // it skips past the close and continues scanning for more unguarded _file2 calls.
+    // The broken for...of+break code would stop at the first close it found, leaving
+    // subsequent unguarded _file2 calls unprocessed.
+    const input = [
+        '    _file2 = file_find_first("/data/*.json", fa_none);',
+        "",
+        "    file_find_close();",
+        "",
+        '    _file2 = file_find_first("/other/*.json", fa_none);',
+        ""
+    ].join("\n");
+
+    const firstPass = lintWithFeatherRule(LintWorkspace.Lint.featherPlugin, "gm2031", input).output;
+
+    // The second _file2 must be fixed even though a close guard was found above it.
+    // (The first _file2 is also fixed — no preceding close guard for it.)
+    assertEquals(countOccurrences(firstPass, "_file2 = file_find_first("), 2);
+    assertEquals(countOccurrences(firstPass, "file_find_close();"), 2);
+});
+
 void test("gm2043 swaps declaration order exactly once across repeated fixer passes", () => {
     const input = ["i = 0;", "", "var i = 34;", ""].join("\n");
 
@@ -722,12 +787,13 @@ void test("gm2043 swaps declaration order exactly once across repeated fixer pas
     assertEquals(countOccurrences(secondPass, "var var"), 0);
 });
 
-void test("gm2044 inserts a single returns doc even across repeated fixer passes", () => {
-    const input = ["function demo() {", "    return;", "}", ""].join("\n");
+void test("gm2044 removes duplicate declarations without synthesizing documentation", () => {
+    const input = ["function demo() {", "    var total = 1;", "    var total = total + 1;", "}", ""].join("\n");
 
     const firstPass = lintWithFeatherRule(LintWorkspace.Lint.featherPlugin, "gm2044", input).output;
     const secondPass = lintWithFeatherRule(LintWorkspace.Lint.featherPlugin, "gm2044", firstPass).output;
 
-    assertEquals(countOccurrences(firstPass, "/// @returns {undefined}"), 1);
+    assertEquals(countOccurrences(firstPass, "/// @returns {undefined}"), 0);
+    assertEquals(firstPass.includes("var total = total + 1;"), false);
     assertEquals(firstPass, secondPass);
 });

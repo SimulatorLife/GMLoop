@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { Parser } from "@gmloop/parser";
+import { Transpiler } from "@gmloop/transpiler";
 
-import { Transpiler } from "../index.js";
 import type { CallExpressionNode } from "../src/emitter/ast.js";
 
 /**

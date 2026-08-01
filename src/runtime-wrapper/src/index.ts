@@ -1,19 +1,21 @@
-import * as Runtime from "./runtime/index.js";
-import * as Timing from "./timing/index.js";
-import * as Clients from "./websocket/index.js";
+import * as Runtime from "./browser/runtime/index.js";
+import * as Timing from "./browser/timing.js";
+import * as Clients from "./browser/websocket/index.js";
 
 // Export the RuntimeWrapper namespace as the primary public API
 export const RuntimeWrapper = Object.freeze({
     ...Runtime,
     ...Clients,
-    ...Timing,
     Timing
 });
 
 export type {
     ApplyPatchResult,
     BatchApplyResult,
+    ClosureCollection,
+    ConsoleOutput,
     ErrorAnalytics,
+    EventCollection,
     GeneralLogger,
     Logger,
     LoggerConfiguration,
@@ -21,6 +23,7 @@ export type {
     LogLevel,
     Patch,
     PatchApplicator,
+    PatchDependencyRegistry,
     PatchDiagnostics,
     PatchErrorAnalytics,
     PatchErrorCategory,
@@ -41,6 +44,7 @@ export type {
     RegistryLifecycleLogger,
     RegistryMutator,
     RegistryReader,
+    ResourceCollection,
     RuntimeFunction,
     RuntimeMetrics,
     RuntimePatchError,
@@ -50,11 +54,13 @@ export type {
     RuntimeWrapperOptions,
     RuntimeWrapperState,
     RuntimeWrapper as RuntimeWrapperType,
+    ScriptCollection,
     TrySafeApplyResult,
+    VersionedRegistry,
     WebSocketLogger
-} from "./runtime/index.js";
+} from "./browser/runtime/index.js";
 // Export sub-namespaces for internal use and testing
-export * as Runtime from "./runtime/index.js";
+export * as Runtime from "./browser/runtime/index.js";
 export type {
     MessageEventLike,
     PatchQueueMetrics,
@@ -72,10 +78,7 @@ export type {
     WebSocketMessageSender,
     WebSocketMetricsCollector,
     WebSocketPatchQueueManager
-} from "./websocket/index.js";
-export * as Clients from "./websocket/index.js";
-// Timing helpers remain available at the workspace root for compatibility, but
-// their implementation now lives in the dedicated timing domain alongside a
-// nested namespace export for consumers that prefer explicit grouping.
-export * as Timing from "./timing/index.js";
-export { getHighResolutionTime, getWallClockTime, measureDuration } from "./timing/index.js";
+} from "./browser/websocket/index.js";
+export * as Clients from "./browser/websocket/index.js";
+// The Timing namespace is the canonical public surface for timing utilities.
+export * as Timing from "./browser/timing.js";

@@ -9,7 +9,7 @@ import type {
     CommanderParseOptions
 } from "./commander-types.js";
 
-const { assertFunctionProperties, describeValueWithArticle, isObjectOrFunction } = Core;
+const { assertFunctionProperties, describeValueWithArticle, hasFunction, isObjectOrFunction } = Core;
 
 type CommanderParse = (argv?: Array<string>, options?: CommanderParseOptions) => Promise<unknown>;
 
@@ -30,13 +30,6 @@ export interface CommanderCommandContract {
     raw: CommanderCommandLike;
     action: (handler: CommanderActionHandler) => CommanderCommandLike;
     getUsage(): string | null;
-}
-
-function hasFunction<TValue, TKey extends PropertyKey>(
-    value: TValue,
-    property: TKey
-): value is TValue & Record<TKey, (...args: Array<unknown>) => unknown> {
-    return typeof (value as Record<TKey, unknown>)?.[property] === "function";
 }
 
 function formatValueForUsage(output: unknown): string {

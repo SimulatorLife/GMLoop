@@ -1,19 +1,48 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
+import { availableParallelism } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 
+import { runCliTestCommand } from "../src/cli.js";
+import { createWatchCommand, runWatchCommand } from "../src/commands/watch.js";
+import {
+    DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_COUNT,
+    DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS,
+    DEFAULT_WATCH_POLLING_INTERVAL_MS,
+    WATCHED_GAME_MAKER_EXTENSIONS
+} from "../src/commands/watch/constants.js";
 import {
     countSourceLines,
     createExtensionMatcher,
-    createWatchCommand,
     hashSourceContent,
-    resolveUnknownScanConcurrency,
-    runWatchCommand
-} from "../src/commands/watch.js";
+    resolveUnknownScanConcurrency
+} from "../src/commands/watch/source-analysis.js";
 import { withTemporaryProperty } from "./test-helpers/temporary-property.js";
+
+function createWatchCommandIntegrationOptions(abortSignal: AbortSignal): Parameters<typeof runWatchCommand>[1] {
+    return {
+        polling: false,
+        pollingInterval: 1000,
+        verbose: false,
+        abortSignal,
+        hydrateRuntime: false,
+        websocketServer: false,
+        statusServer: false
+    };
+}
+
+async function removeDirectoryWithoutMaskingOriginalError(directoryPath: string): Promise<void> {
+    await rm(directoryPath, { recursive: true, force: true }).catch(() => {
+        // Ignore cleanup errors during exception unwinding. The test is
+        // already failing (see `throw error` below), and a secondary cleanup
+        // failure should not mask the original test failure. This defensive
+        // approach ensures that the underlying error propagates cleanly to
+        // the test runner even if the temporary directory cannot be removed.
+    });
+}
 
 void describe("watch command", () => {
     void it("should create a command instance with correct configuration", () => {
@@ -23,18 +52,15 @@ void describe("watch command", () => {
         assert.equal(command.description(), "Watch GML source files and coordinate hot-reload pipeline actions");
 
         const options = command.options;
-        assert.ok(options.some((opt) => opt.long === "--extensions"));
         assert.ok(options.some((opt) => opt.long === "--polling"));
         assert.ok(options.some((opt) => opt.long === "--polling-interval"));
         assert.ok(options.some((opt) => opt.long === "--verbose"));
     });
 
-    void it("should have default extension set to .gml", () => {
+    void it("does not expose a user-configurable extension option", () => {
         const command = createWatchCommand();
         const extensionsOption = command.options.find((opt) => opt.long === "--extensions");
-
-        assert.ok(extensionsOption);
-        assert.deepEqual(extensionsOption.defaultValue, [".gml"]);
+        assert.equal(extensionsOption, undefined);
     });
 
     void it("should have default polling interval of 1000ms", () => {
@@ -42,7 +68,20 @@ void describe("watch command", () => {
         const pollingIntervalOption = command.options.find((opt) => opt.long === "--polling-interval");
 
         assert.ok(pollingIntervalOption);
-        assert.equal(pollingIntervalOption.defaultValue, 1000);
+        assert.equal(pollingIntervalOption.defaultValue, DEFAULT_WATCH_POLLING_INTERVAL_MS);
+    });
+
+    void it("exposes configurable transient empty-file retry defaults", () => {
+        const command = createWatchCommand();
+        const retryCountOption = command.options.find((opt) => opt.long === "--transient-empty-file-read-retry-count");
+        const retryDelayOption = command.options.find(
+            (opt) => opt.long === "--transient-empty-file-read-retry-delay-ms"
+        );
+
+        assert.ok(retryCountOption);
+        assert.ok(retryDelayOption);
+        assert.equal(retryCountOption.defaultValue, DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_COUNT);
+        assert.equal(retryDelayOption.defaultValue, DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS);
     });
 
     void it("normalizes extensions case-insensitively", () => {
@@ -53,12 +92,21 @@ void describe("watch command", () => {
         assert.ok(matcher.matches("event.YY"));
     });
 
-    void it("normalizes extension arguments that include globs or directory prefixes", () => {
-        const matcher = createExtensionMatcher(["scripts/*.gml", String.raw`objects\enemy.YY`]);
+    void it("uses the opinionated GameMaker watch extension defaults", () => {
+        const matcher = createExtensionMatcher(WATCHED_GAME_MAKER_EXTENSIONS);
 
         assert.deepEqual([...matcher.extensions].toSorted(), [".gml", ".yy"]);
         assert.ok(matcher.matches("example.gml"));
         assert.ok(matcher.matches("event.yy"));
+        assert.equal(matcher.matches("notes.txt"), false);
+    });
+
+    void it("treats dotfiles as extension-less while matching nested paths", () => {
+        const matcher = createExtensionMatcher([".gml"]);
+
+        assert.equal(matcher.matches(".gml"), false);
+        assert.equal(matcher.matches("objects/player/create.GML"), true);
+        assert.equal(matcher.matches(String.raw`objects\player\create.GML`), true);
     });
 
     void it("counts source lines across newline conventions", () => {
@@ -89,11 +137,19 @@ void describe("watch command", () => {
     });
 
     void it("resolveUnknownScanConcurrency clamps values to at least one", () => {
-        assert.equal(resolveUnknownScanConcurrency(16), 16);
+        const cpuBound = Math.max(1, availableParallelism());
+        assert.equal(resolveUnknownScanConcurrency(cpuBound + 50), cpuBound);
         assert.equal(resolveUnknownScanConcurrency(1), 1);
         assert.equal(resolveUnknownScanConcurrency(0), 1);
         assert.equal(resolveUnknownScanConcurrency(-5), 1);
-        assert.equal(resolveUnknownScanConcurrency(8.7), 8);
+        assert.equal(resolveUnknownScanConcurrency(8.7), Math.min(8, cpuBound));
+    });
+
+    void it("resolveUnknownScanConcurrency normalizes non-finite values to CPU-bound defaults", () => {
+        const cpuBound = Math.max(1, availableParallelism());
+        assert.equal(resolveUnknownScanConcurrency(Number.POSITIVE_INFINITY), cpuBound);
+        assert.equal(resolveUnknownScanConcurrency(Number.NEGATIVE_INFINITY), cpuBound);
+        assert.equal(resolveUnknownScanConcurrency(Number.NaN), cpuBound);
     });
 });
 
@@ -116,7 +172,6 @@ void describe("watch command integration", () => {
             async () => {
                 try {
                     await runWatchCommand(nonExistentPath, {
-                        extensions: [".gml"],
                         polling: false,
                         pollingInterval: 1000,
                         verbose: false
@@ -130,48 +185,6 @@ void describe("watch command integration", () => {
         assert.equal(exitCodeHolder.code, 1, "Should exit with code 1");
     });
 
-    void it("should normalize file extensions", async () => {
-        // Create a temporary directory for testing
-        const testDir = path.join("/tmp", `watch-test-${Date.now()}-${randomUUID()}`);
-
-        await mkdir(testDir, { recursive: true });
-
-        try {
-            const abortController = new AbortController();
-
-            const watchPromise = runWatchCommand(testDir, {
-                extensions: ["gml", ".yy"],
-                polling: false,
-                pollingInterval: 1000,
-                verbose: false,
-                abortSignal: abortController.signal,
-                hydrateRuntime: false,
-                websocketServer: false,
-                statusServer: false
-            });
-
-            // Give it a moment to start
-            await sleep(100);
-
-            abortController.abort();
-
-            await watchPromise;
-
-            // Clean up
-            await rm(testDir, { recursive: true, force: true });
-        } catch (error) {
-            // Clean up on error
-            await rm(testDir, { recursive: true, force: true }).catch(() => {
-                // Ignore cleanup errors during exception unwinding. The test is
-                // already failing (see `throw error` below), and a secondary cleanup
-                // failure should not mask the original test failure. This defensive
-                // approach ensures that the underlying error propagates cleanly to
-                // the test runner even if the temporary directory cannot be removed.
-            });
-            throw error;
-        }
-    });
-
     void it("uses the default watcher when watchFactory is explicitly undefined", async () => {
         const testDir = path.join("/tmp", `watch-test-default-factory-${Date.now()}-${randomUUID()}`);
 
@@ -181,14 +194,7 @@ void describe("watch command integration", () => {
             const abortController = new AbortController();
 
             const watchPromise = runWatchCommand(testDir, {
-                extensions: [".gml"],
-                polling: false,
-                pollingInterval: 1000,
-                verbose: false,
-                abortSignal: abortController.signal,
-                hydrateRuntime: false,
-                websocketServer: false,
-                statusServer: false,
+                ...createWatchCommandIntegrationOptions(abortController.signal),
                 watchFactory: undefined
             });
 
@@ -216,14 +222,7 @@ void describe("watch command integration", () => {
             // Mock transpiler to capture patches
             // Start watching
             const watchPromise = runWatchCommand(testDir, {
-                extensions: [".gml"],
-                polling: false,
-                pollingInterval: 1000,
-                verbose: false,
-                abortSignal: abortController.signal,
-                hydrateRuntime: false,
-                websocketServer: false,
-                statusServer: false,
+                ...createWatchCommandIntegrationOptions(abortController.signal),
                 runtimeServerStarter: async () => ({
                     stop: async () => {},
                     host: "localhost",
@@ -254,14 +253,29 @@ void describe("watch command integration", () => {
             assert.ok(true, "Watch command handled file creation");
         } catch (error) {
             // Clean up on error
-            await rm(testDir, { recursive: true, force: true }).catch(() => {
-                // Ignore cleanup errors during exception unwinding. The test is
-                // already failing (see `throw error` below), and a secondary cleanup
-                // failure should not mask the original test failure. This defensive
-                // approach ensures that the underlying error propagates cleanly to
-                // the test runner even if the temporary directory cannot be removed.
-            });
+            await removeDirectoryWithoutMaskingOriginalError(testDir);
             throw error;
         }
+    });
+});
+
+void describe("live-reload dev command help consistency", () => {
+    void it("shows 'Show this help message.' for --help flag, matching all other commands", async () => {
+        const { stdout } = await runCliTestCommand({ argv: ["live-reload", "dev", "--help"] });
+
+        assert.match(stdout, /--help.*Show this help message\./);
+    });
+
+    void it("shows help hint on unknown option, matching the pattern of lint and format", async () => {
+        const { stdout, stderr } = await runCliTestCommand({ argv: ["live-reload", "dev", "--unknown-flag-xyz"] });
+
+        const combined = stdout + stderr;
+        assert.match(combined, /add --help for usage information/);
+    });
+
+    void it("exits non-zero when an unknown option is passed", async () => {
+        const { exitCode } = await runCliTestCommand({ argv: ["live-reload", "dev", "--unknown-flag-xyz"] });
+
+        assert.notEqual(exitCode, 0);
     });
 });

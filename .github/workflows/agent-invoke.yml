@@ -21,11 +21,27 @@ on:
       agent_command:
         type: string
         required: false
-      agent_package:
+      agent_command_file:
         type: string
         required: false
+      agent_setup_command:
+        type: string
+        required: false
+      agent_setup_command_file:
+        type: string
+        required: false
+      openai_base_url:
+        type: string
+        required: false
+        default: 'http://127.0.0.1:11434/v1'
+      max_agent_retries:
+        type: number
+        required: false
+        default: 1
     secrets:
-      api_key: # may contain one key OR multiple newline-separated keys
+      OPENAI_API_KEY:
+        required: false
+      GH_USER_TOKEN:
         required: true
 
 concurrency:
@@ -34,11 +50,21 @@ concurrency:
 
 jobs:
   invoke:
+    outputs:
+      should_request_merge_conflict_resolution: ${{ steps.evaluate_merge_conflicts.outputs.should_request_merge_conflict_resolution || 'false' }}
+      target_pr_number: ${{ steps.evaluate_merge_conflicts.outputs.target_pr_number || '' }}
+      follow_up_agent: ${{ steps.evaluate_merge_conflicts.outputs.follow_up_agent || '' }}
     runs-on: ubuntu-latest
+    env:
+      OPENAI_API_TYPE: openai
+      OPENAI_BASE_URL: ${{ inputs.openai_base_url }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'ollama' }}
+      NODE_OPTIONS: --disable-warning=ExperimentalWarning
     permissions:
       contents: write
       issues: write
       pull-requests: write
+
     steps:
       - name: Verify gh CLI available
         run: gh --version
@@ -53,13 +79,13 @@ jobs:
 
           test -n "${GH_USER_TOKEN}" || { echo "GH_USER_TOKEN is empty"; exit 1; }
 
-          token_user=$(curl -sS -H "Authorization: token ${GH_USER_TOKEN}" https://api.github.com/user | jq -r '.login // empty')
+          token_user="$(curl -sS -H "Authorization: token ${GH_USER_TOKEN}" https://api.github.com/user | jq -r '.login // empty')"
           if [ -z "${token_user}" ]; then
             echo "Unable to resolve GH_USER_TOKEN user identity via /user." >&2
             exit 1
           fi
 
-          can_push=$(curl -sS -H "Authorization: token ${GH_USER_TOKEN}" "https://api.github.com/repos/${REPOSITORY}" | jq -r '.permissions.push // false')
+          can_push="$(curl -sS -H "Authorization: token ${GH_USER_TOKEN}" "https://api.github.com/repos/${REPOSITORY}" | jq -r '.permissions.push // false')"
           if [ "${can_push}" != "true" ]; then
             echo "GH_USER_TOKEN user '${token_user}' does not have push permission to ${REPOSITORY}." >&2
             echo "Grant that account write access or replace GH_USER_TOKEN with a PAT/app token that has contents:write." >&2
@@ -81,31 +107,43 @@ jobs:
         run: |
           set -euo pipefail
 
-          # If a raw comment body was provided, validate it mentions the agent and extract
-          # the additional context. We expect callers to pass the raw comment body; the
-          # mention token is simply @<agent> (e.g. @gemini, @qwen).
           if [ -n "${RAW_COMMENT}" ]; then
             mention="@${AGENT_NAME}"
-            if ! printf '%s' "${RAW_COMMENT}" | grep -qF "${mention}"; then
-              echo "Comment does not mention ${mention}; aborting." >&2
+            normalized_comment="$(
+              printf '%s\n' "${RAW_COMMENT}" | awk '
+                BEGIN { skipping = 1 }
+                {
+                  line = $0
+                  if (skipping && line ~ /^[[:space:]]*$/) next
+                  if (skipping && line ~ /^[[:space:]]*<!--.*-->[[:space:]]*$/) next
+                  skipping = 0
+                  print
+                }
+              '
+            )"
+
+            if ! printf '%s' "${normalized_comment}" | grep -qE "^${mention}([[:space:]]|$)"; then
+              echo "Comment does not start with ${mention} after optional marker lines; aborting." >&2
               exit 1
             fi
-            ADDITIONAL_CTX=$(printf '%s' "${RAW_COMMENT}" | sed -E "s/^.*${mention}\s*//")
+
+            ADDITIONAL_CTX="$(printf '%s' "${normalized_comment}" | sed -E "1s/^${mention}[[:space:]]*//")"
             echo "additional_context<<EOF" >> "$GITHUB_OUTPUT"
             printf '%s' "$ADDITIONAL_CTX" >> "$GITHUB_OUTPUT"
             echo >> "$GITHUB_OUTPUT"
             echo "EOF" >> "$GITHUB_OUTPUT"
           fi
 
-          # Fetch PR metadata directly and emit outputs (avoid temporary files)
-          PR_JSON=$(gh pr view "${PR_NUMBER}" --repo "${REPOSITORY}" --json headRefName,headRefOid,title -q '.')
-          PR_HEAD_REF=$(jq -r '.headRefName // empty' <<<"$PR_JSON")
-          PR_HEAD_SHA=$(jq -r '.headRefOid // empty' <<<"$PR_JSON")
-          PR_TITLE=$(jq -r '.title // empty' <<<"$PR_JSON")
+          PR_JSON="$(gh pr view "${PR_NUMBER}" --repo "${REPOSITORY}" --json headRefName,headRefOid,title -q '.')"
+          PR_HEAD_REF="$(jq -r '.headRefName // empty' <<<"$PR_JSON")"
+          PR_HEAD_SHA="$(jq -r '.headRefOid // empty' <<<"$PR_JSON")"
+          PR_TITLE="$(jq -r '.title // empty' <<<"$PR_JSON")"
+
           if [ -z "$PR_HEAD_REF" ] || [ -z "$PR_HEAD_SHA" ]; then
             echo "Failed to determine PR head ref/sha for PR #${PR_NUMBER}" >&2
             exit 1
           fi
+
           echo "pr_title<<EOF" >> "$GITHUB_OUTPUT"
           printf '%s' "$PR_TITLE" >> "$GITHUB_OUTPUT"
           echo >> "$GITHUB_OUTPUT"
@@ -120,19 +158,18 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ inputs.pr_number }}
-          AGENT_NAME: ${{ inputs.agent }}
           REPOSITORY: ${{ github.repository }}
           MESSAGE: |-
             **[🤖 ${{ inputs.agent }}]** Hi, I've received your request and will begin working on it now. See the [logs for progress](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
         run: |
           set -euo pipefail
+
           gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}"
 
       - name: Checkout target commit
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          # Use the SHA fetched by the validate_pr step (prefer step output to inputs)
           ref: ${{ steps.validate_pr.outputs.head_sha }}
           submodules: recursive
           persist-credentials: false
@@ -144,18 +181,22 @@ jobs:
           TARGET_SHA: ${{ steps.validate_pr.outputs.head_sha }}
         run: |
           set -euo pipefail
+
           raw="${WORKING_BRANCH}"
           branch="${raw#refs/heads/}"
           branch="${branch#origin/}"
+
           git checkout -B "${branch}" "${TARGET_SHA}"
           echo "WORKING_BRANCH=${branch}" >> "$GITHUB_ENV"
 
       - name: Configure git identity
+        shell: bash
         env:
           GH_USER_NAME: ${{ vars.GH_USER_NAME }}
           GH_USER_EMAIL: ${{ vars.GH_USER_EMAIL }}
         run: |
           set -euo pipefail
+
           git config user.name "${GH_USER_NAME}"
           git config user.email "${GH_USER_EMAIL}"
           git config --global user.name "${GH_USER_NAME}"
@@ -165,10 +206,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           shim_dir="$RUNNER_TEMP/cmd_shims"
           mkdir -p "$shim_dir"
+
           real_git="$(command -v git)"
-          if [ -z "$real_git" ]; then echo "Could not locate real git"; exit 1; fi
+          if [ -z "$real_git" ]; then
+            echo "Could not locate real git"
+            exit 1
+          fi
+
           {
             echo '#!/usr/bin/env bash'
             echo "REAL_GIT=\"$real_git\""
@@ -181,75 +228,170 @@ jobs:
             echo 'fi'
             echo 'exit $code'
           } > "$shim_dir/git"
+
           chmod +x "$shim_dir/git"
           echo "PATH=$shim_dir:$PATH" >> "$GITHUB_ENV"
 
       - name: Use PAT for pushes
+        shell: bash
         env:
           GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
         run: |
           set -euo pipefail
+
           git config --local --unset-all http.https://github.com/.extraheader || true
           git remote set-url origin "https://x-access-token:${GH_USER_TOKEN}@github.com/${{ github.repository }}.git"
 
-      - name: Read Node version from .nvmrc
-        id: read-node-version
-        run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          cache: true
 
-      - name: Use Node from .nvmrc
+      - name: Setup node
         uses: actions/setup-node@v6
         with:
-          node-version: ${{ steps.read-node-version.outputs.version }}
+          node-version-file: .nvmrc
           cache: 'pnpm'
           cache-dependency-path: |
             pnpm-lock.yaml
             **/pnpm-lock.yaml
 
-      - name: Enable pnpm via Corepack
-        run: |
-          corepack enable
-          corepack prepare $(node -p "require('./package.json').packageManager") --activate
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --recursive
 
-      - name: Install dependencies and build (root/workspaces)
+      - name: Build TypeScript workspaces (best effort)
         run: |
-          set -o pipefail
+          if ! pnpm run build:ts; then
+            echo "::warning::TypeScript workspace build failed; continuing environment setup."
+          fi
+        continue-on-error: true
 
-          run_typescript_build_best_effort() {
-            if ! pnpm run build:ts; then
-              echo "::warning::TypeScript workspace build failed; continuing agent workflow setup."
-            fi
+      - name: Start and validate local OpenAI-compatible endpoint
+        if: ${{ startsWith(inputs.openai_base_url, 'http://127.0.0.1') || startsWith(inputs.openai_base_url, 'http://localhost') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -n "${OPENAI_BASE_URL:-}" || { echo "OPENAI_BASE_URL is empty"; exit 1; }
+          test -n "${OPENAI_API_KEY:-}" || { echo "OPENAI_API_KEY is empty"; exit 1; }
+
+          OLLAMA_NATIVE_URL="${OPENAI_BASE_URL%/}"
+          OLLAMA_NATIVE_URL="${OLLAMA_NATIVE_URL%/v1}"
+
+          if [ -n "${NO_PROXY:-}" ]; then
+            NO_PROXY="${NO_PROXY},127.0.0.1,localhost"
+          else
+            NO_PROXY='127.0.0.1,localhost'
+          fi
+
+          if [ -n "${no_proxy:-}" ]; then
+            no_proxy="${no_proxy},127.0.0.1,localhost"
+          else
+            no_proxy='127.0.0.1,localhost'
+          fi
+
+          echo "OPENAI_BASE_URL=${OPENAI_BASE_URL}" >> "$GITHUB_ENV"
+          echo "OPENAI_API_KEY=${OPENAI_API_KEY}" >> "$GITHUB_ENV"
+          echo "NO_PROXY=${NO_PROXY}" >> "$GITHUB_ENV"
+          echo "no_proxy=${no_proxy}" >> "$GITHUB_ENV"
+
+          curl_local() {
+            curl --noproxy '*' -fsS "$@"
           }
 
-          install_log="$(mktemp)"
-          if pnpm install --frozen-lockfile 2>&1 | tee "$install_log"; then
-            run_typescript_build_best_effort
-            exit 0
+          if ! command -v ollama >/dev/null 2>&1; then
+            curl -fsSL https://ollama.com/install.sh | sh
+            export PATH="$HOME/.local/bin:$PATH"
           fi
 
-          if grep -q "ERR_PNPM_OUTDATED_LOCKFILE" "$install_log"; then
-            echo "::warning::pnpm-lock.yaml is out of date. Retrying install with --no-frozen-lockfile."
-            pnpm install --no-frozen-lockfile
-            run_typescript_build_best_effort
-            exit 0
+          if ! curl_local "${OLLAMA_NATIVE_URL}/api/version" >/dev/null 2>&1; then
+            ollama serve > ollama.log 2>&1 &
           fi
 
-          echo "::error::Dependency install failed for a reason other than outdated lockfile."
-          exit 1
+          for attempt in {1..60}; do
+            if curl_local "${OLLAMA_NATIVE_URL}/api/version" >/dev/null 2>&1; then
+              break
+            fi
 
-      - name: Install agent CLI (from child)
-        if: ${{ inputs.agent_package != '' }}
+            if [ "${attempt}" -eq 60 ]; then
+              echo "❌ Ollama native API did not become ready at ${OLLAMA_NATIVE_URL}."
+              cat ollama.log || true
+              exit 1
+            fi
+
+            sleep 1
+          done
+
+          models_response=''
+          for attempt in {1..30}; do
+            if models_response="$(curl_local "${OPENAI_BASE_URL%/}/models" 2>/dev/null)" \
+              && jq -e 'type == "object"' >/dev/null <<<"${models_response}"; then
+              exit 0
+            fi
+
+            if [ "${attempt}" -eq 30 ]; then
+              echo "❌ OpenAI-compatible /models endpoint did not return a valid JSON object at ${OPENAI_BASE_URL}."
+              if [ -n "${models_response}" ]; then
+                printf 'Last /models response:\n%s\n' "${models_response}"
+              fi
+              cat ollama.log || true
+              exit 1
+            fi
+
+            sleep 2
+          done
+
+      - name: Run agent setup command
+        if: ${{ inputs.agent_setup_command != '' || inputs.agent_setup_command_file != '' }}
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          AGENT_SETUP_COMMAND: ${{ inputs.agent_setup_command }}
+          AGENT_SETUP_COMMAND_FILE: ${{ inputs.agent_setup_command_file }}
         run: |
-          echo "Checking for CLI: ${{ inputs.agent }} (from pnpm package: ${{ inputs.agent_package }})"
-          if ! command -v ${{ inputs.agent }} >/dev/null 2>&1; then
-            echo "Not found, installing ${{ inputs.agent_package }} via pnpm..."
-            pnpm add -g ${{ inputs.agent_package }}
-            echo "Installed ${{ inputs.agent_package }}. CLI location: $(command -v ${{ inputs.agent }})"
+          set -euo pipefail
+
+          cd "${GITHUB_WORKSPACE}"
+
+          echo "Running one-time agent setup command"
+          echo "[agent] Setup working directory: $(pwd)"
+          echo "[agent] Setup git root: $(git rev-parse --show-toplevel)"
+
+          setup_script="$RUNNER_TEMP/agent_setup_cmd.sh"
+
+          if [ -n "${AGENT_SETUP_COMMAND_FILE:-}" ]; then
+            case "${AGENT_SETUP_COMMAND_FILE}" in
+              /*|../*|*/../*|*/..|..)
+                echo "❌ agent_setup_command_file must be a safe repository-relative path."
+                exit 1
+                ;;
+            esac
+
+            source_setup_script="${GITHUB_WORKSPACE}/${AGENT_SETUP_COMMAND_FILE}"
+
+            if [ ! -f "${source_setup_script}" ]; then
+              echo "❌ agent_setup_command_file does not exist: ${AGENT_SETUP_COMMAND_FILE}"
+              exit 1
+            fi
+
+            cp "${source_setup_script}" "$setup_script"
           else
-            echo "${{ inputs.agent }} CLI already installed at: $(command -v ${{ inputs.agent }})"
+            printf '%s\n' "${AGENT_SETUP_COMMAND}" > "$setup_script"
           fi
 
-      - name: Run agent custom command
-        if: ${{ inputs.agent_command != '' }}
+          sed -i 's/\r$//' "$setup_script"
+          chmod 700 "$setup_script"
+
+          echo "---- agent_setup_cmd.sh ----"
+          nl -ba "$setup_script"
+          echo "----------------------------"
+
+          stdbuf -oL -eL bash "$setup_script" 2>&1 | tee "$RUNNER_TEMP/agent-setup.log"
+
+      - name: Run agent custom command with retries
+        if: ${{ inputs.agent_command != '' || inputs.agent_command_file != '' }}
         shell: bash
         id: run_agent
         continue-on-error: true
@@ -261,107 +403,366 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           ADDITIONAL_CONTEXT: ${{ steps.validate_pr.outputs.additional_context || '' }}
-          API_KEY: ${{ secrets.api_key }}
+          AGENT_NAME: ${{ inputs.agent }}
+          MAX_AGENT_RETRIES: ${{ inputs.max_agent_retries }}
+          WORKING_BRANCH: ${{ env.WORKING_BRANCH }}
+          AGENT_COMMAND: ${{ inputs.agent_command }}
+          AGENT_COMMAND_FILE: ${{ inputs.agent_command_file }}
         run: |
           set -euo pipefail
-          echo "Running agent command"
+
+          cd "${GITHUB_WORKSPACE}"
+
+          echo "Running agent command with retry support"
+          echo "[agent] Workflow working directory: $(pwd)"
+          echo "[agent] Workflow git root: $(git rev-parse --show-toplevel)"
+          echo "[agent] Workflow branch: $(git branch --show-current)"
 
           script="$RUNNER_TEMP/agent_cmd.sh"
-          # Write the command exactly as-is (no interpolation)
-          cat >"$script" <<'SCRIPT'
-          ${{ inputs.agent_command }}
-          SCRIPT
 
-          # Normalize CRLF if someone pasted Windows newlines (harmless otherwise)
+          if [ -n "${AGENT_COMMAND_FILE:-}" ]; then
+            case "${AGENT_COMMAND_FILE}" in
+              /*|../*|*/../*|*/..|..)
+                echo "❌ agent_command_file must be a safe repository-relative path."
+                exit 1
+                ;;
+            esac
+
+            source_script="${GITHUB_WORKSPACE}/${AGENT_COMMAND_FILE}"
+
+            if [ ! -f "${source_script}" ]; then
+              echo "❌ agent_command_file does not exist: ${AGENT_COMMAND_FILE}"
+              exit 1
+            fi
+
+            cp "${source_script}" "$script"
+          else
+            printf '%s\n' "${AGENT_COMMAND}" > "$script"
+          fi
+
           sed -i 's/\r$//' "$script"
-
           chmod 700 "$script"
 
-          # Optional: show the script in debug logs
           echo "---- agent_cmd.sh ----"
           nl -ba "$script"
           echo "----------------------"
 
-          bash "$script"
+          if ! [[ "${MAX_AGENT_RETRIES}" =~ ^[0-9]+$ ]]; then
+            echo "::error::max_agent_retries must be a non-negative integer; got '${MAX_AGENT_RETRIES}'."
+            exit 1
+          fi
 
-      - name: Auto-commit and push agent changes if needed
-        if: ${{ steps.run_agent.outcome == 'success' }}
-        shell: bash
-        env:
-          PR_NUMBER: ${{ inputs.pr_number }}
-          AGENT_NAME: ${{ inputs.agent }}
-          WORKING_BRANCH: ${{ env.WORKING_BRANCH }}
-        run: |
-          set -euo pipefail
+          total_attempts=$((MAX_AGENT_RETRIES + 1))
 
           SENTINEL="${RUNNER_TEMP:-/tmp}/.agent_push_succeeded"
+          NO_CHANGE_SENTINEL="${RUNNER_TEMP:-/tmp}/.agent_no_change_retries_exhausted"
+          RETRY_COMMENT_SENTINEL="${RUNNER_TEMP:-/tmp}/.agent_retry_comment_posted"
 
-          # If the shim already saw a successful git push, don't do anything.
-          if [ -f "$SENTINEL" ]; then
-            echo "[agent] Push sentinel already present; skipping auto-commit/push."
-            exit 0
-          fi
+          rm -f "$NO_CHANGE_SENTINEL"
+          rm -f "$RETRY_COMMENT_SENTINEL"
 
-          git fetch origin "${WORKING_BRANCH}" || true
+          redact_git_remote_credentials() {
+            sed -E 's#(https://)[^/@]+@#\1***@#g'
+          }
 
-          has_worktree_changes=false
-          if ! git diff --quiet || ! git diff --cached --quiet; then
-            has_worktree_changes=true
-          fi
+          is_stageable_untracked_path() {
+            local candidate="$1"
 
-          if [ "${has_worktree_changes}" = true ]; then
-            echo "[agent] Changes detected; committing before push."
-            git status
-            git add -A
+            if [ -z "${candidate}" ]; then
+              return 1
+            fi
 
-            commit_message="chore: apply @${AGENT_NAME} changes for PR #${PR_NUMBER}"
-            if git commit -m "$commit_message"; then
-              echo "[agent] Created commit: ${commit_message}"
+            if [[ "${candidate}" =~ [[:cntrl:]] ]]; then
+              return 1
+            fi
+
+            if [[ "${candidate}" =~ [\<\>\{\}\`\$\|] ]]; then
+              return 1
+            fi
+
+            case "${candidate}" in
+              /*|../*|*/../*|*/..|..)
+                return 1
+                ;;
+            esac
+
+            return 0
+          }
+
+          cleanup_malformed_untracked_paths() {
+            local removed_any=0
+
+            while IFS= read -r path; do
+              [ -n "${path}" ] || continue
+
+              if is_stageable_untracked_path "${path}"; then
+                continue
+              fi
+
+              echo "[agent] Removing malformed untracked path left by agent output: ${path}"
+              rm -rf -- "${path}"
+              removed_any=1
+            done < <(git ls-files --others --exclude-standard)
+
+            if [ "${removed_any}" -eq 1 ]; then
+              echo "[agent] Removed malformed untracked paths before staging."
+            fi
+          }
+
+          stage_pushable_changes() {
+            git add -u
+
+            while IFS= read -r path; do
+              [ -n "${path}" ] || continue
+
+              if is_stageable_untracked_path "${path}"; then
+                git add -- "${path}"
+              else
+                echo "[agent] Skipping malformed untracked path during staging: ${path}"
+              fi
+            done < <(git ls-files --others --exclude-standard)
+          }
+
+          reset_branch_to_retry_baseline() {
+            local target_ref="${WORKING_BRANCH}"
+
+            cd "${GITHUB_WORKSPACE}"
+
+            echo "[agent] Resetting retry worktree to origin/${target_ref}."
+
+            git fetch origin "${target_ref}" || true
+
+            if git rev-parse --verify --quiet "origin/${target_ref}" >/dev/null; then
+              git reset --hard "origin/${target_ref}"
             else
-              echo "[agent] git commit failed; aborting auto-push."
+              git reset --hard HEAD
+            fi
+
+            git submodule update --init --recursive
+            cleanup_malformed_untracked_paths
+          }
+
+          write_agent_prompt_file() {
+            local additional_context="$1"
+
+            AGENT_PROMPT_FILE="${RUNNER_TEMP:-/tmp}/agent-prompt.txt"
+
+            {
+              printf 'Repository root: %s\n\n' "$(pwd)"
+              printf '%s\n' 'Make one focused, minimal code change set for the user request.'
+              printf '%s\n' 'Do not survey the entire repository exhaustively. Narrow to one candidate area first using targeted searches, then read only the files needed for that area.'
+              printf '%s\n' 'Start from real command output and repository files you read; do not speculate.'
+              printf '%s\n' 'Keep command and tool output small. If lint is requested: run pnpm run lint, fix exactly one deterministic issue, then re-run pnpm run lint, pnpm run build:ts, and pnpm run lint:quiet.'
+              printf '%s\n' 'Do not finish with only analysis or a plan. Leave a concrete repository diff in the worktree.'
+              printf '%s\n' 'When executing user-requested tasks, do not edit golden .gml fixtures, generated files, dist files, workflow files, or configuration files unless explicitly requested.'
+              printf '\n'
+              printf '%s\n' 'User task from PR comment:'
+              printf '%s\n' "${additional_context}"
+            } > "${AGENT_PROMPT_FILE}"
+
+            export AGENT_PROMPT_FILE
+          }
+
+          write_agent_prompt_file "${ADDITIONAL_CONTEXT:-}"
+
+          if [ ! -f "${AGENT_PROMPT_FILE}" ]; then
+            echo "❌ Parent workflow failed to materialize AGENT_PROMPT_FILE."
+            exit 1
+          fi
+
+          run_agent_attempt() {
+            local attempt="$1"
+            local attempt_log="$RUNNER_TEMP/agent-live-attempt-${attempt}.log"
+
+            cd "${GITHUB_WORKSPACE}"
+
+            echo "[agent] Starting agent attempt ${attempt}/${total_attempts}."
+            echo "[agent] Attempt working directory before agent command: $(pwd)"
+            echo "[agent] Attempt git root before agent command: $(git rev-parse --show-toplevel)"
+            echo "[agent] Attempt git remotes before agent command:"
+            git remote -v | redact_git_remote_credentials
+            echo "[agent] Attempt git branch before agent command: $(git branch --show-current)"
+
+            set -x
+            set +e
+            stdbuf -oL -eL bash "$script" 2>&1 | tee "${attempt_log}"
+            agent_status="${PIPESTATUS[0]}"
+            set -e
+            set +x
+
+            cp "${attempt_log}" "$RUNNER_TEMP/agent-live.log"
+            return "${agent_status}"
+          }
+
+          push_current_branch_if_needed() {
+            cd "${GITHUB_WORKSPACE}"
+
+            echo "[agent] Checking repository changes in: $(pwd)"
+            echo "[agent] Change-check git root: $(git rev-parse --show-toplevel)"
+
+            if [ -f "$SENTINEL" ]; then
+              echo "[agent] Push sentinel already present; attempt produced a branch push."
+              return 0
+            fi
+
+            git fetch origin "${WORKING_BRANCH}" || true
+
+            echo "[agent] Worktree after agent attempt:"
+            worktree_status="$(git status --porcelain=v1 --untracked-files=normal)"
+            if [ -n "${worktree_status}" ]; then
+              printf '%s\n' "${worktree_status}"
+            else
+              echo "[agent] Worktree clean."
+            fi
+
+            if [ -n "${worktree_status}" ]; then
+              echo "[agent] Changes detected; committing before push."
+              echo "[agent] Worktree status before staging:"
+              git status --short
+
+              cleanup_malformed_untracked_paths
+              stage_pushable_changes
+
+              echo "[agent] Staged changes before commit:"
+              git diff --cached --stat
+
+              echo "[agent] Worktree status after staging:"
+              git status --short
+
+              if git diff --cached --quiet; then
+                echo "[agent] Only malformed untracked files were present; nothing pushable remains."
+                return 1
+              fi
+
+              commit_message="chore: apply @${AGENT_NAME} changes for PR #${PR_NUMBER}"
+
+              if git commit -m "$commit_message"; then
+                echo "[agent] Created commit: ${commit_message}"
+              else
+                echo "[agent] git commit failed; aborting auto-push."
+                echo "[agent] Staged diff after failed commit:"
+                git diff --cached --stat || true
+                echo "[agent] Worktree status after failed commit:"
+                git status --short || true
+                return 2
+              fi
+            fi
+
+            remote_ref="origin/${WORKING_BRANCH}"
+            has_remote_ref=false
+
+            if git show-ref --verify --quiet "refs/remotes/${remote_ref}"; then
+              has_remote_ref=true
+            fi
+
+            local_head="$(git rev-parse HEAD)"
+            remote_head=''
+
+            if [ "${has_remote_ref}" = true ]; then
+              remote_head="$(git rev-parse "${remote_ref}")"
+            fi
+
+            should_push=false
+
+            if [ "${has_remote_ref}" = false ]; then
+              should_push=true
+              echo "[agent] Remote ref ${remote_ref} not found; will push branch."
+            elif git merge-base --is-ancestor "${remote_ref}" HEAD; then
+              if [ "${remote_head}" != "${local_head}" ]; then
+                if ! git diff --quiet "${remote_ref}" HEAD; then
+                  should_push=true
+                  echo "[agent] Local branch has file changes ahead of ${remote_ref}; will push."
+                else
+                  echo "[agent] Local branch has commits ahead of ${remote_ref}, but the net file diff is empty."
+                fi
+              fi
+            elif git merge-base --is-ancestor HEAD "${remote_ref}"; then
+              echo "❌ Remote ref ${remote_ref} moved ahead of local HEAD; refusing to push stale changes."
+              return 2
+            else
+              echo "❌ Local branch diverged from ${remote_ref}; refusing to push without reconciling remote commits."
+              return 2
+            fi
+
+            if [ "${should_push}" = false ]; then
+              echo "❌ Agent completed without producing pushable local changes."
+              return 1
+            fi
+
+            echo "[agent] Pushing branch ${WORKING_BRANCH}..."
+
+            if git push origin "${WORKING_BRANCH}"; then
+              echo "[agent] git push completed with exit 0 (no shim?)."
+            else
+              code=$?
+              if [ "$code" -eq 99 ]; then
+                echo "[agent] git push succeeded via shim (exit 99)."
+              else
+                echo "[agent] git push failed with code $code"
+                return 2
+              fi
+            fi
+
+            return 0
+          }
+
+          post_retry_comment_once() {
+            local failed_attempt="$1"
+            local next_attempt="$2"
+
+            if [ -f "$RETRY_COMMENT_SENTINEL" ]; then
+              echo "[agent] Retry comment already posted; skipping duplicate PR comment."
+              return 0
+            fi
+
+            retry_message="**[🤖 ${AGENT_NAME}]** The local agent did not produce pushable repository changes on attempt ${failed_attempt}/${total_attempts}, so I am starting retry attempt ${next_attempt}/${total_attempts}."
+
+            if gh issue comment "${PR_NUMBER}" --body "${retry_message}" --repo "${REPOSITORY}"; then
+              date +"%F %T" > "$RETRY_COMMENT_SENTINEL"
+            else
+              echo "::warning::Could not post local-agent retry comment."
+            fi
+          }
+
+          for ((attempt = 1; attempt <= total_attempts; attempt++)); do
+            set +e
+            run_agent_attempt "${attempt}"
+            agent_status="$?"
+            set -e
+
+            set +e
+            push_current_branch_if_needed
+            push_status="$?"
+            set -e
+
+            if [ "${push_status}" -eq 0 ]; then
+              echo "[agent] Attempt ${attempt}/${total_attempts} produced pushable changes."
+              exit 0
+            fi
+
+            if [ "${push_status}" -eq 2 ]; then
+              echo "::error::Attempt ${attempt}/${total_attempts} hit a non-retryable push or branch state failure."
               exit 1
             fi
-          fi
 
-          remote_ref="origin/${WORKING_BRANCH}"
-          has_remote_ref=false
-          if git show-ref --verify --quiet "refs/remotes/${remote_ref}"; then
-            has_remote_ref=true
-          fi
-
-          should_push=false
-          if [ "${has_remote_ref}" = false ]; then
-            should_push=true
-            echo "[agent] Remote ref ${remote_ref} not found; will push branch."
-          elif ! git merge-base --is-ancestor "${remote_ref}" HEAD; then
-            should_push=true
-            echo "[agent] Local branch diverged from ${remote_ref}; will push current HEAD."
-          elif [ "${has_worktree_changes}" = true ]; then
-            should_push=true
-            echo "[agent] New commit created; will push."
-          fi
-
-          if [ "${should_push}" = false ]; then
-            echo "[agent] No local commits ahead of ${remote_ref}; nothing to push."
-            exit 0
-          fi
-
-          echo "[agent] Pushing branch ${WORKING_BRANCH}..."
-
-          # Because of the git shim, a successful push returns 99, not 0.
-          if git push origin "${WORKING_BRANCH}"; then
-            echo "[agent] git push completed with exit 0 (no shim?)."
-          else
-            code=$?
-            if [ "$code" -eq 99 ]; then
-              echo "[agent] git push succeeded via shim (exit 99)."
+            if [ "${attempt}" -lt "${total_attempts}" ]; then
+              post_retry_comment_once "${attempt}" "$((attempt + 1))"
+              echo "[agent] Attempt ${attempt}/${total_attempts} produced no pushable changes; starting a fresh retry session."
+              reset_branch_to_retry_baseline
             else
-              echo "[agent] git push failed with code $code"
-              exit $code
+              echo "❌ Agent exhausted ${total_attempts} attempt(s) without producing pushable local changes."
+              date +"%F %T" > "$NO_CHANGE_SENTINEL"
+
+              if [ "${agent_status}" -ne 0 ]; then
+                echo "Last agent command exit code: ${agent_status}"
+              fi
+
+              exit 1
             fi
-          fi
+          done
 
       - name: Report outcome
+        id: report_outcome
         if: always()
         env:
           RUN_AGENT_OUTCOME: ${{ steps.run_agent.outcome || '' }}
@@ -374,11 +775,210 @@ jobs:
             **[🤖 ${{ inputs.agent }}]** I'm sorry, but I was unable to complete the requested action. See [the logs for details](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
         run: |
           set -euo pipefail
+
           SENTINEL="${RUNNER_TEMP}/.agent_push_succeeded"
-          if [ -f "$SENTINEL" ]; then
-            echo "Push detected → SUCCESS."
+          NO_CHANGE_SENTINEL="${RUNNER_TEMP}/.agent_no_change_retries_exhausted"
+
+          write_report_outputs() {
+            {
+              echo "agent_failed=$1"
+              echo "cleanup_empty_pr=$2"
+            } >> "$GITHUB_OUTPUT"
+          }
+
+          if [ "${RUN_AGENT_OUTCOME}" = "failure" ] || [ "${RUN_AGENT_CONCLUSION}" = "failure" ]; then
+            echo "Run agent step failed → FAIL."
+
+            if gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}"; then
+              if [ -f "$NO_CHANGE_SENTINEL" ]; then
+                write_report_outputs true true
+              else
+                write_report_outputs true false
+              fi
+            else
+              echo "::warning::Could not post failure comment; skipping empty-agent cleanup."
+              write_report_outputs true false
+            fi
+
             exit 0
           fi
-          echo "No push sentinel found → FAIL."
-          gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}" || true
+
+          if [ -f "$SENTINEL" ]; then
+            echo "Push detected → SUCCESS."
+            write_report_outputs false false
+            exit 0
+          fi
+
+          echo "Agent command succeeded with no branch push → FAIL."
+
+          if gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}"; then
+            if [ -f "$NO_CHANGE_SENTINEL" ]; then
+              write_report_outputs true true
+            else
+              write_report_outputs true false
+            fi
+          else
+            echo "::warning::Could not post failure comment; skipping empty-agent cleanup."
+            write_report_outputs true false
+          fi
+
+      - name: Close empty failed agent PR
+        if: always() && steps.report_outcome.outputs.cleanup_empty_pr == 'true'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ inputs.pr_number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          pr_json="$(
+            gh api "repos/${REPOSITORY}/pulls/${ISSUE_NUMBER}" \
+              --jq '{
+                changedFiles: .changed_files,
+                headRefName: .head.ref,
+                headRepository: .head.repo.full_name,
+                baseRefName: .base.ref,
+                state: .state
+              }'
+          )"
+
+          changed_files="$(jq -r '.changedFiles // -1' <<<"${pr_json}")"
+          head_ref="$(jq -r '.headRefName // ""' <<<"${pr_json}")"
+          head_repo="$(jq -r '.headRepository // ""' <<<"${pr_json}")"
+          base_ref="$(jq -r '.baseRefName // ""' <<<"${pr_json}")"
+          pr_state="$(jq -r '.state // ""' <<<"${pr_json}")"
+
+          if [ "${pr_state}" != "open" ]; then
+            echo "[agent] PR state is '${pr_state}'; leaving PR and branch unchanged."
+            exit 0
+          fi
+
+          if [ "${changed_files}" != "0" ]; then
+            echo "[agent] PR has ${changed_files} changed file(s); leaving PR and branch open."
+            exit 0
+          fi
+
+          case "${head_ref}" in
+            claude/task-*|codex/task-*|copilot/task-*|gemini/task-*|qwen/task-*|qwen-local/task-*)
+              ;;
+            *)
+              echo "[agent] Branch '${head_ref}' is not an expected empty agent branch; leaving PR and branch open."
+              exit 0
+              ;;
+          esac
+
+          case "${head_ref}" in
+            ""|main|master|develop|development|trunk|production|release|feature/*|bugfix/*|hotfix/*)
+              echo "[agent] Branch '${head_ref}' is protected or human-owned; leaving PR and branch open."
+              exit 0
+              ;;
+          esac
+
+          if [ "${head_ref}" = "${base_ref}" ]; then
+            echo "[agent] Head branch matches base branch '${base_ref}'; leaving PR and branch open."
+            exit 0
+          fi
+
+          if [ "${head_repo}" != "${REPOSITORY}" ]; then
+            echo "[agent] Head repository '${head_repo}' is not '${REPOSITORY}'; leaving PR and branch open."
+            exit 0
+          fi
+
+          echo "[agent] Closing empty agent PR #${ISSUE_NUMBER} and deleting branch '${head_ref}'."
+          gh pr close "${ISSUE_NUMBER}" --repo "${REPOSITORY}"
+          gh api -X DELETE "repos/${REPOSITORY}/git/refs/heads/${head_ref}"
+
+      - name: Evaluate merge conflicts after successful push
+        id: evaluate_merge_conflicts
+        if: always() && steps.report_outcome.outputs.agent_failed != 'true'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          REPOSITORY: ${{ github.repository }}
+          FOLLOW_UP_AGENT: ${{ inputs.agent }}
+        run: |
+          set -euo pipefail
+
+          write_outputs() {
+            {
+              echo "should_request_merge_conflict_resolution=$1"
+              echo "target_pr_number=$2"
+              echo "follow_up_agent=$3"
+            } >> "$GITHUB_OUTPUT"
+          }
+
+          wait_for_mergeable_state() {
+            local attempt
+            local pr_json=''
+
+            for attempt in {1..12}; do
+              pr_json="$(
+                gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" \
+                  --jq '{
+                    state: .state,
+                    mergeable: .mergeable,
+                    mergeableState: (.mergeable_state // "unknown"),
+                    headRefName: .head.ref,
+                    baseRefName: .base.ref
+                  }'
+              )"
+
+              mergeable_value="$(jq -r '.mergeable' <<<"${pr_json}")"
+              mergeable_state="$(jq -r '.mergeableState' <<<"${pr_json}")"
+
+              if [ "${mergeable_value}" != "null" ] || [ "${mergeable_state}" != "unknown" ]; then
+                printf '%s' "${pr_json}"
+                return 0
+              fi
+
+              echo "[agent] Mergeability still pending for PR #${PR_NUMBER} (attempt ${attempt}/12). Retrying in 5s..." >&2
+              sleep 5
+            done
+
+            printf '%s' "${pr_json}"
+            return 0
+          }
+
+          pr_json="$(wait_for_mergeable_state)"
+          pr_state="$(jq -r '.state // ""' <<<"${pr_json}")"
+          mergeable_state="$(jq -r '.mergeableState // "unknown"' <<<"${pr_json}")"
+          head_ref="$(jq -r '.headRefName // ""' <<<"${pr_json}")"
+          base_ref="$(jq -r '.baseRefName // ""' <<<"${pr_json}")"
+
+          echo "[agent] Post-push PR state: state='${pr_state}', mergeable_state='${mergeable_state}', head='${head_ref}', base='${base_ref}'."
+
+          if [ "${pr_state}" != "open" ]; then
+            echo "[agent] PR #${PR_NUMBER} is not open; skipping merge-conflict follow-up."
+            write_outputs false "" ""
+            exit 0
+          fi
+
+          if [ "${mergeable_state}" != "dirty" ]; then
+            echo "[agent] PR #${PR_NUMBER} does not have merge conflicts; skipping merge-conflict follow-up."
+            write_outputs false "" ""
+            exit 0
+          fi
+
+          echo "[agent] PR #${PR_NUMBER} is conflict-dirty after the agent push; requesting merge-conflict resolution with @${FOLLOW_UP_AGENT}."
+          write_outputs true "${PR_NUMBER}" "${FOLLOW_UP_AGENT}"
+
+      - name: Fail workflow after unsuccessful agent run
+        if: always() && steps.report_outcome.outputs.agent_failed == 'true'
+        shell: bash
+        run: |
+          echo "Agent workflow did not produce a successful branch push."
           exit 1
+
+  request_merge_conflict_resolution:
+    needs: invoke
+    if: ${{ needs.invoke.outputs.should_request_merge_conflict_resolution == 'true' }}
+    uses: ./.github/workflows/agent-02-resolve-merge-conflicts.yml
+    secrets:
+      GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
+    with:
+      target_pr_number: ${{ needs.invoke.outputs.target_pr_number }}
+      agent: ${{ needs.invoke.outputs.follow_up_agent }}

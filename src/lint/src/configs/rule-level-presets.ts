@@ -1,0 +1,170 @@
+import { featherLintRuleMap, gmlLintRuleMap } from "../rules/catalog.js";
+import { featherManifest } from "../rules/feather/manifest.js";
+import type { LintRuleLevel } from "./lint-rule-level.js";
+
+export const PERFORMANCE_OVERRIDE_RULE_IDS = Object.freeze([
+    "gml/prefer-hoistable-loop-accessors",
+    "gml/prefer-loop-invariant-expressions",
+    "gml/prefer-struct-literal-assignments",
+    "gml/no-globalvar",
+    "gml/prefer-string-interpolation"
+]);
+
+export type LintRulesetName = "all" | "recommended" | "feather" | "performance" | "fixible";
+
+const RECOMMENDED_RULES: Readonly<Record<string, LintRuleLevel>> = Object.freeze({
+    "gml/prefer-hoistable-loop-accessors": "warn",
+    "gml/prefer-loop-invariant-expressions": "warn",
+    "gml/prefer-struct-literal-assignments": "warn",
+    "gml/prefer-array-push": "warn",
+    "gml/prefer-compound-assignments": "warn",
+    "gml/prefer-increment-decrement-operators": "warn",
+    "gml/prefer-direct-return": "warn",
+    "gml/prefer-direct-boolean-return": "warn",
+    "gml/no-boolean-literal-comparisons": "warn",
+    "gml/no-double-negation": "warn",
+    "gml/prefer-de-morgan": "warn",
+    "gml/no-redundant-negation-parentheses": "warn",
+    "gml/no-redundant-logical-operands": "warn",
+    "gml/no-logical-absorption": "warn",
+    "gml/prefer-logical-factorization": "warn",
+    "gml/no-logical-complements": "warn",
+    "gml/prefer-logical-xor": "warn",
+    "gml/prefer-conditional-assignment": "warn",
+    "gml/no-globalvar": "warn",
+    "gml/no-multi-var-declarations": "warn",
+    "gml/no-empty-regions": "warn",
+    "gml/no-empty-comments": "warn",
+    "gml/no-scientific-notation": "error",
+    "gml/no-unary-plus-on-identifier": "warn",
+    "gml/no-unnecessary-string-interpolation": "warn",
+    "gml/remove-default-comments": "warn",
+    "gml/remove-doc-function-tags": "warn",
+    "gml/normalize-doc-comment-tags": "warn",
+    "gml/normalize-doc-comments": "warn",
+    "gml/normalize-doc-returns": "warn",
+    "gml/normalize-doc-param-defaults": "warn",
+    "gml/normalize-doc-param-separators": "warn",
+    "gml/normalize-doc-param-undefined-defaults": "warn",
+    "gml/normalize-banner-comments": "warn",
+    "gml/normalize-directives": "warn",
+    "gml/normalize-block-keyword-aliases": "warn",
+    "gml/require-control-flow-braces": "warn",
+    "gml/require-region-pairs": "error",
+    "gml/require-zwrite-enabled-reset": "warn",
+    "gml/require-ztest-enabled-reset": "warn",
+    "gml/no-assignment-in-condition": "warn",
+    "gml/prefer-is-undefined-check": "warn",
+    "gml/prefer-epsilon-comparisons": "warn",
+    "gml/prefer-string-interpolation": "warn",
+    "gml/optimize-math-expressions": "warn",
+    "gml/require-argument-separators": "error",
+    "gml/simplify-real-calls": "warn",
+    "gml/no-negative-zero": "warn"
+});
+
+const ALL_GML_RULES: Readonly<Record<string, LintRuleLevel>> = Object.freeze({
+    ...RECOMMENDED_RULES,
+    "gml/normalize-operator-aliases": "warn"
+});
+
+const RECOMMENDED_SAFE_FEATHER_RULES: Readonly<Record<`feather/${string}`, LintRuleLevel>> = Object.freeze({
+    "feather/gm1003": "warn",
+    "feather/gm1009": "warn",
+    "feather/gm1017": "warn",
+    "feather/gm1023": "warn",
+    "feather/gm1024": "warn",
+    "feather/gm1028": "warn",
+    "feather/gm1033": "warn",
+    "feather/gm1041": "warn",
+    "feather/gm1051": "warn",
+    "feather/gm1056": "warn",
+    "feather/gm2004": "warn",
+    "feather/gm2007": "warn",
+    "feather/gm2020": "warn",
+    "feather/gm2061": "warn"
+});
+
+const FEATHER_RULES: Readonly<Record<`feather/${string}`, LintRuleLevel>> = Object.freeze(
+    Object.fromEntries(featherManifest.entries.map((entry) => [entry.ruleId, entry.defaultSeverity])) as Record<
+        `feather/${string}`,
+        LintRuleLevel
+    >
+);
+
+const ALL_RULES: Readonly<Record<string, LintRuleLevel>> = Object.freeze({
+    ...ALL_GML_RULES,
+    ...FEATHER_RULES
+});
+
+function createPerformanceRuleSet(): Readonly<Record<string, LintRuleLevel>> {
+    const rules: Record<string, LintRuleLevel> = {
+        "gml/prefer-hoistable-loop-accessors": "off",
+        "gml/prefer-loop-invariant-expressions": "off",
+        "gml/prefer-struct-literal-assignments": "off",
+        "gml/no-globalvar": "warn",
+        "gml/prefer-direct-boolean-return": "warn",
+        "gml/prefer-string-interpolation": "off"
+    };
+
+    for (const ruleId of PERFORMANCE_OVERRIDE_RULE_IDS) {
+        if (!(ruleId in rules)) {
+            rules[ruleId] = "off";
+        }
+    }
+
+    return Object.freeze(rules);
+}
+
+const PERFORMANCE_RULES = createPerformanceRuleSet();
+
+function createFixibleRuleSet(): Readonly<Record<string, LintRuleLevel>> {
+    const rules: Record<string, LintRuleLevel> = {};
+
+    for (const [ruleName, ruleModule] of Object.entries(gmlLintRuleMap)) {
+        if (ruleModule.meta?.fixable) {
+            const ruleId = `gml/${ruleName}`;
+            rules[ruleId] = RECOMMENDED_RULES[ruleId] ?? "warn";
+        }
+    }
+
+    for (const [ruleName, ruleModule] of Object.entries(featherLintRuleMap)) {
+        if (ruleModule.meta?.fixable) {
+            const ruleId = `feather/${ruleName}`;
+            rules[ruleId] = FEATHER_RULES[ruleId] ?? "warn";
+        }
+    }
+
+    return Object.freeze(rules);
+}
+
+const FIXIBLE_RULES = createFixibleRuleSet();
+
+export const LINT_RULESET_NAMES: ReadonlyArray<LintRulesetName> = Object.freeze([
+    "recommended",
+    "all",
+    "feather",
+    "performance",
+    "fixible"
+]);
+
+export const LINT_RULESET_RULE_LEVELS: Readonly<Record<LintRulesetName, Readonly<Record<string, LintRuleLevel>>>> =
+    Object.freeze({
+        recommended: Object.freeze({
+            ...RECOMMENDED_RULES,
+            ...RECOMMENDED_SAFE_FEATHER_RULES
+        }),
+        all: ALL_RULES,
+        feather: FEATHER_RULES,
+        performance: PERFORMANCE_RULES,
+        fixible: FIXIBLE_RULES
+    });
+
+export const ALL_RULE_LEVELS = ALL_RULES;
+export const RECOMMENDED_GML_RULE_LEVELS = RECOMMENDED_RULES;
+export const RECOMMENDED_SAFE_FEATHER_RULE_LEVELS = RECOMMENDED_SAFE_FEATHER_RULES;
+export const FEATHER_RULE_LEVELS = FEATHER_RULES;
+export const PERFORMANCE_RULE_LEVELS = PERFORMANCE_RULES;
+export const FIXIBLE_RULE_LEVELS = FIXIBLE_RULES;
+
+export { LintRuleLevel } from "./lint-rule-level.js";

@@ -7,7 +7,6 @@ import {
     Refactor,
     type RefactorEngine,
     type RenameRequest,
-    type WorkspaceEdit,
     type WorkspaceReadFile,
     type WorkspaceWriteFile
 } from "../index.js";
@@ -214,7 +213,7 @@ void test("planRename checks symbol existence with semantic analyzer", async () 
     );
 });
 
-void test("planRename detects reserved keyword conflicts", async () => {
+void test("planRename detects reserved GameMaker identifier conflicts", async () => {
     const mockSemantic = {
         hasSymbol: () => true,
         getSymbolOccurrences: () => [{ path: "test.gml", start: 0, end: 10, scopeId: "scope-1" }]
@@ -228,7 +227,7 @@ void test("planRename detects reserved keyword conflicts", async () => {
                 newName: "if"
             }),
         {
-            message: /reserved keyword/
+            message: /reserved GameMaker identifier/
         }
     );
 });
@@ -256,11 +255,127 @@ void test("planRename creates workspace edit with occurrences", async () => {
     assert.equal(workspace.edits[1].newText, "scr_new");
 });
 
-void test("validateSymbolExists requires semantic analyzer", async () => {
-    const engine = new RefactorEngineClass();
-    await assert.rejects(() => engine.validateSymbolExists("gml/script/foo"), {
-        message: /RefactorEngine requires a semantic analyzer/
+void test("planRename blocks a Tier 2 semantic rename-safety gap", async () => {
+    const message = "Cannot safely rename 'scr_old': an ambiguous binding exists at scripts/caller.gml:8-17.";
+    const semantic: PartialSemanticAnalyzer = {
+        getRenameSafetyGaps: async () => [{ message, path: "scripts/caller.gml" }],
+        getSymbolOccurrences: async () => [{ end: 7, path: "scripts/test.gml", start: 0 }],
+        hasSymbol: async () => true
+    };
+    const engine = new RefactorEngineClass({ semantic });
+
+    await assert.rejects(() => engine.planRename({ symbolId: "gml/script/scr_old", newName: "scr_new" }), {
+        message: new RegExp(message)
     });
+});
+
+void test("planRename drops metadata-file text edits when a full metadata rewrite is staged", async () => {
+    const mockSemantic = {
+        hasSymbol: () => true,
+        getSymbolOccurrences: () => [
+            {
+                path: "objects/oCamera/oCamera.yy",
+                start: 10,
+                end: 17,
+                scopeId: "scope:resource:oCamera"
+            },
+            {
+                path: "objects/oSystem/Other_2.gml",
+                start: 28,
+                end: 35,
+                scopeId: "scope:object:oSystem"
+            }
+        ],
+        getAdditionalSymbolEdits: () => {
+            const workspace = new WorkspaceEditFactory();
+            workspace.addMetadataEdit(
+                "objects/oCamera/oCamera.yy",
+                '{"name":"o_camera","resourcePath":"objects/o_camera/o_camera.yy"}'
+            );
+            workspace.addFileRename("objects/oCamera/oCamera.yy", "objects/oCamera/o_camera.yy");
+            workspace.addFileRename("objects/oCamera", "objects/o_camera");
+            return workspace;
+        }
+    };
+    const engine = new RefactorEngineClass({ semantic: mockSemantic });
+
+    const workspace = await engine.planRename({
+        symbolId: "gml/objects/oCamera",
+        newName: "o_camera"
+    });
+
+    assert.equal(workspace.edits.length, 1);
+    assert.equal(workspace.edits[0]?.path, "objects/oSystem/Other_2.gml");
+    assert.equal(workspace.metadataEdits.length, 1);
+    assert.equal(workspace.metadataEdits[0]?.path, "objects/oCamera/oCamera.yy");
+
+    const validation = await engine.validateRename(workspace);
+    assert.equal(validation.valid, true);
+    assert.deepEqual(validation.errors, []);
+});
+
+void test("planRename drops metadata-file text edits when metadata rewrite path uses windows separators", async () => {
+    const metadataPath = String.raw`objects\oCamera\oCamera.yy`;
+    const mockSemantic = {
+        hasSymbol: () => true,
+        getSymbolOccurrences: () => [
+            {
+                path: "objects/oCamera/oCamera.yy",
+                start: 10,
+                end: 17,
+                scopeId: "scope:resource:oCamera"
+            },
+            {
+                path: "objects/oSystem/Other_2.gml",
+                start: 28,
+                end: 35,
+                scopeId: "scope:object:oSystem"
+            }
+        ],
+        getAdditionalSymbolEdits: () => {
+            const workspace = new WorkspaceEditFactory();
+            workspace.addMetadataEdit(
+                metadataPath,
+                '{"name":"o_camera","resourcePath":"objects/o_camera/o_camera.yy"}'
+            );
+            return workspace;
+        }
+    };
+    const engine = new RefactorEngineClass({ semantic: mockSemantic });
+
+    const workspace = await engine.planRename({
+        symbolId: "gml/objects/oCamera",
+        newName: "o_camera"
+    });
+
+    assert.equal(workspace.edits.length, 1);
+    assert.equal(workspace.edits[0]?.path, "objects/oSystem/Other_2.gml");
+    assert.equal(workspace.metadataEdits.length, 1);
+    assert.equal(workspace.metadataEdits[0]?.path, metadataPath);
+});
+
+void test("validateRename rejects text edits plus metadata rewrites for separator-only path variants", async () => {
+    const metadataPath = String.raw`objects\oCamera\oCamera.yy`;
+    const engine = new RefactorEngineClass();
+    const workspace = new WorkspaceEditFactory();
+    workspace.addEdit("objects/oCamera/oCamera.yy", 0, 7, "o_camera");
+    workspace.addMetadataEdit(metadataPath, '{"name":"o_camera"}');
+
+    const validation = await engine.validateRename(workspace);
+
+    assert.equal(validation.valid, false);
+    assert.ok(validation.errors.some((error) => error.includes("Cannot combine text and metadata edits")));
+});
+
+void test("validateSymbolExists returns true when no semantic analyzer", async () => {
+    // When no semantic analyzer is provided, the cache's fetchHasSymbol returns
+    // true by default, allowing the refactor engine to proceed with optimistic
+    // validation. The actual semantic check is advisory—if the file contains
+    // syntax errors, the refactor engine will detect them during the main
+    // validation pass and present actionable diagnostics to the user.
+    const engine = new RefactorEngineClass();
+    const result = await engine.validateSymbolExists("gml/script/foo");
+    assert.equal(result, true);
 });
 
 void test("validateSymbolExists returns true when semantic lacks hasSymbol", async () => {
@@ -293,6 +408,21 @@ void test("validateRename detects overlapping edits", async () => {
     const result = await engine.validateRename(ws);
     assert.equal(result.valid, false);
     assert.ok(result.errors.some((e) => e.includes("Overlapping")));
+});
+
+void test("validateRename rejects malformed text edit ranges", async () => {
+    const engine = new RefactorEngineClass();
+    const ws = new WorkspaceEditFactory();
+    ws.addEdit("", 0, 1, "missingPath");
+    ws.addEdit("scripts/example.gml", -1, 1, "negativeStart");
+    ws.addEdit("scripts/example.gml", 8, 4, "reversedRange");
+
+    const result = await engine.validateRename(ws);
+
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((error) => error.includes("Text edit path must be a non-empty string")));
+    assert.ok(result.errors.some((error) => error.includes("non-negative integer start offset")));
+    assert.ok(result.errors.some((error) => error.includes("must not end before it starts")));
 });
 
 void test("validateRename warns about large refactorings", async () => {
@@ -468,8 +598,16 @@ void test("prepareHotReloadUpdates includes transitive dependents from cascade",
     assert.equal(grandchildUpdate?.filePath, "deps/grandchild.gml");
 });
 
-void test("findSymbolAtLocation returns null without semantic", async () => {
-    const engine = new RefactorEngineClass();
+void test("findSymbolAtLocation rejects parser-only rename targets without semantic facts", async () => {
+    const parser: ParserBridge = {
+        parse: async () => ({
+            children: [{ end: 10, name: "syntactic_only", start: 0, type: "identifier" }],
+            end: 10,
+            start: 0,
+            type: "program"
+        })
+    };
+    const engine = new RefactorEngineClass({ parser });
     const result = await engine.findSymbolAtLocation("test.gml", 10);
     assert.equal(result, null);
 });
@@ -492,7 +630,7 @@ void test("applyWorkspaceEdit requires a WorkspaceEdit", async () => {
     const engine = new RefactorEngineClass();
     await assert.rejects(
         () =>
-            engine.applyWorkspaceEdit(null as unknown as WorkspaceEdit, {
+            engine.applyWorkspaceEdit(null, {
                 readFile: async () => ""
             }),
         {
@@ -547,6 +685,25 @@ void test("applyWorkspaceEdit applies edits correctly", async () => {
 
     assert.equal(results.size, 1);
     assert.equal(results.get("test.gml"), "new text world");
+});
+
+void test("applyWorkspaceEdit preserves edit ordering when many replacements target one file", async () => {
+    const engine = new RefactorEngineClass();
+    const ws = new WorkspaceEditFactory();
+    const originalSource = "alpha beta gamma delta epsilon";
+
+    ws.addEdit("test.gml", 0, 5, "ALPHA");
+    ws.addEdit("test.gml", 6, 10, "BETA");
+    ws.addEdit("test.gml", 11, 16, "GAMMA");
+    ws.addEdit("test.gml", 17, 22, "DELTA");
+    ws.addEdit("test.gml", 23, 30, "EPSILON");
+
+    const results = await engine.applyWorkspaceEdit(ws, {
+        readFile: async () => originalSource,
+        dryRun: true
+    });
+
+    assert.equal(results.get("test.gml"), "ALPHA BETA GAMMA DELTA EPSILON");
 });
 
 void test("applyWorkspaceEdit handles multiple files", async () => {
@@ -625,6 +782,61 @@ void test("applyWorkspaceEdit rejects invalid edits", async () => {
     await assert.rejects(() => engine.applyWorkspaceEdit(ws, { readFile, dryRun: true }), {
         message: /Overlapping edits/
     });
+});
+
+void test("applyWorkspaceEdit rejects malformed text edit ranges before writing", async () => {
+    const engine = new RefactorEngineClass();
+    const ws = new WorkspaceEditFactory();
+    ws.addEdit("scripts/example.gml", 12, 3, "badRange");
+
+    let writeCount = 0;
+
+    await assert.rejects(
+        () =>
+            engine.applyWorkspaceEdit(ws, {
+                readFile: async () => "show_debug_message(name);",
+                writeFile: async () => {
+                    writeCount += 1;
+                },
+                dryRun: false
+            }),
+        {
+            message: /must not end before it starts/
+        }
+    );
+
+    assert.equal(writeCount, 0);
+});
+
+void test("applyWorkspaceEdit rejects stale out-of-bounds edit ranges before writing", async () => {
+    const engine = new RefactorEngineClass();
+    const ws = new WorkspaceEditFactory();
+    ws.addEdit("scripts/first.gml", 0, 4, "show_debug_message");
+    ws.addEdit("scripts/stale.gml", 8, 12, "renamed");
+
+    const writes: Record<string, string> = {};
+
+    await assert.rejects(
+        () =>
+            engine.applyWorkspaceEdit(ws, {
+                readFile: async (filePath) => {
+                    if (filePath === "scripts/first.gml") {
+                        return "call();";
+                    }
+
+                    return "tiny";
+                },
+                writeFile: async (filePath, content) => {
+                    writes[filePath] = content;
+                },
+                dryRun: false
+            }),
+        {
+            message: /targets range 8-12, but the file length is 4/
+        }
+    );
+
+    assert.deepEqual(writes, {});
 });
 
 void test("executeRename validates required parameters", async () => {

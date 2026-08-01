@@ -11,7 +11,7 @@ import { describe, it } from "node:test";
 
 import type { MutableGameMakerAstNode } from "@gmloop/core";
 
-import { annotateStaticFunctionOverridesTransform } from "../src/rules/gml/transforms/comments/annotate-static-overrides.js";
+import { annotateStaticFunctionOverridesTransform } from "../src/rules/gml/transforms/comment-annotate-static-overrides.js";
 import { assertEquals } from "./assertions.js";
 
 /**
@@ -67,7 +67,7 @@ function makeConstructor(
 }
 
 function makeProgram(body: Record<string, unknown>[]): MutableGameMakerAstNode {
-    return { type: "Program", body } as unknown as MutableGameMakerAstNode;
+    return { type: "Program", body };
 }
 
 void describe("annotateStaticFunctionOverridesTransform", () => {

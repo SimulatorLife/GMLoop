@@ -1,0 +1,26 @@
+{
+  "mcpServers": {
+    "gmloop": {
+      "command": "gmloop",
+      "args": ["mcp"],
+      "env": {
+        "GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS": "true"
+      }
+    },
+    "gm-cli": {
+      "command": "gmloop",
+      "args": ["gm-cli", "mcp"],
+      "env": {
+        "GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS": "true"
+      }
+    },
+    "lsp": {
+      "command": "pnpm",
+      "args": ["exec", "lsp-mcp-server"]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"]
+    }
+  }
+}

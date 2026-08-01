@@ -11,9 +11,19 @@ import {
 
 const { RefactorEngine: RefactorEngineClass, OccurrenceKind } = Refactor;
 
+function createEngineWithSemantic(semanticOverrides: object): RefactorEngine {
+    const semantic = {
+        hasSymbol: () => true,
+        getSymbolOccurrences: () => [],
+        ...semanticOverrides
+    };
+
+    return new RefactorEngineClass({ semantic });
+}
+
 void test("planBatchRename requires an array", async () => {
     const engine = new RefactorEngineClass();
-    await assert.rejects(() => engine.planBatchRename(null as unknown as Array<RenameRequest>), {
+    await assert.rejects(() => engine.planBatchRename(null), {
         name: "TypeError",
         message: /requires an array/
     });
@@ -38,11 +48,7 @@ void test("planBatchRename validates each rename request", async () => {
 });
 
 void test("planBatchRename rejects duplicate symbol IDs", async () => {
-    const mockSemantic = {
-        hasSymbol: () => true,
-        getSymbolOccurrences: () => []
-    };
-    const engine = new RefactorEngineClass({ semantic: mockSemantic });
+    const engine = createEngineWithSemantic({});
 
     await assert.rejects(
         () =>
@@ -57,11 +63,7 @@ void test("planBatchRename rejects duplicate symbol IDs", async () => {
 });
 
 void test("planBatchRename detects duplicate target names", async () => {
-    const mockSemantic = {
-        hasSymbol: () => true,
-        getSymbolOccurrences: () => []
-    };
-    const engine = new RefactorEngineClass({ semantic: mockSemantic });
+    const engine = createEngineWithSemantic({});
 
     await assert.rejects(
         () =>
@@ -88,7 +90,7 @@ void test("planBatchRename combines multiple renames", async () => {
             return [];
         }
     };
-    const engine = new RefactorEngineClass({ semantic: mockSemantic });
+    const engine = createEngineWithSemantic(mockSemantic);
 
     const workspace = await engine.planBatchRename([
         { symbolId: "gml/script/scr_a", newName: "scr_new_a" },
@@ -117,7 +119,7 @@ void test("planBatchRename validates merged edits for overlaps", async () => {
             return [];
         }
     };
-    const engine = new RefactorEngineClass({ semantic: mockSemantic });
+    const engine = createEngineWithSemantic(mockSemantic);
 
     await assert.rejects(
         () =>
@@ -132,11 +134,7 @@ void test("planBatchRename validates merged edits for overlaps", async () => {
 });
 
 void test("planBatchRename detects simple circular rename (A→B, B→A)", async () => {
-    const mockSemantic = {
-        hasSymbol: () => true,
-        getSymbolOccurrences: () => []
-    };
-    const engine = new RefactorEngineClass({ semantic: mockSemantic });
+    const engine = createEngineWithSemantic({});
 
     await assert.rejects(
         () =>
@@ -151,11 +149,7 @@ void test("planBatchRename detects simple circular rename (A→B, B→A)", async
 });
 
 void test("planBatchRename detects three-way circular rename (A→B→C→A)", async () => {
-    const mockSemantic = {
-        hasSymbol: () => true,
-        getSymbolOccurrences: () => []
-    };
-    const engine = new RefactorEngineClass({ semantic: mockSemantic });
+    const engine = createEngineWithSemantic({});
 
     await assert.rejects(
         () =>
@@ -197,7 +191,7 @@ void test("planBatchRename allows non-circular chain renames (A→B→C)", async
             return [];
         }
     };
-    const engine = new RefactorEngineClass({ semantic: mockSemantic });
+    const engine = createEngineWithSemantic(mockSemantic);
 
     // This should succeed because scr_alpha→scr_beta, scr_beta→scr_gamma forms
     // a non-circular chain (scr_gamma is not renamed back to scr_alpha)
@@ -239,7 +233,7 @@ void test("planBatchRename allows independent renames without cycles", async () 
             return [];
         }
     };
-    const engine = new RefactorEngineClass({ semantic: mockSemantic });
+    const engine = createEngineWithSemantic(mockSemantic);
 
     // Independent renames should succeed
     const workspace = await engine.planBatchRename([
@@ -251,6 +245,89 @@ void test("planBatchRename allows independent renames without cycles", async () 
     assert.ok(typeof workspace.groupByFile === "function");
     assert.ok(Array.isArray(workspace.edits));
     assert.equal(workspace.edits.length, 2);
+});
+
+void test("planBatchRename coalesces staged metadata rewrites for the same file", async () => {
+    let stagedProjectMetadata = "project";
+    let clearWorkspaceOverlayCallCount = 0;
+    let stageWorkspaceEditCallCount = 0;
+
+    const mockSemantic = {
+        clearWorkspaceOverlay() {
+            clearWorkspaceOverlayCallCount += 1;
+            stagedProjectMetadata = "project";
+        },
+        getAdditionalSymbolEdits(symbolId: string, newName: string) {
+            const symbolName = symbolId.split("/").at(-1) ?? symbolId;
+            return {
+                edits: [],
+                fileRenames: [],
+                metadataEdits: [
+                    {
+                        path: "game.yyp",
+                        content: `${stagedProjectMetadata}|${symbolName}:${newName}`
+                    }
+                ],
+                addEdit() {},
+                addFileRename() {},
+                addMetadataEdit() {},
+                groupByFile() {
+                    return new Map();
+                },
+                hasChanges() {
+                    return this.edits.length > 0 || this.metadataEdits.length > 0 || this.fileRenames.length > 0;
+                },
+                collectChangedFilePaths() {
+                    const paths = new Set<string>();
+                    for (const edit of this.edits) {
+                        paths.add(edit.path);
+                    }
+                    for (const metadataEdit of this.metadataEdits) {
+                        paths.add(metadataEdit.path);
+                    }
+                    for (const fileRename of this.fileRenames) {
+                        paths.add(fileRename.oldPath);
+                        paths.add(fileRename.newPath);
+                    }
+                    return paths;
+                }
+            };
+        },
+        getSymbolOccurrences(name: string) {
+            if (name === "scr_a") {
+                return [{ path: "test.gml", start: 0, end: 5, scopeId: "scope-1" }];
+            }
+            if (name === "scr_b") {
+                return [{ path: "test.gml", start: 12, end: 17, scopeId: "scope-1" }];
+            }
+            return [];
+        },
+        hasSymbol() {
+            return true;
+        },
+        stageWorkspaceEdit(workspace: { metadataEdits?: Array<{ content: string; path: string }> }) {
+            stageWorkspaceEditCallCount += 1;
+            const latestProjectMetadata = workspace.metadataEdits?.find((edit) => edit.path === "game.yyp");
+            if (latestProjectMetadata) {
+                stagedProjectMetadata = latestProjectMetadata.content;
+            }
+        }
+    };
+    const engine = createEngineWithSemantic(mockSemantic);
+
+    const workspace = await engine.planBatchRename([
+        { symbolId: "gml/script/scr_a", newName: "scr_new_a" },
+        { symbolId: "gml/script/scr_b", newName: "scr_new_b" }
+    ]);
+
+    assert.deepEqual(workspace.metadataEdits, [
+        {
+            path: "game.yyp",
+            content: "project|scr_a:scr_new_a|scr_b:scr_new_b"
+        }
+    ]);
+    assert.equal(stageWorkspaceEditCallCount, 2);
+    assert.equal(clearWorkspaceOverlayCallCount, 2);
 });
 
 void test("executeBatchRename validates required parameters", async () => {
@@ -276,7 +353,7 @@ void test("executeBatchRename performs complete batch rename workflow", async ()
             return [];
         }
     };
-    const engine = new RefactorEngineClass({ semantic: mockSemantic });
+    const engine = createEngineWithSemantic(mockSemantic);
 
     const files = { "test.gml": "scr_a some code scr_b" };
     const readFile: WorkspaceReadFile = async (path) => files[path];
@@ -312,7 +389,7 @@ void test("executeBatchRename prepares hot reload when requested", async () => {
         },
         getFileSymbols: () => [{ id: "gml/script/scr_test" }]
     };
-    const engine = new RefactorEngineClass({ semantic: mockSemantic });
+    const engine = createEngineWithSemantic(mockSemantic);
 
     const readFile: WorkspaceReadFile = async () => "scr_a";
     const writeFile: WorkspaceWriteFile = async () => {};
@@ -334,7 +411,7 @@ void test("executeBatchRename can omit result content in write mode", async () =
         hasSymbol: () => true,
         getSymbolOccurrences: () => [{ path: "test.gml", start: 0, end: 5, scopeId: "scope-1" }]
     };
-    const engine = new RefactorEngineClass({ semantic: mockSemantic });
+    const engine = createEngineWithSemantic(mockSemantic);
 
     const files = { "test.gml": "scr_a" };
     const readFile: WorkspaceReadFile = async (path) => files[path];
@@ -372,7 +449,7 @@ void test("analyzeRenameImpact detects missing symbol", async () => {
     const mockSemantic = {
         hasSymbol: () => false
     };
-    const engine = new RefactorEngineClass({ semantic: mockSemantic });
+    const engine = createEngineWithSemantic(mockSemantic);
 
     const result = await engine.analyzeRenameImpact({
         symbolId: "gml/script/missing",
@@ -411,7 +488,7 @@ void test("analyzeRenameImpact provides comprehensive summary", async () => {
             }
         ]
     };
-    const engine = new RefactorEngineClass({ semantic: mockSemantic });
+    const engine = createEngineWithSemantic(mockSemantic);
 
     const result = await engine.analyzeRenameImpact({
         symbolId: "gml/script/scr_test",
@@ -430,12 +507,12 @@ void test("analyzeRenameImpact provides comprehensive summary", async () => {
     assert.equal(result.summary.hotReloadRequired, true);
 });
 
-void test("analyzeRenameImpact detects reserved keyword conflicts", async () => {
+void test("analyzeRenameImpact detects reserved GameMaker identifier conflicts", async () => {
     const mockSemantic = {
         hasSymbol: () => true,
         getSymbolOccurrences: () => [{ path: "test.gml", start: 0, end: 10, scopeId: "scope-1" }]
     };
-    const engine = new RefactorEngineClass({ semantic: mockSemantic });
+    const engine = createEngineWithSemantic(mockSemantic);
 
     const result = await engine.analyzeRenameImpact({
         symbolId: "gml/script/scr_test",
@@ -463,7 +540,7 @@ void test("analyzeRenameImpact warns about large renames", async () => {
         hasSymbol: () => true,
         getSymbolOccurrences: () => occurrences
     };
-    const engine = new RefactorEngineClass({ semantic: mockSemantic });
+    const engine = createEngineWithSemantic(mockSemantic);
 
     const result = await engine.analyzeRenameImpact({
         symbolId: "gml/script/scr_test",
@@ -490,7 +567,7 @@ void test("analyzeRenameImpact tracks dependent symbols", async () => {
             }
         ]
     };
-    const engine = new RefactorEngineClass({ semantic: mockSemantic });
+    const engine = createEngineWithSemantic(mockSemantic);
 
     const result = await engine.analyzeRenameImpact({
         symbolId: "gml/script/scr_test",
@@ -509,7 +586,7 @@ void test("analyzeRenameImpact handles errors gracefully", async () => {
             throw new Error("Semantic analyzer error");
         }
     };
-    const engine = new RefactorEngineClass({ semantic: mockSemantic });
+    const engine = createEngineWithSemantic(mockSemantic);
 
     const result = await engine.analyzeRenameImpact({
         symbolId: "gml/script/scr_test",

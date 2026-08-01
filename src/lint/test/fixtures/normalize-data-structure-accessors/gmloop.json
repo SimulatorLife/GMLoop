@@ -1,9 +1,0 @@
-{
-  "lintRules": {
-    "gml/normalize-data-structure-accessors": "error"
-  },
-  "fixture": {
-    "kind": "lint",
-    "assertion": "transform"
-  }
-}

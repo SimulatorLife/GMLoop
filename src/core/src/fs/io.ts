@@ -1,9 +1,45 @@
-import { readFileSync as fsReadFileSync, writeFileSync as fsWriteFileSync } from "node:fs";
-import { readFile as fsReadFileAsync, writeFile as fsWriteFileAsync } from "node:fs/promises";
+import { type Dirent, readFileSync as fsReadFileSync, type Stats, writeFileSync as fsWriteFileSync } from "node:fs";
+import * as fsPromises from "node:fs/promises";
 
 import { createAbortGuard } from "../utils/abort.js";
 import { toArrayFromIterable } from "../utils/array.js";
 import { isErrorWithCode } from "../utils/error.js";
+
+/**
+ * Async filesystem facade interface for GMLoop packages.
+ *
+ * Provides a swappable async filesystem layer so packages can operate against
+ * in-memory or test doubles without coupling to Node's `fs/promises` directly.
+ * All members are optional to allow partial implementations in tests; callers
+ * that need the full surface should pass `defaultFsFacade`.
+ */
+export interface FsFacade {
+    readonly readFile?: (path: string, encoding: BufferEncoding) => Promise<string>;
+    readonly writeFile?: (path: string, contents: string, encoding: BufferEncoding) => Promise<void>;
+    readonly rename?: (fromPath: string, toPath: string) => Promise<void>;
+    readonly unlink?: (path: string) => Promise<void>;
+    readonly mkdir?: (path: string, options: { recursive: boolean }) => Promise<void>;
+    readonly stat?: (path: string) => Promise<{ mtimeMs?: number } | null>;
+    readonly readDir?: (path: string) => Promise<Iterable<string>>;
+}
+
+/**
+ * Default async filesystem facade backed by Node's `fs/promises`.
+ *
+ * Used as the baseline when no custom facade is provided. Exposed publicly so
+ * consumers can spread it as a base and override specific methods.
+ */
+export const defaultFsFacade: FsFacade = Object.freeze({
+    readFile: fsPromises.readFile,
+    writeFile: fsPromises.writeFile,
+    rename: fsPromises.rename,
+    unlink: fsPromises.unlink,
+    mkdir: async (path: string, options: { recursive: boolean }) => {
+        await fsPromises.mkdir(path, options);
+    },
+    stat: fsPromises.stat,
+    readDir: fsPromises.readdir
+});
 
 export interface FileSystemDirectoryReader {
     readonly readDir: (path: string) => Promise<Iterable<string>>;
@@ -15,21 +51,6 @@ export interface FileSystemStats {
 
 export interface FileSystemStatReader {
     readonly stat: (path: string) => Promise<FileSystemStats | null>;
-}
-
-/**
- * Type-safe wrapper over {@link isErrorWithCode} so callers can narrow thrown
- * filesystem errors to specific Node-style `code` strings without repeating the
- * shared utility import. Accepts the same loose inputs as the underlying
- * helper, mirroring how error guards are typically used in catch blocks.
- *
- * @param {unknown} error Candidate error thrown by the filesystem facade.
- * @param {...string} codes Node-style error codes (for example `"ENOENT"`).
- * @returns {error is NodeJS.ErrnoException} `true` when {@link error} exposes a
- *          matching {@link NodeJS.ErrnoException.code} value.
- */
-export function isFsErrorCode(error, ...codes) {
-    return isErrorWithCode(error, ...codes);
 }
 
 /**
@@ -64,7 +85,7 @@ export async function listDirectory(
 
         return toArrayFromIterable(entries);
     } catch (error) {
-        if (isFsErrorCode(error, "ENOENT", "ENOTDIR")) {
+        if (isErrorWithCode(error, "ENOENT", "ENOTDIR")) {
             return [];
         }
         throw error;
@@ -100,7 +121,7 @@ export async function getFileMtime(
         guard.ensureNotAborted();
         return typeof stats.mtimeMs === "number" ? stats.mtimeMs : null;
     } catch (error) {
-        if (isFsErrorCode(error, "ENOENT")) {
+        if (isErrorWithCode(error, "ENOENT")) {
             return null;
         }
         throw error;
@@ -135,7 +156,7 @@ export function readTextFileSync(filePath: string): string {
  * @throws {NodeJS.ErrnoException} When the file cannot be read.
  */
 export function readTextFile(filePath: string): Promise<string> {
-    return fsReadFileAsync(filePath, "utf8");
+    return fsPromises.readFile(filePath, "utf8");
 }
 
 /**
@@ -154,6 +175,148 @@ export function writeTextFileSync(filePath: string, content: string): void {
 }
 
 /**
+ * Read a JSON state file synchronously, normalizing the parsed payload and
+ * falling back to a default value when the file is missing, unreadable, or
+ * contains invalid JSON.
+ *
+ * Centralizes the "read + JSON.parse + normalize, swallow any failure" shape
+ * that several synchronous state stores (CLI runtime/project-operation
+ * persistence) previously reimplemented with their own `try`/`catch` blocks.
+ * Since the fallback path discards the failure entirely, callers do not need
+ * detailed parse-error context here.
+ *
+ * @param {string} filePath Absolute or relative path to the JSON state file.
+ * @param {(value: unknown) => T} normalize Converts the parsed JSON value
+ *        into the caller's canonical shape. Receives `unknown` so callers can
+ *        also reject unexpected shapes by throwing from within `normalize`.
+ * @param {T} defaultValue Value returned when the file is absent, unreadable,
+ *        not valid JSON, or `normalize` throws.
+ * @returns {T} The normalized state, or `defaultValue` on any failure.
+ */
+export function readJsonFileSyncOrDefault<T>(filePath: string, normalize: (value: unknown) => T, defaultValue: T): T {
+    try {
+        return normalize(JSON.parse(fsReadFileSync(filePath, "utf8")));
+    } catch {
+        return defaultValue;
+    }
+}
+
+/**
+ * Read directory entries safely, returning an empty array when the directory
+ * does not exist or is inaccessible. Errors other than "not a directory" are
+ * re-thrown so callers can distinguish benign ENOENT/ENOTDIR cases from
+ * permission or I/O failures.
+ *
+ * Mirrors the semantics of {@link listDirectory} for cases where the filesystem
+ * facade is exposed directly rather than abstracted behind the `FileSystem-
+ * DirectoryReader` interface. Callers that already use a `FileSystemDirectory-
+ * Reader` should prefer {@link listDirectory} for consistent abort-signal
+ * handling.
+ *
+ * @param {{ readDir(path: string): Promise<Iterable<string>> }} fsFacade
+ *        Filesystem facade whose `readDir` method mirrors
+ *        `fs.promises.readdir`.
+ * @param {string} directoryPath Absolute or relative directory to read.
+ * @returns {Promise<Array<string>>} Stable array of directory entries,
+ *          ordered according to the underlying iterator.
+ */
+async function runDirectoryReadWithMissingFallback<TResult>(readDirectory: () => Promise<TResult>): Promise<TResult> {
+    try {
+        return await readDirectory();
+    } catch (error) {
+        if (isErrorWithCode(error, "ENOENT", "ENOTDIR")) {
+            return [] as TResult;
+        }
+        throw error;
+    }
+}
+
+export function safeReaddir(fsFacade: FileSystemDirectoryReader, directoryPath: string): Promise<Array<string>> {
+    return runDirectoryReadWithMissingFallback(async () => toArrayFromIterable(await fsFacade.readDir(directoryPath)));
+}
+
+/**
+ * Minimal directory entry shape required by {@link safeReaddirDirent}. Omits
+ * internal `parent` / buffer fields from Node's `Dirent` to keep the interface
+ * lean and portable.
+ */
+type FileDirent = Pick<
+    Dirent,
+    "name" | "isBlockDevice" | "isCharacterDevice" | "isDirectory" | "isFIFO" | "isFile" | "isSocket" | "isSymbolicLink"
+>;
+
+export interface FileSystemDirentReader {
+    readonly readDir: (path: string, options: { withFileTypes: true }) => Promise<FileDirent[]>;
+}
+
+/**
+ * Read directory entries with `withFileTypes: true`, returning an empty array
+ * when the directory does not exist or is inaccessible. Errors other than
+ * "not a directory" are re-thrown so callers can distinguish benign
+ * ENOENT/ENOTDIR cases from permission or I/O failures.
+ *
+ * Provides a canonical, reusable alternative to bare `.catch(() => [])`
+ * handlers that:
+ *   - Documents the intent in the function name rather than relying on
+ *     inline callbacks.
+ *   - Propagates unexpected errors (permission denied, I/O faults) rather
+ *     than silently absorbing them.
+ *   - Keeps error-handling logic centralized in the core fs module so it can
+ *     be audited and updated in one place.
+ *
+ * @param {{ readDir(path: string): Promise<Iterable<string>> }} fsFacade
+ *        Filesystem facade whose `readDir` method mirrors
+ *        `fs.promises.readdir`.
+ * @param {string} directoryPath Absolute or relative directory to read.
+ * @returns {Promise<Array<FileDirent>>} Stable array of directory entries,
+ *          ordered according to the underlying iterator.
+ */
+export function safeReaddirDirent(fsFacade: FileSystemDirentReader, directoryPath: string): Promise<FileDirent[]> {
+    return runDirectoryReadWithMissingFallback(() => fsFacade.readDir(directoryPath, { withFileTypes: true }));
+}
+
+/**
+ * Retrieve file stats, returning `null` when the file does not exist or is
+ * inaccessible. Errors other than ENOENT are re-thrown so callers can
+ * distinguish benign "not found" cases from permission or I/O failures.
+ *
+ * @param {string} filePath Path to the file or directory to stat.
+ * @returns {Promise<Stats | null>} File stats when accessible, otherwise `null`.
+ */
+export async function safeStat(filePath: string): Promise<Stats | null> {
+    try {
+        return await fsPromises.stat(filePath);
+    } catch (error) {
+        if (isErrorWithCode(error, "ENOENT")) {
+            return null;
+        }
+        throw error;
+    }
+}
+
+/**
+ * Read directory entries with `withFileTypes: true`, returning an empty array
+ * when the directory does not exist. Errors other than ENOENT/ENOTDIR are
+ * re-thrown so callers can distinguish benign "missing directory" cases from
+ * permission or I/O failures.
+ *
+ * Routes through the same {@link runDirectoryReadWithMissingFallback} helper
+ * as {@link safeReaddir} and {@link safeReaddirDirent} so all canonical "safe"
+ * directory reads share identical fallback semantics. Historically this
+ * helper used a bare `.catch(() => [])` which silently absorbed permission
+ * and I/O errors; it now mirrors the documented project-wide pattern.
+ *
+ * @param {string} directoryPath Path to the directory to read.
+ * @returns {Promise<Dirent[]>} Directory entries when accessible, otherwise an empty array.
+ * @throws {NodeJS.ErrnoException} When the read fails for a reason other than
+ *         the directory being missing (`ENOENT`) or replaced by a non-directory
+ *         entry (`ENOTDIR`).
+ */
+export function safeReaddirWithFileTypes(directoryPath: string): Promise<Dirent[]> {
+    return runDirectoryReadWithMissingFallback(() => fsPromises.readdir(directoryPath, { withFileTypes: true }));
+}
+
+/**
  * Write text content to a file asynchronously with UTF-8 encoding.
  *
  * Standardizes file writes across the codebase by defaulting to UTF-8 encoding
@@ -166,5 +329,5 @@ export function writeTextFileSync(filePath: string, content: string): void {
  * @throws {NodeJS.ErrnoException} When the file cannot be written.
  */
 export function writeTextFile(filePath: string, content: string): Promise<void> {
-    return fsWriteFileAsync(filePath, content, "utf8");
+    return fsPromises.writeFile(filePath, content, "utf8");
 }

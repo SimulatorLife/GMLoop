@@ -23,6 +23,15 @@ export interface StorageBackend {
     deleteEntry(key: string): Promise<void>;
     dispose(): Promise<void>;
     getStats(): StorageBackendStats;
+    /**
+     * Remove a spilled entry from the backend's path index and read cache
+     * without deleting the backing file on disk.
+     *
+     * Used by overlay scenarios where the overlay entry has been written back
+     * and the spill reference is now stale, but the file contents are still
+     * valid for the in-memory overlay map.
+     */
+    removeFromIndex(key: string): void;
 }
 
 type TempFileStorageBackendOptions = {
@@ -64,6 +73,32 @@ function createStorageFileName(key: string): string {
 }
 
 /**
+ * Resolves the temp directory path to clean up during disposal by awaiting
+ * an in-flight {@link mkdtemp} promise when the synchronously captured
+ * {@link rootPath} is still null. Returns the path to remove, or null
+ * when no directory was ever created (e.g. if mkdtemp itself failed).
+ */
+async function resolveInflightTempPath(
+    pendingPromise: Promise<string> | null,
+    rootPath: string | null
+): Promise<string | null> {
+    if (rootPath) {
+        return rootPath;
+    }
+
+    if (pendingPromise === null) {
+        return null;
+    }
+
+    try {
+        return await pendingPromise;
+    } catch {
+        // mkdtemp failed — no directory was created, nothing to clean up.
+        return null;
+    }
+}
+
+/**
  * Temp-file storage backend with bounded read-through cache.
  */
 export class TempFileStorageBackend implements StorageBackend {
@@ -97,7 +132,9 @@ export class TempFileStorageBackend implements StorageBackend {
         await writeFile(filePath, content, "utf8");
         this.stats.writes += 1;
         this.stats.spilledEntries = this.pathByKey.size;
-        this.readCacheByKey.delete(key);
+        // Reuse the just-written string for the next read so dry-run overlays do
+        // not immediately allocate a second copy by round-tripping through disk.
+        this.promoteReadCacheEntry(key, { content });
     }
 
     async readEntry(key: string): Promise<string | null> {
@@ -155,19 +192,34 @@ export class TempFileStorageBackend implements StorageBackend {
         }
     }
 
-    async dispose(): Promise<void> {
-        this.disposed = true;
-        const rootPath = this.tempRootPath;
-        this.tempRootPath = null;
-        this.tempRootPathPromise = null;
-        this.pathByKey.clear();
-        this.readCacheByKey.clear();
-
-        if (!rootPath) {
+    removeFromIndex(key: string): void {
+        if (this.disposed) {
             return;
         }
 
-        await rm(rootPath, { recursive: true, force: true });
+        this.readCacheByKey.delete(key);
+        this.pathByKey.delete(key);
+        this.stats.spilledEntries = this.pathByKey.size;
+    }
+
+    async dispose(): Promise<void> {
+        this.disposed = true;
+        const pendingPromise = this.tempRootPathPromise;
+        const rootPath = this.tempRootPath;
+        this.tempRootPath = null;
+        this.tempRootPathPromise = null;
+        this.readCacheByKey.clear();
+        this.pathByKey.clear();
+
+        // If mkdtemp() is still in-flight, await it so the newly created
+        // directory can be removed. Without this, dispose() would return
+        // before the directory exists and the temp path would be orphaned.
+        const resolvedPath = await resolveInflightTempPath(pendingPromise, rootPath);
+        if (!resolvedPath) {
+            return;
+        }
+
+        await rm(resolvedPath, { recursive: true, force: true });
     }
 
     getStats(): StorageBackendStats {
@@ -188,7 +240,12 @@ export class TempFileStorageBackend implements StorageBackend {
 
         if (this.tempRootPathPromise === null) {
             this.tempRootPathPromise = mkdtemp(path.join(os.tmpdir(), this.tempDirectoryPrefix)).then((rootPath) => {
-                this.tempRootPath = rootPath;
+                // Guard against the race where dispose() ran while mkdtemp
+                // was in-flight. dispose() awaits this same promise and will
+                // handle directory removal, so skip caching the path here.
+                if (!this.disposed) {
+                    this.tempRootPath = rootPath;
+                }
                 return rootPath;
             });
         }
@@ -218,8 +275,8 @@ export class TempFileStorageBackend implements StorageBackend {
         this.readCacheByKey.set(key, entry);
 
         while (this.readCacheByKey.size > this.readCacheMaxEntries) {
-            const oldestKey = this.readCacheByKey.keys().next().value;
-            if (!oldestKey) {
+            const oldestKey = this.readCacheByKey.keys().next().value as string | undefined;
+            if (oldestKey === undefined) {
                 break;
             }
 

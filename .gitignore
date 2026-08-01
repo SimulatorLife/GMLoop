@@ -13,11 +13,25 @@ tools/
 /*.cjs
 /*.mjs
 */**/*debug*.txt
+.playwright-mcp/
+.gmloop/
+.gmcache/
+**/.gmcache/
+cache/
+repomix-output.xml
 
 # We only want extra markdown files in docs/ and README.md files for each workspace
 *.md
+!docs/*.md
 !docs/**/*.md
 !**/*/README.md
+!src/agent-pack/skills/*/SKILL.md
+!src/agent-pack/templates/*.md
+!.github/copilot-instructions.md
+
+**/.gmloop
+.playwright-mcp/
+*.png
 
 # TypeScript
 *.tsbuildinfo
@@ -32,16 +46,29 @@ tools/
 # Ignore JS (except in src/parser/generated/)
 src/**/*.js
 !src/parser/generated/*.js
+!**/stylelint.config.js
 
 # Make sure we keep the ESLint config file which is intentionally committed
 !/eslint.config.js
 
-# gemini-cli
-.gemini/*
+# AI / agents
+.gemini/**
+!.gemini/
+!.gemini/**/
 !.gemini/settings.json
-
+!.gemini/policies/tools.toml
 .qwen/*
 !.qwen/settings.json
+.codex/*
+!.codex/config.toml
+!.codex/*-model-catalog.json
+!.codex/agents/
+!.codex/agents/*.toml
+.agents/**
+!.agents/
+!.agents/**/
+!.agents/skills/**/SKILL.md
+!.agents/prompts/**/*.txt
 
 # GitHub App credentials
 gha-creds-*.json
@@ -49,6 +76,10 @@ gha-creds-*.json
 # AI agents sometimes add scripts
 # We don't want to commit these by accident
 scripts/
+!/scripts/
+/scripts/*
+!/scripts/codex-mini.sh
+!/scripts/ensure-codex-minimax-proxy
 
 # Logs
 logs/
@@ -94,7 +125,8 @@ build/Release
 node_modules/
 jspm_packages/
 .husky/_/
-reports/
+reports/*
+!reports/.gitkeep
 report/
 
 # Snowpack dependency directory (https://snowpack.dev/)
@@ -170,8 +202,10 @@ dist
 .tern-port
 
 # Stores VSCode versions used for testing VSCode extensions
-.vscode
+.vscode/*
 .vscode-test
+!.vscode/settings.json
+!.vscode/tasks.json
 
 # yarn v2
 .yarn/cache
@@ -179,3 +213,5 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+.agents/skills/repomix-reference-gmloop/

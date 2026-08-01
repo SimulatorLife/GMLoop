@@ -170,7 +170,7 @@ void describe("capability probes", () => {
         });
 
         assert.equal(fromObject instanceof Map, true);
-        assert.equal(fromObject.get("id")?.status, "failed");
+        assert.equal((fromObject.get("id") as { status: string } | undefined)?.status, "failed");
     });
 
     void it("ignores invalid iterable shapes when normalizing maps", () => {

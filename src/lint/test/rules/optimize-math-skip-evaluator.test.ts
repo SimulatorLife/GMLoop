@@ -1,0 +1,726 @@
+/**
+ * Unit tests for the math skip-evaluator module.
+ *
+ * These tests verify that the policy evaluation logic is correct and
+ * independent from the mechanism code that applies rewrites. Each test
+ * case documents the expected behavior of the policy decision.
+ *
+ * The module was previously named `optimize-math-skip-evaluator` and lived
+ * under `gml/rules/`. It is pure GML math-policy code (signal patterns,
+ * built-in math call names, length-thresholds, AST-shape candidate tests),
+ * so it now sits alongside the other math helpers in `gml/math/` where its
+ * peers (`math-numeric-policy.ts`, `math-scalar-condensing.ts`, etc.)
+ * already live.
+ */
+
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+// Import via the curated `math/index.js` barrel rather than reaching into
+// `math-skip-evaluator.js` directly. The barrel is the stable public surface
+// for the math helpers; deep-relative imports into specific implementation
+// files couple this test to the internal layout of `gml/math/`. If a helper
+// is moved or split across files, only the barrel needs updating.
+import {
+    ADDITIVE_MATH_BINARY_OPERATORS,
+    canAstShapeContainMathOptimizationCandidate,
+    containsMathOptimizationSyntax,
+    DEFAULT_MATH_CALL_NAMES,
+    DEFAULT_MATH_SIGNAL_PATTERNS,
+    DEFAULT_TEXT_LENGTH_POLICY,
+    evaluateCanonicalFormDecision,
+    evaluateMathOptimizationCandidate,
+    evaluateSkipDecision,
+    formatCanonicalNumericLiteral,
+    MATH_OPTIMIZATION_POLICY_CONSTANTS,
+    STRONG_MATH_BINARY_OPERATORS
+} from "../../src/rules/gml/math/index.js";
+
+void test("evaluateSkipDecision returns true for nested expression parents", () => {
+    const parents = [
+        { type: "BinaryExpression" },
+        { type: "UnaryExpression" },
+        { type: "LogicalExpression" },
+        { type: "ParenthesizedExpression" }
+    ];
+
+    for (const parent of parents) {
+        assert.strictEqual(evaluateSkipDecision(parent, "left"), true, `Should skip when parent is ${parent.type}`);
+    }
+});
+
+void test("evaluateSkipDecision returns true for specific parent/key combinations", () => {
+    const testCases: Array<{ parent: { type: string }; key: string; expected: boolean }> = [
+        { parent: { type: "VariableDeclarator" }, key: "init", expected: true },
+        { parent: { type: "AssignmentExpression" }, key: "right", expected: true },
+        { parent: { type: "IfStatement" }, key: "test", expected: true },
+        { parent: { type: "ReturnStatement" }, key: "argument", expected: true },
+        // Negative cases - wrong key
+        { parent: { type: "VariableDeclarator" }, key: "id", expected: false },
+        { parent: { type: "AssignmentExpression" }, key: "left", expected: false },
+        { parent: { type: "IfStatement" }, key: "body", expected: false },
+        { parent: { type: "ReturnStatement" }, key: "callee", expected: false }
+    ];
+
+    for (const { parent, key, expected } of testCases) {
+        assert.strictEqual(
+            evaluateSkipDecision(parent, key),
+            expected,
+            `Parent=${parent.type}, key=${key} should ${expected ? "skip" : "process"}`
+        );
+    }
+});
+
+void test("evaluateSkipDecision returns false for null/undefined parent", () => {
+    assert.strictEqual(evaluateSkipDecision(null, null), false);
+    assert.strictEqual(evaluateSkipDecision(undefined, null), false);
+    assert.strictEqual(evaluateSkipDecision({}, null), false);
+});
+
+void test("evaluateSkipDecision returns false for parent without type property", () => {
+    assert.strictEqual(evaluateSkipDecision({ name: "test" }, null), false);
+    assert.strictEqual(evaluateSkipDecision({ foo: "bar" }, "left"), false);
+});
+
+void test("evaluateSkipDecision returns false for generic statement parents", () => {
+    const statementParents = [
+        { type: "ExpressionStatement" },
+        { type: "BlockStatement" },
+        { type: "Program" },
+        { type: "FunctionDeclaration" }
+    ];
+
+    for (const parent of statementParents) {
+        assert.strictEqual(
+            evaluateSkipDecision(parent, "body"),
+            false,
+            `Should NOT skip when parent is ${parent.type}`
+        );
+    }
+});
+
+void test("evaluateMathOptimizationCandidate detects math syntax", () => {
+    const testCases: Array<{ sourceText: string; nodeType: string; expected: boolean }> = [
+        { sourceText: "a + b", nodeType: "BinaryExpression", expected: true },
+        { sourceText: "x * y", nodeType: "BinaryExpression", expected: true },
+        { sourceText: "score / 2", nodeType: "BinaryExpression", expected: true },
+        { sourceText: "sin(angle)", nodeType: "CallExpression", expected: true },
+        { sourceText: "sqrt(x * x)", nodeType: "CallExpression", expected: true },
+        // Negative cases
+        { sourceText: "hello", nodeType: "Identifier", expected: false },
+        { sourceText: "myFunction()", nodeType: "CallExpression", expected: false },
+        { sourceText: '"string"', nodeType: "Literal", expected: false },
+        { sourceText: "", nodeType: "BinaryExpression", expected: false }
+    ];
+
+    for (const { sourceText, nodeType, expected } of testCases) {
+        const evaluation = evaluateMathOptimizationCandidate({ sourceText, nodeType });
+        assert.strictEqual(
+            evaluation.hasMathSyntax,
+            expected,
+            `"${sourceText}" should ${expected ? "have" : "not have"} math syntax`
+        );
+    }
+});
+
+void test("evaluateMathOptimizationCandidate respects length threshold", () => {
+    const shortExpr = "x + y";
+    const longExpr = "a".repeat(DEFAULT_TEXT_LENGTH_POLICY.maxOptimizationCandidateLength + 1);
+
+    const shortEval = evaluateMathOptimizationCandidate({ sourceText: shortExpr, nodeType: "BinaryExpression" });
+    const longEval = evaluateMathOptimizationCandidate({ sourceText: longExpr, nodeType: "BinaryExpression" });
+
+    assert.strictEqual(shortEval.exceedsLengthThreshold, false);
+    assert.strictEqual(longEval.exceedsLengthThreshold, true);
+});
+
+void test("evaluateMathOptimizationCandidate detects strong math signals", () => {
+    const strongSignalExpr = "x * y / z";
+    const weakSignalExpr = "a + b - c";
+
+    const strongEval = evaluateMathOptimizationCandidate({
+        sourceText: strongSignalExpr,
+        nodeType: "BinaryExpression"
+    });
+    const weakEval = evaluateMathOptimizationCandidate({ sourceText: weakSignalExpr, nodeType: "BinaryExpression" });
+
+    assert.strictEqual(strongEval.hasStrongMathSignal, true);
+    assert.strictEqual(weakEval.hasStrongMathSignal, false);
+});
+
+void test("evaluateMathOptimizationCandidate detects division operators", () => {
+    const divisionExpr = "x / 2";
+    const noDivisionExpr = "x * y + z";
+
+    const divisionEval = evaluateMathOptimizationCandidate({ sourceText: divisionExpr, nodeType: "BinaryExpression" });
+    const noDivisionEval = evaluateMathOptimizationCandidate({
+        sourceText: noDivisionExpr,
+        nodeType: "BinaryExpression"
+    });
+
+    assert.strictEqual(divisionEval.hasDivisionOperator, true);
+    assert.strictEqual(noDivisionEval.hasDivisionOperator, false);
+});
+
+void test("evaluateMathOptimizationCandidate detects numeric literals", () => {
+    const numericExpr = "42 * x";
+    const noNumericExpr = "a + b";
+
+    const numericEval = evaluateMathOptimizationCandidate({ sourceText: numericExpr, nodeType: "BinaryExpression" });
+    const noNumericEval = evaluateMathOptimizationCandidate({
+        sourceText: noNumericExpr,
+        nodeType: "BinaryExpression"
+    });
+
+    assert.strictEqual(numericEval.hasNumericLiteral, true);
+    assert.strictEqual(noNumericEval.hasNumericLiteral, false);
+});
+
+void test("evaluateMathOptimizationCandidate handles string literals", () => {
+    const stringExpr = '"hello" + "world"';
+
+    const result = evaluateMathOptimizationCandidate({ sourceText: stringExpr, nodeType: "BinaryExpression" });
+
+    // String concatenation should not be treated as a math candidate
+    assert.strictEqual(result.hasMathSyntax, false);
+});
+
+void test("evaluateMathOptimizationCandidate handles function call expressions", () => {
+    const callExpr = "myFunction(x, y)";
+
+    const result = evaluateMathOptimizationCandidate({ sourceText: callExpr, nodeType: "CallExpression" });
+
+    // Function calls should not be treated as math candidates
+    assert.strictEqual(result.hasMathSyntax, false);
+});
+
+void test("MATH_OPTIMIZATION_POLICY_CONSTANTS match DEFAULT_TEXT_LENGTH_POLICY", () => {
+    assert.strictEqual(
+        MATH_OPTIMIZATION_POLICY_CONSTANTS.MAX_OPTIMIZATION_CANDIDATE_LENGTH,
+        DEFAULT_TEXT_LENGTH_POLICY.maxOptimizationCandidateLength
+    );
+    assert.strictEqual(
+        MATH_OPTIMIZATION_POLICY_CONSTANTS.MAX_MANUAL_NORMALIZATION_LENGTH,
+        DEFAULT_TEXT_LENGTH_POLICY.maxManualNormalizationLength
+    );
+});
+
+void test("formatCanonicalNumericLiteral produces correct output", () => {
+    const testCases: Array<{ input: number; expected: string }> = [
+        { input: 0, expected: "0" },
+        { input: 1, expected: "1" },
+        { input: -1, expected: "-1" },
+        { input: 0.5, expected: "0.5" },
+        { input: 100, expected: "100" },
+        { input: 0.0001, expected: "0.0001" },
+        { input: 1_234_567_890, expected: "1234567890" }
+    ];
+
+    for (const { input, expected } of testCases) {
+        const result = formatCanonicalNumericLiteral(input);
+        assert.strictEqual(result, expected, `formatCanonicalNumericLiteral(${input}) should be "${expected}"`);
+    }
+});
+
+void test("formatCanonicalNumericLiteral handles edge cases", () => {
+    assert.strictEqual(formatCanonicalNumericLiteral(Number.NaN), null);
+    assert.strictEqual(formatCanonicalNumericLiteral(Number.POSITIVE_INFINITY), null);
+    assert.strictEqual(formatCanonicalNumericLiteral(Number.NEGATIVE_INFINITY), null);
+});
+
+void test("DEFAULT_MATH_SIGNAL_PATTERNS contains all required patterns", () => {
+    const patterns: Array<keyof typeof DEFAULT_MATH_SIGNAL_PATTERNS> = [
+        "mathOptimizationSignal",
+        "mathStrongSignal",
+        "divisionBasedSignal",
+        "numericLiteralSignal",
+        "manualMathCallSignal"
+    ];
+
+    for (const patternName of patterns) {
+        assert.ok(DEFAULT_MATH_SIGNAL_PATTERNS[patternName] instanceof RegExp, `${patternName} should be a RegExp`);
+    }
+});
+
+void test("evaluateSkipDecision is pure and does not mutate inputs", () => {
+    const parent = { type: "BinaryExpression", extra: "data" };
+    const originalParent = JSON.stringify(parent);
+
+    evaluateSkipDecision(parent, "left");
+
+    assert.strictEqual(JSON.stringify(parent), originalParent, "Parent should not be mutated");
+});
+
+void test("evaluateMathOptimizationCandidate is pure and does not mutate config", () => {
+    const context = { sourceText: "a + b", nodeType: "BinaryExpression" };
+    const originalContext = JSON.stringify(context);
+
+    evaluateMathOptimizationCandidate(context);
+
+    assert.strictEqual(JSON.stringify(context), originalContext, "Context should not be mutated");
+});
+
+void test("skip decisions are consistent across multiple calls", () => {
+    const parent = { type: "BinaryExpression" };
+
+    // Call multiple times and verify consistency
+    const result1 = evaluateSkipDecision(parent, "left");
+    const result2 = evaluateSkipDecision(parent, "left");
+    const result3 = evaluateSkipDecision(parent, "left");
+
+    assert.strictEqual(result1, result2);
+    assert.strictEqual(result2, result3);
+});
+
+void test("candidate evaluation is consistent across multiple calls", () => {
+    const context = { sourceText: "x * y", nodeType: "BinaryExpression" };
+
+    // Call multiple times and verify consistency
+    const result1 = evaluateMathOptimizationCandidate(context);
+    const result2 = evaluateMathOptimizationCandidate(context);
+    const result3 = evaluateMathOptimizationCandidate(context);
+
+    assert.strictEqual(result1.hasMathSyntax, result2.hasMathSyntax);
+    assert.strictEqual(result2.hasMathSyntax, result3.hasMathSyntax);
+});
+
+void test("evaluateSkipDecision handles edge case of empty parent", () => {
+    assert.strictEqual(evaluateSkipDecision({}, null), false);
+    assert.strictEqual(evaluateSkipDecision({ type: "" }, null), false);
+});
+
+void test("evaluateMathOptimizationCandidate handles edge cases", () => {
+    // Empty string
+    const emptyEval = evaluateMathOptimizationCandidate({ sourceText: "", nodeType: "BinaryExpression" });
+    assert.strictEqual(emptyEval.exceedsLengthThreshold, true);
+    assert.strictEqual(emptyEval.hasMathSyntax, false);
+
+    // Very long but valid math expression
+    const longMathExpr = "x + y".repeat(500);
+    const longEval = evaluateMathOptimizationCandidate({ sourceText: longMathExpr, nodeType: "BinaryExpression" });
+    assert.strictEqual(longEval.exceedsLengthThreshold, true);
+});
+
+void test("shouldAttemptManualNormalization is correctly determined", () => {
+    // Should attempt: has division operator
+    const divisionExpr = "x / 2 + y";
+    const divisionEval = evaluateMathOptimizationCandidate({ sourceText: divisionExpr, nodeType: "BinaryExpression" });
+    assert.strictEqual(divisionEval.shouldAttemptManualNormalization, true);
+
+    // Should attempt: has multiplication
+    const multExpr = "x * y";
+    const multEval = evaluateMathOptimizationCandidate({ sourceText: multExpr, nodeType: "BinaryExpression" });
+    assert.strictEqual(multEval.shouldAttemptManualNormalization, true);
+
+    // Should attempt: has numeric with addition
+    const numericAddExpr = "42 + x";
+    const numericAddEval = evaluateMathOptimizationCandidate({
+        sourceText: numericAddExpr,
+        nodeType: "BinaryExpression"
+    });
+    assert.strictEqual(numericAddEval.shouldAttemptManualNormalization, true);
+
+    // Should NOT attempt: simple addition without numbers
+    const simpleAddExpr = "x + y";
+    const simpleAddEval = evaluateMathOptimizationCandidate({
+        sourceText: simpleAddExpr,
+        nodeType: "BinaryExpression"
+    });
+    assert.strictEqual(simpleAddEval.shouldAttemptManualNormalization, false);
+});
+
+void test("evaluateSkipDecision with complex parent structures", () => {
+    // Test that deeply nested structures are handled correctly
+    const complexParent = {
+        type: "ParenthesizedExpression",
+        extra: { nested: { data: "test" } }
+    };
+
+    assert.strictEqual(evaluateSkipDecision(complexParent, "expression"), true);
+});
+
+void test("evaluateCanonicalFormDecision treats numerically equivalent literals as canonical (epsilon-tolerant)", () => {
+    // Source text "1" parses to the numeric value 1.  This is canonical — no noise —
+    // so the canonical form matches the source text directly.
+    const cleanNode = {
+        type: "Literal",
+        value: 1
+    };
+    assert.strictEqual(evaluateCanonicalFormDecision("1", cleanNode), true);
+
+    // Source text "1" with a node whose numeric value is very close to 1 (e.g.
+    // 1 + 2e-16).  Strict string equality "1" === "1" would return true here, but
+    // the real bug is the inverse case: a numerically-canonical value whose string
+    // form contains floating-point noise.  We test the inverse below with a value
+    // that canonicalizes to a shorter string.
+    const nearCanonicalNode = {
+        type: "Literal",
+        value: 1 + 2e-16
+    };
+    assert.strictEqual(evaluateCanonicalFormDecision("1", nearCanonicalNode), true);
+});
+
+void test("evaluateCanonicalFormDecision rejects literals that are not numerically canonical", () => {
+    // "2.5" is numerically canonical — formatCanonicalNumericLiteral(2.5) → "2.5"
+    const canonicalNode = {
+        type: "Literal",
+        value: 2.5
+    };
+    assert.strictEqual(evaluateCanonicalFormDecision("2.5", canonicalNode), true);
+
+    // Source text "0.1 + 0.9" as a parsed value (0.9999999999999999): this is close
+    // to 1, which canonically formats as "1".  Epsilon comparison correctly treats
+    // it as numerically equal to the canonical form, so the function returns true
+    // — the value is already as canonical as it can be.
+    const noisyNearOneNode = {
+        type: "Literal",
+        value: 0.1 + 0.9
+    };
+    assert.strictEqual(evaluateCanonicalFormDecision("0.1 + 0.9", noisyNearOneNode), true);
+});
+
+void test("evaluateCanonicalFormDecision uses strict equality for non-finite canonical text", () => {
+    // NaN values: getLiteralNumberValue returns null, so the function returns false.
+    const nanNode = {
+        type: "Literal",
+        value: Number.NaN
+    };
+    assert.strictEqual(evaluateCanonicalFormDecision("NaN", nanNode), false);
+
+    // Non-numeric literal: getLiteralNumberValue returns null, function returns false.
+    const stringNode = {
+        type: "Literal",
+        value: "hello"
+    };
+    assert.strictEqual(evaluateCanonicalFormDecision("hello", stringNode), false);
+});
+
+void test("containsMathOptimizationSyntax accepts strong-signal expressions unconditionally", () => {
+    // Strong math signals (multiplicative, trigonometric, etc.) should be
+    // accepted without consulting the disqualifying checks.
+    const strongCases = ["x * y", "score / 2", "depth % 4", "value div 3", "amount mod 2", "sin(angle)"];
+
+    for (const sourceText of strongCases) {
+        assert.strictEqual(
+            containsMathOptimizationSyntax(sourceText),
+            true,
+            `expected "${sourceText}" to be a candidate`
+        );
+    }
+});
+
+void test("containsMathOptimizationSyntax rejects identifier-only additive text", () => {
+    // Weak-signal (additive) expressions without numeric literals are
+    // not optimizable and should be rejected.
+    const weakCases = ["x + y", "left + right - previous", "name + suffix"];
+
+    for (const sourceText of weakCases) {
+        assert.strictEqual(
+            containsMathOptimizationSyntax(sourceText),
+            false,
+            `expected "${sourceText}" to be rejected`
+        );
+    }
+});
+
+void test("containsMathOptimizationSyntax rejects string-literal concatenations", () => {
+    // Even with math operators present, string literals disqualify the
+    // expression because the `+` could be string concatenation.
+    const stringCases = ['"hello" + name', 'prefix + ":"', 'greeting + ", world"'];
+
+    for (const sourceText of stringCases) {
+        assert.strictEqual(
+            containsMathOptimizationSyntax(sourceText),
+            false,
+            `expected "${sourceText}" to be rejected as string concatenation`
+        );
+    }
+});
+
+void test("containsMathOptimizationSyntax rejects weak-signal call-shaped text without numerics", () => {
+    // Weak-signal expression that contains a function call but no numeric
+    // literal — call-shaped additive chains are not safe candidates.
+    const callCases = ["myFunction(x, y)", "build() + collect()"];
+
+    for (const sourceText of callCases) {
+        assert.strictEqual(
+            containsMathOptimizationSyntax(sourceText),
+            false,
+            `expected "${sourceText}" to be rejected as call-shaped text`
+        );
+    }
+});
+
+void test("containsMathOptimizationSyntax accepts weak-signal call-shaped text when strong signal present", () => {
+    // Strong-signal expressions containing a function call are still
+    // accepted because the strong signal short-circuits the disqualifier.
+    const strongCallCases = ["x * myFunction(y)", "length * sin(angle)"];
+
+    for (const sourceText of strongCallCases) {
+        assert.strictEqual(
+            containsMathOptimizationSyntax(sourceText),
+            true,
+            `expected "${sourceText}" to be accepted via strong signal`
+        );
+    }
+});
+
+void test("containsMathOptimizationSyntax accepts weak-signal text with a numeric literal", () => {
+    // `x + 1`, `score - 2` etc. are valid candidates because they have
+    // a numeric literal to fold.
+    const numericCases = ["x + 1", "score - 2", "value + 0.5", "depth * 4"];
+
+    for (const sourceText of numericCases) {
+        assert.strictEqual(
+            containsMathOptimizationSyntax(sourceText),
+            true,
+            `expected "${sourceText}" to be accepted due to numeric literal`
+        );
+    }
+});
+
+void test("containsMathOptimizationSyntax rejects empty input", () => {
+    assert.strictEqual(containsMathOptimizationSyntax(""), false);
+    // Whitespace-only text does not contain any math signal, so the
+    // predicate's first guard short-circuits to false.
+    assert.strictEqual(containsMathOptimizationSyntax("   \n\t  "), false);
+});
+
+void test("containsMathOptimizationSyntax is pure and does not mutate its patterns argument", () => {
+    const patterns = { ...DEFAULT_MATH_SIGNAL_PATTERNS };
+    const serializedPatterns = JSON.stringify(patterns);
+
+    containsMathOptimizationSyntax("x + 1", patterns);
+
+    assert.strictEqual(JSON.stringify(patterns), serializedPatterns, "Patterns should not be mutated");
+});
+
+void test("containsMathOptimizationSyntax respects caller-supplied patterns", () => {
+    // When the caller passes a custom pattern that only matches a specific
+    // substring, the predicate should follow the caller's policy.
+    const customPatterns = {
+        ...DEFAULT_MATH_SIGNAL_PATTERNS,
+        mathOptimizationSignal: /\bx\b/u,
+        mathStrongSignal: /\bx\b/u
+    };
+
+    assert.strictEqual(containsMathOptimizationSyntax("x + 1", customPatterns), true);
+    assert.strictEqual(containsMathOptimizationSyntax("y + 1", customPatterns), false);
+});
+
+void test("canAstShapeContainMathOptimizationCandidate accepts numeric literals", () => {
+    assert.strictEqual(canAstShapeContainMathOptimizationCandidate({ type: "Literal", value: 1 }), true);
+    assert.strictEqual(canAstShapeContainMathOptimizationCandidate({ type: "Literal", value: 0.5 }), true);
+    assert.strictEqual(canAstShapeContainMathOptimizationCandidate({ type: "Literal", value: -3 }), true);
+});
+
+void test("canAstShapeContainMathOptimizationCandidate rejects non-numeric literals", () => {
+    assert.strictEqual(canAstShapeContainMathOptimizationCandidate({ type: "Literal", value: "hello" }), false);
+    assert.strictEqual(canAstShapeContainMathOptimizationCandidate({ type: "Literal", value: null }), false);
+});
+
+void test("canAstShapeContainMathOptimizationCandidate accepts strong binary operators", () => {
+    for (const operator of STRONG_MATH_BINARY_OPERATORS) {
+        const node = {
+            type: "BinaryExpression",
+            operator,
+            left: { type: "Identifier", name: "x" },
+            right: { type: "Identifier", name: "y" }
+        };
+        assert.strictEqual(
+            canAstShapeContainMathOptimizationCandidate(node),
+            true,
+            `strong operator "${operator}" should yield a candidate`
+        );
+    }
+});
+
+void test("canAstShapeContainMathOptimizationCandidate recurses into additive operands", () => {
+    // `x + y` is additive on the surface but its operands are identifiers
+    // (not math). The predicate should reject the whole expression.
+    const identifierOnlyAddition = {
+        type: "BinaryExpression",
+        operator: "+",
+        left: { type: "Identifier", name: "x" },
+        right: { type: "Identifier", name: "y" }
+    };
+    assert.strictEqual(canAstShapeContainMathOptimizationCandidate(identifierOnlyAddition), false);
+
+    // `1 + y` recurses into the right operand which is an identifier, but
+    // the left operand is a numeric literal, so the whole expression is
+    // accepted.
+    const mixedAddition = {
+        type: "BinaryExpression",
+        operator: "+",
+        left: { type: "Literal", value: 1 },
+        right: { type: "Identifier", name: "y" }
+    };
+    assert.strictEqual(canAstShapeContainMathOptimizationCandidate(mixedAddition), true);
+
+    // Deeply nested multiplicative content should still be detected.
+    const nestedMultiplication = {
+        type: "BinaryExpression",
+        operator: "+",
+        left: { type: "Identifier", name: "outerLeft" },
+        right: {
+            type: "BinaryExpression",
+            operator: "*",
+            left: { type: "Identifier", name: "deepLeft" },
+            right: { type: "Identifier", name: "deepRight" }
+        }
+    };
+    assert.strictEqual(canAstShapeContainMathOptimizationCandidate(nestedMultiplication), true);
+});
+
+void test("canAstShapeContainMathOptimizationCandidate rejects unrelated binary operators", () => {
+    for (const operator of ["==", "&&", "||", "=", "<", ">"]) {
+        const node = {
+            type: "BinaryExpression",
+            operator,
+            left: { type: "Identifier", name: "x" },
+            right: { type: "Identifier", name: "y" }
+        };
+        assert.strictEqual(
+            canAstShapeContainMathOptimizationCandidate(node),
+            false,
+            `operator "${operator}" should not yield a candidate`
+        );
+    }
+});
+
+void test("canAstShapeContainMathOptimizationCandidate accepts math built-in call expressions", () => {
+    // Use a representative subset of the default catalogue.
+    for (const callName of ["sin", "cos", "sqrt", "point_distance", "lengthdir_x"]) {
+        const node = {
+            type: "CallExpression",
+            object: { type: "Identifier", name: callName },
+            arguments: []
+        };
+        assert.strictEqual(
+            canAstShapeContainMathOptimizationCandidate(node),
+            true,
+            `math call "${callName}" should yield a candidate`
+        );
+    }
+});
+
+void test("canAstShapeContainMathOptimizationCandidate rejects non-math call expressions", () => {
+    for (const callName of ["myFunction", "draw_sprite", "variable_instance_set"]) {
+        const node = {
+            type: "CallExpression",
+            object: { type: "Identifier", name: callName },
+            arguments: []
+        };
+        assert.strictEqual(
+            canAstShapeContainMathOptimizationCandidate(node),
+            false,
+            `non-math call "${callName}" should be rejected`
+        );
+    }
+});
+
+void test("canAstShapeContainMathOptimizationCandidate accepts additive unary expressions", () => {
+    const negative = {
+        type: "UnaryExpression",
+        operator: "-",
+        argument: { type: "Literal", value: 1 }
+    };
+    assert.strictEqual(canAstShapeContainMathOptimizationCandidate(negative), true);
+
+    // Recursive: -(-x) where the inner is a unary plus over an identifier
+    // should still be rejected because no math signal exists.
+    const nestedUseless = {
+        type: "UnaryExpression",
+        operator: "-",
+        argument: { type: "UnaryExpression", operator: "+", argument: { type: "Identifier", name: "x" } }
+    };
+    assert.strictEqual(canAstShapeContainMathOptimizationCandidate(nestedUseless), false);
+});
+
+void test("canAstShapeContainMathOptimizationCandidate rejects non-additive unary expressions", () => {
+    const logicalNot = {
+        type: "UnaryExpression",
+        operator: "!",
+        argument: { type: "Identifier", name: "x" }
+    };
+    assert.strictEqual(canAstShapeContainMathOptimizationCandidate(logicalNot), false);
+});
+
+void test("canAstShapeContainMathOptimizationCandidate unwraps parenthesized expressions", () => {
+    const parenthesized = {
+        type: "ParenthesizedExpression",
+        expression: { type: "Literal", value: 5 }
+    };
+    assert.strictEqual(canAstShapeContainMathOptimizationCandidate(parenthesized), true);
+});
+
+void test("canAstShapeContainMathOptimizationCandidate rejects null and non-object inputs", () => {
+    assert.strictEqual(canAstShapeContainMathOptimizationCandidate(null), false);
+    assert.strictEqual(canAstShapeContainMathOptimizationCandidate(undefined), false);
+    assert.strictEqual(canAstShapeContainMathOptimizationCandidate(42), false);
+    assert.strictEqual(canAstShapeContainMathOptimizationCandidate("BinaryExpression"), false);
+    assert.strictEqual(canAstShapeContainMathOptimizationCandidate({}), false);
+});
+
+void test("canAstShapeContainMathOptimizationCandidate rejects irrelevant AST node kinds", () => {
+    const identifier = { type: "Identifier", name: "x" };
+    const block = { type: "BlockStatement", body: [] };
+
+    assert.strictEqual(canAstShapeContainMathOptimizationCandidate(identifier), false);
+    assert.strictEqual(canAstShapeContainMathOptimizationCandidate(block), false);
+});
+
+void test("canAstShapeContainMathOptimizationCandidate respects caller-supplied math call catalogue", () => {
+    const node = {
+        type: "CallExpression",
+        object: { type: "Identifier", name: "user_math" },
+        arguments: []
+    };
+
+    // Default catalogue does not include `user_math`; predicate rejects.
+    assert.strictEqual(canAstShapeContainMathOptimizationCandidate(node), false);
+
+    // Caller-provided catalogue includes the custom call name.
+    const customCallNames = new Set([...DEFAULT_MATH_CALL_NAMES, "user_math"]);
+    assert.strictEqual(canAstShapeContainMathOptimizationCandidate(node, customCallNames), true);
+});
+
+void test("canAstShapeContainMathOptimizationCandidate is pure and does not mutate inputs", () => {
+    const node = {
+        type: "BinaryExpression",
+        operator: "*",
+        left: { type: "Literal", value: 2 },
+        right: { type: "Identifier", name: "x" }
+    };
+    const serialized = JSON.stringify(node);
+
+    canAstShapeContainMathOptimizationCandidate(node);
+
+    assert.strictEqual(JSON.stringify(node), serialized, "Node should not be mutated");
+});
+
+void test("STRONG_MATH_BINARY_OPERATORS contains the canonical math operator set", () => {
+    const expected = new Set(["*", "/", "%", "div", "mod"]);
+    assert.deepStrictEqual([...STRONG_MATH_BINARY_OPERATORS].sort(), [...expected].sort());
+});
+
+void test("ADDITIVE_MATH_BINARY_OPERATORS contains the canonical additive operator set", () => {
+    const expected = new Set(["+", "-"]);
+    assert.deepStrictEqual([...ADDITIVE_MATH_BINARY_OPERATORS].sort(), [...expected].sort());
+});
+
+void test("DEFAULT_MATH_CALL_NAMES contains the canonical math built-in catalogue", () => {
+    // The catalogue should be frozen and contain a representative set of
+    // the math built-ins used by the rule.
+    assert.strictEqual(Object.isFrozen(DEFAULT_MATH_CALL_NAMES), true);
+    for (const callName of ["sin", "cos", "sqrt", "point_distance"]) {
+        assert.strictEqual(DEFAULT_MATH_CALL_NAMES.has(callName), true, `expected ${callName} in catalogue`);
+    }
+});
+
+void test("DEFAULT_MATH_SIGNAL_PATTERNS exposes the new callExpressionPattern", () => {
+    assert.ok(DEFAULT_MATH_SIGNAL_PATTERNS.callExpressionPattern instanceof RegExp);
+    assert.strictEqual(DEFAULT_MATH_SIGNAL_PATTERNS.callExpressionPattern.test("foo()"), true);
+    assert.strictEqual(DEFAULT_MATH_SIGNAL_PATTERNS.callExpressionPattern.test("bar(42)"), true);
+    assert.strictEqual(DEFAULT_MATH_SIGNAL_PATTERNS.callExpressionPattern.test("a + b"), false);
+});

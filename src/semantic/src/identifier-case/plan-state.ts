@@ -89,11 +89,16 @@ function tryResolveRenameTarget(
                     return renameMap.get(fileKey) ?? null;
                 }
             } catch {
-                /* ignore */
+                // File-qualified lookup is the secondary path for plans keyed
+                // with a filepath. A malformed location or custom map-like
+                // implementation must behave like a missing rename; propagating
+                // the error would abort formatting for an optional case fix.
             }
         }
     } catch {
-        /* ignore */
+        // Rename maps cross the provider boundary and may only be map-like.
+        // Treat a throwing membership probe as an unavailable plan so identifier
+        // case correction cannot turn otherwise printable GML into a hard failure.
     }
 
     return null;
@@ -157,7 +162,7 @@ export function captureIdentifierCasePlanSnapshot(options) {
                         } catch {
                             /* ignore */
                         }
-                        samples.push(`${String(k)}=>${String(v)}`);
+                        samples.push(`${Core.describeValueForError(k)}=>${Core.describeValueForError(v)}`);
                         i += 1;
                         if (i >= 5) break;
                     }
@@ -225,13 +230,7 @@ export function applyIdentifierCasePlanSnapshot(snapshot, options) {
                     const size = isMap && typeof value.size === "number" ? value.size : 0;
                     if (isMap && size > 0 && !object[optionKey]) {
                         setIdentifierCaseOption(object, optionKey, value);
-                        logIdentifierCaseRenameMapSamples(value as Map<unknown, unknown>);
                     }
-                    // After writing the option, emit an identity check to confirm
-                    // whether the snapshot's map instance is the same object that
-                    // now lives on the options bag. This helps detect cases where
-                    // the map may have been cloned, cleared, or replaced between
-                    // capture and apply.
 
                     continue;
                 }
@@ -263,43 +262,3 @@ export function applyIdentifierCasePlanSnapshot(snapshot, options) {
 }
 
 export { buildRenameKey };
-
-function logIdentifierCaseRenameMapSamples(value: Map<unknown, unknown>): void {
-    try {
-        const formatKey = (key: unknown) => {
-            if (typeof key === "string") {
-                return key;
-            }
-
-            if (key === null) {
-                return "null";
-            }
-
-            if (key === undefined) {
-                return "undefined";
-            }
-
-            if (typeof key === "number" || typeof key === "boolean") {
-                return String(key);
-            }
-
-            try {
-                return JSON.stringify(key);
-            } catch {
-                return Object.prototype.toString.call(key);
-            }
-        };
-
-        const samples: Array<string> = [];
-        let count = 0;
-        for (const key of value.keys()) {
-            samples.push(formatKey(key));
-            count += 1;
-            if (count >= 3) {
-                break;
-            }
-        }
-    } catch {
-        /* ignore */
-    }
-}

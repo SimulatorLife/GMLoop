@@ -1,6 +1,16 @@
 {
   "lintRules": {
-    "gml/optimize-logical-flow": "error"
+    "gml/prefer-direct-boolean-return": "error",
+    "gml/no-boolean-literal-comparisons": "error",
+    "gml/no-double-negation": "error",
+    "gml/prefer-de-morgan": "error",
+    "gml/no-redundant-logical-operands": "error",
+    "gml/no-logical-absorption": "error",
+    "gml/prefer-logical-factorization": "error",
+    "gml/no-logical-complements": "error",
+    "gml/prefer-logical-xor": "error",
+    "gml/prefer-conditional-assignment": "error",
+    "feather/gm2061": "error"
   },
   "fixture": {
     "kind": "lint",

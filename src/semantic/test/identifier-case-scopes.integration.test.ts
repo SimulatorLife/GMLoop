@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { buildProjectIndex } from "../src/project-index/index.js";
 import { resolveIdentifierCaseFixturesDirectory } from "./identifier-case-test-helpers.js";
+import { createTempProjectWorkspace, recordValues } from "./test-project-helpers.js";
 
 type IdentifierIndexEntry = {
     identifierId?: string;
@@ -24,39 +24,29 @@ type IdentifierCollections = {
 
 type ProjectIndexSnapshot = { identifiers: IdentifierCollections };
 
-function valuesAs<T>(record: Record<string, T>): T[] {
-    return Object.values(record);
-}
-
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 const fixturesDirectory = resolveIdentifierCaseFixturesDirectory(currentDirectory);
 const scopeFixturePath = path.join(fixturesDirectory, "scope-collisions.gml");
 
 async function createScopeFixtureProject() {
-    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gml-scope-tests-"));
-    const writeFile = async (relativePath: string, contents: string) => {
-        const absolutePath = path.join(tempRoot, relativePath);
-        await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-        await fs.writeFile(absolutePath, contents, "utf8");
-        return absolutePath;
-    };
+    const { projectRoot, writeProjectFile, cleanup } = await createTempProjectWorkspace("gml-scope-tests-");
 
-    await writeFile("MyGame.yyp", JSON.stringify({ name: "MyGame", resourceType: "GMProject" }));
+    await writeProjectFile("MyGame.yyp", JSON.stringify({ name: "MyGame", resourceType: "GMProject" }));
 
-    await writeFile(
+    await writeProjectFile(
         "scripts/scopeTester/scopeTester.yy",
         JSON.stringify({ resourceType: "GMScript", name: "scopeTester" })
     );
 
     const fixtureSource = await fs.readFile(scopeFixturePath, "utf8");
-    await writeFile("scripts/scopeTester/scopeTester.gml", fixtureSource);
+    await writeProjectFile("scripts/scopeTester/scopeTester.gml", fixtureSource);
 
-    return { projectRoot: tempRoot, fixtureSource };
+    return { projectRoot, fixtureSource, cleanup };
 }
 
 void describe("project index scope tracking", () => {
     void it("collects identifiers across macros, enums, and globals", async () => {
-        const { projectRoot } = await createScopeFixtureProject();
+        const { projectRoot, cleanup } = await createScopeFixtureProject();
 
         try {
             const index = (await buildProjectIndex(projectRoot)) as ProjectIndexSnapshot;
@@ -71,13 +61,13 @@ void describe("project index scope tracking", () => {
             assert.ok(globalVars.global_score, "expected global_score declaration to be tracked");
             assert.ok(globalVars.GLOBAL_SCORE, "expected GLOBAL_SCORE declaration to be tracked");
 
-            const enumEntries = valuesAs<IdentifierIndexEntry>(index.identifiers.enums);
+            const enumEntries = recordValues<IdentifierIndexEntry>(index.identifiers.enums);
             const difficultyEnum = enumEntries.find((entry) => entry.name === "Difficulty");
             const difficultyCopyEnum = enumEntries.find((entry) => entry.name === "DifficultyCopy");
             assert.ok(difficultyEnum, "expected Difficulty enum to be present");
             assert.ok(difficultyCopyEnum, "expected DifficultyCopy enum to be present");
 
-            const enumMembers = valuesAs<IdentifierIndexEntry>(index.identifiers.enumMembers);
+            const enumMembers = recordValues<IdentifierIndexEntry>(index.identifiers.enumMembers);
             const hasEasyMember = enumMembers.filter((entry) => entry.name === "Easy");
             assert.ok(hasEasyMember.length >= 2, "expected both Easy members to be tracked");
 
@@ -85,7 +75,7 @@ void describe("project index scope tracking", () => {
             assert.ok(scriptEntry, "expected script entry for scopeTester");
             assert.equal(scriptEntry.declarations.length > 0, true);
         } finally {
-            await fs.rm(projectRoot, { recursive: true, force: true });
+            await cleanup();
         }
     });
 });

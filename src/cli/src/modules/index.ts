@@ -1,5 +1,5 @@
 export * as Formatting from "./formatting/index.js";
-export * as HotReload from "./hot-reload/inject-runtime.js";
+export * as LiveReload from "./live-reload/index.js";
 export * as Manual from "./manual/index.js";
 export * as QualityReport from "./quality-report/index.js";
 export * as Refactor from "./refactor/index.js";

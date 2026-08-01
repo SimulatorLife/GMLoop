@@ -16,10 +16,6 @@ const PACKAGE_VERSION_CANDIDATES = Object.freeze([
     path.resolve(REPO_ROOT, "src", "format", "package.json")
 ]);
 
-function normalizeVersionValue(value: unknown): string | null {
-    return getNonEmptyTrimmedString(value);
-}
-
 function readPackageVersion(candidate: string): string | null {
     try {
         const contents = readTextFileSync(candidate);
@@ -37,7 +33,7 @@ export function resolveCliVersion(): string {
     ];
 
     for (const candidate of envCandidates) {
-        const version = normalizeVersionValue(candidate);
+        const version = getNonEmptyTrimmedString(candidate);
         if (version) {
             return version;
         }

@@ -1,0 +1,98 @@
+{
+  "name": "@gmloop/vscode",
+  "displayName": "GMLoop",
+  "description": "VSCode language client for GMLoop's GameMaker Language server.",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/src/extension.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "syntaxes",
+    "language-configuration.json",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.5.0",
+    "vscode": "^1.92.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:gml"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "gml",
+        "aliases": [
+          "GameMaker Language",
+          "GML"
+        ],
+        "extensions": [
+          ".gml"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "gml",
+        "scopeName": "source.gml",
+        "path": "./syntaxes/gml.tmLanguage.json"
+      },
+      {
+        "scopeName": "markdown.gml.codeblock",
+        "path": "./syntaxes/markdown-gml.tmLanguage.json",
+        "injectTo": [
+          "text.html.markdown"
+        ],
+        "embeddedLanguages": {
+          "source.gml": "gml"
+        }
+      }
+    ],
+    "configuration": {
+      "title": "GMLoop",
+      "properties": {
+        "gmloop.serverPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional path or command name for a development GMLoop CLI override. The bundled language server is used by default; the extension appends the fixed 'lsp' argument to an override."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "gmloop.restartLanguageServer",
+        "title": "GMLoop: Restart Language Server"
+      },
+      {
+        "command": "gmloop.showLanguageServerOutput",
+        "title": "GMLoop: Show Language Server Output"
+      }
+    ]
+  },
+  "scripts": {
+    "build:types": "tsc -b tsconfig.json",
+    "clean:types": "rm -rf dist",
+    "package:vsix": "pnpm run build:types && node dist/src/build-vsix-package.js",
+    "test": "pnpm run build:types && node --test-force-exit --test --test-timeout=120000 dist/test/*.test.js"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/vscode": "^1.92.0",
+    "@vscode/vsce": "^3.9.2",
+    "typescript": "catalog:",
+    "yaml": "^2.9.0"
+  }
+}

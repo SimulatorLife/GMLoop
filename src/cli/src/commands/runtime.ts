@@ -1,0 +1,466 @@
+import { Command, Option } from "commander";
+
+import { wrapInvalidArgumentResolver } from "../cli-core/command-parsing.js";
+import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
+import {
+    getRunnerStateStore,
+    type RunnerLogReader,
+    type RunnerProjectBinder,
+    type RunnerSnapshotReader
+} from "../modules/runtime/index.js";
+import {
+    readRuntimeProjectState,
+    type RuntimeProjectState,
+    writeRuntimeProjectState
+} from "../modules/runtime/project-state-store.js";
+import {
+    coerceRuntimeScope,
+    DEFAULT_RUNTIME_SCOPE,
+    RUNTIME_SCOPES,
+    type RuntimeScope
+} from "../modules/runtime/scope.js";
+import { discoverProjectRoot } from "../workflow/project-root.js";
+
+type RuntimeOptions = Readonly<{
+    args?: string;
+    expression?: string;
+    instanceId?: string;
+    json?: boolean;
+    kind?: "audio" | "camera" | "draw" | "room";
+    method?: string;
+    path?: string;
+    project?: string;
+    scope?: RuntimeScope;
+    value?: string;
+}>;
+
+type RuntimeStateRecord = Record<string, unknown>;
+
+const DEFAULT_INSTANCE_ID = "instance-1";
+
+function appendRuntimeLog(state: RuntimeProjectState, message: string): RuntimeProjectState {
+    return {
+        ...state,
+        logs: [
+            ...state.logs,
+            {
+                message,
+                timestamp: Date.now()
+            }
+        ]
+    };
+}
+
+function resolveRuntimeScopeStore(state: RuntimeProjectState, options: RuntimeOptions): RuntimeStateRecord {
+    if (options.scope === RUNTIME_SCOPES.global) {
+        return state.globals;
+    }
+    const instanceId = options.instanceId ?? DEFAULT_INSTANCE_ID;
+    const existing = state.instances[instanceId];
+    if (existing) {
+        return existing;
+    }
+    const created: RuntimeStateRecord = {};
+    state.instances[instanceId] = created;
+    return created;
+}
+
+/**
+ * Build the shared `--scope` option used by `runtime get` and `runtime set`.
+ *
+ * Centralising the option here keeps the description, default, and
+ * {@link coerceRuntimeScope} validator identical across the subcommands so
+ * call sites cannot drift. The `argParser` wraps the coercer so invalid
+ * inputs surface as Commander `InvalidArgumentError` instances before any
+ * action handler runs.
+ */
+function createRuntimeScopeOption(): Option {
+    return new Option("--scope <scope>", "Scope: instance or global.")
+        .argParser(wrapInvalidArgumentResolver(coerceRuntimeScope))
+        .default(DEFAULT_RUNTIME_SCOPE);
+}
+
+/**
+ * Parse a string supplied via a CLI flag (e.g. `--value`) into the closest
+ * primitive that the runtime state store can persist unchanged.
+ *
+ * The parser deliberately restricts its output to shapes that
+ * {@link isSerializableRuntimeValue} accepts (primitives and arrays of
+ * primitives). Anything parsed by `JSON.parse` that does not pass that
+ * contract — most notably plain objects — is treated as malformed input and
+ * the function returns the trimmed raw string instead.
+ *
+ * This guard exists because the previous implementation handed through
+ * any JSON shape returned by `JSON.parse`, which silently leaked plain
+ * objects downstream. Those objects then ran through
+ * {@link sanitizeRuntimeValue} and were rewritten to `null` for storage,
+ * producing a confusing mismatch between the value echoed in the CLI
+ * payload (the original object) and the value actually persisted on disk
+ * (the sanitised `null`). Rejecting non-serializable JSON early here keeps
+ * the printed and stored values aligned and surfaces the malformed input
+ * to callers as a plain string.
+ *
+ * @param value - Raw flag value exactly as supplied by the user.
+ * @returns A primitive, an array of primitives, or the trimmed input string
+ *          when the value cannot be coerced to a serializable shape.
+ */
+function parseRuntimeValue(value: string): unknown {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+        return "";
+    }
+
+    if (trimmed === "true") {
+        return true;
+    }
+    if (trimmed === "false") {
+        return false;
+    }
+    if (trimmed === "null") {
+        return null;
+    }
+
+    const maybeNumber = Number(trimmed);
+    if (Number.isFinite(maybeNumber) && String(maybeNumber) === trimmed) {
+        return maybeNumber;
+    }
+
+    try {
+        const parsed = JSON.parse(trimmed) as unknown;
+        if (isSerializableRuntimeValue(parsed)) {
+            return parsed;
+        }
+    } catch {
+        // Either the payload was not valid JSON or it parsed to a shape the
+        // runtime state store cannot round-trip. Both cases fall back to the
+        // trimmed input string below.
+    }
+    return trimmed;
+}
+
+/**
+ * Validate that a value extracted from the runtime state store has a serializable
+ * type expected by the GML runtime variable system.
+ *
+ * Returns `true` if the value is a primitive (boolean, null, number, string) or
+ * an array containing only serializable values. Returns `false` for any other shape,
+ * including plain objects, nested non-serializable structures, symbols, or functions.
+ *
+ * Note: `null` is considered serializable because it is a valid GML runtime value
+ * and round-trips correctly through JSON. Arrays containing `null` elements are also
+ * allowed because `[null]` round-trips as-is. Arrays containing `undefined` are
+ * rejected because `JSON.stringify([undefined])` produces `"[]"`, causing silent
+ * data loss on write.
+ */
+function isSerializableRuntimeValue(value: unknown): boolean {
+    if (value === null) {
+        return true;
+    }
+    if (value === undefined) {
+        return false;
+    }
+    if (typeof value === "boolean" || typeof value === "number" || typeof value === "string") {
+        return true;
+    }
+    if (Array.isArray(value)) {
+        return value.every((item) => isSerializableRuntimeValue(item));
+    }
+    return false;
+}
+
+/**
+ * Guard the value stored in the runtime state store so that callers who read it
+ * back can rely on the type contract without additional runtime checks.
+ *
+ * When a non-serializable value is detected, it is replaced with `null` and a
+ * warning is emitted so the state file remains loadable rather than corrupting
+ * downstream consumers that expect primitives.
+ */
+function sanitizeRuntimeValue(path: string, value: unknown): unknown {
+    if (isSerializableRuntimeValue(value)) {
+        return value;
+    }
+
+    const description =
+        typeof value === "object" && value !== null
+            ? `object with keys [${Object.keys(value).join(", ")}]`
+            : typeof value;
+    console.warn(
+        `runtime set: value at "${path}" is ${description}; ` +
+            "storing null to prevent type corruption in runtime state."
+    );
+    return null;
+}
+
+function printRuntimePayload(command: string, payload: unknown): void {
+    console.log(
+        JSON.stringify(
+            {
+                command,
+                payload
+            },
+            null,
+            2
+        )
+    );
+}
+
+async function resolveRuntimeProjectRoot(options: RuntimeOptions): Promise<string> {
+    return await discoverProjectRoot({
+        explicitProjectPath: options.project ?? options.path
+    });
+}
+
+async function runRuntimeInstancesAction(options: RuntimeOptions): Promise<void> {
+    const projectRoot = await resolveRuntimeProjectRoot(options);
+    const state = readRuntimeProjectState(projectRoot);
+    const payload = Object.keys(state.instances)
+        .sort()
+        .map((instanceId) => ({
+            instanceId,
+            keys: Object.keys(state.instances[instanceId] ?? {}).sort()
+        }));
+    printRuntimePayload("runtime instances", { ok: true, instances: payload });
+}
+
+async function runRuntimeInspectAction(options: RuntimeOptions): Promise<void> {
+    const projectRoot = await resolveRuntimeProjectRoot(options);
+    const state = readRuntimeProjectState(projectRoot);
+    const instanceId = options.instanceId ?? DEFAULT_INSTANCE_ID;
+    const instanceState = state.instances[instanceId] ?? {};
+    printRuntimePayload("runtime inspect", { instanceId, ok: true, state: instanceState });
+}
+
+async function runRuntimeGetAction(options: RuntimeOptions): Promise<void> {
+    const projectRoot = await resolveRuntimeProjectRoot(options);
+    const runtimeState = readRuntimeProjectState(projectRoot);
+    const propertyPath = options.path ?? "";
+    const scopeStore = resolveRuntimeScopeStore(runtimeState, options);
+    const value = propertyPath.length > 0 ? scopeStore[propertyPath] : undefined;
+    printRuntimePayload("runtime get", {
+        ok: propertyPath.length > 0 && value !== undefined,
+        path: propertyPath,
+        scope: options.scope ?? DEFAULT_RUNTIME_SCOPE,
+        value
+    });
+}
+
+async function runRuntimeSetAction(options: RuntimeOptions): Promise<void> {
+    const projectRoot = await resolveRuntimeProjectRoot(options);
+    const propertyPath = options.path ?? "";
+    const rawValue = options.value ?? "";
+    const parsedValue = parseRuntimeValue(rawValue);
+    const runtimeState = readRuntimeProjectState(projectRoot);
+    const scopeStore = resolveRuntimeScopeStore(runtimeState, options);
+    scopeStore[propertyPath] = sanitizeRuntimeValue(propertyPath, parsedValue);
+    const nextState = appendRuntimeLog(runtimeState, `Set ${options.scope ?? DEFAULT_RUNTIME_SCOPE}:${propertyPath}`);
+    writeRuntimeProjectState(projectRoot, nextState);
+    printRuntimePayload("runtime set", {
+        ok: true,
+        path: propertyPath,
+        scope: options.scope ?? DEFAULT_RUNTIME_SCOPE,
+        value: parsedValue
+    });
+}
+
+/**
+ * Guard the arguments payload for a runtime method call so that callers receive
+ * an array regardless of what the user supplied.
+ *
+ * When a non-array JSON value (object, primitive) is provided via `--args`, it is
+ * wrapped in a single-element array rather than being passed as-is, which prevents
+ * runtime methods from receiving unexpected shapes.
+ */
+function sanitizeCallArguments(argsPayload: unknown): Array<unknown> {
+    if (Array.isArray(argsPayload)) {
+        return argsPayload;
+    }
+    return [argsPayload];
+}
+
+async function runRuntimeCallAction(options: RuntimeOptions): Promise<void> {
+    const projectRoot = await resolveRuntimeProjectRoot(options);
+    const method = options.method ?? "";
+    let argsPayload: unknown = [];
+    if (typeof options.args === "string" && options.args.trim().length > 0) {
+        try {
+            argsPayload = JSON.parse(options.args);
+        } catch {
+            argsPayload = [options.args];
+        }
+    }
+    argsPayload = sanitizeCallArguments(argsPayload);
+    const runtimeState = readRuntimeProjectState(projectRoot);
+    writeRuntimeProjectState(projectRoot, appendRuntimeLog(runtimeState, `Call ${method}`));
+    printRuntimePayload("runtime call", {
+        args: argsPayload,
+        method,
+        ok: true,
+        result: null
+    });
+}
+
+async function runRuntimeObserveAction(options: RuntimeOptions): Promise<void> {
+    const projectRoot = await resolveRuntimeProjectRoot(options);
+    const runtimeState = readRuntimeProjectState(projectRoot);
+    const expression = options.expression ?? "";
+    const instanceCount = Object.keys(runtimeState.instances).length;
+    printRuntimePayload("runtime observe", {
+        expression,
+        ok: true,
+        sample: {
+            globalsTrackedKeys: Object.keys(runtimeState.globals).sort(),
+            instanceCount
+        }
+    });
+}
+
+async function runRuntimeStateAction(options: RuntimeOptions): Promise<void> {
+    const projectRoot = await resolveRuntimeProjectRoot(options);
+    const runtimeState = readRuntimeProjectState(projectRoot);
+    // Narrow the local binding to the role interfaces the action actually
+    // exercises so the call site documents that this handler only needs to
+    // (re)target the store and read a status snapshot — never to mutate
+    // logs, lifecycle state, or the active room.
+    const runnerStateStore: RunnerProjectBinder & RunnerSnapshotReader = getRunnerStateStore();
+    runnerStateStore.bindProjectRoot(projectRoot);
+    const runnerSnapshot = runnerStateStore.readSnapshot();
+    const kind = options.kind ?? "room";
+    const payload = {
+        globals: Object.keys(runtimeState.globals).sort(),
+        kind,
+        logs: runtimeState.logs.length,
+        runner: {
+            logCount: runnerSnapshot.logCount,
+            room: runnerSnapshot.room,
+            state: runnerSnapshot.state
+        },
+        trackedInstances: Object.keys(runtimeState.instances).length
+    };
+    printRuntimePayload("runtime state", { ok: true, state: payload });
+}
+
+async function runRuntimeLogsAction(options: RuntimeOptions): Promise<void> {
+    const projectRoot = await resolveRuntimeProjectRoot(options);
+    const runtimeState = readRuntimeProjectState(projectRoot);
+    // Narrow the local binding to the role interfaces this handler actually
+    // exercises (binding + reading logs); lifecycle, room, and log-mutation
+    // capabilities remain outside the action's contract.
+    const runnerStateStore: RunnerProjectBinder & RunnerLogReader = getRunnerStateStore();
+    runnerStateStore.bindProjectRoot(projectRoot);
+    const runnerLogs = runnerStateStore.readLogs({ kind: "runtime" }).map((entry) => ({
+        message: `[runner:${entry.level}] ${entry.message}`,
+        timestamp: entry.timestamp
+    }));
+
+    const payload = [...runtimeState.logs, ...runnerLogs].sort(
+        (left, right) => left.timestamp - right.timestamp || left.message.localeCompare(right.message)
+    );
+    printRuntimePayload("runtime logs", { ok: true, payload });
+}
+
+export function createRuntimeCommand(): Command {
+    const command = applyStandardCommandOptions(new Command("runtime")).description(
+        "Inspect and interact with runtime state."
+    );
+    const runtimeInstanceIdOptionName = "--instance-id <id>";
+    const runtimeInstanceIdOptionDescription = "Runtime instance id.";
+
+    const shared = (nested: Command): Command =>
+        nested.option("--json", "Emit JSON output.").option("--project <path>", "Project root or .yyp path.");
+
+    const instances = shared(
+        applyStandardCommandOptions(new Command("instances")).description("List runtime instances.")
+    );
+    instances.action(async function runtimeInstancesAction() {
+        await runRuntimeInstancesAction(this.opts<RuntimeOptions>());
+    });
+
+    const inspect = shared(
+        applyStandardCommandOptions(new Command("inspect"))
+            .description("Inspect one runtime instance.")
+            .option(runtimeInstanceIdOptionName, runtimeInstanceIdOptionDescription)
+    );
+    inspect.action(async function runtimeInspectAction() {
+        await runRuntimeInspectAction(this.opts<RuntimeOptions>());
+    });
+
+    const get = shared(
+        applyStandardCommandOptions(new Command("get"))
+            .description("Read a runtime value.")
+            .option("--path <path>", "Property path.")
+            .addOption(createRuntimeScopeOption())
+            .option(runtimeInstanceIdOptionName, runtimeInstanceIdOptionDescription)
+    );
+    get.action(async function runtimeGetAction() {
+        await runRuntimeGetAction(this.opts<RuntimeOptions>());
+    });
+
+    const set = shared(
+        applyStandardCommandOptions(new Command("set"))
+            .description("Set a runtime value.")
+            .requiredOption("--path <path>", "Property path.")
+            .requiredOption("--value <value>", "New value.")
+            .addOption(createRuntimeScopeOption())
+            .option(runtimeInstanceIdOptionName, runtimeInstanceIdOptionDescription)
+    );
+    set.action(async function runtimeSetAction() {
+        await runRuntimeSetAction(this.opts<RuntimeOptions>());
+    });
+
+    const call = shared(
+        applyStandardCommandOptions(new Command("call"))
+            .description("Call a runtime method/function.")
+            .requiredOption("--method <name>", "Method/function name.")
+            .option("--args <json>", "JSON encoded arguments.")
+            .option(runtimeInstanceIdOptionName, runtimeInstanceIdOptionDescription)
+    );
+    call.action(async function runtimeCallAction() {
+        await runRuntimeCallAction(this.opts<RuntimeOptions>());
+    });
+
+    const observe = shared(
+        applyStandardCommandOptions(new Command("observe"))
+            .description("Observe runtime expression changes.")
+            .requiredOption("--expression <expr>", "Expression to observe.")
+    );
+    observe.action(async function runtimeObserveAction() {
+        await runRuntimeObserveAction(this.opts<RuntimeOptions>());
+    });
+
+    const state = shared(
+        applyStandardCommandOptions(new Command("state"))
+            .description("Read coarse runtime state domain.")
+            .option("--kind <kind>", "State kind.", "room")
+    );
+    state.action(async function runtimeStateAction() {
+        await runRuntimeStateAction(this.opts<RuntimeOptions>());
+    });
+
+    const logs = shared(applyStandardCommandOptions(new Command("logs")).description("Read runtime logs."));
+    logs.action(async function runtimeLogsAction() {
+        await runRuntimeLogsAction(this.opts<RuntimeOptions>());
+    });
+
+    command.addCommand(instances);
+    command.addCommand(inspect);
+    command.addCommand(get);
+    command.addCommand(set);
+    command.addCommand(call);
+    command.addCommand(observe);
+    command.addCommand(state);
+    command.addCommand(logs);
+
+    return command;
+}
+
+export const __runtimeTestHelpers__ = Object.freeze({
+    isSerializableRuntimeValue,
+    sanitizeRuntimeValue,
+    sanitizeCallArguments
+});
+
+// `parseRuntimeValue` is exported separately (not via `__test__`) to avoid
+// a naming conflict with `format.js` in the barrel re-export at
+// `./commands/index.ts`.
+export { parseRuntimeValue };

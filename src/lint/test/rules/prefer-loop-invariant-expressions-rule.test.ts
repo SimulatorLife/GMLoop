@@ -151,6 +151,73 @@ void test("prefer-loop-invariant-expressions hoists point_distance calls when al
     expectAutoFix(input, expected);
 });
 
+void test("prefer-loop-invariant-expressions hoists floor calls on invariant inputs", () => {
+    const input = ["repeat (count) {", "    total += floor(score / divisor);", "}", ""].join("\n");
+    const expected = [
+        "var cached_value = floor(score / divisor);",
+        "repeat (count) {",
+        "    total += cached_value;",
+        "}",
+        ""
+    ].join("\n");
+
+    expectAutoFix(input, expected);
+});
+
+void test("prefer-loop-invariant-expressions hoists dsin calls on invariant inputs", () => {
+    const input = ["repeat (count) {", "    xs[i] = dsin(angle) * amplitude;", "    i += 1;", "}", ""].join("\n");
+    const expected = [
+        "var cached_value = dsin(angle) * amplitude;",
+        "repeat (count) {",
+        "    xs[i] = cached_value;",
+        "    i += 1;",
+        "}",
+        ""
+    ].join("\n");
+
+    expectAutoFix(input, expected);
+});
+
+void test("prefer-loop-invariant-expressions hoists lerp calls when all inputs are invariant", () => {
+    const input = ["repeat (count) {", "    arr[i] = lerp(a, b, f) * scale;", "    i += 1;", "}", ""].join("\n");
+    const expected = [
+        "var cached_value = lerp(a, b, f) * scale;",
+        "repeat (count) {",
+        "    arr[i] = cached_value;",
+        "    i += 1;",
+        "}",
+        ""
+    ].join("\n");
+
+    expectAutoFix(input, expected);
+});
+
+void test("prefer-loop-invariant-expressions hoists string_length calls on invariant inputs", () => {
+    const input = ["repeat (count) {", "    total += string_length(name) + suffix;", "}", ""].join("\n");
+    const expected = [
+        "var cached_value = string_length(name) + suffix;",
+        "repeat (count) {",
+        "    total += cached_value;",
+        "}",
+        ""
+    ].join("\n");
+
+    expectAutoFix(input, expected);
+});
+
+void test("prefer-loop-invariant-expressions hoists ceil calls on invariant inputs", () => {
+    const input = ["repeat (count) {", "    total += ceil(score / divisor);", "}", ""].join("\n");
+    const expected = [
+        "var cached_value = ceil(score / divisor);",
+        "repeat (count) {",
+        "    total += cached_value;",
+        "}",
+        ""
+    ].join("\n");
+
+    expectAutoFix(input, expected);
+});
+
 void test("prefer-loop-invariant-expressions hoists template strings even when call sites remain in-loop", () => {
     const input = ["repeat (count) {", '    draw_text(x, y, $"hp: {max_hp}");', "}", ""].join("\n");
     const expected = [
@@ -306,6 +373,126 @@ void test("prefer-loop-invariant-expressions does not hoist expressions that dep
     const input = ["var i = 0;", "", "repeat (count) {", "    total += values[i] * 2;", "    i += 1;", "}", ""].join(
         "\n"
     );
+    expectNoAutoFix(input);
+});
+
+void test("prefer-loop-invariant-expressions does not hoist indexed reads across while-test mutations", () => {
+    const input = "while (--i >= 0) array[i] = argument[i];\n";
+    expectNoAutoFix(input);
+});
+
+void test("prefer-loop-invariant-expressions does not hoist indexed reads across for-test mutations", () => {
+    const input = ["for (; ++i < count;) {", "    array[i] = argument[i];", "}", ""].join("\n");
+    expectNoAutoFix(input);
+});
+
+void test("prefer-loop-invariant-expressions does not hoist indexed reads across do-until-test mutations", () => {
+    const input = ["do {", "    array[i] = argument[i];", "} until (++i >= count);", ""].join("\n");
+    expectNoAutoFix(input);
+});
+
+void test("prefer-loop-invariant-expressions does not hoist indexed reads ahead of for initializers", () => {
+    const input = ["for (i = count - 1; j >= 0; --j) {", "    array[j] = argument[i];", "}", ""].join("\n");
+    expectNoAutoFix(input);
+});
+
+void test("prefer-loop-invariant-expressions does not hoist indexed reads ahead of repeat-count mutations", () => {
+    const input = ["repeat (++i) {", "    total += argument[i] * 2;", "}", ""].join("\n");
+    expectNoAutoFix(input);
+});
+
+void test("prefer-loop-invariant-expressions still hoists values independent of loop-control expressions", () => {
+    const input = ["while (--i >= 0) {", "    total += weights[0] + weights[1];", "}", ""].join("\n");
+    const expected = [
+        "var cached_value = weights[0] + weights[1];",
+        "while (--i >= 0) {",
+        "    total += cached_value;",
+        "}",
+        ""
+    ].join("\n");
+
+    expectAutoFix(input, expected);
+});
+
+void test("prefer-loop-invariant-expressions ignores assignment-like text in loop-control strings and comments", () => {
+    const input = [
+        'while (string_pos("+=", marker) > 0 /* += is only text */) {',
+        "    total += 60 * 60;",
+        "}",
+        ""
+    ].join("\n");
+    const expected = [
+        "var cached_value = 60 * 60;",
+        'while (string_pos("+=", marker) > 0 /* += is only text */) {',
+        "    total += cached_value;",
+        "}",
+        ""
+    ].join("\n");
+
+    expectAutoFix(input, expected);
+});
+
+void test("prefer-loop-invariant-expressions does not hoist indexed reads across compound test assignments", () => {
+    const input = ["while ((i += step) < count) {", "    array[i] = argument[i];", "}", ""].join("\n");
+    expectNoAutoFix(input);
+});
+
+void test("prefer-loop-invariant-expressions does not hoist member reads across loop-control root reassignment", () => {
+    const input = [
+        "while ((current = current.next) != undefined) {",
+        "    total += current.value * scale;",
+        "}",
+        ""
+    ].join("\n");
+    expectNoAutoFix(input);
+});
+
+void test("prefer-loop-invariant-expressions does not hoist member reads across loop-control member mutation", () => {
+    const input = [
+        "for (; state.index < count; state.index += 1) {",
+        "    total += values[state.index] * scale;",
+        "}",
+        ""
+    ].join("\n");
+    expectNoAutoFix(input);
+});
+
+void test("prefer-loop-invariant-expressions does not hoist expressions out of nested functions", () => {
+    const input = [
+        "repeat (count) {",
+        "    var callback = function() {",
+        "        return base_damage * multiplier;",
+        "    };",
+        "    callbacks[i] = callback;",
+        "}",
+        ""
+    ].join("\n");
+    expectNoAutoFix(input);
+});
+
+void test("prefer-loop-invariant-expressions does not hoist expressions out of with receiver scopes", () => {
+    const input = [
+        "repeat (count) {",
+        "    with (obj_enemy) {",
+        "        total += attack_power * damage_scale;",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+    expectNoAutoFix(input);
+});
+
+void test("prefer-loop-invariant-expressions does not hoist potentially-throwing reads out of try blocks", () => {
+    const input = [
+        "repeat (count) {",
+        "    try {",
+        "        total += current.value * scale;",
+        "    } catch (error) {",
+        "        failed += 1;",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
     expectNoAutoFix(input);
 });
 
@@ -524,4 +711,42 @@ void test("prefer-loop-invariant-expressions skips comment-spanning candidates w
     ].join("\n");
 
     expectAutoFix(input, expected);
+});
+
+void test("prefer-loop-invariant-expressions respects minComplexity option (higher threshold)", () => {
+    const input = ["repeat (count) {", "    total += a + b;", "}", ""].join("\n");
+
+    const result = lintWithRule("prefer-loop-invariant-expressions", input, { minComplexity: 4 });
+
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
+});
+
+void test("prefer-loop-invariant-expressions respects minComplexity option (lower threshold)", () => {
+    const input = ["repeat (count) {", "    total += a + b;", "}", ""].join("\n");
+    const expected = ["var cached_value = a + b;", "repeat (count) {", "    total += cached_value;", "}", ""].join(
+        "\n"
+    );
+
+    const result = lintWithRule("prefer-loop-invariant-expressions", input, { minComplexity: 2 });
+    assertEquals(result.messages.length > 0, true);
+    assertEquals(result.output, expected);
+});
+
+void test("prefer-loop-invariant-expressions minComplexity clamps to minimum of 2", () => {
+    const input = ["repeat (count) {", "    total += a + b;", "}", ""].join("\n");
+    const expected = ["var cached_value = a + b;", "repeat (count) {", "    total += cached_value;", "}", ""].join(
+        "\n"
+    );
+
+    const result = lintWithRule("prefer-loop-invariant-expressions", input, { minComplexity: 1 });
+    assertEquals(result.messages.length > 0, true);
+    assertEquals(result.output, expected);
+});
+
+void test("prefer-loop-invariant-expressions minComplexity option can be set to a valid value", () => {
+    const input = ["repeat (count) {", "    total += a + b;", "}", ""].join("\n");
+    const result = lintWithRule("prefer-loop-invariant-expressions", input, { minComplexity: 4 });
+    assertEquals(result.messages.length, 0);
+    assertEquals(result.output, input);
 });

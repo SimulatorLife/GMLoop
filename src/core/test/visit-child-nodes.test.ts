@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { visitChildNodes } from "../src/ast/node-helpers.js";
+import { visitChildNodes } from "../src/ast/node-helpers/index.js";
 
 interface Named {
     name: string;

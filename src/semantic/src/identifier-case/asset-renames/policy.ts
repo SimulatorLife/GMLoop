@@ -12,6 +12,13 @@ type AssetRenamePolicyContext = {
     assetConflicts?: Array<unknown>;
 };
 
+type AssetRenamePolicyResult = {
+    shouldApply: boolean;
+    reason: string;
+    renames: Array<unknown>;
+    conflicts: Array<unknown>;
+};
+
 const IdentifierCaseAssetRenamePolicyReason = Object.freeze({
     DRY_RUN_ENABLED: "dry-run-enabled",
     NO_RENAMES: "no-renames",
@@ -21,42 +28,62 @@ const IdentifierCaseAssetRenamePolicyReason = Object.freeze({
     APPLY: "apply"
 });
 
+const EMPTY_RENAMES: Array<unknown> = [];
+const EMPTY_CONFLICTS: Array<unknown> = [];
+
+function buildPolicyResult({
+    reason,
+    shouldApply = false,
+    renames = EMPTY_RENAMES,
+    conflicts = EMPTY_CONFLICTS
+}: {
+    reason: string;
+    shouldApply?: boolean;
+    renames?: Array<unknown>;
+    conflicts?: Array<unknown>;
+}): AssetRenamePolicyResult {
+    return { shouldApply, reason, renames, conflicts };
+}
+
 export function evaluateIdentifierCaseAssetRenamePolicy(context: AssetRenamePolicyContext = {}) {
     const { options = {}, projectIndex = null, assetRenames = [], assetConflicts = [] } = context;
 
     const renames = Core.asArray(assetRenames);
     const conflicts = Core.asArray(assetConflicts);
 
-    const createResult = (reason, { shouldApply = false, includeRenames = false, includeConflicts = false } = {}) => ({
-        shouldApply,
-        reason,
-        renames: includeRenames ? renames : [],
-        conflicts: includeConflicts ? conflicts : []
-    });
-
     if (options?.__identifierCaseDryRun !== false) {
-        return createResult(IdentifierCaseAssetRenamePolicyReason.DRY_RUN_ENABLED);
+        return buildPolicyResult({ reason: IdentifierCaseAssetRenamePolicyReason.DRY_RUN_ENABLED });
     }
 
     if (!Core.isNonEmptyArray(renames)) {
-        return createResult(IdentifierCaseAssetRenamePolicyReason.NO_RENAMES);
+        return buildPolicyResult({ reason: IdentifierCaseAssetRenamePolicyReason.NO_RENAMES });
     }
 
     if (Core.isNonEmptyArray(conflicts)) {
-        return createResult(IdentifierCaseAssetRenamePolicyReason.HAS_CONFLICTS, { includeConflicts: true });
+        return buildPolicyResult({
+            reason: IdentifierCaseAssetRenamePolicyReason.HAS_CONFLICTS,
+            conflicts
+        });
     }
 
     if (!projectIndex) {
-        return createResult(IdentifierCaseAssetRenamePolicyReason.MISSING_PROJECT_INDEX, { includeRenames: true });
+        return buildPolicyResult({
+            reason: IdentifierCaseAssetRenamePolicyReason.MISSING_PROJECT_INDEX,
+            renames
+        });
     }
 
     if (options?.__identifierCaseAssetRenamesApplied === true) {
-        return createResult(IdentifierCaseAssetRenamePolicyReason.ALREADY_APPLIED, { includeRenames: true });
+        return buildPolicyResult({
+            reason: IdentifierCaseAssetRenamePolicyReason.ALREADY_APPLIED,
+            renames
+        });
     }
 
-    return createResult(IdentifierCaseAssetRenamePolicyReason.APPLY, {
+    return buildPolicyResult({
+        reason: IdentifierCaseAssetRenamePolicyReason.APPLY,
         shouldApply: true,
-        includeRenames: true
+        renames
     });
 }
 

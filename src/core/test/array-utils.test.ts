@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "node:test";
 
 // Node deprecated the loose equality helpers (for example `assert.equal`).
 // These tests intentionally rely on the strict variants so future refactors do
@@ -8,7 +8,6 @@ import test from "node:test";
 import {
     asArray,
     compactArray,
-    copyDocCommentArrayFlags,
     findLastIndex,
     isNonEmptyArray,
     mergeUniqueValues,
@@ -66,6 +65,13 @@ void test("mergeUniqueValues combines unique values and can coerce entries", () 
     assert.ok(!Object.isFrozen(result));
 });
 
+void test("mergeUniqueValues passes values through unchanged when no coerce is provided", () => {
+    const result = mergeUniqueValues(["alpha", "beta"], ["beta", "gamma"]);
+
+    assert.deepEqual(result, ["alpha", "beta", "gamma"]);
+    assert.ok(Object.isFrozen(result));
+});
+
 void test("toArrayFromIterable snapshots arrays before mutation", () => {
     const input = ["alpha", "beta"];
 
@@ -104,6 +110,10 @@ void test("compactArray tolerates iterables and optional freezing", () => {
 void test("compactArray normalizes nullish inputs to empty arrays", () => {
     assert.deepEqual(compactArray(null), []);
     assert.deepEqual(compactArray(), []);
+});
+
+void test("compactArray ignores non-iterable values", () => {
+    assert.deepEqual(compactArray({ value: "alpha" }), []);
 });
 
 void test("pushUnique appends values that are not present", () => {
@@ -145,18 +155,34 @@ void test("findLastIndex returns the index of the last matching element", () => 
     assert.strictEqual(index, 3);
 });
 
-void test("findLastIndex returns -1 when no element matches", () => {
-    const entries = [1, 2, 3];
+void test("findLastIndex returns -1 for non-matching and nullish inputs", () => {
+    const cases: Array<{
+        label: string;
+        entries: number[] | null | undefined;
+        predicate: (value: number) => boolean;
+    }> = [
+        {
+            label: "no matching element",
+            entries: [1, 2, 3],
+            predicate: (value) => value === 5
+        },
+        {
+            label: "null input",
+            entries: null,
+            predicate: () => true
+        },
+        {
+            label: "undefined input",
+            entries: undefined,
+            predicate: () => true
+        }
+    ];
 
-    const index = findLastIndex(entries, (value) => value === 5);
+    for (const testCase of cases) {
+        const index = findLastIndex(testCase.entries, testCase.predicate);
 
-    assert.strictEqual(index, -1);
-});
-
-void test("findLastIndex returns -1 for null input", () => {
-    const index = findLastIndex(null, () => true);
-
-    assert.strictEqual(index, -1);
+        assert.strictEqual(index, -1, `expected -1 for ${testCase.label}`);
+    }
 });
 
 void test("toMutableArray returns the original array when clone is false", () => {
@@ -190,56 +216,6 @@ void test("toMutableArray does not copy doc comment flags by default", () => {
     assert.strictEqual(result._preserveDescriptionBreaks, undefined);
     assert.strictEqual(result._suppressLeadingBlank, undefined);
     assert.strictEqual(result._blockCommentDocs, undefined);
-});
-
-void test("copyDocCommentArrayFlags copies all three flags when present", () => {
-    const source = ["line1", "line2"] as any;
-    source._preserveDescriptionBreaks = true;
-    source._suppressLeadingBlank = true;
-    source._blockCommentDocs = true;
-
-    const target = ["line3", "line4"] as any;
-    copyDocCommentArrayFlags(source, target);
-
-    assert.strictEqual(target._preserveDescriptionBreaks, true);
-    assert.strictEqual(target._suppressLeadingBlank, true);
-    assert.strictEqual(target._blockCommentDocs, true);
-});
-
-void test("copyDocCommentArrayFlags only copies flags that are true", () => {
-    const source = ["line1"] as any;
-    source._preserveDescriptionBreaks = true;
-    // _suppressLeadingBlank is not set
-    source._blockCommentDocs = false;
-
-    const target = ["line2"] as any;
-    copyDocCommentArrayFlags(source, target);
-
-    assert.strictEqual(target._preserveDescriptionBreaks, true);
-    assert.strictEqual(target._suppressLeadingBlank, undefined);
-    assert.strictEqual(target._blockCommentDocs, undefined);
-});
-
-void test("copyDocCommentArrayFlags returns target for chaining", () => {
-    const source = ["line1"] as any;
-    const target = ["line2"] as any;
-
-    const result = copyDocCommentArrayFlags(source, target);
-
-    assert.strictEqual(result, target);
-});
-
-void test("copyDocCommentArrayFlags handles non-array inputs gracefully", () => {
-    const target = ["line"] as any;
-
-    assert.doesNotThrow(() => copyDocCommentArrayFlags(null as any, target));
-    assert.doesNotThrow(() => copyDocCommentArrayFlags(["line"] as any, null as any));
-});
-
-void test("findLastIndex returns -1 for undefined input", () => {
-    const index = findLastIndex(undefined, () => true);
-
-    assert.strictEqual(index, -1);
 });
 
 void test("findLastIndex provides index and array to predicate", () => {

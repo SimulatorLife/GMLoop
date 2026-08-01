@@ -26,12 +26,13 @@ jobs:
         within a single file or function): focus on the selected/targeted area rather than
         project-wide formatting. Prioritize errors over warnings. Your goal is to make a small,
         correct, and safe code change that resolves that particular ESLint rule violation without
-        introducing new ones. Do not refactor, reformat, or modify configuration files unless
-        absolutely required by the rule itself. When selecting which issues to fix, prefer ones that are
-        deterministic, locally fixable, and least likely to alter runtime behavior. Once selected,
-        explain briefly what the problems are and why your fixes satisfy the ESLint rule(s).
-        After applying the fixes, re-run `pnpm run lint` to confirm that the specific issues are resolved
-        and that the total number of warnings/errors has decreased. If the changes affect logic,
-        include a short explanation of why behavior is preserved. Provide a concise sumary message
+        introducing new ones. Don't just do the minimal change needed to silence/hide the lint violation(s); 
+        fix them such that the code actually, properly adheres to the spirit of the rule. Do not refactor, 
+        reformat, or modify configuration files unless absolutely required by the rule itself. When selecting 
+        which issues to fix, prefer ones that are deterministic, locally fixable, and least likely to alter 
+        runtime behavior. Once selected, explain briefly what the problems are and why your fixes satisfy 
+        the ESLint rule(s). After applying the fixes, re-run `pnpm run lint` to confirm that the specific 
+        issues are resolved and that the total number of warnings/errors has decreased. If the changes affect 
+        logic, include a short explanation of why behavior is preserved. Provide a concise sumary message
         describing the rules fixed and files/functions updated. Never disable a lint rule, and never
         make stylistic changes beyond the targeted fixes.

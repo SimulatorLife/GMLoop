@@ -29,6 +29,15 @@ export type ProjectIndexMetricsRecording = {
         startTimer(label: string): () => void;
         timeSync<T>(label: string, callback: () => T): T;
         timeAsync<T>(label: string, callback: () => Promise<T>): Promise<T>;
+        /**
+         * Fold a duration measured elsewhere (a worker thread's own tracker)
+         * into this tracker's `timings` snapshot. Genuinely optional: trackers
+         * that never aggregate pre-measured durations from another execution
+         * context (most custom/test trackers) have no need to implement it,
+         * so it is not part of the required recording-suite contract checked
+         * by `isMetricsRecordingSuite`.
+         */
+        recordDuration?(label: string, durationMs: number): void;
     };
     counters: {
         increment(label: string, amount?: number): void;
@@ -157,7 +166,7 @@ const NOOP_METRIC_REPORTING_GROUPS = Object.freeze({
     }),
     caches: Object.freeze({
         cachesSnapshot: () => ({}),
-        cacheSnapshot: () => ({}) as Record<string, number>
+        cacheSnapshot: () => ({})
     }),
     logger: Object.freeze({
         logSummary: Core.noop

@@ -59,67 +59,56 @@ void describe("gml/simplify-real-calls", () => {
         assert.ok(rule, "Expected simplify-real-calls rule to be registered");
     });
 
-    void it("reports real() with a double-quoted numeric string", () => {
-        const source = 'var x = real("123.45");';
-        const node = buildRealCallNode("real", '"123.45"', 8);
-        const { context, messages } = createContext(source);
+    const reportingCases = [
+        {
+            name: "double-quoted numeric string",
+            source: 'var x = real("123.45");',
+            callee: "real",
+            literalValue: '"123.45"',
+            expectedFixText: "123.45"
+        },
+        {
+            name: "single-quoted numeric string",
+            source: "var x = real('56');",
+            callee: "real",
+            literalValue: "'56'",
+            expectedFixText: "56"
+        },
+        {
+            name: 'verbatim (@") string',
+            source: 'var x = real(@"123.45");',
+            callee: "real",
+            literalValue: '@"123.45"',
+            expectedFixText: "123.45"
+        },
+        {
+            name: "uppercase callee (case-insensitive)",
+            source: 'var x = REAL("123.45");',
+            callee: "REAL",
+            literalValue: '"123.45"',
+            expectedFixText: "123.45"
+        },
+        {
+            name: "mixed-case callee",
+            source: 'var x = ReAl("56");',
+            callee: "ReAl",
+            literalValue: '"56"',
+            expectedFixText: "56"
+        }
+    ] as const;
 
-        const visitor = rule.create(context as any);
-        visitor.Program?.({ type: "Program", body: [node] } as any);
+    for (const testCase of reportingCases) {
+        void it(`reports real() with a ${testCase.name}`, () => {
+            const node = buildRealCallNode(testCase.callee, testCase.literalValue, 8);
+            const { context, messages } = createContext(testCase.source);
+            const visitor = rule.create(context as any);
+            visitor.Program?.({ type: "Program", body: [node] } as any);
 
-        assert.strictEqual(messages.length, 1);
-        assert.strictEqual(messages[0]?.messageId, "simplifyRealCalls");
-        assert.strictEqual(messages[0]?.fix?.text, "123.45");
-    });
-
-    void it("reports real() with a single-quoted numeric string", () => {
-        const source = "var x = real('56');";
-        const node = buildRealCallNode("real", "'56'", 8);
-        const { context, messages } = createContext(source);
-
-        const visitor = rule.create(context as any);
-        visitor.Program?.({ type: "Program", body: [node] } as any);
-
-        assert.strictEqual(messages.length, 1);
-        assert.strictEqual(messages[0]?.messageId, "simplifyRealCalls");
-        assert.strictEqual(messages[0]?.fix?.text, "56");
-    });
-
-    void it('reports real() with a verbatim (@") string', () => {
-        const source = 'var x = real(@"123.45");';
-        const node = buildRealCallNode("real", '@"123.45"', 8);
-        const { context, messages } = createContext(source);
-
-        const visitor = rule.create(context as any);
-        visitor.Program?.({ type: "Program", body: [node] } as any);
-
-        assert.strictEqual(messages.length, 1);
-        assert.strictEqual(messages[0]?.fix?.text, "123.45");
-    });
-
-    void it("reports real() with an uppercase callee (case-insensitive)", () => {
-        const source = 'var x = REAL("123.45");';
-        const node = buildRealCallNode("REAL", '"123.45"', 8);
-        const { context, messages } = createContext(source);
-
-        const visitor = rule.create(context as any);
-        visitor.Program?.({ type: "Program", body: [node] } as any);
-
-        assert.strictEqual(messages.length, 1);
-        assert.strictEqual(messages[0]?.fix?.text, "123.45");
-    });
-
-    void it("reports real() with a mixed-case callee", () => {
-        const source = 'var x = ReAl("56");';
-        const node = buildRealCallNode("ReAl", '"56"', 8);
-        const { context, messages } = createContext(source);
-
-        const visitor = rule.create(context as any);
-        visitor.Program?.({ type: "Program", body: [node] } as any);
-
-        assert.strictEqual(messages.length, 1);
-        assert.strictEqual(messages[0]?.fix?.text, "56");
-    });
+            assert.strictEqual(messages.length, 1);
+            assert.strictEqual(messages[0]?.messageId, "simplifyRealCalls");
+            assert.strictEqual(messages[0]?.fix?.text, testCase.expectedFixText);
+        });
+    }
 
     void it("does not report real() when the argument is a non-numeric string", () => {
         const source = 'var x = real("hello");';
@@ -196,6 +185,34 @@ void describe("gml/simplify-real-calls", () => {
         visitor.Program?.({ type: "Program", body: [node] } as any);
 
         assert.strictEqual(messages.length, 0);
+    });
+
+    // GML does not parse scientific notation natively — the
+    // `gml/no-scientific-notation` rule explicitly flags `1e-3`-style tokens
+    // as invalid. Reporting `real("1e-3")` and rewriting it to `1e-3` would
+    // therefore replace valid code with source that fails to compile, so the
+    // rule must stay silent on exponent-shaped inputs.
+    void it("does not report real() when the argument uses scientific notation", () => {
+        const scientificLiteralCases = [
+            { source: 'var x = real("1e10");', literalValue: '"1e10"' },
+            { source: 'var x = real("-1.5e-3");', literalValue: '"-1.5e-3"' },
+            { source: 'var x = real("+1E5");', literalValue: '"+1E5"' },
+            { source: "var x = real('.5e2');", literalValue: "'.5e2'" }
+        ] as const;
+
+        for (const testCase of scientificLiteralCases) {
+            const node = buildRealCallNode("real", testCase.literalValue, 8);
+            const { context, messages } = createContext(testCase.source);
+
+            const visitor = rule.create(context as any);
+            visitor.Program?.({ type: "Program", body: [node] } as any);
+
+            assert.strictEqual(
+                messages.length,
+                0,
+                `real(${testCase.literalValue}) should not be reported because the replacement would be invalid GML`
+            );
+        }
     });
 
     void it("is included in the recommended config", () => {

@@ -14,13 +14,15 @@
   "dependencies": {
     "@gmloop/core": "workspace:*"
   },
+  "devDependencies": {
+    "typescript": "catalog:"
+  },
   "scripts": {
     "build:types": "tsc -p tsconfig.json",
     "clean:types": "rm -rf dist",
     "test": "pnpm run build:types && node --test dist/test/*.test.js"
   },
   "engines": {
-    "node": ">=22.0.0"
-  },
-  "packageManager": "pnpm@10.28.0"
+    "node": ">=22.5.0"
+  }
 }

@@ -41,7 +41,7 @@ jobs:
             const isProtectedGoldenFixture = (filename) =>
               typeof filename === 'string' &&
               protectedGoldenFixturePatterns.some((pattern) => pattern.test(filename));
-            
+
             const changedFixtures = files.filter((f) => {
               if (f.status === 'added') {
                 return false;
@@ -62,8 +62,8 @@ jobs:
 
   tests:
     needs: gate
-    if: ${{ needs.gate.outputs.should_run_tests == 'true' }}   # <- job-level gate (will show Skipped)
-    name: Run tests (${{ matrix.target }})
+    if: ${{ needs.gate.outputs.should_run_tests == 'true' }}
+    name: Generate reports (${{ matrix.target }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -78,89 +78,53 @@ jobs:
           if [ "${{ matrix.target }}" = "base" ]; then
             echo "ref=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
           elif [ "${{ matrix.target }}" = "head" ]; then
-            echo "ref=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            echo "ref=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
           else
-            echo "ref=refs/pull/${{ github.event.pull_request.number }}/merge" >> "$GITHUB_OUTPUT"
+            echo "ref=${{ github.sha }}" >> "$GITHUB_OUTPUT"
           fi
 
-      # If the synthetic merge ref doesn't exist, continue so the leg can still upload nothing and be summarized.
       - name: Checkout (${{ matrix.target }})
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ steps.ref.outputs.ref }}
         continue-on-error: ${{ matrix.target == 'merge' }}
 
-      - name: Read Node version from .nvmrc
-        id: node-version
-        run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
+      - name: Setup pnpm (${{ matrix.target }})
+        uses: pnpm/action-setup@v6
+        with:
+          cache: true
 
       - name: Setup Node (${{ matrix.target }})
         uses: actions/setup-node@v6
         with:
-          node-version: ${{ steps.node-version.outputs.version }}
-          cache: 'pnpm'
-          cache-dependency-path: pnpm-lock.yaml
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            **/pnpm-lock.yaml
 
-      - name: Enable pnpm via Corepack (${{ matrix.target }})
-        run: |
-          corepack enable
-          corepack prepare $(node -p "require('./package.json').packageManager") --activate
-
-      - name: Install deps (${{ matrix.target }})
-        run: |
-          set -o pipefail
-          install_log="$(mktemp)"
-          if pnpm install --frozen-lockfile 2>&1 | tee "$install_log"; then
-            exit 0
-          fi
-
-          if grep -q "ERR_PNPM_OUTDATED_LOCKFILE" "$install_log"; then
-            echo "::warning::pnpm-lock.yaml is out of date. Retrying install with --no-frozen-lockfile."
-            pnpm install --no-frozen-lockfile
-            exit 0
-          fi
-
-          echo "::error::Dependency install failed for a reason other than outdated lockfile."
-          exit 1
+      - name: Install deps
+        run: pnpm install --frozen-lockfile --recursive --force
         continue-on-error: ${{ matrix.target == 'merge' }}
 
-      - name: Build typescript (${{ matrix.target }})
-        run: |
-          if ! pnpm run build:ts; then
-            echo "::warning::TypeScript workspace build failed for target '${{ matrix.target }}'; continuing workflow."
-          fi
-
-      # Runs tests once, generating both JUnit XML and LCOV coverage
-      - name: Run tests & coverage (${{ matrix.target }})
-        run: pnpm run test:ci
+      - name: Generate quality reports (${{ matrix.target }})
+        run: pnpm run report
         continue-on-error: true
 
       - name: Publish test summary (${{ matrix.target }})
         if: ${{ always() }}
-        uses: dorny/test-reporter@v2
+        uses: dorny/test-reporter@v3
         with:
           name: Publish test summary (${{ matrix.target }})
-          path: reports/*.xml
+          path: reports/tests.xml
           reporter: java-junit
           fail-on-error: false
           fail-on-empty: false
           use-actions-summary: false
 
-      - name: Run lint (${{ matrix.target }})
-        run: pnpm run lint:report
-        continue-on-error: true
-
-      - name: Run duplicates check (${{ matrix.target }})
-        run: pnpm run lint:duplicates:report
-        continue-on-error: true
-
-      - name: Collect project stats (${{ matrix.target }})
-        run: pnpm run stats:report
-        continue-on-error: true
-
       - name: Upload report artifacts (${{ matrix.target }})
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: report-${{ matrix.target }}
           path: |
@@ -180,49 +144,30 @@ jobs:
       GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
     steps:
       - name: Checkout repo (for scripts)
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
-      - name: Read Node version from .nvmrc
-        id: node-version-summary
-        run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          cache: true
 
-      - name: Setup Node
+      - name: Setup node
         uses: actions/setup-node@v6
         with:
-          node-version: ${{ steps.node-version-summary.outputs.version }}
+          node-version-file: .nvmrc
           cache: 'pnpm'
-          cache-dependency-path: pnpm-lock.yaml
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            **/pnpm-lock.yaml
 
-      - name: Enable pnpm via Corepack (summary)
-        run: |
-          corepack enable
-          corepack prepare $(node -p "require('./package.json').packageManager") --activate
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --recursive --force
 
-      - name: Install deps
-        run: |
-          set -o pipefail
-          install_log="$(mktemp)"
-          if pnpm install --frozen-lockfile 2>&1 | tee "$install_log"; then
-            exit 0
-          fi
+      - name: Build CLI
+        run: pnpm run ensure:cli
 
-          if grep -q "ERR_PNPM_OUTDATED_LOCKFILE" "$install_log"; then
-            echo "::warning::pnpm-lock.yaml is out of date. Retrying install with --no-frozen-lockfile."
-            pnpm install --no-frozen-lockfile
-            exit 0
-          fi
-
-          echo "::error::Dependency install failed for a reason other than outdated lockfile."
-          exit 1
-
-      - name: Build typescript
-        run: |
-          if ! pnpm run build:ts; then
-            echo "::warning::TypeScript workspace build failed during summary job; continuing workflow."
-          fi
-      
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: report-*
           merge-multiple: false
@@ -233,22 +178,25 @@ jobs:
         run: |
           set +e
           set -o pipefail
-          
+
           # Create reports directory if it doesn't exist
           mkdir -p reports
 
           # Run the CLI command with explicit paths to the downloaded artifacts
-          pnpm run cli generate-quality-report \
+          pnpm run cli:compiled generate-quality-report \
             --base report-base \
             --head report-head \
             --merge report-merge \
             --report-file reports/summary-report.md
-          
+
           code=$?
-          
+
           if [ $code -eq 0 ]; then
             echo "all_green=true" >> "$GITHUB_OUTPUT"
             echo "status=clean" >> "$GITHUB_OUTPUT"
+          elif [ $code -eq 11 ]; then
+            echo "all_green=false" >> "$GITHUB_OUTPUT"
+            echo "status=lint_errors" >> "$GITHUB_OUTPUT"
           elif [ $code -eq 10 ]; then
             echo "all_green=false" >> "$GITHUB_OUTPUT"
             echo "status=regressions" >> "$GITHUB_OUTPUT"
@@ -271,7 +219,7 @@ jobs:
 
             const MARKER = '<!-- automerge-pr-test-summary -->';
             const reportFile = 'reports/summary-report.md';
-            
+
             let body = '';
             if (fs.existsSync(reportFile)) {
               body = fs.readFileSync(reportFile, 'utf8');
@@ -290,10 +238,45 @@ jobs:
             } else {
               await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
             }
-            
+
             // Set output for auto-merge gate
             const allGreen = process.env.REGRESSION_ALL_GREEN === 'true';
             core.setOutput('all_green', allGreen ? 'true' : 'false');
+
+      - name: Request Agent help for lint errors
+        if: ${{ github.event_name == 'pull_request' && steps.regress.outputs.status == 'lint_errors' && env.GH_USER_TOKEN != '' }}
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ env.GH_USER_TOKEN }}
+          script: |
+            const fs = require('node:fs');
+            const marker = '<!-- automerge-pr-lint-agent -->';
+            const { owner, repo } = context.repo;
+            const number = context.payload.pull_request?.number;
+            if (!number) {
+              core.notice('No PR number; skipping Agent lint comment.');
+              return;
+            }
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
+            const existing = comments.find(comment => comment.body && comment.body.includes(marker));
+            const body = [
+              marker,
+              '',
+              '@mini-max The auto-merge workflow detected lint errors on this PR gate target. Please prioritize lint-error fixes before test regression triage.',
+              '',
+              'Suggested next steps:',
+              '1. Run `pnpm run lint:quiet` and apply deterministic fixes first.',
+              '2. Re-run `pnpm run build:ts` and `pnpm run lint:quiet` until lint errors are fully resolved.',
+              '',
+              `Once done, push fixes to **${pr.head.ref}** on base **${pr.base.ref}** (PR #${number}).`
+            ].join('\n');
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
+            }
+            core.notice(`Requested Agent assistance for lint errors on PR #${number}.`);
 
       - name: Request Agent help for regressions
         if: ${{ github.event_name == 'pull_request' && steps.regress.outputs.status == 'regressions' && env.GH_USER_TOKEN != '' }}
@@ -301,7 +284,13 @@ jobs:
         with:
           github-token: ${{ env.GH_USER_TOKEN }}
           script: |
+            const fs = require('node:fs');
+            const path = require('node:path');
+
             const marker = '<!-- automerge-pr-regression-agent -->';
+            const FOLLOW_UP_AGENT_POOL = 'followUps';
+            const DEFAULT_FOLLOW_UP_AGENT = 'codex';
+            const WEIGHT_SCALE = 1000;
             const { owner, repo } = context.repo;
             const number = context.payload.pull_request?.number;
             if (!number) {
@@ -309,16 +298,132 @@ jobs:
               return;
             }
 
+            const normalize = (value) => {
+              const trimmed = (value || '').trim();
+              if (!trimmed) return '';
+              return trimmed
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '')
+                || '';
+            };
+
+            const getRunNumber = () => {
+              const raw = (process.env.GITHUB_RUN_NUMBER || '').trim();
+              const parsed = Number.parseInt(raw, 10);
+              return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+            };
+
+            const toSlots = (weight) => Math.max(1, Math.round(weight * WEIGHT_SCALE));
+
+            const buildInterleavedCycle = (items) => {
+              const maxSlots = Math.max(...items.map((item) => item.slots));
+              const cycle = [];
+              for (let slot = 1; slot <= maxSlots; slot += 1) {
+                for (const item of items) {
+                  if (item.slots >= slot) {
+                    cycle.push(item);
+                  }
+                }
+              }
+              return cycle;
+            };
+
+            const chooseDeterministicWeighted = (items, runNumber) => {
+              if (items.length === 0) return null;
+              const sortedItems = [...items].sort((left, right) => left.slug.localeCompare(right.slug));
+              const cycle = buildInterleavedCycle(sortedItems);
+              if (cycle.length === 0) return null;
+              const cycleIndex = (runNumber - 1) % cycle.length;
+              return {
+                selected: cycle[cycleIndex],
+                cycleIndex,
+                cycleLength: cycle.length,
+                totalWeight: sortedItems.reduce((sum, item) => sum + item.weight, 0),
+              };
+            };
+
+            const parseAgentCandidates = (pool) => {
+              if (!pool || !Array.isArray(pool.agents)) {
+                return [];
+              }
+
+              return pool.agents
+                .map((agent) => ({
+                  name: typeof agent?.name === 'string' ? agent.name : '',
+                  weight: Number(agent?.weight),
+                }))
+                .filter((agent) => agent.name && Number.isFinite(agent.weight) && agent.weight > 0)
+                .map((agent) => ({
+                  name: agent.name,
+                  weight: agent.weight,
+                  slug: normalize(agent.name),
+                  slots: toSlots(agent.weight),
+                }))
+                .filter((agent) => agent.slug);
+            };
+
+            const loadWeightsConfig = () => {
+              const weightsPath = path.resolve(process.cwd(), '.github/workflows/weights.json');
+              const raw = fs.readFileSync(weightsPath, 'utf8');
+              return JSON.parse(raw);
+            };
+
+            const selectAgent = (poolName, requestedAgent) => {
+              if (requestedAgent) {
+                return {
+                  agent: requestedAgent,
+                  reason: 'manual override',
+                };
+              }
+
+              let poolDefault = DEFAULT_FOLLOW_UP_AGENT;
+              let candidates = [];
+              try {
+                const parsed = loadWeightsConfig();
+                const pool = parsed?.agentPools?.[poolName] ?? null;
+                const configuredDefault = normalize(pool?.default);
+                if (configuredDefault) {
+                  poolDefault = configuredDefault;
+                }
+                candidates = parseAgentCandidates(pool);
+              } catch (error) {
+                core.warning(`Falling back to default follow-up agent due to configuration error: ${error.message}`);
+              }
+
+              if (!candidates.length) {
+                return {
+                  agent: poolDefault,
+                  reason: `${poolName} pool default fallback`,
+                };
+              }
+
+              const runNumber = getRunNumber();
+              const chosen = chooseDeterministicWeighted(candidates, runNumber);
+              if (!chosen || !chosen.selected) {
+                return {
+                  agent: poolDefault,
+                  reason: `${poolName} deterministic weighted selection fallback`,
+                };
+              }
+
+              const { slug, name, weight, slots } = chosen.selected;
+              const cyclePosition = chosen.cycleIndex + 1;
+              core.info(
+                `Deterministic weighted selection picked agent "${name}" from ${poolName} pool ` +
+                `(slug=${slug}, weight=${weight}, slots=${slots}) for run #${runNumber} ` +
+                `at cycle position ${cyclePosition}/${chosen.cycleLength} from total weight ${chosen.totalWeight.toFixed(6)}.`
+              );
+              return {
+                agent: slug,
+                reason: `${poolName} deterministic weighted selection`,
+              };
+            };
+
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
-            const branchLower = (pr.head?.ref || '').toLowerCase();
-            // Extract the agent prefix (the part before the first '/') and require it to be present
-            const rawPrefix = (branchLower.split('/')[0] || '').replace(/^@/, '').trim();
-            if (!rawPrefix) {
-              core.info('No agent prefix found on branch name; skipping agent regression request.');
-              return;
-            }
-            const agentPrefix = rawPrefix;
-            const agentMention = `@${agentPrefix}`;
+            const selection = selectAgent(FOLLOW_UP_AGENT_POOL, '');
+            const agentMention = `@${selection.agent}`;
+            core.info(`Using follow-up agent "${selection.agent}" (${selection.reason}).`);
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner,
               repo,
@@ -327,16 +432,39 @@ jobs:
             });
 
             const existing = comments.find(comment => comment.body && comment.body.includes(marker));
+            const reportFile = 'reports/summary-report.md';
+            let regressionSummaryLine = '';
+            try {
+              const reportBody = fs.readFileSync(reportFile, 'utf8');
+              const matchingLine = reportBody
+                .split(/\r?\n/u)
+                .find((line) => line.trim().startsWith('❌ Test regressions detected.'));
+              regressionSummaryLine = matchingLine ? matchingLine.trim() : '';
+            } catch (error) {
+              if (error?.code !== 'ENOENT') {
+                core.warning(`Unable to read regression summary from ${reportFile}: ${error.message}`);
+              }
+            }
 
             const lines = [
               marker,
               '',
-              `${agentMention} The auto-merge workflow detected test regressions on this PR while comparing \`${pr.head.ref}\` against \`${pr.base.ref}\`. Please review the failing suites, identify the root cause, and provide the fixes so this change can be merged.`,
+              `${agentMention} The auto-merge workflow detected test regressions on this PR ` +
+                `while comparing the base results with the merged results ` +
+                `(or with PR head results when merged results are unavailable). ` +
+                "Please review the failing suites, identify the root cause, and provide the fixes so this change can be merged. Do not remove tests or relax performance requirements without a clear, well-reasoned justification, as doing so can harm the overall health of the project.",
+            ];
+
+            if (regressionSummaryLine) {
+              lines.push('', `Regression summary from the Quality Report: ${regressionSummaryLine}`);
+            }
+
+            lines.push(
               '',
               'Suggested next steps:',
               '1. Reproduce the failures locally (for example, `pnpm run test:report` and `pnpm run test:coverage`) to confirm the regression.',
               '2. Deliver the smallest possible fix—or a precise explanation of the required follow-up—that resolves the regression blocking auto-merge.'
-            ];
+            );
 
             const normalizedAgent = agentMention.replace(/^@/, '').trim().toLowerCase();
             if (normalizedAgent !== 'copilot') {
@@ -359,6 +487,11 @@ jobs:
             }
 
             core.notice(`Requested Agent assistance for regressions on PR #${number}.`);
+
+      - name: Warn when Agent user token missing for lint errors
+        if: ${{ github.event_name == 'pull_request' && steps.regress.outputs.status == 'lint_errors' && env.GH_USER_TOKEN == '' }}
+        run: |
+          echo "::warning::GH_USER_TOKEN secret is not configured; skipping Agent lint comment."
 
       - name: Warn when Agent user token missing
         if: ${{ github.event_name == 'pull_request' && steps.regress.outputs.status == 'regressions' && env.GH_USER_TOKEN == '' }}

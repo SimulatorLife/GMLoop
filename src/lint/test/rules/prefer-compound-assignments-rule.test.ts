@@ -202,3 +202,87 @@ void test("prefer-compound-assignments does not rewrite x = y ?? x (non-commutat
     assertEquals(result.messageCount, 0);
     assertEquals(result.output, input);
 });
+
+void test("prefer-compound-assignments rewrites modulo and bitwise self-assignments but preserves shifts", () => {
+    const input = [
+        "angle = angle % 360;",
+        "flags = flags | mask;",
+        "bits = bits & mask;",
+        "state = state ^ toggle;",
+        "value = value << 2;",
+        "value = value >> 1;",
+        ""
+    ].join("\n");
+    const expected = [
+        "angle %= 360;",
+        "flags |= mask;",
+        "bits &= mask;",
+        "state ^= toggle;",
+        "value = value << 2;",
+        "value = value >> 1;",
+        ""
+    ].join("\n");
+
+    const result = runPreferCompoundAssignmentsRule(input);
+    assertEquals(result.messageCount, 4);
+    assertEquals(result.output, expected);
+});
+
+void test("prefer-compound-assignments never rewrites GML shift self-assignments to unsupported compound syntax", () => {
+    const input = "_decoded_colour = _decoded_colour << 4;\n";
+    const result = runPreferCompoundAssignmentsRule(input);
+
+    assertEquals(result.messageCount, 0);
+    assertEquals(result.output, input);
+});
+
+void test("prefer-compound-assignments rewrites x = y | x to x |= y (commutative bitwise)", () => {
+    const input = "flags = new_flag | flags;\n";
+    const expected = "flags |= new_flag;\n";
+    const result = runPreferCompoundAssignmentsRule(input);
+
+    assertEquals(result.messageCount, 1);
+    assertEquals(result.output, expected);
+});
+
+void test("prefer-compound-assignments rewrites x = y & x to x &= y (commutative bitwise)", () => {
+    const input = "mask = filter & mask;\n";
+    const expected = "mask &= filter;\n";
+    const result = runPreferCompoundAssignmentsRule(input);
+
+    assertEquals(result.messageCount, 1);
+    assertEquals(result.output, expected);
+});
+
+void test("prefer-compound-assignments rewrites x = y ^ x to x ^= y (commutative bitwise)", () => {
+    const input = "state = toggle ^ state;\n";
+    const expected = "state ^= toggle;\n";
+    const result = runPreferCompoundAssignmentsRule(input);
+
+    assertEquals(result.messageCount, 1);
+    assertEquals(result.output, expected);
+});
+
+void test("prefer-compound-assignments does not rewrite x = y % x (non-commutative)", () => {
+    const input = "x = y % x;\n";
+    const result = runPreferCompoundAssignmentsRule(input);
+
+    assertEquals(result.messageCount, 0);
+    assertEquals(result.output, input);
+});
+
+void test("prefer-compound-assignments does not rewrite x = y << x (non-commutative)", () => {
+    const input = "x = y << x;\n";
+    const result = runPreferCompoundAssignmentsRule(input);
+
+    assertEquals(result.messageCount, 0);
+    assertEquals(result.output, input);
+});
+
+void test("prefer-compound-assignments does not rewrite x = y >> x (non-commutative)", () => {
+    const input = "x = y >> x;\n";
+    const result = runPreferCompoundAssignmentsRule(input);
+
+    assertEquals(result.messageCount, 0);
+    assertEquals(result.output, input);
+});

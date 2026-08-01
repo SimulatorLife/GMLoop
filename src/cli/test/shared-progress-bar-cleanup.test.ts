@@ -5,7 +5,7 @@ import {
     renderProgressBar,
     resetProgressBarRegistryForTesting,
     withProgressBarCleanup
-} from "../src/runtime-options/progress-bar.js";
+} from "../src/shared/progress-bar.js";
 
 function createMockStdout() {
     return {

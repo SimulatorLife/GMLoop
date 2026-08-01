@@ -28,25 +28,14 @@ const KNOWN_TYPE_IDENTIFIERS = Object.freeze([
 
 const KNOWN_TYPES = new Set(KNOWN_TYPE_IDENTIFIERS.map((identifier) => identifier.toLowerCase()));
 
-/**
- * Checks if the provided value is a DocCommentLines object.
- */
-function isDocCommentLines(lines: DocCommentLines | string[]): lines is DocCommentLines {
-    return (
-        Array.isArray(lines) &&
-        ("_preserveDescriptionBreaks" in lines || "_suppressLeadingBlank" in lines || "_blockCommentDocs" in lines)
-    );
+function copyDocCommentFlags(source: DocCommentLines | string[], target: MutableDocCommentLines): void {
+    copyDocCommentArrayFlags(source as string[], target);
 }
 
-/**
- * Copies doc comment metadata flags from a source to a target.
- * This is a wrapper around copyDocCommentArrayFlags that checks if the source
- * is a DocCommentLines object before copying.
- */
-function copyDocCommentFlags(source: DocCommentLines | string[], target: MutableDocCommentLines): void {
-    if (isDocCommentLines(source)) {
-        copyDocCommentArrayFlags(source as any, target);
-    }
+function cloneDocCommentLinesWithFlags(lines: DocCommentLines | string[]): MutableDocCommentLines {
+    const clonedLines = toMutableArray(lines, { clone: true }) as MutableDocCommentLines;
+    copyDocCommentFlags(lines, clonedLines);
+    return clonedLines;
 }
 
 export function dedupeReturnDocLines(
@@ -101,7 +90,7 @@ export function reorderDescriptionLinesToTop(docLines: DocCommentLines | string[
     const normalizedDocLines: string[] = toMutableArray(docLines, { clone: true });
 
     if (normalizedDocLines.length === 0) {
-        return normalizedDocLines as DocCommentLines;
+        return normalizedDocLines;
     }
 
     const descriptionBlocks: number[][] = [];
@@ -134,7 +123,7 @@ export function reorderDescriptionLinesToTop(docLines: DocCommentLines | string[
     }
 
     if (descriptionBlocks.length === 0) {
-        return normalizedDocLines as DocCommentLines;
+        return normalizedDocLines;
     }
 
     const descriptionIndices = descriptionBlocks.flat();
@@ -168,121 +157,42 @@ export function reorderDescriptionLinesToTop(docLines: DocCommentLines | string[
     const result = [...descriptionLines, ...filtered] as MutableDocCommentLines;
     copyDocCommentFlags(docLines, result);
 
-    return result as DocCommentLines;
+    return result;
 }
 
 export function convertLegacyReturnsDescriptionLinesToMetadata(
     docLines: DocCommentLines | string[],
     opts: { normalizeDocCommentTypeAnnotations?: (line: string) => string } = {}
 ) {
-    const normalizedLines: string[] = toMutableArray(docLines, { clone: true });
+    const normalizedLines = cloneDocCommentLinesWithFlags(docLines);
 
     if (normalizedLines.length === 0) {
         return normalizedLines as DocCommentLines;
     }
 
-    const preserveLeadingBlank = isDocCommentLines(docLines) && docLines._suppressLeadingBlank === true;
-    const preserveDescriptionBreaks = isDocCommentLines(docLines) && docLines._preserveDescriptionBreaks === true;
-    const preserveBlockCommentDocs = isDocCommentLines(docLines) && docLines._blockCommentDocs === true;
-
     const convertedReturns: string[] = [];
     const retainedLines: string[] = [];
-    const normalizedTypeAnnotation =
-        typeof opts.normalizeDocCommentTypeAnnotations === "function"
-            ? opts.normalizeDocCommentTypeAnnotations
-            : undefined;
-
     for (const line of normalizedLines) {
         if (typeof line !== STRING_TYPE) {
             retainedLines.push(line);
             continue;
         }
 
-        const match = line.match(/^(\s*\/\/\/)(.*)$/);
-        if (!match) {
+        const convertedLine = convertLegacyReturnsDescriptionLineToMetadata(line, opts);
+        if (convertedLine === line) {
             retainedLines.push(line);
             continue;
         }
 
-        const [, prefix = "///", suffix = ""] = match;
-        const trimmedSuffix = suffix.trim();
-
-        if (trimmedSuffix.length === 0) {
-            retainedLines.push(line);
-            continue;
-        }
-
-        if (trimmedSuffix.startsWith("@")) {
-            retainedLines.push(line);
-            continue;
-        }
-
-        const returnsMatch = trimmedSuffix.match(LEGACY_RETURNS_DESCRIPTION_PATTERN);
-        let payload: string;
-
-        const returnsColonMatch = trimmedSuffix.match(/^returns\s*:\s*(.*)$/i);
-
-        if (returnsColonMatch) {
-            payload = (returnsColonMatch[1] ?? "").trim();
-        } else if (returnsMatch) {
-            payload = returnsMatch[0];
-        } else {
-            retainedLines.push(line);
-            continue;
-        }
-
-        const payloadParts = parseLegacyReturnPayload(payload);
-        if (!payloadParts) {
-            retainedLines.push(line);
-            continue;
-        }
-
-        let { typeText, descriptionText } = payloadParts;
-
-        if (descriptionText.length > 0 && /^[a-z]/.test(descriptionText)) {
-            descriptionText = capitalize(descriptionText);
-        }
-
-        let normalizedType = typeText.trim();
-        if (normalizedType.length > 0 && !/^\{.*\}$/.test(normalizedType)) {
-            normalizedType = `{${normalizedType}}`;
-        }
-
-        if (normalizedTypeAnnotation && normalizedType.length > 0) {
-            normalizedType = normalizedTypeAnnotation(normalizedType);
-        }
-
-        let converted = `${prefix} @returns`;
-        if (normalizedType.length > 0) {
-            converted += ` ${normalizedType}`;
-        }
-        if (descriptionText.length > 0) {
-            converted += ` ${descriptionText}`;
-        }
-
-        convertedReturns.push(converted);
+        convertedReturns.push(convertedLine);
     }
 
     if (convertedReturns.length === 0) {
-        const result = normalizedLines as MutableDocCommentLines;
-        if (preserveLeadingBlank) {
-            result._suppressLeadingBlank = true;
-        }
-        if (preserveDescriptionBreaks) {
-            result._preserveDescriptionBreaks = true;
-        }
-        if (preserveBlockCommentDocs) {
-            result._blockCommentDocs = true;
-        }
-        return result as DocCommentLines;
+        return normalizedLines as DocCommentLines;
     }
 
-    const resultLines = (
-        convertedReturns.length > 0
-            ? retainedLines.filter(
-                  (line) => !isLegacyFunctionTagWithoutParams(typeof line === STRING_TYPE ? line : null)
-              )
-            : [...retainedLines]
+    const resultLines = retainedLines.filter(
+        (line) => !isLegacyFunctionTagWithoutParams(typeof line === STRING_TYPE ? line : null)
     ) as MutableDocCommentLines;
 
     let appendIndex = resultLines.length;
@@ -295,20 +205,85 @@ export function convertLegacyReturnsDescriptionLinesToMetadata(
     }
 
     resultLines.splice(appendIndex, 0, ...convertedReturns);
-
-    if (preserveLeadingBlank) {
-        resultLines._suppressLeadingBlank = true;
-    }
-
-    if (preserveDescriptionBreaks) {
-        resultLines._preserveDescriptionBreaks = true;
-    }
-
-    if (preserveBlockCommentDocs) {
-        resultLines._blockCommentDocs = true;
-    }
+    copyDocCommentFlags(docLines, resultLines);
 
     return resultLines as DocCommentLines;
+}
+
+/**
+ * Converts one legacy doc-comment return line into canonical `@returns`
+ * metadata.
+ *
+ * @param line Source line to inspect.
+ * @param opts Optional type-annotation normalizer for converted return types.
+ * @returns Converted line, or the original line when it is not a legacy return description.
+ */
+export function convertLegacyReturnsDescriptionLineToMetadata(
+    line: string,
+    opts: { normalizeDocCommentTypeAnnotations?: (line: string) => string } = {}
+): string {
+    const match = line.match(/^(\s*\/\/\/)(.*)$/);
+    if (!match) {
+        return line;
+    }
+
+    const [, prefix = "///", suffix = ""] = match;
+    const trimmedSuffix = suffix.trim();
+    if (trimmedSuffix.length === 0 || trimmedSuffix.startsWith("@")) {
+        return line;
+    }
+
+    const returnsColonMatch = trimmedSuffix.match(/^returns\s*:\s*(.*)$/i);
+    const returnsMatch = trimmedSuffix.match(LEGACY_RETURNS_DESCRIPTION_PATTERN);
+    let payload: string;
+
+    if (returnsColonMatch) {
+        payload = (returnsColonMatch[1] ?? "").trim();
+    } else if (returnsMatch && isKnownLegacyReturnType(returnsMatch.groups?.type ?? "")) {
+        payload = returnsMatch[0];
+    } else {
+        return line;
+    }
+
+    const payloadParts = parseLegacyReturnPayload(payload);
+    if (!payloadParts) {
+        return line;
+    }
+
+    let { typeText, descriptionText } = payloadParts;
+
+    if (descriptionText.length > 0 && /^[a-z]/.test(descriptionText)) {
+        descriptionText = capitalize(descriptionText);
+    }
+
+    let normalizedType = typeText.trim();
+    if (normalizedType.length > 0 && !/^\{.*\}$/.test(normalizedType)) {
+        normalizedType = `{${normalizedType}}`;
+    }
+
+    const normalizedTypeAnnotation =
+        typeof opts.normalizeDocCommentTypeAnnotations === "function" ? opts.normalizeDocCommentTypeAnnotations : null;
+    if (normalizedTypeAnnotation && normalizedType.length > 0) {
+        normalizedType = normalizedTypeAnnotation(normalizedType);
+    }
+
+    let converted = `${prefix} @returns`;
+    if (normalizedType.length > 0) {
+        converted += ` ${normalizedType}`;
+    }
+    if (descriptionText.length > 0) {
+        converted += ` ${descriptionText}`;
+    }
+
+    return converted;
+}
+
+function isKnownLegacyReturnType(typeText: string): boolean {
+    const normalizedTypeText = typeText
+        .trim()
+        .replaceAll(/^\{|\}$/gu, "")
+        .toLowerCase();
+    return KNOWN_TYPES.has(normalizedTypeText) || normalizedTypeText.startsWith("struct.");
 }
 
 function isLegacyFunctionTagWithoutParams(line: string | null) {
@@ -393,7 +368,7 @@ export function promoteLeadingDocCommentTextToDescription(
             break;
         }
 
-        const isTaggedLine = /^\/\/\/\s*@/i.test(trimmed) || /^\/\/\s*\/\s*@/i.test(trimmed);
+        const isTaggedLine = /^\/\/\/\s*(?:@|\/\s*@)/i.test(trimmed) || /^\/\/\s*\/\s*@/i.test(trimmed);
         if (isTaggedLine) {
             break;
         }

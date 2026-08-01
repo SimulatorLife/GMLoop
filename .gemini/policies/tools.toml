@@ -1,0 +1,51 @@
+# Deny Gemini web fetch/search tools.
+
+[[rule]]
+toolName = "WebFetchTool"
+decision = "deny"
+priority = 999
+denyMessage = "WebFetchTool is disabled by user policy."
+
+[[rule]]
+toolName = "WebSearchTool"
+decision = "deny"
+priority = 999
+denyMessage = "WebSearchTool is disabled by user policy."
+
+# Deny unsafe raw JavaScript / Playwright code execution from Playwright MCP.
+
+[[rule]]
+mcpName = "playwright"
+toolName = "browser_run_code_unsafe"
+decision = "deny"
+priority = 999
+denyMessage = "Playwright raw browser code execution is disabled by user policy."
+
+# Explicit shell allow.
+
+[[rule]]
+toolName = "run_shell_command"
+decision = "allow"
+priority = 998
+allowRedirection = true
+
+# Explicit Playwright MCP allow.
+# Lower priority than the unsafe Playwright deny rule above.
+
+[[rule]]
+mcpName = "playwright"
+decision = "allow"
+priority = 901
+
+[[rule]]
+mcpName = "lsp"
+decision = "allow"
+priority = 901
+
+# Auto-allow everything else.
+# Lower priority than the explicit deny rules above.
+
+[[rule]]
+toolName = "*"
+decision = "allow"
+priority = 900

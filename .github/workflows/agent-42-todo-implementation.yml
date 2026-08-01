@@ -22,16 +22,7 @@ jobs:
       todo_line_number: ${{ steps.pick_todo.outputs.todo_line_number }}
       todo_text: ${{ steps.pick_todo.outputs.todo_text }}
     steps:
-      - uses: actions/checkout@v5
-
-      - name: Read Node version from .nvmrc
-        id: read-node-version
-        run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
-
-      - name: Use Node from .nvmrc
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ steps.read-node-version.outputs.version }}
+      - uses: actions/checkout@v6
 
       - name: Verify and select one outstanding TODO
         id: pick_todo

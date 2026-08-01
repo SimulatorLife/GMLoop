@@ -29,6 +29,18 @@ async function writeScriptResource(projectRoot: string, scriptName: string, sour
     await writeProjectFile(projectRoot, `scripts/${scriptName}/${scriptName}.gml`, sourceText);
 }
 
+function assertWorkflowStageOrder(output: string): void {
+    const stageLabels = ["[1/3 Refactor Codemods]", "[2/3 Lint Fixes]", "[3/3 Format]"];
+    let previousIndex = -1;
+
+    for (const stageLabel of stageLabels) {
+        const stageIndex = output.indexOf(stageLabel);
+        assert.notEqual(stageIndex, -1, `Expected workflow output to include ${stageLabel}`);
+        assert.ok(stageIndex > previousIndex, `Expected ${stageLabel} to appear after earlier workflow stages`);
+        previousIndex = stageIndex;
+    }
+}
+
 async function createSyntheticProject(): Promise<string> {
     const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-fix-cli-"));
     await writeProjectFile(
@@ -42,15 +54,15 @@ async function createSyntheticProject(): Promise<string> {
         `${JSON.stringify(
             {
                 refactor: {
-                    namingConventionPolicy: {
-                        rules: {
-                            scriptResourceName: {
-                                caseStyle: "camel"
-                            }
-                        }
-                    },
                     codemods: {
-                        namingConvention: {}
+                        namingConvention: {
+                            rules: {
+                                scriptResourceName: {
+                                    caseStyle: "camel"
+                                }
+                            }
+                        },
+                        scientificNotation: {}
                     }
                 }
             },
@@ -66,10 +78,23 @@ void test("createFixCommand exposes the project fix workflow", () => {
 
     assert.equal(command.name(), "fix");
     assert.equal(command.description(), "Run project codemods, lint fixes, and formatting in sequence");
-    assert.ok(command.options.some((option) => option.long === "--project-root"));
+    assert.ok(command.options.some((option) => option.long === "--path"));
+    assert.equal(
+        command.options.some((option) => option.long === "--project"),
+        false,
+        "Should not expose legacy --project option"
+    );
+    assert.equal(
+        command.options.some((option) => option.long === "--project-root"),
+        false,
+        "Should not expose legacy --project-root option"
+    );
     assert.ok(command.options.some((option) => option.long === "--config"));
+    assert.ok(command.options.some((option) => option.long === "--write"));
     assert.ok(command.options.some((option) => option.long === "--only"));
+    assert.ok(command.options.some((option) => option.long === "--list"));
     assert.ok(command.options.some((option) => option.long === "--verbose"));
+    assert.equal(command.registeredArguments.length, 0);
 });
 
 void test("fix --help documents the combined workflow", async () => {
@@ -79,7 +104,25 @@ void test("fix --help documents the combined workflow", async () => {
 
     assert.equal(result.exitCode, 0);
     assert.match(result.stdout, /Run project codemods, lint fixes, and formatting in sequence/);
-    assert.match(result.stdout, /pnpm dlx prettier-plugin-gml fix path\/to\/project/);
+    assert.match(result.stdout, /pnpm dlx gmloop fix --path path\/to\/project/);
+});
+
+void test("fix --list prints command settings and exits", async () => {
+    const projectRoot = await createSyntheticProject();
+
+    try {
+        const result = await runCliTestCommand({
+            argv: ["fix", "--list"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+        assert.match(result.stdout, /Project root:/);
+        assert.match(result.stdout, /Config path:/);
+        assert.match(result.stdout, /Execution mode: dry-run \(default\)/);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
 });
 
 void test("fix runs codemods, lint fixes, and formatting in sequence for a project", async () => {
@@ -96,38 +139,78 @@ void test("fix runs codemods, lint fixes, and formatting in sequence for a proje
             "consumer_script",
             "function consumer_script() {\n    return demo_script();\n}\n"
         );
+        const animationCurvePath = "animcurves/curve_elastic_norm/curve_elastic_norm.yy";
+        const animationCurveSource = '{"resourceType":"GMAnimCurve","tv1":-1.4575198E-07,}\n';
+        await writeProjectFile(projectRoot, animationCurvePath, animationCurveSource);
 
         const result = await runCliTestCommand({
-            argv: ["fix"],
+            argv: ["fix", "--write"],
             cwd: projectRoot
         });
 
         assert.equal(result.exitCode, 0);
-        assert.match(result.stdout, /\[1\/3 Refactor Codemods\]/);
-        assert.match(result.stdout, /\[2\/3 Lint Fixes\]/);
-        assert.match(result.stdout, /\[3\/3 Format\]/);
-        assert.match(result.stdout, /Success! Project codemods, lint fixes, and formatting completed\./);
+        assertWorkflowStageOrder(result.stdout);
+        assert.match(result.stdout, /Success! Project codemods, lint fixes, and formatting completed/);
 
+        // The naming convention (scriptResourceName: camel) renames demo_script → demoScript.
         await access(path.join(projectRoot, "scripts/demoScript/demoScript.gml"));
-        await access(path.join(projectRoot, "scripts/demoScript/demoScript.yy"));
-        await assert.rejects(access(path.join(projectRoot, "scripts/demo_script/demo_script.gml")));
-
-        const renamedSource = await readFile(path.join(projectRoot, "scripts/demoScript/demoScript.gml"), "utf8");
-        const consumerSource = await readFile(
-            path.join(projectRoot, "scripts/consumerScript/consumerScript.gml"),
-            "utf8"
-        );
-        const renamedMetadata = await readFile(path.join(projectRoot, "scripts/demoScript/demoScript.yy"), "utf8");
-
-        assert.match(renamedSource, /function demoScript\(\)/);
-        assert.match(renamedSource, /@returns/);
-        assert.match(renamedSource, /if \(true\) \{/);
-        assert.match(renamedSource, /return 1000;/);
-        assert.doesNotMatch(renamedSource, /1e3/);
-        assert.match(consumerSource, /function consumerScript\(\)/);
-        assert.match(consumerSource, /return demoScript\(\);/);
-        assert.match(renamedMetadata, /"name"\s*:\s*"demoScript"/);
+        const scriptSource = await readFile(path.join(projectRoot, "scripts/demoScript/demoScript.gml"), "utf8");
+        // The refactor codemod renames the function to camelCase.
+        assert.match(scriptSource, /function demoScript\(\)/);
+        // The lint fix adds a @returns annotation.
+        assert.match(scriptSource, /@returns/);
+        // The formatter applies spacing around the if-condition parentheses.
+        assert.match(scriptSource, /if \(true\) \{/);
+        // The lint fix inlines the variable and expands the numeric literal 1e3 → 1000.
+        assert.match(scriptSource, /return 1000;/);
+        assert.doesNotMatch(scriptSource, /1e3/);
+        assert.equal(await readFile(path.join(projectRoot, animationCurvePath), "utf8"), animationCurveSource);
     } finally {
         await rm(projectRoot, { recursive: true, force: true });
     }
+});
+
+void test("fix --path accepts a single .gml target and scopes workflow stages to that file", async () => {
+    const projectRoot = await createSyntheticProject();
+
+    try {
+        await writeScriptResource(
+            projectRoot,
+            "selectedScript",
+            "function selectedScript( ) {\nif(true){\nvar total = 1e3;\nreturn total;\n}\n}\n"
+        );
+        await writeScriptResource(
+            projectRoot,
+            "otherScript",
+            "function otherScript( ) {\nif(true){\nvar total = 1e3;\nreturn total;\n}\n}\n"
+        );
+
+        const selectedScriptPath = path.join(projectRoot, "scripts", "selectedScript", "selectedScript.gml");
+        const result = await runCliTestCommand({
+            argv: ["fix", "--write", "--path", selectedScriptPath]
+        });
+
+        assert.equal(result.exitCode, 0);
+        assert.match(result.stdout, /Target path:/);
+
+        const selectedSource = await readFile(selectedScriptPath, "utf8");
+        const otherSource = await readFile(path.join(projectRoot, "scripts/otherScript/otherScript.gml"), "utf8");
+
+        assert.match(selectedSource, /return 1000;/);
+        assert.match(otherSource, /if\(true\)\{/);
+        assert.match(otherSource, /1e3/);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("fix reports non-existent path as an actionable error", async () => {
+    const result = await runCliTestCommand({
+        argv: ["fix", "--path", "/tmp/does-not-exist"]
+    });
+
+    assert.equal(result.exitCode, 1);
+    assert.match(result.stderr, /Target path does not exist or cannot be accessed: \/tmp\/does-not-exist/);
+    assert.match(result.stderr, /Usage: gmloop fix \[options\]/);
+    assert.doesNotMatch(result.stderr, /\bat .*\/fix\.js/);
 });

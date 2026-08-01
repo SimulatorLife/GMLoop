@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { pathExistsSync } from "./path-exists.js";
+
 /**
  * Options used to control recursive directory traversal.
  */
@@ -33,7 +35,7 @@ export function traverseDirectoryEntries(
     rootPath: string,
     { onFile, shouldDescend, continueOnReadError, ignoreDotEntries }: DirectoryTraversalOptions
 ): void {
-    if (!fs.existsSync(rootPath)) {
+    if (!pathExistsSync(rootPath)) {
         return;
     }
 

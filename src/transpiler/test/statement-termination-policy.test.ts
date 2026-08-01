@@ -9,6 +9,7 @@ void test("isStatementTerminated returns false for unterminated expression state
 
 void test("isStatementTerminated returns true for existing statement terminators", () => {
     assert.equal(isStatementTerminated("foo();"), true);
+    assert.equal(isStatementTerminated("foo();   "), true);
 });
 
 void test("isStatementTerminated returns true for control flow prefixes", () => {
@@ -25,6 +26,8 @@ void test("append semicolon when policy requires terminator", () => {
 
 void test("keep existing terminators unchanged", () => {
     assert.equal(ensureStatementTerminated("foo();"), "foo();");
+    assert.equal(ensureStatementTerminated("foo();   "), "foo();   ");
     assert.equal(ensureStatementTerminated("if (ready) { doThing(); }"), "if (ready) { doThing(); }");
     assert.equal(ensureStatementTerminated("{\n  doThing();\n}"), "{\n  doThing();\n}");
+    assert.equal(ensureStatementTerminated("{\n  doThing();\n}   "), "{\n  doThing();\n}   ");
 });

@@ -5,27 +5,31 @@ import vm from "node:vm";
 
 import { Core } from "@gmloop/core";
 import { Command, Option } from "commander";
-import { parseHTML } from "linkedom";
 import type { Element } from "linkedom/types/interface/element.js";
 
 import { wrapInvalidArgumentResolver } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import type { CommanderCommandLike } from "../cli-core/commander-types.js";
 import { isMainModule, runAsMainModule } from "../cli-core/main-module-runner.js";
+import { assertSupportedNodeVersion } from "../cli-core/node-version.js";
+import { normalizeManualGeneratorBaseOptions } from "../modules/manual/command-options.js";
+import {
+    getDirectElementChildren,
+    parseManualDocument,
+    replaceBreakElementsWithNewlines
+} from "../modules/manual/html.js";
 import { decodeManualKeywordsPayload, decodeManualTagsPayload } from "../modules/manual/payload-validation.js";
 import { getManualRootMetadataPath, readManualText, resolveManualSourceCommitHash } from "../modules/manual/source.js";
 import { type ManualWorkflowOptions, prepareManualWorkflow } from "../modules/manual/workflow.js";
 import { getDefaultVmEvalTimeoutMs, resolveVmEvalTimeout } from "../runtime-options/vm-eval-timeout.js";
 import { writeJsonArtifact } from "../shared/fs-artifacts.js";
-import { assertSupportedNodeVersion } from "../shared/node-version.js";
+import { createVerboseDurationLogger, resolveVerboseFlag, timeSync } from "../shared/timing/verbose-timing.js";
 import { resolveFromRepoRoot } from "../shared/workspace-paths.js";
 
 const {
-    createVerboseDurationLogger,
     describeValueWithArticle,
-    getErrorMessageOrFallback,
     normalizeIdentifierMetadataEntries,
-    timeSync,
+    toContextualError,
     toMutableArray,
     toNormalizedLowerCaseSet,
     toPosixPath,
@@ -86,6 +90,14 @@ type DeprecatedReplacementKind = "direct-rename" | "manual-migration" | "none";
 type DeprecatedLegacyUsage = "call" | "identifier" | "indexed-identifier" | "call-or-identifier";
 type DeprecatedDiagnosticOwner = "gml" | "feather";
 
+type ManualHoverParameter = Readonly<{ description: string; name: string; type: string }>;
+type ManualHoverMetadata = Readonly<{
+    description: string;
+    parameters: ReadonlyArray<ManualHoverParameter>;
+    returnType: string;
+    signature: string;
+}>;
+
 type IdentifierMapEntry = {
     type: string;
     sources: Set<string>;
@@ -97,6 +109,7 @@ type IdentifierMapEntry = {
     legacyCategory?: string;
     legacyUsage?: DeprecatedLegacyUsage;
     diagnosticOwner?: DeprecatedDiagnosticOwner;
+    hover?: ManualHoverMetadata;
 };
 
 type IdentifierMapMergeData = Readonly<{
@@ -110,6 +123,7 @@ type IdentifierMapMergeData = Readonly<{
     legacyCategory?: string;
     legacyUsage?: DeprecatedLegacyUsage;
     diagnosticOwner?: DeprecatedDiagnosticOwner;
+    hover?: ManualHoverMetadata;
 }>;
 
 type LegacySupplement = Readonly<{
@@ -230,15 +244,14 @@ export function createGenerateIdentifiersCommand({ env = process.env } = {}) {
 function resolveGenerateIdentifierOptions(command?: CommanderCommandLike): NormalizedGenerateIdentifiersOptions {
     const options: GenerateIdentifiersCommandOptions = command?.opts?.() ?? {};
 
+    const baseOptions = normalizeManualGeneratorBaseOptions(options, DEFAULT_OUTPUT_PATH);
+
     return {
-        outputPath: options.output ?? DEFAULT_OUTPUT_PATH,
-        manualRoot: options.manualRoot ?? null,
-        manualPackage: options.manualPackage ?? null,
+        ...baseOptions,
         manualGmlPath: options.manualGmlPath ?? DEFAULT_GML_SOURCE_PATH,
         manualKeywordsPath: options.manualKeywordsPath ?? DEFAULT_KEYWORDS_PATH,
         manualTagsPath: options.manualTagsPath ?? DEFAULT_TAGS_PATH,
-        vmEvalTimeoutMs: options.vmEvalTimeoutMs === undefined ? getDefaultVmEvalTimeoutMs() : options.vmEvalTimeoutMs,
-        quiet: Boolean(options.quiet)
+        vmEvalTimeoutMs: options.vmEvalTimeoutMs === undefined ? getDefaultVmEvalTimeoutMs() : options.vmEvalTimeoutMs
     };
 }
 
@@ -296,8 +309,7 @@ function parseArrayLiteral(source: string, identifier: string, { timeoutMs }: Pa
     try {
         return vm.runInNewContext(literal, {}, vmOptions);
     } catch (error) {
-        const message = getErrorMessageOrFallback(error);
-        throw new Error(`Failed to evaluate array literal for ${identifier}: ${message}`, { cause: error });
+        throw toContextualError(`Failed to evaluate array literal for ${identifier}`, error);
     }
 }
 
@@ -389,22 +401,6 @@ const REPLACEMENT_PRIORITY = new Map<DeprecatedReplacementKind, number>([
     [DIRECT_RENAME_REPLACEMENT_KIND, 2]
 ]);
 
-function parseDocument(html: string) {
-    return parseHTML(html).document;
-}
-
-function getDirectChildren(element: Element | null | undefined, selector?: string): Array<Element> {
-    const predicate = selector ? (child: Element) => child.matches?.(selector) === true : () => true;
-    return Array.from(element?.children ?? []).filter(predicate);
-}
-
-function replaceBreaksWithNewlines(clone: Element) {
-    const document = clone.ownerDocument;
-    for (const br of clone.querySelectorAll("br")) {
-        br.parentNode?.replaceChild(document.createTextNode("\n"), br);
-    }
-}
-
 function normalizeCellIdentifierText(rawText: string): string {
     return rawText.replaceAll("\u00A0", " ").replaceAll(/\s+/g, "");
 }
@@ -415,7 +411,7 @@ function extractCellIdentifierText(cell: Element | null | undefined): string | n
     }
 
     const clone = cell.cloneNode(true) as Element;
-    replaceBreaksWithNewlines(clone);
+    replaceBreakElementsWithNewlines(clone);
     const normalized = normalizeCellIdentifierText(clone.textContent ?? "");
     return normalized.length > 0 ? normalized : null;
 }
@@ -462,18 +458,27 @@ function normalizeDeprecatedReplacementKind(
     return typeof replacement === "string" && replacement.length > 0 ? DIRECT_RENAME_REPLACEMENT_KIND : "none";
 }
 
+function isCoreIdentifierType(type: string): boolean {
+    return type === "keyword" || type === "literal" || type === "symbol";
+}
+
 function getReplacementPriority(replacementKind: DeprecatedReplacementKind | undefined): number {
     return REPLACEMENT_PRIORITY.get(replacementKind ?? "none") ?? 0;
+}
+/**
+ * Fold an incoming value into a current value using first-win semantics.
+ * Returns the incoming value when it is defined; otherwise falls back to current.
+ */
+function applyFirstWin<T>(incoming: T | undefined, current: T | undefined): T | undefined {
+    return incoming ?? current;
 }
 
 function mergeEntry(map: Map<string, IdentifierMapEntry>, identifier: string, data: IdentifierMapMergeData) {
     const current = map.get(identifier);
-    const sourceList = data.sources ?? [];
-    const tagList = data.tags ?? [];
 
     if (!current) {
-        const sources = toMutableArray(sourceList);
-        const tags = toMutableArray(tagList);
+        const sources = toMutableArray(data.sources ?? []);
+        const tags = toMutableArray(data.tags ?? []);
 
         map.set(identifier, {
             type: data.type ?? "unknown",
@@ -485,51 +490,51 @@ function mergeEntry(map: Map<string, IdentifierMapEntry>, identifier: string, da
             replacementKind: normalizeDeprecatedReplacementKind(data.replacementKind, data.replacement),
             legacyCategory: data.legacyCategory,
             legacyUsage: data.legacyUsage,
-            diagnosticOwner: data.diagnosticOwner
+            diagnosticOwner: data.diagnosticOwner,
+            hover: data.hover
         });
         return;
     }
 
-    for (const source of sourceList) {
+    // Accumulate collections.
+    for (const source of data.sources ?? []) {
         current.sources.add(source);
     }
-    for (const tag of tagList) {
+    for (const tag of data.tags ?? []) {
         current.tags.add(tag);
     }
-    if (data.manualPath && !current.manualPath) {
-        current.manualPath = data.manualPath;
-    }
-    if (data.deprecated) {
-        current.deprecated = true;
-    }
-    if (data.legacyCategory && !current.legacyCategory) {
-        current.legacyCategory = data.legacyCategory;
-    }
-    if (data.legacyUsage && !current.legacyUsage) {
-        current.legacyUsage = data.legacyUsage;
-    }
-    if (data.diagnosticOwner && !current.diagnosticOwner) {
-        current.diagnosticOwner = data.diagnosticOwner;
-    }
 
-    const incomingReplacementKind = normalizeDeprecatedReplacementKind(data.replacementKind, data.replacement);
-    if (
-        data.replacement &&
-        getReplacementPriority(incomingReplacementKind) >= getReplacementPriority(current.replacementKind)
-    ) {
+    // First-win fields: write only when incoming is defined and current is absent.
+    current.manualPath = applyFirstWin(data.manualPath, current.manualPath);
+    current.deprecated = current.deprecated || Boolean(data.deprecated);
+    current.legacyCategory = applyFirstWin(data.legacyCategory, current.legacyCategory);
+    current.legacyUsage = applyFirstWin(data.legacyUsage, current.legacyUsage);
+    current.diagnosticOwner = applyFirstWin(data.diagnosticOwner, current.diagnosticOwner);
+    current.hover = applyFirstWin(data.hover, current.hover);
+
+    // Upgrade replacement / replacementKind if incoming has higher priority.
+    const incomingKind = normalizeDeprecatedReplacementKind(data.replacementKind, data.replacement);
+    const incomingPriority = getReplacementPriority(incomingKind);
+    const currentPriority = getReplacementPriority(current.replacementKind);
+
+    if (data.replacement && incomingPriority >= currentPriority) {
         current.replacement = data.replacement;
-        current.replacementKind = incomingReplacementKind;
-    } else if (
-        current.replacement === undefined &&
-        getReplacementPriority(incomingReplacementKind) > getReplacementPriority(current.replacementKind)
-    ) {
-        current.replacementKind = incomingReplacementKind;
+        current.replacementKind = incomingKind;
+    } else if (current.replacement === undefined && incomingPriority > currentPriority) {
+        current.replacementKind = incomingKind;
     }
 
+    // Upgrade type if incoming has higher priority.
     const incomingType = data.type ?? "unknown";
-    const currentPriority = TYPE_PRIORITY.get(current.type) ?? 0;
-    const incomingPriority = TYPE_PRIORITY.get(incomingType) ?? 0;
-    if (incomingPriority > currentPriority) {
+    const incomingTypePriority = TYPE_PRIORITY.get(incomingType) ?? 0;
+    const currentTypePriority = TYPE_PRIORITY.get(current.type) ?? 0;
+
+    if (isCoreIdentifierType(current.type)) {
+        // Current is already a core type, keep it.
+    } else if (isCoreIdentifierType(incomingType)) {
+        // Incoming is a core type, it wins.
+        current.type = incomingType;
+    } else if (incomingTypePriority > currentTypePriority) {
         current.type = incomingType;
     }
 }
@@ -689,7 +694,7 @@ function classifyObsoleteTableIdentifiers(
     const identifiers: Array<ObsoleteIdentifierDescriptor> = [];
 
     for (const row of table.querySelectorAll("tr")) {
-        for (const cell of getDirectChildren(row, "td")) {
+        for (const cell of getDirectElementChildren(row, "td")) {
             const identifierText = extractCellIdentifierText(cell);
             if (!identifierText) {
                 continue;
@@ -740,7 +745,7 @@ function inferTableLegacyUsage(paragraphText: string | null): DeprecatedLegacyUs
 function parseObsoleteIdentifierTableEntries(
     obsoleteFunctionsHtml: string
 ): ReadonlyArray<ObsoleteIdentifierDescriptor> {
-    const document = parseDocument(obsoleteFunctionsHtml);
+    const document = parseManualDocument(obsoleteFunctionsHtml);
     const identifiers: Array<ObsoleteIdentifierDescriptor> = [];
     const seenKeys = new Set<string>();
 
@@ -756,7 +761,7 @@ function parseObsoleteIdentifierTableEntries(
         }
 
         let currentUsageHint: DeprecatedLegacyUsage | null = null;
-        for (const child of getDirectChildren(section)) {
+        for (const child of getDirectElementChildren(section)) {
             if (child.matches?.("p")) {
                 currentUsageHint = inferTableLegacyUsage(child.textContent);
                 continue;
@@ -841,6 +846,164 @@ async function collectManualHtmlBasenames(
     }
 
     return basenames;
+}
+
+function resolveCanonicalManualPath(
+    identifier: string,
+    currentPath: string | undefined,
+    manualBasenames: ReadonlyMap<string, string | null>
+): string | undefined {
+    const canonicalPath = manualBasenames.get(identifier);
+    return canonicalPath === null || canonicalPath === undefined ? currentPath : canonicalPath;
+}
+
+function createCanonicalManualUrl(identifier: string, manualPath: string): string {
+    const targetPath = manualPath.endsWith(".htm") ? manualPath : "Content.htm";
+    const fragment = new URLSearchParams({ t: targetPath, rhsearch: identifier, rhhlterm: identifier });
+    return `https://manual.gamemaker.io/monthly/en/#${fragment.toString()}`;
+}
+
+function normalizeManualHoverText(value: string | null | undefined): string {
+    return (value ?? "").replaceAll("\u00A0", " ").replaceAll(/\s+/gu, " ").trim();
+}
+
+function findManualSectionHeading(document: Document, label: string): Element | null {
+    return (
+        [...document.querySelectorAll("h2, h3, h4, h5")].find(
+            (heading) => normalizeManualHoverText(heading.textContent).toLowerCase() === `${label.toLowerCase()}:`
+        ) ?? null
+    );
+}
+
+function findFollowingManualElement(heading: Element | null, selector: string): Element | null {
+    let candidate = heading?.nextElementSibling ?? null;
+    while (candidate !== null && !/^H[2-5]$/u.test(candidate.tagName)) {
+        if (candidate.matches(selector)) {
+            return candidate;
+        }
+        candidate = candidate.nextElementSibling;
+    }
+    return null;
+}
+
+/** Extract structured hover facts from one canonical GameMaker manual page. */
+function extractManualHoverMetadata(identifier: string, html: string): ManualHoverMetadata | null {
+    const document = parseManualDocument(html);
+    const title = document.querySelector("h1");
+    let descriptionElement = title?.nextElementSibling ?? null;
+    while (
+        descriptionElement !== null &&
+        (descriptionElement.tagName !== "P" || normalizeManualHoverText(descriptionElement.textContent).length === 0)
+    ) {
+        descriptionElement = descriptionElement.nextElementSibling;
+    }
+    const syntaxHeading = findManualSectionHeading(document, "Syntax");
+    const signature = normalizeManualHoverText(findFollowingManualElement(syntaxHeading, ".code")?.textContent);
+    if (!signature.startsWith(`${identifier}(`)) {
+        return null;
+    }
+    const parameterTable = findFollowingManualElement(syntaxHeading, "table");
+    const parameters = parameterTable
+        ? [...parameterTable.querySelectorAll("tr")].flatMap((row) => {
+              const cells = [...row.querySelectorAll("td")];
+              const name = normalizeManualHoverText(cells[0]?.textContent);
+              if (name.length === 0) {
+                  return [];
+              }
+              return [
+                  Object.freeze({
+                      description: normalizeManualHoverText(cells[2]?.textContent),
+                      name,
+                      type: normalizeManualHoverText(cells[1]?.textContent)
+                  })
+              ];
+          })
+        : [];
+    const returnsHeading = findManualSectionHeading(document, "Returns");
+    return Object.freeze({
+        description: normalizeManualHoverText(descriptionElement?.textContent),
+        parameters: Object.freeze(parameters),
+        returnType: normalizeManualHoverText(findFollowingManualElement(returnsHeading, ".code")?.textContent),
+        signature
+    });
+}
+
+async function mergeManualHoverMetadata(
+    identifierMap: Map<string, IdentifierMapEntry>,
+    manualRoot: string
+): Promise<void> {
+    const candidates = [...identifierMap.entries()].filter(
+        ([, entry]) => entry.hover === undefined && entry.manualPath?.endsWith(".htm") === true
+    );
+    const extractedEntries = await Core.runInParallelWithLimit(
+        candidates,
+        async ([identifier, entry]) => {
+            const html = await readManualText(manualRoot, path.posix.join("Manual/contents", entry.manualPath ?? ""));
+            const hover = extractManualHoverMetadata(identifier, html);
+            if (hover === null) {
+                return null;
+            }
+            return { entry, hover };
+        },
+        8
+    );
+    for (const extractedEntry of extractedEntries) {
+        if (extractedEntry === null) {
+            continue;
+        }
+        const { entry, hover } = extractedEntry;
+        entry.hover = hover;
+        entry.type = "function";
+        entry.legacyUsage = "call";
+    }
+}
+
+async function mergeCallableManualPages(
+    identifierMap: Map<string, IdentifierMapEntry>,
+    manualRoot: string,
+    manualBasenames: ReadonlyMap<string, string | null>
+): Promise<void> {
+    const manualPaths = [...new Set([...manualBasenames.values()].flatMap((value) => (value === null ? [] : [value])))];
+    const callablePages = await Core.runInParallelWithLimit(
+        manualPaths,
+        async (manualPath) => {
+            const html = await readManualText(manualRoot, path.posix.join("Manual/contents", manualPath));
+            const document = parseManualDocument(html);
+            const identifier = normalizeManualHoverText(document.querySelector("h1")?.textContent);
+            if (!IDENTIFIER_PATTERN.test(identifier)) {
+                return null;
+            }
+            const hover = extractManualHoverMetadata(identifier, html);
+            return hover === null ? null : { hover, identifier, manualPath };
+        },
+        8
+    );
+    for (const callablePage of callablePages) {
+        if (callablePage === null) {
+            continue;
+        }
+        mergeEntry(identifierMap, callablePage.identifier, {
+            deprecated: false,
+            hover: callablePage.hover,
+            legacyUsage: "call",
+            manualPath: callablePage.manualPath,
+            sources: ["manual:pages"],
+            tags: [callablePage.identifier],
+            type: "function"
+        });
+    }
+}
+
+async function canonicalizeIdentifierManualPaths(
+    identifierMap: Map<string, IdentifierMapEntry>,
+    manualRoot: string
+): Promise<Map<string, string | null>> {
+    const manualContentsPath = path.join(manualRoot, "Manual", "contents");
+    const manualBasenames = await collectManualHtmlBasenames(manualContentsPath);
+    for (const [identifier, entry] of identifierMap) {
+        entry.manualPath = resolveCanonicalManualPath(identifier, entry.manualPath, manualBasenames);
+    }
+    return manualBasenames;
 }
 
 function extractDeprecatedReplacementFromManualHtml(html: string): ManualDeprecatedReplacement | null {
@@ -954,48 +1117,53 @@ function mergeObsoleteIdentifierEntries(
 
 async function mergeDeprecatedReplacementMetadataFromManualPages(
     identifierMap: Map<string, IdentifierMapEntry>,
-    manualRoot: string
+    manualRoot: string,
+    manualBasenames: ReadonlyMap<string, string | null>
 ) {
     const manualContentsPath = path.join(manualRoot, "Manual", "contents");
-    const manualBasenames = await collectManualHtmlBasenames(manualContentsPath);
     const pageCache = new Map<string, string>();
-    const relativePagePaths = new Set<string>();
-
-    for (const [identifier, entry] of identifierMap.entries()) {
-        if (!entry.deprecated || entry.replacement) {
-            continue;
+    const unresolvedDeprecatedEntries = Array.from(identifierMap.entries()).reduce<
+        Array<{
+            identifier: string;
+            type: string;
+            legacyUsage: DeprecatedLegacyUsage | undefined;
+            relativePagePath: string;
+        }>
+    >((result, [identifier, entry]) => {
+        if (!entry.deprecated || entry.replacement !== undefined) {
+            return result;
         }
 
         const relativePagePath = manualBasenames.get(identifier);
-        if (relativePagePath === undefined || relativePagePath === null) {
-            continue;
+        if (relativePagePath === null || relativePagePath === undefined) {
+            return result;
         }
 
-        relativePagePaths.add(relativePagePath);
-    }
+        result.push({
+            identifier,
+            type: entry.type,
+            legacyUsage: entry.legacyUsage,
+            relativePagePath
+        });
+        return result;
+    }, []);
 
     const loadedPageEntries = await Promise.all(
-        Array.from(relativePagePaths, async (relativePagePath) => {
-            const pageHtml = await readFile(path.join(manualContentsPath, relativePagePath), "utf8");
-            return [relativePagePath, pageHtml] as const;
-        })
+        Array.from(
+            new Set(unresolvedDeprecatedEntries.map((entry) => entry.relativePagePath)),
+            async (relativePagePath) => {
+                const pageHtml = await readFile(path.join(manualContentsPath, relativePagePath), "utf8");
+                return [relativePagePath, pageHtml] as const;
+            }
+        )
     );
 
     for (const [relativePagePath, pageHtml] of loadedPageEntries) {
         pageCache.set(relativePagePath, pageHtml);
     }
 
-    for (const [identifier, entry] of identifierMap.entries()) {
-        if (!entry.deprecated || entry.replacement) {
-            continue;
-        }
-
-        const relativePagePath = manualBasenames.get(identifier);
-        if (relativePagePath === undefined || relativePagePath === null) {
-            continue;
-        }
-
-        const pageHtml = pageCache.get(relativePagePath);
+    for (const unresolvedEntry of unresolvedDeprecatedEntries) {
+        const pageHtml = pageCache.get(unresolvedEntry.relativePagePath);
         if (pageHtml === undefined) {
             continue;
         }
@@ -1005,12 +1173,12 @@ async function mergeDeprecatedReplacementMetadataFromManualPages(
             continue;
         }
 
-        mergeEntry(identifierMap, identifier, {
-            type: entry.type,
+        mergeEntry(identifierMap, unresolvedEntry.identifier, {
+            type: unresolvedEntry.type,
             sources: ["manual:deprecated-page"],
             replacement: replacement.replacement,
             replacementKind: replacement.replacementKind,
-            legacyUsage: entry.legacyUsage ?? (entry.type === "function" ? "call" : "identifier")
+            legacyUsage: unresolvedEntry.legacyUsage ?? (unresolvedEntry.type === "function" ? "call" : "identifier")
         });
     }
 }
@@ -1159,7 +1327,10 @@ async function buildIdentifierArtifact({ payloads, manualSource, manualCommitHas
         verbose,
         formatMessage: (duration) => `  Resolving deprecated replacement metadata completed in ${duration}.`
     });
-    await mergeDeprecatedReplacementMetadataFromManualPages(identifierMap, manualSource.root);
+    const manualBasenames = await canonicalizeIdentifierManualPaths(identifierMap, manualSource.root);
+    await mergeCallableManualPages(identifierMap, manualSource.root, manualBasenames);
+    await mergeManualHoverMetadata(identifierMap, manualSource.root);
+    await mergeDeprecatedReplacementMetadataFromManualPages(identifierMap, manualSource.root, manualBasenames);
     logReplacementMetadataCompletion();
 
     return createIdentifierArtifactPayload({
@@ -1190,6 +1361,7 @@ function sortIdentifierEntries(identifierMap) {
                 sources: data.sources ? [...data.sources].toSorted() : [],
                 tags: data.tags ? [...data.tags].toSorted() : [],
                 ...(data.manualPath ? { manualPath: data.manualPath } : {}),
+                ...(data.manualPath ? { manualUrl: createCanonicalManualUrl(identifier, data.manualPath) } : {}),
                 deprecated: data.deprecated,
                 ...(data.replacement ? { replacement: data.replacement } : {}),
                 ...(data.replacementKind && data.replacementKind !== "none"
@@ -1197,7 +1369,8 @@ function sortIdentifierEntries(identifierMap) {
                     : {}),
                 ...(data.legacyCategory ? { legacyCategory: data.legacyCategory } : {}),
                 ...(data.legacyUsage ? { legacyUsage: data.legacyUsage } : {}),
-                ...(data.diagnosticOwner ? { diagnosticOwner: data.diagnosticOwner } : {})
+                ...(data.diagnosticOwner ? { diagnosticOwner: data.diagnosticOwner } : {}),
+                ...(data.hover ? { hover: data.hover } : {})
             }
         ])
         .toSorted(([a], [b]) => a.localeCompare(b));
@@ -1252,7 +1425,7 @@ export async function runGenerateGmlIdentifiers({ command, workflow }: RunGenera
         quiet
     } = resolveGenerateIdentifierOptions(command);
 
-    const verboseState = quiet ? {} : { parsing: true };
+    const verboseState = resolveVerboseFlag({ quiet });
     const { workflowPathFilter, manualSource } = await prepareManualWorkflow({
         workflow,
         outputPath,
@@ -1294,11 +1467,16 @@ export async function runGenerateGmlIdentifiers({ command, workflow }: RunGenera
 }
 
 export const __test__ = Object.freeze({
+    applyFirstWin,
+    mergeEntry,
     parseArrayLiteral,
     collectManualArrayIdentifiers,
     assertManualIdentifierArray,
     extractDeprecatedReplacementFromManualHtml,
-    parseObsoleteIdentifierTableEntries
+    parseObsoleteIdentifierTableEntries,
+    resolveCanonicalManualPath,
+    createCanonicalManualUrl,
+    extractManualHoverMetadata
 });
 
 if (isMainModule(import.meta.url)) {

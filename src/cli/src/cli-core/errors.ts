@@ -6,7 +6,7 @@ import { asErrorLike } from "../shared/error-guards.js";
 
 const DEFAULT_INDENT = "  ";
 
-const CLI_USAGE_ERROR_BRAND = Symbol.for("prettier-plugin-gml/cli-usage-error");
+const CLI_USAGE_ERROR_BRAND = Symbol.for("gmloop/cli-usage-error");
 
 export interface ErrorWithMetadata extends Error {
     usage?: string | null;
@@ -106,9 +106,8 @@ function formatAggregateErrors(error: unknown, seen: Set<unknown>): string | nul
     }
 
     const aggregate = error as { errors: Array<unknown> };
-    const formatted = Core.compactArray(aggregate.errors.map((entry) => formatErrorValue(entry, seen))).map((text) =>
-        indentBlock(`- ${text.replaceAll("\n", "\n  ")}`)
-    );
+    const mapped: Array<string> = aggregate.errors.map((entry) => formatErrorValue(entry, seen));
+    const formatted = Core.compactArray(mapped).map((text) => indentBlock(`- ${text.replaceAll("\n", "\n  ")}`));
 
     if (formatted.length === 0) {
         return null;
@@ -320,4 +319,17 @@ export function handleCliError(error: unknown, { exitCode = 1, prefix }: HandleC
     }
 
     process.exit(exitCode);
+}
+
+/**
+ * Build a CLI command error handler that delegates to {@link handleCliError}
+ * with a fixed prefix and exit code.
+ *
+ * The returned handler matches the signature expected by
+ * {@link CliCommandRegistrationOptions.onError}; the command context is ignored
+ * because {@link handleCliError} already records the configured prefix in its
+ * output and terminates the process.
+ */
+export function createCliCommandErrorHandler(options: HandleCliErrorOptions = {}): (error: unknown) => never {
+    return (error: unknown) => handleCliError(error, options);
 }

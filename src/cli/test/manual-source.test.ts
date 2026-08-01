@@ -10,6 +10,7 @@ import { Core } from "@gmloop/core";
 import {
     describeManualSource,
     getManualRootMetadataPath,
+    readManualJson,
     readManualText,
     resolveManualSource,
     resolveManualSourceCommitHash
@@ -64,6 +65,27 @@ void test("readManualText returns manual asset contents", async (t) => {
 
     const contents = await readManualText(tempDir, path.join("Manual", "contents", "sample.txt"));
     assert.equal(contents, "hello world");
+});
+
+void test("readManualJson wraps parse failures with manual asset context", async (t) => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "manual-read-json-"));
+    const relativePath = path.join("Manual", "contents", "broken.json");
+    const absolutePath = path.join(tempDir, relativePath);
+
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    await fs.writeFile(absolutePath, "{ invalid", "utf8");
+
+    t.after(async () => {
+        await fs.rm(tempDir, { recursive: true, force: true });
+    });
+
+    await assert.rejects(
+        () => readManualJson(tempDir, relativePath),
+        (error: unknown) =>
+            error instanceof Error &&
+            error.message.includes("Manual asset 'Manual/contents/broken.json' did not contain valid JSON.") &&
+            error.message.includes("Failed to parse manual asset from Manual/contents/broken.json")
+    );
 });
 
 void test("describeManualSource includes package version", () => {

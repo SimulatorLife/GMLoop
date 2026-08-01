@@ -2,12 +2,13 @@ import { Core } from "@gmloop/core";
 import { Parser } from "@gmloop/parser";
 import { SourceCode } from "eslint";
 
-import { normalizeLintFilePath } from "../services/path-normalization.js";
+import { normalizeLintFilePath } from "./path-normalization.js";
 import {
     createLimitedRecoveryProjection,
     type InsertedArgumentSeparatorRecovery,
     mapRecoveredIndexToOriginal,
     type RecoveryMode,
+    type RecoveryProjection,
     type RecoveryTextInsertion
 } from "./recovery.js";
 
@@ -18,6 +19,41 @@ type GMLAstNode = {
     tokens: ReadonlyArray<unknown>;
     sourceType: string;
 };
+
+/**
+ * Abstract factory for creating GML parser instances.
+ *
+ * High-level language wiring consumes this contract instead of directly
+ * instantiating `new Parser.GMLParser(...)`. Concrete adapters are assembled
+ * behind this boundary so the language layer remains decoupled from the
+ * parser workspace implementation.
+ */
+export type ParserFactory = (source: string) => {
+    parse: () => GMLAstNode;
+};
+
+/**
+ * Injects a custom parser factory for the GML language.
+ *
+ * This enables test doubles and alternate parser implementations without
+ * modifying the language definition itself. The factory is consumed by
+ * `parseAst` when the language parses source text.
+ *
+ * @param factory - A function that accepts source text and returns a
+ *   parser instance with a `parse()` method producing a GML AST.
+ */
+export function setParserFactory(factory: ParserFactory): void {
+    parserFactory = factory;
+}
+
+let parserFactory: ParserFactory = (source: string) =>
+    new Parser.GMLParser(source, {
+        astFormat: "gml",
+        asJSON: false,
+        getComments: true,
+        getLocations: true,
+        simplifyLocations: false
+    });
 
 type GMLLanguageOptions = {
     recovery: "none" | "limited";
@@ -189,28 +225,32 @@ function readSourceText(context: GMLLanguageContext): string {
         return decodeFileBody(context.body);
     }
 
-    if (typeof context.text === "string") {
-        return context.text;
-    }
-
-    if (typeof context.source === "string") {
-        return context.source;
+    const sourceText = readFirstPresentStringValue(context, ["text", "source"]);
+    if (sourceText !== null) {
+        return sourceText;
     }
 
     return "";
 }
 
+function readFirstPresentStringValue(
+    context: GMLLanguageContext,
+    keys: ReadonlyArray<keyof GMLLanguageContext>
+): string | null {
+    for (const key of keys) {
+        const candidate = context[key];
+        if (typeof candidate === "string") {
+            return candidate;
+        }
+    }
+
+    return null;
+}
+
 function readFilename(context: GMLLanguageContext): string {
-    if (typeof context.path === "string" && context.path.length > 0) {
-        return context.path;
-    }
-
-    if (typeof context.filePath === "string" && context.filePath.length > 0) {
-        return context.filePath;
-    }
-
-    if (typeof context.filename === "string" && context.filename.length > 0) {
-        return context.filename;
+    const filename = readFirstPresentStringValue(context, ["path", "filePath", "filename"]);
+    if (filename !== null && filename.length > 0) {
+        return filename;
     }
 
     return "<text>";
@@ -236,7 +276,7 @@ function readRecoveryMode(parseContext: { languageOptions?: unknown }): Recovery
 }
 
 function toIndexedLocation(value: unknown): IndexedLocation | null {
-    return value && typeof value === "object" ? (value as IndexedLocation) : null;
+    return value && typeof value === "object" ? value : null;
 }
 
 function createLineStartIndexMap(sourceText: string): LineStartIndexMap {
@@ -466,16 +506,70 @@ function getErrorLineColumn(error: unknown): { line: number; column: number; mes
     };
 }
 
+/**
+ * Builds the parse-failure channel for the GML language. Centralises the
+ * `{ok: false, errors: [...]}` shape so every failure branch in
+ * {@link gmlLanguage.parse} reports parse errors identically.
+ */
+function buildParseFailureResult(error: unknown): ParseFailureResult {
+    const details = getErrorLineColumn(error);
+    return {
+        ok: false,
+        errors: [
+            {
+                message: details.message,
+                line: details.line,
+                column: details.column
+            }
+        ]
+    };
+}
+
+type ParseSuccessInputs = {
+    parseSource: string;
+    sourceText: string;
+    filePath: string;
+    insertions: ReadonlyArray<InsertedArgumentSeparatorRecovery>;
+    textInsertions: ReadonlyArray<RecoveryTextInsertion>;
+};
+
+/**
+ * Runs the AST post-processing pipeline (`parseAst` + case normalisation +
+ * location projection + range assignment) and packages the result as the
+ * ESLint parse-success channel. Both the strict and the recovered parse
+ * branches share this finalizer so they cannot drift apart.
+ */
+function finalizeParseSuccess(inputs: ParseSuccessInputs): ParseSuccessResult {
+    const ast = parseAst(inputs.parseSource);
+    normalizeSwitchCaseConsequentShape(ast);
+    projectLocationsToOriginalSource(ast, inputs.sourceText, inputs.textInsertions);
+    assignRangesRecursively(ast);
+    return {
+        ok: true,
+        ast,
+        parserServices: createParserServices(inputs.filePath, Object.freeze(inputs.insertions)),
+        visitorKeys: GML_VISITOR_KEYS
+    };
+}
+
+/**
+ * Returns `true` when the recovery projection leaves the original source
+ * untouched (no separator insertions, no text rewrites, and an unchanged
+ * parse source). When the projection is a no-op there is nothing for the
+ * recovered parse branch to gain over the strict attempt.
+ */
+function recoveryProjectionIsIdentity(projection: RecoveryProjection, sourceText: string): boolean {
+    return (
+        projection.insertions.length === 0 &&
+        projection.textInsertions.length === 0 &&
+        projection.parseSource === sourceText
+    );
+}
+
 export const GML_VISITOR_KEYS = Object.freeze({}) as Record<string, string[]>;
 
 function parseAst(text: string): GMLAstNode {
-    const parser = new Parser.GMLParser(text, {
-        astFormat: "gml",
-        asJSON: false,
-        getComments: true,
-        getLocations: true,
-        simplifyLocations: false
-    });
+    const parser = parserFactory(text);
     return normalizeProgramShape(parser.parse());
 }
 
@@ -494,75 +588,38 @@ export const gmlLanguage = Object.freeze({
         const filePath = normalizeLintFilePath(readFilename(file));
         const recoveryMode = readRecoveryMode(parseContext);
 
+        let strictError: unknown;
         try {
-            const ast = parseAst(sourceText);
-            normalizeSwitchCaseConsequentShape(ast);
-            projectLocationsToOriginalSource(ast, sourceText, Object.freeze([]));
-            assignRangesRecursively(ast);
-            return {
-                ok: true,
-                ast,
-                parserServices: createParserServices(filePath, Object.freeze([])),
-                visitorKeys: GML_VISITOR_KEYS
-            };
-        } catch (strictParseError) {
-            if (recoveryMode === "none") {
-                const details = getErrorLineColumn(strictParseError);
-                return {
-                    ok: false,
-                    errors: [
-                        {
-                            message: details.message,
-                            line: details.line,
-                            column: details.column
-                        }
-                    ]
-                };
-            }
+            return finalizeParseSuccess({
+                parseSource: sourceText,
+                sourceText,
+                filePath,
+                insertions: Object.freeze([]),
+                textInsertions: Object.freeze([])
+            });
+        } catch (error) {
+            strictError = error;
+        }
 
-            const recoveryProjection = createLimitedRecoveryProjection(sourceText, strictParseError);
-            if (
-                recoveryProjection.insertions.length === 0 &&
-                recoveryProjection.textInsertions.length === 0 &&
-                recoveryProjection.parseSource === sourceText
-            ) {
-                const details = getErrorLineColumn(strictParseError);
-                return {
-                    ok: false,
-                    errors: [
-                        {
-                            message: details.message,
-                            line: details.line,
-                            column: details.column
-                        }
-                    ]
-                };
-            }
+        if (recoveryMode === "none") {
+            return buildParseFailureResult(strictError);
+        }
 
-            try {
-                const ast = parseAst(recoveryProjection.parseSource);
-                normalizeSwitchCaseConsequentShape(ast);
-                projectLocationsToOriginalSource(ast, sourceText, recoveryProjection.textInsertions);
-                assignRangesRecursively(ast);
-                return {
-                    ok: true,
-                    ast,
-                    parserServices: createParserServices(filePath, Object.freeze(recoveryProjection.insertions)),
-                    visitorKeys: GML_VISITOR_KEYS
-                };
-            } catch {
-                const details = getErrorLineColumn(strictParseError);
-                return {
-                    ok: false,
-                    errors: [
-                        {
-                            message: details.message,
-                            line: details.line,
-                            column: details.column
-                        }
-                    ]
-                };
-            }
+        const recoveryProjection = createLimitedRecoveryProjection(sourceText, strictError);
+        if (recoveryProjectionIsIdentity(recoveryProjection, sourceText)) {
+            return buildParseFailureResult(strictError);
+        }
+
+        try {
+            return finalizeParseSuccess({
+                parseSource: recoveryProjection.parseSource,
+                sourceText,
+                filePath,
+                insertions: Object.freeze(recoveryProjection.insertions),
+                textInsertions: recoveryProjection.textInsertions
+            });
+        } catch {
+            return buildParseFailureResult(strictError);
         }
     },
     createSourceCode(

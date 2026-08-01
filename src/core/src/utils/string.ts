@@ -46,12 +46,16 @@ export function isNonEmptyString(value: unknown): value is string {
  * identifiers and option values so callers can accept padded input without
  * introducing bespoke trimming logic.
  *
- * The previous micro-optimization attempted to avoid allocating a trimmed string
- * by checking character codes <= 32, but this incorrectly classified control
- * characters (codes 0-31 except tab/newline/etc.) as whitespace and failed to
- * handle Unicode whitespace (e.g., non-breaking space U+00A0, line separator U+2028).
- * We now delegate to String.prototype.trim() to match JavaScript's exact whitespace
- * handling, sacrificing the micro-optimization for correctness.
+ * The implementation walks characters from both ends simultaneously and
+ * returns a boolean without allocating a trimmed copy. To preserve the exact
+ * whitespace semantics of {@link String.prototype.trim} (which strips TAB
+ * `9`, LF `10`, VT `11`, FF `12`, CR `13`, SPACE `32`, plus Unicode
+ * WhiteSpace and LineTerminator code points such as NBSP `U+00A0` and line
+ * separator `U+2028`), the scan treats only those ASCII whitespace codes
+ * as trimmable; any time an inspected code is outside that set we check
+ * whether it is still ASCII (definite content) and otherwise fall back to
+ * `String.prototype.trim()` so non-ASCII whitespace is still recognised
+ * correctly.
  *
  * @param {unknown} value Candidate value to evaluate.
  * @returns {value is string} `true` when {@link value} is a non-empty string
@@ -62,9 +66,45 @@ export function isNonEmptyTrimmedString(value: unknown): value is string {
         return false;
     }
 
-    // Delegate to String.prototype.trim() to ensure we match JavaScript's exact
-    // whitespace handling, including Unicode whitespace characters
-    return value.trim().length > 0;
+    const length = value.length;
+    if (length === 0) {
+        return false;
+    }
+
+    // Walk inward from both ends. When both ends are ASCII whitespace we can
+    // advance two positions per iteration; when either end reveals a
+    // non-whitespace ASCII character the trimmed string is non-empty; when an
+    // inspected code is outside the ASCII range we defer to the native
+    // String.prototype.trim() so Unicode whitespace (NBSP, line separator,
+    // etc.) is still classified correctly.
+    let start = 0;
+    let end = length - 1;
+
+    while (start <= end) {
+        const headCode = value.charCodeAt(start);
+        const tailCode = value.charCodeAt(end);
+        const headIsAsciiWhitespace = (headCode >= 9 && headCode <= 13) || headCode === 32;
+        const tailIsAsciiWhitespace = (tailCode >= 9 && tailCode <= 13) || tailCode === 32;
+
+        if (headIsAsciiWhitespace && tailIsAsciiWhitespace) {
+            start += 1;
+            end -= 1;
+            continue;
+        }
+
+        // At least one end exposes a non-whitespace character. If the
+        // revealed code is non-ASCII it could be Unicode whitespace (NBSP,
+        // line separator, etc.), so fall back to the native trim() for
+        // correctness; otherwise it is definitely content and we can return
+        // true without any allocation.
+        if (headCode >= 128 || tailCode >= 128) {
+            return value.trim().length > 0;
+        }
+
+        return true;
+    }
+
+    return false;
 }
 
 /**
@@ -230,8 +270,28 @@ const CHAR_CODE_UPPER_END = 90; // Z
 const CHAR_CODE_LOWER_START = 97; // a
 const CHAR_CODE_LOWER_END = 122; // z
 const CHAR_CODE_UNDERSCORE = 95; // _
-const OBJECT_TO_STRING = Object.prototype.toString.bind(Object.prototype);
 const STARTS_WITH_VOWEL_PATTERN = /^[aeiou]/i;
+const LEADING_NUMERIC_TOKEN_PATTERN = /^\d+/;
+const NUMERIC_TOKENS_REQUIRING_INDEFINITE_AN = new Set(["11", "18"]);
+
+function startsWithIndefiniteAnSound(label: string): boolean {
+    if (STARTS_WITH_VOWEL_PATTERN.test(label)) {
+        return true;
+    }
+
+    const numericPrefix = label.match(LEADING_NUMERIC_TOKEN_PATTERN)?.[0];
+    if (!numericPrefix) {
+        return false;
+    }
+
+    if (numericPrefix.startsWith("8")) {
+        return true;
+    }
+
+    // "11" and "18" are pronounced with an initial vowel sound ("eleven",
+    // "eighteen"), so they conventionally pair with "an".
+    return NUMERIC_TOKENS_REQUIRING_INDEFINITE_AN.has(numericPrefix);
+}
 
 function normalizeIndefiniteArticle(label) {
     if (typeof label !== "string") {
@@ -243,7 +303,7 @@ function normalizeIndefiniteArticle(label) {
         return null;
     }
 
-    return `${STARTS_WITH_VOWEL_PATTERN.test(normalized) ? "an" : "a"} ${normalized}`;
+    return `${startsWithIndefiniteAnSound(normalized) ? "an" : "a"} ${normalized}`;
 }
 
 function toSafeString(value: unknown): string {
@@ -255,14 +315,6 @@ function toSafeString(value: unknown): string {
         return value;
     }
 
-    if (typeof value === "object") {
-        const toString = (value as { toString?: unknown }).toString;
-        if (typeof toString === "function" && toString !== Object.prototype.toString) {
-            return (toString as (this: unknown) => string).call(value);
-        }
-        return OBJECT_TO_STRING(value);
-    }
-
     if (typeof value === "number" || typeof value === "bigint" || typeof value === "boolean") {
         return String(value);
     }
@@ -271,8 +323,18 @@ function toSafeString(value: unknown): string {
         return value.toString();
     }
 
-    const unexpected: never = value as never;
-    return String(unexpected);
+    // `typeof value === "object"` — invoke the custom toString if the object's
+    // prototype chain provides one; fall back to Object.prototype.toString for
+    // plain objects so callers receive "[object Object]" rather than silently
+    // dropping to a generic string that masks the actual type.
+    const obj = value as object;
+    const toString = (obj as { toString?: () => string }).toString;
+    if (typeof toString === "function" && toString !== Object.prototype.toString) {
+        return toString.call(obj);
+    }
+    // Plain object: fall back to the generic tag. The preceding guard ensures
+    // method is Object.prototype.toString here, so using it directly is safe.
+    return Object.prototype.toString.call(value);
 }
 
 /**
@@ -521,7 +583,8 @@ export function capitalize(value?: unknown): string {
  * @returns {RegExp} A character-class-based regular expression suitable for
  *          use with `String#split`.
  */
-export function createListSplitPattern(separators, { includeWhitespace = false } = {}) {
+export function createListSplitPattern(separators, options?: { includeWhitespace?: boolean } | null) {
+    const includeWhitespace = options?.includeWhitespace === true;
     const entries: Array<{ pattern: string; length: number; order: number }> = [];
     const seenPatterns = new Set();
 
@@ -725,4 +788,149 @@ export function toNormalizedLowerCaseSet(
     });
 
     return new Set(normalizedValues.map((entry) => entry.toLowerCase()));
+}
+
+/**
+ * Determine whether a character is a valid identifier start character in GML.
+ * Matches any letter (A-Z, a-z) or underscore (_).
+ *
+ * @param {unknown} character Candidate character to evaluate.
+ * @returns {boolean} `true` when the character can start an identifier.
+ */
+export function isIdentifierStartCharacter(character: unknown): boolean {
+    if (typeof character !== "string" || character.length === 0) {
+        return false;
+    }
+
+    const code = character.charCodeAt(0);
+    return (
+        (code >= 65 && code <= 90) || // A-Z
+        (code >= 97 && code <= 122) || // a-z
+        code === 95 // _
+    );
+}
+
+/**
+ * Determine whether a logical NOT alias ("not" or "NOT", etc.) is present at the
+ * given index and acts as a unary negation operator.
+ *
+ * NOTE: GML does not support "not" as a built-in/reserved logical operator; only
+ * "!" is valid. Because "not" is not a reserved keyword, users are allowed to define
+ * variables or identifiers named "not" (e.g. `var not = 0;`).
+ *
+ * To tolerate legacy/invalid GML and successfully parse it (allowing linter auto-fixes),
+ * the parser preprocessor rewrites logical "not" usages to "!".
+ *
+ * This function resolves the variable/operator ambiguity by checking if the word "not"
+ * is followed by a token that can start a GML expression (like digits, strings, hex,
+ * array/struct literals, negation/tilde, or parenthesized expressions separated by space),
+ * while excluding binary operators and punctuation (such as `+`, `-`, `=`, `==`, `;`, `)`)
+ * that can only follow a variable.
+ *
+ * @param {string} sourceText GML source text.
+ * @param {number} startIndex Index where the alias starts.
+ * @returns {boolean} `true` when the alias is a logical NOT operator.
+ */
+export function isLogicalNotOperatorAliasAt(sourceText: string, startIndex: number): boolean {
+    const aliasEnd = startIndex + 3; // "not".length
+    if (aliasEnd > sourceText.length) {
+        return false;
+    }
+
+    const keyword = sourceText.slice(startIndex, aliasEnd);
+    if (keyword.toLowerCase() !== "not") {
+        return false;
+    }
+
+    if (!isIdentifierBoundaryCharacter(sourceText[startIndex - 1])) {
+        return false;
+    }
+
+    if (!isIdentifierBoundaryCharacter(sourceText[aliasEnd])) {
+        return false;
+    }
+
+    // Find the previous non-whitespace character on the line
+    let prevCursor = startIndex - 1;
+    let previousCharacterOnLine: string | undefined;
+    while (prevCursor >= 0) {
+        const char = sourceText[prevCursor];
+        if (char === "\n" || char === "\r") {
+            break;
+        }
+        if (char !== " " && char !== "\t") {
+            previousCharacterOnLine = char;
+            break;
+        }
+        prevCursor -= 1;
+    }
+
+    if (previousCharacterOnLine === '"' || previousCharacterOnLine === "'" || previousCharacterOnLine === "`") {
+        return false;
+    }
+
+    // Find the next non-whitespace character
+    let operandIndex = aliasEnd;
+    while (operandIndex < sourceText.length) {
+        const char = sourceText[operandIndex];
+        if (char !== " " && char !== "\t" && char !== "\n" && char !== "\r") {
+            break;
+        }
+        operandIndex += 1;
+    }
+
+    const nextTokenStart = sourceText[operandIndex];
+    if (!nextTokenStart) {
+        return false;
+    }
+
+    if (nextTokenStart === "(") {
+        // If '(' is immediately adjacent to 'not' (no whitespace), it is a function call
+        if (operandIndex === aliasEnd) {
+            return false;
+        }
+        return true;
+    }
+
+    if (isIdentifierStartCharacter(nextTokenStart)) {
+        return true;
+    }
+
+    const code = nextTokenStart.charCodeAt(0);
+    const isDigit = code >= 48 && code <= 57;
+
+    // Expression start symbols: digits, strings, hex, unary negation/not, and struct braces
+    if (
+        isDigit ||
+        nextTokenStart === '"' ||
+        nextTokenStart === "$" ||
+        nextTokenStart === "!" ||
+        nextTokenStart === "~" ||
+        nextTokenStart === "{"
+    ) {
+        return true;
+    }
+
+    if (nextTokenStart === "[") {
+        // If '[' is immediately adjacent to 'not' (no whitespace), it is an array index access
+        if (operandIndex === aliasEnd) {
+            return false;
+        }
+        return true;
+    }
+
+    if (nextTokenStart === ".") {
+        // Handle float literals like `.5` vs member access `not.field`.
+        // A float literal requires preceding whitespace and a digit following the dot.
+        if (operandIndex > aliasEnd) {
+            const nextChar = sourceText[operandIndex + 1];
+            if (nextChar) {
+                const nextCode = nextChar.charCodeAt(0);
+                return nextCode >= 48 && nextCode <= 57;
+            }
+        }
+        return false;
+    }
+
+    return false;
 }

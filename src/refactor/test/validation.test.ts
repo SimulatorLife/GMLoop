@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { ConflictType, type SymbolOccurrence, type SymbolResolver } from "../src/types.js";
 import {
     batchValidateScopeConflicts,
     detectCircularRenames,
@@ -10,7 +9,8 @@ import {
     detectDuplicateTargetNames,
     detectRenameConflicts,
     validateRenameStructure
-} from "../src/validation.js";
+} from "../src/rename/rename-validation.js";
+import { ConflictType, type SemanticGapProvider, type SymbolOccurrence, type SymbolResolver } from "../src/types.js";
 
 void describe("validateRenameStructure", () => {
     void test("returns error for missing symbolId", async () => {
@@ -67,9 +67,9 @@ void describe("validateRenameStructure", () => {
         assert.ok(errors.some((e) => e.includes("Invalid") || e.includes("identifier") || e.includes("valid")));
     });
 
-    void test("allows reserved keywords (semantic check happens later)", async () => {
+    void test("allows reserved GameMaker identifiers (semantic check happens later)", async () => {
         // validateRenameStructure only checks syntax, not semantics
-        // Reserved keyword checking is done by detectRenameConflicts
+        // Reserved GameMaker identifier checking is done by detectRenameConflicts
         const errors = await validateRenameStructure("gml/script/scr_test", "if", null);
         assert.deepEqual(errors, []);
     });
@@ -383,6 +383,14 @@ void describe("batchValidateScopeConflicts", () => {
 });
 
 void describe("detectRenameConflicts", () => {
+    void test("flags supplemental reserved identifiers even without semantic keyword providers", async () => {
+        const conflicts = await detectRenameConflicts("old_name", "poisson_disk_sample", [], null, null);
+
+        assert.equal(conflicts.length, 1);
+        assert.equal(conflicts[0].type, ConflictType.RESERVED);
+        assert.ok(conflicts[0].message.includes("reserved GameMaker identifier"));
+    });
+
     void test("deduplicates shadow conflicts per file in the same scope", async () => {
         const occurrences: Array<SymbolOccurrence> = [
             { path: "scripts/player.gml", start: 0, end: 5, scopeId: "scope-1" },
@@ -398,6 +406,42 @@ void describe("detectRenameConflicts", () => {
         assert.equal(conflicts.length, 1);
         assert.equal(conflicts[0].type, ConflictType.SHADOW);
         assert.equal(conflicts[0].path, "scripts/player.gml");
+    });
+
+    void test("reports typed semantic gaps as blocking conflicts", async () => {
+        const resolver: Partial<SymbolResolver> & Partial<SemanticGapProvider> = {
+            checkSemanticGaps: () => [
+                {
+                    message: "An ambiguous reference prevents this rename.",
+                    path: "scripts/player.gml"
+                }
+            ]
+        };
+
+        const conflicts = await detectRenameConflicts("old_name", "new_name", [], resolver, null);
+
+        assert.deepEqual(conflicts, [
+            {
+                type: ConflictType.SEMANTIC_GAP,
+                message: "An ambiguous reference prevents this rename.",
+                path: "scripts/player.gml"
+            }
+        ]);
+    });
+
+    void test("applies case-sensitive checks to reserved keywords", async () => {
+        // Lowercase "lerp" is a reserved function name in GML and should trigger a conflict
+        const lowercaseConflicts = await detectRenameConflicts("old_name", "lerp", [], null, null);
+        assert.equal(lowercaseConflicts.length, 1, "lowercase 'lerp' should trigger a RESERVED conflict");
+        assert.equal(lowercaseConflicts[0].type, ConflictType.RESERVED);
+
+        // Uppercase "LERP" does not conflict with the built-in lowercase "lerp" function and should not trigger a conflict
+        const uppercaseConflicts = await detectRenameConflicts("old_name", "LERP", [], null, null);
+        assert.equal(uppercaseConflicts.length, 0, "uppercase 'LERP' should not trigger a conflict");
+
+        // Custom symbol with name "Lerp" (capital L) is not a reserved built-in keyword and should be allowed to be renamed
+        const oldNameConflicts = await detectRenameConflicts("Lerp", "new_name", [], null, null);
+        assert.equal(oldNameConflicts.length, 0, "renaming symbol 'Lerp' should not trigger a conflict");
     });
 });
 
@@ -495,6 +539,21 @@ void describe("detectDuplicateTargetNames", () => {
         assert.equal(result.length, 1);
         assert.equal(result[0].newName, "scr_collision");
         assert.deepEqual([...result[0].symbolIds].sort(), ["gml/script/scr_a", "gml/script/scr_b"]);
+    });
+
+    void test("allows coupled script resource and callable renames to share a target name", () => {
+        const result = detectDuplicateTargetNames([
+            { symbolId: "gml/scripts/Attack", newName: "attack" },
+            { symbolId: "gml/script/Attack", newName: "attack" },
+            { symbolId: "gml/script/OtherAttack", newName: "attack" }
+        ]);
+
+        assert.deepEqual(result, [
+            {
+                newName: "attack",
+                symbolIds: ["gml/scripts/Attack", "gml/script/OtherAttack"]
+            }
+        ]);
     });
 
     void test("skips entries with invalid (non-normalizable) newName", () => {

@@ -1,0 +1,64 @@
+{
+  "search.exclude": {
+    "tmp/": true,
+    "**/package-lock.json": true,
+    "**/pnpm-lock.yaml": true,
+    "**/node_modules": true,
+    "node_modules": true,
+    "**/dist": true,
+    "dist": true,
+    "**/build": true,
+    ".pnpm-store/": true,
+    ".eslintcache/": true,
+    "**/playwright*": true
+  },
+  "editor.detectIndentation": false,
+  "editor.formatOnSave": true,
+  "editor.formatOnPaste": true,
+  "[json]": {
+    "editor.insertSpaces": true,
+    "editor.tabSize": 2
+  },
+  "[jsonc]": {
+    "editor.insertSpaces": true,
+    "editor.tabSize": 2
+  },
+  "[yaml]": {
+    "editor.insertSpaces": true,
+    "editor.tabSize": 2
+  },
+  "[typescript]": {
+    "editor.insertSpaces": true,
+    "editor.tabSize": 4
+  },
+  "github.copilot.chat.mcp.enabled": true,
+  "github.copilot.chat.mcp.servers": {
+    "gmloop-mcp": {
+      "command": "node",
+      "args": [
+        "${workspaceFolder}/src/mcp/dist/src/main.js"
+      ]
+    },
+    "lsp": {
+      "type": "stdio",
+      "command": "pnpm",
+      "tools": [
+        "*"
+      ],
+      "args": [
+        "exec",
+        "lsp-mcp-server"
+      ]
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "tools": [
+        "*"
+      ],
+      "args": [
+        "@playwright/mcp@latest"
+      ]
+    }
+  }
+}

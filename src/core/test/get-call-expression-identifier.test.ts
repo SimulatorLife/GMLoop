@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { getCallExpressionIdentifier, getCallExpressionIdentifierName } from "../src/ast/node-helpers.js";
+import { getCallExpressionIdentifier, getCallExpressionIdentifierName } from "../src/ast/node-helpers/index.js";
 
 void describe("getCallExpressionIdentifier", () => {
     void it("returns the identifier node when the callee is a named identifier", () => {

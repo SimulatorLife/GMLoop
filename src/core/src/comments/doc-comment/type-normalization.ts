@@ -5,13 +5,13 @@ const STRING_TYPE = "string" as const;
 
 const JSDOC_REPLACEMENTS = {
     "@func": "@function",
+    "@funct": "@function",
     "@method": "@function",
     "@yield": "@returns",
     "@yields": "@returns",
     "@return": "@returns",
     "@output": "@returns",
     "@outputs": "@returns",
-    "@desc": "@description",
     "@arg": "@param",
     "@argument": "@param",
     "@params": "@param",
@@ -309,8 +309,7 @@ export function normalizeGameMakerType(typeText: string) {
 
             if (typeof normalizedValue === STRING_TYPE) {
                 const canonicalPrefix = docCommentTypeNormalization.getCanonicalSpecifierName(normalizedValue) as
-                    | string
-                    | null;
+                    string | null;
 
                 if (typeof canonicalPrefix === "string" && isDotSeparatedTypeSpecifierPrefix(index)) {
                     normalizedValue = canonicalPrefix;
@@ -331,7 +330,11 @@ export function normalizeGameMakerType(typeText: string) {
             const next = segments[index + 1];
             const nextToken = findNextNonWhitespaceSegment(index + 1);
 
-            if (nextToken && nextToken.type === "separator" && /^[[(<>{})]/.test(nextToken.value.trim())) {
+            if (
+                nextToken &&
+                nextToken.type === "separator" &&
+                /^[[(<>{})]/.test(getNonEmptyTrimmedString(nextToken.value) ?? "")
+            ) {
                 continue;
             }
 

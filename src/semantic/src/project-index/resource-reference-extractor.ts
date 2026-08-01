@@ -1,6 +1,5 @@
-import { Core } from "@gmloop/core";
+import { Core, type ProjectMetadataSchemaName } from "@gmloop/core";
 
-import { type ProjectMetadataSchemaName, resolveProjectMetadataSchemaName } from "../project-metadata/yy-adapter.js";
 import { isProjectManifestPath, matchProjectResourceMetadataExtension } from "./constants.js";
 import { normalizeProjectResourcePath } from "./path-normalization.js";
 
@@ -13,6 +12,7 @@ type AssetReferenceCandidate = {
 const DEFAULT_REFERENCE_KEYS = Object.freeze(
     new Set<string>([
         "id",
+        "Id",
         "roomId",
         "objectId",
         "spriteId",
@@ -30,18 +30,13 @@ const DEFAULT_REFERENCE_KEYS = Object.freeze(
     ])
 );
 
-const PROJECT_REFERENCE_KEYS = Object.freeze(new Set<string>(["id", "roomId"]));
-
-const RESOURCE_REFERENCE_KEYS_BY_SCHEMA = Object.freeze({
-    project: PROJECT_REFERENCE_KEYS
-});
+const RESOURCE_REFERENCE_KEYS_BY_SCHEMA: Partial<Record<ProjectMetadataSchemaName, ReadonlySet<string>>> =
+    Object.freeze({});
 
 function getReferenceKeySet(schemaName: ProjectMetadataSchemaName | null): ReadonlySet<string> {
-    if (!schemaName) {
-        return DEFAULT_REFERENCE_KEYS;
-    }
-
-    return RESOURCE_REFERENCE_KEYS_BY_SCHEMA[schemaName] ?? DEFAULT_REFERENCE_KEYS;
+    return schemaName
+        ? (RESOURCE_REFERENCE_KEYS_BY_SCHEMA[schemaName] ?? DEFAULT_REFERENCE_KEYS)
+        : DEFAULT_REFERENCE_KEYS;
 }
 
 function extractTerminalPropertyName(propertyPath: string): string | null {
@@ -155,6 +150,27 @@ function collectProjectManifestReferenceCandidates(root: Record<string, unknown>
         }
     }
 
+    for (const textureGroupCollectionName of ["TextureGroups", "textureGroups"]) {
+        const textureGroups = root[textureGroupCollectionName];
+        if (!Array.isArray(textureGroups)) {
+            continue;
+        }
+
+        for (const [index, textureGroup] of textureGroups.entries()) {
+            if (!Core.isObjectLike(textureGroup)) {
+                continue;
+            }
+
+            const groupReference = Core.isObjectLike(textureGroup.id) ? textureGroup.id : textureGroup;
+            pushAssetReferenceCandidate(
+                collected,
+                `${textureGroupCollectionName}.${index}.path`,
+                groupReference.path,
+                groupReference.name
+            );
+        }
+    }
+
     return collected;
 }
 
@@ -162,10 +178,6 @@ function collectAssetReferenceCandidates(
     root: Record<string, unknown>,
     schemaName: ProjectMetadataSchemaName | null
 ): Array<AssetReferenceCandidate> {
-    if (schemaName === "project") {
-        return collectProjectManifestReferenceCandidates(root);
-    }
-
     const acceptedReferenceKeys = getReferenceKeySet(schemaName);
     const collected: Array<AssetReferenceCandidate> = [];
     const stack: Array<{ value: Record<string, unknown> | Array<unknown>; path: string }> = [{ value: root, path: "" }];
@@ -208,6 +220,12 @@ function collectAssetReferenceCandidates(
 
 /**
  * Extract resource-to-resource metadata references from a parsed .yy/.yyp document.
+ *
+ * Project manifest files (.yyp) are handled via a dedicated collector that
+ * extracts references from top-level arrays (resources, RoomOrderNodes, Options,
+ * Folders, TextureGroups) using their structural shape rather than the generic schema-driven
+ * traversal. The @bscotch/yy "project" schema is intentionally avoided for
+ * `.yyp` files to prevent data loss, so manifest detection is done by file path.
  */
 export function extractAssetReferencesFromMetadataDocument({
     document,
@@ -218,8 +236,12 @@ export function extractAssetReferencesFromMetadataDocument({
     sourcePath: string;
     projectRoot: string;
 }) {
-    const schemaName = resolveProjectMetadataSchemaName(sourcePath, document.resourceType);
-    const collected = collectAssetReferenceCandidates(document, schemaName);
+    const collected = isProjectManifestPath(sourcePath)
+        ? collectProjectManifestReferenceCandidates(document)
+        : collectAssetReferenceCandidates(
+              document,
+              Core.resolveProjectMetadataSchemaName(sourcePath, document.resourceType)
+          );
 
     return collected
         .map((candidate) => {

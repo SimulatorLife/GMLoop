@@ -10,6 +10,13 @@ export interface CommanderConfigureOutputOptions {
     outputError?: (...args: Array<unknown>) => unknown;
 }
 
+export interface CommanderOptionLike {
+    long?: string;
+    short?: string;
+    flags?: string;
+    description?: string;
+}
+
 export interface CommanderUsageProvider {
     helpInformation?: () => string;
     usage?: () => string;
@@ -20,6 +27,7 @@ export type CommanderHookListener = (...args: Array<unknown>) => unknown;
 
 export interface CommanderLifecycle {
     hook?: (event: string, listener: CommanderHookListener) => unknown;
+    on?: (event: string, listener: CommanderHookListener) => unknown;
 }
 
 export interface CommanderAddCommandOptions {
@@ -31,6 +39,7 @@ export type CommanderActionHandler = (...args: Array<unknown>) => unknown;
 export interface CommanderCommandHost extends CommanderUsageProvider, CommanderLifecycle {
     addCommand?: (command: CommanderCommandHost, options?: CommanderAddCommandOptions) => unknown;
     action?: (handler: CommanderActionHandler) => unknown;
+    outputHelp?: (contextOptions?: { error?: boolean }) => unknown;
 }
 
 /**
@@ -83,4 +92,7 @@ export interface CommanderOptionSetter {
  * interface they need (CommanderExecutor, CommanderConfigurator,
  * CommanderOptionSetter) rather than this composite interface when possible.
  */
-export interface CommanderCommandLike extends CommanderExecutor, CommanderConfigurator, CommanderOptionSetter {}
+export interface CommanderCommandLike extends CommanderExecutor, CommanderConfigurator, CommanderOptionSetter {
+    name?: () => string;
+    options?: ReadonlyArray<CommanderOptionLike>;
+}

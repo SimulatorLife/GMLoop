@@ -1,11 +1,4 @@
 /**
- * Shared server contracts used by the CLI's HTTP and WebSocket modules.
- *
- * Keeping these types at the directory export surface avoids a fragmented
- * single-purpose leaf module and makes the server concept easier to discover.
- */
-
-/**
  * Network endpoint information for a running server.
  *
  * Provides address and URL details needed for logging, diagnostics,
@@ -26,3 +19,5 @@ export interface ServerEndpoint {
 export interface ServerLifecycle {
     stop(): Promise<void>;
 }
+
+export * from "./graph-visualization-server.js";

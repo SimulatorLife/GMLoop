@@ -1,6 +1,6 @@
 // Create Event
 
-tex = texture_defined ? sprite_get_texture(sprite_index, 0) : pointer_null;
+tex = (texture_defined) ? sprite_get_texture(sprite_index, 0) : -1;
 
 // Draw Event
 

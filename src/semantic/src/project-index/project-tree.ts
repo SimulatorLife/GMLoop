@@ -1,20 +1,28 @@
-import { promises as fs } from "node:fs";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
 import { createProjectIndexAbortGuard } from "./abort-guard.js";
-import { type ProjectIndexFsFacade } from "./fs-facade.js";
+import { type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
 import {
     normalizeProjectFileCategory,
     ProjectFileCategory,
     resolveProjectFileCategory
 } from "./project-file-categories.js";
 
-function createProjectTreeRecord(absolutePath, relativePosix) {
+const PROJECT_TREE_EXCLUDED_DIRECTORY_SEGMENTS = new Set<string>([
+    ".git",
+    ".gmcache",
+    ".gmloop",
+    "cache",
+    "node_modules"
+]);
+
+function createProjectTreeRecord(absolutePath, relativePosix, mtimeMs = null) {
     return {
         absolutePath,
-        relativePath: relativePosix
+        relativePath: relativePosix,
+        mtimeMs
     };
 }
 
@@ -37,13 +45,13 @@ function createProjectTreeCollector(metrics = null) {
         }
     }
 
-    function register(relativePosix, absolutePath) {
+    function register(relativePosix, absolutePath, mtimeMs = null) {
         const category = resolveProjectFileCategory(relativePosix);
         if (!category) {
             return;
         }
 
-        recordFile(category, createProjectTreeRecord(absolutePath, relativePosix));
+        recordFile(category, createProjectTreeRecord(absolutePath, relativePosix, mtimeMs));
     }
 
     function snapshot() {
@@ -109,17 +117,16 @@ function isDirectoryStat(stats) {
 }
 
 async function resolveEntryStats({ absolutePath, fsFacade, ensureNotAborted, metrics }) {
-    try {
-        const stats = await fsFacade.stat(absolutePath);
-        ensureNotAborted();
-        return stats;
-    } catch (error) {
-        if (Core.isFsErrorCode(error, "ENOENT")) {
+    const stats = await runWithMissingPathFallback(
+        () => fsFacade.stat(absolutePath),
+        () => {
             metrics?.counters?.increment("io.skippedMissingEntries");
             return null;
         }
-        throw error;
-    }
+    );
+
+    ensureNotAborted();
+    return stats;
 }
 
 async function processDirectoryEntries({
@@ -130,34 +137,52 @@ async function processDirectoryEntries({
     projectRoot,
     fsFacade,
     ensureNotAborted,
-    metrics,
-    signal
+    metrics
 }) {
-    void signal;
-    await Core.runSequentially(entries, async (entry) => {
-        ensureNotAborted();
-        const descriptor = createDirectoryEntryDescriptor(directoryContext, entry, projectRoot);
-        const stats = await resolveEntryStats({
-            absolutePath: descriptor.absolutePath,
-            fsFacade,
-            ensureNotAborted,
-            metrics
-        });
+    await Core.runInParallelWithLimit(
+        entries,
+        async (entry) => {
+            ensureNotAborted();
+            const descriptor = createDirectoryEntryDescriptor(directoryContext, entry, projectRoot);
+            if (
+                Core.isDirectoryExcludedBySegments(
+                    descriptor.absolutePath,
+                    PROJECT_TREE_EXCLUDED_DIRECTORY_SEGMENTS,
+                    []
+                )
+            ) {
+                metrics?.counters?.increment("io.skippedExcludedDirectories");
+                return;
+            }
 
-        if (!stats) {
-            return;
-        }
+            const stats = await resolveEntryStats({
+                absolutePath: descriptor.absolutePath,
+                fsFacade,
+                ensureNotAborted,
+                metrics
+            });
 
-        if (isDirectoryStat(stats)) {
-            traversal.enqueue(descriptor.relativePath);
-            return;
-        }
+            if (!stats) {
+                return;
+            }
 
-        collector.register(descriptor.relativePosix, descriptor.absolutePath);
-    });
+            if (isDirectoryStat(stats)) {
+                traversal.enqueue(descriptor.relativePath);
+                return;
+            }
+
+            collector.register(descriptor.relativePosix, descriptor.absolutePath, stats?.mtimeMs ?? null);
+        },
+        32
+    );
 }
 
-export async function scanProjectTree(projectRoot, fsFacade: ProjectIndexFsFacade = fs, metrics = null, options = {}) {
+export async function scanProjectTree(
+    projectRoot,
+    fsFacade: ProjectIndexFsFacade = Core.defaultFsFacade,
+    metrics = null,
+    options = {}
+) {
     const { signal, ensureNotAborted } = createProjectIndexAbortGuard(options);
     const traversal = createDirectoryTraversal(projectRoot);
     const collector = createProjectTreeCollector(metrics);
@@ -188,8 +213,7 @@ export async function scanProjectTree(projectRoot, fsFacade: ProjectIndexFsFacad
             projectRoot,
             fsFacade,
             ensureNotAborted,
-            metrics,
-            signal
+            metrics
         });
 
         return processNextDirectory();

@@ -1,3 +1,4 @@
+import { Core } from "@gmloop/core";
 import WebSocket from "ws";
 
 export interface HotReloadScriptPatch {
@@ -85,14 +86,14 @@ async function connectWithRetry(
                     cleanup();
                     client.close();
                     reject(
-                        error instanceof Error
+                        Core.isErrorLike(error)
                             ? error
                             : new Error(`WebSocket error: ${error === undefined ? "unknown" : String(error)}`)
                     );
                 });
             });
         } catch (error) {
-            lastError = error instanceof Error ? error : new Error(String(error));
+            lastError = Core.isErrorLike(error) ? error : new Error(String(error));
             await delay(retryIntervalMs);
         }
     }
@@ -116,11 +117,13 @@ export async function connectToHotReloadWebSocket(
         (client) => {
             client.on("message", (data) => {
                 try {
-                    const patch = JSON.parse(data.toString());
-                    if (filter(patch)) {
-                        receivedPatches.push(patch);
-                        for (const listener of patchListeners) {
-                            listener(patch);
+                    const payload = JSON.parse(data.toString());
+                    for (const patch of Core.toArray(payload)) {
+                        if (filter(patch)) {
+                            receivedPatches.push(patch);
+                            for (const listener of patchListeners) {
+                                listener(patch);
+                            }
                         }
                     }
                 } catch (error) {

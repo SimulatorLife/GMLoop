@@ -1,0 +1,561 @@
+/**
+ * Supported graph scopes that can be rendered in the graph-index UI.
+ */
+export type GraphVisualizationScope = "project" | "toolset";
+
+/**
+ * MCP server connection status for the local GMLoop MCP server.
+ */
+export type GraphVisualizationMcpServerStatus = "not-started" | "running" | "stopped";
+
+/**
+ * High-level live-reload watcher state rendered by the UI.
+ */
+export type GraphVisualizationLiveReloadWatcherStatus = "inactive" | "offline" | "scanning" | "running" | "error";
+
+/**
+ * Runtime wrapper readiness state rendered by the UI.
+ */
+export type GraphVisualizationLiveReloadRuntimeStatus = "unknown" | "ready" | "not-ready" | "error";
+
+/**
+ * Node kinds rendered by the graph-index visualization UI.
+ */
+export type GraphVisualizationNodeKind =
+    | "anim_curve"
+    | "data_file"
+    | "enum"
+    | "enum_member"
+    | "extension"
+    | "file"
+    | "font"
+    | "folder"
+    | "function"
+    | "global_variable"
+    | "instance_variable"
+    | "local_variable"
+    | "macro"
+    | "note"
+    | "object"
+    | "object_event"
+    | "particle_system"
+    | "path"
+    | "project"
+    | "room"
+    | "room_layer"
+    | "room_instance"
+    | "script"
+    | "sequence"
+    | "shader"
+    | "sound"
+    | "sprite"
+    | "struct"
+    | "struct_variable"
+    | "texture_group"
+    | "tileset"
+    | "timeline";
+
+/**
+ * Edge kinds rendered by the graph-index visualization UI.
+ */
+export type GraphVisualizationEdgeType =
+    "calls" | "contains" | "defines" | "depends_on" | "inherits" | "placed_in_room" | "references" | "uses_toolset";
+
+/**
+ * Graph metadata embedded into the graph-index visualization document.
+ */
+export type GraphVisualizationGraphRecord = Readonly<{
+    edgeCount: number;
+    graphId: GraphVisualizationScope;
+    nodeCount: number;
+    rootPath: string;
+}>;
+
+/**
+ * Edge record embedded into the graph-index visualization document.
+ */
+export type GraphVisualizationEdgeRecord = Readonly<{
+    source: string;
+    target: string;
+    type: GraphVisualizationEdgeType;
+}>;
+
+/**
+ * Node record embedded into the graph-index visualization document.
+ */
+export type GraphVisualizationNodeRecord = Readonly<{
+    displayName: string;
+    filePath: string | null;
+    graphId: GraphVisualizationScope;
+    id: string;
+    kind: GraphVisualizationNodeKind;
+    lineEnd: number | null;
+    lineStart: number | null;
+    name: string;
+    resourcePath: string | null;
+    scopeId: string | null;
+    scipSymbol: string | null;
+    snippet: string;
+    summary: string;
+}>;
+
+/**
+ * Typed graph payload consumed by the graph-index visualization renderer.
+ */
+export type GraphVisualizationData = Readonly<{
+    edges: ReadonlyArray<GraphVisualizationEdgeRecord>;
+    generatedAt: string;
+    graphs: ReadonlyArray<GraphVisualizationGraphRecord>;
+    nodes: ReadonlyArray<GraphVisualizationNodeRecord>;
+    projectRoot: string;
+}>;
+
+/**
+ * Startup lifecycle state exposed to the graph shell while project loading
+ * and indexing continue in the background.
+ */
+export type GraphVisualizationStartupState = Readonly<{
+    detail: string | null;
+    message: string;
+    phase: "error" | "loading";
+}>;
+
+/** Shared semantic-index progress snapshot polled by the graph-index page. */
+/** Slowest-file/cache-hit summary reported once a semantic index build completes. */
+export type GraphVisualizationGraphIndexBuildSummary = Readonly<{
+    cacheHitCount: number;
+    cacheMissCount: number;
+    slowestFiles: ReadonlyArray<Readonly<{ relativePath: string; durationMs: number }>>;
+    totalDurationMs: number;
+}>;
+
+export type GraphVisualizationGraphIndexProgress = Readonly<{
+    current: number | null;
+    isRunning: boolean;
+    logLines: ReadonlyArray<string>;
+    stage: "gml-parse" | "complete" | null;
+    status: "idle" | "running" | "success" | "error";
+    summary: GraphVisualizationGraphIndexBuildSummary | null;
+    total: number | null;
+}>;
+
+/**
+ * Most recent project fix workflow result known by the visualization host.
+ */
+export type GraphVisualizationLastFixRun = Readonly<{
+    logLines: ReadonlyArray<string>;
+    projectRoot: string;
+    status: "success";
+}>;
+
+/**
+ * Lifecycle state for the host-reported autonomous game creation pipeline.
+ */
+export type GraphVisualizationAutoGamePipelineStatus = "idle" | "running" | "blocked" | "success" | "error";
+
+/**
+ * Presentational action rendered by the Auto-Game pipeline page.
+ */
+export type GraphVisualizationAutoGamePipelineAction = Readonly<{
+    description: string;
+    disabled: boolean;
+    id: string;
+    label: string;
+}>;
+
+/**
+ * Timeline event rendered by the Auto-Game pipeline feed.
+ */
+export type GraphVisualizationAutoGamePipelineEvent = Readonly<{
+    detail: string | null;
+    id: string;
+    status: GraphVisualizationAutoGamePipelineStatus;
+    timestamp: string;
+    title: string;
+}>;
+
+/**
+ * AI skill readiness entry rendered by the Auto-Game pipeline page.
+ */
+export type GraphVisualizationAutoGamePipelineSkill = Readonly<{
+    description: string;
+    diagnostic: string | null;
+    enabled: boolean;
+    id: string;
+    name: string;
+    sourcePath: string;
+    status: "available" | "unreadable";
+}>;
+
+/** Packaged agent-pack source that can be previewed without modifying a project. */
+export type GraphVisualizationAutoGameAgentPackResource = Readonly<{
+    content: string;
+    kind: "skill" | "template";
+    packagePath: string;
+    targetPath: string;
+}>;
+
+/** Agent integration target rendered by the Auto-Game setup page. */
+export type GraphVisualizationAutoGameAgentConfig = Readonly<{
+    cliInstalled: boolean;
+    cliName: string;
+    cliVersion: string | null;
+    configDetected: boolean;
+    configPaths: ReadonlyArray<string>;
+    id: "codex" | "gemini" | "qwen";
+    label: string;
+    manualInstructions: ReadonlyArray<string>;
+    selectedByDefault: boolean;
+    status: "cli-configurable" | "manual-required" | "unavailable";
+    statusDetail: string;
+}>;
+
+/**
+ * Installation and update state for the GMLoop Auto-Game agent pack.
+ */
+export type GraphVisualizationAutoGameAgentPack = Readonly<{
+    agentConfigs: ReadonlyArray<GraphVisualizationAutoGameAgentConfig>;
+    availableVersion: string;
+    conflicts: ReadonlyArray<string>;
+    installedVersion: string | null;
+    resources: ReadonlyArray<GraphVisualizationAutoGameAgentPackResource>;
+    status: "current" | "not-installed" | "update-available";
+}>;
+
+/**
+ * Host-provided LLM or thought-process output snippet for the Auto-Game page.
+ */
+export type GraphVisualizationAutoGamePipelineLlmOutput = Readonly<{
+    content: string;
+    id: string;
+    role: "system" | "user" | "assistant" | "tool" | "thought";
+    timestamp: string;
+    title: string;
+}>;
+
+/**
+ * Optional host-provided presentation model for autonomous game creation.
+ */
+export type GraphVisualizationAutoGamePipelineModel = Readonly<{
+    actions: ReadonlyArray<GraphVisualizationAutoGamePipelineAction>;
+    agentPack: GraphVisualizationAutoGameAgentPack;
+    events: ReadonlyArray<GraphVisualizationAutoGamePipelineEvent>;
+    llmOutputs: ReadonlyArray<GraphVisualizationAutoGamePipelineLlmOutput>;
+    skills: ReadonlyArray<GraphVisualizationAutoGamePipelineSkill>;
+    status: GraphVisualizationAutoGamePipelineStatus;
+    statusText: string | null;
+}>;
+
+/**
+ * Options that control how the graph-index visualization HTML document is rendered.
+ */
+export type GraphVisualizationRenderOptions = Readonly<{
+    autoGamePipeline?: GraphVisualizationAutoGamePipelineModel;
+    documentationCatalogs?: GraphVisualizationDocumentationCatalogs;
+    isServerMode?: boolean;
+    lastFixRun?: GraphVisualizationLastFixRun;
+    loadedTarget?: GraphVisualizationLoadedTarget;
+    liveReload?: GraphVisualizationLiveReloadModel;
+    mcpServerStatus?: GraphVisualizationMcpServerStatus;
+    projectConfigurationCatalog?: GraphVisualizationProjectConfigurationCatalog;
+    startupState?: GraphVisualizationStartupState;
+    title: string;
+}>;
+
+/**
+ * A single file emitted by the graph visualization renderer bundle.
+ */
+export type GraphVisualizationBundleFile = Readonly<{
+    bytes: Uint8Array;
+    contentType: string;
+    relativePath: string;
+}>;
+
+/**
+ * Filesystem-ready artifact returned by the graph visualization bundle renderer.
+ */
+export type GraphVisualizationBundleArtifact = Readonly<{
+    entryHtmlPath: string;
+    files: ReadonlyArray<GraphVisualizationBundleFile>;
+}>;
+
+/**
+ * Summary of the current path input selection loaded by the UI host.
+ */
+export type GraphVisualizationLoadedTarget = Readonly<{
+    activePath: string;
+    projectRoot: string;
+    selectedPaths: ReadonlyArray<string>;
+    source: "active-project-state" | "cli-path" | "demo-project" | "finder-open" | "working-directory";
+}>;
+
+/**
+ * Endpoint configuration for the UI's live-reload observability surface.
+ */
+export type GraphVisualizationLiveReloadEndpointConfig = Readonly<{
+    runtimeUrl: string | null;
+    statusUrl: string | null;
+    websocketUrl: string | null;
+}>;
+
+/**
+ * Recent patch summary rendered by the live-reload UI.
+ */
+export type GraphVisualizationLiveReloadRecentPatch = Readonly<{
+    durationMs: number;
+    filePath: string;
+    hotReloadLatencyMs: number | null;
+    id: string;
+    timestamp: number;
+}>;
+
+/**
+ * Recent hot-reload error summary rendered by the live-reload UI.
+ */
+export type GraphVisualizationLiveReloadRecentError = Readonly<{
+    error: string;
+    filePath: string;
+    recoveryHint: string | null;
+    timestamp: number;
+}>;
+
+/**
+ * CLI watcher status snapshot rendered by the live-reload UI.
+ */
+export type GraphVisualizationLiveReloadStatusSnapshot = Readonly<{
+    avgHotReloadLatencyMs: number | null;
+    errorCount: number;
+    maxPatchHistory: number | null;
+    patchCount: number;
+    patchHistorySize: number | null;
+    p95HotReloadLatencyMs: number | null;
+    recentErrors: ReadonlyArray<GraphVisualizationLiveReloadRecentError>;
+    recentPatches: ReadonlyArray<GraphVisualizationLiveReloadRecentPatch>;
+    runtimeUrl: string | null;
+    scanComplete: boolean;
+    totalPatchCount: number | null;
+    uptimeMs: number;
+    watcherStatus: GraphVisualizationLiveReloadWatcherStatus;
+    websocketClients: number;
+}>;
+
+/**
+ * Runtime-wrapper health snapshot rendered by the live-reload UI.
+ */
+export type GraphVisualizationLiveReloadRuntimeHealth = Readonly<{
+    appliedPatches: number;
+    closureCount: number;
+    eventCount: number;
+    failedPatches: number;
+    patchQueueDepth: number;
+    registryVersion: number;
+    runtimeStatus: GraphVisualizationLiveReloadRuntimeStatus;
+    scriptCount: number;
+}>;
+
+/**
+ * UI-owned presentation model for live-reload observability.
+ */
+export type GraphVisualizationLiveReloadModel = Readonly<{
+    endpoints: GraphVisualizationLiveReloadEndpointConfig;
+    pollIntervalMs: number;
+    runtimeHealth: GraphVisualizationLiveReloadRuntimeHealth | null;
+    statusSnapshot: GraphVisualizationLiveReloadStatusSnapshot | null;
+}>;
+
+export type GraphVisualizationCliCatalogArgument = Readonly<{
+    choices: ReadonlyArray<string>;
+    description: string;
+    name: string;
+    required: boolean;
+    variadic: boolean;
+}>;
+
+export type GraphVisualizationCliCatalogOption = Readonly<{
+    attributeName: string;
+    boolean: boolean;
+    choices: ReadonlyArray<string>;
+    description: string;
+    flags: string;
+    long: string | undefined;
+    short: string | undefined;
+    variadic: boolean;
+}>;
+
+export type GraphVisualizationCliCatalogEntry = Readonly<{
+    arguments: ReadonlyArray<GraphVisualizationCliCatalogArgument>;
+    commandPath: ReadonlyArray<string>;
+    description: string;
+    displayName: string;
+    options: ReadonlyArray<GraphVisualizationCliCatalogOption>;
+    usage: string;
+}>;
+
+export type GraphVisualizationMcpToolCatalogField = Readonly<{
+    attributeName: string;
+    choices: ReadonlyArray<string>;
+    description: string;
+    kind: "argument" | "option";
+    multiple: boolean;
+    name: string;
+    required: boolean;
+    valueType: "boolean" | "string";
+}>;
+
+export type GraphVisualizationMcpToolCatalogEntry = Readonly<{
+    commandDisplayName: string;
+    description: string;
+    fields: ReadonlyArray<GraphVisualizationMcpToolCatalogField>;
+    toolName: string;
+    internal?: boolean;
+}>;
+
+export type GraphVisualizationLspToolCatalogField = Readonly<{
+    description: string;
+    name: string;
+    required: boolean;
+    type: string;
+    default?: unknown;
+    choices?: ReadonlyArray<string>;
+}>;
+
+export type GraphVisualizationLspToolCatalogEntry = Readonly<{
+    description: string;
+    displayName: string;
+    fields: ReadonlyArray<GraphVisualizationLspToolCatalogField>;
+    name: string;
+}>;
+
+export type GraphVisualizationDocumentationCatalogs = Readonly<{
+    cliCommands: ReadonlyArray<GraphVisualizationCliCatalogEntry>;
+    lspTools?: ReadonlyArray<GraphVisualizationLspToolCatalogEntry>;
+    mcpServer: Readonly<{
+        name: string;
+        version: string;
+    }>;
+    mcpTools: ReadonlyArray<GraphVisualizationMcpToolCatalogEntry>;
+    workspaceRules: Readonly<{
+        formatOptions: ReadonlyArray<
+            Readonly<{
+                defaultValue: boolean | number | string;
+                description: string;
+                name: string;
+            }>
+        >;
+        lintRules: ReadonlyArray<
+            Readonly<{
+                description: string;
+                fixable: "code" | "whitespace" | null;
+                ruleId: string;
+            }>
+        >;
+        refactorCodemods: ReadonlyArray<
+            Readonly<{
+                description: string;
+                id: string;
+                requiresSemanticProjectIndex: boolean;
+            }>
+        >;
+    }>;
+}>;
+
+export type GraphVisualizationProjectConfigurationEntry = Readonly<{
+    description: string;
+    name: string;
+    source: "configured" | "default";
+    value: unknown;
+}>;
+
+export type GraphVisualizationProjectConfigurationLintRuleEntry = Readonly<{
+    description: string;
+    fixable: "code" | "whitespace" | null;
+    level: "error" | "off" | "warn";
+    options: Readonly<Record<string, unknown>>;
+    ruleId: string;
+}>;
+
+export type GraphVisualizationProjectConfigurationLintRulesetEntry = Readonly<{
+    name: string;
+    ruleIds: ReadonlyArray<string>;
+    ruleLevels: Readonly<Record<string, "error" | "off" | "warn">>;
+}>;
+
+export type GraphVisualizationProjectConfigurationRefactorCodemodEntry = Readonly<{
+    config: unknown;
+    description: string;
+    enabled: boolean;
+    id: string;
+    requiresSemanticProjectIndex: boolean;
+}>;
+
+export type GraphVisualizationExternalToolParameter = Readonly<{
+    choices: ReadonlyArray<string>;
+    description: string;
+    kind: "argument" | "flag";
+    multiple: boolean;
+    name: string;
+    required: boolean;
+    syntax: string;
+    valueType: "boolean" | "string";
+}>;
+
+export type GraphVisualizationGameMakerCliCommandEntry = Readonly<{
+    commandPath: ReadonlyArray<string>;
+    description: string;
+    displayName: string;
+    parameters: ReadonlyArray<GraphVisualizationExternalToolParameter>;
+    usageLines: ReadonlyArray<string>;
+}>;
+
+export type GraphVisualizationGameMakerCliMcpToolEntry = Readonly<{
+    description: string;
+    fields: ReadonlyArray<GraphVisualizationExternalToolParameter>;
+    name: string;
+}>;
+
+export type GraphVisualizationProjectConfigurationCatalog = Readonly<{
+    format: Readonly<{
+        entries: ReadonlyArray<GraphVisualizationProjectConfigurationEntry>;
+    }>;
+    gameMakerCli: Readonly<{
+        available: boolean;
+        cliCommands: ReadonlyArray<GraphVisualizationGameMakerCliCommandEntry>;
+        error: string | null;
+        invocation: string | null;
+        mcpServer: Readonly<{
+            available: boolean;
+            error: string | null;
+            name: string | null;
+            projectPath: string | null;
+            serverId: string | null;
+            sourcePath: string | null;
+            version: string | null;
+        }>;
+        mcpTools: ReadonlyArray<GraphVisualizationGameMakerCliMcpToolEntry>;
+        version: string | null;
+    }>;
+    githubRepositoryUrl: string;
+    gmloop: Readonly<{
+        configPath: string | null;
+        exists: boolean;
+        projectRoot: string;
+        rawConfig: Readonly<Record<string, unknown>>;
+    }>;
+    lint: Readonly<{
+        rules: ReadonlyArray<GraphVisualizationProjectConfigurationLintRuleEntry>;
+        rulesets: ReadonlyArray<GraphVisualizationProjectConfigurationLintRulesetEntry>;
+        ruleset: string | null;
+    }>;
+    refactor: Readonly<{
+        codemods: ReadonlyArray<GraphVisualizationProjectConfigurationRefactorCodemodEntry>;
+    }>;
+}>;
+/**
+ * Project-writing workflows available from the Fix UI surface.
+ */
+export const PROJECT_WORKFLOWS = ["fix", "format", "refactor", "lint"] as const;
+
+/**
+ * Project-writing workflow available from the Fix UI surface.
+ */
+export type GraphVisualizationProjectWorkflow = (typeof PROJECT_WORKFLOWS)[number];

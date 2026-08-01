@@ -82,7 +82,7 @@ jobs:
               return;
             }
 
-            const prefixes = ['codex/', 'copilot/', 'gemini/', 'qwen/'];
+            const prefixes = ['codex/', 'copilot/', 'gemini/', 'qwen/', 'qwen-local/'];
             const hasAllowedPrefix = (ref) => typeof ref === 'string' && prefixes.some((prefix) => ref.startsWith(prefix));
             if (!hasAllowedPrefix(pr.head?.ref) || !hasAllowedPrefix(pr.base?.ref)) {
               core.info('Branch prefixes do not match auto-merge policy; skipping.');

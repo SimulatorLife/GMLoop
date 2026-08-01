@@ -1,86 +1,67 @@
-import * as CoreWorkspace from "@gmloop/core";
+import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import type { GmlRuleDefinition } from "../../catalog.js";
+import type { GmlRuleDefinition } from "../index.js";
 import {
     type AstNodeRecord,
     createMeta,
-    getNodeEndIndex,
-    getNodeStartIndex,
+    type IdentifierNode,
+    isAssignmentExpressionNodeWithOperator,
     isAstNodeRecord,
+    isBinaryExpressionNodeWithOperator,
+    isIdentifierNode,
     walkAstNodes
 } from "../rule-base-helpers.js";
 
-type SupportedArithmeticOperator = "+" | "-" | "*" | "/";
+type SupportedArithmeticOperator = "+" | "-" | "*" | "/" | "%";
+type SupportedBitwiseOperator = "|" | "&" | "^";
 type SupportedNullishOperator = "??";
-type SupportedBinaryOperator = SupportedArithmeticOperator | SupportedNullishOperator;
-type CompoundAssignmentOperator = "+=" | "-=" | "*=" | "/=" | "??=";
-
-type IdentifierNode = AstNodeRecord &
-    Readonly<{
-        type: "Identifier";
-        name: string;
-    }>;
-
-type BinaryExpressionNode = AstNodeRecord &
-    Readonly<{
-        type: "BinaryExpression";
-        operator: SupportedBinaryOperator;
-        left: unknown;
-        right: unknown;
-    }>;
-
-type AssignmentExpressionNode = AstNodeRecord &
-    Readonly<{
-        type: "AssignmentExpression";
-        operator: "=";
-        left: unknown;
-        right: unknown;
-    }>;
+type SupportedBinaryOperator = SupportedArithmeticOperator | SupportedBitwiseOperator | SupportedNullishOperator;
+type CompoundAssignmentOperator = "+=" | "-=" | "*=" | "/=" | "%=" | "|=" | "&=" | "^=" | "??=";
 
 type CompoundAssignmentCandidate = Readonly<{
-    assignmentExpression: AssignmentExpressionNode;
+    assignmentExpression: AstNodeRecord &
+        Readonly<{
+            type: "AssignmentExpression";
+            operator: "=";
+            left: unknown;
+            right: unknown;
+        }>;
     leftIdentifier: IdentifierNode;
-    rightBinaryExpression: BinaryExpressionNode;
+    rightBinaryExpression: AstNodeRecord &
+        Readonly<{
+            type: "BinaryExpression";
+            operator: SupportedBinaryOperator;
+            left: unknown;
+            right: unknown;
+        }>;
     rightOperand: AstNodeRecord;
     compoundOperator: CompoundAssignmentOperator;
 }>;
-
-type UnwrapParenthesizedExpressionInput = Parameters<typeof CoreWorkspace.Core.unwrapParenthesizedExpression>[0];
 
 const COMPOUND_OPERATOR_BY_BINARY_OPERATOR = Object.freeze({
     "+": "+=",
     "-": "-=",
     "*": "*=",
     "/": "/=",
+    "%": "%=",
+    "|": "|=",
+    "&": "&=",
+    "^": "^=",
     "??": "??="
 } as const satisfies Readonly<Record<SupportedBinaryOperator, CompoundAssignmentOperator>>);
 
-function isIdentifierNode(node: unknown): node is IdentifierNode {
-    return isAstNodeRecord(node) && node.type === "Identifier" && typeof node.name === "string";
-}
-
 function isSupportedBinaryOperator(operator: unknown): operator is SupportedBinaryOperator {
-    return operator === "+" || operator === "-" || operator === "*" || operator === "/" || operator === "??";
-}
-
-function isBinaryExpressionNode(node: unknown): node is BinaryExpressionNode {
     return (
-        isAstNodeRecord(node) &&
-        node.type === "BinaryExpression" &&
-        isSupportedBinaryOperator(node.operator) &&
-        Object.hasOwn(node, "left") &&
-        Object.hasOwn(node, "right")
-    );
-}
-
-function isAssignmentExpressionNode(node: unknown): node is AssignmentExpressionNode {
-    return (
-        isAstNodeRecord(node) &&
-        node.type === "AssignmentExpression" &&
-        node.operator === "=" &&
-        Object.hasOwn(node, "left") &&
-        Object.hasOwn(node, "right")
+        operator === "+" ||
+        operator === "-" ||
+        operator === "*" ||
+        operator === "/" ||
+        operator === "%" ||
+        operator === "|" ||
+        operator === "&" ||
+        operator === "^" ||
+        operator === "??"
     );
 }
 
@@ -89,7 +70,7 @@ function containsCommentToken(expressionText: string): boolean {
 }
 
 function tryGetCompoundAssignmentCandidate(node: unknown): CompoundAssignmentCandidate | null {
-    if (!isAssignmentExpressionNode(node)) {
+    if (!isAssignmentExpressionNodeWithOperator(node, (operator): operator is "=" => operator === "=")) {
         return null;
     }
 
@@ -97,22 +78,19 @@ function tryGetCompoundAssignmentCandidate(node: unknown): CompoundAssignmentCan
         return null;
     }
 
-    const rightExpressionNode = CoreWorkspace.Core.unwrapParenthesizedExpression(
-        node.right as UnwrapParenthesizedExpressionInput
-    );
-    if (!isBinaryExpressionNode(rightExpressionNode)) {
+    const rightExpressionNode = Core.unwrapParenthesizedExpression(node.right);
+    if (!isBinaryExpressionNodeWithOperator(rightExpressionNode, isSupportedBinaryOperator)) {
         return null;
     }
 
-    const rightLeftNode = CoreWorkspace.Core.unwrapParenthesizedExpression(
-        rightExpressionNode.left as UnwrapParenthesizedExpressionInput
-    );
+    const rightLeftNode = Core.unwrapParenthesizedExpression(rightExpressionNode.left);
 
     // Left-first pattern: x = x OP y → x OP= y
     if (isIdentifierNode(rightLeftNode) && rightLeftNode.name === node.left.name) {
         if (!isAstNodeRecord(rightExpressionNode.right)) {
             return null;
         }
+
         return Object.freeze({
             assignmentExpression: node,
             leftIdentifier: node.left,
@@ -123,15 +101,18 @@ function tryGetCompoundAssignmentCandidate(node: unknown): CompoundAssignmentCan
     }
 
     // Right-first pattern for commutative operators: x = y + x → x += y, x = y * x → x *= y.
-    // Only `+` and `*` are commutative; `-`, `/`, and `??` are not.
-    const isCommutativeOperator = rightExpressionNode.operator === "+" || rightExpressionNode.operator === "*";
+    // Commutative: `+`, `*`, `|`, `&`, `^`. Non-commutative: `-`, `/`, `%`, `??`.
+    const isCommutativeOperator =
+        rightExpressionNode.operator === "+" ||
+        rightExpressionNode.operator === "*" ||
+        rightExpressionNode.operator === "|" ||
+        rightExpressionNode.operator === "&" ||
+        rightExpressionNode.operator === "^";
     if (!isCommutativeOperator) {
         return null;
     }
 
-    const rightRightNode = CoreWorkspace.Core.unwrapParenthesizedExpression(
-        rightExpressionNode.right as UnwrapParenthesizedExpressionInput
-    );
+    const rightRightNode = Core.unwrapParenthesizedExpression(rightExpressionNode.right);
     if (!isIdentifierNode(rightRightNode) || rightRightNode.name !== node.left.name) {
         return null;
     }
@@ -144,7 +125,6 @@ function tryGetCompoundAssignmentCandidate(node: unknown): CompoundAssignmentCan
         assignmentExpression: node,
         leftIdentifier: node.left,
         rightBinaryExpression: rightExpressionNode,
-        // The variable appears on the right; use the left operand as the compound right-hand side.
         rightOperand: rightExpressionNode.left,
         compoundOperator: COMPOUND_OPERATOR_BY_BINARY_OPERATOR[rightExpressionNode.operator]
     });
@@ -154,7 +134,12 @@ function tryGetCompoundAssignmentCandidate(node: unknown): CompoundAssignmentCan
  * Creates the `gml/prefer-compound-assignments` rule.
  *
  * Reports and auto-fixes safe self-assignment patterns:
- * `x = x + y`, `x = x - y`, `x = x * y`, `x = x / y`, and `x = x ?? y`.
+ * `x = x + y`, `x = x - y`, `x = x * y`, `x = x / y`, `x = x % y`,
+ * `x = x | y`, `x = x & y`, `x = x ^ y`, and `x = x ?? y`.
+ *
+ * IMPORTANT: GML does not support `<<=` or `>>=` compound-assignment syntax.
+ * The linter must never rewrite `x = x << y` or `x = x >> y` into those forms,
+ * because doing so produces invalid, unparsable code.
  */
 export function createPreferCompoundAssignmentsRule(definition: GmlRuleDefinition): Rule.RuleModule {
     return Object.freeze({
@@ -170,14 +155,14 @@ export function createPreferCompoundAssignmentsRule(definition: GmlRuleDefinitio
                             return;
                         }
 
-                        const assignmentStart = getNodeStartIndex(candidate.assignmentExpression);
-                        const assignmentEnd = getNodeEndIndex(candidate.assignmentExpression);
-                        const leftStart = getNodeStartIndex(candidate.leftIdentifier);
-                        const leftEnd = getNodeEndIndex(candidate.leftIdentifier);
-                        const rightExpressionStart = getNodeStartIndex(candidate.rightBinaryExpression);
-                        const rightExpressionEnd = getNodeEndIndex(candidate.rightBinaryExpression);
-                        const rightOperandStart = getNodeStartIndex(candidate.rightOperand);
-                        const rightOperandEnd = getNodeEndIndex(candidate.rightOperand);
+                        const assignmentStart = Core.getNodeStartIndex(candidate.assignmentExpression);
+                        const assignmentEnd = Core.getNodeEndIndex(candidate.assignmentExpression);
+                        const leftStart = Core.getNodeStartIndex(candidate.leftIdentifier);
+                        const leftEnd = Core.getNodeEndIndex(candidate.leftIdentifier);
+                        const rightExpressionStart = Core.getNodeStartIndex(candidate.rightBinaryExpression);
+                        const rightExpressionEnd = Core.getNodeEndIndex(candidate.rightBinaryExpression);
+                        const rightOperandStart = Core.getNodeStartIndex(candidate.rightOperand);
+                        const rightOperandEnd = Core.getNodeEndIndex(candidate.rightOperand);
 
                         if (
                             typeof assignmentStart !== "number" ||

@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { Parser } from "@gmloop/parser";
-
-import { Transpiler } from "../index.js";
+import { Transpiler } from "@gmloop/transpiler";
 
 void test("GmlToJsEmitter handles switch with fall-through cases", () => {
     const source = `switch (value) {

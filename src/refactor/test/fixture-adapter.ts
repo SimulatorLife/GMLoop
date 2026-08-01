@@ -1,7 +1,8 @@
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { FixtureAdapter } from "@gmloop/fixture-runner";
+import { Core } from "@gmloop/core";
+import { type FixtureAdapter, FixtureRunner } from "@gmloop/fixture-runner";
 
 import { normalizeRefactorProjectConfig } from "../src/project-config.js";
 import { RefactorEngine } from "../src/refactor-engine.js";
@@ -21,10 +22,6 @@ type FixtureNamingTarget = {
     symbolId: string;
     occurrences: Array<FixtureSymbolOccurrence>;
 };
-
-function escapeRegExp(source: string): string {
-    return source.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
-}
 
 function collectFunctionDeclarations(sourceText: string): Array<{ name: string; start: number }> {
     const declarations: Array<{ name: string; start: number }> = [];
@@ -46,7 +43,7 @@ function collectFunctionDeclarations(sourceText: string): Array<{ name: string; 
 }
 
 function collectNameOccurrences(sourceText: string, name: string): Array<{ start: number; end: number }> {
-    const escapedName = escapeRegExp(name);
+    const escapedName = Core.escapeRegExp(name);
     const pattern = new RegExp(`(?<=^|[^A-Za-z0-9_])${escapedName}(?=[^A-Za-z0-9_]|$)`, "g");
     const hits: Array<{ start: number; end: number }> = [];
     let match: RegExpExecArray | null = pattern.exec(sourceText);
@@ -119,8 +116,12 @@ async function createFixtureSemanticAnalyzer(projectRoot: string, gmlFilePaths: 
                 return namingTargets;
             }
 
-            const selectedPaths = new Set(filePaths.map((entry) => path.resolve(projectRoot, entry)));
-            return namingTargets.filter((target) => selectedPaths.has(path.resolve(projectRoot, target.path)));
+            const isSelectedPath = Core.createProjectPathBoundaryMatcher({
+                projectRoot,
+                allowedPaths: filePaths,
+                deniedPaths: []
+            });
+            return namingTargets.filter((target) => isSelectedPath(target.path));
         },
         getSymbolOccurrences(symbolName: string) {
             return occurrencesByName.get(symbolName) ?? [];
@@ -129,29 +130,9 @@ async function createFixtureSemanticAnalyzer(projectRoot: string, gmlFilePaths: 
 }
 
 async function collectProjectGmlFiles(projectRoot: string): Promise<Array<string>> {
-    const relativePaths: Array<string> = [];
-
-    async function walk(currentPath: string): Promise<void> {
-        const entries = await readdir(currentPath, { withFileTypes: true });
-        await Promise.all(
-            entries.map(async (entry) => {
-                const entryPath = path.join(currentPath, entry.name);
-                if (entry.isDirectory()) {
-                    await walk(entryPath);
-                    return;
-                }
-
-                if (!entry.isFile() || !entry.name.endsWith(".gml")) {
-                    return;
-                }
-
-                relativePaths.push(path.relative(projectRoot, entryPath).split(path.sep).join("/"));
-            })
-        );
-    }
-
-    await walk(projectRoot);
-    return relativePaths.sort((left, right) => left.localeCompare(right));
+    return await Core.listRelativeFilePathsRecursively(projectRoot, {
+        includeFile: ({ entryName }) => entryName.endsWith(".gml")
+    });
 }
 
 /**
@@ -198,5 +179,23 @@ export function createRefactorFixtureAdapter(): FixtureAdapter {
                 changed: true
             };
         }
+    });
+}
+
+/**
+ * Create the canonical refactor fixture suite definition shared by workspace
+ * and aggregate fixture runs.
+ *
+ * @returns Refactor fixture suite registration metadata.
+ */
+export function createRefactorFixtureSuiteDefinition() {
+    return FixtureRunner.createFixtureSuiteDefinition({
+        workspaceName: "refactor",
+        suiteName: "refactor fixtures",
+        compiledWorkspaceTestFilePath: "src/refactor/dist/test/refactor-fixtures.test.js",
+        moduleUrl: import.meta.url,
+        sourceRelativeSegments: ["fixtures"],
+        distRelativeSegments: ["..", "..", "test", "fixtures"],
+        adapter: createRefactorFixtureAdapter()
     });
 }

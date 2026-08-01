@@ -1,19 +1,22 @@
 /**
- * Enumerated scope override keywords supported by the semantic scope tracker.
+ * Scope override keyword for the semantic scope tracker.
  *
- * The values are frozen to avoid accidental mutations when the constants are
- * re-exported through the public API surface.
+ * Using a plain string constant avoids the overhead of maintaining an object
+ * wrapper that would require Object.values() and Set lookups when only one
+ * value exists. This is intentionally simpler than the historical pattern.
  */
-export const ScopeOverrideKeyword = Object.freeze({
-    GLOBAL: "global"
-});
+export const SCOPE_OVERRIDE_KEYWORD = "global";
 
-const SCOPE_OVERRIDE_KEYWORD_SET: Set<string> = new Set<string>(Object.values(ScopeOverrideKeyword) as string[]);
-
-export function isScopeOverrideKeyword(value) {
-    return typeof value === "string" && SCOPE_OVERRIDE_KEYWORD_SET.has(value);
+/**
+ * Checks whether a value is a recognized scope override keyword.
+ */
+export function isScopeOverrideKeyword(value: unknown): boolean {
+    return value === SCOPE_OVERRIDE_KEYWORD;
 }
 
-export function formatKnownScopeOverrideKeywords() {
-    return [...SCOPE_OVERRIDE_KEYWORD_SET].join(", ");
+/**
+ * Returns all known scope override keywords as a comma-separated string.
+ */
+export function formatKnownScopeOverrideKeywords(): string[] {
+    return [SCOPE_OVERRIDE_KEYWORD];
 }

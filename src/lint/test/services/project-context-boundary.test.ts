@@ -24,7 +24,8 @@ void test("lint services no longer expose project-aware analysis helpers", () =>
         "createMissingContextSettings",
         "defaultProjectIndexExcludes",
         "resolveNearestProjectRoot",
-        "resolveForcedProjectRoot"
+        "resolveForcedProjectRoot",
+        "projectConfig"
     ];
 
     for (const serviceName of forbiddenServiceNames) {

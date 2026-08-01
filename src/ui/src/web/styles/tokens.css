@@ -1,0 +1,256 @@
+:root {
+  /* ─── Text colors ────────────────────────────────────────── */
+  color-scheme: dark;
+  --gm-text: #f3f7fd;
+  --gm-text-secondary: #d7e3f2;
+  --gm-text-subdued: #adbbd0;
+  --gm-text-interactive: #f8fbff;
+
+  /* ─── Accent colors ─────────────────────────────────────── */
+  --gm-accent: #8ee0f0;
+  --gm-accent-strong: #73c8ff;
+  --gm-brand-teal: #59c3c3;
+  --gm-brand-purple: #8b5cf6;
+  --gm-brand-teal-hover: #59c3c34d;
+  --gm-brand-purple-hover: #8b5cf64d;
+
+  /* ─── Surfaces ──────────────────────────────────────────── */
+  --gm-surface-app-top: #08101b;
+  --gm-surface-app-bottom: #0e1726;
+  --gm-surface-elevated: #101c2ef0;
+  --gm-surface-elevated-strong: #0b1422f9;
+  --gm-surface-muted: var(--gm-bg-muted);
+  --gm-surface-inset: #050c1680;
+  --gm-surface-overlay: #0a121ef5;
+  --gm-surface-highlight: #8ee0f01f;
+
+  /* ─── Background surfaces ─────────────────────────────── */
+  --gm-bg-subtle: #ffffff08;
+  --gm-bg-muted: #ffffff0d;
+  --gm-bg-hover: #ffffff14;
+  --gm-bg-active: #ffffff17;
+  --gm-bg-overlay: #050a1382;
+  --gm-bg-inset: #070d17c7;
+
+  /* ─── Borders ───────────────────────────────────────────── */
+  --gm-border: #8fb5ff2e;
+  --gm-border-strong: #8fb5ff4d;
+  --gm-border-subtle: #8fb5ff1a;
+  --gm-border-interactive: #8ee0f073;
+  --gm-focus-ring: #8ee0f0a6;
+
+  /* ─── Semantic status colors ──────────────────────────────── */
+  --gm-success-text: #d8ffe6;
+  --gm-success-border: #58cd8473;
+  --gm-success-surface: #58cd841f;
+  --gm-success-dot: #58cd84;
+
+  --gm-warning-text: #ffe9a8;
+  --gm-warning-border: #f7d0818c;
+  --gm-warning-surface: #f7d0811f;
+  --gm-warning-dot: #f6c46d;
+
+  --gm-danger-text: #ffd6d6;
+  --gm-danger-border: #ff89896b;
+  --gm-danger-surface: #ff505026;
+  --gm-danger-surface-hover: #ff505040;
+  --gm-danger-dot: #ff8989;
+
+  --gm-error-text: var(--gm-danger-text);
+  --gm-error-border: var(--gm-danger-border);
+  --gm-error-surface: var(--gm-danger-surface);
+
+  /* ─── Translucent surfaces ──────────────────────────────── */
+  --gm-surface-app-top-translucent: #08101bf5;
+  --gm-surface-elevated-translucent: #101c2eb7;
+  --gm-surface-overlay-translucent: #0a121ef5;
+  --gm-surface-hero-bottom-translucent: #080f1ad1;
+  --gm-surface-app-bottom-translucent: #09101de0;
+
+  /* ─── Selection / Active states ─────────────────────────── */
+  --gm-surface-selected: #8fb5ff26;
+  --gm-surface-active: #8fb5ff1f;
+  --gm-surface-brand-subtle: #1f5ed624;
+  --gm-surface-brand-subtle-hover: #1f5ed638;
+  --gm-surface-teal-subtle: #59c3c326;
+  --gm-border-teal-subtle: #59c3c34d;
+  --gm-border-accent-subtle: #8ee0f033;
+  --gm-border-accent-medium: #8ee0f066;
+  --gm-surface-accent-subtle: #8ee0f014;
+  --gm-surface-accent-strong-subtle: #73c8ff2e;
+
+  /* ─── Accent / action colors ────────────────────────────── */
+  --gm-action-primary-bg: linear-gradient(135deg, #9ce8c8, #f7d081);
+  --gm-action-primary-text: #101820;
+  --gm-action-primary-text-hover: #ffffff;
+  --gm-action-primary-shadow: 0 4px 12px #00000040;
+
+  /* ─── Glow/ambient colors ────────────────────────────────── */
+  --gm-ambient-teal: #59c3c32e;
+  --gm-ambient-purple: #8b5cf62e;
+
+  /* ─── Shadows ────────────────────────────────────────────── */
+  --gm-shadow: 0 20px 44px #00000052;
+  --gm-shadow-sm: 0 10px 22px #00000033;
+  --gm-shadow-overlay: var(--gm-shadow);
+  --gm-shadow-focus: 0 0 0 1px #060c16f5, 0 0 0 4px var(--gm-focus-ring);
+  --gm-shadow-brand: 0 12px 28px var(--gm-ambient-teal);
+
+  /* ─── Spacing ───────────────────────────────────────────── */
+  --gm-space-2xs: 2px;
+  --gm-space-xs: 4px;
+  --gm-space-sm: 8px;
+  --gm-space-md: 12px;
+  --gm-space-lg: 16px;
+  --gm-space-xl: 24px;
+  --gm-space-2xl: 32px;
+  --gm-space-3xl: 48px;
+
+  /* ─── Border radius ─────────────────────────────────────── */
+  --gm-radius-xs: 4px;
+  --gm-radius-sm: 8px;
+  --gm-radius-md: 12px;
+  --gm-radius-lg: 16px;
+  --gm-radius-xl: 22px;
+  --gm-radius-full: 999px;
+
+  /* ─── Typography ─────────────────────────────────────────── */
+  --gm-font-sans: "Manrope", system-ui, sans-serif;
+  --gm-font-mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --gm-weight-semibold: 600;
+  --gm-weight-bold: 700;
+  --gm-weight-extrabold: 800;
+
+  --gm-text-xs: 11px;
+  --gm-text-sm: 13px;
+  --gm-text-md: 15px;
+  --gm-text-lg: 18px;
+  --gm-text-xl: 24px;
+  --gm-text-2xl: 36px;
+
+  --gm-leading-none: 1;
+  --gm-leading-tight: 1.2;
+  --gm-leading-normal: 1.45;
+  --gm-leading-relaxed: 1.6;
+
+  --gm-letter-spacing-tight: -0.03em;
+  --gm-letter-spacing-wide: 0.05em;
+  --gm-letter-spacing-wider: 0.08em;
+
+  /* ─── Transitions ────────────────────────────────────────── */
+  --gm-transition: 150ms ease;
+
+  /* ─── Component heights ────────────────────────────────── */
+  --gm-height-sm: 32px;
+  --gm-height-md: 36px;
+  --gm-height-xl: 42px;
+
+  /* ─── Icon sizes ────────────────────────────────────────── */
+  --gm-icon-xs: 12px;
+  --gm-icon-sm: 16px;
+  --gm-icon-md: 18px;
+  --gm-icon-lg: 20px;
+
+  /* ─── Control gaps (used by playground, toolbar, etc.) ──── */
+  --gm-space-control-gap: 8px;
+  --gm-space-control-gap-tight: 4px;
+
+  /* ─── Spinners ──────────────────────────────────────────── */
+  --gm-spinner-track-dark: #10182047;
+  --gm-spinner-track-light: #ffffff4d;
+
+  /* ─── Log/output colors ────────────────────────────────── */
+  --gm-log-bg: #071019;
+  --gm-log-text: #d9f7e7;
+
+  /* ─── Graph canvas colors ──────────────────────────────── */
+  --gm-graph-node-stroke: #050c14f5;
+  --gm-graph-toolset-stroke: #aaa;
+  --gm-graph-link-opacity: 0.72;
+  --gm-graph-text: #f1f6fc;
+  --gm-graph-arrow: #80c8ff;
+  --gm-graph-highlight-stroke: #ffffff;
+  --gm-graph-text-shadow: #060a12f2;
+
+  /* ─── Code syntax highlighting colors ────────────────────── */
+  --gm-syntax-keyword: #c792ea;
+  --gm-syntax-function: #82aaff;
+  --gm-syntax-string: #c3e88d;
+  --gm-syntax-number: #f78c6c;
+  --gm-syntax-comment: #546e7a;
+  --gm-syntax-operator: #89ddff;
+  --gm-syntax-property: #e0af68;
+  --gm-syntax-constant: #ff5370;
+  --gm-syntax-type: #4ec9b0;
+  --gm-syntax-string-alt: #ce9178;
+  --gm-syntax-parameter: #f7d081;
+
+  /* ─── Blur / overlay effects ─────────────────────────────── */
+  --gm-blur-sm: blur(6px);
+  --gm-blur-md: blur(14px);
+  --gm-blur-lg: blur(20px);
+
+  /* ─── Diff colors ──────────────────────────────────────── */
+  --gm-diff-added-bg: rgba(46, 160, 67, 0.15);
+  --gm-diff-added-text: #3fb950;
+  --gm-diff-removed-bg: rgba(248, 81, 73, 0.15);
+  --gm-diff-removed-text: #f85149;
+
+  /* ─── Selection ─────────────────────────────────────────── */
+  --gm-selection-bg: #73c8ff47;
+  --gm-selection-text: #ffffff;
+}
+
+/* ─── Base ─────────────────────────────────────────────────── */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100%;
+  font-family: var(--gm-font-sans);
+  font-size: var(--gm-text-lg);
+  color: var(--gm-text);
+  background:
+    radial-gradient(circle at top left, var(--gm-ambient-teal), transparent 28%),
+    radial-gradient(circle at top right, var(--gm-ambient-purple), transparent 24%),
+    linear-gradient(180deg, var(--gm-surface-app-top) 0%, var(--gm-surface-app-bottom) 45%, var(--gm-surface-app-bottom) 100%);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.35;
+  background-image:
+    linear-gradient(#ffffff05 1px, transparent 1px),
+    linear-gradient(90deg, #ffffff05 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+body {
+  position: relative;
+  min-height: 100vh;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+a {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+::selection {
+  background: var(--gm-selection-bg);
+  color: var(--gm-selection-text);
+}

@@ -1,0 +1,27 @@
+{
+  "mcpServers": {
+    "gmloop": {
+      "command": "gmloop mcp"
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "playwright",
+        "test",
+        "--project=chromium",
+        "--reporter=list"
+      ],
+      "env": {}
+    },
+    "gamemaker-resource-tool": {
+      "type": "stdio",
+      "command": "gmloop",
+      "args": [
+        "gm-cli",
+        "mcp"
+      ],
+      "env": {}
+    }
+  }
+}

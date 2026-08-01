@@ -1,52 +1,94 @@
-import { existsSync } from "node:fs";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+const PACKAGE_JSON_FILE_NAME = "package.json";
+const CORE_PACKAGE_NAME = "@gmloop/core";
+
 /**
- * Fallback resource path resolution.
+ * Attempt to read the `name` field from the `package.json` file located at
+ * `directoryPath`. Returns `null` when the file is missing, unreadable, or
+ * does not expose a string `name`.
  *
- * DESIGN PROBLEM: This array contains hardcoded relative paths that attempt to locate
- * the shared `resources/` directory from different build output locations. The paths
- * vary depending on whether code is running from:
- *   - src/ (during development with ts-node or similar)
- *   - dist/ (after compilation)
- *   - nested subdirectories (e.g., dist/core/src/ vs dist/cli/src/)
- *
- * CURRENT STATE: The locator tries each path in sequence until it finds one that exists,
- * then uses that to resolve resource files. This is fragile and breaks if the build
- * structure changes or if new packages are added with different nesting levels.
- *
- * TODO: BETTER APPROACH: Compute the resource directory at build time or installation time
- * using one of these strategies:
- *   1. Define an environment variable (e.g., GML_RESOURCES_DIR) and read it at runtime.
- *   2. Use a build step to generate a config file with the absolute path to resources/.
- *   3. Walk upward from import.meta.url until a marker file (e.g., package.json with
- *      "name": "prettier-plugin-gml") is found, then resolve resources/ relative to that.
- *
- * WHAT WOULD BREAK: Removing these hardcoded paths without replacing them would cause
- * resource loading to fail in some build configurations. Implement one of the alternatives
- * above before removing this fallback array.
+ * The previous implementation pre-checked file existence with `fs.existsSync`
+ * before issuing `readFileSync`, a pattern the rest of this workspace has
+ * moved away from (see `readExistingMetadata` in `project-metadata.ts`). The
+ * lookup is now folded into a single `readFileSync` call wrapped in
+ * `try/catch`, which removes the redundant stat syscall and matches the
+ * "open and catch ENOENT" idiom used elsewhere in this package.
  */
-const RESOURCE_BASE_PATHS = Object.freeze(["../../../../resources/", "../../../../../resources/"]);
+function tryReadPackageName(directoryPath: string): string | null {
+    const packageJsonPath = path.resolve(directoryPath, PACKAGE_JSON_FILE_NAME);
 
-function resolveResourceUrlForExistingBase(resourceName: string): URL {
-    for (const basePath of RESOURCE_BASE_PATHS) {
-        const candidateBaseUrl = new URL(basePath, import.meta.url);
-        const candidateResourceUrl = new URL(resourceName, candidateBaseUrl);
-        const candidatePath = fileURLToPath(candidateResourceUrl);
+    let packageContents: string;
+    try {
+        packageContents = readFileSync(packageJsonPath, "utf8");
+    } catch {
+        return null;
+    }
 
-        if (existsSync(candidatePath)) {
-            return candidateResourceUrl;
+    const packageValue = JSON.parse(packageContents) as unknown;
+    if (typeof packageValue !== "object" || packageValue === null || !("name" in packageValue)) {
+        return null;
+    }
+
+    return typeof packageValue.name === "string" ? packageValue.name : null;
+}
+
+function findCorePackageDirectory(moduleDirectoryPath: string): string {
+    for (let currentDirectoryPath = moduleDirectoryPath; ; currentDirectoryPath = path.dirname(currentDirectoryPath)) {
+        if (tryReadPackageName(currentDirectoryPath) === CORE_PACKAGE_NAME) {
+            return currentDirectoryPath;
+        }
+
+        const parentDirectoryPath = path.dirname(currentDirectoryPath);
+        if (parentDirectoryPath === currentDirectoryPath) {
+            break;
         }
     }
 
-    return new URL(resourceName, new URL(RESOURCE_BASE_PATHS[0], import.meta.url));
+    throw new Error(`Unable to locate the ${CORE_PACKAGE_NAME} package directory from ${moduleDirectoryPath}.`);
+}
+
+function resolveResourceBaseDirectory(moduleDirectoryPath: string): string {
+    const packageDirectoryPath = findCorePackageDirectory(moduleDirectoryPath);
+    return path.resolve(packageDirectoryPath, "../../resources");
+}
+
+function isUnsafeResourcePath(resourcePath: string): boolean {
+    return (
+        resourcePath.length === 0 ||
+        resourcePath === "." ||
+        resourcePath === ".." ||
+        resourcePath.startsWith("../") ||
+        resourcePath.startsWith("/")
+    );
+}
+
+function resolveResourceUrl(resourceName: string): URL {
+    const moduleDirectoryPath = path.dirname(fileURLToPath(import.meta.url));
+    const resourceBaseDirectory = resolveResourceBaseDirectory(moduleDirectoryPath);
+    const normalizedResourcePath = path.posix.normalize(resourceName.replaceAll("\\", "/"));
+    const decodedNormalizedResourcePath = (() => {
+        try {
+            return path.posix.normalize(decodeURIComponent(normalizedResourcePath));
+        } catch {
+            throw new TypeError("Resource name must resolve to a safe relative path within the bundled resources.");
+        }
+    })();
+
+    if (isUnsafeResourcePath(normalizedResourcePath) || isUnsafeResourcePath(decodedNormalizedResourcePath)) {
+        throw new TypeError("Resource name must resolve to a safe relative path within the bundled resources.");
+    }
+
+    return new URL(normalizedResourcePath, new URL(`${resourceBaseDirectory}/`, "file:"));
 }
 
 /**
  * Resolve a URL pointing at a bundled resource artefact.
  *
- * Centralizing the resolution protects call sites from relying on directory
- * depth or package layout, making it easier to relocate resource assets.
+ * Resource lookup anchors itself at the `@gmloop/core` package directory and
+ * resolves the repository `resources/` folder relative to that package root.
  *
  * @param {string} resourceName Name of the resource file to resolve.
  * @returns {URL} Absolute file URL referencing the bundled artefact.
@@ -56,7 +98,7 @@ export function resolveBundledResourceUrl(resourceName: string): URL {
         throw new TypeError("Resource name must be a non-empty string.");
     }
 
-    return resolveResourceUrlForExistingBase(resourceName);
+    return resolveResourceUrl(resourceName);
 }
 
 /**
@@ -67,4 +109,21 @@ export function resolveBundledResourceUrl(resourceName: string): URL {
  */
 export function resolveBundledResourcePath(resourceName: string): string {
     return fileURLToPath(resolveBundledResourceUrl(resourceName));
+}
+
+/**
+ * Resolve the base resource directory for a caller-supplied module directory.
+ *
+ * This test-only seam validates the package-root lookup without coupling unit
+ * tests to the real repository layout.
+ *
+ * @param {string} moduleDirectoryPath Directory containing the calling module.
+ * @returns {string} Absolute resource directory for the package installation.
+ */
+export function __resolveBundledResourceBaseDirectoryForTests(moduleDirectoryPath: string): string {
+    if (typeof moduleDirectoryPath !== "string" || moduleDirectoryPath.length === 0) {
+        throw new TypeError("Module directory path must be a non-empty string.");
+    }
+
+    return resolveResourceBaseDirectory(moduleDirectoryPath);
 }

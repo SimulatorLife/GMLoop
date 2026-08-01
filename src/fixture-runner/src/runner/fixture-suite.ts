@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cp, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { chmod, cp, mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, it, test } from "node:test";
@@ -19,55 +19,69 @@ import type {
     FixtureCaseExecutionResult,
     FixtureCaseResult,
     FixtureComparison,
+    FixtureProfileBudgets,
     FixtureProfileCollector,
     FixtureRunFailure,
-    FixtureRunResult
+    FixtureRunResult,
+    FixtureStageName
 } from "../types.js";
 
-async function snapshotDirectoryTree(rootPath: string): Promise<Map<string, string>> {
-    const files = new Map<string, string>();
+type DirectoryComparisonStats = Readonly<{
+    totalComparedFiles: number;
+    peakBufferedFileCount: number;
+}>;
 
-    async function walk(currentPath: string): Promise<void> {
-        const directoryEntries = await readdir(currentPath, { withFileTypes: true });
-        const sortedEntries = directoryEntries.toSorted((left, right) => left.name.localeCompare(right.name));
+/**
+ * Compare two fixture directories by path and UTF-8 file content while keeping
+ * in-memory file buffering bounded to one pair of files at a time.
+ *
+ * @param actualDirectoryPath Produced fixture output directory.
+ * @param expectedDirectoryPath Golden expected fixture directory.
+ * @returns Deterministic comparison stats for tests/profiling assertions.
+ */
+export async function compareDirectoryTrees(
+    actualDirectoryPath: string,
+    expectedDirectoryPath: string
+): Promise<DirectoryComparisonStats> {
+    const [actualPaths, expectedPaths] = await Promise.all([
+        Core.listRelativeFilePathsRecursively(actualDirectoryPath),
+        Core.listRelativeFilePathsRecursively(expectedDirectoryPath)
+    ]);
 
-        await Promise.all(
-            sortedEntries.map(async (entry) => {
-                const entryPath = path.join(currentPath, entry.name);
-                if (entry.isDirectory()) {
-                    await walk(entryPath);
-                    return;
-                }
+    const sortedActualPaths = [...actualPaths].sort();
+    const sortedExpectedPaths = [...expectedPaths].sort();
 
-                if (!entry.isFile()) {
-                    return;
-                }
+    assert.deepEqual(
+        sortedActualPaths,
+        sortedExpectedPaths,
+        "Project tree output paths must match expected tree paths byte-for-byte."
+    );
 
-                const relativePath = path.relative(rootPath, entryPath).split(path.sep).join("/");
-                files.set(relativePath, await readFile(entryPath, "utf8"));
-            })
-        );
+    async function compareNextFile(nextIndex: number): Promise<number> {
+        if (nextIndex >= sortedActualPaths.length) {
+            return 0;
+        }
+        const relativePath = sortedActualPaths[nextIndex];
+        if (relativePath === undefined) {
+            throw new Error("Directory comparison encountered an unexpected undefined relative path.");
+        }
+        const [actualText, expectedText] = await Promise.all([
+            readFile(path.join(actualDirectoryPath, relativePath), "utf8"),
+            readFile(path.join(expectedDirectoryPath, relativePath), "utf8")
+        ]);
+        assert.equal(actualText, expectedText, `Project tree file "${relativePath}" must match expected text.`);
+        return 1 + (await compareNextFile(nextIndex + 1));
     }
 
-    await walk(rootPath);
+    const comparedFiles = await compareNextFile(0);
 
-    return new Map([...files.entries()].toSorted(([leftPath], [rightPath]) => leftPath.localeCompare(rightPath)));
-}
-
-const DOC_COMMENT_PATTERN = /^\s*\/\/\/\s*(?:\/\s*)?@/iu;
-
-function removeDocCommentAnnotationLines(text: string): string {
-    return text
-        .split(/\r?\n/u)
-        .filter((line) => !DOC_COMMENT_PATTERN.test(line))
-        .join("\n");
+    return Object.freeze({
+        totalComparedFiles: comparedFiles,
+        peakBufferedFileCount: comparedFiles > 0 ? 2 : 0
+    });
 }
 
 function canonicalizeFixtureText(text: string, comparison: FixtureComparison): string {
-    if (comparison === "trimmed-strip-doc-comment-annotations") {
-        return removeDocCommentAnnotationLines(text).trim();
-    }
-
     if (comparison === "ignore-whitespace-and-line-endings") {
         return text.replaceAll(/\r\n?/gu, "\n").replaceAll(/\s+/gu, "");
     }
@@ -75,7 +89,11 @@ function canonicalizeFixtureText(text: string, comparison: FixtureComparison): s
     return text;
 }
 
-async function compareFixtureCaseResult(fixtureCase: FixtureCase, caseResult: FixtureCaseResult): Promise<void> {
+async function compareFixtureCaseResult(
+    fixtureCase: FixtureCase,
+    caseResult: FixtureCaseResult,
+    inputText: string | null
+): Promise<void> {
     if (fixtureCase.assertion === "parse-error") {
         throw new Error(`Fixture ${fixtureCase.caseId} expected a parse error but completed successfully.`);
     }
@@ -91,22 +109,14 @@ async function compareFixtureCaseResult(fixtureCase: FixtureCase, caseResult: Fi
             null,
             `Fixture ${fixtureCase.caseId} is missing expected/ directory.`
         );
-        const [actualFiles, expectedFiles] = await Promise.all([
-            snapshotDirectoryTree(caseResult.outputDirectoryPath),
-            snapshotDirectoryTree(fixtureCase.expectedDirectoryPath)
-        ]);
-        assert.deepEqual(
-            [...actualFiles.entries()],
-            [...expectedFiles.entries()],
-            `${fixtureCase.caseId} project tree output must match expected tree byte-for-byte.`
-        );
+        await compareDirectoryTrees(caseResult.outputDirectoryPath, fixtureCase.expectedDirectoryPath);
         return;
     }
 
     assert.equal(caseResult.resultKind, "text", `Fixture ${fixtureCase.caseId} must return a text result.`);
     const expectedText =
         fixtureCase.assertion === "idempotent"
-            ? await readFile(fixtureCase.inputFilePath ?? "", "utf8")
+            ? (inputText ?? "")
             : await readFile(fixtureCase.expectedFilePath ?? "", "utf8");
     const actualOutput = canonicalizeFixtureText(caseResult.outputText, fixtureCase.comparison);
     const canonicalExpected = canonicalizeFixtureText(expectedText, fixtureCase.comparison);
@@ -120,6 +130,52 @@ async function compareFixtureCaseResult(fixtureCase: FixtureCase, caseResult: Fi
     );
 }
 
+function createFixtureProfileEntry(
+    adapter: FixtureAdapter,
+    fixtureCase: FixtureCase,
+    caseResult: FixtureCaseResult | null,
+    status: "passed" | "failed",
+    budgets: FixtureProfileBudgets | null,
+    stages: ReturnType<ReturnType<typeof createStageTimer>["getStages"]>
+) {
+    const deepCpuProfileArtifactPath = null;
+    const budgetFailures = collectBudgetFailures(stages, budgets);
+
+    return Object.freeze({
+        workspace: adapter.workspaceName,
+        suite: adapter.suiteName,
+        caseId: fixtureCase.caseId,
+        fixturePath: fixtureCase.fixturePath,
+        status,
+        changed: caseResult?.changed ?? false,
+        totalMs: stages.find((stage) => stage.stageName === "total")?.durationMs ?? 0,
+        stages,
+        budgets,
+        budgetFailures,
+        deepCpuProfileArtifactPath,
+        memorySummary: createFixtureMemorySummary(stages)
+    });
+}
+
+async function readFixtureInputText(fixtureCase: FixtureCase): Promise<string | null> {
+    return fixtureCase.inputFilePath ? await readFile(fixtureCase.inputFilePath, "utf8") : null;
+}
+
+function assertFixtureBudgetsWithinLimits(
+    fixtureCase: FixtureCase,
+    budgetFailures: ReturnType<typeof collectBudgetFailures>
+): void {
+    if (budgetFailures.length === 0) {
+        return;
+    }
+
+    throw new Error(
+        `Fixture ${fixtureCase.caseId} exceeded profiling budgets:\n${budgetFailures
+            .map((failure) => `- ${failure.metricName} on ${failure.stageName}: ${failure.actual} > ${failure.budget}`)
+            .join("\n")}`
+    );
+}
+
 async function executeFixtureCase(
     adapter: FixtureAdapter,
     fixtureCase: FixtureCase,
@@ -127,16 +183,24 @@ async function executeFixtureCase(
 ): Promise<FixtureCaseExecutionResult> {
     const stageTimer = createStageTimer();
     const budgets = fixtureCase.config.fixture.profile?.budgets ?? null;
-    const deepCpuProfileArtifactPath = null;
+    const inputText = await readFixtureInputText(fixtureCase);
+    const runProfiledStage = <T>(
+        stageName: Exclude<FixtureStageName, "load" | "compare" | "total">,
+        operation: () => Promise<T>
+    ) => stageTimer.runStage(stageName, operation);
     let workingProjectDirectoryPath: string | null = null;
     let caseResult: FixtureCaseResult | null = null;
-    let changed = false;
 
     try {
         await stageTimer.runStage("load", async () => {
             if (fixtureCase.projectDirectoryPath) {
                 workingProjectDirectoryPath = await mkdtemp(path.join(os.tmpdir(), "gmloop-fixture-runner-"));
                 await cp(fixtureCase.projectDirectoryPath, workingProjectDirectoryPath, { recursive: true });
+                // The source fixture files may be read-only (e.g. protected golden files).
+                // Make all copied files writable so the refactor engine can write changes.
+                const tempDir = workingProjectDirectoryPath;
+                const copiedFiles = await Core.listRelativeFilePathsRecursively(tempDir);
+                await Promise.all(copiedFiles.map((relPath) => chmod(path.join(tempDir, relPath), 0o644)));
             }
         });
 
@@ -146,9 +210,9 @@ async function executeFixtureCase(
                     adapter.run({
                         fixtureCase,
                         config: fixtureCase.config,
-                        inputText: fixtureCase.inputFilePath ? await readFile(fixtureCase.inputFilePath, "utf8") : null,
+                        inputText,
                         workingProjectDirectoryPath,
-                        runProfiledStage: (stageName, operation) => stageTimer.runStage(stageName, operation)
+                        runProfiledStage
                     })
                 );
                 return;
@@ -157,44 +221,24 @@ async function executeFixtureCase(
             caseResult = await adapter.run({
                 fixtureCase,
                 config: fixtureCase.config,
-                inputText: fixtureCase.inputFilePath ? await readFile(fixtureCase.inputFilePath, "utf8") : null,
+                inputText,
                 workingProjectDirectoryPath,
-                runProfiledStage: (stageName, operation) => stageTimer.runStage(stageName, operation)
+                runProfiledStage
             });
-            changed = caseResult.changed;
             await stageTimer.runStage("compare", async () => {
-                await compareFixtureCaseResult(fixtureCase, caseResult);
+                await compareFixtureCaseResult(fixtureCase, caseResult, inputText);
             });
         });
 
-        const stages = stageTimer.getStages();
-        const budgetFailures = collectBudgetFailures(stages, budgets);
-        const profileEntry = Object.freeze({
-            workspace: adapter.workspaceName,
-            suite: adapter.suiteName,
-            caseId: fixtureCase.caseId,
-            fixturePath: fixtureCase.fixturePath,
-            status: "passed" as const,
-            changed,
-            totalMs: stages.find((stage) => stage.stageName === "total")?.durationMs ?? 0,
-            stages,
+        const profileEntry = createFixtureProfileEntry(
+            adapter,
+            fixtureCase,
+            caseResult,
+            "passed",
             budgets,
-            budgetFailures,
-            deepCpuProfileArtifactPath,
-            memorySummary: createFixtureMemorySummary(stages)
-        });
-
-        if (budgetFailures.length > 0) {
-            throw new Error(
-                `Fixture ${fixtureCase.caseId} exceeded profiling budgets:\n${budgetFailures
-                    .map(
-                        (failure) =>
-                            `- ${failure.metricName} on ${failure.stageName}: ${failure.actual} > ${failure.budget}`
-                    )
-                    .join("\n")}`
-            );
-        }
-
+            stageTimer.getStages()
+        );
+        assertFixtureBudgetsWithinLimits(fixtureCase, profileEntry.budgetFailures);
         profileCollector.addEntry(profileEntry);
 
         return {
@@ -203,22 +247,14 @@ async function executeFixtureCase(
             caseResult
         };
     } catch (error) {
-        const stages = stageTimer.getStages();
-        const budgetFailures = collectBudgetFailures(stages, budgets);
-        const profileEntry = Object.freeze({
-            workspace: adapter.workspaceName,
-            suite: adapter.suiteName,
-            caseId: fixtureCase.caseId,
-            fixturePath: fixtureCase.fixturePath,
-            status: "failed" as const,
-            changed,
-            totalMs: stages.find((stage) => stage.stageName === "total")?.durationMs ?? 0,
-            stages,
+        const profileEntry = createFixtureProfileEntry(
+            adapter,
+            fixtureCase,
+            caseResult,
+            "failed",
             budgets,
-            budgetFailures,
-            deepCpuProfileArtifactPath,
-            memorySummary: createFixtureMemorySummary(stages)
-        });
+            stageTimer.getStages()
+        );
         profileCollector.addEntry(profileEntry);
         throw error;
     } finally {
@@ -274,28 +310,32 @@ export async function runFixtureSuite(parameters: {
     const executionResults: Array<FixtureCaseExecutionResult> = [];
     const failures: Array<FixtureRunFailure> = [];
 
-    await Core.runSequentially(fixtureCases, async (fixtureCase) => {
-        try {
-            executionResults.push(
-                await runDiscoveredFixtureCase({
-                    adapter: parameters.adapter,
-                    fixtureCase,
-                    profileCollector
-                })
-            );
-        } catch (error) {
-            if (!parameters.continueOnFailure) {
-                throw error;
-            }
+    await Core.runInParallelWithLimit(
+        fixtureCases,
+        async (fixtureCase) => {
+            try {
+                executionResults.push(
+                    await runDiscoveredFixtureCase({
+                        adapter: parameters.adapter,
+                        fixtureCase,
+                        profileCollector
+                    })
+                );
+            } catch (error) {
+                if (!parameters.continueOnFailure) {
+                    throw error;
+                }
 
-            failures.push(
-                Object.freeze({
-                    fixtureCase,
-                    error
-                })
-            );
-        }
-    });
+                failures.push(
+                    Object.freeze({
+                        fixtureCase,
+                        error
+                    })
+                );
+            }
+        },
+        /* concurrency limit: */ 8
+    );
 
     if (failures.length > 0 && !parameters.continueOnFailure) {
         throw failures[0]?.error;

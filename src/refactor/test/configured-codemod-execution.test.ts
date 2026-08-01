@@ -1,16 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { type BatchRenamePlanSummary, type PartialSemanticAnalyzer, Refactor } from "../index.js";
+import { Parser } from "@gmloop/parser";
+
+import {
+    type BatchRenamePlanSummary,
+    type NamingConventionTarget,
+    type PartialSemanticAnalyzer,
+    Refactor
+} from "../index.js";
 import type { StorageBackend, StorageBackendStats } from "../src/backends/index.js";
 import type { CodemodExecutionTelemetry } from "../src/types.js";
 
 /**
  * Create a minimal batch rename plan summary for codemod tests.
  */
-function createBatchRenamePlanSummary(errors: Array<string>): BatchRenamePlanSummary {
+function createBatchRenamePlanSummary(
+    errors: Array<string>,
+    workspace = new Refactor.WorkspaceEdit()
+): BatchRenamePlanSummary {
     return {
-        workspace: new Refactor.WorkspaceEdit(),
+        workspace,
         validation: {
             valid: errors.length === 0,
             errors: [...errors],
@@ -67,6 +77,11 @@ class InMemoryOverlayStorageBackend implements StorageBackend {
         this.stats.spilledEntries = this.valuesByKey.size;
     }
 
+    removeFromIndex(_key: string): void {
+        // In-memory backend has no separate index — the Map IS the index.
+        // This is a no-op that matches the StorageBackend contract.
+    }
+
     async dispose(): Promise<void> {
         this.disposed = true;
         this.valuesByKey.clear();
@@ -85,34 +100,101 @@ class InMemoryOverlayStorageBackend implements StorageBackend {
 void test("listRegisteredCodemods returns the v1 configured codemod set", () => {
     assert.deepEqual(
         Refactor.listRegisteredCodemods().map((codemod) => codemod.id),
-        ["loopLengthHoisting", "namingConvention"]
-    );
-});
-
-void test("listConfiguredCodemods reports normalized effective config and selection state", () => {
-    assert.deepEqual(
-        Refactor.listConfiguredCodemods({ codemods: { loopLengthHoisting: {} } }, ["loopLengthHoisting"]),
         [
-            {
-                id: "loopLengthHoisting",
-                description: "Hoist repeated loop-length helper calls out of for-loop test expressions.",
-                configured: true,
-                selected: true,
-                effectiveConfig: {}
-            },
-            {
-                id: "namingConvention",
-                description: "Plan and apply naming-policy-driven renames using namingConventionPolicy.",
-                configured: false,
-                selected: false,
-                effectiveConfig: null
-            }
+            "scientificNotation",
+            "repairLogicalNot",
+            "repairArgumentSeparators",
+            "repairTexturePrefetchGuard",
+            "repairInvalidTexturePointerGuard",
+            "repairAudioEmitterCreationGuard",
+            "repairSpriteTextureUvResolution",
+            "globalvarToGlobal",
+            "loopLengthHoisting",
+            "namingConvention"
         ]
     );
 });
 
-void test("executeConfiguredCodemods defaults to dry-run for loop-length hoisting", async () => {
-    const sourceText = "for (var i = 0; i < array_length(items); i++) {\n    total += i;\n}\n";
+void test("listConfiguredCodemods reports normalized effective config and selection state", () => {
+    assert.deepEqual(Refactor.listConfiguredCodemods({ codemods: { globalvarToGlobal: {} } }, ["globalvarToGlobal"]), [
+        {
+            id: "scientificNotation",
+            description: "Expand unsupported scientific-notation number literals into plain decimal literals.",
+            configured: false,
+            selected: false,
+            effectiveConfig: null
+        },
+        {
+            id: "repairLogicalNot",
+            description: "Rewrite invalid logical 'not' and 'NOT' operators to '!'.",
+            configured: false,
+            selected: false,
+            effectiveConfig: null
+        },
+        {
+            id: "repairArgumentSeparators",
+            description: "Insert missing call argument separators (commas) where omitted.",
+            configured: false,
+            selected: false,
+            effectiveConfig: null
+        },
+        {
+            id: "repairTexturePrefetchGuard",
+            description: "Prefetch texture pages when they are not ready before using their texture pointers.",
+            configured: false,
+            selected: false,
+            effectiveConfig: null
+        },
+        {
+            id: "repairInvalidTexturePointerGuard",
+            description: "Return a declared texture-info fallback when a texture pointer is not ready during startup.",
+            configured: false,
+            selected: false,
+            effectiveConfig: null
+        },
+        {
+            id: "repairAudioEmitterCreationGuard",
+            description: "Defer audio-emitter creation until the HTML5 audio engine is initialized.",
+            configured: false,
+            selected: false,
+            effectiveConfig: null
+        },
+        {
+            id: "repairSpriteTextureUvResolution",
+            description:
+                "Resolve sprite UVs before numeric texture-page handles in HTML5-compatible scr_get_uvs helpers.",
+            configured: false,
+            selected: false,
+            effectiveConfig: null
+        },
+
+        {
+            id: "globalvarToGlobal",
+            description:
+                "Remove legacy `globalvar` declarations and replace all bare identifier references with `global.<name>`.",
+            configured: true,
+            selected: true,
+            effectiveConfig: {}
+        },
+        {
+            id: "loopLengthHoisting",
+            description: "Hoist array_length(...) calls from safe for-loop conditions into local length variables.",
+            configured: false,
+            selected: false,
+            effectiveConfig: null
+        },
+        {
+            id: "namingConvention",
+            description: "Plan and apply naming-policy-driven renames.",
+            configured: false,
+            selected: false,
+            effectiveConfig: null
+        }
+    ]);
+});
+
+void test("executeConfiguredCodemods defaults to dry-run for configured codemods", async () => {
+    const sourceText = "globalvar score;\nscore += 1;\n";
     const engine = new Refactor.RefactorEngine();
     const result = await engine.executeConfiguredCodemods({
         projectRoot: "/project",
@@ -120,7 +202,7 @@ void test("executeConfiguredCodemods defaults to dry-run for loop-length hoistin
         gmlFilePaths: ["scripts/example.gml"],
         config: {
             codemods: {
-                loopLengthHoisting: {}
+                globalvarToGlobal: {}
             }
         },
         readFile: async () => sourceText
@@ -129,18 +211,75 @@ void test("executeConfiguredCodemods defaults to dry-run for loop-length hoistin
     assert.equal(result.dryRun, true);
     assert.deepEqual(result.summaries, [
         {
-            id: "loopLengthHoisting",
+            id: "globalvarToGlobal",
             changed: true,
             changedFiles: ["scripts/example.gml"],
             warnings: [],
             errors: []
         }
     ]);
-    assert.match(result.appliedFiles.get("scripts/example.gml") ?? "", /var len = array_length\(items\);/);
+    assert.match(result.appliedFiles.get("scripts/example.gml") ?? "", /global\.score \+= 1;/);
+});
+
+void test("executeConfiguredCodemods deduplicates repeated target and gml file paths", async () => {
+    const sourceText = "globalvar score;\nscore += 1;\n";
+    const engine = new Refactor.RefactorEngine();
+    const reads = new Map<string, number>();
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project", "/project"],
+        gmlFilePaths: ["scripts/example.gml", "scripts/example.gml"],
+        config: {
+            codemods: {
+                globalvarToGlobal: {}
+            }
+        },
+        readFile: async (filePath) => {
+            reads.set(filePath, (reads.get(filePath) ?? 0) + 1);
+            return sourceText;
+        }
+    });
+
+    assert.equal(reads.get("scripts/example.gml"), 1);
+    assert.deepEqual(result.summaries, [
+        {
+            id: "globalvarToGlobal",
+            changed: true,
+            changedFiles: ["scripts/example.gml"],
+            warnings: [],
+            errors: []
+        }
+    ]);
+    assert.match(result.appliedFiles.get("scripts/example.gml") ?? "", /global\.score \+= 1;/);
+});
+
+void test("executeConfiguredCodemods reuses read-through cache across codemod passes", async () => {
+    const sourceText = "globalvar score;\nscore += 1;\n";
+    const engine = new Refactor.RefactorEngine();
+    let readCount = 0;
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["scripts/example.gml"],
+        config: {
+            codemods: {
+                globalvarToGlobal: {}
+            }
+        },
+        readFile: async () => {
+            readCount += 1;
+            return sourceText;
+        }
+    });
+
+    assert.equal(result.summaries.length, 1);
+    assert.equal(readCount, 1);
 });
 
 void test("executeConfiguredCodemods avoids retaining full file content in write mode", async () => {
-    const sourceText = "for (var i = 0; i < array_length(items); i++) {\n    total += i;\n}\n";
+    const sourceText = "globalvar score;\nscore += 1;\n";
     const writes = new Map<string, string>();
     const engine = new Refactor.RefactorEngine();
 
@@ -150,7 +289,7 @@ void test("executeConfiguredCodemods avoids retaining full file content in write
         gmlFilePaths: ["scripts/example.gml"],
         config: {
             codemods: {
-                loopLengthHoisting: {}
+                globalvarToGlobal: {}
             }
         },
         readFile: async () => sourceText,
@@ -162,11 +301,11 @@ void test("executeConfiguredCodemods avoids retaining full file content in write
 
     assert.equal(result.dryRun, false);
     assert.equal(result.appliedFiles.get("scripts/example.gml"), "");
-    assert.match(writes.get("scripts/example.gml") ?? "", /var len = array_length\(items\);/);
+    assert.match(writes.get("scripts/example.gml") ?? "", /global\.score \+= 1;/);
 });
 
 void test("executeConfiguredCodemods reports overlay telemetry and emits callback", async () => {
-    const sourceText = "for (var i = 0; i < array_length(items); i++) {\n    total += i;\n}\n";
+    const sourceText = "globalvar score;\nscore += 1;\n";
     const engine = new Refactor.RefactorEngine();
     const telemetrySnapshots: Array<CodemodExecutionTelemetry> = [];
 
@@ -176,7 +315,7 @@ void test("executeConfiguredCodemods reports overlay telemetry and emits callbac
         gmlFilePaths: ["scripts/example.gml"],
         config: {
             codemods: {
-                loopLengthHoisting: {}
+                globalvarToGlobal: {}
             }
         },
         readFile: async () => sourceText,
@@ -194,7 +333,7 @@ void test("executeConfiguredCodemods reports overlay telemetry and emits callbac
 });
 
 void test("executeConfiguredCodemods spills dry-run overlay when threshold is exceeded", async () => {
-    const sourceText = "for (var i = 0; i < array_length(items); i++) {\n    total += i;\n}\n";
+    const sourceText = "globalvar score;\nscore += 1;\n";
     const engine = new Refactor.RefactorEngine();
 
     const result = await engine.executeConfiguredCodemods({
@@ -203,7 +342,7 @@ void test("executeConfiguredCodemods spills dry-run overlay when threshold is ex
         gmlFilePaths: ["scripts/example.gml"],
         config: {
             codemods: {
-                loopLengthHoisting: {}
+                globalvarToGlobal: {}
             }
         },
         readFile: async () => sourceText,
@@ -214,11 +353,11 @@ void test("executeConfiguredCodemods spills dry-run overlay when threshold is ex
     assert.ok(result.telemetry);
     assert.ok((result.telemetry?.overlaySpillWrites ?? 0) > 0);
     assert.ok((result.telemetry?.overlayEntryCount ?? 0) >= (result.telemetry?.overlaySpilledEntries ?? 0));
-    assert.match(result.appliedFiles.get("scripts/example.gml") ?? "", /var len = array_length\(items\);/);
+    assert.match(result.appliedFiles.get("scripts/example.gml") ?? "", /global\.score \+= 1;/);
 });
 
 void test("executeConfiguredCodemods uses injected dry-run overlay backend and disposes it", async () => {
-    const sourceText = "for (var i = 0; i < array_length(items); i++) {\n    total += i;\n}\n";
+    const sourceText = "globalvar score;\nscore += 1;\n";
     const engine = new Refactor.RefactorEngine();
     const backend = new InMemoryOverlayStorageBackend();
 
@@ -228,7 +367,7 @@ void test("executeConfiguredCodemods uses injected dry-run overlay backend and d
         gmlFilePaths: ["scripts/example.gml"],
         config: {
             codemods: {
-                loopLengthHoisting: {}
+                globalvarToGlobal: {}
             }
         },
         readFile: async () => sourceText,
@@ -281,15 +420,14 @@ void test("executeConfiguredCodemods applies namingConvention local renames with
         targetPaths: ["/project"],
         gmlFilePaths: ["scripts/example.gml"],
         config: {
-            namingConventionPolicy: {
-                rules: {
-                    localVariable: {
-                        caseStyle: "camel"
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        localVariable: {
+                            caseStyle: "camel"
+                        }
                     }
                 }
-            },
-            codemods: {
-                namingConvention: {}
             }
         },
         readFile: async () => sourceText
@@ -307,9 +445,19 @@ void test("executeConfiguredCodemods applies namingConvention local renames with
     assert.equal(result.appliedFiles.get("scripts/example.gml"), "var badName = 1;\nshow_debug_message(badName);\n");
 });
 
-void test("executeConfiguredCodemods reports namingConvention batch rename conflicts without applying edits", async () => {
+void test("executeConfiguredCodemods skips invalid namingConvention top-level renames and still applies safe dry-run edits", async () => {
+    const sourceText = "function good_name() {}\nfunction bad_name() {}\n";
+    const goodNameStart = sourceText.indexOf("good_name");
     const semantic: PartialSemanticAnalyzer = {
         listNamingConventionTargets: async () => [
+            {
+                name: "good_name",
+                category: "function",
+                path: "scripts/example.gml",
+                scopeId: null,
+                symbolId: "gml/script/good_name",
+                occurrences: []
+            },
             {
                 name: "bad_name",
                 category: "function",
@@ -322,8 +470,32 @@ void test("executeConfiguredCodemods reports namingConvention batch rename confl
     };
     const engine = new Refactor.RefactorEngine({ semantic });
     Object.assign(engine, {
-        async prepareBatchRenamePlan(): Promise<BatchRenamePlanSummary> {
-            return createBatchRenamePlanSummary(["Rename target collides with an existing symbol."]);
+        async validateRenameRequest(request: { symbolId: string; newName: string }) {
+            if (request.symbolId === "gml/script/bad_name") {
+                return {
+                    valid: false,
+                    errors: ["Rename target collides with an existing symbol."],
+                    warnings: []
+                };
+            }
+
+            return {
+                valid: true,
+                errors: [],
+                warnings: []
+            };
+        },
+        async prepareBatchRenamePlan(
+            renames: Array<{ symbolId: string; newName: string }>
+        ): Promise<BatchRenamePlanSummary> {
+            assert.deepEqual(renames, [{ symbolId: "gml/script/good_name", newName: "goodName" }]);
+            const workspace = new Refactor.WorkspaceEdit();
+            workspace.addEdit("scripts/example.gml", goodNameStart, goodNameStart + "good_name".length, "goodName");
+
+            return {
+                ...createBatchRenamePlanSummary([]),
+                workspace
+            };
         }
     });
 
@@ -332,25 +504,25 @@ void test("executeConfiguredCodemods reports namingConvention batch rename confl
         targetPaths: ["/project"],
         gmlFilePaths: [],
         config: {
-            namingConventionPolicy: {
-                rules: {
-                    function: {
-                        caseStyle: "camel"
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        function: {
+                            caseStyle: "camel"
+                        }
                     }
                 }
-            },
-            codemods: {
-                namingConvention: {}
             }
         },
-        readFile: async () => "function bad_name() {}\n"
+        readFile: async () => sourceText
     });
 
-    assert.equal(result.appliedFiles.size, 0);
     assert.equal(result.summaries.length, 1);
     assert.equal(result.summaries[0]?.id, "namingConvention");
-    assert.equal(result.summaries[0]?.changed, false);
-    assert.match(result.summaries[0]?.errors[0] ?? "", /collides/);
+    assert.equal(result.summaries[0]?.changed, true);
+    assert.deepEqual(result.summaries[0]?.errors, []);
+    assert.match(result.summaries[0]?.warnings[0] ?? "", /Skipping top-level rename 'gml\/script\/bad_name'/);
+    assert.equal(result.appliedFiles.get("scripts/example.gml"), "function goodName() {}\nfunction bad_name() {}\n");
 });
 
 void test("executeConfiguredCodemods uses lightweight batch planning for namingConvention top-level renames", async () => {
@@ -386,15 +558,14 @@ void test("executeConfiguredCodemods uses lightweight batch planning for namingC
         targetPaths: ["/project"],
         gmlFilePaths: [],
         config: {
-            namingConventionPolicy: {
-                rules: {
-                    function: {
-                        caseStyle: "camel"
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        function: {
+                            caseStyle: "camel"
+                        }
                     }
                 }
-            },
-            codemods: {
-                namingConvention: {}
             }
         },
         readFile: async () => "function bad_name() {}\n"
@@ -406,45 +577,284 @@ void test("executeConfiguredCodemods uses lightweight batch planning for namingC
     assert.equal(calls[0]?.validateHotReload, undefined);
 });
 
-void test("executeConfiguredCodemods streams namingConvention top-level renames in write mode", async () => {
+void test("executeConfiguredCodemods applies structDeclaration policy to constructor targets and new-expression references", async () => {
+    const sourceText = "function vector3() constructor {}\nvar value = new vector3();\n";
+    const declarationStart = sourceText.indexOf("vector3");
+    const referenceStart = sourceText.lastIndexOf("vector3");
     const semantic: PartialSemanticAnalyzer = {
         listNamingConventionTargets: async () => [
             {
-                name: "bad_one",
-                category: "function",
-                path: "scripts/a.gml",
+                name: "vector3",
+                category: "constructorFunction",
+                path: "scripts/vector3/vector3.gml",
                 scopeId: null,
-                symbolId: "gml/script/bad_one",
-                occurrences: []
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "scripts/vector3/vector3.gml",
+                        start: declarationStart,
+                        end: declarationStart + "vector3".length,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: null
+                    },
+                    {
+                        path: "scripts/vector3/vector3.gml",
+                        start: referenceStart,
+                        end: referenceStart + "vector3".length,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: null
+                    }
+                ]
+            }
+        ]
+    };
+    const engine = new Refactor.RefactorEngine({ semantic });
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["scripts/vector3/vector3.gml"],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        structDeclaration: {
+                            caseStyle: "pascal"
+                        }
+                    }
+                }
+            }
+        },
+        readFile: async () => sourceText
+    });
+
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(result.summaries[0]?.changed, true);
+    assert.equal(
+        result.appliedFiles.get("scripts/vector3/vector3.gml"),
+        "function Vector3() constructor {}\nvar value = new Vector3();\n"
+    );
+});
+
+void test("executeConfiguredCodemods preserves Pascal constructor uses while renaming enum members", async () => {
+    const sourceText = [
+        "hp = new HealthConfig(1, 1);",
+        "hp.set_damage_for_type(eDamageType.roll, 1);  // Can take damage from player rolling into it",
+        ""
+    ].join("\n");
+    const constructorReferenceStart = sourceText.indexOf("HealthConfig");
+    const enumMemberReferenceStart = sourceText.indexOf("roll");
+
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => [
+            {
+                name: "HealthConfig",
+                category: "constructorFunction",
+                path: "scripts/HealthConfig/HealthConfig.gml",
+                scopeId: null,
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "objects/obj_enemy/Create_0.gml",
+                        start: constructorReferenceStart,
+                        end: constructorReferenceStart + "HealthConfig".length,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: null
+                    }
+                ]
             },
             {
-                name: "bad_two",
-                category: "function",
-                path: "scripts/b.gml",
+                name: "roll",
+                category: "enumMember",
+                path: "scripts/damage_type/damage_type.gml",
                 scopeId: null,
-                symbolId: "gml/script/bad_two",
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "objects/obj_enemy/Create_0.gml",
+                        start: enumMemberReferenceStart,
+                        end: enumMemberReferenceStart + "roll".length,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: null
+                    }
+                ]
+            }
+        ]
+    };
+    const engine = new Refactor.RefactorEngine({ semantic });
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["objects/obj_enemy/Create_0.gml"],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        structDeclaration: {
+                            caseStyle: "pascal"
+                        },
+                        enumMember: {
+                            caseStyle: "upper_snake"
+                        },
+                        variable: {
+                            caseStyle: "lower_snake"
+                        }
+                    }
+                }
+            }
+        },
+        readFile: async () => sourceText
+    });
+
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(
+        result.appliedFiles.get("objects/obj_enemy/Create_0.gml"),
+        [
+            "hp = new HealthConfig(1, 1);",
+            "hp.set_damage_for_type(eDamageType.ROLL, 1);  // Can take damage from player rolling into it",
+            ""
+        ].join("\n")
+    );
+});
+
+void test("executeConfiguredCodemods preserves allowed leading underscores for resource renames", async () => {
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => [
+            {
+                name: "__input_error",
+                category: "scriptResourceName",
+                path: "scripts/__input_error/__input_error.gml",
+                scopeId: null,
+                symbolId: "gml/scripts/__input_error",
                 occurrences: []
             }
         ]
     };
     const engine = new Refactor.RefactorEngine({ semantic });
-    const executeBatchCalls: Array<number> = [];
+    const preparedRenameRequests: Array<Array<{ newName: string; symbolId: string }>> = [];
 
     Object.assign(engine, {
-        async prepareBatchRenamePlan(): Promise<BatchRenamePlanSummary> {
-            throw new Error("write mode should not call prepareBatchRenamePlan for top-level naming renames");
+        async prepareBatchRenamePlan(
+            request: Array<{ symbolId: string; newName: string }>
+        ): Promise<BatchRenamePlanSummary> {
+            preparedRenameRequests.push(request);
+            return createBatchRenamePlanSummary([]);
+        }
+    });
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["scripts/__input_error/__input_error.gml"],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        resource: {
+                            caseStyle: "lower_snake"
+                        }
+                    }
+                }
+            }
         },
-        async executeBatchRename(request: { renames: Array<{ symbolId: string; newName: string }> }) {
-            executeBatchCalls.push(request.renames.length);
-            return {
-                workspace: new Refactor.WorkspaceEdit(),
-                applied: new Map<string, string>([
-                    ["scripts/a.gml", ""],
-                    ["scripts/b.gml", ""]
-                ]),
-                hotReloadUpdates: [],
-                fileRenames: []
-            };
+        readFile: async () => "",
+        dryRun: true
+    });
+
+    assert.deepEqual(preparedRenameRequests, []);
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(result.summaries[0]?.changed, false);
+    assert.deepEqual(result.summaries[0]?.warnings, []);
+});
+
+void test("executeConfiguredCodemods replaces shader prefix instead of duplicating it", async () => {
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => [
+            {
+                name: "sh_cm_debug",
+                category: "shaderResourceName",
+                path: "shaders/sh_cm_debug/sh_cm_debug.gml",
+                scopeId: null,
+                symbolId: "gml/shaders/sh_cm_debug",
+                occurrences: []
+            }
+        ]
+    };
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const preparedRenameRequests: Array<Array<{ newName: string; symbolId: string }>> = [];
+
+    Object.assign(engine, {
+        async prepareBatchRenamePlan(
+            request: Array<{ symbolId: string; newName: string }>
+        ): Promise<BatchRenamePlanSummary> {
+            preparedRenameRequests.push(request);
+            return createBatchRenamePlanSummary([]);
+        }
+    });
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["shaders/sh_cm_debug/sh_cm_debug.gml"],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        resource: {
+                            caseStyle: "lower_snake"
+                        },
+                        shaderResourceName: {
+                            prefix: "shd_"
+                        }
+                    }
+                }
+            }
+        },
+        readFile: async () => "",
+        dryRun: true
+    });
+
+    assert.deepEqual(preparedRenameRequests, [[{ symbolId: "gml/shaders/sh_cm_debug", newName: "shd_cm_debug" }]]);
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(result.summaries[0]?.changed, false);
+    assert.match(result.summaries[0]?.warnings[0] ?? "", /No occurrences found/);
+});
+
+void test("executeConfiguredCodemods applies namingConvention write-mode renames through one merged workspace", async () => {
+    const namingTargets = Array.from({ length: 65 }, (_, index) => ({
+        name: `bad_name_${index}`,
+        category: "function" as const,
+        path: `scripts/script_${index}.gml`,
+        scopeId: null,
+        symbolId: `gml/script/bad_name_${index}`,
+        occurrences: []
+    }));
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => namingTargets
+    };
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const preparedRenameBatchSizes: Array<number> = [];
+    const applyWorkspaceCalls: Array<InstanceType<typeof Refactor.WorkspaceEdit>> = [];
+    const topLevelWorkspace = new Refactor.WorkspaceEdit();
+    topLevelWorkspace.addEdit("scripts/script_0.gml", 0, 8, "goodName");
+
+    Object.assign(engine, {
+        async prepareBatchRenamePlan(
+            request: Array<{ symbolId: string; newName: string }>
+        ): Promise<BatchRenamePlanSummary> {
+            preparedRenameBatchSizes.push(request.length);
+            return createBatchRenamePlanSummary([], topLevelWorkspace);
+        },
+        async applyWorkspaceEdit(workspace: InstanceType<typeof Refactor.WorkspaceEdit>) {
+            applyWorkspaceCalls.push(workspace);
+            return new Map<string, string>([
+                ["scripts/script_0.gml", ""],
+                ["scripts/script_64.gml", ""]
+            ]);
+        },
+        async executeBatchRename(): Promise<never> {
+            throw new Error("write mode should apply the merged workspace instead of executeBatchRename");
         }
     });
 
@@ -453,15 +863,14 @@ void test("executeConfiguredCodemods streams namingConvention top-level renames 
         targetPaths: ["/project"],
         gmlFilePaths: ["scripts/a.gml", "scripts/b.gml"],
         config: {
-            namingConventionPolicy: {
-                rules: {
-                    function: {
-                        caseStyle: "camel"
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        function: {
+                            caseStyle: "camel"
+                        }
                     }
                 }
-            },
-            codemods: {
-                namingConvention: {}
             }
         },
         readFile: async () => "",
@@ -469,10 +878,360 @@ void test("executeConfiguredCodemods streams namingConvention top-level renames 
         dryRun: false
     });
 
-    assert.equal(executeBatchCalls.length, 1);
+    assert.deepEqual(preparedRenameBatchSizes, [65]);
+    assert.equal(applyWorkspaceCalls.length, 1);
+    assert.equal(applyWorkspaceCalls[0]?.edits.length, 1);
     assert.equal(result.summaries[0]?.id, "namingConvention");
     assert.equal(result.summaries[0]?.changed, true);
+    assert.equal(result.appliedFiles.get("scripts/script_0.gml"), "");
+});
+
+void test("executeConfiguredCodemods skips invalid namingConvention top-level renames in write mode", async () => {
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => [
+            {
+                name: "good_one",
+                category: "function",
+                path: "scripts/a.gml",
+                scopeId: null,
+                symbolId: "gml/script/good_one",
+                occurrences: []
+            },
+            {
+                name: "bad_one",
+                category: "function",
+                path: "scripts/b.gml",
+                scopeId: null,
+                symbolId: "gml/script/bad_one",
+                occurrences: []
+            }
+        ]
+    };
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const preparedRenameBatches: Array<Array<{ symbolId: string; newName: string }>> = [];
+    const topLevelWorkspace = new Refactor.WorkspaceEdit();
+    topLevelWorkspace.addEdit("scripts/a.gml", 0, 8, "goodOne");
+
+    Object.assign(engine, {
+        async validateRenameRequest(request: { symbolId: string; newName: string }) {
+            if (request.symbolId === "gml/script/bad_one") {
+                return {
+                    valid: false,
+                    errors: ["Rename target collides with an existing symbol."],
+                    warnings: []
+                };
+            }
+
+            return {
+                valid: true,
+                errors: [],
+                warnings: []
+            };
+        },
+        async prepareBatchRenamePlan(
+            request: Array<{ symbolId: string; newName: string }>
+        ): Promise<BatchRenamePlanSummary> {
+            preparedRenameBatches.push(request);
+            return createBatchRenamePlanSummary([], topLevelWorkspace);
+        },
+        async applyWorkspaceEdit() {
+            return new Map<string, string>([["scripts/a.gml", ""]]);
+        },
+        async executeBatchRename(): Promise<never> {
+            throw new Error("write mode should apply the merged workspace instead of executeBatchRename");
+        }
+    });
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["scripts/a.gml", "scripts/b.gml"],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        function: {
+                            caseStyle: "camel"
+                        }
+                    }
+                }
+            }
+        },
+        readFile: async () => "",
+        writeFile: async () => {},
+        dryRun: false
+    });
+
+    assert.deepEqual(preparedRenameBatches, [[{ symbolId: "gml/script/good_one", newName: "goodOne" }]]);
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(result.summaries[0]?.changed, true);
+    assert.deepEqual(result.summaries[0]?.errors, []);
+    assert.match(result.summaries[0]?.warnings[0] ?? "", /Skipping top-level rename 'gml\/script\/bad_one'/);
     assert.equal(result.appliedFiles.get("scripts/a.gml"), "");
+    assert.equal(result.appliedFiles.has("scripts/b.gml"), false);
+});
+
+void test("executeConfiguredCodemods keeps mixed local and top-level namingConvention renames aligned in write mode", async () => {
+    const sourceText = [
+        "function setup() {",
+        "    var treeMesh = levelColmesh;",
+        "    cm_add(levelColmesh, treeMesh);",
+        "}",
+        ""
+    ].join("\n");
+    const filePath = "objects/demo/Create_0.gml";
+    const localDefinitionStart = sourceText.indexOf("treeMesh");
+    const localReferenceStart = sourceText.lastIndexOf("treeMesh");
+    const firstGlobalReferenceStart = sourceText.indexOf("levelColmesh");
+    const secondGlobalReferenceStart = sourceText.lastIndexOf("levelColmesh");
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => [
+            {
+                name: "treeMesh",
+                category: "localVariable",
+                path: filePath,
+                scopeId: "scope:treeMesh",
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: filePath,
+                        start: localDefinitionStart,
+                        end: localDefinitionStart + "treeMesh".length,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: "scope:treeMesh"
+                    },
+                    {
+                        path: filePath,
+                        start: localReferenceStart,
+                        end: localReferenceStart + "treeMesh".length,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:treeMesh"
+                    }
+                ]
+            },
+            {
+                name: "levelColmesh",
+                category: "globalVariable",
+                path: filePath,
+                scopeId: null,
+                symbolId: "gml/globalvar/levelColmesh",
+                occurrences: []
+            }
+        ]
+    };
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const writes = new Map<string, string>();
+    const topLevelWorkspace = new Refactor.WorkspaceEdit();
+    topLevelWorkspace.addEdit(
+        filePath,
+        secondGlobalReferenceStart,
+        secondGlobalReferenceStart + "levelColmesh".length,
+        "level_colmesh"
+    );
+    topLevelWorkspace.addEdit(
+        filePath,
+        firstGlobalReferenceStart,
+        firstGlobalReferenceStart + "levelColmesh".length,
+        "level_colmesh"
+    );
+
+    Object.assign(engine, {
+        async prepareBatchRenamePlan(
+            request: Array<{ symbolId: string; newName: string }>
+        ): Promise<BatchRenamePlanSummary> {
+            assert.deepEqual(request, [{ symbolId: "gml/globalvar/levelColmesh", newName: "level_colmesh" }]);
+            return createBatchRenamePlanSummary([], topLevelWorkspace);
+        },
+        async executeBatchRename(): Promise<never> {
+            throw new Error("write mode should not apply stale top-level batch renames after local edits");
+        }
+    });
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: [filePath],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        localVariable: {
+                            caseStyle: "lower_snake"
+                        },
+                        globalVariable: {
+                            caseStyle: "lower_snake"
+                        }
+                    }
+                }
+            }
+        },
+        readFile: async () => sourceText,
+        writeFile: async (writtenFilePath, content) => {
+            writes.set(writtenFilePath, content);
+        },
+        dryRun: false
+    });
+
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(result.summaries[0]?.changed, true);
+    assert.equal(
+        writes.get(filePath),
+        [
+            "function setup() {",
+            "    var tree_mesh = level_colmesh;",
+            "    cm_add(level_colmesh, tree_mesh);",
+            "}",
+            ""
+        ].join("\n")
+    );
+    assert.equal(result.appliedFiles.get(filePath), "");
+});
+
+void test("executeConfiguredCodemods preserves duplicate levelColmesh overlap safety after high-volume top-level edits", async () => {
+    const sourceText = [
+        "function setup() {",
+        "    var treeMesh = levelColmesh;",
+        "    cm_add(levelColmesh, treeMesh);",
+        "}",
+        ""
+    ].join("\n");
+    const filePath = "objects/demo/Create_0.gml";
+    const fillerFilePath = "scripts/filler.gml";
+    const fillerSource = "a".repeat(3000);
+    const localDefinitionStart = sourceText.indexOf("treeMesh");
+    const localReferenceStart = sourceText.lastIndexOf("treeMesh");
+    const firstGlobalReferenceStart = sourceText.indexOf("levelColmesh");
+    const secondGlobalReferenceStart = sourceText.lastIndexOf("levelColmesh");
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => [
+            {
+                name: "treeMesh",
+                category: "localVariable",
+                path: filePath,
+                scopeId: "scope:treeMesh",
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: filePath,
+                        start: localDefinitionStart,
+                        end: localDefinitionStart + "treeMesh".length,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: "scope:treeMesh"
+                    },
+                    {
+                        path: filePath,
+                        start: localReferenceStart,
+                        end: localReferenceStart + "treeMesh".length,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:treeMesh"
+                    }
+                ]
+            },
+            {
+                name: "levelColmesh",
+                category: "instanceVariable",
+                path: filePath,
+                scopeId: "scope:instance",
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: filePath,
+                        start: firstGlobalReferenceStart,
+                        end: firstGlobalReferenceStart + "levelColmesh".length,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:instance"
+                    },
+                    {
+                        path: filePath,
+                        start: secondGlobalReferenceStart,
+                        end: secondGlobalReferenceStart + "levelColmesh".length,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:instance"
+                    }
+                ]
+            },
+            {
+                name: "levelColmesh",
+                category: "globalVariable",
+                path: filePath,
+                scopeId: null,
+                symbolId: "gml/globalvar/levelColmesh",
+                occurrences: []
+            }
+        ]
+    };
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const writes = new Map<string, string>();
+    const topLevelWorkspace = new Refactor.WorkspaceEdit();
+    for (let index = 0; index <= 1024; index += 1) {
+        topLevelWorkspace.addEdit(fillerFilePath, index * 2, index * 2 + 1, "b");
+    }
+    topLevelWorkspace.addEdit(
+        filePath,
+        secondGlobalReferenceStart,
+        secondGlobalReferenceStart + "levelColmesh".length,
+        "level_colmesh"
+    );
+    topLevelWorkspace.addEdit(
+        filePath,
+        firstGlobalReferenceStart,
+        firstGlobalReferenceStart + "levelColmesh".length,
+        "level_colmesh"
+    );
+
+    Object.assign(engine, {
+        async prepareBatchRenamePlan(
+            request: Array<{ symbolId: string; newName: string }>
+        ): Promise<BatchRenamePlanSummary> {
+            assert.deepEqual(request, [{ symbolId: "gml/globalvar/levelColmesh", newName: "level_colmesh" }]);
+            return createBatchRenamePlanSummary([], topLevelWorkspace);
+        },
+        async executeBatchRename(): Promise<never> {
+            throw new Error("write mode should not apply stale top-level batch renames after local edits");
+        }
+    });
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: [filePath, fillerFilePath],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        localVariable: {
+                            caseStyle: "lower_snake"
+                        },
+                        globalVariable: {
+                            caseStyle: "lower_snake"
+                        },
+                        instanceVariable: {
+                            caseStyle: "lower_snake"
+                        }
+                    }
+                }
+            }
+        },
+        readFile: async (readPath) => (readPath === filePath ? sourceText : fillerSource),
+        writeFile: async (writtenFilePath, content) => {
+            writes.set(writtenFilePath, content);
+        },
+        dryRun: false
+    });
+
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(result.summaries[0]?.changed, true);
+    assert.equal(result.summaries[0]?.errors.length, 0);
+    assert.equal(
+        writes.get(filePath),
+        [
+            "function setup() {",
+            "    var tree_mesh = level_colmesh;",
+            "    cm_add(level_colmesh, tree_mesh);",
+            "}",
+            ""
+        ].join("\n")
+    );
 });
 
 void test("executeConfiguredCodemods honors project-relative target paths for namingConvention selection", async () => {
@@ -535,15 +1294,14 @@ void test("executeConfiguredCodemods honors project-relative target paths for na
         targetPaths: ["scripts"],
         gmlFilePaths: [],
         config: {
-            namingConventionPolicy: {
-                rules: {
-                    localVariable: {
-                        caseStyle: "camel"
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        localVariable: {
+                            caseStyle: "camel"
+                        }
                     }
                 }
-            },
-            codemods: {
-                namingConvention: {}
             }
         },
         readFile: async (filePath) => fileContents.get(filePath) ?? ""
@@ -553,6 +1311,1017 @@ void test("executeConfiguredCodemods honors project-relative target paths for na
     assert.deepEqual(result.summaries[0]?.changedFiles, ["scripts/example.gml"]);
     assert.equal(result.appliedFiles.get("scripts/example.gml"), "var badName = 1;\nshow_debug_message(badName);\n");
     assert.equal(result.appliedFiles.has("other/skip.gml"), false);
+});
+
+void test("executeConfiguredCodemods applies enum + enumMember renames and preserves parse validity", async () => {
+    const sourceText = "enum ecm { x, y, z };\nvar a = ecm.x;\nvar b = ecm.y;\nvar c = ecm.z;\n";
+    const enumStart = sourceText.indexOf("ecm");
+    const xDefStart = sourceText.indexOf("x,");
+    const yDefStart = sourceText.indexOf("y,");
+    const zDefStart = sourceText.indexOf("z");
+    const xRefStart = sourceText.indexOf("ecm.x");
+    const yRefStart = sourceText.indexOf("ecm.y");
+    const zRefStart = sourceText.indexOf("ecm.z");
+
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => [
+            {
+                name: "ecm",
+                category: "enum",
+                path: "scripts/enum_test.gml",
+                scopeId: null,
+                symbolId: "gml/enum/ecm",
+                occurrences: []
+            },
+            {
+                name: "x",
+                category: "enumMember",
+                path: "scripts/enum_test.gml",
+                scopeId: null,
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "scripts/enum_test.gml",
+                        start: xDefStart,
+                        end: xDefStart + 1,
+                        kind: Refactor.OccurrenceKind.DEFINITION
+                    },
+                    {
+                        path: "scripts/enum_test.gml",
+                        start: xRefStart + 4,
+                        end: xRefStart + 5,
+                        kind: Refactor.OccurrenceKind.REFERENCE
+                    }
+                ]
+            },
+            {
+                name: "y",
+                category: "enumMember",
+                path: "scripts/enum_test.gml",
+                scopeId: null,
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "scripts/enum_test.gml",
+                        start: yDefStart,
+                        end: yDefStart + 1,
+                        kind: Refactor.OccurrenceKind.DEFINITION
+                    },
+                    {
+                        path: "scripts/enum_test.gml",
+                        start: yRefStart + 4,
+                        end: yRefStart + 5,
+                        kind: Refactor.OccurrenceKind.REFERENCE
+                    }
+                ]
+            },
+            {
+                name: "z",
+                category: "enumMember",
+                path: "scripts/enum_test.gml",
+                scopeId: null,
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "scripts/enum_test.gml",
+                        start: zDefStart,
+                        end: zDefStart + 1,
+                        kind: Refactor.OccurrenceKind.DEFINITION
+                    },
+                    {
+                        path: "scripts/enum_test.gml",
+                        start: zRefStart + 4,
+                        end: zRefStart + 5,
+                        kind: Refactor.OccurrenceKind.REFERENCE
+                    }
+                ]
+            }
+        ],
+        getSymbolOccurrences: async (symbolName: string, symbolId: string | null = null) => {
+            if (symbolId === "gml/enum/ecm") {
+                return [
+                    {
+                        path: "scripts/enum_test.gml",
+                        start: enumStart,
+                        end: enumStart + 3,
+                        kind: Refactor.OccurrenceKind.DEFINITION
+                    },
+                    {
+                        path: "scripts/enum_test.gml",
+                        start: xRefStart,
+                        end: xRefStart + 3,
+                        kind: Refactor.OccurrenceKind.REFERENCE
+                    },
+                    {
+                        path: "scripts/enum_test.gml",
+                        start: yRefStart,
+                        end: yRefStart + 3,
+                        kind: Refactor.OccurrenceKind.REFERENCE
+                    },
+                    {
+                        path: "scripts/enum_test.gml",
+                        start: zRefStart,
+                        end: zRefStart + 3,
+                        kind: Refactor.OccurrenceKind.REFERENCE
+                    }
+                ];
+            }
+            return [];
+        }
+    };
+
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const fileContents = new Map<string, string>([["scripts/enum_test.gml", sourceText]]);
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["scripts/enum_test.gml"],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        enum: { caseStyle: "camel", suffix: "M" },
+                        enumMember: { caseStyle: "lower", suffix: "X" }
+                    }
+                }
+            }
+        },
+        readFile: async (path) => fileContents.get(path) ?? "",
+        writeFile: async (path, content) => {
+            fileContents.set(path, content);
+        },
+        dryRun: false
+    });
+
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(result.summaries[0]?.changed, true);
+    const finalText = fileContents.get("scripts/enum_test.gml");
+    assert.ok(finalText?.includes("enum ecmM"));
+    assert.ok(finalText?.includes("xX"));
+    assert.ok(finalText?.includes("yX"));
+    assert.ok(finalText?.includes("zX"));
+
+    assert.doesNotThrow(() => {
+        const ast = Parser.GMLParser.parse(finalText ?? "");
+        assert.ok(ast && ast.type === "Program");
+    });
+});
+
+void test("executeConfiguredCodemods applies cross-file enum + enumMember renames and preserves parse validity", async () => {
+    const definitionSourceText = [
+        "enum CM_RAY {",
+        "    MASK,",
+        "    NUM",
+        "};",
+        "",
+        "function cm_defs(ray) {",
+        "    return ray[CM_RAY.MASK] + ray[CM_RAY.NUM];",
+        "}",
+        ""
+    ].join("\n");
+    const usageSourceText = [
+        "function cm_use(ray) {",
+        "    var mask = ray[CM_RAY.MASK];",
+        "    return mask + ray[CM_RAY.NUM];",
+        "}",
+        ""
+    ].join("\n");
+    const enumDefinitionStart = definitionSourceText.indexOf("CM_RAY");
+    const enumReferenceInDefinitionStart = definitionSourceText.indexOf("CM_RAY", enumDefinitionStart + 1);
+    const secondEnumReferenceInDefinitionStart = definitionSourceText.indexOf(
+        "CM_RAY",
+        enumReferenceInDefinitionStart + 1
+    );
+    const enumDefinitionMaskStart = definitionSourceText.indexOf("MASK");
+    const enumDefinitionNumStart = definitionSourceText.indexOf("NUM");
+    const enumReferenceMaskInDefinitionStart = definitionSourceText.indexOf("MASK", enumDefinitionMaskStart + 1);
+    const enumReferenceNumInDefinitionStart = definitionSourceText.indexOf("NUM", enumDefinitionNumStart + 1);
+    const enumReferenceInUsageStart = usageSourceText.indexOf("CM_RAY");
+    const secondEnumReferenceInUsageStart = usageSourceText.indexOf("CM_RAY", enumReferenceInUsageStart + 1);
+    const enumReferenceMaskInUsageStart = usageSourceText.indexOf("MASK");
+    const enumReferenceNumInUsageStart = usageSourceText.indexOf("NUM");
+
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => [
+            {
+                name: "CM_RAY",
+                category: "enum",
+                path: "scripts/cm_defs.gml",
+                scopeId: null,
+                symbolId: "gml/enum/cm_ray",
+                occurrences: []
+            },
+            {
+                name: "MASK",
+                category: "enumMember",
+                path: "scripts/cm_defs.gml",
+                scopeId: null,
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "scripts/cm_defs.gml",
+                        start: enumDefinitionMaskStart,
+                        end: enumDefinitionMaskStart + "MASK".length,
+                        kind: Refactor.OccurrenceKind.DEFINITION
+                    },
+                    {
+                        path: "scripts/cm_defs.gml",
+                        start: enumReferenceMaskInDefinitionStart,
+                        end: enumReferenceMaskInDefinitionStart + "MASK".length,
+                        kind: Refactor.OccurrenceKind.REFERENCE
+                    },
+                    {
+                        path: "scripts/cm_use.gml",
+                        start: enumReferenceMaskInUsageStart,
+                        end: enumReferenceMaskInUsageStart + "MASK".length,
+                        kind: Refactor.OccurrenceKind.REFERENCE
+                    }
+                ]
+            },
+            {
+                name: "NUM",
+                category: "enumMember",
+                path: "scripts/cm_defs.gml",
+                scopeId: null,
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "scripts/cm_defs.gml",
+                        start: enumDefinitionNumStart,
+                        end: enumDefinitionNumStart + "NUM".length,
+                        kind: Refactor.OccurrenceKind.DEFINITION
+                    },
+                    {
+                        path: "scripts/cm_defs.gml",
+                        start: enumReferenceNumInDefinitionStart,
+                        end: enumReferenceNumInDefinitionStart + "NUM".length,
+                        kind: Refactor.OccurrenceKind.REFERENCE
+                    },
+                    {
+                        path: "scripts/cm_use.gml",
+                        start: enumReferenceNumInUsageStart,
+                        end: enumReferenceNumInUsageStart + "NUM".length,
+                        kind: Refactor.OccurrenceKind.REFERENCE
+                    }
+                ]
+            }
+        ],
+        getSymbolOccurrences: async (_symbolName: string, symbolId: string | null = null) => {
+            if (symbolId !== "gml/enum/cm_ray") {
+                return [];
+            }
+
+            return [
+                {
+                    path: "scripts/cm_defs.gml",
+                    start: enumDefinitionStart,
+                    end: enumDefinitionStart + "CM_RAY".length,
+                    kind: Refactor.OccurrenceKind.DEFINITION
+                },
+                {
+                    path: "scripts/cm_defs.gml",
+                    start: enumReferenceInDefinitionStart,
+                    end: enumReferenceInDefinitionStart + "CM_RAY".length,
+                    kind: Refactor.OccurrenceKind.REFERENCE
+                },
+                {
+                    path: "scripts/cm_defs.gml",
+                    start: secondEnumReferenceInDefinitionStart,
+                    end: secondEnumReferenceInDefinitionStart + "CM_RAY".length,
+                    kind: Refactor.OccurrenceKind.REFERENCE
+                },
+                {
+                    path: "scripts/cm_use.gml",
+                    start: enumReferenceInUsageStart,
+                    end: enumReferenceInUsageStart + "CM_RAY".length,
+                    kind: Refactor.OccurrenceKind.REFERENCE
+                },
+                {
+                    path: "scripts/cm_use.gml",
+                    start: secondEnumReferenceInUsageStart,
+                    end: secondEnumReferenceInUsageStart + "CM_RAY".length,
+                    kind: Refactor.OccurrenceKind.REFERENCE
+                }
+            ];
+        }
+    };
+
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const fileContents = new Map<string, string>([
+        ["scripts/cm_defs.gml", definitionSourceText],
+        ["scripts/cm_use.gml", usageSourceText]
+    ]);
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["scripts/cm_defs.gml", "scripts/cm_use.gml"],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        enum: { caseStyle: "camel", prefix: "e" },
+                        enumMember: { caseStyle: "upper_snake" }
+                    }
+                }
+            }
+        },
+        readFile: async (path) => fileContents.get(path) ?? "",
+        writeFile: async (path, content) => {
+            fileContents.set(path, content);
+        },
+        dryRun: false
+    });
+
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(result.summaries[0]?.changed, true);
+    assert.deepEqual(result.summaries[0]?.changedFiles, ["scripts/cm_defs.gml", "scripts/cm_use.gml"]);
+
+    const rewrittenDefinitionSource = fileContents.get("scripts/cm_defs.gml") ?? "";
+    const rewrittenUsageSource = fileContents.get("scripts/cm_use.gml") ?? "";
+    assert.match(rewrittenDefinitionSource, /enum eCmRay \{/);
+    assert.match(rewrittenDefinitionSource, /return ray\[eCmRay\.MASK\] \+ ray\[eCmRay\.NUM\];/);
+    assert.match(rewrittenUsageSource, /var mask = ray\[eCmRay\.MASK\];/);
+    assert.match(rewrittenUsageSource, /return mask \+ ray\[eCmRay\.NUM\];/);
+    assert.doesNotMatch(rewrittenDefinitionSource, /\bCM_RAY\b/);
+    assert.doesNotMatch(rewrittenUsageSource, /\bCM_RAY\b/);
+
+    assert.doesNotThrow(() => {
+        const definitionAst = Parser.GMLParser.parse(rewrittenDefinitionSource);
+        const usageAst = Parser.GMLParser.parse(rewrittenUsageSource);
+        assert.ok(definitionAst && definitionAst.type === "Program");
+        assert.ok(usageAst && usageAst.type === "Program");
+    });
+});
+
+void test("executeConfiguredCodemods skips local variable renames that would redeclare built-in instance variables", async () => {
+    const sourceText = [
+        "function cm_collider_check(collider) {",
+        "    var X = collider[CM.X];",
+        "    var Y = collider[CM.Y];",
+        "    var halfX = 1;",
+        "    return X + Y + halfX;",
+        "}",
+        ""
+    ].join("\n");
+    const firstXOccurrence = sourceText.indexOf("X");
+    const secondXOccurrence = sourceText.lastIndexOf("X");
+    const firstYOccurrence = sourceText.indexOf("Y");
+    const secondYOccurrence = sourceText.lastIndexOf("Y");
+    const firstHalfXOccurrence = sourceText.indexOf("halfX");
+    const secondHalfXOccurrence = sourceText.lastIndexOf("halfX");
+
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => [
+            {
+                name: "X",
+                category: "localVariable",
+                path: "scripts/cm_collider.gml",
+                scopeId: "scope:cm_collider",
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "scripts/cm_collider.gml",
+                        start: firstXOccurrence,
+                        end: firstXOccurrence + "X".length,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: "scope:cm_collider"
+                    },
+                    {
+                        path: "scripts/cm_collider.gml",
+                        start: secondXOccurrence,
+                        end: secondXOccurrence + "X".length,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:cm_collider"
+                    }
+                ]
+            },
+            {
+                name: "Y",
+                category: "localVariable",
+                path: "scripts/cm_collider.gml",
+                scopeId: "scope:cm_collider",
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "scripts/cm_collider.gml",
+                        start: firstYOccurrence,
+                        end: firstYOccurrence + "Y".length,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: "scope:cm_collider"
+                    },
+                    {
+                        path: "scripts/cm_collider.gml",
+                        start: secondYOccurrence,
+                        end: secondYOccurrence + "Y".length,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:cm_collider"
+                    }
+                ]
+            },
+            {
+                name: "halfX",
+                category: "localVariable",
+                path: "scripts/cm_collider.gml",
+                scopeId: "scope:cm_collider",
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "scripts/cm_collider.gml",
+                        start: firstHalfXOccurrence,
+                        end: firstHalfXOccurrence + "halfX".length,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: "scope:cm_collider"
+                    },
+                    {
+                        path: "scripts/cm_collider.gml",
+                        start: secondHalfXOccurrence,
+                        end: secondHalfXOccurrence + "halfX".length,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:cm_collider"
+                    }
+                ]
+            }
+        ]
+    };
+
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const fileContents = new Map<string, string>([["scripts/cm_collider.gml", sourceText]]);
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["scripts/cm_collider.gml"],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        variable: { caseStyle: "lower_snake" }
+                    }
+                }
+            }
+        },
+        readFile: async (filePath) => fileContents.get(filePath) ?? "",
+        writeFile: async (filePath, content) => {
+            fileContents.set(filePath, content);
+        },
+        dryRun: false
+    });
+
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(result.summaries[0]?.changed, true);
+    assert.ok(
+        result.summaries[0]?.warnings.some((warning) => warning.includes("reserved GameMaker identifier")),
+        "expected a warning when a reserved local rename is skipped"
+    );
+
+    const finalText = fileContents.get("scripts/cm_collider.gml");
+    assert.match(finalText ?? "", /var X = collider\[CM\.X\];/);
+    assert.match(finalText ?? "", /var Y = collider\[CM\.Y\];/);
+    assert.match(finalText ?? "", /var half_x = 1;/);
+    assert.match(finalText ?? "", /return X \+ Y \+ half_x;/);
+
+    assert.doesNotThrow(() => {
+        const ast = Parser.GMLParser.parse(finalText ?? "");
+        assert.ok(ast && ast.type === "Program");
+    });
+});
+
+void test("executeConfiguredCodemods skips exclusive-prefix variable renames when the stripped name is reserved", async () => {
+    const sourceText = [
+        "function group_smf(path, texName) {",
+        "    var spr_id = asset_get_index(filename_change_ext(filename_name(path), texName));",
+        "    return spr_id;",
+        "}",
+        ""
+    ].join("\n");
+    const firstSprIdOccurrence = sourceText.indexOf("spr_id");
+    const secondSprIdOccurrence = sourceText.lastIndexOf("spr_id");
+
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => [
+            {
+                name: "spr_id",
+                category: "localVariable",
+                path: "scripts/group_smf.gml",
+                scopeId: "scope:group_smf",
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "scripts/group_smf.gml",
+                        start: firstSprIdOccurrence,
+                        end: firstSprIdOccurrence + "spr_id".length,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: "scope:group_smf"
+                    },
+                    {
+                        path: "scripts/group_smf.gml",
+                        start: secondSprIdOccurrence,
+                        end: secondSprIdOccurrence + "spr_id".length,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:group_smf"
+                    }
+                ]
+            }
+        ]
+    };
+
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const fileContents = new Map<string, string>([["scripts/group_smf.gml", sourceText]]);
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["scripts/group_smf.gml"],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        variable: { caseStyle: "lower_snake" },
+                        spriteResourceName: { prefix: "spr_", caseStyle: "lower_snake" }
+                    },
+                    exclusivePrefixes: {
+                        spr_: "spriteResourceName"
+                    }
+                }
+            }
+        },
+        readFile: async (filePath) => fileContents.get(filePath) ?? "",
+        writeFile: async (filePath, content) => {
+            fileContents.set(filePath, content);
+        },
+        dryRun: false
+    });
+
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(result.summaries[0]?.changed, false);
+    assert.ok(
+        result.summaries[0]?.warnings.some((warning) => warning.includes("reserved GameMaker identifier")),
+        "expected a warning when a reserved local rename is skipped"
+    );
+
+    const finalText = fileContents.get("scripts/group_smf.gml");
+    assert.match(finalText ?? "", /var spr_id = asset_get_index/);
+    assert.match(finalText ?? "", /return spr_id;/);
+
+    assert.doesNotThrow(() => {
+        const ast = Parser.GMLParser.parse(finalText ?? "");
+        assert.ok(ast && ast.type === "Program");
+    });
+});
+
+void test("executeConfiguredCodemods skips argument renames to reserved built-in identifiers", async () => {
+    const sourceText = [
+        "function CurveHandlerTimed(arg_id, arg_self, arg_other, arg_global) constructor {",
+        "    self.curve_struct = animcurve_get(arg_id);",
+        "    static set_curve_config = function(arg_id, speed_multiplier) {",
+        "        if (!is_undefined(arg_self) and arg_other != arg_global) {",
+        "            self.curve_struct = animcurve_get(arg_id);",
+        "        }",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+
+    function createArgumentTarget(name: string): NamingConventionTarget {
+        const firstOccurrence = sourceText.indexOf(name);
+        const secondOccurrence = sourceText.indexOf(name, firstOccurrence + name.length);
+
+        return {
+            name,
+            category: "argument",
+            path: "scripts/CurveHandlerTimed/CurveHandlerTimed.gml",
+            scopeId: "scope:CurveHandlerTimed",
+            symbolId: null,
+            occurrences: [
+                {
+                    path: "scripts/CurveHandlerTimed/CurveHandlerTimed.gml",
+                    start: firstOccurrence,
+                    end: firstOccurrence + name.length,
+                    kind: Refactor.OccurrenceKind.DEFINITION,
+                    scopeId: "scope:CurveHandlerTimed"
+                },
+                {
+                    path: "scripts/CurveHandlerTimed/CurveHandlerTimed.gml",
+                    start: secondOccurrence,
+                    end: secondOccurrence + name.length,
+                    kind: Refactor.OccurrenceKind.REFERENCE,
+                    scopeId: "scope:CurveHandlerTimed"
+                }
+            ]
+        };
+    }
+
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => [
+            createArgumentTarget("arg_id"),
+            createArgumentTarget("arg_self"),
+            createArgumentTarget("arg_other"),
+            createArgumentTarget("arg_global")
+        ]
+    };
+
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["scripts/CurveHandlerTimed/CurveHandlerTimed.gml"],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        argument: { bannedPrefixes: ["arg_"], caseStyle: "camel" }
+                    }
+                }
+            }
+        },
+        readFile: async () => sourceText
+    });
+
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(result.summaries[0]?.changed, false);
+    for (const [sourceName, reservedName] of [
+        ["arg_id", "id"],
+        ["arg_self", "self"],
+        ["arg_other", "other"],
+        ["arg_global", "global"]
+    ] as const) {
+        assert.ok(
+            result.summaries[0]?.warnings.some(
+                (warning) =>
+                    warning.includes(sourceName) &&
+                    warning.includes(reservedName) &&
+                    warning.includes("reserved GameMaker identifier")
+            ),
+            `expected ${sourceName} -> ${reservedName} to be skipped as reserved`
+        );
+    }
+    assert.equal(result.appliedFiles.get("scripts/CurveHandlerTimed/CurveHandlerTimed.gml"), undefined);
+});
+
+void test("executeConfiguredCodemods skips catch-argument renames to reserved built-in identifiers", async () => {
+    const sourceText = [
+        "function load_config() {",
+        "    try {",
+        "        return buffer_load(path);",
+        "    } catch (error_id) {",
+        "        show_debug_message(error_id);",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+    const firstErrorIdOccurrence = sourceText.indexOf("error_id");
+    const secondErrorIdOccurrence = sourceText.lastIndexOf("error_id");
+
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => [
+            {
+                name: "error_id",
+                category: "catchArgument",
+                path: "scripts/load_config/load_config.gml",
+                scopeId: "scope:load_config:catch",
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "scripts/load_config/load_config.gml",
+                        start: firstErrorIdOccurrence,
+                        end: firstErrorIdOccurrence + "error_id".length,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: "scope:load_config:catch"
+                    },
+                    {
+                        path: "scripts/load_config/load_config.gml",
+                        start: secondErrorIdOccurrence,
+                        end: secondErrorIdOccurrence + "error_id".length,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:load_config:catch"
+                    }
+                ]
+            }
+        ]
+    };
+
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["scripts/load_config/load_config.gml"],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        catchArgument: { bannedPrefixes: ["error_"], caseStyle: "camel" }
+                    }
+                }
+            }
+        },
+        readFile: async () => sourceText
+    });
+
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(result.summaries[0]?.changed, false);
+    assert.ok(
+        result.summaries[0]?.warnings.some(
+            (warning) =>
+                warning.includes("error_id") &&
+                warning.includes("id") &&
+                warning.includes("reserved GameMaker identifier")
+        )
+    );
+    assert.equal(result.appliedFiles.get("scripts/load_config/load_config.gml"), undefined);
+});
+
+void test("executeConfiguredCodemods skips local renames that referenced macro expansions depend on", async () => {
+    const sourceText = [
+        "function cm_triangle(collider) {",
+        "    var Z = collider[1];",
+        "    CM_TRIANGLE_GET_CAPSULE_REF;",
+        "    return Z;",
+        "}",
+        ""
+    ].join("\n");
+    const zDefinitionStart = sourceText.indexOf("Z =");
+    const zReferenceStart = sourceText.lastIndexOf("Z;");
+
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => [
+            {
+                name: "Z",
+                category: "localVariable",
+                path: "scripts/cm_triangle.gml",
+                scopeId: "scope:cm_triangle",
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "scripts/cm_triangle.gml",
+                        start: zDefinitionStart,
+                        end: zDefinitionStart + 1,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: "scope:cm_triangle"
+                    },
+                    {
+                        path: "scripts/cm_triangle.gml",
+                        start: zReferenceStart,
+                        end: zReferenceStart + 1,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:cm_triangle"
+                    }
+                ]
+            }
+        ],
+        listMacroExpansionDependencies: async () => [
+            {
+                path: "scripts/cm_triangle.gml",
+                macroName: "CM_TRIANGLE_GET_CAPSULE_REF",
+                referencedNames: ["Z"]
+            }
+        ]
+    };
+
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const fileContents = new Map<string, string>([["scripts/cm_triangle.gml", sourceText]]);
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["scripts/cm_triangle.gml"],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        variable: { caseStyle: "lower_snake" }
+                    }
+                }
+            }
+        },
+        readFile: async (filePath) => fileContents.get(filePath) ?? "",
+        writeFile: async (filePath, content) => {
+            fileContents.set(filePath, content);
+        },
+        dryRun: false
+    });
+
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(result.summaries[0]?.changed, false);
+    assert.ok(
+        result.summaries[0]?.warnings.some((warning) =>
+            warning.includes("macro expansion 'CM_TRIANGLE_GET_CAPSULE_REF' depends on 'Z'")
+        ),
+        "expected a warning when a macro expansion depends on the current local name"
+    );
+
+    const finalText = fileContents.get("scripts/cm_triangle.gml");
+    assert.equal(finalText, sourceText);
+});
+
+void test("executeConfiguredCodemods skips argument renames that would collide with locals in reachable scopes", async () => {
+    const sourceText = [
+        "function sample_builder(M, AABB, N) {",
+        "    var m = array_create(16);",
+        "    var aabb = CM_SPATIALHASH_AABB;",
+        "    for (var n = 3; n > 0; --n) {",
+        "        show_debug_message(M[0] + AABB[0] + N.x + m[0] + aabb[0] + n);",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+    const mParameterStart = sourceText.indexOf("M,");
+    const mReferenceStart = sourceText.indexOf("M[0]");
+    const localMDefinitionStart = sourceText.indexOf("var m");
+    const localMReferenceStart = sourceText.indexOf("m[0]");
+    const aabbParameterStart = sourceText.indexOf("AABB");
+    const aabbReferenceStart = sourceText.indexOf("AABB[0]");
+    const localAabbDefinitionStart = sourceText.indexOf("var aabb");
+    const localAabbReferenceStart = sourceText.indexOf("aabb[0]");
+    const nParameterStart = sourceText.indexOf("N)");
+    const nReferenceStart = sourceText.indexOf("N.x");
+    const loopNDefinitionStart = sourceText.indexOf("var n");
+    const loopNReferenceStart = sourceText.lastIndexOf("n)");
+
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => [
+            {
+                name: "M",
+                category: "argument",
+                path: "scripts/sample_builder.gml",
+                scopeId: "scope:function:sample_builder",
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "scripts/sample_builder.gml",
+                        start: mParameterStart,
+                        end: mParameterStart + 1,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: "scope:function:sample_builder"
+                    },
+                    {
+                        path: "scripts/sample_builder.gml",
+                        start: mReferenceStart,
+                        end: mReferenceStart + 1,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:function:sample_builder"
+                    }
+                ]
+            },
+            {
+                name: "m",
+                category: "localVariable",
+                path: "scripts/sample_builder.gml",
+                scopeId: "scope:function:sample_builder",
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "scripts/sample_builder.gml",
+                        start: localMDefinitionStart + 4,
+                        end: localMDefinitionStart + 5,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: "scope:function:sample_builder"
+                    },
+                    {
+                        path: "scripts/sample_builder.gml",
+                        start: localMReferenceStart,
+                        end: localMReferenceStart + 1,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:function:sample_builder"
+                    }
+                ]
+            },
+            {
+                name: "AABB",
+                category: "argument",
+                path: "scripts/sample_builder.gml",
+                scopeId: "scope:function:sample_builder",
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "scripts/sample_builder.gml",
+                        start: aabbParameterStart,
+                        end: aabbParameterStart + 4,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: "scope:function:sample_builder"
+                    },
+                    {
+                        path: "scripts/sample_builder.gml",
+                        start: aabbReferenceStart,
+                        end: aabbReferenceStart + 4,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:function:sample_builder"
+                    }
+                ]
+            },
+            {
+                name: "aabb",
+                category: "localVariable",
+                path: "scripts/sample_builder.gml",
+                scopeId: "scope:function:sample_builder",
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "scripts/sample_builder.gml",
+                        start: localAabbDefinitionStart + 4,
+                        end: localAabbDefinitionStart + 8,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: "scope:function:sample_builder"
+                    },
+                    {
+                        path: "scripts/sample_builder.gml",
+                        start: localAabbReferenceStart,
+                        end: localAabbReferenceStart + 4,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:function:sample_builder"
+                    }
+                ]
+            },
+            {
+                name: "N",
+                category: "argument",
+                path: "scripts/sample_builder.gml",
+                scopeId: "scope:function:sample_builder",
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "scripts/sample_builder.gml",
+                        start: nParameterStart,
+                        end: nParameterStart + 1,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: "scope:function:sample_builder"
+                    },
+                    {
+                        path: "scripts/sample_builder.gml",
+                        start: nReferenceStart,
+                        end: nReferenceStart + 1,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:function:sample_builder"
+                    }
+                ]
+            },
+            {
+                name: "n",
+                category: "loopIndexVariable",
+                path: "scripts/sample_builder.gml",
+                scopeId: "scope:function:sample_builder",
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "scripts/sample_builder.gml",
+                        start: loopNDefinitionStart + 4,
+                        end: loopNDefinitionStart + 5,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: "scope:function:sample_builder"
+                    },
+                    {
+                        path: "scripts/sample_builder.gml",
+                        start: loopNReferenceStart,
+                        end: loopNReferenceStart + 1,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:function:sample_builder"
+                    }
+                ]
+            }
+        ]
+    };
+
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const fileContents = new Map<string, string>([["scripts/sample_builder.gml", sourceText]]);
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["scripts/sample_builder.gml"],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        argument: { caseStyle: "lower_snake" }
+                    }
+                }
+            }
+        },
+        readFile: async (filePath) => fileContents.get(filePath) ?? "",
+        writeFile: async (filePath, content) => {
+            fileContents.set(filePath, content);
+        },
+        dryRun: false
+    });
+
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(result.summaries[0]?.changed, false);
+    assert.ok(
+        result.summaries[0]?.warnings.some((warning) => warning.includes("already exists in the same scope")),
+        "expected a warning when a rename would collide with an existing same-scope declaration"
+    );
+
+    const finalText = fileContents.get("scripts/sample_builder.gml");
+    assert.match(finalText ?? "", /function sample_builder\(M, AABB, N\)/);
+    assert.match(finalText ?? "", /var m = array_create\(16\);/);
+    assert.match(finalText ?? "", /var aabb = CM_SPATIALHASH_AABB;/);
+    assert.match(finalText ?? "", /for \(var n = 3; n > 0; --n\)/);
+
+    assert.doesNotThrow(() => {
+        const ast = Parser.GMLParser.parse(finalText ?? "");
+        assert.ok(ast && ast.type === "Program");
+    });
 });
 
 void test("executeConfiguredCodemods requests naming targets by selected GML file paths", async () => {
@@ -602,15 +2371,14 @@ void test("executeConfiguredCodemods requests naming targets by selected GML fil
         targetPaths: ["/project"],
         gmlFilePaths: ["scripts/example.gml"],
         config: {
-            namingConventionPolicy: {
-                rules: {
-                    localVariable: {
-                        caseStyle: "camel"
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        localVariable: {
+                            caseStyle: "camel"
+                        }
                     }
                 }
-            },
-            codemods: {
-                namingConvention: {}
             }
         },
         readFile: async () => sourceText
@@ -618,9 +2386,652 @@ void test("executeConfiguredCodemods requests naming targets by selected GML fil
 
     assert.equal(result.summaries[0]?.id, "namingConvention");
     assert.equal(result.appliedFiles.get("scripts/example.gml"), "var badName = 1;\nshow_debug_message(badName);\n");
-    assert.ok(listCalls.every((paths) => Array.isArray(paths) && paths.length === 4));
-    assert.ok(listCalls.every((paths) => paths?.includes("scripts/example.gml")));
-    assert.ok(listCalls.every((paths) => paths?.includes("scripts/example.yy")));
+    assert.equal(listCalls.length, 1);
+    assert.ok(Array.isArray(listCalls[0]));
+    assert.equal(listCalls[0]?.length, 4);
+    assert.ok(listCalls[0]?.includes("scripts/example.gml"));
+    assert.ok(listCalls[0]?.includes("/project/scripts/example.gml"));
+    assert.ok(listCalls[0]?.includes("scripts/example.yy"));
+    assert.ok(listCalls[0]?.includes("/project/scripts/example.yy"));
+});
+
+void test("executeConfiguredCodemods recovers naming targets when one file fails semantic parsing", async () => {
+    const sourceText = "var bad_name = 1;\nshow_debug_message(bad_name);\n";
+    const brokenSourceText = "function broken_script() {\n    var x = ;\n}\n";
+    const firstOccurrence = sourceText.indexOf("bad_name");
+    const secondOccurrence = sourceText.lastIndexOf("bad_name");
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async (filePaths?: Array<string>) => {
+            const selectedPaths = filePaths ?? [];
+            if (selectedPaths.some((filePath) => filePath.includes("broken.gml"))) {
+                throw new Error("Syntax Error (scripts/broken.gml: line 2, column 12): unexpected symbol ';'");
+            }
+            if (!selectedPaths.some((filePath) => filePath.includes("example.gml"))) {
+                return [];
+            }
+
+            return [
+                {
+                    name: "bad_name",
+                    category: "localVariable",
+                    path: "scripts/example.gml",
+                    scopeId: "scope:local",
+                    symbolId: null,
+                    occurrences: [
+                        {
+                            path: "scripts/example.gml",
+                            start: firstOccurrence,
+                            end: firstOccurrence + "bad_name".length,
+                            kind: Refactor.OccurrenceKind.DEFINITION,
+                            scopeId: "scope:local"
+                        },
+                        {
+                            path: "scripts/example.gml",
+                            start: secondOccurrence,
+                            end: secondOccurrence + "bad_name".length,
+                            kind: Refactor.OccurrenceKind.REFERENCE,
+                            scopeId: "scope:local"
+                        }
+                    ]
+                }
+            ];
+        }
+    };
+    const fileContents = new Map<string, string>([
+        ["scripts/example.gml", sourceText],
+        ["scripts/broken.gml", brokenSourceText]
+    ]);
+    const engine = new Refactor.RefactorEngine({ semantic });
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["scripts/example.gml", "scripts/broken.gml"],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        localVariable: {
+                            caseStyle: "camel"
+                        }
+                    }
+                }
+            }
+        },
+        readFile: async (filePath) => fileContents.get(filePath) ?? ""
+    });
+
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(result.summaries[0]?.errors.length ?? 1, 0);
+    assert.ok(
+        result.summaries[0]?.warnings.some((warning) =>
+            warning.includes("Naming-convention target discovery encountered recoverable analysis errors")
+        ),
+        "expected fallback warning when the initial semantic query fails"
+    );
+    assert.ok(
+        result.summaries[0]?.warnings.some(
+            (warning) => warning.includes("Skipping naming-convention analysis for") && warning.includes("broken.gml")
+        ),
+        "expected a warning for the skipped broken file"
+    );
+    assert.equal(result.appliedFiles.get("scripts/example.gml"), "var badName = 1;\nshow_debug_message(badName);\n");
+});
+
+void test("executeConfiguredCodemods preserves semantic method context for naming target discovery", async () => {
+    const sourceText = "var bad_name = 1;\nshow_debug_message(bad_name);\n";
+    const firstOccurrence = sourceText.indexOf("bad_name");
+    const secondOccurrence = sourceText.lastIndexOf("bad_name");
+    const projectRoot = "/project";
+    const semanticContext: PartialSemanticAnalyzer & { projectRoot: string } = {
+        projectRoot,
+        listNamingConventionTargets(this: { projectRoot: string }, filePaths?: Array<string>) {
+            if (this.projectRoot !== projectRoot) {
+                throw new TypeError('The "paths[0]" argument must be of type string. Received undefined');
+            }
+
+            const selectedPaths = filePaths ?? [];
+            if (!selectedPaths.some((filePath) => filePath.includes("example.gml"))) {
+                return [];
+            }
+
+            return [
+                {
+                    name: "bad_name",
+                    category: "localVariable",
+                    path: "scripts/example.gml",
+                    scopeId: "scope:local",
+                    symbolId: null,
+                    occurrences: [
+                        {
+                            path: "scripts/example.gml",
+                            start: firstOccurrence,
+                            end: firstOccurrence + "bad_name".length,
+                            kind: Refactor.OccurrenceKind.DEFINITION,
+                            scopeId: "scope:local"
+                        },
+                        {
+                            path: "scripts/example.gml",
+                            start: secondOccurrence,
+                            end: secondOccurrence + "bad_name".length,
+                            kind: Refactor.OccurrenceKind.REFERENCE,
+                            scopeId: "scope:local"
+                        }
+                    ]
+                }
+            ];
+        }
+    };
+    const engine = new Refactor.RefactorEngine({
+        semantic: semanticContext
+    });
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot,
+        targetPaths: [projectRoot],
+        gmlFilePaths: ["scripts/example.gml"],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        localVariable: {
+                            caseStyle: "camel"
+                        }
+                    }
+                }
+            }
+        },
+        readFile: async () => sourceText
+    });
+
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(result.summaries[0]?.errors.length ?? 1, 0);
+    assert.equal(result.summaries[0]?.warnings.length ?? 1, 0);
+    assert.equal(result.appliedFiles.get("scripts/example.gml"), "var badName = 1;\nshow_debug_message(badName);\n");
+});
+
+void test("executeConfiguredCodemods handles duplicate case-only local variable renames", async () => {
+    const sourceText = [
+        "for (var i = 0; i < arm_num; i++) {",
+        "    var IK = twojointik(i);",
+        "    draw_sprite(IK[0], IK[1]);",
+        "}",
+        "for (var i = 0; i < arm_num; i++) {",
+        "    var IK = twojointik(i + 1);",
+        "    draw_sprite(IK[0], IK[1]);",
+        "}",
+        ""
+    ].join("\n");
+
+    const firstDefinitionStart = sourceText.indexOf("IK =");
+    const firstReferenceStart = sourceText.indexOf("IK[0]");
+    const firstReferenceSecondTokenStart = sourceText.indexOf("IK[1]");
+    const secondDefinitionStart = sourceText.lastIndexOf("IK =");
+    const secondReferenceStart = sourceText.lastIndexOf("IK[0]");
+    const secondReferenceSecondTokenStart = sourceText.lastIndexOf("IK[1]");
+
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => [
+            {
+                name: "IK",
+                category: "localVariable",
+                path: "objects/obj_spider/Draw_0.gml",
+                scopeId: "scope:function:draw",
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "objects/obj_spider/Draw_0.gml",
+                        start: firstDefinitionStart,
+                        end: firstDefinitionStart + 2,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: "scope:function:draw"
+                    },
+                    {
+                        path: "objects/obj_spider/Draw_0.gml",
+                        start: firstReferenceStart,
+                        end: firstReferenceStart + 2,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:function:draw"
+                    },
+                    {
+                        path: "objects/obj_spider/Draw_0.gml",
+                        start: firstReferenceSecondTokenStart,
+                        end: firstReferenceSecondTokenStart + 2,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:function:draw"
+                    }
+                ]
+            },
+            {
+                name: "IK",
+                category: "localVariable",
+                path: "objects/obj_spider/Draw_0.gml",
+                scopeId: "scope:function:draw",
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "objects/obj_spider/Draw_0.gml",
+                        start: secondDefinitionStart,
+                        end: secondDefinitionStart + 2,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: "scope:function:draw"
+                    },
+                    {
+                        path: "objects/obj_spider/Draw_0.gml",
+                        start: secondReferenceStart,
+                        end: secondReferenceStart + 2,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:function:draw"
+                    },
+                    {
+                        path: "objects/obj_spider/Draw_0.gml",
+                        start: secondReferenceSecondTokenStart,
+                        end: secondReferenceSecondTokenStart + 2,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:function:draw"
+                    }
+                ]
+            }
+        ]
+    };
+
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const fileContents = new Map<string, string>([["objects/obj_spider/Draw_0.gml", sourceText]]);
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["objects/obj_spider/Draw_0.gml"],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        localVariable: {
+                            caseStyle: "lower_snake"
+                        }
+                    }
+                }
+            }
+        },
+        readFile: async (filePath) => fileContents.get(filePath) ?? "",
+        writeFile: async (filePath, content) => {
+            fileContents.set(filePath, content);
+        },
+        dryRun: false
+    });
+
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(result.summaries[0]?.changed, true);
+    assert.equal(
+        result.summaries[0]?.warnings.some((warning) => warning.includes("already exists in the same scope")),
+        false
+    );
+
+    const finalText = fileContents.get("objects/obj_spider/Draw_0.gml");
+    assert.match(finalText ?? "", /var ik = twojointik\(i\);/);
+    assert.match(finalText ?? "", /draw_sprite\(ik\[0\], ik\[1\]\);/);
+    assert.match(finalText ?? "", /var ik = twojointik\(i \+ 1\);/);
+
+    assert.doesNotThrow(() => {
+        const ast = Parser.GMLParser.parse(finalText ?? "");
+        assert.ok(ast && ast.type === "Program");
+    });
+});
+
+void test("executeConfiguredCodemods handles repeated local variables during resource renames", async () => {
+    const objectSource = [
+        "function Draw_0() {",
+        "    for (var i = 0; i < 2; i++) {",
+        "        var IK = twojointik(i);",
+        "        draw_sprite(IK[0], IK[1]);",
+        "    }",
+        "",
+        "    for (var i = 0; i < 2; i++) {",
+        "        var IK = twojointik(i + 1);",
+        "        draw_sprite(IK[0], IK[1]);",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+    const scriptSource = ["function twojointik(value) {", "    return [value, value + 1];", "}", ""].join("\n");
+
+    const roomMetadataOriginal = JSON.stringify(
+        {
+            "%Name": "Room1",
+            name: "Room1",
+            resourceType: "GMRoom",
+            resourcePath: "rooms/Room1/Room1.yy",
+            instanceCreationOrder: [{ name: "inst_7056BF4E", path: "rooms/Room1/Room1.yy" }],
+            layers: [
+                {
+                    $GMRInstance: "v4",
+                    name: "inst_7056BF4E",
+                    objectId: { name: "oSpider", path: "objects/oSpider/oSpider.yy" },
+                    resourceType: "GMRInstance",
+                    resourceVersion: "2.0"
+                }
+            ]
+        },
+        null,
+        2
+    );
+    const objectMetadataOriginal = JSON.stringify(
+        {
+            "%Name": "oSpider",
+            name: "oSpider",
+            resourceType: "GMObject",
+            resourcePath: "objects/oSpider/oSpider.yy"
+        },
+        null,
+        2
+    );
+    const scriptMetadataOriginal = JSON.stringify(
+        {
+            "%Name": "InverseKinematics",
+            name: "InverseKinematics",
+            resourceType: "GMScript",
+            resourcePath: "scripts/InverseKinematics/InverseKinematics.yy"
+        },
+        null,
+        2
+    );
+    const projectMetadataOriginal = JSON.stringify(
+        {
+            name: "MyGame",
+            resourceType: "GMProject",
+            resources: [
+                { id: { name: "oSpider", path: "objects/oSpider/oSpider.yy" } },
+                { id: { name: "Room1", path: "rooms/Room1/Room1.yy" } },
+                { id: { name: "InverseKinematics", path: "scripts/InverseKinematics/InverseKinematics.yy" } }
+            ],
+            RoomOrderNodes: [{ roomId: { name: "Room1", path: "rooms/Room1/Room1.yy" } }]
+        },
+        null,
+        2
+    );
+
+    const firstIkDefinitionStart = objectSource.indexOf("IK =");
+    const firstIkReferenceStart = objectSource.indexOf("IK[0]");
+    const firstIkSecondReferenceStart = objectSource.indexOf("IK[1]");
+    const secondIkDefinitionStart = objectSource.lastIndexOf("IK =");
+    const secondIkReferenceStart = objectSource.lastIndexOf("IK[0]");
+    const secondIkSecondReferenceStart = objectSource.lastIndexOf("IK[1]");
+    const twojointikDefinitionStart = scriptSource.indexOf("twojointik");
+    const twojointikResourceReferenceStart = projectMetadataOriginal.indexOf("InverseKinematics");
+
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => [
+            {
+                name: "IK",
+                category: "localVariable",
+                path: "objects/oSpider/Draw_0.gml",
+                scopeId: "scope:function:Draw_0",
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "objects/oSpider/Draw_0.gml",
+                        start: firstIkDefinitionStart,
+                        end: firstIkDefinitionStart + 2,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: "scope:function:Draw_0:first"
+                    },
+                    {
+                        path: "objects/oSpider/Draw_0.gml",
+                        start: firstIkReferenceStart,
+                        end: firstIkReferenceStart + 2,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:function:Draw_0:first"
+                    },
+                    {
+                        path: "objects/oSpider/Draw_0.gml",
+                        start: firstIkSecondReferenceStart,
+                        end: firstIkSecondReferenceStart + 2,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:function:Draw_0:first"
+                    }
+                ]
+            },
+            {
+                name: "IK",
+                category: "localVariable",
+                path: "objects/oSpider/Draw_0.gml",
+                scopeId: "scope:function:Draw_0",
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "objects/oSpider/Draw_0.gml",
+                        start: secondIkDefinitionStart,
+                        end: secondIkDefinitionStart + 2,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: "scope:function:Draw_0:second"
+                    },
+                    {
+                        path: "objects/oSpider/Draw_0.gml",
+                        start: secondIkReferenceStart,
+                        end: secondIkReferenceStart + 2,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:function:Draw_0:second"
+                    },
+                    {
+                        path: "objects/oSpider/Draw_0.gml",
+                        start: secondIkSecondReferenceStart,
+                        end: secondIkSecondReferenceStart + 2,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:function:Draw_0:second"
+                    }
+                ]
+            },
+            {
+                name: "twojointik",
+                category: "scriptResourceName",
+                path: "scripts/InverseKinematics/InverseKinematics.gml",
+                scopeId: null,
+                symbolId: "gml/scripts/InverseKinematics",
+                occurrences: [
+                    {
+                        path: "scripts/InverseKinematics/InverseKinematics.gml",
+                        start: twojointikDefinitionStart,
+                        end: twojointikDefinitionStart + "twojointik".length,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: null
+                    }
+                ]
+            },
+            {
+                name: "InverseKinematics",
+                category: "scriptResourceName",
+                path: "MyGame.yyp",
+                scopeId: null,
+                symbolId: "gml/scripts/InverseKinematics",
+                occurrences: [
+                    {
+                        path: "MyGame.yyp",
+                        start: twojointikResourceReferenceStart,
+                        end: twojointikResourceReferenceStart + "InverseKinematics".length,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: null
+                    }
+                ]
+            },
+            {
+                name: "oSpider",
+                category: "objectResourceName",
+                path: "objects/oSpider/oSpider.yy",
+                scopeId: null,
+                symbolId: "gml/objects/oSpider",
+                occurrences: []
+            },
+            {
+                name: "Room1",
+                category: "roomResourceName",
+                path: "rooms/Room1/Room1.yy",
+                scopeId: null,
+                symbolId: "gml/rooms/Room1",
+                occurrences: []
+            }
+        ],
+        getAdditionalSymbolEdits: (symbolId, newName) => {
+            if (symbolId === "gml/objects/oSpider") {
+                const workspace = new Refactor.WorkspaceEdit();
+                workspace.addMetadataEdit(
+                    "objects/oSpider/oSpider.yy",
+                    objectMetadataOriginal
+                        .replaceAll('"oSpider"', `"${newName}"`)
+                        .replaceAll("objects/oSpider/oSpider.yy", `objects/${newName}/${newName}.yy`)
+                );
+                workspace.addMetadataEdit(
+                    "rooms/Room1/Room1.yy",
+                    roomMetadataOriginal
+                        .replaceAll('"oSpider"', `"${newName}"`)
+                        .replaceAll("objects/oSpider/oSpider.yy", `objects/${newName}/${newName}.yy`)
+                );
+                workspace.addMetadataEdit(
+                    "MyGame.yyp",
+                    projectMetadataOriginal
+                        .replaceAll('"oSpider"', `"${newName}"`)
+                        .replaceAll("objects/oSpider/oSpider.yy", `objects/${newName}/${newName}.yy`)
+                );
+                workspace.addFileRename("objects/oSpider/oSpider.yy", `objects/${newName}/${newName}.yy`);
+                workspace.addFileRename("objects/oSpider", `objects/${newName}`);
+                return workspace;
+            }
+
+            if (symbolId === "gml/rooms/Room1") {
+                const workspace = new Refactor.WorkspaceEdit();
+                workspace.addMetadataEdit(
+                    "rooms/Room1/Room1.yy",
+                    roomMetadataOriginal
+                        .replaceAll('"Room1"', `"${newName}"`)
+                        .replaceAll("rooms/Room1/Room1.yy", `rooms/${newName}/${newName}.yy`)
+                );
+                workspace.addMetadataEdit(
+                    "MyGame.yyp",
+                    projectMetadataOriginal
+                        .replaceAll('"Room1"', `"${newName}"`)
+                        .replaceAll("rooms/Room1/Room1.yy", `rooms/${newName}/${newName}.yy`)
+                );
+                workspace.addFileRename("rooms/Room1/Room1.yy", `rooms/${newName}/${newName}.yy`);
+                workspace.addFileRename("rooms/Room1", `rooms/${newName}`);
+                return workspace;
+            }
+
+            if (symbolId === "gml/scripts/InverseKinematics") {
+                const workspace = new Refactor.WorkspaceEdit();
+                workspace.addMetadataEdit(
+                    "scripts/InverseKinematics/InverseKinematics.yy",
+                    scriptMetadataOriginal
+                        .replaceAll('"InverseKinematics"', `"${newName}"`)
+                        .replaceAll(
+                            "scripts/InverseKinematics/InverseKinematics.yy",
+                            `scripts/${newName}/${newName}.yy`
+                        )
+                );
+                workspace.addMetadataEdit(
+                    "MyGame.yyp",
+                    projectMetadataOriginal
+                        .replaceAll('"InverseKinematics"', `"${newName}"`)
+                        .replaceAll(
+                            "scripts/InverseKinematics/InverseKinematics.yy",
+                            `scripts/${newName}/${newName}.yy`
+                        )
+                );
+                workspace.addFileRename(
+                    "scripts/InverseKinematics/InverseKinematics.yy",
+                    `scripts/${newName}/${newName}.yy`
+                );
+                workspace.addFileRename("scripts/InverseKinematics", `scripts/${newName}`);
+                return workspace;
+            }
+
+            return null;
+        }
+    };
+
+    const fileContents = new Map<string, string>([
+        ["objects/oSpider/Draw_0.gml", objectSource],
+        ["scripts/InverseKinematics/InverseKinematics.gml", scriptSource],
+        ["objects/oSpider/oSpider.yy", objectMetadataOriginal],
+        ["rooms/Room1/Room1.yy", roomMetadataOriginal],
+        ["scripts/InverseKinematics/InverseKinematics.yy", scriptMetadataOriginal],
+        ["MyGame.yyp", projectMetadataOriginal]
+    ]);
+    const writes = new Map<string, string>();
+    const engine = new Refactor.RefactorEngine({ semantic });
+    Object.assign(engine, {
+        async applyWorkspaceEdit(workspace: InstanceType<typeof Refactor.WorkspaceEdit>) {
+            const applied = new Map<string, string>();
+            for (const metadataEdit of workspace.metadataEdits) {
+                fileContents.set(metadataEdit.path, metadataEdit.content);
+                writes.set(metadataEdit.path, metadataEdit.content);
+                applied.set(metadataEdit.path, "");
+            }
+
+            for (const textEdit of workspace.edits) {
+                const previous = fileContents.get(textEdit.path) ?? "";
+                const next = previous.slice(0, textEdit.start) + textEdit.newText + previous.slice(textEdit.end);
+                fileContents.set(textEdit.path, next);
+                writes.set(textEdit.path, next);
+                applied.set(textEdit.path, "");
+            }
+
+            return applied;
+        }
+    });
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["objects/oSpider/Draw_0.gml", "scripts/InverseKinematics/InverseKinematics.gml"],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        localVariable: {
+                            caseStyle: "lower_snake"
+                        },
+                        scriptResourceName: {
+                            caseStyle: "lower_snake"
+                        },
+                        objectResourceName: {
+                            caseStyle: "lower_snake",
+                            prefix: "obj_"
+                        },
+                        roomResourceName: {
+                            caseStyle: "lower_snake",
+                            prefix: "rm_"
+                        }
+                    }
+                }
+            }
+        },
+        readFile: async (filePath) => fileContents.get(filePath) ?? "",
+        writeFile: async (filePath, content) => {
+            fileContents.set(filePath, content);
+            writes.set(filePath, content);
+        },
+        dryRun: false
+    });
+
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(result.summaries[0]?.changed, true);
+
+    const rewrittenObjectSource = fileContents.get("objects/oSpider/Draw_0.gml") ?? "";
+    assert.match(rewrittenObjectSource, /var ik = twojointik\(i\);/);
+    assert.match(rewrittenObjectSource, /draw_sprite\(ik\[0\], ik\[1\]\);/);
+    assert.match(rewrittenObjectSource, /var ik = twojointik\(i \+ 1\);/);
+    assert.doesNotMatch(rewrittenObjectSource, /\bIK\b/);
+
+    const rewrittenScriptSource = fileContents.get("scripts/InverseKinematics/InverseKinematics.gml") ?? "";
+    assert.match(rewrittenScriptSource, /function twojointik\(value\)/);
+    assert.ok(
+        result.summaries[0]?.warnings.some((warning) => warning.includes("No occurrences found")),
+        "expected warning coverage for no-occurrence resource renames seen in vendor projects"
+    );
+
+    assert.doesNotThrow(() => {
+        const ast = Parser.GMLParser.parse(rewrittenObjectSource);
+        assert.ok(ast && ast.type === "Program");
+    });
 });
 
 void test("executeConfiguredCodemods surfaces namingConvention hot reload warnings from top-level plans", async () => {
@@ -655,20 +3066,319 @@ void test("executeConfiguredCodemods surfaces namingConvention hot reload warnin
         targetPaths: ["/project"],
         gmlFilePaths: [],
         config: {
-            namingConventionPolicy: {
-                rules: {
-                    function: {
-                        caseStyle: "camel"
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        function: {
+                            caseStyle: "camel"
+                        }
                     }
                 }
-            },
-            codemods: {
-                namingConvention: {}
             }
         },
         readFile: async () => "function bad_name() {}\n"
     });
 
     assert.equal(result.summaries[0]?.id, "namingConvention");
-    assert.match(result.summaries[0]?.warnings[0] ?? "", /Transpiler compatibility validated/);
+    assert.ok(
+        result.summaries[0]?.warnings.some((warning) => /Transpiler compatibility validated/.test(warning)) ?? false
+    );
+});
+
+void test("executeConfiguredCodemods preserves PascalCase constructor when renaming its parent script resource to lowercase", async () => {
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => [
+            {
+                name: "Attack",
+                category: "scriptResourceName",
+                path: "scripts/Attack/Attack.yy",
+                scopeId: null,
+                symbolId: "gml/scripts/Attack",
+                occurrences: []
+            },
+            {
+                name: "Attack",
+                category: "constructorFunction",
+                path: "scripts/Attack/Attack.gml",
+                scopeId: null,
+                symbolId: "gml/function/Attack",
+                occurrences: [
+                    {
+                        path: "scripts/Attack/Attack.gml",
+                        start: 9,
+                        end: 15,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: null
+                    }
+                ]
+            }
+        ]
+    };
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const preparedRenameRequests: Array<Array<{ newName: string; symbolId: string }>> = [];
+
+    Object.assign(engine, {
+        async prepareBatchRenamePlan(
+            request: Array<{ symbolId: string; newName: string }>
+        ): Promise<BatchRenamePlanSummary> {
+            preparedRenameRequests.push(request);
+            return createBatchRenamePlanSummary([]);
+        }
+    });
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["scripts/Attack/Attack.gml"],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        scriptResourceName: {
+                            caseStyle: "lower_snake"
+                        },
+                        structDeclaration: {
+                            caseStyle: "pascal"
+                        }
+                    }
+                }
+            }
+        },
+        readFile: async () => "function Attack() constructor {}\n"
+    });
+
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+
+    assert.equal(preparedRenameRequests.length, 1);
+    const requests = preparedRenameRequests[0];
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].symbolId, "gml/scripts/Attack");
+    assert.equal(requests[0].newName, "attack");
+});
+
+void test("executeConfiguredCodemods aligns same-name constructors for resource-only script naming rules", async () => {
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => [
+            {
+                name: "Attack",
+                category: "scriptResourceName",
+                path: "scripts/Attack/Attack.yy",
+                scopeId: null,
+                symbolId: "gml/scripts/Attack",
+                occurrences: []
+            },
+            {
+                name: "Attack",
+                category: "constructorFunction",
+                path: "scripts/Attack/Attack.gml",
+                scopeId: null,
+                symbolId: "gml/function/Attack",
+                occurrences: [
+                    {
+                        path: "scripts/Attack/Attack.gml",
+                        start: 9,
+                        end: 15,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: null
+                    }
+                ]
+            }
+        ]
+    };
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const preparedRenameRequests: Array<Array<{ newName: string; symbolId: string }>> = [];
+
+    Object.assign(engine, {
+        async prepareBatchRenamePlan(
+            request: Array<{ symbolId: string; newName: string }>
+        ): Promise<BatchRenamePlanSummary> {
+            preparedRenameRequests.push(request);
+            return createBatchRenamePlanSummary([]);
+        }
+    });
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["scripts/Attack/Attack.gml"],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        scriptResourceName: {
+                            caseStyle: "lower"
+                        }
+                    }
+                }
+            }
+        },
+        readFile: async () => "function Attack() constructor {}\n"
+    });
+
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+
+    assert.equal(preparedRenameRequests.length, 1);
+    assert.deepEqual(preparedRenameRequests[0], [
+        {
+            symbolId: "gml/scripts/Attack",
+            newName: "attack"
+        },
+        {
+            symbolId: "gml/function/Attack",
+            newName: "attack"
+        }
+    ]);
+});
+
+void test("executeConfiguredCodemods renames enum member references across different files", async () => {
+    const consoleSymbolId = "gml/enum-member/console";
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => [
+            {
+                name: "console",
+                category: "enumMember",
+                path: "scripts/group_test/group_test.gml",
+                scopeId: null,
+                symbolId: consoleSymbolId,
+                occurrences: [
+                    {
+                        path: "scripts/group_test/group_test.gml",
+                        start: 23,
+                        end: 30,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: null
+                    },
+                    {
+                        path: "scripts/group_vertex_buffers/group_vertex_buffers.gml",
+                        start: 25,
+                        end: 32,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: null
+                    }
+                ]
+            }
+        ],
+        getSymbolOccurrences: async (symbolName, symbolId) => {
+            if (symbolId === consoleSymbolId) {
+                return [
+                    {
+                        path: "scripts/group_test/group_test.gml",
+                        start: 23,
+                        end: 30,
+                        kind: Refactor.OccurrenceKind.DEFINITION
+                    },
+                    {
+                        path: "scripts/group_vertex_buffers/group_vertex_buffers.gml",
+                        start: 25,
+                        end: 32,
+                        kind: Refactor.OccurrenceKind.REFERENCE
+                    }
+                ];
+            }
+            return [];
+        },
+        hasSymbol: async (symbolId) => symbolId === consoleSymbolId
+    };
+    const engine = new Refactor.RefactorEngine({ semantic });
+
+    const files = new Map<string, string>([
+        ["scripts/group_test/group_test.gml", "enum eTestResultType { console }\n"],
+        ["scripts/group_vertex_buffers/group_vertex_buffers.gml", "func_run(eTestResultType.console, false);\n"]
+    ]);
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: Array.from(files.keys()),
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        enumMember: {
+                            caseStyle: "upper_snake"
+                        }
+                    }
+                }
+            }
+        },
+        readFile: async (path) => files.get(path) ?? ""
+    });
+
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(result.appliedFiles.get("scripts/group_test/group_test.gml"), "enum eTestResultType { CONSOLE }\n");
+    assert.equal(
+        result.appliedFiles.get("scripts/group_vertex_buffers/group_vertex_buffers.gml"),
+        "func_run(eTestResultType.CONSOLE, false);\n"
+    );
+});
+
+void test("executeConfiguredCodemods permits same-scope renames to targets that differ only in case from other identifiers in GML", async () => {
+    const sourceText =
+        "function test_scope() {\n    var myVar = 1;\n    var MY_VAR = 2;\n    return myVar + MY_VAR;\n}\n";
+    const myVarDefinitionStart = sourceText.indexOf("myVar");
+    const myVarReferenceStart = sourceText.indexOf("myVar +");
+
+    const semantic: PartialSemanticAnalyzer = {
+        listNamingConventionTargets: async () => [
+            {
+                name: "myVar",
+                category: "localVariable",
+                path: "scripts/test_scope.gml",
+                scopeId: "scope:function:test_scope",
+                symbolId: null,
+                occurrences: [
+                    {
+                        path: "scripts/test_scope.gml",
+                        start: myVarDefinitionStart,
+                        end: myVarDefinitionStart + 5,
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        scopeId: "scope:function:test_scope"
+                    },
+                    {
+                        path: "scripts/test_scope.gml",
+                        start: myVarReferenceStart,
+                        end: myVarReferenceStart + 5,
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        scopeId: "scope:function:test_scope"
+                    }
+                ]
+            }
+        ]
+    };
+
+    const engine = new Refactor.RefactorEngine({ semantic });
+    const fileContents = new Map<string, string>([["scripts/test_scope.gml", sourceText]]);
+
+    const result = await engine.executeConfiguredCodemods({
+        projectRoot: "/project",
+        targetPaths: ["/project"],
+        gmlFilePaths: ["scripts/test_scope.gml"],
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        localVariable: { caseStyle: "lower_snake" }
+                    }
+                }
+            }
+        },
+        readFile: async (filePath) => fileContents.get(filePath) ?? "",
+        writeFile: async (filePath, content) => {
+            fileContents.set(filePath, content);
+        },
+        dryRun: false
+    });
+
+    assert.equal(result.summaries[0]?.id, "namingConvention");
+    assert.equal(result.summaries[0]?.changed, true);
+    // Should have zero warnings because "my_var" does not collide with "MY_VAR" case-sensitively
+    assert.equal(
+        result.summaries[0]?.warnings.some((warning) => warning.includes("already exists in the same scope")),
+        false,
+        "should not warn about same-scope collision when target name differs in case"
+    );
+
+    const finalText = fileContents.get("scripts/test_scope.gml");
+    assert.match(finalText ?? "", /var my_var = 1;/);
+    assert.match(finalText ?? "", /var MY_VAR = 2;/);
 });

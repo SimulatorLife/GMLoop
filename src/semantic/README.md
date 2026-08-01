@@ -1,21 +1,59 @@
 # Semantic Analyzer Subsystem
 
-This `src/semantic` subsystem is a semantic layer that annotates parse tree(s) to add *meaning* to the parsed GML code so the emitter/transpiler can make correct decisions. See the plan for this component/feature in [../../docs/semantic-scope-plan.md](../../docs/semantic-scope-plan.md).
+This `src/semantic` subsystem is a semantic layer that annotates parse tree(s) to add _meaning_ to the parsed GML code so the emitter/transpiler can make correct decisions. See the current architecture plan in [../../docs/target-state.md](../../docs/target-state.md).
 
 ## Ownership Boundaries
 
 `@gmloop/semantic` is analysis-only.
 
-- Owns project indexing, scope/symbol metadata, identifier occurrence discovery, and semantic classification.
+- Owns project indexing, scope/symbol metadata, identifier occurrence discovery, semantic classification, graph-index building and visualization-data export.
 - Does **not** own refactor edit planning or rename application.
 - Does **not** depend on `@gmloop/refactor`.
+- Does **not** own graph layout, filtering, interaction, accessibility, tooltips, or other UI presentation behavior.
+
+The graph index is SQLite-backed through a semantic-owned adapter seam. The current runtime uses Node's `node:sqlite`, which is treated as a stable runtime capability and is surfaced through graph-doctor reporting rather than left as an implicit implementation detail.
+
+## Revision-qualified snapshot leases
+
+Semantic facts, whether durable or session-local, are acquired through `SemanticIndexStore.acquireSemanticSnapshot`, not by treating a cache row as an unqualified project index. A lease has an exact revision, generation, tier, capability set, coverage summary, validation state, and overlay version map. Callers query through `lease.queries` and must call `lease.release()` once the request is complete.
+
+Persisted leases hold a read transaction and execute indexed position, symbol, occurrence, resource, enum, and refactor queries directly against the pinned SQLite generation. Session-local overlay snapshots build the same immutable query interface once when published. Consumers therefore use one backend-independent contract without materializing or re-projecting the complete semantic snapshot for every request.
+
+- `definitions` supplies interactive declaration capabilities: completion, hover, definition, symbols, and semantic tokens.
+- `full` additionally supplies references and rename-safety facts, and is only leaseable when it matches the active definitions revision. Semantic diagnostics are not advertised until canonical diagnostic facts and queries exist.
+- A request with required files, resources, capabilities, or overlay versions that no exact snapshot can satisfy receives a typed failure. It must trigger compatible analysis rather than silently using a stale or lower-tier result.
+- Overlay-backed manifests are published through `publishSessionSemanticSnapshot`. They are bounded to the store session, require an exact overlay-version map, require a matching session `definitions` snapshot before `full`, and are never written to SQLite. A disk-backed refresh after save or close produces the next durable snapshot.
+- Every persisted occurrence and unresolved reference carries a discriminated resolution state. Canonical bindings are `exact`; unbound same-name references are explicitly `candidate` or `ambiguous`, while no-match references remain `unresolved` rather than becoming guessed references.
 
 Downstream tools consume semantic data:
 
 - `@gmloop/refactor` uses semantic data to validate and plan workspace edits.
+- Lease-backed refactor queries expose symbols, exact occurrences, file definitions, and rename-safety gaps without rebuilding a navigation projection or interpreting a raw project index.
 - `@gmloop/lint` uses semantic-backed/project-aware analysis services for lint rules.
 - `@gmloop/cli` composes semantic consumers for lint/refactor command execution and formatter identifier-case runtime integration.
 - `@gmloop/format` consumes only formatter runtime contracts, not semantic internals.
+
+## Project-index workload telemetry
+
+Every project-index build returns a metrics snapshot. The currently implemented workload fields are:
+
+- `buildMode`: `project` for a complete build or `incremental` for a change-selected build.
+- `analysisTier`: `definitions` or `full`.
+- `files.gmlRead`, `files.gmlParsed`, and `files.gmlAnalysed`: exact counts for the corresponding file phases.
+- `files.incrementalSelected`: files selected for an incremental build; it is initialized to zero for complete builds.
+- `total`, `gml.parse`, and `gml.analyse`: timings used by the synthetic workload tests.
+- `memory.sampledPeakRssBytes` and `memory.sampledPeakHeapUsedBytes`: maxima from process-memory samples taken around project phases and while each parsed AST is still live. They are sampled build peaks, not operating-system high-water marks.
+
+Graph-index refreshes reuse the persisted full project snapshot when the source
+revision is unchanged. When files do change, the graph builder passes the
+manifest change set into the project index's incremental path, so unchanged GML
+files are retained instead of being parsed again. The graph parser also keeps
+ANTLR's faster SLL prediction path enabled for medium-sized scripts and limits
+that optimization to bounded source sizes.
+
+Identifier, script-call, resource, and identifier-sink counters remain available in the same snapshot. These measurements establish the current baseline; cache reuse, recomputed semantic units, propagation boundaries, duplicate work, broad-invalidation causes, and retained generations remain target-state observability requirements rather than currently implemented workload counters.
+
+The serial CI workload generates 500 scripts and approximately 100,000 lines. It exercises cold definitions and full analysis, requires an unchanged warm Tier 1 lease within 500 ms with no GML parses or source reads, and measures warmed indexed position, definition, and document-symbol p95 latency against a 20 ms gate. Workspace and completion search use a 50 ms p95 gate. One hundred acquire/query/release cycles must return the active lease count to zero and, when explicit garbage collection is available, retain no more than 5% additional heap. Full Tier 2 completion remains capped at 30 seconds and sampled peak RSS at 768 MiB. The smaller workload separately verifies deterministic bounded-concurrency output and one-file incremental equivalence.
 
 ## Semantic Oracle
 
@@ -32,7 +70,7 @@ const scripts = new Set(["scr_player_move", "scr_enemy_attack"]);
 const oracle = new Semantic.BasicSemanticOracle(tracker, builtins, scripts);
 
 // Classify an identifier
-const kind = oracle.kindOfIdent({ name: "myVar" }); 
+const kind = oracle.kindOfIdent({ name: "myVar" });
 // Returns: "local" | "global_field" | "builtin" | "script"
 
 // Generate SCIP-style symbol for hot reload tracking
@@ -43,7 +81,7 @@ const symbol = oracle.qualifiedSymbol({ name: "scr_player_move" });
 const callKind = oracle.callTargetKind({
     type: "CallExpression",
     object: { name: "array_length" }
-}); 
+});
 // Returns: "builtin" | "script" | "unknown"
 
 // Get SCIP symbol for call target
@@ -178,7 +216,9 @@ tracker.enterScope("function", {
     end: { line: 35, column: 1, index: 700 }
 });
 
-const scopes = tracker.getScopesByPath("scripts/player_movement/player_movement.gml");
+const scopes = tracker.getScopesByPath(
+    "scripts/player_movement/player_movement.gml"
+);
 // Returns: [
 //   {
 //     scopeId: "scope-0",
@@ -388,7 +428,11 @@ const tracker = new ScopeTracker({ enabled: true });
 // ... track many symbols across large codebase ...
 
 // For bulk dependency analysis (faster than safe variant, ideal for hot reload)
-const changedSymbols = new Set(["CONFIG_MAX_HP", "CONFIG_MAX_MP", "initPlayer"]);
+const changedSymbols = new Set([
+    "CONFIG_MAX_HP",
+    "CONFIG_MAX_MP",
+    "initPlayer"
+]);
 const results = tracker.getBatchSymbolOccurrencesUnsafe(changedSymbols);
 
 // ✅ OK: Analyze occurrence data
@@ -504,9 +548,9 @@ Get all external references from a specific scope—references to symbols declar
 ```javascript
 const externalRefs = tracker.getScopeExternalReferences("scope-1");
 // Returns: [
-//   { 
-//     name: "globalVar", 
-//     declaringScopeId: "scope-0", 
+//   {
+//     name: "globalVar",
+//     declaringScopeId: "scope-0",
 //     referencingScopeId: "scope-1",
 //     occurrences: [{kind: "reference", name: "globalVar", scopeId: "scope-1", ...}]
 //   }
@@ -682,11 +726,13 @@ const scipData = tracker.exportScipOccurrences();
 ```
 
 **Options:**
+
 - `scopeId`: Limit export to a specific scope (omit for all scopes)
 - `includeReferences`: Include reference occurrences (default: `true`)
 - `symbolGenerator`: Custom function to generate qualified symbol names. Default format is `"scopeId::name"`.
 
 **Use case:** When a file changes during hot reload, export its SCIP occurrences to determine which symbols changed and which dependent files need recompilation. The SCIP format enables:
+
 - Tracking which symbols are defined/referenced in each file
 - Building cross-file dependency graphs for selective recompilation
 - Identifying downstream code that needs invalidation when symbols change
@@ -734,6 +780,7 @@ const occurrences = tracker.exportOccurrencesBySymbols(changedSymbols);
 ```
 
 **Parameters:**
+
 - `symbolNames`: Iterable<string> - Set or array of symbol names to export
 - `options.scopeId`: Limit export to a specific scope (omit for all scopes)
 - `options.includeReferences`: Include reference occurrences (default: `true`)
@@ -742,6 +789,7 @@ const occurrences = tracker.exportOccurrencesBySymbols(changedSymbols);
 **Returns:** Array of scope occurrence payloads in SCIP format, sorted by scope ID. Scopes with no matching symbols are omitted from the result.
 
 **Use case:** Essential for incremental hot reload when a file edit changes only a subset of symbols. Instead of exporting all occurrences (which can be expensive for large codebases), query only the symbols that changed. For example:
+
 1. File watcher detects edit to `player.gml`
 2. Parse the file to identify changed symbols: `["player_hp", "player_update"]`
 3. Call `exportOccurrencesBySymbols(["player_hp", "player_update"])` to get targeted occurrences
@@ -915,9 +963,17 @@ const tracker = new ScopeTracker({ enabled: true });
 
 // Register scopes during initial parse.
 tracker.enterScope("program", { path: "/lib.gml" });
-tracker.declare("utils", { name: "utils", start: { line: 1, index: 0 }, end: { line: 1, index: 5 } });
+tracker.declare("utils", {
+    name: "utils",
+    start: { line: 1, index: 0 },
+    end: { line: 1, index: 5 }
+});
 tracker.enterScope("file", { path: "/app.gml" });
-tracker.reference("utils", { name: "utils", start: { line: 3, index: 0 }, end: { line: 3, index: 5 } });
+tracker.reference("utils", {
+    name: "utils",
+    start: { line: 3, index: 0 },
+    end: { line: 3, index: 5 }
+});
 tracker.exitScope(); // app.gml
 tracker.exitScope(); // lib.gml
 
@@ -942,9 +998,17 @@ const tracker = new ScopeTracker({ enabled: true });
 
 // lib.gml declares "utils"; app.gml references it.
 tracker.enterScope("program", { path: "/lib.gml" });
-tracker.declare("utils", { name: "utils", start: { line: 1, index: 0 }, end: { line: 1, index: 5 } });
+tracker.declare("utils", {
+    name: "utils",
+    start: { line: 1, index: 0 },
+    end: { line: 1, index: 5 }
+});
 tracker.enterScope("file", { path: "/app.gml" });
-tracker.reference("utils", { name: "utils", start: { line: 3, index: 0 }, end: { line: 3, index: 5 } });
+tracker.reference("utils", {
+    name: "utils",
+    start: { line: 3, index: 0 },
+    end: { line: 3, index: 5 }
+});
 tracker.exitScope(); // app.gml
 tracker.exitScope(); // lib.gml
 
@@ -1015,47 +1079,6 @@ for (const p of sorted) {
 // parseAndRegisterScopes(tracker, sorted[1]);  // app.gml second
 ```
 
-## Identifier Case Bootstrap Controls
-
-Formatter options that tune project discovery and cache behaviour now live in
-the semantic layer. They continue to be part of the plugin’s public surface,
-but their canonical documentation sits here alongside the implementation.
-
-| Option | Default | Summary |
-| --- | --- | --- |
-| `gmlIdentifierCaseDiscoverProject` | `true` | Controls whether the formatter auto-discovers the nearest `.yyp` manifest to bootstrap the project index. |
-| `gmlIdentifierCaseProjectRoot` | `""` | Pins project discovery to a specific directory when auto-detection is undesirable (e.g. CI or monorepos). |
-| `gmlIdentifierCaseProjectIndexCacheMaxBytes` | `8 MiB` | Upper bound for the persisted project-index cache. Set the option or `GML_PROJECT_INDEX_CACHE_MAX_SIZE` to `0` to disable the size guard when coordinating cache writes manually. |
-| `gmlIdentifierCaseProjectIndexConcurrency` | `4` (overridable via `GML_PROJECT_INDEX_CONCURRENCY`, clamped between `1` and the configured max; defaults to `16` via `GML_PROJECT_INDEX_MAX_CONCURRENCY`) | Caps how many GameMaker source files are parsed in parallel while building the identifier-case project index. |
-
-When rolling out rename scopes, continue to warm the project index cache
-before enabling write mode so the semantic layer can reuse cached dependency
-analysis. The bootstrap generates `.prettier-plugin-gml/project-index-cache.json`
-the first time a rename-enabled scope executes; pin `gmlIdentifierCaseProjectRoot`
-in CI builds to avoid repeated discovery work.
-
-## Resource Metadata Extension Hook
-> TODO: Remove this option/extension – handling custom resource metadata is out of scope. Keep this implementation 'opinionated'.
-
-**Pre-change analysis.** The project index previously treated only `.yy`
-resource documents as metadata, so integrations experimenting with alternate
-GameMaker exports (for example, bespoke build pipelines that emit `.meta`
-descriptors) had to fork the scanner whenever they wanted those files to be
-indexed. The formatter’s defaults remain correct for the vast majority of
-users, so the new seam keeps the behavior opinionated while allowing internal
-callers to extend it on demand.
-
-Use `setProjectResourceMetadataExtensions()` from the semantic project-index
-package to register additional metadata suffixes. The helper normalizes and
-deduplicates the list, seeds it with the default `.yy` entry, and is intended
-for host integrations, tests, or future live tooling—not end-user
-configuration. `resetProjectResourceMetadataExtensions()` restores the
-defaults, and `getProjectResourceMetadataExtensions()` exposes the frozen list
-for diagnostics. Production consumers should treat the defaults as canonical
-until downstream formats stabilize; the hook exists to unblock experimentation
-without diluting the formatter’s standard behavior.
-
-
 ## TODO
-- Align the structure of `semantic` with the plan outlined in
-  [../../docs/semantic-scope-plan.md](../../docs/semantic-scope-plan.md).
+
+- **FEAT**: For determining the file-diffs to trigger a file-level hot-reload and/or semantic re-analysis should/can we use the .git history to determine which files/lines have changed? This would allow us to avoid re-analyzing files that haven't changed, improving performance in large projects. Also we need to be sure that, for things like applying lint-fixes & formatting across a project we don't trigger a rebuild for each file that was changed, but instead we should be able to determine the set of files that were changed at the end of the operation and only re-analyze those files as/if needed. This would be a significant performance improvement for large projects.

@@ -126,16 +126,43 @@ interface GameMakerLexerErrorListenerOptions {
     formatter?: SyntaxErrorFormatter;
 }
 
-function reportAmbiguity() {
-    return undefined;
-}
+// ANTLR's `ErrorListener` interface (see docs/antlr-regeneration.md#error-handling)
+// requires parsers to expose `reportAmbiguity`, `reportAttemptingFullContext`, and
+// `reportContextSensitivity` callbacks. GML's parsing strategy intentionally
+// ignores these notifications because the formatter, pre-typed browsers, and the
+// refactor workspace care only about hard syntax errors raised through
+// `syntaxError`; ambiguity and context-sensitivity traces are accepted as a
+// practical cost of reusing a single grammar pass. Removing or replacing these
+// stubs with throwing bodies would break `parser.removeErrorListener(...)` and
+// the listener wiring in `gml-parser.ts`, silently turning recoverable
+// notifications into fatal errors and corrupting downstream prettifying/codemod
+// batches that intentionally suppress them.
+function reportAmbiguity() {}
 
-function reportAttemptingFullContext() {
-    return undefined;
-}
+function reportAttemptingFullContext() {}
 
-function reportContextSensitivity() {
-    return undefined;
+function reportContextSensitivity() {}
+
+function resolveRuleInvocationStack(recognizer: unknown): Array<string> {
+    if (!recognizer || typeof recognizer !== "object") {
+        return [];
+    }
+
+    if (!("getRuleInvocationStack" in recognizer)) {
+        return [];
+    }
+
+    const candidate = (recognizer as { getRuleInvocationStack?: unknown }).getRuleInvocationStack;
+    if (typeof candidate !== "function") {
+        return [];
+    }
+
+    try {
+        const stack = candidate.call(recognizer);
+        return Array.isArray(stack) ? stack : [];
+    } catch {
+        return [];
+    }
 }
 
 class ParserContextAnalyzer {
@@ -218,7 +245,7 @@ function createGameMakerParseErrorListener({
         const offendingText = formatter.resolveOffendingSymbolText(offendingSymbol);
         const wrongSymbol = formatter.formatWrongSymbol(offendingText);
 
-        const stack = parser.getRuleInvocationStack();
+        const stack = resolveRuleInvocationStack(parser);
         const currentRule = stack[0];
 
         const createError = (message) =>

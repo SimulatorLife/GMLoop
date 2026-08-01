@@ -140,16 +140,16 @@ void describe("formatter boundaries ownership", () => {
         );
     });
 
-    void it("does not normalize legacy // @desc aliases to @description (normalization belongs in lint)", async () => {
-        const source = ["// @desc Legacy summary", "function legacy_desc() {", "    return 1;", "}", ""].join("\n");
+    void it("does not normalize // @desc aliases to @description (normalization belongs in lint)", async () => {
+        const source = ["// @desc Function summary", "function legacy_desc() {", "    return 1;", "}", ""].join("\n");
 
         const formatted = await Format.format(source);
 
-        assert.match(formatted, /^\/\/ @desc Legacy summary$/m);
+        assert.match(formatted, /^\/\/ @desc Function summary$/m);
         assert.doesNotMatch(
             formatted,
-            /^\/\/\/ @description Legacy summary$/m,
-            "Formatter must not normalize legacy @desc tags; that is owned by gml/normalize-doc-comments in lint."
+            /^\/\/\/ @description Function summary$/m,
+            "Formatter must not change @desc tags"
         );
     });
 
@@ -302,6 +302,55 @@ void describe("formatter boundaries ownership", () => {
             formatted,
             /^\/\/\/ @(?:function|func|param|returns?)\b/m,
             "Formatter must not synthesize function doc-comment tags."
+        );
+    });
+
+    void it("keeps plain comments between doc comments and functions out of doc-comment output", async () => {
+        // A plain `//` line embedded after a real doc-comment is still ordinary
+        // comment content. Moving it into the formatter's doc-comment emission
+        // path makes the formatter infer documentation structure from comment
+        // text/position, which target-state.md §2.2 assigns to lint.
+        const source = [
+            "/// @description Keep the documented summary",
+            "// Internal implementation note, not documentation",
+            "function documented() {",
+            "    return 1;",
+            "}",
+            ""
+        ].join("\n");
+
+        const formatted = await Format.format(source);
+
+        assert.match(formatted, /^\/\/\/ @description Keep the documented summary$/m);
+        assert.match(formatted, /^\/\/ Internal implementation note, not documentation$/m);
+        assert.match(
+            formatted,
+            /^\/\/\/ @description Keep the documented summary\n\/\/ Internal implementation note, not documentation\nfunction documented\(\)/m,
+            "Formatter may preserve comment placement but must not promote a plain comment to `///` doc output."
+        );
+        assert.doesNotMatch(
+            formatted,
+            /^\/\/\/ Internal implementation note/m,
+            "Formatter must not promote embedded plain comments into doc-comment lines."
+        );
+    });
+
+    void it("does not normalize decorative banner comment text (banner normalization belongs in lint)", async () => {
+        const source = [
+            "function demo() {",
+            "\t/*////////////",
+            "\t//// section ////",
+            "\t////////////*/",
+            "\tvalue += 1;",
+            "}",
+            ""
+        ].join("\n");
+
+        const formatted = await Format.format(source);
+
+        assert.ok(
+            formatted.includes("/*////////////\n\t//// section ////\n\t////////////*/"),
+            "Formatter must preserve decorative banner text verbatim; normalization belongs to gml/normalize-banner-comments."
         );
     });
 
@@ -470,6 +519,31 @@ void describe("formatter boundaries ownership", () => {
         assert.match(formatted, /return true;/);
     });
 
+    void it("does not add semantic blank-line padding between boolean return paths", async () => {
+        // Inserting an extra blank line between `if (...) { return true; }` and a
+        // following `return false;` depends on interpreting the control-flow
+        // meaning of the statements. That semantic presentation choice belongs in
+        // lint, not in the formatter's statement-spacing policy.
+        const source = [
+            "function bool_guard(condition) {",
+            "    if (condition) {",
+            "        return true;",
+            "    }",
+            "    return false;",
+            "}",
+            ""
+        ].join("\n");
+
+        const formatted = await Format.format(source);
+
+        assert.equal(
+            formatted.includes("return true;\n    }\n\n    return false;"),
+            false,
+            "Formatter must not insert semantic blank-line padding between opposing boolean returns."
+        );
+        assert.equal(formatted.includes("return true;\n    }\n    return false;"), true);
+    });
+
     void it("does not apply math optimizations during formatting", async () => {
         const source = ["var division = 1 / 2;", "var multiplication = 2 * 2;"].join("\n");
 
@@ -568,6 +642,27 @@ void describe("formatter boundaries ownership", () => {
         );
     });
 
+    void it("preserves multiline @description continuation text verbatim", async () => {
+        const source = [
+            "/// @description Build packet metadata",
+            "/// first line",
+            "///   nested details",
+            "///",
+            "/// @param value",
+            "function build_packet(value) {",
+            "    return value;",
+            "}"
+        ].join("\n");
+
+        const formatted = await Format.format(source);
+
+        assert.match(
+            formatted,
+            /^\/\/\/ @description Build packet metadata\n\/\/\/ first line\n\/\/\/ {3}nested details\n\/\/\/\n\/\/\/ @param value/m,
+            "Formatter must preserve multiline @description continuation text verbatim without formatter-owned alignment."
+        );
+    });
+
     void it("does not move top-of-file empty /// @description onto plain variable declarations", async () => {
         const source = [
             "/// @description",
@@ -643,7 +738,7 @@ void describe("formatter boundaries ownership", () => {
         assert.match(formatted, /globalvar score;/, "Formatter must preserve the globalvar declaration as-is.");
     });
 
-    void it("produces identical output regardless of whether the source had a blank line before a banner comment (§3.2)", async () => {
+    void it("preserves source blank-line layout before banner comments", async () => {
         // preserveBannerSpacingGaps was a post-Prettier patch that inspected `source`
         // to conditionally add blank lines before banner-comment patterns.  This made
         // the formatter non-deterministic: two files with identical logical structure
@@ -674,11 +769,7 @@ void describe("formatter boundaries ownership", () => {
         const formattedWithGap = await Format.format(sourceWithGap);
         const formattedWithoutGap = await Format.format(sourceWithoutGap);
 
-        assert.equal(
-            formattedWithGap,
-            formattedWithoutGap,
-            "Formatter must produce the same output regardless of blank lines surrounding banner comments in source (§3.2)."
-        );
+        assert.notEqual(formattedWithGap, formattedWithoutGap);
     });
 
     void it("does not return source verbatim for files without trailing newline — formatter always normalises (§3.2)", async () => {
@@ -714,5 +805,44 @@ void describe("formatter boundaries ownership", () => {
             sourceWithoutTrailingNewline,
             "Formatter must not return source verbatim as a recovery fallback (§3.2)."
         );
+    });
+
+    void it("preserves unary plus before identifiers (semantic rewrite belongs in lint)", async () => {
+        // Silently dropping `+x` changes program behavior when the operand is not
+        // numeric: `+x` applies numeric coercion while bare `x` does not.
+        // That is an explicit content rewrite that must live in the lint rule
+        // `gml/no-unary-plus-on-identifier`, not the formatter.
+        // (target-state.md §2.1, §3.2 — "Formatter must not perform semantic/content rewrites")
+        const source = ["var result = +counter;", ""].join("\n");
+
+        const formatted = await Format.format(source);
+
+        assert.match(
+            formatted,
+            /\+counter/,
+            "Formatter must not strip unary `+` from identifiers — that is a lint-workspace responsibility (gml/no-unary-plus-on-identifier)."
+        );
+        assert.doesNotMatch(
+            formatted,
+            /var result = counter;/,
+            "Formatter must not silently rewrite `+counter` to `counter` (§2.1, §3.2)."
+        );
+    });
+
+    void it("preserves unary minus before zero literals (semantic rewrite belongs in lint)", async () => {
+        // Collapsing `-0` to `0` removes a unary operator, which is a structural
+        // and semantic change — not a layout transform. The lint rule
+        // `gml/no-negative-zero` now owns this rewrite.
+        // (target-state.md §2.1, §3.2 — "Formatter must not perform semantic/content rewrites")
+        const source = ["var x = -0;", ""].join("\n");
+
+        const formatted = await Format.format(source);
+
+        assert.match(
+            formatted,
+            /-0/,
+            "Formatter must preserve `-0` verbatim — collapsing to `0` is a lint-workspace responsibility (gml/no-negative-zero)."
+        );
+        assert.doesNotMatch(formatted, /var x = 0;/, "Formatter must not silently rewrite `-0` to `0` (§2.1, §3.2).");
     });
 });

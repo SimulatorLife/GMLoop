@@ -1,8 +1,7 @@
-import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import type { GmlRuleDefinition } from "../../catalog.js";
-import { createMeta, reportFullTextRewrite } from "../rule-base-helpers.js";
+import type { GmlRuleDefinition } from "../index.js";
+import { createMeta, reportFullTextRewrite, rewriteSourceLines } from "../rule-base-helpers.js";
 
 type LineCommentParts = Readonly<{
     codeText: string;
@@ -14,8 +13,7 @@ function isValidMacroIdentifier(name: string): boolean {
 }
 
 function splitLineCommentOutsideStringLiterals(line: string): LineCommentParts {
-    let inSingleQuotedString = false;
-    let inDoubleQuotedString = false;
+    let activeQuoteDelimiter: '"' | "'" | null = null;
     let isEscapedCharacter = false;
 
     for (let index = 0; index < line.length - 1; index += 1) {
@@ -27,22 +25,22 @@ function splitLineCommentOutsideStringLiterals(line: string): LineCommentParts {
             continue;
         }
 
-        if ((inSingleQuotedString || inDoubleQuotedString) && character === "\\") {
+        if (activeQuoteDelimiter !== null && character === "\\") {
             isEscapedCharacter = true;
             continue;
         }
 
-        if (!inDoubleQuotedString && character === "'") {
-            inSingleQuotedString = !inSingleQuotedString;
+        if (activeQuoteDelimiter === null && (character === "'" || character === '"')) {
+            activeQuoteDelimiter = character;
             continue;
         }
 
-        if (!inSingleQuotedString && character === '"') {
-            inDoubleQuotedString = !inDoubleQuotedString;
+        if (activeQuoteDelimiter === character) {
+            activeQuoteDelimiter = null;
             continue;
         }
 
-        if (!inSingleQuotedString && !inDoubleQuotedString && character === "/" && nextCharacter === "/") {
+        if (activeQuoteDelimiter === null && character === "/" && nextCharacter === "/") {
             return Object.freeze({
                 codeText: line.slice(0, index),
                 commentText: line.slice(index)
@@ -82,13 +80,14 @@ function normalizeDefineRegionLine(leadingWhitespace: string, directiveBody: str
 }
 
 function normalizeDefineMacroLine(line: string): string {
-    const defineMatch = /^(\s*)#define\b(.*)$/u.exec(line);
+    const defineMatch = /^(\s*)#define(\s+)(.*)$/u.exec(line);
     if (!defineMatch) {
         return line;
     }
 
     const leadingWhitespace = defineMatch[1] ?? "";
-    const directiveBody = (defineMatch[2] ?? "").trim();
+    const spacingAfterDefine = defineMatch[2] ?? " ";
+    const directiveBody = (defineMatch[3] ?? "").trim();
     if (directiveBody.length === 0) {
         return line;
     }
@@ -113,56 +112,14 @@ function normalizeDefineMacroLine(line: string): string {
         : directiveValueText;
     const normalizedMacroLine =
         normalizedDirectiveValue.length === 0
-            ? `${leadingWhitespace}#macro ${directiveName}`
-            : `${leadingWhitespace}#macro ${directiveName} ${normalizedDirectiveValue}`;
+            ? `${leadingWhitespace}#macro${spacingAfterDefine}${directiveName}`
+            : `${leadingWhitespace}#macro${spacingAfterDefine}${directiveName} ${normalizedDirectiveValue}`;
 
     return appendTrailingLineComment(normalizedMacroLine, lineCommentParts.commentText);
 }
 
 function normalizeCommentedDirectiveLine(line: string): string {
-    const match = /^(\s*)\/\/\s*#(region|endregion)\b(.*)$/u.exec(line);
-    if (!match) {
-        return line;
-    }
-
-    const leadingWhitespace = match[1] ?? "";
-    const directive = match[2] ?? "";
-    const name = match[3]?.trim() ?? "";
-    if (name.length === 0) {
-        return `${leadingWhitespace}#${directive}`;
-    }
-
-    return `${leadingWhitespace}#${directive} ${name}`;
-}
-
-function normalizeLegacyBlockKeywordLine(line: string): string | null {
-    const beginBlockMatch = /^(\s*)begin\s*;?\s*(\/\/.*)?$/u.exec(line);
-    if (beginBlockMatch) {
-        const indentation = beginBlockMatch[1] ?? "";
-        const commentText = beginBlockMatch[2] ?? "";
-        return commentText.trim().length === 0 ? "" : appendTrailingLineComment(`${indentation}{`, commentText);
-    }
-
-    const endBlockMatch = /^(\s*)end\s*;?\s*(\/\/.*)?$/u.exec(line);
-    if (endBlockMatch) {
-        const indentation = endBlockMatch[1] ?? "";
-        const commentText = endBlockMatch[2] ?? "";
-        return commentText.trim().length === 0 ? null : appendTrailingLineComment(`${indentation}}`, commentText);
-    }
-
-    const inlineBeginMatch = /^(\s*)(.+?)\s+begin\s*;?\s*(\/\/.*)?$/u.exec(line);
-    if (!inlineBeginMatch) {
-        return line;
-    }
-
-    const indentation = inlineBeginMatch[1] ?? "";
-    const header = inlineBeginMatch[2]?.trimEnd() ?? "";
-    const commentText = inlineBeginMatch[3] ?? "";
-    if (header.length === 0 || header.startsWith("#") || header.startsWith("//") || header.endsWith("{")) {
-        return line;
-    }
-
-    return appendTrailingLineComment(`${indentation}${header} {`, commentText);
+    return line;
 }
 
 export function createNormalizeDirectivesRule(definition: GmlRuleDefinition): Rule.RuleModule {
@@ -172,30 +129,20 @@ export function createNormalizeDirectivesRule(definition: GmlRuleDefinition): Ru
             return Object.freeze({
                 Program() {
                     const text = context.sourceCode.text;
-                    const lineEnding = Core.dominantLineEnding(text);
-                    const lines = text.split(/\r?\n/u);
-                    const rewrittenLines = lines
-                        .map((line, index) => {
-                            let normalized: string | null = normalizeDefineMacroLine(line);
-                            if (normalized === null) {
-                                return normalized;
-                            }
-                            normalized = normalizeCommentedDirectiveLine(normalized);
-                            normalized = normalizeLegacyBlockKeywordLine(normalized);
-                            if (normalized === null) {
-                                return normalized;
-                            }
-
-                            const isLastLine = index === lines.length - 1;
-                            if (isLastLine && normalized.endsWith("\n")) {
-                                normalized = normalized.slice(0, -1);
-                            }
-
+                    const rewritten = rewriteSourceLines(text, (line, index, sourceLines) => {
+                        let normalized: string | null = normalizeDefineMacroLine(line);
+                        if (normalized === null) {
                             return normalized;
-                        })
-                        .filter((line): line is string => line !== null);
+                        }
+                        normalized = normalizeCommentedDirectiveLine(normalized);
 
-                    const rewritten = rewrittenLines.join(lineEnding);
+                        const isLastLine = index === sourceLines.length - 1;
+                        if (isLastLine && normalized.endsWith("\n")) {
+                            normalized = normalized.slice(0, -1);
+                        }
+
+                        return normalized;
+                    });
                     reportFullTextRewrite(context, definition.messageId, text, rewritten);
                 }
             });

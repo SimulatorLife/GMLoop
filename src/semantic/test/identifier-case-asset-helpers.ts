@@ -1,26 +1,10 @@
-import { promises as fs } from "node:fs";
-import os from "node:os";
-import path from "node:path";
-
 import { buildProjectIndex } from "../src/project-index/index.js";
-
-export async function createTempProjectWorkspace(prefix: string) {
-    const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
-
-    const writeFile = async (relativePath: string, contents: string) => {
-        const absolutePath = path.join(projectRoot, relativePath);
-        await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-        await fs.writeFile(absolutePath, contents, "utf8");
-        return absolutePath;
-    };
-
-    return { projectRoot, writeFile };
-}
+import { createTempProjectWorkspace } from "./test-project-helpers.js";
 
 export async function createAssetRenameProject() {
-    const { projectRoot, writeFile } = await createTempProjectWorkspace("gml-asset-rename-");
+    const { projectRoot, writeProjectFile } = await createTempProjectWorkspace("gml-asset-rename-");
 
-    await writeFile(
+    await writeProjectFile(
         "MyGame.yyp",
         `${JSON.stringify(
             {
@@ -40,7 +24,7 @@ export async function createAssetRenameProject() {
         )}\n`
     );
 
-    await writeFile(
+    await writeProjectFile(
         "scripts/demo_script/demo_script.yy",
         `${JSON.stringify(
             {
@@ -54,9 +38,9 @@ export async function createAssetRenameProject() {
     );
 
     const source = "function demo_script() {\n    return 42;\n}\n";
-    const scriptPath = await writeFile("scripts/demo_script/demo_script.gml", source);
+    const scriptPath = await writeProjectFile("scripts/demo_script/demo_script.gml", source);
 
-    await writeFile(
+    await writeProjectFile(
         "objects/obj_controller/obj_controller.yy",
         `${JSON.stringify(
             {
@@ -83,9 +67,9 @@ export async function createAssetRenameProject() {
 }
 
 export async function createAssetCollisionProject() {
-    const { projectRoot, writeFile } = await createTempProjectWorkspace("gml-asset-collision-");
+    const { projectRoot, writeProjectFile } = await createTempProjectWorkspace("gml-asset-collision-");
 
-    await writeFile(
+    await writeProjectFile(
         "MyGame.yyp",
         `${JSON.stringify(
             {
@@ -111,7 +95,7 @@ export async function createAssetCollisionProject() {
         )}\n`
     );
 
-    await writeFile(
+    await writeProjectFile(
         "scripts/demo_script/demo_script.yy",
         `${JSON.stringify(
             {
@@ -124,7 +108,7 @@ export async function createAssetCollisionProject() {
         )}\n`
     );
 
-    await writeFile(
+    await writeProjectFile(
         "scripts/demo_script/DemoScriptExisting.yy",
         `${JSON.stringify(
             {
@@ -139,8 +123,8 @@ export async function createAssetCollisionProject() {
 
     const primarySource = "function demo_script() {\n    return 1;\n}\n";
     const secondarySource = "function DemoScript() {\n    return 2;\n}\n";
-    const primaryPath = await writeFile("scripts/demo_script/demo_script.gml", primarySource);
-    await writeFile("scripts/demo_script/DemoScriptExisting.gml", secondarySource);
+    const primaryPath = await writeProjectFile("scripts/demo_script/demo_script.gml", primarySource);
+    await writeProjectFile("scripts/demo_script/DemoScriptExisting.gml", secondarySource);
 
     const projectIndex = await buildProjectIndex(projectRoot);
 

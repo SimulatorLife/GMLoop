@@ -1,7 +1,7 @@
 import { Core, type MutableGameMakerAstNode, type ParserTransform } from "@gmloop/core";
 
-import { markCallsMissingArgumentSeparatorsTransform } from "./arguments/mark-missing-separators.js";
-import { annotateStaticFunctionOverridesTransform } from "./comments/annotate-static-overrides.js";
+import { markCallsMissingArgumentSeparatorsTransform } from "./argument-mark-missing-separators.js";
+import { annotateStaticFunctionOverridesTransform } from "./comment-annotate-static-overrides.js";
 
 const { stripCommentsTransform } = Core;
 
@@ -87,12 +87,23 @@ export const availableTransforms = TRANSFORM_REGISTRY_ENTRIES.map(
     (transform) => transform.name
 ) as readonly ParserTransformName[];
 
-export { markCallsMissingArgumentSeparatorsTransform } from "./arguments/mark-missing-separators.js";
-export { annotateStaticFunctionOverridesTransform } from "./comments/annotate-static-overrides.js";
+export { markCallsMissingArgumentSeparatorsTransform } from "./argument-mark-missing-separators.js";
+export { annotateStaticFunctionOverridesTransform } from "./comment-annotate-static-overrides.js";
 export {
     applySanitizedIndexAdjustments,
     conditionalAssignmentSanitizerTransform,
     sanitizeConditionalAssignments
 } from "./conditional-assignment-sanitizer.js";
 export { stripCommentsTransform };
-export { CommentTracker } from "./comments/comment-tracker.js";
+// `CommentTracker` is intentionally not re-exported here. No production
+// consumer in the lint workspace (or elsewhere) imports it; the class
+// remains accessible via its source module for its dedicated test suite
+// and any future integration. Keeping the barrel free of orphan re-exports
+// makes the public surface of the transforms directory honest.
+export {
+    evaluateTruthTablePolicy,
+    LOGICAL_NORMALIZATION_POLICY_BASELINE,
+    resolveLogicalNormalizationPolicy,
+    SIMPLIFICATION_POLICY_BASELINE,
+    TRUTH_TABLE_POLICY_BASELINE
+} from "./logical-expression-condensation-policy.js";

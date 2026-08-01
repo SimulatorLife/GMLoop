@@ -4,18 +4,13 @@ import test from "node:test";
 import {
     getProjectIndexSourceExtensions,
     getProjectResourceMetadataExtensions,
-    matchProjectResourceMetadataExtension,
     normalizeProjectFileCategory,
     ProjectFileCategory,
-    resetProjectIndexSourceExtensions,
     resetProjectResourceMetadataExtensions,
-    resolveProjectFileCategory,
-    setProjectIndexSourceExtensions,
-    setProjectResourceMetadataExtensions
+    resolveProjectFileCategory
 } from "../src/project-index/index.js";
 
 test.afterEach(() => {
-    resetProjectIndexSourceExtensions();
     resetProjectResourceMetadataExtensions();
 });
 
@@ -55,22 +50,9 @@ void test("project index source extensions expose the default list", () => {
     }, TypeError);
 });
 
-void test("setProjectIndexSourceExtensions extends recognised source files", () => {
-    setProjectIndexSourceExtensions([".gmlx"]);
-    assert.deepEqual(getProjectIndexSourceExtensions(), [".gml", ".gmlx"]);
-    assert.equal(resolveProjectFileCategory("scripts/player/move.gmlx"), ProjectFileCategory.SOURCE);
-    assert.equal(resolveProjectFileCategory("scripts/player/move.gml"), ProjectFileCategory.SOURCE);
-});
-
-void test("setProjectIndexSourceExtensions normalises and deduplicates extensions", () => {
-    setProjectIndexSourceExtensions([" GMLX ", ".gmlx", "custom"]);
-    assert.deepEqual(getProjectIndexSourceExtensions(), [".gml", ".gmlx", ".custom"]);
-});
-
-void test("setProjectIndexSourceExtensions rejects invalid input", () => {
-    assert.throws(() => setProjectIndexSourceExtensions("gml"), /array of strings/);
-    assert.throws(() => setProjectIndexSourceExtensions([""]), /cannot be empty/);
-    assert.throws(() => setProjectIndexSourceExtensions([42]), /must be strings/);
+void test("resolveProjectFileCategory rejects custom GML-like source extensions", () => {
+    assert.equal(resolveProjectFileCategory("scripts/player/move.gmlx"), null);
+    assert.equal(resolveProjectFileCategory("scripts/player/move.custom"), null);
 });
 
 void test("resource metadata extensions expose the default list", () => {
@@ -79,17 +61,4 @@ void test("resource metadata extensions expose the default list", () => {
     assert.throws(() => {
         defaults.push(".yyz");
     }, TypeError);
-});
-
-void test("resource metadata extension overrides extend detection", () => {
-    setProjectResourceMetadataExtensions([".meta"]);
-    assert.deepEqual(getProjectResourceMetadataExtensions(), [".yy", ".meta"]);
-    assert.equal(resolveProjectFileCategory("objects/player/player.meta"), ProjectFileCategory.RESOURCE_METADATA);
-    assert.equal(resolveProjectFileCategory("objects/player/player.yy"), ProjectFileCategory.RESOURCE_METADATA);
-});
-
-void test("resource metadata extension overrides normalise input", () => {
-    setProjectResourceMetadataExtensions([" .YYZ", "", null, ".yyz"]);
-    assert.deepEqual(getProjectResourceMetadataExtensions(), [".yy", ".yyz"]);
-    assert.equal(matchProjectResourceMetadataExtension("objects/player/player.YYZ"), ".yyz");
 });

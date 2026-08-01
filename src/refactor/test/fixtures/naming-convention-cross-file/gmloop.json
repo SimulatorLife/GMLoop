@@ -1,14 +1,13 @@
 {
   "refactor": {
-    "namingConventionPolicy": {
-      "rules": {
-        "function": {
-          "caseStyle": "camel"
+    "codemods": {
+      "namingConvention": {
+        "rules": {
+          "function": {
+            "caseStyle": "camel"
+          }
         }
       }
-    },
-    "codemods": {
-      "namingConvention": {}
     }
   },
   "fixture": {

@@ -1,93 +1,131 @@
 /**
- * Local variable collector for GML event transpilation.
+ * Pre-emission name collectors for GML transpilation.
  *
- * In GML, `var` declarations are function-scoped (similar to JavaScript's `var`).
- * When transpiling object events, we need to distinguish between:
- *   - Local variables: declared with `var` in the event body
- *   - Instance fields: all other identifiers that resolve to `self.<name>`
+ * Before the emitter walks the AST, it must know which names are already
+ * bound so that identifiers referencing those names are emitted correctly
+ * regardless of declaration order.
  *
- * This module provides `collectLocalVariables`, which walks an AST and returns
- * the set of all `var`-declared variable names. Nested function scopes are not
- * descended into because their `var` declarations belong to those inner functions,
- * not to the enclosing event body.
+ * Two collectors are provided:
+ *
+ * - `collectLocalVariables` – walks a GML event AST and returns the set of
+ *   all names declared with `var` or `static`. Used by `EventContextOracle` to distinguish
+ *   locals from instance fields.
+ *
+ * - `collectGlobalVarNames` – walks any GML program AST and returns the set
+ *   of all names declared with `globalvar`. Used by `GmlToJsEmitter` to
+ *   pre-seed its global-var tracking set so that forward references to
+ *   `globalvar`-declared names are emitted as `global.<name>` even when the
+ *   declaration appears after the first use.
  */
 
-import type { ProgramNode } from "./ast.js";
+import type { GmlNode, ProgramNode, VariableDeclaratorNode } from "./ast.js";
+import {
+    isAstRecord,
+    isFunctionScopeBoundary,
+    isGlobalVarStatementNode,
+    isIdentifierNode,
+    isVariableDeclarationNode,
+    isVariableDeclaratorNode
+} from "./type-guards.js";
 
-type AnyRecord = Record<string, unknown>;
+type AstRecord = Record<string, unknown>;
 
-function enqueueNodeChildren(node: AnyRecord, traversalStack: unknown[]): void {
-    for (const value of Object.values(node)) {
-        if (Array.isArray(value)) {
-            for (let index = value.length - 1; index >= 0; index -= 1) {
-                traversalStack.push(value[index]);
+function walkAstNodes(root: unknown, visitNode: (node: AstRecord) => boolean | void): void {
+    const traversalStack: unknown[] = [root];
+
+    while (traversalStack.length > 0) {
+        const currentNode = traversalStack.pop();
+
+        if (Array.isArray(currentNode)) {
+            for (let index = currentNode.length - 1; index >= 0; index -= 1) {
+                traversalStack.push(currentNode[index]);
             }
             continue;
         }
 
-        if (value !== null && typeof value === "object") {
+        if (!isAstRecord(currentNode)) {
+            continue;
+        }
+
+        const shouldDescend = visitNode(currentNode);
+        if (shouldDescend === false) {
+            continue;
+        }
+
+        for (const value of Object.values(currentNode)) {
             traversalStack.push(value);
         }
     }
 }
 
-function isFunctionScopeBoundary(nodeType: unknown): boolean {
-    return nodeType === "FunctionDeclaration" || nodeType === "ConstructorDeclaration";
-}
-
-/**
- * Extract the declared variable name from a VariableDeclarator node record.
- * Returns the name string, or null if the shape doesn't match.
- */
-function extractDeclaratorName(decl: unknown): string | null {
-    if (decl === null || typeof decl !== "object") {
-        return null;
-    }
-    const declRecord = decl as AnyRecord;
-    if (declRecord.type !== "VariableDeclarator") {
-        return null;
-    }
-    const id = declRecord.id;
-    if (id === null || typeof id !== "object") {
-        return null;
-    }
-    const name = (id as AnyRecord).name;
-    return typeof name === "string" && name ? name : null;
-}
-
-/**
- * Collect names from a VariableDeclaration node whose `kind` is `"var"`.
- * Adds each declared name to the `out` set.
- */
-function collectVarDeclarationNames(node: AnyRecord, out: Set<string>): void {
-    if (node.kind !== "var") {
+function collectVarDeclaratorNames(node: AstRecord, localNames: Set<string>): void {
+    if (
+        !isVariableDeclarationNode(node) ||
+        (node.kind !== "var" && node.kind !== "static") ||
+        !Array.isArray(node.declarations)
+    ) {
         return;
     }
-    const declarations = node.declarations;
-    if (!Array.isArray(declarations)) {
-        return;
-    }
-    for (const decl of declarations) {
-        const name = extractDeclaratorName(decl);
-        if (name) {
-            out.add(name);
+
+    for (const declaration of node.declarations) {
+        if (!isVariableDeclaratorNode(declaration) || !isAstRecord(declaration.id)) {
+            continue;
+        }
+
+        const idNode = declaration.id;
+        if (isIdentifierNode(idNode) && idNode.name.length > 0) {
+            localNames.add(idNode.name);
         }
     }
 }
 
+function collectVarDeclarationsFromTree(root: unknown, localNames: Set<string>): void {
+    walkAstNodes(root, (currentNode) => {
+        if (isFunctionScopeBoundary(currentNode)) {
+            return false;
+        }
+
+        collectVarDeclaratorNames(currentNode, localNames);
+        return true;
+    });
+}
+
+function collectStaticDeclarationsFromTree(root: unknown, declarations: VariableDeclaratorNode[]): void {
+    walkAstNodes(root, (currentNode) => {
+        if (isFunctionScopeBoundary(currentNode)) {
+            return false;
+        }
+
+        if (
+            isVariableDeclarationNode(currentNode) &&
+            currentNode.kind === "static" &&
+            Array.isArray(currentNode.declarations)
+        ) {
+            for (const declaration of currentNode.declarations) {
+                if (isVariableDeclaratorNode(declaration)) {
+                    declarations.push(declaration);
+                }
+            }
+        }
+
+        return true;
+    });
+}
+
 /**
- * Walk a GML event AST and collect all variable names declared with `var`.
+ * Walk a GML event AST and collect all variable names declared with `var` or `static`.
  *
  * Traversal stops at nested `FunctionDeclaration` and `ConstructorDeclaration`
  * boundaries so that inner-function locals are not included in the returned set.
  *
- * @param ast - The root `Program` node to walk
+ * @param ast - The event or function-body AST node to walk
  * @returns An immutable set of all `var`-declared variable names in the event body
  *
  * @example
  * ```gml
  * // Event body:
  * var speed = 5;
+ * static cached_message = "hit";
  * var dx = cos(direction) * speed;
  * health -= 1;           // NOT a local (instance field)
  * if (alive) {
@@ -96,30 +134,88 @@ function collectVarDeclarationNames(node: AnyRecord, out: Set<string>): void {
  * ```
  * ```typescript
  * const locals = collectLocalVariables(ast);
- * // locals = Set { "speed", "dx", "msg" }
+ * // locals = Set { "speed", "cached_message", "dx", "msg" }
  * ```
  */
-export function collectLocalVariables(ast: ProgramNode): ReadonlySet<string> {
-    const locals = new Set<string>();
-    const traversalStack: unknown[] = [ast];
+export function collectLocalVariables(ast: GmlNode): ReadonlySet<string> {
+    const localNames = new Set<string>();
+    collectVarDeclarationsFromTree(ast, localNames);
+    return localNames;
+}
 
-    while (traversalStack.length > 0) {
-        const current = traversalStack.pop();
-        if (current === null || typeof current !== "object") {
-            continue;
-        }
+/**
+ * Collect static declarations owned by one function body.
+ *
+ * Static declarations are initialized before the rest of their containing
+ * function executes. The emitter uses this ordered list to hoist those
+ * initializers into the function prologue while keeping nested functions'
+ * static scopes separate.
+ *
+ * @param ast - The function body or program fragment to inspect
+ * @returns Static declarators in source order, excluding nested functions
+ */
+export function collectStaticVariableDeclarations(ast: GmlNode): ReadonlyArray<VariableDeclaratorNode> {
+    const declarations: VariableDeclaratorNode[] = [];
+    collectStaticDeclarationsFromTree(ast, declarations);
+    return declarations;
+}
 
-        const node = current as AnyRecord;
-        const nodeType = node.type;
-        if (isFunctionScopeBoundary(nodeType)) {
-            continue;
-        }
-        if (nodeType === "VariableDeclaration") {
-            collectVarDeclarationNames(node, locals);
-        }
+/**
+ * Collect the names of all `globalvar`-declared variables from a GML program AST.
+ *
+ * In GML, `globalvar` binds a name to the global struct regardless of where the
+ * declaration appears in the source. This means an identifier may be referenced
+ * before its `globalvar` declaration in the source text—a legal forward reference.
+ *
+ * `GmlToJsEmitter` uses this set to pre-seed its internal global-var tracker
+ * before emission begins, so that forward-referenced global names are always
+ * emitted as `global.<name>` rather than as bare identifiers.
+ *
+ * The walk crosses `FunctionDeclaration` and `ConstructorDeclaration` boundaries
+ * because `globalvar` is always global-scoped regardless of the lexical nesting.
+ *
+ * @param ast - The root `Program` node to walk
+ * @returns An immutable set of all `globalvar`-declared names in the program
+ *
+ * @example
+ * ```gml
+ * // Forward reference — foo referenced before its globalvar declaration:
+ * foo = 1;
+ * globalvar foo;
+ * ```
+ * ```typescript
+ * const globals = collectGlobalVarNames(ast);
+ * // globals = Set { "foo" }
+ * // GmlToJsEmitter pre-seeds this.globalVars with { "foo" } before emission,
+ * // so `foo = 1` is correctly emitted as `global.foo = 1`.
+ * ```
+ */
+export function collectGlobalVarNames(ast: ProgramNode): ReadonlySet<string> {
+    const globalNames = new Set<string>();
+    collectGlobalVarNamesFromTree(ast, globalNames);
+    return globalNames;
+}
 
-        enqueueNodeChildren(node, traversalStack);
+function collectGlobalVarNamesFromDeclaration(declaration: unknown, globalNames: Set<string>): void {
+    if (!isVariableDeclaratorNode(declaration) || !isAstRecord(declaration.id)) {
+        return;
     }
+    const idNode = declaration.id;
+    if (isIdentifierNode(idNode) && idNode.name.length > 0) {
+        globalNames.add(idNode.name);
+    }
+}
 
-    return locals;
+function collectGlobalVarNamesFromNode(node: AstRecord, globalNames: Set<string>): void {
+    if (isGlobalVarStatementNode(node) && Array.isArray(node.declarations)) {
+        for (const declaration of node.declarations) {
+            collectGlobalVarNamesFromDeclaration(declaration, globalNames);
+        }
+    }
+}
+
+function collectGlobalVarNamesFromTree(root: unknown, globalNames: Set<string>): void {
+    walkAstNodes(root, (currentNode) => {
+        collectGlobalVarNamesFromNode(currentNode, globalNames);
+    });
 }

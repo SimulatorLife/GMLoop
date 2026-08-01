@@ -1,23 +1,29 @@
 import { Core } from "@gmloop/core";
 
-import { assertRefactorConfigPlainObject } from "./refactor-config-assertions.js";
-import type {
+import {
+    assertRefactorConfigPlainObject,
+    assertRefactorConfigPlainObjectWithAllowedKeys
+} from "./refactor-config-assertions.js";
+import {
+    isNamingCaseStyle,
     NamingCaseStyle,
-    NamingCategory,
-    NamingConventionPolicy,
-    NamingRuleConfig,
-    ResolvedNamingConventionRules,
-    ResolvedNamingRule
+    type NamingCategory,
+    type NamingConventionPolicy,
+    type NamingRuleConfig,
+    requireNamingCaseStyle,
+    type ResolvedNamingConventionRules,
+    type ResolvedNamingRule
 } from "./types.js";
 
-export const NAMING_CASE_STYLES: ReadonlyArray<NamingCaseStyle> = Object.freeze([
-    "lower",
-    "upper",
-    "camel",
-    "lower_snake",
-    "upper_snake",
-    "pascal"
-]);
+/**
+ * Frozen list of every supported naming case style.
+ *
+ * Re-exposes `Object.values(NamingCaseStyle)` so callers that need to iterate
+ * the canonical list (e.g. to format error messages or build a choice list)
+ * can keep doing so without re-listing the values. The single source of truth
+ * for the values themselves is the {@link NamingCaseStyle} constant object.
+ */
+export const NAMING_CASE_STYLES: ReadonlyArray<NamingCaseStyle> = Object.freeze(Object.values(NamingCaseStyle));
 
 export const NAMING_CATEGORY_PARENTS: Readonly<Record<NamingCategory, NamingCategory | null>> = Object.freeze({
     resource: null,
@@ -46,9 +52,9 @@ export const NAMING_CATEGORY_PARENTS: Readonly<Record<NamingCategory, NamingCate
     loopIndexVariable: "localVariable",
     callable: null,
     function: "callable",
-    constructorFunction: "callable",
     typeName: null,
     structDeclaration: "typeName",
+    constructorFunction: "structDeclaration",
     enum: "typeName",
     member: null,
     enumMember: "member",
@@ -61,14 +67,21 @@ type RuntimeResolvedNamingRule = ResolvedNamingRule & {
 };
 
 const NAMING_CATEGORY_SET = new Set(Object.keys(NAMING_CATEGORY_PARENTS));
-const NAMING_CASE_STYLE_SET: ReadonlySet<string> = new Set(NAMING_CASE_STYLES);
+
+const NAMING_RULE_CONFIG_ALLOWED_KEYS = new Set([
+    "caseStyle",
+    "prefix",
+    "suffix",
+    "minChars",
+    "maxChars",
+    "bannedPrefixes",
+    "bannedSuffixes"
+]);
+
+const NAMING_CONVENTION_POLICY_ALLOWED_KEYS = new Set(["rules", "exclusivePrefixes", "exclusiveSuffixes"]);
 
 function isNamingCategory(value: unknown): value is NamingCategory {
     return typeof value === "string" && NAMING_CATEGORY_SET.has(value);
-}
-
-function isNamingCaseStyle(value: unknown): value is NamingCaseStyle {
-    return typeof value === "string" && NAMING_CASE_STYLE_SET.has(value);
 }
 
 function normalizeStringArray(value: unknown, context: string): Array<string> {
@@ -86,22 +99,7 @@ function normalizeStringArray(value: unknown, context: string): Array<string> {
 }
 
 function normalizeNamingRuleConfig(config: unknown, context: string): NamingRuleConfig {
-    const object = assertRefactorConfigPlainObject(config, context);
-    const allowedKeys = new Set([
-        "caseStyle",
-        "prefix",
-        "suffix",
-        "minChars",
-        "maxChars",
-        "bannedPrefixes",
-        "bannedSuffixes"
-    ]);
-
-    for (const key of Object.keys(object)) {
-        if (!allowedKeys.has(key)) {
-            throw new TypeError(`${context} contains unknown property ${JSON.stringify(key)}`);
-        }
-    }
+    const object = assertRefactorConfigPlainObjectWithAllowedKeys(config, NAMING_RULE_CONFIG_ALLOWED_KEYS, context);
 
     const normalized: NamingRuleConfig = {};
 
@@ -190,14 +188,11 @@ export function normalizeNamingConventionPolicy(
         };
     }
 
-    const object = assertRefactorConfigPlainObject(policy, context);
-    const allowedKeys = new Set(["rules", "exclusivePrefixes", "exclusiveSuffixes"]);
-
-    for (const key of Object.keys(object)) {
-        if (!allowedKeys.has(key)) {
-            throw new TypeError(`${context} contains unknown property ${JSON.stringify(key)}`);
-        }
-    }
+    const object = assertRefactorConfigPlainObjectWithAllowedKeys(
+        policy,
+        NAMING_CONVENTION_POLICY_ALLOWED_KEYS,
+        context
+    );
 
     const rulesObject = assertRefactorConfigPlainObject(object.rules ?? {}, `${context}.rules`);
     const rules: NamingConventionPolicy["rules"] = {};
@@ -260,7 +255,7 @@ export function resolveNamingConventionRules(policy: NamingConventionPolicy): Re
         const runtimeRule: RuntimeResolvedNamingRule = {
             prefix: "",
             suffix: "",
-            caseStyle: "camel",
+            caseStyle: NamingCaseStyle.CAMEL,
             enforceCaseStyle: false,
             minChars: null,
             maxChars: null,
@@ -291,15 +286,21 @@ export function resolveNamingConventionRules(policy: NamingConventionPolicy): Re
                 runtimeRule.maxChars = entry.rule.maxChars;
             }
             if (entry.rule.bannedPrefixes !== undefined) {
+                // Keep the merged list unsorted here; it is sorted once after the
+                // full inheritance chain is resolved.
                 runtimeRule.bannedPrefixes = [...entry.rule.bannedPrefixes];
             }
             if (entry.rule.bannedSuffixes !== undefined) {
+                // Keep the merged list unsorted here; it is sorted once after the
+                // full inheritance chain is resolved.
                 runtimeRule.bannedSuffixes = [...entry.rule.bannedSuffixes];
             }
         }
 
         if (!disabled) {
             runtimeRule.enforceCaseStyle = sawCaseStyle;
+            runtimeRule.bannedPrefixes = [...runtimeRule.bannedPrefixes].sort((a, b) => b.length - a.length);
+            runtimeRule.bannedSuffixes = [...runtimeRule.bannedSuffixes].sort((a, b) => b.length - a.length);
             resolved[category] = runtimeRule;
         }
     }
@@ -307,57 +308,279 @@ export function resolveNamingConventionRules(policy: NamingConventionPolicy): Re
     return resolved;
 }
 
-function splitIdentifierWords(value: string): Array<string> {
-    const normalized = value
-        .replaceAll(/([a-z0-9])([A-Z])/g, "$1 $2")
-        .replaceAll(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
-        .replaceAll(/[_\-\s]+/g, " ")
-        .trim();
+function isWordDelimiter(character: string): boolean {
+    return character === "_" || character === "-" || /\s/u.test(character);
+}
 
-    if (normalized.length === 0) {
+function isUppercaseAscii(character: string): boolean {
+    return character >= "A" && character <= "Z";
+}
+
+function isLowercaseAscii(character: string): boolean {
+    return character >= "a" && character <= "z";
+}
+
+function splitIdentifierWords(value: string): Array<string> {
+    if (value.length === 0) {
         return [];
     }
 
-    return normalized
-        .split(" ")
-        .map((word) => word.toLowerCase())
-        .filter((word) => word.length > 0);
+    let containsUppercase = false;
+    let containsOtherDelimiters = false;
+    let containsUnderscore = false;
+    for (const character of value) {
+        if (character === "_") {
+            containsUnderscore = true;
+            continue;
+        }
+
+        if (character === "-" || /\s/u.test(character)) {
+            containsOtherDelimiters = true;
+            break;
+        }
+
+        if (isUppercaseAscii(character)) {
+            containsUppercase = true;
+            if (containsUnderscore) {
+                break;
+            }
+        }
+    }
+
+    if (!containsUppercase && !containsOtherDelimiters) {
+        if (!containsUnderscore) {
+            return [value.toLowerCase()];
+        }
+
+        const splitWords = value.split("_");
+        const words: Array<string> = [];
+        for (const splitWord of splitWords) {
+            if (splitWord.length > 0) {
+                words.push(splitWord.toLowerCase());
+            }
+        }
+        return words;
+    }
+
+    const words: Array<string> = [];
+    let currentWord = "";
+
+    for (let index = 0; index < value.length; index += 1) {
+        const character = value[index];
+        if (character === undefined) {
+            continue;
+        }
+
+        if (isWordDelimiter(character)) {
+            if (currentWord.length > 0) {
+                words.push(currentWord);
+                currentWord = "";
+            }
+            continue;
+        }
+
+        const previousCharacter = index > 0 ? value[index - 1] : undefined;
+        const nextCharacter = index + 1 < value.length ? value[index + 1] : undefined;
+
+        const startsCamelCaseBoundary =
+            previousCharacter !== undefined && isLowercaseAscii(previousCharacter) && isUppercaseAscii(character);
+        const startsAcronymBoundary =
+            previousCharacter !== undefined &&
+            nextCharacter !== undefined &&
+            isUppercaseAscii(previousCharacter) &&
+            isUppercaseAscii(character) &&
+            isLowercaseAscii(nextCharacter);
+
+        if ((startsCamelCaseBoundary || startsAcronymBoundary) && currentWord.length > 0) {
+            words.push(currentWord);
+            currentWord = character.toLowerCase();
+            continue;
+        }
+
+        currentWord += character.toLowerCase();
+    }
+
+    if (currentWord.length > 0) {
+        words.push(currentWord);
+    }
+
+    return words;
 }
 
 function capitalize(word: string): string {
     return word.length === 0 ? word : `${word[0]?.toUpperCase() ?? ""}${word.slice(1)}`;
 }
 
-/**
- * Rewrite an identifier core into the requested naming case style.
- */
-export function formatNamingCaseStyle(value: string, caseStyle: NamingCaseStyle): string {
-    const words = splitIdentifierWords(value);
+function toCamelCase(words: ReadonlyArray<string>): string {
     if (words.length === 0) {
         return "";
     }
 
-    if (caseStyle === "lower") {
-        return words.join("").toLowerCase();
+    // Use an index loop instead of words.slice(1) to avoid an intermediate array allocation.
+    let formatted = words[0] ?? "";
+    for (let i = 1; i < words.length; i++) {
+        formatted += capitalize(words[i]);
     }
 
-    if (caseStyle === "upper") {
-        return words.join("").toUpperCase();
+    return formatted;
+}
+
+function toPascalCase(words: ReadonlyArray<string>): string {
+    let formatted = "";
+    for (const word of words) {
+        formatted += capitalize(word);
+    }
+    return formatted;
+}
+
+type IdentifierUnderscoreAffixes = {
+    core: string;
+    leading: string;
+    trailing: string;
+};
+
+function isSimpleLowerSnakeCore(value: string): boolean {
+    // Use a charCode loop instead of a regex to avoid the regex-engine overhead on every
+    // identifier in the hot path.  Valid characters are a-z (97-122), 0-9 (48-57), and _ (95).
+    const len = value.length;
+    if (len === 0) {
+        return false;
+    }
+    for (let i = 0; i < len; i++) {
+        const code = value.charCodeAt(i);
+        if ((code < 97 || code > 122) && (code < 48 || code > 57) && code !== 95) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function toCamelCaseFromLowerSnakeCore(value: string): string {
+    // Use an indexed charCode loop instead of for...of to avoid iterator allocation and
+    // charCode comparisons to avoid per-character String.prototype calls.
+    let formatted = "";
+    let uppercaseNext = false;
+
+    for (let i = 0, len = value.length; i < len; i++) {
+        const code = value.charCodeAt(i);
+        if (code === 95 /* "_" */) {
+            uppercaseNext = true;
+            continue;
+        }
+
+        // Uppercase the character when following an underscore and it's a-z (97–122).
+        formatted +=
+            uppercaseNext && code >= 97 && code <= 122 ? String.fromCharCode(code - 32) : String.fromCharCode(code);
+        uppercaseNext = false;
     }
 
-    if (caseStyle === "camel") {
-        return words[0] + words.slice(1).map(capitalize).join("");
+    return formatted;
+}
+
+function splitIdentifierUnderscoreAffixes(value: string): IdentifierUnderscoreAffixes {
+    // Use direct charCode comparisons instead of regex to avoid regex-engine overhead.
+    // charCode 95 is "_".  Avoid slice() calls for the common case where leading/trailing
+    // affix strings are empty (no underscore boundary characters present).
+    const UNDERSCORE = 95;
+    const len = value.length;
+    let leadingEnd = 0;
+    while (leadingEnd < len && value.charCodeAt(leadingEnd) === UNDERSCORE) {
+        leadingEnd++;
     }
 
-    if (caseStyle === "pascal") {
-        return words.map(capitalize).join("");
+    if (leadingEnd === len) {
+        // Entire value is underscores (or value is empty).
+        return { leading: value, core: "", trailing: "" };
     }
 
-    if (caseStyle === "lower_snake") {
-        return words.join("_");
+    let trailingStart = len;
+    while (trailingStart > leadingEnd && value.charCodeAt(trailingStart - 1) === UNDERSCORE) {
+        trailingStart--;
     }
 
-    return words.join("_").toUpperCase();
+    return {
+        leading: leadingEnd > 0 ? value.slice(0, leadingEnd) : "",
+        core: value.slice(leadingEnd, trailingStart),
+        trailing: trailingStart < len ? value.slice(trailingStart) : ""
+    };
+}
+
+/**
+ * Per-style formatter functions keyed by {@link NamingCaseStyle}.
+ *
+ * Replacing the previous nested ternary with a typed dispatch table keeps
+ * the dispatch logic declarative: each entry maps a `NamingCaseStyle`
+ * constant to a function that converts an array of identifier words into the
+ * matching case. Adding a new style is a one-line change here and the
+ * compiler will refuse to build until the new constant is registered.
+ */
+const NAMING_CASE_STYLE_FORMATTERS: Readonly<Record<NamingCaseStyle, (words: ReadonlyArray<string>) => string>> =
+    Object.freeze({
+        [NamingCaseStyle.LOWER]: (words) => words.join(""),
+        [NamingCaseStyle.UPPER]: (words) => words.join("").toUpperCase(),
+        [NamingCaseStyle.CAMEL]: (words) => toCamelCase(words),
+        [NamingCaseStyle.PASCAL]: (words) => toPascalCase(words),
+        [NamingCaseStyle.LOWER_SNAKE]: (words) => words.join("_"),
+        [NamingCaseStyle.UPPER_SNAKE]: (words) => words.join("_").toUpperCase()
+    });
+
+/**
+ * Rewrite an identifier core into the requested naming case style.
+ *
+ * Validates `caseStyle` at the entry point so callers passing raw strings
+ * from configuration files or external tools get a `TypeError` immediately
+ * with the list of valid values, instead of silently producing a
+ * `formatNamingCaseStyle` output (the previous nested ternary fell through
+ * to an implicit "upper snake" branch for any unknown string).
+ */
+export function formatNamingCaseStyle(value: string, caseStyle: NamingCaseStyle): string {
+    // Fail fast on invalid input even though the type system normally
+    // constrains callers: the public `formatNamingCaseStyle` is exported and
+    // can be invoked from JavaScript or with values that bypass type checks.
+    requireNamingCaseStyle(caseStyle, "formatNamingCaseStyle");
+
+    const underscoreAffixes = splitIdentifierUnderscoreAffixes(value);
+    if (underscoreAffixes.core.length === 0) {
+        return `${underscoreAffixes.leading}${underscoreAffixes.trailing}`;
+    }
+
+    if (isSimpleLowerSnakeCore(underscoreAffixes.core)) {
+        if (caseStyle === NamingCaseStyle.CAMEL) {
+            return `${underscoreAffixes.leading}${toCamelCaseFromLowerSnakeCore(underscoreAffixes.core)}${underscoreAffixes.trailing}`;
+        }
+
+        if (caseStyle === NamingCaseStyle.LOWER_SNAKE) {
+            return `${underscoreAffixes.leading}${underscoreAffixes.core}${underscoreAffixes.trailing}`;
+        }
+    }
+
+    const words = splitIdentifierWords(underscoreAffixes.core);
+
+    if (words.length === 0) {
+        return `${underscoreAffixes.leading}${underscoreAffixes.core}${underscoreAffixes.trailing}`;
+    }
+
+    const formatter = NAMING_CASE_STYLE_FORMATTERS[caseStyle];
+    const formattedCore = formatter(words);
+
+    return `${underscoreAffixes.leading}${formattedCore}${underscoreAffixes.trailing}`;
+}
+
+function attachesDirectlyToIdentifierCore(affix: string): boolean {
+    return affix.length > 0 && /[A-Za-z0-9]$/u.test(affix);
+}
+
+function formatCoreNameForRule(coreName: string, rule: RuntimeResolvedNamingRule): string {
+    if (rule.caseStyle === NamingCaseStyle.CAMEL && attachesDirectlyToIdentifierCore(rule.prefix)) {
+        return formatNamingCaseStyle(coreName, NamingCaseStyle.PASCAL);
+    }
+
+    return formatNamingCaseStyle(coreName, rule.caseStyle);
+}
+
+function composeExpectedIdentifierName(coreName: string, rule: RuntimeResolvedNamingRule): string {
+    const formattedCoreName = rule.enforceCaseStyle ? formatCoreNameForRule(coreName, rule) : coreName;
+    return `${rule.prefix}${formattedCoreName}${rule.suffix}`;
 }
 
 function longestMatchingAffix(
@@ -398,6 +621,9 @@ function stripAffix(value: string, affix: string, position: "prefix" | "suffix")
  *   1. The rule's required affix takes precedence.
  *   2. An exclusive affix that belongs to a different category is stripped next.
  *   3. The longest matching banned affix is stripped as a last resort.
+ *
+ * `bannedAffixes` must already be sorted by descending length (longest first) so
+ * this function can iterate them directly without allocating a sorted copy.
  */
 function stripOneAffixDirection(
     coreName: string,
@@ -407,11 +633,13 @@ function stripOneAffixDirection(
     position: "prefix" | "suffix",
     category: NamingCategory
 ): string {
-    const hasAffix = (name: string, affix: string) =>
-        position === "prefix" ? name.startsWith(affix) : name.endsWith(affix);
+    const isPrefix = position === "prefix";
 
-    if (ruleAffix.length > 0 && hasAffix(coreName, ruleAffix)) {
-        return stripAffix(coreName, ruleAffix, position);
+    if (ruleAffix.length > 0) {
+        const matches = isPrefix ? coreName.startsWith(ruleAffix) : coreName.endsWith(ruleAffix);
+        if (matches) {
+            return stripAffix(coreName, ruleAffix, position);
+        }
     }
 
     const exclusive = longestMatchingAffix(coreName, exclusiveAffixes, position);
@@ -419,9 +647,39 @@ function stripOneAffixDirection(
         return stripAffix(coreName, exclusive[0], position);
     }
 
-    for (const banned of [...bannedAffixes].sort((a, b) => b.length - a.length)) {
-        if (banned.length > 0 && hasAffix(coreName, banned)) {
-            return stripAffix(coreName, banned, position);
+    // bannedAffixes is pre-sorted descending by length in resolveNamingConventionRules,
+    // so we can iterate without creating an intermediate sorted copy.
+    for (const banned of bannedAffixes) {
+        if (banned.length > 0) {
+            const matches = isPrefix ? coreName.startsWith(banned) : coreName.endsWith(banned);
+            if (matches) {
+                return stripAffix(coreName, banned, position);
+            }
+        }
+    }
+
+    if (isPrefix && ruleAffix.length >= 2 && ruleAffix.endsWith("_")) {
+        const coreTargetPrefix = ruleAffix.slice(0, -1);
+        const match = coreName.match(/^([a-z]+)(_|[A-Z])(.*)$/);
+
+        if (match) {
+            const prefixWord = match[1];
+            const separator = match[2];
+            const remainder = match[3];
+            const separatorIsUpperCase = /[A-Z]/u.test(separator);
+
+            if (
+                prefixWord === coreTargetPrefix ||
+                // When a target resource prefix extends a legacy short prefix word
+                // (for example "oSpider" -> "obj_spider" or "sSpiderHead" -> "spr_spider_head"),
+                // replace that old prefix instead of duplicating it in the result. This
+                // single-letter branch is intentionally constrained to legacy prefixes
+                // that match the first character of the configured target prefix.
+                (prefixWord === coreTargetPrefix[0] && (separator === "_" || separatorIsUpperCase)) ||
+                (prefixWord.length > 1 && coreTargetPrefix.startsWith(prefixWord))
+            ) {
+                return separator === "_" ? remainder : separator + remainder;
+            }
         }
     }
 
@@ -452,6 +710,20 @@ function stripKnownAffixes(
     );
 }
 
+function isSimpleCaseOnlyRule(rule: RuntimeResolvedNamingRule, policy: NamingConventionPolicy): boolean {
+    return (
+        rule.enforceCaseStyle &&
+        rule.prefix.length === 0 &&
+        rule.suffix.length === 0 &&
+        rule.minChars === null &&
+        rule.maxChars === null &&
+        rule.bannedPrefixes.length === 0 &&
+        rule.bannedSuffixes.length === 0 &&
+        policy.exclusivePrefixes === undefined &&
+        policy.exclusiveSuffixes === undefined
+    );
+}
+
 /**
  * Evaluate a single identifier against the resolved naming policy.
  */
@@ -459,8 +731,12 @@ export function evaluateNamingConvention(
     currentName: string,
     category: NamingCategory,
     policy: NamingConventionPolicy,
-    resolvedRules: ResolvedNamingConventionRules
+    resolvedRules: ResolvedNamingConventionRules,
+    options: {
+        includeMessage?: boolean;
+    } = {}
 ): { compliant: boolean; suggestedName: string | null; message: string | null } {
+    const includeMessage = options.includeMessage !== false;
     const rule = resolvedRules[category] as RuntimeResolvedNamingRule | undefined;
     if (!rule) {
         return {
@@ -470,7 +746,28 @@ export function evaluateNamingConvention(
         };
     }
 
+    if (isSimpleCaseOnlyRule(rule, policy)) {
+        const suggestedName = formatNamingCaseStyle(currentName, rule.caseStyle);
+        if (suggestedName === currentName) {
+            return {
+                compliant: true,
+                suggestedName: currentName,
+                message: null
+            };
+        }
+
+        return {
+            compliant: false,
+            suggestedName,
+            message: includeMessage
+                ? `Identifier ${JSON.stringify(currentName)} does not match ${rule.caseStyle} case.`
+                : null
+        };
+    }
+
     let issueMessage: string | null = null;
+    // Computed suggested name: undefined = not yet computed, null = no suggestion available
+    let suggestedName: string | null | undefined = undefined;
     const coreName = stripKnownAffixes(currentName, rule, policy, category);
     const exclusivePrefix = longestMatchingAffix(currentName, policy.exclusivePrefixes, "prefix");
     const exclusiveSuffix = longestMatchingAffix(currentName, policy.exclusiveSuffixes, "suffix");
@@ -489,11 +786,13 @@ export function evaluateNamingConvention(
         issueMessage = `Identifier ${JSON.stringify(currentName)} must end with ${JSON.stringify(rule.suffix)}.`;
     } else if (rule.minChars !== null && coreName.length < rule.minChars) {
         issueMessage = `Identifier ${JSON.stringify(currentName)} is shorter than the minimum core length ${rule.minChars}.`;
+        suggestedName = null; // No meaningful suggestion for length violations
     } else if (rule.maxChars !== null && coreName.length > rule.maxChars) {
         issueMessage = `Identifier ${JSON.stringify(currentName)} exceeds the maximum core length ${rule.maxChars}.`;
+        suggestedName = null; // No meaningful suggestion for length violations
     } else if (rule.enforceCaseStyle) {
-        const expectedCoreName = formatNamingCaseStyle(coreName, rule.caseStyle);
-        if (expectedCoreName !== coreName) {
+        suggestedName = composeExpectedIdentifierName(coreName, rule);
+        if (suggestedName !== currentName) {
             issueMessage = `Identifier ${JSON.stringify(currentName)} does not match ${rule.caseStyle} case.`;
         }
     }
@@ -506,23 +805,12 @@ export function evaluateNamingConvention(
         };
     }
 
-    if (
-        (rule.minChars !== null && coreName.length < rule.minChars) ||
-        (rule.maxChars !== null && coreName.length > rule.maxChars)
-    ) {
-        return {
-            compliant: false,
-            suggestedName: null,
-            message: issueMessage
-        };
-    }
-
-    const formattedCoreName = rule.enforceCaseStyle ? formatNamingCaseStyle(coreName, rule.caseStyle) : coreName;
-    const suggestedName = `${rule.prefix}${formattedCoreName}${rule.suffix}`;
+    // Finalize suggestion: use already-computed value (including null) or compute now
+    const finalSuggestion = suggestedName === undefined ? composeExpectedIdentifierName(coreName, rule) : suggestedName;
 
     return {
-        compliant: suggestedName === currentName,
-        suggestedName,
-        message: issueMessage
+        compliant: finalSuggestion === currentName,
+        suggestedName: finalSuggestion,
+        message: includeMessage ? issueMessage : null
     };
 }

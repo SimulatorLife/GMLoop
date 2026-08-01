@@ -1,8 +1,21 @@
 # Runtime Wrapper Module
 
 This package hosts the browser-side runtime wrapper described in
-`docs/hot-reload.md`. It receives transpiler patches from the CLI over a WebSocket
+`../../docs/target-state.md`. It receives transpiler patches from the CLI over a WebSocket
 connection and swaps them into the running GameMaker HTML5 export without restarting the game.
+
+During browser bootstrap it also guards HTML5 audio-emitter creation until the
+Web Audio engine is initialized, preventing partially constructed emitters from
+being dereferenced by the native update loop.
+
+During browser bootstrap it also repairs the HTML5 runtime's pointer predicate
+when a GameMaker build exposes `is_ptr` as ArrayBuffer-only even though
+`sprite_get_texture` returns object-backed `Texture:` handles. The native
+predicate remains authoritative for other pointer values.
+
+Script, event, and closure patches also receive a persistent static-variable
+store. This lets transpiled GML `static` declarations initialize once and keep
+their values across calls and replacements during a live-reload session.
 
 ## Responsibilities
 
@@ -42,10 +55,10 @@ Applies a patch to the runtime registry. The patch object must have:
 - `id`: Unique identifier for the patch
 - `js_body`: JavaScript function body as a string
 - `metadata` (optional): Additional context about the patch:
-  - `sourcePath` (optional): File path where this patch originated
-  - `sourceHash` (optional): Hash of the source code for cache validation
-  - `timestamp` (optional): When the patch was created
-  - `dependencies` (optional): Array of patch IDs this patch depends on
+    - `sourcePath` (optional): File path where this patch originated
+    - `sourceHash` (optional): Hash of the source code for cache validation
+    - `timestamp` (optional): When the patch was created
+    - `dependencies` (optional): Array of patch IDs this patch depends on
 
 When `validateBeforeApply` is enabled, patches are validated in a shadow registry first. Invalid patches are rejected before touching the real registry.
 
@@ -116,6 +129,7 @@ Applies multiple patches atomically as a single operation. Either all patches su
 Dependencies are validated in the same order patches are applied. A dependency can be satisfied by the current registry or by a patch that appears earlier in the same batch. Forward references (dependencies declared later in the same batch) still fail validation.
 
 For interdependent batches:
+
 - Order patches from foundational dependencies to dependent patches
 - Keep dependency metadata explicit and minimal
 - Use separate `applyPatch()` calls only when batch order cannot be guaranteed
@@ -592,13 +606,13 @@ Creates a WebSocket client for receiving live patches from a development server.
 - `autoConnect` (optional): When `true`, connects immediately. Default is `true`.
 - `logger` (optional): Logger instance for structured diagnostic logging. See [Diagnostic Logging](#diagnostic-logging) for details.
 - `patchQueue` (optional): Configuration for patch queuing and batching:
-  - `enabled` (optional): When `true`, enables patch queuing. Default is `false`.
-  - `maxQueueSize` (optional): Maximum patches to buffer before forcing a flush. Default is `100`.
-  - `flushIntervalMs` (optional): Time in milliseconds to wait before flushing queued patches. Default is `50`ms.
+    - `enabled` (optional): When `true`, enables patch queuing. Default is `false`. Requires `wrapper`; otherwise queuing is automatically disabled.
+    - `maxQueueSize` (optional): Maximum patches to buffer before forcing a flush. Default is `100`.
+    - `flushIntervalMs` (optional): Time in milliseconds to wait before flushing queued patches. Default is `50`ms.
 
 **Patch Queuing:**
 
-When `patchQueue.enabled` is `true`, incoming patches are buffered and flushed in batches rather than applied immediately. This provides several benefits:
+When `patchQueue.enabled` is `true` **and** a `wrapper` is provided, incoming patches are buffered and flushed in batches rather than applied immediately. This provides several benefits:
 
 - **Reduced overhead**: Multiple patches are applied as a single atomic batch operation
 - **Improved throughput**: During rapid file changes, patches accumulate and are flushed together
@@ -606,6 +620,7 @@ When `patchQueue.enabled` is `true`, incoming patches are buffered and flushed i
 - **Automatic batching**: Leverages the existing `applyPatchBatch()` API for optimal performance
 
 The queue automatically flushes when:
+
 - The flush interval timer expires (default 50ms)
 - The queue reaches `maxQueueSize` (default 100 patches)
 - `disconnect()` is called
@@ -753,7 +768,9 @@ const metrics = client.getPatchQueueMetrics();
 if (metrics) {
     console.log(`Queue depth: ${metrics.maxQueueDepth}`);
     console.log(`Flush rate: ${metrics.flushCount} flushes`);
-    console.log(`Avg batch size: ${(metrics.totalFlushed / metrics.flushCount).toFixed(1)}`);
+    console.log(
+        `Avg batch size: ${(metrics.totalFlushed / metrics.flushCount).toFixed(1)}`
+    );
 }
 ```
 
@@ -1161,7 +1178,9 @@ const summary = wrapper.getErrorsForPatch("script:flaky");
 if (summary) {
     console.log(`Patch: ${summary.patchId}`);
     console.log(`Total failures: ${summary.totalErrors}`);
-    console.log(`First failed: ${new Date(summary.firstErrorAt).toISOString()}`);
+    console.log(
+        `First failed: ${new Date(summary.firstErrorAt).toISOString()}`
+    );
     console.log(`Last failed: ${new Date(summary.lastErrorAt).toISOString()}`);
     console.log(`Error: ${summary.mostRecentError}`);
     console.log(`Unique error messages: ${summary.uniqueErrorMessages}`);
@@ -1211,7 +1230,10 @@ const analytics = wrapper.getErrorAnalytics();
 if (analytics.errorRate > 0.1) {
     console.warn("High error rate detected!");
 
-    for (const { patchId, errorCount } of analytics.mostProblematicPatches.slice(0, 3)) {
+    for (const {
+        patchId,
+        errorCount
+    } of analytics.mostProblematicPatches.slice(0, 3)) {
         const summary = wrapper.getErrorsForPatch(patchId);
         console.log(`\nProblematic patch: ${patchId} (${errorCount} errors)`);
         console.log(`Most recent error: ${summary.mostRecentError}`);
@@ -1289,7 +1311,11 @@ Creates a diagnostic logger for runtime wrapper operations.
 **Example:**
 
 ```javascript
-import { createLogger, createChangeEventLogger, createRuntimeWrapper } from "@gmloop/runtime-wrapper";
+import {
+    createLogger,
+    createChangeEventLogger,
+    createRuntimeWrapper
+} from "@gmloop/runtime-wrapper";
 
 // Create logger with info level for development
 const logger = createLogger({
@@ -1361,13 +1387,14 @@ const logger = createLogger({ level: "info" });
 const eventLogger = createChangeEventLogger(logger);
 
 const wrapper = createRuntimeWrapper({
-    onChange: eventLogger  // Automatically log all registry changes
+    onChange: eventLogger // Automatically log all registry changes
 });
 ```
 
 **Log Level Priority:**
 
 Log levels are ordered from least to most verbose:
+
 1. `silent` - No output
 2. `error` - Only errors
 3. `warn` - Errors and warnings
@@ -1379,9 +1406,9 @@ Log levels are ordered from least to most verbose:
 For production builds, set the log level to `"silent"` or `"error"` to minimize console noise:
 
 ```javascript
-    const logger = createLogger({
-        level: process.env.NODE_ENV === "production" ? "error" : "debug"
-    });
+const logger = createLogger({
+    level: process.env.NODE_ENV === "production" ? "error" : "debug"
+});
 ```
 
 **Performance Impact:**
@@ -1435,9 +1462,9 @@ For development sessions lasting hours with frequent errors or many patches:
 
 ```javascript
 const wrapper = createRuntimeWrapper({
-    maxUndoStackSize: 30,          // Reduce undo depth if not heavily used
-    maxErrorHistorySize: 50,       // Lower if full error analytics not needed
-    validateBeforeApply: false     // Disable unless actively debugging syntax errors
+    maxUndoStackSize: 30, // Reduce undo depth if not heavily used
+    maxErrorHistorySize: 50, // Lower if full error analytics not needed
+    validateBeforeApply: false // Disable unless actively debugging syntax errors
 });
 ```
 
@@ -1445,8 +1472,8 @@ For aggressive memory conservation:
 
 ```javascript
 const wrapper = createRuntimeWrapper({
-    maxUndoStackSize: 10,          // Minimal undo capability
-    maxErrorHistorySize: 20,       // Keep only recent errors
+    maxUndoStackSize: 10, // Minimal undo capability
+    maxErrorHistorySize: 20, // Keep only recent errors
     validateBeforeApply: false
 });
 ```
@@ -1502,3 +1529,6 @@ The same pattern is applied to other major interfaces in this module:
 
 - **`RuntimeWrapper`** extends `PatchApplicator`, `PatchUndoController`, `PatchHistoryReader`, `RegistryReader`, `RegistryMutator`, `RuntimeMetrics`, `RegistryDiagnostics`, and `ErrorAnalytics`
 - **`Logger`** extends `PatchLifecycleLogger`, `RegistryLifecycleLogger`, `WebSocketLogger`, `GeneralLogger`, and `LoggerConfiguration`
+
+## TODO
+- **BUG/FEAT** Updating a GameMaker room's background layer's properties like its color (ex. in `/Users/henrykirk/GMLoop/vendor/3DSpider/rooms/Room1/Room1.yy`) does not trigger a patch event/live-reload/update in the running game

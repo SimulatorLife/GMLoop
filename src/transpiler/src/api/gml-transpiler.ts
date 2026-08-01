@@ -6,13 +6,23 @@ import {
     collectLocalVariables,
     createSemanticOracle,
     type EmitOptions,
-    ensureStatementTerminated,
-    EventContextOracle,
     type FunctionDeclarationNode,
     GmlToJsEmitter,
     type IdentifierAnalyzer,
-    type ProgramNode
+    isBlockStatementNode,
+    isDefaultParameterNode,
+    isIdentifierNode,
+    type ProgramNode,
+    StringBuilder
 } from "../emitter/index.js";
+import { EventContextOracle } from "../event-context/index.js";
+import { expandProjectMacros, type MacroDefinition } from "../macro-expansion.js";
+import { TranspilerError, TranspilerErrorCode } from "./errors.js";
+
+const SCRIPT_REQUEST_CONTEXT = "script request";
+const EXPRESSION_REQUEST_CONTEXT = "expression request";
+const EVENT_REQUEST_CONTEXT = "event request";
+const CLOSURE_REQUEST_CONTEXT = "closure request";
 
 export interface TranspileScriptRequest {
     /**
@@ -28,6 +38,8 @@ export interface TranspileScriptRequest {
      * This eliminates redundant parsing when the caller has already parsed the source.
      */
     readonly ast?: unknown;
+    /** Project macro definitions to expand before script emission. */
+    readonly macroDefinitions?: ReadonlyMap<string, MacroDefinition>;
 }
 
 export interface TranspileEventRequest {
@@ -48,11 +60,14 @@ export interface TranspileEventRequest {
      * Defaults to `"self"` when not provided.
      */
     readonly thisName?: string;
+    /** Project macro definitions to expand before event emission. */
+    readonly macroDefinitions?: ReadonlyMap<string, MacroDefinition>;
 }
 
 export interface PatchMetadata {
     readonly timestamp: number;
     readonly sourcePath?: string;
+    readonly dependencies?: Array<string>;
 }
 
 export interface ScriptPatch {
@@ -78,6 +93,48 @@ export interface EventPatch {
     readonly metadata?: PatchMetadata;
 }
 
+/**
+ * A hot-reload patch for a GML closure (anonymous or named nested function).
+ *
+ * Closures are registered in the runtime wrapper's closure registry and
+ * created via `new Function("...args", js_body)`. The emitted `js_body`
+ * unpacks named parameters from the `args` array (identical to the script
+ * unwrapping pattern used by `ScriptPatch`) so that callers can invoke the
+ * function by passing positional arguments.
+ *
+ * The runtime wrapper `ClosurePatch` interface is intentionally compatible:
+ * this type carries additional transpiler metadata (`sourceText`, `version`)
+ * but remains structurally assignable to the runtime type.
+ */
+export interface ClosurePatch {
+    readonly kind: "closure";
+    readonly id: string;
+    readonly js_body: string;
+    readonly sourceText: string;
+    readonly version: number;
+    readonly metadata?: PatchMetadata;
+}
+
+/**
+ * Request object for `GmlTranspiler.transpileClosure`.
+ */
+export interface TranspileClosureRequest {
+    /**
+     * Absolute or workspace-relative file path that produced the source.
+     * Surfaced in patch metadata for runtime diagnostics.
+     */
+    readonly sourcePath?: string;
+    readonly sourceText: string;
+    readonly symbolId: string;
+    /**
+     * Pre-parsed AST to reuse instead of re-parsing `sourceText`.
+     * Eliminates redundant parsing when the caller already has the AST.
+     */
+    readonly ast?: unknown;
+    /** Project macro definitions to expand before closure emission. */
+    readonly macroDefinitions?: ReadonlyMap<string, MacroDefinition>;
+}
+
 export interface TranspilerDependencies {
     readonly semantic?: IdentifierAnalyzer & CallTargetAnalyzer;
     readonly emitterOptions?: Partial<EmitOptions>;
@@ -99,26 +156,72 @@ export class GmlTranspiler {
     }
 
     private parseProgram(sourceText: string) {
-        const parser = new Parser.GMLParser(sourceText, {});
+        const parser = new Parser.GMLParser(sourceText, {
+            getComments: false,
+            getLocations: true,
+            simplifyLocations: true,
+            attachFunctionDocComments: false
+        });
         return parser.parse();
     }
 
-    private resolveProgramAst(request: TranspileScriptRequest): ProgramNode {
-        const astCandidate = request.ast ?? this.parseProgram(request.sourceText);
-        if (!Core.isObjectLike(astCandidate)) {
-            throw new TypeError("transpileScript requires ast to be a Program-like object when provided");
+    private resolveProgramAst(
+        request: TranspileScriptRequest | TranspileEventRequest | TranspileClosureRequest
+    ): ProgramNode {
+        if (request.ast === undefined) {
+            return this.parseProgram(request.sourceText);
         }
 
-        const astRecord = astCandidate as Record<string, unknown>;
+        if (!Core.isObjectLike(request.ast)) {
+            throw this.createTranspileError(
+                "request",
+                new TypeError("transpile request requires ast to be a Program-like object when provided"),
+                TranspilerErrorCode.REQUEST_ERROR
+            );
+        }
+
+        const astRecord = request.ast as Record<string, unknown>;
+        if (astRecord.type !== "Program") {
+            throw this.createTranspileError(
+                "request",
+                new TypeError("transpile request requires ast.type to be 'Program' when ast is provided"),
+                TranspilerErrorCode.REQUEST_ERROR
+            );
+        }
         if (!Array.isArray(astRecord.body)) {
-            throw new TypeError("transpileScript requires ast.body to be an array when ast is provided");
+            throw this.createTranspileError(
+                "request",
+                new TypeError("transpile request requires ast.body to be an array when ast is provided"),
+                TranspilerErrorCode.REQUEST_ERROR
+            );
         }
 
-        return astCandidate as ProgramNode;
+        return request.ast as ProgramNode;
+    }
+
+    private resolveExpandedProgramAst(
+        request: TranspileScriptRequest | TranspileEventRequest | TranspileClosureRequest
+    ): ProgramNode {
+        const ast = this.resolveProgramAst(request);
+        const macroDefinitions = request.macroDefinitions;
+        if (macroDefinitions === undefined || macroDefinitions.size === 0) {
+            return ast;
+        }
+
+        const expandedAst = expandProjectMacros(ast, macroDefinitions, request.sourcePath ?? "<inline>");
+        const expandedRecord = Core.isObjectLike(expandedAst) ? (expandedAst as Record<string, unknown>) : null;
+        if (expandedRecord?.type !== "Program" || !Array.isArray(expandedRecord.body)) {
+            throw new TypeError("macro expansion must return a Program AST");
+        }
+
+        return expandedAst as ProgramNode;
     }
 
     private emitFunctionParameterUnpacking(func: FunctionDeclarationNode, emitter: GmlToJsEmitter): string {
-        const lines: string[] = [];
+        if (func.params.length === 0) {
+            return "";
+        }
+        const builder = new StringBuilder(func.params.length);
 
         for (let index = 0; index < func.params.length; index += 1) {
             const parameter = func.params[index];
@@ -126,12 +229,12 @@ export class GmlTranspiler {
 
             if (typeof parameter === "string") {
                 line = `var ${parameter} = args[${index}];`;
-            } else if (parameter.type === "Identifier") {
+            } else if (isIdentifierNode(parameter)) {
                 line = `var ${parameter.name} = args[${index}];`;
-            } else if (parameter.type === "DefaultParameter" && parameter.left.type === "Identifier") {
+            } else if (isDefaultParameterNode(parameter) && isIdentifierNode(parameter.left)) {
                 const name = parameter.left.name;
                 if (parameter.right) {
-                    const defaultValue = emitter.emit(parameter.right);
+                    const defaultValue = emitter.emitFragment(parameter.right);
                     line = `var ${name} = args[${index}] === undefined ? ${defaultValue} : args[${index}];`;
                 } else {
                     line = `var ${name} = args[${index}];`;
@@ -142,48 +245,102 @@ export class GmlTranspiler {
                 continue;
             }
 
-            lines.push(line);
+            builder.append(line);
         }
 
-        return lines.join("\n");
+        return builder.toString("\n");
     }
 
     private emitUnwrappedFunctionBody(body: ProgramNode["body"][number], emitter: GmlToJsEmitter): string {
-        if (body.type !== "BlockStatement") {
-            return emitter.emit(body).trim();
+        if (!isBlockStatementNode(body)) {
+            return emitter.emitFunctionBody(body).trim();
         }
 
-        const lines: string[] = [];
-        for (const statement of (body).body) {
-            const code = emitter.emit(statement);
-            if (!code) {
-                continue;
+        return emitter.emitFunctionBody({ type: "Program", body: body.body });
+    }
+
+    private createTranspileError(contextLabel: string, error: unknown, code?: TranspilerErrorCode): TranspilerError {
+        const cause = Core.isErrorLike(error) ? error : undefined;
+        const causeMessage =
+            cause && "message" in cause && typeof cause.message === "string" ? cause.message : undefined;
+        const message = causeMessage ?? (Core.isNonEmptyString(error) ? error : "Unknown transpilation error");
+        return new TranspilerError(
+            `Failed to transpile ${contextLabel}: ${message}`,
+            code ?? TranspilerErrorCode.INTERNAL_ERROR,
+            {
+                cause
             }
+        );
+    }
 
-            lines.push(ensureStatementTerminated(code));
+    private createRequestError(contextLabel: string, message: string): TranspilerError {
+        return this.createTranspileError(contextLabel, new TypeError(message), TranspilerErrorCode.REQUEST_ERROR);
+    }
+
+    /**
+     * Build patch metadata from optional source path and an emitter's collected
+     * script-reference set.
+     *
+     * `dependencies` is omitted from the metadata when the emitter encountered
+     * no script calls, keeping the patch object lean for simple event bodies
+     * and library utilities that never invoke other scripts.
+     */
+    private buildPatchMetadata(
+        sourcePath: string | undefined,
+        emitter: GmlToJsEmitter,
+        timestamp: number
+    ): PatchMetadata {
+        const deps = emitter.getDependencies();
+        return {
+            ...(sourcePath ? { sourcePath } : {}),
+            ...(deps.size > 0 ? { dependencies: [...deps] } : {}),
+            timestamp
+        };
+    }
+
+    /**
+     * Returns the single `FunctionDeclaration` node from a program if the program
+     * contains exactly one statement of that type, otherwise returns `null`.
+     *
+     * Centralizes the narrowing logic shared by `transpileScript` and
+     * `transpileClosure`, eliminating the need for unsafe double casts at
+     * each call site.
+     */
+    private extractSingleFunctionDeclaration(ast: ProgramNode): FunctionDeclarationNode | null {
+        if (ast.body.length !== 1) {
+            return null;
         }
-
-        return lines.join("\n");
+        const firstNode = ast.body[0];
+        if (firstNode.type !== "FunctionDeclaration") {
+            return null;
+        }
+        // TypeScript narrows `firstNode` to `FunctionDeclarationNode` here because
+        // we've already ruled out `firstNode.type !== "FunctionDeclaration"` above,
+        // and the `GmlNode` union is discriminated on `.type`.
+        return firstNode;
     }
 
     transpileScript(request: TranspileScriptRequest): ScriptPatch {
         if (!request || typeof request !== "object") {
-            throw new TypeError("transpileScript requires a request object");
+            throw this.createRequestError(SCRIPT_REQUEST_CONTEXT, "transpileScript requires a request object");
         }
         const { sourceText, symbolId } = request;
         const sourcePath = request.sourcePath;
         if (typeof sourceText !== "string" || sourceText.length === 0) {
-            throw new TypeError("transpileScript requires a sourceText string");
+            throw this.createRequestError(SCRIPT_REQUEST_CONTEXT, "transpileScript requires a sourceText string");
         }
         if (typeof symbolId !== "string" || symbolId.length === 0) {
-            throw new TypeError("transpileScript requires a symbolId string");
+            throw this.createRequestError(SCRIPT_REQUEST_CONTEXT, "transpileScript requires a symbolId string");
         }
         if (sourcePath !== undefined && (typeof sourcePath !== "string" || sourcePath.length === 0)) {
-            throw new TypeError("transpileScript requires sourcePath to be a non-empty string when provided");
+            throw this.createRequestError(
+                SCRIPT_REQUEST_CONTEXT,
+                "transpileScript requires sourcePath to be a non-empty string when provided"
+            );
         }
 
         try {
-            const ast = this.resolveProgramAst(request);
+            const ast = this.resolveExpandedProgramAst(request);
             const emitter = new GmlToJsEmitter(this.getSemanticAnalyzers(), this.emitterOptions);
             let jsBody = "";
 
@@ -192,14 +349,14 @@ export class GmlTranspiler {
             // rather than just defining the function in the local scope.
             // We unwrap the function, generating code to unpack 'args' into the named parameters,
             // and then emit the body of the function.
-            if (ast.body.length === 1 && ast.body[0].type === "FunctionDeclaration") {
-                const func = ast.body[0] as unknown as FunctionDeclarationNode;
-                const paramUnpacking = this.emitFunctionParameterUnpacking(func, emitter);
-                const bodyContent = this.emitUnwrappedFunctionBody(func.body, emitter);
+            const singleFunc = this.extractSingleFunctionDeclaration(ast);
+            if (singleFunc === null) {
+                jsBody = emitter.emit(ast);
+            } else {
+                const paramUnpacking = this.emitFunctionParameterUnpacking(singleFunc, emitter);
+                const bodyContent = this.emitUnwrappedFunctionBody(singleFunc.body, emitter);
 
                 jsBody = paramUnpacking ? `${paramUnpacking}\n${bodyContent}` : bodyContent;
-            } else {
-                jsBody = emitter.emit(ast);
             }
 
             const timestamp = Date.now();
@@ -209,35 +366,34 @@ export class GmlTranspiler {
                 js_body: jsBody,
                 sourceText,
                 version: timestamp,
-                metadata: {
-                    ...(sourcePath ? { sourcePath } : {}),
-                    timestamp
-                }
+                metadata: this.buildPatchMetadata(sourcePath, emitter, timestamp)
             };
             return patch;
         } catch (error) {
-            const message = Core.isErrorLike(error) ? error.message : String(error);
-            throw new Error(`Failed to transpile script ${symbolId}: ${message}`, {
-                cause: Core.isErrorLike(error) ? error : undefined
-            });
+            throw this.createTranspileError(`script ${symbolId}`, error, TranspilerErrorCode.INTERNAL_ERROR);
         }
     }
 
     transpileExpression(sourceText: string): string {
         if (typeof sourceText !== "string" || sourceText.length === 0) {
-            throw new TypeError("transpileExpression requires a sourceText string");
+            throw this.createRequestError(
+                EXPRESSION_REQUEST_CONTEXT,
+                "transpileExpression requires a sourceText string"
+            );
         }
 
         try {
-            const parser = new Parser.GMLParser(sourceText);
+            const parser = new Parser.GMLParser(sourceText, {
+                getComments: false,
+                getLocations: true,
+                simplifyLocations: true,
+                attachFunctionDocComments: false
+            });
             const ast = parser.parse();
             const emitter = new GmlToJsEmitter(this.getSemanticAnalyzers(), this.emitterOptions);
             return emitter.emit(ast);
         } catch (error) {
-            const message = Core.isErrorLike(error) ? error.message : String(error);
-            throw new Error(`Failed to transpile expression: ${message}`, {
-                cause: Core.isErrorLike(error) ? error : undefined
-            });
+            throw this.createTranspileError("expression", error, TranspilerErrorCode.INTERNAL_ERROR);
         }
     }
 
@@ -265,29 +421,38 @@ export class GmlTranspiler {
      */
     transpileEvent(request: TranspileEventRequest): EventPatch {
         if (!request || typeof request !== "object") {
-            throw new TypeError("transpileEvent requires a request object");
+            throw this.createRequestError(EVENT_REQUEST_CONTEXT, "transpileEvent requires a request object");
         }
         const { sourceText, symbolId } = request;
         const sourcePath = request.sourcePath;
         if (typeof sourceText !== "string" || sourceText.length === 0) {
-            throw new TypeError("transpileEvent requires a sourceText string");
+            throw this.createRequestError(EVENT_REQUEST_CONTEXT, "transpileEvent requires a sourceText string");
         }
         if (typeof symbolId !== "string" || symbolId.length === 0) {
-            throw new TypeError("transpileEvent requires a symbolId string");
+            throw this.createRequestError(EVENT_REQUEST_CONTEXT, "transpileEvent requires a symbolId string");
         }
         if (sourcePath !== undefined && (typeof sourcePath !== "string" || sourcePath.length === 0)) {
-            throw new TypeError("transpileEvent requires sourcePath to be a non-empty string when provided");
+            throw this.createRequestError(
+                EVENT_REQUEST_CONTEXT,
+                "transpileEvent requires sourcePath to be a non-empty string when provided"
+            );
+        }
+        if (request.thisName !== undefined && (typeof request.thisName !== "string" || request.thisName.length === 0)) {
+            throw this.createRequestError(
+                EVENT_REQUEST_CONTEXT,
+                "transpileEvent requires thisName to be a non-empty string when provided"
+            );
         }
 
         try {
-            const ast = this.resolveProgramAst(request);
+            const ast = this.resolveExpandedProgramAst(request);
 
             // Pre-collect var-declared locals before building the oracle so the
             // EventContextOracle can distinguish them from instance fields.
             const localVars = collectLocalVariables(ast);
             const eventOracle = new EventContextOracle(this.getSemanticAnalyzers(), localVars);
             const emitter = new GmlToJsEmitter(eventOracle, this.emitterOptions);
-            const jsBody = emitter.emit(ast);
+            const jsBody = emitter.emitFunctionBody(ast);
 
             const timestamp = Date.now();
             const patch: EventPatch = {
@@ -297,17 +462,86 @@ export class GmlTranspiler {
                 sourceText,
                 version: timestamp,
                 this_name: request.thisName ?? "self",
-                metadata: {
-                    ...(sourcePath ? { sourcePath } : {}),
-                    timestamp
-                }
+                metadata: this.buildPatchMetadata(sourcePath, emitter, timestamp)
             };
             return patch;
         } catch (error) {
-            const message = Core.isErrorLike(error) ? error.message : String(error);
-            throw new Error(`Failed to transpile event ${symbolId}: ${message}`, {
-                cause: Core.isErrorLike(error) ? error : undefined
-            });
+            throw this.createTranspileError(`event ${symbolId}`, error, TranspilerErrorCode.INTERNAL_ERROR);
+        }
+    }
+
+    /**
+     * Transpile a GML function (named or anonymous) into a `ClosurePatch`.
+     *
+     * A closure patch targets the runtime wrapper's closure registry and is
+     * created via `new Function("...args", js_body)`. The emitted `js_body`
+     * uses the same parameter-unpacking convention as `transpileScript`:
+     * named parameters become `var <name> = args[<index>]` declarations at the
+     * top of the body so callers can pass positional arguments normally.
+     *
+     * When the source contains a single function declaration, the function is
+     * unwrapped and only the body (plus parameter unpacking) is emitted—the
+     * `function` keyword itself is not included. When the source is a bare
+     * statement block or expression, it is emitted directly.
+     *
+     * @example
+     * ```typescript
+     * const patch = transpiler.transpileClosure({
+     *   sourceText: "function helper(x, y) { return x + y; }",
+     *   symbolId: "gml/closure/scr_utils/helper"
+     * });
+     * // patch.js_body ≈ "var x = args[0];\nvar y = args[1];\nreturn (x + y);"
+     * ```
+     */
+    transpileClosure(request: TranspileClosureRequest): ClosurePatch {
+        if (!request || typeof request !== "object") {
+            throw this.createRequestError(CLOSURE_REQUEST_CONTEXT, "transpileClosure requires a request object");
+        }
+        const { sourceText, symbolId } = request;
+        const sourcePath = request.sourcePath;
+        if (typeof sourceText !== "string" || sourceText.length === 0) {
+            throw this.createRequestError(CLOSURE_REQUEST_CONTEXT, "transpileClosure requires a sourceText string");
+        }
+        if (typeof symbolId !== "string" || symbolId.length === 0) {
+            throw this.createRequestError(CLOSURE_REQUEST_CONTEXT, "transpileClosure requires a symbolId string");
+        }
+        if (sourcePath !== undefined && (typeof sourcePath !== "string" || sourcePath.length === 0)) {
+            throw this.createRequestError(
+                CLOSURE_REQUEST_CONTEXT,
+                "transpileClosure requires sourcePath to be a non-empty string when provided"
+            );
+        }
+
+        try {
+            const ast = this.resolveExpandedProgramAst(request);
+            const emitter = new GmlToJsEmitter(this.getSemanticAnalyzers(), this.emitterOptions);
+            let jsBody = "";
+
+            // Unwrap a single function declaration, emitting only the body with
+            // parameter unpacking. This matches the convention expected by the
+            // runtime-wrapper's `new Function("...args", patchBody)` pattern:
+            // named parameters are extracted from `args[0]`, `args[1]`, etc.
+            const singleFunc = this.extractSingleFunctionDeclaration(ast);
+            if (singleFunc === null) {
+                jsBody = emitter.emit(ast);
+            } else {
+                const paramUnpacking = this.emitFunctionParameterUnpacking(singleFunc, emitter);
+                const bodyContent = this.emitUnwrappedFunctionBody(singleFunc.body, emitter);
+                jsBody = paramUnpacking ? `${paramUnpacking}\n${bodyContent}` : bodyContent;
+            }
+
+            const timestamp = Date.now();
+            const patch: ClosurePatch = {
+                kind: "closure",
+                id: symbolId,
+                js_body: jsBody,
+                sourceText,
+                version: timestamp,
+                metadata: this.buildPatchMetadata(sourcePath, emitter, timestamp)
+            };
+            return patch;
+        } catch (error) {
+            throw this.createTranspileError(`closure ${symbolId}`, error, TranspilerErrorCode.INTERNAL_ERROR);
         }
     }
 }

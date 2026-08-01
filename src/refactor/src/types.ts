@@ -1,4 +1,15 @@
 /**
+ * Shared codemod types used across all built-in codemods.
+ *
+ * These types describe edits, results, and options for simple text-manipulation
+ * codemods that operate on source text. Each codemod defines its own Edit and
+ * Result types using this shared shape; option types vary per-codemod.
+ */
+
+/**
+ * A single text edit in source-text coordinates.
+ */
+/**
  * Core types and interfaces for the refactor engine.
  * Defines symbols, occurrences, conflicts, dependencies, and validation contracts
  * that coordinate semantic analysis, transpiler integration, and safe renaming.
@@ -6,9 +17,216 @@
 
 import { Core } from "@gmloop/core";
 
-import type { StorageBackend } from "./backends/storage-backend.js";
-import type { LoopLengthHoistingCodemodOptions } from "./codemods/loop-length-hoisting/types.js";
-import type { FileRename, WorkspaceEdit } from "./workspace-edit.js";
+export type CodemodEdit = Readonly<{
+    /** Inclusive start offset in the source text. */
+    start: number;
+    /** Exclusive end offset in the source text. */
+    end: number;
+    /** Replacement text for the region [start, end). */
+    text: string;
+}>;
+
+/**
+ * Base result returned by most simple source-text codemods.
+ *
+ * All codemods follow this shape: they report whether anything changed,
+ * return the (potentially transformed) source text, and list the edits
+ * that were applied.
+ */
+export type CodemodResult = Readonly<{
+    /** Whether the source text changed. */
+    changed: boolean;
+    /** Transformed source text, or the original text when unchanged. */
+    outputText: string;
+    /** Edits applied to create the transformed text. */
+    appliedEdits: ReadonlyArray<CodemodEdit>;
+}>;
+
+/**
+ * A single edit produced by the loop-length hoisting codemod.
+ */
+export type LoopLengthHoistingEdit = CodemodEdit;
+
+/**
+ * Result payload returned by the loop-length hoisting codemod.
+ */
+export type LoopLengthHoistingResult = CodemodResult;
+
+/**
+ * Options for the globalvar-to-global codemod.
+ *
+ * All options are optional; omitting them is equivalent to passing `{}`.
+ */
+export type GlobalvarToGlobalCodemodOptions = Readonly<{
+    /**
+     * Variable names to exclude from migration.
+     *
+     * When specified, `globalvar` declarations for these names are still removed
+     * but their bare identifier references are left as-is.  This is useful when
+     * a legacy compatibility layer already handles a specific global name and you
+     * only want to migrate the remaining ones.
+     *
+     * Defaults to an empty array (all declared names are migrated).
+     */
+    excludeNames?: ReadonlyArray<string>;
+}>;
+
+/**
+ * Per-file result returned by `applyGlobalvarToGlobalCodemod`.
+ */
+export type GlobalvarToGlobalResult = Readonly<{
+    /** Whether any edits were applied. */
+    changed: boolean;
+    /** The transformed source text (equals the input when `changed` is false). */
+    outputText: string;
+    /** All edits applied in the order they were generated (not necessarily sorted). */
+    appliedEdits: ReadonlyArray<CodemodEdit>;
+    /**
+     * The globalvar variable names that were migrated.
+     * Empty when no globalvar declarations were found.
+     */
+    migratedNames: ReadonlyArray<string>;
+}>;
+
+/**
+ * Options for the loop-length hoisting codemod.
+ */
+export type LoopLengthHoistingCodemodOptions = Readonly<Record<string, never>>;
+
+/**
+ * Options for the scientific-notation codemod.
+ *
+ * No options are currently supported.
+ */
+export type ScientificNotationCodemodOptions = Readonly<Record<string, never>>;
+
+/**
+ * Options for the repair-logical-not codemod.
+ */
+export type RepairLogicalNotCodemodOptions = Readonly<Record<string, never>>;
+
+/**
+ * Options for the repair-argument-separators codemod.
+ */
+export type RepairArgumentSeparatorsCodemodOptions = Readonly<Record<string, never>>;
+
+/**
+ * Options for the texture-prefetch guard repair codemod.
+ */
+export type RepairTexturePrefetchGuardCodemodOptions = Readonly<Record<string, never>>;
+
+/**
+ * A single text edit produced by the texture-prefetch guard repair codemod.
+ */
+export type RepairTexturePrefetchGuardEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by the texture-prefetch guard repair codemod.
+ */
+export type RepairTexturePrefetchGuardResult = CodemodResult;
+
+/**
+ * Options for the invalid-texture-pointer guard repair codemod.
+ */
+export type RepairInvalidTexturePointerGuardCodemodOptions = Readonly<Record<string, never>>;
+
+/**
+ * A single text edit produced by the invalid-texture-pointer guard repair codemod.
+ */
+export type RepairInvalidTexturePointerGuardEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by `applyRepairInvalidTexturePointerGuardCodemod`.
+ */
+export type RepairInvalidTexturePointerGuardResult = CodemodResult;
+
+/**
+ * Options for the audio-emitter creation guard codemod.
+ */
+export type RepairAudioEmitterCreationGuardCodemodOptions = Readonly<Record<string, never>>;
+
+/**
+ * A single text edit produced by the audio-emitter creation guard codemod.
+ */
+export type RepairAudioEmitterCreationGuardEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by `applyRepairAudioEmitterCreationGuardCodemod`.
+ */
+export type RepairAudioEmitterCreationGuardResult = CodemodResult;
+
+/**
+ * Options for the sprite-texture UV resolution repair codemod.
+ */
+export type RepairSpriteTextureUvResolutionCodemodOptions = Readonly<Record<string, never>>;
+
+/**
+ * A single text edit produced by the sprite-texture UV resolution repair codemod.
+ */
+export type RepairSpriteTextureUvResolutionEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by `applyRepairSpriteTextureUvResolutionCodemod`.
+ */
+export type RepairSpriteTextureUvResolutionResult = CodemodResult;
+
+/**
+ * Options for the event-callback other-keyword repair codemod.
+ *
+ * The codemod only runs on event files (paths that match
+ * `objects/<objectName>/<eventName>.gml`); the `sourcePath` is used to
+ * determine the file kind and to keep the codemod a no-op on
+ * script/library files that may legitimately use `other.<name>`.
+ */
+export type RepairEventCallbackOtherCodemodOptions = Readonly<{
+    readonly sourcePath?: string;
+}>;
+
+/**
+ * A single text edit produced by the event-callback other-keyword repair codemod.
+ */
+export type RepairEventCallbackOtherEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by `applyRepairEventCallbackOtherCodemod`.
+ */
+export type RepairEventCallbackOtherResult = CodemodResult;
+
+/**
+ * A single text edit produced by the repair-logical-not codemod.
+ */
+export type RepairLogicalNotEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by `applyRepairLogicalNotCodemod`.
+ */
+export type RepairLogicalNotResult = CodemodResult;
+
+/**
+ * A single text edit produced by the repair-argument-separators codemod.
+ */
+export type RepairArgumentSeparatorsEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by `applyRepairArgumentSeparatorsCodemod`.
+ */
+export type RepairArgumentSeparatorsResult = CodemodResult;
+
+/**
+ * A single text edit produced by the scientific-notation codemod.
+ */
+export type ScientificNotationEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by `applyScientificNotationCodemod`.
+ */
+export type ScientificNotationResult = CodemodResult;
+
+/**
+ * A single text edit produced by the globalvar-to-global codemod.
+ * Alias for the shared CodemodEdit shape.
+ */
+export type GlobalvarToGlobalEdit = CodemodEdit;
 
 export type MaybePromise<T> = T | Promise<T>;
 
@@ -17,9 +235,89 @@ export type Range = { start: number; end: number };
 const { createEnumeratedOptionHelpers } = Core;
 
 /**
- * Allowed naming case styles for naming-convention policy rules.
+ * Enumerated constants for naming case styles accepted by
+ * naming-convention policy rules.
+ *
+ * Naming case styles are the canonical identifier casing used by the refactor
+ * engine's naming policy. Centralising the valid values as a frozen constant
+ * object removes raw string literals (e.g. `"camel"`, `"lower_snake"`) from
+ * the dispatch logic in `formatNamingCaseStyle` and gives callers a single
+ * source of truth for runtime validation. The string values are deliberately
+ * preserved as the wire format used in user-authored config so existing
+ * policies keep working without translation.
+ *
+ * @example
+ * // Use typed constants instead of raw strings
+ * if (rule.caseStyle === NamingCaseStyle.LOWER_SNAKE) { ... }
+ *
+ * // Validate runtime strings
+ * const style = requireNamingCaseStyle(rawInput, "naming rule");
  */
-export type NamingCaseStyle = "lower" | "upper" | "camel" | "lower_snake" | "upper_snake" | "pascal";
+export const NamingCaseStyle = Object.freeze({
+    LOWER: "lower",
+    UPPER: "upper",
+    CAMEL: "camel",
+    LOWER_SNAKE: "lower_snake",
+    UPPER_SNAKE: "upper_snake",
+    PASCAL: "pascal"
+} as const);
+
+/**
+ * Allowed naming case styles for naming-convention policy rules.
+ *
+ * Derived from {@link NamingCaseStyle} so the union stays in lock-step with
+ * the runtime constant map; adding a new style only requires updating the
+ * `NamingCaseStyle` object.
+ */
+export type NamingCaseStyle = (typeof NamingCaseStyle)[keyof typeof NamingCaseStyle];
+
+const namingCaseStyleHelpers = createEnumHelpers(NamingCaseStyle, "naming case style");
+
+/**
+ * Check whether a value is a valid naming case style.
+ *
+ * @param value - Candidate value to test
+ * @returns True if value matches a known NamingCaseStyle constant
+ *
+ * @example
+ * if (isNamingCaseStyle(rawString)) {
+ *   // Safe to use as NamingCaseStyle
+ * }
+ */
+export function isNamingCaseStyle(value: unknown): value is NamingCaseStyle {
+    return namingCaseStyleHelpers.is(value);
+}
+
+/**
+ * Parse and validate a naming case style string.
+ *
+ * @param value - Raw string to parse
+ * @returns Valid NamingCaseStyle or null if invalid
+ *
+ * @example
+ * const style = parseNamingCaseStyle(rawInput);
+ * if (style === null) {
+ *   // Handle invalid style
+ * }
+ */
+export function parseNamingCaseStyle(value: unknown): NamingCaseStyle | null {
+    return namingCaseStyleHelpers.parse(value);
+}
+
+/**
+ * Parse and validate a naming case style string, throwing on invalid input.
+ *
+ * @param value - Raw string to parse
+ * @param context - Optional context for error message
+ * @returns Valid NamingCaseStyle
+ * @throws {TypeError} If value is not a valid naming case style
+ *
+ * @example
+ * const style = requireNamingCaseStyle(rawInput, "naming rule caseStyle");
+ */
+export function requireNamingCaseStyle(value: unknown, context?: string): NamingCaseStyle {
+    return namingCaseStyleHelpers.require(value, context);
+}
 
 /**
  * Category keys that can be targeted by naming-convention policy rules.
@@ -85,28 +383,46 @@ export interface NamingConventionPolicy {
 /**
  * Stable identifiers for codemods exposed through project configuration and the CLI.
  */
-export type RefactorCodemodId = "loopLengthHoisting" | "namingConvention";
+export type RefactorCodemodId =
+    | "scientificNotation"
+    | "globalvarToGlobal"
+    | "loopLengthHoisting"
+    | "namingConvention"
+    | "repairLogicalNot"
+    | "repairArgumentSeparators"
+    | "repairTexturePrefetchGuard"
+    | "repairInvalidTexturePointerGuard"
+    | "repairAudioEmitterCreationGuard"
+    | "repairSpriteTextureUvResolution"
+    | "repairEventCallbackOther";
 
 /**
  * Normalized config payloads keyed by registered codemod id.
  */
 export interface RefactorCodemodConfigMap {
+    scientificNotation: ScientificNotationCodemodOptions;
+    globalvarToGlobal: GlobalvarToGlobalCodemodOptions;
     loopLengthHoisting: LoopLengthHoistingCodemodOptions;
-    namingConvention: Record<string, never>;
+    namingConvention: NamingConventionPolicy;
+    repairLogicalNot: RepairLogicalNotCodemodOptions;
+    repairArgumentSeparators: RepairArgumentSeparatorsCodemodOptions;
+    repairTexturePrefetchGuard: RepairTexturePrefetchGuardCodemodOptions;
+    repairInvalidTexturePointerGuard: RepairInvalidTexturePointerGuardCodemodOptions;
+    repairAudioEmitterCreationGuard: RepairAudioEmitterCreationGuardCodemodOptions;
+    repairSpriteTextureUvResolution: RepairSpriteTextureUvResolutionCodemodOptions;
+    repairEventCallbackOther: RepairEventCallbackOtherCodemodOptions;
 }
 
 /**
  * Config payload for a single registered codemod.
  */
 export type RefactorCodemodConfigEntry<T extends RefactorCodemodId = RefactorCodemodId> =
-    | RefactorCodemodConfigMap[T]
-    | false;
+    RefactorCodemodConfigMap[T] | false;
 
 /**
  * Refactor-specific configuration loaded from the `refactor` section of `gmloop.json`.
  */
 export interface RefactorProjectConfig {
-    namingConventionPolicy?: NamingConventionPolicy;
     codemods?: Partial<{ [K in RefactorCodemodId]: RefactorCodemodConfigEntry<K> }>;
 }
 
@@ -136,10 +452,14 @@ export type ResolvedNamingConventionRules = Partial<Record<NamingCategory, Resol
  * @param typeName - Human-readable name for error messages
  * @returns Helper object with is, parse, and require methods
  */
-function createEnumHelpers<T extends Record<string, string>>(enumObj: T, typeName: string) {
+export function createEnumHelpers<T extends Record<string, string>>(enumObj: T, typeName: string) {
     type EnumValue = T[keyof T];
     const values = Object.values(enumObj);
     const validValues = values.join(", ");
+    const formatInvalidEnumMessage = (value: unknown, context?: string): string => {
+        const contextInfo = context ? ` (in ${context})` : "";
+        return `Invalid ${typeName}: ${JSON.stringify(value)}${contextInfo}. Must be one of: ${validValues}.`;
+    };
 
     const coreHelpers = createEnumeratedOptionHelpers(values, {
         caseSensitive: true,
@@ -154,20 +474,11 @@ function createEnumHelpers<T extends Record<string, string>>(enumObj: T, typeNam
             return coreHelpers.normalize(value) as EnumValue | null;
         },
         require: (value: unknown, context?: string): EnumValue => {
-            if (typeof value !== "string") {
-                const contextInfo = context ? ` (in ${context})` : "";
-                throw new TypeError(
-                    `Invalid ${typeName}: ${JSON.stringify(value)}${contextInfo}. Must be one of: ${validValues}.`
-                );
+            const normalized = typeof value === "string" ? coreHelpers.normalize(value) : null;
+            if (normalized === null) {
+                throw new TypeError(formatInvalidEnumMessage(value, context));
             }
-            const normalized = coreHelpers.normalize(value);
-            if (normalized !== null) {
-                return normalized as EnumValue;
-            }
-            const contextInfo = context ? ` (in ${context})` : "";
-            throw new TypeError(
-                `Invalid ${typeName}: ${JSON.stringify(value)}${contextInfo}. Must be one of: ${validValues}.`
-            );
+            return normalized as EnumValue;
         }
     };
 }
@@ -192,7 +503,8 @@ export const SymbolKind = Object.freeze({
     VAR: "var",
     EVENT: "event",
     MACRO: "macro",
-    ENUM: "enum"
+    ENUM: "enum",
+    ENUM_MEMBER: "enum-member"
 } as const);
 
 export type SymbolKindValue = (typeof SymbolKind)[keyof typeof SymbolKind];
@@ -267,7 +579,8 @@ export const ConflictType = Object.freeze({
     MISSING_SYMBOL: "missing_symbol",
     LARGE_RENAME: "large_rename",
     MANY_DEPENDENTS: "many_dependents",
-    ANALYSIS_ERROR: "analysis_error"
+    ANALYSIS_ERROR: "analysis_error",
+    SEMANTIC_GAP: "semantic_gap"
 } as const);
 
 export type ConflictTypeValue = (typeof ConflictType)[keyof typeof ConflictType];
@@ -390,570 +703,78 @@ export function requireOccurrenceKind(value: unknown, context?: string): Occurre
     return occurrenceKindHelpers.require(value, context);
 }
 
-export interface AstNode {
-    type?: string;
-    name?: string;
-    start: number;
-    end: number;
-    children?: Array<AstNode>;
-}
-
-export interface SymbolLocation {
-    symbolId: string;
-    name: string;
-    range: Range;
-}
-
-export interface SymbolOccurrence {
-    path: string;
-    start: number;
-    end: number;
-    scopeId?: string;
-    kind?: OccurrenceKindValue;
-}
-
-export interface SymbolLookupResult {
-    name: string;
-}
-
-export interface FileSymbol {
-    id: string;
-}
-
-export interface DependentSymbol {
-    symbolId: string;
-    filePath: string;
-}
-
-export interface ParserBridge {
-    parse(filePath: string): MaybePromise<AstNode>;
-}
-
-export interface SemanticValidationResult {
-    errors?: Array<string>;
-    warnings?: Array<string>;
-}
-
 /**
- * Symbol existence and lookup operations.
+ * Enumerated constants for refactor conflict severity levels.
  *
- * Provides the ability to check whether symbols exist and perform
- * scope-aware name lookups without coupling to occurrence tracking,
- * dependency analysis, or file-level operations.
- */
-export interface SymbolResolver {
-    hasSymbol(symbolId: string): MaybePromise<boolean>;
-    resolveSymbolId(name: string): MaybePromise<string | null | undefined>;
-    lookup(name: string, scopeId?: string): MaybePromise<SymbolLookupResult | null | undefined>;
-    getSymbolAtPosition(filePath: string, offset: number): MaybePromise<SymbolLocation | null | undefined>;
-}
-
-/**
- * Symbol occurrence tracking.
+ * Severity is reported alongside each `ConflictEntry` so callers can decide
+ * whether to surface the issue as a hard failure, an advisory warning, or
+ * background context. This enum centralizes the valid severity strings,
+ * replacing raw literals (e.g. `"error"`, `"warning"`, `"info"`) that used to
+ * live inline on conflict records and were compared with `===` in branching
+ * logic. Using typed constants prevents typo-induced mismatches and gives
+ * callers a single source of truth for validation.
  *
- * Provides the ability to find all occurrences (definitions and references)
- * of a symbol across the project without coupling to validation, dependency
- * analysis, or other semantic operations.
- */
-export interface OccurrenceTracker {
-    getSymbolOccurrences(symbolName: string): MaybePromise<Array<SymbolOccurrence>>;
-    getAdditionalSymbolEdits?(symbolId: string, newName: string): MaybePromise<WorkspaceEdit | null>;
-}
-
-/**
- * File-level symbol operations.
+ * @example
+ * // Use typed constants instead of raw strings
+ * conflicts.push({ type: ConflictType.LARGE_RENAME, severity: ConflictSeverity.WARNING, ... });
  *
- * Provides the ability to query symbols defined in specific files
- * without coupling to cross-file dependency analysis or validation.
+ * // Validate runtime strings
+ * const severity = parseConflictSeverity(rawInput);
  */
-export interface FileSymbolProvider {
-    getFileSymbols(filePath: string): MaybePromise<Array<FileSymbol>>;
-}
+export const ConflictSeverity = Object.freeze({
+    ERROR: "error",
+    WARNING: "warning",
+    INFO: "info"
+} as const);
+
+export type ConflictSeverityValue = (typeof ConflictSeverity)[keyof typeof ConflictSeverity];
+
+const conflictSeverityHelpers = createEnumHelpers(ConflictSeverity, "conflict severity");
 
 /**
- * Symbol dependency analysis.
+ * Check whether a value is a valid conflict severity.
  *
- * Provides the ability to track which symbols depend on other symbols,
- * essential for hot reload and impact analysis without coupling to
- * occurrence tracking or validation operations.
- */
-export interface DependencyAnalyzer {
-    getDependents(symbolIds: Array<string>): MaybePromise<Array<DependentSymbol>>;
-}
-
-/**
- * Language keyword information.
+ * @param value - Candidate value to test
+ * @returns True if value matches a known ConflictSeverity constant
  *
- * Provides access to reserved keywords for the language without
- * coupling to symbol resolution or other semantic operations.
+ * @example
+ * if (isConflictSeverity(rawString)) {
+ *   // Safe to use as ConflictSeverityValue
+ * }
  */
-export interface KeywordProvider {
-    getReservedKeywords(): MaybePromise<Array<string>>;
+export function isConflictSeverity(value: unknown): value is ConflictSeverityValue {
+    return conflictSeverityHelpers.is(value);
 }
 
 /**
- * Semantic adapter surface used by naming-convention codemods to enumerate
- * renameable identifiers and resources.
- */
-export interface NamingConventionTargetProvider {
-    listNamingConventionTargets(filePaths?: Array<string>): MaybePromise<Array<NamingConventionTarget>>;
-}
-
-/**
- * Workspace edit validation.
+ * Parse and validate a conflict severity string.
  *
- * Provides semantic validation of workspace edits to detect conflicts
- * and issues before applying changes, without coupling to symbol queries
- * or dependency analysis.
- */
-export interface EditValidator {
-    validateEdits(workspace: WorkspaceEdit): MaybePromise<SemanticValidationResult>;
-}
-
-/**
- * Complete semantic analyzer interface.
+ * @param value - Raw string to parse
+ * @returns Valid ConflictSeverityValue or null if invalid
  *
- * Combines all role-focused interfaces for consumers that need full
- * semantic analysis capabilities. All methods are required when implementing
- * this interface. For partial implementations, use PartialSemanticAnalyzer.
+ * @example
+ * const severity = parseConflictSeverity(conflict.severity);
+ * if (severity === null) {
+ *   // Handle unknown severity
+ * }
+ */
+export function parseConflictSeverity(value: unknown): ConflictSeverityValue | null {
+    return conflictSeverityHelpers.parse(value);
+}
+
+/**
+ * Parse and validate a conflict severity string, throwing on invalid input.
  *
- * Consumers should prefer depending on the minimal interface they need
- * (SymbolResolver, OccurrenceTracker, etc.) rather than this composite
- * interface when possible.
- */
-export interface SemanticAnalyzer
-    extends SymbolResolver,
-        OccurrenceTracker,
-        FileSymbolProvider,
-        DependencyAnalyzer,
-        KeywordProvider,
-        EditValidator {}
-
-/**
- * Partial semantic analyzer for dependency injection.
+ * @param value - Raw string to parse
+ * @param context - Optional context for error message
+ * @returns Valid ConflictSeverityValue
+ * @throws {TypeError} If value is not a valid conflict severity
  *
- * Allows RefactorEngine and other consumers to accept semantic analyzers
- * that only implement a subset of capabilities. This maintains flexibility
- * while enforcing ISP: consumers must check capability availability at runtime
- * (e.g., typeof semantic?.getSymbolOccurrences === "function") but the type
- * system correctly represents that methods may be absent.
- *
- * Prefer depending on specific role interfaces (SymbolResolver, OccurrenceTracker)
- * when the required capabilities are known at design time.
+ * @example
+ * const severity = requireConflictSeverity(conflict.severity, "rename validation");
  */
-export type PartialSemanticAnalyzer = Partial<SymbolResolver> &
-    Partial<OccurrenceTracker> &
-    Partial<FileSymbolProvider> &
-    Partial<DependencyAnalyzer> &
-    Partial<KeywordProvider> &
-    Partial<EditValidator> &
-    Partial<NamingConventionTargetProvider>;
-
-export interface TranspilerBridge {
-    transpileScript(request: { sourceText: string; symbolId: string }): MaybePromise<Record<string, unknown>>;
+export function requireConflictSeverity(value: unknown, context?: string): ConflictSeverityValue {
+    return conflictSeverityHelpers.require(value, context);
 }
 
-export interface RenameRequest {
-    symbolId: string;
-    newName: string;
-}
-
-export interface ExecuteRenameRequest extends RenameRequest {
-    readFile: WorkspaceReadFile;
-    writeFile: WorkspaceWriteFile;
-    includeResultContent?: boolean;
-    renameFile?: (oldPath: string, newPath: string) => MaybePromise<void>;
-    deleteFile?: (path: string) => MaybePromise<void>;
-    prepareHotReload?: boolean;
-}
-
-export interface ExecuteBatchRenameRequest {
-    renames: Array<RenameRequest>;
-    readFile: WorkspaceReadFile;
-    writeFile: WorkspaceWriteFile;
-    includeResultContent?: boolean;
-    renameFile?: (oldPath: string, newPath: string) => MaybePromise<void>;
-    deleteFile?: (path: string) => MaybePromise<void>;
-    prepareHotReload?: boolean;
-}
-
-/**
- * Parameters for running the loop-length hoisting codemod across multiple files.
- */
-export interface ExecuteLoopLengthHoistingCodemodRequest {
-    filePaths: Array<string>;
-    readFile: WorkspaceReadFile;
-    writeFile?: WorkspaceWriteFile;
-    options?: LoopLengthHoistingCodemodOptions;
-    dryRun?: boolean;
-}
-
-/**
- * Summary of loop-length hoisting codemod execution for a single file.
- */
-export interface LoopLengthHoistingFileSummary {
-    path: string;
-    appliedEditCount: number;
-    diagnosticOffsets: Array<number>;
-}
-
-/**
- * Result payload returned after executing a loop-length hoisting codemod transaction.
- */
-export interface ExecuteLoopLengthHoistingCodemodResult {
-    workspace: WorkspaceEdit;
-    applied: Map<string, string>;
-    changedFiles: Array<LoopLengthHoistingFileSummary>;
-}
-
-/**
- * Normalized naming-convention target emitted by semantic adapters.
- */
-export interface NamingConventionTarget {
-    name: string;
-    category: NamingCategory;
-    path: string;
-    scopeId: string | null;
-    symbolId: string | null;
-    occurrences: Array<SymbolOccurrence>;
-}
-
-/**
- * A single naming-policy violation detected during codemod planning.
- */
-export interface NamingConventionViolation {
-    category: NamingCategory;
-    currentName: string;
-    suggestedName: string | null;
-    path: string;
-    symbolId: string | null;
-    message: string;
-}
-
-/**
- * Naming-convention planning result, including collected edits and any blocking errors.
- */
-export interface NamingConventionCodemodPlan {
-    workspace: WorkspaceEdit;
-    violations: Array<NamingConventionViolation>;
-    warnings: Array<string>;
-    errors: Array<string>;
-    topLevelRenamePlan: BatchRenamePlanSummary | null;
-    topLevelRenameRequests: Array<RenameRequest>;
-    localRenameCount: number;
-}
-
-/**
- * Summary emitted for each configured codemod run.
- */
-export interface ConfiguredCodemodSummary {
-    id: RefactorCodemodId;
-    changed: boolean;
-    changedFiles: Array<string>;
-    warnings: Array<string>;
-    errors: Array<string>;
-}
-
-export interface CodemodExecutionTelemetry {
-    queueCount: number;
-    requestedCodemodCount: number;
-    durationMs: number;
-    overlayEntryCount: number;
-    overlayBytes: number;
-    overlayHighWaterBytes: number;
-    overlaySpillWrites: number;
-    overlaySpilledEntries: number;
-    overlayCacheHits: number;
-    overlayCacheMisses: number;
-    appliedFileCount: number;
-    workspaceEdit?: {
-        textEditCount: number;
-        fileRenameCount: number;
-        metadataEditCount: number;
-        touchedFileCount: number;
-        totalTextBytes: number;
-        highWaterTextBytes: number;
-    };
-}
-
-/**
- * Aggregate result for a configured codemod execution request.
- */
-export interface ConfiguredCodemodRunResult {
-    dryRun: boolean;
-    summaries: Array<ConfiguredCodemodSummary>;
-    appliedFiles: Map<string, string>;
-    telemetry?: CodemodExecutionTelemetry;
-}
-
-/**
- * Parameters for executing codemods selected from `gmloop.json`.
- */
-export interface ConfiguredCodemodRunRequest {
-    projectRoot: string;
-    targetPaths: Array<string>;
-    gmlFilePaths: Array<string>;
-    config: RefactorProjectConfig;
-    readFile: WorkspaceReadFile;
-    writeFile?: WorkspaceWriteFile;
-    renameFile?: (oldPath: string, newPath: string) => MaybePromise<void>;
-    deleteFile?: (path: string) => MaybePromise<void>;
-    dryRun?: boolean;
-    onlyCodemods?: Array<RefactorCodemodId>;
-    /**
-     * Upper bound for in-memory dry-run overlay bytes before entries spill.
-     *
-     * A value of 0 disables spill and retains all overlay content in memory.
-     */
-    dryRunOverlaySpillThresholdBytes?: number;
-    /**
-     * Maximum read-through cache entries for the default temp-file overlay backend.
-     */
-    dryRunOverlayReadCacheMaxEntries?: number;
-    /**
-     * Optional backend used for dry-run overlay spilling.
-     *
-     * When omitted, the engine uses the default temp-file backend. This hook
-     * keeps codemod execution backend-agnostic while preserving current defaults.
-     */
-    dryRunOverlayStorageBackend?: StorageBackend;
-    onTelemetry?: (telemetry: CodemodExecutionTelemetry) => void;
-}
-
-/**
- * Public metadata describing a codemod registered with the refactor workspace.
- */
-export interface RegisteredCodemod {
-    id: RefactorCodemodId;
-    description: string;
-}
-
-/**
- * Effective registration state for a codemod after config normalization and CLI filtering.
- */
-export interface RegisteredCodemodSelection {
-    id: RefactorCodemodId;
-    description: string;
-    configured: boolean;
-    selected: boolean;
-    effectiveConfig: RefactorCodemodConfigMap[RefactorCodemodId] | null;
-}
-
-export interface PrepareRenamePlanOptions {
-    validateHotReload?: boolean;
-    hotReloadOptions?: HotReloadValidationOptions;
-}
-
-export interface PrepareBatchRenamePlanOptions extends PrepareRenamePlanOptions {
-    includeImpactAnalyses?: boolean;
-}
-
-export interface HotReloadValidationOptions {
-    checkTranspiler?: boolean;
-    readFile?: WorkspaceReadFile;
-}
-
-export interface ValidationSummary {
-    valid: boolean;
-    errors: Array<string>;
-    warnings: Array<string>;
-    symbolName?: string;
-    occurrenceCount?: number;
-    hotReload?: HotReloadSafetySummary;
-}
-
-export interface RenamePlanSummary {
-    workspace: WorkspaceEdit;
-    validation: ValidationSummary;
-    hotReload: ValidationSummary | null;
-    analysis: RenameImpactAnalysis;
-}
-
-export interface BatchRenamePlanSummary {
-    workspace: WorkspaceEdit;
-    validation: ValidationSummary;
-    hotReload: ValidationSummary | null;
-    batchValidation: BatchRenameValidation;
-    impactAnalyses: Map<string, RenameImpactAnalysis>;
-    cascadeResult: HotReloadCascadeResult | null;
-}
-
-export interface RenameImpactSummary {
-    symbolId: string;
-    oldName: string;
-    newName: string;
-    affectedFiles: Array<string>;
-    totalOccurrences: number;
-    definitionCount: number;
-    referenceCount: number;
-    hotReloadRequired: boolean;
-    dependentSymbols: Array<string>;
-}
-
-export interface RenameImpactAnalysis {
-    valid: boolean;
-    summary: RenameImpactSummary;
-    conflicts: Array<ConflictEntry>;
-    warnings: Array<ConflictEntry>;
-}
-
-export interface HotReloadUpdate {
-    symbolId: string;
-    action: "recompile" | "notify";
-    filePath: string;
-    affectedRanges: Array<Range>;
-}
-
-export interface ExecuteRenameResult {
-    workspace: WorkspaceEdit;
-    applied: Map<string, string>;
-    hotReloadUpdates: Array<HotReloadUpdate>;
-    fileRenames: Array<FileRename>;
-}
-
-export interface TranspilerPatch {
-    symbolId: string;
-    patch: Record<string, unknown>;
-    filePath: string;
-}
-
-export interface CascadeEntry {
-    symbolId: string;
-    distance: number;
-    reason: string;
-    filePath?: string;
-}
-
-export interface HotReloadCascadeMetadata {
-    totalSymbols: number;
-    maxDistance: number;
-    hasCircular: boolean;
-}
-
-export interface HotReloadCascadeResult {
-    cascade: Array<CascadeEntry>;
-    order: Array<string>;
-    circular: Array<Array<string>>;
-    metadata: HotReloadCascadeMetadata;
-}
-
-export interface HotReloadSafetySummary {
-    safe: boolean;
-    reason: string;
-    requiresRestart: boolean;
-    canAutoFix: boolean;
-    suggestions: Array<string>;
-}
-
-export interface ValidateRenameRequestOptions {
-    includeHotReload?: boolean;
-}
-
-export interface BatchRenameValidation {
-    valid: boolean;
-    errors: Array<string>;
-    warnings: Array<string>;
-    renameValidations: Map<string, ValidationSummary>;
-    conflictingSets: Array<Array<string>>;
-}
-
-export interface ConflictEntry {
-    type: ConflictTypeValue;
-    message: string;
-    severity?: string;
-    path?: string;
-}
-
-export type WorkspaceReadFile = (path: string) => MaybePromise<string>;
-export type WorkspaceWriteFile = (path: string, content: string) => MaybePromise<void>;
-
-export interface RefactorProjectAnalysisProvider {
-    isIdentifierOccupied(
-        identifierName: string,
-        context: {
-            semantic: PartialSemanticAnalyzer | null;
-            prepareRenamePlan: (
-                request: { symbolId: string; newName: string },
-                options: { validateHotReload: boolean }
-            ) => Promise<RenamePlanSummary>;
-        }
-    ): Promise<boolean>;
-    listIdentifierOccurrences(
-        identifierName: string,
-        context: {
-            semantic: PartialSemanticAnalyzer | null;
-            prepareRenamePlan: (
-                request: { symbolId: string; newName: string },
-                options: { validateHotReload: boolean }
-            ) => Promise<RenamePlanSummary>;
-        }
-    ): Promise<Set<string>>;
-    planFeatherRenames(
-        requests: ReadonlyArray<{ identifierName: string; preferredReplacementName: string }>,
-        filePath: string | null,
-        projectRoot: string,
-        context: {
-            semantic: PartialSemanticAnalyzer | null;
-            prepareRenamePlan: (
-                request: { symbolId: string; newName: string },
-                options: { validateHotReload: boolean }
-            ) => Promise<RenamePlanSummary>;
-        }
-    ): Promise<
-        Array<{
-            identifierName: string;
-            mode: "local-fallback" | "project-aware";
-            preferredReplacementName: string;
-            replacementName: string | null;
-            skipReason?: string;
-        }>
-    >;
-    assessGlobalVarRewrite(
-        filePath: string | null,
-        hasInitializer: boolean
-    ): {
-        allowRewrite: boolean;
-        initializerMode: "existing" | "undefined";
-        mode: "project-aware";
-    };
-    resolveLoopHoistIdentifier(preferredName: string): {
-        identifierName: string;
-        mode: "project-aware";
-    };
-}
-
-export interface RefactorEngineDependencies {
-    parser: ParserBridge | null;
-    semantic: PartialSemanticAnalyzer | null;
-    formatter: TranspilerBridge | null;
-    projectAnalysisProvider: RefactorProjectAnalysisProvider | null;
-}
-
-export interface ApplyWorkspaceEditOptions {
-    dryRun?: boolean;
-    includeResultContent?: boolean;
-    readFile: WorkspaceReadFile;
-    writeFile?: WorkspaceWriteFile;
-    renameFile?: (oldPath: string, newPath: string) => MaybePromise<void>;
-    deleteFile?: (path: string) => MaybePromise<void>;
-}
-
-export interface RenameImpactNode {
-    symbolId: string;
-    symbolName: string;
-    distance: number;
-    isDirectlyAffected: boolean;
-    dependents: Array<string>;
-    dependsOn: Array<string>;
-    filePath?: string;
-    estimatedReloadTime?: number;
-}
-
-export interface RenameImpactGraph {
-    nodes: Map<string, RenameImpactNode>;
-    rootSymbol: string;
-    totalAffectedSymbols: number;
-    maxDepth: number;
-    criticalPath: Array<string>;
-    estimatedTotalReloadTime: number;
-}
+export * from "./types/index.js";

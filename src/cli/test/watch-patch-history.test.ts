@@ -3,7 +3,7 @@ import type { WatchListener } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { after, before, describe, it } from "node:test";
 
-import { runWatchCommand } from "../src/commands/watch.js";
+import { createWatchCommand, runWatchCommand } from "../src/commands/watch.js";
 import { findAvailablePort } from "./test-helpers/free-port.js";
 import { fetchStatusPayload, waitForPatchCount, waitForStatusReady } from "./test-helpers/status-polling.js";
 import {
@@ -12,6 +12,13 @@ import {
     disposeWatchTestFixture,
     type WatchTestFixture
 } from "./test-helpers/watch-fixtures.js";
+
+void it("documents that max patch history requires a positive integer", () => {
+    const option = createWatchCommand().options.find((candidate) => candidate.long === "--max-patch-history");
+
+    assert.ok(option);
+    assert.match(option.description, /must be a positive integer/iu);
+});
 
 void describe("Watch command patch history limit", () => {
     let fixture: WatchTestFixture | null = null;
@@ -46,7 +53,6 @@ void describe("Watch command patch history limit", () => {
         const watchFactory = createMockWatchFactory(listenerCapture);
 
         const watchPromise = runWatchCommand(fixture.dir, {
-            extensions: [".gml"],
             verbose: false,
             maxPatchHistory: maxHistory,
             websocketServer: false,

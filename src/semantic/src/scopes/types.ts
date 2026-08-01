@@ -36,6 +36,8 @@ export type Occurrence = {
 export type ScopeSummary = {
     hasDeclaration: boolean;
     hasReference: boolean;
+    /** Most recent declaration/reference timestamp for this symbol in this scope. */
+    lastModified: number;
 };
 
 /**
@@ -164,6 +166,41 @@ export type ScopeDependent = {
     dependentScopeId: string;
     dependentScopeKind: string;
     symbols: string[];
+};
+
+/**
+ * A scope that should be re-analysed after a semantic change.
+ */
+export type ScopeInvalidationEntry = {
+    scopeId: string;
+    scopeKind: string;
+    reason: "self" | "dependent" | "descendant";
+};
+
+/**
+ * Options shared by hot-reload invalidation queries.
+ */
+export type ScopeInvalidationOptions = {
+    /** Include child scopes nested inside each changed scope. */
+    includeDescendants?: boolean;
+};
+
+/**
+ * A transitive dependent scope with its distance from the changed scope.
+ */
+export type ScopeDependentDepth = {
+    dependentScopeId: string;
+    dependentScopeKind: string;
+    depth: number;
+};
+
+/**
+ * A descendant scope with its nesting depth below the queried scope.
+ */
+export type ScopeDescendant = {
+    scopeId: string;
+    scopeKind: string;
+    depth: number;
 };
 
 /**

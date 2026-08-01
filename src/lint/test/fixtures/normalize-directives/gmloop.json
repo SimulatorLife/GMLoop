@@ -1,6 +1,7 @@
 {
   "lintRules": {
-    "gml/normalize-directives": "error"
+    "gml/normalize-directives": "error",
+    "gml/normalize-block-keyword-aliases": "error"
   },
   "fixture": {
     "kind": "lint",

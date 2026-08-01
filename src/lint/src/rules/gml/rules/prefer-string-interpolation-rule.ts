@@ -1,19 +1,17 @@
-import * as CoreWorkspace from "@gmloop/core";
+import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import type { GmlRuleDefinition } from "../../catalog.js";
+import { gmlRuleAutofixServices } from "../gml-rule-services.js";
+import type { GmlRuleDefinition } from "../index.js";
 import {
     type AstNodeRecord,
     createMeta,
-    getNodeEndIndex,
-    getNodeStartIndex,
     isAstNodeRecord,
-    isAstNodeWithType
+    isAstNodeWithType,
+    shouldReportUnsafe
 } from "../rule-base-helpers.js";
-import { shouldReportUnsafe } from "../rule-helpers.js";
 
-const { unwrapParenthesizedExpression } = CoreWorkspace.Core;
-type UnwrapParenthesizedExpressionInput = Parameters<typeof CoreWorkspace.Core.unwrapParenthesizedExpression>[0];
+const { unwrapParenthesizedExpression } = Core;
 
 function isStringLiteralExpression(expression: unknown): boolean {
     if (!isAstNodeRecord(expression) || expression.type !== "Literal") {
@@ -50,17 +48,30 @@ function isTemplateStringTextAtom(node: unknown): node is AstNodeRecord {
 }
 
 function getNodeTextFromContext(context: Rule.RuleContext, astNode: any): string {
-    if (typeof context.getSourceCode === "function") {
-        return context.getSourceCode().getText(astNode);
+    const sourceCode = context.sourceCode;
+    const nodeText = sourceCode.getText(astNode);
+    if (nodeText.length > 0) {
+        return nodeText;
     }
+
     if (isAstNodeRecord(astNode) && Array.isArray(astNode.range)) {
-        const txt = context.sourceCode.text;
+        const txt = sourceCode.text;
         const [start, end] = astNode.range;
         if (typeof start === "number" && typeof end === "number") {
             return txt.slice(start, end);
         }
     }
     return "";
+}
+
+function printInterpolationExpression(context: Rule.RuleContext, expressionNode: unknown): string {
+    const sourceText = context.sourceCode.text;
+    const printed = gmlRuleAutofixServices.printExpression(expressionNode, sourceText).trim();
+    if (printed.length > 0) {
+        return printed;
+    }
+
+    return getNodeTextFromContext(context, expressionNode).trim();
 }
 
 function extractStringLiteralText(context: Rule.RuleContext, literalNode: AstNodeRecord): string | null {
@@ -101,7 +112,7 @@ function extractStringLiteralText(context: Rule.RuleContext, literalNode: AstNod
 }
 
 function collectConcatenationParts(node: unknown, output: Array<unknown>): void {
-    const candidate = unwrapParenthesizedExpression(node as UnwrapParenthesizedExpressionInput);
+    const candidate = unwrapParenthesizedExpression(node);
     if (isBinaryStringConcatenationExpression(candidate)) {
         collectConcatenationParts(candidate.left, output);
         collectConcatenationParts(candidate.right, output);
@@ -127,6 +138,21 @@ function isStringFunctionCallExpression(node: unknown): node is AstNodeRecord {
     }
 
     return false;
+}
+
+function extractStringFunctionArgumentText(context: Rule.RuleContext, callNode: AstNodeRecord): string | null {
+    const firstArgument =
+        Array.isArray(callNode.arguments) && callNode.arguments.length > 0 ? callNode.arguments[0] : null;
+    if (firstArgument === null) {
+        return null;
+    }
+
+    const argumentText = printInterpolationExpression(context, firstArgument);
+    if (argumentText.length === 0) {
+        return null;
+    }
+
+    return argumentText;
 }
 
 type TemplateBuildState = {
@@ -193,7 +219,7 @@ function buildTemplateBody(context: Rule.RuleContext, node: AstNodeRecord): stri
     };
 
     for (const part of concatenationParts) {
-        const segment = unwrapParenthesizedExpression(part as UnwrapParenthesizedExpressionInput);
+        const segment = unwrapParenthesizedExpression(part);
 
         if (isAstNodeRecord(segment) && isStringLiteralExpression(segment)) {
             const literalText = extractStringLiteralText(context, segment);
@@ -212,17 +238,15 @@ function buildTemplateBody(context: Rule.RuleContext, node: AstNodeRecord): stri
         }
 
         if (isStringFunctionCallExpression(segment)) {
-            const firstArgument =
-                Array.isArray(segment.arguments) && segment.arguments.length > 0 ? segment.arguments[0] : segment;
-            const expressionText = getNodeTextFromContext(context, firstArgument);
-            if (expressionText.length === 0) {
+            const expressionText = extractStringFunctionArgumentText(context, segment);
+            if (expressionText === null || expressionText.length === 0) {
                 return null;
             }
             appendTemplateExpression(state, expressionText);
             continue;
         }
 
-        const expressionText = getNodeTextFromContext(context, segment);
+        const expressionText = printInterpolationExpression(context, segment);
         if (expressionText.length === 0) {
             return null;
         }
@@ -254,7 +278,11 @@ export function createPreferStringInterpolationRule(definition: GmlRuleDefinitio
                 }
 
                 const candidate = node as AstNodeRecord;
-                if (candidate.type === "UpdateExpression" || candidate.type === "IncDecStatement") {
+                if (candidate.type === "UpdateExpression") {
+                    return true;
+                }
+
+                if (Core.isIncDecNode(candidate)) {
                     return true;
                 }
                 if (
@@ -288,8 +316,8 @@ export function createPreferStringInterpolationRule(definition: GmlRuleDefinitio
                     return;
                 }
 
-                const start = getNodeStartIndex(node);
-                const end = getNodeEndIndex(node);
+                const start = Core.getNodeStartIndex(node);
+                const end = Core.getNodeEndIndex(node);
                 if (start < 0 || end <= start || rangeOverlapsHandledConcatenation(start, end)) {
                     return;
                 }

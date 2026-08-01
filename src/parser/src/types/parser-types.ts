@@ -1,4 +1,3 @@
-import type { ScopeTrackerOptions } from "@gmloop/core";
 import type { ParserRuleContext, Token, TokenStream } from "antlr4";
 
 export type ParserContext =
@@ -8,11 +7,6 @@ export type ParserContext =
     | null
     | undefined;
 
-export type ParserContextMethod = (
-    this: ParserRuleContext,
-    ...args: Array<unknown>
-) => ParserContext | ParserContext[] | null | undefined;
-
 export type ParserContextWithMethods = ParserRuleContext & {
     [methodName: string]: (...args: Array<unknown>) => unknown;
 };
@@ -20,15 +14,6 @@ export type ParserContextWithMethods = ParserRuleContext & {
 export interface ParserToken extends Token {
     symbol?: Token | null;
 }
-
-// Re-export scope tracker types from Core for convenience
-export type {
-    GlobalIdentifierTracker,
-    IdentifierRoleManager,
-    ScopeLifecycle,
-    ScopeTracker,
-    ScopeTrackerOptions
-} from "@gmloop/core";
 
 /**
  * Comment extraction options.
@@ -79,25 +64,6 @@ export interface LocationMetadataOptions {
      * @default true
      */
     simplifyLocations: boolean;
-}
-
-/**
- * Scope tracking configuration.
- *
- * Controls whether the parser should perform semantic scope analysis
- * during parsing to track variable declarations, references, and
- * identifier roles. Used primarily for advanced semantic analysis.
- */
-export interface ScopeTrackingOptions {
-    /**
-     * Scope tracker configuration.
-     *
-     * When provided, enables scope tracking with the specified options.
-     * When undefined or with enabled:false, scope tracking is disabled.
-     *
-     * @default { enabled: false, getIdentifierMetadata: false }
-     */
-    scopeTrackerOptions?: ScopeTrackerOptions;
 }
 
 /**
@@ -158,6 +124,24 @@ export interface OutputFormatOptions {
 }
 
 /**
+ * Prediction strategy options.
+ *
+ * Controls when the parser should attempt the fast SLL prediction path before
+ * falling back to LL parsing.
+ */
+export interface PredictionStrategyOptions {
+    /**
+     * Maximum source length that will use SLL prediction mode.
+     *
+     * Values above this threshold skip SLL and parse directly in LL mode.
+     * A value of 0 falls back to the default threshold (8000).
+     *
+     * @default 8000
+     */
+    sllPredictionMaxSourceLength: number;
+}
+
+/**
  * Complete parser options interface.
  *
  * Combines all role-focused option interfaces for consumers that need
@@ -167,23 +151,28 @@ export interface OutputFormatOptions {
  * when possible.
  */
 export interface ParserOptions
-    extends CommentProcessingOptions,
+    extends
+        CommentProcessingOptions,
         LocationMetadataOptions,
-        ScopeTrackingOptions,
         DocCommentAttachmentOptions,
+        PredictionStrategyOptions,
         OutputFormatOptions {}
 
-const DEFAULT_SCOPE_TRACKER_OPTIONS: ScopeTrackerOptions = Object.freeze({
-    enabled: false,
-    getIdentifierMetadata: false
-});
+/**
+ * Default maximum source length for which the parser uses the SLL fast path.
+ *
+ * The SLL fast path is significantly faster for small/medium inputs but can
+ * trigger expensive fallback behavior on very large sources. This threshold
+ * lets callers tune the SLL/LL hand-off to match project size characteristics.
+ */
+export const DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH = 8000;
 
 export const defaultParserOptions: ParserOptions = Object.freeze({
     getComments: true,
     getLocations: true,
     simplifyLocations: true,
     attachFunctionDocComments: true,
-    scopeTrackerOptions: DEFAULT_SCOPE_TRACKER_OPTIONS,
+    sllPredictionMaxSourceLength: DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH,
     astFormat: "gml",
     asJSON: false
 });

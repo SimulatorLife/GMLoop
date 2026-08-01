@@ -1,6 +1,6 @@
 /**
  * This test suite verifies that the workspace ownership and dependency policies are correctly enforced across the monorepo workspaces.
- * The tests ensure that the format workspace remains decoupled from the semantic and refactor packages, while the refactor workspace 
+ * The tests ensure that the format workspace remains decoupled from the semantic and refactor packages, while the refactor workspace
  * owns the semantic-backed refactor behavior.
  */
 import assert from "node:assert/strict";
@@ -9,10 +9,17 @@ import { describe, it } from "node:test";
 
 type DependencyMap = Readonly<Record<string, string>>;
 
+type PackageExportRoot = Readonly<{
+    import?: string;
+    types?: string;
+}>;
+
 type PackageJson = Readonly<{
     dependencies?: DependencyMap;
     devDependencies?: DependencyMap;
     exports?: Readonly<Record<string, unknown>>;
+    main?: string;
+    types?: string;
 }>;
 
 const require = createRequire(import.meta.url);
@@ -41,13 +48,14 @@ void describe("workspace ownership dependency policy", () => {
         assert.strictEqual(getDevDependencyVersion(formatPackage, "@gmloop/fixture-runner"), "workspace:*");
     });
 
-    void it("refactor workspace owns semantic-backed refactor behavior", () => {
+    void it("refactor workspace is decoupled from semantic via dependency injection", () => {
         const refactorPackage = readWorkspacePackage("@gmloop/refactor");
         const semanticPackage = readWorkspacePackage("@gmloop/semantic");
 
-        assert.ok(
+        assert.strictEqual(
             getDependencyVersion(refactorPackage, "@gmloop/semantic"),
-            "Refactor workspace should declare a semantic dependency."
+            null,
+            "Refactor workspace must not depend on semantic directly; it defines its own abstraction interfaces (PartialSemanticAnalyzer) and accepts implementations via dependency injection."
         );
         assert.strictEqual(
             getDependencyVersion(semanticPackage, "@gmloop/refactor"),
@@ -64,6 +72,16 @@ void describe("workspace ownership dependency policy", () => {
         assert.strictEqual(getDependencyVersion(fixtureRunnerPackage, "@gmloop/lint"), null);
         assert.strictEqual(getDependencyVersion(fixtureRunnerPackage, "@gmloop/refactor"), null);
         assert.strictEqual(getDependencyVersion(fixtureRunnerPackage, "@gmloop/semantic"), null);
+    });
+
+    void it("transpiler publishes from the workspace root index", () => {
+        const transpilerPackage = readWorkspacePackage("@gmloop/transpiler");
+        const rootExport = transpilerPackage.exports?.["."] as PackageExportRoot | undefined;
+
+        assert.strictEqual(transpilerPackage.main, "./dist/index.js");
+        assert.strictEqual(transpilerPackage.types, "./dist/index.d.ts");
+        assert.strictEqual(rootExport?.import, "./dist/index.js");
+        assert.strictEqual(rootExport?.types, "./dist/index.d.ts");
     });
 
     void it("workspace packages do not publish test-support subpath exports", () => {

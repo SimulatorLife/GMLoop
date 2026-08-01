@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { createIdentifierNode } from "../src/ast/node-helpers.js";
+import { createIdentifierNode } from "../src/ast/node-helpers/index.js";
 
 void describe("createIdentifierNode", () => {
     void it("returns an identifier with cloned location metadata", () => {

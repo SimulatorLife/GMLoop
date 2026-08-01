@@ -2,28 +2,15 @@ import { Core, type GameMakerAstLocation, type GameMakerAstNode } from "@gmloop/
 import type { Token } from "antlr4";
 
 import GameMakerLanguageParserVisitor from "../runtime/game-maker-language-parser-visitor.js";
-import type {
-    ParserContext,
-    ParserContextWithMethods,
-    ParserOptions,
-    ParserToken,
-    ScopeTracker
-} from "../types/index.js";
+import type { ParserContext, ParserContextWithMethods, ParserOptions, ParserToken } from "../types/index.js";
 import BinaryExpressionDelegate from "./binary-expression-delegate.js";
-
-type IdentifierRole = {
-    type: string;
-    kind: string;
-    tags?: string[];
-    scopeOverride?: string;
-};
+import { GameMakerSyntaxError } from "./gml-syntax-error.js";
 
 type ParserVisitorInstance = InstanceType<typeof GameMakerLanguageParserVisitor>;
 type MutableParserVisitor = ParserVisitorInstance & {
     [methodName: string]: (...args: Array<unknown>) => unknown;
 };
 
-type ParserScopeTracker = ScopeTracker | null;
 type DirectiveKeyword = "define" | "macro";
 type DirectiveKeywordRange = {
     start: number;
@@ -35,7 +22,7 @@ type ParsedDefineMacroDirective = {
     macroValue: string;
 };
 
-const GLOBAL_SCOPE_OVERRIDE_KEYWORD = "global" as const;
+const DISALLOWED_SYMBOLIC_IDENTIFIER_TEXTS = new Set(["%", "&&", "||", "^^"]);
 
 /**
  * Create a parser visitor instance whose generated `visit*` methods proxy to
@@ -84,9 +71,9 @@ export default class GameMakerASTBuilder {
     options: ParserOptions;
     whitespaces: unknown[];
     operatorStack: string[];
-    private scopeTracker: ParserScopeTracker;
     private binaryExpressions: any;
     private visitor: MutableParserVisitor;
+    private currentLValueObject: any = null;
 
     constructor(
         options: ParserOptions,
@@ -106,31 +93,12 @@ export default class GameMakerASTBuilder {
         this.options = options;
         this.whitespaces = whitespaces || [];
         this.operatorStack = [];
-        const { enabled, createScopeTracker } = options.scopeTrackerOptions;
-
-        if (enabled) {
-            if (typeof createScopeTracker !== "function") {
-                throw new TypeError("Invalid createScopeTracker function.");
-            }
-
-            this.scopeTracker = createScopeTracker();
-        } else {
-            this.scopeTracker = null;
-        }
 
         this.binaryExpressions = new BinaryExpressionDelegate({
             operators: Core.BINARY_OPERATORS
         });
 
         this.visitor = createVisitorDelegate(this);
-    }
-
-    get globalIdentifiers(): any {
-        // When scope tracking is disabled the tracker won't be present. In
-        // that case callers should be able to treat global identifiers as an
-        // empty collection rather than receiving an error.
-        if (!this.scopeTracker) return [];
-        return this.scopeTracker.globalIdentifiers;
     }
 
     visit(node: unknown): any {
@@ -143,7 +111,7 @@ export default class GameMakerASTBuilder {
             }
             return results;
         }
-        return this.visitor.visit(node as ParserContextWithMethods);
+        return this.visitor.visit(node);
     }
 
     visitChildren(node: unknown): any {
@@ -152,55 +120,6 @@ export default class GameMakerASTBuilder {
             return node.map((n) => this.visitor.visitChildren(n as ParserContextWithMethods));
         }
         return this.visitor.visitChildren(node as ParserContextWithMethods);
-    }
-
-    withScope<T>(kind: string, callback: () => T): T {
-        // Allow AST building to proceed even when the scope tracker is disabled
-        // or uninitialized. Some callers enable scope tracking via configuration
-        // (e.g., for refactoring or semantic analysis), while others (e.g., the
-        // formatter in parse-only mode) do not need it. Rather than requiring
-        // every caller to guard withScope invocations, we execute the callback
-        // directly when no tracker is available. This maintains backward
-        // compatibility with workflows that call withScope without initializing
-        // scope tracking infrastructure.
-        if (!this.scopeTracker) {
-            return callback();
-        }
-        if (typeof this.scopeTracker.withScope === "function") {
-            return this.scopeTracker.withScope(kind, callback);
-        }
-        return callback();
-    }
-
-    withIdentifierRole<T>(role: IdentifierRole, callback: () => T): T {
-        // Execute the callback without tracking identifier roles when the scope
-        // tracker is disabled or missing. This mirrors the withScope fallback
-        // logic: workflows that do not need semantic analysis (e.g., basic
-        // formatting) can still build AST nodes without initializing role
-        // tracking infrastructure. The callback proceeds unconditionally,
-        // allowing the builder to remain usable across different operational
-        // modes without requiring every caller to check tracker availability.
-        if (!this.scopeTracker) {
-            return callback();
-        }
-        if (typeof this.scopeTracker.withRole === "function") {
-            return this.scopeTracker.withRole(role, callback);
-        }
-        return callback();
-    }
-
-    cloneIdentifierRole(role: IdentifierRole): IdentifierRole {
-        if (!this.scopeTracker) {
-            // No tracker present; return a shallow copy of the role as a
-            // best-effort clone so callers can mutate safely without
-            // inadvertently modifying the original object.
-            return { ...(role as any) } as IdentifierRole;
-        }
-        const clonedRole = this.scopeTracker.cloneRole(role);
-        if (clonedRole) {
-            return clonedRole as IdentifierRole;
-        }
-        return { ...(role as any) } as IdentifierRole;
     }
 
     ensureArray(ctx: unknown): ParserContextWithMethods[] {
@@ -242,14 +161,6 @@ export default class GameMakerASTBuilder {
         }
 
         if (typeof token === "number") {
-            return Number.isFinite(token) ? token : null;
-        }
-
-        if (typeof token === "number") {
-            return Number.isFinite(token) ? token : null;
-        }
-
-        if (typeof token === "number") {
             return token;
         }
 
@@ -277,6 +188,26 @@ export default class GameMakerASTBuilder {
             start,
             end: start + `#${keyword}`.length
         };
+    }
+
+    private isValidIdentifierContextText(text: string): boolean {
+        return !DISALLOWED_SYMBOLIC_IDENTIFIER_TEXTS.has(text) && (Core.isGmlIdentifierName(text) || text === "!");
+    }
+
+    private throwInvalidIdentifierSyntaxError(ctx: ParserContext, text: string): never {
+        const token = this.resolveParserToken(ctx?.start);
+        const line = typeof token?.line === "number" ? token.line : undefined;
+        const column = typeof token?.column === "number" ? token.column : undefined;
+        const location = line === undefined || column === undefined ? "" : `(line ${line}, column ${column}): `;
+
+        throw new GameMakerSyntaxError({
+            message: `Syntax Error ${location}unexpected symbol '${text}' while matching rule identifier`,
+            line,
+            column,
+            wrongSymbol: `symbol '${text}'`,
+            rule: "identifier",
+            offendingText: text
+        });
     }
 
     private parseDefineMacroDirective(rawText: string): ParsedDefineMacroDirective | null {
@@ -431,6 +362,20 @@ export default class GameMakerASTBuilder {
         return object;
     }
 
+    /**
+     * Resolve the first numeric property from an object, trying keys in the order
+     * they are given. Returns `undefined` if none match.
+     */
+    private resolveNumericProperty<T>(obj: T, keys: ReadonlyArray<keyof T>): number | undefined {
+        for (const key of keys) {
+            const value = obj[key];
+            if (typeof value === "number") {
+                return value;
+            }
+        }
+        return undefined;
+    }
+
     private buildLocationFromToken(
         token: Token | number | null | undefined,
         { includeLineBreakCount = false, useStopIndex = false } = {}
@@ -442,35 +387,13 @@ export default class GameMakerASTBuilder {
         let index: number | null;
         if (typeof token === "number") {
             index = token;
+        } else if (useStopIndex) {
+            index =
+                this.resolveNumericProperty(token, ["stopIndex", "stop"]) ??
+                this.resolveNumericProperty(token, ["startIndex", "start"]) ??
+                null;
         } else {
-            if (useStopIndex) {
-                index =
-                    typeof token.stopIndex === "number"
-                        ? token.stopIndex
-                        : typeof token.stop === "number"
-                          ? token.stop
-                          : null;
-
-                if (index === null) {
-                    index =
-                        typeof token.startIndex === "number"
-                            ? token.startIndex
-                            : typeof token.start === "number"
-                              ? token.start
-                              : null;
-                }
-            } else {
-                index =
-                    typeof token.startIndex === "number"
-                        ? token.startIndex
-                        : typeof token.start === "number"
-                          ? token.start
-                          : typeof token.stopIndex === "number"
-                            ? token.stopIndex
-                            : typeof token.stop === "number"
-                              ? token.stop
-                              : null;
-            }
+            index = this.resolveNumericProperty(token, ["startIndex", "start", "stopIndex", "stop"]) ?? null;
         }
 
         if (index === null) {
@@ -496,18 +419,8 @@ export default class GameMakerASTBuilder {
             return null;
         }
 
-        const startIndex =
-            typeof token.start === "number"
-                ? token.start
-                : typeof token.startIndex === "number"
-                  ? token.startIndex
-                  : undefined;
-        const stopIndex =
-            typeof token.stop === "number"
-                ? token.stop
-                : typeof token.stopIndex === "number"
-                  ? token.stopIndex
-                  : startIndex;
+        const startIndex = this.resolveNumericProperty(token, ["start", "startIndex"]);
+        const stopIndex = this.resolveNumericProperty(token, ["stop", "stopIndex"]) ?? startIndex;
         const line = typeof token.line === "number" ? token.line : undefined;
         const startColumn = typeof token.column === "number" ? token.column : undefined;
 
@@ -553,11 +466,9 @@ export default class GameMakerASTBuilder {
 
     // Visit a parse tree produced by GameMakerLanguageParser#program.
     build(ctx: ParserContext): any {
-        const body = this.withScope("program", () => {
-            // Accept null or undefined from the generated runtime for optional
-            // productions.
-            return ctx.statementList() === null ? [] : this.visit(this.ensureSingle(ctx.statementList()));
-        });
+        // Accept null or undefined from the generated runtime for optional
+        // productions.
+        const body = ctx.statementList() === null ? [] : this.visit(this.ensureSingle(ctx.statementList()));
         return this.astNode(ctx, {
             type: "Program",
             body: body ?? []
@@ -697,7 +608,7 @@ export default class GameMakerASTBuilder {
         return this.astNode(ctx, {
             type: "WithStatement",
             test: this.visit(ctx.expression()),
-            body: this.withScope("with", () => this.visit(this.ensureSingle(ctx.statement())))
+            body: this.visit(this.ensureSingle(ctx.statement()))
         });
     }
 
@@ -806,15 +717,8 @@ export default class GameMakerASTBuilder {
 
     // Visit a parse tree produced by GameMakerLanguageParser#catchProduction.
     visitCatchProduction(ctx: ParserContext): any {
-        let param: any = null;
-        const body = this.withScope("catch", () => {
-            if (ctx.identifier() !== null) {
-                param = this.withIdentifierRole({ type: "declaration", kind: "parameter" }, () =>
-                    this.visit(this.ensureSingle(ctx.identifier()))
-                );
-            }
-            return this.visit(ctx.statement());
-        });
+        const param = ctx.identifier() === null ? null : this.visit(this.ensureSingle(ctx.identifier()));
+        const body = this.visit(ctx.statement());
         return this.astNode(ctx, {
             type: "CatchClause",
             param,
@@ -908,9 +812,7 @@ export default class GameMakerASTBuilder {
     visitVariableDeclaration(ctx: ParserContext): any {
         const initExprCtx = this.ensureSingle(ctx.expressionOrFunction());
         const initExpr = initExprCtx ? this.visit(initExprCtx) : null;
-        const id = this.withIdentifierRole({ type: "declaration", kind: "variable" }, () =>
-            this.visit(this.ensureSingle(ctx.identifier()))
-        );
+        const id = this.visit(this.ensureSingle(ctx.identifier()));
         return this.astNode(ctx, {
             type: "VariableDeclarator",
             id,
@@ -923,21 +825,11 @@ export default class GameMakerASTBuilder {
         const declarations = this.ensureArray(ctx.identifier())
 
             .map((identifierCtx: ParserContext) => {
-                const identifier = this.withIdentifierRole(
-                    {
-                        type: "declaration",
-                        kind: "variable",
-                        tags: ["global"],
-                        scopeOverride: GLOBAL_SCOPE_OVERRIDE_KEYWORD
-                    },
-                    () => this.visit(identifierCtx)
-                );
+                const identifier = this.visit(identifierCtx);
 
                 if (!identifier) {
                     return null;
                 }
-
-                this.scopeTracker?.markGlobalIdentifier(identifier);
 
                 return this.astNode(identifierCtx, {
                     type: "VariableDeclarator",
@@ -969,7 +861,9 @@ export default class GameMakerASTBuilder {
         // accumulate operations
         const ops = this.ensureArray(ctx.lValueChainOperator?.()) || [];
         for (const op of ops) {
+            this.currentLValueObject = object;
             const node = this.visit(op);
+            this.currentLValueObject = null;
             // The visitor contract allows individual rule handlers to return `null`
             // when they encounter malformed or otherwise-absent AST fragments (e.g.,
             // a parse error recovery path that skips a subtree). Attempting to assign
@@ -988,7 +882,9 @@ export default class GameMakerASTBuilder {
         }
 
         if (ctx.lValueFinalOperator() !== null) {
+            this.currentLValueObject = object;
             const finalOp = this.visit(ctx.lValueFinalOperator());
+            this.currentLValueObject = null;
             if (finalOp && typeof finalOp === "object") {
                 finalOp.object = object;
                 object = finalOp;
@@ -1030,12 +926,12 @@ export default class GameMakerASTBuilder {
 
     // Visit a parse tree produced by GameMakerLanguageParser#MemberDotLValue.
     visitMemberDotLValue(ctx: ParserContext): any {
+        const property = this.visit(ctx.memberIdentifier());
+
         return this.astNode(ctx, {
             type: "MemberDotExpression",
             object: null,
-            property: this.withIdentifierRole({ type: "reference", kind: "property" }, () =>
-                this.visit(ctx.identifier())
-            )
+            property
         });
     }
 
@@ -1137,6 +1033,11 @@ export default class GameMakerASTBuilder {
         return this.visit(ctx.functionDeclaration());
     }
 
+    // Visit a parse tree produced by GameMakerLanguageParser#StructLiteralLValue.
+    visitStructLiteralLValue(ctx: ParserContext): any {
+        return this.visit(ctx.structLiteral());
+    }
+
     // Visit a parse tree produced by GameMakerLanguageParser#ParenthesizedLValue.
     visitParenthesizedLValue(ctx: ParserContext): any {
         return this.astNode(ctx, {
@@ -1221,9 +1122,7 @@ export default class GameMakerASTBuilder {
     visitNewExpression(ctx: ParserContext): any {
         return this.astNode(ctx, {
             type: "NewExpression",
-            expression: this.withIdentifierRole({ type: "reference", kind: "type" }, () =>
-                this.visit(ctx.identifier())
-            ),
+            expression: this.visit(ctx.identifier()),
             arguments: this.visit(ctx.arguments())
         });
     }
@@ -1236,9 +1135,8 @@ export default class GameMakerASTBuilder {
     // Visit a parse tree produced by GameMakerLanguageParser#MemberDotExpression.
     visitMemberDotExpression(ctx: ParserContext): any {
         const object = this.visit(ctx.expression()[0]);
-        const property = this.withIdentifierRole({ type: "reference", kind: "property" }, () =>
-            this.visit(ctx.expression()[1])
-        );
+        const property = this.visit(ctx.expression()[1]);
+
         const node: any = this.astNode(ctx, {
             type: "MemberDotExpression",
             object,
@@ -1303,9 +1201,7 @@ export default class GameMakerASTBuilder {
                 ? this.astNode(ctx, {
                       type: "MemberDotExpression",
                       object: null,
-                      property: this.withIdentifierRole({ type: "reference", kind: "property" }, () =>
-                          this.visit(ctx.identifier())
-                      )
+                      property: this.visit(ctx.memberIdentifier())
                   })
                 : this.visit(ctx.implicitCallStatement());
 
@@ -1498,11 +1394,11 @@ export default class GameMakerASTBuilder {
         let id: string | null = null;
         let idLocation: any = null;
 
-        // Guard against `null` as well as `undefined` from the parser runtime.
-        if (this.ensureToken(ctx.Identifier()) != null) {
-            const identifierNode = this.ensureToken(ctx.Identifier());
-            id = identifierNode.getText();
-            idLocation = this.createIdentifierLocation((identifierNode as any).symbol);
+        const identifierContext = this.ensureSingle(ctx.identifier?.());
+        if (identifierContext != null) {
+            const identifierNode = this.visit(identifierContext);
+            id = typeof identifierNode?.name === "string" ? identifierNode.name : null;
+            idLocation = identifierNode;
         }
 
         const paramListCtx = this.ensureSingle(ctx.parameterList());
@@ -1516,13 +1412,11 @@ export default class GameMakerASTBuilder {
               )
             : false;
 
-        const body = this.withScope("function", () => {
-            if (paramListCtx != null) {
-                const p = this.visit(paramListCtx);
-                params = p ? Core.toArray(p) : [];
-            }
-            return this.visit(ctx.block());
-        });
+        if (paramListCtx != null) {
+            const p = this.visit(paramListCtx);
+            params = p ? Core.toArray(p) : [];
+        }
+        const body = this.visit(ctx.block());
 
         // constructorClause may be nullish; accept null and undefined.
         if (ctx.constructorClause() != null) {
@@ -1550,11 +1444,15 @@ export default class GameMakerASTBuilder {
     // Visit a parse tree produced by GameMakerLanguageParser#constructorClause.
     visitConstructorClause(ctx: ParserContext): any {
         let id: string | null = null;
+        let idLocation: any = null;
         let params: any[] = [];
         let hasTrailingComma = false;
 
-        if (ctx.Identifier() != null) {
-            id = this.ensureToken(ctx.Identifier()).getText();
+        const identifierContext = this.ensureSingle(ctx.identifier?.());
+        if (identifierContext != null) {
+            const identifierNode = this.visit(identifierContext);
+            id = typeof identifierNode?.name === "string" ? identifierNode.name : null;
+            idLocation = identifierNode;
         }
 
         const argsCtx = this.ensureSingle(ctx.arguments?.());
@@ -1577,13 +1475,14 @@ export default class GameMakerASTBuilder {
         return this.astNode(ctx, {
             type: "ConstructorParentClause",
             id,
+            idLocation,
             params,
             hasTrailingComma
         });
     }
 
     visitInheritanceClause(ctx: ParserContext): any {
-        const id = this.withIdentifierRole({ type: "reference", kind: "type" }, () => this.visit(ctx.identifier()));
+        const id = this.visit(ctx.identifier());
         const args = ctx.arguments() ? this.visit(ctx.arguments()) : [];
 
         return this.astNode(ctx, {
@@ -1594,15 +1493,13 @@ export default class GameMakerASTBuilder {
     }
 
     visitStructDeclaration(ctx: ParserContext): any {
-        const id = this.withIdentifierRole({ type: "declaration", kind: "struct" }, () => this.visit(ctx.identifier()));
+        const id = this.visit(ctx.identifier());
         const paramListCtx = this.ensureSingle(ctx.parameterList());
         let params: any[] = [];
-        const body = this.withScope("struct", () => {
-            if (paramListCtx != null) {
-                params = this.visit(paramListCtx);
-            }
-            return this.visit(ctx.block());
-        });
+        if (paramListCtx != null) {
+            params = this.visit(paramListCtx);
+        }
+        const body = this.visit(ctx.block());
         const parent = ctx.inheritanceClause() ? this.visit(ctx.inheritanceClause()) : null;
 
         return this.astNode(ctx, {
@@ -1626,8 +1523,7 @@ export default class GameMakerASTBuilder {
 
     // Visit a parse tree produced by GameMakerLanguageParser#parameterArgument.
     visitParameterArgument(ctx: ParserContext): any {
-        const identifier = () =>
-            this.withIdentifierRole({ type: "declaration", kind: "parameter" }, () => this.visit(ctx.identifier()));
+        const identifier = () => this.visit(ctx.identifier());
 
         if (ctx.expressionOrFunction() === undefined) {
             return identifier();
@@ -1657,18 +1553,30 @@ export default class GameMakerASTBuilder {
     // Visit a parse tree produced by GameMakerLanguageParser#identifier.
     visitIdentifier(ctx: ParserContext): any {
         const name = this.ensureToken(ctx).getText();
+        if (!this.isValidIdentifierContextText(name)) {
+            this.throwInvalidIdentifierSyntaxError(ctx, name);
+        }
+
         const node: any = this.astNode(ctx, {
             type: "Identifier",
             name
         });
-        this.scopeTracker?.applyGlobalIdentifiersToNode(node);
-        this.scopeTracker?.applyCurrentRoleToIdentifier(name, node);
+        return node;
+    }
+
+    // Visit a parse tree produced by GameMakerLanguageParser#memberIdentifier.
+    visitMemberIdentifier(ctx: ParserContext): any {
+        const name = this.ensureToken(ctx).getText();
+        const node: any = this.astNode(ctx, {
+            type: "Identifier",
+            name
+        });
         return node;
     }
 
     // Visit a parse tree produced by GameMakerLanguageParser#enumeratorDeclaration.
     visitEnumeratorDeclaration(ctx: ParserContext): any {
-        const name = this.withIdentifierRole({ type: "declaration", kind: "enum" }, () => this.visit(ctx.identifier()));
+        const name = this.visit(ctx.identifier());
         return this.astNode(ctx, {
             type: "EnumDeclaration",
             name,
@@ -1720,9 +1628,7 @@ export default class GameMakerASTBuilder {
 
         return this.astNode(ctx, {
             type: "EnumMember",
-            name: this.withIdentifierRole({ type: "declaration", kind: "enum-member" }, () =>
-                this.visit(ctx.identifier())
-            ),
+            name: this.visit(ctx.identifier()),
             initializer
         });
     }
@@ -1746,15 +1652,7 @@ export default class GameMakerASTBuilder {
 
     // Visit a parse tree produced by GameMakerLanguageParser#macroStatement.
     visitMacroStatement(ctx: ParserContext): any {
-        const name = this.withIdentifierRole(
-            {
-                type: "declaration",
-                kind: "macro",
-                tags: ["global"],
-                scopeOverride: GLOBAL_SCOPE_OVERRIDE_KEYWORD
-            },
-            () => this.visit(ctx.identifier())
-        );
+        const name = this.visit(ctx.identifier());
         return this.astNode(ctx, {
             type: "MacroDeclaration",
             name,
@@ -1804,15 +1702,7 @@ export default class GameMakerASTBuilder {
 
         const parsedMacroDirective = this.parseDefineMacroDirective(rawText);
         if (parsedMacroDirective) {
-            const macroIdentifier = this.withIdentifierRole(
-                {
-                    type: "declaration",
-                    kind: "macro",
-                    tags: ["global"],
-                    scopeOverride: GLOBAL_SCOPE_OVERRIDE_KEYWORD
-                },
-                () => this.createDefineMacroIdentifierNode(parsedMacroDirective, regionCharactersToken)
-            );
+            const macroIdentifier = this.createDefineMacroIdentifierNode(parsedMacroDirective, regionCharactersToken);
             return this.astNode(ctx, {
                 type: "MacroDeclaration",
                 name: macroIdentifier,
@@ -1858,10 +1748,7 @@ export default class GameMakerASTBuilder {
 
     // Visit a parse tree produced by GameMakerLanguageParser#softKeyword.
     visitSoftKeyword(ctx: ParserContext): string | null {
-        if (ctx.Constructor() != null) {
-            return this.ensureToken(ctx.Constructor()).getText();
-        }
-        return null;
+        return this.ensureToken(ctx).getText();
     }
 
     // Visit a parse tree produced by GameMakerLanguageParser#propertySoftKeyword.

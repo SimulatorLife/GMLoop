@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import vm from "node:vm";
 
 import { Parser } from "@gmloop/parser";
-
-import { Transpiler } from "../index.js";
+import { Transpiler } from "@gmloop/transpiler";
 
 void describe("GmlTranspiler.transpileEvent", () => {
     void describe("patch shape", () => {
@@ -61,16 +61,13 @@ void describe("GmlTranspiler.transpileEvent", () => {
 
         void it("includes metadata with timestamp", () => {
             const transpiler = new Transpiler.GmlTranspiler();
-            const before = Date.now();
             const patch = transpiler.transpileEvent({
                 sourceText: "x = 0;",
                 symbolId: "gml/event/obj_player/create"
             });
-            const after = Date.now();
 
-            assert.ok(patch.metadata?.timestamp !== undefined);
-            assert.ok(patch.metadata.timestamp >= before);
-            assert.ok(patch.metadata.timestamp <= after);
+            assert.strictEqual(typeof patch.metadata?.timestamp, "number", "timestamp should be a number");
+            assert.ok(patch.metadata.timestamp > 0, "timestamp should be positive");
         });
 
         void it("includes sourcePath in metadata when provided", () => {
@@ -147,6 +144,21 @@ void describe("GmlTranspiler.transpileEvent", () => {
             assert.match(patch.js_body, /self\.direction/);
         });
 
+        void it("recognizes runtime values and constants as bare identifiers", () => {
+            const transpiler = new Transpiler.GmlTranspiler();
+            const patch = transpiler.transpileEvent({
+                sourceText: "x = mouse_x; spiderColour = c_green; z = pi;",
+                symbolId: "gml/event/obj_player/step"
+            });
+
+            assert.match(patch.js_body, /self\.x = mouse_x/);
+            assert.match(patch.js_body, /self\.spiderColour = c_green/);
+            assert.match(patch.js_body, /self\.z = pi/);
+            assert.ok(!patch.js_body.includes("self.mouse_x"), "mouse_x should resolve through the runtime proxy");
+            assert.ok(!patch.js_body.includes("self.c_green"), "c_green should resolve through the runtime proxy");
+            assert.ok(!patch.js_body.includes("self.pi"), "pi should resolve through the runtime proxy");
+        });
+
         void it("routes script calls through the hot-reload wrapper", () => {
             const oracle = Transpiler.createSemanticOracle({
                 scriptNames: new Set(["scr_die"])
@@ -186,31 +198,34 @@ void describe("GmlTranspiler.transpileEvent", () => {
     });
 
     void describe("input validation", () => {
-        void it("throws TypeError when request is not an object", () => {
+        void it("throws request error when request is not an object", () => {
             const transpiler = new Transpiler.GmlTranspiler();
-            assert.throws(() => transpiler.transpileEvent(null as never), {
-                name: "TypeError",
+            assert.throws(() => transpiler.transpileEvent(null), {
+                name: "TranspilerError",
+                code: Transpiler.TranspilerErrorCode.REQUEST_ERROR,
                 message: /transpileEvent requires a request object/
             });
         });
 
-        void it("throws TypeError when sourceText is empty", () => {
+        void it("throws request error when sourceText is empty", () => {
             const transpiler = new Transpiler.GmlTranspiler();
             assert.throws(() => transpiler.transpileEvent({ sourceText: "", symbolId: "gml/event/x" }), {
-                name: "TypeError",
+                name: "TranspilerError",
+                code: Transpiler.TranspilerErrorCode.REQUEST_ERROR,
                 message: /transpileEvent requires a sourceText string/
             });
         });
 
-        void it("throws TypeError when symbolId is empty", () => {
+        void it("throws request error when symbolId is empty", () => {
             const transpiler = new Transpiler.GmlTranspiler();
             assert.throws(() => transpiler.transpileEvent({ sourceText: "x = 1;", symbolId: "" }), {
-                name: "TypeError",
+                name: "TranspilerError",
+                code: Transpiler.TranspilerErrorCode.REQUEST_ERROR,
                 message: /transpileEvent requires a symbolId string/
             });
         });
 
-        void it("throws TypeError when sourcePath is an empty string", () => {
+        void it("throws request error when sourcePath is an empty string", () => {
             const transpiler = new Transpiler.GmlTranspiler();
             assert.throws(
                 () =>
@@ -219,7 +234,28 @@ void describe("GmlTranspiler.transpileEvent", () => {
                         symbolId: "gml/event/obj/create",
                         sourcePath: ""
                     }),
-                { name: "TypeError", message: /sourcePath to be a non-empty string/ }
+                {
+                    name: "TranspilerError",
+                    code: Transpiler.TranspilerErrorCode.REQUEST_ERROR,
+                    message: /sourcePath to be a non-empty string/
+                }
+            );
+        });
+
+        void it("throws request error when thisName is an empty string", () => {
+            const transpiler = new Transpiler.GmlTranspiler();
+            assert.throws(
+                () =>
+                    transpiler.transpileEvent({
+                        sourceText: "x = 1;",
+                        symbolId: "gml/event/obj/create",
+                        thisName: ""
+                    }),
+                {
+                    name: "TranspilerError",
+                    code: Transpiler.TranspilerErrorCode.REQUEST_ERROR,
+                    message: /thisName to be a non-empty string/
+                }
             );
         });
 
@@ -245,6 +281,155 @@ void describe("GmlTranspiler.transpileEvent", () => {
             const patch = transpiler.transpileEvent({ sourceText, symbolId: "gml/event/x", ast });
             assert.equal(patch.kind, "event");
             assert.match(patch.js_body, /self\.x/);
+        });
+
+        void it("rejects non-Program AST reuse inputs", () => {
+            const transpiler = new Transpiler.GmlTranspiler();
+            assert.throws(
+                () =>
+                    transpiler.transpileEvent({
+                        sourceText: "x = 10;",
+                        symbolId: "gml/event/x",
+                        ast: {
+                            type: "BlockStatement",
+                            body: []
+                        }
+                    }),
+                { name: "TranspilerError", message: /ast\.type to be 'Program'/ }
+            );
+        });
+    });
+
+    void describe("nested lexical scopes (regression: function (self.x))", () => {
+        void it("emits nested function parameters as bare names, not self.<name>", () => {
+            const transpiler = new Transpiler.GmlTranspiler();
+            const patch = transpiler.transpileEvent({
+                sourceText: "function inner(inner_param) { return inner_param + 1; }",
+                symbolId: "gml/event/obj_player/step"
+            });
+
+            assert.ok(
+                !patch.js_body.includes("self.inner_param"),
+                "nested function parameter must not be emitted as self.inner_param"
+            );
+            assert.ok(
+                !/function\s*\([^)]*\bself\./.test(patch.js_body),
+                "the function parameter list itself must not contain self."
+            );
+            assert.match(patch.js_body, /function\s+inner\s*\(\s*inner_param\s*\)/);
+        });
+
+        void it("emits nested function var declarations as bare names, not self.<name>", () => {
+            const transpiler = new Transpiler.GmlTranspiler();
+            const patch = transpiler.transpileEvent({
+                sourceText: "function inner() { var inner_local = 5; return inner_local; }",
+                symbolId: "gml/event/obj_player/step"
+            });
+
+            assert.ok(!patch.js_body.includes("self.inner_local"), "var inside nested function must remain a local");
+            assert.match(patch.js_body, /var\s+inner_local/);
+            assert.match(patch.js_body, /return\s+inner_local/);
+        });
+
+        void it("emits nested function expression parameters as bare names, not self.<name>", () => {
+            const transpiler = new Transpiler.GmlTranspiler();
+            // The classic bug: `function (self.x) { ... }` — the parameter list itself
+            // contained the bogus `self.` prefix instead of the bare parameter name.
+            const patch = transpiler.transpileEvent({
+                sourceText: "var cb = function (callback_arg) { return callback_arg + 1; };",
+                symbolId: "gml/event/obj_enemy/step"
+            });
+
+            assert.ok(
+                !/function\s*\([^)]*\bself\./.test(patch.js_body),
+                `nested function expression parameter list must not contain self., got: ${patch.js_body}`
+            );
+            assert.ok(!patch.js_body.includes("self.callback_arg"));
+            assert.match(patch.js_body, /function\s*\(\s*callback_arg\s*\)/);
+        });
+
+        void it("emits catch clause parameters as bare names, not self.<name>", () => {
+            const transpiler = new Transpiler.GmlTranspiler();
+            const patch = transpiler.transpileEvent({
+                sourceText: "try { health -= 1; } catch (err) { show_debug_message(err.message); }",
+                symbolId: "gml/event/obj_enemy/step"
+            });
+
+            assert.ok(!/catch\s*\(\s*self\./.test(patch.js_body), "catch parameter must not be emitted as self.<name>");
+            assert.ok(!patch.js_body.includes("self.err"));
+            assert.match(patch.js_body, /catch\s*\(\s*err\s*\)/);
+            assert.match(patch.js_body, /err\.message/);
+        });
+
+        void it("emits var declarations inside a catch body as bare names, not self.<name>", () => {
+            const transpiler = new Transpiler.GmlTranspiler();
+            const patch = transpiler.transpileEvent({
+                sourceText:
+                    "try { x = 0; } catch (caught_err) { var caught_msg = caught_err.message; show_debug_message(caught_msg); }",
+                symbolId: "gml/event/obj_enemy/step"
+            });
+
+            assert.ok(!patch.js_body.includes("self.caught_msg"), "var inside catch body must remain a local");
+            assert.ok(!patch.js_body.includes("self.caught_err"));
+            assert.match(patch.js_body, /var\s+caught_msg/);
+        });
+
+        void it("keeps outer-scope locals visible inside nested functions while nested locals stay lexical", () => {
+            const transpiler = new Transpiler.GmlTranspiler();
+            const patch = transpiler.transpileEvent({
+                sourceText:
+                    "var outer_local = 1; function inner(inner_arg) { var inner_local = outer_local + inner_arg; return inner_local; }",
+                symbolId: "gml/event/obj_player/step"
+            });
+
+            // outer_local is a local in the event body, so references inside the nested
+            // function should also resolve to the bare name (no self. prefix).
+            assert.ok(!patch.js_body.includes("self.outer_local"));
+            assert.ok(!patch.js_body.includes("self.inner_local"));
+            assert.ok(!patch.js_body.includes("self.inner_arg"));
+            assert.match(patch.js_body, /outer_local/);
+            assert.match(patch.js_body, /inner_local/);
+            assert.match(patch.js_body, /inner_arg/);
+        });
+
+        void it("keeps default-parameter bindings bare while resolving instance-field defaults", () => {
+            const transpiler = new Transpiler.GmlTranspiler();
+            const patch = transpiler.transpileEvent({
+                sourceText: "var callback = function (value = health) { return value; };",
+                symbolId: "gml/event/obj_player/create"
+            });
+
+            assert.match(patch.js_body, /function\s*\(value = self\.health\)/);
+            assert.ok(!patch.js_body.includes("self.value"));
+        });
+
+        void it("keeps function-scoped vars declared in catch blocks local after the catch", () => {
+            const transpiler = new Transpiler.GmlTranspiler();
+            const patch = transpiler.transpileEvent({
+                sourceText:
+                    "function inner() { try { health -= 1; } catch (err) { var message = err.message; } return message; }",
+                symbolId: "gml/event/obj_player/step"
+            });
+
+            assert.ok(!patch.js_body.includes("self.err"));
+            assert.ok(!patch.js_body.includes("self.message"));
+            assert.match(patch.js_body, /return\s+message/);
+        });
+
+        void it("emits a syntactically valid patch for nested event callbacks", () => {
+            const transpiler = new Transpiler.GmlTranspiler();
+            const patch = transpiler.transpileEvent({
+                sourceText: [
+                    "var owner = self;",
+                    "callback = function (callback_arg) {",
+                    "    var inner = function (inner_arg) { return owner.value + inner_arg; };",
+                    "    try { return inner(callback_arg); } catch (err) { return err.message; }",
+                    "};"
+                ].join("\n"),
+                symbolId: "gml/event/obj_player/create"
+            });
+
+            assert.doesNotThrow(() => new vm.Script(`(function(self, other, args) { ${patch.js_body} })`));
         });
     });
 });

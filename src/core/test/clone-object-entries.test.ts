@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "node:test";
 
 import { cloneObjectEntries } from "../src/utils/array.js";
 
@@ -26,4 +26,30 @@ void test("cloneObjectEntries preserves non-object entries", () => {
 void test("cloneObjectEntries normalizes nullish input to empty arrays", () => {
     assert.deepEqual(cloneObjectEntries(null), []);
     assert.deepEqual(cloneObjectEntries(), []);
+});
+
+void test("cloneObjectEntries fast path for single-element array", () => {
+    const original = [{ value: 42 }];
+    const cloned = cloneObjectEntries(original);
+
+    assert.notEqual(cloned, original);
+    assert.deepEqual(cloned, original);
+    assert.notEqual(cloned[0], original[0]);
+});
+
+void test("cloneObjectEntries single-element non-object passes through", () => {
+    const original = [42];
+    const cloned = cloneObjectEntries(original);
+
+    assert.deepEqual(cloned, original);
+    assert.strictEqual(cloned[0], original[0]);
+});
+
+void test("cloneObjectEntries single-element null passes through", () => {
+    const original = [null];
+    const cloned = cloneObjectEntries(original);
+
+    assert.deepEqual(cloned, original);
+    assert.strictEqual(cloned[0], original[0]);
+    assert.strictEqual(cloned.length, 1);
 });

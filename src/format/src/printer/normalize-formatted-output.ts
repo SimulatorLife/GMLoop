@@ -1,11 +1,19 @@
 import { Core } from "@gmloop/core";
 
+import { clearStructArgumentBreakCache } from "./print.js";
+
 const { isNonEmptyTrimmedString } = Core;
 
 const MULTIPLE_BLANK_LINE_PATTERN = /\n{3,}/g;
-const WHITESPACE_ONLY_BLANK_LINE_PATTERN = /\n[ \t]+\n/g;
+const WHITESPACE_ONLY_BLANK_LINE_PATTERN = /\n([ \t]+\n)+/g;
 const LINE_COMMENT_TO_BLOCK_COMMENT_BLANK_PATTERN = /(\/\/(?!\/)[^\n]*\n)[ \t]*\n(?=[ \t]*\/\*)/g;
-const BLOCK_OPENING_BLANK_PATTERN = /\{\n[ \t]*\n(?![ \t]*(?:\/\/\/|\/\*))/g;
+// Matches a blank line immediately after `{`, but not when the next
+// non-blank content is a comment (`///`, `//`, or `/*`).  Comments that
+// immediately follow a block opener are left with their blank line intact
+// so the formatter never makes spacing decisions that require knowing
+// whether the surrounding block is a function, a loop, or any other
+// GML-specific construct.  (target-state.md §3.2 – formatter boundary)
+const BLOCK_OPENING_BLANK_PATTERN = /\{\n[ \t]*\n(?![ \t]*(?:\/\/\/|\/\/|\/\*))/g;
 const DECORATIVE_COMMENT_BLANK_PATTERN = /\{\n[ \t]+\n(?=\s*\/\/)/g;
 
 const INLINE_TRAILING_COMMENT_SPACING_PATTERN = /(?<=[^\s/,])[ \t]{2,}(?=\/\/(?!\/))/g;
@@ -15,44 +23,30 @@ const DOUBLE_INDENT_TO_SINGLE = new Map([
     ["\t\t", "\t"]
 ]);
 
-function collapseDuplicateBlankLines(formatted: string): string {
-    return formatted.replaceAll(MULTIPLE_BLANK_LINE_PATTERN, "\n\n");
+type NormalizationStep = (formatted: string) => string;
+
+function createPatternReplacementStep(pattern: RegExp, replacement: string): NormalizationStep {
+    return (formatted: string) => formatted.replaceAll(pattern, replacement);
 }
 
-function collapseWhitespaceOnlyBlankLines(formatted: string): string {
-    return formatted.replaceAll(WHITESPACE_ONLY_BLANK_LINE_PATTERN, "\n\n");
-}
+const collapseDuplicateBlankLines = createPatternReplacementStep(MULTIPLE_BLANK_LINE_PATTERN, "\n\n");
+const collapseWhitespaceOnlyBlankLines = createPatternReplacementStep(WHITESPACE_ONLY_BLANK_LINE_PATTERN, "\n\n");
+const collapseLineCommentToBlockCommentBlankLines = createPatternReplacementStep(
+    LINE_COMMENT_TO_BLOCK_COMMENT_BLANK_PATTERN,
+    "$1\n"
+);
 
-function collapseLineCommentToBlockCommentBlankLines(formatted: string): string {
-    return formatted.replaceAll(LINE_COMMENT_TO_BLOCK_COMMENT_BLANK_PATTERN, "$1\n");
-}
+// Collapse the blank line that directly follows `{` when the next
+// non-empty content is code (not a comment).  Comments are excluded by
+// BLOCK_OPENING_BLANK_PATTERN so this replacement is unconditional and
+// requires no knowledge of surrounding GML syntax.  (target-state.md §3.2)
+const collapseBlockOpeningBlankLines = createPatternReplacementStep(BLOCK_OPENING_BLANK_PATTERN, "{\n");
 
-function collapseBlockOpeningBlankLines(formatted: string): string {
-    return formatted.replaceAll(BLOCK_OPENING_BLANK_PATTERN, (matched, offset, source) => {
-        const remaining = source.slice(offset + matched.length);
-        const hasPlainLineComment = /^\s*\/\/(?!\/)/.test(remaining);
-
-        if (hasPlainLineComment) {
-            const previousNewlineIndex = source.lastIndexOf("\n", offset - 1);
-            const lineStart = previousNewlineIndex === -1 ? 0 : previousNewlineIndex + 1;
-            const openingLine = source.slice(lineStart, offset).trim();
-
-            if (openingLine.includes("function")) {
-                return "{\n\n";
-            }
-        }
-
-        return "{\n";
-    });
-}
-
-function trimDecorativeCommentBlankLines(formatted: string): string {
-    return formatted.replaceAll(DECORATIVE_COMMENT_BLANK_PATTERN, "{\n\n");
-}
-
-function normalizeInlineTrailingCommentSpacing(formatted: string): string {
-    return formatted.replaceAll(INLINE_TRAILING_COMMENT_SPACING_PATTERN, " ");
-}
+const trimDecorativeCommentBlankLines = createPatternReplacementStep(DECORATIVE_COMMENT_BLANK_PATTERN, "{\n\n");
+const normalizeInlineTrailingCommentSpacing = createPatternReplacementStep(
+    INLINE_TRAILING_COMMENT_SPACING_PATTERN,
+    " "
+);
 
 function normalizeSingleCommentBlockIndentation(formatted: string): string {
     const lines = formatted.split("\n");
@@ -121,11 +115,43 @@ function updateBlockCommentState(line: string, isInside: boolean): boolean {
     return true;
 }
 
+/**
+ * Returns `true` when `line` is a single-line block comment (block comment
+ * opener and closer on the same line).  Multi-line block comment segments
+ * (opener-only, closer-only, and body lines) are excluded so that
+ * block-comment boundaries do not perturb the `inDocCommentRun` tracker.
+ */
+function isSingleLineBlockComment(line: string): boolean {
+    const startIndex = line.indexOf("/*");
+    if (startIndex === -1) {
+        return false;
+    }
+    return line.slice(startIndex + 2).includes("*/");
+}
+
+/**
+ * Tracks whether the formatter is currently emitting a run of doc-style
+ * (`///` / `//`) comments.  Single-line block comments are treated as
+ * transparent — they neither start nor end a run — so a block comment that
+ * appears between two doc comments does not falsely report a non-doc context
+ * to `ensureBlankLineBeforeTopLevelLineComments`.
+ */
+function updateDocCommentRun(line: string, inRun: boolean): boolean {
+    if (line.startsWith("///") || line.startsWith("//")) {
+        return true;
+    }
+    if (line.trim() === "" || isSingleLineBlockComment(line)) {
+        return inRun;
+    }
+    return false;
+}
+
 function ensureBlankLineBeforeTopLevelLineComments(formatted: string): string {
     const lines = formatted.split(/\r?\n/);
     const result: string[] = [];
     let previousLine: string | undefined;
     let insideBlockComment = false;
+    let inDocCommentRun = false;
 
     for (const line of lines) {
         if (
@@ -133,12 +159,17 @@ function ensureBlankLineBeforeTopLevelLineComments(formatted: string): string {
             isTopLevelLineComment(line) &&
             shouldInsertBlankLineBeforeTopLevelComment(previousLine)
         ) {
-            result.push("");
+            const previousIsSingleLineBlockComment =
+                typeof previousLine === "string" && isSingleLineBlockComment(previousLine);
+            if (!previousIsSingleLineBlockComment || !inDocCommentRun) {
+                result.push("");
+            }
         }
 
         result.push(line);
         previousLine = line;
         insideBlockComment = updateBlockCommentState(line, insideBlockComment);
+        inDocCommentRun = updateDocCommentRun(line, inDocCommentRun);
     }
 
     return result.join("\n");
@@ -163,5 +194,8 @@ export function normalizeFormattedOutput(formatted: string): string {
         collapseLineCommentToBlockCommentBlankLines
     ].reduce<string>((current, step) => step(current), formatted);
 
-    return collapseWhitespaceOnlyBlankLines(normalized);
+    const result = collapseDuplicateBlankLines(collapseWhitespaceOnlyBlankLines(normalized));
+
+    clearStructArgumentBreakCache();
+    return result;
 }

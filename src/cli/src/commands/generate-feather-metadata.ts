@@ -1,25 +1,29 @@
 import { Core } from "@gmloop/core";
 import { Command } from "commander";
-import { parseHTML } from "linkedom";
 import type { Element } from "linkedom/types/interface/element.js";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import type { CommanderCommandLike } from "../cli-core/commander-types.js";
 import { isMainModule, runAsMainModule } from "../cli-core/main-module-runner.js";
+import { assertSupportedNodeVersion } from "../cli-core/node-version.js";
+import { normalizeManualGeneratorBaseOptions } from "../modules/manual/command-options.js";
+import {
+    getDirectElementChildren,
+    parseManualDocument,
+    replaceBreakElementsWithNewlines
+} from "../modules/manual/html.js";
 import { getManualRootMetadataPath, readManualText, resolveManualSourceCommitHash } from "../modules/manual/source.js";
 import { type ManualWorkflowOptions, prepareManualWorkflow } from "../modules/manual/workflow.js";
 import { writeJsonArtifact } from "../shared/fs-artifacts.js";
-import { assertSupportedNodeVersion } from "../shared/node-version.js";
+import { createVerboseDurationLogger, resolveVerboseFlag, timeSync } from "../shared/timing/verbose-timing.js";
 import { resolveFromRepoRoot } from "../shared/workspace-paths.js";
 
 const {
     compactArray,
-    createVerboseDurationLogger,
     escapeRegExp,
     getNonEmptyTrimmedString,
     isNonEmptyArray,
     isNonEmptyString,
-    timeSync,
     toNormalizedLowerCaseSet
 } = Core;
 
@@ -86,16 +90,7 @@ export function createFeatherMetadataCommand() {
 function resolveFeatherMetadataOptions(command?: CommanderCommandLike): NormalizedFeatherMetadataOptions {
     const options: FeatherMetadataCommandOptions = command?.opts?.() ?? {};
 
-    return {
-        outputPath: options.output ?? DEFAULT_OUTPUT_PATH,
-        manualRoot: options.manualRoot ?? null,
-        manualPackage: options.manualPackage ?? null,
-        quiet: Boolean(options.quiet)
-    };
-}
-
-function createVerboseState({ quiet }) {
-    return quiet ? { parsing: false } : { parsing: true };
+    return normalizeManualGeneratorBaseOptions(options, DEFAULT_OUTPUT_PATH);
 }
 
 function normalizeMultilineText(text) {
@@ -173,10 +168,6 @@ function getNormalizedTextContent(element, { trim = false } = {}) {
     return getNonEmptyTrimmedString(normalized);
 }
 
-function parseDocument(html) {
-    return parseHTML(html).document;
-}
-
 function isElement(node) {
     return node?.nodeType === node?.ownerDocument?.ELEMENT_NODE;
 }
@@ -185,27 +176,13 @@ function getTagName(element) {
     return element?.tagName?.toLowerCase() ?? "";
 }
 
-function getDirectChildren(element: Element | null | undefined, selector?: string) {
-    const predicate = selector ? (child: Element) => child.matches?.(selector) === true : () => true;
-
-    return Array.from(element?.children ?? []).filter(predicate);
-}
-
-function replaceBreaksWithNewlines(clone) {
-    const document = clone.ownerDocument;
-    for (const br of clone.querySelectorAll("br")) {
-        const textNode = document.createTextNode("\n");
-        br.parentNode?.replaceChild(textNode, br);
-    }
-}
-
 function splitCellLines(element: Element | null | undefined) {
     if (!element) {
         return [];
     }
 
-    const clone = element.cloneNode(true);
-    replaceBreaksWithNewlines(clone);
+    const clone = element.cloneNode(true) as Element;
+    replaceBreakElementsWithNewlines(clone);
 
     const lines =
         clone.textContent
@@ -221,7 +198,7 @@ function createTableExtractionState(): ManualTable {
 }
 
 function getRowCells(row) {
-    return getDirectChildren(row, "th, td");
+    return getDirectElementChildren(row, "th, td");
 }
 
 function extractCellValue(cell) {
@@ -352,7 +329,9 @@ function getHeadingLevel(tagName) {
 }
 
 function extractListItems(element) {
-    const items = getDirectChildren(element, "li").map((item) => extractText(item, { preserveLineBreaks: false }));
+    const items = getDirectElementChildren(element, "li").map((item) =>
+        extractText(item, { preserveLineBreaks: false })
+    );
 
     return compactArray(items);
 }
@@ -407,8 +386,8 @@ function extractText(element, { preserveLineBreaks = false } = {}) {
         return "";
     }
 
-    const clone = element.cloneNode(true);
-    replaceBreaksWithNewlines(clone);
+    const clone = element.cloneNode(true) as Element;
+    replaceBreakElementsWithNewlines(clone);
 
     const text = getNormalizedTextContent(clone);
     if (preserveLineBreaks) {
@@ -477,7 +456,7 @@ function collectNamingRuleSectionOptions(listItem) {
         return [];
     }
 
-    const options = getDirectChildren(nestedList, "li").map((option) =>
+    const options = getDirectElementChildren(nestedList, "li").map((option) =>
         normalizeMultilineText(extractText(option, { preserveLineBreaks: false }))
     );
 
@@ -485,7 +464,7 @@ function collectNamingRuleSectionOptions(listItem) {
 }
 
 function createNamingRuleSection(listItem) {
-    const strongChildren = getDirectChildren(listItem, "strong");
+    const strongChildren = getDirectElementChildren(listItem, "strong");
     const title = getNormalizedTextContent(strongChildren[0], { trim: true });
     const description = extractText(listItem, { preserveLineBreaks: true });
     let normalizedDescription = normalizeMultilineText(description);
@@ -556,7 +535,7 @@ function collectNamingListMetadata(mainList) {
         updateNamingListMetadataFromStrongElement(strongEl, metadata);
     }
 
-    metadata.ruleSections = getDirectChildren(mainList, "li").map((item) => createNamingRuleSection(item));
+    metadata.ruleSections = getDirectElementChildren(mainList, "li").map((item) => createNamingRuleSection(item));
 
     return metadata;
 }
@@ -634,6 +613,37 @@ function slugify(text) {
 }
 
 // Split the collected manual blocks into descriptive and trailing sections.
+//
+// GameMaker Feather diagnostics follow a recurring layout inside the manual:
+// a prose description (possibly multiple paragraphs and bullet lists), an
+// "Example" heading that introduces a bad code sample, an optional correction
+// paragraph, a good code sample, and any closing notes. We split on the first
+// such signal because `summariseDiagnosticBlocks` relies on the trailing tail
+// to disambiguate correction prose from a second example.
+//
+// Boundary precedence (matters for the trailing shape — keep stable):
+//   1. An "Example"-style heading wins outright. Everything from the heading
+//      onward, *including* the heading itself, is treated as trailing so that
+//      downstream collectors do not have to re-skip it. The heading remains
+//      dropped (we do not surface it in the structured record).
+//   2. Otherwise, fall back to the first code block: Feather authors sometimes
+//      omit the explicit "Example" heading and lead directly with a snippet.
+//      Starting the trailing region at the first code block (not after it)
+//      matches case (1) and prevents the badExample detector below from
+//      accepting the snippet's surrounding paragraph as description prose.
+//   3. If neither signal is present, the whole block list stays in the
+//      description bucket so we never silently truncate a diagnostic that
+//      lacks examples.
+//
+// What would break if the precedence is reordered: trusting the next code
+// block before an "Example" heading would misclassify the heading's lead-in
+// paragraph as description; trusting description first would either drop the
+// snippet from the trailing region or fold the correction paragraph into the
+// bad example. Both regressions surface as Feather diagnostics that lose
+// either their correction guidance or one of the two code samples.
+//
+// See docs/feather-data-plan.md for the upstream HTML topic layout that these
+// heuristics target (Feather_Messages in vendor/GameMaker-Manual).
 function splitDiagnosticBlocks(blocks) {
     const exampleHeadingIndex = blocks.findIndex(
         (block) => block.type === "heading" && /example/i.test(block.text ?? "")
@@ -710,6 +720,33 @@ function collectDiagnosticTrailingContent(blocks) {
 }
 
 // Convert the raw manual blocks into structured diagnostic metadata.
+//
+// This is the contract surface for the rest of the Feather pipeline:
+// `createDiagnosticMetadataFromHeading` consumes the returned shape verbatim
+// (`description`, `correction`, `badExample`, `goodExample`). The function is
+// a thin orchestrator — `splitDiagnosticBlocks` decides the description/
+// trailing boundary and `collectDiagnosticTrailingContent` walks the trailing
+// region to label each snippet as bad-then-good and to keep correction prose
+// separate from extra description fragments. We then re-attach those trailing
+// description fragments to the description list because Feather authors
+// frequently add a follow-up note *after* the example pair that still belongs
+// to the diagnostic description.
+//
+// Why the trailing scanner yields at most one bad example and N good examples:
+// the manual only ever shows a single bad snippet per diagnostic, but authors
+// sometimes include multiple good snippets when the fix has several variants.
+// Preserving that multiplicity (rather than overwriting or dropping extras)
+// matters for the formatter/feather rule surfaces that key on example parity.
+//
+// What would break if the description/trailing split here were merged into a
+// single pass: the bad-example detector would mis-identify the first sentence
+// of correction prose as a `badExample` whenever a diagnostic opens with a
+// note before its code sample. The correction prose would also fold into
+// `descriptionParts`, hiding the actionable guidance users see in tooling.
+//
+// See `splitDiagnosticBlocks` above for the boundary semantics and
+// docs/feather-data-plan.md (HTML parsing → diagnostics section) for the
+// upstream page layout this orchestration targets.
 function summariseDiagnosticBlocks(blocks) {
     const { descriptionBlocks, trailingBlocks } = splitDiagnosticBlocks(blocks);
     const descriptionParts = collectDiagnosticDescriptionParts(descriptionBlocks);
@@ -786,12 +823,12 @@ function collectDiagnosticsFromHeadings(headingElements) {
 }
 
 function parseDiagnostics(html) {
-    const document = parseDocument(html);
+    const document = parseManualDocument(html);
     return collectDiagnosticsFromHeadings(document.querySelectorAll("h3"));
 }
 
 function parseNamingRules(html) {
-    const document = parseDocument(html);
+    const document = parseManualDocument(html);
     const heading = document.querySelector("h2#s4");
     if (!heading) {
         return {
@@ -847,7 +884,7 @@ function parseNamingRules(html) {
 }
 
 function parseDirectiveSections(html) {
-    const document = parseDocument(html);
+    const document = parseManualDocument(html);
     const sections = [];
 
     for (const element of document.querySelectorAll("h2")) {
@@ -883,7 +920,7 @@ function parseBaseTypeTable(table: Element) {
             return;
         }
 
-        const cells = getDirectChildren(row, "th, td");
+        const cells = getDirectElementChildren(row, "th, td");
         if (cells.length < 3) {
             return;
         }
@@ -910,7 +947,7 @@ function parseTypeValidationTable(table: Element | null) {
         return null;
     }
 
-    const headerCells = getDirectChildren(headerRow, "th, td");
+    const headerCells = getDirectElementChildren(headerRow, "th, td");
     const columns = compactArray(
         headerCells.slice(1).map((cell) => getNonEmptyTrimmedString(extractText(cell, { preserveLineBreaks: false })))
     );
@@ -918,7 +955,7 @@ function parseTypeValidationTable(table: Element | null) {
     const rows = [];
     const dataRows = Array.from(table.querySelectorAll("tr")).slice(1);
     for (const row of dataRows) {
-        const cells = getDirectChildren(row, "th, td");
+        const cells = getDirectElementChildren(row, "th, td");
         if (cells.length === 0) {
             continue;
         }
@@ -944,7 +981,7 @@ function parseTypeValidationTable(table: Element | null) {
 }
 
 function parseTypeSystem(html) {
-    const document = parseDocument(html);
+    const document = parseManualDocument(html);
     const introBlocks = [];
     const articleBody = document.querySelector("h1");
     if (articleBody) {
@@ -1126,7 +1163,7 @@ export async function runGenerateFeatherMetadata({ command, workflow }: FeatherM
     assertSupportedNodeVersion();
 
     const { outputPath, manualRoot, manualPackage, quiet } = resolveFeatherMetadataOptions(command);
-    const verbose = createVerboseState({ quiet });
+    const verbose = resolveVerboseFlag({ quiet });
     const { workflowPathFilter, manualSource } = await prepareManualWorkflow({
         workflow,
         outputPath,

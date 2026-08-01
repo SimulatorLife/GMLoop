@@ -40,10 +40,14 @@ void test("prints all call arguments in order", async () => {
     );
 });
 
-void test("omits redundant unary plus before identifiers", async () => {
+void test("preserves unary plus before identifiers (semantic rewrite belongs in lint)", async () => {
+    // Removing `+x` silently changes program semantics when `x` is not numeric
+    // (e.g. string coercion via `+` differs from the raw identifier access).
+    // This is an explicit content rewrite that belongs in the lint workspace
+    // as `gml/no-unary-plus-on-identifier`. (target-state.md §2.1, §3.2)
     const formatted = await Format.format("var value = +count;\n");
 
-    assert.strictEqual(formatted, "var value = count;\n");
+    assert.strictEqual(formatted, "var value = +count;\n");
 });
 
 void test("retains plus-plus before identifiers", async () => {
@@ -56,4 +60,17 @@ void test("preserves unary plus conversions", async () => {
     const formatted = await Format.format('var value = +"5";\n');
 
     assert.strictEqual(formatted, 'var value = +"5";\n');
+});
+
+void test("does not throw TypeError when CallExpression node has undefined arguments", async () => {
+    // A CallExpression node with `arguments` set to undefined (malformed or
+    // synthetic input) must not produce a TypeError when accessing arguments[0]
+    // inside buildCallArgumentsDocs. Previously the direct index access would
+    // throw "TypeError: Cannot read properties of undefined (reading 'type')"
+    // when simplePrefixLength === 1 and hasTrailingArguments is true.
+    const source = 'function demo() { return my_func("hello"); }\n';
+
+    const formatted = await Format.format(source);
+
+    assert.strictEqual(formatted, ["function demo() {", '    return my_func("hello");', "}", ""].join("\n"));
 });

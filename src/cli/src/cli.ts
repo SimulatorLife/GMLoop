@@ -4,6 +4,7 @@
  * Commands provided include:
  * - A wrapper around the GML-Prettier plugin to provide a convenient
  *   way to format GameMaker Language files.
+ * - Direct GML -> JavaScript transpilation utilities for file/directory targets.
  * - Watch mode for monitoring GML source files and coordinating the
  *   hot-reload pipeline (transpiler, semantic analysis, patch streaming).
  * - Regression testing utilities.
@@ -16,113 +17,45 @@
 
 import process from "node:process";
 
-import { Core } from "@gmloop/core";
 import { Command } from "commander";
 
+import { registerCliCommands } from "./cli-command-registration.js";
+import {
+    FORMAT_ACTION,
+    normalizeCommandLineArguments,
+    resolveDefaultAction
+} from "./cli-core/cli-argument-normalization.js";
+import { type CliCatalogEntry, createCliCommandCatalog } from "./cli-core/command-catalog.js";
 import { createCliCommandManager } from "./cli-core/command-manager.js";
 import { applyStandardCommandOptions } from "./cli-core/command-standard-options.js";
 import { handleCliError } from "./cli-core/errors.js";
+import {
+    isCliEntrypointModule,
+    isNodeTestRunnerProcess,
+    shouldAutoRunCliProcess
+} from "./cli-core/main-module-runner.js";
+import { createMcpToolCatalogEntries, type McpToolCatalogEntry } from "./cli-core/mcp-tool-catalog.js";
 import { resolveCliVersion } from "./cli-core/version.js";
-import { createCollectStatsCommand, runCollectStats } from "./commands/collect-stats.js";
-import { createFixCommand, runFixCommand } from "./commands/fix.js";
-import { __formatTest__, createFormatCommand, runFormatCommand } from "./commands/format.js";
-import { createFeatherMetadataCommand, runGenerateFeatherMetadata } from "./commands/generate-feather-metadata.js";
-import { createGenerateIdentifiersCommand, runGenerateGmlIdentifiers } from "./commands/generate-gml-identifiers.js";
-import { createGenerateQualityReportCommand, runGenerateQualityReport } from "./commands/generate-quality-report.js";
-import { createLintCommand, runLintCommand } from "./commands/lint.js";
-import { createPrepareHotReloadCommand, runPrepareHotReloadCommand } from "./commands/prepare-hot-reload.js";
-import { createRefactorCommand, runRefactorCommand } from "./commands/refactor.js";
-import { createWatchCommand, runWatchCommand } from "./commands/watch.js";
-import { createWatchStatusCommand, runWatchStatusCommand } from "./commands/watch-status.js";
-import { isCliRunSkipped, SKIP_CLI_RUN_ENV_VAR } from "./shared/skip-cli-run.js";
+import { __formatTest__ } from "./commands/format.js";
+import { __refactorTest__ } from "./commands/refactor.js";
+import { __runtimeTestHelpers__ as __runtimeTest__, parseRuntimeValue } from "./commands/runtime.js";
+import { SKIP_CLI_RUN_ENV_VAR } from "./shared/skip-cli-run.js";
 
 function normalizeWriteChunk(chunk: string | Uint8Array, encoding?: BufferEncoding): string {
     return typeof chunk === "string" ? chunk : Buffer.from(chunk).toString(encoding);
 }
 
-const { isNonEmptyArray } = Core;
-
-const FORMAT_ACTION = "format";
-const HELP_ACTION = "help";
-
-function resolveDefaultAction() {
-    return process.env.PRETTIER_PLUGIN_GML_DEFAULT_ACTION === FORMAT_ACTION ? FORMAT_ACTION : HELP_ACTION;
-}
-
-function normalizeCommandLineArguments(argv) {
-    const normalizedArgs = normalizeArgumentList(argv);
-    const withoutSeparator = stripPnpmArgumentSeparators(normalizedArgs);
-    return resolveHelpAliasArguments(withoutSeparator);
-}
-
-function normalizeArgumentList(argv) {
-    return isNonEmptyArray(argv) ? [...argv] : [];
-}
-
-function stripPnpmArgumentSeparators(args) {
-    // pnpm forwards script arguments through `--`, which can show up as
-    // standalone tokens in argv (e.g., `format -- --check`). These separators
-    // are transport-only and should not reach command handlers because they can
-    // be misinterpreted as a positional path.
-    return args.filter((argument) => argument !== "--");
-}
-
-function resolveHelpAliasArguments(args) {
-    if (args.length === 0) {
-        // When no arguments are provided, default behavior depends on
-        // PRETTIER_PLUGIN_GML_DEFAULT_ACTION environment variable.
-        // Default is to show help (user-friendly for first-time users).
-        // Set PRETTIER_PLUGIN_GML_DEFAULT_ACTION to "format" for legacy behavior.
-        return resolveDefaultAction() === FORMAT_ACTION ? [] : ["--help"];
-    }
-
-    if (isStandaloneHelpRequest(args)) {
-        return ["--help"];
-    }
-
-    if (!isHelpAliasCommand(args)) {
-        return args;
-    }
-
-    return resolveHelpAliasCommandArguments(args);
-}
-
-function isHelpRequest(input: unknown): boolean {
-    if (typeof input !== "string") {
-        return false;
-    }
-
-    const normalized = input.trim().toLowerCase();
-    return normalized === "--help" || normalized === "-h" || normalized === "help";
-}
-
-function isStandaloneHelpRequest(args) {
-    return args.length === 1 && isHelpRequest(args[0]);
-}
-
-function isHelpAliasCommand(args) {
-    return args[0] === "help";
-}
-
-function resolveHelpAliasCommandArguments(args) {
-    if (args.length === 1) {
-        return ["--help"];
-    }
-
-    return [...args.slice(1), "--help"];
-}
-
 const program = applyStandardCommandOptions(new Command())
-    .name("prettier-plugin-gml")
+    .name("gmloop")
     .usage("[command] [options]")
     .description(
-        [
-            "Utilities for working with the GMLoop toolchain.",
-            "Provides formatting, benchmarking, and manual data generation commands.",
-            resolveDefaultAction() === FORMAT_ACTION
-                ? `Defaults to running the ${FORMAT_ACTION} command when no command is provided.`
-                : `Run with a command name to get started (e.g., '${FORMAT_ACTION} --help' for formatting options).`
-        ].join(" \n")
+        `Utilities for working with the GMLoop toolchain.
+Provides formatting, linting, refactoring, transpiling, graph analysis, runtime workflows, and report generation commands.
+${
+    resolveDefaultAction() === FORMAT_ACTION
+        ? `Defaults to running the ${FORMAT_ACTION} command when no command is provided.`
+        : `Run with a command name to get started (e.g., '${FORMAT_ACTION} --help' for formatting options). Tip: passing only a file or directory path runs '${FORMAT_ACTION}' for that target. Use 'help <command>' to open command-specific usage quickly (for example, 'help lint').`
+}`
     )
     .version(resolveCliVersion(), "-V, --version", "Show CLI version information.");
 
@@ -135,15 +68,32 @@ export const { registry: cliCommandRegistry, runner: cliCommandRunner } = create
         })
 });
 
-export { normalizeCommandLineArguments };
+export { normalizeCommandLineArguments } from "./cli-core/cli-argument-normalization.js";
+
+/** Well-known name used as the contract discriminant for {@link CliTestExit}. */
+const CLI_TEST_EXIT_NAME = "CliTestExit";
 
 class CliTestExit extends Error {
     public readonly exitCode: number;
 
     constructor(exitCode: number) {
         super(`Cli test exit (${exitCode})`);
+        this.name = CLI_TEST_EXIT_NAME;
         this.exitCode = exitCode;
     }
+}
+
+/**
+ * Determine whether a caught value is a {@link CliTestExit} sentinel using the
+ * well-known name string as the contract discriminant rather than `instanceof`.
+ */
+function isCliTestExit(value: unknown): value is CliTestExit {
+    if (value === null || value === undefined || typeof value !== "object") {
+        return false;
+    }
+
+    const candidate = value as { name?: unknown; exitCode?: unknown };
+    return candidate.name === CLI_TEST_EXIT_NAME && typeof candidate.exitCode === "number";
 }
 
 export interface RunCliTestCommandOptions {
@@ -151,6 +101,8 @@ export interface RunCliTestCommandOptions {
     env?: NodeJS.ProcessEnv;
     cwd?: string | URL;
 }
+
+export type RunCliCommandCaptureOptions = RunCliTestCommandOptions;
 
 type ConsoleMethodSnapshot = {
     debug: typeof console.debug;
@@ -251,7 +203,7 @@ function startProcessOutputCapture(): ProcessOutputCapture {
     };
 }
 
-export async function runCliTestCommand({ argv = [], env = {}, cwd }: RunCliTestCommandOptions = {}) {
+export async function runCliCommandCapture({ argv = [], env = {}, cwd }: RunCliCommandCaptureOptions = {}) {
     const envOverrides = {
         ...env,
         [SKIP_CLI_RUN_ENV_VAR]: "1"
@@ -270,10 +222,10 @@ export async function runCliTestCommand({ argv = [], env = {}, cwd }: RunCliTest
 
     const originalExit = process.exit.bind(process);
     let exitCode = 0;
-    process.exit = ((code = 0) => {
+    process.exit = (code = 0) => {
         exitCode = Number.isNaN(Number(code)) ? 0 : Number(code);
         throw new CliTestExit(exitCode);
-    }) as typeof process.exit;
+    };
     process.exitCode = 0;
 
     try {
@@ -281,7 +233,7 @@ export async function runCliTestCommand({ argv = [], env = {}, cwd }: RunCliTest
         await cliCommandRunner.run(normalizedArgs);
         exitCode = typeof process.exitCode === "number" && !Number.isNaN(process.exitCode) ? process.exitCode : 0;
     } catch (error) {
-        if (error instanceof CliTestExit) {
+        if (isCliTestExit(error)) {
             exitCode = error.exitCode;
         } else {
             throw error;
@@ -306,124 +258,40 @@ export async function runCliTestCommand({ argv = [], env = {}, cwd }: RunCliTest
     };
 }
 
+export function runCliTestCommand(options: RunCliTestCommandOptions = {}) {
+    return runCliCommandCapture(options);
+}
+
+export function getCliCommandCatalog(): ReadonlyArray<CliCatalogEntry> {
+    return Object.freeze(createCliCommandCatalog(program));
+}
+
+export function getMcpToolCatalogEntries(options?: { includeInternal?: boolean }): ReadonlyArray<McpToolCatalogEntry> {
+    return createMcpToolCatalogEntries(getCliCommandCatalog(), options);
+}
+
 export const __test__ = Object.freeze({
     ...__formatTest__,
-    normalizeCommandLineArguments
+    ...__refactorTest__,
+    ...__runtimeTest__,
+    getMcpToolCatalogEntries,
+    getCliCommandCatalog,
+    isCliEntrypointModule,
+    isNodeTestRunnerProcess,
+    normalizeCommandLineArguments,
+    parseRuntimeValue,
+    shouldAutoRunCliProcess
 });
 
-const formatCommand = createFormatCommand({ name: FORMAT_ACTION });
-
-cliCommandRegistry.registerDefaultCommand({
-    command: formatCommand,
-    run: ({ command }) => runFormatCommand(command),
-    onError: (error) =>
-        handleCliError(error, {
-            prefix: "Failed to format project.",
-            exitCode: 1
-        })
+registerCliCommands({
+    defaultCommandName: FORMAT_ACTION,
+    env: process.env,
+    getCliCommandCatalog,
+    getMcpToolCatalogEntries,
+    registry: cliCommandRegistry
 });
 
-cliCommandRegistry.registerCommand({
-    command: createLintCommand(),
-    run: ({ command }) => runLintCommand(command),
-    onError: (error) =>
-        handleCliError(error, {
-            prefix: "Lint command failed.",
-            exitCode: 2
-        })
-});
-
-cliCommandRegistry.registerCommand({
-    command: createFixCommand(),
-    run: ({ command }) => runFixCommand(command),
-    onError: (error) =>
-        handleCliError(error, {
-            prefix: "Failed to run project fix workflow.",
-            exitCode: 1
-        })
-});
-
-cliCommandRegistry.registerCommand({
-    command: createGenerateIdentifiersCommand({ env: process.env }),
-    run: ({ command }) => runGenerateGmlIdentifiers({ command }),
-    onError: (error) =>
-        handleCliError(error, {
-            prefix: "Failed to generate GML identifiers.",
-            exitCode: 1
-        })
-});
-
-cliCommandRegistry.registerCommand({
-    command: createGenerateQualityReportCommand(),
-    run: ({ command }) => runGenerateQualityReport({ command }),
-    onError: (error) =>
-        handleCliError(error, {
-            prefix: "Failed to generate quality report.",
-            exitCode: 1
-        })
-});
-
-cliCommandRegistry.registerCommand({
-    command: createCollectStatsCommand(),
-    run: ({ command }) => runCollectStats({ command }),
-    onError: (error) =>
-        handleCliError(error, {
-            prefix: "Failed to collect project stats.",
-            exitCode: 1
-        })
-});
-
-cliCommandRegistry.registerCommand({
-    command: createFeatherMetadataCommand(),
-    run: ({ command }) => runGenerateFeatherMetadata({ command }),
-    onError: (error) =>
-        handleCliError(error, {
-            prefix: "Failed to generate Feather metadata.",
-            exitCode: 1
-        })
-});
-
-cliCommandRegistry.registerCommand({
-    command: createPrepareHotReloadCommand(),
-    run: ({ command }) => runPrepareHotReloadCommand(command),
-    onError: (error) =>
-        handleCliError(error, {
-            prefix: "Failed to prepare hot-reload injection.",
-            exitCode: 1
-        })
-});
-
-cliCommandRegistry.registerCommand({
-    command: createRefactorCommand(),
-    run: ({ command }) => runRefactorCommand(command),
-    onError: (error) =>
-        handleCliError(error, {
-            prefix: "Failed to perform refactor operation.",
-            exitCode: 1
-        })
-});
-
-cliCommandRegistry.registerCommand({
-    command: createWatchCommand(),
-    run: ({ command }) => runWatchCommand(command.args[0], command.opts()),
-    onError: (error) =>
-        handleCliError(error, {
-            prefix: "Failed to start watch mode.",
-            exitCode: 1
-        })
-});
-
-cliCommandRegistry.registerCommand({
-    command: createWatchStatusCommand(),
-    run: ({ command }) => runWatchStatusCommand(command.opts()),
-    onError: (error) =>
-        handleCliError(error, {
-            prefix: "Failed to query watch status.",
-            exitCode: 1
-        })
-});
-
-if (!isCliRunSkipped()) {
+if (shouldAutoRunCliProcess(process.env, process.execArgv, process.argv[1], import.meta.url)) {
     const normalizedArguments = normalizeCommandLineArguments(process.argv.slice(2));
 
     try {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { getSingleMemberIndexPropertyEntry } from "../src/ast/node-helpers.js";
+import { getSingleMemberIndexPropertyEntry } from "../src/ast/node-helpers/index.js";
 
 // Regression coverage: these tests intentionally rely on strict equality helpers to
 // confirm the migration away from the deprecated `assert.equal` API preserves the

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "node:test";
 
 // Prefer strict assertion helpers to avoid relying on Node.js' deprecated
 // loose equality variants like assert.equal/assert.deepEqual.
@@ -13,6 +13,8 @@ import {
     formatWithIndefiniteArticle,
     getNonEmptyString,
     isIdentifierBoundaryCharacter,
+    isIdentifierStartCharacter,
+    isLogicalNotOperatorAliasAt,
     isNonEmptyString,
     isNonEmptyTrimmedString,
     isWordChar,
@@ -76,8 +78,18 @@ void test("createListSplitPattern optionally includes whitespace separators", ()
     assert.deepStrictEqual("one, two  three".split(pattern), ["one", "two", "three"]);
 });
 
+void test("createListSplitPattern treats null options like omitted options", () => {
+    assert.doesNotThrow(() => createListSplitPattern([","], null));
+
+    const pattern = createListSplitPattern([","], null);
+    assert.deepStrictEqual("one,two".split(pattern), ["one", "two"]);
+});
+
 void test("createListSplitPattern requires a separator when whitespace is disabled", () => {
-    assert.throws(() => createListSplitPattern([]), TypeError);
+    assert.throws(
+        () => createListSplitPattern([]),
+        (error: unknown) => error instanceof TypeError
+    );
 });
 
 void test("toNormalizedLowerCaseString trims and lowercases input values", () => {
@@ -206,16 +218,64 @@ void test("isIdentifierBoundaryCharacter treats non-word values as boundaries", 
     assert.strictEqual(isIdentifierBoundaryCharacter(null), true);
 });
 
+void test("isIdentifierStartCharacter matches valid identifier start characters", () => {
+    assert.strictEqual(isIdentifierStartCharacter("a"), true);
+    assert.strictEqual(isIdentifierStartCharacter("Z"), true);
+    assert.strictEqual(isIdentifierStartCharacter("_"), true);
+    assert.strictEqual(isIdentifierStartCharacter("0"), false);
+    assert.strictEqual(isIdentifierStartCharacter("-"), false);
+    assert.strictEqual(isIdentifierStartCharacter(""), false);
+    assert.strictEqual(isIdentifierStartCharacter(null), false);
+});
+
+void test("isLogicalNotOperatorAliasAt detects not as an operator vs identifier", () => {
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not active", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("NOT (active)", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not(active)", 0), false);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("var not = 1;", 4), false);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("obj.not = 1;", 4), false);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("if (not) {", 4), false);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("if not_active {", 3), false);
+
+    // Literal and unary expression starts
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not 1", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not 0.5", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not .5", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not $FF", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not 0x10", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not !value", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not ~value", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt('not "hello"', 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not [1, 2]", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not {a: 1}", 0), true);
+
+    // Boundaries and adjacencies
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not.field", 0), false);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not[0]", 0), false);
+});
+
 void test("assertNonEmptyString returns the validated value", () => {
     assert.strictEqual(assertNonEmptyString("value"), "value");
     assert.strictEqual(assertNonEmptyString("  padded  ", { trim: true }), "padded");
 });
 
 void test("assertNonEmptyString throws when value is not a non-empty string", () => {
-    assert.throws(() => assertNonEmptyString(""), TypeError);
-    assert.throws(() => assertNonEmptyString("   ", { trim: true }), TypeError);
-    assert.throws(() => assertNonEmptyString(null), TypeError);
-    assert.throws(() => assertNonEmptyString(42), TypeError);
+    assert.throws(
+        () => assertNonEmptyString(""),
+        (error: unknown) => error instanceof TypeError
+    );
+    assert.throws(
+        () => assertNonEmptyString("   ", { trim: true }),
+        (error: unknown) => error instanceof TypeError
+    );
+    assert.throws(
+        () => assertNonEmptyString(null),
+        (error: unknown) => error instanceof TypeError
+    );
+    assert.throws(
+        () => assertNonEmptyString(42),
+        (error: unknown) => error instanceof TypeError
+    );
 });
 
 void test("assertNoLeadingOrTrailingWhitespace returns the value when valid", () => {
@@ -225,21 +285,48 @@ void test("assertNoLeadingOrTrailingWhitespace returns the value when valid", ()
 });
 
 void test("assertNoLeadingOrTrailingWhitespace throws when value has leading whitespace", () => {
-    assert.throws(() => assertNoLeadingOrTrailingWhitespace(" value"), Error);
-    assert.throws(() => assertNoLeadingOrTrailingWhitespace("\tvalue"), Error);
-    assert.throws(() => assertNoLeadingOrTrailingWhitespace("\nvalue"), Error);
+    assert.throws(
+        () => assertNoLeadingOrTrailingWhitespace(" value"),
+        (error: unknown) => error instanceof Error
+    );
+    assert.throws(
+        () => assertNoLeadingOrTrailingWhitespace("\tvalue"),
+        (error: unknown) => error instanceof Error
+    );
+    assert.throws(
+        () => assertNoLeadingOrTrailingWhitespace("\nvalue"),
+        (error: unknown) => error instanceof Error
+    );
 });
 
 void test("assertNoLeadingOrTrailingWhitespace throws when value has trailing whitespace", () => {
-    assert.throws(() => assertNoLeadingOrTrailingWhitespace("value "), Error);
-    assert.throws(() => assertNoLeadingOrTrailingWhitespace("value\t"), Error);
-    assert.throws(() => assertNoLeadingOrTrailingWhitespace("value\n"), Error);
+    assert.throws(
+        () => assertNoLeadingOrTrailingWhitespace("value "),
+        (error: unknown) => error instanceof Error
+    );
+    assert.throws(
+        () => assertNoLeadingOrTrailingWhitespace("value\t"),
+        (error: unknown) => error instanceof Error
+    );
+    assert.throws(
+        () => assertNoLeadingOrTrailingWhitespace("value\n"),
+        (error: unknown) => error instanceof Error
+    );
 });
 
 void test("assertNoLeadingOrTrailingWhitespace throws when value has both leading and trailing whitespace", () => {
-    assert.throws(() => assertNoLeadingOrTrailingWhitespace(" value "), Error);
-    assert.throws(() => assertNoLeadingOrTrailingWhitespace("\tvalue\t"), Error);
-    assert.throws(() => assertNoLeadingOrTrailingWhitespace("  value  "), Error);
+    assert.throws(
+        () => assertNoLeadingOrTrailingWhitespace(" value "),
+        (error: unknown) => error instanceof Error
+    );
+    assert.throws(
+        () => assertNoLeadingOrTrailingWhitespace("\tvalue\t"),
+        (error: unknown) => error instanceof Error
+    );
+    assert.throws(
+        () => assertNoLeadingOrTrailingWhitespace("  value  "),
+        (error: unknown) => error instanceof Error
+    );
 });
 
 void test("assertNoLeadingOrTrailingWhitespace preserves internal whitespace", () => {
@@ -284,11 +371,30 @@ void test("describeValueForError formats primitives and structured values", () =
 void test("formatWithIndefiniteArticle selects the correct article", () => {
     assert.strictEqual(formatWithIndefiniteArticle("array"), "an array");
     assert.strictEqual(formatWithIndefiniteArticle("string"), "a string");
+    assert.strictEqual(formatWithIndefiniteArticle("8-bit integer"), "an 8-bit integer");
     assert.strictEqual(formatWithIndefiniteArticle(""), "a");
 });
 
 void test("describeValueForError can skip JSON serialization for complex values", () => {
     assert.strictEqual(describeValueForError({ example: true }, { stringifyUnknown: false }), "[object Object]");
+});
+
+void test("describeValueForError defers to a custom toString when one is provided", () => {
+    class TaggedValue {
+        constructor(private readonly label: string) {}
+
+        toString(): string {
+            return `tag:${this.label}`;
+        }
+    }
+
+    // The stringifyUnknown path still goes through JSON serialization, which
+    // ignores custom toString when own enumerable properties exist.
+    assert.strictEqual(describeValueForError(new TaggedValue("player")), '{"label":"player"}');
+
+    // With stringifyUnknown disabled, the helper falls back to toSafeString
+    // and honors the custom toString override.
+    assert.strictEqual(describeValueForError(new TaggedValue("enemy"), { stringifyUnknown: false }), "tag:enemy");
 });
 
 void test("stripStringQuotes removes matching single and double quotes", () => {

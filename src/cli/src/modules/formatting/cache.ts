@@ -8,37 +8,36 @@
 
 import { createHash } from "node:crypto";
 
-import type { Options as PrettierOptions } from "prettier";
+import { evaluateFormattingCacheEvictionPolicy } from "./cache-eviction-policy.js";
+import { getDefaultMaxFormattingCacheEntries } from "./format-memory-options.js";
 
 /**
  * Internal cache storing formatted output keyed by content hash and options.
- * Uses LRU eviction when the cache exceeds MAX_FORMATTING_CACHE_ENTRIES.
+ * Uses LRU eviction when the cache exceeds the configured max-entry cap.
  */
 const formattingCache = new Map<string, string>();
 
 /**
- * Maximum number of entries to retain in the formatting cache.
- * Reduced from 100 to 10 since cache keys now use hashes instead of full file content,
- * and we perform more frequent periodic cleanups.
+ * Applies the formatting-cache eviction policy to the mutable LRU cache.
+ * Capacity rules remain in the pure policy evaluator; this function owns only
+ * the cache mutations needed to carry out its decision.
  */
-const MAX_FORMATTING_CACHE_ENTRIES = 10;
+export function trimFormattingCache(limit = getDefaultMaxFormattingCacheEntries()): void {
+    const decision = evaluateFormattingCacheEvictionPolicy({
+        currentCacheSize: formattingCache.size,
+        maxEntries: limit
+    });
 
-/**
- * Trims the formatting cache to the specified limit using LRU eviction.
- * If limit is not finite, the cache is left unchanged.
- * If limit is 0 or negative, the cache is cleared entirely.
- */
-export function trimFormattingCache(limit = MAX_FORMATTING_CACHE_ENTRIES): void {
-    if (!Number.isFinite(limit)) {
+    if (decision.action === "retain") {
         return;
     }
 
-    if (limit <= 0) {
+    if (decision.action === "clear") {
         formattingCache.clear();
         return;
     }
 
-    while (formattingCache.size > limit) {
+    for (let entriesEvicted = 0; entriesEvicted < decision.entriesToEvict; entriesEvicted += 1) {
         const { value: oldestKey, done } = formattingCache.keys().next();
         if (done) {
             break;
@@ -102,12 +101,24 @@ function stringifyCacheComponent(value: unknown): string {
 }
 
 /**
- * Creates a cache key from file content and Prettier options.
+ * Minimal formatting options that contribute to CLI cache identity.
+ */
+export interface FormattingCacheOptions {
+    parser: unknown;
+    tabWidth?: unknown;
+    printWidth?: unknown;
+    semi?: unknown;
+    useTabs?: unknown;
+    plugins: unknown;
+}
+
+/**
+ * Creates a cache key from file content and formatting options.
  * Uses SHA-256 hashing of file content to prevent memory bloat while ensuring
  * uniqueness. The cache key includes formatting options to ensure that changes
  * to options invalidate cached results.
  */
-export function createFormattingCacheKey(data: string, formattingOptions: PrettierOptions): string {
+export function createFormattingCacheKey(data: string, formattingOptions: FormattingCacheOptions): string {
     const { parser, tabWidth, printWidth, semi, useTabs, plugins } = formattingOptions;
     const pluginKey = Array.isArray(plugins) ? plugins.map(String).toSorted().join(",") : "";
     // Use a hash of the file content instead of the full content to prevent memory bloat.
@@ -133,10 +144,11 @@ export function getFormattingCacheStats(): {
     estimatedBytes: number;
     maxEntries: number;
 } {
+    const maxEntries = getDefaultMaxFormattingCacheEntries();
     return {
         size: formattingCache.size,
         estimatedBytes: estimateFormattingCacheBytes(),
-        maxEntries: MAX_FORMATTING_CACHE_ENTRIES
+        maxEntries
     };
 }
 

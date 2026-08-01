@@ -1,0 +1,61 @@
+name: "Agent 108 - Autonomous Game Creation Pipeline"
+
+on:
+  workflow_dispatch:
+    inputs:
+      agent:
+        description: "Optional agent override."
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  run:
+    uses: ./.github/workflows/_agent-open-pr-and-ping.yml
+    secrets: inherit
+    with:
+      agent: ${{ inputs.agent }}
+      pr_title: "Agent: Autonomous Game Creation Pipeline"
+      prompt: >-
+        Advance the CLI/MCP-backed autonomous GameMaker creation pipeline by implementing one small,
+        cohesive improvement aligned with `docs/autonomous-game-creator-plan.md`.
+
+        Focus on the target state where agents create and maintain complete GameMaker projects through
+        high-level, structured operations: CLI commands are the canonical tool surface, MCP tools are
+        derived from the CLI command catalog, and GameMaker resource/project mutations happen through
+        domain-owned APIs rather than ad-hoc `.yyp` or `.yy` file edits.
+
+        Good targets include:
+        - completing one high-value autonomous-game command leaf, such as
+          `object event update`, `object event add/delete`, `room instance add/update/delete`,
+          `room layer create/update/delete`, `room camera update`, or `test case create/update`;
+        - improving structured JSON output or command metadata for resource/object/room/test
+          mutations so agent and MCP consumers receive deterministic, machine-readable summaries;
+        - adding or strengthening CLI catalog and MCP catalog tests proving autonomous-game commands are
+          exposed as derived MCP tools with the intended names, schemas, and write/dry-run behavior;
+        - adding a narrow CLI-backed project/resource inspection or validation improvement that helps
+          agents safely plan the next autonomous game-creation step;
+        - advancing the minimal helper-library, task-graph, test-authoring, or build/run/check surfaces
+          only when the work remains CLI-first and MCP-exposed through the catalog.
+
+        Requirements:
+        - Choose exactly one cohesive advancement; do not start a broad autonomous-game framework rewrite.
+        - Implement behavior in the owning workspace first, typically `@gmloop/refactor`, `@gmloop/semantic`,
+          `@gmloop/cli`, or the relevant command/domain layer. Keep `@gmloop/mcp` as a thin exposure layer.
+        - Do not add MCP-only business logic or parallel command surfaces. If MCP needs attention, improve
+          catalog/schema/result exposure for CLI-backed commands and cover it with tests.
+        - Preserve GameMaker project metadata correctness, stable resource IDs, folder/resource consistency,
+          dry-run behavior where applicable, deterministic output ordering, and useful error payloads.
+        - Add focused unit and/or integration tests for the selected CLI behavior and, when applicable,
+          MCP catalog exposure. Update concise documentation only if command behavior or contracts change.
+        - Avoid legacy aliases, compatibility shims, raw resource-file edits from agent-facing code,
+          broad configuration, or speculative abstractions.
+
+        In the PR summary, identify which autonomous-game target-state gap was closed, explain how the
+        CLI remains the source of truth and MCP remains catalog-derived, and list the validation commands
+        that prove the change works.

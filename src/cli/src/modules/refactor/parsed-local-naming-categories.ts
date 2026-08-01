@@ -4,9 +4,25 @@ import path from "node:path";
 import { Core } from "@gmloop/core";
 import { Parser } from "@gmloop/parser";
 
+import { pathExistsSync } from "../../shared/path-exists.js";
+
 type ParsedLocalNamingCategory = "staticVariable" | "loopIndexVariable";
 
-type ParsedLocalNamingCategoryMap = ReadonlyMap<string, ParsedLocalNamingCategory>;
+type ParsedLocalDeclarationMetadata = {
+    category: ParsedLocalNamingCategory;
+    isConstructorStaticMember: boolean;
+};
+
+type ParsedLocalDeclarationMetadataMap = ReadonlyMap<string, ParsedLocalDeclarationMetadata>;
+type ConstructorStaticFunctionRange = {
+    end: number;
+    start: number;
+};
+type ParsedLocalSourceMetadata = {
+    declarations: ParsedLocalDeclarationMetadataMap;
+    constructorStaticFunctionRanges: ReadonlyArray<ConstructorStaticFunctionRange>;
+};
+const REQUIRES_PARSED_LOCAL_CATEGORY_SCAN_PATTERN = /\bstatic\b|\bfor\s*\(\s*var\b/u;
 
 function createDeclarationLookupKey(name: string, start: number): string {
     return `${name}:${start}`;
@@ -30,14 +46,30 @@ function readNodeStartIndex(node: unknown): number | null {
     return typeof startRecord.index === "number" ? startRecord.index : null;
 }
 
+function readNodeEndIndex(node: unknown): number | null {
+    if (!Core.isObjectLike(node)) {
+        return null;
+    }
+
+    const endValue = (node as Record<string, unknown>).end;
+    if (typeof endValue === "number") {
+        return endValue;
+    }
+
+    if (!Core.isObjectLike(endValue)) {
+        return null;
+    }
+
+    const endRecord = endValue as Record<string, unknown>;
+    return typeof endRecord.index === "number" ? endRecord.index : null;
+}
+
 function classifyVariableDeclarationSyntax(
     node: unknown,
     parent: unknown,
     key: string | number | null
 ): ParsedLocalNamingCategory | null {
-    const declarationKind = Core.getVariableDeclarationKind(
-        node as Parameters<typeof Core.getVariableDeclarationKind>[0]
-    );
+    const declarationKind = Core.getVariableDeclarationKind(node);
     if (declarationKind === "static") {
         return "staticVariable";
     }
@@ -54,47 +86,111 @@ function classifyVariableDeclarationSyntax(
     return null;
 }
 
-function extractParsedLocalNamingCategories(sourceText: string): ParsedLocalNamingCategoryMap {
-    const parsedCategories = new Map<string, ParsedLocalNamingCategory>();
+function isFunctionLikeNode(node: unknown): boolean {
+    return (
+        Core.isConstructorDeclarationNode(node) ||
+        Core.isFunctionDeclarationNode(node) ||
+        Core.isStructFunctionDeclarationNode(node)
+    );
+}
+
+function extractParsedLocalSourceMetadata(sourceText: string): ParsedLocalSourceMetadata {
+    const parsedMetadata = new Map<string, ParsedLocalDeclarationMetadata>();
+    const constructorStaticFunctionRanges: Array<ConstructorStaticFunctionRange> = [];
     const ast = Parser.GMLParser.parse(sourceText, {
         getComments: false,
         getLocations: true,
         simplifyLocations: false
     });
 
-    Core.walkAst(ast, (node, parent, key) => {
+    const visitNode = (
+        value: unknown,
+        insideConstructorScope: boolean,
+        parent: unknown,
+        key: string | number | null
+    ): void => {
+        if (Array.isArray(value)) {
+            for (let i = 0, len = value.length; i < len; i++) {
+                visitNode(value[i], insideConstructorScope, value, i);
+            }
+            return;
+        }
+
+        if (!Core.isObjectLike(value)) {
+            return;
+        }
+
+        const nextInsideConstructorScope = Core.isConstructorDeclarationNode(value)
+            ? true
+            : isFunctionLikeNode(value)
+              ? false
+              : insideConstructorScope;
+
+        const node = value as Record<string, unknown>;
+
         if (!Core.isVariableDeclarationNode(node)) {
+            const keys = Object.keys(node);
+            for (let i = 0, len = keys.length; i < len; i++) {
+                const childKey = keys[i];
+                visitNode(node[childKey], nextInsideConstructorScope, node, childKey);
+            }
             return;
         }
 
         const syntaxCategory = classifyVariableDeclarationSyntax(node, parent, key);
-        if (syntaxCategory === null) {
-            return;
+        if (syntaxCategory !== null) {
+            for (const declarator of node.declarations ?? []) {
+                if (!Core.isVariableDeclaratorNode(declarator)) {
+                    continue;
+                }
+
+                const declarationName = Core.resolveNodeName(declarator.id ?? null);
+                const declarationStart = readNodeStartIndex(declarator.id ?? declarator);
+                if (!declarationName || declarationStart === null) {
+                    continue;
+                }
+
+                parsedMetadata.set(createDeclarationLookupKey(declarationName, declarationStart), {
+                    category: syntaxCategory,
+                    isConstructorStaticMember: syntaxCategory === "staticVariable" && nextInsideConstructorScope
+                });
+
+                if (
+                    syntaxCategory === "staticVariable" &&
+                    nextInsideConstructorScope &&
+                    Core.isFunctionDeclarationNode(declarator.init)
+                ) {
+                    const functionStart = readNodeStartIndex(declarator.init);
+                    const functionEnd = readNodeEndIndex(declarator.init);
+                    if (functionStart !== null && functionEnd !== null && functionStart < functionEnd) {
+                        constructorStaticFunctionRanges.push({
+                            start: functionStart,
+                            end: functionEnd
+                        });
+                    }
+                }
+            }
         }
 
-        for (const declarator of node.declarations ?? []) {
-            if (!Core.isVariableDeclaratorNode(declarator)) {
-                continue;
-            }
-
-            const declarationName = Core.resolveNodeName(declarator.id ?? null);
-            const declarationStart = readNodeStartIndex(declarator.id ?? declarator);
-            if (!declarationName || declarationStart === null) {
-                continue;
-            }
-
-            parsedCategories.set(createDeclarationLookupKey(declarationName, declarationStart), syntaxCategory);
+        const keys = Object.keys(node);
+        for (let i = 0, len = keys.length; i < len; i++) {
+            const childKey = keys[i];
+            visitNode(node[childKey], nextInsideConstructorScope, node, childKey);
         }
-    });
+    };
 
-    return parsedCategories;
+    visitNode(ast, false, null, null);
+    return {
+        declarations: parsedMetadata,
+        constructorStaticFunctionRanges
+    };
 }
 
 /**
  * Resolves syntax-derived local naming categories for declarations in project files.
  */
 export class ParsedLocalNamingCategoryResolver {
-    private readonly categoryCache = new Map<string, ParsedLocalNamingCategoryMap>();
+    private readonly metadataCache = new Map<string, ParsedLocalSourceMetadata>();
     private readonly projectRoot: string;
 
     constructor(projectRoot: string) {
@@ -105,30 +201,76 @@ export class ParsedLocalNamingCategoryResolver {
      * Resolve a local declaration's refined naming category when syntax provides
      * more precision than the semantic project index alone.
      */
-    resolveCategory(filePath: string, name: string, start: number): ParsedLocalNamingCategory | null {
-        const fileCategories = this.loadFileCategories(filePath);
-        return fileCategories.get(createDeclarationLookupKey(name, start)) ?? null;
+    resolveCategory(
+        filePath: string,
+        sourceText: string | null,
+        name: string,
+        start: number
+    ): ParsedLocalNamingCategory | null {
+        const fileMetadata = this.loadFileMetadata(filePath, sourceText);
+        return fileMetadata.declarations.get(createDeclarationLookupKey(name, start))?.category ?? null;
     }
 
-    private loadFileCategories(filePath: string): ParsedLocalNamingCategoryMap {
-        const cachedCategories = this.categoryCache.get(filePath);
-        if (cachedCategories) {
-            return cachedCategories;
+    /**
+     * Determine whether a static declaration belongs to constructor scope, which
+     * makes dotted member accesses a valid external reference form.
+     */
+    isConstructorStaticMember(filePath: string, sourceText: string | null, name: string, start: number): boolean {
+        const fileMetadata = this.loadFileMetadata(filePath, sourceText);
+        return (
+            fileMetadata.declarations.get(createDeclarationLookupKey(name, start))?.isConstructorStaticMember === true
+        );
+    }
+
+    /**
+     * Return source ranges for constructor static function expressions in a file.
+     */
+    listConstructorStaticFunctionRanges(
+        filePath: string,
+        sourceText: string | null
+    ): ReadonlyArray<ConstructorStaticFunctionRange> {
+        return this.loadFileMetadata(filePath, sourceText).constructorStaticFunctionRanges;
+    }
+
+    /**
+     * Clear cached per-file declaration metadata after the underlying project
+     * sources change.
+     */
+    clear(): void {
+        this.metadataCache.clear();
+    }
+
+    private loadFileMetadata(filePath: string, sourceText: string | null): ParsedLocalSourceMetadata {
+        const cachedMetadata = this.metadataCache.get(filePath);
+        if (cachedMetadata) {
+            return cachedMetadata;
         }
 
-        const absoluteFilePath = path.resolve(this.projectRoot, filePath);
-        let parsedCategories: ParsedLocalNamingCategoryMap = new Map();
+        let parsedMetadata: ParsedLocalSourceMetadata = {
+            declarations: new Map(),
+            constructorStaticFunctionRanges: []
+        };
 
         try {
-            if (fs.existsSync(absoluteFilePath)) {
-                const sourceText = fs.readFileSync(absoluteFilePath, "utf8");
-                parsedCategories = extractParsedLocalNamingCategories(sourceText);
+            let resolvedSourceText = sourceText;
+            if (resolvedSourceText === null) {
+                const absoluteFilePath = path.resolve(this.projectRoot, filePath);
+                if (pathExistsSync(absoluteFilePath)) {
+                    resolvedSourceText = fs.readFileSync(absoluteFilePath, "utf8");
+                }
+            }
+
+            if (resolvedSourceText !== null && REQUIRES_PARSED_LOCAL_CATEGORY_SCAN_PATTERN.test(resolvedSourceText)) {
+                parsedMetadata = extractParsedLocalSourceMetadata(resolvedSourceText);
             }
         } catch {
-            parsedCategories = new Map();
+            parsedMetadata = {
+                declarations: new Map(),
+                constructorStaticFunctionRanges: []
+            };
         }
 
-        this.categoryCache.set(filePath, parsedCategories);
-        return parsedCategories;
+        this.metadataCache.set(filePath, parsedMetadata);
+        return parsedMetadata;
     }
 }

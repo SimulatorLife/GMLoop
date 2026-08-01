@@ -18,6 +18,20 @@ import { test } from "node:test";
 
 import { normalizeFormattedOutput } from "../src/printer/normalize-formatted-output.js";
 
+void test("normalizeFormattedOutput does not promote plain // description comments into doc comments", () => {
+    const input = ["// description Updates velocity", "function update_velocity() {", "    return 1;", "}", ""].join(
+        "\n"
+    );
+
+    const result = normalizeFormattedOutput(input);
+
+    assert.strictEqual(
+        result,
+        input,
+        "promoting plain comments into doc-comment syntax is a lint-owned content rewrite, not formatter post-processing (target-state.md §2.2, §3.2)"
+    );
+});
+
 void test("normalizeFormattedOutput preserves @function tags (content rewrites belong in lint)", () => {
     const input = [
         "/// @function update_ground_dist(ray_len)",
@@ -160,5 +174,57 @@ void test("normalizeFormattedOutput preserves blank lines before guard-comment+i
         result,
         input,
         "normalizeFormattedOutput must not remove blank lines before guard-comment+if sequences — semantic inference of comment roles belongs in @gmloop/lint (target-state.md §2.2, §3.2)"
+    );
+});
+
+void test("normalizeFormattedOutput preserves blank lines before plain // comments uniformly regardless of surrounding block type (no GML keyword detection, target-state.md §3.2)", () => {
+    // `collapseBlockOpeningBlankLines` previously inspected the source text for
+    // the keyword "function" to decide whether to preserve a blank line between
+    // `{` and a following `// comment`.  That is GML-domain knowledge inside a
+    // layout-only pass and violates target-state.md §3.2.
+    //
+    // The fix: BLOCK_OPENING_BLANK_PATTERN now excludes plain `//` comments from
+    // the collapsing regex, so blank lines between `{` and `// comments` are
+    // ALWAYS preserved without any text-scanning for GML keywords.
+    const functionBlock = ["function foo() {", "", "    // initialise state", "    return 0;", "}", ""].join("\n");
+
+    const ifBlock = ["if (ready) {", "", "    // guard check", "    return;", "}", ""].join("\n");
+
+    const whileBlock = ["while (running) {", "", "    // tick", "    update();", "}", ""].join("\n");
+
+    assert.strictEqual(
+        normalizeFormattedOutput(functionBlock),
+        functionBlock,
+        "blank line after { before // must be preserved in function blocks without inspecting the 'function' keyword"
+    );
+    assert.strictEqual(
+        normalizeFormattedOutput(ifBlock),
+        ifBlock,
+        "blank line after { before // must be preserved in if blocks (same rule as function blocks — no keyword detection)"
+    );
+    assert.strictEqual(
+        normalizeFormattedOutput(whileBlock),
+        whileBlock,
+        "blank line after { before // must be preserved in while blocks (same rule as function blocks — no keyword detection)"
+    );
+});
+
+void test("normalizeFormattedOutput collapses blank lines after { before code uniformly (target-state.md §3.2)", () => {
+    // When the content after `{\n\n` is code (not a comment), the blank line is
+    // always collapsed regardless of block type.  This is a uniform layout rule
+    // with no GML keyword knowledge.
+    const functionBlockWithCode = ["function foo() {", "", "    return 0;", "}", ""].join("\n");
+
+    const ifBlockWithCode = ["if (ready) {", "", "    return;", "}", ""].join("\n");
+
+    assert.strictEqual(
+        normalizeFormattedOutput(functionBlockWithCode),
+        ["function foo() {", "    return 0;", "}", ""].join("\n"),
+        "blank line after { before code must be collapsed in function blocks"
+    );
+    assert.strictEqual(
+        normalizeFormattedOutput(ifBlockWithCode),
+        ["if (ready) {", "    return;", "}", ""].join("\n"),
+        "blank line after { before code must be collapsed in if blocks"
     );
 });

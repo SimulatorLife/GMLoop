@@ -1,12 +1,26 @@
+import path from "node:path";
+
 import { Core } from "@gmloop/core";
 
+import { applyLoopLengthHoistingCodemod } from "./codemods/loop-length-hoisting/index.js";
 import { executeNamingConventionCodemod } from "./codemods/naming-convention/index.js";
-import { assertRefactorConfigPlainObject } from "./refactor-config-assertions.js";
-import type { RefactorEngine } from "./refactor-engine.js";
+import { applyRepairArgumentSeparatorsCodemod } from "./codemods/repair-argument-separators/index.js";
+import { applyRepairAudioEmitterCreationGuardCodemod } from "./codemods/repair-audio-emitter-creation-guard/index.js";
+import { applyRepairEventCallbackOtherCodemod } from "./codemods/repair-event-callback-other/index.js";
+import { applyRepairInvalidTexturePointerGuardCodemod } from "./codemods/repair-invalid-texture-pointer-guard/index.js";
+import { applyRepairLogicalNotCodemod } from "./codemods/repair-logical-not/index.js";
+import { applyRepairSpriteTextureUvResolutionCodemod } from "./codemods/repair-sprite-texture-uv-resolution/index.js";
+import { applyRepairTexturePrefetchGuardCodemod } from "./codemods/repair-texture-prefetch-guard/index.js";
+import { applyScientificNotationCodemod } from "./codemods/scientific-notation/index.js";
+import { normalizeNamingConventionPolicy } from "./naming-convention-policy.js";
+import { assertRefactorConfigPlainObjectWithAllowedKeys } from "./refactor-config-assertions.js";
 import type {
+    CodemodEngine,
     ConfiguredCodemodRunRequest,
     ConfiguredCodemodRunResult,
     ConfiguredCodemodSummary,
+    NamingConventionPolicy,
+    PartialSemanticAnalyzer,
     RefactorCodemodConfigEntry,
     RefactorCodemodConfigMap,
     RefactorCodemodId,
@@ -18,9 +32,10 @@ import type {
 type RegisteredCodemodDefinition<T extends RefactorCodemodId> = {
     id: T;
     description: string;
+    requiresSemanticProjectIndex: boolean;
     normalizeConfig: (value: unknown, context: string) => RefactorCodemodConfigEntry<T>;
     execute: (
-        engine: RefactorEngine,
+        engine: CodemodEngine,
         request: ConfiguredCodemodRunRequest,
         effectiveConfig: RefactorCodemodConfigMap[T]
     ) => Promise<ConfiguredCodemodExecutionResult>;
@@ -35,51 +50,154 @@ type ConfiguredCodemodExecutionResult = {
     summary: ConfiguredCodemodSummary;
 };
 
-function isNullableString(value: unknown): value is string | null {
-    return typeof value === "string" || value === null;
+const EMPTY_ALLOWED_KEYS = new Set<string>();
+
+const GLOBALVAR_TO_GLOBAL_ALLOWED_KEYS = new Set(["excludeNames"]);
+
+function isGmlSourceFilePath(candidatePath: string): boolean {
+    return path.extname(candidatePath.trim()).toLowerCase() === ".gml";
 }
 
-function normalizeLoopLengthHoistingConfig(
+function normalizeRepairEventCallbackOtherConfig(
     value: unknown,
     context: string
-): RefactorCodemodConfigEntry<"loopLengthHoisting"> {
+): RefactorCodemodConfigEntry<"repairEventCallbackOther"> {
+    if (value === false) {
+        return false;
+    }
+    assertRefactorConfigPlainObjectWithAllowedKeys(value, new Set(["sourcePath"]), context);
+    const record = value as { sourcePath?: unknown };
+    if (record.sourcePath !== undefined && typeof record.sourcePath !== "string") {
+        throw new TypeError(`${context}.sourcePath must be a string path`);
+    }
+    return { sourcePath: typeof record.sourcePath === "string" ? record.sourcePath : undefined };
+}
+
+function normalizeEmptyObjectConfig<
+    T extends
+        | "scientificNotation"
+        | "loopLengthHoisting"
+        | "repairLogicalNot"
+        | "repairArgumentSeparators"
+        | "repairTexturePrefetchGuard"
+        | "repairInvalidTexturePointerGuard"
+        | "repairAudioEmitterCreationGuard"
+        | "repairSpriteTextureUvResolution"
+>(value: unknown, context: string): RefactorCodemodConfigEntry<T> {
+    if (value === false) {
+        return false;
+    }
+    assertRefactorConfigPlainObjectWithAllowedKeys(value, EMPTY_ALLOWED_KEYS, context);
+    return {};
+}
+
+async function executeSingleFileTextCodemod(
+    engine: CodemodEngine,
+    request: ConfiguredCodemodRunRequest,
+    codemodId:
+        | "scientificNotation"
+        | "loopLengthHoisting"
+        | "repairLogicalNot"
+        | "repairArgumentSeparators"
+        | "repairTexturePrefetchGuard"
+        | "repairInvalidTexturePointerGuard"
+        | "repairAudioEmitterCreationGuard"
+        | "repairSpriteTextureUvResolution"
+        | "repairEventCallbackOther",
+    warningMessage: string,
+    transform: (
+        sourceText: string,
+        semantic: PartialSemanticAnalyzer | null
+    ) =>
+        Promise<Readonly<{ changed: boolean; outputText: string }>> | Readonly<{ changed: boolean; outputText: string }>
+): Promise<ConfiguredCodemodExecutionResult> {
+    const gmlSourceFilePaths = request.gmlFilePaths.filter((filePath) => isGmlSourceFilePath(filePath));
+
+    if (gmlSourceFilePaths.length === 0) {
+        return {
+            appliedFiles: new Map(),
+            summary: {
+                id: codemodId,
+                changed: false,
+                changedFiles: [],
+                warnings: [warningMessage],
+                errors: []
+            }
+        };
+    }
+
+    if (request.dryRun === false) {
+        Core.assertFunction(request.writeFile, "writeFile", {
+            errorMessage: `${codemodId} codemod requires writeFile when dryRun is false`
+        });
+    }
+
+    const appliedFiles = new Map<string, string>();
+    const changedFiles: Array<string> = [];
+    const semantic = engine.semantic;
+    let current = 0;
+    const total = gmlSourceFilePaths.length;
+    await Core.runSequentially(gmlSourceFilePaths, async (filePath) => {
+        if (request.onProgress) {
+            await request.onProgress({ current, total, filePath });
+        }
+        const sourceText = await request.readFile(filePath);
+        const result = await transform(sourceText, semantic);
+        if (result.changed) {
+            changedFiles.push(filePath);
+            if (request.dryRun === false && request.writeFile) {
+                await request.writeFile(filePath, result.outputText);
+                appliedFiles.set(filePath, "");
+            } else {
+                appliedFiles.set(filePath, result.outputText);
+            }
+        }
+        current++;
+    });
+
+    if (request.onProgress && total > 0) {
+        await request.onProgress({ current: total, total, filePath: "" });
+    }
+
+    return {
+        appliedFiles,
+        summary: {
+            id: codemodId,
+            changed: changedFiles.length > 0,
+            changedFiles,
+            warnings: [],
+            errors: []
+        }
+    };
+}
+
+function normalizeGlobalvarToGlobalConfig(
+    value: unknown,
+    context: string
+): RefactorCodemodConfigEntry<"globalvarToGlobal"> {
     if (value === false) {
         return false;
     }
 
-    const object = assertRefactorConfigPlainObject(value, context);
-    const allowedKeys = new Set(["functionSuffixes"]);
+    const object = assertRefactorConfigPlainObjectWithAllowedKeys(value, GLOBALVAR_TO_GLOBAL_ALLOWED_KEYS, context);
 
-    for (const key of Object.keys(object)) {
-        if (!allowedKeys.has(key)) {
-            throw new TypeError(`${context} contains unknown property ${JSON.stringify(key)}`);
-        }
-    }
-
-    if (object.functionSuffixes === undefined) {
+    if (object.excludeNames === undefined) {
         return {};
     }
 
-    const functionSuffixesObject = assertRefactorConfigPlainObject(
-        object.functionSuffixes,
-        `${context}.functionSuffixes`
-    );
-    const functionSuffixes: Record<string, string | null> = {};
-
-    for (const [functionName, suffixValue] of Object.entries(functionSuffixesObject)) {
-        if (isNullableString(suffixValue)) {
-            functionSuffixes[functionName] = suffixValue;
-            continue;
-        }
-
-        throw new TypeError(
-            `${context}.functionSuffixes.${functionName} must be a string or null, received ${typeof suffixValue}`
-        );
+    if (!Array.isArray(object.excludeNames)) {
+        throw new TypeError(`${context}.excludeNames must be an array of strings`);
     }
 
-    return {
-        functionSuffixes
-    };
+    const excludeNames: Array<string> = [];
+    for (const [index, entry] of object.excludeNames.entries()) {
+        if (typeof entry !== "string") {
+            throw new TypeError(`${context}.excludeNames[${String(index)}] must be a string, received ${typeof entry}`);
+        }
+        excludeNames.push(entry);
+    }
+
+    return { excludeNames };
 }
 
 function normalizeNamingConventionConfig(
@@ -89,41 +207,192 @@ function normalizeNamingConventionConfig(
     if (value === false) {
         return false;
     }
-
-    const object = assertRefactorConfigPlainObject(value, context);
-    const keys = Object.keys(object);
-
-    if (keys.length > 0) {
-        throw new TypeError(`${context} does not currently accept configuration properties`);
-    }
-
-    return {};
+    return normalizeNamingConventionPolicy(value as NamingConventionPolicy | undefined, context);
 }
 
 const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.freeze({
-    loopLengthHoisting: Object.freeze({
-        id: "loopLengthHoisting",
-        description: "Hoist repeated loop-length helper calls out of for-loop test expressions.",
-        normalizeConfig: normalizeLoopLengthHoistingConfig,
+    scientificNotation: Object.freeze({
+        id: "scientificNotation",
+        description: "Expand unsupported scientific-notation number literals into plain decimal literals.",
+        requiresSemanticProjectIndex: false,
+        normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
+        execute(
+            _engine: CodemodEngine,
+            request: ConfiguredCodemodRunRequest
+        ): Promise<ConfiguredCodemodExecutionResult> {
+            return executeSingleFileTextCodemod(
+                _engine,
+                request,
+                "scientificNotation",
+                "No .gml files were selected for scientific-notation migration.",
+                applyScientificNotationCodemod
+            );
+        }
+    }),
+    repairLogicalNot: Object.freeze({
+        id: "repairLogicalNot",
+        description: "Rewrite invalid logical 'not' and 'NOT' operators to '!'.",
+        requiresSemanticProjectIndex: false,
+        normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
+        execute(
+            _engine: CodemodEngine,
+            request: ConfiguredCodemodRunRequest
+        ): Promise<ConfiguredCodemodExecutionResult> {
+            return executeSingleFileTextCodemod(
+                _engine,
+                request,
+                "repairLogicalNot",
+                "No .gml files were selected for logical 'not' repair.",
+                applyRepairLogicalNotCodemod
+            );
+        }
+    }),
+    repairArgumentSeparators: Object.freeze({
+        id: "repairArgumentSeparators",
+        description: "Insert missing call argument separators (commas) where omitted.",
+        requiresSemanticProjectIndex: false,
+        normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
+        execute(
+            _engine: CodemodEngine,
+            request: ConfiguredCodemodRunRequest
+        ): Promise<ConfiguredCodemodExecutionResult> {
+            return executeSingleFileTextCodemod(
+                _engine,
+                request,
+                "repairArgumentSeparators",
+                "No .gml files were selected for argument separator repair.",
+                applyRepairArgumentSeparatorsCodemod
+            );
+        }
+    }),
+
+    repairTexturePrefetchGuard: Object.freeze({
+        id: "repairTexturePrefetchGuard",
+        description: "Prefetch texture pages when they are not ready before using their texture pointers.",
+        requiresSemanticProjectIndex: false,
+        normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
+        execute(
+            _engine: CodemodEngine,
+            request: ConfiguredCodemodRunRequest
+        ): Promise<ConfiguredCodemodExecutionResult> {
+            return executeSingleFileTextCodemod(
+                _engine,
+                request,
+                "repairTexturePrefetchGuard",
+                "No .gml files were selected for texture-prefetch guard repair.",
+                applyRepairTexturePrefetchGuardCodemod
+            );
+        }
+    }),
+
+    repairInvalidTexturePointerGuard: Object.freeze({
+        id: "repairInvalidTexturePointerGuard",
+        description: "Return a declared texture-info fallback when a texture pointer is not ready during startup.",
+        requiresSemanticProjectIndex: false,
+        normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
+        execute(
+            _engine: CodemodEngine,
+            request: ConfiguredCodemodRunRequest
+        ): Promise<ConfiguredCodemodExecutionResult> {
+            return executeSingleFileTextCodemod(
+                _engine,
+                request,
+                "repairInvalidTexturePointerGuard",
+                "No .gml files were selected for invalid-texture-pointer guard repair.",
+                applyRepairInvalidTexturePointerGuardCodemod
+            );
+        }
+    }),
+
+    repairAudioEmitterCreationGuard: Object.freeze({
+        id: "repairAudioEmitterCreationGuard",
+        description: "Defer audio-emitter creation until the HTML5 audio engine is initialized.",
+        requiresSemanticProjectIndex: false,
+        normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
+        execute(
+            _engine: CodemodEngine,
+            request: ConfiguredCodemodRunRequest
+        ): Promise<ConfiguredCodemodExecutionResult> {
+            return executeSingleFileTextCodemod(
+                _engine,
+                request,
+                "repairAudioEmitterCreationGuard",
+                "No .gml files were selected for audio-emitter creation guard repair.",
+                applyRepairAudioEmitterCreationGuardCodemod
+            );
+        }
+    }),
+
+    repairSpriteTextureUvResolution: Object.freeze({
+        id: "repairSpriteTextureUvResolution",
+        description: "Resolve sprite UVs before numeric texture-page handles in HTML5-compatible scr_get_uvs helpers.",
+        requiresSemanticProjectIndex: false,
+        normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
+        execute(
+            _engine: CodemodEngine,
+            request: ConfiguredCodemodRunRequest
+        ): Promise<ConfiguredCodemodExecutionResult> {
+            return executeSingleFileTextCodemod(
+                _engine,
+                request,
+                "repairSpriteTextureUvResolution",
+                "No .gml files were selected for sprite-texture UV resolution repair.",
+                applyRepairSpriteTextureUvResolutionCodemod
+            );
+        }
+    }),
+
+    repairEventCallbackOther: Object.freeze({
+        id: "repairEventCallbackOther",
+        description:
+            "Rewrite `other.<name>` references inside inline function expressions in event bodies to `self.<name>` so the closure reaches the event instance. Outside of inline callbacks the original `other` access is preserved because the GameMaker HTML5 runtime correctly supplies the calling instance for top-level event references.",
+        requiresSemanticProjectIndex: false,
+        normalizeConfig: (value: unknown, context: string) => normalizeRepairEventCallbackOtherConfig(value, context),
+        execute(
+            _engine: CodemodEngine,
+            request: ConfiguredCodemodRunRequest
+        ): Promise<ConfiguredCodemodExecutionResult> {
+            return executeSingleFileTextCodemod(
+                _engine,
+                request,
+                "repairEventCallbackOther",
+                "No .gml files were selected for event-callback `other` repair.",
+                (sourceText) => {
+                    const filePath = request.gmlFilePaths[0] ?? "";
+                    return applyRepairEventCallbackOtherCodemod(
+                        sourceText,
+                        { type: "Program" },
+                        { sourcePath: filePath }
+                    );
+                }
+            );
+        }
+    }),
+    globalvarToGlobal: Object.freeze({
+        id: "globalvarToGlobal",
+        description:
+            "Remove legacy `globalvar` declarations and replace all bare identifier references with `global.<name>`.",
+        requiresSemanticProjectIndex: false,
+        normalizeConfig: normalizeGlobalvarToGlobalConfig,
         async execute(
-            engine: RefactorEngine,
+            engine: CodemodEngine,
             request: ConfiguredCodemodRunRequest,
-            effectiveConfig: RefactorCodemodConfigMap["loopLengthHoisting"]
+            effectiveConfig: RefactorCodemodConfigMap["globalvarToGlobal"]
         ): Promise<ConfiguredCodemodExecutionResult> {
             if (request.gmlFilePaths.length === 0) {
                 return {
                     appliedFiles: new Map(),
                     summary: {
-                        id: "loopLengthHoisting",
+                        id: "globalvarToGlobal",
                         changed: false,
                         changedFiles: [],
-                        warnings: ["No .gml files were selected for loop-length hoisting."],
+                        warnings: ["No .gml files were selected for globalvar-to-global migration."],
                         errors: []
                     }
                 };
             }
 
-            const result = await engine.executeLoopLengthHoistingCodemod({
+            const result = await engine.executeGlobalvarToGlobalCodemod({
                 filePaths: request.gmlFilePaths,
                 readFile: request.readFile,
                 writeFile: request.writeFile,
@@ -134,7 +403,7 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
             return {
                 appliedFiles: result.applied,
                 summary: {
-                    id: "loopLengthHoisting",
+                    id: "globalvarToGlobal",
                     changed: result.changedFiles.length > 0,
                     changedFiles: result.changedFiles.map((entry) => entry.path),
                     warnings: [],
@@ -143,19 +412,38 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
             };
         }
     }),
+
+    loopLengthHoisting: Object.freeze({
+        id: "loopLengthHoisting",
+        description: "Hoist array_length(...) calls from safe for-loop conditions into local length variables.",
+        requiresSemanticProjectIndex: false,
+        normalizeConfig: (value: unknown, context: string) => normalizeEmptyObjectConfig(value, context),
+        execute(
+            _engine: CodemodEngine,
+            request: ConfiguredCodemodRunRequest
+        ): Promise<ConfiguredCodemodExecutionResult> {
+            return executeSingleFileTextCodemod(
+                _engine,
+                request,
+                "loopLengthHoisting",
+                "No .gml files were selected for loop-length hoisting.",
+                applyLoopLengthHoistingCodemod
+            );
+        }
+    }),
     namingConvention: Object.freeze({
         id: "namingConvention",
-        description: "Plan and apply naming-policy-driven renames using namingConventionPolicy.",
+        description: "Plan and apply naming-policy-driven renames.",
+        requiresSemanticProjectIndex: true,
         normalizeConfig: normalizeNamingConventionConfig,
         async execute(
-            engine: RefactorEngine,
+            engine: CodemodEngine,
             request: ConfiguredCodemodRunRequest,
             effectiveConfig: RefactorCodemodConfigMap["namingConvention"]
         ): Promise<ConfiguredCodemodExecutionResult> {
             const result = await executeNamingConventionCodemod(engine, {
                 projectRoot: request.projectRoot,
                 config: {
-                    ...request.config,
                     codemods: {
                         ...request.config.codemods,
                         namingConvention: effectiveConfig
@@ -173,9 +461,8 @@ const REGISTERED_CODEMOD_DEFINITIONS: RegisteredCodemodDefinitions = Object.free
             });
 
             const changedFiles = new Set<string>(result.applied.keys());
-            for (const fileRename of result.plan.workspace.fileRenames) {
-                changedFiles.add(fileRename.oldPath);
-                changedFiles.add(fileRename.newPath);
+            for (const touchedPath of result.plan.workspace.collectChangedFilePaths()) {
+                changedFiles.add(touchedPath);
             }
 
             return {
@@ -218,6 +505,16 @@ export function normalizeRegisteredCodemodConfig<T extends RefactorCodemodId>(
 }
 
 /**
+ * Return the codemod ids that require an up-to-date semantic project index
+ * before they execute.
+ */
+export function listSemanticProjectIndexDependentCodemodIds(): Array<RefactorCodemodId> {
+    return Object.values(REGISTERED_CODEMOD_DEFINITIONS)
+        .filter((definition) => definition.requiresSemanticProjectIndex)
+        .map((definition) => definition.id);
+}
+
+/**
  * Resolve the configured/selected state for all registered codemods.
  */
 export function listConfiguredCodemods(
@@ -246,7 +543,7 @@ export function listConfiguredCodemods(
  * Execute the configured codemod set in stable registry order.
  */
 export async function executeRegisteredCodemods(
-    engine: RefactorEngine,
+    engine: CodemodEngine,
     request: ConfiguredCodemodRunRequest
 ): Promise<ConfiguredCodemodRunResult> {
     Core.assertArray(request.targetPaths, {
@@ -264,6 +561,9 @@ export async function executeRegisteredCodemods(
 
     await Core.runSequentially(configuredSelections, async (selection) => {
         const definition = getRegisteredCodemodDefinition(selection.id);
+        if (request.onBeforeCodemod) {
+            await request.onBeforeCodemod(selection.id);
+        }
         const result = await definition.execute(engine, request, selection.effectiveConfig);
 
         for (const [filePath, content] of result.appliedFiles.entries()) {
@@ -271,6 +571,12 @@ export async function executeRegisteredCodemods(
         }
 
         summaries.push(result.summary);
+
+        if (request.onAfterCodemod) {
+            await request.onAfterCodemod(result.summary, {
+                readFile: request.readFile
+            });
+        }
     });
 
     return {

@@ -293,21 +293,21 @@ export default class GameMakerLanguageParserListener extends antlr4.tree.ParseTr
 	}
 
 
-	// Enter a parse tree produced by GameMakerLanguageParser#IdentifierLValue.
-	enterIdentifierLValue(ctx) {
-	}
-
-	// Exit a parse tree produced by GameMakerLanguageParser#IdentifierLValue.
-	exitIdentifierLValue(ctx) {
-	}
-
-
 	// Enter a parse tree produced by GameMakerLanguageParser#NewLValue.
 	enterNewLValue(ctx) {
 	}
 
 	// Exit a parse tree produced by GameMakerLanguageParser#NewLValue.
 	exitNewLValue(ctx) {
+	}
+
+
+	// Enter a parse tree produced by GameMakerLanguageParser#IdentifierLValue.
+	enterIdentifierLValue(ctx) {
+	}
+
+	// Exit a parse tree produced by GameMakerLanguageParser#IdentifierLValue.
+	exitIdentifierLValue(ctx) {
 	}
 
 
@@ -326,6 +326,15 @@ export default class GameMakerLanguageParserListener extends antlr4.tree.ParseTr
 
 	// Exit a parse tree produced by GameMakerLanguageParser#ParenthesizedLValue.
 	exitParenthesizedLValue(ctx) {
+	}
+
+
+	// Enter a parse tree produced by GameMakerLanguageParser#StructLiteralLValue.
+	enterStructLiteralLValue(ctx) {
+	}
+
+	// Exit a parse tree produced by GameMakerLanguageParser#StructLiteralLValue.
+	exitStructLiteralLValue(ctx) {
 	}
 
 
@@ -731,6 +740,15 @@ export default class GameMakerLanguageParserListener extends antlr4.tree.ParseTr
 
 	// Exit a parse tree produced by GameMakerLanguageParser#identifier.
 	exitIdentifier(ctx) {
+	}
+
+
+	// Enter a parse tree produced by GameMakerLanguageParser#memberIdentifier.
+	enterMemberIdentifier(ctx) {
+	}
+
+	// Exit a parse tree produced by GameMakerLanguageParser#memberIdentifier.
+	exitMemberIdentifier(ctx) {
 	}
 
 

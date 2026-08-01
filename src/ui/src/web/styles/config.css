@@ -1,0 +1,399 @@
+.config-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-lg);
+}
+
+.config-editor-layout,
+.config-editor-layout--raw {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-lg);
+}
+
+.config-builder-section,
+.config-tool-metadata {
+  padding: var(--gm-space-lg);
+  border: 1px solid var(--gm-border);
+  border-radius: var(--gm-radius-md);
+  background: var(--gm-surface-elevated);
+  box-shadow: var(--gm-shadow);
+}
+
+.config-section-heading,
+.config-section-heading--split {
+  display: flex;
+  gap: var(--gm-space-md);
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: var(--gm-space-md);
+}
+
+.config-section-heading-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-xs);
+  min-width: 0;
+}
+
+.config-raw-copy-button {
+  flex-shrink: 0;
+}
+
+.config-section-heading h3 {
+  margin: 0;
+  color: var(--gm-text);
+  font-size: var(--gm-text-lg);
+}
+
+.config-section-heading p,
+.config-tool-group p,
+.config-tool-details p {
+  margin: var(--gm-space-xs) 0 0;
+  color: var(--gm-text-secondary);
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-normal);
+}
+
+.config-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--gm-space-md);
+}
+
+.config-field,
+.config-inline-field,
+.config-filter-field,
+.config-json-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-sm);
+  min-width: 0;
+}
+
+.config-field {
+  padding: var(--gm-space-md);
+  border: 1px solid var(--gm-border-subtle);
+  border-radius: var(--gm-radius-sm);
+  background: var(--gm-surface-inset);
+}
+
+.config-field--toggle {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.config-field strong,
+.config-rule-main strong,
+.config-toggle-label strong {
+  color: var(--gm-text);
+  font-size: var(--gm-text-sm);
+}
+
+.config-field small,
+.config-toggle-label small {
+  display: block;
+  margin-top: var(--gm-space-xs);
+  color: var(--gm-text-secondary);
+  font-size: var(--gm-text-xs);
+  line-height: var(--gm-leading-normal);
+}
+
+.config-field input,
+.config-field select,
+.config-inline-field select,
+.config-filter-field input,
+.config-filter-field select,
+.config-json-field textarea,
+.config-raw-textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--gm-border);
+  border-radius: var(--gm-radius-sm);
+  background: var(--gm-surface-inset);
+  color: var(--gm-text);
+  font: inherit;
+}
+
+.config-field input,
+.config-field select,
+.config-inline-field select,
+.config-filter-field input,
+.config-filter-field select {
+  min-height: var(--gm-height-md);
+  padding: var(--gm-space-sm) var(--gm-space-sm);
+}
+
+.config-field input[type="checkbox"],
+.config-toggle-label input[type="checkbox"] {
+  width: var(--gm-icon-md);
+  height: var(--gm-icon-md);
+  min-height: var(--gm-icon-md);
+}
+
+.config-filter-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(150px, 0.7fr) minmax(130px, 0.6fr) auto;
+  gap: var(--gm-space-sm);
+  align-items: end;
+  margin-bottom: var(--gm-space-md);
+}
+
+.config-filter-field span,
+.config-inline-field span,
+.config-json-field span {
+  color: var(--gm-text-subdued);
+  font-size: var(--gm-text-xs);
+  font-weight: var(--gm-weight-extrabold);
+  text-transform: uppercase;
+}
+
+.config-rule-table,
+.config-codemod-table,
+.config-tool-metadata {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-sm);
+}
+
+.config-rule-table-header,
+.config-rule-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(230px, auto);
+  gap: var(--gm-space-md);
+  align-items: center;
+}
+
+.config-rule-table-header {
+  color: var(--gm-text-subdued);
+  font-size: var(--gm-text-xs);
+  font-weight: var(--gm-weight-extrabold);
+  text-transform: uppercase;
+}
+
+.config-rule-row,
+.config-codemod-row,
+.config-tool-group,
+.config-tool-details {
+  padding: var(--gm-space-md);
+  border: 1px solid var(--gm-border-subtle);
+  border-radius: var(--gm-radius-sm);
+  background: var(--gm-surface-inset);
+}
+
+.config-rule-main {
+  min-width: 0;
+}
+
+.config-rule-title {
+  display: flex;
+  gap: var(--gm-space-sm);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.config-rule-description {
+  display: block;
+  margin-top: var(--gm-space-xs);
+  color: var(--gm-text-secondary);
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-normal);
+}
+
+.config-rule-fixable-badge .gm-badge {
+  padding: var(--gm-space-2xs) var(--gm-space-xs);
+  font-size: var(--gm-text-xs);
+  line-height: var(--gm-leading-none);
+}
+
+.config-badge-row {
+  display: inline-flex;
+  gap: var(--gm-space-sm);
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: var(--gm-space-sm);
+}
+
+.config-rule-level-selector {
+  justify-self: end;
+}
+
+.config-rule-level-selector > .config-rule-level-error[aria-pressed="true"] {
+  background: var(--gm-error-surface);
+  color: var(--gm-error-text);
+}
+
+.config-rule-level-selector > .config-rule-level-warn[aria-pressed="true"] {
+  background: var(--gm-warning-surface);
+  color: var(--gm-warning-text);
+}
+
+.config-inline-json,
+.config-code-block {
+  margin: var(--gm-space-sm) 0 0;
+  padding: var(--gm-space-sm);
+  border: 1px solid var(--gm-border-subtle);
+  border-radius: var(--gm-radius-sm);
+  background: var(--gm-surface-inset);
+  color: var(--gm-text-secondary);
+  font-family: var(--gm-font-mono);
+  font-size: var(--gm-text-xs);
+  line-height: var(--gm-leading-normal);
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.config-builder-section .gm-collapsible__summary,
+.config-codemod-row .gm-collapsible__summary,
+.config-tool-group summary,
+.config-tool-details summary {
+  display: flex;
+  gap: var(--gm-space-md);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.config-toggle-label {
+  display: flex;
+  gap: var(--gm-space-sm);
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.config-json-field {
+  margin-top: var(--gm-space-md);
+}
+
+.config-json-field textarea,
+.config-raw-textarea {
+  min-height: 150px;
+  padding: var(--gm-space-md);
+  font-family: var(--gm-font-mono);
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-relaxed);
+  resize: vertical;
+}
+
+.config-raw-textarea {
+  min-height: 560px;
+}
+
+.config-save-actions {
+  display: flex;
+  gap: var(--gm-space-sm);
+  flex-wrap: wrap;
+}
+
+.config-validation {
+  margin: 0;
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-normal);
+}
+
+.config-validation.is-valid {
+  color: var(--gm-success-text);
+}
+
+.config-validation.is-invalid {
+  color: var(--gm-error-text);
+}
+
+.config-setup-banner {
+  padding: var(--gm-space-lg);
+  border-radius: var(--gm-radius-md);
+  background: var(--gm-surface-elevated);
+  border: 1px dashed var(--gm-border-strong);
+  display: flex;
+  gap: var(--gm-space-md);
+  justify-content: space-between;
+  align-items: center;
+}
+
+.config-setup-banner h3 {
+  margin: 0;
+  font-size: var(--gm-text-lg);
+  color: var(--gm-text);
+}
+
+.config-setup-banner p {
+  margin: var(--gm-space-xs) 0 0;
+  color: var(--gm-text-secondary);
+  font-size: var(--gm-text-sm);
+}
+
+.config-tool-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-sm);
+  margin: var(--gm-space-sm) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.config-tool-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.5fr) minmax(0, 1fr);
+  gap: var(--gm-space-sm);
+  padding-top: var(--gm-space-sm);
+  border-top: 1px solid var(--gm-border-subtle);
+}
+
+.config-tool-name {
+  color: var(--gm-text);
+  font-family: var(--gm-font-mono);
+  font-size: var(--gm-text-sm);
+}
+
+.config-tool-description {
+  color: var(--gm-text-secondary);
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-normal);
+}
+
+.config-empty {
+  margin: 0;
+  padding: var(--gm-space-md);
+  color: var(--gm-text-secondary);
+  font-size: var(--gm-text-sm);
+}
+
+
+@media (max-width: 760px) {
+  .config-filter-row,
+  .config-rule-table-header,
+  .config-rule-row,
+  .config-tool-row {
+    grid-template-columns: 1fr;
+  }
+
+  .config-section-heading,
+  .config-section-heading--split,
+  .config-setup-banner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .config-rule-level-selector {
+    width: 100%;
+  }
+}
+
+.config-builder-section .gm-collapsible__summary {
+  justify-content: flex-start;
+}
+
+.config-builder-section .gm-collapsible__summary > .config-section-heading,
+.config-builder-section .gm-collapsible__summary > .config-section-heading--split {
+  margin-bottom: 0;
+  flex-grow: 1;
+}
+
+.config-builder-section .gm-collapsible[open] .gm-collapsible__summary {
+  margin-bottom: var(--gm-space-md);
+}
+
+.config-builder-section .gm-collapsible__summary:focus-visible {
+  border-radius: var(--gm-radius-sm);
+}
+

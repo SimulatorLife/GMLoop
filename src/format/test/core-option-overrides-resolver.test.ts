@@ -1,20 +1,24 @@
+/**
+ * Regression tests for the core-option-overrides module.
+ *
+ * Validates that the formatter's Prettier-core option overrides are locked to
+ * safe defaults. The constant DEFAULT_CORE_OPTION_OVERRIDES is the canonical
+ * source of truth — it is frozen and directly imported at the single call site
+ * in format-entry.ts, eliminating a prior null-op thunk layer.
+ */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import {
-    DEFAULT_CORE_OPTION_OVERRIDES,
-    resolveCoreOptionOverrides,
-    restoreDefaultCoreOptionOverridesResolver,
-    setCoreOptionOverridesResolver
-} from "../src/options/core-option-overrides.js";
-import { TRAILING_COMMA } from "../src/options/trailing-comma-option.js";
+import { DEFAULT_CORE_OPTION_OVERRIDES } from "../src/options/core-option-overrides.js";
 
-void describe("resolveCoreOptionOverrides", () => {
-    void it("returns the default override map when no resolver is registered", () => {
-        const overrides = resolveCoreOptionOverrides();
+void describe("DEFAULT_CORE_OPTION_OVERRIDES", () => {
+    void it("is deeply frozen", () => {
+        assert.ok(Object.isFrozen(DEFAULT_CORE_OPTION_OVERRIDES));
+        assert.ok(Object.isFrozen(DEFAULT_CORE_OPTION_OVERRIDES));
+    });
 
-        assert.strictEqual(overrides, DEFAULT_CORE_OPTION_OVERRIDES);
-        assert.deepEqual(Object.keys(overrides).toSorted(), [
+    void it("contains exactly the expected override keys", () => {
+        assert.deepEqual(Object.keys(DEFAULT_CORE_OPTION_OVERRIDES).toSorted(), [
             "arrowParens",
             "htmlWhitespaceSensitivity",
             "jsxSingleQuote",
@@ -24,70 +28,18 @@ void describe("resolveCoreOptionOverrides", () => {
         ]);
     });
 
-    void it("allows hosts to replace opinionated values via the resolver hook", () => {
-        try {
-            setCoreOptionOverridesResolver(() => ({
-                trailingComma: TRAILING_COMMA.ES5,
-                htmlWhitespaceSensitivity: "ignore"
-            }));
-
-            const overrides = resolveCoreOptionOverrides();
-
-            assert.equal(overrides.trailingComma, TRAILING_COMMA.ES5);
-            assert.equal(overrides.htmlWhitespaceSensitivity, "ignore");
-            assert.equal(overrides.arrowParens, "always");
-            assert.equal(overrides.jsxSingleQuote, false);
-        } finally {
-            restoreDefaultCoreOptionOverridesResolver();
-        }
+    void it("locks trailingComma to 'none' (GML positional commas)", () => {
+        assert.equal(DEFAULT_CORE_OPTION_OVERRIDES.trailingComma, "none");
     });
 
-    void it("throws when the resolver returns an invalid trailing comma override", () => {
-        try {
-            assert.throws(
-                () =>
-                    setCoreOptionOverridesResolver(() => ({
-                        trailingComma: "ALWAYS"
-                    })),
-                {
-                    name: "TypeError",
-                    message: /Trailing comma override must be one of/
-                }
-            );
-        } finally {
-            restoreDefaultCoreOptionOverridesResolver();
-        }
+    void it("locks arrowParens to 'always' (no GML arrow functions)", () => {
+        assert.equal(DEFAULT_CORE_OPTION_OVERRIDES.arrowParens, "always");
     });
 
-    void it("treats null or undefined entries as opt-outs so user configs can apply", () => {
-        try {
-            setCoreOptionOverridesResolver(() => ({
-                trailingComma: null,
-                arrowParens: undefined
-            }));
-
-            const overrides = resolveCoreOptionOverrides();
-
-            assert.ok(!Object.hasOwn(overrides, "trailingComma"));
-            assert.ok(!Object.hasOwn(overrides, "arrowParens"));
-            assert.equal(overrides.singleAttributePerLine, false);
-        } finally {
-            restoreDefaultCoreOptionOverridesResolver();
-        }
-    });
-
-    void it("falls back to the default map when the resolver returns invalid data", () => {
-        try {
-            setCoreOptionOverridesResolver(() => ({
-                trailingComma: 42,
-                proseWrap: "ALWAYS"
-            }));
-
-            const overrides = resolveCoreOptionOverrides();
-
-            assert.strictEqual(overrides, DEFAULT_CORE_OPTION_OVERRIDES);
-        } finally {
-            restoreDefaultCoreOptionOverridesResolver();
-        }
+    void it("locks JSX/HTML/prose options to defaults", () => {
+        assert.equal(DEFAULT_CORE_OPTION_OVERRIDES.singleAttributePerLine, false);
+        assert.equal(DEFAULT_CORE_OPTION_OVERRIDES.jsxSingleQuote, false);
+        assert.equal(DEFAULT_CORE_OPTION_OVERRIDES.proseWrap, "preserve");
+        assert.equal(DEFAULT_CORE_OPTION_OVERRIDES.htmlWhitespaceSensitivity, "css");
     });
 });

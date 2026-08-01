@@ -7,8 +7,16 @@
 import { Core } from "@gmloop/core";
 
 import { groupOccurrencesByFile } from "./occurrence-analysis.js";
-import type { BatchRenamePlanSummary, RenamePlanSummary, SymbolOccurrence } from "./types.js";
-import { extractSymbolName } from "./validation-utils.js";
+import { extractSymbolName } from "./rename/index.js";
+import type {
+    BatchRenamePlanSummary,
+    BatchRenameValidation,
+    HotReloadCascadeResult,
+    RenameImpactAnalysis,
+    RenameImpactSummary,
+    RenamePlanSummary,
+    SymbolOccurrence
+} from "./types.js";
 import type { WorkspaceEdit } from "./workspace-edit.js";
 
 /**
@@ -37,6 +45,248 @@ function appendErrorsAndWarnings(
             lines.push(`    ⚠ ${warning}`);
         }
     }
+}
+
+/**
+ * Structured hot-reload report extracted from a `ValidationSummary`.
+ *
+ * Exists to break the Law-of-Demeter violation where callers navigate
+ * `validation.hotReload` repeatedly to access safety details.
+ *
+ * @example
+ * const report = buildHotReloadReport(validation);
+ * if (report) {
+ *     console.log(`Safe: ${report.safe}`);
+ *     console.log(`Reason: ${report.reason}`);
+ * }
+ */
+export type RenameHotReloadReport = Readonly<{
+    safe: boolean;
+    reason: string;
+    requiresRestart: boolean;
+    canAutoFix: boolean;
+    suggestions: ReadonlyArray<string>;
+}>;
+
+/**
+ * Build a structured hot-reload report from a `ValidationSummary`.
+ *
+ * Returns `null` when the validation has no hot-reload safety data
+ * (i.e., `validation.hotReload` is undefined), allowing callers to
+ * handle the absent case explicitly rather than navigating the chain
+ * repeatedly.
+ *
+ * @param validation - Validation summary that may contain hot-reload details
+ * @returns Structured report, or null when no hot-reload data exists
+ *
+ * @example
+ * const report = buildHotReloadReport(plan.hotReload);
+ * if (report === null) {
+ *     // Hot reload validation was not requested
+ * } else if (report.safe) {
+ *     // Safe to hot reload
+ * } else {
+ *     console.log(`Reason: ${report.reason}`);
+ * }
+ */
+export function buildHotReloadReport(
+    validation: Readonly<{
+        valid: boolean;
+        errors: ReadonlyArray<string>;
+        warnings: ReadonlyArray<string>;
+        hotReload?: RenameHotReloadReport;
+    }> | null
+): RenameHotReloadReport | null {
+    if (validation === null || validation === undefined) {
+        return null;
+    }
+    if (validation.hotReload === undefined) {
+        return null;
+    }
+    return validation.hotReload;
+}
+
+/**
+ * Structured view of a batch plan's `BatchRenameValidation`.
+ *
+ * Exists to break the Law-of-Demeter violation where callers navigate
+ * `plan.batchValidation.{valid,errors,warnings,conflictingSets}`
+ * repeatedly inside the batch preview formatter. Wrapping the sub-object
+ * in a dedicated type gives downstream code a single immediate neighbour
+ * to talk to and keeps the formatter focused on presentation.
+ */
+export type BatchValidationReport = Readonly<{
+    valid: boolean;
+    errors: ReadonlyArray<string>;
+    warnings: ReadonlyArray<string>;
+    conflictingSets: ReadonlyArray<ReadonlyArray<string>>;
+}>;
+
+/**
+ * Build a structured view of the `BatchRenameValidation` attached to a
+ * batch rename plan.
+ *
+ * The returned value mirrors the shape of `plan.batchValidation` but is
+ * exposed as a named, frozen projection so callers do not have to
+ * reach through `plan.batchValidation.*` chains. The helper intentionally
+ * does no validation work of its own: it is a structural adapter that
+ * preserves the existing batch-validation contract verbatim.
+ *
+ * @param plan - Batch rename plan whose batch-validation should be exposed
+ * @returns Structured view of the plan's `BatchRenameValidation`
+ *
+ * @example
+ * const batchValidation = buildBatchValidationReport(plan);
+ * if (!batchValidation.valid) {
+ *     for (const error of batchValidation.errors) {
+ *         console.error(error);
+ *     }
+ * }
+ */
+export function buildBatchValidationReport(plan: BatchRenamePlanSummary): BatchValidationReport {
+    return {
+        valid: plan.batchValidation.valid,
+        errors: plan.batchValidation.errors,
+        warnings: plan.batchValidation.warnings,
+        conflictingSets: plan.batchValidation.conflictingSets
+    };
+}
+
+/**
+ * Build a hot-reload dependency cascade view for a batch rename plan.
+ *
+ * Returns `null` when the plan has no cascade result (e.g., the batch
+ * did not request hot-reload cascade analysis), allowing callers to
+ * handle the absent case explicitly rather than navigating the
+ * `plan.cascadeResult` chain repeatedly.
+ *
+ * The returned value is the existing `HotReloadCascadeResult`; summary
+ * counters live on its `metadata` field, so downstream code reads
+ * `cascade.metadata.totalSymbols` and friends directly.
+ *
+ * @param plan - Batch rename plan that may carry a cascade result
+ * @returns The cascade result, or null when no cascade exists
+ *
+ * @example
+ * const cascade = buildCascadeReport(plan);
+ * if (cascade !== null) {
+ *     console.log(`Symbols to reload: ${cascade.metadata.totalSymbols}`);
+ * }
+ */
+export function buildCascadeReport(plan: BatchRenamePlanSummary): HotReloadCascadeResult | null {
+    return plan.cascadeResult;
+}
+
+/**
+ * Structured view of a batch plan's hot-reload validation summary.
+ *
+ * Mirrors the fields `formatBatchRenamePlanReport` previously reached
+ * through `plan.hotReload.{valid,errors,warnings}` chains. Exists as a
+ * dedicated type so the formatter can talk to a single immediate
+ * neighbour instead of repeatedly walking through `plan.hotReload`.
+ */
+export type BatchHotReloadReport = Readonly<{
+    valid: boolean;
+    errors: ReadonlyArray<string>;
+    warnings: ReadonlyArray<string>;
+}>;
+
+/**
+ * Build a structured view of a batch plan's hot-reload validation.
+ *
+ * Returns `null` when the plan has no hot-reload validation attached
+ * (i.e., `plan.hotReload === null`), letting callers branch on the
+ * absent case explicitly rather than walking `plan.hotReload` chains.
+ *
+ * @param plan - Batch rename plan that may carry hot-reload data
+ * @returns Structured hot-reload report, or null when not present
+ *
+ * @example
+ * const hotReload = buildBatchHotReloadReport(plan);
+ * if (hotReload !== null) {
+ *     console.log(`Status: ${hotReload.valid ? "SAFE" : "UNSAFE"}`);
+ * }
+ */
+export function buildBatchHotReloadReport(plan: BatchRenamePlanSummary): BatchHotReloadReport | null {
+    if (plan.hotReload === null) {
+        return null;
+    }
+    return {
+        valid: plan.hotReload.valid,
+        errors: plan.hotReload.errors,
+        warnings: plan.hotReload.warnings
+    };
+}
+
+/**
+ * Structured view of a single rename impact summary.
+ *
+ * Exists to break the Law-of-Demeter violation where callers reach
+ * through `analysis.summary.*` chains (for example
+ * `plan.analysis.summary.totalOccurrences` or
+ * `analysis.summary.affectedFiles`) to read impact metrics inside the
+ * rename preview formatters. Promoting the summary to a facaded
+ * projection gives every formatter and downstream helper a single
+ * immediate neighbour to talk to instead of walking three to four
+ * segments deep, and preserves the existing field shape so the
+ * formatter output stays byte-for-byte equivalent.
+ *
+ * The type deliberately mirrors the entire `RenameImpactSummary` surface
+ * — the formatters surface nine fields today (symbol id, old/new names,
+ * affected files, occurrence counts, definition/reference counts, hot
+ * reload flag, dependent symbols), and the facade keeps every one of
+ * them rather than hiding any. That keeps the refactor tightly scoped
+ * and prevents silent drift if a future field is added to the
+ * underlying summary without updating the formatter.
+ */
+export type RenameImpactReport = Readonly<RenameImpactSummary>;
+
+/**
+ * Build a structured view of a rename impact summary.
+ *
+ * Returns the summary attached to a `RenameImpactAnalysis` as a named,
+ * read-only projection. The helper exists for the same reason as the
+ * sibling facade helpers (`buildHotReloadReport`,
+ * `buildBatchValidationReport`, `buildCascadeReport`,
+ * `buildBatchHotReloadReport`): callers should not have to repeat
+ * `analysis.summary.X` four-segment walks across formatters and CLI
+ * integrations. The adapter performs no validation work of its own —
+ * `summary` is a required field on `RenameImpactAnalysis`, so the
+ * absent case cannot occur — it just renames the relationship so the
+ * call site speaks a single neighbour's name.
+ *
+ * The returned value is `Readonly<RenameImpactSummary>`: every input
+ * field is copied into the projection so that subsequent mutations of
+ * the underlying analysis (e.g., when the engine stages additional
+ * occurrences after the report is rendered) cannot retroactively
+ * change the formatter's captured snapshot.
+ *
+ * @param analysis - Rename impact analysis whose summary should be exposed
+ * @returns Structured view of the analysis's `RenameImpactSummary`
+ *
+ * @example
+ * const impact = buildRenameImpactReport(plan.analysis);
+ * console.log(`${impact.oldName} → ${impact.newName}`);
+ * console.log(`${impact.totalOccurrences} occurrences across ${impact.affectedFiles.length} files`);
+ *
+ * @example
+ * for (const [, analysis] of plan.impactAnalyses) {
+ *     const impact = buildRenameImpactReport(analysis);
+ *     lines.push(`${impact.oldName} → ${impact.newName}: ${impact.totalOccurrences} occurrences`);
+ * }
+ */
+export function buildRenameImpactReport(analysis: RenameImpactAnalysis): RenameImpactReport {
+    return {
+        symbolId: analysis.summary.symbolId,
+        oldName: analysis.summary.oldName,
+        newName: analysis.summary.newName,
+        affectedFiles: analysis.summary.affectedFiles,
+        totalOccurrences: analysis.summary.totalOccurrences,
+        definitionCount: analysis.summary.definitionCount,
+        referenceCount: analysis.summary.referenceCount,
+        hotReloadRequired: analysis.summary.hotReloadRequired,
+        dependentSymbols: analysis.summary.dependentSymbols
+    };
 }
 
 /**
@@ -174,16 +424,23 @@ export function generateRenamePreview(workspace: WorkspaceEdit, oldName: string,
  * //   Requires Restart: No
  */
 export function formatRenamePlanReport(plan: RenamePlanSummary): string {
+    // Talk to the plan's sub-objects through their dedicated facade helpers
+    // so this function only ever addresses one immediate neighbour at a
+    // time. `buildRenameImpactReport` collapses the
+    // `plan.analysis.summary.*` four-segment walk into a single
+    // `impact.field` access, mirroring how `buildHotReloadReport`
+    // smooths the `plan.hotReload.*` chain.
+    const impact = buildRenameImpactReport(plan.analysis);
     const title = "Rename Plan Report";
-    const lines: Array<string> = [title, "=".repeat(title.length), ""];
 
-    // Extract the impact summary to avoid repeated deep-navigation through plan.analysis.summary.*
-    const impactSummary = plan.analysis.summary;
-    lines.push(
-        `Symbol: ${impactSummary.oldName} → ${impactSummary.newName}`,
+    const lines: Array<string> = [
+        title,
+        "=".repeat(title.length),
+        "",
+        `Symbol: ${impact.oldName} → ${impact.newName}`,
         `Status: ${plan.validation.valid ? "VALID" : "INVALID"}`,
         ""
-    );
+    ];
 
     if (!plan.validation.valid) {
         lines.push("Validation Errors:");
@@ -203,12 +460,12 @@ export function formatRenamePlanReport(plan: RenamePlanSummary): string {
 
     lines.push(
         "Impact Summary:",
-        `  Total Occurrences: ${impactSummary.totalOccurrences}`,
-        `  Definitions: ${impactSummary.definitionCount}`,
-        `  References: ${impactSummary.referenceCount}`,
-        `  Affected Files: ${impactSummary.affectedFiles.length}`,
-        `  Hot Reload Required: ${impactSummary.hotReloadRequired ? "Yes" : "No"}`,
-        `  Dependent Symbols: ${impactSummary.dependentSymbols.length}`,
+        `  Total Occurrences: ${impact.totalOccurrences}`,
+        `  Definitions: ${impact.definitionCount}`,
+        `  References: ${impact.referenceCount}`,
+        `  Affected Files: ${impact.affectedFiles.length}`,
+        `  Hot Reload Required: ${impact.hotReloadRequired ? "Yes" : "No"}`,
+        `  Dependent Symbols: ${impact.dependentSymbols.length}`,
         ""
     );
 
@@ -241,19 +498,18 @@ export function formatRenamePlanReport(plan: RenamePlanSummary): string {
 
     if (plan.hotReload) {
         lines.push(`Hot Reload Status: ${plan.hotReload.valid ? "SAFE" : "UNSAFE"}`);
-        if (plan.hotReload.hotReload) {
-            // Extract the hot-reload safety details to avoid the confusingly
-            // repetitive plan.hotReload.hotReload.* deep-navigation chain.
-            const hotReloadDetails = plan.hotReload.hotReload;
+
+        const hotReloadReport = buildHotReloadReport(plan.hotReload);
+        if (hotReloadReport !== null) {
             lines.push(
-                `  Reason: ${hotReloadDetails.reason}`,
-                `  Requires Restart: ${hotReloadDetails.requiresRestart ? "Yes" : "No"}`,
-                `  Can Auto-Fix: ${hotReloadDetails.canAutoFix ? "Yes" : "No"}`
+                `  Reason: ${hotReloadReport.reason}`,
+                `  Requires Restart: ${hotReloadReport.requiresRestart ? "Yes" : "No"}`,
+                `  Can Auto-Fix: ${hotReloadReport.canAutoFix ? "Yes" : "No"}`
             );
 
-            if (hotReloadDetails.suggestions.length > 0) {
+            if (hotReloadReport.suggestions.length > 0) {
                 lines.push("  Suggestions:");
-                for (const suggestion of hotReloadDetails.suggestions) {
+                for (const suggestion of hotReloadReport.suggestions) {
                     lines.push(`    • ${suggestion}`);
                 }
             }
@@ -282,35 +538,44 @@ export function formatRenamePlanReport(plan: RenamePlanSummary): string {
  * console.log(report);
  */
 export function formatBatchRenamePlanReport(plan: BatchRenamePlanSummary): string {
+    // Talk to the plan's sub-objects through their dedicated facade helpers
+    // so this function only ever addresses one immediate neighbour at a
+    // time. The helpers also normalize nullable sub-objects (cascade and
+    // hot-reload) into explicit `null` returns, letting the formatter
+    // branch on the absent case without repeated `plan.?.?.?` walks.
+    const batchValidation = buildBatchValidationReport(plan);
+    const cascade = buildCascadeReport(plan);
+    const hotReload = buildBatchHotReloadReport(plan);
+
     const title = "Batch Rename Plan Report";
     const lines: Array<string> = [
         title,
         "=".repeat(title.length),
         "",
-        `Status: ${plan.batchValidation.valid ? "VALID" : "INVALID"}`,
+        `Status: ${batchValidation.valid ? "VALID" : "INVALID"}`,
         `Total Renames: ${plan.impactAnalyses.size}`,
         ""
     ];
 
-    if (!plan.batchValidation.valid) {
+    if (!batchValidation.valid) {
         lines.push("Batch Validation Errors:");
-        for (const error of plan.batchValidation.errors) {
+        for (const error of batchValidation.errors) {
             lines.push(`  ✗ ${error}`);
         }
         lines.push("");
     }
 
-    if (plan.batchValidation.warnings.length > 0) {
+    if (batchValidation.warnings.length > 0) {
         lines.push("Batch Validation Warnings:");
-        for (const warning of plan.batchValidation.warnings) {
+        for (const warning of batchValidation.warnings) {
             lines.push(`  ⚠ ${warning}`);
         }
         lines.push("");
     }
 
-    if (plan.batchValidation.conflictingSets.length > 0) {
+    if (batchValidation.conflictingSets.length > 0) {
         lines.push("Conflicting Symbol Sets:");
-        for (const set of plan.batchValidation.conflictingSets) {
+        for (const set of batchValidation.conflictingSets) {
             lines.push(`  ✗ ${set.join(", ")}`);
         }
         lines.push("");
@@ -318,12 +583,17 @@ export function formatBatchRenamePlanReport(plan: BatchRenamePlanSummary): strin
 
     lines.push("Per-Symbol Impact:");
     for (const [symbolId, analysis] of plan.impactAnalyses) {
-        const summary = analysis.summary;
+        // `buildRenameImpactReport` collapses the
+        // `analysis.summary.*` four-segment walk into a single
+        // `impact.field` access, matching the per-symbol contract of
+        // `formatRenamePlanReport` and keeping the two formatters
+        // symmetric at the immediate-neighbour boundary.
+        const impact = buildRenameImpactReport(analysis);
         lines.push(
-            `  ${summary.oldName} → ${summary.newName} (${symbolId})`,
-            `    Occurrences: ${summary.totalOccurrences} (${summary.definitionCount} def, ${summary.referenceCount} ref)`,
-            `    Affected Files: ${summary.affectedFiles.length}`,
-            `    Dependent Symbols: ${summary.dependentSymbols.length}`
+            `  ${impact.oldName} → ${impact.newName} (${symbolId})`,
+            `    Occurrences: ${impact.totalOccurrences} (${impact.definitionCount} def, ${impact.referenceCount} ref)`,
+            `    Affected Files: ${impact.affectedFiles.length}`,
+            `    Dependent Symbols: ${impact.dependentSymbols.length}`
         );
 
         if (analysis.conflicts.length > 0) {
@@ -350,31 +620,32 @@ export function formatBatchRenamePlanReport(plan: BatchRenamePlanSummary): strin
         ""
     );
 
-    if (plan.cascadeResult) {
-        // Extract metadata to avoid repeated deep-navigation through plan.cascadeResult.metadata.*
-        const cascadeMetadata = plan.cascadeResult.metadata;
+    if (cascade !== null) {
+        // `HotReloadCascadeResult` keeps its summary counters on the
+        // `metadata` bag; access them through the canonical path so the
+        // report and the cascade result stay in lock-step.
         lines.push(
             "Hot Reload Dependency Cascade:",
-            `  Total Symbols to Reload: ${cascadeMetadata.totalSymbols}`,
-            `  Max Dependency Distance: ${cascadeMetadata.maxDistance}`,
-            `  Has Circular Dependencies: ${cascadeMetadata.hasCircular ? "Yes" : "No"}`
+            `  Total Symbols to Reload: ${cascade.metadata.totalSymbols}`,
+            `  Max Dependency Distance: ${cascade.metadata.maxDistance}`,
+            `  Has Circular Dependencies: ${cascade.metadata.hasCircular ? "Yes" : "No"}`
         );
 
-        if (plan.cascadeResult.circular.length > 0) {
+        if (cascade.circular.length > 0) {
             lines.push("  Circular Dependency Chains:");
-            for (const cycle of plan.cascadeResult.circular) {
+            for (const cycle of cascade.circular) {
                 const formattedCycle = cycle.map((id) => extractSymbolName(id)).join(" → ");
                 lines.push(`    ⚠ ${formattedCycle}`);
             }
         }
 
-        lines.push(`  Reload Order: ${plan.cascadeResult.order.length} symbols`, "");
+        lines.push(`  Reload Order: ${cascade.order.length} symbols`, "");
     }
 
-    if (plan.hotReload) {
-        lines.push(`Hot Reload Status: ${plan.hotReload.valid ? "SAFE" : "UNSAFE"}`);
+    if (hotReload !== null) {
+        lines.push(`Hot Reload Status: ${hotReload.valid ? "SAFE" : "UNSAFE"}`);
 
-        appendErrorsAndWarnings(lines, plan.hotReload.errors, plan.hotReload.warnings);
+        appendErrorsAndWarnings(lines, hotReload.errors, hotReload.warnings);
     }
 
     return lines.join("\n");

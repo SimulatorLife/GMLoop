@@ -4,9 +4,32 @@ import { isObjectLike, isPlainObject } from "../utils/object.js";
 import { getNonEmptyString } from "../utils/string.js";
 import { resolveBundledResourcePath, resolveBundledResourceUrl } from "./resource-locator.js";
 
-export const GML_IDENTIFIER_METADATA_URL = resolveBundledResourceUrl("gml-identifiers.json");
+// The metadata URL/path constants are exposed as lazy accessors rather
+// than top-level `const` bindings. Resolving them at module load would
+// touch Node-only APIs (`node:url`, `node:path`, `node:fs`) that are
+// externalized to empty stubs in the browser bundle, which would crash
+// any non-Node consumer that imports `@gmloop/core` for its AST/utility
+// surface. Deferring the resolution to first access keeps module load
+// safe in browser contexts while preserving eager access for Node-side
+// callers (which invoke the accessor at module load, the same instant
+// the previous `const` would have evaluated).
 
-export const GML_IDENTIFIER_METADATA_PATH = resolveBundledResourcePath("gml-identifiers.json");
+let cachedGmlIdentifierMetadataUrl: URL | null = null;
+let cachedGmlIdentifierMetadataPath: string | null = null;
+
+export function getGmlIdentifierMetadataUrl(): URL {
+    if (cachedGmlIdentifierMetadataUrl === null) {
+        cachedGmlIdentifierMetadataUrl = resolveBundledResourceUrl("gml-identifiers.json");
+    }
+    return cachedGmlIdentifierMetadataUrl;
+}
+
+export function getGmlIdentifierMetadataPath(): string {
+    if (cachedGmlIdentifierMetadataPath === null) {
+        cachedGmlIdentifierMetadataPath = resolveBundledResourcePath("gml-identifiers.json");
+    }
+    return cachedGmlIdentifierMetadataPath;
+}
 
 /**
  * Replacement semantics for a deprecated built-in GML identifier.
@@ -40,6 +63,38 @@ export type DeprecatedIdentifierMetadataEntry = Readonly<{
 }>;
 
 /**
+ * Normalized parameter payload for a built-in identifier's hover entry.
+ *
+ * The contract intentionally exposes `null` rather than `undefined` for any
+ * optional field so consumers can treat the value uniformly without
+ * discriminating between "missing" and "present-but-empty". Adapter code in
+ * {@link normalizeBuiltInHoverParameter} guarantees the shape regardless of
+ * the underlying JSON layout.
+ */
+export type BuiltInHoverParameter = Readonly<{
+    name: string;
+    type: string | null;
+    description: string | null;
+}>;
+
+/**
+ * Normalized hover payload for a built-in identifier.
+ *
+ * The contract mirrors the surface that downstream consumers (LSP hover,
+ * completion detail, semantic highlight hover) actually consume, so any
+ * structural variation in the bundled metadata JSON — missing fields,
+ * reordered keys, or alternate casing — is absorbed by the
+ * {@link normalizeBuiltInHoverInfo} adapter rather than leaked into call
+ * sites.
+ */
+export type BuiltInHoverInfo = Readonly<{
+    signature: string | null;
+    description: string | null;
+    parameters: ReadonlyArray<BuiltInHoverParameter>;
+    returnType: string | null;
+}>;
+
+/**
  * Load the bundled identifier metadata JSON artefact.
  *
  * Centralizing path resolution keeps consumers from depending on the
@@ -49,7 +104,7 @@ export type DeprecatedIdentifierMetadataEntry = Readonly<{
  * @returns {unknown} Raw identifier metadata payload bundled with the package.
  */
 export function loadBundledIdentifierMetadata() {
-    const contents = readTextFileSync(GML_IDENTIFIER_METADATA_PATH);
+    const contents = readTextFileSync(getGmlIdentifierMetadataPath());
     return JSON.parse(contents);
 }
 
@@ -61,6 +116,16 @@ let cachedDeprecatedIdentifierEntries: ReadonlyArray<DeprecatedIdentifierMetadat
  * Reset alongside metadata cache to maintain consistency.
  */
 let cachedManualFunctionNames: Set<string> | null = null;
+
+/**
+ * Cached normalized hover payloads keyed by identifier name. The cache stores
+ * both resolved and null results so repeat lookups for the same identifier
+ * skip the per-call adapter walk without re-running type guards.
+ *
+ * Reset alongside clearIdentifierMetadataCache so test harnesses can
+ * force a fresh normalization pass.
+ */
+const cachedBuiltInHoverInfo = new Map<string, BuiltInHoverInfo | null>();
 
 /**
  * Maximum number of cached reserved identifier name Sets.
@@ -92,13 +157,15 @@ export function getIdentifierMetadata() {
 
 /**
  * Reset the metadata cache so test harnesses can force a reload.
- * Also clears derived caches (function names, reserved identifiers).
+ * Also clears derived caches (function names, reserved identifiers, hover
+ * info).
  */
 export function clearIdentifierMetadataCache() {
     cachedIdentifierMetadata = null;
     cachedDeprecatedIdentifierEntries = null;
     cachedManualFunctionNames = null;
     cachedReservedIdentifierNames.clear();
+    cachedBuiltInHoverInfo.clear();
 }
 
 /**
@@ -123,7 +190,7 @@ export function normalizeIdentifierMetadataEntries(metadata) {
             return entries;
         }
 
-        const normalizedDescriptor = normalizeIdentifierDescriptor(normalizedName, descriptor);
+        const normalizedDescriptor = normalizeIdentifierDescriptor(descriptor);
         if (!normalizedDescriptor) {
             return entries;
         }
@@ -227,7 +294,7 @@ function normalizeDeprecatedDiagnosticOwner(
     return diagnosticOwner === "gml" || diagnosticOwner === "feather" ? diagnosticOwner : null;
 }
 
-function normalizeIdentifierDescriptor(name: string, descriptor: unknown): IdentifierMetadataDescriptor | null {
+function normalizeIdentifierDescriptor(descriptor: unknown): IdentifierMetadataDescriptor | null {
     if (!isPlainObject(descriptor)) {
         return null;
     }
@@ -247,26 +314,16 @@ function normalizeIdentifierDescriptor(name: string, descriptor: unknown): Ident
 
 const DEFAULT_EXCLUDED_TYPES = new Set(["literal", "keyword"]);
 
-type ReservedIdentifierMetadataLoader = () => unknown;
-
-let metadataLoader: ReservedIdentifierMetadataLoader = defaultLoadIdentifierMetadata;
-
-function safelyLoadIdentifierMetadata(loader: ReservedIdentifierMetadataLoader) {
-    try {
-        const metadata = loader();
-        return isObjectLike(metadata) ? metadata : null;
-    } catch {
-        return null;
-    }
-}
-
-function defaultLoadIdentifierMetadata() {
-    return safelyLoadIdentifierMetadata(loadBundledIdentifierMetadata);
-}
+let metadataLoader: () => unknown = loadBundledIdentifierMetadata;
 
 function loadIdentifierMetadata() {
     if (cachedIdentifierMetadata === null) {
-        cachedIdentifierMetadata = safelyLoadIdentifierMetadata(metadataLoader);
+        try {
+            const metadata = metadataLoader();
+            cachedIdentifierMetadata = isObjectLike(metadata) ? metadata : null;
+        } catch {
+            cachedIdentifierMetadata = null;
+        }
     }
 
     return cachedIdentifierMetadata;
@@ -276,7 +333,8 @@ function loadIdentifierMetadata() {
  * Allow advanced integrations to supply alternate metadata at runtime while
  * keeping the default loader pointed at the bundled JSON file.
  *
- * @param {() => unknown} loader
+ * @param loader Custom metadata loader function, or a falsy value to reset
+ *        to the default bundled JSON loader.
  * @returns {() => void} Cleanup handler that restores the previous loader when
  *          invoked. The handler intentionally degrades to a no-op when another
  *          caller swapped the loader before cleanup runs. Identifier casing
@@ -284,22 +342,20 @@ function loadIdentifierMetadata() {
  *          reinstating `previousLoader` would roll back those newer overrides
  *          and leave the formatter reading stale metadata mid-run.
  */
-export function setReservedIdentifierMetadataLoader(loader) {
+export function setReservedIdentifierMetadataLoader(loader: (() => unknown) | null | undefined) {
     if (typeof loader !== "function") {
         resetReservedIdentifierMetadataLoader();
         return noop;
     }
 
     const previousLoader = metadataLoader;
-    const wrappedLoader = () => safelyLoadIdentifierMetadata(loader);
-
-    metadataLoader = wrappedLoader;
+    metadataLoader = loader;
 
     // Clear caches when the loader changes to prevent stale data
     clearIdentifierMetadataCache();
 
     return () => {
-        if (metadataLoader === wrappedLoader) {
+        if (metadataLoader === loader) {
             metadataLoader = previousLoader;
             // Clear caches when restoring to prevent using cached data from the custom loader
             clearIdentifierMetadataCache();
@@ -312,7 +368,7 @@ export function setReservedIdentifierMetadataLoader(loader) {
  * implementation.
  */
 export function resetReservedIdentifierMetadataLoader() {
-    metadataLoader = defaultLoadIdentifierMetadata;
+    metadataLoader = loadBundledIdentifierMetadata;
     // Clear caches when resetting to ensure fresh data from default loader
     clearIdentifierMetadataCache();
 }
@@ -397,7 +453,7 @@ export function loadReservedIdentifierNames({ disallowedTypes }: { disallowedTyp
 
         const normalizedName = getNonEmptyString(name);
         if (normalizedName) {
-            names.add(normalizedName.toLowerCase());
+            names.add(normalizedName);
         }
     }
 
@@ -446,4 +502,112 @@ export function loadManualFunctionNames(): Set<string> {
     // Store in cache and return
     cachedManualFunctionNames = names;
     return cachedManualFunctionNames;
+}
+
+
+/**
+ * Normalize a single hover-parameter entry into the BuiltInHoverParameter
+ * contract.
+ *
+ * Used exclusively by normalizeBuiltInHoverInfo to absorb arbitrary shape
+ * variation from the bundled metadata JSON. The function returns null
+ * whenever the entry is missing the required name field so the surrounding
+ * array can prune malformed entries without callers having to discriminate.
+ *
+ * @param value Unknown candidate value (typically a JSON object).
+ * @returns Normalized parameter or null when the entry is unusable.
+ */
+function normalizeBuiltInHoverParameter(value: unknown): BuiltInHoverParameter | null {
+    if (!isPlainObject(value)) {
+        return null;
+    }
+
+    const record = value as Readonly<Record<string, unknown>>;
+    const name = getNonEmptyString(record.name);
+    if (name === null) {
+        return null;
+    }
+
+    return Object.freeze({
+        name,
+        type: getStringField(record, "type"),
+        description: getStringField(record, "description")
+    });
+}
+
+/**
+ * Normalize a hover payload from any shape into the BuiltInHoverInfo
+ * contract.
+ *
+ * This adapter owns every duck-typing step against the bundled metadata JSON,
+ * so downstream consumers (LSP hover, completion detail, semantic highlight
+ * hover) read from a uniform contract surface. Values that are missing,
+ * malformed, or come from a substitute loader all funnel through the same
+ * normalization path and yield either a populated contract or null.
+ *
+ * @param value Unknown candidate value (typically the hover field of a
+ *              built-in descriptor).
+ * @returns Normalized hover info or null when the input lacks a usable
+ *          shape.
+ */
+function normalizeBuiltInHoverInfo(value: unknown): BuiltInHoverInfo | null {
+    if (!isPlainObject(value)) {
+        return null;
+    }
+
+    const record = value as Readonly<Record<string, unknown>>;
+    const parameters = Array.isArray(record.parameters)
+        ? (record.parameters
+              .map((entry) => normalizeBuiltInHoverParameter(entry))
+              .filter((entry): entry is BuiltInHoverParameter => entry !== null) as ReadonlyArray<
+              BuiltInHoverParameter
+          >)
+        : [];
+
+    return Object.freeze({
+        signature: getStringField(record, "signature"),
+        description: getStringField(record, "description"),
+        parameters,
+        returnType: getStringField(record, "returnType")
+    });
+}
+
+/**
+ * Resolve the normalized hover contract for a built-in identifier name.
+ *
+ * Result memoization keeps hot paths (LSP hover requests, completion detail)
+ * from re-walking the descriptor shape on every invocation. The cache records
+ * both populated payloads and explicit null results so callers that probe
+ * many identifiers only pay the normalization cost once per identifier.
+ *
+ * @param identifier Built-in identifier name to look up.
+ * @returns Normalized hover info or null when the identifier is unknown or
+ *          carries no hover metadata.
+ */
+export function getBuiltInHoverInfo(identifier: string): BuiltInHoverInfo | null {
+    if (cachedBuiltInHoverInfo.has(identifier)) {
+        return cachedBuiltInHoverInfo.get(identifier) ?? null;
+    }
+
+    const metadata = loadIdentifierMetadata();
+    if (!isPlainObject(metadata)) {
+        cachedBuiltInHoverInfo.set(identifier, null);
+        return null;
+    }
+
+    const identifiers = (metadata as { identifiers?: unknown }).identifiers;
+    if (!isPlainObject(identifiers)) {
+        cachedBuiltInHoverInfo.set(identifier, null);
+        return null;
+    }
+
+    const descriptor = (identifiers as Record<string, unknown>)[identifier];
+    if (!isPlainObject(descriptor)) {
+        cachedBuiltInHoverInfo.set(identifier, null);
+        return null;
+    }
+
+    const hover = normalizeBuiltInHoverInfo((descriptor as Record<string, unknown>).hover);
+    cachedBuiltInHoverInfo.set(identifier, hover);
+    return hover;
 }

@@ -8,7 +8,7 @@ import { Core } from "@gmloop/core";
 
 import type { ServerEndpoint, ServerLifecycle } from "../server/index.js";
 
-const { isFsErrorCode, getErrorMessage } = Core;
+const { getErrorMessage, isErrorWithCode, toNumber } = Core;
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 0;
@@ -71,7 +71,7 @@ function getRuntimeHttpErrorStatus(error: unknown): number | null {
     }
 
     const statusCode = (error as unknown as Record<string, unknown>).statusCode;
-    return typeof statusCode === "number" ? statusCode : null;
+    return toNumber(statusCode);
 }
 
 function formatRuntimeHttpErrorMessage(error: unknown, statusCode: number, fallbackMessage: string): string {
@@ -86,12 +86,12 @@ function formatRuntimeHttpErrorMessage(error: unknown, statusCode: number, fallb
     return fallbackMessage;
 }
 
-function resolveMimeType(filePath) {
+function resolveMimeType(filePath: string): string {
     const extension = path.extname(filePath).toLowerCase();
     return MIME_TYPES.get(extension) ?? "application/octet-stream";
 }
 
-function normalizeRequestPath(requestUrl) {
+function normalizeRequestPath(requestUrl: string): string {
     if (typeof requestUrl !== "string" || requestUrl.length === 0) {
         return "/";
     }
@@ -105,19 +105,31 @@ function normalizeRequestPath(requestUrl) {
     return pathOnly.length === 0 ? "/" : pathOnly;
 }
 
-function resolveRuntimeFilePath(root, requestPath) {
-    let decoded;
+/**
+ * Resolve `requestPath` against the runtime root, rejecting any attempt to
+ * traverse outside of it.
+ *
+ * Two layered checks keep the resolution inside `root`:
+ *  1. The slash-normalized decoded path is scanned for any `..` segment up
+ *     front, so `path.resolve` below never sees a traversal shape.
+ *  2. After resolution, the relative path from `root` is inspected so any
+ *     other escape shape (encoded forms, absolute paths) is still caught.
+ *
+ * Both branches surface the same 403 error so callers see one observable
+ * failure mode for paths that resolve outside the runtime root.
+ */
+function resolveRuntimeFilePath(root: string, requestPath: string) {
+    let decoded: string;
     try {
         decoded = decodeURIComponent(requestPath);
     } catch {
         throw createRuntimeHttpError("Malformed request path.", 400);
     }
-    const sanitizedPath = decoded.replaceAll("\\", "/");
-    const sanitizedSegments = sanitizedPath.split("/").filter((segment) => segment && segment !== ".");
 
-    if (sanitizedSegments.includes("..")) {
+    if (decoded.replaceAll("\\", "/").split("/").includes("..")) {
         throw createRuntimeHttpError("Request path resolves outside runtime root.", 403);
     }
+
     const normalizedPath = path.normalize(decoded).replaceAll("\\", "/");
     const strippedPath = normalizedPath.startsWith("/") ? normalizedPath.slice(1) : normalizedPath;
     const candidate = strippedPath.length === 0 ? "." : strippedPath;
@@ -131,15 +143,21 @@ function resolveRuntimeFilePath(root, requestPath) {
     return target;
 }
 
-async function sendFileResponse(res, filePath, { method }) {
-    const stats = await fs.stat(filePath);
-    let servingPath = filePath;
+async function sendFileResponse(
+    res: http.ServerResponse,
+    filePath: string,
+    { method }: { method: string }
+): Promise<void> {
+    const initialStats = await fs.stat(filePath);
 
-    if (stats.isDirectory()) {
-        servingPath = path.join(filePath, "index.html");
-    }
-
-    const fileStats = await fs.stat(servingPath);
+    // When the requested path is a directory, the runtime serves its
+    // `index.html`. The directory stat is not the file we ultimately stream,
+    // so we re-stat the index.html entry. In the common case of a regular
+    // file, however, the first stat is already the correct stats for the
+    // resource we are about to stream, so we skip a redundant second
+    // `fs.stat` syscall on every asset request.
+    const servingPath = initialStats.isDirectory() ? path.join(filePath, "index.html") : filePath;
+    const fileStats = initialStats.isDirectory() ? await fs.stat(servingPath) : initialStats;
 
     if (!fileStats.isFile()) {
         throw createRuntimeHttpError("Requested resource is not a file.", 404);
@@ -172,13 +190,25 @@ async function sendFileResponse(res, filePath, { method }) {
             }
             errorHandled = true;
 
-            // Remove specific listeners to prevent memory leaks
+            // Detach every listener registered below before tearing the stream
+            // down. Node keeps the listeners attached to the underlying
+            // EventEmitter instances for as long as the emitter exists, so any
+            // callback we leave behind keeps the request/response pair alive
+            // (closing over `stream`, `res`, and `cleanup` itself). On a long
+            // watcher session that turns into a slow file-descriptor leak as
+            // every aborted request strands one orphan emitter.
             stream.removeListener("error", cleanup);
             stream.removeListener("close", handleStreamClose);
             res.removeListener("close", handleResponseClose);
             res.removeListener("error", handleResponseError);
 
-            // Destroy the stream if it's still open
+            // Force the file read stream closed if it hasn't already emitted
+            // `end`/`close`. `pipe` only stops emitting when the source ends,
+            // so an early disconnect (browser tab closed, network drop) leaves
+            // the descriptor open until GC eventually runs the auto-close.
+            // Without this guard the server accumulates unread fds until the
+            // process hits `EMFILE`, which the watcher treats as a fatal
+            // restart on every subsequent request.
             if (stream.readable || !stream.destroyed) {
                 stream.destroy();
             }
@@ -202,19 +232,37 @@ async function sendFileResponse(res, filePath, { method }) {
         };
 
         const handleResponseClose = () => {
-            // Response closed by client - clean up the stream
+            // The HTTP response ended before the file stream drained
+            // (client disconnect, proxy timeout, or server keep-alive
+            // teardown). Forwarding to `cleanup` makes sure the in-flight
+            // read stream is destroyed and the surrounding promise settles,
+            // which lets the request handler release its own resources.
             cleanup();
         };
 
         const handleResponseError = (error: unknown) => {
-            // Response encountered an error - clean up the stream
+            // Node emits `error` on the response stream when the underlying
+            // socket fails (e.g. ECONNRESET). We forward the original error
+            // so `cleanup` rejects the awaiting promise with a meaningful
+            // cause instead of swallowing it as a graceful close.
             cleanup(error);
         };
 
         stream.on("error", cleanup);
         stream.on("close", handleStreamClose);
 
-        // Critical: Monitor response lifecycle to prevent stream leaks when client disconnects
+        // Critical: hook the HTTP response (not just the file stream) into the
+        // cleanup pipeline. `pipe` only reacts to events on the *source*
+        // stream, so a client disconnect that closes `res` while the file
+        // stream is still readable would otherwise leave the read stream
+        // running to completion in the background. That keeps the underlying
+        // file descriptor open for the rest of the stream's lifetime, holds
+        // the file lock on Windows, and stalls the watcher if the file is
+        // later rewritten by an editor. Listening for both `close` (graceful
+        // disconnect) and `error` (socket failure) covers the two ways a
+        // response can end prematurely and routes each into the same
+        // idempotent `cleanup` above, which is what actually destroys the
+        // read stream and frees the descriptor.
         res.on("close", handleResponseClose);
         res.on("error", handleResponseError);
 
@@ -222,7 +270,7 @@ async function sendFileResponse(res, filePath, { method }) {
     });
 }
 
-function writeError(res, statusCode, message) {
+function writeError(res: http.ServerResponse, statusCode: number, message: string): void {
     res.statusCode = statusCode;
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
     res.end(message);
@@ -241,7 +289,7 @@ export async function startRuntimeStaticServer({
     const resolvedRoot = path.resolve(runtimeRoot);
 
     const initialStats = await fs.stat(resolvedRoot).catch((error) => {
-        if (isFsErrorCode(error, "ENOENT")) {
+        if (isErrorWithCode(error, "ENOENT")) {
             throw new Error(`Runtime root '${resolvedRoot}' does not exist. Did hydration succeed?`);
         }
         throw error;
@@ -269,7 +317,9 @@ export async function startRuntimeStaticServer({
             const statusCode = getRuntimeHttpErrorStatus(error) ?? 500;
             const message = formatRuntimeHttpErrorMessage(error, statusCode, "Internal Server Error");
             if (statusCode >= 500) {
-                console.error("Runtime static server request error:", error);
+                console.error(
+                    `Runtime static server request error: ${getErrorMessage(error, { fallback: "Unknown error" })}`
+                );
             }
             writeError(res, statusCode, message);
             return;
@@ -280,14 +330,16 @@ export async function startRuntimeStaticServer({
         }
 
         sendFileResponse(res, targetPath, { method }).catch((error) => {
-            const statusCode = getRuntimeHttpErrorStatus(error) ?? (isFsErrorCode(error, "ENOENT") ? 404 : 500);
+            const statusCode = getRuntimeHttpErrorStatus(error) ?? (isErrorWithCode(error, "ENOENT") ? 404 : 500);
             const fallbackMessage =
                 statusCode === 404
                     ? "Not Found"
                     : `Failed to read runtime asset: ${getErrorMessage(error, { fallback: "Unknown error" })}`;
             const message = formatRuntimeHttpErrorMessage(error, statusCode, fallbackMessage);
             if (statusCode >= 500) {
-                console.error("Runtime static server failed to read asset:", error);
+                console.error(
+                    `Runtime static server failed to read asset: ${getErrorMessage(error, { fallback: "Unknown error" })}`
+                );
             }
             writeError(res, statusCode, message);
         });

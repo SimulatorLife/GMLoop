@@ -79,8 +79,8 @@ export interface GameMakerAstNode {
     arguments?: Array<unknown> | null;
     /** Single expression used by return or unary nodes. */
     argument?: GameMakerAstNode | null;
-    /** Block or list of statements inside structured nodes. */
-    body?: Array<unknown> | null;
+    /** Block node or statement list inside structured nodes. */
+    body?: GameMakerAstNode | Array<unknown> | null;
     /** Variable declarators for declarations. */
     declarations?: Array<GameMakerAstNode> | null;
     /** Initializer for variable declarators or assignment right-hand sides */

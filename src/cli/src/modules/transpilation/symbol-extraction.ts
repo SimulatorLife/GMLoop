@@ -31,13 +31,27 @@ interface AstNode {
     type?: string | null;
     id?: string | AstNode | null;
     name?: string | AstNode | null;
+    params?: Array<AstNode | string> | null;
+    param?: AstNode | string | null;
+    argument?: AstNode | null;
     init?: AstNode | null;
     left?: AstNode | null;
     right?: AstNode | null;
-    // body may be a statement array (Program, BlockStatement) or a nested BlockStatement node
-    // (FunctionDeclaration.body) — handle both shapes during traversal.
+    // body may be a statement array (Program, BlockStatement, SwitchCase) or a nested
+    // BlockStatement node (FunctionDeclaration.body) — handle both shapes during traversal.
     body?: Array<unknown> | AstNode | null;
     declarations?: Array<AstNode> | null;
+    // SwitchStatement: `discriminant` is the expression being tested; `cases` is the list of
+    // SwitchCase nodes. Neither maps to `body` or a standard prop, so they are tracked separately.
+    discriminant?: AstNode | null;
+    cases?: Array<AstNode> | null;
+    // ForStatement: `update` is the post-iteration step expression (e.g. `i = next(i)`).
+    update?: AstNode | null;
+    // TryStatement: `block` is the try body, `handler` is the CatchClause, `finalizer` is the
+    // Finalizer. None of these map to `body`, so they must be walked explicitly.
+    block?: AstNode | null;
+    handler?: AstNode | null;
+    finalizer?: AstNode | null;
 }
 
 /**
@@ -66,6 +80,141 @@ function extractIdentifierName(node: string | AstNode | null | undefined): strin
         return node.name;
     }
     return null;
+}
+
+type FunctionAstNode = AstNode & {
+    type: "FunctionDeclaration" | "FunctionExpression" | "ArrowFunctionExpression";
+};
+
+function isFunctionNode(node: unknown): node is FunctionAstNode {
+    if (!node || typeof node !== "object") {
+        return false;
+    }
+
+    const type = (node as AstNode).type;
+    return type === "FunctionDeclaration" || type === "FunctionExpression" || type === "ArrowFunctionExpression";
+}
+
+function extractBindingNames(node: string | AstNode | null | undefined): Array<string> {
+    if (typeof node === "string") {
+        return [node];
+    }
+    if (!node || typeof node !== "object") {
+        return [];
+    }
+
+    if (node.type === "Identifier") {
+        const identifierName = extractIdentifierName(node);
+        return identifierName === null ? [] : [identifierName];
+    }
+
+    if (node.type === "DefaultParameter") {
+        return extractBindingNames(node.left);
+    }
+
+    if (node.type === "RestElement") {
+        return extractBindingNames(node.argument);
+    }
+
+    return [];
+}
+
+function walkNodeForScopeBindings(node: unknown, bindings: Set<string>): void {
+    if (!node || typeof node !== "object") {
+        return;
+    }
+
+    const astNode = node as AstNode;
+
+    // Nested functions have an independent local scope. Their function name is
+    // still a binding in the containing scope, but their parameters and local
+    // declarations must not hide script calls in the containing function.
+    if (isFunctionNode(astNode)) {
+        if (astNode.type === FUNCTION_DECLARATION) {
+            const functionName = extractIdentifierName(astNode.id);
+            if (functionName !== null) {
+                bindings.add(functionName);
+            }
+        }
+        return;
+    }
+
+    if (astNode.type === VARIABLE_DECLARATOR) {
+        for (const bindingName of extractBindingNames(astNode.id)) {
+            bindings.add(bindingName);
+        }
+    }
+
+    if (astNode.type === ASSIGNMENT_EXPRESSION && isFunctionNode(astNode.right)) {
+        for (const bindingName of extractBindingNames(astNode.left)) {
+            bindings.add(bindingName);
+        }
+    }
+
+    if (astNode.type === "CatchClause") {
+        for (const bindingName of extractBindingNames(astNode.param)) {
+            bindings.add(bindingName);
+        }
+    }
+
+    if (Array.isArray(astNode.body)) {
+        for (const child of astNode.body) {
+            walkNodeForScopeBindings(child, bindings);
+        }
+    } else if (astNode.body !== null && astNode.body !== undefined) {
+        walkNodeForScopeBindings(astNode.body, bindings);
+    }
+
+    if (Array.isArray(astNode.declarations)) {
+        for (const child of astNode.declarations) {
+            walkNodeForScopeBindings(child, bindings);
+        }
+    }
+
+    for (const prop of [
+        "init",
+        "left",
+        "right",
+        "argument",
+        "test",
+        "consequent",
+        "alternate",
+        "expression",
+        "discriminant",
+        "update",
+        "block",
+        "handler",
+        "finalizer"
+    ] as const) {
+        const value = astNode[prop];
+        if (value) {
+            walkNodeForScopeBindings(value, bindings);
+        }
+    }
+
+    if (Array.isArray(astNode.cases)) {
+        for (const switchCase of astNode.cases) {
+            walkNodeForScopeBindings(switchCase, bindings);
+        }
+    }
+}
+
+function collectFunctionScopeBindings(functionNode: AstNode): Set<string> {
+    const bindings = new Set<string>();
+
+    if (Array.isArray(functionNode.params)) {
+        for (const parameter of functionNode.params) {
+            for (const bindingName of extractBindingNames(parameter)) {
+                bindings.add(bindingName);
+            }
+        }
+    }
+
+    if (functionNode.body) {
+        walkNodeForScopeBindings(functionNode.body, bindings);
+    }
+
+    return bindings;
 }
 
 /**
@@ -127,59 +276,90 @@ function resolveRuntimeIdFromPath(filePath: string, symbolName: string): string 
 
 /**
  * Recursively walks an AST node and extracts all symbol definitions.
+ *
+ * `filePath` is captured in a closure so the recursive descent does not need to
+ * thread it as a parameter through every intermediate call site — it is only
+ * consumed at the leaf extraction helpers.
  */
-function walkNode(node: unknown, filePath: string, symbols: Array<string>): void {
-    if (!node || typeof node !== "object") {
-        return;
-    }
+function buildWalkNode(filePath: string, symbols: Array<string>): (node: unknown) => void {
+    function walkNode(node: unknown): void {
+        if (!node || typeof node !== "object") {
+            return;
+        }
 
-    const astNode = node as AstNode;
+        const astNode = node as AstNode;
 
-    // Extract from FunctionDeclaration nodes
-    if (astNode.type === FUNCTION_DECLARATION) {
-        const functionName = extractIdentifierName(astNode.id);
-        if (functionName) {
-            const runtimeId = resolveRuntimeIdFromPath(filePath, functionName);
-            if (runtimeId) {
-                symbols.push(runtimeId);
+        // Extract from FunctionDeclaration nodes
+        if (astNode.type === FUNCTION_DECLARATION) {
+            const functionName = extractIdentifierName(astNode.id);
+            if (functionName) {
+                const runtimeId = resolveRuntimeIdFromPath(filePath, functionName);
+                if (runtimeId) {
+                    symbols.push(runtimeId);
+                }
+            }
+        }
+
+        // Extract from VariableDeclarator nodes (var myFunc = function() {})
+        if (astNode.type === VARIABLE_DECLARATOR) {
+            symbols.push(...extractFromVariableDeclarator(astNode, filePath));
+        }
+
+        // Extract from AssignmentExpression nodes (myFunc = function() {})
+        if (astNode.type === ASSIGNMENT_EXPRESSION) {
+            symbols.push(...extractFromAssignment(astNode, filePath));
+        }
+
+        // Recursively walk body — as a statement array (Program, BlockStatement.body)
+        // or as a nested BlockStatement node (FunctionDeclaration.body).
+        if (Array.isArray(astNode.body)) {
+            for (const child of astNode.body) {
+                walkNode(child);
+            }
+        } else if (astNode.body !== null && astNode.body !== undefined) {
+            walkNode(astNode.body);
+        }
+
+        // Recursively walk declarations array (for VariableDeclaration, etc.)
+        if (Array.isArray(astNode.declarations)) {
+            for (const child of astNode.declarations) {
+                walkNode(child);
+            }
+        }
+
+        // Walk common single-node AST properties that might contain nested function definitions.
+        // Includes: SwitchStatement.discriminant, ForStatement.update, TryStatement.block/handler/finalizer.
+        for (const prop of [
+            "init",
+            "left",
+            "right",
+            "argument",
+            "test",
+            "consequent",
+            "alternate",
+            "expression",
+            "discriminant",
+            "update",
+            "block",
+            "handler",
+            "finalizer"
+        ] as const) {
+            const value = astNode[prop];
+            if (value) {
+                walkNode(value);
+            }
+        }
+
+        // Walk SwitchStatement.cases — an array of SwitchCase nodes that is not covered
+        // by `body` or `declarations`, so it requires its own traversal step.
+        if (Array.isArray(astNode.cases)) {
+            for (const switchCase of astNode.cases) {
+                walkNode(switchCase);
             }
         }
     }
 
-    // Extract from VariableDeclarator nodes (var myFunc = function() {})
-    if (astNode.type === VARIABLE_DECLARATOR) {
-        symbols.push(...extractFromVariableDeclarator(astNode, filePath));
-    }
-
-    // Extract from AssignmentExpression nodes (myFunc = function() {})
-    if (astNode.type === ASSIGNMENT_EXPRESSION) {
-        symbols.push(...extractFromAssignment(astNode, filePath));
-    }
-
-    // Recursively walk body — as a statement array (Program, BlockStatement.body)
-    // or as a nested BlockStatement node (FunctionDeclaration.body).
-    if (Array.isArray(astNode.body)) {
-        for (const child of astNode.body) {
-            walkNode(child, filePath, symbols);
-        }
-    } else if (astNode.body !== null && astNode.body !== undefined) {
-        walkNode(astNode.body, filePath, symbols);
-    }
-
-    // Recursively walk declarations array (for VariableDeclaration, etc.)
-    if (Array.isArray(astNode.declarations)) {
-        for (const child of astNode.declarations) {
-            walkNode(child, filePath, symbols);
-        }
-    }
-
-    // Walk common AST properties that might contain nested nodes
-    for (const prop of ["init", "left", "right", "argument", "test", "consequent", "alternate"] as const) {
-        const value = astNode[prop];
-        if (value) {
-            walkNode(value, filePath, symbols);
-        }
-    }
+    return walkNode;
 }
 
 /**
@@ -191,7 +371,8 @@ function walkNode(node: unknown, filePath: string, symbols: Array<string>): void
  */
 export function extractSymbolsFromAst(ast: AstNode, filePath: string): Array<string> {
     const symbols: Array<string> = [];
-    walkNode(ast, filePath, symbols);
+    const walkNode = buildWalkNode(filePath, symbols);
+    walkNode(ast);
     return Core.uniqueArray(symbols) as Array<string>;
 }
 
@@ -214,20 +395,38 @@ interface CallExpressionNode {
  * recurses into the callee (for chained/member-expression callees), and recurses
  * into each argument (for nested call expressions like `outer(inner())`).
  */
-function processCallExpressionReferences(callNode: CallExpressionNode, references: Set<string>): void {
+function processCallExpressionReferences(
+    callNode: CallExpressionNode,
+    references: Set<string>,
+    locallyBoundNames: ReadonlySet<string>
+): void {
     const callee = callNode.object ?? callNode.callee;
     if (callee) {
         const calleeName = extractIdentifierName(callee);
-        if (calleeName) {
+        if (calleeName && !locallyBoundNames.has(calleeName)) {
             references.add(`gml_Script_${calleeName}`);
         }
-        walkNodeForReferences(callee, references);
+        walkNodeForReferences(callee, references, locallyBoundNames);
     }
 
     if (Array.isArray(callNode.arguments)) {
         for (const arg of callNode.arguments) {
-            walkNodeForReferences(arg, references);
+            walkNodeForReferences(arg, references, locallyBoundNames);
         }
+    }
+}
+
+function walkFunctionReferences(functionNode: AstNode, references: Set<string>): void {
+    const locallyBoundNames = collectFunctionScopeBindings(functionNode);
+
+    if (Array.isArray(functionNode.params)) {
+        for (const parameter of functionNode.params) {
+            walkNodeForReferences(parameter, references, locallyBoundNames);
+        }
+    }
+
+    if (functionNode.body) {
+        walkNodeForReferences(functionNode.body, references, locallyBoundNames);
     }
 }
 
@@ -244,38 +443,44 @@ function processCallExpressionReferences(callNode: CallExpressionNode, reference
  * NOTE: The GML parser emits `object` (not the ESTree standard `callee`) as the
  * function being called in a CallExpression. This handler accounts for that shape.
  */
-function walkNodeForReferences(node: unknown, references: Set<string>): void {
+function walkNodeForReferences(node: unknown, references: Set<string>, locallyBoundNames: ReadonlySet<string>): void {
     if (!node || typeof node !== "object") {
         return;
     }
 
     const astNode = node as AstNode;
 
+    if (isFunctionNode(astNode)) {
+        walkFunctionReferences(astNode, references);
+        return;
+    }
+
     // Extract from CallExpression nodes (e.g., player_move(), enemy_attack()).
     // Callee and arguments walks are delegated to processCallExpressionReferences
     // to keep this function within the allowed cognitive complexity budget.
     if (astNode.type === "CallExpression") {
-        processCallExpressionReferences(astNode as unknown as CallExpressionNode, references);
+        processCallExpressionReferences(astNode as unknown as CallExpressionNode, references, locallyBoundNames);
     }
 
     // Recursively walk body — as a statement array (Program, BlockStatement.body)
     // or as a nested BlockStatement node (FunctionDeclaration.body).
     if (Array.isArray(astNode.body)) {
         for (const child of astNode.body) {
-            walkNodeForReferences(child, references);
+            walkNodeForReferences(child, references, locallyBoundNames);
         }
     } else if (astNode.body !== null && astNode.body !== undefined) {
-        walkNodeForReferences(astNode.body, references);
+        walkNodeForReferences(astNode.body, references, locallyBoundNames);
     }
 
     // Recursively walk declarations array
     if (Array.isArray(astNode.declarations)) {
         for (const child of astNode.declarations) {
-            walkNodeForReferences(child, references);
+            walkNodeForReferences(child, references, locallyBoundNames);
         }
     }
 
-    // Walk common AST properties that may contain nested call expressions.
+    // Walk common single-node AST properties that may contain nested call expressions.
+    // Includes: SwitchStatement.discriminant, ForStatement.update, TryStatement.block/handler/finalizer.
     for (const prop of [
         "init",
         "left",
@@ -284,11 +489,24 @@ function walkNodeForReferences(node: unknown, references: Set<string>): void {
         "test",
         "consequent",
         "alternate",
-        "expression"
+        "expression",
+        "discriminant",
+        "update",
+        "block",
+        "handler",
+        "finalizer"
     ] as const) {
         const value = astNode[prop];
         if (value) {
-            walkNodeForReferences(value, references);
+            walkNodeForReferences(value, references, locallyBoundNames);
+        }
+    }
+
+    // Walk SwitchStatement.cases — an array of SwitchCase nodes that is not covered
+    // by `body` or `declarations`, so it requires its own traversal step.
+    if (Array.isArray(astNode.cases)) {
+        for (const switchCase of astNode.cases) {
+            walkNodeForReferences(switchCase, references, locallyBoundNames);
         }
     }
 }
@@ -306,6 +524,31 @@ function walkNodeForReferences(node: unknown, references: Set<string>): void {
  */
 export function extractReferencesFromAst(ast: AstNode): Array<string> {
     const references = new Set<string>();
-    walkNodeForReferences(ast, references);
+
+    if (ast.type === "Program" && Array.isArray(ast.body)) {
+        const topLevelNodes = ast.body.filter((node): node is AstNode => typeof node === "object" && node !== null);
+        const topLevelBindings = new Set<string>();
+
+        for (const node of topLevelNodes) {
+            if (!isFunctionNode(node)) {
+                walkNodeForScopeBindings(node, topLevelBindings);
+            }
+        }
+
+        for (const node of topLevelNodes) {
+            if (isFunctionNode(node)) {
+                walkFunctionReferences(node, references);
+            } else {
+                walkNodeForReferences(node, references, topLevelBindings);
+            }
+        }
+    } else if (isFunctionNode(ast)) {
+        walkFunctionReferences(ast, references);
+    } else {
+        const locallyBoundNames = new Set<string>();
+        walkNodeForScopeBindings(ast, locallyBoundNames);
+        walkNodeForReferences(ast, references, locallyBoundNames);
+    }
+
     return Array.from(references);
 }

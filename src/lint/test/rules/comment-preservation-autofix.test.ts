@@ -2,14 +2,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import * as LintWorkspace from "@gmloop/lint";
+import { ruleIds } from "@gmloop/lint";
 import { ESLint, type Linter } from "eslint";
 
 import { lintWithRule } from "./lint-rule-test-harness.js";
 
 function buildAllRuleLevels(): Linter.RulesRecord {
-    return Object.fromEntries(
-        Object.values(LintWorkspace.Lint.ruleIds).map((ruleId) => [ruleId, "error" satisfies Linter.RuleEntry])
-    );
+    return Object.fromEntries(Object.values(ruleIds).map((ruleId) => [ruleId, "error" satisfies Linter.RuleEntry]));
 }
 
 async function runAllRuleAutofixes(
@@ -42,7 +41,7 @@ async function runAllRuleAutofixes(
     });
 }
 
-void test("optimize-logical-flow preserves block comments while rewriting nested branches", () => {
+void test("prefer-conditional-assignment preserves block comments while rewriting branches", () => {
     const input = [
         "function move_actor() {",
         "    // Verlet integration, figure out the speed from the previous frame based on how far the player has moved",
@@ -69,7 +68,7 @@ void test("optimize-logical-flow preserves block comments while rewriting nested
         ""
     ].join("\n");
 
-    const result = lintWithRule("optimize-logical-flow", input, {});
+    const result = lintWithRule("prefer-conditional-assignment", input, {});
 
     assert.equal(result.messages.length, 1);
     assert.equal(result.output, expected);
@@ -127,7 +126,7 @@ void test("combined auto-fixes preserve comments from the InterplanetaryFootball
     ].join("\n");
 
     const result = await runAllRuleAutofixes(input, {
-        "gml/optimize-logical-flow": "error",
+        "gml/prefer-conditional-assignment": "error",
         "gml/prefer-epsilon-comparisons": "error",
         "gml/optimize-math-expressions": "error",
         "gml/normalize-doc-comments": "error"
@@ -155,7 +154,7 @@ void test("combined auto-fixes preserve comments from the InterplanetaryFootball
     );
     assert.match(output, /if \(abs\(move_spd\) > math_get_epsilon\(\)\) \{/u);
     assert.match(output, /var weight = 0\.4 \+ 1\.2 \* sqr\(dp\);/u);
-    assert.match(output, /\/\/\/ @description Updates ground_dist' each step/u);
+    assert.match(output, /\/\/\/ @desc Updates ground_dist' each step/u);
     assert.match(output, /\/\/\/ @param \[ray_len=128\]/u);
     assert.match(output, /\/\/\/ @returns \{undefined\}/u);
 });

@@ -1,9 +1,10 @@
 import type { Rule } from "eslint";
 
-import { createLimitedRecoveryProjection } from "../../../language/index.js";
-import type { GmlRuleDefinition } from "../../catalog.js";
+import { gmlRuleLanguageServices } from "../gml-rule-services.js";
+import type { GmlRuleDefinition } from "../index.js";
 import { createMeta } from "../rule-base-helpers.js";
-import { readObjectOption } from "../rule-helpers.js";
+
+const { createLimitedRecoveryProjection } = gmlRuleLanguageServices;
 
 type ArgumentSeparatorInsertion = Readonly<{
     originalOffset: number;
@@ -66,16 +67,13 @@ function collectArgumentSeparatorInsertionOffsets(
         uniqueOffsets.add(recovery.originalOffset);
     }
 
-    return Object.freeze([...uniqueOffsets].sort((left, right) => left - right));
+    return Object.freeze(Array.from(uniqueOffsets).toSorted((left, right) => left - right));
 }
 
 export function createRequireArgumentSeparatorsRule(definition: GmlRuleDefinition): Rule.RuleModule {
     return Object.freeze({
         meta: createMeta(definition),
         create(context) {
-            const options = readObjectOption(context);
-            const shouldRepair = options.repair === undefined ? true : options.repair === true;
-
             return Object.freeze({
                 Program() {
                     const sourceText = context.sourceCode.text;
@@ -84,10 +82,7 @@ export function createRequireArgumentSeparatorsRule(definition: GmlRuleDefinitio
                     for (const insertionOffset of insertionOffsets) {
                         context.report({
                             loc: context.sourceCode.getLocFromIndex(insertionOffset),
-                            messageId: definition.messageId,
-                            fix: shouldRepair
-                                ? (fixer) => fixer.insertTextAfterRange([insertionOffset, insertionOffset], ",")
-                                : null
+                            messageId: definition.messageId
                         });
                     }
                 }

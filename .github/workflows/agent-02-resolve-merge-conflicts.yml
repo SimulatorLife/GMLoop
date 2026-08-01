@@ -1,6 +1,21 @@
 name: "Agent 02 - Resolve Merge Conflicts"
 
 on:
+  workflow_call:
+    inputs:
+      target_pr_number:
+        description: "Optional PR number to target for conflict resolution."
+        required: false
+        default: ""
+        type: string
+      agent:
+        description: "Optional agent override."
+        required: false
+        default: ""
+        type: string
+    secrets:
+      GH_USER_TOKEN:
+        required: true
   workflow_dispatch:
     inputs:
       target_pr_number:
@@ -53,9 +68,9 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const marker = "<!-- agent-resolve-merge-conflicts -->";
-            const manualInputRaw = context.payload?.inputs?.target_pr_number ?? "";
+            const manualInputRaw = process.env.TARGET_PR_NUMBER_INPUT ?? "";
             const manualInput = typeof manualInputRaw === "string" ? manualInputRaw.trim() : "";
-            const manualRun = manualInput.length > 0;
+            const manualRun = context.eventName === "workflow_dispatch" && manualInput.length > 0;
 
             function setOutputs({
               found,
@@ -189,6 +204,12 @@ jobs:
               headSha: candidate.head.sha,
               mergeableState: candidate.mergeable_state || "unknown",
             });
+        env:
+          TARGET_PR_NUMBER_INPUT: ${{ inputs.target_pr_number || github.event.inputs.target_pr_number || '' }}
+
+      - name: Checkout repository
+        if: ${{ steps.select_pr.outputs.found == 'true' }}
+        uses: actions/checkout@v6
 
       - name: Comment to request conflict resolution (as your user)
         id: comment
@@ -202,10 +223,14 @@ jobs:
           MERGEABLE_STATE: ${{ steps.select_pr.outputs.mergeable_state }}
           MANUAL_RUN: ${{ steps.select_pr.outputs.manual_run }}
           ALLOW_REPEAT: ${{ steps.select_pr.outputs.allow_repeat }}
-          AGENT: ${{ github.event.inputs.agent }}
+          AGENT: ${{ inputs.agent || github.event.inputs.agent || '' }}
+          WEIGHTS_PATH: .github/workflows/weights.json
         with:
           github-token: ${{ secrets.GH_USER_TOKEN }}
           script: |
+            const fs = require("fs");
+            const path = require("path");
+
             if (process.env.FOUND !== "true") {
               core.info("No eligible PR selected; skipping comment.");
               core.setOutput("commented", "false");
@@ -222,6 +247,131 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const marker = "<!-- agent-resolve-merge-conflicts -->";
+            const FOLLOW_UP_AGENT_POOL = "followUps";
+            const DEFAULT_FOLLOW_UP_AGENT = "codex";
+            const WEIGHT_SCALE = 1000;
+
+            const normalize = (value) => {
+              const trimmed = (value || "").trim();
+              if (!trimmed) return "";
+              return trimmed
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, "-")
+                .replace(/^-+|-+$/g, "")
+                || "";
+            };
+
+            const getRunNumber = () => {
+              const raw = (process.env.GITHUB_RUN_NUMBER || "").trim();
+              const parsed = Number.parseInt(raw, 10);
+              return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+            };
+
+            const toSlots = (weight) => Math.max(1, Math.round(weight * WEIGHT_SCALE));
+
+            const buildInterleavedCycle = (items) => {
+              const maxSlots = Math.max(...items.map((item) => item.slots));
+              const cycle = [];
+              for (let slot = 1; slot <= maxSlots; slot += 1) {
+                for (const item of items) {
+                  if (item.slots >= slot) {
+                    cycle.push(item);
+                  }
+                }
+              }
+              return cycle;
+            };
+
+            const chooseDeterministicWeighted = (items, runNumber) => {
+              if (items.length === 0) return null;
+              const sortedItems = [...items].sort((left, right) => left.slug.localeCompare(right.slug));
+              const cycle = buildInterleavedCycle(sortedItems);
+              if (cycle.length === 0) return null;
+              const cycleIndex = (runNumber - 1) % cycle.length;
+              return {
+                selected: cycle[cycleIndex],
+                cycleIndex,
+                cycleLength: cycle.length,
+                totalWeight: sortedItems.reduce((sum, item) => sum + item.weight, 0),
+              };
+            };
+
+            const parseAgentCandidates = (pool) => {
+              if (!pool || !Array.isArray(pool.agents)) {
+                return [];
+              }
+
+              return pool.agents
+                .map((agent) => ({
+                  name: typeof agent?.name === "string" ? agent.name : "",
+                  weight: Number(agent?.weight),
+                }))
+                .filter((agent) => agent.name && Number.isFinite(agent.weight) && agent.weight > 0)
+                .map((agent) => ({
+                  name: agent.name,
+                  weight: agent.weight,
+                  slug: normalize(agent.name),
+                  slots: toSlots(agent.weight),
+                }))
+                .filter((agent) => agent.slug);
+            };
+
+            const loadWeightsConfig = () => {
+              const weightsPath = path.resolve(process.cwd(), process.env.WEIGHTS_PATH || ".github/workflows/weights.json");
+              const raw = fs.readFileSync(weightsPath, "utf8");
+              return JSON.parse(raw);
+            };
+
+            const selectAgent = (poolName, requestedAgent) => {
+              if (requestedAgent) {
+                return {
+                  agent: requestedAgent,
+                  reason: "manual override",
+                };
+              }
+
+              let poolDefault = DEFAULT_FOLLOW_UP_AGENT;
+              let candidates = [];
+              try {
+                const parsed = loadWeightsConfig();
+                const pool = parsed?.agentPools?.[poolName] ?? null;
+                const configuredDefault = normalize(pool?.default);
+                if (configuredDefault) {
+                  poolDefault = configuredDefault;
+                }
+                candidates = parseAgentCandidates(pool);
+              } catch (error) {
+                core.warning(`Falling back to default follow-up agent due to configuration error: ${error.message}`);
+              }
+
+              if (!candidates.length) {
+                return {
+                  agent: poolDefault,
+                  reason: `${poolName} pool default fallback`,
+                };
+              }
+
+              const runNumber = getRunNumber();
+              const chosen = chooseDeterministicWeighted(candidates, runNumber);
+              if (!chosen || !chosen.selected) {
+                return {
+                  agent: poolDefault,
+                  reason: `${poolName} deterministic weighted selection fallback`,
+                };
+              }
+
+              const { slug, name, weight, slots } = chosen.selected;
+              const cyclePosition = chosen.cycleIndex + 1;
+              core.info(
+                `Deterministic weighted selection picked agent "${name}" from ${poolName} pool ` +
+                `(slug=${slug}, weight=${weight}, slots=${slots}) for run #${runNumber} ` +
+                `at cycle position ${cyclePosition}/${chosen.cycleLength} from total weight ${chosen.totalWeight.toFixed(6)}.`
+              );
+              return {
+                agent: slug,
+                reason: `${poolName} deterministic weighted selection`,
+              };
+            };
 
             async function fetchPullRequest(attempts = 6) {
               for (let attempt = 0; attempt < attempts; attempt++) {
@@ -281,9 +431,11 @@ jobs:
               core.info(`Manual run requested another conflict resolution comment on PR #${prNumber}.`);
             }
 
-            const rawAgent = (process.env.AGENT || "").trim();
-            const agent = rawAgent ? rawAgent.toLowerCase() : "copilot";
-            const mention = `@${rawAgent || agent}`;
+            const rawAgent = normalize(process.env.AGENT);
+            const selection = selectAgent(FOLLOW_UP_AGENT_POOL, rawAgent);
+            const agent = selection.agent;
+            const mention = `@${agent}`;
+            core.info(`Using follow-up agent "${agent}" (${selection.reason}).`);
 
             const lines = [
               marker,

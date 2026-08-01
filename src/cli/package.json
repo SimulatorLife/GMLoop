@@ -8,6 +8,9 @@
     ".": "./dist/index.js",
     "./package.json": "./package.json"
   },
+  "bin": {
+    "gmloop": "./dist/index.js"
+  },
   "files": [
     "dist"
   ],
@@ -15,27 +18,29 @@
     "root_path": "."
   },
   "scripts": {
-    "build:types": "tsc -b tsconfig.json",
+    "build:types": "tsc -b tsconfig.json && chmod +x dist/index.js",
     "clean:types": "rm -rf dist",
-    "test": "pnpm run build:types && node --test dist/test/*.test.js"
+    "test": "pnpm run build:types && node --disable-warning=ExperimentalWarning --test-force-exit --test dist/test/*.test.js"
   },
   "dependencies": {
+    "@gmloop/agent-pack": "workspace:*",
     "@gmloop/core": "workspace:*",
+    "@gmloop/fixture-runner": "workspace:*",
+    "@gmloop/format": "workspace:*",
     "@gmloop/lint": "workspace:*",
     "@gmloop/parser": "workspace:*",
-    "@gmloop/format": "workspace:*",
     "@gmloop/refactor": "workspace:*",
     "@gmloop/semantic": "workspace:*",
     "@gmloop/transpiler": "workspace:*",
-    "commander": "^14.0.2",
-    "eslint": "^9.39.1",
-    "eslint-formatter-checkstyle": "^9.0.1",
-    "linkedom": "^0.18.12",
-    "fast-xml-parser": "^5.3.4",
-    "ws": "^8.18.0"
+    "@gmloop/ui": "workspace:*",
+    "eslint": "catalog:",
+    "ws": "catalog:",
+    "commander": "^15",
+    "fast-xml-parser": "^5.10.1",
+    "gray-matter": "^4.0.3",
+    "linkedom": "^0.18.13"
   },
-  "engines": {
-    "node": ">=22.0.0"
-  },
-  "packageManager": "pnpm@10.28.0"
+  "devDependencies": {
+    "typescript": "catalog:"
+  }
 }

@@ -1,0 +1,67 @@
+export {
+    buildGraphIndex,
+    doctorGraphIndex,
+    getGraphContext,
+    getGraphNeighbors,
+    getGraphNode,
+    getGraphUsages,
+    openGraphIndex,
+    searchGraphIndex,
+    vacuumGraphIndex
+} from "./builder.js";
+export { resolveGraphIndexConfig } from "./config.js";
+export {
+    GRAPH_INDEX_SCHEMA_VERSION,
+    openExistingGraphIndexDatabase,
+    openGraphIndexDatabase,
+    readGraphIndexSchemaVersion,
+    resetGraphIndexDatabase
+} from "./database.js";
+export {
+    cosineSimilarity,
+    deserializeEmbeddingVector,
+    ensureGraphEmbeddingModelAssets,
+    LocalTokenHashEmbeddingProvider,
+    serializeEmbeddingVector
+} from "./embeddings.js";
+export { exportGraphVisualizationData } from "./export-visualization-data.js";
+export {
+    getGraphDatabaseRuntimeInfo,
+    inspectGraphDatabaseIntegrity,
+    isSqliteDuplicateColumnError,
+    isSqliteMissingTableError,
+    openExistingGraphDatabase,
+    openGraphDatabase,
+    optimizeGraphDatabase,
+    runGraphDatabaseImmediateTransaction,
+    runGraphDatabaseTransaction
+} from "./sqlite-adapter.js";
+export {
+    createGraphAliases,
+    createGraphNodeSnippet,
+    createGraphNodeSummary,
+    extractDocCommentFirstSentence
+} from "./summary.js";
+export type {
+    GraphContextBundle,
+    GraphDatabaseIntegrityStatus,
+    GraphDatabaseRuntimeInfo,
+    GraphDoctorGraphStatus,
+    GraphDoctorIssue,
+    GraphDoctorReport,
+    GraphEdgeRecord,
+    GraphEdgeType,
+    GraphEmbeddingsConfig,
+    GraphIndexBuildOptions,
+    GraphIndexBuildResult,
+    GraphIndexConfig,
+    GraphIndexHandle,
+    GraphIndexScope,
+    GraphNeighborRecord,
+    GraphNodeKind,
+    GraphNodeRecord,
+    GraphSearchResponse,
+    GraphSearchResult,
+    GraphUsageRecord,
+    GraphVisualizationData
+} from "./types.js";

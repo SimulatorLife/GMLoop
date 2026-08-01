@@ -20,7 +20,7 @@
  * var x = real("0.5");
  * var y = REAL("123");
  *
- * // After --fix
+ * // After --write
  * var x = 0.5;
  * var y = 123;
  * ```
@@ -29,15 +29,24 @@
 import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import type { GmlRuleDefinition } from "../../catalog.js";
-import { createMeta, getNodeEndIndex, getNodeStartIndex, isAstNodeRecord, walkAstNodes } from "../rule-base-helpers.js";
+import type { GmlRuleDefinition } from "../index.js";
+import { createMeta, isAstNodeRecord, walkAstNodes } from "../rule-base-helpers.js";
 
 /**
  * Matches a valid GML numeric literal string: optional sign, integer part,
- * optional decimal, and optional exponent. Used to validate that the content
- * of the string argument to `real()` can be safely emitted as a bare literal.
+ * optional decimal, but no exponent suffix. GML does not parse scientific
+ * notation natively (the `no-scientific-notation` rule explicitly flags
+ * `1e-3` style tokens), so emitting one as a replacement for `real("1e-3")`
+ * would produce invalid source. The pattern therefore stops at the decimal
+ * portion to ensure the rewritten literal is always a syntactically valid
+ * GML token.
+ *
+ * This pattern is deliberately duplicated here rather than imported from
+ * `@gmloop/format` to keep the linter's public API surface minimal. The lint
+ * workspace must not re-export internal formatter utilities that could pull in
+ * Prettier internals and widen the dependency graph for consumers.
  */
-const NUMERIC_STRING_LITERAL_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+const NUMERIC_STRING_LITERAL_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/u;
 
 /**
  * Extracts the inner content of a GML string literal node value.
@@ -125,8 +134,8 @@ export function createSimplifyRealCallsRule(definition: GmlRuleDefinition): Rule
                             return;
                         }
 
-                        const start = getNodeStartIndex(node);
-                        const end = getNodeEndIndex(node);
+                        const start = Core.getNodeStartIndex(node);
+                        const end = Core.getNodeEndIndex(node);
                         if (typeof start !== "number" || typeof end !== "number") {
                             return;
                         }

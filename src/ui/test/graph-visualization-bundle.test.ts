@@ -1,0 +1,386 @@
+import assert from "node:assert/strict";
+import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+
+import {
+    __graphVisualizationBundleTest__,
+    renderGraphVisualizationBundle
+} from "../src/graph/graph-visualization-bundle.js";
+
+function createBaseData() {
+    return {
+        generatedAt: "2026-01-01T00:00:00.000Z",
+        graphs: [],
+        edges: [],
+        nodes: [],
+        projectRoot: "/tmp/project"
+    } as const;
+}
+
+function decodeBytes(bytes: Uint8Array): string {
+    return new TextDecoder().decode(bytes);
+}
+
+type GraphVisualizationBundle = Awaited<ReturnType<typeof renderGraphVisualizationBundle>>;
+
+function readBundleFileText(bundle: GraphVisualizationBundle, relativePath: string): string {
+    const file = bundle.files.find((entry) => entry.relativePath === relativePath);
+    assert.ok(file, `Expected bundle file '${relativePath}' to exist.`);
+    return decodeBytes(file.bytes);
+}
+
+function countTextOccurrences(text: string, pattern: RegExp): number {
+    return Array.from(text.matchAll(pattern)).length;
+}
+
+void test("workspace UI bundle freshness rejects browser assets older than source inputs", async () => {
+    const rootDirectory = await mkdtemp(path.join(os.tmpdir(), "gmloop-ui-freshness-"));
+    const webDirectory = path.join(rootDirectory, "dist/web");
+    const sourceDirectories = ["src/app", "src/graph", "src/web"];
+
+    try {
+        await mkdir(webDirectory, { recursive: true });
+        await Promise.all(
+            sourceDirectories.map(async (sourceDirectory) => {
+                await mkdir(path.join(rootDirectory, sourceDirectory), { recursive: true });
+                await writeFile(path.join(rootDirectory, sourceDirectory, "source.ts"), "export {};\n", "utf8");
+            })
+        );
+        await writeFile(path.join(rootDirectory, "vite.config.ts"), "export default {};\n", "utf8");
+        await writeFile(path.join(webDirectory, "index.html"), "<!doctype html>\n", "utf8");
+
+        const olderTime = new Date("2026-01-01T00:00:00.000Z");
+        const newerTime = new Date("2026-01-01T00:01:00.000Z");
+        await Promise.all(
+            sourceDirectories.map(async (sourceDirectory) => {
+                await utimes(path.join(rootDirectory, sourceDirectory, "source.ts"), olderTime, olderTime);
+            })
+        );
+        await utimes(path.join(rootDirectory, "vite.config.ts"), olderTime, olderTime);
+        await utimes(path.join(webDirectory, "index.html"), olderTime, olderTime);
+        await utimes(path.join(rootDirectory, "src/app/source.ts"), newerTime, newerTime);
+
+        assert.equal(
+            await __graphVisualizationBundleTest__.isWorkspaceWebBundleFresh(rootDirectory, webDirectory),
+            false
+        );
+
+        await utimes(path.join(webDirectory, "index.html"), newerTime, newerTime);
+        assert.equal(
+            await __graphVisualizationBundleTest__.isWorkspaceWebBundleFresh(rootDirectory, webDirectory),
+            true
+        );
+    } finally {
+        await rm(rootDirectory, { force: true, recursive: true });
+    }
+});
+
+void test("monorepo prebuilt UI assets remain subject to workspace freshness checks", () => {
+    const prebuiltWebDirectory = __graphVisualizationBundleTest__.resolvePrebuiltWebDirectory();
+
+    assert.ok(prebuiltWebDirectory);
+    assert.ok(prebuiltWebDirectory.workspaceRoot);
+    assert.equal(prebuiltWebDirectory.path, path.join(prebuiltWebDirectory.workspaceRoot, "dist/web"));
+});
+
+void test("graph visualization bundle emits entry html plus local runtime assets", async () => {
+    const bundle = await renderGraphVisualizationBundle(createBaseData(), { title: "Test Graph" });
+
+    assert.equal(bundle.entryHtmlPath, "index.html");
+    assert.ok(bundle.files.some((entry) => /^assets\/.+\.css$/u.test(entry.relativePath)));
+    assert.ok(bundle.files.some((entry) => /^assets\/.+\.js$/u.test(entry.relativePath)));
+    assert.equal(
+        bundle.files.some((entry) => entry.relativePath.includes("vendor/d3")),
+        false
+    );
+});
+
+void test("graph visualization entry html references local assets and avoids CDN links", async () => {
+    const bundle = await renderGraphVisualizationBundle(createBaseData(), { title: "No CDN" });
+    const html = readBundleFileText(bundle, bundle.entryHtmlPath);
+
+    assert.match(html, /<link rel="stylesheet" crossorigin href="\.\/assets\/.+\.css">/u);
+    assert.match(html, /<script type="module" crossorigin src="\.\/assets\/.+\.js"><\/script>/u);
+    assert.doesNotMatch(html, /cdn\./u);
+    assert.doesNotMatch(html, /<script[^>]+src="https?:\/\//u);
+    assert.doesNotMatch(html, /<link[^>]+href="https?:\/\//u);
+    assert.match(html, /window\.__GMLOOP_GRAPH_VISUALIZATION_DATA__/u);
+    assert.match(html, /window\.__GMLOOP_GRAPH_VISUALIZATION_OPTIONS__/u);
+    assert.doesNotMatch(html, /window\.__GMLOOP_DOCUMENTATION_CATALOGS__/u);
+    assert.doesNotMatch(html, /window\.__GMLOOP_LIVE_RELOAD__/u);
+    assert.doesNotMatch(html, /window\.__GMLOOP_LOADED_TARGET__/u);
+    assert.doesNotMatch(html, /window\.__GMLOOP_PROJECT_CONFIGURATION__/u);
+    assert.doesNotMatch(html, /window\.__GMLOOP_STARTUP_STATE__/u);
+    assert.doesNotMatch(html, />GitHub Repo</u);
+});
+
+void test("graph visualization entry html keeps project opening inside the project context card", async () => {
+    const bundle = await renderGraphVisualizationBundle(createBaseData(), { title: "No project loaded" });
+    const html = readBundleFileText(bundle, bundle.entryHtmlPath);
+
+    assert.equal(countTextOccurrences(html, /id="root"/gu), 1);
+    assert.match(html, /"title":"No project loaded"/u);
+});
+
+void test("graph visualization module script embeds serialized graph payload and boot logic", async () => {
+    const bundle = await renderGraphVisualizationBundle(
+        {
+            generatedAt: "2026-01-01T00:00:00.000Z",
+            graphs: [],
+            edges: [
+                {
+                    source: "project::resource::InterplanetaryFootball.yyp",
+                    target: "project::resource::scripts/kickoff/kickoff.yy",
+                    type: "contains"
+                }
+            ],
+            nodes: [
+                {
+                    displayName: "InterplanetaryFootball",
+                    filePath: null,
+                    graphId: "project",
+                    id: "project::resource::InterplanetaryFootball.yyp",
+                    kind: "project",
+                    lineEnd: null,
+                    lineStart: null,
+                    name: "InterplanetaryFootball",
+                    resourcePath: "InterplanetaryFootball.yyp",
+                    scopeId: null,
+                    scipSymbol: null,
+                    snippet: "",
+                    summary: "project 'InterplanetaryFootball'. Defined in InterplanetaryFootball.yyp."
+                }
+            ],
+            projectRoot: "/tmp/project"
+        },
+        { title: "Payload Test" }
+    );
+
+    const html = readBundleFileText(bundle, bundle.entryHtmlPath);
+    const script = bundle.files
+        .filter((entry) => entry.relativePath.endsWith(".js"))
+        .map((entry) => decodeBytes(entry.bytes))
+        .join("\n");
+
+    assert.match(html, /InterplanetaryFootball/u);
+    assert.match(html, /resourcePath":"InterplanetaryFootball\.yyp/u);
+    assert.match(script, /Graph Index/u);
+    assert.match(script, /Search graph nodes/u);
+    assert.match(script, /api\/ui-revision/u);
+});
+
+void test("graph visualization module script renders unloaded project state without repeated empty labels", async () => {
+    const bundle = await renderGraphVisualizationBundle(createBaseData(), { title: "No project loaded" });
+    const html = readBundleFileText(bundle, bundle.entryHtmlPath);
+
+    assert.match(html, /"loadedTarget":null/u);
+    assert.match(html, /"title":"No project loaded"/u);
+});
+
+void test("graph visualization module script shows live-reload startup state via button spinner instead of banner text", async () => {
+    const bundle = await renderGraphVisualizationBundle(createBaseData(), { title: "Live Reload Startup" });
+    const script = bundle.files
+        .filter((entry) => entry.relativePath.endsWith(".js"))
+        .map((entry) => decodeBytes(entry.bytes))
+        .join("\n");
+
+    assert.match(script, /button-spinner/u);
+    assert.match(script, /Start Live Reload/u);
+    assert.doesNotMatch(script, /Restarting live reload pipeline\. Waiting for watcher status/u);
+});
+
+void test("graph visualization module script embeds workspace rule catalogs when provided", async () => {
+    const bundle = await renderGraphVisualizationBundle(createBaseData(), {
+        documentationCatalogs: {
+            cliCommands: [],
+            mcpServer: {
+                name: "gmloop-mcp",
+                version: "0.0.1"
+            },
+            mcpTools: [],
+            workspaceRules: {
+                formatOptions: [
+                    {
+                        defaultValue: true,
+                        description: "Format option description",
+                        name: "gmloop_format"
+                    }
+                ],
+                lintRules: [
+                    {
+                        description: "Lint rule description",
+                        fixable: "code",
+                        ruleId: "gml/test-rule"
+                    }
+                ],
+                refactorCodemods: [
+                    {
+                        description: "Codemod description",
+                        id: "refactor/test-codemod",
+                        requiresSemanticProjectIndex: false
+                    }
+                ]
+            }
+        },
+        title: "Rules Catalog"
+    });
+
+    const html = readBundleFileText(bundle, bundle.entryHtmlPath);
+    const script = bundle.files
+        .filter((entry) => entry.relativePath.endsWith(".js"))
+        .map((entry) => decodeBytes(entry.bytes))
+        .join("\n");
+    assert.match(html, /workspaceRules/u);
+    assert.match(html, /gml\/test-rule/u);
+    assert.match(html, /refactor\/test-codemod/u);
+    assert.match(script, /activePage/u);
+    assert.match(script, /history\.replaceState/u);
+});
+
+void test("graph visualization bundle preserves relationship edge kinds in exported payload", async () => {
+    const bundle = await renderGraphVisualizationBundle(
+        {
+            generatedAt: "2026-01-01T00:00:00.000Z",
+            graphs: [],
+            edges: [
+                {
+                    source: "project::resource::objects/obj_child/obj_child.yy",
+                    target: "project::resource::objects/obj_parent/obj_parent.yy",
+                    type: "inherits"
+                },
+                {
+                    source: "project::resource::objects/obj_child/obj_child.yy",
+                    target: "project::resource::sprites/spr_player/spr_player.yy",
+                    type: "references"
+                }
+            ],
+            nodes: [
+                {
+                    displayName: "obj_child",
+                    filePath: null,
+                    graphId: "project",
+                    id: "project::resource::objects/obj_child/obj_child.yy",
+                    kind: "object",
+                    lineEnd: null,
+                    lineStart: null,
+                    name: "obj_child",
+                    resourcePath: "objects/obj_child/obj_child.yy",
+                    scopeId: null,
+                    scipSymbol: null,
+                    snippet: "",
+                    summary: "Object 'obj_child'."
+                },
+                {
+                    displayName: "obj_parent",
+                    filePath: null,
+                    graphId: "project",
+                    id: "project::resource::objects/obj_parent/obj_parent.yy",
+                    kind: "object",
+                    lineEnd: null,
+                    lineStart: null,
+                    name: "obj_parent",
+                    resourcePath: "objects/obj_parent/obj_parent.yy",
+                    scopeId: null,
+                    scipSymbol: null,
+                    snippet: "",
+                    summary: "Object 'obj_parent'."
+                },
+                {
+                    displayName: "spr_player",
+                    filePath: null,
+                    graphId: "project",
+                    id: "project::resource::sprites/spr_player/spr_player.yy",
+                    kind: "sprite",
+                    lineEnd: null,
+                    lineStart: null,
+                    name: "spr_player",
+                    resourcePath: "sprites/spr_player/spr_player.yy",
+                    scopeId: null,
+                    scipSymbol: null,
+                    snippet: "",
+                    summary: "Sprite 'spr_player'."
+                }
+            ],
+            projectRoot: "/tmp/project"
+        },
+        { title: "Inheritance Graph" }
+    );
+
+    const html = readBundleFileText(bundle, bundle.entryHtmlPath);
+    const script = bundle.files
+        .filter((entry) => entry.relativePath.endsWith(".js"))
+        .map((entry) => decodeBytes(entry.bytes))
+        .join("\n");
+
+    assert.match(html, /"type":"inherits"/u);
+    assert.match(html, /"type":"references"/u);
+    assert.match(script, /inherits/u);
+});
+
+void test("graph visualization css asset preserves core visual affordances", async () => {
+    const bundle = await renderGraphVisualizationBundle(createBaseData(), { title: "Styles Test" });
+    const css = bundle.files
+        .filter((entry) => entry.relativePath.endsWith(".css"))
+        .map((entry) => decodeBytes(entry.bytes))
+        .join("\n");
+
+    assert.match(css, /font-size:\s*var\(--gm-text-lg\)/u);
+    assert.match(css, /#tooltip/u);
+    assert.match(css, /#tooltip\{[^}]*top:20px;[^}]*left:20px/u);
+    assert.match(css, /\.link/u);
+    assert.match(css, /@keyframes graph-button-spin/u);
+    assert.match(css, /button:disabled\{cursor:not-allowed/u);
+    assert.match(css, /\.gm-btn--nav\.active:disabled\{/u);
+    assert.match(css, /\.live-reload-pipeline/u);
+    assert.match(css, /\.gm-status-chip/u);
+});
+
+void test("graph visualization server-mode html includes regenerate affordance", async () => {
+    const bundle = await renderGraphVisualizationBundle(createBaseData(), {
+        isServerMode: true,
+        title: "Server Mode"
+    });
+    const html = readBundleFileText(bundle, bundle.entryHtmlPath);
+
+    assert.match(html, /"isServerMode":true/u);
+    const script = bundle.files
+        .filter((entry) => entry.relativePath.endsWith(".js"))
+        .map((entry) => decodeBytes(entry.bytes))
+        .join("\n");
+    assert.match(script, /Regenerate/u);
+});
+
+void test("graph visualization bundle includes a graph empty state for no-project sessions", async () => {
+    const bundle = await renderGraphVisualizationBundle(createBaseData(), { title: "Empty State" });
+    const script = bundle.files
+        .filter((entry) => entry.relativePath.endsWith(".js"))
+        .map((entry) => decodeBytes(entry.bytes))
+        .join("\n");
+
+    assert.match(script, /graph-empty-state/u);
+    assert.match(script, /Open a GameMaker project to start exploring the graph/u);
+});
+
+void test("graph visualization bundle includes startup-loading shell affordances", async () => {
+    const bundle = await renderGraphVisualizationBundle(createBaseData(), {
+        loadedTarget: {
+            activePath: "/tmp/loading-project/Project.yyp",
+            projectRoot: "/tmp/loading-project",
+            selectedPaths: ["/tmp/loading-project"],
+            source: "finder-open"
+        },
+        startupState: {
+            detail: null,
+            message: "Loading project data…",
+            phase: "loading"
+        },
+        title: "Startup Loading"
+    });
+
+    const html = readBundleFileText(bundle, bundle.entryHtmlPath);
+
+    assert.match(html, /"startupState":\{"detail":null,"message":"Loading project data…","phase":"loading"\}/u);
+    assert.match(html, /"loadedTarget":\{"activePath":"\/tmp\/loading-project\/Project\.yyp"/u);
+});

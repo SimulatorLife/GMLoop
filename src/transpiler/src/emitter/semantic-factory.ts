@@ -1,7 +1,41 @@
 import { Core } from "@gmloop/core";
 import { Semantic } from "@gmloop/semantic";
 
-import type { CallTargetAnalyzer, IdentifierAnalyzer } from "./ast.js";
+import type {
+    CallExpressionNode,
+    CallTargetAnalyzer,
+    IdentifierAnalyzer,
+    IdentifierMetadata,
+    IdentifierNode,
+    SemKind
+} from "./ast.js";
+
+const GML_RUNTIME_VALUE_NAMES: ReadonlySet<string> = new Set([
+    "c_aqua",
+    "c_black",
+    "c_blue",
+    "c_dkgray",
+    "c_fuchsia",
+    "c_gray",
+    "c_green",
+    "c_lime",
+    "c_ltgray",
+    "c_maroon",
+    "c_navy",
+    "c_olive",
+    "c_orange",
+    "c_purple",
+    "c_red",
+    "c_silver",
+    "c_teal",
+    "c_white",
+    "c_yellow",
+    "current_time",
+    "mouse_x",
+    "mouse_y",
+    "pi",
+    "pi2"
+]);
 
 /**
  * Configuration options for creating a semantic oracle for the transpiler.
@@ -21,26 +55,101 @@ export interface SemanticOracleOptions {
 }
 
 /**
+ * Check whether an arbitrary GML AST node carries identifier metadata
+ * (i.e. a `.name` string property, with an optional `.isGlobalIdentifier` flag).
+ *
+ * Used by call-target methods when inspecting the `object` child of a
+ * CallExpression, which may be any GML node type at runtime.
+ */
+function hasIdentifierMetadata(value: unknown): value is IdentifierMetadata {
+    return typeof value === "object" && value !== null && "name" in value && typeof value.name === "string";
+}
+
+/**
+ * Scope-free semantic oracle for the transpiler.
+ *
+ * Classifies GML identifiers and call targets using only two lookup sets:
+ * - `builtinNames`: GameMaker built-in function names (from manual metadata)
+ * - `scriptNames`: known user script names (for hot-reload routing)
+ *
+ * No scope-chain resolution is performed; identifiers that are not builtins
+ * or scripts fall back to "local". Scope-aware classification (e.g. detecting
+ * instance fields vs local variables) is intentionally out of scope for the
+ * transpiler layer. When scope tracking is needed in the future the caller
+ * should wrap this oracle with a scope-aware decorator or supply a richer
+ * `IdentifierAnalyzer` implementation via `GmlTranspiler`'s dependencies.
+ *
+ * Implements both `IdentifierAnalyzer` and `CallTargetAnalyzer` so it can be
+ * passed directly to `GmlToJsEmitter`.
+ */
+class DefaultSemanticOracle implements IdentifierAnalyzer, CallTargetAnalyzer {
+    private readonly builtinNames: Set<string>;
+    private readonly scriptNames: Set<string>;
+
+    constructor(builtinNames: Set<string>, scriptNames: Set<string>) {
+        this.builtinNames = builtinNames;
+        this.scriptNames = scriptNames;
+    }
+
+    private classifyName(name: string): "builtin" | "script" | null {
+        if (this.builtinNames.has(name) || GML_RUNTIME_VALUE_NAMES.has(name)) {
+            return "builtin";
+        }
+        if (this.scriptNames.has(name)) {
+            return "script";
+        }
+        return null;
+    }
+
+    kindOfIdent(node: IdentifierNode | IdentifierMetadata | null | undefined): SemKind {
+        if (!node?.name) return "local";
+        if (node.isGlobalIdentifier) return "global_field";
+        return this.classifyName(node.name) ?? "local";
+    }
+
+    nameOfIdent(node: IdentifierNode | IdentifierMetadata | null | undefined): string {
+        return node?.name ?? "";
+    }
+
+    qualifiedSymbol(node: IdentifierNode | IdentifierMetadata | null | undefined): string | null {
+        if (!node?.name) return null;
+        const kind = this.kindOfIdent(node);
+        return Semantic.buildQualifiedSymbol(kind, node.name);
+    }
+
+    callTargetKind(node: CallExpressionNode): "script" | "builtin" | "unknown" {
+        if (!hasIdentifierMetadata(node.object)) return "unknown";
+        return this.classifyName(node.object.name) ?? "unknown";
+    }
+
+    callTargetSymbol(node: CallExpressionNode): string | null {
+        if (!hasIdentifierMetadata(node.object)) return null;
+        const kind = this.classifyName(node.object.name);
+        if (!kind) return null;
+        return Semantic.buildCallTargetSymbol(kind, node.object.name);
+    }
+}
+
+/**
  * Create a semantic oracle configured for transpiler use.
  *
- * This factory provides a properly configured `BasicSemanticOracle` that:
- * - Knows about all GameMaker built-in functions from manual metadata
- * - Can classify scripts when provided with script names
- * - Resolves local variables through an optional scope tracker
+ * Returns a `DefaultSemanticOracle` that:
+ * - Knows all GameMaker built-in functions from manual metadata
+ * - Can classify user scripts when provided with script names
  *
  * The returned oracle implements both `IdentifierAnalyzer` and `CallTargetAnalyzer`
- * interfaces expected by the transpiler emitter.
+ * as expected by `GmlToJsEmitter`.
  *
- * @param options Configuration for the semantic oracle
+ * @param options Configuration for the oracle
  * @returns An oracle instance that can classify identifiers and call targets
  *
  * @example
  * ```typescript
- * // Basic usage with just built-in functions
+ * // Basic usage — loads built-in names automatically
  * const oracle = createSemanticOracle();
  * const emitter = new GmlToJsEmitter(oracle);
  *
- * // With script tracking for hot reload
+ * // With script names for hot-reload routing
  * const oracle = createSemanticOracle({
  *   scriptNames: new Set(['scr_player_move', 'scr_enemy_ai'])
  * });
@@ -50,27 +159,5 @@ export interface SemanticOracleOptions {
 export function createSemanticOracle(options: SemanticOracleOptions = {}): IdentifierAnalyzer & CallTargetAnalyzer {
     const builtinNames = options.builtinNames ?? Core.loadManualFunctionNames();
     const scriptNames = options.scriptNames ?? new Set<string>();
-
-    // SCOPE TRACKING DECISION: We pass `null` for the scope tracker parameter.
-    //
-    // The transpiler operates on individual AST nodes in isolation, emitting
-    // JavaScript code without needing full project context or cross-file scope
-    // information. The semantic oracle's built-in function knowledge and script
-    // name classification are sufficient for code generation.
-    //
-    // Scope tracking would only be beneficial if the transpiler needed to:
-    //   1. Distinguish between local variables and instance fields with the same name
-    //   2. Handle shadowing across nested function scopes
-    //   3. Generate different code based on declaration site
-    //
-    // Currently, the transpiler relies on GML's runtime semantics where undeclared
-    // identifiers are treated as instance variables. This matches GameMaker's
-    // behavior and avoids requiring full project analysis for transpilation.
-    //
-    // If scope-aware transpilation becomes necessary in the future, the integration
-    // point would be through the public Semantic API (SemanticScopeCoordinator),
-    // not the internal ScopeTracker class.
-    const scopeTracker: ConstructorParameters<typeof Semantic.BasicSemanticOracle>[0] = null;
-
-    return new Semantic.BasicSemanticOracle(scopeTracker, builtinNames, scriptNames);
+    return new DefaultSemanticOracle(builtinNames, scriptNames);
 }

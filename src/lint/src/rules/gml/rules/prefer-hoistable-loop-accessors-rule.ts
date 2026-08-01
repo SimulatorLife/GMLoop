@@ -1,17 +1,17 @@
-import * as CoreWorkspace from "@gmloop/core";
+import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import type { GmlRuleDefinition } from "../../catalog.js";
+import type { GmlRuleDefinition } from "../index.js";
 import {
     type AstNodeWithType,
     createMeta,
-    getNodeStartIndex,
     isAstNodeWithType,
+    readObjectOption,
     resolveLocFromIndex,
+    shouldReportUnsafe,
     walkAstNodes,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
-import { readObjectOption, shouldReportUnsafe } from "../rule-helpers.js";
 
 const DEFAULT_HOIST_ACCESSORS = Object.freeze({
     array_length: "len"
@@ -27,7 +27,7 @@ function collectLoopLengthAccessorCallsFromTestExpression(parameters: {
     testNode: unknown;
     enabledFunctionNames: ReadonlySet<string>;
 }) {
-    return CoreWorkspace.Core.collectLoopLengthAccessorCallsFromAstNode({
+    return Core.collectLoopLengthAccessorCallsFromAstNode({
         sourceText: parameters.sourceText,
         rootNode: parameters.testNode,
         enabledFunctionNames: parameters.enabledFunctionNames
@@ -65,10 +65,7 @@ export function createPreferHoistableLoopAccessorsRule(definition: GmlRuleDefini
             const minOccurrences = typeof options.minOccurrences === "number" ? options.minOccurrences : 2;
             const functionSuffixes = options.functionSuffixes as Record<string, string | null> | undefined;
             const shouldReportUnsafeFixes = shouldReportUnsafe(context);
-            const suffixMap = CoreWorkspace.Core.resolveIdentifierKeyedSuffixMap(
-                DEFAULT_HOIST_ACCESSORS,
-                functionSuffixes
-            );
+            const suffixMap = Core.resolveIdentifierKeyedSuffixMap(DEFAULT_HOIST_ACCESSORS, functionSuffixes);
 
             return Object.freeze({
                 Program(programNode) {
@@ -97,7 +94,16 @@ export function createPreferHoistableLoopAccessorsRule(definition: GmlRuleDefini
                     let firstReportOffset: number | null = null;
                     let firstUnsafeOffset: number | null = null;
                     for (const loopNode of loopNodes) {
-                        if (loopNode.type === "ForStatement" && enabledHoistFunctionNames.size > 0) {
+                        // Skip the loop entirely when the user has disabled every
+                        // configured accessor (for example by setting
+                        // `functionSuffixes: { array_length: null }`). Without this
+                        // guard the body branch below would still match the
+                        // hardcoded `array_length` name and produce false positives.
+                        if (enabledHoistFunctionNames.size === 0) {
+                            continue;
+                        }
+
+                        if (loopNode.type === "ForStatement") {
                             const testCalls = collectLoopLengthAccessorCallsFromTestExpression({
                                 sourceText,
                                 testNode: (loopNode as any).test,
@@ -115,7 +121,7 @@ export function createPreferHoistableLoopAccessorsRule(definition: GmlRuleDefini
 
                                 const forContext = forStatementContextByNode.get(loopNode);
                                 if (forContext && !forContext.canInsertHoistBeforeLoop) {
-                                    const forStart = getNodeStartIndex(loopNode);
+                                    const forStart = Core.getNodeStartIndex(loopNode);
                                     if (
                                         typeof forStart === "number" &&
                                         (firstUnsafeOffset === null || forStart < firstUnsafeOffset)
@@ -128,20 +134,20 @@ export function createPreferHoistableLoopAccessorsRule(definition: GmlRuleDefini
                             }
                         }
 
-                        const loopCalls = CoreWorkspace.Core.collectLoopLengthAccessorCallsFromAstNode({
+                        const loopCalls = Core.collectLoopLengthAccessorCallsFromAstNode({
                             sourceText,
                             rootNode: loopNode,
-                            enabledFunctionNames: new Set(["array_length"])
+                            enabledFunctionNames: enabledHoistFunctionNames
                         });
                         if (loopCalls.length === 0) {
                             continue;
                         }
 
                         if (loopNode.type === "ForStatement") {
-                            const testCalls = CoreWorkspace.Core.collectLoopLengthAccessorCallsFromAstNode({
+                            const testCalls = Core.collectLoopLengthAccessorCallsFromAstNode({
                                 sourceText,
                                 rootNode: (loopNode as any).test,
-                                enabledFunctionNames: new Set(["array_length"])
+                                enabledFunctionNames: enabledHoistFunctionNames
                             });
                             if (testCalls.length > 0) {
                                 continue;

@@ -2,15 +2,14 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
-import { ProjectIndexCacheStatus } from "./cache.js";
-import { defaultFsFacade, type ProjectIndexFsFacade } from "./fs-facade.js";
+import type { ProjectIndexBuildOptions } from "./build-options.js";
+import type { ProjectIndexFsFacade } from "./fs-facade.js";
+import type { SemanticFileManifest } from "./semantic-manifest.js";
 
 /** Descriptor passed to {@link ProjectIndexCoordinatorInstance.ensureReady}. */
 type EnsureReadyDescriptor = {
     projectRoot: string;
-    maxSizeBytes?: number | null;
-    buildOptions?: Record<string, unknown>;
-    [key: string]: unknown;
+    buildOptions?: ProjectIndexBuildOptions;
 };
 
 /** Project index data returned from a build or cache hit. */
@@ -26,16 +25,23 @@ type CacheSaveResult = {
 };
 
 /** Result returned by a cache load operation. */
-type CacheLoadResult = {
-    status: string;
-    projectIndex?: ProjectIndexData;
-    cacheFilePath: string;
-    [key: string]: unknown;
-};
+type CacheLoadResult =
+    | Readonly<{
+          cacheFilePath: string;
+          manifest: SemanticFileManifest;
+          projectIndex: ProjectIndexData;
+          status: "hit";
+      }>
+    | Readonly<{
+          cacheFilePath: string;
+          manifest: SemanticFileManifest;
+          reason: Readonly<{ type: "not-found" | "revision-mismatch" }>;
+          status: "miss";
+      }>;
 
 /** Result returned by {@link ProjectIndexCoordinatorInstance.ensureReady}. */
 export type EnsureReadyResult = {
-    source: "cache" | "build";
+    source: "store" | "build";
     projectIndex: ProjectIndexData;
     cache: {
         saveResult?: CacheSaveResult;
@@ -43,21 +49,19 @@ export type EnsureReadyResult = {
     };
 };
 
-/** Loads the project index from cache. Mirrors the shape of `loadProjectIndexCache`. */
+/** Loads the project index from the canonical semantic store. */
 type LoadCacheFunction = (
     descriptor: { projectRoot: string; [key: string]: unknown },
     fsFacade: ProjectIndexFsFacade,
     options: { signal: AbortSignal }
 ) => Promise<CacheLoadResult>;
 
-/** Persists the project index to cache. Mirrors the shape of `saveProjectIndexCache`. */
+/** Persists the project index to the canonical semantic store. */
 type SaveCacheFunction = (
     descriptor: {
         projectRoot: string;
         projectIndex: ProjectIndexData;
-        metricsSummary?: unknown;
-        maxSizeBytes: number | null;
-        [key: string]: unknown;
+        manifest: SemanticFileManifest;
     },
     fsFacade: ProjectIndexFsFacade,
     options: { signal: AbortSignal }
@@ -67,11 +71,8 @@ type SaveCacheFunction = (
 type BuildIndexFunction = (
     projectRoot: string,
     fsFacade: ProjectIndexFsFacade,
-    options?: Record<string, unknown>
+    options?: ProjectIndexBuildOptions
 ) => Promise<ProjectIndexData>;
-
-/** Returns the default maximum cache size in bytes. */
-type GetDefaultCacheSizeFunction = () => number;
 
 /**
  * Options for the core project index coordinator.
@@ -81,14 +82,11 @@ type GetDefaultCacheSizeFunction = () => number;
  * `./builder.ts` (`createProjectIndexCoordinator`).
  */
 export type CoordinatorCoreOptions = {
-    /** Filesystem facade used by load/save operations. Defaults to `defaultFsFacade`. */
+    /** Filesystem facade used by load/save operations. Defaults to `Core.defaultFsFacade`. */
     fsFacade?: ProjectIndexFsFacade;
     loadCache: LoadCacheFunction;
     saveCache: SaveCacheFunction;
     buildIndex: BuildIndexFunction;
-    /** Override the maximum cache size in bytes. Defaults to `getDefaultCacheMaxSize()`. */
-    cacheMaxSizeBytes?: number | null;
-    getDefaultCacheMaxSize: GetDefaultCacheSizeFunction;
 };
 
 /** Public API of the project index coordinator returned by `createProjectIndexCoordinator`. */
@@ -157,20 +155,18 @@ function trackInFlightOperation(
     key: string,
     createOperation: () => Promise<EnsureReadyResult>
 ): Promise<EnsureReadyResult> {
-    if (map.has(key)) {
-        return map.get(key);
-    }
-
-    const pending = (async () => {
-        try {
-            return await createOperation();
-        } finally {
-            map.delete(key);
-        }
-    })();
-
-    map.set(key, pending);
-    return pending;
+    // Use Core.getOrCreateMapEntry instead of the manual has/get/set pattern.
+    // The initializer returns the cached promise when one is already in flight,
+    // avoiding the double-lookup that the manual pattern required.
+    return Core.getOrCreateMapEntry(map, key, () =>
+        (async () => {
+            try {
+                return await createOperation();
+            } finally {
+                map.delete(key);
+            }
+        })()
+    );
 }
 
 type ExecuteOperationOptions = {
@@ -181,7 +177,6 @@ type ExecuteOperationOptions = {
     loadCache: LoadCacheFunction;
     saveCache: SaveCacheFunction;
     buildIndex: BuildIndexFunction;
-    cacheMaxSizeBytes: number | null;
     disposedMessage: string;
 };
 
@@ -193,16 +188,15 @@ async function executeEnsureReadyOperation({
     loadCache,
     saveCache,
     buildIndex,
-    cacheMaxSizeBytes,
     disposedMessage
 }: ExecuteOperationOptions): Promise<EnsureReadyResult> {
     const loadResult = await loadCache({ ...descriptor, projectRoot: resolvedRoot }, fsFacade, { signal });
     Core.throwIfAborted(signal, disposedMessage);
 
-    if (loadResult.status === ProjectIndexCacheStatus.HIT) {
+    if (loadResult.status === "hit") {
         Core.throwIfAborted(signal, disposedMessage);
         return {
-            source: "cache",
+            source: "store",
             projectIndex: loadResult.projectIndex,
             cache: loadResult
         };
@@ -214,15 +208,12 @@ async function executeEnsureReadyOperation({
     });
     Core.throwIfAborted(signal, disposedMessage);
 
-    const descriptorMaxSizeBytes = descriptor.maxSizeBytes === undefined ? cacheMaxSizeBytes : descriptor.maxSizeBytes;
-
     const saveResult = await saveCache(
         {
             ...descriptor,
             projectRoot: resolvedRoot,
             projectIndex,
-            metricsSummary: projectIndex.metrics,
-            maxSizeBytes: descriptorMaxSizeBytes
+            manifest: loadResult.manifest
         },
         fsFacade,
         { signal }
@@ -254,24 +245,14 @@ async function executeEnsureReadyOperation({
  * provides convenient defaults for all required dependencies.
  */
 export function createProjectIndexCoordinator({
-    fsFacade = defaultFsFacade,
+    fsFacade = Core.defaultFsFacade,
     loadCache,
     saveCache,
-    buildIndex,
-    cacheMaxSizeBytes: rawCacheMaxSizeBytes,
-    getDefaultCacheMaxSize
+    buildIndex
 }: CoordinatorCoreOptions): ProjectIndexCoordinatorInstance {
     const normalizedLoadCache = assertCoordinatorFunction<LoadCacheFunction>(loadCache, "loadCache");
     const normalizedSaveCache = assertCoordinatorFunction<SaveCacheFunction>(saveCache, "saveCache");
     const normalizedBuildIndex = assertCoordinatorFunction<BuildIndexFunction>(buildIndex, "buildIndex");
-    const normalizedGetDefaultCacheMaxSize = assertCoordinatorFunction<GetDefaultCacheSizeFunction>(
-        getDefaultCacheMaxSize,
-        "getDefaultCacheMaxSize"
-    );
-
-    const cacheMaxSizeBytes: number | null =
-        rawCacheMaxSizeBytes === undefined ? normalizedGetDefaultCacheMaxSize() : rawCacheMaxSizeBytes;
-
     const inFlight = new Map<string, Promise<EnsureReadyResult>>();
     let disposed = false;
     const abortController = new AbortController();
@@ -305,7 +286,6 @@ export function createProjectIndexCoordinator({
                 loadCache: normalizedLoadCache,
                 saveCache: normalizedSaveCache,
                 buildIndex: normalizedBuildIndex,
-                cacheMaxSizeBytes,
                 disposedMessage: DISPOSED_MESSAGE
             })
         );

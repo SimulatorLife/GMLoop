@@ -4,14 +4,14 @@ import { Core } from "@gmloop/core";
 
 import { createProjectIndexAbortGuard, PROJECT_ROOT_DISCOVERY_ABORT_MESSAGE } from "./abort-guard.js";
 import { isProjectManifestPath } from "./constants.js";
-import { defaultFsFacade, type ProjectIndexFsFacade } from "./fs-facade.js";
+import type { ProjectIndexFsFacade } from "./fs-facade.js";
 
 // Use canonical Core namespace access instead of destructuring
 // - Core.walkAncestorDirectories
 
 export async function findProjectRoot(
     options,
-    fsFacade: Required<Pick<ProjectIndexFsFacade, "readDir">> = defaultFsFacade
+    fsFacade: Required<Pick<ProjectIndexFsFacade, "readDir">> = Core.defaultFsFacade as Required<ProjectIndexFsFacade>
 ) {
     const filepath = options?.filepath;
     const { signal, ensureNotAborted } = createProjectIndexAbortGuard(options, {

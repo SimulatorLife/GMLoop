@@ -1,21 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { getHighResolutionTime, getWallClockTime, measureDuration } from "../src/timing/index.js";
+import { getHighResolutionTime, measureDuration } from "../src/browser/timing.js";
 
 await describe("timing utilities", async () => {
-    await it("getWallClockTime returns a number", () => {
-        const time = getWallClockTime();
-        assert.strictEqual(typeof time, "number");
-        assert.ok(time > 0);
-    });
-
-    await it("getWallClockTime returns approximately the same value as Date.now", () => {
-        const wallClock = getWallClockTime();
-        const dateNow = Date.now();
-        assert.ok(Math.abs(wallClock - dateNow) < 10, "Wall clock time should be within 10ms of Date.now()");
-    });
-
     await it("getHighResolutionTime returns a number", () => {
         const time = getHighResolutionTime();
         assert.strictEqual(typeof time, "number");
@@ -94,6 +82,30 @@ await describe("timing utilities", async () => {
                 subMillisecondCount > 0 || measurements.every((m) => m === 0),
                 "High-resolution timer should provide sub-millisecond precision"
             );
+        }
+    });
+
+    await it("getHighResolutionTime returns stable results across rapid successive calls", () => {
+        // Validates that the eagerly-resolved timer function does not degrade
+        // across a burst of calls. Because the implementation binds the timer
+        // once at module load (avoiding a per-call typeof check), rapid
+        // invocations must all return non-negative, weakly increasing values.
+        const results: number[] = [];
+        for (let i = 0; i < 1000; i++) {
+            results.push(getHighResolutionTime());
+        }
+
+        for (const value of results) {
+            assert.strictEqual(typeof value, "number");
+            assert.ok(value >= 0, "each result must be non-negative");
+        }
+
+        // All values should be weakly monotonic
+        for (const [index, value] of results.entries()) {
+            if (index === 0) {
+                continue;
+            }
+            assert.ok(value >= results[index - 1], `result[${index}] must be >= result[${index - 1}]`);
         }
     });
 });

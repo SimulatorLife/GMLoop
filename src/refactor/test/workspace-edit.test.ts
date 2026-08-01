@@ -7,9 +7,12 @@ import { test } from "node:test";
 
 import {
     getWorkspaceArrays,
+    getWorkspaceEditRevision,
     getWorkspaceEditTelemetry,
     isWorkspaceEditLike,
+    mergeWorkspaceEditInto,
     validateFileRenameOperations,
+    WORKSPACE_EDIT_REVISION_TOKEN,
     WorkspaceEdit
 } from "../src/workspace-edit.js";
 
@@ -103,7 +106,8 @@ void test("getWorkspaceArrays preserves array contents", () => {
 });
 
 void test("isWorkspaceEditLike identifies valid workspace-edit-like objects", () => {
-    const validWorkspaceEdit = {
+    // The old partial object without metadataEdits/fileRenames should now fail
+    const partialWorkspaceEdit = {
         edits: [],
         addEdit() {},
         groupByFile() {
@@ -111,21 +115,90 @@ void test("isWorkspaceEditLike identifies valid workspace-edit-like objects", ()
         }
     };
 
+    // New complete workspace-like object satisfies the full contract
+    const validWorkspaceEdit = {
+        edits: [],
+        metadataEdits: [],
+        fileRenames: [],
+        addEdit() {},
+        addMetadataEdit() {},
+        addFileRename() {},
+        groupByFile() {
+            return new Map();
+        },
+        hasChanges() {
+            return false;
+        },
+        collectChangedFilePaths() {
+            return new Set<string>();
+        }
+    };
+
     assert.equal(isWorkspaceEditLike(validWorkspaceEdit), true);
     assert.equal(isWorkspaceEditLike(new WorkspaceEdit()), true);
+    // Partial objects no longer satisfy the contract
+    assert.equal(isWorkspaceEditLike(partialWorkspaceEdit), false);
 });
 
 void test("isWorkspaceEditLike rejects non-conforming objects", () => {
+    // Missing arrays
     assert.equal(isWorkspaceEditLike({ edits: [] }), false);
-    assert.equal(isWorkspaceEditLike({ edits: [], addEdit() {} }), false);
-    assert.equal(isWorkspaceEditLike({ addEdit() {}, groupByFile() {} }), false);
+    assert.equal(isWorkspaceEditLike({ edits: [], metadataEdits: [] }), false);
+    assert.equal(isWorkspaceEditLike({ edits: [], metadataEdits: [], fileRenames: [] }), false);
+    // Missing methods
+    assert.equal(isWorkspaceEditLike({ edits: [], metadataEdits: [], fileRenames: [], addEdit() {} }), false);
+    assert.equal(
+        isWorkspaceEditLike({
+            edits: [],
+            metadataEdits: [],
+            fileRenames: [],
+            addEdit() {},
+            addMetadataEdit() {}
+        }),
+        false
+    );
+    // Wrong types
     assert.equal(isWorkspaceEditLike(null), false);
     assert.equal(isWorkspaceEditLike(), false);
     assert.equal(
         isWorkspaceEditLike({
             edits: "not an array",
+            metadataEdits: [],
+            fileRenames: [],
             addEdit() {},
-            groupByFile() {}
+            addMetadataEdit() {},
+            addFileRename() {},
+            groupByFile() {},
+            hasChanges() {},
+            collectChangedFilePaths() {}
+        }),
+        false
+    );
+    assert.equal(
+        isWorkspaceEditLike({
+            edits: [],
+            metadataEdits: "not an array",
+            fileRenames: [],
+            addEdit() {},
+            addMetadataEdit() {},
+            addFileRename() {},
+            groupByFile() {},
+            hasChanges() {},
+            collectChangedFilePaths() {}
+        }),
+        false
+    );
+    assert.equal(
+        isWorkspaceEditLike({
+            edits: [],
+            metadataEdits: [],
+            fileRenames: "not an array",
+            addEdit() {},
+            addMetadataEdit() {},
+            addFileRename() {},
+            groupByFile() {},
+            hasChanges() {},
+            collectChangedFilePaths() {}
         }),
         false
     );
@@ -143,9 +216,100 @@ void test("WorkspaceEdit telemetry tracks edit counts and byte high-water marks"
     assert.equal(telemetry.textEditCount, 2);
     assert.equal(telemetry.metadataEditCount, 1);
     assert.equal(telemetry.fileRenameCount, 1);
-    assert.ok(telemetry.touchedFileCount >= 4);
-    assert.ok(telemetry.totalTextBytes > 0);
-    assert.ok(telemetry.highWaterTextBytes >= telemetry.totalTextBytes);
+    assert.equal(telemetry.touchedFileCount, 5);
+    assert.equal(telemetry.totalTextBytes, Buffer.byteLength('helloworld!{"resource":"o"}', "utf8"));
+    assert.equal(telemetry.highWaterTextBytes, telemetry.totalTextBytes);
+});
+
+void test("WorkspaceEdit telemetry ignores duplicate text edits and includes constructor edits", () => {
+    const workspace = new WorkspaceEdit([{ path: "scripts/initial.gml", start: 0, end: 3, newText: "αβ" }]);
+
+    workspace.addEdit("scripts/initial.gml", 0, 3, "αβ");
+    workspace.addEdit("scripts/other.gml", 4, 8, "name");
+
+    const telemetry = getWorkspaceEditTelemetry(workspace);
+
+    assert.equal(telemetry.textEditCount, 2);
+    assert.equal(telemetry.touchedFileCount, 2);
+    assert.equal(telemetry.totalTextBytes, Buffer.byteLength("αβname", "utf8"));
+    assert.equal(telemetry.highWaterTextBytes, telemetry.totalTextBytes);
+});
+
+void test("WorkspaceEdit ignores exact duplicate text edits", () => {
+    const workspace = new WorkspaceEdit();
+
+    workspace.addEdit("scripts/example.gml", 4, 12, "goodName");
+    workspace.addEdit("scripts/example.gml", 4, 12, "goodName");
+    workspace.addEdit("scripts/example.gml", 4, 12, "goodName");
+
+    assert.equal(workspace.edits.length, 1);
+    assert.deepEqual(workspace.edits[0], {
+        path: "scripts/example.gml",
+        start: 4,
+        end: 12,
+        newText: "goodName"
+    });
+});
+
+void test("WorkspaceEdit groupByFile de-duplicates exact duplicates after the addEdit guard disables", () => {
+    const workspace = new WorkspaceEdit();
+
+    for (let index = 0; index <= 1024; index += 1) {
+        workspace.addEdit("scripts/example.gml", index, index + 1, "x");
+    }
+
+    workspace.addEdit("scripts/example.gml", 1024, 1025, "x");
+    assert.equal(workspace.edits.length, 1026);
+
+    const grouped = workspace.groupByFile();
+    const groupedEdits = grouped.get("scripts/example.gml") ?? [];
+    assert.equal(groupedEdits.length, 1025);
+});
+
+void test("WorkspaceEdit revision only advances when the workspace changes", () => {
+    const workspace = new WorkspaceEdit();
+
+    assert.equal(getWorkspaceEditRevision(workspace), 0);
+
+    workspace.addEdit("scripts/example.gml", 4, 12, "goodName");
+    assert.equal(getWorkspaceEditRevision(workspace), 1);
+
+    workspace.addEdit("scripts/example.gml", 4, 12, "goodName");
+    assert.equal(getWorkspaceEditRevision(workspace), 1);
+
+    workspace.addMetadataEdit("scripts/example.yy", '{"name":"goodName"}');
+    assert.equal(getWorkspaceEditRevision(workspace), 2);
+
+    workspace.addFileRename("scripts/example.gml", "scripts/good_name.gml");
+    assert.equal(getWorkspaceEditRevision(workspace), 3);
+});
+
+void test("WorkspaceEdit reuses grouped edits until the edit set changes", () => {
+    const workspace = new WorkspaceEdit();
+    workspace.addEdit("scripts/example.gml", 8, 12, "demoName");
+
+    const firstGrouping = workspace.groupByFile();
+    const secondGrouping = workspace.groupByFile();
+
+    assert.equal(firstGrouping, secondGrouping);
+
+    workspace.addEdit("scripts/example.gml", 0, 4, "demo");
+
+    const thirdGrouping = workspace.groupByFile();
+
+    assert.notEqual(thirdGrouping, firstGrouping);
+    assert.deepEqual(thirdGrouping.get("scripts/example.gml"), [
+        {
+            start: 8,
+            end: 12,
+            newText: "demoName"
+        },
+        {
+            start: 0,
+            end: 4,
+            newText: "demo"
+        }
+    ]);
 });
 
 void test("validateFileRenameOperations rejects duplicate sources, duplicate destinations, and rename chains", () => {
@@ -165,6 +329,18 @@ void test("validateFileRenameOperations rejects duplicate sources, duplicate des
     );
 });
 
+void test("WorkspaceEdit.addFileRename filters out identity renames and identical duplicate renames", () => {
+    const workspace = new WorkspaceEdit();
+    workspace.addFileRename("scripts/a.gml", "scripts/a.gml"); // Identity rename
+    assert.equal(workspace.fileRenames.length, 0);
+
+    workspace.addFileRename("scripts/a.gml", "scripts/b.gml");
+    workspace.addFileRename("scripts/a.gml", "scripts/b.gml"); // Duplicate rename
+    assert.equal(workspace.fileRenames.length, 1);
+    assert.equal(workspace.fileRenames[0].oldPath, "scripts/a.gml");
+    assert.equal(workspace.fileRenames[0].newPath, "scripts/b.gml");
+});
+
 void test("validateFileRenameOperations rejects empty and unchanged paths", () => {
     const errors = validateFileRenameOperations([
         { oldPath: "", newPath: "scripts/b.gml" },
@@ -175,4 +351,233 @@ void test("validateFileRenameOperations rejects empty and unchanged paths", () =
     assert.ok(errors.some((error) => error.includes("source path must be a non-empty string")));
     assert.ok(errors.some((error) => error.includes("destination path must be a non-empty string")));
     assert.ok(errors.some((error) => error.includes("must change the path")));
+});
+
+void test("getWorkspaceEditRevision returns null for objects that do not implement WORKSPACE_EDIT_REVISION_TOKEN", () => {
+    assert.equal(getWorkspaceEditRevision({}), null);
+    assert.equal(getWorkspaceEditRevision({ edits: [], addEdit() {}, groupByFile() {} }), null);
+});
+
+void test("getWorkspaceEditRevision reads revision from any object implementing WORKSPACE_EDIT_REVISION_TOKEN", () => {
+    // A minimal substitutable workspace implementation that exposes revision via
+    // the well-known symbol, without extending WorkspaceEdit.
+    // This tests the full WorkspaceLike contract including the revision token.
+    let internalRevision = 0;
+
+    const substituteWorkspace = {
+        edits: [] as Array<{ path: string; start: number; end: number; newText: string }>,
+        metadataEdits: [] as Array<{ path: string; content: string }>,
+        fileRenames: [] as Array<{ oldPath: string; newPath: string }>,
+        addEdit(path: string, start: number, end: number, newText: string) {
+            this.edits.push({ path, start, end, newText });
+            internalRevision += 1;
+        },
+        addMetadataEdit(path: string, content: string) {
+            this.metadataEdits.push({ path, content });
+        },
+        addFileRename(oldPath: string, newPath: string) {
+            this.fileRenames.push({ oldPath, newPath });
+        },
+        groupByFile() {
+            return new Map<string, Array<{ start: number; end: number; newText: string }>>();
+        },
+        hasChanges() {
+            return this.edits.length > 0 || this.metadataEdits.length > 0 || this.fileRenames.length > 0;
+        },
+        collectChangedFilePaths() {
+            const paths = new Set<string>();
+            for (const edit of this.edits) {
+                paths.add(edit.path);
+            }
+            for (const metadataEdit of this.metadataEdits) {
+                paths.add(metadataEdit.path);
+            }
+            for (const fileRename of this.fileRenames) {
+                paths.add(fileRename.oldPath);
+                paths.add(fileRename.newPath);
+            }
+            return paths;
+        },
+        [WORKSPACE_EDIT_REVISION_TOKEN]() {
+            return internalRevision;
+        }
+    };
+
+    // Verify the substitutable implementation satisfies the full contract
+    assert.equal(isWorkspaceEditLike(substituteWorkspace), true);
+
+    assert.equal(getWorkspaceEditRevision(substituteWorkspace), 0);
+
+    substituteWorkspace.addEdit("scripts/example.gml", 0, 5, "hello");
+    assert.equal(getWorkspaceEditRevision(substituteWorkspace), 1);
+
+    substituteWorkspace.addEdit("scripts/other.gml", 3, 7, "world");
+    assert.equal(getWorkspaceEditRevision(substituteWorkspace), 2);
+});
+
+void test("WORKSPACE_EDIT_REVISION_TOKEN on WorkspaceEdit returns the same value as getWorkspaceEditRevision", () => {
+    const workspace = new WorkspaceEdit();
+
+    assert.equal(workspace[WORKSPACE_EDIT_REVISION_TOKEN](), getWorkspaceEditRevision(workspace));
+
+    workspace.addEdit("scripts/a.gml", 0, 4, "test");
+
+    assert.equal(workspace[WORKSPACE_EDIT_REVISION_TOKEN](), getWorkspaceEditRevision(workspace));
+});
+
+void test("mergeWorkspaceEditInto is a no-op when source is null", () => {
+    const target = new WorkspaceEdit();
+    target.addEdit("a.gml", 0, 3, "foo");
+
+    mergeWorkspaceEditInto(target, null);
+
+    assert.equal(target.edits.length, 1);
+    assert.equal(target.fileRenames.length, 0);
+    assert.equal(target.metadataEdits.length, 0);
+});
+
+void test("mergeWorkspaceEditInto is a no-op when source is undefined", () => {
+    const target = new WorkspaceEdit();
+    target.addEdit("a.gml", 0, 3, "foo");
+
+    mergeWorkspaceEditInto(target, undefined);
+
+    assert.equal(target.edits.length, 1);
+    assert.equal(target.fileRenames.length, 0);
+    assert.equal(target.metadataEdits.length, 0);
+});
+
+void test("mergeWorkspaceEditInto merges text edits into target", () => {
+    const target = new WorkspaceEdit();
+    target.addEdit("a.gml", 0, 3, "foo");
+
+    const source = new WorkspaceEdit();
+    source.addEdit("b.gml", 10, 15, "bar");
+
+    mergeWorkspaceEditInto(target, source);
+
+    assert.equal(target.edits.length, 2);
+    assert.ok(target.edits.some((e) => e.path === "a.gml"));
+    assert.ok(target.edits.some((e) => e.path === "b.gml" && e.newText === "bar"));
+});
+
+void test("mergeWorkspaceEditInto merges file renames into target", () => {
+    const target = new WorkspaceEdit();
+
+    const source = new WorkspaceEdit();
+    source.addFileRename("old.gml", "new.gml");
+
+    mergeWorkspaceEditInto(target, source);
+
+    assert.equal(target.fileRenames.length, 1);
+    assert.equal(target.fileRenames[0]?.oldPath, "old.gml");
+    assert.equal(target.fileRenames[0]?.newPath, "new.gml");
+});
+
+void test("mergeWorkspaceEditInto merges metadata edits into target", () => {
+    const target = new WorkspaceEdit();
+
+    const source = new WorkspaceEdit();
+    source.addMetadataEdit("resource.yy", '{"name":"foo"}');
+
+    mergeWorkspaceEditInto(target, source);
+
+    assert.equal(target.metadataEdits.length, 1);
+    assert.equal(target.metadataEdits[0]?.path, "resource.yy");
+    assert.equal(target.metadataEdits[0]?.content, '{"name":"foo"}');
+});
+
+void test("mergeWorkspaceEditInto merges all edit types simultaneously", () => {
+    const target = new WorkspaceEdit();
+    target.addEdit("existing.gml", 0, 5, "existing");
+
+    const source = new WorkspaceEdit();
+    source.addEdit("src.gml", 1, 4, "hello");
+    source.addFileRename("old_dir/res.yy", "new_dir/res.yy");
+    source.addMetadataEdit("res.yy", '{"name":"updated"}');
+
+    mergeWorkspaceEditInto(target, source);
+
+    assert.equal(target.edits.length, 2);
+    assert.equal(target.fileRenames.length, 1);
+    assert.equal(target.metadataEdits.length, 1);
+});
+
+void test("mergeWorkspaceEditInto respects the exact-duplicate guard on target", () => {
+    const target = new WorkspaceEdit();
+    target.addEdit("a.gml", 0, 3, "foo");
+
+    // Source carries an exact copy of the same edit that is already in target.
+    const source = new WorkspaceEdit();
+    source.addEdit("a.gml", 0, 3, "foo");
+
+    mergeWorkspaceEditInto(target, source);
+
+    // The duplicate guard on WorkspaceEdit should suppress the second insertion.
+    assert.equal(target.edits.length, 1);
+});
+
+void test("WorkspaceEdit.hasChanges returns false for a freshly constructed workspace", () => {
+    const workspace = new WorkspaceEdit();
+    assert.equal(workspace.hasChanges(), false);
+});
+
+void test("WorkspaceEdit.hasChanges returns true when only text edits are queued", () => {
+    const workspace = new WorkspaceEdit();
+    workspace.addEdit("scripts/a.gml", 0, 4, "demo");
+    assert.equal(workspace.hasChanges(), true);
+});
+
+void test("WorkspaceEdit.hasChanges returns true when only metadata edits are queued", () => {
+    const workspace = new WorkspaceEdit();
+    workspace.addMetadataEdit("objects/o.yy", '{"name":"o"}');
+    assert.equal(workspace.hasChanges(), true);
+});
+
+void test("WorkspaceEdit.hasChanges returns true when only file renames are queued", () => {
+    const workspace = new WorkspaceEdit();
+    workspace.addFileRename("scripts/a.gml", "scripts/b.gml");
+    assert.equal(workspace.hasChanges(), true);
+});
+
+void test("WorkspaceEdit.collectChangedFilePaths returns an empty set for a fresh workspace", () => {
+    const workspace = new WorkspaceEdit();
+    assert.equal(workspace.collectChangedFilePaths().size, 0);
+});
+
+void test("WorkspaceEdit.collectChangedFilePaths includes paths from text, metadata, and rename operations", () => {
+    const workspace = new WorkspaceEdit();
+    workspace.addEdit("scripts/player.gml", 0, 4, "hero");
+    workspace.addMetadataEdit("objects/player.yy", '{"name":"hero"}');
+    workspace.addFileRename("scripts/old.gml", "scripts/new.gml");
+
+    const paths = workspace.collectChangedFilePaths();
+
+    assert.equal(paths.size, 4);
+    assert.ok(paths.has("scripts/player.gml"));
+    assert.ok(paths.has("objects/player.yy"));
+    assert.ok(paths.has("scripts/old.gml"));
+    assert.ok(paths.has("scripts/new.gml"));
+});
+
+void test("WorkspaceEdit.collectChangedFilePaths deduplicates paths touched by multiple edits", () => {
+    const workspace = new WorkspaceEdit();
+    workspace.addEdit("scripts/a.gml", 0, 4, "first");
+    workspace.addEdit("scripts/a.gml", 12, 16, "second");
+    workspace.addMetadataEdit("scripts/a.gml", '{"name":"a"}');
+
+    const paths = workspace.collectChangedFilePaths();
+    assert.equal(paths.size, 1);
+    assert.ok(paths.has("scripts/a.gml"));
+});
+
+void test("WorkspaceEdit.collectChangedFilePaths returns a read-only view that reflects later mutations", () => {
+    const workspace = new WorkspaceEdit();
+    workspace.addEdit("scripts/initial.gml", 0, 4, "demo");
+    const paths = workspace.collectChangedFilePaths();
+    assert.ok(paths.has("scripts/initial.gml"));
+
+    workspace.addEdit("scripts/added-later.gml", 0, 4, "demo");
+    const updatedPaths = workspace.collectChangedFilePaths();
+    assert.ok(updatedPaths.has("scripts/added-later.gml"));
 });

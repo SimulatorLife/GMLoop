@@ -86,7 +86,7 @@ export default class BinaryExpressionDelegate {
             return visit(ctx);
         }
 
-        const operator = operatorToken.getText();
+        const operator = operatorToken.getText().toLowerCase();
 
         // In GML, the single-equals token can represent assignment semantics.
         // Parsing it as a BinaryExpression would incorrectly treat chained
@@ -136,11 +136,12 @@ export default class BinaryExpressionDelegate {
             return false;
         }
 
-        const leftOp =
-            leftNode.type === "BinaryExpression" ? this.operators[leftNode.operator] : { prec: 0, assoc: "left" };
-        const rightOp =
-            rightNode.type === "BinaryExpression" ? this.operators[rightNode.operator] : { prec: 0, assoc: "left" };
+        const leftOp = this.resolveOperatorMeta(leftNode);
+        const rightOp = this.resolveOperatorMeta(rightNode);
         const currOp = this.operators[operator];
+        if (!currOp) {
+            return false;
+        }
 
         if (currOp.assoc === "left") {
             return leftOp.prec < currOp.prec || rightOp.prec < currOp.prec;
@@ -165,6 +166,20 @@ export default class BinaryExpressionDelegate {
      * @param astNode Factory for constructing AST nodes with location metadata.
      * @returns A ParenthesizedExpression node containing the original expression.
      */
+
+    /**
+     * Resolve precedence metadata for a node when it represents a binary
+     * expression. Unknown operators fall back to baseline precedence so parser
+     * behavior remains stable when operator tables are incomplete.
+     */
+    private resolveOperatorMeta(node): BinaryOperatorMeta {
+        if (!node || node.type !== "BinaryExpression") {
+            return { prec: 0, assoc: "left" };
+        }
+
+        return this.operators[node.operator] ?? { prec: 0, assoc: "left" };
+    }
+
     wrapInParentheses(ctx, node, astNode) {
         return astNode(ctx, {
             type: "ParenthesizedExpression",

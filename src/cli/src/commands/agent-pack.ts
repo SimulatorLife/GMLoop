@@ -1,0 +1,65 @@
+import { Command } from "commander";
+
+import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
+import { createPathOption } from "../cli-core/shared-command-options.js";
+import * as AgentPack from "../modules/auto-game-agent-pack/index.js";
+import { discoverProjectRoot, printProjectPayload } from "../workflow/project-root.js";
+
+type AgentPackInitOptions = Readonly<{
+    agents?: string;
+    gitignore?: boolean;
+    path?: string;
+    vscode?: boolean;
+}>;
+
+/** Initialize or update the Auto-Game agent pack in one GameMaker project. */
+export async function runAgentPackInit(options: AgentPackInitOptions): Promise<void> {
+    const projectRoot = await discoverProjectRoot({ explicitProjectPath: options.path });
+    const result = await AgentPack.initializeAgentPack(projectRoot, {
+        agentTargets: AgentPack.parseAgentConfigTargetSelections(options.agents ?? "detected"),
+        includeGitIgnore: options.gitignore !== false,
+        includeVSCode: options.vscode === true
+    });
+    printProjectPayload({
+        command: "agent-pack init",
+        ok: true,
+        payload: {
+            added: result.added,
+            agentConfigs: result.agentConfigs,
+            agentSetup: result.agentSetup,
+            changed: result.changed,
+            conflicts: result.conflicts,
+            removed: result.removed,
+            unchanged: result.unchanged,
+            updated: result.updated,
+            vscodeSetup: result.vscodeSetup,
+            version: result.availableVersion
+        },
+        projectRoot: result.projectRoot
+    });
+}
+
+/** Create the project-scoped Auto-Game agent-pack command family. */
+export function createAgentPackCommand(): Command {
+    const command = applyStandardCommandOptions(new Command("agent-pack")).description(
+        "Manage the project-scoped Auto-Game agent pack."
+    );
+    const init = applyStandardCommandOptions(new Command("init"))
+        .description("Initialize or update packaged Auto-Game skills and project guidance.")
+        .addOption(createPathOption())
+        .option(
+            "--agents <selection>",
+            "Configure agent MCP integrations through provider CLIs: detected, all, none, or comma-separated codex,gemini,qwen.",
+            "detected"
+        )
+        .option("--no-gitignore", "Do not create or update the project-root .gitignore.")
+        .option(
+            "--vscode",
+            "Create or update project VSCode settings and attempt to install the GMLoop VSCode extension."
+        );
+    init.action(async function agentPackInitAction() {
+        await runAgentPackInit(this.opts<AgentPackInitOptions>());
+    });
+    command.addCommand(init);
+    return command;
+}

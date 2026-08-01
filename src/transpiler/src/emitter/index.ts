@@ -5,13 +5,17 @@ export { tryFoldConstantExpression } from "./constant-folding.js";
 export { GmlToJsEmitter } from "./emitter.js";
 export { emitJavaScript } from "./emitter-entrypoints.js";
 export { lowerEnumDeclaration } from "./enum-lowering.js";
-export { EventContextOracle } from "./event-context-oracle.js";
 export { escapeTemplateText, isIdentifierLike, normalizeStructKeyText, stringifyStructKey } from "./js-string-utils.js";
 export { normalizeGmlNumericLiteral } from "./literal-normalization.js";
-export { collectLocalVariables } from "./local-variable-collector.js";
-export { mapBinaryOperator, mapUnaryOperator } from "./operator-mapping.js";
+export {
+    collectGlobalVarNames,
+    collectLocalVariables,
+    collectStaticVariableDeclarations
+} from "./local-variable-collector.js";
+export { mapBinaryOperator } from "./operator-mapping.js";
 export type { SemanticOracleOptions } from "./semantic-factory.js";
 export { createSemanticOracle } from "./semantic-factory.js";
 export { ensureStatementTerminated, isStatementTerminated } from "./statement-termination-policy.js";
 export { StringBuilder } from "./string-builder.js";
+export * from "./type-guards.js";
 export { lowerWithStatement } from "./with-lowering.js";

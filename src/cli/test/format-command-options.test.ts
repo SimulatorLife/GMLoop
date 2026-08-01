@@ -42,16 +42,16 @@ void test("collectFormatCommandOptions tolerates commands without option state",
     assert.strictEqual(result.targetPathProvided, false);
     assert.strictEqual(result.prettierLogLevel, DEFAULTS.defaultPrettierLogLevel);
     assert.strictEqual(result.onParseError, DEFAULTS.defaultParseErrorAction);
-    assert.strictEqual(result.checkMode, false);
+    assert.strictEqual(result.dryRunMode, true);
     assert.strictEqual(result.skippedDirectorySampleLimit, undefined);
     assert.strictEqual(result.ignoredFileSampleLimit, undefined);
     assert.strictEqual(result.unsupportedExtensionSampleLimit, undefined);
     assert.strictEqual(result.usage, "usage");
+    assert.strictEqual(result.list, false);
 });
 
 void test("collectFormatCommandOptions derives target path from --path option", () => {
     const command = createStubCommand({
-        args: ["ignored"],
         opts: () => ({ path: " ./project  " })
     });
 
@@ -62,9 +62,18 @@ void test("collectFormatCommandOptions derives target path from --path option", 
     assert.strictEqual(result.rawTargetPathInput, " ./project  ");
 });
 
+void test("collectFormatCommandOptions reads --list option", () => {
+    const command = createStubCommand({
+        opts: () => ({ list: true })
+    });
+
+    const result = collectFormatCommandOptions(command, DEFAULTS);
+
+    assert.strictEqual(result.list, true);
+});
+
 void test("collectFormatCommandOptions treats blank --path as provided but empty", () => {
     const command = createStubCommand({
-        args: ["ignored"],
         opts: () => ({ path: "   " })
     });
 
@@ -74,7 +83,7 @@ void test("collectFormatCommandOptions treats blank --path as provided but empty
     assert.strictEqual(result.targetPathProvided, true);
 });
 
-void test("collectFormatCommandOptions falls back to positional target", () => {
+void test("collectFormatCommandOptions ignores positional targets", () => {
     const command = createStubCommand({
         args: [" ./script.gml  "],
         opts: () => ({})
@@ -82,21 +91,50 @@ void test("collectFormatCommandOptions falls back to positional target", () => {
 
     const result = collectFormatCommandOptions(command, DEFAULTS);
 
-    assert.strictEqual(result.targetPathInput, "./script.gml");
-    assert.strictEqual(result.targetPathProvided, true);
+    assert.strictEqual(result.targetPathInput, null);
+    assert.strictEqual(result.targetPathProvided, false);
 });
 
-void test("collectFormatCommandOptions honours ignored directory samples alias", () => {
+void test("collectFormatCommandOptions sets apply mode when --write is provided", () => {
     const command = createStubCommand({
         opts: () => ({
-            ignoredDirectorySampleLimit: 5,
+            write: true
+        })
+    });
+
+    const result = collectFormatCommandOptions(command, DEFAULTS);
+
+    assert.strictEqual(result.dryRunMode, false);
+});
+
+void test("collectFormatCommandOptions reads --ignored-directory-sample-limit option", () => {
+    const command = createStubCommand({
+        opts: () => ({
+            ignoredDirectorySampleLimit: 7
+        })
+    });
+
+    const result = collectFormatCommandOptions(command, DEFAULTS);
+
+    assert.strictEqual(result.skippedDirectorySampleLimit, 7);
+});
+
+void test("collectFormatCommandOptions ignores the retired --ignored-directory-samples alias", () => {
+    // The `ignoredDirectorySamples` option was a backwards-compatibility alias
+    // for `--ignored-directory-sample-limit`. The alias has been removed in
+    // favour of the canonical long-term flag; the collector must continue to
+    // ignore it so legacy callers fall back to the documented default rather
+    // than opting into an unsupported override path. Reintroducing the alias
+    // would silently change resolution behaviour for existing flag names.
+    const command = createStubCommand({
+        opts: () => ({
             ignoredDirectorySamples: 2
         })
     });
 
     const result = collectFormatCommandOptions(command, DEFAULTS);
 
-    assert.strictEqual(result.skippedDirectorySampleLimit, 2);
+    assert.strictEqual(result.skippedDirectorySampleLimit, undefined);
 });
 
 void test("collectFormatCommandOptions sets log level to debug when verbose is true", () => {
@@ -110,4 +148,24 @@ void test("collectFormatCommandOptions sets log level to debug when verbose is t
 
     assert.strictEqual(result.verbose, true);
     assert.strictEqual(result.prettierLogLevel, "debug");
+});
+
+void test("collectFormatCommandOptions does not emit option dumps to stdout", () => {
+    const command = createStubCommand({
+        opts: () => ({ path: "./project" })
+    });
+
+    const originalConsoleLog = console.log;
+    const capturedLogs: Array<unknown> = [];
+    console.log = (...args: Array<unknown>) => {
+        capturedLogs.push(args);
+    };
+
+    try {
+        collectFormatCommandOptions(command, DEFAULTS);
+    } finally {
+        console.log = originalConsoleLog;
+    }
+
+    assert.deepStrictEqual(capturedLogs, []);
 });

@@ -12,8 +12,14 @@ import {
     resolvePackageJsonPath
 } from "../../shared/index.js";
 
-const { assertNonEmptyString, getErrorMessageOrFallback, isFsErrorCode, resolveContainedRelativePath, toPosixPath } =
-    Core;
+const {
+    assertNonEmptyString,
+    isErrorWithCode,
+    parseJsonWithContext,
+    resolveContainedRelativePath,
+    toContextualError,
+    toPosixPath
+} = Core;
 
 export interface ManualSourceDescriptor {
     root: string;
@@ -38,12 +44,11 @@ async function ensureDirectoryExists(root, { required, label }) {
         }
         return true;
     } catch (error) {
-        if (!required && isFsErrorCode(error, "ENOENT")) {
+        if (!required && isErrorWithCode(error, "ENOENT")) {
             return false;
         }
 
-        const message = getErrorMessageOrFallback(error);
-        throw new Error(`${label} '${root}' is unavailable. (${message})`);
+        throw toContextualError(`${label} '${root}' is unavailable`, error, { wrap: "parentheses" });
     }
 }
 
@@ -95,8 +100,9 @@ export async function readManualText(root, relativePath) {
     try {
         return await fs.readFile(absolutePath, "utf8");
     } catch (error) {
-        const message = getErrorMessageOrFallback(error);
-        throw new Error(`Failed to read manual asset '${relativePath}' from '${root}'. (${message})`);
+        throw toContextualError(`Failed to read manual asset '${relativePath}' from '${root}'`, error, {
+            wrap: "parentheses"
+        });
     }
 }
 
@@ -104,10 +110,14 @@ export async function readManualJson(root, relativePath) {
     const contents = await readManualText(root, relativePath);
 
     try {
-        return JSON.parse(contents);
+        return parseJsonWithContext(contents, {
+            source: relativePath,
+            description: "manual asset"
+        });
     } catch (error) {
-        const message = getErrorMessageOrFallback(error);
-        throw new Error(`Manual asset '${relativePath}' did not contain valid JSON. (${message})`);
+        throw toContextualError(`Manual asset '${relativePath}' did not contain valid JSON`, error, {
+            wrap: "parentheses"
+        });
     }
 }
 

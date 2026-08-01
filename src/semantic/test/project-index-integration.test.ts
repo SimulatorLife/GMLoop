@@ -1,20 +1,26 @@
 import assert from "node:assert/strict";
-import { promises as fs } from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import { unlink } from "node:fs/promises";
 import test from "node:test";
 
 import { buildProjectIndex } from "../src/project-index/index.js";
+import { createTempProjectWorkspace, recordValues } from "./test-project-helpers.js";
 
 type IdentifierIndexEntry = {
     name?: string;
     declarations?: Array<{ name?: string }>;
+    documentation?: {
+        description: string;
+        normalizedText: string;
+        parameters: Array<{ description: string | null; name: string; type: string | null }>;
+        returns: { description: string | null; type: string | null } | null;
+    };
     references?: Array<{ filePath?: string }>;
 };
 
 type IdentifierCollections = {
     enums: Record<string, IdentifierIndexEntry>;
     enumMembers: Record<string, IdentifierIndexEntry>;
+    functions: Record<string, IdentifierIndexEntry>;
     globalVariables: Record<string, IdentifierIndexEntry>;
     instanceVariables: Record<string, IdentifierIndexEntry>;
     macros: Record<string, IdentifierIndexEntry>;
@@ -52,24 +58,13 @@ type ProjectIndexSnapshot = {
     >;
 };
 
-function valuesAs<T>(record: Record<string, T>): T[] {
-    return Object.values(record);
-}
-
-async function writeFile(rootDir: string, relativePath: string, contents: string) {
-    const absolutePath = path.join(rootDir, relativePath);
-    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-    await fs.writeFile(absolutePath, contents, "utf8");
-}
-
 void test("buildProjectIndex collects symbols and relationships across project files", async () => {
-    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gml-project-"));
+    const { projectRoot, writeProjectFile, cleanup } = await createTempProjectWorkspace("gml-project-");
 
     try {
-        await writeFile(tempRoot, "MyGame.yyp", JSON.stringify({ name: "MyGame", resourceType: "GMProject" }));
+        await writeProjectFile("MyGame.yyp", JSON.stringify({ name: "MyGame", resourceType: "GMProject" }));
 
-        await writeFile(
-            tempRoot,
+        await writeProjectFile(
             "sprites/spr_enemy/spr_enemy.yy",
             JSON.stringify({
                 resourceType: "GMSprite",
@@ -77,30 +72,26 @@ void test("buildProjectIndex collects symbols and relationships across project f
             })
         );
 
-        await writeFile(
-            tempRoot,
+        await writeProjectFile(
             "scripts/calc_damage/calc_damage.yy",
             JSON.stringify({
                 resourceType: "GMScript",
                 name: "calc_damage"
             })
         );
-        await writeFile(
-            tempRoot,
+        await writeProjectFile(
             "scripts/calc_damage/calc_damage.gml",
             "function calc_damage(target) {\n    return max(0, target.hp - target.armor);\n}\n"
         );
 
-        await writeFile(
-            tempRoot,
+        await writeProjectFile(
             "scripts/meta/meta.yy",
             JSON.stringify({
                 resourceType: "GMScript",
                 name: "meta"
             })
         );
-        await writeFile(
-            tempRoot,
+        await writeProjectFile(
             "scripts/meta/meta.gml",
             [
                 "#macro MAX_ENEMIES 3",
@@ -117,24 +108,21 @@ void test("buildProjectIndex collects symbols and relationships across project f
             ].join("\n")
         );
 
-        await writeFile(
-            tempRoot,
+        await writeProjectFile(
             "scripts/attack/attack.yy",
             JSON.stringify({
                 resourceType: "GMScript",
                 name: "attack"
             })
         );
-        await writeFile(
-            tempRoot,
+        await writeProjectFile(
             "scripts/attack/attack.gml",
             ["function attack(target) {", "    var damage = calc_damage(target);", "    return damage;", "}", ""].join(
                 "\n"
             )
         );
 
-        await writeFile(
-            tempRoot,
+        await writeProjectFile(
             "objects/obj_enemy/obj_enemy.yy",
             JSON.stringify({
                 resourceType: "GMObject",
@@ -166,19 +154,17 @@ void test("buildProjectIndex collects symbols and relationships across project f
             })
         );
 
-        await writeFile(
-            tempRoot,
+        await writeProjectFile(
             "objects/obj_enemy/obj_enemy_Create_0.gml",
             ["hp = 100;", "attack(other);", "sprite_index = spr_enemy;", "enemy_limit = enemy_limit + 1;"].join("\n")
         );
 
-        await writeFile(
-            tempRoot,
+        await writeProjectFile(
             "objects/obj_enemy/obj_enemy_Step_0.gml",
             ["if (hp <= 0) {", "    instance_destroy();", "}"].join("\n")
         );
 
-        const index = (await buildProjectIndex(tempRoot)) as ProjectIndexSnapshot;
+        const index = (await buildProjectIndex(projectRoot)) as ProjectIndexSnapshot;
 
         assert.ok(index.resources["scripts/attack/attack.yy"], "expected attack resource to be indexed");
         assert.ok(index.resources["objects/obj_enemy/obj_enemy.yy"], "expected object resource to be indexed");
@@ -214,13 +200,13 @@ void test("buildProjectIndex collects symbols and relationships across project f
         assert.equal(globalIdentifiers.declarations.length, 1);
         assert.ok(globalIdentifiers.references.length > 0);
 
-        const enumEntries = valuesAs<IdentifierIndexEntry>(index.identifiers.enums);
+        const enumEntries = recordValues<IdentifierIndexEntry>(index.identifiers.enums);
         const difficultyEnum = enumEntries.find((entry) => entry.name === "Difficulty");
         assert.ok(difficultyEnum, "expected Difficulty enum to be indexed");
         assert.equal(difficultyEnum.declarations.length, 1);
         assert.ok(difficultyEnum.references.length > 0);
 
-        const enumMemberEntries = valuesAs<IdentifierIndexEntry>(index.identifiers.enumMembers);
+        const enumMemberEntries = recordValues<IdentifierIndexEntry>(index.identifiers.enumMembers);
         const hardMember = enumMemberEntries.find((entry) => entry.name === "Hard");
         assert.ok(hardMember, "expected enum member Hard to be indexed");
         assert.equal(hardMember.declarations.length, 1);
@@ -232,7 +218,7 @@ void test("buildProjectIndex collects symbols and relationships across project f
         assert.equal(createFile.scriptCalls[0].target.name, "attack");
         assert.equal(createFile.scriptCalls[0].isResolved, true);
 
-        const instanceEntries = valuesAs<IdentifierIndexEntry>(index.identifiers.instanceVariables);
+        const instanceEntries = recordValues<IdentifierIndexEntry>(index.identifiers.instanceVariables);
         const hpInstance = instanceEntries.find((entry) => entry.name === "hp");
         assert.ok(hpInstance, "expected hp instance assignment to be tracked");
         assert.ok(hpInstance.declarations.length > 0);
@@ -253,12 +239,7 @@ void test("buildProjectIndex collects symbols and relationships across project f
         );
 
         const scriptCallTargets = index.relationships.scriptCalls.map((call) => call.target.name);
-        const sortedScriptCallTargets = [...scriptCallTargets].reduce((acc, item) => {
-            const insertIndex = acc.findIndex((existing) => existing > item);
-            return insertIndex === -1
-                ? [...acc, item]
-                : [...acc.slice(0, insertIndex), item, ...acc.slice(insertIndex)];
-        }, []);
+        const sortedScriptCallTargets = [...scriptCallTargets].sort();
         assert.deepEqual(sortedScriptCallTargets, ["attack", "calc_damage"]);
 
         const spriteReference = index.relationships.assetReferences.find(
@@ -267,6 +248,101 @@ void test("buildProjectIndex collects symbols and relationships across project f
         assert.ok(spriteReference, "expected sprite asset reference to be recorded");
         assert.equal(spriteReference.fromResourcePath, "objects/obj_enemy/obj_enemy.yy");
     } finally {
-        await fs.rm(tempRoot, { recursive: true, force: true });
+        await cleanup();
+    }
+});
+
+void test("buildProjectIndex consumes parser-attached documentation without declaration source rescanning", async () => {
+    const { projectRoot, writeProjectFile, cleanup } = await createTempProjectWorkspace("gml-project-documentation-");
+
+    try {
+        await writeProjectFile("MyGame.yyp", JSON.stringify({ name: "MyGame", resourceType: "GMProject" }));
+        await writeProjectFile(
+            "scripts/documented/documented.gml",
+            [
+                "/// @desc Computes the documented value.",
+                "/// @param {real} value Input value.",
+                "/// @returns {real} Computed value.",
+                "function documented(value) {",
+                "    return value;",
+                "}",
+                ""
+            ].join("\n")
+        );
+
+        const index = (await buildProjectIndex(projectRoot)) as ProjectIndexSnapshot;
+        const documentation = Object.values(index.identifiers.functions).find(
+            (entry) => entry.name === "documented"
+        )?.documentation;
+
+        assert.deepEqual(documentation, {
+            additionalTags: [],
+            description: "Computes the documented value.",
+            normalizedText: [
+                "@desc Computes the documented value.",
+                "@param {real} value Input value.",
+                "@returns {real} Computed value."
+            ].join("\n"),
+            parameters: [{ description: "Input value.", name: "value", type: "real" }],
+            returns: { description: "Computed value.", type: "real" }
+        });
+    } finally {
+        await cleanup();
+    }
+});
+
+void test("definitions-only indexing never records references or script-call relationships for priority files", async () => {
+    const { projectRoot, writeProjectFile, cleanup } = await createTempProjectWorkspace("gml-definitions-only-");
+    try {
+        await writeProjectFile("Game.yyp", JSON.stringify({ name: "Game", resourceType: "GMProject" }));
+        await writeProjectFile(
+            "scripts/source/source.yy",
+            JSON.stringify({ name: "source", resourceType: "GMScript" })
+        );
+        await writeProjectFile("scripts/source/source.gml", "function source() { return 1; }\n");
+        await writeProjectFile(
+            "scripts/consumer/consumer.yy",
+            JSON.stringify({ name: "consumer", resourceType: "GMScript" })
+        );
+        const consumerPath = await writeProjectFile(
+            "scripts/consumer/consumer.gml",
+            "function consumer() { return source(); }\n"
+        );
+
+        const index = (await buildProjectIndex(projectRoot, undefined, {
+            definitionsOnly: true,
+            priorityFiles: [consumerPath]
+        })) as ProjectIndexSnapshot;
+
+        assert.deepEqual(index.relationships.scriptCalls, []);
+        assert.deepEqual(index.files["scripts/consumer/consumer.gml"]?.scriptCalls, []);
+        assert.deepEqual(index.identifiers.scripts["scope:script:source"]?.references, []);
+    } finally {
+        await cleanup();
+    }
+});
+
+void test("batched incremental indexing removes deleted file facts without parsing the deleted path", async () => {
+    const { projectRoot, writeProjectFile, cleanup } = await createTempProjectWorkspace("gml-incremental-delete-");
+    try {
+        await writeProjectFile("Game.yyp", JSON.stringify({ name: "Game", resourceType: "GMProject" }));
+        await writeProjectFile(
+            "scripts/removed/removed.yy",
+            JSON.stringify({ name: "removed", resourceType: "GMScript" })
+        );
+        const removedPath = await writeProjectFile("scripts/removed/removed.gml", "function removed() { return 1; }\n");
+        await writeProjectFile("scripts/kept/kept.yy", JSON.stringify({ name: "kept", resourceType: "GMScript" }));
+        await writeProjectFile("scripts/kept/kept.gml", "function kept() { return 2; }\n");
+        const initial = await buildProjectIndex(projectRoot);
+
+        await unlink(removedPath);
+        const updated = (await buildProjectIndex(projectRoot, undefined, {
+            incremental: { changes: [{ filePath: removedPath, kind: "deleted" }], existingIndex: initial }
+        })) as ProjectIndexSnapshot;
+
+        assert.equal(updated.files["scripts/removed/removed.gml"], undefined);
+        assert.ok(updated.files["scripts/kept/kept.gml"]);
+    } finally {
+        await cleanup();
     }
 });

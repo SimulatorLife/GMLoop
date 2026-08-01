@@ -12,14 +12,20 @@ const ESCAPE_REGEXP_REPLACEMENT = String.raw`\$&`;
 export const GML_IDENTIFIER_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
- * Pattern matching GML built-in argument identifiers. GameMaker provides
- * implicit `argument0` through `argument15` variables in legacy scripts and
- * constructors. This pattern is used to detect and migrate these identifiers
- * during formatting, Feather fixes, and documentation generation.
+ * Tests whether the given string is a valid GML identifier name.
  *
- * @type {RegExp}
+ * A GML identifier must start with a letter (A-Z, a-z) or underscore,
+ * followed by zero or more letters, digits, or underscores. This is a
+ * convenience wrapper around {@link GML_IDENTIFIER_NAME_PATTERN} to keep
+ * call sites concise and avoid scattering raw `.test()` calls across the
+ * monorepo.
+ *
+ * @param value - The string to test.
+ * @returns `true` when `value` is a syntactically valid GML identifier.
  */
-export const GML_ARGUMENT_IDENTIFIER_PATTERN = /^argument(\d+)$/;
+export function isGmlIdentifierName(value: string): boolean {
+    return GML_IDENTIFIER_NAME_PATTERN.test(value);
+}
 
 /**
  * Escape characters that carry special meaning in regular expressions so the

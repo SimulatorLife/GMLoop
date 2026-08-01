@@ -3,7 +3,7 @@ import { type Doc, doc } from "prettier";
 const { builders, utils } = doc;
 const rawJoin = builders.join;
 const { willBreak } = utils;
-const { breakParent, line, hardline, softline, lineSuffixBoundary, fill: fillBuilder, align: alignBuilder } = builders;
+const { breakParent, line, hardline, softline, lineSuffixBoundary } = builders;
 
 /**
  * Normalized child shape accepted by the Prettier doc builder helpers.
@@ -14,21 +14,24 @@ const { breakParent, line, hardline, softline, lineSuffixBoundary, fill: fillBui
  */
 export type DocChild = Doc | DocChild[] | boolean | null | undefined;
 
+/**
+ * Sanitize each element of a {@link DocChild} array into a valid
+ * {@link Doc} array. Uses pre-sized allocation and an indexed loop to
+ * avoid per-element callback overhead on the hot printer path.
+ */
+function sanitizeArray(parts: DocChild[]): Doc[] {
+    const length = parts.length;
+    const result: Doc[] = [];
+    result.length = length;
+    for (let i = 0; i < length; i++) {
+        result[i] = sanitizeDocChild(parts[i]);
+    }
+    return result;
+}
+
 function sanitizeDocChild(child: DocChild): Doc {
     if (Array.isArray(child)) {
-        // Optimize array iteration by pre-sizing the result array and using a
-        // for-loop instead of Array#map. This avoids the overhead of map's
-        // function call per element and enables V8 to better optimize the loop.
-        // In micro-benchmarks with realistic printer workloads (3M operations,
-        // nested doc fragments), this optimization yields ~22% overall speedup
-        // when combined with similar changes in concat, join, and conditionalGroup.
-        const length = child.length;
-        const result: Doc[] = [];
-        result.length = length;
-        for (let i = 0; i < length; i++) {
-            result[i] = sanitizeDocChild(child[i]);
-        }
-        return result;
+        return sanitizeArray(child);
     }
 
     if (child == null || child === false) {
@@ -51,16 +54,7 @@ export function concat(parts: DocChild | DocChild[]): Doc {
         return [sanitizeDocChild(parts)];
     }
 
-    // Use pre-sized array and for-loop instead of map for consistent performance
-    // with sanitizeDocChild's optimization. This micro-optimization reduces
-    // allocations in the hot printer path.
-    const length = parts.length;
-    const result: Doc[] = [];
-    result.length = length;
-    for (let i = 0; i < length; i++) {
-        result[i] = sanitizeDocChild(parts[i]);
-    }
-    return result;
+    return sanitizeArray(parts);
 }
 
 /**
@@ -69,61 +63,24 @@ export function concat(parts: DocChild | DocChild[]): Doc {
  */
 export function join(separator: Doc, parts: DocChild | DocChild[]): Doc {
     if (!Array.isArray(parts)) {
-        const sanitized = sanitizeDocChild(parts);
-        return rawJoin(separator, [sanitized]);
+        return rawJoin(separator, [sanitizeDocChild(parts)]);
     }
 
-    // Use pre-sized array and for-loop to match the optimization in concat
-    // and sanitizeDocChild, reducing overhead in this frequently-called helper.
-    const length = parts.length;
-    const sanitizedParts: Doc[] = [];
-    sanitizedParts.length = length;
-    for (let i = 0; i < length; i++) {
-        sanitizedParts[i] = sanitizeDocChild(parts[i]);
-    }
-    return rawJoin(separator, sanitizedParts);
-}
-
-/**
- * Align a list of docs using Prettier's fill algorithm.
- */
-export function fill(parts: DocChild | DocChild[]): Doc {
-    if (!Array.isArray(parts)) {
-        return sanitizeDocChild(parts);
-    }
-
-    const length = parts.length;
-    const sanitizedParts: Doc[] = [];
-    sanitizedParts.length = length;
-    for (let i = 0; i < length; i += 1) {
-        sanitizedParts[i] = sanitizeDocChild(parts[i]);
-    }
-    return fillBuilder(sanitizedParts);
+    return rawJoin(separator, sanitizeArray(parts));
 }
 
 /**
  * Wrap a doc fragment in a Prettier group after sanitizing its children.
  */
 export function group(parts: DocChild, opts?: Record<string, unknown>): Doc {
-    const sanitized = sanitizeDocChild(parts);
-    return builders.group(sanitized, opts);
+    return builders.group(sanitizeDocChild(parts), opts);
 }
 
 /**
  * Construct a conditional group while sanitizing each branch.
  */
 export function conditionalGroup(parts: DocChild[], opts?: Record<string, unknown>): Doc {
-    // Pre-size the sanitized parts array and use a for-loop to avoid
-    // reallocation during iteration. This mirrors the optimization in
-    // sanitizeDocChild and concat, maintaining consistent performance
-    // characteristics across all doc builder helpers on the hot formatting path.
-    const length = parts.length;
-    const sanitizedParts: Doc[] = [];
-    sanitizedParts.length = length;
-    for (let i = 0; i < length; i++) {
-        sanitizedParts[i] = sanitizeDocChild(parts[i]);
-    }
-    return builders.conditionalGroup(sanitizedParts, opts);
+    return builders.conditionalGroup(sanitizeArray(parts), opts);
 }
 
 /**
@@ -145,13 +102,6 @@ export function ifBreak(breakContents: DocChild, flatContents?: DocChild, opts?:
  */
 export function lineSuffix(parts: DocChild): Doc {
     return builders.lineSuffix(sanitizeDocChild(parts));
-}
-
-/**
- * Align a doc fragment using a specific indentation or string.
- */
-export function align(widthOrString: number | string, parts: DocChild): Doc {
-    return alignBuilder(widthOrString, sanitizeDocChild(parts));
 }
 
 export { breakParent, hardline, line, lineSuffixBoundary, softline, willBreak };

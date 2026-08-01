@@ -1,0 +1,815 @@
+import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
+
+import { replaceNode } from "../math/index.js";
+import {
+    LOGICAL_NORMALIZATION_POLICY_BASELINE,
+    type LogicalNormalizationPolicy
+} from "./logical-expression-condensation-policy.js";
+
+const { isObjectLike, unwrapParenthesizedExpression } = Core;
+
+/** Individual logical rewrites that can be owned by one lint rule. */
+export type LogicalNormalizationKind =
+    | "all"
+    | "double-negation"
+    | "de-morgan"
+    | "negation-parentheses"
+    | "logical-not-call"
+    | "logical-identities"
+    | "logical-absorption"
+    | "logical-factorization"
+    | "logical-complement"
+    | "logical-xor"
+    | "conditional-assignment";
+
+/**
+ * Apply logical expression simplifications using AST traversal.
+ * Handles De Morgan's laws, double negation, and boolean constant simplification.
+ */
+export function applyLogicalNormalization(ast: MutableGameMakerAstNode): MutableGameMakerAstNode {
+    return applyLogicalNormalizationWithChangeMetadata(ast).ast;
+}
+
+/**
+ * Apply logical-expression normalization and surface whether any node changed.
+ *
+ * @param ast AST to normalize in place.
+ * @param policy Optional policy that controls the fixed-point loop bound. The
+ *   orchestrator's `maxTraversalIterations` cap is the only setting consulted
+ *   here — inner truth-table and simplification iteration limits live closer
+ *   to the condensation entry point. Defaults to
+ *   `LOGICAL_NORMALIZATION_POLICY_BASELINE` so callers that never opt into a
+ *   custom policy keep the historical 10-pass ceiling.
+ */
+export function applyLogicalNormalizationWithChangeMetadata(
+    ast: MutableGameMakerAstNode,
+    policy: LogicalNormalizationPolicy = LOGICAL_NORMALIZATION_POLICY_BASELINE,
+    kind: LogicalNormalizationKind = "all"
+): Readonly<{ ast: MutableGameMakerAstNode; changed: boolean }> {
+    if (!isObjectLike(ast)) {
+        return Object.freeze({ ast, changed: false });
+    }
+
+    // Repeatedly apply passes until no changes occur, or max limit reached
+    let changedAtLeastOnce = false;
+    for (let iterations = 0; iterations < policy.maxTraversalIterations; iterations++) {
+        if (!traverseAndSimplify(ast, kind)) break;
+        changedAtLeastOnce = true;
+    }
+
+    return Object.freeze({ ast, changed: changedAtLeastOnce });
+}
+
+/**
+ * Walk every object-valued child of `node` in post-order, invoking
+ * `visit(child)` on each one and returning `true` if any call returned
+ * `true`. The helper owns the traversal mechanics so the orchestrator above
+ * can stay focused on simplification:
+ *
+ *   - The "parent" key is always skipped, so the helper is safe to invoke
+ *     before parent pointers are wired up.
+ *   - Arrays are snapshotted before iteration, so a visitor that splices
+ *     into the underlying list will not skip the next sibling.
+ *   - Each child has `node` written into its `parent` slot before `visit`
+ *     is called, so descendants can resolve their ancestry during their
+ *     own recursive walks.
+ */
+function visitChildNodesPostOrder(node: any, visit: (child: any) => boolean): boolean {
+    const keys = Object.keys(node);
+    let changed = false;
+
+    for (const key of keys) {
+        if (key === "parent") {
+            continue;
+        }
+
+        const child = node[key];
+        if (Array.isArray(child)) {
+            const childSnapshot = [...child];
+            for (const element of childSnapshot) {
+                if (isObjectLike(element)) {
+                    (element as { parent?: unknown }).parent = node;
+                    changed ||= visit(element);
+                }
+            }
+        } else if (isObjectLike(child)) {
+            (child as { parent?: unknown }).parent = node;
+            changed ||= visit(child);
+        }
+    }
+
+    return changed;
+}
+
+function traverseAndSimplify(node: any, kind: LogicalNormalizationKind): boolean {
+    if (!isObjectLike(node)) {
+        return false;
+    }
+
+    // Post-order: simplify every descendant first, then attempt to simplify
+    // the current node. The traversal mechanics live in
+    // `visitChildNodesPostOrder`; this function only owns the orchestration
+    // of "walk children, then simplify self".
+    const changedInChildren = visitChildNodesPostOrder(node, (child) => traverseAndSimplify(child, kind));
+    return changedInChildren || simplifyNode(node, kind);
+}
+
+function simplifyNode(node: any, kind: LogicalNormalizationKind): boolean {
+    if (
+        (kind === "all" || kind === "logical-not-call" || kind === "de-morgan" || kind === "negation-parentheses") &&
+        isLogicalNotCallExpression(node)
+    ) {
+        replaceNode(node, {
+            type: "UnaryExpression",
+            operator: "!",
+            prefix: true,
+            argument: node.arguments[0],
+            start: node.start,
+            end: node.end,
+            parent: node.parent
+        });
+        return true;
+    }
+
+    if (node.type === "UnaryExpression" && node.operator === "!") {
+        return simplifyNot(node, kind);
+    }
+    if (isLogicalBinaryNode(node)) {
+        return simplifyLogical(node, kind);
+    }
+
+    if ((kind === "all" || kind === "conditional-assignment") && node.type === "IfStatement") {
+        return simplifyIfStatement(node);
+    }
+    if (kind === "all" && (node.type === "Program" || node.type === "BlockStatement")) {
+        return simplifyStatementList(node.body);
+    }
+    return false;
+}
+
+function isLogicalOperator(operator: unknown): boolean {
+    return operator === "&&" || operator === "||";
+}
+
+function isLogicalBinaryNode(node: any): boolean {
+    if (!node || typeof node !== "object") {
+        return false;
+    }
+
+    if (node.type !== "LogicalExpression" && node.type !== "BinaryExpression") {
+        return false;
+    }
+
+    return isLogicalOperator(node.operator);
+}
+
+function isNegatedExpression(node: any): boolean {
+    return Boolean(node && node.type === "UnaryExpression" && node.operator === "!");
+}
+
+function isLogicalNotCallExpression(node: any): boolean {
+    if (!node || node.type !== "CallExpression" || !Array.isArray(node.arguments) || node.arguments.length !== 1) {
+        return false;
+    }
+
+    const callee = node.callee ?? node.object;
+    return Boolean(callee && callee.type === "Identifier" && callee.name === "!");
+}
+
+function readExclusiveOrOperands(
+    leftTerm: any,
+    rightTerm: any
+): Readonly<{ leftOperand: any; rightOperand: any }> | null {
+    const leftOperands = [leftTerm.left, leftTerm.right];
+    const rightOperands = [rightTerm.left, rightTerm.right];
+
+    for (const leftNegatedCandidate of leftOperands) {
+        if (!isNegatedExpression(leftNegatedCandidate)) {
+            continue;
+        }
+
+        const leftPositiveCandidate = leftTerm.left === leftNegatedCandidate ? leftTerm.right : leftTerm.left;
+        for (const rightNegatedCandidate of rightOperands) {
+            if (!isNegatedExpression(rightNegatedCandidate)) {
+                continue;
+            }
+
+            const rightPositiveCandidate = rightTerm.left === rightNegatedCandidate ? rightTerm.right : rightTerm.left;
+            if (
+                nodesAreEqual(leftPositiveCandidate, rightNegatedCandidate.argument) &&
+                nodesAreEqual(rightPositiveCandidate, leftNegatedCandidate.argument)
+            ) {
+                return Object.freeze({
+                    leftOperand: leftPositiveCandidate,
+                    rightOperand: rightPositiveCandidate
+                });
+            }
+        }
+    }
+
+    return null;
+}
+
+function simplifyStatementList(body: any[]): boolean {
+    if (!Array.isArray(body)) return false;
+
+    // Iterate over a stable snapshot of `body` and accumulate the rewritten
+    // nodes into a fresh array, then swap that array back into `body` only
+    // when a rewrite actually occurred. The previous implementation relied
+    // on `body.splice(index + 1, 1)` inside a forward index loop, which
+    // shifted every later element down by one and coupled correctness to the
+    // precise placement of `continue` statements; a future edit that removed
+    // the `continue` (or added an unconditional `index += 1` at the bottom)
+    // would silently start skipping the sibling that shifted into the removed
+    // slot. Walking a snapshot keeps the inspection index aligned with the
+    // original pair positions regardless of how many slots the accumulator
+    // absorbs on each iteration, so the rewrite can no longer skip a sibling.
+    const snapshot = body.slice();
+    const rewritten: any[] = [];
+    let changed = false;
+
+    let index = 0;
+    while (index < snapshot.length) {
+        const current = snapshot[index];
+        const next = index + 1 < snapshot.length ? snapshot[index + 1] : undefined;
+        const collapsedReturn = maybeCollapseBooleanReturnPair(current, next);
+        if (collapsedReturn !== null) {
+            rewritten.push(collapsedReturn);
+            index += 2;
+            changed = true;
+            continue;
+        }
+
+        rewritten.push(current);
+        index += 1;
+    }
+
+    if (changed) {
+        body.length = 0;
+        body.push(...rewritten);
+    }
+    return changed;
+}
+
+/**
+ * Build the replacement `ReturnStatement` for an `if (cond) { return X; } return Y;`
+ * sibling pair whose literals resolve to `true`/`false` (or vice versa).
+ *
+ * Returns `null` when the pair is not eligible so the caller can keep the
+ * original sibling in place. Extracting this helper keeps the accumulation
+ * loop above focused on slot bookkeeping; all of the structural unwrapping
+ * and value-resolution logic lives here so it can be tested in isolation and
+ * so the loop's control flow is not entangled with conditional checks.
+ */
+function maybeCollapseBooleanReturnPair(current: any, next: any): any {
+    if (!isObjectLike(current) || !isObjectLike(next)) {
+        return null;
+    }
+    if (current.type !== "IfStatement" || current.alternate) {
+        return null;
+    }
+
+    const consequent = unwrapBlock(current.consequent);
+    if (!consequent || consequent.type !== "ReturnStatement" || next.type !== "ReturnStatement") {
+        return null;
+    }
+
+    const consBool = getBooleanValue(consequent.argument);
+    const nextBool = getBooleanValue(next.argument);
+    const shouldNegate = resolveBooleanReturnNegation(consBool, nextBool);
+    if (shouldNegate === null) {
+        return null;
+    }
+
+    return createBooleanReturnStatement(current.test, current.start, next.end, shouldNegate);
+}
+
+function simplifyIfStatement(node: any): boolean {
+    if (!node.consequent) {
+        return false;
+    }
+
+    // Normalize blocks to single statements if they contain only one statement.
+    const consequent = unwrapBlock(node.consequent);
+    const alternate = node.alternate ? unwrapBlock(node.alternate) : null;
+
+    if (alternate !== null) {
+        // Rules 1 & 2: if (cond) return true/false; else return false/true; -> return cond/!cond;
+        // These apply even inside else-if chains (a return collapses the entire branch).
+        if (consequent && consequent.type === "ReturnStatement" && alternate.type === "ReturnStatement") {
+            const consBool = getBooleanValue(consequent.argument);
+            const altBool = getBooleanValue(alternate.argument);
+            const shouldNegate = resolveBooleanReturnNegation(consBool, altBool);
+            if (shouldNegate !== null) {
+                const newReturn = createBooleanReturnStatement(node.test, node.start, node.end, shouldNegate);
+                replaceNode(node, newReturn);
+                return true;
+            }
+        }
+
+        // Rule 3: if (cond) x = A; else x = B; -> x = cond ? A : B;
+        // Skip else-if chains: folding them into a ternary harms readability more than it helps.
+        if (isElseIfAlternateChainNode(node)) {
+            return false;
+        }
+
+        const consExp = getAssignmentExpressionFromStatementLikeNode(consequent);
+        const altExp = getAssignmentExpressionFromStatementLikeNode(alternate);
+
+        if (consExp && altExp && nodesRecursiveEqual(consExp.left, altExp.left)) {
+            // x = cond ? A : B;
+            const conditional = {
+                type: "ConditionalExpression",
+                test: node.test,
+                consequent: consExp.right,
+                alternate: altExp.right
+            };
+            const assignment = {
+                type: "AssignmentExpression",
+                operator: consExp.operator, // Assume same operator (=)
+                left: consExp.left,
+                right: conditional
+            };
+            const statement = {
+                type: "ExpressionStatement",
+                expression: assignment,
+                start: node.start,
+                end: node.end
+            };
+            replaceNode(node, statement);
+            return true;
+        }
+
+        return false;
+    }
+
+    return false;
+}
+
+function isElseIfAlternateChainNode(node: any): boolean {
+    let current = node;
+    let parent = node?.parent;
+
+    while (parent && typeof parent === "object") {
+        if (parent.type === "IfStatement" && parent.alternate) {
+            const currentStart = Core.getNodeStartIndex(current);
+            const currentEnd = Core.getNodeEndIndex(current);
+            const alternateStart = Core.getNodeStartIndex(parent.alternate);
+            const alternateEnd = Core.getNodeEndIndex(parent.alternate);
+
+            if (
+                typeof currentStart === "number" &&
+                typeof currentEnd === "number" &&
+                typeof alternateStart === "number" &&
+                typeof alternateEnd === "number" &&
+                currentStart >= alternateStart &&
+                currentEnd <= alternateEnd
+            ) {
+                return true;
+            }
+        }
+
+        current = parent;
+        parent = parent.parent;
+    }
+
+    return false;
+}
+
+function getAssignmentExpressionFromStatementLikeNode(node: any): any {
+    if (!node || typeof node !== "object") {
+        return null;
+    }
+
+    if (node.type === "AssignmentExpression") {
+        return node;
+    }
+
+    if (node.type !== "ExpressionStatement") {
+        return null;
+    }
+
+    if (!node.expression || typeof node.expression !== "object") {
+        return null;
+    }
+
+    if (node.expression.type !== "AssignmentExpression") {
+        return null;
+    }
+
+    return node.expression;
+}
+
+function resolveBooleanReturnNegation(firstValue: boolean | null, secondValue: boolean | null): boolean | null {
+    if (firstValue === true && secondValue === false) {
+        return false;
+    }
+
+    if (firstValue === false && secondValue === true) {
+        return true;
+    }
+
+    return null;
+}
+
+function createBooleanReturnStatement(
+    test: any,
+    start: number | undefined,
+    end: number | undefined,
+    negate: boolean
+): any {
+    const argument = negate ? negateNode(test) : test;
+    return { type: "ReturnStatement", argument, start, end };
+}
+
+function unwrapBlock(node: any): any {
+    if (node && node.type === "BlockStatement" && Array.isArray(node.body) && node.body.length === 1) {
+        return node.body[0];
+    }
+    return node;
+}
+
+function nodesRecursiveEqual(a: any, b: any): boolean {
+    if (a === b) return true;
+    if (!isObjectLike(a) || !isObjectLike(b)) return false;
+    if (a.type !== b.type) return false;
+
+    if (a.type === "Identifier") return a.name === b.name;
+    if (a.type === "Literal") return a.value === b.value;
+
+    if (a.type === "MemberDotExpression") {
+        return nodesRecursiveEqual(a.object, b.object) && nodesRecursiveEqual(a.property, b.property);
+    }
+    if (a.type === "MemberIndexExpression") {
+        return nodesRecursiveEqual(a.object, b.object) && nodesRecursiveEqual(a.index, b.index);
+    }
+
+    // Incomplete, but sufficient for variable/member matching
+    return false;
+}
+
+/**
+ * Wraps `inner` in a `!` unary expression, preserving source location.
+ * Used when constructing negations during De Morgan's law application.
+ */
+function negateNode(inner: any): any {
+    return {
+        type: "UnaryExpression",
+        operator: "!",
+        prefix: true,
+        argument: inner,
+        start: inner.start,
+        end: inner.end
+    };
+}
+
+function simplifyNot(node: any, kind: LogicalNormalizationKind): boolean {
+    const argument = node.argument;
+
+    // Double negation: !!A → A
+    //
+    // In GML, `!(!(exp))` is always equivalent to `bool(exp)`, so `!!A` should
+    // collapse to `A`.  However, we conservatively restrict this transform to
+    // the exact pattern `!(!A)` (where the inner operand is a `UnaryExpression`
+    // with operator `!`) for two reasons:
+    //
+    // 1. De Morgan's law below handles the `(!(A && B))` / `(!(A || B))` cases
+    //    separately, and applying both rules in a single pass can cause the
+    //    traverser to miss intermediate simplifications.
+    // 2. Without side-effect analysis we cannot safely drop a double negation on
+    //    arbitrary expressions—for example `!!(func())` remains a valid
+    //    side-effect-preserving guard in GML, whereas `!(!func())` could be
+    //    misinterpreted if the transform ever encounters a non-boolean operand
+    //    in a looser variant of this rule.
+    //
+    // Adding broader transforms (e.g. `!(!(!(A)))` or `!!func()`) requires
+    // either a dedicated side-effect detection pass or a broader scope note
+    // in this module's documentation.
+    if (
+        (kind === "all" || kind === "double-negation") &&
+        argument.type === "UnaryExpression" &&
+        argument.operator === "!"
+    ) {
+        // Replace current node with argument.argument
+        // We can't replace the node reference, so we have to copy properties.
+        const inner = argument.argument;
+        replaceNode(node, inner);
+        return true;
+    }
+
+    // De Morgan's laws: !(A || B) -> !A && !B  /  !(A && B) -> !A || !B
+    // Both transforms follow the same structure; only the resulting operator differs.
+    if ((kind === "all" || kind === "de-morgan") && isLogicalBinaryNode(argument)) {
+        const { left, right } = argument;
+        const negatedOperator = argument.operator === "||" ? "&&" : "||";
+        replaceNode(node, {
+            type: argument.type,
+            operator: negatedOperator,
+            left: negateNode(left),
+            right: negateNode(right),
+            start: node.start,
+            end: node.end,
+            parent: node.parent
+        });
+        return true;
+    }
+
+    // Parentheses handling: !( (A) ) -> !A
+    //
+    // GML permits a redundant `ParenthesizedExpression` wrapper around a `!`
+    // operand (e.g. `!((cond))`) with no semantic difference, so we strip the
+    // wrapper by reassigning `node.argument` to the inner expression. The
+    // rewrite is intentionally in-place: the outer `UnaryExpression` node
+    // already lives at the correct position in its parent's child slot, and
+    // the visitor (`visitChildNodesPostOrder`) walks the *replaced* child on
+    // subsequent passes, so the bare inner expression will be revisited and
+    // any further `simplifyNot` matches will fire in a later traversal.
+    //
+    // Returning `true` here is part of the fixed-point contract: the
+    // orchestrator (`applyLogicalNormalizationWithChangeMetadata`) loops
+    // `traverseAndSimplify` until it returns `false`, so signalling a change
+    // guarantees another pass runs and catches the now-exposed inner operand.
+    // Returning `false` instead would terminate the loop after this rewrite,
+    // leaving `!(A)` un-simplified on this pass and any chained simplifications
+    // (`!(!A)` → `A`, `!(A && B)` → `!A || !B`, etc.) would silently no-op on
+    // inputs that need multiple collapse steps to reach a fixed point.
+    if ((kind === "all" || kind === "negation-parentheses") && argument.type === "ParenthesizedExpression") {
+        node.argument = argument.expression;
+        return true;
+    }
+
+    return false;
+}
+
+function simplifyLogical(node: any, kind: LogicalNormalizationKind): boolean {
+    // Simplify: true && A -> A
+    // Simplify: false || A -> A
+
+    // We assume short-circuiting behavior.
+    const leftNode = unwrapParenthesizedExpression(node.left);
+    const rightNode = unwrapParenthesizedExpression(node.right);
+    if (!leftNode || !rightNode) {
+        return false;
+    }
+
+    // Check for boolean literals
+    const leftBool = getBooleanValue(leftNode);
+    const rightBool = getBooleanValue(rightNode);
+
+    if (kind === "all" || kind === "logical-identities") {
+        if (node.operator === "&&") {
+            // true && A -> A
+            if (leftBool === true) {
+                replaceNode(node, node.right);
+                return true;
+            }
+            // A && true -> A
+            if (rightBool === true) {
+                replaceNode(node, node.left);
+                return true;
+            }
+            // false && A -> false (short circuit)
+            if (leftBool === false) {
+                replaceNode(node, node.left); // Replace with the 'false' literal
+                return true;
+            }
+            // A && false -> false is NOT applied here.
+            //
+            // Unlike `false && A` (where `false` is on the left and the short-circuit
+            // is trivial), `A && false` on the right requires `A` to be evaluated
+            // first to determine whether the result is `false` or something else.
+            // Dropping `A` here would discard any side effects that `A` has (e.g.
+            // `func() && false` — the call must run even though the final result
+            // is `false`).  Unlike the left-side literal cases, evaluating whether
+            // `A` has side effects is non-trivial without a dedicated analysis pass.
+            //
+            // All other branches above preserve side effects or known constants:
+            // `true && A` / `A && true` → A, `false && A` → false, `false || A` /
+            // `A || false` → A, `true || A` → true.  Extending to `A && false`
+            // requires side-effect tracking.
+        }
+
+        if (node.operator === "||") {
+            // false || A -> A
+            if (leftBool === false) {
+                replaceNode(node, node.right);
+                return true;
+            }
+            // A || false -> A
+            if (rightBool === false) {
+                replaceNode(node, node.left);
+                return true;
+            }
+            // true || A -> true
+            if (leftBool === true) {
+                replaceNode(node, node.left);
+                return true;
+            }
+        }
+    }
+
+    // Absorption: A || (A && B) -> A
+    // Absorption: A && (A || B) -> A
+
+    // Check if right is parenthesized, unwrap for inspection
+    if (
+        (kind === "all" || kind === "logical-absorption") &&
+        node.operator === "||" &&
+        isLogicalBinaryNode(rightNode) &&
+        rightNode.operator === "&&" &&
+        nodesAreEqual(leftNode, rightNode.left)
+    ) {
+        // A || (A && B) -> A
+        replaceNode(node, leftNode);
+        return true;
+    }
+
+    if (
+        (kind === "all" || kind === "logical-absorption") &&
+        node.operator === "&&" &&
+        isLogicalBinaryNode(rightNode) &&
+        rightNode.operator === "||" &&
+        nodesAreEqual(leftNode, rightNode.left)
+    ) {
+        // A && (A || B) -> A
+        replaceNode(node, leftNode);
+        return true;
+    }
+
+    // Distributive / Shared Term: (A && B) || (A && C) -> A && (B || C)
+    if (
+        (kind === "all" ||
+            kind === "logical-factorization" ||
+            kind === "logical-complement" ||
+            kind === "logical-xor") &&
+        node.operator === "||" &&
+        isLogicalBinaryNode(leftNode) &&
+        leftNode.operator === "&&" &&
+        isLogicalBinaryNode(rightNode) &&
+        rightNode.operator === "&&"
+    ) {
+        // (A && B) || (A && C) -> A && (B || C)
+        if ((kind === "all" || kind === "logical-factorization") && nodesAreEqual(leftNode.left, rightNode.left)) {
+            const newRight = {
+                type: node.type,
+                operator: "||",
+                left: leftNode.right,
+                right: rightNode.right,
+                start: rightNode.start, // Approx
+                end: rightNode.end
+            };
+            const newRoot = {
+                type: node.type,
+                operator: "&&",
+                left: leftNode.left,
+                right: newRight,
+                start: node.start,
+                end: node.end
+            };
+            replaceNode(node, newRoot);
+            return true;
+        }
+
+        // (B && A) || (C && A) -> (B || C) && A
+        if ((kind === "all" || kind === "logical-factorization") && nodesAreEqual(leftNode.right, rightNode.right)) {
+            const newLeft = {
+                type: node.type,
+                operator: "||",
+                left: leftNode.left,
+                right: rightNode.left,
+                start: leftNode.start,
+                end: leftNode.end
+            };
+            const newRoot = {
+                type: node.type,
+                operator: "&&",
+                left: newLeft,
+                right: leftNode.right,
+                start: node.start,
+                end: node.end
+            };
+            replaceNode(node, newRoot);
+            return true;
+        }
+
+        // (A && B) || (A && !B) -> A (Complement/Redundancy)
+        if (
+            (kind === "all" || kind === "logical-complement") &&
+            nodesAreEqual(leftNode.left, rightNode.left) &&
+            areNegations(leftNode.right, rightNode.right)
+        ) {
+            replaceNode(node, leftNode.left);
+            return true;
+        }
+
+        // (B && A) || (!B && A) -> A
+        if (
+            (kind === "all" || kind === "logical-complement") &&
+            nodesAreEqual(leftNode.right, rightNode.right) &&
+            areNegations(leftNode.left, rightNode.left)
+        ) {
+            replaceNode(node, leftNode.right);
+            return true;
+        }
+
+        // XOR Pattern: (A && !B) || (!A && B) -> (A || B) && !(A && B)
+        const exclusiveOrOperands =
+            kind === "all" || kind === "logical-xor" ? readExclusiveOrOperands(leftNode, rightNode) : null;
+        if (exclusiveOrOperands) {
+            const { leftOperand, rightOperand } = exclusiveOrOperands;
+            // Construct (A || B) && !(A && B)
+            const orPart = {
+                type: node.type,
+                operator: "||",
+                left: leftOperand,
+                right: rightOperand
+            };
+
+            const andPart = {
+                type: node.type,
+                operator: "&&",
+                left: leftOperand,
+                right: rightOperand
+            };
+
+            const notAndPart = {
+                type: "UnaryExpression",
+                operator: "!",
+                prefix: true,
+                argument: andPart
+            };
+
+            const finalExpr = {
+                type: node.type,
+                operator: "&&",
+                left: orPart,
+                right: notAndPart,
+                start: node.start,
+                end: node.end
+            };
+
+            replaceNode(node, finalExpr);
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function areNegations(node1: any, node2: any): boolean {
+    if (!node1 || !node2) return false;
+    // Check if node1 is !node2
+    if (node1.type === "UnaryExpression" && node1.operator === "!" && nodesAreEqual(node1.argument, node2)) {
+        return true;
+    }
+    // Check if node2 is !node1
+    if (node2.type === "UnaryExpression" && node2.operator === "!" && nodesAreEqual(node2.argument, node1)) {
+        return true;
+    }
+    return false;
+}
+
+function getBooleanValue(node: any): boolean | undefined {
+    const currentNode = unwrapParenthesizedExpression(node);
+    if (!currentNode || currentNode.type !== "Literal") {
+        return undefined;
+    }
+
+    if (typeof currentNode.value === "boolean") {
+        return currentNode.value;
+    }
+
+    if (typeof currentNode.value === "string") {
+        if (currentNode.value === "true") {
+            return true;
+        }
+
+        if (currentNode.value === "false") {
+            return false;
+        }
+    }
+
+    return undefined;
+}
+
+function nodesAreEqual(a: any, b: any): boolean {
+    if (a === b) return true;
+    if (!isObjectLike(a) || !isObjectLike(b)) return false;
+    if (a.type !== b.type) return false;
+
+    if (a.type === "Identifier") {
+        return a.name === b.name;
+    }
+    if (a.type === "Literal") {
+        return a.value === b.value;
+    }
+    // Structural equality is checked for absorption-law simplifications
+    // (A || (A && B) → A and A && (A || B) → A).  These laws only require
+    // comparing the top-level operands: the left side of the outer expression
+    // against the left side of the inner expression.  Deep structural comparison
+    // is intentionally omitted because the absorption rules operate exclusively
+    // on `Identifier` and `Literal` nodes; extending this function to handle
+    // richer node types (e.g. member expressions, call expressions) requires
+    // reviewing whether that change preserves correctness for all active rules.
+    return false;
+}

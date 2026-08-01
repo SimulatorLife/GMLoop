@@ -3,7 +3,7 @@
  *
  * `dominantLineEnding` is a shared text utility — it must be defined once in
  * `@gmloop/core` and consumed from there by both the `lint` and `refactor`
- * workspaces. It must NOT be redefined locally inside `rule-helpers.ts` or any
+ * workspaces. It must NOT be redefined locally inside `rule-base-helpers.ts` or any
  * individual lint rule file.
  *
  * This test catches regressions where someone re-adds the function to the lint
@@ -23,7 +23,7 @@ const THIS_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 // THIS_DIRECTORY is dist/test/rules/ at runtime; climb up to the workspace root
 // (dist/test/rules → dist/test → dist → workspace root), then into src/
 const WORKSPACE_ROOT = path.resolve(THIS_DIRECTORY, "../../..");
-const RULE_HELPERS_PATH = path.resolve(WORKSPACE_ROOT, "src/rules/gml/rule-helpers.ts");
+const RULE_HELPERS_PATH = path.resolve(WORKSPACE_ROOT, "src/rules/gml/rule-base-helpers.ts");
 
 void test("dominantLineEnding is exported from Core (target-state.md §2.1)", () => {
     assertEquals(
@@ -33,13 +33,13 @@ void test("dominantLineEnding is exported from Core (target-state.md §2.1)", ()
     );
 });
 
-void test("dominantLineEnding is not redefined in lint rule-helpers (belongs exclusively in @gmloop/core)", () => {
+void test("dominantLineEnding is not redefined in lint rule-base-helpers (belongs exclusively in @gmloop/core)", () => {
     const ruleHelpersSource = readFileSync(RULE_HELPERS_PATH, "utf8");
 
     assertEquals(
         ruleHelpersSource.includes("function dominantLineEnding"),
         false,
-        "rule-helpers.ts must not define its own dominantLineEnding — the canonical implementation lives in @gmloop/core (target-state.md §2.1). Remove the local copy and use Core.dominantLineEnding instead."
+        "rule-base-helpers.ts must not define its own dominantLineEnding — the canonical implementation lives in @gmloop/core (target-state.md §2.1). Remove the local copy and use Core.dominantLineEnding instead."
     );
 });
 

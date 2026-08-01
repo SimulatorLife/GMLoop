@@ -28,14 +28,41 @@ void describe("workflow path filter helpers", () => {
         assert.ok(filter.allowsPath(path.join(workspace, "file.json")));
     });
 
-    void it("accepts alias workflow input names for allow/deny lists", () => {
-        const root = path.resolve("/tmp", "workflow-path-filter", "aliases");
+    void it("preserves Windows absolute allow paths on non-Windows hosts", () => {
+        const workspace = path.win32.join("C:\\", "workflow-path-filter", "allowed");
+        const outputPath = path.win32.join(workspace, "artefacts", "manual.json");
+        const filter = createWorkflowPathFilter({ allowPaths: [workspace] });
+
+        assert.deepStrictEqual(filter.allowList, [workspace]);
+        assert.ok(filter.allowsDirectory(workspace));
+        assert.ok(filter.allowsPath(outputPath));
+    });
+
+    void it("preserves UNC deny paths on non-Windows hosts", () => {
+        const restricted = String.raw`\\server\share\workflow-path-filter\restricted`;
+        const filter = createWorkflowPathFilter({ denyPaths: [restricted] });
+
+        assert.equal(filter.denyList[0], restricted);
+        assert.equal(filter.allowsPath(String.raw`${restricted}\manual.json`), false);
+    });
+
+    void it("accepts UNC allow paths written with forward slashes", () => {
+        const workspace = "//server/share/workflow-path-filter/allowed";
+        const outputPath = "//SERVER/SHARE/workflow-path-filter/allowed/manual.json";
+        const filter = createWorkflowPathFilter({ allowPaths: [workspace] });
+
+        assert.deepStrictEqual(filter.allowList, [String.raw`\\server\share\workflow-path-filter\allowed`]);
+        assert.ok(filter.allowsPath(outputPath));
+    });
+
+    void it("uses only canonical allowPaths/denyPaths inputs", () => {
+        const root = path.resolve("/tmp", "workflow-path-filter", "canonical");
         const allowed = path.join(root, "allowed");
         const denied = path.join(allowed, "denied");
 
         const filter = createWorkflowPathFilter({
-            includePaths: [allowed],
-            excludePaths: [denied]
+            allowPaths: [allowed],
+            denyPaths: [denied]
         });
 
         assert.ok(filter.allowsDirectory(allowed));

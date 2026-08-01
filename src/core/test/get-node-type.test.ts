@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "node:test";
 
-import { getNodeType } from "../src/ast/node-helpers.js";
+import { getNodeType } from "../src/ast/node-helpers/index.js";
 
 void test("getNodeType returns the type string for node objects", () => {
     const node = { type: "CallExpression", value: 42 };

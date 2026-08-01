@@ -1,6 +1,11 @@
-import assert from "node:assert";
+import assert from "node:assert/strict";
 import { test } from "node:test";
 
+// Node.js deprecated the loose equality helpers (e.g. assert.equal) in the
+// `node:assert` module. This test suite migrates to the /strict subpath and
+// strict helpers (assert.strictEqual, assert.deepStrictEqual) for value- and
+// type-exact comparisons. Behaviour parity with the original calls is
+// validated via: pnpm test src/core/test/async-utils.test.js
 import { runInParallel, runInParallelWithLimit, runSequentially } from "../src/utils/async.js";
 
 // === runSequentially tests ===
@@ -26,7 +31,7 @@ void test("runSequentially handles empty array", async () => {
     await runSequentially([], async () => {
         called = true;
     });
-    assert.equal(called, false);
+    assert.strictEqual(called, false);
 });
 
 void test("runSequentially handles async operations", async () => {
@@ -49,6 +54,22 @@ void test("runSequentially propagates errors", async () => {
         },
         { message: "Test error" }
     );
+});
+
+function* generateSequentialNumbers(): Generator<number> {
+    yield 10;
+    yield 20;
+    yield 30;
+}
+
+void test("runSequentially works with generator iterables without materializing to array", async () => {
+    // Verifies that runSequentially consumes the iterable lazily (for...of) rather than
+    // calling Array.from() first, so generators and other lazy iterables work correctly.
+    const results: Array<number> = [];
+    await runSequentially(generateSequentialNumbers(), async (num) => {
+        results.push(num);
+    });
+    assert.deepEqual(results, [10, 20, 30]);
 });
 
 // === runInParallel tests ===
@@ -128,30 +149,53 @@ void test("runInParallel works with iterables", async () => {
     assert.deepEqual(results, [11, 12, 13]);
 });
 
-void test("runInParallel is faster than sequential for slow operations", async () => {
-    const delayMs = 50;
-    const count = 5;
-    const delays = Array.from({ length: count }, () => delayMs);
-
-    // Time parallel execution
-    const parallelStart = Date.now();
-    await runInParallel(delays, async (delay) => {
-        await new Promise((resolve) => setTimeout(resolve, delay));
+void test("runInParallel eagerly starts all callbacks unlike runSequentially", async () => {
+    // Historical note: this suite previously asserted Date.now() durations to prove
+    // parallelism. That approach is flaky in busy CI environments where scheduler
+    // jitter can invert close timing comparisons.
+    const startedInParallel: Array<number> = [];
+    let releaseParallelCallbacks: () => void;
+    const parallelGate = new Promise<void>((resolve) => {
+        releaseParallelCallbacks = resolve;
     });
-    const parallelDuration = Date.now() - parallelStart;
 
-    // Time sequential execution
-    const sequentialStart = Date.now();
-    await runSequentially(delays, async (delay) => {
-        await new Promise((resolve) => setTimeout(resolve, delay));
+    const parallelResultsPromise = runInParallel([1, 2, 3], async (value) => {
+        startedInParallel.push(value);
+        await parallelGate;
+        return value;
     });
-    const sequentialDuration = Date.now() - sequentialStart;
 
-    // Parallel should be significantly faster (at least 2x for 5 operations)
-    assert.ok(
-        parallelDuration < sequentialDuration / 2,
-        `Parallel (${parallelDuration}ms) should be much faster than sequential (${sequentialDuration}ms)`
+    assert.deepEqual(
+        startedInParallel,
+        [1, 2, 3],
+        "runInParallel should invoke every callback before any callback is released"
     );
+    releaseParallelCallbacks();
+    await parallelResultsPromise;
+
+    const startedInSequence: Array<number> = [];
+    let releaseFirstSequentialCallback: () => void;
+    const firstSequentialGate = new Promise<void>((resolve) => {
+        releaseFirstSequentialCallback = resolve;
+    });
+
+    const sequentialResultsPromise = runSequentially([1, 2, 3], async (value) => {
+        startedInSequence.push(value);
+        if (value === 1) {
+            await firstSequentialGate;
+        }
+    });
+
+    await Promise.resolve();
+    assert.strictEqual(
+        startedInSequence.length,
+        1,
+        "runSequentially should not invoke the next callback until the current callback settles"
+    );
+    assert.strictEqual(startedInSequence[0], 1);
+    releaseFirstSequentialCallback();
+    await sequentialResultsPromise;
+    assert.deepStrictEqual(startedInSequence, [1, 2, 3]);
 });
 
 // === runInParallelWithLimit tests ===
@@ -172,8 +216,8 @@ void test("runInParallelWithLimit executes callbacks with bounded concurrency", 
         2
     );
 
-    assert.equal(maxConcurrent, 2, "Should never exceed concurrency limit of 2");
-    assert.deepEqual(results, [2, 4, 6, 8, 10, 12], "Results should be in order");
+    assert.strictEqual(maxConcurrent, 2, "Should never exceed concurrency limit of 2");
+    assert.deepStrictEqual(results, [2, 4, 6, 8, 10, 12], "Results should be in order");
 });
 
 void test("runInParallelWithLimit maintains result order", async () => {
@@ -254,47 +298,52 @@ void test("runInParallelWithLimit passes correct indices", async () => {
     assert.deepEqual(results, ["0:a", "1:b", "2:c", "3:d"]);
 });
 
-void test("runInParallelWithLimit is faster than sequential but slower than unlimited", async () => {
-    const delayMs = 30;
-    const count = 6;
-    const limit = 2;
-    const delays = Array.from({ length: count }, () => delayMs);
-    const TIMING_TOLERANCE_MS = 50;
+void test("runInParallelWithLimit starts up to the limit immediately and backfills as tasks settle", async () => {
+    // This scenario replaces a historical wall-clock benchmark that compared Date.now()
+    // durations between sequential/limited/unlimited modes. That benchmark was flaky:
+    // CI scheduler jitter could make near-equal durations invert, causing sporadic failures.
+    // We now verify deterministic scheduling semantics with explicit promise gates.
+    const started: Array<number> = [];
+    const releaseByTask = new Map<number, () => void>();
 
-    // Time sequential execution
-    const sequentialStart = Date.now();
-    await runSequentially(delays, async (delay) => {
-        await new Promise((resolve) => setTimeout(resolve, delay));
-    });
-    const sequentialDuration = Date.now() - sequentialStart;
-
-    // Time limited parallel execution
-    const limitedStart = Date.now();
-    await runInParallelWithLimit(
-        delays,
-        async (delay) => {
-            await new Promise((resolve) => setTimeout(resolve, delay));
+    const resultsPromise = runInParallelWithLimit(
+        [1, 2, 3, 4],
+        async (value) => {
+            started.push(value);
+            await new Promise<void>((resolve) => {
+                releaseByTask.set(value, resolve);
+            });
+            return value * 10;
         },
-        limit
-    );
-    const limitedDuration = Date.now() - limitedStart;
-
-    // Time unlimited parallel execution
-    const unlimitedStart = Date.now();
-    await runInParallel(delays, async (delay) => {
-        await new Promise((resolve) => setTimeout(resolve, delay));
-    });
-    const unlimitedDuration = Date.now() - unlimitedStart;
-
-    // Limited should be faster than sequential
-    assert.ok(
-        limitedDuration < sequentialDuration,
-        `Limited (${limitedDuration}ms) should be faster than sequential (${sequentialDuration}ms)`
+        2
     );
 
-    // Unlimited should be faster than or equal to limited (allowing tolerance for timing variance)
-    assert.ok(
-        unlimitedDuration <= limitedDuration + TIMING_TOLERANCE_MS,
-        `Unlimited (${unlimitedDuration}ms) should be faster than or similar to limited (${limitedDuration}ms)`
-    );
+    // Only two tasks should begin before any task is released.
+    assert.deepEqual(started, [1, 2], "Exactly `limit` tasks should start immediately");
+
+    const releaseTaskOne = releaseByTask.get(1);
+    assert.ok(releaseTaskOne, "First task release handle should be registered");
+    releaseTaskOne();
+    for (let microtaskTurn = 0; microtaskTurn < 5; microtaskTurn += 1) {
+        await Promise.resolve();
+    }
+    assert.equal(started.length, 3, "Exactly one queued task should start after releasing one active task");
+    assert.deepEqual(started.slice(0, 3), [1, 2, 3], "Third task should begin only after one active task settles");
+
+    const releaseTaskTwo = releaseByTask.get(2);
+    assert.ok(releaseTaskTwo, "Second task release handle should be registered");
+    releaseTaskTwo();
+    for (let microtaskTurn = 0; microtaskTurn < 5; microtaskTurn += 1) {
+        await Promise.resolve();
+    }
+    assert.deepEqual(started, [1, 2, 3, 4], "Fourth task should begin after the second slot becomes available");
+
+    for (const taskId of [3, 4]) {
+        const releaseTask = releaseByTask.get(taskId);
+        assert.ok(releaseTask, `Task ${taskId} release handle should be registered`);
+        releaseTask();
+    }
+
+    const results = await resultsPromise;
+    assert.deepEqual(results, [10, 20, 30, 40], "Result ordering should remain stable");
 });

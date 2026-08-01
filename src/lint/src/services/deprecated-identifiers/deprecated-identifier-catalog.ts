@@ -1,6 +1,10 @@
-import * as CoreWorkspace from "@gmloop/core";
-
-const { Core } = CoreWorkspace;
+import {
+    Core,
+    type DeprecatedIdentifierDiagnosticOwner,
+    type DeprecatedIdentifierLegacyUsage,
+    type DeprecatedIdentifierMetadataEntry,
+    type DeprecatedIdentifierReplacementKind
+} from "@gmloop/core";
 
 /**
  * Normalized deprecated identifier metadata used by lint rules.
@@ -10,10 +14,10 @@ export type DeprecatedIdentifierCatalogEntry = Readonly<{
     normalizedName: string;
     type: string;
     replacement: string | null;
-    replacementKind: CoreWorkspace.DeprecatedIdentifierReplacementKind;
+    replacementKind: DeprecatedIdentifierReplacementKind;
     legacyCategory: string | null;
-    legacyUsage: CoreWorkspace.DeprecatedIdentifierLegacyUsage;
-    diagnosticOwner: CoreWorkspace.DeprecatedIdentifierDiagnosticOwner | null;
+    legacyUsage: DeprecatedIdentifierLegacyUsage;
+    diagnosticOwner: DeprecatedIdentifierDiagnosticOwner | null;
 }>;
 
 /**
@@ -25,7 +29,7 @@ export type DeprecatedIdentifierCatalog = Readonly<{
 
 let cachedDeprecatedIdentifierCatalog: DeprecatedIdentifierCatalog | null = null;
 
-function createCatalogEntry(entry: CoreWorkspace.DeprecatedIdentifierMetadataEntry): DeprecatedIdentifierCatalogEntry {
+function createCatalogEntry(entry: DeprecatedIdentifierMetadataEntry): DeprecatedIdentifierCatalogEntry {
     return Object.freeze({
         name: entry.name,
         normalizedName: entry.name.toLowerCase(),
@@ -56,7 +60,7 @@ export function loadDeprecatedIdentifierCatalog(): DeprecatedIdentifierCatalog {
     }
 
     cachedDeprecatedIdentifierCatalog = Object.freeze({
-        byNormalizedName: byNormalizedName as ReadonlyMap<string, DeprecatedIdentifierCatalogEntry>
+        byNormalizedName
     });
     return cachedDeprecatedIdentifierCatalog;
 }

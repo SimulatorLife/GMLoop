@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "node:test";
 
-import { createMetricsTracker } from "../src/utils/metrics.js";
+import { createMetricsTracker } from "../src/reporting/metrics.js";
 
 void test("snapshot exposes accumulated metrics as plain objects", () => {
     const tracker = createMetricsTracker({ category: "demo" });
@@ -176,4 +176,45 @@ void test("snapshot returns fresh copies of accumulated metrics", () => {
     const second = reporting.summary.snapshot();
     assert.deepEqual(second.counters, { runs: 1 });
     assert.deepEqual(second.caches.cache, { hits: 1, misses: 0, stale: 0 });
+});
+
+void test("timers and counters both record through shared increment path", async () => {
+    const tracker = createMetricsTracker();
+    const { recording, reporting } = tracker;
+
+    recording.counters.increment("files", 2);
+    await recording.timers.timeAsync("parse", async () => {});
+
+    const report = reporting.summary.snapshot();
+    assert.equal(report.counters.files, 2);
+    assert.ok(typeof report.timings.parse === "number");
+});
+
+void test("startTimer reports non-negative sub-millisecond durations", () => {
+    const tracker = createMetricsTracker({ category: "high-resolution" });
+    const { recording, reporting } = tracker;
+
+    const stop = recording.timers.startTimer("op");
+    const report = reporting.summary.snapshot();
+    assert.equal(report.timings.op, undefined);
+
+    stop();
+    const after = reporting.summary.snapshot();
+
+    const duration = after.timings.op;
+    assert.ok(typeof duration === "number");
+    assert.ok(duration >= 0, `startTimer should record a non-negative duration, got ${duration}`);
+});
+
+void test("timeSync accumulates measured duration into timings", () => {
+    const tracker = createMetricsTracker({ category: "time-sync" });
+    const { recording, reporting } = tracker;
+
+    const result = recording.timers.timeSync("compute", () => 7);
+    assert.equal(result, 7);
+
+    const report = reporting.summary.snapshot();
+    const duration = report.timings.compute;
+    assert.ok(typeof duration === "number");
+    assert.ok(duration >= 0, `timeSync should record a non-negative duration, got ${duration}`);
 });

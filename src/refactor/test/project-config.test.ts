@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { Refactor } from "../index.js";
+import { normalizeRefactorProjectConfigOrNull } from "../src/project-config.js";
 
 /**
  * Write a temporary `gmloop.json` file and return its absolute path.
@@ -19,20 +20,15 @@ async function writeConfigFile(config: Record<string, unknown>): Promise<string>
 void test("normalizeRefactorProjectConfig accepts a populated refactor section", async () => {
     const configPath = await writeConfigFile({
         refactor: {
-            namingConventionPolicy: {
-                rules: {
-                    localVariable: {
-                        caseStyle: "camel"
-                    }
-                }
-            },
             codemods: {
-                namingConvention: {},
-                loopLengthHoisting: {
-                    functionSuffixes: {
-                        array_length: "len"
+                namingConvention: {
+                    rules: {
+                        localVariable: {
+                            caseStyle: "camel"
+                        }
                     }
-                }
+                },
+                scientificNotation: {}
             }
         }
     });
@@ -41,25 +37,46 @@ void test("normalizeRefactorProjectConfig accepts a populated refactor section",
         const rawConfig = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
         const normalized = Refactor.normalizeRefactorProjectConfig(rawConfig.refactor);
         assert.deepEqual(normalized, {
-            namingConventionPolicy: {
-                rules: {
-                    localVariable: {
-                        caseStyle: "camel"
-                    }
-                }
-            },
             codemods: {
-                namingConvention: {},
-                loopLengthHoisting: {
-                    functionSuffixes: {
-                        array_length: "len"
+                namingConvention: {
+                    rules: {
+                        localVariable: {
+                            caseStyle: "camel"
+                        }
                     }
-                }
+                },
+                scientificNotation: {}
             }
         });
     } finally {
         await rm(path.dirname(configPath), { recursive: true, force: true });
     }
+});
+
+void test("normalizeRefactorProjectConfig accepts loopLengthHoisting in project config", () => {
+    const normalized = Refactor.normalizeRefactorProjectConfig({
+        codemods: {
+            loopLengthHoisting: {}
+        }
+    });
+    assert.deepEqual(normalized, {
+        codemods: {
+            loopLengthHoisting: {}
+        }
+    });
+});
+
+void test("normalizeRefactorProjectConfig accepts loopLengthHoisting disabled via false", () => {
+    const normalized = Refactor.normalizeRefactorProjectConfig({
+        codemods: {
+            loopLengthHoisting: false
+        }
+    });
+    assert.deepEqual(normalized, {
+        codemods: {
+            loopLengthHoisting: false
+        }
+    });
 });
 
 void test("normalizeRefactorProjectConfig rejects malformed refactor sections", () => {
@@ -79,10 +96,25 @@ void test("normalizeRefactorProjectConfig rejects malformed refactor sections", 
     assert.throws(
         () =>
             Refactor.normalizeRefactorProjectConfig({
-                namingConventionPolicy: {
-                    rules: {
-                        localVariable: {
-                            caseStyle: "invalid"
+                codemods: {
+                    docCommentAlignment: {}
+                }
+            }),
+        {
+            name: "TypeError",
+            message: /Unknown refactor codemod/
+        }
+    );
+
+    assert.throws(
+        () =>
+            Refactor.normalizeRefactorProjectConfig({
+                codemods: {
+                    namingConvention: {
+                        rules: {
+                            localVariable: {
+                                caseStyle: "invalid"
+                            }
                         }
                     }
                 }
@@ -92,4 +124,67 @@ void test("normalizeRefactorProjectConfig rejects malformed refactor sections", 
             message: /caseStyle must be one of/
         }
     );
+});
+
+void test("normalizeRefactorProjectConfigOrNull returns null for unknown top-level keys", () => {
+    const result = normalizeRefactorProjectConfigOrNull({
+        codemods: {},
+        unknownTopLevelKey: {}
+    });
+    assert.strictEqual(result, null);
+});
+
+void test("normalizeRefactorProjectConfigOrNull returns null for unknown codemod ids", () => {
+    const result = normalizeRefactorProjectConfigOrNull({
+        codemods: {
+            docCommentAlignment: {}
+        }
+    });
+    assert.strictEqual(result, null);
+});
+
+void test("normalizeRefactorProjectConfigOrNull returns null for invalid codemod config values", () => {
+    const result = normalizeRefactorProjectConfigOrNull({
+        codemods: {
+            namingConvention: {
+                rules: {
+                    localVariable: {
+                        caseStyle: "invalid"
+                    }
+                }
+            }
+        }
+    });
+    assert.strictEqual(result, null);
+});
+
+void test("normalizeRefactorProjectConfigOrNull returns normalized config for valid inputs", () => {
+    const result = normalizeRefactorProjectConfigOrNull({
+        codemods: {
+            scientificNotation: {}
+        }
+    });
+    assert.deepEqual(result, {
+        codemods: {
+            scientificNotation: {}
+        }
+    });
+});
+
+void test("normalizeRefactorProjectConfigOrNull returns empty object for undefined config", () => {
+    const result = normalizeRefactorProjectConfigOrNull(undefined);
+    assert.deepEqual(result, {});
+});
+
+void test("normalizeRefactorProjectConfigOrNull returns null for non-object config", () => {
+    assert.strictEqual(normalizeRefactorProjectConfigOrNull("not an object"), null);
+    assert.strictEqual(normalizeRefactorProjectConfigOrNull(null), null);
+    assert.strictEqual(normalizeRefactorProjectConfigOrNull(42), null);
+});
+
+void test("normalizeRefactorProjectConfigOrNull returns null for malformed codemods object", () => {
+    const result = normalizeRefactorProjectConfigOrNull({
+        codemods: "not an object"
+    });
+    assert.strictEqual(result, null);
 });

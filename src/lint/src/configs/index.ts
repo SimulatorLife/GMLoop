@@ -1,9 +1,36 @@
-import type { LintPluginShape } from "../plugin.js";
-import { featherManifest } from "../rules/feather/manifest.js";
-import { PERFORMANCE_OVERRIDE_RULE_IDS } from "./performance-rule-ids.js";
+import {
+    ALL_RULE_LEVELS,
+    FEATHER_RULE_LEVELS,
+    FIXIBLE_RULE_LEVELS,
+    type LintRuleLevel,
+    PERFORMANCE_RULE_LEVELS,
+    RECOMMENDED_GML_RULE_LEVELS,
+    RECOMMENDED_SAFE_FEATHER_RULE_LEVELS
+} from "./rule-level-presets.js";
 
-export { normalizeLintRulesConfig } from "./project-config.js";
-export { createLintRuleEntriesFromProjectConfig } from "./rule-entries.js";
+export {
+    formatLintRuleLevelList,
+    getLintRuleLevelValues,
+    isLintRuleLevel,
+    LintRuleLevel,
+    normalizeLintRuleLevel,
+    normalizeLintRuleLevelWithFallback
+} from "./lint-rule-level.js";
+export { normalizeLintRulesConfig, normalizeLintRulesConfigOrNull } from "./project-config.js";
+export {
+    createLintRuleEntriesFromProjectConfig,
+    createLintRuleEntriesFromProjectConfigOrNull
+} from "./rule-entries.js";
+
+/**
+ * Minimal runtime shape for the lint plugin objects consumed by lint config
+ * presets. Lives next to the configs that consume it so the config layer has
+ * a single, direct dependency without a separate contract module.
+ */
+export type LintPluginShape = Readonly<{
+    rules: Record<string, unknown>;
+    languages?: Record<string, unknown>;
+}>;
 
 /**
  * Represents a pinned lint flat-config entry exposed by the lint namespace.
@@ -12,116 +39,64 @@ export type FlatConfig = Readonly<{
     files: ReadonlyArray<string>;
     plugins?: Readonly<Record<string, LintPluginShape>>;
     language?: string;
-    rules: Readonly<Record<string, "off" | "warn" | "error">>;
+    languageOptions?: Readonly<{
+        recovery: "none" | "limited";
+    }>;
+    rules: Readonly<Record<string, LintRuleLevel>>;
 }>;
 
 export const GML_LINT_FILES_GLOB = Object.freeze(["**/*.gml"]);
-
-const RECOMMENDED_RULES = Object.freeze({
-    "gml/prefer-hoistable-loop-accessors": "warn",
-    "gml/prefer-loop-invariant-expressions": "warn",
-    "gml/prefer-repeat-loops": "warn",
-    "gml/prefer-struct-literal-assignments": "warn",
-    "gml/prefer-array-push": "warn",
-    "gml/prefer-compound-assignments": "warn",
-    "gml/prefer-increment-decrement-operators": "warn",
-    "gml/prefer-direct-return": "warn",
-    "gml/optimize-logical-flow": "warn",
-    "gml/no-globalvar": "warn",
-    "gml/no-empty-regions": "warn",
-    "gml/no-legacy-api": "warn",
-    "gml/no-scientific-notation": "error",
-    "gml/no-unnecessary-string-interpolation": "warn",
-    "gml/remove-default-comments": "warn",
-    "gml/normalize-doc-comments": "warn",
-    "gml/normalize-banner-comments": "warn",
-    "gml/normalize-directives": "warn",
-    "gml/require-control-flow-braces": "warn",
-    "gml/no-assignment-in-condition": "warn",
-    "gml/prefer-is-undefined-check": "warn",
-    "gml/prefer-epsilon-comparisons": "warn",
-    "gml/normalize-operator-aliases": "warn",
-    "gml/prefer-string-interpolation": "warn",
-    "gml/optimize-math-expressions": "warn",
-    "gml/require-argument-separators": "error",
-    "gml/normalize-data-structure-accessors": "warn",
-    "gml/require-trailing-optional-defaults": "warn",
-    "gml/simplify-real-calls": "warn"
-});
-
-const RECOMMENDED_SAFE_FEATHER_RULES = Object.freeze({
-    "feather/gm1003": "warn",
-    "feather/gm1009": "warn",
-    "feather/gm1033": "warn",
-    "feather/gm1041": "warn",
-    "feather/gm2007": "warn",
-    "feather/gm2020": "warn"
-} satisfies Record<`feather/${string}`, "warn" | "error">);
-
-const FEATHER_RULES: Readonly<Record<`feather/${string}`, "warn" | "error">> = Object.freeze(
-    Object.fromEntries(featherManifest.entries.map((entry) => [entry.ruleId, entry.defaultSeverity])) as Record<
-        `feather/${string}`,
-        "warn" | "error"
-    >
-);
-
-function createPerformanceRuleSet(): Readonly<Record<string, "off" | "warn" | "error">> {
-    const rules: Record<string, "off" | "warn" | "error"> = {
-        "gml/prefer-hoistable-loop-accessors": "off",
-        "gml/prefer-loop-invariant-expressions": "off",
-        "gml/prefer-struct-literal-assignments": "off",
-        "gml/no-globalvar": "warn",
-        "gml/prefer-string-interpolation": "off"
-    };
-
-    for (const ruleId of PERFORMANCE_OVERRIDE_RULE_IDS) {
-        if (!(ruleId in rules)) {
-            rules[ruleId] = "off";
-        }
-    }
-
-    return Object.freeze(rules);
-}
-
-const PERFORMANCE_RULES = createPerformanceRuleSet();
 
 /**
  * Represents the immutable lint config sets exported through `Lint.configs`.
  */
 export type LintConfigSets = Readonly<{
+    all: ReadonlyArray<FlatConfig>;
     recommended: ReadonlyArray<FlatConfig>;
     feather: ReadonlyArray<FlatConfig>;
     performance: ReadonlyArray<FlatConfig>;
+    fixible: ReadonlyArray<FlatConfig>;
 }>;
 
 /**
- * Legacy helper that builds all config sets from a single plugin object.
- * Prefer `createLintConfigsWithPlugins` when gml/feather plugins differ.
+ * Builds all config sets from separate gml and feather plugin objects.
+ * The gml and feather configs may differ; pass the same plugin instance
+ * to both fields to replicate the deprecated single-plugin behavior.
  */
-export function createLintConfigs(plugin: LintPluginShape): LintConfigSets {
-    return createLintConfigsWithPlugins({
-        gmlPlugin: plugin,
-        featherPlugin: plugin
-    });
-}
-
 type LintConfigPluginSet = Readonly<{
     gmlPlugin: LintPluginShape;
     featherPlugin: LintPluginShape;
 }>;
 
 export function createLintConfigsWithPlugins(plugins: LintConfigPluginSet): LintConfigSets {
+    const all: ReadonlyArray<FlatConfig> = Object.freeze([
+        Object.freeze({
+            files: GML_LINT_FILES_GLOB,
+            plugins: Object.freeze({
+                gml: plugins.gmlPlugin,
+                feather: plugins.featherPlugin
+            }),
+            language: "gml/gml",
+            languageOptions: Object.freeze({ recovery: "limited" }),
+            rules: ALL_RULE_LEVELS
+        })
+    ]);
+
     const recommended: ReadonlyArray<FlatConfig> = Object.freeze([
         Object.freeze({
             files: GML_LINT_FILES_GLOB,
             plugins: Object.freeze({ gml: plugins.gmlPlugin }),
             language: "gml/gml",
-            rules: RECOMMENDED_RULES
+            // Run the recommended GML config in limited recovery mode so malformed
+            // files still flow through the tolerant/token-safe phase before AST
+            // rules consume the recovered tree (target-state.md §3.1).
+            languageOptions: Object.freeze({ recovery: "limited" }),
+            rules: RECOMMENDED_GML_RULE_LEVELS
         }),
         Object.freeze({
             files: GML_LINT_FILES_GLOB,
             plugins: Object.freeze({ feather: plugins.featherPlugin }),
-            rules: RECOMMENDED_SAFE_FEATHER_RULES
+            rules: RECOMMENDED_SAFE_FEATHER_RULE_LEVELS
         })
     ]);
 
@@ -129,16 +104,29 @@ export function createLintConfigsWithPlugins(plugins: LintConfigPluginSet): Lint
         Object.freeze({
             files: GML_LINT_FILES_GLOB,
             plugins: Object.freeze({ feather: plugins.featherPlugin }),
-            rules: FEATHER_RULES
+            rules: FEATHER_RULE_LEVELS
         })
     ]);
 
     const performance: ReadonlyArray<FlatConfig> = Object.freeze([
         Object.freeze({
             files: GML_LINT_FILES_GLOB,
-            rules: PERFORMANCE_RULES
+            rules: PERFORMANCE_RULE_LEVELS
         })
     ]);
 
-    return Object.freeze({ recommended, feather, performance });
+    const fixible: ReadonlyArray<FlatConfig> = Object.freeze([
+        Object.freeze({
+            files: GML_LINT_FILES_GLOB,
+            plugins: Object.freeze({
+                gml: plugins.gmlPlugin,
+                feather: plugins.featherPlugin
+            }),
+            language: "gml/gml",
+            languageOptions: Object.freeze({ recovery: "limited" }),
+            rules: FIXIBLE_RULE_LEVELS
+        })
+    ]);
+
+    return Object.freeze({ recommended, all, feather, performance, fixible });
 }

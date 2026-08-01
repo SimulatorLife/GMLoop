@@ -1,0 +1,162 @@
+import type {
+    GraphVisualizationAutoGamePipelineModel,
+    GraphVisualizationData,
+    GraphVisualizationDocumentationCatalogs,
+    GraphVisualizationEdgeRecord,
+    GraphVisualizationLastFixRun,
+    GraphVisualizationLiveReloadModel,
+    GraphVisualizationLoadedTarget,
+    GraphVisualizationMcpServerStatus,
+    GraphVisualizationNodeRecord,
+    GraphVisualizationProjectConfigurationCatalog,
+    GraphVisualizationProjectWorkflow,
+    GraphVisualizationRenderOptions,
+    GraphVisualizationStartupState
+} from "../graph/index.js";
+
+export type GraphVisualizationFixRunResult = Readonly<{
+    logLines: ReadonlyArray<string>;
+    status: "success";
+}>;
+
+export type GraphVisualizationFixProgressSnapshot = Readonly<{
+    logLines: ReadonlyArray<string>;
+}>;
+
+export type GraphVisualizationFixRunOptions = Readonly<{
+    onProgress: (progress: GraphVisualizationFixProgressSnapshot) => void;
+    workflow: GraphVisualizationProjectWorkflow;
+}>;
+
+export type GraphVisualizationHostMutationResult = Readonly<{
+    changed: boolean;
+}>;
+
+/**
+ * Normalized model consumed by the Lit graph visualization UI shell.
+ */
+export type GraphVisualizationUiModel = Readonly<{
+    autoGamePipeline: GraphVisualizationAutoGamePipelineModel | null;
+    data: GraphVisualizationData;
+    documentationCatalogs: GraphVisualizationDocumentationCatalogs | null;
+    isServerMode: boolean;
+    lastFixRun: GraphVisualizationLastFixRun | null;
+    loadedTarget: GraphVisualizationLoadedTarget | null;
+    liveReload: GraphVisualizationLiveReloadModel | null;
+    mcpServerStatus: GraphVisualizationMcpServerStatus;
+    projectConfigurationCatalog: GraphVisualizationProjectConfigurationCatalog | null;
+    startupState: GraphVisualizationStartupState | null;
+    title: string;
+}>;
+
+/**
+ * Host callbacks invoked from UI actions.
+ */
+export type GraphVisualizationUiCallbacks = Readonly<{
+    onOpenProject: () => void | Promise<void>;
+    onRegenerate: () =>
+        GraphVisualizationHostMutationResult | void | Promise<GraphVisualizationHostMutationResult | void>;
+    onCreateConfig?: () => void | Promise<void>;
+    onSaveConfig: (config: Readonly<Record<string, unknown>>) => void | Promise<void>;
+    onRunFix: (
+        options: GraphVisualizationFixRunOptions
+    ) => GraphVisualizationFixRunResult | Promise<GraphVisualizationFixRunResult>;
+    onCancelFix?: () => void | Promise<void>;
+    onStartLiveReload: () =>
+        GraphVisualizationLiveReloadModel | null | Promise<GraphVisualizationLiveReloadModel | null>;
+    onStopLiveReload: () => void | Promise<void>;
+
+    onInitializeAutoGameAgentPack?: (options: GraphVisualizationAgentPackInitializationOptions) => void | Promise<void>;
+    onSetAutoGameSkillEnabled?: (name: string, enabled: boolean) => void | Promise<void>;
+}>;
+
+/** Options selected when initializing or updating project-scoped Auto-Game resources. */
+export type GraphVisualizationAgentPackInitializationOptions = Readonly<{
+    agentTargets: ReadonlyArray<"codex" | "gemini" | "qwen">;
+    includeGitIgnore: boolean;
+    includeVSCode: boolean;
+}>;
+
+/**
+ * Convert graph visualization renderer inputs into the model consumed by Lit UI components.
+ */
+export function createGraphVisualizationUiModel(
+    data: GraphVisualizationData,
+    options: GraphVisualizationRenderOptions
+): GraphVisualizationUiModel {
+    return {
+        autoGamePipeline: options.autoGamePipeline ?? null,
+        data,
+        documentationCatalogs: options.documentationCatalogs ?? null,
+        isServerMode: options.isServerMode ?? false,
+        lastFixRun: options.lastFixRun ?? null,
+        loadedTarget: options.loadedTarget ?? null,
+        liveReload: options.liveReload ?? null,
+        mcpServerStatus: options.mcpServerStatus ?? "not-started",
+        projectConfigurationCatalog: options.projectConfigurationCatalog ?? null,
+        startupState: options.startupState ?? null,
+        title: options.title
+    };
+}
+
+/**
+ * Provide no-op callback implementations for host wiring that has not yet been attached.
+ */
+export function createNoopGraphVisualizationUiCallbacks(): GraphVisualizationUiCallbacks {
+    return {
+        onOpenProject: () => {},
+        onRegenerate: () => {},
+        onCreateConfig: () => {},
+        onSaveConfig: () => {},
+        onRunFix: () => ({ logLines: ["Fix workflow is unavailable in this host."], status: "success" }),
+        onCancelFix: () => {},
+        onStartLiveReload: () => null,
+        onStopLiveReload: () => {},
+
+        onInitializeAutoGameAgentPack: () => {},
+        onSetAutoGameSkillEnabled: () => {}
+    };
+}
+
+/**
+ * Return graph nodes from the UI model without forcing components to traverse the nested data payload.
+ */
+export function readGraphVisualizationNodes(
+    model: GraphVisualizationUiModel
+): ReadonlyArray<GraphVisualizationNodeRecord> {
+    return model.data.nodes;
+}
+
+/**
+ * Return graph edges from the UI model without forcing components to traverse the nested data payload.
+ */
+export function readGraphVisualizationEdges(
+    model: GraphVisualizationUiModel
+): ReadonlyArray<GraphVisualizationEdgeRecord> {
+    return model.data.edges;
+}
+
+/**
+ * Return whether the current UI model includes graph data that can be explored.
+ */
+export function hasLoadedGraphIndex(model: GraphVisualizationUiModel): boolean {
+    return readGraphVisualizationNodes(model).length > 0;
+}
+
+/**
+ * Return whether the current UI model includes graph edges that can be visualised.
+ */
+export function hasGraphEdges(model: GraphVisualizationUiModel): boolean {
+    return readGraphVisualizationEdges(model).length > 0;
+}
+
+/**
+ * Return whether the current UI model is ready for project-dependent actions.
+ *
+ * The host publishes a selected target before semantic loading completes so
+ * the header can show the path immediately. That target is not considered
+ * loaded until its startup state settles.
+ */
+export function hasLoadedGraphProject(model: GraphVisualizationUiModel): boolean {
+    return model.loadedTarget !== null && model.startupState === null;
+}

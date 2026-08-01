@@ -1,6 +1,6 @@
 /// @description Initialize sound controller
 
-/// @description Set the gain for the master volume from the volume specified in the settings
+/// @desc Set the gain for the master volume from the volume specified in the settings
 /// @returns {undefined}
 function set_master_volume() {
     var i = 0;

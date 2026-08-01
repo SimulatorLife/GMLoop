@@ -31,6 +31,31 @@ void test("preserves parentheses that change grouping in multiplicative expressi
     assert.equal(formatted, "var value = a * (b + c);\n");
 });
 
+void test("preserves right-side multiplicative grouping in division expressions", async () => {
+    const source = "var value = a / (b * c);\n";
+    const formatted = await Format.format(source);
+
+    assert.equal(formatted, "var value = a / (b * c);\n");
+});
+
+void test("preserves right-side divisive grouping in division expressions", async () => {
+    const source = "var value = a / (b / c);\n";
+    const formatted = await Format.format(source);
+
+    assert.equal(formatted, "var value = a / (b / c);\n");
+});
+
+void test("preserves denominator grouping for 3DSpider inverse-kinematics sqrt expression", async () => {
+    const source =
+        "var intersectionRadius = sqrt(p2_p3sqr - (sqr(p1_p2sqr - p2_p3sqr - p1_p3sqr) / (4 * p1_p3sqr)));\n";
+    const formatted = await Format.format(source);
+
+    assert.equal(
+        formatted,
+        "var intersectionRadius = sqrt(p2_p3sqr - sqr(p1_p2sqr - p2_p3sqr - p1_p3sqr) / (4 * p1_p3sqr));\n"
+    );
+});
+
 void test("omits redundant parentheses around a simple identifier", async () => {
     const source = "var value = (a);\n";
     const formatted = await Format.format(source);
@@ -103,6 +128,13 @@ void test("omits synthetic multiplicative parentheses in comparison operands", a
         formatted,
         "if ((actual_dist < dst * dst and push_out) or (actual_dist > dst * dst and pull_in)) {\n    exit;\n}\n"
     );
+});
+
+void test("preserves clause adjacency when a conjunction starts with a logical operand", async () => {
+    const source = "if ((ready and actual_dist > 0) or (active and actual_dist < 1)){\n    exit;\n}\n";
+    const formatted = await Format.format(source);
+
+    assert.strictEqual(formatted, source);
 });
 
 void test("omits redundant parentheses around a logical clause operand when precedence makes it unnecessary", async () => {

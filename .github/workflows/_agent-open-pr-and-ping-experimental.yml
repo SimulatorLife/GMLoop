@@ -67,7 +67,7 @@ jobs:
           GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
 
       - name: Checkout (with your token so pushes are yours)
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.base_branch }}
           fetch-depth: 0
@@ -143,7 +143,7 @@ jobs:
           github-token: ${{ secrets.GH_USER_TOKEN }}
           script: |
             const preInstruction = "Begin by surveying the entire codebase before narrowing to this task.";
-            const postInstruction = "Ensure changes are self-contained, tested, and documented as needed, with no reduction in test coverage. Ensure the diff is minimal, readable, and well-commented; never sacrifice clarity for cleverness. There is no time constraint or specific allotted time for this task; prioritize quality and correctness over speed and take as much time as needed. You may **NOT** respond with \"no issues found\", \"didn't find any major issues\", or similar—if no obvious implementation exists, choose the most plausible area and apply a singular, safe, minimal improvement. Make absolutely certain that you make a code commit before ending your work session.";
+            const postInstruction = "Ensure changes are self-contained, tested, and documented as needed, with no reduction in test coverage. For tests, ensure any newly added tests pass and that tests or suites already passing at the start of the task remain passing; unrelated pre-existing failures may remain if your changes do not cause them. Run `pnpm run build:ts` and `pnpm run lint:quiet`, fix any issues properly, and finish with both passing. Do not modify golden `.gml` fixtures or add compatibility shims. Ensure the diff is minimal, readable, and well-commented; never sacrifice clarity for cleverness. There is no time constraint or specific allotted time for this task; prioritize quality and correctness over speed and take as much time as needed. You may **NOT** respond with \"no issues found\", \"didn't find any major issues\", or similar—if no obvious implementation exists, choose the most plausible area and apply a singular, safe, minimal improvement. Make absolutely certain that you make a code commit before ending your work session.";
 
             const lines = [];
             const intro = (process.env.PR_BODY || "").trim();

@@ -14,7 +14,7 @@ import { importFormatModule, resolveFormatEntryPoint } from "../src/format-runti
 const temporaryDirectories = new Set<string>();
 
 function createTemporaryFormatModuleFile({ baseDirectory = os.tmpdir() } = {}) {
-    const directory = fs.mkdtempSync(path.join(baseDirectory, "prettier-plugin-gml-entry-"));
+    const directory = fs.mkdtempSync(path.join(baseDirectory, "gmloop-entry-"));
     temporaryDirectories.add(directory);
 
     const modulePath = path.join(directory, "custom-format-module.mjs");
@@ -50,9 +50,28 @@ void describe("resolveFormatEntryPoint", () => {
         assert.strictEqual(resolved, formatPath);
     });
 
+    void it("prefers call-site candidates before environment and default candidates", () => {
+        const callSitePath = createTemporaryFormatModuleFile();
+        const environmentPath = createTemporaryFormatModuleFile();
+
+        const resolved = resolveFormatEntryPoint({
+            candidates: [callSitePath],
+            env: { PRETTIER_PLUGIN_GML_FORMAT_PATH: environmentPath }
+        });
+
+        assert.strictEqual(resolved, callSitePath);
+    });
+
     void it("treats null options bags as absent overrides", () => {
         const expected = resolveFormatEntryPoint();
         const resolved = resolveFormatEntryPoint(null);
+
+        assert.strictEqual(resolved, expected);
+    });
+
+    void it("treats primitive options bags as absent overrides", () => {
+        const expected = resolveFormatEntryPoint();
+        const resolved = resolveFormatEntryPoint("invalid-options-bag");
 
         assert.strictEqual(resolved, expected);
     });
@@ -71,7 +90,7 @@ void describe("resolveFormatEntryPoint", () => {
 
     void it("skips directory overrides when resolving the entry point", () => {
         const defaultEntryPoint = resolveFormatEntryPoint({ env: {} });
-        const directoryOverride = fs.mkdtempSync(path.join(os.tmpdir(), "prettier-plugin-gml-entry-dir-"));
+        const directoryOverride = fs.mkdtempSync(path.join(os.tmpdir(), "gmloop-entry-dir-"));
         temporaryDirectories.add(directoryOverride);
 
         const resolved = resolveFormatEntryPoint({
@@ -82,21 +101,30 @@ void describe("resolveFormatEntryPoint", () => {
     });
 
     void it("expands leading tildes in environment overrides", () => {
-        const homeDirectory = os.homedir();
-        if (!homeDirectory) {
-            return;
+        const originalHome = process.env.HOME;
+        const homeDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "gmloop-home-"));
+        temporaryDirectories.add(homeDirectory);
+
+        try {
+            process.env.HOME = homeDirectory;
+
+            const formatPath = createTemporaryFormatModuleFile({
+                baseDirectory: homeDirectory
+            });
+            const tildePath = `~${formatPath.slice(homeDirectory.length)}`;
+
+            const resolved = resolveFormatEntryPoint({
+                env: { PRETTIER_PLUGIN_GML_FORMAT_PATH: tildePath }
+            });
+
+            assert.strictEqual(resolved, formatPath);
+        } finally {
+            if (originalHome === undefined) {
+                delete process.env.HOME;
+            } else {
+                process.env.HOME = originalHome;
+            }
         }
-
-        const formatPath = createTemporaryFormatModuleFile({
-            baseDirectory: homeDirectory
-        });
-        const tildePath = `~${formatPath.slice(homeDirectory.length)}`;
-
-        const resolved = resolveFormatEntryPoint({
-            env: { PRETTIER_PLUGIN_GML_FORMAT_PATH: tildePath }
-        });
-
-        assert.strictEqual(resolved, formatPath);
     });
 
     void it("falls back to built-in candidates when overrides are not provided", () => {

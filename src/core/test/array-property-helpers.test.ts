@@ -7,7 +7,7 @@ import {
     hasArrayPropertyEntries,
     hasBodyStatements,
     isProgramOrBlockStatement
-} from "../src/ast/node-helpers.js";
+} from "../src/ast/node-helpers/index.js";
 
 void describe("array property helpers", () => {
     void it("returns empty arrays for invalid inputs", () => {

@@ -1,7 +1,0 @@
-{
-  "fixture": {
-    "kind": "integration",
-    "assertion": "idempotent",
-    "comparison": "exact"
-  }
-}

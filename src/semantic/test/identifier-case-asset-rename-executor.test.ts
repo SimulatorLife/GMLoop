@@ -3,8 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 
-import { __private__, createAssetRenameExecutor } from "../src/identifier-case/asset-rename-executor.js";
-import { DEFAULT_WRITE_ACCESS_MODE } from "../src/identifier-case/common.js";
+import { __private__, createAssetRenameExecutor } from "../src/identifier-case/asset-renames/executor.js";
+import { DEFAULT_WRITE_ACCESS_MODE } from "../src/identifier-case/identifier-case-helpers.js";
 
 const { ensureWritableDirectory, ensureWritableFile, readJsonFile } = __private__;
 
@@ -149,12 +149,12 @@ void describe("asset rename executor memory management", () => {
 
     void it("clears cached JSON payloads after commit to reduce heap usage", () => {
         const largePayload = "x".repeat(1024 * 256);
-        const largeJson = JSON.stringify({ name: "demo", payload: largePayload });
         let readCount = 0;
         const fsFacade = {
             readFileSync() {
                 readCount += 1;
-                return largeJson;
+                // Generate a fresh string representation on every call to avoid V8 reference optimization
+                return JSON.stringify({ name: "demo", payload: largePayload.slice(0) });
             },
             accessSync() {},
             writeFileSync() {},

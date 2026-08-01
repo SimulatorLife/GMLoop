@@ -17,8 +17,8 @@ function hasConfiguredRefactorStage(config: Record<string, unknown>): boolean {
     return Object.hasOwn(config, "refactor") && config.refactor !== undefined;
 }
 
-function resolveIntegrationWorkspaceFilePath(tempProjectDirectoryPath: string): string {
-    return path.join(tempProjectDirectoryPath, "input.gml");
+function resolveIntegrationWorkspaceFilePath(temporaryProjectDirectoryPath: string): string {
+    return path.join(temporaryProjectDirectoryPath, "input.gml");
 }
 
 async function createIntegrationRefactorWorkspace(inputText: string): Promise<string> {
@@ -29,28 +29,28 @@ async function createIntegrationRefactorWorkspace(inputText: string): Promise<st
 
 async function runConfiguredIntegrationRefactorStage(
     config: Record<string, unknown>,
-    tempProjectDirectoryPath: string
+    temporaryProjectDirectoryPath: string
 ): Promise<string> {
-    const projectFilePath = resolveIntegrationWorkspaceFilePath(tempProjectDirectoryPath);
+    const projectFilePath = resolveIntegrationWorkspaceFilePath(temporaryProjectDirectoryPath);
     const engine = new Refactor.RefactorEngine();
 
     await engine.executeConfiguredCodemods({
-        projectRoot: tempProjectDirectoryPath,
+        projectRoot: temporaryProjectDirectoryPath,
         targetPaths: ["input.gml"],
         gmlFilePaths: ["input.gml"],
         config: Refactor.normalizeRefactorProjectConfig(config.refactor),
         readFile: async (filePath) =>
-            await readFile(path.isAbsolute(filePath) ? filePath : path.join(tempProjectDirectoryPath, filePath), "utf8"),
+            readFile(path.isAbsolute(filePath) ? filePath : path.join(temporaryProjectDirectoryPath, filePath), "utf8"),
         writeFile: async (filePath, content) =>
-            await writeFile(
-                path.isAbsolute(filePath) ? filePath : path.join(tempProjectDirectoryPath, filePath),
+            writeFile(
+                path.isAbsolute(filePath) ? filePath : path.join(temporaryProjectDirectoryPath, filePath),
                 content,
                 "utf8"
             ),
         dryRun: false
     });
 
-    return await readFile(projectFilePath, "utf8");
+    return readFile(projectFilePath, "utf8");
 }
 
 export function createIntegrationFixtureAdapter() {
@@ -64,14 +64,14 @@ export function createIntegrationFixtureAdapter() {
         },
         async run({ fixtureCase, config, inputText, runProfiledStage }) {
             const formatOptions = Format.extractProjectFormatOptions(config);
-            const lintRuleEntries = Lint.createLintRuleEntriesFromProjectConfig(config);
+            const lintRuleEntries = Lint.configs.createLintRuleEntriesFromProjectConfig(config);
             let temporaryRefactorWorkspacePath: string | null = null;
 
             try {
                 const refactoredText = hasConfiguredRefactorStage(config)
                     ? await runProfiledStage("refactor", async () => {
                           temporaryRefactorWorkspacePath = await createIntegrationRefactorWorkspace(inputText ?? "");
-                          return await runConfiguredIntegrationRefactorStage(config, temporaryRefactorWorkspacePath);
+                          return runConfiguredIntegrationRefactorStage(config, temporaryRefactorWorkspacePath);
                       })
                     : (inputText ?? "");
 
@@ -100,14 +100,53 @@ export function createIntegrationFixtureAdapter() {
                 }
 
                 const [result] = await runProfiledStage("lint", async () =>
-                    await eslint.lintText(refactoredText, {
+                    eslint.lintText(refactoredText, {
                         filePath: `${fixtureCase.caseId}.gml`
                     })
                 );
-                const lintedOutput = result.output ?? refactoredText;
-                const outputText = await runProfiledStage(
-                    "format",
-                    async () => await Format.format(lintedOutput, formatOptions)
+                let currentLintedOutput = result.output ?? refactoredText;
+
+                if (
+                    lintRuleEntries["gml/require-argument-separators"] &&
+                    lintRuleEntries["gml/require-argument-separators"] !== "off"
+                ) {
+                    const repairResult =
+                        Refactor.RepairArgumentSeparators.applyRepairArgumentSeparatorsCodemod(currentLintedOutput);
+                    if (repairResult.changed) {
+                        currentLintedOutput = repairResult.outputText;
+                    }
+                }
+
+                let afterLogicalNotOutput: string;
+                if (
+                    lintRuleEntries["gml/normalize-operator-aliases"] &&
+                    lintRuleEntries["gml/normalize-operator-aliases"] !== "off"
+                ) {
+                    const repairLogicalNotResult = await Refactor.RepairLogicalNot.applyRepairLogicalNotCodemod(
+                        currentLintedOutput,
+                        null
+                    );
+                    afterLogicalNotOutput = repairLogicalNotResult.changed
+                        ? repairLogicalNotResult.outputText
+                        : currentLintedOutput;
+                } else {
+                    afterLogicalNotOutput = currentLintedOutput;
+                }
+
+                let finalLintedOutput = afterLogicalNotOutput;
+                if (
+                    lintRuleEntries["gml/no-scientific-notation"] &&
+                    lintRuleEntries["gml/no-scientific-notation"] !== "off"
+                ) {
+                    const repairScientificResult =
+                        Refactor.ScientificNotation.applyScientificNotationCodemod(finalLintedOutput);
+                    if (repairScientificResult.changed) {
+                        finalLintedOutput = repairScientificResult.outputText;
+                    }
+                }
+
+                const outputText = await runProfiledStage("format", async () =>
+                    Format.format(finalLintedOutput, formatOptions)
                 );
 
                 return {

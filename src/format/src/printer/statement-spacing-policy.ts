@@ -1,60 +1,19 @@
 import { Core } from "@gmloop/core";
 
-// The printer hits this helper in hot loops, so prefer a switch statement over
-// re-allocating arrays on every call (see PR #110 micro-benchmark in commit
-// message). These top-level statements are surrounded by empty lines by
-// default.
-const DEFAULT_NODE_TYPES_WITH_SURROUNDING_NEWLINES = Object.freeze([
+type StatementTypeCandidate = {
+    type?: unknown;
+};
+
+// This policy is intentionally closed: the formatter owns a single opinionated
+// statement-spacing default instead of exposing a mutable extension registry for
+// hypothetical node kinds. Add new entries here only when the AST contract grows
+// a concrete statement kind that should always receive surrounding blank lines.
+const NODE_TYPES_WITH_SURROUNDING_NEWLINES = new Set<string>([
     "FunctionDeclaration",
     "ConstructorDeclaration",
     "RegionStatement",
     "EndRegionStatement"
 ]);
-
-const nodeTypesWithSurroundingNewlines = new Set();
-
-/**
- * Allow internal consumers to register additional statement node type names
- * that should be padded with surrounding blank lines. The hook keeps the
- * formatter opinionated by seeding the registry with
- * {@link DEFAULT_NODE_TYPES_WITH_SURROUNDING_NEWLINES} and only accepting
- * string inputs, so external Prettier users keep the existing behavior unless
- * the formatter opts into more spacing internally. Invalid values (including
- * `null`, `undefined`, or whitespace-only strings) are ignored to keep the hot
- * path predictable.
- *
- * @param {...string | Array<string>} nodeTypes Additional node type names to
- *        register.
- */
-function registerSurroundingNewlineNodeTypes(...nodeTypes) {
-    for (const entry of nodeTypes) {
-        if (Array.isArray(entry)) {
-            registerSurroundingNewlineNodeTypes(...entry);
-            continue;
-        }
-
-        const normalized = Core.getNonEmptyTrimmedString(entry);
-        if (!normalized) {
-            continue;
-        }
-
-        nodeTypesWithSurroundingNewlines.add(normalized);
-    }
-}
-
-/**
- * Reset the newline padding registry back to the defaults. This keeps tests
- * and experiments isolated while preserving the formatter's baseline formatting
- * when no extensions are registered.
- */
-function resetSurroundingNewlineNodeTypes() {
-    nodeTypesWithSurroundingNewlines.clear();
-    for (const type of DEFAULT_NODE_TYPES_WITH_SURROUNDING_NEWLINES) {
-        nodeTypesWithSurroundingNewlines.add(type);
-    }
-}
-
-resetSurroundingNewlineNodeTypes();
 
 /**
  * Detects define statements that emulate region boundaries and therefore need
@@ -75,8 +34,8 @@ function defineReplacementRequiresNewlines(node) {
  * Determines whether a statement should be surrounded by blank lines in the
  * generated doc tree.
  *
- * Statements listed in {@link DEFAULT_NODE_TYPES_WITH_SURROUNDING_NEWLINES}
- * receive padding to keep large constructs readable. The `#region` and
+ * Statements listed in {@link NODE_TYPES_WITH_SURROUNDING_NEWLINES} receive
+ * padding to keep large constructs readable. The `#region` and
  * `#endregion` define replacements behave like their dedicated statement
  * counterparts, so they are treated the same even though they originate from a
  * `DefineStatement`. All other nodes default to `false` so the printer never
@@ -86,36 +45,28 @@ function defineReplacementRequiresNewlines(node) {
  * @returns {boolean} `true` when the printer should emit surrounding
  *                    newlines.
  */
-function shouldAddNewlinesAroundStatement(node) {
+function shouldAddNewlinesAroundStatement(node: StatementTypeCandidate | null | undefined): boolean {
     const nodeType = node?.type;
-    if (!nodeType) {
+    if (typeof nodeType !== "string") {
         return false;
     }
 
-    // Reuse a module-scoped Set (created once during module evaluation) instead of
-    // allocating a fresh Array on every call, since `shouldAddNewlinesAroundStatement`
-    // runs inside the printer's core statement loop and is invoked thousands of times
-    // per file. Trading `Array.includes` for a Set membership check yields two wins:
-    //   1. No per-call allocation overhead (Array construction and population).
-    //   2. O(1) average-case lookup complexity instead of O(n) linear scan.
-    // This keeps the hot path allocation-free and branch-predictable, which matters
-    // because the formatter spends a measurable fraction of its runtime deciding
-    // whether to inject blank lines between consecutive statements. The Set is
-    // immutable after module load, so there's no risk of concurrent modification or
-    // stale data—it's purely a performance optimization that avoids penalizing the
-    // common case where most statements don't require surrounding newlines.
-    if (nodeTypesWithSurroundingNewlines.has(nodeType)) {
+    if (NODE_TYPES_WITH_SURROUNDING_NEWLINES.has(nodeType)) {
         return true;
     }
 
     return defineReplacementRequiresNewlines(node);
 }
 
-function shouldSuppressEmptyLineBetween(previousNode, nextNode) {
+function shouldSuppressEmptyLineBetween(previousNode: unknown, nextNode: unknown): boolean {
     return Core.isMacroLikeStatement(previousNode) && Core.isMacroLikeStatement(nextNode);
 }
 
-function shouldForceTrailingBlankLineForNestedFunction(node, blockNode, containerNode) {
+function shouldForceTrailingBlankLineForNestedFunction(
+    node: unknown,
+    blockNode: StatementTypeCandidate | null | undefined,
+    containerNode: unknown
+): boolean {
     if (!Core.isFunctionLikeDeclaration(node)) {
         return false;
     }
@@ -134,71 +85,8 @@ function shouldForceTrailingBlankLineForNestedFunction(node, blockNode, containe
     return false;
 }
 
-/**
- * Require a blank line between a guard-style `if` statement and the
- * following `return` when the branch returns the opposite boolean literal.
- *
- * The spacing makes early-return fallbacks easier to scan by visually
- * separating the "happy path" (`return true;`) from the "bail out"
- * (`return false;`) logic. The policy only triggers when the `if` statement
- * ends with a single `return` inside its block and the next sibling is a
- * `ReturnStatement` with the opposing boolean literal. Mixed argument types
- * or multi-statement branches opt out so existing formatting remains
- * untouched.
- *
- * @param {unknown} currentNode Candidate `IfStatement` node to inspect.
- * @param {unknown} nextNode Statement that follows {@link currentNode}.
- * @returns {boolean} `true` when the printer should inject a blank line
- *                    between the statements.
- */
-function shouldForceBlankLineBetweenReturnPaths(currentNode, nextNode) {
-    if (!currentNode || currentNode.type !== "IfStatement") {
-        return false;
-    }
-
-    if (!nextNode || nextNode.type !== "ReturnStatement") {
-        return false;
-    }
-
-    if (currentNode.alternate) {
-        return false;
-    }
-
-    const blockBody = currentNode.consequent?.body;
-    if (!Array.isArray(blockBody)) {
-        return false;
-    }
-
-    // Iterate manually instead of using `Array#findLast` so the printer avoids
-    // invoking a callback for every statement while scanning hot blocks.
-    let lastStatement = null;
-    for (let index = blockBody.length - 1; index >= 0; index -= 1) {
-        const candidate = blockBody[index];
-        if (candidate) {
-            lastStatement = candidate;
-            break;
-        }
-    }
-
-    if (!lastStatement || lastStatement.type !== "ReturnStatement") {
-        return false;
-    }
-
-    const consequentBoolean = Core.getBooleanLiteralValue(lastStatement.argument);
-    const fallbackBoolean = Core.getBooleanLiteralValue(nextNode.argument);
-
-    if (consequentBoolean === null || fallbackBoolean === null) {
-        return false;
-    }
-
-    return consequentBoolean !== fallbackBoolean;
-}
-
 export {
-    registerSurroundingNewlineNodeTypes,
-    resetSurroundingNewlineNodeTypes,
     shouldAddNewlinesAroundStatement,
-    shouldForceBlankLineBetweenReturnPaths,
     shouldForceTrailingBlankLineForNestedFunction,
     shouldSuppressEmptyLineBetween
 };

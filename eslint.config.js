@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import js from "@eslint/js";
+import { fixupPluginRules } from "@eslint/compat";
 import tseslint from "typescript-eslint";
 import { defineConfig } from "eslint/config";
 import globals from "globals";
@@ -12,7 +13,7 @@ import globals from "globals";
 import { createTypeScriptImportResolver } from "eslint-import-resolver-typescript";
 
 // YAML parser
-import yamlParser from "yaml-eslint-parser";
+import * as yamlParser from "yaml-eslint-parser";
 
 // Plugins
 import pluginBoundaries from "eslint-plugin-boundaries";
@@ -66,6 +67,96 @@ const baseIgnorePatterns = [
     // Removing the blanket ignore allows the `.github/*.yml` files to
     // be picked up by `npm run lint:yaml` and by CI checks.
 ];
+
+const publicWorkspaceEntryPoints = ["index.ts", "index.js"];
+const publicWorkspaceTypes = [
+    "cli",
+    "core",
+    "parser",
+    "transpiler",
+    "semantic",
+    "plugin",
+    "lint",
+    "lsp",
+    "ui",
+    "fixture-runner",
+    "refactor",
+    "runtime-wrapper",
+    "mcp",
+    "vscode",
+    "syntax-highlight"
+];
+
+function workspaceEntryPointTypes(...types) {
+    return {
+        to: {
+            type: types,
+            internalPath: publicWorkspaceEntryPoints
+        }
+    };
+}
+
+function workspaceTypes(...types) {
+    return {
+        to: {
+            type: types
+        }
+    };
+}
+
+const MAX_SOURCE_DIRECTORY_NESTING = 3;
+const SOURCE_ROOT_DIRECTORY_NAMES = new Set(["src", "test"]);
+const sourceStructurePlugin = {
+    rules: {
+        "max-directory-nesting": {
+            meta: {
+                type: "suggestion",
+                docs: {
+                    description:
+                        "Prevent excessively nested workspace source directories."
+                },
+                schema: []
+            },
+            create(context) {
+                return {
+                    Program(node) {
+                        const relativePath = path.relative(
+                            tsconfigRootDir,
+                            context.filename
+                        );
+                        const normalizedPath = relativePath
+                            .split(path.sep)
+                            .join("/");
+                        const pathSegments = normalizedPath.split("/");
+
+                        if (
+                            pathSegments[0] !== "src" ||
+                            pathSegments.length < 4
+                        ) {
+                            return;
+                        }
+
+                        if (!SOURCE_ROOT_DIRECTORY_NAMES.has(pathSegments[2])) {
+                            return;
+                        }
+
+                        const nestedDirectoryCount = pathSegments.length - 4;
+                        if (
+                            nestedDirectoryCount <= MAX_SOURCE_DIRECTORY_NESTING
+                        ) {
+                            return;
+                        }
+
+                        context.report({
+                            node,
+                            message: `Source files may be nested at most ${MAX_SOURCE_DIRECTORY_NESTING} directories below a workspace ${pathSegments[2]}/ root; found ${nestedDirectoryCount} in "${normalizedPath}".`
+                        });
+                    }
+                };
+            }
+        }
+    }
+};
 
 /**
  * TypeScript configuration:
@@ -128,9 +219,10 @@ const tsConfig = defineConfig({
         regexp: pluginRegexp,
         boundaries: pluginBoundaries,
         "no-secrets": pluginNoSecrets,
-        "eslint-comments": pluginEslintComments,
+        "eslint-comments": fixupPluginRules(pluginEslintComments),
         "unused-imports": pluginUnusedImports,
-        "simple-import-sort": pluginSimpleImportSort
+        "simple-import-sort": pluginSimpleImportSort,
+        "source-structure": sourceStructurePlugin
     },
 
     settings: {
@@ -145,16 +237,21 @@ const tsConfig = defineConfig({
             { type: "test", pattern: "src/**/test/**" }, // Put tests first to avoid matching other types
             { type: "integration", pattern: "test/**" }, // Root-level integration tests
             { type: "core", pattern: "src/core/**" },
+            { type: "ui", pattern: "src/ui/**" },
             { type: "parser", pattern: "src/parser/**" },
             { type: "parser-generated", pattern: "src/parser/generated/**" },
             { type: "transpiler", pattern: "src/transpiler/**" },
             { type: "semantic", pattern: "src/semantic/**" },
             { type: "plugin", pattern: "src/format/**" },
             { type: "lint", pattern: "src/lint/**" },
+            { type: "lsp", pattern: "src/lsp/**" },
             { type: "fixture-runner", pattern: "src/fixture-runner/**" },
             { type: "refactor", pattern: "src/refactor/**" },
             { type: "runtime-wrapper", pattern: "src/runtime-wrapper/**" },
-            { type: "cli", pattern: "src/cli/**" }
+            { type: "cli", pattern: "src/cli/**" },
+            { type: "mcp", pattern: "src/mcp/**" },
+            { type: "vscode", pattern: "src/vscode/**" },
+            { type: "syntax-highlight", pattern: "src/syntax-highlight/**" }
         ]
     },
 
@@ -245,6 +342,7 @@ const tsConfig = defineConfig({
         /* --- core "bad practice" rules --- */
         complexity: ["error", { max: 70 }],
         "max-depth": ["error", 5],
+        "source-structure/max-directory-nesting": "error",
         "max-lines": [
             "warn",
             {
@@ -413,88 +511,106 @@ const tsConfig = defineConfig({
 
         // Boundaries plugin (enforce architectural module boundaries)
         "boundaries/no-unknown": "error",
-        "boundaries/entry-point": [
-            2,
-            {
-                default: "disallow",
-                rules: [
-                    {
-                        // set the required entry point name
-                        target: [
-                            "cli",
-                            "core",
-                            "parser",
-                            "transpiler",
-                            "semantic",
-                            "plugin",
-                            "lint",
-                            "fixture-runner",
-                            "refactor",
-                            "runtime-wrapper"
-                        ],
-                        allow: ["index.ts", "index.js"]
-                    }
-                ]
-            }
-        ],
-        "boundaries/element-types": [
+        "boundaries/dependencies": [
             "error",
             {
                 default: "disallow",
                 rules: [
-                    { from: "core", allow: ["core"] },
                     {
-                        from: "parser",
-                        allow: ["core", "parser", "parser-generated"]
+                        from: { type: "core" },
+                        allow: workspaceEntryPointTypes("core")
                     },
                     {
-                        from: "parser-generated",
-                        allow: ["core", "parser-generated"]
+                        from: { type: "parser" },
+                        allow: workspaceTypes("parser-generated")
                     },
                     {
-                        from: "transpiler",
-                        allow: ["core", "transpiler", "parser", "semantic"]
+                        from: { type: "parser" },
+                        allow: workspaceEntryPointTypes("core", "parser")
                     },
                     {
-                        from: "semantic",
-                        allow: ["core", "parser", "transpiler", "semantic"]
+                        from: { type: "parser-generated" },
+                        allow: workspaceTypes("parser-generated")
                     },
                     {
-                        from: "plugin",
-                        allow: ["core", "parser", "plugin", "fixture-runner"]
+                        from: { type: "parser-generated" },
+                        allow: workspaceEntryPointTypes("core")
                     },
                     {
-                        from: "lint",
-                        allow: ["core", "parser", "lint", "fixture-runner"]
+                        from: { type: "transpiler" },
+                        allow: workspaceEntryPointTypes(
+                            "core",
+                            "parser",
+                            "transpiler",
+                            "semantic"
+                        )
                     },
                     {
-                        from: "fixture-runner",
-                        allow: ["core", "fixture-runner"]
+                        from: { type: "semantic" },
+                        allow: workspaceEntryPointTypes(
+                            "core",
+                            "parser",
+                            "transpiler",
+                            "semantic"
+                        )
                     },
                     {
-                        from: "refactor",
-                        allow: [
+                        from: { type: "plugin" },
+                        allow: workspaceEntryPointTypes(
+                            "core",
+                            "parser",
+                            "plugin",
+                            "fixture-runner"
+                        )
+                    },
+                    {
+                        from: { type: "lint" },
+                        allow: workspaceEntryPointTypes(
+                            "core",
+                            "parser",
+                            "lint",
+                            "fixture-runner"
+                        )
+                    },
+                    {
+                        from: { type: "ui" },
+                        allow: workspaceEntryPointTypes(
+                            "core",
+                            "syntax-highlight",
+                            "ui"
+                        )
+                    },
+                    {
+                        from: { type: "fixture-runner" },
+                        allow: workspaceEntryPointTypes(
+                            "core",
+                            "fixture-runner"
+                        )
+                    },
+                    {
+                        from: { type: "refactor" },
+                        allow: workspaceEntryPointTypes(
                             "core",
                             "parser",
                             "transpiler",
                             "semantic",
                             "refactor",
                             "fixture-runner"
-                        ]
+                        )
                     },
                     {
-                        from: "runtime-wrapper",
-                        allow: [
+                        from: { type: "runtime-wrapper" },
+                        allow: workspaceEntryPointTypes(
                             "core",
                             "parser",
                             "transpiler",
                             "semantic",
                             "runtime-wrapper"
-                        ]
+                        )
                     },
                     {
-                        from: "cli",
-                        allow: [
+                        from: { type: "cli" },
+                        allow: workspaceEntryPointTypes(
                             "core",
                             "parser",
                             "transpiler",
@@ -502,16 +618,43 @@ const tsConfig = defineConfig({
                             "runtime-wrapper",
                             "plugin",
                             "lint",
+                            "ui",
                             "refactor",
                             "cli"
-                        ]
+                        )
                     },
-
-                    // Tests can import anything
-                    { from: "test", allow: ["*"] },
-
-                    // Integration tests can import anything
-                    { from: "integration", allow: ["*"] }
+                    {
+                        from: { type: "mcp" },
+                        allow: workspaceEntryPointTypes("core", "cli", "mcp")
+                    },
+                    {
+                        from: { type: "vscode" },
+                        allow: workspaceEntryPointTypes("vscode")
+                    },
+                    {
+                        from: { type: "syntax-highlight" },
+                        allow: workspaceEntryPointTypes("syntax-highlight")
+                    },
+                    {
+                        from: { type: "lsp" },
+                        allow: workspaceEntryPointTypes(
+                            "core",
+                            "parser",
+                            "semantic",
+                            "plugin",
+                            "lint",
+                            "refactor",
+                            "lsp"
+                        )
+                    },
+                    {
+                        from: { type: "test" },
+                        allow: workspaceTypes(...publicWorkspaceTypes)
+                    },
+                    {
+                        from: { type: "integration" },
+                        allow: workspaceTypes(...publicWorkspaceTypes)
+                    }
                 ]
             }
         ]
@@ -524,9 +667,9 @@ export default [
         ignores: baseIgnorePatterns
     },
 
-    // YAML: use the plugin’s flat preset (scoped to *.yml/*.yaml)
+    // YAML: use the plugin’s flat preset for tracked project YAML files.
     {
-        files: [".github/workflows/**/*.{yml,yaml}"],
+        files: ["**/*.{yml,yaml}"],
         languageOptions: {
             parser: yamlParser
         },
@@ -627,7 +770,6 @@ export default [
             "no-restricted-syntax": "off",
             "no-throw-literal": "warn",
             "require-await": "off",
-            "boundaries/entry-point": "off",
             "unicorn/no-useless-undefined": "off",
             "no-await-in-loop": "warn",
             "no-secrets/no-secrets": "off",

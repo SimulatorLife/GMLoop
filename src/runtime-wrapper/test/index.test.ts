@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { RuntimeWrapper } from "../index.js";
-import type { PatchHistoryReader, PatchUndoController } from "../src/runtime/types.js";
+import type { PatchHistoryReader, PatchUndoController } from "../src/browser/runtime/types.js";
 
 void test("runtime wrapper exposes timing helpers through the dedicated timing namespace", () => {
-    assert.strictEqual(RuntimeWrapper.Timing.getWallClockTime, RuntimeWrapper.getWallClockTime);
-    assert.strictEqual(RuntimeWrapper.Timing.getHighResolutionTime, RuntimeWrapper.getHighResolutionTime);
-    assert.strictEqual(RuntimeWrapper.Timing.measureDuration, RuntimeWrapper.measureDuration);
+    assert.strictEqual(typeof RuntimeWrapper.Timing.getHighResolutionTime, "function");
+    assert.strictEqual(typeof RuntimeWrapper.Timing.measureDuration, "function");
+    assert.ok(!("getHighResolutionTime" in RuntimeWrapper));
+    assert.ok(!("measureDuration" in RuntimeWrapper));
 });
 
 void test("createRuntimeWrapper returns hot wrapper state", () => {
@@ -76,6 +77,23 @@ void test("script patch function executes correctly", () => {
     assert.ok(fn);
     const result = fn(null, null, [5, 3]) as number;
     assert.strictEqual(result, 8);
+});
+
+void test("script patch preserves static storage across calls and replacements", () => {
+    const wrapper = RuntimeWrapper.createRuntimeWrapper();
+    const jsBody =
+        'if (!Object.prototype.hasOwnProperty.call(__gml_static, "count")) { __gml_static["count"] = 0; }\nreturn __gml_static["count"]++;';
+
+    wrapper.applyPatch({ kind: "script", id: "script:counter", js_body: jsBody });
+    const firstFunction = wrapper.getScript("script:counter");
+    assert.ok(firstFunction);
+    assert.equal(firstFunction(null, null, []), 0);
+    assert.equal(firstFunction(null, null, []), 1);
+
+    wrapper.applyPatch({ kind: "script", id: "script:counter", js_body: jsBody });
+    const replacementFunction = wrapper.getScript("script:counter");
+    assert.ok(replacementFunction);
+    assert.equal(replacementFunction(null, null, []), 2);
 });
 
 void test("script patch prefers builtin constants over conflicting globals", () => {
@@ -417,7 +435,7 @@ void test("undo restores previous version of patched script", () => {
 
     const fn1 = wrapper.getScript("script:test");
     assert.ok(fn1);
-    assert.strictEqual(fn1(null, null, []) as number, 1);
+    assert.strictEqual(fn1(null, null, []), 1);
 
     wrapper.applyPatch({
         kind: "script",
@@ -427,12 +445,12 @@ void test("undo restores previous version of patched script", () => {
 
     const fn2 = wrapper.getScript("script:test");
     assert.ok(fn2);
-    assert.strictEqual(fn2(null, null, []) as number, 2);
+    assert.strictEqual(fn2(null, null, []), 2);
 
     wrapper.undo();
     const fn3 = wrapper.getScript("script:test");
     assert.ok(fn3);
-    assert.strictEqual(fn3(null, null, []) as number, 1);
+    assert.strictEqual(fn3(null, null, []), 1);
     assert.strictEqual(fn3, fn1);
 });
 
@@ -483,6 +501,39 @@ void test("getPatchHistory tracks multiple patches in order", () => {
     assert.strictEqual(history[0].patch.id, "script:a");
     assert.strictEqual(history[1].patch.id, "obj_test#Create");
     assert.ok(history[0].timestamp <= history[1].timestamp);
+});
+
+void test("patch history is bounded by default to avoid retaining obsolete diagnostics", () => {
+    const wrapper = RuntimeWrapper.createRuntimeWrapper();
+
+    for (let i = 0; i < RuntimeWrapper.DEFAULT_MAX_PATCH_HISTORY_SIZE + 75; i++) {
+        wrapper.applyPatch({
+            kind: "script",
+            id: `script:history_bound_${i}`,
+            js_body: `return ${i};`
+        });
+    }
+
+    const history = wrapper.getPatchHistory();
+    assert.strictEqual(history.length, RuntimeWrapper.DEFAULT_MAX_PATCH_HISTORY_SIZE);
+    assert.strictEqual(history[0].patch.id, "script:history_bound_75");
+    assert.strictEqual(history.at(-1)?.patch.id, "script:history_bound_574");
+});
+
+void test("maxPatchHistorySize zero allows explicitly unbounded diagnostic history", () => {
+    const wrapper = RuntimeWrapper.createRuntimeWrapper({
+        maxPatchHistorySize: 0
+    });
+
+    for (let i = 0; i < RuntimeWrapper.DEFAULT_MAX_PATCH_HISTORY_SIZE + 25; i++) {
+        wrapper.applyPatch({
+            kind: "script",
+            id: `script:history_unbounded_${i}`,
+            js_body: `return ${i};`
+        });
+    }
+
+    assert.strictEqual(wrapper.getPatchHistory().length, RuntimeWrapper.DEFAULT_MAX_PATCH_HISTORY_SIZE + 25);
 });
 
 void test("getPatchHistory tracks undo operations", () => {
@@ -682,7 +733,7 @@ void test("trySafeApply applies valid patch to actual registry", () => {
 
     const fn = wrapper.getScript("script:multiply");
     assert.ok(fn);
-    assert.strictEqual(fn(null, null, [3, 4]) as number, 12);
+    assert.strictEqual(fn(null, null, [3, 4]), 12);
 });
 
 void test("trySafeApply supports custom validation callback", () => {
@@ -1221,7 +1272,7 @@ void test("applyPatchBatch handles empty array", () => {
 void test("applyPatchBatch validates input is array", () => {
     const wrapper = RuntimeWrapper.createRuntimeWrapper();
 
-    assert.throws(() => wrapper.applyPatchBatch(null as unknown as Array<unknown>), {
+    assert.throws(() => wrapper.applyPatchBatch(null), {
         message: /applyPatchBatch expects an array/
     });
 });
@@ -1379,6 +1430,71 @@ void test("applyPatchBatch clears undo stack on rollback", () => {
     assert.strictEqual(result.rolledBack, true);
     assert.ok(wrapper.hasScript("script:before_batch"));
     assert.ok(!wrapper.hasScript("script:batch_fail1"));
+});
+
+void test("applyPatchBatch rollback preserves pre-batch undo stack depth", () => {
+    // The batch checkpoint must capture and restore the exact undo-stack size so
+    // that a failed batch does not corrupt the undo stack accumulated before it.
+    const wrapper = RuntimeWrapper.createRuntimeWrapper();
+
+    // Establish two pre-batch entries on the undo stack.
+    wrapper.applyPatch({ kind: "script", id: "script:pre1", js_body: "return 0;" });
+    wrapper.applyPatch({ kind: "script", id: "script:pre2", js_body: "return 0;" });
+    const preUndoSize = wrapper.getUndoStackSize();
+
+    // A batch that partially succeeds then fails midway.
+    wrapper.applyPatchBatch([
+        { kind: "script", id: "script:batch_ok", js_body: "return 1;" },
+        { kind: "script", id: "script:batch_bad", js_body: "return {{ bad" }
+    ]);
+
+    // Rollback must restore the undo stack to its pre-batch depth — no partial
+    // entries from the failed batch should be left behind.
+    assert.strictEqual(wrapper.getUndoStackSize(), preUndoSize);
+});
+
+void test("applyPatchBatch rollback restores pre-batch patch history length", () => {
+    // The checkpoint must also restore the patch-history array so that failed
+    // batches do not leave orphaned per-patch entries in the history.
+    const wrapper = RuntimeWrapper.createRuntimeWrapper();
+
+    wrapper.applyPatch({ kind: "script", id: "script:pre", js_body: "return 0;" });
+    const preHistoryLength = wrapper.getPatchHistory().length;
+
+    wrapper.applyPatchBatch([
+        { kind: "script", id: "script:batch_ok", js_body: "return 1;" },
+        { kind: "script", id: "script:batch_bad", js_body: "return {{ bad" }
+    ]);
+
+    // History grows by exactly one entry: the rollback summary. Per-patch entries
+    // written during the failed batch must have been stripped by the checkpoint.
+    assert.strictEqual(wrapper.getPatchHistory().length, preHistoryLength + 1);
+    const rollbackEntry = wrapper.getPatchHistory().at(-1);
+    assert.ok(rollbackEntry?.patch.id.startsWith("batch:"));
+    assert.strictEqual(rollbackEntry?.action, "rollback");
+});
+
+void test("applyPatchBatch records rollback history entry with correct patch counts", () => {
+    // recordBatchRollbackHistoryEntry must embed both the completed count and the
+    // total count so callers can tell where the batch failed.
+    const wrapper = RuntimeWrapper.createRuntimeWrapper();
+
+    const result = wrapper.applyPatchBatch([
+        { kind: "script", id: "script:ok1", js_body: "return 1;" },
+        { kind: "script", id: "script:ok2", js_body: "return 2;" },
+        { kind: "script", id: "script:bad", js_body: "return {{ bad" }
+    ]);
+
+    assert.strictEqual(result.success, false);
+    assert.strictEqual(result.appliedCount, 2);
+    assert.strictEqual(result.failedIndex, 2);
+
+    const history = wrapper.getPatchHistory();
+    const rollbackEntry = history.at(-1);
+    // id format: "batch:<appliedCount>_of_<totalCount>"
+    assert.strictEqual(rollbackEntry?.patch.id, "batch:2_of_3");
+    assert.strictEqual(rollbackEntry?.action, "rollback");
+    assert.ok(typeof rollbackEntry?.error === "string" && rollbackEntry.error.length > 0);
 });
 
 void test("onChange listener receives patch-applied events", () => {

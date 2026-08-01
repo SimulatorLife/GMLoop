@@ -1,6 +1,7 @@
 {
   "lintRules": {
-    "feather/gm2040": "error"
+    "feather/gm2040": "error",
+    "gml/require-zwrite-enabled-reset": "error"
   },
   "fixture": {
     "kind": "lint",

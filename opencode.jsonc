@@ -1,0 +1,286 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "skills": {
+    "paths": [
+      ".agents/skills"
+    ]
+  },
+  "experimental": {
+    "openTelemetry": false
+  },
+  "model": "openai-compatible/MiniMax-M3",
+  "small_model": "openai-compatible/MiniMax-M3",
+  "default_agent": "gmloop-orchestrator",
+  "enabled_providers": [
+    "openai-compatible"
+  ],
+  "permission": {
+    "*": {
+      "*": "allow",
+      "dist/**": "deny",
+      "**/dist/**": "deny",
+      "node_modules/**": "deny",
+      "**/node_modules/**": "deny",
+      ".pnpm-store/**": "deny",
+      "**/.pnpm-store/**": "deny",
+      ".gmloop/**": "deny",
+      "**/.gmloop/**": "deny",
+      ".git/**": "deny",
+      ".codex/**": "deny",
+      ".qwen/**": "deny",
+      ".kilo/**": "deny",
+      ".kilocode/**": "deny",
+      ".gemini/**": "deny",
+      ".vscode/**": "deny",
+      ".husky/**": "deny",
+      ".github/**": "deny",
+      ".editorconfig": "deny",
+      ".nvmrc": "deny",
+      ".gitmodules": "deny",
+      ".aiexclude": "deny",
+      ".prettier*": "deny",
+      "opencode.jsonc": "deny",
+      "pnpm-lock.yaml": "deny",
+      "scripts/**": "deny",
+      "resources/antlr/**": "deny",
+      "**/*.js": "deny"
+    },
+    "edit": {
+      "vendor/**": "deny",
+      "AGENTS.md": "deny",
+      "eslint.config.js": "deny",
+      ".agents/**": "deny",
+      "resources/**": "deny",
+      "src/parser/generated/**": "deny",
+      "src/parser/.antlr/**": "deny",
+      "**/*.gml": "deny",
+      "**/*.yy": "deny",
+      "**/*.yyp": "deny"
+    },
+    "grep": "allow",
+    "glob": "allow",
+    "list": "allow",
+    "lsp": "allow",
+    "skill": "allow",
+    "webfetch": "deny",
+    "websearch": "deny",
+    "question": "deny",
+    // Task tool is used to spawn subagents. It is denied globally and explicitly
+    // re-enabled only for the primary code/orchestrator agent below.
+    "task": "deny"
+  },
+  "provider": {
+    "openai-compatible": {
+      "options": {
+        "apiKey": "{env:MINIMAX_API_KEY}",
+        "baseURL": "https://api.minimax.io/v1",
+        "timeout": 300000,
+        "chunkTimeout": 60000
+      },
+      "models": {
+        "MiniMax-M3": {
+          "id": "MiniMax-M3",
+          "name": "MiniMax M3",
+          "tool_call": true,
+          "reasoning": true,
+          "temperature": true,
+          "limit": {
+            "context": 524288,
+            "input": 500000,
+            "output": 8192
+          },
+          "options": {
+            "thinking": {
+              "type": "adaptive"
+            },
+            "reasoning_split": true
+          }
+        }
+      }
+    }
+  },
+  "instructions": [
+    "AGENTS.md"
+  ],
+  "lsp": {
+    "gmloop": {
+      "command": [
+        "pnpm",
+        "exec",
+        "lsp-mcp-server"
+      ],
+      "extensions": [
+        ".ts"
+      ]
+    }
+  },
+  // "mcp": {
+  // "gmloop": {
+  //   "type": "local",
+  //   "command": [
+  //     "pnpm",
+  //     "--filter",
+  //     "@gmloop/mcp",
+  //     "start"
+  //   ],
+  //   "environment": {
+  //     "GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS": "true"
+  //   },
+  //   "enabled": true,
+  //   "timeout": 600000
+  // },
+  // "playwright": {
+  //   "type": "local",
+  //   "command": [
+  //     "npx",
+  //     "-y",
+  //     "@playwright/mcp@latest"
+  //   ],
+  //   "enabled": true,
+  //   "timeout": 600000
+  // }
+  // },
+  "agent": {
+    "gmloop-orchestrator": {
+      "description": "Main GMLoop orchestration agent. Splits work across focused GMLoop subagents, coordinates the overall goal, and integrates the final result.",
+      "mode": "primary",
+      "prompt": "{file:./.agents/prompts/gmloop-orchestrator.txt}",
+      "permission": {
+        "bash": "deny",
+        "task": {
+          "*": "deny",
+          "gmloop-coder": "allow",
+          "gmloop-explorer": "allow",
+          "gmloop-validator": "allow"
+        }
+      }
+    },
+    "gmloop-explorer": {
+      "description": "Read-only GMLoop exploration subagent. Use to find relevant files, inspect code, search symbols, query LSP, and understand current behavior before edits.",
+      "mode": "subagent",
+      "prompt": "{file:./.agents/prompts/gmloop-explorer.txt}",
+      "steps": 30,
+      "hidden": true,
+      "temperature": 0.2,
+      "top_p": 0.8,
+      "permission": {
+        "edit": "deny",
+        "bash": {
+          "*": "deny",
+          "pwd": "allow",
+          "cd *": "allow",
+          "ls *": "allow",
+          "rg *": "allow",
+          "cat *": "allow",
+          "head *": "allow",
+          "tail *": "allow",
+          "find *": "allow",
+          "sed -n *": "allow",
+          "jq *": "allow",
+          "git status*": "allow",
+          "git diff*": "allow",
+          "git log*": "allow",
+          "git show*": "allow",
+          "git rev-parse *": "allow",
+          "git ls-files *": "allow"
+        }
+      }
+    },
+    "gmloop-coder": {
+      "description": "Focused GMLoop coding subagent. Use for narrow implementation edits after the relevant files, expected behavior, and validation target are known.",
+      "mode": "subagent",
+      "prompt": "{file:./.agents/prompts/gmloop-coder.txt}",
+      "steps": 30,
+      "hidden": true,
+      "temperature": 0.3,
+      "top_p": 0.9,
+      "permission": {
+        "task": "deny",
+        "edit": {
+          "*": "deny",
+          "docs/**": "allow",
+          "**/*.ts": "allow",
+          "**/*.test.ts": "allow",
+          "**/test/**/*.json": "allow",
+          "**/src/**/*.json": "allow",
+          "**/src/**/*.md": "allow",
+          "**/src/**/*.css": "allow",
+          "**/src/**/*.html": "allow"
+        },
+        "bash": {
+          "*": "deny",
+          "pwd": "allow",
+          "cd": "allow",
+          "ls *": "allow",
+          "rg *": "allow",
+          "cat *": "allow",
+          "head *": "allow",
+          "mkdir *": "allow",
+          "tail *": "allow",
+          "sed -n *": "allow",
+          "jq *": "allow",
+          "git status*": "allow",
+          "git diff*": "allow",
+          "git rev-parse *": "allow",
+          "git ls-files *": "allow"
+        }
+      }
+    },
+    "gmloop-validator": {
+      "description": "Validation-only GMLoop subagent. Use to run focused tests, lint, typecheck, build, CLI checks, Playwright checks, and report failures without editing files.",
+      "mode": "subagent",
+      "prompt": "{file:./.agents/prompts/gmloop-validator.txt}",
+      "steps": 30,
+      "hidden": true,
+      "temperature": 0.2,
+      "top_p": 0.9,
+      "permission": {
+        "edit": "deny",
+        "background_process": "deny",
+        "bash": {
+          "*": "deny",
+          "pwd": "allow",
+          "ls *": "allow",
+          "rg *": "allow",
+          "cat *": "allow",
+          "head *": "allow",
+          "tail *": "allow",
+          "sed -n *": "allow",
+          "jq *": "allow",
+          "git status*": "allow",
+          "git diff*": "allow",
+          "git log*": "allow",
+          "git show*": "allow",
+          "git rev-parse *": "allow",
+          "git ls-files *": "allow",
+          "pnpm check*": "allow",
+          "pnpm test*": "allow",
+          "pnpm lint*": "allow",
+          "pnpm typecheck*": "allow",
+          "pnpm build*": "allow",
+          "pnpm exec *": "allow",
+          "pnpm run check*": "allow",
+          "pnpm run test*": "allow",
+          "pnpm run lint*": "allow",
+          "pnpm run typecheck*": "allow",
+          "pnpm run build*": "allow",
+          "pnpm install": "allow",
+          "pnpm --filter *": "allow",
+          "pnpm -F *": "allow",
+          "node --test*": "allow"
+        }
+      }
+    }
+  },
+  "snapshot": true,
+  "tool_output": {
+    "max_lines": 1000,
+    "max_bytes": 32768
+  },
+  "compaction": {
+    "auto": true,
+    "prune": true,
+    "tail_turns": 2,
+    "reserved": 8192
+  }
+}

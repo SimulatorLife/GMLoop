@@ -1,47 +1,33 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import { Core, type GameMakerAstNode } from "@gmloop/core";
 import { Parser } from "@gmloop/parser";
 
 import { Semantic } from "../index.js";
 
 const { GMLParser } = Parser;
 
-function collectIdentifiers(node: any) {
-    const identifiers: any[] = [];
-    const visited = new Set();
+type ParsedEnumInitializer = Readonly<{
+    _enumInitializerText?: string;
+    object?: Readonly<{ name?: string }>;
+    property?: Readonly<{ name?: string }>;
+    type?: string;
+}>;
 
-    function visit(value: any) {
-        if (value === null || typeof value !== "object") {
-            return;
-        }
+type ParsedEnumMember = Readonly<{
+    initializer?: ParsedEnumInitializer;
+}>;
 
-        if (visited.has(value)) {
-            return;
-        }
-
-        visited.add(value);
-
-        if (Array.isArray(value)) {
-            for (const item of value) {
-                visit(item);
+function collectIdentifiers(node: GameMakerAstNode) {
+    const identifiers: Array<GameMakerAstNode & { name: string; type: "Identifier" }> = [];
+    Core.traverseAst(node, {
+        enter(candidate) {
+            if (Core.isIdentifierNode(candidate)) {
+                identifiers.push(candidate);
             }
-            return;
         }
-
-        if (value.type === "Identifier") {
-            identifiers.push(value);
-        }
-
-        for (const [key, child] of Object.entries(value)) {
-            if (key === "start" || key === "end" || key === "declaration") {
-                continue;
-            }
-            visit(child);
-        }
-    }
-
-    visit(node);
+    });
     return identifiers;
 }
 
@@ -64,13 +50,9 @@ function groupIdentifiersByName(identifiers: any[]) {
 }
 
 function parseWithMetadata(source: string) {
-    return GMLParser.parse(source, {
-        simplifyLocations: false,
-        scopeTrackerOptions: {
-            enabled: true,
-            createScopeTracker: () => new Semantic.SemanticScopeCoordinator()
-        }
-    });
+    const ast = GMLParser.parse(source, { simplifyLocations: false }) as GameMakerAstNode;
+    Semantic.annotateSemanticBindings(ast);
+    return ast;
 }
 
 void describe("Parser Integration with Semantic Scope Tracker", () => {
@@ -220,6 +202,79 @@ with (target) {
         );
     });
 
+    void it("resolves shadowed parameters without rebinding outer references", () => {
+        const ast = parseWithMetadata(`
+var value = 1;
+function demo(value) {
+  var inside = value;
+}
+var after = value;
+`);
+        const valueNodes = groupIdentifiersByName(collectIdentifiers(ast)).get("value") ?? [];
+        const declarations = valueNodes.filter((node) => node.classifications?.includes("declaration"));
+        const references = valueNodes.filter((node) => node.classifications?.includes("reference"));
+        const parameterDeclaration = declarations.find((node) => node.classifications?.includes("parameter"));
+        const outerDeclaration = declarations.find(
+            (node) => node.classifications?.includes("variable") && !node.classifications.includes("parameter")
+        );
+
+        assert.ok(parameterDeclaration);
+        assert.ok(outerDeclaration);
+        assert.notEqual(parameterDeclaration.scopeId, outerDeclaration.scopeId);
+        assert.ok(
+            references.some((reference) => reference.declaration?.scopeId === parameterDeclaration.scopeId),
+            "Function-body reference should resolve to the shadowing parameter."
+        );
+        assert.ok(
+            references.some((reference) => reference.declaration?.scopeId === outerDeclaration.scopeId),
+            "Program reference after the function should resolve to the outer declaration."
+        );
+    });
+
+    void it("keeps catch parameters inside a distinct catch scope", () => {
+        const ast = parseWithMetadata(`
+var failure = 0;
+try {
+  throw 1;
+} catch (failure) {
+  failure += 1;
+}
+failure += 1;
+`);
+        const failureNodes = groupIdentifiersByName(collectIdentifiers(ast)).get("failure") ?? [];
+        const declarations = failureNodes.filter((node) => node.classifications?.includes("declaration"));
+        const references = failureNodes.filter((node) => node.classifications?.includes("reference"));
+        const catchDeclaration = declarations.find((node) => node.classifications?.includes("parameter"));
+        const outerDeclaration = declarations.find((node) => node.classifications?.includes("variable"));
+
+        assert.ok(catchDeclaration);
+        assert.ok(outerDeclaration);
+        assert.notEqual(catchDeclaration.scopeId, outerDeclaration.scopeId);
+        assert.ok(references.some((reference) => reference.declaration?.scopeId === catchDeclaration.scopeId));
+        assert.ok(references.some((reference) => reference.declaration?.scopeId === outerDeclaration.scopeId));
+    });
+
+    void it("binds globalvar declarations and global member references to the program scope", () => {
+        const ast = parseWithMetadata(`
+globalvar score;
+score = 1;
+global.score += score;
+`);
+        const scoreNodes = groupIdentifiersByName(collectIdentifiers(ast)).get("score") ?? [];
+        const declaration = scoreNodes.find((node) => node.classifications?.includes("declaration"));
+        const references = scoreNodes.filter((node) => node.classifications?.includes("reference"));
+
+        assert.ok(declaration);
+        assert.ok(declaration.classifications?.includes("global"));
+        assert.equal(declaration.isGlobalIdentifier, true);
+        assert.equal(references.length, 3);
+        for (const reference of references) {
+            assert.ok(reference.classifications?.includes("global"));
+            assert.equal(reference.declaration?.scopeId, declaration.scopeId);
+        }
+        assert.ok(references.some((reference) => reference.isGlobalIdentifier === true));
+    });
+
     void it("marks macros as global declarations", () => {
         const source = "#macro MAX_ENEMIES 8";
         const ast = parseWithMetadata(source);
@@ -307,9 +362,13 @@ enum eTransitionType {
         const ast = parseWithMetadata(source);
         assert.ok(ast, "Parser returned no AST when parsing enum source.");
 
-        const transitionEnum = ast.body.find((node: any) => {
-            return node && node.type === "EnumDeclaration" && node.name?.name === "eTransitionType";
-        });
+        const transitionEnum = Core.getBodyStatements(ast).find((node) => {
+            return (
+                node.type === "EnumDeclaration" &&
+                Core.isObjectLike(node.name) &&
+                (node.name as { name?: unknown }).name === "eTransitionType"
+            );
+        }) as (GameMakerAstNode & { members?: ParsedEnumMember[] }) | undefined;
         assert.ok(transitionEnum, "Expected to locate the eTransitionType enum declaration.");
 
         const members = transitionEnum.members;

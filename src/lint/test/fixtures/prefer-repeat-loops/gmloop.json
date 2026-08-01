@@ -1,9 +1,0 @@
-{
-  "lintRules": {
-    "gml/prefer-repeat-loops": "error"
-  },
-  "fixture": {
-    "kind": "lint",
-    "assertion": "transform"
-  }
-}

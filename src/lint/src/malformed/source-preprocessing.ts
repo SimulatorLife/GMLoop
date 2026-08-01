@@ -33,7 +33,7 @@ export function fixMalformedComments(sourceText: string): CommentFixResult {
         return { sourceText, indexMapper: (i) => i };
     }
 
-    const pattern = /^(\s*)\/\s+(@.+)$/gm;
+    const malformedCommentPattern = /^(\s*)\/\s+(@.+)$/gm;
     const changes: Array<{
         newStart: number;
         newLength: number;
@@ -42,21 +42,24 @@ export function fixMalformedComments(sourceText: string): CommentFixResult {
     }> = [];
     let accumulatedDiff = 0;
 
-    const newText = sourceText.replaceAll(pattern, (match, p1, p2, index) => {
-        const replacement = `${p1}// ${p2}`;
-        const diff = replacement.length - match.length;
+    const newText = sourceText.replaceAll(
+        malformedCommentPattern,
+        (match, indentationPrefix, annotationText, index) => {
+            const replacement = `${indentationPrefix}// ${annotationText}`;
+            const diff = replacement.length - match.length;
 
-        if (diff !== 0) {
-            changes.push({
-                newStart: index + accumulatedDiff,
-                newLength: replacement.length,
-                oldLength: match.length,
-                diff
-            });
-            accumulatedDiff += diff;
+            if (diff !== 0) {
+                changes.push({
+                    newStart: index + accumulatedDiff,
+                    newLength: replacement.length,
+                    oldLength: match.length,
+                    diff
+                });
+                accumulatedDiff += diff;
+            }
+            return replacement;
         }
-        return replacement;
-    });
+    );
 
     const indexMapper = (index: number): number => {
         let currentShift = 0;
@@ -78,160 +81,4 @@ export function fixMalformedComments(sourceText: string): CommentFixResult {
     };
 
     return { sourceText: newText, indexMapper };
-}
-
-/**
- * Attempts to recover from missing closing braces by appending them to the source.
- *
- * When the parser fails due to missing closing braces, this function appends the
- * appropriate number of closing braces to allow parsing to continue. Returns null
- * if the error is not brace-related or if no braces need to be added.
- *
- * @param sourceText - Raw GML source code that failed to parse
- * @param error - The error object from the failed parse attempt
- * @returns The source text with appended braces, or null if recovery is not applicable
- */
-export function recoverParseSourceFromMissingBrace(sourceText: string, error: unknown): string | null {
-    if (!isMissingClosingBraceError(error)) {
-        return null;
-    }
-
-    const appended = appendMissingClosingBraces(sourceText);
-
-    return appended === sourceText ? null : appended;
-}
-
-/**
- * Determines whether an error indicates missing closing braces.
- */
-function isMissingClosingBraceError(error: unknown): boolean {
-    const message = extractErrorMessage(error);
-
-    return Core.isNonEmptyString(message) && message.toLowerCase().includes("missing associated closing brace");
-}
-
-/**
- * Extracts a human-readable error message from unknown error input.
- */
-function extractErrorMessage(error: unknown): string {
-    if (!error) {
-        return "";
-    }
-
-    if (Core.isNonEmptyString(error)) {
-        return String(error);
-    }
-
-    if (typeof error === "object" && "message" in error) {
-        const message = (error as { message: unknown }).message;
-        return Core.isNonEmptyString(message) ? String(message) : "";
-    }
-
-    return "";
-}
-
-/**
- * Appends the necessary number of closing braces to balance unclosed opening braces.
- */
-function appendMissingClosingBraces(sourceText: string): string {
-    if (!Core.isNonEmptyString(sourceText)) {
-        return sourceText;
-    }
-
-    const missingBraceCount = countUnclosedBraces(sourceText);
-
-    if (missingBraceCount <= 0) {
-        return sourceText;
-    }
-
-    let normalized = sourceText;
-
-    if (!normalized.endsWith("\n")) {
-        normalized += "\n";
-    }
-
-    const closingLines = Array.from({ length: missingBraceCount }, () => "}").join("\n");
-
-    return `${normalized}${closingLines}`;
-}
-
-/**
- * Counts the number of unclosed opening braces in the source text.
- *
- * Skips braces that appear in comments or strings to avoid false positives.
- */
-function countUnclosedBraces(sourceText: string): number {
-    let depth = 0;
-    let inSingleLineComment = false;
-    let inBlockComment = false;
-    let stringDelimiter: string | null = null;
-    let isEscaped = false;
-
-    for (let index = 0; index < sourceText.length; index += 1) {
-        const char = sourceText[index];
-        const nextChar = sourceText[index + 1];
-
-        if (stringDelimiter) {
-            if (isEscaped) {
-                isEscaped = false;
-                continue;
-            }
-
-            if (char === "\\") {
-                isEscaped = true;
-                continue;
-            }
-
-            if (char === stringDelimiter) {
-                stringDelimiter = null;
-            }
-
-            continue;
-        }
-
-        if (inSingleLineComment) {
-            if (char === "\n") {
-                inSingleLineComment = false;
-            }
-
-            continue;
-        }
-
-        if (inBlockComment) {
-            if (char === "*" && nextChar === "/") {
-                inBlockComment = false;
-                index += 1;
-            }
-
-            continue;
-        }
-
-        if (char === "/" && nextChar === "/") {
-            inSingleLineComment = true;
-            index += 1;
-            continue;
-        }
-
-        if (char === "/" && nextChar === "*") {
-            inBlockComment = true;
-            index += 1;
-            continue;
-        }
-
-        if (char === "'" || char === '"') {
-            stringDelimiter = char;
-            continue;
-        }
-
-        if (char === "{") {
-            depth += 1;
-            continue;
-        }
-
-        if (char === "}" && depth > 0) {
-            depth -= 1;
-        }
-    }
-
-    return depth;
 }

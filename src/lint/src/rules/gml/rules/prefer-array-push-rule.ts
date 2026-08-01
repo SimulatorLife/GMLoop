@@ -1,30 +1,16 @@
-import * as CoreWorkspace from "@gmloop/core";
+import { Core, MEMBER_ACCESSOR_ARRAY } from "@gmloop/core";
 import type { Rule } from "eslint";
 
-import type { GmlRuleDefinition } from "../../catalog.js";
+import type { GmlRuleDefinition } from "../index.js";
 import {
     createMeta,
-    getNodeEndIndex,
-    getNodeStartIndex,
+    isAssignmentExpressionNodeWithOperator,
     isAstNodeRecord,
+    isMemberIndexExpressionNode,
     isStandaloneStatementParentKey,
     sourceRangeContainsCommentToken,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
-
-type MemberIndexExpressionNode = Readonly<{
-    type: "MemberIndexExpression";
-    object?: unknown;
-    property?: Array<unknown> | null;
-    accessor?: string | null;
-}>;
-
-type AssignmentExpressionNode = Readonly<{
-    type: "AssignmentExpression";
-    operator: "=";
-    left: unknown;
-    right: unknown;
-}>;
 
 type CallExpressionNode = Readonly<{
     type: "CallExpression";
@@ -32,26 +18,15 @@ type CallExpressionNode = Readonly<{
 }>;
 
 type PreferArrayPushCandidate = Readonly<{
-    assignmentExpression: AssignmentExpressionNode;
+    assignmentExpression: Readonly<{
+        type: "AssignmentExpression";
+        operator: "=";
+        left: unknown;
+        right: unknown;
+    }>;
     arrayExpression: unknown;
     valueExpression: unknown;
 }>;
-
-type UnwrapParenthesizedExpressionInput = Parameters<typeof CoreWorkspace.Core.unwrapParenthesizedExpression>[0];
-
-function isAssignmentExpressionNode(node: unknown): node is AssignmentExpressionNode {
-    return (
-        isAstNodeRecord(node) &&
-        node.type === "AssignmentExpression" &&
-        node.operator === "=" &&
-        Object.hasOwn(node, "left") &&
-        Object.hasOwn(node, "right")
-    );
-}
-
-function isMemberIndexExpressionNode(node: unknown): node is MemberIndexExpressionNode {
-    return isAstNodeRecord(node) && node.type === "MemberIndexExpression";
-}
 
 function isCallExpressionNode(node: unknown): node is CallExpressionNode {
     return isAstNodeRecord(node) && node.type === "CallExpression";
@@ -82,7 +57,7 @@ function isSafeArrayReceiver(node: unknown): boolean {
                 return false;
             }
 
-            const propertyEntry = CoreWorkspace.Core.getSingleMemberIndexPropertyEntry(node as never);
+            const propertyEntry = Core.getSingleMemberIndexPropertyEntry(node);
             return propertyEntry !== null && isSafeArrayReceiver(propertyEntry);
         }
         default: {
@@ -92,45 +67,37 @@ function isSafeArrayReceiver(node: unknown): boolean {
 }
 
 function sliceNodeText(sourceText: string, node: unknown): string | null {
-    const start = getNodeStartIndex(node);
-    const end = getNodeEndIndex(node);
-    if (typeof start !== "number" || typeof end !== "number") {
-        return null;
-    }
-
-    return sourceText.slice(start, end);
+    return Core.getNodeSourceText(sourceText, node);
 }
 
 function tryGetPreferArrayPushCandidate(node: unknown, sourceText: string): PreferArrayPushCandidate | null {
-    if (!isAssignmentExpressionNode(node)) {
+    if (!isAssignmentExpressionNodeWithOperator(node, (operator): operator is "=" => operator === "=")) {
         return null;
     }
 
-    if (!isMemberIndexExpressionNode(node.left) || node.left.accessor !== "[") {
+    if (!isMemberIndexExpressionNode(node.left) || node.left.accessor !== MEMBER_ACCESSOR_ARRAY) {
         return null;
     }
 
-    const arrayExpression = CoreWorkspace.Core.unwrapParenthesizedExpression(
-        node.left.object as UnwrapParenthesizedExpressionInput
-    );
+    const arrayExpression = Core.unwrapParenthesizedExpression(node.left.object);
     if (!arrayExpression || !isSafeArrayReceiver(arrayExpression)) {
         return null;
     }
 
-    const indexExpression = CoreWorkspace.Core.getSingleMemberIndexPropertyEntry(node.left as never);
+    const indexExpression = Core.getSingleMemberIndexPropertyEntry(node.left);
     if (!isCallExpressionNode(indexExpression)) {
         return null;
     }
 
     if (
-        !CoreWorkspace.Core.isCallExpressionIdentifierMatch(indexExpression as never, "array_length", {
+        !Core.isCallExpressionIdentifierMatch(indexExpression, "array_length", {
             caseInsensitive: true
         })
     ) {
         return null;
     }
 
-    const indexArguments = CoreWorkspace.Core.getCallExpressionArguments(indexExpression as never);
+    const indexArguments = Core.getCallExpressionArguments(indexExpression);
     if (indexArguments.length !== 1) {
         return null;
     }
@@ -177,8 +144,8 @@ export function createPreferArrayPushRule(definition: GmlRuleDefinition): Rule.R
                             return;
                         }
 
-                        const assignmentStart = getNodeStartIndex(candidate.assignmentExpression);
-                        const assignmentEnd = getNodeEndIndex(candidate.assignmentExpression);
+                        const assignmentStart = Core.getNodeStartIndex(candidate.assignmentExpression);
+                        const assignmentEnd = Core.getNodeEndIndex(candidate.assignmentExpression);
                         if (typeof assignmentStart !== "number" || typeof assignmentEnd !== "number") {
                             return;
                         }

@@ -21,10 +21,10 @@ Each fixture now uses directory-per-case layout:
 
 ```json
 {
-  "fixture": {
-    "kind": "format",
-    "assertion": "transform"
-  }
+    "fixture": {
+        "kind": "format",
+        "assertion": "transform"
+    }
 }
 ```
 

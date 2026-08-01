@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import test from "node:test";
 
 import { buildProjectIndex } from "../src/project-index/index.js";
+import { createTempProjectWorkspace } from "./test-project-helpers.js";
 
 type ProjectIndexSnapshot = {
     identifiers: Record<string, unknown>;
@@ -13,25 +11,17 @@ type ProjectIndexSnapshot = {
     };
 };
 
-async function writeProjectFile(projectRoot: string, relativePath: string, contents: string): Promise<void> {
-    const absolutePath = path.join(projectRoot, relativePath);
-    await mkdir(path.dirname(absolutePath), { recursive: true });
-    await writeFile(absolutePath, contents, "utf8");
-}
-
 async function createStreamingFixture(): Promise<{ projectRoot: string; cleanup: () => Promise<void> }> {
-    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "project-index-streaming-"));
+    const { projectRoot, writeProjectFile, cleanup } = await createTempProjectWorkspace("project-index-streaming-");
 
-    await writeProjectFile(projectRoot, "StreamingProject.yyp", JSON.stringify({ name: "StreamingProject" }));
+    await writeProjectFile("StreamingProject.yyp", JSON.stringify({ name: "StreamingProject" }));
 
     await writeProjectFile(
-        projectRoot,
         "scripts/streaming_script/streaming_script.yy",
         JSON.stringify({ resourceType: "GMScript", name: "streaming_script" })
     );
 
     await writeProjectFile(
-        projectRoot,
         "scripts/streaming_script/streaming_script.gml",
         [
             "#macro STREAMING_MACRO 1",
@@ -52,7 +42,7 @@ async function createStreamingFixture(): Promise<{ projectRoot: string; cleanup:
     return {
         projectRoot,
         cleanup: async () => {
-            await rm(projectRoot, { recursive: true, force: true });
+            await cleanup();
         }
     };
 }

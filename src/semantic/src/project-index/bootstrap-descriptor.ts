@@ -1,114 +1,89 @@
 import { Core } from "@gmloop/core";
 
-type ProjectIndexParserFacade = {
-    parse?: (text: string, filePath?: string) => unknown;
-};
+import type { ProjectIndexBuildOptions } from "./build-options.js";
 
 type ProjectIndexConcurrencySettings = {
     gml: number;
     gmlParsing: number;
 };
 
-type ProjectIndexBuildOptions = {
-    logger?: { debug?: (message?: string, payload?: unknown) => void } | null;
+export type { ProjectIndexConcurrencySettings };
+
+type ProjectIndexBuildOptionsInput = Readonly<{
+    concurrency?: unknown;
+    logger?: ProjectIndexBuildOptions["logger"];
     logMetrics?: boolean;
-    // Historical option names accepted by some callers. Keep both names so we
-    // can accept either legacy or current option shapes passed by callers.
-    concurrency?: ProjectIndexConcurrencySettings | null;
-    projectIndexConcurrency?: number | ProjectIndexConcurrencySettings | null;
-    gmlParserFacade?: ProjectIndexParserFacade | null;
-    parserOverride?: {
-        facade?: ProjectIndexParserFacade | null;
-        parse?: (text: string, filePath?: string) => unknown;
-    } | null;
-    parseGml?: (text: string, filePath?: string) => unknown;
-};
+    parseGml?: unknown;
+}>;
+
+function isPositiveInteger(value: unknown): value is number {
+    return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
+function isProjectIndexParser(value: unknown): value is NonNullable<ProjectIndexBuildOptions["parseGml"]> {
+    return typeof value === "function";
+}
 
 export function createProjectIndexBuildOptions({
     logger = null,
     logMetrics = false,
-    projectIndexConcurrency,
-    parserOverride = null
-}: ProjectIndexBuildOptions = {}) {
-    const buildOptions: ProjectIndexBuildOptions = {
-        logger,
-        logMetrics
-    };
+    concurrency,
+    parseGml
+}: ProjectIndexBuildOptionsInput = {}): ProjectIndexBuildOptions {
+    let normalizedConcurrency: ProjectIndexBuildOptions["concurrency"];
+    let normalizedParser: ProjectIndexBuildOptions["parseGml"];
 
     Core.withDefinedValue(
-        projectIndexConcurrency,
+        concurrency,
         (value) => {
             if (value === null) {
                 return;
             }
 
-            if (typeof value === "number") {
-                buildOptions.concurrency = {
-                    gml: value,
-                    gmlParsing: value
-                };
+            if (!Core.isObjectLike(value)) {
                 return;
             }
 
-            buildOptions.concurrency = {
-                gml: value.gml,
-                gmlParsing: value.gmlParsing
+            const rawGml = (value as Record<string, unknown>).gml;
+            const rawGmlParsing = (value as Record<string, unknown>).gmlParsing;
+
+            if (!isPositiveInteger(rawGml) || !isPositiveInteger(rawGmlParsing)) {
+                return;
+            }
+
+            normalizedConcurrency = {
+                gml: rawGml,
+                gmlParsing: rawGmlParsing
             };
         },
         () => {}
     );
 
-    if (!parserOverride) {
-        return buildOptions;
-    }
+    Core.withDefinedValue(parseGml, (fn) => {
+        if (!isProjectIndexParser(fn)) {
+            return;
+        }
+        normalizedParser = fn;
+    });
 
-    const { facade, parse } = parserOverride;
-
-    if (facade) {
-        buildOptions.gmlParserFacade = facade;
-    }
-
-    buildOptions.parseGml = parse as ((text: string, filePath?: string) => unknown) | null;
-
-    return buildOptions;
+    return {
+        logger,
+        logMetrics,
+        ...(normalizedConcurrency === undefined ? {} : { concurrency: normalizedConcurrency }),
+        ...(normalizedParser === undefined ? {} : { parseGml: normalizedParser })
+    };
 }
 
 type ProjectIndexDescriptor = {
     projectRoot?: string | null;
-    cacheMaxSizeBytes?: number | null;
-    cacheFilePath?: string | null;
-    formatterVersion?: string | null;
-    pluginVersion?: string | null;
     buildOptions?: ProjectIndexBuildOptions | null;
-    // `maxSizeBytes` is the runtime name used in a few places while
-    // `cacheMaxSizeBytes` is the config object property - keep both so
-    // consumers can read the same property regardless of the name used.
-    maxSizeBytes?: number | null;
 };
 
-export function createProjectIndexDescriptor({
-    projectRoot,
-    cacheMaxSizeBytes,
-    cacheFilePath = null,
-    formatterVersion,
-    pluginVersion,
-    buildOptions
-}: ProjectIndexDescriptor = {}) {
+export function createProjectIndexDescriptor({ projectRoot, buildOptions }: ProjectIndexDescriptor = {}) {
     const descriptor: ProjectIndexDescriptor = {
         projectRoot,
-        cacheFilePath,
-        formatterVersion,
-        pluginVersion,
-        buildOptions
+        buildOptions: Core.isObjectLike(buildOptions) ? buildOptions : undefined
     };
-
-    Core.withDefinedValue(
-        cacheMaxSizeBytes,
-        (value) => {
-            descriptor.maxSizeBytes = value;
-        },
-        () => {}
-    );
 
     return descriptor;
 }

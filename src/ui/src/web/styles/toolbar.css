@@ -1,0 +1,200 @@
+.page-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-md);
+  align-items: stretch;
+  padding: var(--gm-space-lg) var(--gm-space-xl);
+  margin: var(--gm-space-lg) var(--gm-space-xl) 0;
+  border: 1px solid var(--gm-border);
+  border-radius: var(--gm-radius-xl);
+  background: linear-gradient(180deg, var(--gm-surface-elevated), var(--gm-surface-elevated-strong));
+  box-shadow: var(--gm-shadow);
+}
+
+.toolbar-title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-xs);
+}
+
+.toolbar-title-row {
+  display: flex;
+  gap: var(--gm-space-md);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.toolbar-heading-row {
+  display: flex;
+  gap: var(--gm-space-xl);
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.toolbar-title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-xs);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.toolbar-live-reload-controls {
+  display: flex;
+  gap: var(--gm-space-md);
+  align-items: flex-start;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.toolbar-fix-controls {
+  display: flex;
+  gap: var(--gm-space-md);
+  align-items: flex-start;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.toolbar-title strong {
+  color: var(--gm-text);
+  font-size: var(--gm-text-lg);
+}
+
+.toolbar-title span {
+  color: var(--gm-text-subdued);
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-normal);
+}
+
+.toolbar-controls {
+  display: flex;
+  gap: var(--gm-space-xl);
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  width: 100%;
+}
+
+.toolbar-control-group {
+  display: flex;
+  gap: var(--gm-space-md);
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.toolbar-search-group {
+  flex: 1 1 220px;
+  min-width: 180px;
+  max-width: 360px;
+}
+
+#search {
+  min-width: 0;
+  width: 100%;
+  padding: var(--gm-space-sm) var(--gm-space-md);
+  border: 1px solid var(--gm-border);
+  border-radius: var(--gm-radius-md);
+  background: var(--gm-surface-inset);
+  color: var(--gm-text);
+  font-size: var(--gm-text-sm);
+}
+
+#search::placeholder {
+  color: var(--gm-text-subdued);
+  opacity: 0.68;
+}
+
+.pending-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--gm-icon-lg);
+  height: var(--gm-icon-lg);
+  padding: 0 var(--gm-space-xs);
+  border-radius: var(--gm-radius-full);
+  background: var(--gm-border-accent-subtle);
+  border: 1px solid var(--gm-border-accent-medium);
+  color: var(--gm-accent);
+  font-size: var(--gm-text-xs);
+  font-weight: var(--gm-weight-bold);
+  line-height: var(--gm-leading-none);
+  animation: pending-badge-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pending-badge-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.65;
+  }
+}
+
+.toolbar-config-actions-container {
+  display: flex;
+  gap: var(--gm-space-lg);
+  align-items: center;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.toolbar-config-save-group {
+  display: flex;
+  gap: var(--gm-space-md);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.toolbar-config-save-group .config-validation {
+  font-size: var(--gm-text-xs);
+  max-width: 350px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolbar-docs-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-sm);
+  min-width: 0;
+  flex: 1 1 360px;
+  max-width: 560px;
+}
+
+.toolbar-docs-subtabs {
+  flex-wrap: wrap;
+  gap: var(--gm-space-2xs);
+}
+
+.toolbar-docs-subtabs > .gm-btn--chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gm-space-xs);
+  padding: var(--gm-space-2xs) var(--gm-space-sm);
+  font-size: var(--gm-text-xs);
+}
+
+.toolbar-docs-subtabs-label {
+  min-width: 0;
+  font-weight: var(--gm-weight-extrabold);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.toolbar-docs-subtabs-count {
+  padding: 0 var(--gm-space-xs);
+  border-radius: var(--gm-radius-full);
+  background: var(--gm-bg-muted);
+  color: var(--gm-text-subdued);
+  font-size: var(--gm-text-xs);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--gm-leading-none);
+}
+
+.toolbar-docs-subtabs > .gm-btn--chip.active .toolbar-docs-subtabs-count,
+.toolbar-docs-subtabs > .gm-btn--chip[aria-pressed="true"] .toolbar-docs-subtabs-count {
+  background: var(--gm-surface-selected);
+  color: var(--gm-text);
+}

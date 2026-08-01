@@ -1,11 +1,26 @@
 /**
- * Determine whether the provided value is a finite number.
+ * Guard: determine whether the provided value is a finite number.
  *
  * @param {unknown} value Potential numeric value.
  * @returns {value is number} `true` when `value` is a finite number.
  */
 export function isFiniteNumber(value?: unknown): value is number {
     return typeof value === "number" && Number.isFinite(value);
+}
+
+/**
+ * Return a number when it is finite, otherwise `null`.
+ *
+ * Consolidates the repeated guard pattern:
+ *   `typeof x === "number" ? x : null`
+ * that appears across the codebase for values that are already known to be
+ * numbers at the call site (e.g. property reads from loosely-typed objects).
+ *
+ * @param {unknown} value Candidate value to narrow.
+ * @returns {number | null} The value when it is a finite number, otherwise `null`.
+ */
+export function toNumber(value: unknown): number | null {
+    return typeof value === "number" ? value : null;
 }
 
 /**
@@ -59,6 +74,29 @@ export function toNormalizedInteger(value?: unknown) {
  */
 export function clamp(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value));
+}
+
+/**
+ * Epsilon for zero-value checks with floating-point tolerance.
+ * 4× EPSILON covers accumulated rounding error from typical numeric operations
+ * (e.g., `0.1 + 0.2` vs `0.3` in IEEE 754). This threshold is intentionally
+ * narrow — wider values risk conflating genuinely small non-zero numbers with
+ * actual zero, which would produce incorrect transpiled output.
+ */
+export const ZERO_CHECK_EPSILON = Number.EPSILON * 4;
+
+/**
+ * Determine whether a number is approximately zero within floating-point
+ * tolerance.  This guard is used to prevent division-by-zero traps at runtime
+ * when evaluating constant expressions: if a divisor rounds to a value smaller
+ * than {@link ZERO_CHECK_EPSILON}, the fold is skipped rather than risking
+ * a GML runtime error.
+ *
+ * @param value Number to test.
+ * @returns `true` when `|value|` is at most {@link ZERO_CHECK_EPSILON}.
+ */
+export function isApproximatelyZero(value: number): boolean {
+    return Math.abs(value) <= ZERO_CHECK_EPSILON;
 }
 
 const APPROXIMATE_EQUALITY_SCALE_MULTIPLIER = 4;

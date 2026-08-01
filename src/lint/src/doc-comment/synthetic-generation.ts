@@ -1,16 +1,14 @@
 import { Core } from "@gmloop/core";
 
 import { parseDocCommentMetadata } from "./metadata.js";
+import { appendDocumentedParamLines, type DocMeta } from "./synthetic-generation-parameter-doc-lines.js";
 import {
     collectImplicitArgumentDocNames,
     gatherImplicitArgumentReferences,
     getArgumentIndexFromIdentifier,
     getIdentifierFromParameterNode,
     getParameterDocInfo,
-    getSourceTextForNode,
     type ImplicitArgumentDocEntry,
-    preferredParamDocNamesByNode,
-    shouldOmitUndefinedDefaultForFunctionNode,
     suppressedImplicitDocCanonicalByNode,
     type SyntheticDocGenerationOptions
 } from "./synthetic-helpers.js";
@@ -21,25 +19,22 @@ const {
     docParamNamesLooselyEqual,
     getCanonicalParamNameFromText,
     isNonEmptyArray,
-    isNonEmptyTrimmedString,
-    isOptionalParamDocName,
     isUndefinedSentinel,
-    normalizeDocCommentTypeAnnotations,
-    normalizeParamDocType,
-    preservedUndefinedDefaultParameters,
-    synthesizedUndefinedDefaultParameters
+    normalizeDocCommentTypeAnnotations
 } = Core;
 
 const STRING_TYPE = "string";
-const NUMBER_TYPE = "number";
 
-type DocMeta = {
-    tag: string;
-    name?: string | null;
-    type?: string | null;
-    description?: string | null;
-};
-
+/**
+ * Parse parameter names from a `@function` or `@func` doc-tag value.
+ *
+ * Extracts the parameter list from a tag value like `my_function(arg0, arg1, arg2)`
+ * and returns an array of normalized parameter name strings. Returns an empty
+ * array when the content lacks a valid parenthesized parameter list.
+ *
+ * @param functionTagContent - The raw name value from a `@function` doc tag.
+ * @returns Array of parameter name strings, or an empty array on parse failure.
+ */
 function extractParamsFromFunctionTag(functionTagContent: string): string[] {
     const openParenIndex = functionTagContent.indexOf("(");
     const closeParenIndex = functionTagContent.lastIndexOf(")");
@@ -55,81 +50,58 @@ function extractParamsFromFunctionTag(functionTagContent: string): string[] {
         .filter((p) => p.length > 0);
 }
 
+/**
+ * Suppress canonical `argumentN` fallbacks for documented param names that have
+ * explicit aliases in the GML implicit argument system.
+ *
+ * When a doc comment names a parameter (e.g., `argument0`) that has an alias
+ * mapping from `gatherImplicitArgumentReferences`, the fallback canonical is
+ * added to `suppressed` so it won't be generated as a separate param line.
+ *
+ * @param aliasByIndex - Map of argument index to its aliased name (e.g., index 0 -> "my_arg").
+ * @param documentedParamNames - Set of param names already documented in the comment.
+ * @param suppressed - Set of canonical names to skip generating as implicit fallbacks.
+ */
 function suppressAliasCanonicalOverrides(
     aliasByIndex: Map<number, unknown>,
     documentedParamNames: Set<unknown>,
     suppressed: Set<string>
 ): void {
     for (const rawDocName of documentedParamNames) {
-        const normalizedDocName = typeof rawDocName === "string" ? rawDocName.replaceAll(/^\[|\]$/g, "") : rawDocName;
-        const maybeIndex = getArgumentIndexFromIdentifier(normalizedDocName);
+        if (typeof rawDocName !== "string") continue;
 
-        if (maybeIndex === null || !aliasByIndex.has(maybeIndex)) {
-            continue;
-        }
+        const normalizedDocName = rawDocName.replaceAll(/^\[|\]$/g, "");
+        const maybeIndex = getArgumentIndexFromIdentifier(normalizedDocName);
+        if (maybeIndex === null || !aliasByIndex.has(maybeIndex)) continue;
 
         const fallbackCanonical = getCanonicalParamNameFromText(`argument${maybeIndex}`) || `argument${maybeIndex}`;
         suppressed.add(fallbackCanonical);
     }
 }
 
-function suppressOrderedCanonicalFallbacks(orderedParamMetadata: readonly any[], suppressed: Set<string>): void {
+/**
+ * Suppress canonical `argumentN` fallbacks for ordinal param names that already
+ * have explicit canonical forms in the doc comment.
+ *
+ * For ordered `@param` entries where the documented name maps to a canonical
+ * different from the `argument{index}` fallback, that fallback is suppressed.
+ * This prevents generating duplicate param lines like `@param argument0` when
+ * `@param arg0` is already present and canonicalizes to the same target.
+ *
+ * @param orderedParamMetadata - Ordered param metadata from the existing doc comment.
+ * @param suppressed - Set of canonical names to skip generating as implicit fallbacks.
+ */
+function suppressOrderedCanonicalFallbacks(orderedParamMetadata: readonly DocMeta[], suppressed: Set<string>): void {
     for (const [ordIndex, ordMeta] of orderedParamMetadata.entries()) {
-        if (!ordMeta || typeof ordMeta.name !== STRING_TYPE) {
-            continue;
-        }
+        if (!ordMeta || typeof ordMeta.name !== STRING_TYPE) continue;
 
         const canonicalOrdinal = getCanonicalParamNameFromText(ordMeta.name);
-        if (!canonicalOrdinal) {
-            continue;
-        }
+        if (!canonicalOrdinal) continue;
 
         const fallback = getCanonicalParamNameFromText(`argument${ordIndex}`) || `argument${ordIndex}`;
-        if (canonicalOrdinal === fallback) {
-            continue;
-        }
+        if (canonicalOrdinal === fallback) continue;
+
         suppressed.add(fallback);
-    }
-}
-
-function applyOrdinalImplicitDocEntryOverrides(
-    node: any,
-    paramIndex: number,
-    implicitDocEntry: any,
-    canonicalOrdinal: string | null,
-    ordinalDocName: string | null
-) {
-    if (!implicitDocEntry) {
-        return;
-    }
-
-    implicitDocEntry._suppressDocLine = true;
-
-    if (implicitDocEntry.canonical && node) {
-        let suppressedCanonicals = suppressedImplicitDocCanonicalByNode.get(node);
-        if (!suppressedCanonicals) {
-            suppressedCanonicals = new Set();
-            suppressedImplicitDocCanonicalByNode.set(node, suppressedCanonicals);
-        }
-        suppressedCanonicals.add(implicitDocEntry.canonical);
-    }
-
-    if (canonicalOrdinal) {
-        implicitDocEntry.canonical = canonicalOrdinal;
-    }
-
-    if (!ordinalDocName) {
-        return;
-    }
-
-    implicitDocEntry.name = ordinalDocName;
-    if (node) {
-        let preferredDocs = preferredParamDocNamesByNode.get(node);
-        if (!preferredDocs) {
-            preferredDocs = new Map();
-            preferredParamDocNamesByNode.set(node, preferredDocs);
-        }
-        preferredDocs.set(paramIndex, ordinalDocName);
     }
 }
 
@@ -138,6 +110,17 @@ type ReturnSummary = Readonly<{
     hasNonUndefinedReturnValue: boolean;
 }>;
 
+/**
+ * Walk the function body AST to collect return-statement statistics.
+ *
+ * Traverses the body with awareness of control-flow structures (if/else branches,
+ * loops, switch cases, try/catch) to determine whether any non-undefined return
+ * values exist. This drives the decision of whether to emit a synthetic
+ * `@returns {undefined}` tag for functions lacking an explicit return doc line.
+ *
+ * @param node - AST node to examine (can be any statement container or expression).
+ * @returns Summary indicating presence of return statements and non-undefined values.
+ */
 function summarizeReturnStatements(node: any): ReturnSummary {
     if (!node) {
         return {
@@ -241,29 +224,35 @@ function summarizeReturnStatements(node: any): ReturnSummary {
     };
 }
 
+/**
+ * Append a synthetic `@returns {undefined}` doc line when the function body
+ * lacks any non-undefined return values and no `@returns` tag is present.
+ *
+ * Skip conditions:
+ * - `overrides.suppressReturns === true` (caller suppressed synthetic returns)
+ * - `hasReturnsTag === true` (comment already has an explicit `@returns`)
+ * - `functionNode` is not a real function (not FunctionDeclaration or StructFunctionDeclaration)
+ * - `_suppressSyntheticReturnsDoc` flag is set on the node (e.g., for built-in overloads)
+ * - Function body is missing (arrow function expression or other body-less form)
+ *
+ * @param lines - Accumulated doc lines array to mutate.
+ * @param functionNode - Function AST node whose body is examined.
+ * @param hasReturnsTag - Whether the existing doc comment already has `@returns`.
+ * @param overrides - Optional overrides including `suppressReturns`.
+ * @returns The same lines array (for chaining convenience, though the input is mutated).
+ */
 function maybeAppendReturnsDoc(lines: string[], functionNode: any, hasReturnsTag: boolean, overrides: any = {}) {
-    if (!Array.isArray(lines)) {
-        return [];
-    }
+    if (!Array.isArray(lines)) return [];
 
-    if (overrides?.suppressReturns === true) {
-        return lines;
-    }
+    if (overrides?.suppressReturns === true) return lines;
 
-    if (
-        hasReturnsTag ||
-        !functionNode ||
-        (functionNode.type !== "FunctionDeclaration" && functionNode.type !== "StructFunctionDeclaration") ||
-        functionNode._suppressSyntheticReturnsDoc
-    ) {
+    const isFunctionDeclaration =
+        functionNode?.type === "FunctionDeclaration" || functionNode?.type === "StructFunctionDeclaration";
+    if (hasReturnsTag || !functionNode || !isFunctionDeclaration || functionNode._suppressSyntheticReturnsDoc)
         return lines;
-    }
 
     const body = functionNode.body;
-
-    if (!body) {
-        return lines;
-    }
+    if (!body) return lines;
 
     const returnSummary = summarizeReturnStatements(body);
     if (!returnSummary.hasNonUndefinedReturnValue) {
@@ -373,6 +362,16 @@ export function computeSyntheticFunctionDocLines(
     return finalizeDocLines(lines, node, hasReturnsTag, overrides);
 }
 
+/**
+ * Finalize synthetic doc lines by appending returns documentation and
+ * normalizing type annotations.
+ *
+ * @param lines - Accumulated doc lines.
+ * @param node - Function AST node.
+ * @param hasReturnsTag - Whether existing doc has `@returns`.
+ * @param overrides - Optional overrides for returns suppression.
+ * @returns Finalized and normalized doc lines.
+ */
 function finalizeDocLines(lines: string[], node: any, hasReturnsTag: boolean, overrides: any) {
     return maybeAppendReturnsDoc(lines, node, hasReturnsTag, overrides).map((line) =>
         normalizeDocCommentTypeAnnotations(line)
@@ -489,6 +488,18 @@ function shouldSuppressImplicitOrdinal(
     return true;
 }
 
+/**
+ * Append implicit fallback param lines for arguments that have both an alias
+ * canonical name and a fallback canonical name, but only when the fallback
+ * is referenced directly in code.
+ *
+ * Only emits lines when `hasDirectReference` is true (the fallback name appears
+ * in the function body), preventing doc pollution from unreferenced fallbacks.
+ *
+ * @param implicitArgumentDocNames - Collected implicit argument doc entries.
+ * @param documentedParamNames - Set of already-documented param names (mutated).
+ * @param lines - Accumulated doc lines (mutated).
+ */
 function appendImplicitFallbackDocLines(
     implicitArgumentDocNames: readonly ImplicitArgumentDocEntry[],
     documentedParamNames: Set<unknown>,
@@ -516,6 +527,16 @@ function appendImplicitFallbackDocLines(
     }
 }
 
+/**
+ * Index implicit argument doc entries by their argument index.
+ *
+ * Builds a Map from argument index to the corresponding doc entry, preserving
+ * only the first entry for each index. This index is used to correlate
+ * implicit argument documentation with formal parameter positions.
+ *
+ * @param implicitArgumentDocNames - Flat list of implicit argument doc entries.
+ * @returns Map from argument index to entry (first entry wins on duplicates).
+ */
 function buildImplicitDocEntryByIndex(implicitArgumentDocNames: readonly ImplicitArgumentDocEntry[]) {
     const implicitDocEntryByIndex = new Map<number, ImplicitArgumentDocEntry>();
 
@@ -537,6 +558,22 @@ function buildImplicitDocEntryByIndex(implicitArgumentDocNames: readonly Implici
     return implicitDocEntryByIndex;
 }
 
+/**
+ * Append param doc lines for functions that have no formal `@param` declarations
+ * but do have implicit argument documentation (from Feather or manual references).
+ *
+ * Each implicit argument entry is processed twice:
+ * 1. In the initial loop, already-documented names are expanded with types/descriptions
+ *    from existing metadata, and fallback canonicals are appended when directly referenced.
+ * 2. A second pass in the `try` block handles any remaining referenced fallbacks that
+ *    weren't caught in the first pass (handles edge cases where suppression wasn't known).
+ *
+ * @param lines - Accumulated doc lines (mutated).
+ * @param implicitArgumentDocNames - Implicit argument doc entries for this function.
+ * @param documentedParamNames - Set of already-documented param names (mutated).
+ * @param node - Function AST node (used to query suppressed canonicals).
+ * @param paramMetadataByCanonical - Map from canonical name to param metadata.
+ */
 function appendDocLinesForNoParams(
     lines: string[],
     implicitArgumentDocNames: readonly ImplicitArgumentDocEntry[],
@@ -616,556 +653,3 @@ function appendDocLinesForNoParams(
         /* best-effort */
     }
 }
-
-function appendDocumentedParamLines(
-    lines: string[],
-    node: any,
-    options: SyntheticDocGenerationOptions,
-    documentedParamNames: Set<unknown>,
-    orderedParamMetadata: readonly DocMeta[],
-    paramMetadataByCanonical: Map<string, DocMeta>,
-    implicitDocEntryByIndex: Map<number, ImplicitArgumentDocEntry>,
-    implicitArgumentDocNames: readonly ImplicitArgumentDocEntry[]
-) {
-    appendExplicitParameterDocLines({
-        lines,
-        node,
-        options,
-        documentedParamNames,
-        orderedParamMetadata,
-        paramMetadataByCanonical,
-        implicitDocEntryByIndex
-    });
-    appendImplicitArgumentDocLines({
-        lines,
-        node,
-        documentedParamNames,
-        orderedParamMetadata,
-        implicitArgumentDocNames
-    });
-}
-
-type AppendExplicitParameterDocLinesParams = {
-    lines: string[];
-    node: any;
-    options: SyntheticDocGenerationOptions;
-    documentedParamNames: Set<unknown>;
-    orderedParamMetadata: readonly DocMeta[];
-    paramMetadataByCanonical: Map<string, DocMeta>;
-    implicitDocEntryByIndex: Map<number, ImplicitArgumentDocEntry>;
-};
-
-function appendExplicitParameterDocLines({
-    lines,
-    node,
-    options,
-    documentedParamNames,
-    orderedParamMetadata,
-    paramMetadataByCanonical,
-    implicitDocEntryByIndex
-}: AppendExplicitParameterDocLinesParams) {
-    for (const [paramIndex, param] of (node.params ?? []).entries()) {
-        const paramInfo = getParameterDocInfo(param, node, options);
-        if (!paramInfo || !paramInfo.name) {
-            continue;
-        }
-        const ordinalMetadata =
-            Number.isInteger(paramIndex) && paramIndex >= 0 ? (orderedParamMetadata[paramIndex] ?? null) : null;
-        const rawOrdinalName =
-            typeof ordinalMetadata?.name === STRING_TYPE && ordinalMetadata.name.length > 0
-                ? ordinalMetadata.name
-                : null;
-        const canonicalOrdinal = rawOrdinalName ? getCanonicalParamNameFromText(rawOrdinalName) : null;
-        const implicitDocEntry = implicitDocEntryByIndex.get(paramIndex);
-        const paramIdentifier = getIdentifierFromParameterNode(param);
-        const paramIdentifierName = typeof paramIdentifier?.name === STRING_TYPE ? paramIdentifier.name : null;
-        const isGenericArgumentName =
-            typeof paramIdentifierName === STRING_TYPE && getArgumentIndexFromIdentifier(paramIdentifierName) !== null;
-
-        const implicitName =
-            implicitDocEntry &&
-            typeof implicitDocEntry.name === STRING_TYPE &&
-            implicitDocEntry.name &&
-            (implicitDocEntry.canonical !== implicitDocEntry.fallbackCanonical ||
-                implicitDocEntry.name !== implicitDocEntry.canonical)
-                ? implicitDocEntry.name
-                : null;
-
-        const canonicalParamName =
-            (implicitDocEntry?.canonical && implicitDocEntry.canonical) ||
-            getCanonicalParamNameFromText(paramInfo.name);
-        const existingMetadata =
-            (canonicalParamName &&
-                paramMetadataByCanonical.has(canonicalParamName) &&
-                paramMetadataByCanonical.get(canonicalParamName)) ||
-            null;
-        const existingDocName = existingMetadata?.name;
-        const hasCompleteOrdinalDocs =
-            Array.isArray(node?.params) && orderedParamMetadata.length === node.params.length;
-        const canonicalOrdinalMatchesParam =
-            Boolean(canonicalOrdinal) &&
-            Boolean(canonicalParamName) &&
-            (canonicalOrdinal === canonicalParamName ||
-                docParamNamesLooselyEqual(canonicalOrdinal, canonicalParamName));
-
-        const ordinalNameMatchesOtherParamAlias =
-            Boolean(rawOrdinalName) &&
-            Array.from(implicitDocEntryByIndex.values()).some(
-                (entry) => entry.index !== paramIndex && entry.name === rawOrdinalName
-            );
-
-        const shouldAdoptOrdinalName =
-            Boolean(rawOrdinalName) &&
-            (canonicalOrdinalMatchesParam || isGenericArgumentName) &&
-            !ordinalNameMatchesOtherParamAlias;
-
-        handleOrdinalDocPreferences({
-            node,
-            paramInfo,
-            paramIndex,
-            options,
-            shouldAdoptOrdinalName,
-            hasCompleteOrdinalDocs,
-            canonicalOrdinal,
-            canonicalParamName,
-            rawOrdinalName,
-            paramMetadataByCanonical,
-            implicitDocEntryByIndex
-        });
-        const ordinalDocName =
-            hasCompleteOrdinalDocs && (!existingDocName || existingDocName.length === 0) && shouldAdoptOrdinalName
-                ? rawOrdinalName
-                : null;
-        let effectiveImplicitName = implicitName;
-        effectiveImplicitName = applyImplicitNameOverride({
-            node,
-            paramIndex,
-            implicitDocEntry,
-            canonicalOrdinal,
-            ordinalDocName,
-            effectiveImplicitName,
-            fallbackCanonical: implicitDocEntry?.fallbackCanonical ?? getCanonicalParamNameFromText(paramInfo.name)
-        });
-
-        const baseDocName =
-            (effectiveImplicitName && effectiveImplicitName.length > 0 && effectiveImplicitName) ||
-            (ordinalDocName && ordinalDocName.length > 0 && ordinalDocName) ||
-            paramInfo.name;
-
-        const shouldMarkOptional = computeOptionalDocState({
-            node,
-            param,
-            paramIndex,
-            paramInfo,
-            options,
-            existingMetadata,
-            serializedDocName: existingDocName
-        });
-
-        const docName = shouldMarkOptional ? `[${baseDocName}]` : baseDocName;
-
-        const normalizedExistingType = normalizeParamDocType(existingMetadata?.type);
-        const normalizedOrdinalType = normalizeParamDocType(ordinalMetadata?.type);
-        const docType = normalizedExistingType ?? normalizedOrdinalType;
-
-        const isOrphanedImplicit = implicitName && docName === implicitName && !existingMetadata;
-        const isAdoptingOrdinal = shouldAdoptOrdinalName && docName === rawOrdinalName && !existingMetadata;
-        appendExplicitParameterDocLine({
-            lines,
-            documentedParamNames,
-            docName,
-            docType,
-            existingMetadata,
-            implicitName,
-            ordinalMetadata,
-            isOrphanedImplicit,
-            isAdoptingOrdinal,
-            implicitDocEntry
-        });
-    }
-}
-
-type AppendExplicitParameterDocLineParams = {
-    lines: string[];
-    documentedParamNames: Set<unknown>;
-    docName: string;
-    docType: string | null;
-    existingMetadata: DocMeta | null;
-    implicitName: string | null;
-    ordinalMetadata: DocMeta | null;
-    isOrphanedImplicit: boolean;
-    isAdoptingOrdinal: boolean;
-    implicitDocEntry: ImplicitArgumentDocEntry | undefined;
-};
-
-function appendExplicitParameterDocLine({
-    lines,
-    documentedParamNames,
-    docName,
-    docType,
-    existingMetadata,
-    implicitName,
-    ordinalMetadata,
-    isOrphanedImplicit,
-    isAdoptingOrdinal,
-    implicitDocEntry
-}: AppendExplicitParameterDocLineParams) {
-    if (documentedParamNames.has(docName) && !isOrphanedImplicit && !isAdoptingOrdinal) {
-        if (existingMetadata) {
-            const typePart = existingMetadata.type ? `{${existingMetadata.type}} ` : "";
-            const descriptionPart = existingMetadata.description ?? "";
-            const separator = descriptionPart ? " - " : "";
-            const line = `/// @param ${typePart}${docName}${separator}${descriptionPart}`;
-            lines.push(line.trimEnd());
-        } else if (implicitName && docName === implicitName && !existingMetadata && !ordinalMetadata) {
-            const line = `/// @param ${docName}`;
-            lines.push(line);
-        }
-
-        if (implicitDocEntry?.name) {
-            documentedParamNames.add(implicitDocEntry.name);
-        }
-        return;
-    }
-
-    documentedParamNames.add(docName);
-    const typePart = docType ? `{${docType}} ` : "";
-    const descriptionPart = existingMetadata?.description ?? ordinalMetadata?.description ?? "";
-    const separator = descriptionPart ? " - " : "";
-    const newLine = `/// @param ${typePart}${docName}${separator}${descriptionPart}`;
-    lines.push(newLine);
-}
-
-type AppendImplicitArgumentDocLinesParams = {
-    lines: string[];
-    node: any;
-    documentedParamNames: Set<unknown>;
-    orderedParamMetadata: readonly DocMeta[];
-    implicitArgumentDocNames: readonly ImplicitArgumentDocEntry[];
-};
-
-function appendImplicitArgumentDocLines({
-    lines,
-    node,
-    documentedParamNames,
-    orderedParamMetadata,
-    implicitArgumentDocNames
-}: AppendImplicitArgumentDocLinesParams) {
-    for (const entry of implicitArgumentDocNames) {
-        if (!entry || entry._suppressDocLine) {
-            continue;
-        }
-
-        const { name: docName, index, canonical, fallbackCanonical } = entry;
-        const isImplicitFallbackEntry = canonical === fallbackCanonical;
-        let declaredParamIsGeneric = false;
-        if (Array.isArray(node?.params) && Number.isInteger(index) && index >= 0) {
-            const decl = node.params[index];
-            const declId = getIdentifierFromParameterNode(decl);
-            if (declId && typeof declId.name === STRING_TYPE) {
-                declaredParamIsGeneric = getArgumentIndexFromIdentifier(declId.name) !== null;
-            }
-        }
-        const isFallbackEntry = canonical === fallbackCanonical;
-        if (
-            isFallbackEntry &&
-            Number.isInteger(index) &&
-            orderedParamMetadata[index] &&
-            typeof orderedParamMetadata[index].name === STRING_TYPE &&
-            orderedParamMetadata[index].name.length > 0
-        ) {
-            continue;
-        }
-
-        if (documentedParamNames.has(docName)) {
-            if (
-                canonical &&
-                fallbackCanonical &&
-                canonical !== fallbackCanonical &&
-                entry.hasDirectReference === true &&
-                !documentedParamNames.has(fallbackCanonical) &&
-                !declaredParamIsGeneric &&
-                Array.isArray(node?.params) &&
-                Number.isInteger(index) &&
-                index >= 0 &&
-                index < node.params.length
-            ) {
-                documentedParamNames.add(fallbackCanonical);
-                lines.push(`/// @param ${fallbackCanonical}`);
-            }
-            continue;
-        }
-
-        if (
-            isImplicitFallbackEntry &&
-            Number.isInteger(index) &&
-            orderedParamMetadata[index] &&
-            typeof orderedParamMetadata[index].name === STRING_TYPE &&
-            orderedParamMetadata[index].name.length > 0
-        ) {
-            continue;
-        }
-
-        documentedParamNames.add(docName);
-        lines.push(`/// @param ${docName}`);
-
-        if (
-            canonical &&
-            fallbackCanonical &&
-            canonical !== fallbackCanonical &&
-            entry.hasDirectReference === true &&
-            !documentedParamNames.has(fallbackCanonical) &&
-            Number.isInteger(index) &&
-            index >= 0 &&
-            !declaredParamIsGeneric
-        ) {
-            documentedParamNames.add(fallbackCanonical);
-            lines.push(`/// @param ${fallbackCanonical}`);
-        }
-    }
-}
-
-type OrdinalDocPreferencesParams = {
-    node: any;
-    paramInfo: ReturnType<typeof getParameterDocInfo>;
-    paramIndex: number;
-    options: SyntheticDocGenerationOptions;
-    shouldAdoptOrdinalName: boolean;
-    hasCompleteOrdinalDocs: boolean;
-    canonicalOrdinal: string | null;
-    canonicalParamName: string | null;
-    rawOrdinalName: string | null;
-    paramMetadataByCanonical: Map<string, DocMeta>;
-    implicitDocEntryByIndex: Map<number, ImplicitArgumentDocEntry>;
-};
-
-function handleOrdinalDocPreferences({
-    node,
-    paramInfo,
-    paramIndex,
-    options,
-    shouldAdoptOrdinalName,
-    hasCompleteOrdinalDocs,
-    canonicalOrdinal,
-    canonicalParamName,
-    rawOrdinalName,
-    paramMetadataByCanonical,
-    implicitDocEntryByIndex
-}: OrdinalDocPreferencesParams) {
-    if (hasCompleteOrdinalDocs && node && typeof paramIndex === NUMBER_TYPE && shouldAdoptOrdinalName) {
-        const documentedParamCanonical = getCanonicalParamNameFromText(paramInfo.name) ?? null;
-        if (documentedParamCanonical && paramMetadataByCanonical.has(documentedParamCanonical)) {
-            // The parameter already appears in the documented metadata;
-            // avoid overriding it with mismatched ordinal ordering.
-        } else {
-            let preferredDocs = preferredParamDocNamesByNode.get(node);
-            if (!preferredDocs) {
-                preferredDocs = new Map();
-                preferredParamDocNamesByNode.set(node, preferredDocs);
-            }
-            if (!preferredDocs.has(paramIndex)) {
-                preferredDocs.set(paramIndex, rawOrdinalName);
-            }
-        }
-    }
-
-    if (
-        !shouldAdoptOrdinalName &&
-        canonicalOrdinal &&
-        canonicalParamName &&
-        canonicalOrdinal !== canonicalParamName &&
-        node &&
-        !paramMetadataByCanonical.has(canonicalParamName)
-    ) {
-        const canonicalOrdinalMatchesDeclaredParam = Array.isArray(node?.params)
-            ? node.params.some((candidate: any, candidateIndex: number) => {
-                  if (candidateIndex === paramIndex) {
-                      return false;
-                  }
-
-                  const candidateInfo = getParameterDocInfo(candidate, node, options);
-                  const candidateCanonical = candidateInfo?.name
-                      ? getCanonicalParamNameFromText(candidateInfo.name)
-                      : null;
-
-                  return candidateCanonical === canonicalOrdinal;
-              })
-            : false;
-
-        const canonicalOrdinalMatchesImplicitAlias =
-            implicitDocEntryByIndex &&
-            Array.from(implicitDocEntryByIndex.values()).some((entry) => entry.name === canonicalOrdinal);
-
-        if (canonicalOrdinalMatchesDeclaredParam || canonicalOrdinalMatchesImplicitAlias) {
-            // Preserve canonical ordinal names when they match declared parameters or aliases.
-            // If the canonical ordinal name (e.g., "argument0") matches an explicitly
-            // declared parameter name or an implicit alias assigned by the function signature,
-            // we keep it in the synthetic @param list. Suppressing it would remove valid
-            // parameter documentation that the author explicitly chose to preserve, creating
-            // gaps in the generated JSDoc comment. This branch ensures that functions using
-            // canonical names intentionally (e.g., `function foo(argument0, argument1)`) or
-            // aliasing them (e.g., via implicit doc entries) retain their documentation,
-            // while still suppressing generic ordinal fallbacks for unnamed parameters that
-            // were never referenced by name in the source.
-        } else {
-            let suppressedCanonicals = suppressedImplicitDocCanonicalByNode.get(node);
-            if (!suppressedCanonicals) {
-                suppressedCanonicals = new Set();
-                suppressedImplicitDocCanonicalByNode.set(node, suppressedCanonicals);
-            }
-            suppressedCanonicals.add(canonicalOrdinal);
-        }
-    }
-}
-
-type ImplicitNameOverrideParams = {
-    node: any;
-    paramIndex: number;
-    implicitDocEntry: ImplicitArgumentDocEntry | undefined;
-    canonicalOrdinal: string | null;
-    ordinalDocName: string | null;
-    effectiveImplicitName: string | null;
-    fallbackCanonical: string | null;
-};
-
-function applyImplicitNameOverride({
-    node,
-    paramIndex,
-    implicitDocEntry,
-    canonicalOrdinal,
-    ordinalDocName,
-    effectiveImplicitName,
-    fallbackCanonical
-}: ImplicitNameOverrideParams) {
-    if (!effectiveImplicitName || !ordinalDocName) {
-        return effectiveImplicitName;
-    }
-
-    const canonicalImplicit = getCanonicalParamNameFromText(effectiveImplicitName) ?? null;
-    const resolvedFallbackCanonical = fallbackCanonical;
-    const shouldOverrideImplicitName = Boolean(
-        canonicalOrdinal && canonicalOrdinal !== resolvedFallbackCanonical && canonicalOrdinal !== canonicalImplicit
-    );
-
-    if (!shouldOverrideImplicitName) {
-        return effectiveImplicitName;
-    }
-
-    const ordinalLength = canonicalOrdinal.length;
-    const implicitCanonicalLength = canonicalImplicit?.length ?? 0;
-    const hasImplicitName = implicitCanonicalLength > 0 || isNonEmptyTrimmedString(effectiveImplicitName);
-    const implicitComparisonLength = hasImplicitName ? implicitCanonicalLength : 0;
-
-    if (ordinalLength > implicitComparisonLength) {
-        applyOrdinalImplicitDocEntryOverrides(node, paramIndex, implicitDocEntry, canonicalOrdinal, ordinalDocName);
-        return null;
-    }
-
-    return effectiveImplicitName;
-}
-
-type OptionalDocStateParams = {
-    node: any;
-    param: any;
-    paramIndex: number;
-    paramInfo: ReturnType<typeof getParameterDocInfo>;
-    options: SyntheticDocGenerationOptions;
-    existingMetadata: DocMeta | null;
-    serializedDocName: string | undefined;
-};
-
-function computeOptionalDocState({
-    node,
-    param,
-    paramIndex,
-    paramInfo,
-    options,
-    existingMetadata,
-    serializedDocName
-}: OptionalDocStateParams) {
-    const optionalOverrideFlag = paramInfo?.optionalOverride === true;
-    const defaultIsUndefined = param?.type === "DefaultParameter" && isUndefinedSentinel(param.right);
-    const shouldOmitUndefinedDefault = defaultIsUndefined && shouldOmitUndefinedDefaultForFunctionNode(node);
-    const hasExistingMetadata = Boolean(existingMetadata);
-    const hasOptionalDocName = param?.type === "DefaultParameter" && isOptionalParamDocName(serializedDocName);
-    const parameterSourceText = getSourceTextForNode(param, options);
-    const defaultCameFromSource =
-        defaultIsUndefined && typeof parameterSourceText === STRING_TYPE && parameterSourceText.includes("=");
-
-    const explicitOptionalMarker = param?._featherOptionalParameter === true;
-
-    let shouldMarkOptional =
-        Boolean(paramInfo.optional) ||
-        hasOptionalDocName ||
-        (param?.type === "DefaultParameter" &&
-            isUndefinedSentinel(param.right) &&
-            (explicitOptionalMarker || node?.type === "ConstructorDeclaration"));
-    const hasSiblingExplicitDefault = Array.isArray(node?.params)
-        ? node.params.some((candidate: any, candidateIndex: number) => {
-              if (candidateIndex === paramIndex || !candidate) {
-                  return false;
-              }
-
-              if (candidate.type !== "DefaultParameter") {
-                  return false;
-              }
-
-              return candidate.right != null && !isUndefinedSentinel(candidate.right);
-          })
-        : false;
-    const hasPriorExplicitDefault = Array.isArray(node?.params)
-        ? node.params.slice(0, paramIndex).some((candidate: any) => {
-              if (!candidate || candidate.type !== "DefaultParameter") {
-                  return false;
-              }
-
-              return candidate.right != null && !isUndefinedSentinel(candidate.right);
-          })
-        : false;
-    const shouldApplyOptionalSuppression = hasExistingMetadata || !hasSiblingExplicitDefault;
-
-    const materializedFromExplicitLeft = param?._featherMaterializedFromExplicitLeft === true;
-    if (
-        !shouldMarkOptional &&
-        !hasExistingMetadata &&
-        hasSiblingExplicitDefault &&
-        hasPriorExplicitDefault &&
-        !materializedFromExplicitLeft &&
-        param?._featherMaterializedTrailingUndefined !== true
-    ) {
-        shouldMarkOptional = true;
-    }
-    if (shouldApplyOptionalSuppression) {
-        if (
-            shouldMarkOptional &&
-            defaultIsUndefined &&
-            shouldOmitUndefinedDefault &&
-            paramInfo?.explicitUndefinedDefault === true &&
-            !optionalOverrideFlag &&
-            !hasOptionalDocName
-        ) {
-            shouldMarkOptional = false;
-        }
-        if (
-            shouldMarkOptional &&
-            shouldOmitUndefinedDefault &&
-            paramInfo.optional &&
-            defaultCameFromSource &&
-            !hasOptionalDocName
-        ) {
-            shouldMarkOptional = false;
-        }
-    }
-    if (shouldMarkOptional && param?.type === "Identifier" && !synthesizedUndefinedDefaultParameters.has(param)) {
-        synthesizedUndefinedDefaultParameters.add(param);
-    }
-    if (shouldMarkOptional && defaultIsUndefined) {
-        preservedUndefinedDefaultParameters.add(param);
-    }
-
-    return shouldMarkOptional;
-}
-
-/**
- * Merge synthetic doc comments with existing metadata while preserving order.
- */

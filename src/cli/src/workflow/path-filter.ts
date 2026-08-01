@@ -2,15 +2,21 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
-const { getNonEmptyTrimmedString, isNonEmptyString, isPathInside, toArray, uniqueArray, compactArray } = Core;
+import { REPO_ROOT } from "../shared/workspace-paths.js";
+
+const {
+    getNonEmptyTrimmedString,
+    isNonEmptyString,
+    createProjectPathBoundaryMatcher,
+    resolvePortableAbsolutePath,
+    toArray,
+    uniqueArray,
+    compactArray
+} = Core;
 
 export interface WorkflowPathFilterOptions {
     allowPaths?: Iterable<unknown>;
     denyPaths?: Iterable<unknown>;
-    allow?: Iterable<unknown>;
-    deny?: Iterable<unknown>;
-    includePaths?: Iterable<unknown>;
-    excludePaths?: Iterable<unknown>;
     allowsPath?: (candidate: string) => boolean;
     allowsDirectory?: (candidate: string) => boolean;
 }
@@ -23,6 +29,14 @@ export interface WorkflowPathFilter {
 }
 
 /**
+ * Canonical fixture directories used by workflow-based fixture discovery.
+ */
+export const DEFAULT_FIXTURE_DIRECTORIES = Object.freeze([
+    path.resolve(REPO_ROOT, "src", "parser", "test", "input"),
+    path.resolve(REPO_ROOT, "src", "format", "test")
+]);
+
+/**
  * Normalize workflow path lists into absolute, deduplicated entries.
  *
  * @param {Iterable<unknown> | null | undefined} paths
@@ -32,8 +46,23 @@ export function normalizeWorkflowPathList(paths: Iterable<unknown> | null | unde
     const trimmed = compactArray(toArray(paths).map(getNonEmptyTrimmedString)).filter(
         (value): value is string => typeof value === "string"
     );
-    const resolved = trimmed.map((candidate) => path.resolve(candidate));
+    const resolved = trimmed.map((candidate) => resolvePortableAbsolutePath(candidate));
     return [...(uniqueArray(resolved, { freeze: false }) as Array<string>)];
+}
+
+/**
+ * Normalize fixture roots by combining default fixture directories with
+ * caller-provided entries, then applying the workflow path filter.
+ */
+export function normalizeFixtureRoots(
+    additionalRoots: Iterable<unknown> | Array<unknown> = [],
+    filterOptions: WorkflowPathFilterOptions = {}
+): Array<string> {
+    const pathFilter = createWorkflowPathFilter(filterOptions);
+    const additionalRootEntries = Array.isArray(additionalRoots) ? additionalRoots : toArray(additionalRoots);
+    const normalizedCandidates = normalizeWorkflowPathList([...DEFAULT_FIXTURE_DIRECTORIES, ...additionalRootEntries]);
+
+    return normalizedCandidates.filter((candidate) => pathFilter.allowsDirectory(candidate));
 }
 
 /**
@@ -63,37 +92,26 @@ export function createWorkflowPathFilter(
         typeof filters.allowsPath === "function"
     ) {
         return {
-            allowList: resolveWorkflowPathListFromInputs(filters, "allow"),
-            denyList: resolveWorkflowPathListFromInputs(filters, "deny"),
+            allowList: normalizeWorkflowPathList(filters.allowPaths),
+            denyList: normalizeWorkflowPathList(filters.denyPaths),
             allowsPath: filters.allowsPath,
             allowsDirectory: filters.allowsDirectory
         };
     }
 
-    const allowList = resolveWorkflowPathListFromInputs(filters, "allow");
-    const denyList = resolveWorkflowPathListFromInputs(filters, "deny");
-    const allows = (candidate, { treatAsDirectory = false } = {}) => {
-        if (typeof candidate !== "string") {
-            return false;
-        }
-
-        const normalized = path.resolve(candidate);
-
-        if (denyList.some((deny) => isPathInside(normalized, deny))) {
-            return false;
-        }
-
-        if (allowList.length === 0) {
-            return true;
-        }
-
-        return allowList.some(
-            (allow) => isPathInside(normalized, allow) || (treatAsDirectory && isPathInside(allow, normalized))
-        );
-    };
-
-    const allowsPath = (candidate) => allows(candidate);
-    const allowsDirectory = (candidate) => allows(candidate, { treatAsDirectory: true });
+    const allowList = normalizeWorkflowPathList(filters?.allowPaths);
+    const denyList = normalizeWorkflowPathList(filters?.denyPaths);
+    const allowsPath = createProjectPathBoundaryMatcher({
+        projectRoot: path.parse(process.cwd()).root,
+        allowedPaths: allowList,
+        deniedPaths: denyList
+    });
+    const allowsDirectory = createProjectPathBoundaryMatcher({
+        projectRoot: path.parse(process.cwd()).root,
+        allowedPaths: allowList,
+        deniedPaths: denyList,
+        allowAncestorDirectories: true
+    });
 
     return {
         allowList,
@@ -101,37 +119,6 @@ export function createWorkflowPathFilter(
         allowsPath,
         allowsDirectory
     };
-}
-
-interface WorkflowPathAliasRegistry {
-    allow: Array<keyof WorkflowPathFilterOptions>;
-    deny: Array<keyof WorkflowPathFilterOptions>;
-}
-
-const WORKFLOW_PATH_ALIAS_REGISTRY: WorkflowPathAliasRegistry = {
-    allow: ["allowPaths", "allow", "includePaths"],
-    deny: ["denyPaths", "deny", "excludePaths"]
-};
-
-/**
- * Resolve workflow allow/deny path lists from supported input aliases.
- *
- * This keeps the path-filter surface stable for existing callers while also
- * supporting common workflow input names used by CI pipelines.
- */
-export function resolveWorkflowPathListFromInputs(
-    filters: WorkflowPathFilterOptions | null | undefined,
-    kind: keyof WorkflowPathAliasRegistry
-): Array<string> {
-    const aliases = WORKFLOW_PATH_ALIAS_REGISTRY[kind];
-    const mergedCandidates: Array<unknown> = [];
-
-    for (const alias of aliases) {
-        const values = filters?.[alias];
-        mergedCandidates.push(...toArray(values));
-    }
-
-    return normalizeWorkflowPathList(mergedCandidates);
 }
 
 /**

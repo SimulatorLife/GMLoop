@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { gmlFormatComponents } from "../src/components/format-components.js";
+import { gmlFormatComponents } from "../src/components/default-format-components.js";
 
 void test("GML format component registry", async (t) => {
     await t.test("exposes validated defaults", () => {

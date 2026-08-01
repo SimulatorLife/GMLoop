@@ -218,6 +218,9 @@ void test("computeHotReloadCascade returns empty for no changes", async () => {
     assert.equal(result.cascade.length, 0);
     assert.ok(Array.isArray(result.order));
     assert.equal(result.order.length, 0);
+
+    // Summary counters live on the metadata bag; the result no longer
+    // re-publishes them as top-level aliases.
     assert.equal(result.metadata.totalSymbols, 0);
     assert.equal(result.metadata.maxDistance, 0);
     assert.equal(result.metadata.hasCircular, false);
@@ -678,7 +681,7 @@ void test("checkHotReloadSafety rejects same-name renames", async () => {
     assert.equal(result.requiresRestart, false);
 });
 
-void test("checkHotReloadSafety rejects reserved keywords", async () => {
+void test("checkHotReloadSafety rejects reserved GameMaker identifiers", async () => {
     const mockSemantic = {
         hasSymbol: () => true,
         getSymbolOccurrences: (name) => [{ path: "test.gml", start: 0, end: name.length, scopeId: "scope-1" }],
@@ -692,7 +695,7 @@ void test("checkHotReloadSafety rejects reserved keywords", async () => {
     });
 
     assert.equal(result.safe, false);
-    assert.ok(result.reason.includes("reserved keyword"));
+    assert.ok(result.reason.includes("reserved GameMaker identifier"));
     assert.equal(result.requiresRestart, true);
     assert.equal(result.canAutoFix, false);
 });
@@ -751,7 +754,7 @@ void test("checkHotReloadSafety approves instance variable renames", async () =>
 
     const result = await engine.checkHotReloadSafety({
         symbolId: "gml/var/obj_enemy::hp",
-        newName: "health"
+        newName: "health_points"
     });
 
     assert.equal(result.safe, true);

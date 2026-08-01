@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "node:test";
 
 import { Core } from "@gmloop/core";
 
 const {
+    canAttachComment,
     collectCommentNodes,
     getCommentBoundaryIndex,
     getCommentArray,
@@ -30,6 +31,28 @@ void test("line and block helpers classify comment nodes", () => {
     assert.equal(isLineComment(block), false);
     assert.equal(isBlockComment(block), true);
     assert.equal(isBlockComment(line), false);
+});
+
+void test("canAttachComment accepts statements and rejects comments and empty nodes", () => {
+    // Regular statement nodes are attachable.
+    assert.equal(canAttachComment({ type: "VariableDeclaration" }), true);
+    assert.equal(canAttachComment({ type: "IfStatement" }), true);
+    assert.equal(canAttachComment({ type: "CallExpression" }), true);
+
+    // Comment-shaped nodes cannot be attachable regardless of value content.
+    assert.equal(canAttachComment({ type: "CommentLine", value: "// ignored" }), false);
+    assert.equal(canAttachComment({ type: "CommentBlock", value: "/* ignored */" }), false);
+
+    // EmptyStatement has no source range to attach a comment to.
+    assert.equal(canAttachComment({ type: "EmptyStatement" }), false);
+
+    // Defensive behaviour for non-object and malformed inputs.
+    assert.equal(canAttachComment(null), false);
+    assert.equal(canAttachComment(undefined), false);
+    assert.equal(canAttachComment("CommentLine"), false);
+    assert.equal(canAttachComment(42), false);
+    assert.equal(canAttachComment({}), false);
+    assert.equal(canAttachComment({ type: "" }), false);
 });
 
 void test("hasComment reports when nodes contain comments", () => {

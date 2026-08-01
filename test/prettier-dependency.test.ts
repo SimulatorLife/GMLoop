@@ -17,6 +17,7 @@ const TARGET_WORKSPACES: Array<WorkspacePolicy> = [
     { name: "@gmloop/parser", allowPrettierPeerDep: false, requirePrettierPeerDep: false },
     { name: "@gmloop/semantic", allowPrettierPeerDep: false, requirePrettierPeerDep: false },
     { name: "@gmloop/transpiler", allowPrettierPeerDep: false, requirePrettierPeerDep: false },
+    { name: "@gmloop/ui", allowPrettierPeerDep: false, requirePrettierPeerDep: false },
     { name: "@gmloop/runtime-wrapper", allowPrettierPeerDep: false, requirePrettierPeerDep: false },
     { name: "@gmloop/refactor", allowPrettierPeerDep: false, requirePrettierPeerDep: false },
     { name: "@gmloop/cli", allowPrettierPeerDep: false, requirePrettierPeerDep: false },

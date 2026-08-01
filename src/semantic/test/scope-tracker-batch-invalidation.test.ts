@@ -10,7 +10,7 @@ type InvalidationEntry = {
 };
 
 function normalizeInvalidationEntries(entries: ReadonlyArray<InvalidationEntry>): Array<InvalidationEntry> {
-    return [...entries].sort((left, right) => {
+    return [...entries].toSorted((left, right) => {
         if (left.scopeId !== right.scopeId) {
             return left.scopeId.localeCompare(right.scopeId);
         }
@@ -243,6 +243,74 @@ void describe("ScopeTracker batch invalidation", () => {
         );
     });
 
+    void it("reuses the canonical empty invalidation set for missing normalized paths", () => {
+        const tracker = new ScopeTracker({ enabled: true });
+
+        const windowsPath = String.raw`\project\missing.gml`;
+        const posixPath = "/project/missing.gml";
+        const results = tracker.getBatchInvalidationSets([windowsPath, posixPath]);
+
+        const windowsResults = results.get(windowsPath);
+        const posixResults = results.get(posixPath);
+
+        assert.ok(windowsResults, "Windows path result should exist");
+        assert.ok(posixResults, "POSIX path result should exist");
+        assert.strictEqual(
+            windowsResults,
+            posixResults,
+            "Missing normalized paths should share one empty result array"
+        );
+        assert.strictEqual(windowsResults.length, 0, "Missing normalized path result should be empty");
+    });
+
+    void it("invalidates known changed scopes without path index work", () => {
+        const tracker = new ScopeTracker({ enabled: true });
+
+        tracker.enterScope("program", { path: "/project/root.gml" });
+        const changedScope = tracker.enterScope("function", { name: "changed", path: "/project/changed.gml" });
+        tracker.declare("changedValue", { name: "changedValue" });
+        tracker.exitScope();
+
+        const dependentScope = tracker.enterScope("function", { name: "dependent", path: "/project/dependent.gml" });
+        tracker.reference("changedValue", { name: "changedValue" });
+        tracker.exitScope();
+
+        const results = tracker.getBatchInvalidationSetsForScopes([changedScope.id, changedScope.id, "missing-scope"]);
+
+        assert.strictEqual(results.size, 2, "Duplicate scope ids should not trigger duplicate invalidation work");
+        assert.deepStrictEqual(results.get("missing-scope"), [], "Missing scope ids should return an empty set");
+
+        const changedInvalidation = results.get(changedScope.id);
+        assert.ok(changedInvalidation, "Changed scope should have an invalidation set");
+        assert.deepStrictEqual(
+            normalizeInvalidationEntries(changedInvalidation),
+            normalizeInvalidationEntries([
+                { scopeId: changedScope.id, scopeKind: "function", reason: "self" },
+                { scopeId: dependentScope.id, scopeKind: "function", reason: "dependent" }
+            ]),
+            "Scope-id invalidation should include the changed scope and its transitive dependents"
+        );
+    });
+
+    void it("includes descendants for known changed scope invalidation", () => {
+        const tracker = new ScopeTracker({ enabled: true });
+
+        tracker.enterScope("program", { path: "/project/root.gml" });
+        const parentScope = tracker.enterScope("function", { name: "parent", path: "/project/parent.gml" });
+        const childScope = tracker.enterScope("block", { name: "child" });
+        tracker.exitScope();
+        tracker.exitScope();
+
+        const results = tracker.getBatchInvalidationSetsForScopes([parentScope.id], { includeDescendants: true });
+        const parentInvalidation = results.get(parentScope.id);
+
+        assert.ok(parentInvalidation, "Parent scope should have an invalidation set");
+        assert.ok(
+            parentInvalidation.some((entry) => entry.scopeId === childScope.id && entry.reason === "descendant"),
+            "Descendant scopes should be included when requested"
+        );
+    });
+
     void it("handles empty input gracefully", () => {
         const tracker = new ScopeTracker({ enabled: true });
 
@@ -257,12 +325,7 @@ void describe("ScopeTracker batch invalidation", () => {
         tracker.enterScope("program", { path: "/project/valid.gml" });
         tracker.declare("x", { name: "x" });
 
-        const results = tracker.getBatchInvalidationSets([
-            "",
-            null as unknown as string,
-            undefined as unknown as string,
-            "/project/valid.gml"
-        ]);
+        const results = tracker.getBatchInvalidationSets(["", null, undefined, "/project/valid.gml"]);
 
         assert.ok(results.has("/project/valid.gml"), "Should process valid path");
         const validResults = results.get("/project/valid.gml");

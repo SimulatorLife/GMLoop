@@ -1,6 +1,9 @@
+export { TranspilerError, TranspilerErrorCode } from "./errors.js";
 export type {
+    ClosurePatch,
     EventPatch,
     ScriptPatch,
+    TranspileClosureRequest,
     TranspileEventRequest,
     TranspilerDependencies,
     TranspileScriptRequest

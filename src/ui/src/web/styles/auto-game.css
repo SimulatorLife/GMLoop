@@ -1,0 +1,595 @@
+/* ============================================================
+   Auto-Game operations dashboard.
+   Shared cards, buttons, badges, and empty states are defined in
+   components.css; this file owns only Auto-Game composition.
+   ============================================================ */
+
+.auto-game-dashboard,
+.auto-game-primary-grid,
+.auto-game-secondary-grid,
+.auto-game-supporting {
+  display: grid;
+  gap: var(--gm-space-xl);
+}
+
+.auto-game-dashboard {
+  align-items: start;
+}
+
+.auto-game-primary-grid {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+.auto-game-secondary-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.auto-game-card {
+  min-width: 0;
+}
+
+.auto-game-card__heading,
+.auto-game-item-heading,
+.auto-game-skill-item__header,
+.auto-game-skill-item__identity,
+.auto-game-agent-config__header,
+.auto-game-agent-config__select,
+.auto-game-llm-item__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--gm-space-md);
+}
+
+.auto-game-card__heading {
+  margin-bottom: var(--gm-space-lg);
+}
+
+.auto-game-card__heading > div {
+  min-width: 0;
+}
+
+.auto-game-card__heading .gm-card__heading {
+  margin: 0;
+}
+
+.auto-game-card__heading p {
+  max-width: 64ch;
+  margin: var(--gm-space-xs) 0 0;
+  color: var(--gm-text-subdued);
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-normal);
+}
+
+.auto-game-control-stack,
+.auto-game-task-form,
+.auto-game-action-list,
+.auto-game-feed-list,
+.auto-game-skill-list,
+.auto-game-llm-list,
+.auto-game-resource-list,
+.auto-game-agent-config-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.auto-game-control-stack {
+  gap: var(--gm-space-lg);
+}
+
+.auto-game-task-form,
+.auto-game-action-list,
+.auto-game-feed-list,
+.auto-game-skill-list,
+.auto-game-llm-list,
+.auto-game-resource-list,
+.auto-game-agent-config-list {
+  gap: var(--gm-space-sm);
+}
+
+.auto-game-action-list,
+.auto-game-feed-list,
+.auto-game-skill-list,
+.auto-game-llm-list,
+.auto-game-agent-config-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.auto-game-skill-disclosure,
+.auto-game-resource-preview {
+  border: 1px solid var(--gm-border-subtle);
+  border-radius: var(--gm-radius-md);
+  background: var(--gm-bg-subtle);
+}
+
+.auto-game-skill-disclosure .gm-collapsible__summary,
+.auto-game-resource-preview .gm-collapsible__summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--gm-space-md);
+  padding: var(--gm-space-md);
+  color: var(--gm-text);
+}
+
+.auto-game-skill-disclosure .gm-collapsible__summary:hover,
+.auto-game-resource-preview .gm-collapsible__summary:hover {
+  background: var(--gm-bg-muted);
+}
+
+.auto-game-skill-disclosure .gm-collapsible__summary > span,
+.auto-game-resource-preview .gm-collapsible__summary > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--gm-space-xs);
+}
+
+.auto-game-skill-disclosure .gm-collapsible__summary small,
+.auto-game-resource-preview .gm-collapsible__summary code {
+  color: var(--gm-text-subdued);
+  font-size: var(--gm-text-xs);
+  line-height: var(--gm-leading-normal);
+  overflow-wrap: anywhere;
+}
+
+.auto-game-skill-disclosure .auto-game-skill-list,
+.auto-game-skill-disclosure .auto-game-skill-empty {
+  margin: 0;
+  padding: 0 var(--gm-space-md) var(--gm-space-md);
+}
+
+.auto-game-resource-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-md);
+  margin-top: var(--gm-space-xl);
+}
+
+.auto-game-resource-section__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--gm-space-md);
+}
+
+.auto-game-resource-section__heading h4,
+.auto-game-resource-section__heading p {
+  margin: 0;
+}
+
+.auto-game-resource-section__heading h4 {
+  color: var(--gm-text);
+  font-size: var(--gm-text-sm);
+}
+
+.auto-game-resource-section__heading p {
+  margin-top: var(--gm-space-xs);
+  color: var(--gm-text-subdued);
+  font-size: var(--gm-text-xs);
+  line-height: var(--gm-leading-normal);
+}
+
+.auto-game-resource-preview pre {
+  margin: 0;
+  padding: var(--gm-space-md);
+  border-top: 1px solid var(--gm-border-subtle);
+  color: var(--gm-text-secondary);
+  font-family: var(--gm-font-mono);
+  font-size: var(--gm-text-xs);
+  line-height: var(--gm-leading-normal);
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.auto-game-lifecycle-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gm-space-sm);
+}
+
+.auto-game-lifecycle-controls .gm-btn {
+  flex: 1 1 0;
+}
+
+.auto-game-field-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--gm-space-md);
+}
+
+.auto-game-field-heading label {
+  color: var(--gm-text);
+  font-size: var(--gm-text-sm);
+  font-weight: var(--gm-weight-bold);
+}
+
+.auto-game-field-heading span {
+  color: var(--gm-text-subdued);
+  font-size: var(--gm-text-xs);
+}
+
+.auto-game-task-form textarea {
+  min-height: calc(var(--gm-height-xl) + var(--gm-height-xl));
+  resize: vertical;
+  padding: var(--gm-space-md);
+  border: 1px solid var(--gm-border-subtle);
+  border-radius: var(--gm-radius-md);
+  background: var(--gm-bg-inset);
+  color: var(--gm-text);
+  font: inherit;
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-normal);
+}
+
+.auto-game-task-form textarea:hover:not(:disabled) {
+  border-color: var(--gm-border);
+}
+
+.auto-game-task-form textarea:focus-visible {
+  border-color: var(--gm-border-interactive);
+  outline: none;
+  box-shadow: var(--gm-shadow-focus);
+}
+
+.auto-game-task-form textarea:disabled {
+  color: var(--gm-text-subdued);
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.auto-game-task-submit {
+  align-self: flex-start;
+}
+
+.auto-game-action {
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  white-space: normal;
+}
+
+.auto-game-action__label,
+.auto-game-feed-item strong,
+.auto-game-skill-item strong,
+.auto-game-agent-config strong,
+.auto-game-llm-item strong {
+  color: var(--gm-text);
+  font-size: var(--gm-text-sm);
+  overflow-wrap: anywhere;
+}
+
+.auto-game-action__description,
+.auto-game-feed-item p,
+.auto-game-skill-item p,
+.auto-game-agent-config p {
+  margin: 0;
+  color: var(--gm-text-secondary);
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-normal);
+  overflow-wrap: anywhere;
+}
+
+.auto-game-feed-item,
+.auto-game-skill-item,
+.auto-game-agent-config,
+.auto-game-llm-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-sm);
+  padding: var(--gm-space-md);
+  border: 1px solid var(--gm-border-subtle);
+  border-radius: var(--gm-radius-md);
+  background: var(--gm-bg-subtle);
+}
+
+.auto-game-feed-item--success,
+.auto-game-skill-item--available,
+.auto-game-agent-config--cli-configurable {
+  border-color: var(--gm-success-border);
+}
+
+.auto-game-feed-item--error,
+.auto-game-skill-item--unreadable {
+  border-color: var(--gm-error-border);
+}
+
+.auto-game-feed-item--blocked,
+.auto-game-agent-config--manual-required {
+  border-color: var(--gm-warning-border);
+}
+
+.auto-game-item-meta {
+  color: var(--gm-text-subdued);
+  font-family: var(--gm-font-mono);
+  font-size: var(--gm-text-xs);
+  line-height: var(--gm-leading-normal);
+  overflow-wrap: anywhere;
+}
+
+.auto-game-skill-item__identity {
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.auto-game-skill-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gm-space-sm);
+  min-height: var(--gm-height-xl);
+  color: var(--gm-text-secondary);
+  font-size: var(--gm-text-xs);
+  font-weight: var(--gm-weight-bold);
+  cursor: pointer;
+}
+
+.auto-game-skill-toggle input {
+  position: absolute;
+  inset-inline-end: 0;
+  width: var(--gm-height-xl);
+  height: var(--gm-space-xl);
+  margin: 0;
+  cursor: inherit;
+  opacity: 0;
+}
+
+.auto-game-skill-toggle__track {
+  display: inline-flex;
+  align-items: center;
+  width: var(--gm-height-xl);
+  height: var(--gm-space-xl);
+  padding: var(--gm-space-xs);
+  border: 1px solid var(--gm-border-strong);
+  border-radius: var(--gm-radius-full);
+  background: var(--gm-bg-muted);
+  transition:
+    background var(--gm-transition),
+    border-color var(--gm-transition),
+    box-shadow var(--gm-transition);
+}
+
+.auto-game-skill-toggle__thumb {
+  width: var(--gm-space-lg);
+  height: var(--gm-space-lg);
+  border-radius: var(--gm-radius-full);
+  background: var(--gm-text-subdued);
+  transition:
+    background var(--gm-transition),
+    transform var(--gm-transition);
+}
+
+.auto-game-skill-toggle input:checked + .auto-game-skill-toggle__track {
+  border-color: var(--gm-success-border);
+  background: var(--gm-success-surface);
+}
+
+.auto-game-skill-toggle
+  input:checked
+  + .auto-game-skill-toggle__track
+  .auto-game-skill-toggle__thumb {
+  background: var(--gm-success-dot);
+  transform: translateX(calc(var(--gm-height-xl) - var(--gm-space-xl)));
+}
+
+.auto-game-skill-toggle input:focus-visible + .auto-game-skill-toggle__track {
+  box-shadow: var(--gm-shadow-focus);
+}
+
+.auto-game-skill-toggle:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.auto-game-skill-item p.auto-game-skill-item__diagnostic {
+  color: var(--gm-error-text);
+}
+
+.auto-game-conflict-notice {
+  margin: 0 0 var(--gm-space-md);
+  padding: var(--gm-space-md);
+  border: 1px solid var(--gm-warning-border);
+  border-radius: var(--gm-radius-md);
+  background: var(--gm-warning-surface);
+}
+
+.auto-game-skill-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--gm-space-md);
+  margin-bottom: var(--gm-space-md);
+}
+
+.auto-game-skill-empty p {
+  margin: 0;
+}
+
+.auto-game-initialize-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--gm-space-md);
+  align-items: start;
+  width: 100%;
+  padding: var(--gm-space-md);
+  border: 1px solid var(--gm-border-subtle);
+  border-radius: var(--gm-radius-md);
+  background: var(--gm-bg-subtle);
+  color: var(--gm-text);
+  cursor: pointer;
+}
+
+.auto-game-initialize-option:hover {
+  border-color: var(--gm-border);
+  background: var(--gm-bg-muted);
+}
+
+.auto-game-initialize-option:focus-within {
+  border-color: var(--gm-border-interactive);
+  box-shadow: var(--gm-shadow-focus);
+}
+
+.auto-game-initialize-option input {
+  width: var(--gm-icon-lg);
+  height: var(--gm-icon-lg);
+  margin: 0;
+  accent-color: var(--gm-success-dot);
+}
+
+.auto-game-initialize-option span {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-xs);
+}
+
+.auto-game-initialize-option strong {
+  font-size: var(--gm-text-sm);
+}
+
+.auto-game-initialize-option small {
+  color: var(--gm-text-subdued);
+  font-size: var(--gm-text-xs);
+  line-height: var(--gm-leading-normal);
+}
+
+.auto-game-agent-configs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-sm);
+  width: 100%;
+}
+
+.auto-game-agent-configs__heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-xs);
+}
+
+.auto-game-agent-configs__heading strong {
+  color: var(--gm-text);
+  font-size: var(--gm-text-sm);
+}
+
+.auto-game-agent-configs__heading small,
+.auto-game-agent-config small {
+  color: var(--gm-text-subdued);
+  font-size: var(--gm-text-xs);
+  line-height: var(--gm-leading-normal);
+}
+
+.auto-game-agent-config__header {
+  align-items: center;
+}
+
+.auto-game-agent-config__select {
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: flex-start;
+  justify-content: flex-start;
+  cursor: pointer;
+}
+
+.auto-game-agent-config__select input {
+  width: var(--gm-icon-lg);
+  height: var(--gm-icon-lg);
+  margin: 0;
+  accent-color: var(--gm-success-dot);
+}
+
+.auto-game-agent-config__select span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--gm-space-xs);
+}
+
+.auto-game-agent-config__select:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.auto-game-agent-config__manual {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-xs);
+  margin: 0;
+  padding-inline-start: var(--gm-space-xl);
+  color: var(--gm-text-secondary);
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-normal);
+}
+
+.auto-game-skill-empty--skills:last-child {
+  margin-bottom: 0;
+}
+
+.auto-game-llm-item__header {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.auto-game-llm-item pre {
+  margin: 0;
+  color: var(--gm-text-secondary);
+  font-family: var(--gm-font-mono);
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-normal);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.auto-game-empty--compact {
+  margin: 0;
+  padding: var(--gm-space-md);
+}
+
+.auto-game-mcp-card__heading {
+  align-items: center;
+}
+
+.auto-game-mcp-card .gm-detail-list {
+  flex: 0 1 auto;
+  min-width: min(100%, 320px);
+  margin: 0;
+}
+
+@media (max-width: 920px) {
+  .auto-game-primary-grid,
+  .auto-game-secondary-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .auto-game-mcp-card__heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 560px) {
+  .auto-game-card__heading,
+  .auto-game-skill-item__header,
+  .auto-game-agent-config__header,
+  .auto-game-field-heading,
+  .auto-game-resource-section__heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .auto-game-lifecycle-controls,
+  .auto-game-lifecycle-controls .gm-btn,
+  .auto-game-task-submit {
+    width: 100%;
+  }
+
+  .auto-game-skill-toggle {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

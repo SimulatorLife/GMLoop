@@ -46,15 +46,14 @@ function resolveVmEvalTimeout(
         defaultValue?: number;
         defaultTimeout?: number;
     } = {}
-): number | null | undefined {
+): number | undefined {
     const fallback = options.defaultTimeout ?? options.defaultValue ?? state.get();
-    const normalized = resolveIntegerOption(rawValue, {
+    return resolveIntegerOption(rawValue, {
         defaultValue: fallback,
         coerce,
         typeErrorMessage: createTimeoutTypeErrorMessage,
         blankStringReturnsDefault: true
     });
-    return normalized === 0 ? null : normalized;
 }
 
 function applyVmEvalTimeoutEnvOverride(env?: NodeJS.ProcessEnv): number | undefined {

@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { Core } from "@gmloop/core";
-
+import { createCommentBlockNode, createCommentLineNode, createWhitespaceNode } from "../src/ast/comment-nodes.js";
 import { createHiddenNodeProcessor } from "../src/ast/hidden-node-processor.js";
 
 void test("createCommentLineNode strips leading markers and records metadata", () => {
     const token = { line: 5, start: 10, stop: 18 };
-    const comment = Core.createCommentLineNode({
+    const comment = createCommentLineNode({
         token,
         tokenText: "// example",
         leadingWS: "\n",
@@ -26,7 +25,7 @@ void test("createCommentLineNode strips leading markers and records metadata", (
 
 void test("createCommentBlockNode tracks line count and boundaries", () => {
     const token = { line: 2, start: 4, stop: 25 };
-    const comment = Core.createCommentBlockNode({
+    const comment = createCommentBlockNode({
         token,
         tokenText: "/* multi\nline */",
         leadingWS: "  ",
@@ -44,7 +43,7 @@ void test("createCommentBlockNode tracks line count and boundaries", () => {
 
 void test("createWhitespaceNode annotates newlines", () => {
     const token = { line: 7, start: 3, stop: 4 };
-    const whitespace = Core.createWhitespaceNode({
+    const whitespace = createWhitespaceNode({
         token,
         tokenText: "\n",
         isNewline: true
@@ -193,4 +192,25 @@ void test("hidden node processor does not emit debug logs", () => {
     assert.equal(capturedLogs.length, 0);
     assert.equal(comments.length, 2);
     assert.equal(whitespaces.length, 0);
+});
+
+void test("hidden node processor initializes state with correct defaults", () => {
+    const comments: Array<unknown> = [];
+    const whitespaces: Array<unknown> = [];
+    const lexerTokens = {
+        EOF: 0,
+        SingleLineComment: 1,
+        MultiLineComment: 2,
+        WhiteSpaces: 3,
+        LineTerminator: 4,
+        Identifier: 5
+    };
+
+    const processor = createHiddenNodeProcessor({
+        comments,
+        whitespaces,
+        lexerTokens
+    });
+
+    assert.equal(processor.hasReachedEnd(), false);
 });

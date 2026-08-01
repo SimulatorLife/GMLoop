@@ -4,14 +4,11 @@ import { test } from "node:test";
 import { emitBuiltinFunction, isBuiltinFunction } from "../src/emitter/builtins.js";
 
 /**
- * Memory footprint test for builtin function storage.
+ * Regression tests for the builtin function emitter.
  *
- * BEFORE: The module eagerly loaded ~1.3MB of identifier metadata and created
- * a Record with 1787 closures, consuming ~7 MB of heap.
- *
- * AFTER: The module uses a lazy-loaded Set. Module load is now ~3.1 MB (the
- * Set is loaded on first access), and builtin emission avoids materializing a
- * function-per-builtin compatibility structure.
+ * The emitter relies on Core.loadManualFunctionNames() for lookup (which
+ * lazily loads and caches ~1787 function names internally). No local
+ * cache is maintained in builtins.ts — the Core layer handles caching.
  */
 
 void test("isBuiltinFunction recognizes known builtins", () => {
@@ -19,9 +16,27 @@ void test("isBuiltinFunction recognizes known builtins", () => {
     assert.ok(!isBuiltinFunction("totally_not_a_builtin"), "Expected custom name to be rejected");
 });
 
+void test("isBuiltinFunction returns consistent results on repeated calls", () => {
+    const first = isBuiltinFunction("floor");
+    const second = isBuiltinFunction("floor");
+
+    assert.strictEqual(first, second, "Repeated lookups should return the same result");
+    assert.ok(first, "floor should be a known builtin");
+});
+
 void test("emitBuiltinFunction formats builtin calls", () => {
     const result = emitBuiltinFunction("abs", ["value"]);
     assert.strictEqual(result, "abs(value)", "Should emit a standard builtin call");
+});
+
+void test("emitBuiltinFunction formats zero-argument calls", () => {
+    const result = emitBuiltinFunction("game_end", []);
+    assert.strictEqual(result, "game_end()", "Should emit empty parentheses for zero-argument calls");
+});
+
+void test("emitBuiltinFunction formats single-argument calls", () => {
+    const result = emitBuiltinFunction("floor", ["x"]);
+    assert.strictEqual(result, "floor(x)", "Should emit single-argument call without trailing comma");
 });
 
 void test("emitBuiltinFunction formats multi-argument builtin calls", () => {

@@ -59,7 +59,6 @@ export async function runFileRemovalTest(options: FileRemovalTestOptions): Promi
         },
         async () => {
             const watchPromise = Cli.CLI.Commands.runWatchCommand(root, {
-                extensions: [".gml"],
                 verbose: false,
                 quiet: true,
                 debounceDelay: 0,
@@ -70,6 +69,16 @@ export async function runFileRemovalTest(options: FileRemovalTestOptions): Promi
                 watchFactory
             });
 
+            // Wait for watch listener to be registered (up to 2000ms)
+            const start = Date.now();
+            while (!listenerCapture.listener && Date.now() - start < 2000) {
+                await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+            if (!listenerCapture.listener) {
+                throw new Error("Timeout waiting for watch listener registration");
+            }
+
+            // Keep standard brief delay to let initial scan setup progress
             await new Promise((resolve) => setTimeout(resolve, 50));
 
             await rm(targetFile, { force: true });

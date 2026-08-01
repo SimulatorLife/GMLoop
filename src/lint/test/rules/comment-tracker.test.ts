@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { CommentTracker } from "../../src/rules/gml/transforms/comments/comment-tracker.js";
+import { CommentTracker } from "../../src/rules/gml/transforms/comment-tracker.js";
 
 /** Minimal synthetic comment shape used throughout these tests. */
 interface TestComment {

@@ -11,9 +11,11 @@ import path from "node:path";
 import { Core } from "@gmloop/core";
 
 import { ConflictSeverity, normalizeConflictSeverityWithFallback } from "./conflict-severity.js";
-import { defaultIdentifierCaseFsFacade as defaultFsFacade } from "./fs-facade.js";
-import { consumeIdentifierCaseDryRunContext } from "./identifier-case-context.js";
-import { warnWithReason } from "./logger.js";
+import {
+    consumeIdentifierCaseDryRunContext,
+    defaultIdentifierCaseFsFacade as defaultFsFacade,
+    warnWithReason
+} from "./identifier-case-helpers.js";
 import { getIdentifierCaseOptionStore, setIdentifierCaseOption } from "./option-store.js";
 
 type IdentifierCaseReportSummary = {
@@ -186,7 +188,7 @@ function normalizeOperation(rawOperation) {
             );
 
             const referenceCandidates = Core.compactArray(Core.toArray(operation.references).map(normalizeReference));
-            const references = referenceCandidates.slice().sort((a, b) => a.filePath.localeCompare(b.filePath));
+            const references = referenceCandidates.toSorted((a, b) => a.filePath.localeCompare(b.filePath));
 
             const occurrenceCount = references.reduce((total, reference) => total + (reference.occurrences ?? 0), 0);
 
@@ -239,7 +241,7 @@ function normalizeConflict(rawConflict) {
 }
 
 function sortOperations(operations) {
-    return operations.slice().sort((a, b) => {
+    return operations.toSorted((a, b) => {
         const scopeCompare = (a.scopeName ?? "").localeCompare(b.scopeName ?? "");
         if (scopeCompare !== 0) return scopeCompare;
 
@@ -257,7 +259,7 @@ function sortConflicts(conflicts) {
         [ConflictSeverity.INFO, 2]
     ]);
 
-    return conflicts.slice().sort((a, b) => {
+    return conflicts.toSorted((a, b) => {
         const severityDiff = (severityOrder.get(a.severity) ?? 99) - (severityOrder.get(b.severity) ?? 99);
         if (severityDiff !== 0) return severityDiff;
 
