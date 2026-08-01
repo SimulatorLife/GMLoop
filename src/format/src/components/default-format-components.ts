@@ -1,10 +1,6 @@
 import { Core } from "@gmloop/core";
 
-import {
-    defaultGmlFormatAdapterResolver,
-    type GmlFormatAdapterResolver,
-    type GmlFormatPrettierDefaults
-} from "./default-format-adapters.js";
+import { defaultGmlFormatAdapterResolver, type GmlFormatAdapterResolver } from "./default-format-adapters.js";
 import { normalizeGmlFormatComponents } from "./format-component-normalizer.js";
 import type { GmlFormatProvider } from "./format-provider.js";
 import type { GmlFormatComponentBundle, GmlFormatComponentContract } from "./format-types.js";
@@ -48,10 +44,6 @@ export const gmlFormatComponents: GmlFormatComponentBundle = Object.freeze(
     normalizeGmlFormatComponents(createDefaultGmlFormatComponents())
 );
 
-const DEFAULT_PRETTIER_OPTIONS: GmlFormatPrettierDefaults = Object.freeze(
-    defaultGmlFormatAdapterResolver.resolvePrettierDefaults()
-);
-
 /**
  * Default abstract provider consumed by the high-level Prettier plugin entry
  * point. Concrete parser, printer, comment, and normalization implementations
@@ -60,7 +52,7 @@ const DEFAULT_PRETTIER_OPTIONS: GmlFormatPrettierDefaults = Object.freeze(
  */
 export const defaultGmlFormatProvider: GmlFormatProvider = Object.freeze({
     components: gmlFormatComponents,
-    prettierDefaults: DEFAULT_PRETTIER_OPTIONS,
+    prettierDefaults: defaultGmlFormatAdapterResolver.resolvePrettierDefaults(),
     normalizeFormattedOutput: defaultGmlFormatAdapterResolver.resolveNormalizeFormattedOutput()
 });
 
