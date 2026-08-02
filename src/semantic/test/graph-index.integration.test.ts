@@ -712,6 +712,104 @@ void test("buildGraphIndex projects structs, variables, functions, and concrete 
     }
 });
 
+void test("buildGraphIndex classifies constructor static members by value and connects them to their struct", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-constructor-static-members-");
+
+    try {
+        await fixture.writeProjectFile("Project.yyp", JSON.stringify({ name: "Project", resourceType: "GMProject" }));
+        await fixture.writeProjectFile(
+            "scripts/timer_multiplier/timer_multiplier.yy",
+            JSON.stringify({ name: "timer_multiplier", resourceType: "GMScript" })
+        );
+        await fixture.writeProjectFile(
+            "scripts/timer_multiplier/timer_multiplier.gml",
+            [
+                "function TimerMultiplier() constructor {",
+                "    static max_multiplier = 4;",
+                "    static get_multiplier = function() { return 1; };",
+                "}",
+                ""
+            ].join("\n")
+        );
+
+        const result = await buildGraphIndex({
+            projectConfig: {
+                graph: {
+                    embeddings: {
+                        enabled: false
+                    }
+                }
+            },
+            projectRoot: fixture.projectRoot
+        });
+
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const nodeRows = database.prepare("SELECT id, kind, name FROM nodes").all() as Array<{
+                id: string;
+                kind: string;
+                name: string;
+            }>;
+
+            const structNode = nodeRows.find((row) => row.kind === "struct" && row.name === "TimerMultiplier");
+            assert.ok(structNode, "expected TimerMultiplier struct node");
+
+            // A `static` member holding plain data must be modeled as a
+            // struct-owned variable, not misclassified as a callable.
+            const maxMultiplierNode = nodeRows.find(
+                (row) => row.kind === "struct_variable" && row.name === "max_multiplier"
+            );
+            assert.ok(maxMultiplierNode, "expected max_multiplier to be a struct_variable node, not a function node");
+            assert.equal(
+                nodeRows.some((row) => row.kind === "function" && row.name === "max_multiplier"),
+                false,
+                "a data-valued static member must not also appear as a function node"
+            );
+
+            // A `static` member holding a function value remains a callable.
+            const getMultiplierNode = nodeRows.find((row) => row.kind === "function" && row.name === "get_multiplier");
+            assert.ok(getMultiplierNode, "expected get_multiplier to remain a function node");
+
+            const definesEdges = database
+                .prepare("SELECT from_id AS fromId, to_id AS toId FROM edges WHERE type = 'defines'")
+                .all() as Array<{ fromId: string; toId: string }>;
+
+            // Both kinds of static member are owned by their constructor's
+            // struct node — the graph must not leave either disconnected.
+            assert.ok(
+                definesEdges.some((edge) => edge.fromId === structNode.id && edge.toId === maxMultiplierNode.id),
+                "expected the struct to define its static data member"
+            );
+            assert.ok(
+                definesEdges.some((edge) => edge.fromId === structNode.id && edge.toId === getMultiplierNode.id),
+                "expected the struct to define its static method"
+            );
+
+            const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
+            const visualizationMaxMultiplierNode = visualizationData.nodes.find(
+                (node) => node.kind === "struct_variable" && node.name === "max_multiplier"
+            );
+            assert.ok(
+                visualizationMaxMultiplierNode,
+                "expected max_multiplier to be exported as a struct_variable in visualization data"
+            );
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) =>
+                        edge.source === structNode.id &&
+                        edge.target === visualizationMaxMultiplierNode.id &&
+                        edge.type === "defines"
+                ),
+                "expected visualization data to connect the static data member to its owning struct"
+            );
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
 void test("buildGraphIndex exports object parent metadata as inherits relationships", async () => {
     const fixture = await createTempProjectWorkspace("graph-index-object-inheritance-");
 

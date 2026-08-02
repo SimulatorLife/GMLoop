@@ -81,6 +81,7 @@ type ProjectIndexIdentifierEntry = {
     filePath?: string;
     id?: string;
     identifierId?: string;
+    isCallableValue?: boolean;
     key?: string;
     name?: string;
     references?: Array<Record<string, unknown>>;
@@ -686,6 +687,12 @@ function normalizeIdentifierCollectionKind(collectionName: string): GraphNodeKin
         }
         case "function":
         case "constructorStaticMember": {
+            // Collection-level default only, used to decide whether the
+            // `constructorStaticMembers` collection projects nodes at all.
+            // `resolveConstructorStaticMemberNodeKind` below overrides this
+            // per entry: a `static` member that holds plain data (not a
+            // function/constructor value) is a data field, not a callable,
+            // and must not be drawn as a `function` node.
             return "function";
         }
         case "struct": {
@@ -736,6 +743,21 @@ function normalizeIdentifierCollectionKind(collectionName: string): GraphNodeKin
             return null;
         }
     }
+}
+
+/**
+ * Resolve the graph node kind for one `constructorStaticMembers` entry.
+ *
+ * `static` members can hold either a method (`static foo = function() {...}`)
+ * or plain data (`static foo = 0;`). Collapsing both into `function` would
+ * misrepresent data fields as callables in the graph and viewer legend, so
+ * this classifies per entry using the `isCallableValue` fact recorded by
+ * `collectConstructorMemberAnalysis`. Non-callable statics are modeled as
+ * `struct_variable` nodes, the existing category for a struct-owned data
+ * member, rather than inventing a narrower one-off kind.
+ */
+function resolveConstructorStaticMemberNodeKind(entry: ProjectIndexIdentifierEntry): GraphNodeKind {
+    return entry.isCallableValue === true ? "function" : "struct_variable";
 }
 
 function normalizeResourceKind(resourceType: string | null): GraphNodeKind | null {
@@ -1366,6 +1388,8 @@ function projectIdentifierCollections(context: ProjectionContext): void {
 
         for (const [collectionKey, rawEntry] of Object.entries(collection)) {
             const entry = asRecord(rawEntry) as ProjectIndexIdentifierEntry;
+            const entryKind =
+                collectionName === "constructorStaticMembers" ? resolveConstructorStaticMemberNodeKind(entry) : kind;
             const name = getString(entry.name) ?? collectionKey;
             const declaration = readFirstDeclaration(entry);
             const declarationStart = readLocationIndex(asRecord(declaration?.start));
@@ -1375,7 +1399,7 @@ function projectIdentifierCollections(context: ProjectionContext): void {
                 getString(entry.filePath) ??
                 getString((Array.isArray(entry.references) ? entry.references[0] : null)?.filePath);
             const resourcePath = getString(entry.resourcePath) ?? resolveResourcePathForFile(context, filePath);
-            const scipSymbol = resolveScipSymbol(kind, name, entry);
+            const scipSymbol = resolveScipSymbol(entryKind, name, entry);
             if (!scipSymbol) {
                 // Resource-style identifiers (texture groups, sprites, ...)
                 // do not have a SCIP symbol; they are addressed by their
@@ -1391,12 +1415,12 @@ function projectIdentifierCollections(context: ProjectionContext): void {
             const summary = createGraphNodeSummary({
                 docCommentSummary: extractDocCommentFirstSentence(sourceText, declarationStart),
                 filePath,
-                kind,
+                kind: entryKind,
                 name,
                 resourcePath
             });
             if (
-                kind === "script" &&
+                entryKind === "script" &&
                 mergeScriptIdentifierIntoResourceNode({
                     context,
                     displayName,
@@ -1417,7 +1441,7 @@ function projectIdentifierCollections(context: ProjectionContext): void {
                 filePath,
                 graphId: context.graphId,
                 id: createGraphNodeId(context.graphId, "symbol", scipSymbol),
-                kind,
+                kind: entryKind,
                 lineEnd: readLocationLine(asRecord(declaration?.end)),
                 lineStart: readLocationLine(asRecord(declaration?.start)),
                 name,
@@ -1439,7 +1463,7 @@ function projectIdentifierCollections(context: ProjectionContext): void {
                 });
             }
 
-            if (kind === "enum_member") {
+            if (entryKind === "enum_member") {
                 const enumNodeId = resolveEnumOwnerNodeId(context, entry);
                 if (enumNodeId) {
                     context.edgeRecords.push({
@@ -1450,7 +1474,12 @@ function projectIdentifierCollections(context: ProjectionContext): void {
                 }
             }
 
-            if (kind === "struct_variable") {
+            // Constructor static members (methods and data fields alike)
+            // are always owned by the constructor's struct node, just like
+            // instance-scoped struct variables, so both share the same
+            // ownership-edge projection rather than leaving statics
+            // disconnected from their constructor.
+            if (entryKind === "struct_variable" || collectionName === "constructorStaticMembers") {
                 projectStructVariableOwnershipEdge(context, node, entry);
             }
         }

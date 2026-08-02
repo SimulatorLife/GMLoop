@@ -6,6 +6,7 @@ import { createTempProjectWorkspace, recordValues } from "./test-project-helpers
 
 type ConstructorStaticMemberEntry = {
     constructorName?: string;
+    isCallableValue?: boolean;
     name?: string;
     declarations?: Array<{ filePath?: string; name?: string }>;
     references?: Array<{ filePath?: string; name?: string }>;
@@ -33,6 +34,7 @@ void test("buildProjectIndex resolves constructor-owned receiver static member r
                 "function TimerMultiplier() constructor {",
                 "    static get_multiplier = function() { return 1; };",
                 "    static set_multiplier = function(value) { return value; };",
+                "    static max_multiplier = 4;",
                 "}",
                 ""
             ].join("\n")
@@ -90,8 +92,12 @@ void test("buildProjectIndex resolves constructor-owned receiver static member r
         const otherGet = entries.find(
             (entry) => entry.constructorName === "OtherTimer" && entry.name === "get_multiplier"
         );
+        const timerMaxMultiplier = entries.find(
+            (entry) => entry.constructorName === "TimerMultiplier" && entry.name === "max_multiplier"
+        );
 
         assert.ok(timerGet, "expected TimerMultiplier.get_multiplier entry");
+        assert.equal(timerGet.isCallableValue, true, "a `static foo = function() {}` member is a callable value");
         assert.equal(timerGet.declarations?.length, 1);
         assert.deepEqual(
             timerGet.references?.map((reference) => reference.filePath),
@@ -111,6 +117,13 @@ void test("buildProjectIndex resolves constructor-owned receiver static member r
         assert.deepEqual(otherGet.references, []);
         assert.equal(structVariableNames.has("get_multiplier"), false);
         assert.equal(structVariableNames.has("set_multiplier"), false);
+
+        assert.ok(timerMaxMultiplier, "expected TimerMultiplier.max_multiplier entry");
+        assert.equal(
+            timerMaxMultiplier.isCallableValue,
+            false,
+            "a `static foo = 4;` member holds plain data, not a callable value"
+        );
     } finally {
         await cleanup();
     }

@@ -1005,6 +1005,7 @@ function registerConstructorStaticMemberDeclaration({
     filePath,
     constructorName,
     memberName,
+    isCallableValue,
     identifierSink,
     documentation
 }) {
@@ -1024,7 +1025,8 @@ function registerConstructorStaticMemberDeclaration({
             name: memberName,
             constructorName,
             displayName: key,
-            filePath: filePath ?? null
+            filePath: filePath ?? null,
+            isCallableValue
         }),
         metadata: {
             identifierId,
@@ -2076,6 +2078,7 @@ function analyseConstructorStaticMemberOccurrences({
             filePath,
             constructorName: declaration.constructorName,
             memberName: declaration.memberName,
+            isCallableValue: declaration.isCallableValue,
             identifierSink,
             documentation: extractDeclarationDocumentation(declaration.declarationNode)
         });
@@ -2926,6 +2929,7 @@ function createProjectIndexResultSnapshot({
             displayName: entry.displayName ?? entry.key ?? null,
             documentation: entry.documentation ?? parseGmlSymbolDocumentation(""),
             filePath: entry.filePath ?? null,
+            isCallableValue: entry.isCallableValue === true,
             declarations: resolveIdentifierRoleRecords({
                 identifierSink,
                 collection: IDENTIFIER_COLLECTION_NAMES.constructorStaticMembers,

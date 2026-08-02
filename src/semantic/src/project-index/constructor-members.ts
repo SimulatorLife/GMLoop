@@ -6,6 +6,13 @@ type AstNodeRecord = GameMakerAstNode & Record<string, unknown>;
 export type ConstructorStaticMemberDeclarationRecord = {
     constructorName: string;
     declarationNode: AstNodeRecord;
+    /**
+     * Whether the member's initializer is a function/constructor value (a static
+     * method) rather than plain data (a static field). Distinguishes the two so
+     * downstream consumers such as the semantic graph do not classify every
+     * `static` member as a callable.
+     */
+    isCallableValue: boolean;
     memberIdentifier: AstNodeRecord;
     memberName: string;
 };
@@ -88,6 +95,17 @@ function traverseConstructorOwnedBodyNode(root: unknown, visit: (node: AstNodeRe
     });
 }
 
+/**
+ * Whether a static member's initializer holds a callable value (a static method
+ * or nested constructor) as opposed to plain data such as a number, string, or
+ * struct literal. GML function values parse as `FunctionDeclaration` nodes even
+ * when used as an expression, matching the check `collectStaticFunctionNodes`
+ * uses below to find static method bodies.
+ */
+function isCallableStaticMemberValue(node: unknown): boolean {
+    return isAstNodeRecord(node) && (node.type === "FunctionDeclaration" || node.type === "ConstructorDeclaration");
+}
+
 function collectStaticMemberDeclarations(constructorNode: AstNodeRecord, constructorName: string) {
     const declarations: Array<ConstructorStaticMemberDeclarationRecord> = [];
 
@@ -109,6 +127,7 @@ function collectStaticMemberDeclarations(constructorNode: AstNodeRecord, constru
             declarations.push({
                 constructorName,
                 declarationNode: node,
+                isCallableValue: isCallableStaticMemberValue(declaration.init),
                 memberName,
                 memberIdentifier: declaration.id
             });
