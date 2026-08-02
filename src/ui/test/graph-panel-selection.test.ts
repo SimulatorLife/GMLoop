@@ -95,6 +95,7 @@ void test("graph panel renders shared semantic-index progress in the graph page 
             current: 4,
             isRunning: true,
             logLines: ["Parsing GML files... (4/9)"],
+            operationId: "op-1",
             stage: "gml-parse",
             status: "running",
             summary: null,
