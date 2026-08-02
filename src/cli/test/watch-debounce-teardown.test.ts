@@ -42,10 +42,10 @@ import {
 } from "./test-helpers/watch-fixtures.js";
 
 /**
- * The debounce delay used by `delayFileReadRetry` (not exported from watch.ts).
- * This value matches the `TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS` constant.
+ * Use a non-default retry delay to avoid counting unrelated 25ms timers from
+ * other async teardown work in CI, while still verifying retry-timer behavior.
  */
-const TRANSIENT_RETRY_DELAY_MS = 25;
+const TRANSIENT_RETRY_DELAY_MS = 23;
 
 void describe("Watch debounce handler teardown (resource-leak regression)", () => {
     void it("cancels pending debounced handlers on SIGTERM shutdown — prevents spurious retry timers", async () => {
@@ -99,6 +99,7 @@ void describe("Watch debounce handler teardown (resource-leak regression)", () =
                             websocketServer: false,
                             statusServer: false,
                             watchFactory,
+                            transientEmptyFileReadRetryDelayMs: TRANSIENT_RETRY_DELAY_MS,
                             // Long debounce to guarantee the handler is still pending
                             // when SIGTERM fires; must not expire on its own before
                             // the signal is emitted.
