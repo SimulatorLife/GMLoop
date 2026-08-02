@@ -2249,6 +2249,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                         current: null,
                         isRunning: false,
                         logLines: Object.freeze([]),
+                        operationId: null,
                         stage: null,
                         status: "idle" as const,
                         summary: null,
@@ -2269,6 +2270,7 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                         current: null,
                         isRunning: false,
                         logLines: Object.freeze([]),
+                        operationId: null,
                         stage: null,
                         status: "idle" as const,
                         summary: null,
@@ -2281,6 +2283,13 @@ async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Prom
                     current: semanticIndex?.stage === "gml-parse" ? semanticIndex.current : null,
                     isRunning: operation.status === "running",
                     logLines: operation.messages,
+                    // Identifies which build this snapshot describes. A different
+                    // process (e.g. the LSP driving a background Tier 2 build for
+                    // the same project) can start and finish a build between two
+                    // polls; without a stable id the client can only detect
+                    // completion by observing a running->success transition itself,
+                    // which silently misses builds it never saw running.
+                    operationId: operation.id,
                     stage: semanticIndex?.stage ?? null,
                     status:
                         operation.status === "running"
