@@ -1004,6 +1004,87 @@ void test("prefer-epsilon-comparisons treats trig-builtin variables as math-sens
     assertEquals(result.output, expected);
 });
 
+void test("prefer-epsilon-comparisons inserts a separate eps declaration per function scope", () => {
+    // `var eps` is scoped to its enclosing function in GML, so a second
+    // function that also needs the rewrite must get its own declaration
+    // rather than referencing the first function's now out-of-scope `eps`.
+    const input = [
+        "function foo() {",
+        "    var actual_dist = sqr(xoff) + sqr(yoff);",
+        "    if (actual_dist == 0) {",
+        "        return false;",
+        "    }",
+        "}",
+        "",
+        "function bar() {",
+        "    var other_dist = sqr(a) + sqr(b);",
+        "    if (other_dist == 0) {",
+        "        return false;",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+    const expected = [
+        "function foo() {",
+        "    var actual_dist = sqr(xoff) + sqr(yoff);",
+        "    var eps = math_get_epsilon();",
+        "    if (actual_dist <= eps) {",
+        "        return false;",
+        "    }",
+        "}",
+        "",
+        "function bar() {",
+        "    var other_dist = sqr(a) + sqr(b);",
+        "    var eps = math_get_epsilon();",
+        "    if (other_dist <= eps) {",
+        "        return false;",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("prefer-epsilon-comparisons", input, {});
+    assertEquals(result.output, expected);
+});
+
+void test("prefer-epsilon-comparisons still inserts eps for a later function when an earlier one already declares it", () => {
+    // An existing `var eps = math_get_epsilon();` in one function must not
+    // suppress insertion of a fresh, correctly scoped declaration in a
+    // sibling function that also needs it.
+    const input = [
+        "function foo() {",
+        "    var eps = math_get_epsilon();",
+        "    var unrelated = eps * 2;",
+        "}",
+        "",
+        "function bar() {",
+        "    var other_dist = sqr(a) + sqr(b);",
+        "    if (other_dist == 0) {",
+        "        return false;",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+    const expected = [
+        "function foo() {",
+        "    var eps = math_get_epsilon();",
+        "    var unrelated = eps * 2;",
+        "}",
+        "",
+        "function bar() {",
+        "    var other_dist = sqr(a) + sqr(b);",
+        "    var eps = math_get_epsilon();",
+        "    if (other_dist <= eps) {",
+        "        return false;",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = lintWithRule("prefer-epsilon-comparisons", input, {});
+    assertEquals(result.output, expected);
+});
+
 void test("no-assignment-in-condition does not rewrite grouped multiline conditions without assignments", () => {
     const input = [
         "if ((_index == undefined)",

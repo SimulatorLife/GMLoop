@@ -139,6 +139,25 @@ function readIfZeroComparisonMatch(line: string): IfZeroComparisonMatch | null {
     });
 }
 
+// Matches a line that opens a new function body (either `function name(...) {`
+// or a method/lambda assignment such as `name = function(...) {`). GML `var`
+// locals declared inside a function are scoped to that function and are not
+// visible from sibling or outer functions, so `eps` insertion must be tracked
+// per function scope rather than once for the whole file.
+const FUNCTION_SCOPE_START_PATTERN = /\bfunction\b[^{]*\{\s*$/u;
+const EPSILON_DECLARATION_PATTERN = /^\s*var\s+eps\s*=\s*math_get_epsilon\(\)\s*;\s*$/u;
+
+function countOccurrences(line: string, character: string): number {
+    let count = 0;
+    for (const char of line) {
+        if (char === character) {
+            count += 1;
+        }
+    }
+
+    return count;
+}
+
 export function createPreferEpsilonComparisonsRule(definition: GmlRuleDefinition): Rule.RuleModule {
     return Object.freeze({
         meta: createMeta(definition),
@@ -168,44 +187,59 @@ export function createPreferEpsilonComparisonsRule(definition: GmlRuleDefinition
                         }
                     }
 
-                    const hasEpsilonDeclaration = lines.some((line) =>
-                        /^\s*var\s+eps\s*=\s*math_get_epsilon\(\)\s*;\s*$/u.test(line)
-                    );
-
                     const rewrittenLines: Array<string> = [];
-                    let insertedEpsilonDeclaration = hasEpsilonDeclaration;
+
+                    // Track whether an `eps` declaration has already been emitted for the
+                    // current function scope. Each stack entry corresponds to one nested
+                    // function body; `braceDepth` records the depth at which that entry's
+                    // scope was opened so we know when it closes and control returns to
+                    // the enclosing scope's own `insertedEpsilonDeclaration` state.
+                    const scopeStack: Array<{ braceDepth: number; insertedEpsilonDeclaration: boolean }> = [
+                        { braceDepth: 0, insertedEpsilonDeclaration: false }
+                    ];
+                    let braceDepth = 0;
+
                     for (const line of lines) {
+                        if (FUNCTION_SCOPE_START_PATTERN.test(line)) {
+                            scopeStack.push({ braceDepth, insertedEpsilonDeclaration: false });
+                        }
+
+                        const currentScope = scopeStack.at(-1);
+
+                        if (EPSILON_DECLARATION_PATTERN.test(line)) {
+                            currentScope.insertedEpsilonDeclaration = true;
+                        }
+
                         const ifZeroComparisonMatch = readIfZeroComparisonMatch(line);
-                        if (!ifZeroComparisonMatch) {
-                            rewrittenLines.push(line);
-                            continue;
-                        }
+                        if (ifZeroComparisonMatch && mathSensitiveVariables.has(ifZeroComparisonMatch.variableName)) {
+                            const { indentation, variableName, operator, suffix } = ifZeroComparisonMatch;
+                            if (operator === ">") {
+                                if (nonNegativeMathSensitiveVariables.has(variableName)) {
+                                    rewrittenLines.push(line);
+                                } else {
+                                    rewrittenLines.push(
+                                        `${indentation}if (${variableName} > math_get_epsilon())${suffix}`
+                                    );
+                                }
+                            } else {
+                                if (!currentScope.insertedEpsilonDeclaration) {
+                                    rewrittenLines.push(`${indentation}var eps = math_get_epsilon();`);
+                                    currentScope.insertedEpsilonDeclaration = true;
+                                }
 
-                        const { indentation, variableName, operator, suffix } = ifZeroComparisonMatch;
-                        if (!mathSensitiveVariables.has(variableName)) {
-                            rewrittenLines.push(line);
-                            continue;
-                        }
-
-                        if (operator === ">") {
-                            if (nonNegativeMathSensitiveVariables.has(variableName)) {
-                                rewrittenLines.push(line);
-                                continue;
+                                const zeroComparisonVariable = nonNegativeMathSensitiveVariables.has(variableName)
+                                    ? variableName
+                                    : `abs(${variableName})`;
+                                rewrittenLines.push(`${indentation}if (${zeroComparisonVariable} <= eps)${suffix}`);
                             }
-
-                            rewrittenLines.push(`${indentation}if (${variableName} > math_get_epsilon())${suffix}`);
-                            continue;
+                        } else {
+                            rewrittenLines.push(line);
                         }
 
-                        if (!insertedEpsilonDeclaration) {
-                            rewrittenLines.push(`${indentation}var eps = math_get_epsilon();`);
-                            insertedEpsilonDeclaration = true;
+                        braceDepth += countOccurrences(line, "{") - countOccurrences(line, "}");
+                        while (scopeStack.length > 1 && braceDepth <= scopeStack.at(-1).braceDepth) {
+                            scopeStack.pop();
                         }
-
-                        const zeroComparisonVariable = nonNegativeMathSensitiveVariables.has(variableName)
-                            ? variableName
-                            : `abs(${variableName})`;
-                        rewrittenLines.push(`${indentation}if (${zeroComparisonVariable} <= eps)${suffix}`);
                     }
 
                     const rewrittenText = rewrittenLines.join(lineEnding);
