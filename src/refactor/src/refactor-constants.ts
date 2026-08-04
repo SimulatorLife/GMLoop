@@ -30,6 +30,17 @@ export const RENAME_VALIDATION_CACHE_MAX_SIZE = 4096;
 export const APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT = 8;
 
 /**
+ * Maximum number of concurrent I/O operations when running a single-file text
+ * codemod (e.g. scientificNotation, loopLengthHoisting) across many files.
+ * Each file is read, transformed, and optionally written independently, so
+ * bounding concurrency lets slow disk I/O overlap across files instead of
+ * serializing one read/transform/write cycle at a time.
+ *
+ * @default 8
+ */
+export const SINGLE_FILE_TEXT_CODEMOD_IO_CONCURRENCY_LIMIT = 8;
+
+/**
  * Minimum number of file entries to allocate in the codemod read-through cache.
  * The cache size is dynamically sized based on the project file count, but
  * will never fall below this floor to ensure meaningful caching for small projects.
