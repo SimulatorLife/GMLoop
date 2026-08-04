@@ -1,1 +1,1 @@
-export { loadFixtureProjectConfig } from "./load-fixture-project-config.js";
+export { FIXTURE_COMPARISONS, loadFixtureProjectConfig } from "./load-fixture-project-config.js";
