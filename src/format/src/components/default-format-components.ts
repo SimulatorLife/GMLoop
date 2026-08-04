@@ -61,6 +61,7 @@ const DEFAULT_PRETTIER_OPTIONS: GmlFormatPrettierDefaults = Object.freeze(
 export const defaultGmlFormatProvider: GmlFormatProvider = Object.freeze({
     components: gmlFormatComponents,
     prettierDefaults: DEFAULT_PRETTIER_OPTIONS,
+    formatSource: defaultGmlFormatAdapterResolver.resolveSourceFormatter(),
     normalizeFormattedOutput: defaultGmlFormatAdapterResolver.resolveNormalizeFormattedOutput()
 });
 
