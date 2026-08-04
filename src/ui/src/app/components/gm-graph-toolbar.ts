@@ -2,22 +2,6 @@ import { html } from "lit";
 
 import type { GraphVisualizationProjectWorkflow } from "../../graph/index.js";
 import { type GraphVisualizationUiModel, hasLoadedGraphIndex, hasLoadedGraphProject } from "../contracts.js";
-import { LIVE_RELOAD_RUNTIME_TAB_TARGET, resolveLiveReloadRuntimeUrl } from "../live-reload-runtime-tab.js";
-import type {
-    GraphVisualizationUiDocsView,
-    GraphVisualizationUiPage,
-    GraphVisualizationUiState
-} from "../state/types.js";
-import { createGraphVisualizationDocsPanelContent } from "./docs-panel-content.js";
-import {
-    createSearchResultSummary,
-    normalizeCatalogSearchQuery,
-    searchCatalogEntries,
-    searchCliEntries,
-    searchLspEntries,
-    searchMcpEntries
-} from "./docs-search.js";
-import { EventBusManager } from "./event-bus-mixin.js";
 import {
     GRAPH_UI_EVENT_CONFIG_DRAFT_CHANGED,
     GRAPH_UI_EVENT_CYCLE_LABEL_MODE,
@@ -38,7 +22,23 @@ import {
     type GraphUiSetDocsViewDetail,
     type GraphUiSetSearchQueryDetail,
     type GraphUiTriggerFixDetail
-} from "./events.js";
+} from "../events/events.js";
+import { LIVE_RELOAD_RUNTIME_TAB_TARGET, resolveLiveReloadRuntimeUrl } from "../live-reload-runtime-tab.js";
+import type {
+    GraphVisualizationUiDocsView,
+    GraphVisualizationUiPage,
+    GraphVisualizationUiState
+} from "../state/types.js";
+import { createGraphVisualizationDocsPanelContent } from "./docs-panel-content.js";
+import {
+    createSearchResultSummary,
+    normalizeCatalogSearchQuery,
+    searchCatalogEntries,
+    searchCliEntries,
+    searchLspEntries,
+    searchMcpEntries
+} from "./docs-search.js";
+import { EventBusManager } from "./event-bus-mixin.js";
 import type { GmConfigPanel } from "./gm-config-panel.js";
 import {
     evaluateToolbarKeyboardShortcut,
