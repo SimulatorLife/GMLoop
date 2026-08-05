@@ -189,14 +189,19 @@ void test("IdentifierCacheManager invalidateScopes removes only entries for the 
 void test("IdentifierCacheManager accepts Infinity for maxScopesPerName to disable per-name eviction", () => {
     const cache = new IdentifierCacheManager({ maxTrackedNames: 2, maxScopesPerName: Infinity });
 
-    // Add many scopes for a single name — with Infinity, no per-name eviction occurs.
-    for (let i = 0; i < 10; i++) {
+    // Write well over the default cap (64) to confirm `Infinity` is preserved
+    // as the documented "disable per-name eviction entirely" sentinel rather
+    // than silently coerced to the default. With the previous coercion the
+    // 65th scope entry would evict the oldest one and this loop would expose
+    // the regression.
+    const scopeCount = 100;
+    for (let i = 0; i < scopeCount; i++) {
         cache.write("shared-name", `scope-${i}`, null);
     }
 
-    // All 10 scope entries for "shared-name" should be retained because
-    // maxScopesPerName is Infinity (per-name eviction disabled).
-    for (let i = 0; i < 10; i++) {
+    // Every scope entry should survive because per-name eviction is disabled.
+    for (let i = 0; i < scopeCount; i++) {
         assert.strictEqual(cache.read("shared-name", `scope-${i}`), null);
     }
+    assert.strictEqual(cache.countRetainedEntries(), scopeCount);
 });

@@ -209,7 +209,7 @@ export function matchLengthdirReassignment(expression: any, identifierName: stri
     }
 
     const functionName = Core.getUnwrappedIdentifierName(callExpression.object);
-    if (functionName !== "lengthdir_x") {
+    if (functionName !== "lengthdir_x" && functionName !== "lengthdir_y") {
         return null;
     }
 
