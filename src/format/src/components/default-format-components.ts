@@ -1,5 +1,3 @@
-import { Core } from "@gmloop/core";
-
 import {
     defaultGmlFormatAdapterResolver,
     type GmlFormatAdapterResolver,
@@ -69,6 +67,13 @@ export function createDefaultGmlFormatComponents(
 ): GmlFormatComponentBundle {
     const adapters = resolver.resolveAdapters();
     const logicalOperatorsStyle = adapters.LogicalOperatorsStyle;
+    // Source the comment-classification predicates (`Printer.isBlockComment`,
+    // `Printer.canAttachComment`) through the resolver rather than reaching
+    // into `@gmloop/core` directly. The dependency-inversion seam keeps the
+    // high-level glue free of low-level adapter imports so embedders and
+    // tests can substitute alternative predicates through the same seam that
+    // already governs the parser, printer, and comment handlers.
+    const commentPredicates = resolver.resolveCommentPredicates();
 
     return {
         parsers: {
@@ -77,15 +82,8 @@ export function createDefaultGmlFormatComponents(
         printers: {
             "gml-ast": {
                 print: adapters.print,
-                // Delegate the comment-classification predicates to the
-                // canonical helpers owned by `@gmloop/core`. Centralising
-                // these rules keeps the high-level Prettier wiring free of
-                // ad-hoc AST shape checks and lets any embedded consumer
-                // (or test) override the boundaries through the same
-                // dependency-inversion seam that already governs the
-                // parser, printer, and comment handlers.
-                isBlockComment: Core.isBlockComment,
-                canAttachComment: Core.canAttachComment,
+                isBlockComment: commentPredicates.isBlockComment,
+                canAttachComment: commentPredicates.canAttachComment,
                 printComment: adapters.printComment,
                 handleComments: adapters.handleComments
             }
