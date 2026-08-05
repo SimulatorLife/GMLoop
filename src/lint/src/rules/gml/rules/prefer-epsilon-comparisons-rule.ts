@@ -1,8 +1,7 @@
-import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import type { GmlRuleDefinition } from "../index.js";
-import { createMeta, reportFullTextRewrite } from "../rule-base-helpers.js";
+import { createMeta, reportFullTextRewrite, rewriteSourceText } from "../rule-base-helpers.js";
 
 // GML built-in functions whose result is a floating-point value subject to
 // rounding error. Any variable whose initializer calls one of these functions
@@ -165,87 +164,103 @@ export function createPreferEpsilonComparisonsRule(definition: GmlRuleDefinition
             return Object.freeze({
                 Program() {
                     const sourceText = context.sourceCode.text;
-                    const lineEnding = Core.dominantLineEnding(sourceText);
-                    const lines = sourceText.split(/\r?\n/u);
-                    const mathSensitiveVariables = new Set<string>();
-                    const nonNegativeMathSensitiveVariables = new Set<string>();
-
-                    for (const line of lines) {
-                        const declarationMatch = /^\s*var\s+([A-Za-z_]\w*)\s*=\s*(.+?);\s*$/u.exec(line);
-                        if (!declarationMatch) {
-                            continue;
-                        }
-
-                        const variableName = declarationMatch[1] ?? "";
-                        const expression = declarationMatch[2] ?? "";
-                        const functionNames = readMathSensitiveFunctionNames(expression);
-                        if (functionNames.length > 0) {
-                            mathSensitiveVariables.add(variableName);
-                            if (expressionIsKnownNonNegativeMath(expression, functionNames)) {
-                                nonNegativeMathSensitiveVariables.add(variableName);
-                            }
-                        }
-                    }
-
-                    const rewrittenLines: Array<string> = [];
-
-                    // Track whether an `eps` declaration has already been emitted for the
-                    // current function scope. Each stack entry corresponds to one nested
-                    // function body; `braceDepth` records the depth at which that entry's
-                    // scope was opened so we know when it closes and control returns to
-                    // the enclosing scope's own `insertedEpsilonDeclaration` state.
-                    const scopeStack: Array<{ braceDepth: number; insertedEpsilonDeclaration: boolean }> = [
-                        { braceDepth: 0, insertedEpsilonDeclaration: false }
-                    ];
-                    let braceDepth = 0;
-
-                    for (const line of lines) {
-                        if (FUNCTION_SCOPE_START_PATTERN.test(line)) {
-                            scopeStack.push({ braceDepth, insertedEpsilonDeclaration: false });
-                        }
-
-                        const currentScope = scopeStack.at(-1);
-
-                        if (EPSILON_DECLARATION_PATTERN.test(line)) {
-                            currentScope.insertedEpsilonDeclaration = true;
-                        }
-
-                        const ifZeroComparisonMatch = readIfZeroComparisonMatch(line);
-                        if (ifZeroComparisonMatch && mathSensitiveVariables.has(ifZeroComparisonMatch.variableName)) {
-                            const { indentation, variableName, operator, suffix } = ifZeroComparisonMatch;
-                            if (operator === ">") {
-                                if (nonNegativeMathSensitiveVariables.has(variableName)) {
-                                    rewrittenLines.push(line);
-                                } else {
-                                    rewrittenLines.push(
-                                        `${indentation}if (${variableName} > math_get_epsilon())${suffix}`
-                                    );
-                                }
-                            } else {
-                                if (!currentScope.insertedEpsilonDeclaration) {
-                                    rewrittenLines.push(`${indentation}var eps = math_get_epsilon();`);
-                                    currentScope.insertedEpsilonDeclaration = true;
-                                }
-
-                                const zeroComparisonVariable = nonNegativeMathSensitiveVariables.has(variableName)
-                                    ? variableName
-                                    : `abs(${variableName})`;
-                                rewrittenLines.push(`${indentation}if (${zeroComparisonVariable} <= eps)${suffix}`);
-                            }
-                        } else {
-                            rewrittenLines.push(line);
-                        }
-
-                        braceDepth += countOccurrences(line, "{") - countOccurrences(line, "}");
-                        while (scopeStack.length > 1 && braceDepth <= scopeStack.at(-1).braceDepth) {
-                            scopeStack.pop();
-                        }
-                    }
-
-                    const rewrittenText = rewrittenLines.join(lineEnding);
+                    const rewrittenText = rewriteSourceText(sourceText, rewriteEpsilonComparisonLines);
                     reportFullTextRewrite(context, definition.messageId, sourceText, rewrittenText);
                 }
             });
         }
     });
+}
+
+/**
+ * Applies the epsilon-comparison rewrite to a sequence of source lines.
+ *
+ * Runs two passes over `sourceLines`:
+ *  1. Collect every `var X = mathFn(...);` declaration whose initializer calls
+ *     a math-sensitive builtin; record the variable name and whether its
+ *     result is known to be non-negative.
+ *  2. Rewrite every `if (var == 0) {` and `if (var > 0) {` line whose target
+ *     was collected in pass 1, inserting an `eps = math_get_epsilon()`
+ *     declaration at the start of the enclosing function scope when no such
+ *     declaration already exists.
+ *
+ * Pass 2 tracks brace depth and an explicit scope stack so the inserted
+ * `eps` declaration is scoped to the function body that owns the rewritten
+ * check rather than the file as a whole.
+ */
+function rewriteEpsilonComparisonLines(sourceLines: ReadonlyArray<string>): ReadonlyArray<string> {
+    const mathSensitiveVariables = new Set<string>();
+    const nonNegativeMathSensitiveVariables = new Set<string>();
+
+    for (const line of sourceLines) {
+        const declarationMatch = /^\s*var\s+([A-Za-z_]\w*)\s*=\s*(.+?);\s*$/u.exec(line);
+        if (!declarationMatch) {
+            continue;
+        }
+
+        const variableName = declarationMatch[1] ?? "";
+        const expression = declarationMatch[2] ?? "";
+        const functionNames = readMathSensitiveFunctionNames(expression);
+        if (functionNames.length > 0) {
+            mathSensitiveVariables.add(variableName);
+            if (expressionIsKnownNonNegativeMath(expression, functionNames)) {
+                nonNegativeMathSensitiveVariables.add(variableName);
+            }
+        }
+    }
+
+    const rewrittenLines: Array<string> = [];
+
+    // Track whether an `eps` declaration has already been emitted for the
+    // current function scope. Each stack entry corresponds to one nested
+    // function body; `braceDepth` records the depth at which that entry's
+    // scope was opened so we know when it closes and control returns to the
+    // enclosing scope's own `insertedEpsilonDeclaration` state.
+    const scopeStack: Array<{ braceDepth: number; insertedEpsilonDeclaration: boolean }> = [
+        { braceDepth: 0, insertedEpsilonDeclaration: false }
+    ];
+    let braceDepth = 0;
+
+    for (const line of sourceLines) {
+        if (FUNCTION_SCOPE_START_PATTERN.test(line)) {
+            scopeStack.push({ braceDepth, insertedEpsilonDeclaration: false });
+        }
+
+        const currentScope = scopeStack.at(-1);
+
+        if (EPSILON_DECLARATION_PATTERN.test(line)) {
+            currentScope.insertedEpsilonDeclaration = true;
+        }
+
+        const ifZeroComparisonMatch = readIfZeroComparisonMatch(line);
+        if (ifZeroComparisonMatch && mathSensitiveVariables.has(ifZeroComparisonMatch.variableName)) {
+            const { indentation, variableName, operator, suffix } = ifZeroComparisonMatch;
+            if (operator === ">") {
+                if (nonNegativeMathSensitiveVariables.has(variableName)) {
+                    rewrittenLines.push(line);
+                } else {
+                    rewrittenLines.push(`${indentation}if (${variableName} > math_get_epsilon())${suffix}`);
+                }
+            } else {
+                if (!currentScope.insertedEpsilonDeclaration) {
+                    rewrittenLines.push(`${indentation}var eps = math_get_epsilon();`);
+                    currentScope.insertedEpsilonDeclaration = true;
+                }
+
+                const zeroComparisonVariable = nonNegativeMathSensitiveVariables.has(variableName)
+                    ? variableName
+                    : `abs(${variableName})`;
+                rewrittenLines.push(`${indentation}if (${zeroComparisonVariable} <= eps)${suffix}`);
+            }
+        } else {
+            rewrittenLines.push(line);
+        }
+
+        braceDepth += countOccurrences(line, "{") - countOccurrences(line, "}");
+        while (scopeStack.length > 1 && braceDepth <= scopeStack.at(-1).braceDepth) {
+            scopeStack.pop();
+        }
+    }
+
+    return rewrittenLines;
 }
