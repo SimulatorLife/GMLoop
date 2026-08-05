@@ -136,6 +136,27 @@ export type IdentifierCacheContract = IdentifierCacheReader &
  * on the narrow role they actually use; see {@link IdentifierCacheContract}
  * for the full composite shape.
  */
+
+/**
+ * Resolve the per-name scope cap, preserving `Infinity` as the documented
+ * "disable per-name eviction" sentinel.
+ *
+ * `Core.coercePositiveIntegerOption` collapses any non-finite input — including
+ * `Infinity` — back to the default, which silently re-enabled eviction for
+ * callers who followed the documented contract. This helper explicitly returns
+ * `Infinity` when the caller passed it so the `write()` cap check
+ * (`scopeResults.size >= this.maxScopesPerName`) never triggers, matching the
+ * "disable per-name eviction entirely" promise above. Non-positive numbers
+ * still fall back to the supplied default; `NaN`, objects, and other invalid
+ * inputs also fall back to the default to mirror the surrounding helpers.
+ */
+function resolveMaxScopesPerName(value: unknown, defaultValue: number): number {
+    if (value === Number.POSITIVE_INFINITY) {
+        return Number.POSITIVE_INFINITY;
+    }
+    return Core.coercePositiveIntegerOption(value, defaultValue);
+}
+
 export class IdentifierCacheManager
     implements IdentifierCacheReader, IdentifierCacheWriter, IdentifierCacheInvalidator, IdentifierCacheDiagnostics
 {
@@ -156,7 +177,7 @@ export class IdentifierCacheManager
 
     constructor(options: { maxTrackedNames?: number; maxScopesPerName?: number } = {}) {
         this.maxTrackedNames = Core.coercePositiveIntegerOption(options.maxTrackedNames, 4000);
-        this.maxScopesPerName = Core.coercePositiveIntegerOption(options.maxScopesPerName, 64);
+        this.maxScopesPerName = resolveMaxScopesPerName(options.maxScopesPerName, 64);
     }
 
     /**
