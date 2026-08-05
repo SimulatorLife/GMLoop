@@ -2,29 +2,29 @@ import { html, svg } from "lit";
 
 import {
     buildGraphEdgeBatches,
+    createGraphLayout,
     createGraphRenderBounds,
     cullGraphLayoutToViewport,
-    type GraphViewportBounds,
-    isGraphViewportCovered,
-    shouldBatchGraphEdges,
-    shouldRenderGraphLabels
-} from "../../graph/graph-render-viewport.js";
-import { projectGraphLayoutForSemanticZoom, resolveGraphSemanticZoomLevel } from "../../graph/graph-semantic-zoom.js";
-import { EDGE_LINE_VISUAL_STYLES, NODE_VISUAL_STYLES } from "../../graph/graph-visualization-style-metadata.js";
-import {
-    createGraphLayout,
+    EDGE_LINE_VISUAL_STYLES,
     filterGraphLayoutForDisplay,
     type GraphLayout,
     type GraphLayoutNode,
     type GraphLegendNodeKind,
     type GraphNodeKindLegendItem,
+    type GraphViewportBounds,
     type GraphVisualizationEdgeType,
     type GraphVisualizationGraphIndexBuildSummary,
     type GraphVisualizationNodeKind,
+    isGraphViewportCovered,
     listGraphEdgeTypes,
     listGraphNodeKindLegendItems,
     listGraphNodeKinds,
-    resolveEffectiveGraphNodeKinds
+    NODE_VISUAL_STYLES,
+    projectGraphLayoutForSemanticZoom,
+    resolveEffectiveGraphNodeKinds,
+    resolveGraphSemanticZoomLevel,
+    shouldBatchGraphEdges,
+    shouldRenderGraphLabels
 } from "../../graph/index.js";
 import {
     type GraphVisualizationUiModel,
