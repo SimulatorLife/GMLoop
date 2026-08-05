@@ -353,10 +353,6 @@ function isIdentifierTokenAt(sourceText: string, startIndex: number, identifierN
     );
 }
 
-function escapeRegExpLiteral(value: string): string {
-    return value.replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`);
-}
-
 function createIdentifierTokenOccurrence(parameters: {
     sourceText: string | null;
     filePath: string;
@@ -2360,7 +2356,7 @@ export class GmlSemanticBridge {
         }
 
         const functionDeclarationPattern = new RegExp(
-            String.raw`\bfunction\s+${escapeRegExpLiteral(resource.name)}\s*\(`,
+            String.raw`\bfunction\s+${Core.escapeRegExp(resource.name)}\s*\(`,
             "u"
         );
         const match = functionDeclarationPattern.exec(sourceText);
