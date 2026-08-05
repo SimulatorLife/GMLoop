@@ -5,7 +5,7 @@
  * consumers can register the formatter without reaching into internal modules.
  */
 
-import prettier, { type SupportLanguage, type SupportOptions } from "prettier";
+import type { Options as PrettierOptions, SupportLanguage, SupportOptions } from "prettier";
 
 import {
     defaultGmlFormatProvider,
@@ -51,9 +51,10 @@ function createDefaultOptions(provider: GmlFormatProvider): GmlFormatDefaultOpti
  * Create a GML Prettier plugin from an abstract formatter provider.
  *
  * The provider boundary keeps orchestration code independent from concrete
- * parser, printer, comment, and output-normalization adapters. Default runtime
- * exports call this factory with the canonical provider, while tests can inject
- * a provider to verify the high-level plugin only depends on the abstraction.
+ * parser, printer, comment, Prettier runtime, and output-normalization adapters.
+ * Default runtime exports call this factory with the canonical provider, while
+ * tests can inject a provider to verify the high-level plugin only depends on
+ * the abstraction.
  */
 export function createGmlFormat(provider: GmlFormatProvider = defaultGmlFormatProvider): GmlFormat {
     const rawDefaultOptions = createDefaultOptions(provider);
@@ -72,24 +73,25 @@ export function createGmlFormat(provider: GmlFormatProvider = defaultGmlFormatPr
         /**
          * Utility function and entry point to format GML source code.
          *
-         * This is a thin, deterministic wrapper around `prettier.format()` using the
-         * GML plugin. It must not inspect `source` to patch the result — doing so
-         * would make formatting non-deterministic (same logical structure, different
-         * source text → different output), violating target-state.md §3.2.
+         * This is a thin, deterministic wrapper around the injected Prettier
+         * runtime using the GML plugin. It must not inspect `source` to patch the
+         * result — doing so would make formatting non-deterministic (same logical
+         * structure, different source text → different output), violating
+         * target-state.md §3.2.
          *
          * Post-processing that normalises whitespace-only layout details (blank-line
          * collapsing, trailing-newline normalisation, etc.) belongs in
          * `normalizeFormattedOutput`, which operates solely on the already-formatted
          * string and therefore remains deterministic.
          */
-        async format(source: string, options: SupportOptions = {}) {
-            const prettierFormatOptions: Record<string, unknown> = {
+        async format(source: string, options: PrettierOptions = {}) {
+            const prettierFormatOptions: PrettierOptions = {
                 ...options,
                 parser: "gml-parse",
                 plugins: [plugin]
             };
 
-            const formatted = await prettier.format(source, prettierFormatOptions);
+            const formatted = await provider.formatSource(source, prettierFormatOptions);
 
             if (typeof formatted !== "string") {
                 throw new TypeError("Expected Prettier to return a string result.");
