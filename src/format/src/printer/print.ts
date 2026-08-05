@@ -557,8 +557,18 @@ function printArrayExpressionNode(node, path, options, print) {
     );
 }
 
+// `printNewExpressionNode` is exported at the bottom of this module for use
+// by the `print-new-expression-arguments-null-guard` regression test, which
+// exercises the malformed-`arguments` branches directly via synthetic AstPath
+// fixtures rather than going through full `Format.format()`.
 function printNewExpressionNode(node, path, options, print) {
-    if (node.arguments.length === 0) {
+    // Defensive guard: a malformed `NewExpression` (for example, a synthetic
+    // node produced during normalization or a partial fixture) may leave
+    // `arguments` as `null` or `undefined`. Mirrors the guard added to
+    // `printCallExpressionNode`/`buildCallLikeArgumentDocs` so the format
+    // pass never aborts with `TypeError: Cannot read properties of
+    // undefined (reading 'length')` on a missing array property.
+    if (!Array.isArray(node.arguments) || node.arguments.length === 0) {
         return concat(["new ", print("expression"), printEmptyParens(path, options)]);
     }
 
@@ -1549,3 +1559,12 @@ function buildIfAlternateDoc(path, options, print, node) {
 }
 
 export { clearStructArgumentBreakCache } from "./call-argument-layout.js";
+
+// Exported exclusively for the malformed-`arguments` regression test that
+// exercises the guard on `printNewExpressionNode`. Mirrors the pattern used
+// for `printInBlock`: a printer-internal helper is intentionally reachable
+// from the test harness so a future regression that re-introduces a direct
+// `node.arguments.length` dereference on a possibly-undefined value can be
+// pinned to a single, localised test failure instead of cascading through
+// the format pipeline.
+export { printNewExpressionNode };
