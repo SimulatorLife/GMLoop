@@ -16,7 +16,7 @@ void test("buildNoMatchingFilesMessage reports ignored directory matches", () =>
         extensions: [".gml"],
         ignoredFilesSkipped: true,
         gmlExtension: ".gml",
-        cliExample: "pnpm dlx gmloop format path/to/project",
+        cliExample: "pnpm dlx gmloop format --path path/to/project",
         workspaceExample: "pnpm run format:gml -- path/to/project"
     });
 
@@ -33,13 +33,13 @@ void test("buildWriteModeSummaryMessage includes examples for current working di
         targetPath: ".",
         targetIsDirectory: true,
         targetPathProvided: false,
-        cliExample: "pnpm dlx gmloop format path/to/project",
+        cliExample: "pnpm dlx gmloop format --path path/to/project",
         workspaceExample: "pnpm run format:gml -- path/to/project"
     });
 
     assert.strictEqual(
         message,
-        "Formatted 2 files found in the current working directory (.). For example: pnpm dlx gmloop format path/to/project or pnpm run format:gml -- path/to/project."
+        "Formatted 2 files found in the current working directory (.). For example: pnpm dlx gmloop format --path path/to/project or pnpm run format:gml -- path/to/project."
     );
 });
 

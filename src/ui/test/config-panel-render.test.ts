@@ -4,11 +4,11 @@ import test from "node:test";
 
 import type { PropertyValues } from "lit";
 
-import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, GRAPH_UI_EVENT_SAVE_CONFIG } from "../src/app/components/events.js";
 import { GmAppShell } from "../src/app/components/gm-app-shell.js";
 import { GmConfigPanel } from "../src/app/components/gm-config-panel.js";
 import { GmGraphToolbar } from "../src/app/components/gm-graph-toolbar.js";
 import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, GRAPH_UI_EVENT_SAVE_CONFIG } from "../src/app/events/events.js";
 import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
