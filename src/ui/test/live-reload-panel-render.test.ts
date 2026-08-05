@@ -1,17 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { GmAppShell, GmGraphToolbar, GmLiveReloadPanel } from "../src/app/components/index.js";
+import type { GraphVisualizationFixRunResult, GraphVisualizationUiModel } from "../src/app/contracts.js";
 import {
-    GmAppShell,
-    GmGraphToolbar,
-    GmLiveReloadPanel,
     GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
     GRAPH_UI_EVENT_LIVE_RELOAD_STATUS_CHANGED,
     GRAPH_UI_EVENT_TRIGGER_FIX,
     GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD,
     GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD
-} from "../src/app/components/index.js";
-import type { GraphVisualizationFixRunResult, GraphVisualizationUiModel } from "../src/app/contracts.js";
+} from "../src/app/events/events.js";
 import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import type { GraphVisualizationLiveReloadStatusSnapshot } from "../src/graph/types.js";
