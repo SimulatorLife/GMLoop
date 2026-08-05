@@ -7,6 +7,7 @@ import type {
 const ROOT_HIERARCHY_RADIUS = 320;
 const SECOND_LEVEL_HIERARCHY_RADIUS = 150;
 const DEEP_HIERARCHY_RADIUS = 95;
+const AUXILIARY_ROOT_RADIUS = 720;
 
 export const PROMOTABLE_HIERARCHY_EDGE_TYPES = new Set<GraphVisualizationEdgeType>(["contains", "defines"]);
 
@@ -34,7 +35,15 @@ export function buildGraphHierarchy(
         }
     }
 
-    const projectNodes = nodes.filter((node) => node.kind === "project");
+    // Keep the actual game/project root first. The graph can also contain a toolset
+    // project node, and downstream centering intentionally anchors to projectNodes[0].
+    const projectNodes = nodes
+        .filter((node) => node.kind === "project")
+        .toSorted((left, right) => {
+            const leftPriority = left.graphId === "project" ? 0 : 1;
+            const rightPriority = right.graphId === "project" ? 0 : 1;
+            return leftPriority - rightPriority || left.id.localeCompare(right.id);
+        });
     const defaultParentId = projectNodes.length > 0 ? projectNodes[0].id : null;
     for (const node of nodes) {
         if (node.kind !== "project" && !parentMap.has(node.id) && defaultParentId && node.id !== defaultParentId) {
@@ -63,9 +72,26 @@ export function seedInitialGraphPositions(
 ): Map<string, InitialGraphPosition> {
     const initialPositions = new Map<string, InitialGraphPosition>();
     const visitedNodeIds = new Set<string>();
+    const primaryProjectNode = hierarchy.projectNodes[0];
 
-    for (const projectNode of hierarchy.projectNodes) {
-        layoutHierarchyBranch(projectNode.id, 0, 0, null, 0, hierarchy, initialPositions, visitedNodeIds);
+    if (primaryProjectNode) {
+        layoutHierarchyBranch(primaryProjectNode.id, 0, 0, null, 0, hierarchy, initialPositions, visitedNodeIds);
+    }
+
+    const auxiliaryProjectNodes = hierarchy.projectNodes.slice(1);
+    for (let index = 0; index < auxiliaryProjectNodes.length; index++) {
+        const projectNode = auxiliaryProjectNodes[index];
+        const theta = Math.PI + (index / Math.max(1, auxiliaryProjectNodes.length)) * Math.PI * 2;
+        layoutHierarchyBranch(
+            projectNode.id,
+            Math.cos(theta) * AUXILIARY_ROOT_RADIUS,
+            Math.sin(theta) * AUXILIARY_ROOT_RADIUS,
+            theta,
+            0,
+            hierarchy,
+            initialPositions,
+            visitedNodeIds
+        );
     }
 
     for (const node of nodes) {
@@ -139,6 +165,18 @@ function getInitialHierarchyPosition(
     const siblings = parentId ? (hierarchy.childrenMap.get(parentId) ?? []) : [];
     const index = siblings.indexOf(nodeId);
     const count = siblings.length;
+
+    // Direct children of the game/project root should surround it instead of
+    // occupying a narrow forward arc. This keeps the root visually central and
+    // gives top-level branches distinct radial lanes before force refinement.
+    if (depth === 1) {
+        const theta = count > 1 ? (index / count) * Math.PI * 2 : parentActualAngle;
+        return {
+            angle: theta,
+            x: parentX + Math.cos(theta) * radius,
+            y: parentY + Math.sin(theta) * radius
+        };
+    }
 
     if (parentAngle === null) {
         const theta = count > 1 ? (index / count) * Math.PI * 2 : 0;
