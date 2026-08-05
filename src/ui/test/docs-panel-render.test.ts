@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "../src/app/components/events.js";
 import { GmDocsPanel } from "../src/app/components/gm-docs-panel.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "../src/app/events/events.js";
 import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import type { GraphVisualizationDocumentationCatalogs } from "../src/graph/types.js";

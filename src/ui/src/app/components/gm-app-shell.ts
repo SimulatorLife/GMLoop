@@ -9,18 +9,6 @@ import {
     hasLoadedGraphProject
 } from "../contracts.js";
 import { getUiErrorMessage } from "../error-message.js";
-import { createInitialFixWorkflowLogLines, createRunningFixWorkflowLogLines } from "../fix-workflow-progress.js";
-import { GraphVisualizationUiStore } from "../state/store.js";
-import type {
-    GraphVisualizationUiDocsView,
-    GraphVisualizationUiPage,
-    GraphVisualizationUiState
-} from "../state/types.js";
-import {
-    readGraphVisualizationUiStateFromCurrentUrl,
-    replaceGraphVisualizationUiStateInCurrentUrl
-} from "../state/url-state.js";
-import { EventBusManager } from "./event-bus-mixin.js";
 import {
     GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
     GRAPH_UI_EVENT_CYCLE_LABEL_MODE,
@@ -49,7 +37,19 @@ import {
     type GraphUiSetAutoGameSkillEnabledDetail,
     type GraphUiSetConfigViewDetail,
     type GraphUiTriggerFixDetail
-} from "./events.js";
+} from "../events/events.js";
+import { createInitialFixWorkflowLogLines, createRunningFixWorkflowLogLines } from "../fix-workflow-progress.js";
+import { GraphVisualizationUiStore } from "../state/store.js";
+import type {
+    GraphVisualizationUiDocsView,
+    GraphVisualizationUiPage,
+    GraphVisualizationUiState
+} from "../state/types.js";
+import {
+    readGraphVisualizationUiStateFromCurrentUrl,
+    replaceGraphVisualizationUiStateInCurrentUrl
+} from "../state/url-state.js";
+import { EventBusManager } from "./event-bus-mixin.js";
 import { FixWorkflowReconnectParticipant } from "./fix-workflow-reconnect-participant.js";
 import { GraphIndexProgressParticipant } from "./graph-index-progress-participant.js";
 import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
