@@ -6,6 +6,7 @@ import type {
     GraphVisualizationMcpToolCatalogEntry
 } from "../../graph/index.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "../events/events.js";
 import type { GraphVisualizationUiDocsView, GraphVisualizationUiState } from "../state/types.js";
 import {
     createGraphVisualizationDocsPanelContent,
@@ -20,7 +21,6 @@ import {
     searchMcpEntries
 } from "./docs-search.js";
 import { EventBusManager } from "./event-bus-mixin.js";
-import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "./events.js";
 import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
