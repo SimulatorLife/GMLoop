@@ -3,9 +3,9 @@ import test from "node:test";
 
 import type { PropertyValues } from "lit";
 
-import { GRAPH_UI_EVENT_NAVIGATE_PAGE } from "../src/app/components/events.js";
 import { GmAppShell } from "../src/app/components/gm-app-shell.js";
 import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
+import { GRAPH_UI_EVENT_NAVIGATE_PAGE } from "../src/app/events/events.js";
 
 class TestableGmAppShell extends GmAppShell {
     // Tests drive navigation directly through the store and never render the
