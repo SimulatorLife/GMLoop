@@ -178,15 +178,9 @@ importers:
 
   src/cli:
     dependencies:
-      '@gmloop/agent-pack':
-        specifier: workspace:*
-        version: link:../agent-pack
       '@gmloop/core':
         specifier: workspace:*
         version: link:../core
-      '@gmloop/fixture-runner':
-        specifier: workspace:*
-        version: link:../fixture-runner
       '@gmloop/format':
         specifier: workspace:*
         version: link:../format
