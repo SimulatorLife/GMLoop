@@ -150,7 +150,7 @@ const logLevelOption = createEnumeratedOptionHelpers(VALID_PRETTIER_LOG_LEVELS, 
     formatError: (list) => `Must be one of: ${list}`
 });
 
-const FORMAT_COMMAND_CLI_EXAMPLE = "pnpm dlx gmloop format path/to/project";
+const FORMAT_COMMAND_CLI_EXAMPLE = "pnpm dlx gmloop format --path path/to/project";
 const FORMAT_COMMAND_WORKSPACE_EXAMPLE = "pnpm run format:gml -- path/to/project";
 const FORMAT_COMMAND_FIX_EXAMPLE = `pnpm dlx gmloop format --write --path path/to/script${GML_EXTENSION}`;
 
