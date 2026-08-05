@@ -117,12 +117,10 @@ void test("edge batching groups relationships by visual type without degrading s
     ]);
 
     assert.deepEqual(
-        batches
-            .map((batch) => ({ edgeCount: batch.edgeCount, type: batch.type }))
-            .toSorted((left, right) => left.type.localeCompare(right.type)),
+        batches.map((batch) => ({ edgeCount: batch.edgeCount, type: batch.type })),
         [
-            { edgeCount: 1, type: "calls" },
-            { edgeCount: 2, type: "references" }
+            { edgeCount: 2, type: "references" },
+            { edgeCount: 1, type: "calls" }
         ]
     );
     assert.ok(batches.every((batch) => batch.pathData.length > 0));
