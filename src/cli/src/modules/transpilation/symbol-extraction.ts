@@ -119,6 +119,65 @@ function extractBindingNames(node: string | AstNode | null | undefined): Array<s
     return [];
 }
 
+/**
+ * AST properties that hold a single nested node which may itself contain
+ * function definitions, call expressions, or scope-affecting bindings.
+ * Includes SwitchStatement.discriminant, ForStatement.update, and
+ * TryStatement.block/handler/finalizer, none of which map to `body`.
+ */
+const CHILD_NODE_PROPERTIES = [
+    "init",
+    "left",
+    "right",
+    "argument",
+    "test",
+    "consequent",
+    "alternate",
+    "expression",
+    "discriminant",
+    "update",
+    "block",
+    "handler",
+    "finalizer"
+] as const;
+
+/**
+ * Visits every child AST node reachable from {@link astNode} through the
+ * traversal shape shared by the scope-binding, symbol, and reference walkers
+ * below: `body` (a statement array or a single nested node), `declarations`,
+ * the common single-node properties in {@link CHILD_NODE_PROPERTIES}, and
+ * SwitchStatement's `cases` array. Centralizing this shape keeps the three
+ * walkers in sync as GML's AST surface grows.
+ */
+function forEachChildNode(astNode: AstNode, visit: (child: unknown) => void): void {
+    if (Array.isArray(astNode.body)) {
+        for (const child of astNode.body) {
+            visit(child);
+        }
+    } else if (astNode.body !== null && astNode.body !== undefined) {
+        visit(astNode.body);
+    }
+
+    if (Array.isArray(astNode.declarations)) {
+        for (const child of astNode.declarations) {
+            visit(child);
+        }
+    }
+
+    for (const prop of CHILD_NODE_PROPERTIES) {
+        const value = astNode[prop];
+        if (value) {
+            visit(value);
+        }
+    }
+
+    if (Array.isArray(astNode.cases)) {
+        for (const switchCase of astNode.cases) {
+            visit(switchCase);
+        }
+    }
+}
+
 function walkNodeForScopeBindings(node: unknown, bindings: Set<string>): void {
     if (!node || typeof node !== "object") {
         return;
@@ -157,46 +216,7 @@ function walkNodeForScopeBindings(node: unknown, bindings: Set<string>): void {
         }
     }
 
-    if (Array.isArray(astNode.body)) {
-        for (const child of astNode.body) {
-            walkNodeForScopeBindings(child, bindings);
-        }
-    } else if (astNode.body !== null && astNode.body !== undefined) {
-        walkNodeForScopeBindings(astNode.body, bindings);
-    }
-
-    if (Array.isArray(astNode.declarations)) {
-        for (const child of astNode.declarations) {
-            walkNodeForScopeBindings(child, bindings);
-        }
-    }
-
-    for (const prop of [
-        "init",
-        "left",
-        "right",
-        "argument",
-        "test",
-        "consequent",
-        "alternate",
-        "expression",
-        "discriminant",
-        "update",
-        "block",
-        "handler",
-        "finalizer"
-    ] as const) {
-        const value = astNode[prop];
-        if (value) {
-            walkNodeForScopeBindings(value, bindings);
-        }
-    }
-
-    if (Array.isArray(astNode.cases)) {
-        for (const switchCase of astNode.cases) {
-            walkNodeForScopeBindings(switchCase, bindings);
-        }
-    }
+    forEachChildNode(astNode, (child) => walkNodeForScopeBindings(child, bindings));
 }
 
 function collectFunctionScopeBindings(functionNode: AstNode): Set<string> {
@@ -310,53 +330,7 @@ function buildWalkNode(filePath: string, symbols: Array<string>): (node: unknown
             symbols.push(...extractFromAssignment(astNode, filePath));
         }
 
-        // Recursively walk body — as a statement array (Program, BlockStatement.body)
-        // or as a nested BlockStatement node (FunctionDeclaration.body).
-        if (Array.isArray(astNode.body)) {
-            for (const child of astNode.body) {
-                walkNode(child);
-            }
-        } else if (astNode.body !== null && astNode.body !== undefined) {
-            walkNode(astNode.body);
-        }
-
-        // Recursively walk declarations array (for VariableDeclaration, etc.)
-        if (Array.isArray(astNode.declarations)) {
-            for (const child of astNode.declarations) {
-                walkNode(child);
-            }
-        }
-
-        // Walk common single-node AST properties that might contain nested function definitions.
-        // Includes: SwitchStatement.discriminant, ForStatement.update, TryStatement.block/handler/finalizer.
-        for (const prop of [
-            "init",
-            "left",
-            "right",
-            "argument",
-            "test",
-            "consequent",
-            "alternate",
-            "expression",
-            "discriminant",
-            "update",
-            "block",
-            "handler",
-            "finalizer"
-        ] as const) {
-            const value = astNode[prop];
-            if (value) {
-                walkNode(value);
-            }
-        }
-
-        // Walk SwitchStatement.cases — an array of SwitchCase nodes that is not covered
-        // by `body` or `declarations`, so it requires its own traversal step.
-        if (Array.isArray(astNode.cases)) {
-            for (const switchCase of astNode.cases) {
-                walkNode(switchCase);
-            }
-        }
+        forEachChildNode(astNode, (child) => walkNode(child));
     }
 
     return walkNode;
@@ -462,53 +436,7 @@ function walkNodeForReferences(node: unknown, references: Set<string>, locallyBo
         processCallExpressionReferences(astNode as unknown as CallExpressionNode, references, locallyBoundNames);
     }
 
-    // Recursively walk body — as a statement array (Program, BlockStatement.body)
-    // or as a nested BlockStatement node (FunctionDeclaration.body).
-    if (Array.isArray(astNode.body)) {
-        for (const child of astNode.body) {
-            walkNodeForReferences(child, references, locallyBoundNames);
-        }
-    } else if (astNode.body !== null && astNode.body !== undefined) {
-        walkNodeForReferences(astNode.body, references, locallyBoundNames);
-    }
-
-    // Recursively walk declarations array
-    if (Array.isArray(astNode.declarations)) {
-        for (const child of astNode.declarations) {
-            walkNodeForReferences(child, references, locallyBoundNames);
-        }
-    }
-
-    // Walk common single-node AST properties that may contain nested call expressions.
-    // Includes: SwitchStatement.discriminant, ForStatement.update, TryStatement.block/handler/finalizer.
-    for (const prop of [
-        "init",
-        "left",
-        "right",
-        "argument",
-        "test",
-        "consequent",
-        "alternate",
-        "expression",
-        "discriminant",
-        "update",
-        "block",
-        "handler",
-        "finalizer"
-    ] as const) {
-        const value = astNode[prop];
-        if (value) {
-            walkNodeForReferences(value, references, locallyBoundNames);
-        }
-    }
-
-    // Walk SwitchStatement.cases — an array of SwitchCase nodes that is not covered
-    // by `body` or `declarations`, so it requires its own traversal step.
-    if (Array.isArray(astNode.cases)) {
-        for (const switchCase of astNode.cases) {
-            walkNodeForReferences(switchCase, references, locallyBoundNames);
-        }
-    }
+    forEachChildNode(astNode, (child) => walkNodeForReferences(child, references, locallyBoundNames));
 }
 
 /**
