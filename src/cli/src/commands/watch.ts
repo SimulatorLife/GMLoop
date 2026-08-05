@@ -71,10 +71,6 @@ import {
     transpileFile,
     type TranspilerProvider
 } from "../modules/transpilation/index.js";
-import {
-    getRuntimePathSegments,
-    resolveScriptFileNameFromSegments
-} from "../modules/transpilation/runtime-identifiers.js";
 import { type PatchWebSocketServer, startPatchWebSocketServer } from "../modules/websocket/server.js";
 import {
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_COUNT,
@@ -100,7 +96,9 @@ import {
     computeHotReloadLatencyStats,
     countSourceLines,
     createExtensionMatcher,
+    ensureScriptNameRegistered,
     type ExtensionMatcher,
+    getScriptNameFromPath,
     hashSourceContent,
     type InitialFileData,
     readSourceFileWithTransientEmptyRetry,
@@ -1847,18 +1845,6 @@ async function readFileStats(filePath: string): Promise<Stats | null> {
         return await stat(filePath);
     } catch {
         return null;
-    }
-}
-
-function getScriptNameFromPath(filePath: string): string | null {
-    const segments = getRuntimePathSegments(filePath);
-    return resolveScriptFileNameFromSegments(segments);
-}
-
-function ensureScriptNameRegistered(filePath: string, scriptNames: Set<string>): void {
-    const scriptName = getScriptNameFromPath(filePath);
-    if (scriptName) {
-        scriptNames.add(scriptName);
     }
 }
 

@@ -766,6 +766,35 @@ export function rewriteSourceLines(
 }
 
 /**
+ * Splits `sourceText` into source-line records, applies a block-level
+ * `transform`, and rejoins the resulting line array using the dominant line
+ * ending. The transform receives the full `ReadonlyArray<string>` of source
+ * lines and returns the replacement line array in source order.
+ *
+ * This helper complements {@link rewriteSourceLines}, which operates on one
+ * line at a time. Callers that need cross-line state — for example, scanning
+ * the whole file for declarations before rewriting the lines that depend on
+ * them — pass a transform that consumes the full line array and emits the
+ * replacement set in one pass.
+ *
+ * The transform owns all line-shaping decisions (drops, merges, re-emits);
+ * the helper only handles the `Core.dominantLineEnding` lookup and the
+ * `split`/`join` mechanics so call sites read as a single delegation step.
+ *
+ * @param sourceText Full source text to rewrite.
+ * @param transform Block-level transform operating over the full line array.
+ * @returns The rewritten source text, joined with the dominant line ending.
+ */
+export function rewriteSourceText(
+    sourceText: string,
+    transform: (sourceLines: ReadonlyArray<string>) => ReadonlyArray<string>
+): string {
+    const lineEnding = Core.dominantLineEnding(sourceText);
+    const sourceLines = sourceText.split(/\r?\n/u);
+    return transform(sourceLines).join(lineEnding);
+}
+
+/**
  * Structural description of a single source line paired with its absolute
  * offset, used by lint rules that report per-line diagnostics and fixes.
  */
