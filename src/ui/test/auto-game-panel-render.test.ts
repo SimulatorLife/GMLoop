@@ -3,14 +3,14 @@ import test from "node:test";
 
 import type { PropertyValues } from "lit";
 
+import { GmAppShell } from "../src/app/components/gm-app-shell.js";
+import { GmAutoGamePanel } from "../src/app/components/gm-auto-game-panel.js";
+import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
 import {
     GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
     GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK,
     GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED
-} from "../src/app/components/events.js";
-import { GmAppShell } from "../src/app/components/gm-app-shell.js";
-import { GmAutoGamePanel } from "../src/app/components/gm-auto-game-panel.js";
-import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
+} from "../src/app/events/events.js";
 import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import { renderTemplateValue } from "./render-template-helpers.js";

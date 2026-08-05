@@ -14,7 +14,11 @@ import type {
 
 const FIXTURE_KIND_VALUES = new Set<FixtureKind>(["format", "lint", "refactor", "integration", "external-project"]);
 const FIXTURE_ASSERTION_VALUES = new Set<FixtureAssertion>(["transform", "idempotent", "project-tree", "parse-error"]);
-const FIXTURE_COMPARISON_VALUES = new Set<FixtureComparison>(["exact", "ignore-whitespace-and-line-endings"]);
+export const FIXTURE_COMPARISONS = Object.freeze({
+    EXACT: "exact",
+    IGNORE_WHITESPACE_AND_LINE_ENDINGS: "ignore-whitespace-and-line-endings"
+} as const satisfies Record<string, FixtureComparison>);
+const FIXTURE_COMPARISON_VALUES = new Set<FixtureComparison>(Object.values(FIXTURE_COMPARISONS));
 const FIXTURE_SECTION_KEYS = new Set([
     "kind",
     "assertion",
