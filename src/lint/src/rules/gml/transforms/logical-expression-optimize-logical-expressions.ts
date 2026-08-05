@@ -45,13 +45,44 @@ function processStatementListForTempReturnElimination(statements: StatementList)
         visitStatementChildrenForTempReturnElimination(statement);
     }
 
-    for (let index = 0; index < statements.length - 1; index += 1) {
-        const replacement = maybeBuildRedundantTempReturnReplacement(statements[index], statements[index + 1]);
-        if (!replacement) {
+    // Iterate over a stable snapshot of `statements` and accumulate the
+    // rewritten nodes into a fresh array, swapping it back into `statements`
+    // only when a rewrite actually occurred. The previous implementation
+    // called `statements.splice(index, 2, replacement)` inside a forward
+    // index loop, which shortened the array and re-evaluated
+    // `statements.length - 1` on every subsequent iteration. Although the
+    // replacement is a ReturnStatement that never forms a valid pair with
+    // the next sibling (so the bug never surfaced in practice), the loop's
+    // correctness relied on an implicit invariant — that the splice
+    // contract never produces a node that could pair with the shifted
+    // sibling. Walking a snapshot removes that invariant entirely: the
+    // inspection index stays aligned with the original pair positions
+    // regardless of how many slots the accumulator absorbs on each
+    // iteration, so the rewrite can no longer skip a sibling if the
+    // replacement shape ever changes.
+    const snapshot = statements.slice();
+    const rewritten: StatementList = [];
+    let changed = false;
+
+    let index = 0;
+    while (index < snapshot.length) {
+        const current = snapshot[index];
+        const next = index + 1 < snapshot.length ? snapshot[index + 1] : undefined;
+        const replacement = maybeBuildRedundantTempReturnReplacement(current, next);
+        if (replacement !== null) {
+            rewritten.push(replacement);
+            index += 2;
+            changed = true;
             continue;
         }
 
-        statements.splice(index, 2, replacement);
+        rewritten.push(current);
+        index += 1;
+    }
+
+    if (changed) {
+        statements.length = 0;
+        statements.push(...rewritten);
     }
 }
 
