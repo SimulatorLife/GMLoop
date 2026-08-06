@@ -1,8 +1,15 @@
 export * from "./graph-layout.js";
 export {
+    GRAPH_RENDER_LABEL_MODE_VALUES,
+    GRAPH_RENDER_LABEL_MODES,
+    isGraphRenderLabelMode,
+    parseGraphRenderLabelMode
+} from "./graph-render-label-modes.js";
+export {
     buildGraphEdgeBatches,
     createGraphRenderBounds,
     cullGraphLayoutToViewport,
+    type GraphRenderLabelMode,
     type GraphViewportBounds,
     isGraphViewportCovered,
     shouldBatchGraphEdges,
