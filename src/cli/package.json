@@ -23,7 +23,9 @@
     "test": "pnpm run build:types && node --disable-warning=ExperimentalWarning --test-force-exit --test dist/test/*.test.js"
   },
   "dependencies": {
+    "@gmloop/agent-pack": "workspace:*",
     "@gmloop/core": "workspace:*",
+    "@gmloop/fixture-runner": "workspace:*",
     "@gmloop/format": "workspace:*",
     "@gmloop/lint": "workspace:*",
     "@gmloop/parser": "workspace:*",
