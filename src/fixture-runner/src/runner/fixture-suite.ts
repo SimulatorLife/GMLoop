@@ -263,7 +263,7 @@ async function executeFixtureCase(
             stageTimer.getStages()
         );
         profileCollector.addEntry(profileEntry);
-        throw error;
+        throw Core.toContextualError(`Fixture ${fixtureCase.caseId} failed in ${adapter.workspaceName}`, error);
     } finally {
         if (workingProjectDirectoryPath !== null) {
             await rm(workingProjectDirectoryPath, { recursive: true, force: true });
