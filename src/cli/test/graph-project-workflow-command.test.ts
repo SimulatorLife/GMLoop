@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { __graphCommandTest__ } from "../src/commands/graph.js";
+import { __graphCommandTest__ } from "../src/commands/graph/index.js";
 
 const { createGraphVisualizationWorkflowArguments } = __graphCommandTest__;
 
