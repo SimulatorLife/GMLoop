@@ -159,10 +159,7 @@ export function tokenizeGml(source: string): GmlToken[] {
             afterPropertyDot = false;
             continue;
         }
-        if (
-            (character === "@" && source[position + 1] === '"') ||
-            (character === "@" && source[position + 1] === "'")
-        ) {
+        if (character === "@" && (source[position + 1] === '"' || source[position + 1] === "'")) {
             appendToken("string", readQuotedString(source, position, source[position + 1], true));
             afterPropertyDot = false;
             continue;
