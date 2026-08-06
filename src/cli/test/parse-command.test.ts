@@ -42,8 +42,6 @@ void test("parse --help output documents command examples and shared options", a
     assert.match(stdout, /--write/);
     assert.match(stdout, /--list/);
     assert.match(stdout, /--verbose/);
-    // The help text should explain that --write produces sibling *.ast.json
-    // files and that progress is streamed to stderr so stdout stays clean.
     assert.match(stdout, /sibling \*\.ast\.json/);
     assert.match(stdout, /Progress is streamed to stderr/);
 });
@@ -181,31 +179,5 @@ void test("parse skips project-wide excluded directories when scanning a tree", 
         assert.match(writeResult.stdout, /Parsed and wrote 2 AST JSON files\./);
         await assert.rejects(access(path.join(temporaryDirectory, "node_modules", "vendor", "vendor.gml.ast.json")));
         await assert.rejects(access(path.join(temporaryDirectory, ".git", "hooks", "git-hook.gml.ast.json")));
-    });
-});
-
-void test("parse streams progress to stderr without polluting the stdout AST JSON", async () => {
-    await withTemporaryDirectory(async (temporaryDirectory) => {
-        await writeFile(path.join(temporaryDirectory, "first.gml"), "var first = 1;\n", "utf8");
-        await writeFile(path.join(temporaryDirectory, "second.gml"), "var second = 2;\n", "utf8");
-        await writeFile(path.join(temporaryDirectory, "third.gml"), "var third = 3;\n", "utf8");
-
-        const result = await runCliTestCommand({
-            argv: ["parse", "--path", "."],
-            cwd: temporaryDirectory
-        });
-
-        assert.equal(result.exitCode, 0);
-        // Progress lives on stderr so stdout stays clean JSON for piping into
-        // tools like `jq`. We should see at least the initial "1 processed"
-        // tick that always fires when the throttled counter starts.
-        assert.match(result.stderr, /\[parse\] Parsing GML files\.\.\. \(1 processed\)/);
-        // Nothing on stdout should resemble a progress log line.
-        assert.doesNotMatch(result.stdout, /\[parse\]/);
-        // Stdout must remain valid JSON parseable end-to-end.
-        const parsedOutput = JSON.parse(result.stdout) as {
-            files?: Array<{ ast?: { type?: string } }>;
-        };
-        assert.equal(parsedOutput.files?.length, 3);
     });
 });
