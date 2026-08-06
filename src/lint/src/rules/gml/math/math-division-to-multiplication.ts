@@ -43,7 +43,15 @@ function extractReciprocalScalar(node: GameMakerAstNode | null | undefined): num
         return null;
     }
 
-    if (Math.abs(numeratorValue - 1) > Number.EPSILON) {
+    // Use the shared tolerance-aware comparison so that numerator literals
+    // whose value is within a few ULPs of 1 still match. A bare
+    // `Math.abs(numeratorValue - 1) > Number.EPSILON` check would silently
+    // reject literals like `1.0000000000000004` (1 + 2*Number.EPSILON) even
+    // though those values are numerically equivalent to 1 within IEEE-754
+    // rounding noise. The shared helper scales the tolerance to the magnitude
+    // of the operands so the rewrite keeps firing through the same floating-
+    // point noise window as the rest of the optimize-math-expressions pipeline.
+    if (!Core.areNumbersApproximatelyEqual(numeratorValue, 1)) {
         return null;
     }
 
