@@ -525,8 +525,8 @@ function expandLintTargetsForRecovery(parameters: {
 
     return Object.freeze({
         fileTargets: [...fileTargetSet.values()],
-        passthroughTargets: [...new Set(passthroughTargets).values()],
-        rejectedPaths: [...new Set(rejectedPaths).values()]
+        passthroughTargets: Core.uniqueArray(passthroughTargets) as Array<string>,
+        rejectedPaths: Core.uniqueArray(rejectedPaths) as Array<string>
     });
 }
 
