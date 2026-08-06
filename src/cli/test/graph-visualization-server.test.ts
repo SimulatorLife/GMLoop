@@ -3,7 +3,10 @@ import test, { type TestContext } from "node:test";
 
 import { UI } from "@gmloop/ui";
 
-import { startGraphVisualizationServer } from "../src/modules/server/graph-visualization-server.js";
+import {
+    type GraphVisualizationServerOptions,
+    startGraphVisualizationServer
+} from "../src/modules/server/graph-visualization-server.js";
 
 function createSampleGraphVisualizationData() {
     return {
@@ -89,6 +92,28 @@ async function withGraphVisualizationServer(
     } finally {
         await handle.stop();
     }
+}
+
+/**
+ * Build the shared server options used by every `/api/fix/cancel` test.
+ *
+ * The two cancelFix tests (success and declined) only differ in the
+ * `cancelFix` callback they inject, so the regenerate/runFix/renderBundle
+ * boilerplate lives here once instead of being repeated in each test body.
+ */
+function createCancelFixServerOptions(
+    cancelFix: NonNullable<GraphVisualizationServerOptions["cancelFix"]>
+): GraphVisualizationServerOptions {
+    return {
+        cancelFix,
+        regenerate: async () => ({ changed: false }),
+        runFix: async () => ({ logLines: [] }),
+        renderBundle: (isServerMode) =>
+            UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                isServerMode,
+                title: "/tmp/project"
+            })
+    };
 }
 
 void test("graph visualization server serves UI-rendered HTML and exposes regeneration JSON", async (testContext) => {
@@ -265,19 +290,10 @@ void test("graph visualization server routes POST /api/fix/cancel to the cancelF
 
     await withGraphVisualizationServer(
         testContext,
-        {
-            cancelFix: async () => {
-                cancelFixCallCount += 1;
-                return { cancelled: true };
-            },
-            regenerate: async () => ({ changed: false }),
-            runFix: async () => ({ logLines: [] }),
-            renderBundle: (isServerMode) =>
-                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
-                    isServerMode,
-                    title: "/tmp/project"
-                })
-        },
+        createCancelFixServerOptions(async () => {
+            cancelFixCallCount += 1;
+            return { cancelled: true };
+        }),
         async (handle) => {
             const response = await fetch(`${handle.url}/api/fix/cancel`, { method: "POST" });
 
@@ -291,16 +307,7 @@ void test("graph visualization server routes POST /api/fix/cancel to the cancelF
 void test("graph visualization server reports no in-flight fix workflow when cancelFix declines to cancel", async (testContext) => {
     await withGraphVisualizationServer(
         testContext,
-        {
-            cancelFix: async () => ({ cancelled: false }),
-            regenerate: async () => ({ changed: false }),
-            runFix: async () => ({ logLines: [] }),
-            renderBundle: (isServerMode) =>
-                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
-                    isServerMode,
-                    title: "/tmp/project"
-                })
-        },
+        createCancelFixServerOptions(async () => ({ cancelled: false })),
         async (handle) => {
             const response = await fetch(`${handle.url}/api/fix/cancel`, { method: "POST" });
 

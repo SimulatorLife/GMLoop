@@ -171,20 +171,23 @@ function getEdgeIntersection(edge: GraphLayoutEdge): Readonly<{ x1: number; x2: 
  * in batch mode; they return automatically when zoom/detail and graph size permit per-edge rendering.
  */
 export function buildGraphEdgeBatches(edges: ReadonlyArray<GraphLayoutEdge>): ReadonlyArray<GraphEdgeBatch> {
-    const pathPartsByType = new Map<GraphVisualizationEdgeType, Array<string>>();
-    const edgeCountByType = new Map<GraphVisualizationEdgeType, number>();
+    const batchByType = new Map<GraphVisualizationEdgeType, { edgeCount: number; pathParts: Array<string> }>();
 
     for (const edge of edges) {
         const geometry = getEdgeIntersection(edge);
-        const pathParts = pathPartsByType.get(edge.type) ?? [];
-        pathParts.push(`M${String(geometry.x1)},${String(geometry.y1)}L${String(geometry.x2)},${String(geometry.y2)}`);
-        pathPartsByType.set(edge.type, pathParts);
-        edgeCountByType.set(edge.type, (edgeCountByType.get(edge.type) ?? 0) + 1);
+        const pathPart = `M${String(geometry.x1)},${String(geometry.y1)}L${String(geometry.x2)},${String(geometry.y2)}`;
+        const batch = batchByType.get(edge.type);
+        if (batch) {
+            batch.edgeCount += 1;
+            batch.pathParts.push(pathPart);
+        } else {
+            batchByType.set(edge.type, { edgeCount: 1, pathParts: [pathPart] });
+        }
     }
 
-    return [...pathPartsByType.entries()].map(([type, pathParts]) => ({
-        edgeCount: edgeCountByType.get(type) ?? 0,
-        pathData: pathParts.join(""),
+    return [...batchByType].map(([type, batch]) => ({
+        edgeCount: batch.edgeCount,
+        pathData: batch.pathParts.join(""),
         type
     }));
 }
