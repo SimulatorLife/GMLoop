@@ -1,4 +1,11 @@
-export { IdentifierCacheManager } from "./identifier-cache-manager.js";
+export {
+    IdentifierCacheContract,
+    IdentifierCacheDiagnostics,
+    IdentifierCacheInvalidator,
+    IdentifierCacheManager,
+    IdentifierCacheReader,
+    IdentifierCacheWriter
+} from "./identifier-cache-manager.js";
 export * from "./lookup-cache-policy.js";
 export * from "./occurrence.js";
 export * from "./path-sorting.js";

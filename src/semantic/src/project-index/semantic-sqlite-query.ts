@@ -383,7 +383,7 @@ export function createSemanticSqliteSnapshotQueries(
                 .all(projectRoot, tier, name, name),
             decodeSemanticSymbolRow
         );
-        const symbols = rows.map(cacheSymbol).toSorted(comparePreferredSymbols);
+        const symbols = rows.map((row) => cacheSymbol(row)).toSorted(comparePreferredSymbols);
         return symbols[0]?.symbolId ?? null;
     };
 
@@ -487,7 +487,7 @@ export function createSemanticSqliteSnapshotQueries(
                       )
                       .all(projectRoot, tier, readSemanticSearchNgram(normalizedQuery), normalizedQuery, boundedLimit);
         const rows = decodeRows(rawRows, decodeSemanticSymbolRow);
-        return Object.freeze(rows.map(cacheSymbol));
+        return Object.freeze(rows.map((row) => cacheSymbol(row)));
     };
 
     const createResourceQueryResults = (

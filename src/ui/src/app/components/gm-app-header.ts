@@ -1,12 +1,12 @@
 import { html, nothing } from "lit";
 
 import { type GraphVisualizationUiModel } from "../contracts.js";
-import type { GraphVisualizationUiPage, GraphVisualizationUiState } from "../state/types.js";
 import {
     GRAPH_UI_EVENT_NAVIGATE_PAGE,
     GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT,
     type GraphUiNavigatePageDetail
-} from "./events.js";
+} from "../events/events.js";
+import type { GraphVisualizationUiPage, GraphVisualizationUiState } from "../state/types.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 import { renderProcessButtonContent } from "./primitives/gm-button.js";
 

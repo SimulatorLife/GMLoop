@@ -1,7 +1,11 @@
 import type { Rule } from "eslint";
 
+import {
+    collectRegionSourceLines,
+    readRegionDirectiveType,
+    type RegionSourceLine
+} from "../../../language/region-directives.js";
 import type { GmlRuleDefinition } from "../index.js";
-import { collectRegionSourceLines, readRegionDirectiveType, type RegionSourceLine } from "../region-directives.js";
 import {
     applySourceTextEdits,
     createMeta,

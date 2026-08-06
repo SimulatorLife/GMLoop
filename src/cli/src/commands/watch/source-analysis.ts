@@ -17,6 +17,11 @@ import { availableParallelism } from "node:os";
 
 import { Core } from "@gmloop/core";
 
+import {
+    getRuntimePathSegments,
+    resolveScriptFileNameFromSegments
+} from "../../modules/transpilation/runtime-identifiers.js";
+
 const { clamp, getLineBreakCount, normalizeExtensionSuffix, toNormalizedInteger, uniqueArray } = Core;
 
 // ---------------------------------------------------------------------------
@@ -291,4 +296,40 @@ export function clearInitialFileDataCache(fileDataCache: Map<string, InitialFile
     }
 
     fileDataCache.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Script-name registration
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the runtime script name (`gml_Script_<basename>`) for a `.gml` file
+ * located under a `scripts/` directory. Returns `null` when the path is not
+ * inside a `scripts/` directory or lacks a recognizable file stem.
+ */
+export function getScriptNameFromPath(filePath: string): string | null {
+    const segments = getRuntimePathSegments(filePath);
+    return resolveScriptFileNameFromSegments(segments);
+}
+
+/**
+ * Insert the script name derived from {@link getScriptNameFromPath} into the
+ * provided `Set`. No-op when the path does not resolve to a script name.
+ */
+export function ensureScriptNameRegistered(filePath: string, scriptNames: Set<string>): void {
+    const scriptName = getScriptNameFromPath(filePath);
+    if (scriptName) {
+        scriptNames.add(scriptName);
+    }
+}
+
+/**
+ * Remove the script name derived from {@link getScriptNameFromPath} from the
+ * provided `Set`. No-op when the path does not resolve to a script name.
+ */
+export function unregisterScriptName(filePath: string, scriptNames: Set<string>): void {
+    const scriptName = getScriptNameFromPath(filePath);
+    if (scriptName) {
+        scriptNames.delete(scriptName);
+    }
 }
