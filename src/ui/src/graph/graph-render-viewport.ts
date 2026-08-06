@@ -1,4 +1,9 @@
 import type { GraphLayout, GraphLayoutEdge, GraphLayoutNode } from "./graph-layout.js";
+import {
+    GRAPH_RENDER_LABEL_MODES,
+    type GraphRenderLabelMode,
+    isGraphRenderLabelMode
+} from "./graph-render-label-modes.js";
 import type { GraphVisualizationEdgeType } from "./types.js";
 
 const GRAPH_VIEWBOX_LEFT = -900;
@@ -29,8 +34,6 @@ export type GraphEdgeBatch = Readonly<{
     pathData: string;
     type: GraphVisualizationEdgeType;
 }>;
-
-export type GraphRenderLabelMode = "always" | "auto" | "hidden";
 
 /**
  * Convert the fixed SVG viewBox into graph-world coordinates for the current camera transform.
@@ -122,16 +125,30 @@ export function cullGraphLayoutToViewport(layout: GraphLayout, bounds: GraphView
 /**
  * Auto labels are intentionally suppressed while zoomed out because text nodes are expensive and
  * unreadable at overview scale. The explicit always/hidden modes retain their exact semantics.
+ *
+ * Validates {@link labelMode} against the centralized {@link GRAPH_RENDER_LABEL_MODES} catalogue
+ * and throws on unknown input rather than silently falling through to the `"auto"` zoom heuristic.
+ * The exhaustive `switch` keeps the runtime check in sync with the compile-time union: when a new
+ * mode is added to the tuple, TypeScript will flag the missing case here at build time.
  */
 export function shouldRenderGraphLabels(labelMode: GraphRenderLabelMode, zoomScale: number): boolean {
-    if (labelMode === "always") {
-        return true;
-    }
-    if (labelMode === "hidden") {
-        return false;
+    if (!isGraphRenderLabelMode(labelMode)) {
+        throw new RangeError(
+            `Unsupported graph label mode: ${JSON.stringify(labelMode)}. Expected one of: ${GRAPH_RENDER_LABEL_MODES.join(", ")}.`
+        );
     }
 
-    return zoomScale >= AUTO_LABEL_MIN_SCALE;
+    switch (labelMode) {
+        case "always": {
+            return true;
+        }
+        case "hidden": {
+            return false;
+        }
+        case "auto": {
+            return zoomScale >= AUTO_LABEL_MIN_SCALE;
+        }
+    }
 }
 
 /**
@@ -191,3 +208,5 @@ export function buildGraphEdgeBatches(edges: ReadonlyArray<GraphLayoutEdge>): Re
         type
     }));
 }
+
+export { type GraphRenderLabelMode } from "./graph-render-label-modes.js";
