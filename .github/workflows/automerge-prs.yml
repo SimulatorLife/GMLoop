@@ -218,7 +218,7 @@ jobs:
             reports/jscpd-report.json
             reports/project-health.json
           if-no-files-found: warn
-          retention-days: 2
+          retention-days: 1
 
   summarize:
     name: Summarize & comment table
