@@ -336,8 +336,8 @@ jobs:
 
   base_lint:
     name: Lint base fallback
-    needs: [gate, base_cache]
-    if: ${{ needs.gate.outputs.should_run_tests == 'true' && needs.base_cache.outputs.usable != 'true' }}
+    needs: [gate, base_cache, base_prepare]
+    if: ${{ needs.gate.outputs.should_run_tests == 'true' && needs.base_cache.outputs.usable != 'true' && needs.base_prepare.outputs.build_succeeded == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -471,15 +471,20 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile --recursive --force
-      - name: Require completed base build and lint execution
+      - name: Require complete base execution
         run: |
           test '${{ needs.base_prepare.result }}' = success
-          test '${{ needs.base_lint.result }}' = success
+          if [ '${{ needs.base_prepare.outputs.build_succeeded }}' = true ]; then
+            test '${{ needs.base_lint.result }}' = success
+            test '${{ needs.base_tests.result }}' = success
+          fi
       - uses: actions/download-artifact@v7
         with:
           name: base-build-evidence
           path: build-evidence
-      - uses: actions/download-artifact@v7
+      - name: Download base lint report
+        if: ${{ needs.base_prepare.outputs.build_succeeded == 'true' }}
+        uses: actions/download-artifact@v7
         with:
           name: base-report-lint
           path: reports
@@ -512,6 +517,7 @@ jobs:
       - name: Package deterministic broken-base evidence
         if: ${{ needs.base_prepare.outputs.build_succeeded != 'true' }}
         run: |
+          mkdir -p reports
           cp build-evidence/build-evidence.json reports/build-evidence.json
           node src/cli/src/commands/ci-build-evidence.ts validate \
             --report-dir reports \
@@ -605,8 +611,8 @@ jobs:
 
   merge_lint:
     name: Lint synthetic merge
-    needs: gate
-    if: ${{ needs.gate.outputs.should_run_tests == 'true' }}
+    needs: [gate, merge_prepare]
+    if: ${{ needs.gate.outputs.should_run_tests == 'true' && needs.merge_prepare.outputs.build_succeeded == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -706,15 +712,20 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile --recursive --force
-      - name: Require completed merge build and lint execution
+      - name: Require complete synthetic-merge execution
         run: |
           test '${{ needs.merge_prepare.result }}' = success
-          test '${{ needs.merge_lint.result }}' = success
+          if [ '${{ needs.merge_prepare.outputs.build_succeeded }}' = true ]; then
+            test '${{ needs.merge_lint.result }}' = success
+            test '${{ needs.merge_tests.result }}' = success
+          fi
       - uses: actions/download-artifact@v7
         with:
           name: merge-build-evidence
           path: build-evidence
-      - uses: actions/download-artifact@v7
+      - name: Download merge lint report
+        if: ${{ needs.merge_prepare.outputs.build_succeeded == 'true' }}
+        uses: actions/download-artifact@v7
         with:
           name: merge-report-lint
           path: reports
@@ -747,6 +758,7 @@ jobs:
       - name: Package deterministic merge build failure
         if: ${{ needs.merge_prepare.outputs.build_succeeded != 'true' }}
         run: |
+          mkdir -p reports
           cp build-evidence/build-evidence.json reports/build-evidence.json
           node src/cli/src/commands/ci-build-evidence.ts validate \
             --report-dir reports \
@@ -792,15 +804,17 @@ jobs:
             echo "No complete base evidence was available."
             exit 1
           fi
-          for result in "$MERGE_PREPARE_RESULT" "$MERGE_LINT_RESULT" "$MERGE_ASSEMBLE_RESULT"; do
+          for result in "$MERGE_PREPARE_RESULT" "$MERGE_ASSEMBLE_RESULT"; do
             if [ "$result" != success ]; then
               echo "Synthetic-merge evidence component failed: $result"
               exit 1
             fi
           done
-          if [ "$MERGE_BUILD_SUCCEEDED" = true ] && [ "$MERGE_TEST_RESULT" != success ]; then
-            echo "Synthetic merge built successfully but its test shards did not complete."
-            exit 1
+          if [ "$MERGE_BUILD_SUCCEEDED" = true ]; then
+            if [ "$MERGE_LINT_RESULT" != success ] || [ "$MERGE_TEST_RESULT" != success ]; then
+              echo "Synthetic merge built successfully but lint/test evidence did not complete."
+              exit 1
+            fi
           fi
           if [ "$TRUSTED_CI_CHANGED" = true ]; then
             echo "::notice::This PR changes trusted CI/evaluation files. Validation may complete, but unattended merge is disabled."
