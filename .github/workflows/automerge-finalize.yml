@@ -71,7 +71,7 @@ jobs:
             core.setOutput('head_sha', pr.head.sha);
             core.notice(`Trusted finalizer resolved PR #${number} at head ${pr.head.sha}; trusted CI changed=${trustedCiChanged}.`);
 
-      - name: Download trusted base report
+      - name: Download trusted base evidence
         if: ${{ steps.resolve.outputs.current == 'true' && steps.resolve.outputs.trusted_ci_changed != 'true' && github.event.workflow_run.conclusion == 'success' }}
         uses: actions/download-artifact@v7
         with:
@@ -80,7 +80,7 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download synthetic-merge report
+      - name: Download synthetic-merge evidence
         if: ${{ steps.resolve.outputs.current == 'true' && steps.resolve.outputs.trusted_ci_changed != 'true' && github.event.workflow_run.conclusion == 'success' }}
         uses: actions/download-artifact@v7
         with:
@@ -99,14 +99,21 @@ jobs:
           script: |
             const fs = require('node:fs');
             const { owner, repo } = context.repo;
-            const readMetadata = (directory) => JSON.parse(fs.readFileSync(`${directory}/auto-merge-report.json`, 'utf8'));
-            const base = readMetadata('report-base');
-            const merge = readMetadata('report-merge');
-            const baseSha = String(base.targetSha || '');
-            const mergeSha = String(merge.targetSha || '');
+            const readTargetSha = (directory) => {
+              for (const filename of ['auto-merge-report.json', 'build-evidence.json']) {
+                const candidate = `${directory}/${filename}`;
+                if (!fs.existsSync(candidate)) continue;
+                const metadata = JSON.parse(fs.readFileSync(candidate, 'utf8'));
+                const targetSha = String(metadata.targetSha || '');
+                if (targetSha) return targetSha;
+              }
+              return '';
+            };
+            const baseSha = readTargetSha('report-base');
+            const mergeSha = readTargetSha('report-merge');
             const validatedHead = process.env.VALIDATED_HEAD;
             if (!baseSha || !mergeSha || !validatedHead) {
-              core.setFailed('Validation reports do not declare complete target provenance.');
+              core.setFailed('Validation evidence does not declare complete target provenance.');
               return;
             }
             const { data: mergeCommit } = await github.rest.repos.getCommit({ owner, repo, ref: mergeSha });
@@ -145,12 +152,33 @@ jobs:
           fingerprint="$({
             printf '%s\0' 'src/cli/src/commands/ci-report.ts'
             cat src/cli/src/commands/ci-report.ts
+            printf '\0%s\0' 'src/cli/src/commands/ci-build-evidence.ts'
+            cat src/cli/src/commands/ci-build-evidence.ts
             printf '\0%s\0' '.github/ci/automerge-policy.json'
             cat .github/ci/automerge-policy.json
           } | sha256sum | cut -d' ' -f1)"
-          node src/cli/src/commands/ci-report.ts validate --report-dir report-base --expected-sha "$BASE_SHA" --expected-fingerprint "$fingerprint"
+
+          validate_evidence() {
+            directory="$1"
+            sha="$2"
+            if [ -f "$directory/auto-merge-report.json" ]; then
+              node src/cli/src/commands/ci-report.ts validate \
+                --report-dir "$directory" \
+                --expected-sha "$sha" \
+                --expected-fingerprint "$fingerprint"
+            elif [ -f "$directory/build-evidence.json" ]; then
+              node src/cli/src/commands/ci-build-evidence.ts validate \
+                --report-dir "$directory" \
+                --expected-sha "$sha" \
+                --require-failure
+            else
+              return 1
+            fi
+          }
+
+          validate_evidence report-base "$BASE_SHA"
           base_status=$?
-          node src/cli/src/commands/ci-report.ts validate --report-dir report-merge --expected-sha "$MERGE_SHA" --expected-fingerprint "$fingerprint"
+          validate_evidence report-merge "$MERGE_SHA"
           merge_status=$?
           if [ "$base_status" -ne 0 ] || [ "$merge_status" -ne 0 ]; then
             echo "all_green=false" >> "$GITHUB_OUTPUT"
@@ -165,7 +193,74 @@ jobs:
             exit 0
           fi
           mkdir -p reports
-          node src/cli/dist/index.js generate-quality-report --base report-base --merge report-merge --report-file reports/summary-report.md
+
+          if [ -f report-merge/build-evidence.json ]; then
+            merge_build_status="$(node -p "require('./report-merge/build-evidence.json').status")"
+            cat > reports/summary-report.md <<EOF
+          <!-- automerge-pr-test-summary -->
+          ### Quality Report Summary
+
+          ❌ **Synthetic merge does not build** (compiler status ${merge_build_status}).
+
+          The exact code that would land on the base branch is authoritative, so auto-merge is blocked even if the current base is also broken.
+          EOF
+            echo "all_green=false" >> "$GITHUB_OUTPUT"
+            echo "status=build_failure" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -f report-base/build-evidence.json ]; then
+            base_build_status="$(node -p "require('./report-base/build-evidence.json').status")"
+            merge_lint_status="$(node -p "require('./report-merge/auto-merge-report.json').lintStatus")"
+            merge_test_status="$(node -p "require('./report-merge/auto-merge-report.json').testStatus")"
+            if [ "$merge_lint_status" -ne 0 ]; then
+              cat > reports/summary-report.md <<EOF
+          <!-- automerge-pr-test-summary -->
+          ### Quality Report Summary
+
+          ❌ Base build is already broken (status ${base_build_status}), and the synthetic merge still has lint failures.
+
+          Recovery auto-merge requires the synthetic merge to build, lint, and test cleanly because no complete base test corpus exists for regression comparison.
+          EOF
+              echo "all_green=false" >> "$GITHUB_OUTPUT"
+              echo "status=lint_errors" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [ "$merge_test_status" -ne 0 ]; then
+              cat > reports/summary-report.md <<EOF
+          <!-- automerge-pr-test-summary -->
+          ### Quality Report Summary
+
+          ❌ Base build is already broken (status ${base_build_status}), and the synthetic merge still has failing tests.
+
+          Recovery auto-merge requires the synthetic merge to build, lint, and test cleanly because no complete base test corpus exists for regression comparison.
+          EOF
+              echo "all_green=false" >> "$GITHUB_OUTPUT"
+              echo "status=regressions" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            cat > reports/summary-report.md <<EOF
+          <!-- automerge-pr-test-summary -->
+          ### Quality Report Summary
+
+          ✅ **Recovery validation passed.** The current base does not build (compiler status ${base_build_status}), while the exact synthetic merge builds successfully and has zero lint/test failures.
+
+          This PR is eligible to repair the broken base branch. Base tests were intentionally unavailable because the base could not compile; infrastructure failures would still block this path.
+          EOF
+            if [ -f report-merge/test-durations.md ]; then
+              printf '\n\n' >> reports/summary-report.md
+              cat report-merge/test-durations.md >> reports/summary-report.md
+            fi
+            echo "all_green=true" >> "$GITHUB_OUTPUT"
+            echo "status=recovery" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          node src/cli/dist/index.js generate-quality-report \
+            --base report-base \
+            --merge report-merge \
+            --report-file reports/summary-report.md
           code=$?
           if [ "$code" -eq 0 ]; then
             echo "all_green=true" >> "$GITHUB_OUTPUT"
@@ -223,7 +318,7 @@ jobs:
 
       - name: Detect Agent token availability
         id: agent_token
-        if: ${{ steps.compare.outputs.status == 'lint_errors' || steps.compare.outputs.status == 'regressions' }}
+        if: ${{ steps.compare.outputs.status == 'lint_errors' || steps.compare.outputs.status == 'regressions' || steps.compare.outputs.status == 'build_failure' }}
         env:
           GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
         run: |
@@ -245,6 +340,25 @@ jobs:
             const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
             const existing = comments.find((comment) => comment.body?.includes(marker));
             const body = [marker, '', '@mini-max Trusted auto-merge validation detected lint errors on the synthetic merge. Fix the root cause on this PR branch.', '', `Keep changes on **${pr.head.ref}** for PR #${number}.`].join('\n');
+            if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            else await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
+
+      - name: Request Agent help for build failures
+        if: ${{ steps.compare.outputs.status == 'build_failure' && steps.agent_token.outputs.available == 'true' }}
+        uses: actions/github-script@v8
+        env:
+          GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+        with:
+          github-token: ${{ env.GH_USER_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const number = Number(process.env.PR_NUMBER);
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            const marker = '<!-- automerge-pr-build-agent -->';
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
+            const existing = comments.find((comment) => comment.body?.includes(marker));
+            const body = [marker, '', '@mini-max Trusted auto-merge validation found that the exact synthetic merge does not build. Fix the build failure on this PR branch.', '', `Keep changes on **${pr.head.ref}** for PR #${number}.`].join('\n');
             if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
             else await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
 
@@ -291,7 +405,7 @@ jobs:
             else await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
 
       - name: Warn when Agent user token is unavailable
-        if: ${{ (steps.compare.outputs.status == 'lint_errors' || steps.compare.outputs.status == 'regressions') && steps.agent_token.outputs.available != 'true' }}
+        if: ${{ (steps.compare.outputs.status == 'lint_errors' || steps.compare.outputs.status == 'regressions' || steps.compare.outputs.status == 'build_failure') && steps.agent_token.outputs.available != 'true' }}
         run: echo "::warning::GH_USER_TOKEN is unavailable; skipping Agent follow-up."
 
   merge:
