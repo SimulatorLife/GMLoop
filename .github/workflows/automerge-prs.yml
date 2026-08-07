@@ -21,6 +21,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       should_run_tests: ${{ steps.decide.outputs.should_run_tests }}
+      base_sha: ${{ steps.decide.outputs.base_sha }}
+      head_sha: ${{ steps.decide.outputs.head_sha }}
+      merge_sha: ${{ steps.decide.outputs.merge_sha }}
     steps:
       - id: decide
         uses: actions/github-script@v8
@@ -32,6 +35,21 @@ jobs:
               core.setOutput('should_run_tests', 'false');
               return;
             }
+
+            const mergeSha = context.sha;
+            const headSha = context.payload.pull_request?.head?.sha;
+            const { data: mergeCommit } = await github.rest.repos.getCommit({ owner, repo, ref: mergeSha });
+            const baseSha = mergeCommit.parents?.[0]?.sha;
+            const mergeHeadSha = mergeCommit.parents?.[1]?.sha;
+            if (!baseSha || !headSha || !mergeHeadSha || mergeHeadSha !== headSha) {
+              core.setFailed(`Unable to resolve a current synthetic merge for PR #${number}. merge=${mergeSha}, base=${baseSha || 'missing'}, eventHead=${headSha || 'missing'}, mergeHead=${mergeHeadSha || 'missing'}`);
+              core.setOutput('should_run_tests', 'false');
+              return;
+            }
+
+            core.setOutput('base_sha', baseSha);
+            core.setOutput('head_sha', headSha);
+            core.setOutput('merge_sha', mergeSha);
 
             const files = await github.paginate(github.rest.pulls.listFiles, {
               owner,
@@ -57,7 +75,7 @@ jobs:
               return;
             }
 
-            core.notice(`PR changed files: ${files.length}`);
+            core.notice(`PR changed files: ${files.length}; validating base ${baseSha}, head ${headSha}, merge ${mergeSha}.`);
             core.setOutput('should_run_tests', files.length > 0 ? 'true' : 'false');
 
   tests:
@@ -75,14 +93,16 @@ jobs:
       - name: Resolve ref for ${{ matrix.target }}
         id: ref
         shell: bash
+        env:
+          BASE_SHA: ${{ needs.gate.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+          MERGE_SHA: ${{ needs.gate.outputs.merge_sha }}
         run: |
-          if [ "${{ matrix.target }}" = "base" ]; then
-            echo "ref=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
-          elif [ "${{ matrix.target }}" = "head" ]; then
-            echo "ref=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "ref=${{ github.sha }}" >> "$GITHUB_OUTPUT"
-          fi
+          case "${{ matrix.target }}" in
+            base) echo "ref=$BASE_SHA" >> "$GITHUB_OUTPUT" ;;
+            head) echo "ref=$HEAD_SHA" >> "$GITHUB_OUTPUT" ;;
+            merge) echo "ref=$MERGE_SHA" >> "$GITHUB_OUTPUT" ;;
+          esac
 
       - name: Checkout (${{ matrix.target }})
         uses: actions/checkout@v6
@@ -92,7 +112,7 @@ jobs:
       - name: Checkout current CI report tooling
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ needs.gate.outputs.head_sha }}
           path: .ci-tools
           sparse-checkout: |
             scripts/eslint-checkstyle-formatter.js
@@ -121,7 +141,7 @@ jobs:
             done
           } | sha256sum | cut -d' ' -f1)"
           echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
-          echo "cache_key=automerge-base-report-v4-${{ github.event.pull_request.base.sha }}-$fingerprint" >> "$GITHUB_OUTPUT"
+          echo "cache_key=automerge-base-report-v4-${{ needs.gate.outputs.base_sha }}-$fingerprint" >> "$GITHUB_OUTPUT"
 
       - name: Restore cached base report
         id: base-cache
@@ -268,6 +288,8 @@ jobs:
     steps:
       - name: Checkout repo (for scripts)
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.gate.outputs.merge_sha }}
 
       - name: Compute report tooling fingerprint
         id: tooling
@@ -320,9 +342,9 @@ jobs:
         shell: bash
         env:
           TOOLING_FINGERPRINT: ${{ steps.tooling.outputs.fingerprint }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          MERGE_SHA: ${{ github.sha }}
+          BASE_SHA: ${{ needs.gate.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+          MERGE_SHA: ${{ needs.gate.outputs.merge_sha }}
         run: |
           set +e
           set -o pipefail
@@ -577,13 +599,16 @@ jobs:
 
   auto-merge:
     name: Auto-merge when green
-    needs: summarize
+    needs: [gate, summarize]
     if: ${{ github.event_name == 'pull_request' && needs.summarize.outputs.all_green == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Prepare PR and verify validation is current
         id: prepare
         uses: actions/github-script@v8
+        env:
+          VALIDATED_HEAD: ${{ needs.gate.outputs.head_sha }}
+          VALIDATED_BASE: ${{ needs.gate.outputs.base_sha }}
         with:
           script: |
             const { owner, repo } = context.repo;
@@ -593,8 +618,8 @@ jobs:
               return;
             }
 
-            const validatedHead = context.payload.pull_request.head.sha;
-            const validatedBase = context.payload.pull_request.base.sha;
+            const validatedHead = process.env.VALIDATED_HEAD;
+            const validatedBase = process.env.VALIDATED_BASE;
             const loadPr = async () => (await github.rest.pulls.get({ owner, repo, pull_number: number })).data;
             const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
             let pr = await loadPr();
@@ -629,10 +654,13 @@ jobs:
               return;
             }
 
+            const { data: baseBranch } = await github.rest.repos.getBranch({ owner, repo, branch: pr.base.ref });
+            const liveBaseSha = baseBranch.commit.sha;
             core.setOutput('proceed', 'true');
             core.setOutput('pr', JSON.stringify(pr));
             core.setOutput('validated_head', validatedHead);
             core.setOutput('validated_base', validatedBase);
+            core.setOutput('live_base', liveBaseSha);
 
       - name: Ensure PR branch is current with base
         id: update
@@ -641,14 +669,16 @@ jobs:
         env:
           PREPARE_PR: ${{ steps.prepare.outputs.pr }}
           VALIDATED_BASE: ${{ steps.prepare.outputs.validated_base }}
+          LIVE_BASE: ${{ steps.prepare.outputs.live_base }}
         with:
           script: |
             const { owner, repo } = context.repo;
             const number = context.payload.pull_request.number;
             const pr = JSON.parse(process.env.PREPARE_PR || '{}');
             const validatedBase = process.env.VALIDATED_BASE;
+            const liveBase = process.env.LIVE_BASE;
             const state = String(pr.mergeable_state || '').toLowerCase();
-            const baseAdvanced = Boolean(pr.base?.sha && validatedBase && pr.base.sha !== validatedBase);
+            const baseAdvanced = Boolean(liveBase && validatedBase && liveBase !== validatedBase);
             const needsUpdate = state === 'behind' || baseAdvanced;
 
             if (!needsUpdate) {
@@ -656,7 +686,7 @@ jobs:
               return;
             }
 
-            core.notice(`PR #${number} needs a base update before merge (state=${state}, baseAdvanced=${baseAdvanced}). Updating the branch and requiring a fresh synchronize validation.`);
+            core.notice(`PR #${number} needs a base update before merge (state=${state}, validatedBase=${validatedBase}, liveBase=${liveBase}). Updating the branch and requiring a fresh synchronize validation.`);
             try {
               await github.rest.pulls.updateBranch({ owner, repo, pull_number: number, expected_head_sha: pr.head.sha });
               core.setOutput('ready_to_merge', 'false');
@@ -664,11 +694,9 @@ jobs:
               return;
             } catch (updateError) {
               const message = String(updateError?.message || '');
-              if (message.toLowerCase().includes('already up to date')) {
-                core.setOutput('ready_to_merge', 'true');
-                return;
+              if (!message.toLowerCase().includes('already up to date')) {
+                core.warning(`pulls.updateBranch failed: ${message}`);
               }
-              core.warning(`pulls.updateBranch failed: ${message}`);
             }
 
             try {
@@ -679,15 +707,14 @@ jobs:
                 head: pr.base.ref,
                 commit_message: `chore: sync ${pr.head.ref} with ${pr.base.ref}`,
               });
-              if (status === 204) core.setOutput('ready_to_merge', 'true');
-              else {
-                core.setOutput('ready_to_merge', 'false');
-                core.setOutput('revalidation_required', 'true');
+              if (status === 204) {
+                core.notice(`Updated ${pr.head.ref} from ${pr.base.ref}; fresh validation is required before merge.`);
               }
             } catch (error) {
               core.warning(`Unable to update PR branch: ${error?.message || error}`);
-              core.setOutput('ready_to_merge', 'false');
             }
+            core.setOutput('ready_to_merge', 'false');
+            core.setOutput('revalidation_required', 'true');
 
       - name: Attempt merge
         id: attempt
@@ -703,14 +730,16 @@ jobs:
             const validatedHead = process.env.VALIDATED_HEAD;
             const validatedBase = process.env.VALIDATED_BASE;
             const { data: current } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            const { data: baseBranch } = await github.rest.repos.getBranch({ owner, repo, branch: current.base.ref });
+            const liveBaseSha = baseBranch.commit.sha;
 
             if (current.head.sha !== validatedHead) {
               core.notice(`Skip merge #${number}: head changed after validation (${validatedHead} -> ${current.head.sha}).`);
               core.setOutput('merged', 'false');
               return;
             }
-            if (current.base.sha !== validatedBase) {
-              core.notice(`Skip merge #${number}: base changed after validation (${validatedBase} -> ${current.base.sha}). Requesting a branch update and fresh validation.`);
+            if (liveBaseSha !== validatedBase) {
+              core.notice(`Skip merge #${number}: base changed after validation (${validatedBase} -> ${liveBaseSha}). Requesting a branch update and fresh validation.`);
               try {
                 await github.rest.pulls.updateBranch({
                   owner,
