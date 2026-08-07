@@ -197,6 +197,35 @@ void test("event patches resolve minified GameMaker runtime value getters", () =
     }
 });
 
+void test("event patches resolve arbitrary GameMaker runtime values through generic get_<prop> getters", () => {
+    // room_speed is a live GML runtime read with no special-cased fallback (unlike mouse_x/mouse_y/current_time);
+    // it must resolve purely through the generic get_<prop> getter lookup, proving the resolver is not limited to
+    // a hardcoded allowlist of runtime value names.
+    const wrapper = RuntimeWrapper.createRuntimeWrapper();
+    wrapper.applyPatch({
+        kind: "event",
+        id: "gml/event/oSpider/Step_0",
+        runtimeId: "gml_Object_oSpider_Step_0",
+        js_body: "self.speed = room_speed;"
+    });
+
+    const fn = wrapper.getEvent("gml/event/oSpider/Step_0");
+    assert.ok(fn);
+
+    const snapshot = snapshotGlobalProperties(["get_room_speed"] as const);
+    try {
+        const globals = globalThis as { get_room_speed?: () => number };
+        globals.get_room_speed = () => 60;
+
+        const instanceEntry: Record<string, unknown> = {};
+        fn.call(instanceEntry);
+
+        assert.equal(instanceEntry.speed, 60, "room_speed should resolve through a generic get_room_speed getter");
+    } finally {
+        restoreGlobalProperties(snapshot);
+    }
+});
+
 void test("object event patches refresh active instances through Create after handler replacement", () => {
     const snapshot = snapshotGlobalProperties(runtimeBindingPropertyNames);
 

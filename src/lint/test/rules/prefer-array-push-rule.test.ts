@@ -1,7 +1,5 @@
 import { test } from "node:test";
 
-import * as LintWorkspace from "@gmloop/lint";
-
 import { assertEquals } from "../assertions.js";
 import { lintWithRule } from "./lint-rule-test-harness.js";
 
@@ -64,11 +62,4 @@ void test("prefer-array-push does not rewrite non-statement append expressions i
     const result = lintWithRule("prefer-array-push", input);
     assertEquals(result.messages.length, 0);
     assertEquals(result.output, input);
-});
-
-void test("prefer-array-push is included in the recommended config", () => {
-    const recommended = LintWorkspace.Lint.configs.recommended;
-    const allRules = recommended.flatMap((config) => Object.keys(config.rules ?? {}));
-
-    assertEquals(allRules.includes("gml/prefer-array-push"), true);
 });

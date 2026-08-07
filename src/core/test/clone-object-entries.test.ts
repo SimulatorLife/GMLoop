@@ -37,19 +37,16 @@ void test("cloneObjectEntries fast path for single-element array", () => {
     assert.notEqual(cloned[0], original[0]);
 });
 
-void test("cloneObjectEntries single-element non-object passes through", () => {
-    const original = [42];
-    const cloned = cloneObjectEntries(original);
+void test("cloneObjectEntries single-element non-object fast path passes value through unchanged", () => {
+    // Both 42 and null hit the same isObjectLike===false branch of the
+    // length===1 fast path; covering both confirms it isn't accidentally
+    // relying on truthiness rather than an object-shape check.
+    for (const value of [42, null]) {
+        const original = [value];
+        const cloned = cloneObjectEntries(original);
 
-    assert.deepEqual(cloned, original);
-    assert.strictEqual(cloned[0], original[0]);
-});
-
-void test("cloneObjectEntries single-element null passes through", () => {
-    const original = [null];
-    const cloned = cloneObjectEntries(original);
-
-    assert.deepEqual(cloned, original);
-    assert.strictEqual(cloned[0], original[0]);
-    assert.strictEqual(cloned.length, 1);
+        assert.deepEqual(cloned, original);
+        assert.strictEqual(cloned[0], original[0]);
+        assert.strictEqual(cloned.length, 1);
+    }
 });

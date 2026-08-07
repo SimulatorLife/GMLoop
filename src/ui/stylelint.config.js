@@ -1,5 +1,5 @@
 export default {
-    plugins: [ "stylelint-declaration-strict-value" ],
+    plugins: ["stylelint-declaration-strict-value"],
     rules: {
         "scale-unlimited/declaration-strict-value": [
             [
@@ -32,9 +32,10 @@ export default {
                 ],
                 ignoreFunctions: false,
                 severity: "error",
-                message: "Use a --gm-* design token variable instead of a hardcoded value."
+                message:
+                    "Use a --gm-* design token variable instead of a hardcoded value."
             }
         ]
     },
-    ignoreFiles: [ "**/tokens.css", "**/dist/**" ]
+    ignoreFiles: ["**/tokens.css", "**/dist/**"]
 };
