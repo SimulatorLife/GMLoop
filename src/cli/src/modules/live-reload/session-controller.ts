@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -13,6 +13,23 @@ import {
     type LiveReloadRegisteredSession,
     resolveLiveReloadProjectIdentity
 } from "./session-registry.js";
+
+/**
+ * Minimal contract for spawning the detached live-reload worker.
+ *
+ * Exists so unit tests can substitute a mock implementation without spawning
+ * real child processes. The signature mirrors the subset of
+ * `child_process.spawn` actually used by `startManagedLiveReloadSession`.
+ */
+export type LiveReloadWorkerSpawnFn = (
+    command: string,
+    args: ReadonlyArray<string>,
+    options: {
+        detached: true;
+        env: NodeJS.ProcessEnv;
+        stdio: ["ignore", number, number];
+    }
+) => ChildProcess;
 
 const STARTUP_TIMEOUT_MS = 600_000;
 const STOP_TIMEOUT_MS = 5000;
@@ -115,7 +132,8 @@ export async function acquireLiveReloadSessionLock(lockPath: string): Promise<fs
 
 /** Ensure, replace, or stop the single live-reload worker registered for a project. */
 export async function manageLiveReloadSession(
-    options: EnsureLiveReloadSessionOptions
+    options: EnsureLiveReloadSessionOptions,
+    spawnFn: LiveReloadWorkerSpawnFn = spawn
 ): Promise<LiveReloadSessionResult> {
     if (options.forceStart && options.stop) {
         throw new Error("--force-start and --stop cannot be used together.");
@@ -137,12 +155,37 @@ export async function manageLiveReloadSession(
     if (restarted && discovery.session !== null) {
         await stopRegisteredLiveReloadSession(options.targetPath, discovery.session);
     }
-    return await startManagedLiveReloadSession(options, restarted ? "restarted" : "started");
+    return await startManagedLiveReloadSession(options, restarted ? "restarted" : "started", spawnFn);
 }
 
-async function startManagedLiveReloadSession(
+/**
+ * Start a fresh detached live-reload worker, acquiring the project-local lock,
+ * opening the session log, spawning the worker process, and polling for the
+ * registry to appear.
+ *
+ * The log `FileHandle` returned by `fs.open` is closed under a dedicated
+ * `try/finally` so a `spawn()` failure (or any later synchronous error before
+ * the explicit `log.close()` runs) cannot strand the parent-side descriptor
+ * until the next GC cycle. Without that guard, repeated failed startup
+ * attempts — for example, a missing CLI entrypoint or an invalid argument —
+ * accumulate open file descriptors inside the parent process. On Linux each
+ * leaked descriptor is visible in `/proc/self/fd`, and reaching the per-process
+ * `ulimit -n` causes subsequent file operations across the project to fail
+ * with `EMFILE`.
+ *
+ * Exported so unit tests can exercise the spawn-failure cleanup path without
+ * relying on internal module mocking.
+ *
+ * @param options - Startup options forwarded to the worker.
+ * @param mode - Lifecycle mode reported back through the returned result.
+ * @param spawnFn - Process spawn implementation; defaults to Node's built-in
+ *   `child_process.spawn`. Tests can substitute a mock that throws to verify
+ *   the log-handle cleanup path.
+ */
+export async function startManagedLiveReloadSession(
     options: EnsureLiveReloadSessionOptions,
-    mode: "restarted" | "started"
+    mode: "restarted" | "started",
+    spawnFn: LiveReloadWorkerSpawnFn = spawn
 ): Promise<LiveReloadSessionResult> {
     const identity = await resolveLiveReloadProjectIdentity(options.targetPath);
     const lockPath = path.join(identity.projectRoot, ".gmloop", "live-reload-session.lock");
@@ -155,28 +198,47 @@ async function startManagedLiveReloadSession(
         const sessionId = randomUUID();
         const logPath = path.join(identity.projectRoot, ".gmloop", "live-reload-session.log");
         const log = await fs.open(logPath, "a");
-        const cliEntrypoint = fileURLToPath(new URL("../../../index.js", import.meta.url));
-        const child = spawn(
-            process.execPath,
-            [
-                cliEntrypoint,
-                "live-reload",
-                "worker",
-                "--path",
-                options.targetPath,
-                "--session-id",
-                sessionId,
-                ...options.startArguments
-            ],
-            {
-                detached: true,
-                env: createLiveReloadWorkerEnvironment(process.env),
-                stdio: ["ignore", log.fd, log.fd]
+        // The log descriptor must be handed to the child via `spawn({ stdio })`
+        // *before* the parent closes its own copy of the handle, because once
+        // closed the parent-side `FileHandle` no longer exposes a usable fd.
+        // A dedicated `finally` guarantees the handle is released even when the
+        // synchronous `spawn()` or `child.unref()` throws — the previous
+        // single-`finally` design only covered the lock file and would leak
+        // this descriptor on every failed startup attempt.
+        let logClosed = false;
+        try {
+            const cliEntrypoint = fileURLToPath(new URL("../../../index.js", import.meta.url));
+            const child = spawnFn(
+                process.execPath,
+                [
+                    cliEntrypoint,
+                    "live-reload",
+                    "worker",
+                    "--path",
+                    options.targetPath,
+                    "--session-id",
+                    sessionId,
+                    ...options.startArguments
+                ],
+                {
+                    detached: true,
+                    env: createLiveReloadWorkerEnvironment(process.env),
+                    stdio: ["ignore", log.fd, log.fd]
+                }
+            );
+            child.unref();
+            await log.close();
+            logClosed = true;
+            return await waitForSession(options.targetPath, sessionId, mode);
+        } finally {
+            if (!logClosed) {
+                // Swallow the secondary close error so the original failure
+                // surfaced by `spawn()` (or its callers) remains the dominant
+                // diagnostic. Without `.catch`, a close-time EBADF would mask
+                // the real reason the worker failed to start.
+                await log.close().catch(() => undefined);
             }
-        );
-        child.unref();
-        await log.close();
-        return await waitForSession(options.targetPath, sessionId, mode);
+        }
     } finally {
         await lock.close();
         await fs.rm(lockPath, { force: true });

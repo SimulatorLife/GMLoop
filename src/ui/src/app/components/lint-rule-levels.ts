@@ -90,3 +90,16 @@ export function parseLintLevel(value: unknown): LintLevel | null {
 export function parseLintLevelFilter(value: unknown): LintLevelFilter | null {
     return isLintLevelFilter(value) ? value : null;
 }
+
+/**
+ * Returns the canonical badge label for lint rule fixability.
+ */
+export function getLintFixableBadgeLabel(
+    fixable: GraphVisualizationProjectConfigurationLintRuleEntry["fixable"]
+): string | null {
+    if (fixable === null) {
+        return null;
+    }
+
+    return "fixable";
+}
