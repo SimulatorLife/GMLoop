@@ -133,17 +133,78 @@ function buildOperatorVariantMap(style: BinaryOperatorStyle): Record<string, str
     return table;
 }
 
+/**
+ * Look up the precedence/associativity metadata for a single binary operator.
+ *
+ * Returns `undefined` for any string that is not present in {@link BINARY_OPERATORS},
+ * which lets callers distinguish "unknown operator" from "operator with neutral
+ * metadata" without resorting to thrown errors. The formatter and lint
+ * pipelines use this to decide whether a child expression needs parentheses
+ * (e.g. when its precedence is lower than its parent's).
+ *
+ * Note: lookup is case-sensitive. GML keyword aliases such as `mod` or `and`
+ * are stored under their lowercase spelling; passing `"MOD"` will miss the
+ * entry. Callers that accept arbitrary user input should normalise to
+ * lowercase first.
+ *
+ * @param operator Operator token exactly as it appears in the AST (e.g. `"+"`,
+ *     `"&&"`, `"mod"`).
+ * @returns The matching {@link BinaryOperatorInfo} entry, or `undefined` when
+ *     the operator is not a recognised GML binary operator.
+ */
 export function getOperatorInfo(operator: string): BinaryOperatorInfo | undefined {
     return BINARY_OPERATORS[operator];
 }
 
+/**
+ * Resolve a GML operator to either its canonical symbol form or its keyword
+ * alias, depending on the requested style.
+ *
+ * - `style: "symbol"` returns the symbol form (e.g. `mod` → `%`,
+ *   `and` → `&&`). Operators that are already symbols return themselves.
+ * - `style: "keyword"` returns the keyword alias when one exists (e.g.
+ *   `&&` → `and`, `||` → `or`). Operators without a keyword alias (such as
+ *   `+` or `==`) return themselves.
+ *
+ * Unknown operators are returned unchanged so callers can safely pipe
+ * arbitrary tokens through the helper without first validating them.
+ *
+ * Why it matters: the formatter's binary-expression printer invokes this
+ * helper on every `BinaryExpression` and `LogicalExpression` it emits, so the
+ * signature is intentionally tiny and the lookup is O(1) via the
+ * precomputed {@link OPERATOR_VARIANTS_BY_STYLE} tables.
+ *
+ * @param operator Operator token exactly as it appears in the AST.
+ * @param style Target style — `"symbol"` for the canonical symbol, `"keyword"`
+ *     for the GML keyword alias when available.
+ * @returns The operator rendered in the requested style, or `operator`
+ *     unchanged when no entry exists for the (operator, style) pair.
+ */
 export function getOperatorVariant(operator: string, style: BinaryOperatorStyle): string {
     return OPERATOR_VARIANTS_BY_STYLE[style][operator] ?? operator;
 }
 
 /**
- * Map of operator aliases (e.g., "mod", "and", "xor") to their canonical symbol forms (e.g., "%", "&&", "^^").
- * Used for normalization by the linter and formatter.
+ * Maps GML keyword-style operators to their canonical symbol form.
+ *
+ * Populated from the `canonical` field on each entry in
+ * {@link BINARY_OPERATORS}; only operators that declare a canonical
+ * symbol appear here. Currently the map covers:
+ *
+ *   - `mod`   → `%`     (remainder)
+ *   - `div`   → has no canonical entry — `div` is integer division in GML
+ *               and is not an alias for `/`, so it deliberately stays out
+ *               of this map
+ *   - `and`   → `&&`    (logical AND)
+ *   - `or`    → `||`    (logical OR)
+ *   - `xor`   → `^^`    (logical XOR)
+ *   - `not`   → `!`     (logical NOT — also referenced by some binary paths)
+ *
+ * Used by `normalize-operator-aliases-rule` (lint) and any caller that
+ * needs to fold keyword spellings into their symbol equivalents before
+ * further analysis. Iteration order matches {@link BINARY_OPERATORS} order
+ * (insertion order of the source object), so consumers that need stable
+ * output can rely on `for…of` over `.entries()`.
  */
 export const OPERATOR_ALIAS_MAP: Map<string, string> = new Map();
 
