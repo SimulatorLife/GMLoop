@@ -167,14 +167,35 @@ jobs:
           rm -rf .ci-tools
           echo "dir=$CI_TOOLS_DIR" >> "$GITHUB_OUTPUT"
 
+      - name: Validate restored base report
+        id: restored-base
+        if: ${{ matrix.target == 'base' && steps.base-cache.outputs.cache-hit == 'true' }}
+        shell: bash
+        env:
+          CI_TOOLS_DIR: ${{ steps.ci-tools.outputs.dir }}
+          GMLOOP_REPORT_DIR: reports
+          GMLOOP_REPORT_EXPECTED_SHA: ${{ steps.ref.outputs.ref }}
+          GMLOOP_REPORT_EXPECTED_TOOL_FINGERPRINT: ${{ steps.tooling.outputs.fingerprint }}
+        run: |
+          set +e
+          node "$CI_TOOLS_DIR/validate-auto-merge-report.js"
+          status=$?
+          if [ "$status" -eq 0 ]; then
+            echo "usable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "usable=false" >> "$GITHUB_OUTPUT"
+            rm -rf reports
+          fi
+          exit 0
+
       - name: Setup pnpm (${{ matrix.target }})
-        if: ${{ matrix.target != 'base' || steps.base-cache.outputs.cache-hit != 'true' }}
+        if: ${{ matrix.target != 'base' || steps.restored-base.outputs.usable != 'true' }}
         uses: pnpm/action-setup@v6
         with:
           cache: true
 
       - name: Setup Node (${{ matrix.target }})
-        if: ${{ matrix.target != 'base' || steps.base-cache.outputs.cache-hit != 'true' }}
+        if: ${{ matrix.target != 'base' || steps.restored-base.outputs.usable != 'true' }}
         uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
@@ -184,12 +205,12 @@ jobs:
             **/pnpm-lock.yaml
 
       - name: Install deps
-        if: ${{ matrix.target != 'base' || steps.base-cache.outputs.cache-hit != 'true' }}
+        if: ${{ matrix.target != 'base' || steps.restored-base.outputs.usable != 'true' }}
         run: pnpm install --frozen-lockfile --recursive --force
 
       - name: Generate quality reports (${{ matrix.target }})
         id: report
-        if: ${{ matrix.target != 'base' || steps.base-cache.outputs.cache-hit != 'true' }}
+        if: ${{ matrix.target != 'base' || steps.restored-base.outputs.usable != 'true' }}
         shell: bash
         env:
           CI_TOOLS_DIR: ${{ steps.ci-tools.outputs.dir }}
@@ -204,7 +225,7 @@ jobs:
           exit 0
 
       - name: Normalize JUnit report
-        if: ${{ always() && !cancelled() && (matrix.target != 'base' || steps.base-cache.outputs.cache-hit != 'true') }}
+        if: ${{ always() && !cancelled() && (matrix.target != 'base' || steps.restored-base.outputs.usable != 'true') }}
         shell: bash
         env:
           TEST_STATUS: ${{ steps.report.outputs.exit_code || 'unknown' }}
