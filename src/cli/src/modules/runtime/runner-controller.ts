@@ -19,12 +19,21 @@ import {
  */
 type RunnerBinderAndLogger = RunnerProjectBinder & RunnerLifecycleStateController & RunnerLogWriter;
 
-type RunnerController = {
+/** Starts or restarts the configured runner process. */
+export interface RunnerProcessLauncher {
     restart(options: RunnerStartOptions): { pid: number | null };
     start(options: RunnerStartOptions): { pid: number | null };
-    status(projectRoot: string): { pid: number | null; running: boolean };
+}
+
+/** Stops the active runner process. */
+export interface RunnerProcessStopper {
     stop(projectRoot: string): { stopped: boolean };
-};
+}
+
+/** Reads the active runner process status. */
+export interface RunnerProcessStatusReader {
+    status(projectRoot: string): { pid: number | null; running: boolean };
+}
 
 /**
  * Resolved runner launch options for starting or restarting the runner process.
@@ -59,7 +68,9 @@ export type RunnerSpawnFn = (
  * @param spawnFn - Process-spawn implementation; defaults to Node's built-in
  *   `child_process.spawn`.
  */
-export function createRunnerController(spawnFn: RunnerSpawnFn = spawn): RunnerController {
+export function createRunnerController(
+    spawnFn: RunnerSpawnFn = spawn
+): RunnerProcessLauncher & RunnerProcessStopper & RunnerProcessStatusReader {
     let activeProcess: ChildProcessWithoutNullStreams | null = null;
     let activePid: number | null = null;
 
@@ -164,6 +175,6 @@ export function createRunnerController(spawnFn: RunnerSpawnFn = spawn): RunnerCo
 
 const sharedRunnerController = createRunnerController();
 
-export function getRunnerController(): RunnerController {
+export function getRunnerController(): RunnerProcessLauncher & RunnerProcessStopper & RunnerProcessStatusReader {
     return sharedRunnerController;
 }
