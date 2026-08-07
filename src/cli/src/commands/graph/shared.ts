@@ -1,14 +1,10 @@
-import { access, constants } from "node:fs/promises";
-import path from "node:path";
-
-import { Core } from "@gmloop/core";
 import { Semantic } from "@gmloop/semantic";
 import { type Command, Option } from "commander";
 
 import { createMinimumValueValidator } from "../../cli-core/command-parsing.js";
 import { createConfigOption, createPathOption, createVerboseOption } from "../../cli-core/shared-command-options.js";
 import { runSemanticIndexOperation } from "../../modules/runtime/semantic-index-operation.js";
-import { discoverProjectRoot } from "../../workflow/project-root.js";
+import { resolveCommandProjectContext } from "../../workflow/project-root.js";
 
 type GraphCommandSharedOptions = {
     config?: string;
@@ -44,33 +40,16 @@ type GraphJsonEnvelope<TPayload> = Readonly<{
 
 export type { GraphCommandSharedOptions, GraphJsonEnvelope, GraphResolutionContext };
 
-async function loadOptionalProjectConfig(
-    projectRoot: string,
-    configPathOption: string | undefined
-): Promise<Record<string, unknown>> {
-    const candidatePath = configPathOption ? path.resolve(configPathOption) : path.join(projectRoot, "gmloop.json");
-
-    try {
-        await access(candidatePath, constants.R_OK);
-    } catch {
-        return {};
-    }
-
-    const loadedConfig = await Core.loadGmloopProjectConfig(candidatePath);
-    return Core.isObjectLike(loadedConfig) ? loadedConfig : {};
-}
-
-async function resolveGraphContext(options: GraphCommandSharedOptions): Promise<GraphResolutionContext> {
-    const projectRoot = await discoverProjectRoot({
-        configPath: options.config,
-        explicitProjectPath: options.path,
-        statePathOption: options.projectState
-    });
-
-    return Object.freeze({
-        projectConfig: await loadOptionalProjectConfig(projectRoot, options.config),
-        projectRoot
-    });
+/**
+ * Resolve the shared graph context (project root + gmloop.json payload) for a
+ * graph command. Delegates to {@link resolveCommandProjectContext} so the
+ * graph commands reuse the canonical project-context resolution that backs
+ * `room`, `object`, `runner`, and the broader workflow layer — keeping the
+ * "discover project root + load optional gmloop.json" sequence defined in
+ * exactly one place.
+ */
+function resolveGraphContext(options: GraphCommandSharedOptions): Promise<GraphResolutionContext> {
+    return resolveCommandProjectContext(options);
 }
 
 function printGraphOutput(payload: unknown, asJson: boolean, humanText: string): void {
@@ -177,7 +156,6 @@ export {
     createGraphEnvelope,
     ensureGraphIndex,
     ensureGraphIndexForQuery,
-    loadOptionalProjectConfig,
     printGraphOutput,
     resolveGraphContext
 };
