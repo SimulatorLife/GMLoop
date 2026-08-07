@@ -10,7 +10,6 @@ import { groupOccurrencesByFile } from "./occurrence-analysis.js";
 import { extractSymbolName } from "./rename/index.js";
 import type {
     BatchRenamePlanSummary,
-    BatchRenameValidation,
     HotReloadCascadeResult,
     RenameImpactAnalysis,
     RenameImpactSummary,
