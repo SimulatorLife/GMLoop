@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 // Node.js deprecated the loose equality helpers (e.g. assert.equal) in the
-// `node:assert` module. This test suite migrates to the /strict subpath and
-// strict helpers (assert.strictEqual, assert.deepStrictEqual) for value- and
-// type-exact comparisons. Behaviour parity with the original calls is
-// validated via: pnpm test src/core/test/async-utils.test.js
+// `node:assert` module. This suite uses the /strict subpath exclusively, including
+// strict helpers (assert.strictEqual, assert.deepStrictEqual) for value- and type-exact
+// comparisons. Behaviour parity is covered by this suite; validate with:
+// `pnpm run build:ts && pnpm run test:core`
 import { runInParallel, runInParallelWithLimit, runSequentially } from "../src/utils/async.js";
 
 // === runSequentially tests ===
@@ -15,7 +15,7 @@ void test("runSequentially executes callbacks in order", async () => {
     await runSequentially([1, 2, 3], async (num) => {
         results.push(num);
     });
-    assert.deepEqual(results, [1, 2, 3]);
+    assert.deepStrictEqual(results, [1, 2, 3]);
 });
 
 void test("runSequentially passes correct indices", async () => {
@@ -23,7 +23,7 @@ void test("runSequentially passes correct indices", async () => {
     await runSequentially(["a", "b", "c"], async (_, index) => {
         indices.push(index);
     });
-    assert.deepEqual(indices, [0, 1, 2]);
+    assert.deepStrictEqual(indices, [0, 1, 2]);
 });
 
 void test("runSequentially handles empty array", async () => {
@@ -40,7 +40,7 @@ void test("runSequentially handles async operations", async () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
         results.push(num);
     });
-    assert.deepEqual(results, [1, 2, 3]);
+    assert.deepStrictEqual(results, [1, 2, 3]);
 });
 
 void test("runSequentially propagates errors", async () => {
@@ -69,7 +69,7 @@ void test("runSequentially works with generator iterables without materializing 
     await runSequentially(generateSequentialNumbers(), async (num) => {
         results.push(num);
     });
-    assert.deepEqual(results, [10, 20, 30]);
+    assert.deepStrictEqual(results, [10, 20, 30]);
 });
 
 // === runInParallel tests ===
@@ -89,26 +89,26 @@ void test("runInParallel executes callbacks in parallel", async () => {
 
     // runInParallel invokes each callback eagerly before awaiting completion.
     // This assertion avoids wall-clock timing and remains deterministic in CI.
-    assert.deepEqual(startedIndices, [1, 2, 3]);
+    assert.deepStrictEqual(startedIndices, [1, 2, 3]);
     releaseCallbacks();
 
     // Results should be returned in order
     const results = await resultsPromise;
-    assert.deepEqual(results, [2, 4, 6]);
+    assert.deepStrictEqual(results, [2, 4, 6]);
 });
 
 void test("runInParallel passes correct indices", async () => {
     const results = await runInParallel(["a", "b", "c"], async (value, index) => {
         return `${index}:${value}`;
     });
-    assert.deepEqual(results, ["0:a", "1:b", "2:c"]);
+    assert.deepStrictEqual(results, ["0:a", "1:b", "2:c"]);
 });
 
 void test("runInParallel handles empty array", async () => {
     const results = await runInParallel([], async () => {
         return 42;
     });
-    assert.deepEqual(results, []);
+    assert.deepStrictEqual(results, []);
 });
 
 void test("runInParallel maintains result order despite different completion times", async () => {
@@ -117,7 +117,7 @@ void test("runInParallel maintains result order despite different completion tim
         return delay;
     });
     // Results should maintain input order, not completion order
-    assert.deepEqual(results, [100, 50, 10]);
+    assert.deepStrictEqual(results, [100, 50, 10]);
 });
 
 void test("runInParallel propagates errors", async () => {
@@ -138,7 +138,7 @@ void test("runInParallel handles synchronous callbacks", async () => {
     const results = await runInParallel([1, 2, 3], (num) => {
         return num * 3;
     });
-    assert.deepEqual(results, [3, 6, 9]);
+    assert.deepStrictEqual(results, [3, 6, 9]);
 });
 
 void test("runInParallel works with iterables", async () => {
@@ -146,7 +146,7 @@ void test("runInParallel works with iterables", async () => {
     const results = await runInParallel(set, async (num) => {
         return num + 10;
     });
-    assert.deepEqual(results, [11, 12, 13]);
+    assert.deepStrictEqual(results, [11, 12, 13]);
 });
 
 void test("runInParallel eagerly starts all callbacks unlike runSequentially", async () => {
@@ -165,7 +165,7 @@ void test("runInParallel eagerly starts all callbacks unlike runSequentially", a
         return value;
     });
 
-    assert.deepEqual(
+    assert.deepStrictEqual(
         startedInParallel,
         [1, 2, 3],
         "runInParallel should invoke every callback before any callback is released"
@@ -230,17 +230,17 @@ void test("runInParallelWithLimit maintains result order", async () => {
         2
     );
 
-    assert.deepEqual(results, [100, 50, 10, 75, 25], "Results should maintain input order");
+    assert.deepStrictEqual(results, [100, 50, 10, 75, 25], "Results should maintain input order");
 });
 
 void test("runInParallelWithLimit handles empty array", async () => {
     const results = await runInParallelWithLimit([], async () => 42, 3);
-    assert.deepEqual(results, []);
+    assert.deepStrictEqual(results, []);
 });
 
 void test("runInParallelWithLimit handles limit larger than array", async () => {
     const results = await runInParallelWithLimit([1, 2, 3], async (num) => num * 2, 10);
-    assert.deepEqual(results, [2, 4, 6]);
+    assert.deepStrictEqual(results, [2, 4, 6]);
 });
 
 void test("runInParallelWithLimit handles limit of 1 (sequential)", async () => {
@@ -255,8 +255,8 @@ void test("runInParallelWithLimit handles limit of 1 (sequential)", async () => 
         1
     );
 
-    assert.deepEqual(order, [1, 2, 3], "Should process in order with limit 1");
-    assert.deepEqual(results, [2, 4, 6]);
+    assert.deepStrictEqual(order, [1, 2, 3], "Should process in order with limit 1");
+    assert.deepStrictEqual(results, [2, 4, 6]);
 });
 
 void test("runInParallelWithLimit rejects invalid limit", async () => {
@@ -295,7 +295,7 @@ void test("runInParallelWithLimit propagates errors", async () => {
 
 void test("runInParallelWithLimit passes correct indices", async () => {
     const results = await runInParallelWithLimit(["a", "b", "c", "d"], async (value, index) => `${index}:${value}`, 2);
-    assert.deepEqual(results, ["0:a", "1:b", "2:c", "3:d"]);
+    assert.deepStrictEqual(results, ["0:a", "1:b", "2:c", "3:d"]);
 });
 
 void test("runInParallelWithLimit starts up to the limit immediately and backfills as tasks settle", async () => {
@@ -319,7 +319,7 @@ void test("runInParallelWithLimit starts up to the limit immediately and backfil
     );
 
     // Only two tasks should begin before any task is released.
-    assert.deepEqual(started, [1, 2], "Exactly `limit` tasks should start immediately");
+    assert.deepStrictEqual(started, [1, 2], "Exactly `limit` tasks should start immediately");
 
     const releaseTaskOne = releaseByTask.get(1);
     assert.ok(releaseTaskOne, "First task release handle should be registered");
@@ -327,8 +327,12 @@ void test("runInParallelWithLimit starts up to the limit immediately and backfil
     for (let microtaskTurn = 0; microtaskTurn < 5; microtaskTurn += 1) {
         await Promise.resolve();
     }
-    assert.equal(started.length, 3, "Exactly one queued task should start after releasing one active task");
-    assert.deepEqual(started.slice(0, 3), [1, 2, 3], "Third task should begin only after one active task settles");
+    assert.strictEqual(started.length, 3, "Exactly one queued task should start after releasing one active task");
+    assert.deepStrictEqual(
+        started.slice(0, 3),
+        [1, 2, 3],
+        "Third task should begin only after one active task settles"
+    );
 
     const releaseTaskTwo = releaseByTask.get(2);
     assert.ok(releaseTaskTwo, "Second task release handle should be registered");
@@ -336,7 +340,7 @@ void test("runInParallelWithLimit starts up to the limit immediately and backfil
     for (let microtaskTurn = 0; microtaskTurn < 5; microtaskTurn += 1) {
         await Promise.resolve();
     }
-    assert.deepEqual(started, [1, 2, 3, 4], "Fourth task should begin after the second slot becomes available");
+    assert.deepStrictEqual(started, [1, 2, 3, 4], "Fourth task should begin after the second slot becomes available");
 
     for (const taskId of [3, 4]) {
         const releaseTask = releaseByTask.get(taskId);
@@ -345,5 +349,5 @@ void test("runInParallelWithLimit starts up to the limit immediately and backfil
     }
 
     const results = await resultsPromise;
-    assert.deepEqual(results, [10, 20, 30, 40], "Result ordering should remain stable");
+    assert.deepStrictEqual(results, [10, 20, 30, 40], "Result ordering should remain stable");
 });
