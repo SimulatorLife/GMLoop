@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 
 const BUILD_EVIDENCE_SCHEMA_VERSION = 1;
 const BUILD_EVIDENCE_FILE = "build-evidence.json";
@@ -128,7 +129,7 @@ async function runCommand(): Promise<number> {
         return 2;
     }
     if (!succeeded) {
-        console.log(`Build completed with status ${String(result.status)}; recording a comparable build-failed baseline.`);
+        console.log(`Build completed with status ${String(result.status)}; recording comparable build-failure evidence.`);
     }
     return 0;
 }
@@ -146,16 +147,19 @@ async function validateCommand(): Promise<number> {
 
 export const __ciBuildEvidenceTest__ = Object.freeze({ parseEvidence, validateEvidence });
 
-const subcommand = process.argv[2];
-try {
-    if (subcommand === "run") {
-        process.exitCode = await runCommand();
-    } else if (subcommand === "validate") {
-        process.exitCode = await validateCommand();
-    } else {
-        throw new Error("Expected subcommand 'run' or 'validate'.");
+const invokedPath = process.argv[1];
+if (invokedPath && pathToFileURL(path.resolve(invokedPath)).href === import.meta.url) {
+    const subcommand = process.argv[2];
+    try {
+        if (subcommand === "run") {
+            process.exitCode = await runCommand();
+        } else if (subcommand === "validate") {
+            process.exitCode = await validateCommand();
+        } else {
+            throw new Error("Expected subcommand 'run' or 'validate'.");
+        }
+    } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
+        process.exitCode = 2;
     }
-} catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exitCode = 2;
 }
