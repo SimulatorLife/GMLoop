@@ -140,19 +140,10 @@ export function timeSync<TResult>(
 }
 
 // Nanosecond-precision monotonic timing helpers used by CLI commands to report
-// per-file and overall processing durations.
-
-/**
- * Read the current monotonic timestamp in nanoseconds.
- *
- * Monotonic time avoids wall-clock jumps (NTP, DST, manual changes) so
- * duration measurements remain stable across long-running operations.
- *
- * @returns {bigint} Monotonic timestamp in nanoseconds.
- */
-export function readMonotonicNanoseconds(): bigint {
-    return process.hrtime.bigint();
-}
+// per-file and overall processing durations. Callers read the current monotonic
+// timestamp directly via `process.hrtime.bigint()` (monotonic time avoids
+// wall-clock jumps from NTP, DST, or manual changes, keeping duration
+// measurements stable across long-running operations).
 
 /**
  * Calculate elapsed nanoseconds between two monotonic timestamps.
