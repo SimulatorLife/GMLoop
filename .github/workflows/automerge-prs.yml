@@ -10,6 +10,7 @@ permissions:
   contents: write
   pull-requests: write
   checks: write
+  actions: read
 
 concurrency:
   group: automerge-${{ github.event.pull_request.number || 'manual' }}
@@ -27,33 +28,32 @@ jobs:
           script: |
             const { owner, repo } = context.repo;
             const n = context.payload.pull_request?.number;
-            if (!n) { core.setOutput('should_run_tests', 'false'); return; }
-            const files = await github.paginate(github.rest.pulls.listFiles, {
-              owner, repo, pull_number: n, per_page: 100
-            });
+            if (!n) {
+              core.setOutput('should_run_tests', 'false');
+              return;
+            }
 
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner,
+              repo,
+              pull_number: n,
+              per_page: 100,
+            });
             const protectedGoldenFixturePatterns = [
               /^test\/fixtures\/plugin-integration\/.*\.gml$/u,
               /^src\/parser\/test\/input\/.*\.gml$/u,
-              /^src\/lint\/test\/fixtures\/.*\.gml$/u
+              /^src\/lint\/test\/fixtures\/.*\.gml$/u,
             ];
-
             const isProtectedGoldenFixture = (filename) =>
               typeof filename === 'string' &&
               protectedGoldenFixturePatterns.some((pattern) => pattern.test(filename));
-
-            const changedFixtures = files.filter((f) => {
-              if (f.status === 'added') {
-                return false;
-              }
-
-              return (
-                isProtectedGoldenFixture(f.filename) ||
-                isProtectedGoldenFixture(f.previous_filename)
-              );
+            const changedFixtures = files.filter((file) => {
+              if (file.status === 'added') return false;
+              return isProtectedGoldenFixture(file.filename) || isProtectedGoldenFixture(file.previous_filename);
             });
+
             if (changedFixtures.length > 0) {
-              core.setFailed(`Golden .gml test fixtures cannot be modified or removed! Found: ${changedFixtures.map(f => f.filename).join(', ')}`);
+              core.setFailed(`Golden .gml test fixtures cannot be modified or removed! Found: ${changedFixtures.map((file) => file.filename).join(', ')}`);
               return;
             }
 
@@ -65,7 +65,7 @@ jobs:
     if: ${{ needs.gate.outputs.should_run_tests == 'true' }}
     name: Generate reports (${{ matrix.target }})
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -74,6 +74,7 @@ jobs:
     steps:
       - name: Resolve ref for ${{ matrix.target }}
         id: ref
+        shell: bash
         run: |
           if [ "${{ matrix.target }}" = "base" ]; then
             echo "ref=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
@@ -87,7 +88,14 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ steps.ref.outputs.ref }}
-        continue-on-error: ${{ matrix.target == 'merge' }}
+
+      - name: Restore cached base report
+        id: base-cache
+        if: ${{ matrix.target == 'base' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: reports
+          key: automerge-base-report-v2-${{ github.event.pull_request.base.sha }}
 
       - name: Setup pnpm (${{ matrix.target }})
         uses: pnpm/action-setup@v6
@@ -105,14 +113,72 @@ jobs:
 
       - name: Install deps
         run: pnpm install --frozen-lockfile --recursive --force
-        continue-on-error: ${{ matrix.target == 'merge' }}
 
       - name: Generate quality reports (${{ matrix.target }})
-        run: pnpm run report
-        continue-on-error: true
+        id: report
+        if: ${{ matrix.target != 'base' || steps.base-cache.outputs.cache-hit != 'true' }}
+        shell: bash
+        run: |
+          set +e
+          status=0
+          mkdir -p reports
+
+          pnpm run build:ts || status=$?
+          if [ "$status" -eq 0 ]; then
+            pnpm exec eslint . \
+              --format ./scripts/eslint-checkstyle-formatter.mjs \
+              --output-file reports/eslint-checkstyle.xml &
+            lint_pid=$!
+
+            pnpm run test:report:gate:compiled &
+            test_pid=$!
+
+            wait "$lint_pid" || status=$?
+            wait "$test_pid" || status=$?
+          fi
+
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Normalize JUnit report
+        if: ${{ always() }}
+        shell: bash
+        env:
+          TEST_STATUS: ${{ steps.report.outputs.exit_code || 'unknown' }}
+        run: pnpm -s test:ensure-junit
+
+      - name: Validate generated report
+        id: validate
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          complete=true
+          if [ ! -s reports/tests.xml ] || ! grep -q '</testsuites>' reports/tests.xml; then
+            echo "::error::Missing or incomplete reports/tests.xml for ${{ matrix.target }}."
+            complete=false
+          fi
+          if [ ! -s reports/eslint-checkstyle.xml ] || ! grep -q '</checkstyle>' reports/eslint-checkstyle.xml; then
+            echo "::error::Missing or incomplete reports/eslint-checkstyle.xml for ${{ matrix.target }}."
+            complete=false
+          fi
+          echo "complete=$complete" >> "$GITHUB_OUTPUT"
+
+      - name: Save successful base report
+        if: >-
+          ${{
+            always() &&
+            matrix.target == 'base' &&
+            steps.base-cache.outputs.cache-hit != 'true' &&
+            steps.report.outputs.exit_code == '0' &&
+            steps.validate.outputs.complete == 'true'
+          }}
+        uses: actions/cache/save@v4
+        with:
+          path: reports
+          key: automerge-base-report-v2-${{ github.event.pull_request.base.sha }}
 
       - name: Publish test summary (${{ matrix.target }})
-        if: ${{ always() }}
+        if: ${{ always() && steps.validate.outputs.complete == 'true' }}
         uses: dorny/test-reporter@v3
         with:
           name: Publish test summary (${{ matrix.target }})
@@ -132,16 +198,25 @@ jobs:
             reports/lcov.info
             reports/jscpd-report.json
             reports/project-health.json
+          if-no-files-found: warn
           retention-days: 7
 
   summarize:
     name: Summarize & comment table
-    needs: tests
+    needs: [gate, tests]
+    if: >-
+      ${{
+        always() &&
+        needs.gate.result == 'success' &&
+        needs.gate.outputs.should_run_tests == 'true'
+      }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     outputs:
       all_green: ${{ steps.summarize.outputs.all_green }}
     env:
       GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
+
     steps:
       - name: Checkout repo (for scripts)
         uses: actions/checkout@v6
@@ -155,7 +230,7 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
-          cache: 'pnpm'
+          cache: pnpm
           cache-dependency-path: |
             pnpm-lock.yaml
             **/pnpm-lock.yaml
@@ -167,37 +242,64 @@ jobs:
         run: pnpm run ensure:cli
 
       - name: Download artifacts
+        continue-on-error: true
         uses: actions/download-artifact@v7
         with:
           pattern: report-*
           merge-multiple: false
 
-      # Use your repo’s logic to compute regressions (allows legacy failures)
       - name: Detect regressions
         id: regress
+        shell: bash
         run: |
           set +e
           set -o pipefail
-
-          # Create reports directory if it doesn't exist
           mkdir -p reports
 
-          # Run the CLI command with explicit paths to the downloaded artifacts
+          missing=()
+          for target in base head merge; do
+            dir="report-$target"
+            if [ ! -s "$dir/tests.xml" ] || ! grep -q '</testsuites>' "$dir/tests.xml"; then
+              missing+=("$dir/tests.xml")
+            fi
+            if [ ! -s "$dir/eslint-checkstyle.xml" ] || ! grep -q '</checkstyle>' "$dir/eslint-checkstyle.xml"; then
+              missing+=("$dir/eslint-checkstyle.xml")
+            fi
+          done
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            {
+              echo '<!-- automerge-pr-test-summary -->'
+              echo '### Quality Report Summary'
+              echo
+              echo '❌ Auto-merge validation could not produce a complete report set.'
+              echo
+              echo 'Missing or incomplete artifacts:'
+              for path in "${missing[@]}"; do
+                echo "- \`$path\`"
+              done
+              echo
+              echo 'This is treated as a CI failure, not as a passing or silently skipped validation.'
+            } > reports/summary-report.md
+            echo "all_green=false" >> "$GITHUB_OUTPUT"
+            echo "status=missing_reports" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           pnpm run cli:compiled generate-quality-report \
             --base report-base \
             --head report-head \
             --merge report-merge \
             --report-file reports/summary-report.md
-
           code=$?
 
-          if [ $code -eq 0 ]; then
+          if [ "$code" -eq 0 ]; then
             echo "all_green=true" >> "$GITHUB_OUTPUT"
             echo "status=clean" >> "$GITHUB_OUTPUT"
-          elif [ $code -eq 11 ]; then
+          elif [ "$code" -eq 11 ]; then
             echo "all_green=false" >> "$GITHUB_OUTPUT"
             echo "status=lint_errors" >> "$GITHUB_OUTPUT"
-          elif [ $code -eq 10 ]; then
+          elif [ "$code" -eq 10 ]; then
             echo "all_green=false" >> "$GITHUB_OUTPUT"
             echo "status=regressions" >> "$GITHUB_OUTPUT"
           else
@@ -211,292 +313,99 @@ jobs:
         uses: actions/github-script@v8
         env:
           REGRESSION_ALL_GREEN: ${{ steps.regress.outputs.all_green }}
-          REGRESSION_STATUS: ${{ steps.regress.outputs.status }}
         with:
           script: |
             const fs = require('node:fs');
-            const path = require('node:path');
-
             const MARKER = '<!-- automerge-pr-test-summary -->';
             const reportFile = 'reports/summary-report.md';
-
-            let body = '';
-            if (fs.existsSync(reportFile)) {
-              body = fs.readFileSync(reportFile, 'utf8');
-            } else {
-              body = `${MARKER}\n### Quality Report Summary\n\n⚠️ Report generation failed. Check the action logs for details.`;
-            }
-
             const { owner, repo } = context.repo;
             const number = context.payload.pull_request?.number;
-            if (!number) { core.notice('No PR number; skipping comment.'); return; }
 
-            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
-            const existing = comments.find(c => c.body && c.body.includes(MARKER));
-            if (existing) {
-              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-            } else {
-              await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
+            let body = `${MARKER}\n### Quality Report Summary\n\n⚠️ Report generation failed. Check the action logs for details.`;
+            if (fs.existsSync(reportFile)) body = fs.readFileSync(reportFile, 'utf8');
+
+            if (number) {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner,
+                repo,
+                issue_number: number,
+                per_page: 100,
+              });
+              const existing = comments.find((comment) => comment.body?.includes(MARKER));
+              if (existing) {
+                await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              } else {
+                await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
+              }
             }
 
-            // Set output for auto-merge gate
-            const allGreen = process.env.REGRESSION_ALL_GREEN === 'true';
-            core.setOutput('all_green', allGreen ? 'true' : 'false');
+            core.setOutput('all_green', process.env.REGRESSION_ALL_GREEN === 'true' ? 'true' : 'false');
 
       - name: Request Agent help for lint errors
-        if: ${{ github.event_name == 'pull_request' && steps.regress.outputs.status == 'lint_errors' && env.GH_USER_TOKEN != '' }}
+        if: >-
+          ${{
+            github.event_name == 'pull_request' &&
+            steps.regress.outputs.status == 'lint_errors' &&
+            env.GH_USER_TOKEN != ''
+          }}
         uses: actions/github-script@v8
         with:
           github-token: ${{ env.GH_USER_TOKEN }}
           script: |
-            const fs = require('node:fs');
             const marker = '<!-- automerge-pr-lint-agent -->';
             const { owner, repo } = context.repo;
-            const number = context.payload.pull_request?.number;
-            if (!number) {
-              core.notice('No PR number; skipping Agent lint comment.');
-              return;
-            }
+            const number = context.payload.pull_request.number;
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
-            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
-            const existing = comments.find(comment => comment.body && comment.body.includes(marker));
             const body = [
               marker,
               '',
-              '@mini-max The auto-merge workflow detected lint errors on this PR gate target. Please prioritize lint-error fixes before test regression triage.',
+              '@mini-max The auto-merge workflow detected lint regressions on this PR. Please fix the lint errors without weakening the checks.',
               '',
-              'Suggested next steps:',
-              '1. Run `pnpm run lint:quiet` and apply deterministic fixes first.',
-              '2. Re-run `pnpm run build:ts` and `pnpm run lint:quiet` until lint errors are fully resolved.',
-              '',
-              `Once done, push fixes to **${pr.head.ref}** on base **${pr.base.ref}** (PR #${number}).`
+              `Push fixes to **${pr.head.ref}** for PR #${number}; do not open a new PR.`,
             ].join('\n');
-            if (existing) {
-              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-            } else {
-              await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
-            }
-            core.notice(`Requested Agent assistance for lint errors on PR #${number}.`);
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
+            const existing = comments.find((comment) => comment.body?.includes(marker));
+            if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            else await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
 
-      - name: Request Agent help for regressions
-        if: ${{ github.event_name == 'pull_request' && steps.regress.outputs.status == 'regressions' && env.GH_USER_TOKEN != '' }}
+      - name: Request Agent help for test regressions
+        if: >-
+          ${{
+            github.event_name == 'pull_request' &&
+            steps.regress.outputs.status == 'regressions' &&
+            env.GH_USER_TOKEN != ''
+          }}
         uses: actions/github-script@v8
         with:
           github-token: ${{ env.GH_USER_TOKEN }}
           script: |
             const fs = require('node:fs');
-            const path = require('node:path');
-
             const marker = '<!-- automerge-pr-regression-agent -->';
-            const FOLLOW_UP_AGENT_POOL = 'followUps';
-            const DEFAULT_FOLLOW_UP_AGENT = 'codex';
-            const WEIGHT_SCALE = 1000;
             const { owner, repo } = context.repo;
-            const number = context.payload.pull_request?.number;
-            if (!number) {
-              core.notice('No PR number; skipping Agent regression comment.');
-              return;
-            }
-
-            const normalize = (value) => {
-              const trimmed = (value || '').trim();
-              if (!trimmed) return '';
-              return trimmed
-                .toLowerCase()
-                .replace(/[^a-z0-9]+/g, '-')
-                .replace(/^-+|-+$/g, '')
-                || '';
-            };
-
-            const getRunNumber = () => {
-              const raw = (process.env.GITHUB_RUN_NUMBER || '').trim();
-              const parsed = Number.parseInt(raw, 10);
-              return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
-            };
-
-            const toSlots = (weight) => Math.max(1, Math.round(weight * WEIGHT_SCALE));
-
-            const buildInterleavedCycle = (items) => {
-              const maxSlots = Math.max(...items.map((item) => item.slots));
-              const cycle = [];
-              for (let slot = 1; slot <= maxSlots; slot += 1) {
-                for (const item of items) {
-                  if (item.slots >= slot) {
-                    cycle.push(item);
-                  }
-                }
-              }
-              return cycle;
-            };
-
-            const chooseDeterministicWeighted = (items, runNumber) => {
-              if (items.length === 0) return null;
-              const sortedItems = [...items].sort((left, right) => left.slug.localeCompare(right.slug));
-              const cycle = buildInterleavedCycle(sortedItems);
-              if (cycle.length === 0) return null;
-              const cycleIndex = (runNumber - 1) % cycle.length;
-              return {
-                selected: cycle[cycleIndex],
-                cycleIndex,
-                cycleLength: cycle.length,
-                totalWeight: sortedItems.reduce((sum, item) => sum + item.weight, 0),
-              };
-            };
-
-            const parseAgentCandidates = (pool) => {
-              if (!pool || !Array.isArray(pool.agents)) {
-                return [];
-              }
-
-              return pool.agents
-                .map((agent) => ({
-                  name: typeof agent?.name === 'string' ? agent.name : '',
-                  weight: Number(agent?.weight),
-                }))
-                .filter((agent) => agent.name && Number.isFinite(agent.weight) && agent.weight > 0)
-                .map((agent) => ({
-                  name: agent.name,
-                  weight: agent.weight,
-                  slug: normalize(agent.name),
-                  slots: toSlots(agent.weight),
-                }))
-                .filter((agent) => agent.slug);
-            };
-
-            const loadWeightsConfig = () => {
-              const weightsPath = path.resolve(process.cwd(), '.github/workflows/weights.json');
-              const raw = fs.readFileSync(weightsPath, 'utf8');
-              return JSON.parse(raw);
-            };
-
-            const selectAgent = (poolName, requestedAgent) => {
-              if (requestedAgent) {
-                return {
-                  agent: requestedAgent,
-                  reason: 'manual override',
-                };
-              }
-
-              let poolDefault = DEFAULT_FOLLOW_UP_AGENT;
-              let candidates = [];
-              try {
-                const parsed = loadWeightsConfig();
-                const pool = parsed?.agentPools?.[poolName] ?? null;
-                const configuredDefault = normalize(pool?.default);
-                if (configuredDefault) {
-                  poolDefault = configuredDefault;
-                }
-                candidates = parseAgentCandidates(pool);
-              } catch (error) {
-                core.warning(`Falling back to default follow-up agent due to configuration error: ${error.message}`);
-              }
-
-              if (!candidates.length) {
-                return {
-                  agent: poolDefault,
-                  reason: `${poolName} pool default fallback`,
-                };
-              }
-
-              const runNumber = getRunNumber();
-              const chosen = chooseDeterministicWeighted(candidates, runNumber);
-              if (!chosen || !chosen.selected) {
-                return {
-                  agent: poolDefault,
-                  reason: `${poolName} deterministic weighted selection fallback`,
-                };
-              }
-
-              const { slug, name, weight, slots } = chosen.selected;
-              const cyclePosition = chosen.cycleIndex + 1;
-              core.info(
-                `Deterministic weighted selection picked agent "${name}" from ${poolName} pool ` +
-                `(slug=${slug}, weight=${weight}, slots=${slots}) for run #${runNumber} ` +
-                `at cycle position ${cyclePosition}/${chosen.cycleLength} from total weight ${chosen.totalWeight.toFixed(6)}.`
-              );
-              return {
-                agent: slug,
-                reason: `${poolName} deterministic weighted selection`,
-              };
-            };
-
+            const number = context.payload.pull_request.number;
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
-            const selection = selectAgent(FOLLOW_UP_AGENT_POOL, '');
-            const agentMention = `@${selection.agent}`;
-            core.info(`Using follow-up agent "${selection.agent}" (${selection.reason}).`);
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner,
-              repo,
-              issue_number: number,
-              per_page: 100,
-            });
-
-            const existing = comments.find(comment => comment.body && comment.body.includes(marker));
-            const reportFile = 'reports/summary-report.md';
-            let regressionSummaryLine = '';
+            let agent = 'copilot';
             try {
-              const reportBody = fs.readFileSync(reportFile, 'utf8');
-              const matchingLine = reportBody
-                .split(/\r?\n/u)
-                .find((line) => line.trim().startsWith('❌ Test regressions detected.'));
-              regressionSummaryLine = matchingLine ? matchingLine.trim() : '';
+              const config = JSON.parse(fs.readFileSync('.github/workflows/weights.json', 'utf8'));
+              const candidates = (config?.agentPools?.followUps?.agents ?? [])
+                .filter((item) => Number(item?.weight) > 0 && typeof item?.name === 'string')
+                .sort((left, right) => right.weight - left.weight || left.name.localeCompare(right.name));
+              if (candidates.length > 0) agent = candidates[0].name;
+              else if (typeof config?.agentPools?.followUps?.default === 'string') agent = config.agentPools.followUps.default;
             } catch (error) {
-              if (error?.code !== 'ENOENT') {
-                core.warning(`Unable to read regression summary from ${reportFile}: ${error.message}`);
-              }
+              core.warning(`Unable to read follow-up agent weights: ${error.message}`);
             }
-
-            const lines = [
+            const body = [
               marker,
               '',
-              `${agentMention} The auto-merge workflow detected test regressions on this PR ` +
-                `while comparing the base results with the merged results ` +
-                `(or with PR head results when merged results are unavailable). ` +
-                "Please review the failing suites, identify the root cause, and provide the fixes so this change can be merged. Do not remove tests or relax performance requirements without a clear, well-reasoned justification, as doing so can harm the overall health of the project.",
-            ];
-
-            if (regressionSummaryLine) {
-              lines.push('', `Regression summary from the Quality Report: ${regressionSummaryLine}`);
-            }
-
-            lines.push(
+              `@${agent} The auto-merge workflow detected a Base → Merged test regression on this PR. Please reproduce it, identify the root cause, and make the smallest correct fix without removing tests or weakening performance requirements.`,
               '',
-              'Suggested next steps:',
-              '1. Reproduce the failures locally (for example, `pnpm run test:report` and `pnpm run test:coverage`) to confirm the regression.',
-              '2. Deliver the smallest possible fix—or a precise explanation of the required follow-up—that resolves the regression blocking auto-merge.'
-            );
-
-            const normalizedAgent = agentMention.replace(/^@/, '').trim().toLowerCase();
-            if (normalizedAgent !== 'copilot') {
-              lines.push(
-                '',
-                `Once done, ensure all changes are pushed to remote branch **${pr.head.ref}** on base **${pr.base.ref}** and keep all commits tied to PR #${number}; do not open new branches or PRs. As the final step (even after running 'make_pr'), run the following exact command(s) to guarantee your changes are pushed:`,
-                '',
-                '```bash',
-                `git push "https://github.com/${owner}/${repo}.git" "HEAD:${pr.head.ref}"`,
-                '```'
-              );
-            }
-
-            const body = lines.join('\n');
-
-            if (existing) {
-              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-            } else {
-              await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
-            }
-
-            core.notice(`Requested Agent assistance for regressions on PR #${number}.`);
-
-      - name: Warn when Agent user token missing for lint errors
-        if: ${{ github.event_name == 'pull_request' && steps.regress.outputs.status == 'lint_errors' && env.GH_USER_TOKEN == '' }}
-        run: |
-          echo "::warning::GH_USER_TOKEN secret is not configured; skipping Agent lint comment."
-
-      - name: Warn when Agent user token missing
-        if: ${{ github.event_name == 'pull_request' && steps.regress.outputs.status == 'regressions' && env.GH_USER_TOKEN == '' }}
-        run: |
-          echo "::warning::GH_USER_TOKEN secret is not configured; skipping Agent regression comment."
+              `Push fixes to **${pr.head.ref}** for PR #${number}; do not open a new PR.`,
+            ].join('\n');
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
+            const existing = comments.find((comment) => comment.body?.includes(marker));
+            if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            else await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
 
   auto-merge:
     name: Auto-merge when green
@@ -504,142 +413,150 @@ jobs:
     if: ${{ github.event_name == 'pull_request' && needs.summarize.outputs.all_green == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Prepare PR & wait for mergeability
+      - name: Prepare PR and verify validation is current
         id: prepare
         uses: actions/github-script@v8
         with:
           script: |
             const { owner, repo } = context.repo;
             const number = context.payload.pull_request?.number;
-            if (!number) { core.setOutput('proceed', 'false'); return; }
+            if (!number) {
+              core.setOutput('proceed', 'false');
+              return;
+            }
+
+            const validatedHead = context.payload.pull_request.head.sha;
+            const validatedBase = context.payload.pull_request.base.sha;
             const loadPr = async () => (await github.rest.pulls.get({ owner, repo, pull_number: number })).data;
-            const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
-
-            const allowedStates = new Set(['clean','unstable','blocked','has_hooks']);
-
+            const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
             let pr = await loadPr();
-            if (pr.draft) { core.notice(`Skip merge #${number}: draft.`); core.setOutput('proceed','false'); return; }
 
-            const maxAttempts = 6;
-            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            if (pr.draft) {
+              core.notice(`Skip merge #${number}: draft.`);
+              core.setOutput('proceed', 'false');
+              return;
+            }
+            if (pr.head.sha !== validatedHead) {
+              core.notice(`Skip merge #${number}: head moved after validation (${validatedHead} -> ${pr.head.sha}).`);
+              core.setOutput('proceed', 'false');
+              return;
+            }
+
+            for (let attempt = 1; attempt <= 6; attempt += 1) {
               const state = String(pr.mergeable_state || '').toLowerCase();
-              const mergeableKnown = pr.mergeable !== null && state && state !== 'unknown';
-              if (mergeableKnown) break;
-
-              if (attempt === maxAttempts) {
-                core.notice(`Skip merge #${number}: mergeability unresolved after ${maxAttempts} attempts (mergeable=${pr.mergeable}, state=${pr.mergeable_state}).`);
-                core.setOutput('proceed','false');
+              if (pr.mergeable !== null && state && state !== 'unknown') break;
+              if (attempt === 6) {
+                core.notice(`Skip merge #${number}: mergeability remained unresolved.`);
+                core.setOutput('proceed', 'false');
                 return;
               }
-
-              core.info(`Mergeability pending for #${number} (attempt ${attempt}/${maxAttempts}): mergeable=${pr.mergeable}, state=${pr.mergeable_state}. Retrying in 5s...`);
               await wait(5000);
               pr = await loadPr();
             }
 
             const state = String(pr.mergeable_state || '').toLowerCase();
-            const ok = pr.mergeable === true && allowedStates.has(state);
-            if (!ok) { core.notice(`Skip merge #${number}: mergeable=${pr.mergeable}, state=${pr.mergeable_state}.`); core.setOutput('proceed','false'); return; }
+            if (pr.mergeable !== true || state === 'dirty') {
+              core.notice(`Skip merge #${number}: mergeable=${pr.mergeable}, state=${pr.mergeable_state}.`);
+              core.setOutput('proceed', 'false');
+              return;
+            }
 
-            core.setOutput('proceed','true');
+            core.setOutput('proceed', 'true');
             core.setOutput('pr', JSON.stringify(pr));
+            core.setOutput('validated_head', validatedHead);
+            core.setOutput('validated_base', validatedBase);
 
-      - name: Update PR branch from base (attempt updateBranch, fallback to server-side merge)
+      - name: Ensure PR branch is current with base
         id: update
         if: ${{ steps.prepare.outputs.proceed == 'true' }}
         uses: actions/github-script@v8
+        env:
+          PREPARE_PR: ${{ steps.prepare.outputs.pr }}
+          VALIDATED_BASE: ${{ steps.prepare.outputs.validated_base }}
         with:
           script: |
             const { owner, repo } = context.repo;
             const number = context.payload.pull_request.number;
             const pr = JSON.parse(process.env.PREPARE_PR || '{}');
-            const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
-            const MARKER = '<!-- automerge-branch-update -->';
+            const validatedBase = process.env.VALIDATED_BASE;
+            const state = String(pr.mergeable_state || '').toLowerCase();
+            const baseAdvanced = Boolean(pr.base?.sha && validatedBase && pr.base.sha !== validatedBase);
+            const needsUpdate = state === 'behind' || baseAdvanced;
 
-            const upsert = async (text) => {
-              try {
-                const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
-                const existing = comments.find(c => c.body && c.body.includes(MARKER));
-                const body = [MARKER, text].join('\n\n');
-                if (existing) {
-                  await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-                } else {
-                  await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
-                }
-              } catch (err) {
-                core.warning(`Failed to upsert branch-update comment: ${err?.message || err}`);
-              }
-            };
-
-            await upsert('Auto-merge preparing: ensuring PR branch is up-to-date with base branch.');
-
-            try {
-              await github.rest.pulls.updateBranch({ owner, repo, pull_number: number });
-              await upsert('Requested branch update via GitHub API (pulls.updateBranch). Waiting for the update to apply...');
-              core.info('Requested branch update via pulls.updateBranch()');
-              await wait(5000);
-              core.setOutput('updated','true');
+            if (!needsUpdate) {
+              core.setOutput('ready_to_merge', 'true');
               return;
-            } catch (ubErr) {
-              const msg = String(ubErr?.message || '').toLowerCase();
-              if (msg.includes('already up to date')) {
-                core.info('PR branch is already up to date.');
-                await upsert('PR branch is already up to date.');
-                core.setOutput('updated','true');
+            }
+
+            core.notice(`PR #${number} needs a base update before merge (state=${state}, baseAdvanced=${baseAdvanced}). Updating the branch and requiring a fresh synchronize validation.`);
+            try {
+              await github.rest.pulls.updateBranch({ owner, repo, pull_number: number, expected_head_sha: pr.head.sha });
+              core.setOutput('ready_to_merge', 'false');
+              core.setOutput('revalidation_required', 'true');
+              return;
+            } catch (updateError) {
+              const message = String(updateError?.message || '');
+              if (message.toLowerCase().includes('already up to date')) {
+                core.setOutput('ready_to_merge', 'true');
                 return;
               }
-              core.warning(`pulls.updateBranch failed: ${ubErr?.message || ubErr}`);
-              await upsert(`pulls.updateBranch failed: ${ubErr?.message || ubErr}. Attempting fallback server-side merge of base into PR branch.`);
+              core.warning(`pulls.updateBranch failed: ${message}`);
             }
 
             try {
-              const baseRef = pr.base.ref;
-              const headRef = pr.head.ref;
-              core.info(`Attempting server-side merge of base '${baseRef}' into head '${headRef}' via repos.merge()`);
-              const { status } = await github.rest.repos.merge({ owner, repo, base: headRef, head: baseRef, commit_message: `chore: sync ${headRef} with ${baseRef}` });
-              
-              if (status === 204) {
-                core.info('PR branch is already up to date (repos.merge returned 204).');
-                await upsert('PR branch is already up to date.');
-              } else {
-                await upsert('Fallback server-side merge performed: base was merged into the PR branch. Waiting for refs to update...');
-                await wait(3000);
+              const { status } = await github.rest.repos.merge({
+                owner,
+                repo,
+                base: pr.head.ref,
+                head: pr.base.ref,
+                commit_message: `chore: sync ${pr.head.ref} with ${pr.base.ref}`,
+              });
+              if (status === 204) core.setOutput('ready_to_merge', 'true');
+              else {
+                core.setOutput('ready_to_merge', 'false');
+                core.setOutput('revalidation_required', 'true');
               }
-              core.setOutput('updated','true');
-              return;
-            } catch (srvErr) {
-              const msg = String(srvErr?.message || '').toLowerCase();
-              if (msg.includes('nothing to merge') || srvErr.status === 204) {
-                 core.info('PR branch is already up to date (repos.merge caught 204/nothing to merge).');
-                 await upsert('PR branch is already up to date.');
-                 core.setOutput('updated','true');
-                 return;
-              }
-              core.warning(`Server-side repos.merge fallback failed: ${srvErr?.message || srvErr}`);
-              await upsert(`Fallback server-side merge failed: ${srvErr?.message || srvErr}. Manual intervention required.`);
-              core.setOutput('updated','false');
-              core.setOutput('update_error', String(srvErr?.message || srvErr));
-              return;
+            } catch (error) {
+              core.warning(`Unable to update PR branch: ${error?.message || error}`);
+              core.setOutput('ready_to_merge', 'false');
             }
-        env:
-          PREPARE_PR: ${{ steps.prepare.outputs.pr }}
 
       - name: Attempt merge
         id: attempt
-        if: ${{ steps.prepare.outputs.proceed == 'true' }}
+        if: ${{ steps.prepare.outputs.proceed == 'true' && steps.update.outputs.ready_to_merge == 'true' }}
         uses: actions/github-script@v8
+        env:
+          VALIDATED_HEAD: ${{ steps.prepare.outputs.validated_head }}
         with:
           script: |
             const { owner, repo } = context.repo;
             const number = context.payload.pull_request.number;
+            const validatedHead = process.env.VALIDATED_HEAD;
+            const { data: current } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            if (current.head.sha !== validatedHead) {
+              core.notice(`Skip merge #${number}: head changed after validation (${validatedHead} -> ${current.head.sha}).`);
+              core.setOutput('merged', 'false');
+              return;
+            }
+
             try {
-              await github.rest.pulls.merge({ owner, repo, pull_number: number, merge_method: 'squash' });
-              core.notice(`Auto-merged PR #${number}.`);
-              core.setOutput('merged','true');
-            } catch (e) {
-              core.warning(`Merge attempt failed: ${e?.message || e}`);
-              core.setOutput('merged','false');
-              core.setOutput('merge_error', String(e?.message || ''));
+              const response = await github.rest.pulls.merge({
+                owner,
+                repo,
+                pull_number: number,
+                merge_method: 'squash',
+                sha: validatedHead,
+              });
+              if (response.data.merged) {
+                core.notice(`Auto-merged PR #${number}.`);
+                core.setOutput('merged', 'true');
+              } else {
+                core.warning(`Merge rejected for PR #${number}: ${response.data.message}`);
+                core.setOutput('merged', 'false');
+              }
+            } catch (error) {
+              core.warning(`Merge attempt failed: ${error?.message || error}`);
+              core.setOutput('merged', 'false');
             }
 
       - name: Delete head branch (if merged)
@@ -650,22 +567,17 @@ jobs:
             const { owner, repo } = context.repo;
             const number = context.payload.pull_request.number;
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            const headRef = pr.head?.ref;
+            const headRepo = pr.head?.repo?.full_name?.toLowerCase() || '';
+            const thisRepo = `${owner}/${repo}`.toLowerCase();
+            if (!headRef || headRepo !== thisRepo) return;
+
+            const { data: repoInfo } = await github.rest.repos.get({ owner, repo });
+            if (headRef === repoInfo.default_branch) return;
+
             try {
-              const headRef = pr.head?.ref;
-              const headRepoFull = pr.head?.repo?.full_name?.toLowerCase() || '';
-              const thisFull = `${owner}/${repo}`.toLowerCase();
-              if (!headRef || headRepoFull !== thisFull) {
-                core.info(`Not deleting branch: different repo or missing ref (head=${headRepoFull}, this=${thisFull}, ref=${headRef}).`);
-                return;
-              }
-              const { data: rinfo } = await github.rest.repos.get({ owner, repo });
-              const defaultBranch = rinfo.default_branch;
-              if (headRef === defaultBranch) {
-                core.info(`Not deleting branch: ${headRef} is the default branch.`);
-                return;
-              }
               await github.rest.git.deleteRef({ owner, repo, ref: `heads/${headRef}` });
               core.notice(`Deleted branch ${headRef} after merge.`);
-            } catch (e) {
-              core.warning(`Unable to delete head branch: ${e.message}`);
+            } catch (error) {
+              core.warning(`Unable to delete head branch: ${error.message}`);
             }
