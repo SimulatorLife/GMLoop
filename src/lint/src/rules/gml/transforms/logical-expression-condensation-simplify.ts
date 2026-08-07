@@ -150,7 +150,7 @@ function simplifyBooleanStep(expression) {
                 return filteredTerms[0];
             }
             const absorbed = applyAbsorption(expression.type, filteredTerms);
-            const deduped = removeDuplicateTerms(expression.type, absorbed);
+            const deduped = removeDuplicateTerms(absorbed);
             const complemented = applyComplementLaw(expression.type, deduped);
             return expression.type === BOOLEAN_NODE_TYPES.AND
                 ? createBooleanAnd(complemented)
@@ -261,7 +261,7 @@ function containsTerm(terms, target) {
     return false;
 }
 
-function removeDuplicateTerms(type, terms) {
+function removeDuplicateTerms(terms) {
     const seen = new Map();
     const result = [];
 
