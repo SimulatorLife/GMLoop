@@ -3036,10 +3036,7 @@ function createProjectIndexResultSnapshot({
 }
 async function loadBuiltInNamesForProjectIndex({ fsFacade, metrics, signal, ensureNotAborted }) {
     const builtInIdentifiers = await metrics.timers.timeAsync("loadBuiltIns", () =>
-        loadBuiltInIdentifiers(fsFacade, metrics, {
-            signal,
-            fallbackMessage: PROJECT_INDEX_BUILD_ABORT_MESSAGE
-        })
+        loadBuiltInIdentifiers(fsFacade, metrics, { signal })
     );
     ensureNotAborted();
     return builtInIdentifiers.names ?? new Set();

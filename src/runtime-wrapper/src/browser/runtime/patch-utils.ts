@@ -1806,7 +1806,11 @@ const __resolveWritableGmlPropertyKey = (target, prop) => {
     }
     return __resolveMinifiedGmlPropertyKey(prop) ?? prop;
 };
-const __runtime_value_names = new Set(["mouse_x", "mouse_y", "current_time"]);
+const __runtime_value_fallbacks = {
+    mouse_x: () => __gml_scope.x,
+    mouse_y: () => __gml_scope.y,
+    current_time: () => Date.now()
+};
 const __resolveRuntimeGetter = (prop) => {
     const getterName = \`get_\${prop}\`;
     const directGetter = __global_scope?.[getterName];
@@ -1831,9 +1835,6 @@ const __resolveRuntimeGetter = (prop) => {
     return null;
 };
 const __resolveRuntimeValue = (prop) => {
-    if (!__runtime_value_names.has(prop)) {
-        return undefined;
-    }
     if (__global_scope && typeof __global_scope[prop] !== "undefined") {
         return __global_scope[prop];
     }
@@ -1841,14 +1842,9 @@ const __resolveRuntimeValue = (prop) => {
     if (getter !== null) {
         return getter.call(__gml_builtins ?? __global_scope);
     }
-    if (prop === "mouse_x") {
-        return __gml_scope.x;
-    }
-    if (prop === "mouse_y") {
-        return __gml_scope.y;
-    }
-    if (prop === "current_time") {
-        return Date.now();
+    const fallback = __runtime_value_fallbacks[prop];
+    if (typeof fallback === "function") {
+        return fallback();
     }
     return undefined;
 };
@@ -1867,7 +1863,6 @@ const __gml_proxy = new Proxy(__gml_scope, {
         return (
             Object.prototype.hasOwnProperty.call(__gml_constants, prop) ||
             Object.prototype.hasOwnProperty.call(__gml_builtins, prop) ||
-            __runtime_value_names.has(prop) ||
             __resolveRuntimeValue(prop) !== undefined ||
             (__global_scope !== null && prop in __global_scope)
         );

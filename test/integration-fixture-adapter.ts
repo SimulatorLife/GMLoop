@@ -138,7 +138,8 @@ export function createIntegrationFixtureAdapter() {
                     lintRuleEntries["gml/no-scientific-notation"] &&
                     lintRuleEntries["gml/no-scientific-notation"] !== "off"
                 ) {
-                    const repairScientificResult = Refactor.ScientificNotation.applyScientificNotationCodemod(finalLintedOutput);
+                    const repairScientificResult =
+                        Refactor.ScientificNotation.applyScientificNotationCodemod(finalLintedOutput);
                     if (repairScientificResult.changed) {
                         finalLintedOutput = repairScientificResult.outputText;
                     }

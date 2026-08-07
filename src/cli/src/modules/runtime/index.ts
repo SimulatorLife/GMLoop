@@ -2,7 +2,12 @@ export * from "./artifact-store.js";
 export * from "./compare-targets.js";
 export * from "./lifecycle.js";
 export * from "./project-operation-state.js";
-export { getRunnerController } from "./runner-controller.js";
+export {
+    getRunnerController,
+    type RunnerProcessLauncher,
+    type RunnerProcessStatusReader,
+    type RunnerProcessStopper
+} from "./runner-controller.js";
 export {
     getRunnerStateStore,
     type RunnerLifecycleStateController,
