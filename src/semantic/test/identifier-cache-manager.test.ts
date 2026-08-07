@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-    IdentifierCacheContract,
-    IdentifierCacheDiagnostics,
-    IdentifierCacheInvalidator,
+    type IdentifierCacheContract,
+    type IdentifierCacheDiagnostics,
+    type IdentifierCacheInvalidator,
     IdentifierCacheManager,
-    IdentifierCacheReader,
-    IdentifierCacheWriter
+    type IdentifierCacheReader,
+    type IdentifierCacheWriter
 } from "../src/scopes/identifier-cache-manager.js";
 
 /**
