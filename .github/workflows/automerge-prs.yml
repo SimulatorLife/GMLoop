@@ -67,6 +67,7 @@ jobs:
                 '^\\.github/actions/',
                 '^\\.github/ci/automerge-policy\\.json$',
                 '^src/cli/src/commands/ci-report\\.ts$',
+                '^src/cli/src/commands/ci-build-evidence\\.ts$',
                 '^src/cli/src/commands/generate-quality-report\\.ts$',
                 '^src/cli/src/modules/quality-report/',
                 '^src/cli/src/cli-command-registration\\.ts$',
@@ -104,12 +105,7 @@ jobs:
             }
             const goldenPatterns = (policy.goldenFixturePatterns || []).map((value) => new RegExp(value, 'u'));
             const trustedPatterns = (policy.trustedCiPatterns || []).map((value) => new RegExp(value, 'u'));
-            const files = await github.paginate(github.rest.pulls.listFiles, {
-              owner,
-              repo,
-              pull_number: number,
-              per_page: 100,
-            });
+            const files = await github.paginate(github.rest.pulls.listFiles, { owner, repo, pull_number: number, per_page: 100 });
             const matches = (filename, patterns) =>
               typeof filename === 'string' && patterns.some((pattern) => pattern.test(filename));
 
@@ -134,7 +130,7 @@ jobs:
             core.notice(`Validating base ${baseSha}, head ${headSha}, merge ${mergeSha}; shards=${shardCount}; trusted CI changed=${trustedCiChanged}.`);
 
   base_cache:
-    name: Restore trusted base report
+    name: Restore trusted base evidence
     needs: gate
     if: ${{ needs.gate.outputs.should_run_tests == 'true' }}
     runs-on: ubuntu-latest
@@ -164,27 +160,38 @@ jobs:
           fingerprint="$({
             printf '%s\0' 'src/cli/src/commands/ci-report.ts'
             cat src/cli/src/commands/ci-report.ts
+            printf '\0%s\0' 'src/cli/src/commands/ci-build-evidence.ts'
+            cat src/cli/src/commands/ci-build-evidence.ts
             printf '\0%s\0' '.github/ci/automerge-policy.json'
             cat .github/ci/automerge-policy.json
           } | sha256sum | cut -d' ' -f1)"
           echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
-          echo "cache_key=automerge-base-report-v6-${{ needs.gate.outputs.base_sha }}-$fingerprint" >> "$GITHUB_OUTPUT"
-      - name: Restore cached base report
+          echo "cache_key=automerge-base-report-v7-${{ needs.gate.outputs.base_sha }}-$fingerprint" >> "$GITHUB_OUTPUT"
+      - name: Restore cached base evidence
         id: cache
         uses: actions/cache/restore@v4
         with:
           path: reports
           key: ${{ steps.tooling.outputs.cache_key }}
-      - name: Validate restored base report
+      - name: Validate restored base evidence
         id: restored
         if: ${{ steps.cache.outputs.cache-hit == 'true' }}
         shell: bash
         run: |
           set +e
-          node src/cli/src/commands/ci-report.ts validate \
-            --report-dir reports \
-            --expected-sha '${{ needs.gate.outputs.base_sha }}' \
-            --expected-fingerprint '${{ steps.tooling.outputs.fingerprint }}'
+          if [ -f reports/auto-merge-report.json ]; then
+            node src/cli/src/commands/ci-report.ts validate \
+              --report-dir reports \
+              --expected-sha '${{ needs.gate.outputs.base_sha }}' \
+              --expected-fingerprint '${{ steps.tooling.outputs.fingerprint }}'
+          elif [ -f reports/build-evidence.json ]; then
+            node src/cli/src/commands/ci-build-evidence.ts validate \
+              --report-dir reports \
+              --expected-sha '${{ needs.gate.outputs.base_sha }}' \
+              --require-failure
+          else
+            false
+          fi
           status=$?
           if [ "$status" -eq 0 ]; then
             echo "usable=true" >> "$GITHUB_OUTPUT"
@@ -197,7 +204,7 @@ jobs:
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}
         id: miss
         run: echo "usable=false" >> "$GITHUB_OUTPUT"
-      - name: Expose trusted base report
+      - name: Expose trusted base evidence
         if: ${{ steps.restored.outputs.usable == 'true' }}
         uses: actions/upload-artifact@v6
         with:
@@ -225,7 +232,20 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile --recursive --force
-      - run: pnpm exec tsc -b
+      - name: Record non-gating head build result
+        shell: bash
+        run: |
+          set +e
+          node src/cli/src/commands/ci-build-evidence.ts run \
+            --target-sha '${{ needs.gate.outputs.head_sha }}' \
+            --report-dir head-build
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "::warning::Head build diagnostic could not complete; this diagnostic does not gate the exact synthetic merge."
+          elif [ "$(node -p "require('./head-build/build-evidence.json').succeeded")" != true ]; then
+            echo "::warning::PR head does not build standalone. The exact synthetic merge remains authoritative."
+          fi
+          exit 0
 
   base_prepare:
     name: Build base fallback and plan tests
@@ -235,6 +255,9 @@ jobs:
     timeout-minutes: 20
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
+      build_completed: ${{ steps.build.outputs.completed }}
+      build_succeeded: ${{ steps.build.outputs.succeeded }}
+      build_status: ${{ steps.build.outputs.status }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -249,6 +272,7 @@ jobs:
           sparse-checkout: |
             .github/actions/stage-ci-report/action.yml
             src/cli/src/commands/ci-report.ts
+            src/cli/src/commands/ci-build-evidence.ts
           sparse-checkout-cone-mode: false
       - uses: pnpm/action-setup@v6
         with:
@@ -259,23 +283,38 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile --recursive --force
-      - name: Stage head-side CI command outside base tree
+      - name: Stage head-side CI tooling outside base tree
         id: ci
         uses: ./.ci-tools/.github/actions/stage-ci-report
         with:
           source: .ci-tools/src/cli/src/commands/ci-report.ts
+          build-source: .ci-tools/src/cli/src/commands/ci-build-evidence.ts
+      - name: Record exact base build evidence
+        id: build
+        run: |
+          node '${{ steps.ci.outputs.build-tool }}' run \
+            --target-sha '${{ needs.gate.outputs.base_sha }}' \
+            --report-dir build-evidence \
+            --github-output "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: base-build-evidence
+          path: build-evidence/build-evidence.json
+          retention-days: 1
       - name: Restore trusted timing history when available
+        if: ${{ steps.build.outputs.succeeded == 'true' }}
         uses: actions/cache/restore@v4
         with:
           path: .ci-history
           key: automerge-test-timing-v1-${{ needs.base_cache.outputs.fingerprint }}-${{ needs.gate.outputs.base_sha }}
           restore-keys: |
             automerge-test-timing-v1-${{ needs.base_cache.outputs.fingerprint }}-
-      - run: pnpm exec tsc -b
       - name: Stage lean compiled runtime
+        if: ${{ steps.build.outputs.succeeded == 'true' }}
         run: node '${{ steps.ci.outputs.tool }}' stage-compiled --output compiled-runtime
       - name: Create exact timing-balanced base manifest
         id: plan
+        if: ${{ steps.build.outputs.succeeded == 'true' }}
         run: |
           node '${{ steps.ci.outputs.tool }}' manifest \
             --output test-manifest.json \
@@ -283,11 +322,13 @@ jobs:
             --shards '${{ needs.gate.outputs.shard_count }}' \
             --github-output "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v6
+        if: ${{ steps.build.outputs.succeeded == 'true' }}
         with:
           name: compiled-base-${{ needs.gate.outputs.base_sha }}
           path: compiled-runtime
           retention-days: 1
       - uses: actions/upload-artifact@v6
+        if: ${{ steps.build.outputs.succeeded == 'true' }}
         with:
           name: base-test-plan
           path: test-manifest.json
@@ -313,6 +354,7 @@ jobs:
           sparse-checkout: |
             .github/actions/stage-ci-report/action.yml
             src/cli/src/commands/ci-report.ts
+            src/cli/src/commands/ci-build-evidence.ts
           sparse-checkout-cone-mode: false
       - uses: pnpm/action-setup@v6
         with:
@@ -323,11 +365,12 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile --recursive --force
-      - name: Stage head-side CI command outside base tree
+      - name: Stage head-side CI tooling outside base tree
         id: ci
         uses: ./.ci-tools/.github/actions/stage-ci-report
         with:
           source: .ci-tools/src/cli/src/commands/ci-report.ts
+          build-source: .ci-tools/src/cli/src/commands/ci-build-evidence.ts
       - name: Generate base lint report
         shell: bash
         run: |
@@ -345,7 +388,7 @@ jobs:
   base_tests:
     name: Base tests (${{ matrix.shard }})
     needs: [gate, base_cache, base_prepare]
-    if: ${{ needs.gate.outputs.should_run_tests == 'true' && needs.base_cache.outputs.usable != 'true' && needs.base_prepare.result == 'success' }}
+    if: ${{ needs.gate.outputs.should_run_tests == 'true' && needs.base_cache.outputs.usable != 'true' && needs.base_prepare.outputs.build_succeeded == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     strategy:
@@ -365,6 +408,7 @@ jobs:
           sparse-checkout: |
             .github/actions/stage-ci-report/action.yml
             src/cli/src/commands/ci-report.ts
+            src/cli/src/commands/ci-build-evidence.ts
           sparse-checkout-cone-mode: false
       - uses: pnpm/action-setup@v6
         with:
@@ -375,11 +419,12 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile --recursive --force
-      - name: Stage head-side CI command outside base tree
+      - name: Stage head-side CI tooling outside base tree
         id: ci
         uses: ./.ci-tools/.github/actions/stage-ci-report
         with:
           source: .ci-tools/src/cli/src/commands/ci-report.ts
+          build-source: .ci-tools/src/cli/src/commands/ci-build-evidence.ts
       - uses: actions/download-artifact@v7
         with:
           name: compiled-base-${{ needs.gate.outputs.base_sha }}
@@ -407,7 +452,7 @@ jobs:
           retention-days: 1
 
   base_assemble:
-    name: Assemble ephemeral base fallback
+    name: Assemble ephemeral base evidence
     needs: [gate, base_cache, base_prepare, base_lint, base_tests]
     if: ${{ always() && !cancelled() && needs.gate.outputs.should_run_tests == 'true' && needs.base_cache.outputs.usable != 'true' }}
     runs-on: ubuntu-latest
@@ -426,29 +471,53 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile --recursive --force
+      - name: Require completed base build and lint execution
+        run: |
+          test '${{ needs.base_prepare.result }}' = success
+          test '${{ needs.base_lint.result }}' = success
       - uses: actions/download-artifact@v7
         with:
-          pattern: base-report-*
+          name: base-build-evidence
+          path: build-evidence
+      - uses: actions/download-artifact@v7
+        with:
+          name: base-report-lint
+          path: reports
+      - name: Download base test reports
+        if: ${{ needs.base_prepare.outputs.build_succeeded == 'true' }}
+        uses: actions/download-artifact@v7
+        with:
+          pattern: base-report-shard-*
           merge-multiple: true
           path: reports
-      - uses: actions/download-artifact@v7
+      - name: Download base test plan
+        if: ${{ needs.base_prepare.outputs.build_succeeded == 'true' }}
+        uses: actions/download-artifact@v7
         with:
           name: base-test-plan
           path: .
-      - name: Assemble and validate base evidence
+      - name: Assemble healthy base report
+        if: ${{ needs.base_prepare.outputs.build_succeeded == 'true' }}
         run: |
           node src/cli/src/commands/ci-report.ts assemble \
             --manifest test-manifest.json \
             --report-dir reports \
             --target-sha '${{ needs.gate.outputs.base_sha }}' \
             --fingerprint '${{ needs.base_cache.outputs.fingerprint }}' \
-            --build-status '${{ needs.base_prepare.result == 'success' && '0' || '2' }}'
+            --build-status 0
           node src/cli/src/commands/ci-report.ts validate \
             --report-dir reports \
             --expected-sha '${{ needs.gate.outputs.base_sha }}' \
             --expected-fingerprint '${{ needs.base_cache.outputs.fingerprint }}'
+      - name: Package deterministic broken-base evidence
+        if: ${{ needs.base_prepare.outputs.build_succeeded != 'true' }}
+        run: |
+          cp build-evidence/build-evidence.json reports/build-evidence.json
+          node src/cli/src/commands/ci-build-evidence.ts validate \
+            --report-dir reports \
+            --expected-sha '${{ needs.gate.outputs.base_sha }}' \
+            --require-failure
       - uses: actions/upload-artifact@v6
-        if: ${{ always() && !cancelled() }}
         with:
           name: report-base
           path: reports
@@ -463,6 +532,9 @@ jobs:
     timeout-minutes: 20
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
+      build_completed: ${{ steps.build.outputs.completed }}
+      build_succeeded: ${{ steps.build.outputs.succeeded }}
+      build_status: ${{ steps.build.outputs.status }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -477,23 +549,38 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile --recursive --force
+      - name: Record exact synthetic-merge build evidence
+        id: build
+        run: |
+          node src/cli/src/commands/ci-build-evidence.ts run \
+            --target-sha '${{ needs.gate.outputs.merge_sha }}' \
+            --report-dir build-evidence \
+            --github-output "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: merge-build-evidence
+          path: build-evidence/build-evidence.json
+          retention-days: 1
       - name: Restore trusted timing history
+        if: ${{ steps.build.outputs.succeeded == 'true' }}
         uses: actions/cache/restore@v4
         with:
           path: .ci-history
           key: automerge-test-timing-v1-${{ needs.base_cache.outputs.fingerprint }}-${{ needs.gate.outputs.base_sha }}
           restore-keys: |
             automerge-test-timing-v1-${{ needs.base_cache.outputs.fingerprint }}-
-      - run: pnpm exec tsc -b
-      - run: node src/cli/src/commands/ci-report.ts stage-compiled --output compiled-runtime
+      - name: Stage lean compiled runtime
+        if: ${{ steps.build.outputs.succeeded == 'true' }}
+        run: node src/cli/src/commands/ci-report.ts stage-compiled --output compiled-runtime
       - name: Download exact base timing when cache hit
-        if: ${{ needs.base_cache.outputs.usable == 'true' }}
+        if: ${{ steps.build.outputs.succeeded == 'true' && needs.base_cache.outputs.usable == 'true' }}
         uses: actions/download-artifact@v7
         with:
           name: report-base
           path: report-base
       - name: Create exact timing-balanced merge manifest
         id: plan
+        if: ${{ steps.build.outputs.succeeded == 'true' }}
         shell: bash
         run: |
           history=.ci-history/test-durations.json
@@ -504,11 +591,13 @@ jobs:
             --shards '${{ needs.gate.outputs.shard_count }}' \
             --github-output "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v6
+        if: ${{ steps.build.outputs.succeeded == 'true' }}
         with:
           name: compiled-merge-${{ needs.gate.outputs.merge_sha }}
           path: compiled-runtime
           retention-days: 1
       - uses: actions/upload-artifact@v6
+        if: ${{ steps.build.outputs.succeeded == 'true' }}
         with:
           name: merge-test-plan
           path: test-manifest.json
@@ -551,7 +640,7 @@ jobs:
   merge_tests:
     name: Merge tests (${{ matrix.shard }})
     needs: [gate, merge_prepare]
-    if: ${{ needs.gate.outputs.should_run_tests == 'true' && needs.merge_prepare.result == 'success' }}
+    if: ${{ needs.gate.outputs.should_run_tests == 'true' && needs.merge_prepare.outputs.build_succeeded == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     strategy:
@@ -598,7 +687,7 @@ jobs:
           retention-days: 1
 
   merge_assemble:
-    name: Assemble synthetic-merge report
+    name: Assemble synthetic-merge evidence
     needs: [gate, base_cache, merge_prepare, merge_lint, merge_tests]
     if: ${{ always() && !cancelled() && needs.gate.outputs.should_run_tests == 'true' }}
     runs-on: ubuntu-latest
@@ -617,32 +706,56 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile --recursive --force
+      - name: Require completed merge build and lint execution
+        run: |
+          test '${{ needs.merge_prepare.result }}' = success
+          test '${{ needs.merge_lint.result }}' = success
       - uses: actions/download-artifact@v7
         with:
-          pattern: merge-report-*
+          name: merge-build-evidence
+          path: build-evidence
+      - uses: actions/download-artifact@v7
+        with:
+          name: merge-report-lint
+          path: reports
+      - name: Download merge test reports
+        if: ${{ needs.merge_prepare.outputs.build_succeeded == 'true' }}
+        uses: actions/download-artifact@v7
+        with:
+          pattern: merge-report-shard-*
           merge-multiple: true
           path: reports
-      - uses: actions/download-artifact@v7
+      - name: Download merge test plan
+        if: ${{ needs.merge_prepare.outputs.build_succeeded == 'true' }}
+        uses: actions/download-artifact@v7
         with:
           name: merge-test-plan
           path: .
-      - name: Assemble and validate merge evidence
+      - name: Assemble and validate healthy merge evidence
+        if: ${{ needs.merge_prepare.outputs.build_succeeded == 'true' }}
         run: |
           node src/cli/src/commands/ci-report.ts assemble \
             --manifest test-manifest.json \
             --report-dir reports \
             --target-sha '${{ needs.gate.outputs.merge_sha }}' \
             --fingerprint '${{ needs.base_cache.outputs.fingerprint }}' \
-            --build-status '${{ needs.merge_prepare.result == 'success' && '0' || '2' }}'
+            --build-status 0
           node src/cli/src/commands/ci-report.ts validate \
             --report-dir reports \
             --expected-sha '${{ needs.gate.outputs.merge_sha }}' \
             --expected-fingerprint '${{ needs.base_cache.outputs.fingerprint }}'
+      - name: Package deterministic merge build failure
+        if: ${{ needs.merge_prepare.outputs.build_succeeded != 'true' }}
+        run: |
+          cp build-evidence/build-evidence.json reports/build-evidence.json
+          node src/cli/src/commands/ci-build-evidence.ts validate \
+            --report-dir reports \
+            --expected-sha '${{ needs.gate.outputs.merge_sha }}' \
+            --require-failure
       - name: Publish timing profile
         if: ${{ always() && !cancelled() }}
         run: test ! -f reports/test-durations.md || cat reports/test-durations.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v6
-        if: ${{ always() && !cancelled() }}
         with:
           name: report-merge
           path: reports
@@ -661,8 +774,8 @@ jobs:
           GATE_RESULT: ${{ needs.gate.result }}
           BASE_CACHE_USABLE: ${{ needs.base_cache.outputs.usable }}
           BASE_ASSEMBLE_RESULT: ${{ needs.base_assemble.result }}
-          HEAD_RESULT: ${{ needs.head_diagnostic.result }}
           MERGE_PREPARE_RESULT: ${{ needs.merge_prepare.result }}
+          MERGE_BUILD_SUCCEEDED: ${{ needs.merge_prepare.outputs.build_succeeded }}
           MERGE_LINT_RESULT: ${{ needs.merge_lint.result }}
           MERGE_TEST_RESULT: ${{ needs.merge_tests.result }}
           MERGE_ASSEMBLE_RESULT: ${{ needs.merge_assemble.result }}
@@ -676,15 +789,19 @@ jobs:
             exit 0
           fi
           if [ "$BASE_CACHE_USABLE" != true ] && [ "$BASE_ASSEMBLE_RESULT" != success ]; then
-            echo "No complete base report was available."
+            echo "No complete base evidence was available."
             exit 1
           fi
-          for result in "$HEAD_RESULT" "$MERGE_PREPARE_RESULT" "$MERGE_LINT_RESULT" "$MERGE_TEST_RESULT" "$MERGE_ASSEMBLE_RESULT"; do
+          for result in "$MERGE_PREPARE_RESULT" "$MERGE_LINT_RESULT" "$MERGE_ASSEMBLE_RESULT"; do
             if [ "$result" != success ]; then
-              echo "Synthetic-merge validation component failed: $result"
+              echo "Synthetic-merge evidence component failed: $result"
               exit 1
             fi
           done
+          if [ "$MERGE_BUILD_SUCCEEDED" = true ] && [ "$MERGE_TEST_RESULT" != success ]; then
+            echo "Synthetic merge built successfully but its test shards did not complete."
+            exit 1
+          fi
           if [ "$TRUSTED_CI_CHANGED" = true ]; then
             echo "::notice::This PR changes trusted CI/evaluation files. Validation may complete, but unattended merge is disabled."
           fi
