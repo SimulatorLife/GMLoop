@@ -120,37 +120,101 @@ export type SemanticTwoTierPublicationRequest = Readonly<{
     sourceRevision: string;
 }>;
 
-export type SemanticIndexStore = Readonly<{
+/**
+ * Snapshot lease acquisition.
+ *
+ * Provides the ability to acquire a capability-qualified snapshot lease
+ * without coupling to publication, lifecycle, or dependency-query concerns.
+ * Read-path consumers (e.g. LSP navigation queries) that only ever pin a
+ * snapshot and read through its lease should depend on this narrow
+ * interface rather than the full {@link SemanticIndexStore}.
+ */
+export type SemanticSnapshotLeaseAcquirer = Readonly<{
     /** Acquire an immutable, capability-qualified snapshot lease for one request. */
     acquireSemanticSnapshot: (
         requirements: SemanticSnapshotRequirements,
         signal: AbortSignal
     ) => Promise<SemanticSnapshotAcquireResult>;
+    /** Returns the number of leases retaining a snapshot in this store. */
+    readSemanticSnapshotLeaseMetrics: () => SemanticSnapshotLeaseMetrics;
+}>;
+
+/**
+ * Store lifecycle control.
+ *
+ * Provides the ability to flush pending publications and close the
+ * underlying SQLite connection without coupling to snapshot leasing,
+ * reads, or publication.
+ */
+export type SemanticIndexLifecycle = Readonly<{
     /** Flushes all accepted semantic publications. */
     flush: () => Promise<void>;
     /** Flushes accepted work and closes the SQLite connection. */
     close: () => Promise<void>;
+}>;
+
+/**
+ * Read-only tier, manifest, and navigation-projection queries.
+ *
+ * Provides cache-aware consumers (e.g. graph projection) with read access
+ * to persisted semantic state without coupling to snapshot leasing,
+ * publication, or dependency queries.
+ */
+export type SemanticIndexStateReader = Readonly<{
     /** Reads both active tier descriptors and their exact revision compatibility. */
     readActiveSemanticSlots: () => SemanticActiveSlots;
     /** Reads the persisted file manifest for one semantic tier. */
     readSemanticManifest: (tier: SemanticTier) => SemanticFileManifest | null;
-    /** Returns the number of leases retaining a snapshot in this store. */
-    readSemanticSnapshotLeaseMetrics: () => SemanticSnapshotLeaseMetrics;
     /** Reads the generation-checked derived navigation payload used for warm restore. */
     readSemanticNavigationProjection: (tier: SemanticTier) => Record<string, unknown> | null;
     /** Reads the project-wide compare-and-publish generation boundary. */
     readSemanticProjectHead: () => SemanticProjectHead;
     /** Reconstructs the canonical normalized semantic facts for one tier. */
     readSemanticSnapshot: (tier: SemanticTier) => SemanticSnapshot | null;
+}>;
+
+/**
+ * Semantic publication.
+ *
+ * Provides the ability to publish incremental, cold, and session-local
+ * snapshots without coupling to snapshot leasing, reads, or dependency
+ * queries.
+ */
+export type SemanticIndexPublisher = Readonly<{
     applySemanticIncrement: (request: SemanticIncrementPublicationRequest) => SemanticPublishResult;
     publishSemanticSnapshot: (request: SemanticSnapshotPublicationRequest) => SemanticPublishResult;
     /** Retains an overlay-backed snapshot in memory without writing unsaved content to SQLite. */
     publishSessionSemanticSnapshot: (
         request: SemanticSessionSnapshotPublicationRequest
     ) => SemanticSessionSnapshotPublishResult;
+}>;
+
+/**
+ * Dependency-graph queries.
+ *
+ * Provides downstream-file and unresolved-dependent lookups without
+ * coupling to snapshot leasing, reads, or publication.
+ */
+export type SemanticDependencyQuery = Readonly<{
     findImmediateDownstreamFiles: (filePath: string) => ReadonlyArray<string>;
     findUnresolvedDependents: (identifierNames: ReadonlyArray<string>) => ReadonlyArray<string>;
 }>;
+
+/**
+ * Complete semantic index store contract.
+ *
+ * Combines all role-focused types above for consumers (e.g. project
+ * sessions) that need full store capabilities. Consumers that only need
+ * one slice of behavior should depend on the matching role type directly —
+ * see {@link SemanticSnapshotLeaseAcquirer}, {@link SemanticIndexLifecycle},
+ * {@link SemanticIndexStateReader}, {@link SemanticIndexPublisher}, and
+ * {@link SemanticDependencyQuery}.
+ */
+export type SemanticIndexStore = SemanticSnapshotLeaseAcquirer &
+    SemanticIndexLifecycle &
+    SemanticIndexStateReader &
+    SemanticIndexPublisher &
+    SemanticDependencyQuery;
 
 function createAffectedFileSet(
     projectRoot: string,
@@ -1794,7 +1858,10 @@ export function openSemanticIndexStore(projectRoot: string): SemanticIndexStore 
 
 /** Publishes definitions first when necessary, then a full snapshot for the exact same revision. */
 export function publishSemanticTwoTierSnapshot(
-    store: SemanticIndexStore,
+    // Only reads active slots/head and publishes; depends on that slice of
+    // SemanticIndexStore rather than the full store contract.
+    store: Pick<SemanticIndexStateReader, "readActiveSemanticSlots" | "readSemanticProjectHead"> &
+        SemanticIndexPublisher,
     request: SemanticTwoTierPublicationRequest
 ): SemanticPublishResult {
     let activeSlots = store.readActiveSemanticSlots();

@@ -9,8 +9,16 @@ import { setupWatchChangeTest } from "./test-helpers/watch-change-setup.js";
 import { createMockWatchFactory } from "./test-helpers/watch-fixtures.js";
 import { runWatchTest } from "./test-helpers/watch-runner.js";
 
+type AwaitableWatchListener = (...args: Parameters<WatchListener<string>>) => void | Promise<void>;
+
+async function triggerWatchChangeAndWait(listener: WatchListener<string> | undefined, filename: string): Promise<void> {
+    assert.ok(listener, "watch listener should be registered");
+    const awaitableListener: AwaitableWatchListener = listener;
+    await awaitableListener("change", filename);
+}
+
 void describe("watch command duplicate change handling", () => {
-    void it("skips duplicate change events when file mtime is unchanged", async () => {
+    void it("skips duplicate change events when file mtime is unchanged", { timeout: 10_000 }, async () => {
         const listenerCapture: { listener: WatchListener<string> | undefined } = { listener: undefined };
         const watchFactory = createMockWatchFactory(listenerCapture);
 
@@ -23,9 +31,7 @@ void describe("watch command duplicate change handling", () => {
             async (context) => {
                 const { testFile, firstStatus } = await setupWatchChangeTest(context, listenerCapture);
 
-                listenerCapture.listener?.("change", path.basename(testFile));
-                await new Promise((resolve) => setTimeout(resolve, 150));
-
+                await triggerWatchChangeAndWait(listenerCapture.listener, path.basename(testFile));
                 const secondStatus = await fetchStatusPayload(context.baseUrl);
 
                 assert.equal(
@@ -37,7 +43,7 @@ void describe("watch command duplicate change handling", () => {
         );
     });
 
-    void it("skips duplicate events after startup for unchanged live content", async () => {
+    void it("skips duplicate events after startup for unchanged live content", { timeout: 10_000 }, async () => {
         const listenerCapture: { listener: WatchListener<string> | undefined } = { listener: undefined };
         const watchFactory = createMockWatchFactory(listenerCapture);
 
@@ -61,9 +67,7 @@ void describe("watch command duplicate change handling", () => {
                 const afterLiveChange = await fetchStatusPayload(baseUrl);
                 assert.equal(afterLiveChange.totalPatchCount, 1, "live change should emit one runtime patch");
 
-                listenerCapture.listener?.("change", path.basename(testFile));
-                await new Promise((resolve) => setTimeout(resolve, 150));
-
+                await triggerWatchChangeAndWait(listenerCapture.listener, path.basename(testFile));
                 const afterDuplicateEvent = await fetchStatusPayload(baseUrl);
                 assert.equal(
                     afterDuplicateEvent.totalPatchCount,

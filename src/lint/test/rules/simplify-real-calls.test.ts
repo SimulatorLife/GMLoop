@@ -94,6 +94,27 @@ void describe("gml/simplify-real-calls", () => {
             callee: "ReAl",
             literalValue: '"56"',
             expectedFixText: "56"
+        },
+        {
+            name: "hexadecimal literal with 0x prefix",
+            source: 'var x = real("0x00F");',
+            callee: "real",
+            literalValue: '"0x00F"',
+            expectedFixText: "0x00F"
+        },
+        {
+            name: "negative hexadecimal literal with 0x prefix",
+            source: 'var x = real("-0x1A");',
+            callee: "real",
+            literalValue: '"-0x1A"',
+            expectedFixText: "-0x1A"
+        },
+        {
+            name: "mixed-case hexadecimal digits",
+            source: 'var x = real("0xAbCd");',
+            callee: "real",
+            literalValue: '"0xAbCd"',
+            expectedFixText: "0xAbCd"
         }
     ] as const;
 
@@ -211,6 +232,34 @@ void describe("gml/simplify-real-calls", () => {
                 messages.length,
                 0,
                 `real(${testCase.literalValue}) should not be reported because the replacement would be invalid GML`
+            );
+        }
+    });
+
+    // GML's `real()` only accepts the `0x` prefix for hex strings (per the
+    // manual: "Hexadecimal numbers are also supported in a string. These
+    // strings should have a format `"0x00F"`"). The `$` and `#` prefixes are
+    // valid in GML source as hex-literal syntax but `real()` cannot convert
+    // them, so the rule must stay silent — rewriting `real("$1F")` to `$1F`
+    // would change the runtime value (real() would return 0, the literal is 31).
+    void it("does not report real() when the hex string uses $ or # prefixes", () => {
+        const unsupportedHexCases = [
+            { source: 'var x = real("$1F");', literalValue: '"$1F"' },
+            { source: 'var x = real("#FF");', literalValue: '"#FF"' },
+            { source: 'var x = real("0b101");', literalValue: '"0b101"' }
+        ] as const;
+
+        for (const testCase of unsupportedHexCases) {
+            const node = buildRealCallNode("real", testCase.literalValue, 8);
+            const { context, messages } = createContext(testCase.source);
+
+            const visitor = rule.create(context as any);
+            visitor.Program?.({ type: "Program", body: [node] } as any);
+
+            assert.strictEqual(
+                messages.length,
+                0,
+                `real(${testCase.literalValue}) should not be reported because real() does not accept that hex form`
             );
         }
     });

@@ -4,7 +4,7 @@ import type {
     GraphVisualizationLspToolCatalogEntry,
     GraphVisualizationMcpToolCatalogEntry
 } from "../../graph/index.js";
-import { getLintFixableBadgeLabel } from "./lint-rule-labels.js";
+import { getLintFixableBadgeLabel } from "./lint-rule-levels.js";
 
 export type GraphVisualizationDocsPanelCatalogEntry = Readonly<{
     badges: ReadonlyArray<string>;
