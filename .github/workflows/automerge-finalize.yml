@@ -30,6 +30,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
+
       - name: Resolve PR and independently enforce trust policy
         id: resolve
         uses: actions/github-script@v8
@@ -42,11 +43,7 @@ jobs:
             const run = context.payload.workflow_run;
             let number = run.pull_requests?.[0]?.number;
             if (!number) {
-              const associated = await github.rest.repos.listPullRequestsAssociatedWithCommit({
-                owner,
-                repo,
-                commit_sha: run.head_sha,
-              });
+              const associated = await github.rest.repos.listPullRequestsAssociatedWithCommit({ owner, repo, commit_sha: run.head_sha });
               number = associated.data.find((pr) => pr.state === 'open')?.number;
             }
             if (!number) {
@@ -63,12 +60,7 @@ jobs:
 
             const policy = JSON.parse(fs.readFileSync('.github/ci/automerge-policy.json', 'utf8'));
             const trustedPatterns = (policy.trustedCiPatterns || []).map((value) => new RegExp(value, 'u'));
-            const files = await github.paginate(github.rest.pulls.listFiles, {
-              owner,
-              repo,
-              pull_number: number,
-              per_page: 100,
-            });
+            const files = await github.paginate(github.rest.pulls.listFiles, { owner, repo, pull_number: number, per_page: 100 });
             const matchesTrusted = (filename) =>
               typeof filename === 'string' && trustedPatterns.some((pattern) => pattern.test(filename));
             const trustedCiChanged = files.some((file) =>
@@ -79,7 +71,7 @@ jobs:
             core.setOutput('head_sha', pr.head.sha);
             core.notice(`Trusted finalizer resolved PR #${number} at head ${pr.head.sha}; trusted CI changed=${trustedCiChanged}.`);
 
-      - name: Download trusted comparable reports
+      - name: Download trusted base report
         if: ${{ steps.resolve.outputs.current == 'true' && steps.resolve.outputs.trusted_ci_changed != 'true' && github.event.workflow_run.conclusion == 'success' }}
         uses: actions/download-artifact@v7
         with:
@@ -87,6 +79,7 @@ jobs:
           path: report-base
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Download synthetic-merge report
         if: ${{ steps.resolve.outputs.current == 'true' && steps.resolve.outputs.trusted_ci_changed != 'true' && github.event.workflow_run.conclusion == 'success' }}
         uses: actions/download-artifact@v7
@@ -95,6 +88,7 @@ jobs:
           path: report-merge
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Verify validation target provenance
         id: provenance
         if: ${{ steps.resolve.outputs.current == 'true' && steps.resolve.outputs.trusted_ci_changed != 'true' && github.event.workflow_run.conclusion == 'success' }}
@@ -119,7 +113,7 @@ jobs:
             const mergeBase = mergeCommit.parents?.[0]?.sha;
             const mergeHead = mergeCommit.parents?.[1]?.sha;
             if (mergeBase !== baseSha || mergeHead !== validatedHead) {
-              core.setFailed(`Validation provenance mismatch: report base=${baseSha}, merge parents=${mergeBase || 'missing'} + ${mergeHead || 'missing'}, head=${validatedHead}.`);
+              core.setFailed(`Validation provenance mismatch: base=${baseSha}, merge parents=${mergeBase || 'missing'} + ${mergeHead || 'missing'}, head=${validatedHead}.`);
               return;
             }
             core.setOutput('base_sha', baseSha);
@@ -138,6 +132,7 @@ jobs:
       - name: Install trusted finalizer dependencies
         if: ${{ steps.provenance.outputs.base_sha != '' }}
         run: pnpm install --frozen-lockfile --recursive --force
+
       - name: Validate and compare with trusted default-branch code
         id: compare
         if: ${{ steps.provenance.outputs.base_sha != '' }}
@@ -147,16 +142,15 @@ jobs:
           MERGE_SHA: ${{ steps.provenance.outputs.merge_sha }}
         run: |
           set +e
-          fingerprint="$(sha256sum src/cli/src/commands/ci-report.ts | cut -d' ' -f1)"
-          node src/cli/src/commands/ci-report.ts validate \
-            --report-dir report-base \
-            --expected-sha "$BASE_SHA" \
-            --expected-fingerprint "$fingerprint"
+          fingerprint="$({
+            printf '%s\0' 'src/cli/src/commands/ci-report.ts'
+            cat src/cli/src/commands/ci-report.ts
+            printf '\0%s\0' '.github/ci/automerge-policy.json'
+            cat .github/ci/automerge-policy.json
+          } | sha256sum | cut -d' ' -f1)"
+          node src/cli/src/commands/ci-report.ts validate --report-dir report-base --expected-sha "$BASE_SHA" --expected-fingerprint "$fingerprint"
           base_status=$?
-          node src/cli/src/commands/ci-report.ts validate \
-            --report-dir report-merge \
-            --expected-sha "$MERGE_SHA" \
-            --expected-fingerprint "$fingerprint"
+          node src/cli/src/commands/ci-report.ts validate --report-dir report-merge --expected-sha "$MERGE_SHA" --expected-fingerprint "$fingerprint"
           merge_status=$?
           if [ "$base_status" -ne 0 ] || [ "$merge_status" -ne 0 ]; then
             echo "all_green=false" >> "$GITHUB_OUTPUT"
@@ -171,10 +165,7 @@ jobs:
             exit 0
           fi
           mkdir -p reports
-          node src/cli/dist/index.js generate-quality-report \
-            --base report-base \
-            --merge report-merge \
-            --report-file reports/summary-report.md
+          node src/cli/dist/index.js generate-quality-report --base report-base --merge report-merge --report-file reports/summary-report.md
           code=$?
           if [ "$code" -eq 0 ]; then
             echo "all_green=true" >> "$GITHUB_OUTPUT"
@@ -202,7 +193,6 @@ jobs:
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
           TRUSTED_CI_CHANGED: ${{ steps.resolve.outputs.trusted_ci_changed }}
           VALIDATION_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
-          COMPARE_STATUS: ${{ steps.compare.outputs.status }}
         with:
           script: |
             const fs = require('node:fs');
@@ -220,23 +210,13 @@ jobs:
                 'Automated validation may run, but unattended merge is intentionally disabled. A human must review and merge this trust-surface change.',
               ].join('\n');
             } else if (process.env.VALIDATION_CONCLUSION !== 'success') {
-              body = [
-                marker,
-                '### Quality Report Summary',
-                '',
-                `❌ Validation workflow concluded with **${process.env.VALIDATION_CONCLUSION}**. Auto-merge is blocked.`,
-              ].join('\n');
+              body = [marker, '### Quality Report Summary', '', `❌ Validation workflow concluded with **${process.env.VALIDATION_CONCLUSION}**. Auto-merge is blocked.`].join('\n');
             } else if (fs.existsSync('reports/summary-report.md')) {
               body = fs.readFileSync('reports/summary-report.md', 'utf8');
             } else {
               body = [marker, '### Quality Report Summary', '', '❌ Trusted report comparison could not be completed.'].join('\n');
             }
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner,
-              repo,
-              issue_number: number,
-              per_page: 100,
-            });
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
             const existing = comments.find((comment) => comment.body?.includes(marker));
             if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
             else await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
@@ -358,13 +338,7 @@ jobs:
               core.setOutput('merged', 'false');
               return;
             }
-            const response = await github.rest.pulls.merge({
-              owner,
-              repo,
-              pull_number: number,
-              merge_method: 'squash',
-              sha: validatedHead,
-            });
+            const response = await github.rest.pulls.merge({ owner, repo, pull_number: number, merge_method: 'squash', sha: validatedHead });
             core.setOutput('merged', response.data.merged ? 'true' : 'false');
 
       - name: Delete same-repository head branch after merge

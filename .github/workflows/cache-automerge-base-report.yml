@@ -22,6 +22,7 @@ jobs:
       usable: ${{ steps.restored.outputs.usable }}
       fingerprint: ${{ steps.tooling.outputs.fingerprint }}
       cache_key: ${{ steps.tooling.outputs.cache_key }}
+      shard_count: ${{ steps.tooling.outputs.shard_count }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -36,12 +37,19 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile --recursive --force
-      - name: Compute report tooling fingerprint
+      - name: Compute trusted report configuration
         id: tooling
         shell: bash
         run: |
-          fingerprint="$(sha256sum src/cli/src/commands/ci-report.ts | cut -d' ' -f1)"
+          fingerprint="$({
+            printf '%s\0' 'src/cli/src/commands/ci-report.ts'
+            cat src/cli/src/commands/ci-report.ts
+            printf '\0%s\0' '.github/ci/automerge-policy.json'
+            cat .github/ci/automerge-policy.json
+          } | sha256sum | cut -d' ' -f1)"
+          shard_count="$(node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('.github/ci/automerge-policy.json','utf8')); if(!Number.isInteger(p.testShardCount)||p.testShardCount<1) process.exit(2); process.stdout.write(String(p.testShardCount));")"
           echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+          echo "shard_count=$shard_count" >> "$GITHUB_OUTPUT"
           echo "cache_key=automerge-base-report-v6-${{ github.sha }}-$fingerprint" >> "$GITHUB_OUTPUT"
       - name: Restore existing trusted base report
         id: cache
@@ -80,7 +88,7 @@ jobs:
               key: process.env.CACHE_KEY,
               ref: context.ref,
             });
-            core.notice(`Deleted invalid cache ${process.env.CACHE_KEY}.`);
+            core.notice(`Deleted invalid immutable cache ${process.env.CACHE_KEY}.`);
       - name: Remove invalid restored files
         if: ${{ steps.cache.outputs.cache-hit == 'true' && steps.restored.outputs.usable != 'true' }}
         run: rm -rf reports
@@ -89,7 +97,7 @@ jobs:
         id: miss
         run: echo "usable=false" >> "$GITHUB_OUTPUT"
 
-  build:
+  prepare:
     name: Build default branch and plan tests
     needs: cache_state
     if: ${{ needs.cache_state.outputs.usable != 'true' }}
@@ -126,6 +134,7 @@ jobs:
           node src/cli/src/commands/ci-report.ts manifest \
             --output test-manifest.json \
             --history .ci-history/test-durations.json \
+            --shards '${{ needs.cache_state.outputs.shard_count }}' \
             --github-output "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v6
         with:
@@ -174,13 +183,13 @@ jobs:
 
   tests:
     name: Base tests (${{ matrix.shard }})
-    needs: [cache_state, build]
-    if: ${{ needs.cache_state.outputs.usable != 'true' && needs.build.result == 'success' }}
+    needs: [cache_state, prepare]
+    if: ${{ needs.cache_state.outputs.usable != 'true' && needs.prepare.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.build.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -223,7 +232,7 @@ jobs:
 
   assemble:
     name: Assemble and cache trusted base report
-    needs: [cache_state, build, lint, tests]
+    needs: [cache_state, prepare, lint, tests]
     if: ${{ always() && !cancelled() && needs.cache_state.outputs.usable != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -250,14 +259,14 @@ jobs:
         with:
           name: base-test-plan
           path: .
-      - name: Assemble trusted base report
+      - name: Assemble and validate trusted base report
         run: |
           node src/cli/src/commands/ci-report.ts assemble \
             --manifest test-manifest.json \
             --report-dir reports \
             --target-sha '${{ github.sha }}' \
             --fingerprint '${{ needs.cache_state.outputs.fingerprint }}' \
-            --build-status 0
+            --build-status '${{ needs.prepare.result == 'success' && '0' || '2' }}'
           node src/cli/src/commands/ci-report.ts validate \
             --report-dir reports \
             --expected-sha '${{ github.sha }}' \
@@ -268,7 +277,6 @@ jobs:
           path: reports
           key: ${{ needs.cache_state.outputs.cache_key }}
       - name: Save timing history for future balancing
-        shell: bash
         run: |
           mkdir -p .ci-history
           cp reports/test-durations.json .ci-history/test-durations.json

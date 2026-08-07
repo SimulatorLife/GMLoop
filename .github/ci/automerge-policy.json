@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "testShardCount": 5,
   "goldenFixturePatterns": [
     "^test/fixtures/.*\\.gml$",
     "^src/parser/test/.*\\.gml$",
@@ -15,7 +16,6 @@
     "^src/cli/src/commands/generate-quality-report\\.ts$",
     "^src/cli/src/modules/quality-report/",
     "^src/cli/src/cli-command-registration\\.ts$",
-    "^src/cli/src/commands/index\\.ts$",
     "^package\\.json$",
     "^pnpm-lock\\.yaml$",
     "^pnpm-workspace\\.yaml$",

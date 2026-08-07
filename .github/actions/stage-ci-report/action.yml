@@ -1,0 +1,31 @@
+name: "Stage CI report tool"
+description: "Stage the PR's typed CI-report command outside the target checkout while resolving dependencies from the target CLI workspace."
+inputs:
+  source:
+    description: "Path to the checked-out ci-report.ts source file."
+    required: true
+  checkout-root:
+    description: "Temporary checkout to remove after staging so target lint/test discovery remains uncontaminated."
+    required: false
+    default: ".ci-tools"
+outputs:
+  tool:
+    description: "Absolute path to the staged ci-report.ts command."
+    value: ${{ steps.stage.outputs.tool }}
+runs:
+  using: "composite"
+  steps:
+    - id: stage
+      shell: bash
+      env:
+        SOURCE: ${{ inputs.source }}
+        CHECKOUT_ROOT: ${{ inputs.checkout-root }}
+      run: |
+        set -euo pipefail
+        dir="$(mktemp -d "$RUNNER_TEMP/gmloop-ci-report.XXXXXX")"
+        command_dir="$dir/src/cli/src/commands"
+        mkdir -p "$command_dir"
+        cp "$SOURCE" "$command_dir/ci-report.ts"
+        ln -s "$GITHUB_WORKSPACE/src/cli/node_modules" "$dir/src/cli/node_modules"
+        echo "tool=$command_dir/ci-report.ts" >> "$GITHUB_OUTPUT"
+        rm -rf "$CHECKOUT_ROOT"
