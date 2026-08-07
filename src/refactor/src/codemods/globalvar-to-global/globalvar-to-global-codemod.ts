@@ -1,6 +1,6 @@
 import { Core } from "@gmloop/core";
-import { Parser } from "@gmloop/parser";
 
+import { defaultGmlProgramParser } from "../../parser-adapter.js";
 import type { GlobalvarToGlobalCodemodOptions, GlobalvarToGlobalEdit, GlobalvarToGlobalResult } from "../../types.js";
 import { applySourceTextEdits } from "../codemod-helpers.js";
 
@@ -273,7 +273,7 @@ export function collectGlobalvarDeclaredNames(sourceText: string): ReadonlySet<s
 
     let ast: unknown;
     try {
-        ast = Parser.GMLParser.parse(sourceText);
+        ast = defaultGmlProgramParser(sourceText);
     } catch {
         return new Set();
     }
@@ -335,7 +335,7 @@ export function applyGlobalvarToGlobalCodemod(
 
     let ast: unknown;
     try {
-        ast = Parser.GMLParser.parse(sourceText);
+        ast = defaultGmlProgramParser(sourceText);
     } catch {
         return Object.freeze({
             changed: false,

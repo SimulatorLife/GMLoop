@@ -7,665 +7,815 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
-  checks: write
+  contents: read
+  pull-requests: read
+  actions: read
 
 concurrency:
-  group: automerge-${{ github.event.pull_request.number || 'manual' }}
+  group: automerge-validation-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
   gate:
+    name: Resolve validation target
     runs-on: ubuntu-latest
     outputs:
       should_run_tests: ${{ steps.decide.outputs.should_run_tests }}
+      base_sha: ${{ steps.decide.outputs.base_sha }}
+      head_sha: ${{ steps.decide.outputs.head_sha }}
+      merge_sha: ${{ steps.decide.outputs.merge_sha }}
+      trusted_ci_changed: ${{ steps.decide.outputs.trusted_ci_changed }}
+      shard_count: ${{ steps.decide.outputs.shard_count }}
     steps:
       - id: decide
         uses: actions/github-script@v8
         with:
           script: |
             const { owner, repo } = context.repo;
-            const n = context.payload.pull_request?.number;
-            if (!n) { core.setOutput('should_run_tests', 'false'); return; }
-            const files = await github.paginate(github.rest.pulls.listFiles, {
-              owner, repo, pull_number: n, per_page: 100
-            });
-
-            const protectedGoldenFixturePatterns = [
-              /^test\/fixtures\/plugin-integration\/.*\.gml$/u,
-              /^src\/parser\/test\/input\/.*\.gml$/u,
-              /^src\/lint\/test\/fixtures\/.*\.gml$/u
-            ];
-
-            const isProtectedGoldenFixture = (filename) =>
-              typeof filename === 'string' &&
-              protectedGoldenFixturePatterns.some((pattern) => pattern.test(filename));
-
-            const changedFixtures = files.filter((f) => {
-              if (f.status === 'added') {
-                return false;
-              }
-
-              return (
-                isProtectedGoldenFixture(f.filename) ||
-                isProtectedGoldenFixture(f.previous_filename)
-              );
-            });
-            if (changedFixtures.length > 0) {
-              core.setFailed(`Golden .gml test fixtures cannot be modified or removed! Found: ${changedFixtures.map(f => f.filename).join(', ')}`);
+            const number = context.payload.pull_request?.number;
+            if (!number) {
+              core.setOutput('should_run_tests', 'false');
+              core.setOutput('trusted_ci_changed', 'true');
+              core.setOutput('shard_count', '5');
               return;
             }
 
-            core.notice(`PR changed files: ${files.length}`);
-            core.setOutput('should_run_tests', files.length > 0 ? 'true' : 'false');
+            const mergeSha = context.sha;
+            const headSha = context.payload.pull_request?.head?.sha;
+            const { data: mergeCommit } = await github.rest.repos.getCommit({ owner, repo, ref: mergeSha });
+            const baseSha = mergeCommit.parents?.[0]?.sha;
+            const mergeHeadSha = mergeCommit.parents?.[1]?.sha;
+            if (!baseSha || !headSha || !mergeHeadSha || mergeHeadSha !== headSha) {
+              core.setFailed(`Unable to resolve the exact synthetic merge for PR #${number}.`);
+              core.setOutput('should_run_tests', 'false');
+              core.setOutput('trusted_ci_changed', 'true');
+              core.setOutput('shard_count', '5');
+              return;
+            }
 
-  tests:
+            const fallbackPolicy = {
+              testShardCount: 5,
+              goldenFixturePatterns: [
+                '^test/fixtures/.*\\.gml$',
+                '^src/parser/test/.*\\.gml$',
+                '^src/refactor/test/fixtures/.*\\.gml$',
+                '^src/format/test/fixtures/.*\\.gml$',
+                '^src/lint/test/.*\\.gml$',
+              ],
+              trustedCiPatterns: [
+                '^\\.github/workflows/.*\\.ya?ml$',
+                '^\\.github/actions/',
+                '^\\.github/ci/automerge-policy\\.json$',
+                '^src/cli/src/commands/ci-report\\.ts$',
+                '^src/cli/src/commands/ci-build-evidence\\.ts$',
+                '^src/cli/src/commands/generate-quality-report\\.ts$',
+                '^src/cli/src/modules/quality-report/',
+                '^src/cli/src/cli-command-registration\\.ts$',
+                '^package\\.json$',
+                '^pnpm-lock\\.yaml$',
+                '^pnpm-workspace\\.yaml$',
+                '^eslint\\.config\\.js$',
+                '^\\.nvmrc$',
+                '^tsconfig(?:\\..+)?\\.json$',
+                '^src/[^/]+/tsconfig\\.json$',
+              ],
+            };
+
+            let policy = fallbackPolicy;
+            let policyFromBase = false;
+            try {
+              const { data } = await github.rest.repos.getContent({
+                owner,
+                repo,
+                path: '.github/ci/automerge-policy.json',
+                ref: baseSha,
+              });
+              if (!Array.isArray(data) && data.type === 'file' && data.content) {
+                policy = JSON.parse(Buffer.from(data.content, data.encoding || 'base64').toString('utf8'));
+                policyFromBase = true;
+              }
+            } catch (error) {
+              core.warning(`Base does not yet provide the auto-merge policy; using conservative bootstrap policy: ${error.message}`);
+            }
+
+            const shardCount = Number(policy.testShardCount);
+            if (!Number.isInteger(shardCount) || shardCount < 1) {
+              core.setFailed(`Invalid testShardCount in auto-merge policy: ${policy.testShardCount}`);
+              return;
+            }
+            const goldenPatterns = (policy.goldenFixturePatterns || []).map((value) => new RegExp(value, 'u'));
+            const trustedPatterns = (policy.trustedCiPatterns || []).map((value) => new RegExp(value, 'u'));
+            const files = await github.paginate(github.rest.pulls.listFiles, { owner, repo, pull_number: number, per_page: 100 });
+            const matches = (filename, patterns) =>
+              typeof filename === 'string' && patterns.some((pattern) => pattern.test(filename));
+
+            const changedGoldenFixtures = files.filter((file) => {
+              if (file.status === 'added') return false;
+              return matches(file.filename, goldenPatterns) || matches(file.previous_filename, goldenPatterns);
+            });
+            if (changedGoldenFixtures.length > 0) {
+              core.setFailed(`Protected golden .gml fixtures cannot be modified, renamed, or removed: ${changedGoldenFixtures.map((file) => file.filename).join(', ')}`);
+              core.setOutput('should_run_tests', 'false');
+              return;
+            }
+
+            const trustedCiChanged = !policyFromBase || files.some((file) =>
+              matches(file.filename, trustedPatterns) || matches(file.previous_filename, trustedPatterns));
+            core.setOutput('base_sha', baseSha);
+            core.setOutput('head_sha', headSha);
+            core.setOutput('merge_sha', mergeSha);
+            core.setOutput('trusted_ci_changed', trustedCiChanged ? 'true' : 'false');
+            core.setOutput('shard_count', String(shardCount));
+            core.setOutput('should_run_tests', files.length > 0 ? 'true' : 'false');
+            core.notice(`Validating base ${baseSha}, head ${headSha}, merge ${mergeSha}; shards=${shardCount}; trusted CI changed=${trustedCiChanged}.`);
+
+  base_cache:
+    name: Restore trusted base evidence
     needs: gate
     if: ${{ needs.gate.outputs.should_run_tests == 'true' }}
-    name: Generate reports (${{ matrix.target }})
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [base, head, merge]
-
+    timeout-minutes: 10
+    outputs:
+      usable: ${{ steps.restored.outputs.usable }}
+      fingerprint: ${{ steps.tooling.outputs.fingerprint }}
+      cache_key: ${{ steps.tooling.outputs.cache_key }}
     steps:
-      - name: Resolve ref for ${{ matrix.target }}
-        id: ref
-        run: |
-          if [ "${{ matrix.target }}" = "base" ]; then
-            echo "ref=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
-          elif [ "${{ matrix.target }}" = "head" ]; then
-            echo "ref=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "ref=${{ github.sha }}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Checkout (${{ matrix.target }})
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
-          ref: ${{ steps.ref.outputs.ref }}
-        continue-on-error: ${{ matrix.target == 'merge' }}
-
-      - name: Setup pnpm (${{ matrix.target }})
-        uses: pnpm/action-setup@v6
+          ref: ${{ needs.gate.outputs.head_sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
         with:
           cache: true
-
-      - name: Setup Node (${{ matrix.target }})
-        uses: actions/setup-node@v6
+      - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
-          cache-dependency-path: |
-            pnpm-lock.yaml
-            **/pnpm-lock.yaml
-
-      - name: Install deps
-        run: pnpm install --frozen-lockfile --recursive --force
-        continue-on-error: ${{ matrix.target == 'merge' }}
-
-      - name: Generate quality reports (${{ matrix.target }})
-        run: pnpm run report
-        continue-on-error: true
-
-      - name: Publish test summary (${{ matrix.target }})
-        if: ${{ always() }}
-        uses: dorny/test-reporter@v3
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --recursive --force
+      - name: Compute trusted-report fingerprint
+        id: tooling
+        shell: bash
+        run: |
+          fingerprint="$({
+            printf '%s\0' 'src/cli/src/commands/ci-report.ts'
+            cat src/cli/src/commands/ci-report.ts
+            printf '\0%s\0' 'src/cli/src/commands/ci-build-evidence.ts'
+            cat src/cli/src/commands/ci-build-evidence.ts
+            printf '\0%s\0' '.github/ci/automerge-policy.json'
+            cat .github/ci/automerge-policy.json
+          } | sha256sum | cut -d' ' -f1)"
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+          echo "cache_key=automerge-base-report-v7-${{ needs.gate.outputs.base_sha }}-$fingerprint" >> "$GITHUB_OUTPUT"
+      - name: Restore cached base evidence
+        id: cache
+        uses: actions/cache/restore@v4
         with:
-          name: Publish test summary (${{ matrix.target }})
-          path: reports/tests.xml
-          reporter: java-junit
-          fail-on-error: false
-          fail-on-empty: false
-          use-actions-summary: false
-
-      - name: Upload report artifacts (${{ matrix.target }})
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v6
-        with:
-          name: report-${{ matrix.target }}
-          path: |
-            reports/*.xml
-            reports/lcov.info
-            reports/jscpd-report.json
-            reports/project-health.json
-          retention-days: 7
-
-  summarize:
-    name: Summarize & comment table
-    needs: tests
-    runs-on: ubuntu-latest
-    outputs:
-      all_green: ${{ steps.summarize.outputs.all_green }}
-    env:
-      GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
-    steps:
-      - name: Checkout repo (for scripts)
-        uses: actions/checkout@v6
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          cache: true
-
-      - name: Setup node
-        uses: actions/setup-node@v6
-        with:
-          node-version-file: .nvmrc
-          cache: 'pnpm'
-          cache-dependency-path: |
-            pnpm-lock.yaml
-            **/pnpm-lock.yaml
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --recursive --force
-
-      - name: Build CLI
-        run: pnpm run ensure:cli
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v7
-        with:
-          pattern: report-*
-          merge-multiple: false
-
-      # Use your repo’s logic to compute regressions (allows legacy failures)
-      - name: Detect regressions
-        id: regress
+          path: reports
+          key: ${{ steps.tooling.outputs.cache_key }}
+      - name: Validate restored base evidence
+        id: restored
+        if: ${{ steps.cache.outputs.cache-hit == 'true' }}
+        shell: bash
         run: |
           set +e
-          set -o pipefail
-
-          # Create reports directory if it doesn't exist
-          mkdir -p reports
-
-          # Run the CLI command with explicit paths to the downloaded artifacts
-          pnpm run cli:compiled generate-quality-report \
-            --base report-base \
-            --head report-head \
-            --merge report-merge \
-            --report-file reports/summary-report.md
-
-          code=$?
-
-          if [ $code -eq 0 ]; then
-            echo "all_green=true" >> "$GITHUB_OUTPUT"
-            echo "status=clean" >> "$GITHUB_OUTPUT"
-          elif [ $code -eq 11 ]; then
-            echo "all_green=false" >> "$GITHUB_OUTPUT"
-            echo "status=lint_errors" >> "$GITHUB_OUTPUT"
-          elif [ $code -eq 10 ]; then
-            echo "all_green=false" >> "$GITHUB_OUTPUT"
-            echo "status=regressions" >> "$GITHUB_OUTPUT"
+          if [ -f reports/auto-merge-report.json ]; then
+            node src/cli/src/commands/ci-report.ts validate \
+              --report-dir reports \
+              --expected-sha '${{ needs.gate.outputs.base_sha }}' \
+              --expected-fingerprint '${{ steps.tooling.outputs.fingerprint }}'
+          elif [ -f reports/build-evidence.json ]; then
+            node src/cli/src/commands/ci-build-evidence.ts validate \
+              --report-dir reports \
+              --expected-sha '${{ needs.gate.outputs.base_sha }}' \
+              --require-failure
           else
-            echo "all_green=false" >> "$GITHUB_OUTPUT"
-            echo "status=failure" >> "$GITHUB_OUTPUT"
+            false
+          fi
+          status=$?
+          if [ "$status" -eq 0 ]; then
+            echo "usable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "usable=false" >> "$GITHUB_OUTPUT"
+            rm -rf reports
+          fi
+          exit 0
+      - name: Mark cache miss
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        id: miss
+        run: echo "usable=false" >> "$GITHUB_OUTPUT"
+      - name: Expose trusted base evidence
+        if: ${{ steps.restored.outputs.usable == 'true' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: report-base
+          path: reports
+          retention-days: 1
+
+  head_diagnostic:
+    name: Head build diagnostic
+    needs: gate
+    if: ${{ needs.gate.outputs.should_run_tests == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.gate.outputs.head_sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --recursive --force
+      - name: Record non-gating head build result
+        shell: bash
+        run: |
+          set +e
+          node src/cli/src/commands/ci-build-evidence.ts run \
+            --target-sha '${{ needs.gate.outputs.head_sha }}' \
+            --report-dir head-build
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "::warning::Head build diagnostic could not complete; this diagnostic does not gate the exact synthetic merge."
+          elif [ "$(node -p "require('./head-build/build-evidence.json').succeeded")" != true ]; then
+            echo "::warning::PR head does not build standalone. The exact synthetic merge remains authoritative."
           fi
           exit 0
 
-      - name: Summarize and comment
-        id: summarize
-        uses: actions/github-script@v8
-        env:
-          REGRESSION_ALL_GREEN: ${{ steps.regress.outputs.all_green }}
-          REGRESSION_STATUS: ${{ steps.regress.outputs.status }}
+  base_prepare:
+    name: Build base fallback and plan tests
+    needs: [gate, base_cache]
+    if: ${{ needs.gate.outputs.should_run_tests == 'true' && needs.base_cache.outputs.usable != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      build_completed: ${{ steps.build.outputs.completed }}
+      build_succeeded: ${{ steps.build.outputs.succeeded }}
+      build_status: ${{ steps.build.outputs.status }}
+    steps:
+      - uses: actions/checkout@v6
         with:
-          script: |
-            const fs = require('node:fs');
-            const path = require('node:path');
-
-            const MARKER = '<!-- automerge-pr-test-summary -->';
-            const reportFile = 'reports/summary-report.md';
-
-            let body = '';
-            if (fs.existsSync(reportFile)) {
-              body = fs.readFileSync(reportFile, 'utf8');
-            } else {
-              body = `${MARKER}\n### Quality Report Summary\n\n⚠️ Report generation failed. Check the action logs for details.`;
-            }
-
-            const { owner, repo } = context.repo;
-            const number = context.payload.pull_request?.number;
-            if (!number) { core.notice('No PR number; skipping comment.'); return; }
-
-            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
-            const existing = comments.find(c => c.body && c.body.includes(MARKER));
-            if (existing) {
-              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-            } else {
-              await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
-            }
-
-            // Set output for auto-merge gate
-            const allGreen = process.env.REGRESSION_ALL_GREEN === 'true';
-            core.setOutput('all_green', allGreen ? 'true' : 'false');
-
-      - name: Request Agent help for lint errors
-        if: ${{ github.event_name == 'pull_request' && steps.regress.outputs.status == 'lint_errors' && env.GH_USER_TOKEN != '' }}
-        uses: actions/github-script@v8
+          ref: ${{ needs.gate.outputs.base_sha }}
+          persist-credentials: false
+      - name: Checkout current CI tooling
+        uses: actions/checkout@v6
         with:
-          github-token: ${{ env.GH_USER_TOKEN }}
-          script: |
-            const fs = require('node:fs');
-            const marker = '<!-- automerge-pr-lint-agent -->';
-            const { owner, repo } = context.repo;
-            const number = context.payload.pull_request?.number;
-            if (!number) {
-              core.notice('No PR number; skipping Agent lint comment.');
-              return;
-            }
-            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
-            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
-            const existing = comments.find(comment => comment.body && comment.body.includes(marker));
-            const body = [
-              marker,
-              '',
-              '@mini-max The auto-merge workflow detected lint errors on this PR gate target. Please prioritize lint-error fixes before test regression triage.',
-              '',
-              'Suggested next steps:',
-              '1. Run `pnpm run lint:quiet` and apply deterministic fixes first.',
-              '2. Re-run `pnpm run build:ts` and `pnpm run lint:quiet` until lint errors are fully resolved.',
-              '',
-              `Once done, push fixes to **${pr.head.ref}** on base **${pr.base.ref}** (PR #${number}).`
-            ].join('\n');
-            if (existing) {
-              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-            } else {
-              await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
-            }
-            core.notice(`Requested Agent assistance for lint errors on PR #${number}.`);
-
-      - name: Request Agent help for regressions
-        if: ${{ github.event_name == 'pull_request' && steps.regress.outputs.status == 'regressions' && env.GH_USER_TOKEN != '' }}
-        uses: actions/github-script@v8
+          ref: ${{ needs.gate.outputs.head_sha }}
+          path: .ci-tools
+          persist-credentials: false
+          sparse-checkout: |
+            .github/actions/stage-ci-report/action.yml
+            src/cli/src/commands/ci-report.ts
+            src/cli/src/commands/ci-build-evidence.ts
+          sparse-checkout-cone-mode: false
+      - uses: pnpm/action-setup@v6
         with:
-          github-token: ${{ env.GH_USER_TOKEN }}
-          script: |
-            const fs = require('node:fs');
-            const path = require('node:path');
-
-            const marker = '<!-- automerge-pr-regression-agent -->';
-            const FOLLOW_UP_AGENT_POOL = 'followUps';
-            const DEFAULT_FOLLOW_UP_AGENT = 'codex';
-            const WEIGHT_SCALE = 1000;
-            const { owner, repo } = context.repo;
-            const number = context.payload.pull_request?.number;
-            if (!number) {
-              core.notice('No PR number; skipping Agent regression comment.');
-              return;
-            }
-
-            const normalize = (value) => {
-              const trimmed = (value || '').trim();
-              if (!trimmed) return '';
-              return trimmed
-                .toLowerCase()
-                .replace(/[^a-z0-9]+/g, '-')
-                .replace(/^-+|-+$/g, '')
-                || '';
-            };
-
-            const getRunNumber = () => {
-              const raw = (process.env.GITHUB_RUN_NUMBER || '').trim();
-              const parsed = Number.parseInt(raw, 10);
-              return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
-            };
-
-            const toSlots = (weight) => Math.max(1, Math.round(weight * WEIGHT_SCALE));
-
-            const buildInterleavedCycle = (items) => {
-              const maxSlots = Math.max(...items.map((item) => item.slots));
-              const cycle = [];
-              for (let slot = 1; slot <= maxSlots; slot += 1) {
-                for (const item of items) {
-                  if (item.slots >= slot) {
-                    cycle.push(item);
-                  }
-                }
-              }
-              return cycle;
-            };
-
-            const chooseDeterministicWeighted = (items, runNumber) => {
-              if (items.length === 0) return null;
-              const sortedItems = [...items].sort((left, right) => left.slug.localeCompare(right.slug));
-              const cycle = buildInterleavedCycle(sortedItems);
-              if (cycle.length === 0) return null;
-              const cycleIndex = (runNumber - 1) % cycle.length;
-              return {
-                selected: cycle[cycleIndex],
-                cycleIndex,
-                cycleLength: cycle.length,
-                totalWeight: sortedItems.reduce((sum, item) => sum + item.weight, 0),
-              };
-            };
-
-            const parseAgentCandidates = (pool) => {
-              if (!pool || !Array.isArray(pool.agents)) {
-                return [];
-              }
-
-              return pool.agents
-                .map((agent) => ({
-                  name: typeof agent?.name === 'string' ? agent.name : '',
-                  weight: Number(agent?.weight),
-                }))
-                .filter((agent) => agent.name && Number.isFinite(agent.weight) && agent.weight > 0)
-                .map((agent) => ({
-                  name: agent.name,
-                  weight: agent.weight,
-                  slug: normalize(agent.name),
-                  slots: toSlots(agent.weight),
-                }))
-                .filter((agent) => agent.slug);
-            };
-
-            const loadWeightsConfig = () => {
-              const weightsPath = path.resolve(process.cwd(), '.github/workflows/weights.json');
-              const raw = fs.readFileSync(weightsPath, 'utf8');
-              return JSON.parse(raw);
-            };
-
-            const selectAgent = (poolName, requestedAgent) => {
-              if (requestedAgent) {
-                return {
-                  agent: requestedAgent,
-                  reason: 'manual override',
-                };
-              }
-
-              let poolDefault = DEFAULT_FOLLOW_UP_AGENT;
-              let candidates = [];
-              try {
-                const parsed = loadWeightsConfig();
-                const pool = parsed?.agentPools?.[poolName] ?? null;
-                const configuredDefault = normalize(pool?.default);
-                if (configuredDefault) {
-                  poolDefault = configuredDefault;
-                }
-                candidates = parseAgentCandidates(pool);
-              } catch (error) {
-                core.warning(`Falling back to default follow-up agent due to configuration error: ${error.message}`);
-              }
-
-              if (!candidates.length) {
-                return {
-                  agent: poolDefault,
-                  reason: `${poolName} pool default fallback`,
-                };
-              }
-
-              const runNumber = getRunNumber();
-              const chosen = chooseDeterministicWeighted(candidates, runNumber);
-              if (!chosen || !chosen.selected) {
-                return {
-                  agent: poolDefault,
-                  reason: `${poolName} deterministic weighted selection fallback`,
-                };
-              }
-
-              const { slug, name, weight, slots } = chosen.selected;
-              const cyclePosition = chosen.cycleIndex + 1;
-              core.info(
-                `Deterministic weighted selection picked agent "${name}" from ${poolName} pool ` +
-                `(slug=${slug}, weight=${weight}, slots=${slots}) for run #${runNumber} ` +
-                `at cycle position ${cyclePosition}/${chosen.cycleLength} from total weight ${chosen.totalWeight.toFixed(6)}.`
-              );
-              return {
-                agent: slug,
-                reason: `${poolName} deterministic weighted selection`,
-              };
-            };
-
-            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
-            const selection = selectAgent(FOLLOW_UP_AGENT_POOL, '');
-            const agentMention = `@${selection.agent}`;
-            core.info(`Using follow-up agent "${selection.agent}" (${selection.reason}).`);
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner,
-              repo,
-              issue_number: number,
-              per_page: 100,
-            });
-
-            const existing = comments.find(comment => comment.body && comment.body.includes(marker));
-            const reportFile = 'reports/summary-report.md';
-            let regressionSummaryLine = '';
-            try {
-              const reportBody = fs.readFileSync(reportFile, 'utf8');
-              const matchingLine = reportBody
-                .split(/\r?\n/u)
-                .find((line) => line.trim().startsWith('❌ Test regressions detected.'));
-              regressionSummaryLine = matchingLine ? matchingLine.trim() : '';
-            } catch (error) {
-              if (error?.code !== 'ENOENT') {
-                core.warning(`Unable to read regression summary from ${reportFile}: ${error.message}`);
-              }
-            }
-
-            const lines = [
-              marker,
-              '',
-              `${agentMention} The auto-merge workflow detected test regressions on this PR ` +
-                `while comparing the base results with the merged results ` +
-                `(or with PR head results when merged results are unavailable). ` +
-                "Please review the failing suites, identify the root cause, and provide the fixes so this change can be merged. Do not remove tests or relax performance requirements without a clear, well-reasoned justification, as doing so can harm the overall health of the project.",
-            ];
-
-            if (regressionSummaryLine) {
-              lines.push('', `Regression summary from the Quality Report: ${regressionSummaryLine}`);
-            }
-
-            lines.push(
-              '',
-              'Suggested next steps:',
-              '1. Reproduce the failures locally (for example, `pnpm run test:report` and `pnpm run test:coverage`) to confirm the regression.',
-              '2. Deliver the smallest possible fix—or a precise explanation of the required follow-up—that resolves the regression blocking auto-merge.'
-            );
-
-            const normalizedAgent = agentMention.replace(/^@/, '').trim().toLowerCase();
-            if (normalizedAgent !== 'copilot') {
-              lines.push(
-                '',
-                `Once done, ensure all changes are pushed to remote branch **${pr.head.ref}** on base **${pr.base.ref}** and keep all commits tied to PR #${number}; do not open new branches or PRs. As the final step (even after running 'make_pr'), run the following exact command(s) to guarantee your changes are pushed:`,
-                '',
-                '```bash',
-                `git push "https://github.com/${owner}/${repo}.git" "HEAD:${pr.head.ref}"`,
-                '```'
-              );
-            }
-
-            const body = lines.join('\n');
-
-            if (existing) {
-              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-            } else {
-              await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
-            }
-
-            core.notice(`Requested Agent assistance for regressions on PR #${number}.`);
-
-      - name: Warn when Agent user token missing for lint errors
-        if: ${{ github.event_name == 'pull_request' && steps.regress.outputs.status == 'lint_errors' && env.GH_USER_TOKEN == '' }}
+          cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --recursive --force
+      - name: Stage head-side CI tooling outside base tree
+        id: ci
+        uses: ./.ci-tools/.github/actions/stage-ci-report
+        with:
+          source: .ci-tools/src/cli/src/commands/ci-report.ts
+          build-source: .ci-tools/src/cli/src/commands/ci-build-evidence.ts
+      - name: Record exact base build evidence
+        id: build
         run: |
-          echo "::warning::GH_USER_TOKEN secret is not configured; skipping Agent lint comment."
-
-      - name: Warn when Agent user token missing
-        if: ${{ github.event_name == 'pull_request' && steps.regress.outputs.status == 'regressions' && env.GH_USER_TOKEN == '' }}
+          node '${{ steps.ci.outputs.build-tool }}' run \
+            --target-sha '${{ needs.gate.outputs.base_sha }}' \
+            --report-dir build-evidence \
+            --github-output "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: base-build-evidence
+          path: build-evidence/build-evidence.json
+          retention-days: 1
+      - name: Restore trusted timing history when available
+        if: ${{ steps.build.outputs.succeeded == 'true' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: .ci-history
+          key: automerge-test-timing-v1-${{ needs.base_cache.outputs.fingerprint }}-${{ needs.gate.outputs.base_sha }}
+          restore-keys: |
+            automerge-test-timing-v1-${{ needs.base_cache.outputs.fingerprint }}-
+      - name: Stage lean compiled runtime
+        if: ${{ steps.build.outputs.succeeded == 'true' }}
+        run: node '${{ steps.ci.outputs.tool }}' stage-compiled --output compiled-runtime
+      - name: Create exact timing-balanced base manifest
+        id: plan
+        if: ${{ steps.build.outputs.succeeded == 'true' }}
         run: |
-          echo "::warning::GH_USER_TOKEN secret is not configured; skipping Agent regression comment."
+          node '${{ steps.ci.outputs.tool }}' manifest \
+            --output test-manifest.json \
+            --history .ci-history/test-durations.json \
+            --shards '${{ needs.gate.outputs.shard_count }}' \
+            --github-output "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v6
+        if: ${{ steps.build.outputs.succeeded == 'true' }}
+        with:
+          name: compiled-base-${{ needs.gate.outputs.base_sha }}
+          path: compiled-runtime
+          retention-days: 1
+      - uses: actions/upload-artifact@v6
+        if: ${{ steps.build.outputs.succeeded == 'true' }}
+        with:
+          name: base-test-plan
+          path: test-manifest.json
+          retention-days: 1
 
-  auto-merge:
-    name: Auto-merge when green
-    needs: summarize
-    if: ${{ github.event_name == 'pull_request' && needs.summarize.outputs.all_green == 'true' }}
+  base_lint:
+    name: Lint base fallback
+    needs: [gate, base_cache, base_prepare]
+    if: ${{ needs.gate.outputs.should_run_tests == 'true' && needs.base_cache.outputs.usable != 'true' && needs.base_prepare.outputs.build_succeeded == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.gate.outputs.base_sha }}
+          persist-credentials: false
+      - name: Checkout current CI tooling
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.gate.outputs.head_sha }}
+          path: .ci-tools
+          persist-credentials: false
+          sparse-checkout: |
+            .github/actions/stage-ci-report/action.yml
+            src/cli/src/commands/ci-report.ts
+            src/cli/src/commands/ci-build-evidence.ts
+          sparse-checkout-cone-mode: false
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --recursive --force
+      - name: Stage head-side CI tooling outside base tree
+        id: ci
+        uses: ./.ci-tools/.github/actions/stage-ci-report
+        with:
+          source: .ci-tools/src/cli/src/commands/ci-report.ts
+          build-source: .ci-tools/src/cli/src/commands/ci-build-evidence.ts
+      - name: Generate base lint report
+        shell: bash
+        run: |
+          set +e
+          node '${{ steps.ci.outputs.tool }}' lint --report-dir reports
+          exit 0
+      - uses: actions/upload-artifact@v6
+        if: ${{ always() && !cancelled() }}
+        with:
+          name: base-report-lint
+          path: reports
+          if-no-files-found: error
+          retention-days: 1
+
+  base_tests:
+    name: Base tests (${{ matrix.shard }})
+    needs: [gate, base_cache, base_prepare]
+    if: ${{ needs.gate.outputs.should_run_tests == 'true' && needs.base_cache.outputs.usable != 'true' && needs.base_prepare.outputs.build_succeeded == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.base_prepare.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.gate.outputs.base_sha }}
+          persist-credentials: false
+      - name: Checkout current CI tooling
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.gate.outputs.head_sha }}
+          path: .ci-tools
+          persist-credentials: false
+          sparse-checkout: |
+            .github/actions/stage-ci-report/action.yml
+            src/cli/src/commands/ci-report.ts
+            src/cli/src/commands/ci-build-evidence.ts
+          sparse-checkout-cone-mode: false
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --recursive --force
+      - name: Stage head-side CI tooling outside base tree
+        id: ci
+        uses: ./.ci-tools/.github/actions/stage-ci-report
+        with:
+          source: .ci-tools/src/cli/src/commands/ci-report.ts
+          build-source: .ci-tools/src/cli/src/commands/ci-build-evidence.ts
+      - uses: actions/download-artifact@v7
+        with:
+          name: compiled-base-${{ needs.gate.outputs.base_sha }}
+          path: compiled-runtime
+      - uses: actions/download-artifact@v7
+        with:
+          name: base-test-plan
+          path: .
+      - run: cp -R compiled-runtime/. .
+      - name: Run base test shard
+        shell: bash
+        run: |
+          set +e
+          node '${{ steps.ci.outputs.tool }}' run-shard \
+            --manifest test-manifest.json \
+            --shard '${{ matrix.shard }}' \
+            --report-dir reports
+          exit 0
+      - uses: actions/upload-artifact@v6
+        if: ${{ always() && !cancelled() }}
+        with:
+          name: base-report-${{ matrix.shard }}
+          path: reports
+          if-no-files-found: error
+          retention-days: 1
+
+  base_assemble:
+    name: Assemble ephemeral base evidence
+    needs: [gate, base_cache, base_prepare, base_lint, base_tests]
+    if: ${{ always() && !cancelled() && needs.gate.outputs.should_run_tests == 'true' && needs.base_cache.outputs.usable != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.gate.outputs.head_sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --recursive --force
+      - name: Require complete base execution
+        run: |
+          test '${{ needs.base_prepare.result }}' = success
+          if [ '${{ needs.base_prepare.outputs.build_succeeded }}' = true ]; then
+            test '${{ needs.base_lint.result }}' = success
+            test '${{ needs.base_tests.result }}' = success
+          fi
+      - uses: actions/download-artifact@v7
+        with:
+          name: base-build-evidence
+          path: build-evidence
+      - name: Download base lint report
+        if: ${{ needs.base_prepare.outputs.build_succeeded == 'true' }}
+        uses: actions/download-artifact@v7
+        with:
+          name: base-report-lint
+          path: reports
+      - name: Download base test reports
+        if: ${{ needs.base_prepare.outputs.build_succeeded == 'true' }}
+        uses: actions/download-artifact@v7
+        with:
+          pattern: base-report-shard-*
+          merge-multiple: true
+          path: reports
+      - name: Download base test plan
+        if: ${{ needs.base_prepare.outputs.build_succeeded == 'true' }}
+        uses: actions/download-artifact@v7
+        with:
+          name: base-test-plan
+          path: .
+      - name: Assemble healthy base report
+        if: ${{ needs.base_prepare.outputs.build_succeeded == 'true' }}
+        run: |
+          node src/cli/src/commands/ci-report.ts assemble \
+            --manifest test-manifest.json \
+            --report-dir reports \
+            --target-sha '${{ needs.gate.outputs.base_sha }}' \
+            --fingerprint '${{ needs.base_cache.outputs.fingerprint }}' \
+            --build-status 0
+          node src/cli/src/commands/ci-report.ts validate \
+            --report-dir reports \
+            --expected-sha '${{ needs.gate.outputs.base_sha }}' \
+            --expected-fingerprint '${{ needs.base_cache.outputs.fingerprint }}'
+      - name: Package deterministic broken-base evidence
+        if: ${{ needs.base_prepare.outputs.build_succeeded != 'true' }}
+        run: |
+          mkdir -p reports
+          cp build-evidence/build-evidence.json reports/build-evidence.json
+          node src/cli/src/commands/ci-build-evidence.ts validate \
+            --report-dir reports \
+            --expected-sha '${{ needs.gate.outputs.base_sha }}' \
+            --require-failure
+      - uses: actions/upload-artifact@v6
+        with:
+          name: report-base
+          path: reports
+          if-no-files-found: error
+          retention-days: 1
+
+  merge_prepare:
+    name: Build synthetic merge and plan tests
+    needs: [gate, base_cache]
+    if: ${{ needs.gate.outputs.should_run_tests == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      build_completed: ${{ steps.build.outputs.completed }}
+      build_succeeded: ${{ steps.build.outputs.succeeded }}
+      build_status: ${{ steps.build.outputs.status }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.gate.outputs.merge_sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --recursive --force
+      - name: Record exact synthetic-merge build evidence
+        id: build
+        run: |
+          node src/cli/src/commands/ci-build-evidence.ts run \
+            --target-sha '${{ needs.gate.outputs.merge_sha }}' \
+            --report-dir build-evidence \
+            --github-output "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: merge-build-evidence
+          path: build-evidence/build-evidence.json
+          retention-days: 1
+      - name: Restore trusted timing history
+        if: ${{ steps.build.outputs.succeeded == 'true' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: .ci-history
+          key: automerge-test-timing-v1-${{ needs.base_cache.outputs.fingerprint }}-${{ needs.gate.outputs.base_sha }}
+          restore-keys: |
+            automerge-test-timing-v1-${{ needs.base_cache.outputs.fingerprint }}-
+      - name: Stage lean compiled runtime
+        if: ${{ steps.build.outputs.succeeded == 'true' }}
+        run: node src/cli/src/commands/ci-report.ts stage-compiled --output compiled-runtime
+      - name: Download exact base timing when cache hit
+        if: ${{ steps.build.outputs.succeeded == 'true' && needs.base_cache.outputs.usable == 'true' }}
+        uses: actions/download-artifact@v7
+        with:
+          name: report-base
+          path: report-base
+      - name: Create exact timing-balanced merge manifest
+        id: plan
+        if: ${{ steps.build.outputs.succeeded == 'true' }}
+        shell: bash
+        run: |
+          history=.ci-history/test-durations.json
+          if [ -f report-base/test-durations.json ]; then history=report-base/test-durations.json; fi
+          node src/cli/src/commands/ci-report.ts manifest \
+            --output test-manifest.json \
+            --history "$history" \
+            --shards '${{ needs.gate.outputs.shard_count }}' \
+            --github-output "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v6
+        if: ${{ steps.build.outputs.succeeded == 'true' }}
+        with:
+          name: compiled-merge-${{ needs.gate.outputs.merge_sha }}
+          path: compiled-runtime
+          retention-days: 1
+      - uses: actions/upload-artifact@v6
+        if: ${{ steps.build.outputs.succeeded == 'true' }}
+        with:
+          name: merge-test-plan
+          path: test-manifest.json
+          retention-days: 1
+
+  merge_lint:
+    name: Lint synthetic merge
+    needs: [gate, merge_prepare]
+    if: ${{ needs.gate.outputs.should_run_tests == 'true' && needs.merge_prepare.outputs.build_succeeded == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.gate.outputs.merge_sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --recursive --force
+      - name: Generate merge lint report
+        shell: bash
+        run: |
+          set +e
+          node src/cli/src/commands/ci-report.ts lint --report-dir reports
+          exit 0
+      - uses: actions/upload-artifact@v6
+        if: ${{ always() && !cancelled() }}
+        with:
+          name: merge-report-lint
+          path: reports
+          if-no-files-found: error
+          retention-days: 1
+
+  merge_tests:
+    name: Merge tests (${{ matrix.shard }})
+    needs: [gate, merge_prepare]
+    if: ${{ needs.gate.outputs.should_run_tests == 'true' && needs.merge_prepare.outputs.build_succeeded == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.merge_prepare.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.gate.outputs.merge_sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --recursive --force
+      - uses: actions/download-artifact@v7
+        with:
+          name: compiled-merge-${{ needs.gate.outputs.merge_sha }}
+          path: compiled-runtime
+      - uses: actions/download-artifact@v7
+        with:
+          name: merge-test-plan
+          path: .
+      - run: cp -R compiled-runtime/. .
+      - name: Run merge test shard
+        shell: bash
+        run: |
+          set +e
+          node src/cli/src/commands/ci-report.ts run-shard \
+            --manifest test-manifest.json \
+            --shard '${{ matrix.shard }}' \
+            --report-dir reports
+          exit 0
+      - uses: actions/upload-artifact@v6
+        if: ${{ always() && !cancelled() }}
+        with:
+          name: merge-report-${{ matrix.shard }}
+          path: reports
+          if-no-files-found: error
+          retention-days: 1
+
+  merge_assemble:
+    name: Assemble synthetic-merge evidence
+    needs: [gate, base_cache, merge_prepare, merge_lint, merge_tests]
+    if: ${{ always() && !cancelled() && needs.gate.outputs.should_run_tests == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.gate.outputs.merge_sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --recursive --force
+      - name: Require complete synthetic-merge execution
+        run: |
+          test '${{ needs.merge_prepare.result }}' = success
+          if [ '${{ needs.merge_prepare.outputs.build_succeeded }}' = true ]; then
+            test '${{ needs.merge_lint.result }}' = success
+            test '${{ needs.merge_tests.result }}' = success
+          fi
+      - uses: actions/download-artifact@v7
+        with:
+          name: merge-build-evidence
+          path: build-evidence
+      - name: Download merge lint report
+        if: ${{ needs.merge_prepare.outputs.build_succeeded == 'true' }}
+        uses: actions/download-artifact@v7
+        with:
+          name: merge-report-lint
+          path: reports
+      - name: Download merge test reports
+        if: ${{ needs.merge_prepare.outputs.build_succeeded == 'true' }}
+        uses: actions/download-artifact@v7
+        with:
+          pattern: merge-report-shard-*
+          merge-multiple: true
+          path: reports
+      - name: Download merge test plan
+        if: ${{ needs.merge_prepare.outputs.build_succeeded == 'true' }}
+        uses: actions/download-artifact@v7
+        with:
+          name: merge-test-plan
+          path: .
+      - name: Assemble and validate healthy merge evidence
+        if: ${{ needs.merge_prepare.outputs.build_succeeded == 'true' }}
+        run: |
+          node src/cli/src/commands/ci-report.ts assemble \
+            --manifest test-manifest.json \
+            --report-dir reports \
+            --target-sha '${{ needs.gate.outputs.merge_sha }}' \
+            --fingerprint '${{ needs.base_cache.outputs.fingerprint }}' \
+            --build-status 0
+          node src/cli/src/commands/ci-report.ts validate \
+            --report-dir reports \
+            --expected-sha '${{ needs.gate.outputs.merge_sha }}' \
+            --expected-fingerprint '${{ needs.base_cache.outputs.fingerprint }}'
+      - name: Package deterministic merge build failure
+        if: ${{ needs.merge_prepare.outputs.build_succeeded != 'true' }}
+        run: |
+          mkdir -p reports
+          cp build-evidence/build-evidence.json reports/build-evidence.json
+          node src/cli/src/commands/ci-build-evidence.ts validate \
+            --report-dir reports \
+            --expected-sha '${{ needs.gate.outputs.merge_sha }}' \
+            --require-failure
+      - name: Publish timing profile
+        if: ${{ always() && !cancelled() }}
+        run: test ! -f reports/test-durations.md || cat reports/test-durations.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: report-merge
+          path: reports
+          if-no-files-found: error
+          retention-days: 1
+
+  validation_complete:
+    name: Validation evidence complete
+    needs: [gate, base_cache, base_assemble, head_diagnostic, merge_prepare, merge_lint, merge_tests, merge_assemble]
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
-      - name: Prepare PR & wait for mergeability
-        id: prepare
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const { owner, repo } = context.repo;
-            const number = context.payload.pull_request?.number;
-            if (!number) { core.setOutput('proceed', 'false'); return; }
-            const loadPr = async () => (await github.rest.pulls.get({ owner, repo, pull_number: number })).data;
-            const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
-
-            const allowedStates = new Set(['clean','unstable','blocked','has_hooks']);
-
-            let pr = await loadPr();
-            if (pr.draft) { core.notice(`Skip merge #${number}: draft.`); core.setOutput('proceed','false'); return; }
-
-            const maxAttempts = 6;
-            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-              const state = String(pr.mergeable_state || '').toLowerCase();
-              const mergeableKnown = pr.mergeable !== null && state && state !== 'unknown';
-              if (mergeableKnown) break;
-
-              if (attempt === maxAttempts) {
-                core.notice(`Skip merge #${number}: mergeability unresolved after ${maxAttempts} attempts (mergeable=${pr.mergeable}, state=${pr.mergeable_state}).`);
-                core.setOutput('proceed','false');
-                return;
-              }
-
-              core.info(`Mergeability pending for #${number} (attempt ${attempt}/${maxAttempts}): mergeable=${pr.mergeable}, state=${pr.mergeable_state}. Retrying in 5s...`);
-              await wait(5000);
-              pr = await loadPr();
-            }
-
-            const state = String(pr.mergeable_state || '').toLowerCase();
-            const ok = pr.mergeable === true && allowedStates.has(state);
-            if (!ok) { core.notice(`Skip merge #${number}: mergeable=${pr.mergeable}, state=${pr.mergeable_state}.`); core.setOutput('proceed','false'); return; }
-
-            core.setOutput('proceed','true');
-            core.setOutput('pr', JSON.stringify(pr));
-
-      - name: Update PR branch from base (attempt updateBranch, fallback to server-side merge)
-        id: update
-        if: ${{ steps.prepare.outputs.proceed == 'true' }}
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const { owner, repo } = context.repo;
-            const number = context.payload.pull_request.number;
-            const pr = JSON.parse(process.env.PREPARE_PR || '{}');
-            const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
-            const MARKER = '<!-- automerge-branch-update -->';
-
-            const upsert = async (text) => {
-              try {
-                const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
-                const existing = comments.find(c => c.body && c.body.includes(MARKER));
-                const body = [MARKER, text].join('\n\n');
-                if (existing) {
-                  await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-                } else {
-                  await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
-                }
-              } catch (err) {
-                core.warning(`Failed to upsert branch-update comment: ${err?.message || err}`);
-              }
-            };
-
-            await upsert('Auto-merge preparing: ensuring PR branch is up-to-date with base branch.');
-
-            try {
-              await github.rest.pulls.updateBranch({ owner, repo, pull_number: number });
-              await upsert('Requested branch update via GitHub API (pulls.updateBranch). Waiting for the update to apply...');
-              core.info('Requested branch update via pulls.updateBranch()');
-              await wait(5000);
-              core.setOutput('updated','true');
-              return;
-            } catch (ubErr) {
-              const msg = String(ubErr?.message || '').toLowerCase();
-              if (msg.includes('already up to date')) {
-                core.info('PR branch is already up to date.');
-                await upsert('PR branch is already up to date.');
-                core.setOutput('updated','true');
-                return;
-              }
-              core.warning(`pulls.updateBranch failed: ${ubErr?.message || ubErr}`);
-              await upsert(`pulls.updateBranch failed: ${ubErr?.message || ubErr}. Attempting fallback server-side merge of base into PR branch.`);
-            }
-
-            try {
-              const baseRef = pr.base.ref;
-              const headRef = pr.head.ref;
-              core.info(`Attempting server-side merge of base '${baseRef}' into head '${headRef}' via repos.merge()`);
-              const { status } = await github.rest.repos.merge({ owner, repo, base: headRef, head: baseRef, commit_message: `chore: sync ${headRef} with ${baseRef}` });
-              
-              if (status === 204) {
-                core.info('PR branch is already up to date (repos.merge returned 204).');
-                await upsert('PR branch is already up to date.');
-              } else {
-                await upsert('Fallback server-side merge performed: base was merged into the PR branch. Waiting for refs to update...');
-                await wait(3000);
-              }
-              core.setOutput('updated','true');
-              return;
-            } catch (srvErr) {
-              const msg = String(srvErr?.message || '').toLowerCase();
-              if (msg.includes('nothing to merge') || srvErr.status === 204) {
-                 core.info('PR branch is already up to date (repos.merge caught 204/nothing to merge).');
-                 await upsert('PR branch is already up to date.');
-                 core.setOutput('updated','true');
-                 return;
-              }
-              core.warning(`Server-side repos.merge fallback failed: ${srvErr?.message || srvErr}`);
-              await upsert(`Fallback server-side merge failed: ${srvErr?.message || srvErr}. Manual intervention required.`);
-              core.setOutput('updated','false');
-              core.setOutput('update_error', String(srvErr?.message || srvErr));
-              return;
-            }
+      - name: Require complete comparable evidence
         env:
-          PREPARE_PR: ${{ steps.prepare.outputs.pr }}
-
-      - name: Attempt merge
-        id: attempt
-        if: ${{ steps.prepare.outputs.proceed == 'true' }}
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const { owner, repo } = context.repo;
-            const number = context.payload.pull_request.number;
-            try {
-              await github.rest.pulls.merge({ owner, repo, pull_number: number, merge_method: 'squash' });
-              core.notice(`Auto-merged PR #${number}.`);
-              core.setOutput('merged','true');
-            } catch (e) {
-              core.warning(`Merge attempt failed: ${e?.message || e}`);
-              core.setOutput('merged','false');
-              core.setOutput('merge_error', String(e?.message || ''));
-            }
-
-      - name: Delete head branch (if merged)
-        if: ${{ steps.attempt.outputs.merged == 'true' }}
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const { owner, repo } = context.repo;
-            const number = context.payload.pull_request.number;
-            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
-            try {
-              const headRef = pr.head?.ref;
-              const headRepoFull = pr.head?.repo?.full_name?.toLowerCase() || '';
-              const thisFull = `${owner}/${repo}`.toLowerCase();
-              if (!headRef || headRepoFull !== thisFull) {
-                core.info(`Not deleting branch: different repo or missing ref (head=${headRepoFull}, this=${thisFull}, ref=${headRef}).`);
-                return;
-              }
-              const { data: rinfo } = await github.rest.repos.get({ owner, repo });
-              const defaultBranch = rinfo.default_branch;
-              if (headRef === defaultBranch) {
-                core.info(`Not deleting branch: ${headRef} is the default branch.`);
-                return;
-              }
-              await github.rest.git.deleteRef({ owner, repo, ref: `heads/${headRef}` });
-              core.notice(`Deleted branch ${headRef} after merge.`);
-            } catch (e) {
-              core.warning(`Unable to delete head branch: ${e.message}`);
-            }
+          SHOULD_RUN: ${{ needs.gate.outputs.should_run_tests }}
+          GATE_RESULT: ${{ needs.gate.result }}
+          BASE_CACHE_USABLE: ${{ needs.base_cache.outputs.usable }}
+          BASE_ASSEMBLE_RESULT: ${{ needs.base_assemble.result }}
+          MERGE_PREPARE_RESULT: ${{ needs.merge_prepare.result }}
+          MERGE_BUILD_SUCCEEDED: ${{ needs.merge_prepare.outputs.build_succeeded }}
+          MERGE_LINT_RESULT: ${{ needs.merge_lint.result }}
+          MERGE_TEST_RESULT: ${{ needs.merge_tests.result }}
+          MERGE_ASSEMBLE_RESULT: ${{ needs.merge_assemble.result }}
+          TRUSTED_CI_CHANGED: ${{ needs.gate.outputs.trusted_ci_changed }}
+        run: |
+          if [ "$GATE_RESULT" != success ]; then
+            echo "Gate failed."
+            exit 1
+          fi
+          if [ "$SHOULD_RUN" != true ]; then
+            exit 0
+          fi
+          if [ "$BASE_CACHE_USABLE" != true ] && [ "$BASE_ASSEMBLE_RESULT" != success ]; then
+            echo "No complete base evidence was available."
+            exit 1
+          fi
+          for result in "$MERGE_PREPARE_RESULT" "$MERGE_ASSEMBLE_RESULT"; do
+            if [ "$result" != success ]; then
+              echo "Synthetic-merge evidence component failed: $result"
+              exit 1
+            fi
+          done
+          if [ "$MERGE_BUILD_SUCCEEDED" = true ]; then
+            if [ "$MERGE_LINT_RESULT" != success ] || [ "$MERGE_TEST_RESULT" != success ]; then
+              echo "Synthetic merge built successfully but lint/test evidence did not complete."
+              exit 1
+            fi
+          fi
+          if [ "$TRUSTED_CI_CHANGED" = true ]; then
+            echo "::notice::This PR changes trusted CI/evaluation files. Validation may complete, but unattended merge is disabled."
+          fi

@@ -937,21 +937,7 @@ void test("Transpiler.emitJavaScript handles enum declarations with implicit val
     const ast = parser.parse();
     const result = Transpiler.emitJavaScript(ast).trim();
 
-    const expected = [
-        "const Colors = (() => {",
-        "    const __enum = {};",
-        "    let __value = -1;",
-        "    __value += 1;",
-        "    __enum.red = __value;",
-        "    __value = 5;",
-        "    __enum.green = __value;",
-        "    __value += 1;",
-        "    __enum.blue = __value;",
-        "    return __enum;",
-        "})();"
-    ].join("\n");
-
-    assert.equal(result, expected);
+    assert.equal(result, "const Colors = { red: 0, green: 5, blue: 6 };");
 });
 
 void test("Transpiler.emitJavaScript handles enum declarations with expressions", () => {
