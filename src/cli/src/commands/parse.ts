@@ -15,6 +15,7 @@ import {
     createWriteOption
 } from "../cli-core/shared-command-options.js";
 import { createGmlParserAdapter, type GmlParserAdapter } from "../modules/transpilation/adapters.js";
+import { createThrottledCounterLogger } from "../shared/throttled-counter-logger.js";
 import { formatPathForDisplay } from "../workflow/display-path.js";
 import { resolveExplicitWorkflowTargetPath, resolveWorkflowTargetPath } from "../workflow/project-root.js";
 
@@ -22,6 +23,12 @@ const GML_FILE_EXTENSION = ".gml";
 const AST_JSON_EXTENSION = ".ast.json";
 const PARSE_COMMAND_CLI_EXAMPLE = "pnpm dlx gmloop parse --path path/to/script.gml";
 const PARSE_COMMAND_FIX_EXAMPLE = "pnpm dlx gmloop parse --write --path path/to/project";
+const PARSE_COMMAND_HELP_NOTES = [
+    "By default, the parsed AST JSON is printed to stdout. With --write, each",
+    `input file gets a sibling *${AST_JSON_EXTENSION} artifact written next to it.`,
+    "Progress is streamed to stderr while parsing large directories so the",
+    "AST payload on stdout stays cleanly pipeable."
+];
 
 type ParseCommandOptions = {
     write?: boolean;
@@ -131,6 +138,20 @@ async function collectParseTargetFilePaths(targetPath: string, usage: string): P
  */
 const parseAdapter: GmlParserAdapter = createGmlParserAdapter();
 
+/**
+ * Stream periodic progress to stderr so users see movement while parsing
+ * large directories. The parse command emits its AST JSON to stdout, so the
+ * progress sink must use stderr to keep the JSON payload parseable when
+ * piped into another tool. The interval and prefix mirror the format
+ * command so contributors get the same feedback cadence across related
+ * commands.
+ */
+const parseProgressReporter = createThrottledCounterLogger({
+    intervalMs: 1000,
+    formatMessage: (count) => `[parse] Parsing GML files... (${count} processed)`,
+    sink: (message) => console.error(message)
+});
+
 async function parseFileToAst(filePath: string): Promise<ParsedFileAst> {
     const source = await readFile(filePath, "utf8");
     return {
@@ -194,6 +215,7 @@ function logVerboseParseSummary(filePath: string): void {
 
 async function parseAndLogTargetFile(filePath: string, verbose: boolean): Promise<ParsedFileAst> {
     const parsedFile = await parseFileToAst(filePath);
+    parseProgressReporter.tick();
     if (verbose) {
         logVerboseParseSummary(filePath);
     }
@@ -201,6 +223,7 @@ async function parseAndLogTargetFile(filePath: string, verbose: boolean): Promis
 }
 
 function parseTargetFiles(filePaths: ReadonlyArray<string>, verbose: boolean): Promise<Array<ParsedFileAst>> {
+    parseProgressReporter.reset();
     return mapSequentially(filePaths, (filePath) => parseAndLogTargetFile(filePath, verbose));
 }
 
@@ -243,7 +266,15 @@ export function createParseCommand(): Command {
             .addOption(createListOption())
             .addOption(createVerboseOption())
             .addHelpText("after", () =>
-                ["", "Examples:", `  ${PARSE_COMMAND_CLI_EXAMPLE}`, `  ${PARSE_COMMAND_FIX_EXAMPLE}`, ""].join("\n")
+                [
+                    "",
+                    ...PARSE_COMMAND_HELP_NOTES,
+                    "",
+                    "Examples:",
+                    `  ${PARSE_COMMAND_CLI_EXAMPLE}`,
+                    `  ${PARSE_COMMAND_FIX_EXAMPLE}`,
+                    ""
+                ].join("\n")
             )
     );
 }

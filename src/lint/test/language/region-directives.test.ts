@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { gmlRuleRegionDirectiveServices } from "../../../src/rules/gml/gml-rule-services.js";
-
-const { collectRegionSourceLines, readRegionDirectiveType, resolveRegionDirectiveLineEnding } =
-    gmlRuleRegionDirectiveServices;
+import {
+    collectRegionSourceLines,
+    readRegionDirectiveType,
+    resolveRegionDirectiveLineEnding
+} from "../../src/language/region-directives.js";
 
 void test("collectRegionSourceLines preserves source offsets and line endings", () => {
     const lines = collectRegionSourceLines("#region Outer\r\nvalue = 1;\r\n#endregion Inner");

@@ -2,29 +2,29 @@ import { html, svg } from "lit";
 
 import {
     buildGraphEdgeBatches,
+    createGraphLayout,
     createGraphRenderBounds,
     cullGraphLayoutToViewport,
-    type GraphViewportBounds,
-    isGraphViewportCovered,
-    shouldBatchGraphEdges,
-    shouldRenderGraphLabels
-} from "../../graph/graph-render-viewport.js";
-import { projectGraphLayoutForSemanticZoom, resolveGraphSemanticZoomLevel } from "../../graph/graph-semantic-zoom.js";
-import { EDGE_LINE_VISUAL_STYLES, NODE_VISUAL_STYLES } from "../../graph/graph-visualization-style-metadata.js";
-import {
-    createGraphLayout,
+    EDGE_LINE_VISUAL_STYLES,
     filterGraphLayoutForDisplay,
     type GraphLayout,
     type GraphLayoutNode,
     type GraphLegendNodeKind,
     type GraphNodeKindLegendItem,
+    type GraphViewportBounds,
     type GraphVisualizationEdgeType,
     type GraphVisualizationGraphIndexBuildSummary,
     type GraphVisualizationNodeKind,
+    isGraphViewportCovered,
     listGraphEdgeTypes,
     listGraphNodeKindLegendItems,
     listGraphNodeKinds,
-    resolveEffectiveGraphNodeKinds
+    NODE_VISUAL_STYLES,
+    projectGraphLayoutForSemanticZoom,
+    resolveEffectiveGraphNodeKinds,
+    resolveGraphSemanticZoomLevel,
+    shouldBatchGraphEdges,
+    shouldRenderGraphLabels
 } from "../../graph/index.js";
 import {
     type GraphVisualizationUiModel,
@@ -32,9 +32,9 @@ import {
     readGraphVisualizationEdges,
     readGraphVisualizationNodes
 } from "../contracts.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, GRAPH_UI_EVENT_RESET_DEFAULTS } from "../events/events.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { EventBusManager } from "./event-bus-mixin.js";
-import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, GRAPH_UI_EVENT_RESET_DEFAULTS } from "./events.js";
 import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 

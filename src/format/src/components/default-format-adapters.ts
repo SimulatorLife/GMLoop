@@ -1,10 +1,12 @@
+import prettier from "prettier";
+
 import { handleComments, printComment } from "../comments/index.js";
 import { LogicalOperatorsStyle } from "../options/logical-operators-style.js";
 import { gmlParserAdapter } from "../parsers/index.js";
 import { DEFAULT_PRINT_WIDTH, DEFAULT_TAB_WIDTH } from "../printer/constants.js";
 import { print } from "../printer/index.js";
 import { normalizeFormattedOutput } from "../printer/normalize-formatted-output.js";
-import type { GmlFormatComponentContract } from "./format-types.js";
+import type { GmlFormatComponentContract, GmlSourceFormatter } from "./format-types.js";
 import { DEFAULT_GML_PRINTER_LAYOUT_DEFAULTS, type GmlPrinterLayoutDefaults } from "./printer-layout-defaults.js";
 
 /**
@@ -49,6 +51,7 @@ export type GmlFormatAdapterResolver = Readonly<{
     resolveAdapters: () => GmlFormatComponentContract;
     resolvePrettierDefaults: () => GmlFormatPrettierDefaults;
     resolvePrinterLayoutDefaults: () => GmlPrinterLayoutDefaults;
+    resolveSourceFormatter: () => GmlSourceFormatter;
     resolveNormalizeFormattedOutput: () => (formatted: string) => string;
 }>;
 
@@ -68,20 +71,23 @@ const DEFAULT_ADAPTERS: GmlFormatComponentContract = Object.freeze({
     LogicalOperatorsStyle
 });
 
+const DEFAULT_SOURCE_FORMATTER: GmlSourceFormatter = (source, options) => prettier.format(source, options);
+
 /**
  * Default concrete-adapter resolver used by the high-level Prettier
  * plugin wiring.
  *
  * Every low-level import from `../parsers/`, `../printer/`,
- * `../comments/`, and `../options/logical-operators-style.js` is scoped
- * to this module so the orchestration layer can depend on the
- * `GmlFormatAdapterResolver` contract instead. Keeping the concrete
- * selections in one place also makes it obvious where an embedder or
- * test would swap in an alternative resolver.
+ * `../comments/`, `../options/logical-operators-style.js`, and the Prettier
+ * runtime is scoped to this module so the orchestration layer can depend on
+ * the `GmlFormatAdapterResolver` contract instead. Keeping the concrete
+ * selections in one place also makes it obvious where an embedder or test
+ * would swap in an alternative resolver.
  */
 export const defaultGmlFormatAdapterResolver: GmlFormatAdapterResolver = Object.freeze({
     resolveAdapters: () => DEFAULT_ADAPTERS,
     resolvePrettierDefaults: () => DEFAULT_PRETTIER_OPTIONS,
     resolvePrinterLayoutDefaults: () => DEFAULT_GML_PRINTER_LAYOUT_DEFAULTS,
+    resolveSourceFormatter: () => DEFAULT_SOURCE_FORMATTER,
     resolveNormalizeFormattedOutput: () => normalizeFormattedOutput
 });

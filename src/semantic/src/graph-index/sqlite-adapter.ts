@@ -40,11 +40,13 @@ function configureGraphDatabase(database: GraphDatabase): void {
     database.exec("PRAGMA synchronous = NORMAL;");
     database.exec(`PRAGMA busy_timeout = ${String(SQLITE_BUSY_TIMEOUT_MS)};`);
     database.exec("PRAGMA foreign_keys = ON;");
-    // A no-op on a database that already has tables until the next VACUUM, but
-    // takes effect immediately on a freshly created one. Without this, freed
-    // pages (from incremental rebuilds, deleted files, etc.) accumulate in the
-    // freelist forever instead of shrinking the file, since the default mode
-    // (NONE) never reclaims space on its own.
+    // SQLite records this mode in the database header, so changing it on an
+    // existing database does not reclaim pages immediately; the setting takes
+    // effect for new databases (or after a full VACUUM rebuild). Keeping the
+    // mode here is what lets routine graph-index maintenance reclaim freed
+    // pages incrementally instead of allowing deleted or replaced graph data
+    // to grow the file indefinitely. See docs/gml-graph-index-plan.md for the
+    // graph storage and maintenance contract.
     database.exec("PRAGMA auto_vacuum = INCREMENTAL;");
 }
 

@@ -53,6 +53,7 @@ export const gmlFormatComponents: GmlFormatComponentBundle = Object.freeze(
 export const defaultGmlFormatProvider: GmlFormatProvider = Object.freeze({
     components: gmlFormatComponents,
     prettierDefaults: defaultGmlFormatAdapterResolver.resolvePrettierDefaults(),
+    formatSource: defaultGmlFormatAdapterResolver.resolveSourceFormatter(),
     normalizeFormattedOutput: defaultGmlFormatAdapterResolver.resolveNormalizeFormattedOutput()
 });
 

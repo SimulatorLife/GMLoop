@@ -1,5 +1,19 @@
 /**
- * One physical source line with offsets and line-ending text preserved.
+ * Source-text parsing helpers for `#region` / `#endregion` directives.
+ *
+ * Lint rules that need to reason about paired regions (for example
+ * `require-region-pairs-rule` and `no-empty-regions-rule`) consume these
+ * helpers through the `gmlRuleRegionDirectiveServices` facade in
+ * `src/lint/src/rules/gml/gml-rule-services.js`. They live in the
+ * `language/` directory because region directives are a parser-layer
+ * concern (a small, GameMaker-specific front-matter syntax that the
+ * foundation parser does not own), not a GML rule implementation. The
+ * `rules/gml/` subtree is reserved for rule definitions and their
+ * rule-shaped utilities.
+ *
+ * `RegionSourceLine` and `RegionDirectiveType` are exported here so they
+ * can be re-exported through the rule-services facade without forcing
+ * consumers to name the parser-layer file directly.
  */
 export type RegionSourceLine = Readonly<{
     start: number;
