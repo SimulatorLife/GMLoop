@@ -1,0 +1,130 @@
+name: "Cache auto-merge base report"
+
+on:
+  push:
+    branches: [main, master, mainline]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: automerge-base-report-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  cache-base-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout base commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Compute report tooling fingerprint
+        id: tooling
+        shell: bash
+        run: |
+          files=(
+            scripts/eslint-checkstyle-formatter.js
+            scripts/lint-report.js
+            scripts/run-auto-merge-report.js
+            scripts/validate-auto-merge-report.js
+          )
+          fingerprint="$({
+            for file in "${files[@]}"; do
+              printf '%s\0' "$file"
+              cat "$file"
+              printf '\0'
+            done
+          } | sha256sum | cut -d' ' -f1)"
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+          echo "cache_key=automerge-base-report-v4-${{ github.sha }}-$fingerprint" >> "$GITHUB_OUTPUT"
+
+      - name: Restore existing trusted base report
+        id: base-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: reports
+          key: ${{ steps.tooling.outputs.cache_key }}
+
+      - name: Setup pnpm
+        if: ${{ steps.base-cache.outputs.cache-hit != 'true' }}
+        uses: pnpm/action-setup@v6
+        with:
+          cache: true
+
+      - name: Setup Node
+        if: ${{ steps.base-cache.outputs.cache-hit != 'true' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            **/pnpm-lock.yaml
+
+      - name: Install dependencies
+        if: ${{ steps.base-cache.outputs.cache-hit != 'true' }}
+        run: pnpm install --frozen-lockfile --recursive --force
+
+      - name: Generate trusted base report
+        id: report
+        if: ${{ steps.base-cache.outputs.cache-hit != 'true' }}
+        shell: bash
+        env:
+          GMLOOP_REPORT_TARGET_SHA: ${{ github.sha }}
+          GMLOOP_REPORT_TOOL_FINGERPRINT: ${{ steps.tooling.outputs.fingerprint }}
+        run: |
+          set +e
+          node scripts/run-auto-merge-report.js
+          status=$?
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Normalize JUnit report
+        if: ${{ always() && steps.base-cache.outputs.cache-hit != 'true' && !cancelled() }}
+        shell: bash
+        env:
+          TEST_STATUS: ${{ steps.report.outputs.exit_code || 'unknown' }}
+        run: pnpm -s test:ensure-junit
+
+      - name: Validate trusted base report
+        id: validate
+        if: ${{ always() && !cancelled() }}
+        shell: bash
+        env:
+          GMLOOP_REPORT_DIR: reports
+          GMLOOP_REPORT_EXPECTED_SHA: ${{ github.sha }}
+          GMLOOP_REPORT_EXPECTED_TOOL_FINGERPRINT: ${{ steps.tooling.outputs.fingerprint }}
+        run: |
+          set +e
+          node scripts/validate-auto-merge-report.js
+          status=$?
+          if [ "$status" -eq 0 ]; then
+            echo "complete=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "complete=false" >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
+
+      - name: Save trusted base report
+        if: >-
+          ${{
+            always() &&
+            !cancelled() &&
+            steps.base-cache.outputs.cache-hit != 'true' &&
+            steps.validate.outputs.complete == 'true'
+          }}
+        uses: actions/cache/save@v4
+        with:
+          path: reports
+          key: ${{ steps.tooling.outputs.cache_key }}
+
+      - name: Fail when a trusted baseline could not be produced
+        if: ${{ always() && !cancelled() && steps.validate.outputs.complete != 'true' }}
+        run: |
+          echo "::error::The default-branch auto-merge baseline did not complete and was not cached."
+          exit 1
