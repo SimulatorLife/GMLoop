@@ -13,6 +13,7 @@
     "^\\.github/actions/",
     "^\\.github/ci/automerge-policy\\.json$",
     "^src/cli/src/commands/ci-report\\.ts$",
+    "^src/cli/src/commands/ci-build-evidence\\.ts$",
     "^src/cli/src/commands/generate-quality-report\\.ts$",
     "^src/cli/src/modules/quality-report/",
     "^src/cli/src/cli-command-registration\\.ts$",
