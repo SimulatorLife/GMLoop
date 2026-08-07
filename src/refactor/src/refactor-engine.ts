@@ -302,6 +302,58 @@ function applyGroupedTextEditsToContent(
     return result;
 }
 
+function detectOverlappingTextEdits(
+    filePath: string,
+    edits: ReadonlyArray<Pick<TextEdit, "end" | "start">>
+): Array<string> {
+    const errors: Array<string> = [];
+
+    // Edits are sorted in descending order by start position, so overlaps can be
+    // detected by checking whether the next edit's end position exceeds the
+    // current edit's start position. Overlaps indicate that two edits target
+    // overlapping or adjacent text spans, which would corrupt the output if
+    // applied naively.
+    for (let i = 0; i < edits.length - 1; i++) {
+        const current = edits[i];
+        const next = edits[i + 1];
+
+        if (next.end > current.start) {
+            errors.push(`Overlapping edits detected in ${filePath} at positions ${current.start}-${next.end}`);
+        }
+    }
+
+    return errors;
+}
+
+function collectMetadataEditPathErrors(metadataEdits: ReadonlyArray<{ content: unknown; path: string }>): {
+    errors: Array<string>;
+    metadataPathKeys: Set<string>;
+} {
+    const errors: Array<string> = [];
+    const metadataPathKeys = new Set<string>();
+
+    for (const metadataEdit of metadataEdits) {
+        if (!Core.isNonEmptyString(metadataEdit.path)) {
+            errors.push("Metadata edit path must be a non-empty string");
+            continue;
+        }
+
+        const metadataPathKey = toWorkspacePathKey(metadataEdit.path);
+        if (metadataPathKeys.has(metadataPathKey)) {
+            errors.push(`Duplicate metadata edit detected for ${metadataEdit.path}`);
+            continue;
+        }
+
+        metadataPathKeys.add(metadataPathKey);
+
+        if (typeof metadataEdit.content !== "string") {
+            errors.push(`Metadata edit content for ${metadataEdit.path} must be a string`);
+        }
+    }
+
+    return { errors, metadataPathKeys };
+}
+
 function collectOutOfBoundsTextEditErrors(
     filePath: string,
     contentLength: number,
@@ -969,26 +1021,16 @@ export class RefactorEngine {
         // results (which edit wins?) and likely indicate a logic error in the rename.
         const grouped: GroupedTextEdits = workspace.groupByFile();
 
-        // Examine each file's edit list for overlapping ranges. Since edits are
-        // sorted in descending order by start position, we can detect overlaps by
-        // checking whether the next edit's end position exceeds the current edit's
-        // start position. Overlaps indicate that two edits target overlapping or
-        // adjacent text spans, which would corrupt the output if applied naively.
+        // Examine each file's edit list for overlapping ranges and warn when a
+        // single file receives an unusually large number of edits, which could
+        // indicate that the rename is broader than intended (e.g., renaming a
+        // common identifier like "i" across an entire project).
         for (const [filePath, edits] of grouped.entries()) {
-            errors.push(...collectTextEditValidationErrors(filePath, edits));
+            errors.push(
+                ...collectTextEditValidationErrors(filePath, edits),
+                ...detectOverlappingTextEdits(filePath, edits)
+            );
 
-            for (let i = 0; i < edits.length - 1; i++) {
-                const current = edits[i];
-                const next = edits[i + 1];
-
-                if (next.end > current.start) {
-                    errors.push(`Overlapping edits detected in ${filePath} at positions ${current.start}-${next.end}`);
-                }
-            }
-
-            // Warn when a single file receives an unusually large number of edits,
-            // which could indicate that the rename is broader than intended (e.g.,
-            // renaming a common identifier like "i" across an entire project).
             if (edits.length > 50) {
                 warnings.push(
                     `Large number of edits (${edits.length}) planned for ${filePath}. ` +
@@ -997,25 +1039,8 @@ export class RefactorEngine {
             }
         }
 
-        const metadataPathKeys = new Set<string>();
-        for (const metadataEdit of metadataEdits) {
-            if (!Core.isNonEmptyString(metadataEdit.path)) {
-                errors.push("Metadata edit path must be a non-empty string");
-                continue;
-            }
-
-            const metadataPathKey = toWorkspacePathKey(metadataEdit.path);
-            if (metadataPathKeys.has(metadataPathKey)) {
-                errors.push(`Duplicate metadata edit detected for ${metadataEdit.path}`);
-                continue;
-            }
-
-            metadataPathKeys.add(metadataPathKey);
-
-            if (typeof metadataEdit.content !== "string") {
-                errors.push(`Metadata edit content for ${metadataEdit.path} must be a string`);
-            }
-        }
+        const { errors: metadataEditErrors, metadataPathKeys } = collectMetadataEditPathErrors(metadataEdits);
+        errors.push(...metadataEditErrors);
 
         for (const textEditPath of grouped.keys()) {
             if (metadataPathKeys.has(toWorkspacePathKey(textEditPath))) {
