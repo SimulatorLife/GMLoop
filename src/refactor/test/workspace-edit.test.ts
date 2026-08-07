@@ -15,6 +15,7 @@ import {
     WORKSPACE_EDIT_REVISION_TOKEN,
     WorkspaceEdit
 } from "../src/workspace-edit.js";
+import { workspaceEditChangeTracking } from "./test-helpers/workspace-edit-change-tracking.js";
 
 void test("getWorkspaceArrays extracts valid arrays from workspace", () => {
     const workspace = new WorkspaceEdit();
@@ -381,23 +382,7 @@ void test("getWorkspaceEditRevision reads revision from any object implementing 
         groupByFile() {
             return new Map<string, Array<{ start: number; end: number; newText: string }>>();
         },
-        hasChanges() {
-            return this.edits.length > 0 || this.metadataEdits.length > 0 || this.fileRenames.length > 0;
-        },
-        collectChangedFilePaths() {
-            const paths = new Set<string>();
-            for (const edit of this.edits) {
-                paths.add(edit.path);
-            }
-            for (const metadataEdit of this.metadataEdits) {
-                paths.add(metadataEdit.path);
-            }
-            for (const fileRename of this.fileRenames) {
-                paths.add(fileRename.oldPath);
-                paths.add(fileRename.newPath);
-            }
-            return paths;
-        },
+        ...workspaceEditChangeTracking,
         [WORKSPACE_EDIT_REVISION_TOKEN]() {
             return internalRevision;
         }
