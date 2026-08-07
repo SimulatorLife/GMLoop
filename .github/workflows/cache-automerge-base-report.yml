@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   cache_state:
-    name: Restore trusted base report
+    name: Restore trusted base evidence
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -44,29 +44,40 @@ jobs:
           fingerprint="$({
             printf '%s\0' 'src/cli/src/commands/ci-report.ts'
             cat src/cli/src/commands/ci-report.ts
+            printf '\0%s\0' 'src/cli/src/commands/ci-build-evidence.ts'
+            cat src/cli/src/commands/ci-build-evidence.ts
             printf '\0%s\0' '.github/ci/automerge-policy.json'
             cat .github/ci/automerge-policy.json
           } | sha256sum | cut -d' ' -f1)"
           shard_count="$(node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('.github/ci/automerge-policy.json','utf8')); if(!Number.isInteger(p.testShardCount)||p.testShardCount<1) process.exit(2); process.stdout.write(String(p.testShardCount));")"
           echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
           echo "shard_count=$shard_count" >> "$GITHUB_OUTPUT"
-          echo "cache_key=automerge-base-report-v6-${{ github.sha }}-$fingerprint" >> "$GITHUB_OUTPUT"
-      - name: Restore existing trusted base report
+          echo "cache_key=automerge-base-report-v7-${{ github.sha }}-$fingerprint" >> "$GITHUB_OUTPUT"
+      - name: Restore existing trusted base evidence
         id: cache
         uses: actions/cache/restore@v4
         with:
           path: reports
           key: ${{ steps.tooling.outputs.cache_key }}
-      - name: Validate restored trusted base report
+      - name: Validate restored trusted base evidence
         id: restored
         if: ${{ steps.cache.outputs.cache-hit == 'true' }}
         shell: bash
         run: |
           set +e
-          node src/cli/src/commands/ci-report.ts validate \
-            --report-dir reports \
-            --expected-sha '${{ github.sha }}' \
-            --expected-fingerprint '${{ steps.tooling.outputs.fingerprint }}'
+          if [ -f reports/auto-merge-report.json ]; then
+            node src/cli/src/commands/ci-report.ts validate \
+              --report-dir reports \
+              --expected-sha '${{ github.sha }}' \
+              --expected-fingerprint '${{ steps.tooling.outputs.fingerprint }}'
+          elif [ -f reports/build-evidence.json ]; then
+            node src/cli/src/commands/ci-build-evidence.ts validate \
+              --report-dir reports \
+              --expected-sha '${{ github.sha }}' \
+              --require-failure
+          else
+            false
+          fi
           status=$?
           if [ "$status" -eq 0 ]; then
             echo "usable=true" >> "$GITHUB_OUTPUT"
@@ -105,6 +116,9 @@ jobs:
     timeout-minutes: 20
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
+      build_completed: ${{ steps.build.outputs.completed }}
+      build_succeeded: ${{ steps.build.outputs.succeeded }}
+      build_status: ${{ steps.build.outputs.status }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -119,17 +133,32 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile --recursive --force
+      - name: Record default-branch build evidence
+        id: build
+        run: |
+          node src/cli/src/commands/ci-build-evidence.ts run \
+            --target-sha '${{ github.sha }}' \
+            --report-dir build-evidence \
+            --github-output "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: base-build-evidence
+          path: build-evidence/build-evidence.json
+          retention-days: 1
       - name: Restore prior trusted timing history
+        if: ${{ steps.build.outputs.succeeded == 'true' }}
         uses: actions/cache/restore@v4
         with:
           path: .ci-history
           key: automerge-test-timing-v1-${{ needs.cache_state.outputs.fingerprint }}-${{ github.sha }}
           restore-keys: |
             automerge-test-timing-v1-${{ needs.cache_state.outputs.fingerprint }}-
-      - run: pnpm exec tsc -b
-      - run: node src/cli/src/commands/ci-report.ts stage-compiled --output compiled-runtime
+      - name: Stage lean compiled runtime
+        if: ${{ steps.build.outputs.succeeded == 'true' }}
+        run: node src/cli/src/commands/ci-report.ts stage-compiled --output compiled-runtime
       - name: Create timing-balanced canonical manifest
         id: plan
+        if: ${{ steps.build.outputs.succeeded == 'true' }}
         run: |
           node src/cli/src/commands/ci-report.ts manifest \
             --output test-manifest.json \
@@ -137,11 +166,13 @@ jobs:
             --shards '${{ needs.cache_state.outputs.shard_count }}' \
             --github-output "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v6
+        if: ${{ steps.build.outputs.succeeded == 'true' }}
         with:
           name: compiled-base-${{ github.sha }}
           path: compiled-runtime
           retention-days: 1
       - uses: actions/upload-artifact@v6
+        if: ${{ steps.build.outputs.succeeded == 'true' }}
         with:
           name: base-test-plan
           path: test-manifest.json
@@ -184,7 +215,7 @@ jobs:
   tests:
     name: Base tests (${{ matrix.shard }})
     needs: [cache_state, prepare]
-    if: ${{ needs.cache_state.outputs.usable != 'true' && needs.prepare.result == 'success' }}
+    if: ${{ needs.cache_state.outputs.usable != 'true' && needs.prepare.outputs.build_succeeded == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     strategy:
@@ -231,7 +262,7 @@ jobs:
           retention-days: 1
 
   assemble:
-    name: Assemble and cache trusted base report
+    name: Assemble and cache trusted base evidence
     needs: [cache_state, prepare, lint, tests]
     if: ${{ always() && !cancelled() && needs.cache_state.outputs.usable != 'true' }}
     runs-on: ubuntu-latest
@@ -250,37 +281,64 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile --recursive --force
+      - name: Require completed build and lint execution
+        run: |
+          test '${{ needs.prepare.result }}' = success
+          test '${{ needs.lint.result }}' = success
       - uses: actions/download-artifact@v7
         with:
-          pattern: base-report-*
+          name: base-build-evidence
+          path: build-evidence
+      - uses: actions/download-artifact@v7
+        with:
+          name: base-report-lint
+          path: reports
+      - name: Download test reports
+        if: ${{ needs.prepare.outputs.build_succeeded == 'true' }}
+        uses: actions/download-artifact@v7
+        with:
+          pattern: base-report-shard-*
           merge-multiple: true
           path: reports
-      - uses: actions/download-artifact@v7
+      - name: Download test plan
+        if: ${{ needs.prepare.outputs.build_succeeded == 'true' }}
+        uses: actions/download-artifact@v7
         with:
           name: base-test-plan
           path: .
-      - name: Assemble and validate trusted base report
+      - name: Assemble healthy trusted base report
+        if: ${{ needs.prepare.outputs.build_succeeded == 'true' }}
         run: |
           node src/cli/src/commands/ci-report.ts assemble \
             --manifest test-manifest.json \
             --report-dir reports \
             --target-sha '${{ github.sha }}' \
             --fingerprint '${{ needs.cache_state.outputs.fingerprint }}' \
-            --build-status '${{ needs.prepare.result == 'success' && '0' || '2' }}'
+            --build-status 0
           node src/cli/src/commands/ci-report.ts validate \
             --report-dir reports \
             --expected-sha '${{ github.sha }}' \
             --expected-fingerprint '${{ needs.cache_state.outputs.fingerprint }}'
-      - name: Save trusted base report
+      - name: Package deterministic broken-base evidence
+        if: ${{ needs.prepare.outputs.build_succeeded != 'true' }}
+        run: |
+          cp build-evidence/build-evidence.json reports/build-evidence.json
+          node src/cli/src/commands/ci-build-evidence.ts validate \
+            --report-dir reports \
+            --expected-sha '${{ github.sha }}' \
+            --require-failure
+      - name: Save trusted base evidence
         uses: actions/cache/save@v4
         with:
           path: reports
           key: ${{ needs.cache_state.outputs.cache_key }}
       - name: Save timing history for future balancing
+        if: ${{ needs.prepare.outputs.build_succeeded == 'true' && hashFiles('reports/test-durations.json') != '' }}
         run: |
           mkdir -p .ci-history
           cp reports/test-durations.json .ci-history/test-durations.json
       - uses: actions/cache/save@v4
+        if: ${{ needs.prepare.outputs.build_succeeded == 'true' && hashFiles('.ci-history/test-durations.json') != '' }}
         with:
           path: .ci-history
           key: automerge-test-timing-v1-${{ needs.cache_state.outputs.fingerprint }}-${{ github.sha }}
