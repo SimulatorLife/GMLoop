@@ -38,7 +38,7 @@ if (metadata) {
   if (!Number.isInteger(metadata.lintStatus) || metadata.lintStatus < 0 || metadata.lintStatus > 1) {
     errors.push(`lint execution did not produce a comparable result (status ${metadata.lintStatus})`);
   }
-  if (!Number.isInteger(metadata.testStatus) || metadata.testStatus < 0) {
+  if (!Number.isInteger(metadata.testStatus) || metadata.testStatus < 0 || metadata.testStatus > 1) {
     errors.push(`test execution did not produce a comparable result (status ${metadata.testStatus})`);
   }
   if (metadata.testReportSynthetic === true) errors.push("JUnit report was synthesized after the test runner failed to produce a genuine report");
