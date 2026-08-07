@@ -610,7 +610,7 @@ function isUndefinedOrMissingArg(node: any): boolean {
     return isUndefinedValueNode(node);
 }
 
-function createCollapseUndefinedCallArgumentEdit(sourceText: string, callExpression: any): SourceTextEdit | null {
+function createCollapseUndefinedCallArgumentEdit(callExpression: any): SourceTextEdit | null {
     if (!callExpression || callExpression.type !== "CallExpression" || !Array.isArray(callExpression.arguments)) {
         return null;
     }
@@ -666,7 +666,7 @@ export function rewriteTrailingOptionalDefaultsProgram(sourceText: string, progr
         }
 
         if (node?.type === "CallExpression") {
-            const edit = createCollapseUndefinedCallArgumentEdit(sourceText, node);
+            const edit = createCollapseUndefinedCallArgumentEdit(node);
             if (!edit) {
                 return;
             }

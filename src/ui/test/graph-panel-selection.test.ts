@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, GRAPH_UI_EVENT_RESET_DEFAULTS } from "../src/app/components/events.js";
 import { GmGraphPanel } from "../src/app/components/gm-graph-panel.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, GRAPH_UI_EVENT_RESET_DEFAULTS } from "../src/app/events/events.js";
 import { createGraphModel, createGraphState, TestableGmGraphPanel } from "./graph-panel-test-harness.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
 
@@ -95,6 +95,7 @@ void test("graph panel renders shared semantic-index progress in the graph page 
             current: 4,
             isRunning: true,
             logLines: ["Parsing GML files... (4/9)"],
+            operationId: "op-1",
             stage: "gml-parse",
             status: "running",
             summary: null,

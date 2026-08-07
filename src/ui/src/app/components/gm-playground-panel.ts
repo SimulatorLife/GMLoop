@@ -5,9 +5,9 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import { getUiErrorMessage } from "../error-message.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "../events/events.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { EventBusManager } from "./event-bus-mixin.js";
-import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "./events.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 import { PlaygroundSessionController } from "./playground-session-controller.js";
 

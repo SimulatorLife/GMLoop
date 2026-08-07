@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { Core } from "@gmloop/core";
 
 import type * as CliModule from "../src/cli.js";
-import { __graphCommandTest__, createGraphCommand } from "../src/commands/graph.js";
+import { __graphCommandTest__, createGraphCommand } from "../src/commands/graph/index.js";
 import type { LiveReloadRegisteredSession } from "../src/modules/live-reload/session-registry.js";
 import { writeGameMakerCliActiveProjectState } from "../src/workflow/project-root.js";
 

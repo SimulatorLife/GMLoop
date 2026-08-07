@@ -6,6 +6,7 @@ import { describe, it, test } from "node:test";
 
 import { Core } from "@gmloop/core";
 
+import { FIXTURE_COMPARISONS } from "../config/index.js";
 import { discoverFixtureCases } from "../discovery/index.js";
 import {
     collectBudgetFailures,
@@ -82,11 +83,17 @@ export async function compareDirectoryTrees(
 }
 
 function canonicalizeFixtureText(text: string, comparison: FixtureComparison): string {
-    if (comparison === "ignore-whitespace-and-line-endings") {
-        return text.replaceAll(/\r\n?/gu, "\n").replaceAll(/\s+/gu, "");
+    switch (comparison) {
+        case FIXTURE_COMPARISONS.IGNORE_WHITESPACE_AND_LINE_ENDINGS: {
+            return text.replaceAll(/\r\n?/gu, "\n").replaceAll(/\s+/gu, "");
+        }
+        case FIXTURE_COMPARISONS.EXACT: {
+            return text;
+        }
+        default: {
+            throw new TypeError(`Unsupported fixture comparison mode: ${String(comparison)}`);
+        }
     }
-
-    return text;
 }
 
 async function compareFixtureCaseResult(
@@ -124,7 +131,7 @@ async function compareFixtureCaseResult(
     assert.equal(
         actualOutput,
         canonicalExpected,
-        fixtureCase.comparison === "exact"
+        fixtureCase.comparison === FIXTURE_COMPARISONS.EXACT
             ? `${fixtureCase.caseId} output must match expected text byte-for-byte.`
             : `${fixtureCase.caseId} output must match expected text for comparison mode ${fixtureCase.comparison}.`
     );
@@ -256,7 +263,7 @@ async function executeFixtureCase(
             stageTimer.getStages()
         );
         profileCollector.addEntry(profileEntry);
-        throw error;
+        throw Core.toContextualError(`Fixture ${fixtureCase.caseId} failed in ${adapter.workspaceName}`, error);
     } finally {
         if (workingProjectDirectoryPath !== null) {
             await rm(workingProjectDirectoryPath, { recursive: true, force: true });

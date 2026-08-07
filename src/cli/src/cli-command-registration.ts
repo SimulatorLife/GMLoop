@@ -10,7 +10,7 @@ import { createGameMakerCliCommand } from "./commands/game-maker-cli.js";
 import { createFeatherMetadataCommand, runGenerateFeatherMetadata } from "./commands/generate-feather-metadata.js";
 import { createGenerateIdentifiersCommand, runGenerateGmlIdentifiers } from "./commands/generate-gml-identifiers.js";
 import { createGenerateQualityReportCommand, runGenerateQualityReport } from "./commands/generate-quality-report.js";
-import { createGraphCommand } from "./commands/graph.js";
+import { createGraphCommand } from "./commands/graph/index.js";
 import { createLintCommand, runLintCommand } from "./commands/lint.js";
 import { createLiveReloadCommand } from "./commands/live-reload.js";
 import { createLspCommand } from "./commands/lsp.js";
