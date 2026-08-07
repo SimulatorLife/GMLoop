@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 
 const BUILD_EVIDENCE_SCHEMA_VERSION = 1;
 const BUILD_EVIDENCE_FILE = "build-evidence.json";
+const MAX_TYPESCRIPT_EXIT_STATUS = 4;
 
 type BuildEvidence = Readonly<{
     schemaVersion: number;
@@ -29,6 +30,10 @@ function readOption(name: string): string | undefined {
 
 function hasFlag(name: string): boolean {
     return process.argv.includes(name);
+}
+
+function isNormalTypescriptStatus(status: number | null): status is number {
+    return status !== null && Number.isInteger(status) && status >= 0 && status <= MAX_TYPESCRIPT_EXIT_STATUS;
 }
 
 async function runBuild(): Promise<ProcessResult> {
@@ -81,8 +86,8 @@ function parseEvidence(value: unknown): BuildEvidence {
 
 function validateEvidence(evidence: BuildEvidence, expectedSha: string | undefined, requireFailure: boolean): Array<string> {
     const errors: Array<string> = [];
-    if (!evidence.completed || evidence.signal !== null || evidence.status === null) {
-        errors.push("build process did not complete normally");
+    if (!evidence.completed || evidence.signal !== null || !isNormalTypescriptStatus(evidence.status)) {
+        errors.push("build process did not complete with a normal TypeScript compiler status");
     }
     if (expectedSha && evidence.targetSha !== expectedSha) {
         errors.push(`target SHA mismatch (${evidence.targetSha} != ${expectedSha})`);
@@ -93,7 +98,7 @@ function validateEvidence(evidence: BuildEvidence, expectedSha: string | undefin
     if (evidence.succeeded && evidence.testsSkippedReason !== null) {
         errors.push("successful build incorrectly declares skipped tests");
     }
-    if (!evidence.succeeded && evidence.testsSkippedReason !== "build-failed") {
+    if (!evidence.succeeded && evidence.completed && evidence.testsSkippedReason !== "build-failed") {
         errors.push("failed build does not explicitly declare tests skipped because the build failed");
     }
     if (requireFailure && evidence.succeeded) {
@@ -110,7 +115,7 @@ async function runCommand(): Promise<number> {
     }
 
     const result = await runBuild();
-    const completed = result.signal === null && result.status !== null;
+    const completed = result.signal === null && isNormalTypescriptStatus(result.status);
     const succeeded = completed && result.status === 0;
     const evidence: BuildEvidence = Object.freeze({
         schemaVersion: BUILD_EVIDENCE_SCHEMA_VERSION,
@@ -125,7 +130,9 @@ async function runCommand(): Promise<number> {
     await appendOutputs(readOption("--github-output"), evidence);
 
     if (!completed) {
-        console.error(`Build execution did not complete normally${result.signal ? ` (${result.signal})` : ""}.`);
+        console.error(
+            `Build execution did not complete with a normal TypeScript compiler status${result.signal ? ` (${result.signal})` : result.status === null ? "" : ` (status ${String(result.status)})`}.`
+        );
         return 2;
     }
     if (!succeeded) {
@@ -145,7 +152,7 @@ async function validateCommand(): Promise<number> {
     return errors.length === 0 ? 0 : 1;
 }
 
-export const __ciBuildEvidenceTest__ = Object.freeze({ parseEvidence, validateEvidence });
+export const __ciBuildEvidenceTest__ = Object.freeze({ isNormalTypescriptStatus, parseEvidence, validateEvidence });
 
 const invokedPath = process.argv[1];
 if (invokedPath && pathToFileURL(path.resolve(invokedPath)).href === import.meta.url) {
