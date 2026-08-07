@@ -13,16 +13,22 @@ concurrency:
   group: automerge-base-report-${{ github.sha }}
   cancel-in-progress: false
 
+env:
+  GMLOOP_TEST_SHARDS: workspace-1,workspace-2,workspace-3,root-1,root-2,whole-project,process-heavy
+
 jobs:
-  cache-base-report:
+  cache_state:
+    name: Restore trusted base report
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 10
+    outputs:
+      usable: ${{ steps.restored.outputs.usable }}
+      fingerprint: ${{ steps.tooling.outputs.fingerprint }}
+      cache_key: ${{ steps.tooling.outputs.cache_key }}
     steps:
-      - name: Checkout base commit
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.sha }}
-
       - name: Compute report tooling fingerprint
         id: tooling
         shell: bash
@@ -30,7 +36,8 @@ jobs:
           files=(
             scripts/eslint-checkstyle-formatter.js
             scripts/lint-report.js
-            scripts/run-auto-merge-report.js
+            scripts/run-test-shard.js
+            scripts/assemble-auto-merge-report.js
             scripts/validate-auto-merge-report.js
           )
           fingerprint="$({
@@ -41,18 +48,16 @@ jobs:
             done
           } | sha256sum | cut -d' ' -f1)"
           echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
-          echo "cache_key=automerge-base-report-v4-${{ github.sha }}-$fingerprint" >> "$GITHUB_OUTPUT"
-
+          echo "cache_key=automerge-base-report-v5-${{ github.sha }}-$fingerprint" >> "$GITHUB_OUTPUT"
       - name: Restore existing trusted base report
-        id: base-cache
+        id: cache
         uses: actions/cache/restore@v4
         with:
           path: reports
           key: ${{ steps.tooling.outputs.cache_key }}
-
       - name: Validate restored trusted base report
         id: restored
-        if: ${{ steps.base-cache.outputs.cache-hit == 'true' }}
+        if: ${{ steps.cache.outputs.cache-hit == 'true' }}
         shell: bash
         env:
           GMLOOP_REPORT_DIR: reports
@@ -70,81 +75,171 @@ jobs:
           fi
           exit 0
 
-      - name: Setup pnpm
-        if: ${{ steps.restored.outputs.usable != 'true' }}
-        uses: pnpm/action-setup@v6
+  build:
+    name: Build default branch
+    needs: cache_state
+    if: ${{ needs.cache_state.outputs.usable != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - uses: pnpm/action-setup@v6
         with:
           cache: true
-
-      - name: Setup Node
-        if: ${{ steps.restored.outputs.usable != 'true' }}
-        uses: actions/setup-node@v6
+      - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: |
             pnpm-lock.yaml
             **/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --recursive --force
+      - run: pnpm run build:ts
+      - uses: actions/upload-artifact@v6
+        with:
+          name: compiled-base-${{ github.sha }}
+          path: |
+            src/**/dist/**
+            test/dist/**
+          retention-days: 1
 
-      - name: Install dependencies
-        if: ${{ steps.restored.outputs.usable != 'true' }}
-        run: pnpm install --frozen-lockfile --recursive --force
-
-      - name: Generate trusted base report
-        id: report
-        if: ${{ steps.restored.outputs.usable != 'true' }}
+  lint:
+    name: Lint default branch
+    needs: cache_state
+    if: ${{ needs.cache_state.outputs.usable != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            **/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --recursive --force
+      - name: Generate lint report
         shell: bash
-        env:
-          GMLOOP_REPORT_TARGET_SHA: ${{ github.sha }}
-          GMLOOP_REPORT_TOOL_FINGERPRINT: ${{ steps.tooling.outputs.fingerprint }}
         run: |
           set +e
-          node scripts/run-auto-merge-report.js
+          node scripts/lint-report.js
           status=$?
-          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          printf '{"schemaVersion":1,"completed":true,"status":%s}\n' "$status" > reports/lint-meta.json
           exit 0
+      - if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: base-report-lint
+          path: reports
+          if-no-files-found: warn
+          retention-days: 1
 
-      - name: Normalize JUnit report
-        if: ${{ always() && steps.restored.outputs.usable != 'true' && !cancelled() }}
+  tests:
+    name: Base tests (${{ matrix.shard }})
+    needs: [cache_state, build]
+    if: ${{ needs.cache_state.outputs.usable != 'true' && needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [workspace-1, workspace-2, workspace-3, root-1, root-2, whole-project, process-heavy]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            **/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --recursive --force
+      - uses: actions/download-artifact@v7
+        with:
+          name: compiled-base-${{ github.sha }}
+          path: .
+      - name: Run test shard
         shell: bash
         env:
-          TEST_STATUS: ${{ steps.report.outputs.exit_code || 'unknown' }}
-        run: pnpm -s test:ensure-junit
+          GMLOOP_TEST_SHARD: ${{ matrix.shard }}
+          GMLOOP_TEST_REPORT_DIR: reports
+        run: |
+          set +e
+          node scripts/run-test-shard.js
+          exit 0
+      - if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: base-report-${{ matrix.shard }}
+          path: reports
+          if-no-files-found: warn
+          retention-days: 1
 
+  assemble:
+    name: Assemble and cache trusted base report
+    needs: [cache_state, build, lint, tests]
+    if: ${{ always() && !cancelled() && needs.cache_state.outputs.usable != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - name: Download report shards
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          pattern: base-report-*
+          merge-multiple: true
+          path: reports
+      - name: Assemble trusted base report
+        env:
+          GMLOOP_REPORT_DIR: reports
+          GMLOOP_REPORT_TARGET_SHA: ${{ github.sha }}
+          GMLOOP_REPORT_TOOL_FINGERPRINT: ${{ needs.cache_state.outputs.fingerprint }}
+          GMLOOP_REPORT_BUILD_STATUS: ${{ needs.build.result == 'success' && '0' || '2' }}
+        run: node scripts/assemble-auto-merge-report.js
       - name: Validate trusted base report
         id: validate
-        if: ${{ always() && !cancelled() }}
         shell: bash
         env:
           GMLOOP_REPORT_DIR: reports
           GMLOOP_REPORT_EXPECTED_SHA: ${{ github.sha }}
-          GMLOOP_REPORT_EXPECTED_TOOL_FINGERPRINT: ${{ steps.tooling.outputs.fingerprint }}
+          GMLOOP_REPORT_EXPECTED_TOOL_FINGERPRINT: ${{ needs.cache_state.outputs.fingerprint }}
         run: |
           set +e
           node scripts/validate-auto-merge-report.js
           status=$?
-          if [ "$status" -eq 0 ]; then
-            echo "complete=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "complete=false" >> "$GITHUB_OUTPUT"
-          fi
+          echo "complete=$([ "$status" -eq 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
           exit 0
-
       - name: Save trusted base report
-        if: >-
-          ${{
-            always() &&
-            !cancelled() &&
-            steps.base-cache.outputs.cache-hit != 'true' &&
-            steps.validate.outputs.complete == 'true'
-          }}
+        if: ${{ steps.validate.outputs.complete == 'true' }}
         uses: actions/cache/save@v4
         with:
           path: reports
-          key: ${{ steps.tooling.outputs.cache_key }}
-
+          key: ${{ needs.cache_state.outputs.cache_key }}
+      - name: Publish timing summary
+        if: ${{ always() && !cancelled() }}
+        shell: bash
+        run: |
+          if [ -f reports/test-durations.md ]; then
+            cat reports/test-durations.md >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Fail when a trusted baseline could not be produced
-        if: ${{ always() && !cancelled() && steps.validate.outputs.complete != 'true' }}
+        if: ${{ steps.validate.outputs.complete != 'true' }}
         run: |
           echo "::error::The default-branch auto-merge baseline did not complete and was not cached."
           exit 1

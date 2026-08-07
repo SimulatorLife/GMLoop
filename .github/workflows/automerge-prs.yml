@@ -16,6 +16,9 @@ concurrency:
   group: automerge-${{ github.event.pull_request.number || 'manual' }}
   cancel-in-progress: true
 
+env:
+  GMLOOP_TEST_SHARDS: workspace-1,workspace-2,workspace-3,root-1,root-2,whole-project,process-heavy
+
 jobs:
   gate:
     runs-on: ubuntu-latest
@@ -63,8 +66,7 @@ jobs:
               /^src\/lint\/test\/fixtures\/.*\.gml$/u,
             ];
             const isProtectedGoldenFixture = (filename) =>
-              typeof filename === 'string' &&
-              protectedGoldenFixturePatterns.some((pattern) => pattern.test(filename));
+              typeof filename === 'string' && protectedGoldenFixturePatterns.some((pattern) => pattern.test(filename));
             const changedFixtures = files.filter((file) => {
               if (file.status === 'added') return false;
               return isProtectedGoldenFixture(file.filename) || isProtectedGoldenFixture(file.previous_filename);
@@ -78,239 +80,21 @@ jobs:
             core.notice(`PR changed files: ${files.length}; validating base ${baseSha}, head ${headSha}, merge ${mergeSha}.`);
             core.setOutput('should_run_tests', files.length > 0 ? 'true' : 'false');
 
-  tests:
+  base_cache:
+    name: Restore trusted base report
     needs: gate
     if: ${{ needs.gate.outputs.should_run_tests == 'true' }}
-    name: Generate reports (${{ matrix.target }})
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [base, head, merge]
-
+    timeout-minutes: 10
+    outputs:
+      usable: ${{ steps.restored.outputs.usable }}
+      fingerprint: ${{ steps.tooling.outputs.fingerprint }}
+      cache_key: ${{ steps.tooling.outputs.cache_key }}
     steps:
-      - name: Resolve ref for ${{ matrix.target }}
-        id: ref
-        shell: bash
-        env:
-          BASE_SHA: ${{ needs.gate.outputs.base_sha }}
-          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
-          MERGE_SHA: ${{ needs.gate.outputs.merge_sha }}
-        run: |
-          case "${{ matrix.target }}" in
-            base) echo "ref=$BASE_SHA" >> "$GITHUB_OUTPUT" ;;
-            head) echo "ref=$HEAD_SHA" >> "$GITHUB_OUTPUT" ;;
-            merge) echo "ref=$MERGE_SHA" >> "$GITHUB_OUTPUT" ;;
-          esac
-
-      - name: Checkout (${{ matrix.target }})
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ steps.ref.outputs.ref }}
-
-      - name: Checkout current CI report tooling
+      - name: Checkout current CI tooling
         uses: actions/checkout@v6
         with:
           ref: ${{ needs.gate.outputs.head_sha }}
-          path: .ci-tools
-          sparse-checkout: |
-            scripts/eslint-checkstyle-formatter.js
-            scripts/lint-report.js
-            scripts/run-auto-merge-report.js
-            scripts/validate-auto-merge-report.js
-          sparse-checkout-cone-mode: false
-          persist-credentials: false
-
-      - name: Compute report tooling fingerprint
-        id: tooling
-        shell: bash
-        run: |
-          files=(
-            .ci-tools/scripts/eslint-checkstyle-formatter.js
-            .ci-tools/scripts/lint-report.js
-            .ci-tools/scripts/run-auto-merge-report.js
-            .ci-tools/scripts/validate-auto-merge-report.js
-          )
-          fingerprint="$({
-            for file in "${files[@]}"; do
-              logical="${file#.ci-tools/}"
-              printf '%s\0' "$logical"
-              cat "$file"
-              printf '\0'
-            done
-          } | sha256sum | cut -d' ' -f1)"
-          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
-          echo "cache_key=automerge-base-report-v4-${{ needs.gate.outputs.base_sha }}-$fingerprint" >> "$GITHUB_OUTPUT"
-
-      - name: Restore cached base report
-        id: base-cache
-        if: ${{ matrix.target == 'base' }}
-        uses: actions/cache/restore@v4
-        with:
-          path: reports
-          key: ${{ steps.tooling.outputs.cache_key }}
-
-      - name: Stage CI report tooling outside the target checkout
-        id: ci-tools
-        shell: bash
-        env:
-          CI_TOOLS_DIR: ${{ runner.temp }}/gmloop-ci-tools
-        run: |
-          rm -rf "$CI_TOOLS_DIR"
-          mkdir -p "$CI_TOOLS_DIR"
-          cp .ci-tools/scripts/eslint-checkstyle-formatter.js "$CI_TOOLS_DIR/"
-          cp .ci-tools/scripts/lint-report.js "$CI_TOOLS_DIR/"
-          cp .ci-tools/scripts/run-auto-merge-report.js "$CI_TOOLS_DIR/"
-          cp .ci-tools/scripts/validate-auto-merge-report.js "$CI_TOOLS_DIR/"
-          printf '%s\n' '{"type":"module"}' > "$CI_TOOLS_DIR/package.json"
-          rm -rf .ci-tools
-          echo "dir=$CI_TOOLS_DIR" >> "$GITHUB_OUTPUT"
-
-      - name: Validate restored base report
-        id: restored-base
-        if: ${{ matrix.target == 'base' && steps.base-cache.outputs.cache-hit == 'true' }}
-        shell: bash
-        env:
-          CI_TOOLS_DIR: ${{ steps.ci-tools.outputs.dir }}
-          GMLOOP_REPORT_DIR: reports
-          GMLOOP_REPORT_EXPECTED_SHA: ${{ steps.ref.outputs.ref }}
-          GMLOOP_REPORT_EXPECTED_TOOL_FINGERPRINT: ${{ steps.tooling.outputs.fingerprint }}
-        run: |
-          set +e
-          node "$CI_TOOLS_DIR/validate-auto-merge-report.js"
-          status=$?
-          if [ "$status" -eq 0 ]; then
-            echo "usable=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "usable=false" >> "$GITHUB_OUTPUT"
-            rm -rf reports
-          fi
-          exit 0
-
-      - name: Setup pnpm (${{ matrix.target }})
-        if: ${{ matrix.target != 'base' || steps.restored-base.outputs.usable != 'true' }}
-        uses: pnpm/action-setup@v6
-        with:
-          cache: true
-
-      - name: Setup Node (${{ matrix.target }})
-        if: ${{ matrix.target != 'base' || steps.restored-base.outputs.usable != 'true' }}
-        uses: actions/setup-node@v6
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-          cache-dependency-path: |
-            pnpm-lock.yaml
-            **/pnpm-lock.yaml
-
-      - name: Install deps
-        if: ${{ matrix.target != 'base' || steps.restored-base.outputs.usable != 'true' }}
-        run: pnpm install --frozen-lockfile --recursive --force
-
-      - name: Generate quality reports (${{ matrix.target }})
-        id: report
-        if: ${{ matrix.target != 'base' || steps.restored-base.outputs.usable != 'true' }}
-        shell: bash
-        env:
-          CI_TOOLS_DIR: ${{ steps.ci-tools.outputs.dir }}
-          GMLOOP_ESLINT_CHECKSTYLE_FORMATTER: ${{ steps.ci-tools.outputs.dir }}/eslint-checkstyle-formatter.js
-          GMLOOP_REPORT_TARGET_SHA: ${{ steps.ref.outputs.ref }}
-          GMLOOP_REPORT_TOOL_FINGERPRINT: ${{ steps.tooling.outputs.fingerprint }}
-        run: |
-          set +e
-          node "$CI_TOOLS_DIR/run-auto-merge-report.js"
-          status=$?
-          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
-          exit 0
-
-      - name: Normalize JUnit report
-        if: ${{ always() && !cancelled() && (matrix.target != 'base' || steps.restored-base.outputs.usable != 'true') }}
-        shell: bash
-        env:
-          TEST_STATUS: ${{ steps.report.outputs.exit_code || 'unknown' }}
-        run: pnpm -s test:ensure-junit
-
-      - name: Validate generated report
-        id: validate
-        if: ${{ always() && !cancelled() }}
-        shell: bash
-        env:
-          CI_TOOLS_DIR: ${{ steps.ci-tools.outputs.dir }}
-          GMLOOP_REPORT_DIR: reports
-          GMLOOP_REPORT_EXPECTED_SHA: ${{ steps.ref.outputs.ref }}
-          GMLOOP_REPORT_EXPECTED_TOOL_FINGERPRINT: ${{ steps.tooling.outputs.fingerprint }}
-        run: |
-          set +e
-          node "$CI_TOOLS_DIR/validate-auto-merge-report.js"
-          status=$?
-          if [ "$status" -eq 0 ]; then
-            echo "complete=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "complete=false" >> "$GITHUB_OUTPUT"
-          fi
-          exit 0
-
-      - name: Save complete base report
-        if: >-
-          ${{
-            always() &&
-            !cancelled() &&
-            matrix.target == 'base' &&
-            steps.base-cache.outputs.cache-hit != 'true' &&
-            steps.validate.outputs.complete == 'true'
-          }}
-        uses: actions/cache/save@v4
-        with:
-          path: reports
-          key: ${{ steps.tooling.outputs.cache_key }}
-
-      - name: Publish test summary (${{ matrix.target }})
-        if: ${{ always() && !cancelled() && steps.validate.outputs.complete == 'true' }}
-        uses: dorny/test-reporter@v3
-        with:
-          name: Publish test summary (${{ matrix.target }})
-          path: reports/tests.xml
-          reporter: java-junit
-          fail-on-error: false
-          fail-on-empty: false
-          use-actions-summary: false
-
-      - name: Upload report artifacts (${{ matrix.target }})
-        if: ${{ always() && !cancelled() }}
-        uses: actions/upload-artifact@v6
-        with:
-          name: report-${{ matrix.target }}
-          path: |
-            reports/*.xml
-            reports/auto-merge-report.json
-            reports/lcov.info
-            reports/jscpd-report.json
-            reports/project-health.json
-          if-no-files-found: warn
-          retention-days: 1
-
-  summarize:
-    name: Summarize & comment table
-    needs: [gate, tests]
-    if: >-
-      ${{
-        always() &&
-        needs.gate.result == 'success' &&
-        needs.gate.outputs.should_run_tests == 'true'
-      }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    outputs:
-      all_green: ${{ steps.summarize.outputs.all_green }}
-    env:
-      GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
-
-    steps:
-      - name: Checkout repo (for scripts)
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.gate.outputs.merge_sha }}
 
       - name: Compute report tooling fingerprint
         id: tooling
@@ -319,7 +103,8 @@ jobs:
           files=(
             scripts/eslint-checkstyle-formatter.js
             scripts/lint-report.js
-            scripts/run-auto-merge-report.js
+            scripts/run-test-shard.js
+            scripts/assemble-auto-merge-report.js
             scripts/validate-auto-merge-report.js
           )
           fingerprint="$({
@@ -330,61 +115,533 @@ jobs:
             done
           } | sha256sum | cut -d' ' -f1)"
           echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+          echo "cache_key=automerge-base-report-v5-${{ needs.gate.outputs.base_sha }}-$fingerprint" >> "$GITHUB_OUTPUT"
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+      - name: Restore cached base report
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: reports
+          key: ${{ steps.tooling.outputs.cache_key }}
+
+      - name: Validate restored base report
+        id: restored
+        if: ${{ steps.cache.outputs.cache-hit == 'true' }}
+        shell: bash
+        env:
+          GMLOOP_REPORT_DIR: reports
+          GMLOOP_REPORT_EXPECTED_SHA: ${{ needs.gate.outputs.base_sha }}
+          GMLOOP_REPORT_EXPECTED_TOOL_FINGERPRINT: ${{ steps.tooling.outputs.fingerprint }}
+        run: |
+          set +e
+          node scripts/validate-auto-merge-report.js
+          status=$?
+          if [ "$status" -eq 0 ]; then
+            echo "usable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "usable=false" >> "$GITHUB_OUTPUT"
+            rm -rf reports
+          fi
+          exit 0
+
+      - name: Mark cache miss
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        run: echo "usable=false" >> "$GITHUB_OUTPUT"
+        id: miss
+
+      - name: Expose cached base report
+        if: ${{ steps.restored.outputs.usable == 'true' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: report-base
+          path: reports
+          retention-days: 1
+
+  head_diagnostic:
+    name: Head build diagnostic
+    needs: gate
+    if: ${{ needs.gate.outputs.should_run_tests == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.gate.outputs.head_sha }}
+      - uses: pnpm/action-setup@v6
         with:
           cache: true
-
-      - name: Setup node
-        uses: actions/setup-node@v6
+      - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: |
             pnpm-lock.yaml
             **/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --recursive --force
+      - name: Build PR head
+        run: pnpm run build:ts
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --recursive --force
+  base_build:
+    name: Build base fallback
+    needs: [gate, base_cache]
+    if: ${{ needs.gate.outputs.should_run_tests == 'true' && needs.base_cache.outputs.usable != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.gate.outputs.base_sha }}
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            **/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --recursive --force
+      - run: pnpm run build:ts
+      - uses: actions/upload-artifact@v6
+        with:
+          name: compiled-base-${{ needs.gate.outputs.base_sha }}
+          path: |
+            src/**/dist/**
+            test/dist/**
+          retention-days: 1
 
-      - name: Build CLI
-        run: pnpm run ensure:cli
+  base_lint:
+    name: Lint base fallback
+    needs: [gate, base_cache]
+    if: ${{ needs.gate.outputs.should_run_tests == 'true' && needs.base_cache.outputs.usable != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.gate.outputs.base_sha }}
+      - name: Checkout current lint tooling
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.gate.outputs.head_sha }}
+          path: .ci-tools
+          sparse-checkout: |
+            scripts/eslint-checkstyle-formatter.js
+            scripts/lint-report.js
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Stage lint tooling outside target tree
+        id: ci
+        shell: bash
+        run: |
+          dir="$RUNNER_TEMP/gmloop-ci-tools"
+          rm -rf "$dir"
+          mkdir -p "$dir"
+          cp .ci-tools/scripts/eslint-checkstyle-formatter.js "$dir/"
+          cp .ci-tools/scripts/lint-report.js "$dir/"
+          printf '%s\n' '{"type":"module"}' > "$dir/package.json"
+          rm -rf .ci-tools
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            **/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --recursive --force
+      - name: Generate base lint report
+        shell: bash
+        env:
+          CI_DIR: ${{ steps.ci.outputs.dir }}
+        run: |
+          set +e
+          GMLOOP_ESLINT_CHECKSTYLE_FORMATTER="$CI_DIR/eslint-checkstyle-formatter.js" node "$CI_DIR/lint-report.js"
+          status=$?
+          printf '{"schemaVersion":1,"completed":true,"status":%s}\n' "$status" > reports/lint-meta.json
+          exit 0
+      - if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: base-report-lint
+          path: reports
+          if-no-files-found: warn
+          retention-days: 1
 
-      - name: Download artifacts
+  base_tests:
+    name: Base tests (${{ matrix.shard }})
+    needs: [gate, base_cache, base_build]
+    if: ${{ needs.gate.outputs.should_run_tests == 'true' && needs.base_cache.outputs.usable != 'true' && needs.base_build.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [workspace-1, workspace-2, workspace-3, root-1, root-2, whole-project, process-heavy]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.gate.outputs.base_sha }}
+      - name: Checkout current test-shard tooling
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.gate.outputs.head_sha }}
+          path: .ci-tools
+          sparse-checkout: scripts/run-test-shard.js
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Stage test tooling outside target tree
+        id: ci
+        shell: bash
+        run: |
+          dir="$RUNNER_TEMP/gmloop-ci-tools"
+          rm -rf "$dir"
+          mkdir -p "$dir"
+          cp .ci-tools/scripts/run-test-shard.js "$dir/"
+          printf '%s\n' '{"type":"module"}' > "$dir/package.json"
+          rm -rf .ci-tools
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            **/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --recursive --force
+      - uses: actions/download-artifact@v7
+        with:
+          name: compiled-base-${{ needs.gate.outputs.base_sha }}
+          path: .
+      - name: Run base test shard
+        shell: bash
+        env:
+          GMLOOP_TEST_SHARD: ${{ matrix.shard }}
+          GMLOOP_TEST_REPORT_DIR: reports
+          CI_DIR: ${{ steps.ci.outputs.dir }}
+        run: |
+          set +e
+          node "$CI_DIR/run-test-shard.js"
+          exit 0
+      - if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: base-report-${{ matrix.shard }}
+          path: reports
+          if-no-files-found: warn
+          retention-days: 1
+
+  base_assemble:
+    name: Assemble base fallback report
+    needs: [gate, base_cache, base_build, base_lint, base_tests]
+    if: ${{ always() && !cancelled() && needs.gate.outputs.should_run_tests == 'true' && needs.base_cache.outputs.usable != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.gate.outputs.head_sha }}
+      - name: Download base report shards
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          pattern: base-report-*
+          merge-multiple: true
+          path: reports
+      - name: Assemble base report
+        env:
+          GMLOOP_REPORT_DIR: reports
+          GMLOOP_REPORT_TARGET_SHA: ${{ needs.gate.outputs.base_sha }}
+          GMLOOP_REPORT_TOOL_FINGERPRINT: ${{ needs.base_cache.outputs.fingerprint }}
+          GMLOOP_REPORT_BUILD_STATUS: ${{ needs.base_build.result == 'success' && '0' || '2' }}
+        run: node scripts/assemble-auto-merge-report.js
+      - name: Validate base report
+        id: validate
+        shell: bash
+        env:
+          GMLOOP_REPORT_DIR: reports
+          GMLOOP_REPORT_EXPECTED_SHA: ${{ needs.gate.outputs.base_sha }}
+          GMLOOP_REPORT_EXPECTED_TOOL_FINGERPRINT: ${{ needs.base_cache.outputs.fingerprint }}
+        run: |
+          set +e
+          node scripts/validate-auto-merge-report.js
+          status=$?
+          echo "complete=$([ "$status" -eq 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Save complete base report
+        if: ${{ steps.validate.outputs.complete == 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: reports
+          key: ${{ needs.base_cache.outputs.cache_key }}
+      - if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: report-base
+          path: reports
+          if-no-files-found: warn
+          retention-days: 1
+      - name: Fail on incomplete base evidence
+        if: ${{ steps.validate.outputs.complete != 'true' }}
+        run: exit 1
+
+  merge_build:
+    name: Build synthetic merge
+    needs: gate
+    if: ${{ needs.gate.outputs.should_run_tests == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.gate.outputs.merge_sha }}
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            **/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --recursive --force
+      - run: pnpm run build:ts
+      - uses: actions/upload-artifact@v6
+        with:
+          name: compiled-merge-${{ needs.gate.outputs.merge_sha }}
+          path: |
+            src/**/dist/**
+            test/dist/**
+          retention-days: 1
+
+  merge_lint:
+    name: Lint synthetic merge
+    needs: gate
+    if: ${{ needs.gate.outputs.should_run_tests == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.gate.outputs.merge_sha }}
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            **/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --recursive --force
+      - name: Generate merge lint report
+        shell: bash
+        run: |
+          set +e
+          node scripts/lint-report.js
+          status=$?
+          printf '{"schemaVersion":1,"completed":true,"status":%s}\n' "$status" > reports/lint-meta.json
+          exit 0
+      - if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: merge-report-lint
+          path: reports
+          if-no-files-found: warn
+          retention-days: 1
+
+  merge_tests:
+    name: Merge tests (${{ matrix.shard }})
+    needs: [gate, merge_build]
+    if: ${{ needs.gate.outputs.should_run_tests == 'true' && needs.merge_build.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [workspace-1, workspace-2, workspace-3, root-1, root-2, whole-project, process-heavy]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.gate.outputs.merge_sha }}
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            **/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --recursive --force
+      - uses: actions/download-artifact@v7
+        with:
+          name: compiled-merge-${{ needs.gate.outputs.merge_sha }}
+          path: .
+      - name: Run merge test shard
+        shell: bash
+        env:
+          GMLOOP_TEST_SHARD: ${{ matrix.shard }}
+          GMLOOP_TEST_REPORT_DIR: reports
+        run: |
+          set +e
+          node scripts/run-test-shard.js
+          exit 0
+      - if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: merge-report-${{ matrix.shard }}
+          path: reports
+          if-no-files-found: warn
+          retention-days: 1
+
+  merge_assemble:
+    name: Assemble synthetic-merge report
+    needs: [gate, base_cache, merge_build, merge_lint, merge_tests]
+    if: ${{ always() && !cancelled() && needs.gate.outputs.should_run_tests == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.gate.outputs.head_sha }}
+      - name: Download merge report shards
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          pattern: merge-report-*
+          merge-multiple: true
+          path: reports
+      - name: Assemble merge report
+        env:
+          GMLOOP_REPORT_DIR: reports
+          GMLOOP_REPORT_TARGET_SHA: ${{ needs.gate.outputs.merge_sha }}
+          GMLOOP_REPORT_TOOL_FINGERPRINT: ${{ needs.base_cache.outputs.fingerprint }}
+          GMLOOP_REPORT_BUILD_STATUS: ${{ needs.merge_build.result == 'success' && '0' || '2' }}
+        run: node scripts/assemble-auto-merge-report.js
+      - name: Validate merge report
+        id: validate
+        shell: bash
+        env:
+          GMLOOP_REPORT_DIR: reports
+          GMLOOP_REPORT_EXPECTED_SHA: ${{ needs.gate.outputs.merge_sha }}
+          GMLOOP_REPORT_EXPECTED_TOOL_FINGERPRINT: ${{ needs.base_cache.outputs.fingerprint }}
+        run: |
+          set +e
+          node scripts/validate-auto-merge-report.js
+          status=$?
+          echo "complete=$([ "$status" -eq 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Publish test summary
+        if: ${{ steps.validate.outputs.complete == 'true' }}
+        uses: dorny/test-reporter@v3
+        with:
+          name: Publish synthetic-merge test summary
+          path: reports/tests-*.xml
+          reporter: java-junit
+          fail-on-error: false
+          fail-on-empty: false
+          use-actions-summary: false
+      - name: Publish durable timing summary
+        if: ${{ always() && !cancelled() }}
+        shell: bash
+        run: |
+          if [ -f reports/test-durations.md ]; then
+            cat reports/test-durations.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: report-merge
+          path: reports
+          if-no-files-found: warn
+          retention-days: 1
+      - name: Fail on incomplete merge evidence
+        if: ${{ steps.validate.outputs.complete != 'true' }}
+        run: exit 1
+
+  summarize:
+    name: Summarize & comment table
+    needs: [gate, base_cache, base_assemble, head_diagnostic, merge_build, merge_assemble]
+    if: ${{ always() && needs.gate.result == 'success' && needs.gate.outputs.should_run_tests == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      all_green: ${{ steps.summarize.outputs.all_green }}
+    env:
+      GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
+    steps:
+      - name: Checkout synthetic merge
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.gate.outputs.merge_sha }}
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            **/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --recursive --force
+      - name: Download compiled merge
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: compiled-merge-${{ needs.gate.outputs.merge_sha }}
+          path: .
+      - name: Download comparable reports
         continue-on-error: true
         uses: actions/download-artifact@v7
         with:
           pattern: report-*
           merge-multiple: false
-
       - name: Detect regressions
         id: regress
         shell: bash
         env:
-          TOOLING_FINGERPRINT: ${{ steps.tooling.outputs.fingerprint }}
+          TOOLING_FINGERPRINT: ${{ needs.base_cache.outputs.fingerprint }}
           BASE_SHA: ${{ needs.gate.outputs.base_sha }}
-          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
           MERGE_SHA: ${{ needs.gate.outputs.merge_sha }}
+          HEAD_DIAGNOSTIC_RESULT: ${{ needs.head_diagnostic.result }}
+          MERGE_ASSEMBLE_RESULT: ${{ needs.merge_assemble.result }}
         run: |
           set +e
           set -o pipefail
           mkdir -p reports
-
           invalid=()
-          for target in base head merge; do
-            case "$target" in
-              base) expected_sha="$BASE_SHA" ;;
-              head) expected_sha="$HEAD_SHA" ;;
-              merge) expected_sha="$MERGE_SHA" ;;
-            esac
-            if ! GMLOOP_REPORT_DIR="report-$target" \
-              GMLOOP_REPORT_EXPECTED_SHA="$expected_sha" \
-              GMLOOP_REPORT_EXPECTED_TOOL_FINGERPRINT="$TOOLING_FINGERPRINT" \
-              node scripts/validate-auto-merge-report.js; then
-              invalid+=("$target")
-            fi
-          done
+
+          if [ "$HEAD_DIAGNOSTIC_RESULT" != "success" ]; then
+            invalid+=("head-build")
+          fi
+          if [ "$MERGE_ASSEMBLE_RESULT" != "success" ]; then
+            invalid+=("merge-assembly")
+          fi
+
+          if ! GMLOOP_REPORT_DIR="report-base" \
+            GMLOOP_REPORT_EXPECTED_SHA="$BASE_SHA" \
+            GMLOOP_REPORT_EXPECTED_TOOL_FINGERPRINT="$TOOLING_FINGERPRINT" \
+            node scripts/validate-auto-merge-report.js; then
+            invalid+=("base")
+          fi
+          if ! GMLOOP_REPORT_DIR="report-merge" \
+            GMLOOP_REPORT_EXPECTED_SHA="$MERGE_SHA" \
+            GMLOOP_REPORT_EXPECTED_TOOL_FINGERPRINT="$TOOLING_FINGERPRINT" \
+            node scripts/validate-auto-merge-report.js; then
+            invalid+=("merge")
+          fi
 
           if [ "${#invalid[@]}" -gt 0 ]; then
             {
@@ -393,37 +650,39 @@ jobs:
               echo
               echo '❌ Auto-merge validation could not produce a complete, comparable report set.'
               echo
-              echo 'Invalid or incomplete report targets:'
+              echo 'Invalid or incomplete validation components:'
               for target in "${invalid[@]}"; do
                 echo "- \`$target\`"
               done
               echo
-              echo 'Cancelled runs, synthesized JUnit output, infrastructure failures, stale SHAs, and mismatched reporting-tool versions are treated as CI failures and are never accepted as baseline evidence.'
+              echo 'Cancelled runs, missing shards, infrastructure failures, stale SHAs, malformed reports, and mismatched tooling versions fail closed.'
             } > reports/summary-report.md
             echo "all_green=false" >> "$GITHUB_OUTPUT"
             echo "status=missing_reports" >> "$GITHUB_OUTPUT"
-            exit 0
+          else
+            pnpm run cli:compiled generate-quality-report \
+              --base report-base \
+              --merge report-merge \
+              --report-file reports/summary-report.md
+            code=$?
+            if [ "$code" -eq 0 ]; then
+              echo "all_green=true" >> "$GITHUB_OUTPUT"
+              echo "status=clean" >> "$GITHUB_OUTPUT"
+            elif [ "$code" -eq 11 ]; then
+              echo "all_green=false" >> "$GITHUB_OUTPUT"
+              echo "status=lint_errors" >> "$GITHUB_OUTPUT"
+            elif [ "$code" -eq 10 ]; then
+              echo "all_green=false" >> "$GITHUB_OUTPUT"
+              echo "status=regressions" >> "$GITHUB_OUTPUT"
+            else
+              echo "all_green=false" >> "$GITHUB_OUTPUT"
+              echo "status=failure" >> "$GITHUB_OUTPUT"
+            fi
           fi
 
-          pnpm run cli:compiled generate-quality-report \
-            --base report-base \
-            --head report-head \
-            --merge report-merge \
-            --report-file reports/summary-report.md
-          code=$?
-
-          if [ "$code" -eq 0 ]; then
-            echo "all_green=true" >> "$GITHUB_OUTPUT"
-            echo "status=clean" >> "$GITHUB_OUTPUT"
-          elif [ "$code" -eq 11 ]; then
-            echo "all_green=false" >> "$GITHUB_OUTPUT"
-            echo "status=lint_errors" >> "$GITHUB_OUTPUT"
-          elif [ "$code" -eq 10 ]; then
-            echo "all_green=false" >> "$GITHUB_OUTPUT"
-            echo "status=regressions" >> "$GITHUB_OUTPUT"
-          else
-            echo "all_green=false" >> "$GITHUB_OUTPUT"
-            echo "status=failure" >> "$GITHUB_OUTPUT"
+          if [ -f report-merge/test-durations.md ]; then
+            printf '\n\n' >> reports/summary-report.md
+            cat report-merge/test-durations.md >> reports/summary-report.md
           fi
           exit 0
 
@@ -458,7 +717,6 @@ jobs:
                 await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
               }
             }
-
             core.setOutput('all_green', process.env.REGRESSION_ALL_GREEN === 'true' ? 'true' : 'false');
 
       - name: Request Agent help for lint errors
@@ -470,30 +728,19 @@ jobs:
             const marker = '<!-- automerge-pr-lint-agent -->';
             const { owner, repo } = context.repo;
             const number = context.payload.pull_request?.number;
-            if (!number) {
-              core.notice('No PR number; skipping Agent lint comment.');
-              return;
-            }
+            if (!number) return;
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
             const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
             const existing = comments.find((comment) => comment.body?.includes(marker));
             const body = [
               marker,
               '',
-              '@mini-max The auto-merge workflow detected lint errors on this PR gate target. Please prioritize lint-error fixes before test regression triage.',
+              '@mini-max The auto-merge workflow detected lint errors on the synthetic-merge gate. Please prioritize lint fixes before test-regression triage.',
               '',
-              'Suggested next steps:',
-              '1. Run `pnpm run lint:quiet` and apply deterministic fixes first.',
-              '2. Re-run `pnpm run build:ts` and `pnpm run lint:quiet` until lint errors are fully resolved.',
-              '',
-              `Once done, push fixes to **${pr.head.ref}** on base **${pr.base.ref}** (PR #${number}).`,
+              `Push fixes to **${pr.head.ref}** on base **${pr.base.ref}** (PR #${number}).`,
             ].join('\n');
-            if (existing) {
-              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-            } else {
-              await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
-            }
-            core.notice(`Requested Agent assistance for lint errors on PR #${number}.`);
+            if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            else await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
 
       - name: Request Agent help for regressions
         if: ${{ github.event_name == 'pull_request' && steps.regress.outputs.status == 'regressions' && env.GH_USER_TOKEN != '' }}
@@ -509,119 +756,61 @@ jobs:
             const WEIGHT_SCALE = 1000;
             const { owner, repo } = context.repo;
             const number = context.payload.pull_request?.number;
-            if (!number) {
-              core.notice('No PR number; skipping Agent regression comment.');
-              return;
-            }
+            if (!number) return;
 
             const normalize = (value) => {
               const trimmed = (value || '').trim();
               if (!trimmed) return '';
               return trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || '';
             };
-            const getRunNumber = () => {
-              const parsed = Number.parseInt((process.env.GITHUB_RUN_NUMBER || '').trim(), 10);
-              return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
-            };
             const toSlots = (weight) => Math.max(1, Math.round(weight * WEIGHT_SCALE));
-            const buildInterleavedCycle = (items) => {
-              const maxSlots = Math.max(...items.map((item) => item.slots));
-              const cycle = [];
-              for (let slot = 1; slot <= maxSlots; slot += 1) {
-                for (const item of items) {
-                  if (item.slots >= slot) cycle.push(item);
-                }
-              }
-              return cycle;
-            };
-            const parseAgentCandidates = (pool) =>
-              Array.isArray(pool?.agents)
+            const runNumber = Number.parseInt((process.env.GITHUB_RUN_NUMBER || '').trim(), 10) || 1;
+            let selected = DEFAULT_FOLLOW_UP_AGENT;
+            try {
+              const config = JSON.parse(fs.readFileSync(path.resolve('.github/workflows/weights.json'), 'utf8'));
+              const pool = config?.agentPools?.[FOLLOW_UP_AGENT_POOL] ?? null;
+              const fallback = normalize(pool?.default) || selected;
+              const candidates = Array.isArray(pool?.agents)
                 ? pool.agents
-                    .map((agent) => ({ name: typeof agent?.name === 'string' ? agent.name : '', weight: Number(agent?.weight) }))
+                    .map((agent) => ({ name: normalize(agent?.name), weight: Number(agent?.weight) }))
                     .filter((agent) => agent.name && Number.isFinite(agent.weight) && agent.weight > 0)
-                    .map((agent) => ({ ...agent, slug: normalize(agent.name), slots: toSlots(agent.weight) }))
-                    .filter((agent) => agent.slug)
+                    .map((agent) => ({ ...agent, slots: toSlots(agent.weight) }))
+                    .sort((a, b) => a.name.localeCompare(b.name))
                 : [];
-            const selectAgent = () => {
-              let poolDefault = DEFAULT_FOLLOW_UP_AGENT;
-              let candidates = [];
-              try {
-                const config = JSON.parse(fs.readFileSync(path.resolve('.github/workflows/weights.json'), 'utf8'));
-                const pool = config?.agentPools?.[FOLLOW_UP_AGENT_POOL] ?? null;
-                poolDefault = normalize(pool?.default) || poolDefault;
-                candidates = parseAgentCandidates(pool);
-              } catch (error) {
-                core.warning(`Falling back to default follow-up agent due to configuration error: ${error.message}`);
+              if (candidates.length === 0) selected = fallback;
+              else {
+                const maxSlots = Math.max(...candidates.map((agent) => agent.slots));
+                const cycle = [];
+                for (let slot = 1; slot <= maxSlots; slot += 1) {
+                  for (const agent of candidates) if (agent.slots >= slot) cycle.push(agent.name);
+                }
+                selected = cycle[(runNumber - 1) % cycle.length] || fallback;
               }
-              if (candidates.length === 0) return poolDefault;
-              const sorted = [...candidates].sort((left, right) => left.slug.localeCompare(right.slug));
-              const cycle = buildInterleavedCycle(sorted);
-              return cycle[(getRunNumber() - 1) % cycle.length]?.slug || poolDefault;
-            };
+            } catch (error) {
+              core.warning(`Falling back to ${selected}: ${error.message}`);
+            }
 
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
-            const agentMention = `@${selectAgent()}`;
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner,
-              repo,
-              issue_number: number,
-              per_page: 100,
-            });
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
             const existing = comments.find((comment) => comment.body?.includes(marker));
-            const reportFile = 'reports/summary-report.md';
-            let regressionSummaryLine = '';
-            try {
-              const reportBody = fs.readFileSync(reportFile, 'utf8');
-              const matchingLine = reportBody
-                .split(/\r?\n/u)
-                .find((line) => line.trim().startsWith('❌ Test regressions detected.'));
-              regressionSummaryLine = matchingLine ? matchingLine.trim() : '';
-            } catch (error) {
-              if (error?.code !== 'ENOENT') core.warning(`Unable to read regression summary from ${reportFile}: ${error.message}`);
-            }
-
-            const lines = [
+            const body = [
               marker,
               '',
-              `${agentMention} The auto-merge workflow detected test regressions on this PR while comparing the base results with the merged results (or with PR head results when merged results are unavailable). Please review the failing suites, identify the root cause, and provide the fixes so this change can be merged. Do not remove tests or relax performance requirements without a clear, well-reasoned justification, as doing so can harm the overall health of the project.`,
-            ];
-            if (regressionSummaryLine) lines.push('', `Regression summary from the Quality Report: ${regressionSummaryLine}`);
-            lines.push(
+              `@${selected} The auto-merge workflow detected new test regressions when comparing the trusted base with the synthetic merge. Review the failing suites and fix the root cause on this PR branch.`,
               '',
-              'Suggested next steps:',
-              '1. Reproduce the failures locally (for example, `pnpm run test:report` and `pnpm run test:coverage`) to confirm the regression.',
-              '2. Deliver the smallest possible fix—or a precise explanation of the required follow-up—that resolves the regression blocking auto-merge.'
-            );
-            if (agentMention.replace(/^@/, '').trim().toLowerCase() !== 'copilot') {
-              lines.push(
-                '',
-                `Once done, ensure all changes are pushed to remote branch **${pr.head.ref}** on base **${pr.base.ref}** and keep all commits tied to PR #${number}; do not open new branches or PRs. As the final step (even after running 'make_pr'), run the following exact command(s) to guarantee your changes are pushed:`,
-                '',
-                '```bash',
-                `git push "https://github.com/${owner}/${repo}.git" "HEAD:${pr.head.ref}"`,
-                '```'
-              );
-            }
-            const body = lines.join('\n');
-            if (existing) {
-              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-            } else {
-              await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
-            }
-            core.notice(`Requested Agent assistance for regressions on PR #${number}.`);
+              `Keep all changes on **${pr.head.ref}** for PR #${number}; do not open a new PR.`,
+            ].join('\n');
+            if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            else await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
 
-      - name: Warn when Agent user token missing for lint errors
-        if: ${{ github.event_name == 'pull_request' && steps.regress.outputs.status == 'lint_errors' && env.GH_USER_TOKEN == '' }}
-        run: echo "::warning::GH_USER_TOKEN secret is not configured; skipping Agent lint comment."
-
-      - name: Warn when Agent user token missing for regressions
-        if: ${{ github.event_name == 'pull_request' && steps.regress.outputs.status == 'regressions' && env.GH_USER_TOKEN == '' }}
-        run: echo "::warning::GH_USER_TOKEN secret is not configured; skipping Agent regression comment."
+      - name: Warn when Agent user token missing
+        if: ${{ github.event_name == 'pull_request' && (steps.regress.outputs.status == 'lint_errors' || steps.regress.outputs.status == 'regressions') && env.GH_USER_TOKEN == '' }}
+        run: echo "::warning::GH_USER_TOKEN secret is not configured; skipping Agent follow-up comment."
 
   auto-merge:
     name: Auto-merge when green
-    needs: [gate, summarize]
-    if: ${{ github.event_name == 'pull_request' && needs.summarize.outputs.all_green == 'true' }}
+    needs: [gate, summarize, head_diagnostic, merge_assemble]
+    if: ${{ github.event_name == 'pull_request' && needs.summarize.outputs.all_green == 'true' && needs.head_diagnostic.result == 'success' && needs.merge_assemble.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Prepare PR and verify validation is current
@@ -645,13 +834,7 @@ jobs:
             const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
             let pr = await loadPr();
 
-            if (pr.draft) {
-              core.notice(`Skip merge #${number}: draft.`);
-              core.setOutput('proceed', 'false');
-              return;
-            }
-            if (pr.head.sha !== validatedHead) {
-              core.notice(`Skip merge #${number}: head moved after validation (${validatedHead} -> ${pr.head.sha}).`);
+            if (pr.draft || pr.head.sha !== validatedHead) {
               core.setOutput('proceed', 'false');
               return;
             }
@@ -660,7 +843,6 @@ jobs:
               const state = String(pr.mergeable_state || '').toLowerCase();
               if (pr.mergeable !== null && state && state !== 'unknown') break;
               if (attempt === 6) {
-                core.notice(`Skip merge #${number}: mergeability remained unresolved.`);
                 core.setOutput('proceed', 'false');
                 return;
               }
@@ -670,18 +852,16 @@ jobs:
 
             const state = String(pr.mergeable_state || '').toLowerCase();
             if (pr.mergeable !== true || state === 'dirty') {
-              core.notice(`Skip merge #${number}: mergeable=${pr.mergeable}, state=${pr.mergeable_state}.`);
               core.setOutput('proceed', 'false');
               return;
             }
 
             const { data: baseBranch } = await github.rest.repos.getBranch({ owner, repo, branch: pr.base.ref });
-            const liveBaseSha = baseBranch.commit.sha;
             core.setOutput('proceed', 'true');
             core.setOutput('pr', JSON.stringify(pr));
             core.setOutput('validated_head', validatedHead);
             core.setOutput('validated_base', validatedBase);
-            core.setOutput('live_base', liveBaseSha);
+            core.setOutput('live_base', baseBranch.commit.sha);
 
       - name: Ensure PR branch is current with base
         id: update
@@ -699,40 +879,18 @@ jobs:
             const validatedBase = process.env.VALIDATED_BASE;
             const liveBase = process.env.LIVE_BASE;
             const state = String(pr.mergeable_state || '').toLowerCase();
-            const baseAdvanced = Boolean(liveBase && validatedBase && liveBase !== validatedBase);
-            const needsUpdate = state === 'behind' || baseAdvanced;
+            const needsUpdate = state === 'behind' || (liveBase && validatedBase && liveBase !== validatedBase);
 
             if (!needsUpdate) {
               core.setOutput('ready_to_merge', 'true');
               return;
             }
 
-            core.notice(`PR #${number} needs a base update before merge (state=${state}, validatedBase=${validatedBase}, liveBase=${liveBase}). Updating the branch and requiring a fresh synchronize validation.`);
             try {
               await github.rest.pulls.updateBranch({ owner, repo, pull_number: number, expected_head_sha: pr.head.sha });
-              core.setOutput('ready_to_merge', 'false');
-              core.setOutput('revalidation_required', 'true');
-              return;
             } catch (updateError) {
               const message = String(updateError?.message || '');
-              if (!message.toLowerCase().includes('already up to date')) {
-                core.warning(`pulls.updateBranch failed: ${message}`);
-              }
-            }
-
-            try {
-              const { status } = await github.rest.repos.merge({
-                owner,
-                repo,
-                base: pr.head.ref,
-                head: pr.base.ref,
-                commit_message: `chore: sync ${pr.head.ref} with ${pr.base.ref}`,
-              });
-              if (status === 204) {
-                core.notice(`Updated ${pr.head.ref} from ${pr.base.ref}; fresh validation is required before merge.`);
-              }
-            } catch (error) {
-              core.warning(`Unable to update PR branch: ${error?.message || error}`);
+              if (!message.toLowerCase().includes('already up to date')) core.warning(`pulls.updateBranch failed: ${message}`);
             }
             core.setOutput('ready_to_merge', 'false');
             core.setOutput('revalidation_required', 'true');
@@ -752,25 +910,8 @@ jobs:
             const validatedBase = process.env.VALIDATED_BASE;
             const { data: current } = await github.rest.pulls.get({ owner, repo, pull_number: number });
             const { data: baseBranch } = await github.rest.repos.getBranch({ owner, repo, branch: current.base.ref });
-            const liveBaseSha = baseBranch.commit.sha;
 
-            if (current.head.sha !== validatedHead) {
-              core.notice(`Skip merge #${number}: head changed after validation (${validatedHead} -> ${current.head.sha}).`);
-              core.setOutput('merged', 'false');
-              return;
-            }
-            if (liveBaseSha !== validatedBase) {
-              core.notice(`Skip merge #${number}: base changed after validation (${validatedBase} -> ${liveBaseSha}). Requesting a branch update and fresh validation.`);
-              try {
-                await github.rest.pulls.updateBranch({
-                  owner,
-                  repo,
-                  pull_number: number,
-                  expected_head_sha: current.head.sha,
-                });
-              } catch (error) {
-                core.warning(`Unable to update PR #${number} after base advanced: ${error?.message || error}`);
-              }
+            if (current.head.sha !== validatedHead || baseBranch.commit.sha !== validatedBase) {
               core.setOutput('merged', 'false');
               return;
             }
@@ -783,13 +924,7 @@ jobs:
                 merge_method: 'squash',
                 sha: validatedHead,
               });
-              if (response.data.merged) {
-                core.notice(`Auto-merged PR #${number}.`);
-                core.setOutput('merged', 'true');
-              } else {
-                core.warning(`Merge rejected for PR #${number}: ${response.data.message}`);
-                core.setOutput('merged', 'false');
-              }
+              core.setOutput('merged', response.data.merged ? 'true' : 'false');
             } catch (error) {
               core.warning(`Merge attempt failed: ${error?.message || error}`);
               core.setOutput('merged', 'false');
@@ -807,13 +942,10 @@ jobs:
             const headRepo = pr.head?.repo?.full_name?.toLowerCase() || '';
             const thisRepo = `${owner}/${repo}`.toLowerCase();
             if (!headRef || headRepo !== thisRepo) return;
-
             const { data: repoInfo } = await github.rest.repos.get({ owner, repo });
             if (headRef === repoInfo.default_branch) return;
-
             try {
               await github.rest.git.deleteRef({ owner, repo, ref: `heads/${headRef}` });
-              core.notice(`Deleted branch ${headRef} after merge.`);
             } catch (error) {
               core.warning(`Unable to delete head branch: ${error.message}`);
             }
