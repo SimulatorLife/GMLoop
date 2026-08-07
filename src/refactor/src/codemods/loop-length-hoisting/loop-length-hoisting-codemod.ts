@@ -1,6 +1,6 @@
 import { Core } from "@gmloop/core";
-import { Parser } from "@gmloop/parser";
 
+import { defaultGmlProgramParser } from "../../parser-adapter.js";
 import type { LoopLengthHoistingEdit, LoopLengthHoistingResult } from "../../types.js";
 import { applySourceTextEdits } from "../codemod-helpers.js";
 
@@ -176,7 +176,7 @@ export function applyLoopLengthHoistingCodemod(sourceText: string): LoopLengthHo
 
     let ast: unknown;
     try {
-        ast = Parser.GMLParser.parse(sourceText);
+        ast = defaultGmlProgramParser(sourceText);
     } catch {
         return createUnchangedResult(sourceText);
     }
