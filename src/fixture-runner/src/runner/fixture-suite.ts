@@ -168,6 +168,20 @@ async function readFixtureInputText(fixtureCase: FixtureCase): Promise<string | 
     return fixtureCase.inputFilePath ? await readFile(fixtureCase.inputFilePath, "utf8") : null;
 }
 
+/**
+ * Read the profiling budgets declared by a fixture case, if any.
+ *
+ * Acts as a Law-of-Demeter façade so callers don't have to navigate the nested
+ * `config.fixture.profile.budgets` chain themselves. Returns `null` whenever
+ * the fixture omits a profile block, or declares one without budgets.
+ *
+ * @param fixtureCase Fixture case whose budgets should be resolved.
+ * @returns Declared budgets, or `null` when no budgets are configured.
+ */
+export function resolveFixtureCaseProfileBudgets(fixtureCase: FixtureCase): FixtureProfileBudgets | null {
+    return fixtureCase.config.fixture.profile?.budgets ?? null;
+}
+
 function assertFixtureBudgetsWithinLimits(
     fixtureCase: FixtureCase,
     budgetFailures: ReturnType<typeof collectBudgetFailures>
@@ -189,7 +203,7 @@ async function executeFixtureCase(
     profileCollector: FixtureProfileCollector
 ): Promise<FixtureCaseExecutionResult> {
     const stageTimer = createStageTimer();
-    const budgets = fixtureCase.config.fixture.profile?.budgets ?? null;
+    const budgets = resolveFixtureCaseProfileBudgets(fixtureCase);
     const inputText = await readFixtureInputText(fixtureCase);
     const runProfiledStage = <T>(
         stageName: Exclude<FixtureStageName, "load" | "compare" | "total">,
