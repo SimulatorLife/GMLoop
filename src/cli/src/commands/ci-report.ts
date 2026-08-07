@@ -58,10 +58,6 @@ type LintMetadata = Readonly<{
     status: number;
 }>;
 
-type TestDurationHistory = Readonly<{
-    fileDurations?: ReadonlyArray<Readonly<{ file?: string; durationMs?: number }>>;
-}>;
-
 type JunitCaseTiming = Readonly<{
     name: string;
     location: string;
@@ -341,7 +337,9 @@ function parseManifest(value: unknown): TestManifest {
     if (!isRecord(value) || value.schemaVersion !== MANIFEST_SCHEMA_VERSION) {
         throw new Error("Invalid test manifest schema.");
     }
-    if (!Number.isInteger(value.shardCount) || !Array.isArray(value.tests) || !Array.isArray(value.shards)) {
+    const shardCount =
+        typeof value.shardCount === "number" && Number.isInteger(value.shardCount) ? value.shardCount : null;
+    if (shardCount === null || !Array.isArray(value.tests) || !Array.isArray(value.shards)) {
         throw new Error("Test manifest is missing required fields.");
     }
     const tests = value.tests.filter((entry): entry is string => typeof entry === "string").map(normalizePath);
@@ -370,7 +368,7 @@ function parseManifest(value: unknown): TestManifest {
     }
     const manifest: TestManifest = Object.freeze({
         schemaVersion: MANIFEST_SCHEMA_VERSION,
-        shardCount: value.shardCount,
+        shardCount,
         tests: Object.freeze(tests),
         manifestDigest: typeof value.manifestDigest === "string" ? value.manifestDigest : "",
         planDigest: typeof value.planDigest === "string" ? value.planDigest : "",
