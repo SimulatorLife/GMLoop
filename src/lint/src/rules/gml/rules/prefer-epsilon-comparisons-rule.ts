@@ -124,6 +124,56 @@ type IfZeroComparisonMatch = Readonly<{
     suffix: string;
 }>;
 
+type EpsilonScope = {
+    insertedEpsilonDeclaration: boolean;
+};
+
+/**
+ * Build the rewritten `if (var > math_get_epsilon())` line for strict
+ * positivity checks. When the variable is known to be non-negative (e.g.
+ * `point_distance`, `sqr`, `sqrt`), keep the original `> 0` semantics
+ * because the result cannot be negative and the original check is safe.
+ */
+function rewriteStrictPositivityLine(
+    originalLine: string,
+    match: IfZeroComparisonMatch,
+    nonNegativeVariables: ReadonlySet<string>
+): string {
+    if (nonNegativeVariables.has(match.variableName)) {
+        return originalLine;
+    }
+
+    return `${match.indentation}if (${match.variableName} > math_get_epsilon())${match.suffix}`;
+}
+
+/**
+ * Build the rewritten `if (var <= eps)` lines for equality checks against
+ * zero. Equality rewrites must use `abs(...)` because signed math results
+ * can be negative; only known non-negative results can compare directly.
+ * When the enclosing scope has not yet emitted an `eps` declaration, the
+ * helper also returns that declaration line and marks the scope so
+ * subsequent rewrites in the same scope reuse it.
+ */
+function rewriteZeroEqualityLines(
+    match: IfZeroComparisonMatch,
+    nonNegativeVariables: ReadonlySet<string>,
+    scope: EpsilonScope
+): ReadonlyArray<string> {
+    const lines: Array<string> = [];
+
+    if (!scope.insertedEpsilonDeclaration) {
+        lines.push(`${match.indentation}var eps = math_get_epsilon();`);
+        scope.insertedEpsilonDeclaration = true;
+    }
+
+    const comparedVariable = nonNegativeVariables.has(match.variableName)
+        ? match.variableName
+        : `abs(${match.variableName})`;
+    lines.push(`${match.indentation}if (${comparedVariable} <= eps)${match.suffix}`);
+
+    return lines;
+}
+
 function readIfZeroComparisonMatch(line: string): IfZeroComparisonMatch | null {
     const match = /^(\s*)if\s*\(\s*([A-Za-z_]\w*)\s*(==|>)\s*0\s*\)(.*)$/u.exec(line);
     if (!match) {
@@ -216,7 +266,7 @@ function rewriteEpsilonComparisonLines(sourceLines: ReadonlyArray<string>): Read
     // function body; `braceDepth` records the depth at which that entry's
     // scope was opened so we know when it closes and control returns to the
     // enclosing scope's own `insertedEpsilonDeclaration` state.
-    const scopeStack: Array<{ braceDepth: number; insertedEpsilonDeclaration: boolean }> = [
+    const scopeStack: Array<EpsilonScope & { braceDepth: number }> = [
         { braceDepth: 0, insertedEpsilonDeclaration: false }
     ];
     let braceDepth = 0;
@@ -233,27 +283,16 @@ function rewriteEpsilonComparisonLines(sourceLines: ReadonlyArray<string>): Read
         }
 
         const ifZeroComparisonMatch = readIfZeroComparisonMatch(line);
-        if (ifZeroComparisonMatch && mathSensitiveVariables.has(ifZeroComparisonMatch.variableName)) {
-            const { indentation, variableName, operator, suffix } = ifZeroComparisonMatch;
-            if (operator === ">") {
-                if (nonNegativeMathSensitiveVariables.has(variableName)) {
-                    rewrittenLines.push(line);
-                } else {
-                    rewrittenLines.push(`${indentation}if (${variableName} > math_get_epsilon())${suffix}`);
-                }
-            } else {
-                if (!currentScope.insertedEpsilonDeclaration) {
-                    rewrittenLines.push(`${indentation}var eps = math_get_epsilon();`);
-                    currentScope.insertedEpsilonDeclaration = true;
-                }
-
-                const zeroComparisonVariable = nonNegativeMathSensitiveVariables.has(variableName)
-                    ? variableName
-                    : `abs(${variableName})`;
-                rewrittenLines.push(`${indentation}if (${zeroComparisonVariable} <= eps)${suffix}`);
-            }
-        } else {
+        if (!ifZeroComparisonMatch || !mathSensitiveVariables.has(ifZeroComparisonMatch.variableName)) {
             rewrittenLines.push(line);
+        } else if (ifZeroComparisonMatch.operator === ">") {
+            rewrittenLines.push(
+                rewriteStrictPositivityLine(line, ifZeroComparisonMatch, nonNegativeMathSensitiveVariables)
+            );
+        } else {
+            rewrittenLines.push(
+                ...rewriteZeroEqualityLines(ifZeroComparisonMatch, nonNegativeMathSensitiveVariables, currentScope)
+            );
         }
 
         braceDepth += countOccurrences(line, "{") - countOccurrences(line, "}");

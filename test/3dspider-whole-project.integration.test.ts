@@ -35,8 +35,6 @@ type ResourceSearchPayload = Readonly<{
     };
 }>;
 
-
-
 type StatusPayload = JsonEndpointPayload &
     Readonly<{
         totalPatchCount?: number;
@@ -154,12 +152,7 @@ async function waitForStatus(
     predicate: (payload: StatusPayload) => boolean,
     timeoutMs = WATCH_TIMEOUT_MS
 ): Promise<StatusPayload> {
-    return FixtureRunner.waitForJsonEndpointPayload(
-        createStatusEndpointUrl(statusPort),
-        predicate,
-        timeoutMs,
-        100
-    );
+    return FixtureRunner.waitForJsonEndpointPayload(createStatusEndpointUrl(statusPort), predicate, timeoutMs, 100);
 }
 
 function startWatchProcess(
@@ -371,7 +364,10 @@ void test("3DSpider resource CLI tools inspect the real whole project", async ()
         const depsPayload = FixtureRunner.assertJsonCliPayload(depsResult.stdout);
         assert.equal(depsPayload.ok, true);
 
-        assert.ok(listPayload.payload && listPayload.payload.length > 0, "Resource list must count real graph entries.");
+        assert.ok(
+            listPayload.payload && listPayload.payload.length > 0,
+            "Resource list must count real graph entries."
+        );
     });
 });
 

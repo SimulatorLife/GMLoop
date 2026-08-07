@@ -125,10 +125,12 @@ function yieldToEventLoop(): Promise<void> {
     });
 }
 
+type WatchEventListener = (...args: Parameters<WatchListener<string>>) => void | Promise<void>;
+
 type WatchFactory = (
     path: string,
     options?: WatchOptions | BufferEncoding | "buffer",
-    listener?: WatchListener<string>
+    listener?: WatchEventListener
 ) => FSWatcher;
 
 /**
@@ -1437,7 +1439,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                     }
 
                     if (debounceDelay === 0) {
-                        handleFileChange(fullPath, eventType, {
+                        return handleFileChange(fullPath, eventType, {
                             verbose,
                             quiet,
                             runtimeContext,
