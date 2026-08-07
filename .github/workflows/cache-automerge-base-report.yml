@@ -50,14 +50,34 @@ jobs:
           path: reports
           key: ${{ steps.tooling.outputs.cache_key }}
 
+      - name: Validate restored trusted base report
+        id: restored
+        if: ${{ steps.base-cache.outputs.cache-hit == 'true' }}
+        shell: bash
+        env:
+          GMLOOP_REPORT_DIR: reports
+          GMLOOP_REPORT_EXPECTED_SHA: ${{ github.sha }}
+          GMLOOP_REPORT_EXPECTED_TOOL_FINGERPRINT: ${{ steps.tooling.outputs.fingerprint }}
+        run: |
+          set +e
+          node scripts/validate-auto-merge-report.js
+          status=$?
+          if [ "$status" -eq 0 ]; then
+            echo "usable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "usable=false" >> "$GITHUB_OUTPUT"
+            rm -rf reports
+          fi
+          exit 0
+
       - name: Setup pnpm
-        if: ${{ steps.base-cache.outputs.cache-hit != 'true' }}
+        if: ${{ steps.restored.outputs.usable != 'true' }}
         uses: pnpm/action-setup@v6
         with:
           cache: true
 
       - name: Setup Node
-        if: ${{ steps.base-cache.outputs.cache-hit != 'true' }}
+        if: ${{ steps.restored.outputs.usable != 'true' }}
         uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
@@ -67,12 +87,12 @@ jobs:
             **/pnpm-lock.yaml
 
       - name: Install dependencies
-        if: ${{ steps.base-cache.outputs.cache-hit != 'true' }}
+        if: ${{ steps.restored.outputs.usable != 'true' }}
         run: pnpm install --frozen-lockfile --recursive --force
 
       - name: Generate trusted base report
         id: report
-        if: ${{ steps.base-cache.outputs.cache-hit != 'true' }}
+        if: ${{ steps.restored.outputs.usable != 'true' }}
         shell: bash
         env:
           GMLOOP_REPORT_TARGET_SHA: ${{ github.sha }}
@@ -85,7 +105,7 @@ jobs:
           exit 0
 
       - name: Normalize JUnit report
-        if: ${{ always() && steps.base-cache.outputs.cache-hit != 'true' && !cancelled() }}
+        if: ${{ always() && steps.restored.outputs.usable != 'true' && !cancelled() }}
         shell: bash
         env:
           TEST_STATUS: ${{ steps.report.outputs.exit_code || 'unknown' }}
