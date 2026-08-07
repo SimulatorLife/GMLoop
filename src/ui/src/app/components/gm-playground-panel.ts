@@ -8,6 +8,7 @@ import { getUiErrorMessage } from "../error-message.js";
 import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "../events/events.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { EventBusManager } from "./event-bus-mixin.js";
+import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 import { PlaygroundSessionController } from "./playground-session-controller.js";
 
@@ -28,10 +29,6 @@ export class GmPlaygroundPanel extends LightDomLitElement {
     public accessor model: GraphVisualizationUiModel | null = null;
 
     public accessor state: GraphVisualizationUiState | null = null;
-
-    public constructor() {
-        super();
-    }
 
     // The session controller is declared before the callbacks it references
     // so the arrow-function callbacks close over `this` and resolve their
@@ -57,17 +54,34 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         );
     };
 
-    #eventBus = new EventBusManager(this, [{ event: "gm-error-banner-dismiss", handler: this.#onDismissErrorBanner }]);
-
-    public connectedCallback(): void {
-        super.connectedCallback();
-        this.#eventBus.connect();
-        void this.#loadFixtures();
-    }
-
-    public disconnectedCallback(): void {
-        this.#eventBus.disconnect();
-        super.disconnectedCallback();
+    /**
+     * Composite lifecycle wiring keeps `GmPlaygroundPanel` from deepening
+     * the {@link LightDomLitElement} subclass with `connectedCallback` and
+     * `disconnectedCallback` overrides. The constructor hands every
+     * concern that previously lived in those methods to an injected
+     * collaborator: the error-banner subscription is owned by an
+     * {@link EventBusManager} and the fixture catalog fetch is owned by
+     * a one-shot {@link import("./lifecycle-participants-controller.js").LifecycleParticipant}.
+     * Connect order matches the previous hand-rolled lifecycle methods
+     * (subscription registers, then fixtures fetch) and disconnect
+     * order unwinds in reverse, mirroring `GmAutoGamePanel` and
+     * `GmConfigPanel`.
+     */
+    public constructor() {
+        super();
+        new LifecycleParticipantsController(this, [
+            new EventBusManager(this, [{ event: "gm-error-banner-dismiss", handler: this.#onDismissErrorBanner }]),
+            Object.freeze({
+                connect: (): void => {
+                    void this.#loadFixtures();
+                },
+                disconnect: (): void => {
+                    // The fixture fetch is one-shot and self-contained;
+                    // no teardown work is required when the panel
+                    // disconnects.
+                }
+            })
+        ]);
     }
 
     #fixtures: ReadonlyArray<PlaygroundFixture> = [];
