@@ -198,49 +198,49 @@ void test("logical normalization handles reused IfStatement references without s
     assert.equal((normalizedBody[2]?.argument as { name?: string })?.name, "shared_condition");
 });
 
-void test("unwrapBlock returns node intact when consequent is null (guarded against TypeError)", () => {
-    // Regression: prior to the fix, if node.consequent was null, accessing
-    // node.body on it threw "TypeError: Cannot read properties of null (reading 'length')".
-    // The guard `node && node.type === "BlockStatement" && Array.isArray(node.body)`
-    // makes unwrapBlock return the node as-is for null / undefined / non-object inputs.
-    const ast: MutableGameMakerAstNode = {
-        type: "Program",
-        body: [
-            {
-                type: "IfStatement",
-                test: { type: "Identifier", name: "x" },
-                consequent: null as unknown,
-                alternate: null
-            }
-        ]
-    };
+void test("unwrapBlock returns the IfStatement intact when consequent is null or undefined", () => {
+    // Regression: prior to the fix, if node.consequent was null or undefined,
+    // accessing node.body on it threw "TypeError: Cannot read properties of
+    // (null|undefined) (reading 'length')". The guard
+    // `node && node.type === "BlockStatement" && Array.isArray(node.body) && node.body.length === 1`
+    // makes `unwrapBlock` return its input as-is for null / undefined /
+    // non-object inputs, so the IfStatement must survive normalization with
+    // its `test` identifier unchanged and no siblings added or removed.
+    //
+    // Both sentinel values exercise the same short-circuit branch in the
+    // guard, so a single table-driven case is sufficient to pin the
+    // contract: each row only differs by the consequent value (null vs
+    // undefined) and the identifier name used to disambiguate the AST
+    // node per row. If a future change ever distinguished the two inputs
+    // the test would flake for that row.
+    const sentinelCases: ReadonlyArray<{
+        readonly label: string;
+        readonly identifierName: string;
+        readonly consequent: unknown;
+    }> = [
+        { label: "null consequent", identifierName: "x", consequent: null },
+        { label: "undefined consequent", identifierName: "y", consequent: undefined }
+    ];
 
-    applyLogicalNormalizationWithChangeMetadata(ast);
+    for (const { label, identifierName, consequent } of sentinelCases) {
+        const ast: MutableGameMakerAstNode = {
+            type: "Program",
+            body: [
+                {
+                    type: "IfStatement",
+                    test: { type: "Identifier", name: identifierName },
+                    consequent,
+                    alternate: null
+                }
+            ]
+        };
 
-    const normalizedBody = ast.body as Array<MutableRecord>;
-    assert.equal(normalizedBody.length, 1);
-    assert.equal(normalizedBody[0]?.type, "IfStatement");
-});
+        applyLogicalNormalizationWithChangeMetadata(ast);
 
-void test("unwrapBlock handles undefined consequent without throwing", () => {
-    // Same guard applies when consequent is undefined rather than null.
-    const ast: MutableGameMakerAstNode = {
-        type: "Program",
-        body: [
-            {
-                type: "IfStatement",
-                test: { type: "Identifier", name: "y" },
-                consequent: undefined as unknown,
-                alternate: null
-            }
-        ]
-    };
-
-    applyLogicalNormalizationWithChangeMetadata(ast);
-
-    const normalizedBody = ast.body as Array<MutableRecord>;
-    assert.equal(normalizedBody.length, 1);
-    assert.equal(normalizedBody[0]?.type, "IfStatement");
+        const normalizedBody = ast.body as Array<MutableRecord>;
+        assert.equal(normalizedBody.length, 1, `${label}: IfStatement must survive normalization`);
+        assert.equal(normalizedBody[0]?.type, "IfStatement", `${label}: surviving node must remain an IfStatement`);
+    }
 });
 
 void test("unwrapBlock guards consequent in simplifyIfStatement else-if path", () => {
