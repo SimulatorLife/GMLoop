@@ -89,16 +89,7 @@ jobs:
         with:
           ref: ${{ steps.ref.outputs.ref }}
 
-      - name: Restore cached base report
-        id: base-cache
-        if: ${{ matrix.target == 'base' }}
-        uses: actions/cache/restore@v4
-        with:
-          path: reports
-          key: automerge-base-report-v3-${{ github.event.pull_request.base.sha }}
-
       - name: Checkout current CI report tooling
-        if: ${{ matrix.target != 'base' || steps.base-cache.outputs.cache-hit != 'true' }}
         uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha }}
@@ -107,12 +98,41 @@ jobs:
             scripts/eslint-checkstyle-formatter.js
             scripts/lint-report.js
             scripts/run-auto-merge-report.js
+            scripts/validate-auto-merge-report.js
           sparse-checkout-cone-mode: false
           persist-credentials: false
 
+      - name: Compute report tooling fingerprint
+        id: tooling
+        shell: bash
+        run: |
+          files=(
+            .ci-tools/scripts/eslint-checkstyle-formatter.js
+            .ci-tools/scripts/lint-report.js
+            .ci-tools/scripts/run-auto-merge-report.js
+            .ci-tools/scripts/validate-auto-merge-report.js
+          )
+          fingerprint="$({
+            for file in "${files[@]}"; do
+              logical="${file#.ci-tools/}"
+              printf '%s\0' "$logical"
+              cat "$file"
+              printf '\0'
+            done
+          } | sha256sum | cut -d' ' -f1)"
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+          echo "cache_key=automerge-base-report-v4-${{ github.event.pull_request.base.sha }}-$fingerprint" >> "$GITHUB_OUTPUT"
+
+      - name: Restore cached base report
+        id: base-cache
+        if: ${{ matrix.target == 'base' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: reports
+          key: ${{ steps.tooling.outputs.cache_key }}
+
       - name: Stage CI report tooling outside the target checkout
         id: ci-tools
-        if: ${{ matrix.target != 'base' || steps.base-cache.outputs.cache-hit != 'true' }}
         shell: bash
         env:
           CI_TOOLS_DIR: ${{ runner.temp }}/gmloop-ci-tools
@@ -122,6 +142,7 @@ jobs:
           cp .ci-tools/scripts/eslint-checkstyle-formatter.js "$CI_TOOLS_DIR/"
           cp .ci-tools/scripts/lint-report.js "$CI_TOOLS_DIR/"
           cp .ci-tools/scripts/run-auto-merge-report.js "$CI_TOOLS_DIR/"
+          cp .ci-tools/scripts/validate-auto-merge-report.js "$CI_TOOLS_DIR/"
           printf '%s\n' '{"type":"module"}' > "$CI_TOOLS_DIR/package.json"
           rm -rf .ci-tools
           echo "dir=$CI_TOOLS_DIR" >> "$GITHUB_OUTPUT"
@@ -153,6 +174,8 @@ jobs:
         env:
           CI_TOOLS_DIR: ${{ steps.ci-tools.outputs.dir }}
           GMLOOP_ESLINT_CHECKSTYLE_FORMATTER: ${{ steps.ci-tools.outputs.dir }}/eslint-checkstyle-formatter.js
+          GMLOOP_REPORT_TARGET_SHA: ${{ steps.ref.outputs.ref }}
+          GMLOOP_REPORT_TOOL_FINGERPRINT: ${{ steps.tooling.outputs.fingerprint }}
         run: |
           set +e
           node "$CI_TOOLS_DIR/run-auto-merge-report.js"
@@ -161,7 +184,7 @@ jobs:
           exit 0
 
       - name: Normalize JUnit report
-        if: ${{ always() && (matrix.target != 'base' || steps.base-cache.outputs.cache-hit != 'true') }}
+        if: ${{ always() && !cancelled() && (matrix.target != 'base' || steps.base-cache.outputs.cache-hit != 'true') }}
         shell: bash
         env:
           TEST_STATUS: ${{ steps.report.outputs.exit_code || 'unknown' }}
@@ -169,24 +192,29 @@ jobs:
 
       - name: Validate generated report
         id: validate
-        if: ${{ always() }}
+        if: ${{ always() && !cancelled() }}
         shell: bash
+        env:
+          CI_TOOLS_DIR: ${{ steps.ci-tools.outputs.dir }}
+          GMLOOP_REPORT_DIR: reports
+          GMLOOP_REPORT_EXPECTED_SHA: ${{ steps.ref.outputs.ref }}
+          GMLOOP_REPORT_EXPECTED_TOOL_FINGERPRINT: ${{ steps.tooling.outputs.fingerprint }}
         run: |
-          complete=true
-          if [ ! -s reports/tests.xml ] || ! grep -q '</testsuites>' reports/tests.xml; then
-            echo "::error::Missing or incomplete reports/tests.xml for ${{ matrix.target }}."
-            complete=false
+          set +e
+          node "$CI_TOOLS_DIR/validate-auto-merge-report.js"
+          status=$?
+          if [ "$status" -eq 0 ]; then
+            echo "complete=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "complete=false" >> "$GITHUB_OUTPUT"
           fi
-          if [ ! -s reports/eslint-checkstyle.xml ] || ! grep -q '</checkstyle>' reports/eslint-checkstyle.xml; then
-            echo "::error::Missing or incomplete reports/eslint-checkstyle.xml for ${{ matrix.target }}."
-            complete=false
-          fi
-          echo "complete=$complete" >> "$GITHUB_OUTPUT"
+          exit 0
 
       - name: Save complete base report
         if: >-
           ${{
             always() &&
+            !cancelled() &&
             matrix.target == 'base' &&
             steps.base-cache.outputs.cache-hit != 'true' &&
             steps.validate.outputs.complete == 'true'
@@ -194,10 +222,10 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: reports
-          key: automerge-base-report-v3-${{ github.event.pull_request.base.sha }}
+          key: ${{ steps.tooling.outputs.cache_key }}
 
       - name: Publish test summary (${{ matrix.target }})
-        if: ${{ always() && steps.validate.outputs.complete == 'true' }}
+        if: ${{ always() && !cancelled() && steps.validate.outputs.complete == 'true' }}
         uses: dorny/test-reporter@v3
         with:
           name: Publish test summary (${{ matrix.target }})
@@ -208,12 +236,13 @@ jobs:
           use-actions-summary: false
 
       - name: Upload report artifacts (${{ matrix.target }})
-        if: ${{ always() }}
+        if: ${{ always() && !cancelled() }}
         uses: actions/upload-artifact@v6
         with:
           name: report-${{ matrix.target }}
           path: |
             reports/*.xml
+            reports/auto-merge-report.json
             reports/lcov.info
             reports/jscpd-report.json
             reports/project-health.json
@@ -239,6 +268,25 @@ jobs:
     steps:
       - name: Checkout repo (for scripts)
         uses: actions/checkout@v6
+
+      - name: Compute report tooling fingerprint
+        id: tooling
+        shell: bash
+        run: |
+          files=(
+            scripts/eslint-checkstyle-formatter.js
+            scripts/lint-report.js
+            scripts/run-auto-merge-report.js
+            scripts/validate-auto-merge-report.js
+          )
+          fingerprint="$({
+            for file in "${files[@]}"; do
+              printf '%s\0' "$file"
+              cat "$file"
+              printf '\0'
+            done
+          } | sha256sum | cut -d' ' -f1)"
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -270,35 +318,44 @@ jobs:
       - name: Detect regressions
         id: regress
         shell: bash
+        env:
+          TOOLING_FINGERPRINT: ${{ steps.tooling.outputs.fingerprint }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_SHA: ${{ github.sha }}
         run: |
           set +e
           set -o pipefail
           mkdir -p reports
 
-          missing=()
+          invalid=()
           for target in base head merge; do
-            dir="report-$target"
-            if [ ! -s "$dir/tests.xml" ] || ! grep -q '</testsuites>' "$dir/tests.xml"; then
-              missing+=("$dir/tests.xml")
-            fi
-            if [ ! -s "$dir/eslint-checkstyle.xml" ] || ! grep -q '</checkstyle>' "$dir/eslint-checkstyle.xml"; then
-              missing+=("$dir/eslint-checkstyle.xml")
+            case "$target" in
+              base) expected_sha="$BASE_SHA" ;;
+              head) expected_sha="$HEAD_SHA" ;;
+              merge) expected_sha="$MERGE_SHA" ;;
+            esac
+            if ! GMLOOP_REPORT_DIR="report-$target" \
+              GMLOOP_REPORT_EXPECTED_SHA="$expected_sha" \
+              GMLOOP_REPORT_EXPECTED_TOOL_FINGERPRINT="$TOOLING_FINGERPRINT" \
+              node scripts/validate-auto-merge-report.js; then
+              invalid+=("$target")
             fi
           done
 
-          if [ "${#missing[@]}" -gt 0 ]; then
+          if [ "${#invalid[@]}" -gt 0 ]; then
             {
               echo '<!-- automerge-pr-test-summary -->'
               echo '### Quality Report Summary'
               echo
-              echo '❌ Auto-merge validation could not produce a complete report set.'
+              echo '❌ Auto-merge validation could not produce a complete, comparable report set.'
               echo
-              echo 'Missing or incomplete artifacts:'
-              for path in "${missing[@]}"; do
-                echo "- \`$path\`"
+              echo 'Invalid or incomplete report targets:'
+              for target in "${invalid[@]}"; do
+                echo "- \`$target\`"
               done
               echo
-              echo 'This is treated as a CI failure, not as a passing or silently skipped validation.'
+              echo 'Cancelled runs, synthesized JUnit output, infrastructure failures, stale SHAs, and mismatched reporting-tool versions are treated as CI failures and are never accepted as baseline evidence.'
             } > reports/summary-report.md
             echo "all_green=false" >> "$GITHUB_OUTPUT"
             echo "status=missing_reports" >> "$GITHUB_OUTPUT"
