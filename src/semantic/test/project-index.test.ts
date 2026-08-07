@@ -171,3 +171,39 @@ void test("loadBuiltInIdentifiers respects abort guard", async () => {
     assert.equal(statAttempted, false);
     assert.equal(readAttempted, false);
 });
+
+void test("loadBuiltInIdentifiers ignores legacy fallbackMessage field in the options bag", async () => {
+    // Forward-looking regression guard: the symbols module now owns its
+    // canonical abort message and no longer honours a `fallbackMessage`
+    // field that used to flow through the options bag as a transitional
+    // shim. If a caller leaks the legacy field back in (TypeScript would not
+    // catch it because the parameter is typed as the permissive
+    // `Parameters<typeof Core.createAbortGuard>[0]`), the symbols-module
+    // canonical message must still take precedence.
+    const controller = new AbortController();
+    controller.abort(null);
+
+    let statAttempted = false;
+    const stubFs = {
+        async stat() {
+            statAttempted = true;
+            throw new Error("stat should not run when aborted");
+        },
+        async readFile() {
+            throw new Error("readFile should not run when aborted");
+        }
+    };
+
+    await assert.rejects(
+        loadBuiltInIdentifiersForTests(stubFs, null, {
+            signal: controller.signal,
+            fallbackMessage: "should-be-ignored"
+        }),
+        (error) => {
+            assert.equal((error as any)?.message, "Project index build was aborted.");
+            return true;
+        }
+    );
+
+    assert.equal(statAttempted, false);
+});
