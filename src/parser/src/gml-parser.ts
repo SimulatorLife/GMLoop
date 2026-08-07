@@ -188,11 +188,22 @@ export type GmlIdentifierTokenRange = Readonly<{
  * {@link GMLParser.parse} avoids allocating a complete AST when a consumer
  * only needs declaration names.
  *
+ * The `sourceText` argument is run through the shared
+ * {@link Core.validateSourceText} guard so non-string, nullish, or oversized
+ * payloads are rejected with a descriptive {@link Core.SourceTextValidationError}
+ * before the ANTLR lexer is constructed. This matches the validation
+ * performed by {@link GMLParser}'s constructor and keeps the lexer-only
+ * entry points from crashing deep inside ANTLR when callers (the LSP and
+ * semantic workspaces) hand in document payloads of unexpected shape.
+ *
  * @param sourceText GML source text to inspect.
  * @returns Function names in their first-seen source order, without duplicates.
+ * @throws {Core.SourceTextValidationError} When `sourceText` is not a string or
+ *   exceeds the maximum allowed length.
  */
 export function extractGmlFunctionNames(sourceText: string): string[] {
-    const lexer = new GameMakerLanguageLexer(new antlr4.InputStream(sourceText));
+    const validatedSourceText = Core.validateSourceText(sourceText);
+    const lexer = new GameMakerLanguageLexer(new antlr4.InputStream(validatedSourceText));
     lexer.removeErrorListeners();
     lexer.strictMode = false;
     const tokenStream = new antlr4.CommonTokenStream(lexer);
@@ -221,16 +232,32 @@ export function extractGmlFunctionNames(sourceText: string): string[] {
             nameToken.start >= 0 &&
             nameToken.stop >= nameToken.start
         ) {
-            functionNames.add(sourceText.slice(nameToken.start, nameToken.stop + 1));
+            functionNames.add(validatedSourceText.slice(nameToken.start, nameToken.stop + 1));
         }
     }
 
     return [...functionNames];
 }
 
-/** Tokenize identifier ranges without invoking the parser or requiring valid complete GML. */
+/**
+ * Tokenize identifier ranges without invoking the parser or requiring valid
+ * complete GML.
+ *
+ * Like {@link extractGmlFunctionNames}, the `sourceText` argument is funneled
+ * through {@link Core.validateSourceText} so the helper rejects malformed
+ * payloads with a descriptive {@link Core.SourceTextValidationError} instead
+ * of crashing inside the ANTLR lexer. This matches the validation performed
+ * by {@link GMLParser}'s constructor and the lexer-only sibling helper so all
+ * three top-level parser entry points share a single defensive boundary.
+ *
+ * @param sourceText GML source text to tokenize.
+ * @returns Identifier ranges in source order.
+ * @throws {Core.SourceTextValidationError} When `sourceText` is not a string or
+ *   exceeds the maximum allowed length.
+ */
 export function tokenizeGmlIdentifierRanges(sourceText: string): GmlIdentifierTokenRange[] {
-    const lexer = new GameMakerLanguageLexer(new antlr4.InputStream(sourceText));
+    const validatedSourceText = Core.validateSourceText(sourceText);
+    const lexer = new GameMakerLanguageLexer(new antlr4.InputStream(validatedSourceText));
     lexer.removeErrorListeners();
     lexer.strictMode = false;
     const tokenStream = new antlr4.CommonTokenStream(lexer);
@@ -242,7 +269,9 @@ export function tokenizeGmlIdentifierRanges(sourceText: string): GmlIdentifierTo
     const tokens = lexerTokenStream.tokens;
     return tokens.flatMap((token) => {
         if (token.type !== GameMakerLanguageLexer.Identifier || token.start < 0 || token.stop < token.start) return [];
-        return [{ start: token.start, end: token.stop + 1, name: sourceText.slice(token.start, token.stop + 1) }];
+        return [
+            { start: token.start, end: token.stop + 1, name: validatedSourceText.slice(token.start, token.stop + 1) }
+        ];
     });
 }
 
