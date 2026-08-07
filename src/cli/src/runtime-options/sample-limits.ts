@@ -1,5 +1,7 @@
 import { Core } from "@gmloop/core";
 
+import { createIntegerEnvConfiguredValue } from "../shared/env-configured-integer.js";
+
 const { coerceNonNegativeInteger, describeValueForError, resolveIntegerOption } = Core;
 
 interface SampleLimitOptionParams {
@@ -27,62 +29,56 @@ export interface SampleLimitRuntimeOption {
 /**
  * Creates the runtime state machine for a CLI sample limit.
  *
- * Consolidating the factory with the exported sample-limit configurations keeps
- * the entire sample-limit concept discoverable from one domain file instead of
- * splitting it across a config module and a trivial single-function toolkit
- * module.
+ * The factory delegates integer normalization and the in-memory state tracker
+ * to the shared {@link createIntegerEnvConfiguredValue} helper, so the only
+ * logic this function contributes is sample-limit-specific (subject label
+ * labelling for error messages, the resolved-value shortcut exposed as
+ * `resolve`, and the captured-`env` constructor option used by callers to
+ * pin the initial environment source). Consolidating the factory with the
+ * exported sample-limit configurations keeps the entire sample-limit concept
+ * discoverable from one domain file instead of splitting it across a config
+ * module and a trivial single-function toolkit module.
  */
 export function createSampleLimitRuntimeOption(
     params: SampleLimitOptionParams,
-    { env }: { env?: NodeJS.ProcessEnv } = {}
+    { env: capturedEnv }: { env?: NodeJS.ProcessEnv } = {}
 ): SampleLimitRuntimeOption {
     const { defaultValue, envVar, subjectLabel = "Sample" } = params;
 
-    let currentDefault = defaultValue;
-
-    const coerce = (val: unknown) =>
-        coerceNonNegativeInteger(val, {
-            createErrorMessage: (received: unknown) =>
-                `${subjectLabel} sample limit must be a non-negative integer (received ${describeValueForError(received)}). Provide 0 to suppress the sample list.`
-        });
+    const createErrorMessage = (received: unknown) =>
+        `${subjectLabel} sample limit must be a non-negative integer (received ${describeValueForError(
+            received
+        )}). Provide 0 to suppress the sample list.`;
 
     const typeErrorMessage = (type: string) =>
         `${subjectLabel} sample limit must be provided as a number (received type '${type}').`;
 
-    const getDefault = () => currentDefault;
+    const coerce = (val: unknown, context: Record<string, unknown> = {}) =>
+        coerceNonNegativeInteger(val, { ...context, createErrorMessage });
 
-    const resolveValue = (value: unknown, options: { defaultValue?: number } = {}) =>
+    const state = createIntegerEnvConfiguredValue({
+        defaultValue,
+        envVar,
+        coerce,
+        typeErrorMessage
+    });
+
+    const resolve = (value?: unknown, options: { defaultLimit?: number } = {}) =>
         resolveIntegerOption(value, {
-            defaultValue: options.defaultValue ?? currentDefault,
+            defaultValue: options.defaultLimit ?? state.get() ?? defaultValue,
             coerce,
             typeErrorMessage
         });
 
-    const setDefault = (value?: unknown) => {
-        currentDefault = value === undefined ? defaultValue : resolveValue(value, { defaultValue });
-        return currentDefault;
-    };
-
-    const applyEnvOverride = (overrideEnv?: NodeJS.ProcessEnv) => {
-        const targetEnv = overrideEnv ?? env;
-        if (envVar && targetEnv?.[envVar]) {
-            currentDefault = resolveValue(targetEnv[envVar], { defaultValue });
-        }
-        return currentDefault;
-    };
-
-    const resolve = (value?: unknown, options: { defaultLimit?: number } = {}) =>
-        resolveValue(value, {
-            defaultValue: options.defaultLimit ?? currentDefault
-        });
+    const applyEnvOverride = (overrideEnv?: NodeJS.ProcessEnv) => state.applyEnvOverride(overrideEnv ?? capturedEnv);
 
     applyEnvOverride();
 
     return Object.freeze({
         defaultValue,
         envVar,
-        getDefault,
-        setDefault,
+        getDefault: () => state.get(),
+        setDefault: (value?: unknown) => state.set(value),
         resolve,
         applyEnvOverride
     });
