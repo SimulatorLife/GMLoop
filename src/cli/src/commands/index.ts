@@ -1,4 +1,5 @@
 export * from "./agent-pack.js";
+export * from "./ci-report.js";
 export * from "./fix.js";
 export * from "./format.js";
 export * from "./generate-feather-metadata.js";

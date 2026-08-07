@@ -13,9 +13,6 @@ concurrency:
   group: automerge-base-report-${{ github.sha }}
   cancel-in-progress: false
 
-env:
-  GMLOOP_TEST_SHARDS: workspace-1,workspace-2,workspace-3,root-1,root-2,whole-project,process-heavy
-
 jobs:
   cache_state:
     name: Restore trusted base report
@@ -29,26 +26,23 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --recursive --force
       - name: Compute report tooling fingerprint
         id: tooling
         shell: bash
         run: |
-          files=(
-            scripts/eslint-checkstyle-formatter.js
-            scripts/lint-report.js
-            scripts/run-test-shard.js
-            scripts/assemble-auto-merge-report.js
-            scripts/validate-auto-merge-report.js
-          )
-          fingerprint="$({
-            for file in "${files[@]}"; do
-              printf '%s\0' "$file"
-              cat "$file"
-              printf '\0'
-            done
-          } | sha256sum | cut -d' ' -f1)"
+          fingerprint="$(sha256sum src/cli/src/commands/ci-report.ts | cut -d' ' -f1)"
           echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
-          echo "cache_key=automerge-base-report-v5-${{ github.sha }}-$fingerprint" >> "$GITHUB_OUTPUT"
+          echo "cache_key=automerge-base-report-v6-${{ github.sha }}-$fingerprint" >> "$GITHUB_OUTPUT"
       - name: Restore existing trusted base report
         id: cache
         uses: actions/cache/restore@v4
@@ -59,32 +53,55 @@ jobs:
         id: restored
         if: ${{ steps.cache.outputs.cache-hit == 'true' }}
         shell: bash
-        env:
-          GMLOOP_REPORT_DIR: reports
-          GMLOOP_REPORT_EXPECTED_SHA: ${{ github.sha }}
-          GMLOOP_REPORT_EXPECTED_TOOL_FINGERPRINT: ${{ steps.tooling.outputs.fingerprint }}
         run: |
           set +e
-          node scripts/validate-auto-merge-report.js
+          node src/cli/src/commands/ci-report.ts validate \
+            --report-dir reports \
+            --expected-sha '${{ github.sha }}' \
+            --expected-fingerprint '${{ steps.tooling.outputs.fingerprint }}'
           status=$?
           if [ "$status" -eq 0 ]; then
             echo "usable=true" >> "$GITHUB_OUTPUT"
           else
             echo "usable=false" >> "$GITHUB_OUTPUT"
-            rm -rf reports
           fi
           exit 0
+      - name: Delete invalid immutable cache entry
+        if: ${{ steps.cache.outputs.cache-hit == 'true' && steps.restored.outputs.usable != 'true' }}
+        uses: actions/github-script@v8
+        env:
+          CACHE_KEY: ${{ steps.tooling.outputs.cache_key }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            await github.request('DELETE /repos/{owner}/{repo}/actions/caches', {
+              owner,
+              repo,
+              key: process.env.CACHE_KEY,
+              ref: context.ref,
+            });
+            core.notice(`Deleted invalid cache ${process.env.CACHE_KEY}.`);
+      - name: Remove invalid restored files
+        if: ${{ steps.cache.outputs.cache-hit == 'true' && steps.restored.outputs.usable != 'true' }}
+        run: rm -rf reports
+      - name: Mark cache miss
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        id: miss
+        run: echo "usable=false" >> "$GITHUB_OUTPUT"
 
   build:
-    name: Build default branch
+    name: Build default branch and plan tests
     needs: cache_state
     if: ${{ needs.cache_state.outputs.usable != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.sha }}
+          persist-credentials: false
       - uses: pnpm/action-setup@v6
         with:
           cache: true
@@ -92,17 +109,33 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-          cache-dependency-path: |
-            pnpm-lock.yaml
-            **/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile --recursive --force
-      - run: pnpm run build:ts
+      - name: Restore prior trusted timing history
+        uses: actions/cache/restore@v4
+        with:
+          path: .ci-history
+          key: automerge-test-timing-v1-${{ needs.cache_state.outputs.fingerprint }}-${{ github.sha }}
+          restore-keys: |
+            automerge-test-timing-v1-${{ needs.cache_state.outputs.fingerprint }}-
+      - run: pnpm exec tsc -b
+      - run: node src/cli/src/commands/ci-report.ts stage-compiled --output compiled-runtime
+      - name: Create timing-balanced canonical manifest
+        id: plan
+        run: |
+          node src/cli/src/commands/ci-report.ts manifest \
+            --output test-manifest.json \
+            --history .ci-history/test-durations.json \
+            --github-output "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v6
         with:
           name: compiled-base-${{ github.sha }}
-          path: |
-            src/**/dist/**
-            test/dist/**
+          path: compiled-runtime
+          retention-days: 1
+      - uses: actions/upload-artifact@v6
+        with:
+          name: base-test-plan
+          path: test-manifest.json
           retention-days: 1
 
   lint:
@@ -115,6 +148,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.sha }}
+          persist-credentials: false
       - uses: pnpm/action-setup@v6
         with:
           cache: true
@@ -122,24 +156,20 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-          cache-dependency-path: |
-            pnpm-lock.yaml
-            **/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile --recursive --force
       - name: Generate lint report
         shell: bash
         run: |
           set +e
-          node scripts/lint-report.js
-          status=$?
-          printf '{"schemaVersion":1,"completed":true,"status":%s}\n' "$status" > reports/lint-meta.json
+          node src/cli/src/commands/ci-report.ts lint --report-dir reports
           exit 0
-      - if: ${{ always() && !cancelled() }}
-        uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v6
+        if: ${{ always() && !cancelled() }}
         with:
           name: base-report-lint
           path: reports
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 1
 
   tests:
@@ -150,12 +180,12 @@ jobs:
     timeout-minutes: 35
     strategy:
       fail-fast: false
-      matrix:
-        shard: [workspace-1, workspace-2, workspace-3, root-1, root-2, whole-project, process-heavy]
+      matrix: ${{ fromJSON(needs.build.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.sha }}
+          persist-credentials: false
       - uses: pnpm/action-setup@v6
         with:
           cache: true
@@ -163,29 +193,32 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-          cache-dependency-path: |
-            pnpm-lock.yaml
-            **/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile --recursive --force
       - uses: actions/download-artifact@v7
         with:
           name: compiled-base-${{ github.sha }}
+          path: compiled-runtime
+      - uses: actions/download-artifact@v7
+        with:
+          name: base-test-plan
           path: .
+      - run: cp -R compiled-runtime/. .
       - name: Run test shard
         shell: bash
-        env:
-          GMLOOP_TEST_SHARD: ${{ matrix.shard }}
-          GMLOOP_TEST_REPORT_DIR: reports
         run: |
           set +e
-          node scripts/run-test-shard.js
+          node src/cli/src/commands/ci-report.ts run-shard \
+            --manifest test-manifest.json \
+            --shard '${{ matrix.shard }}' \
+            --report-dir reports
           exit 0
-      - if: ${{ always() && !cancelled() }}
-        uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v6
+        if: ${{ always() && !cancelled() }}
         with:
           name: base-report-${{ matrix.shard }}
           path: reports
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 1
 
   assemble:
@@ -198,48 +231,50 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.sha }}
-      - name: Download report shards
-        continue-on-error: true
-        uses: actions/download-artifact@v7
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --recursive --force
+      - uses: actions/download-artifact@v7
         with:
           pattern: base-report-*
           merge-multiple: true
           path: reports
+      - uses: actions/download-artifact@v7
+        with:
+          name: base-test-plan
+          path: .
       - name: Assemble trusted base report
-        env:
-          GMLOOP_REPORT_DIR: reports
-          GMLOOP_REPORT_TARGET_SHA: ${{ github.sha }}
-          GMLOOP_REPORT_TOOL_FINGERPRINT: ${{ needs.cache_state.outputs.fingerprint }}
-          GMLOOP_REPORT_BUILD_STATUS: ${{ needs.build.result == 'success' && '0' || '2' }}
-        run: node scripts/assemble-auto-merge-report.js
-      - name: Validate trusted base report
-        id: validate
-        shell: bash
-        env:
-          GMLOOP_REPORT_DIR: reports
-          GMLOOP_REPORT_EXPECTED_SHA: ${{ github.sha }}
-          GMLOOP_REPORT_EXPECTED_TOOL_FINGERPRINT: ${{ needs.cache_state.outputs.fingerprint }}
         run: |
-          set +e
-          node scripts/validate-auto-merge-report.js
-          status=$?
-          echo "complete=$([ "$status" -eq 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
-          exit 0
+          node src/cli/src/commands/ci-report.ts assemble \
+            --manifest test-manifest.json \
+            --report-dir reports \
+            --target-sha '${{ github.sha }}' \
+            --fingerprint '${{ needs.cache_state.outputs.fingerprint }}' \
+            --build-status 0
+          node src/cli/src/commands/ci-report.ts validate \
+            --report-dir reports \
+            --expected-sha '${{ github.sha }}' \
+            --expected-fingerprint '${{ needs.cache_state.outputs.fingerprint }}'
       - name: Save trusted base report
-        if: ${{ steps.validate.outputs.complete == 'true' }}
         uses: actions/cache/save@v4
         with:
           path: reports
           key: ${{ needs.cache_state.outputs.cache_key }}
-      - name: Publish timing summary
-        if: ${{ always() && !cancelled() }}
+      - name: Save timing history for future balancing
         shell: bash
         run: |
-          if [ -f reports/test-durations.md ]; then
-            cat reports/test-durations.md >> "$GITHUB_STEP_SUMMARY"
-          fi
-      - name: Fail when a trusted baseline could not be produced
-        if: ${{ steps.validate.outputs.complete != 'true' }}
-        run: |
-          echo "::error::The default-branch auto-merge baseline did not complete and was not cached."
-          exit 1
+          mkdir -p .ci-history
+          cp reports/test-durations.json .ci-history/test-durations.json
+      - uses: actions/cache/save@v4
+        with:
+          path: .ci-history
+          key: automerge-test-timing-v1-${{ needs.cache_state.outputs.fingerprint }}-${{ github.sha }}
+      - name: Publish timing summary
+        run: test ! -f reports/test-durations.md || cat reports/test-durations.md >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "goldenFixturePatterns": [
+    "^test/fixtures/.*\\.gml$",
+    "^src/parser/test/.*\\.gml$",
+    "^src/refactor/test/fixtures/.*\\.gml$",
+    "^src/format/test/fixtures/.*\\.gml$",
+    "^src/lint/test/.*\\.gml$"
+  ],
+  "trustedCiPatterns": [
+    "^\\.github/workflows/.*\\.ya?ml$",
+    "^\\.github/actions/",
+    "^\\.github/ci/automerge-policy\\.json$",
+    "^src/cli/src/commands/ci-report\\.ts$",
+    "^src/cli/src/commands/generate-quality-report\\.ts$",
+    "^src/cli/src/modules/quality-report/",
+    "^src/cli/src/cli-command-registration\\.ts$",
+    "^src/cli/src/commands/index\\.ts$",
+    "^package\\.json$",
+    "^pnpm-lock\\.yaml$",
+    "^pnpm-workspace\\.yaml$",
+    "^eslint\\.config\\.js$",
+    "^\\.nvmrc$",
+    "^tsconfig(?:\\..+)?\\.json$",
+    "^src/[^/]+/tsconfig\\.json$"
+  ]
+}
