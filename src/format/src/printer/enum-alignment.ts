@@ -84,21 +84,8 @@ function getEnumInitializerWidth(initializer) {
         return 0;
     }
 
-    if (typeof initializer === "number") {
-        return String(initializer).length;
-    }
-
-    const normalized = typeof initializer === "object" ? extractInitializerText(initializer) : initializer;
-
-    if (typeof normalized === "number") {
-        return String(normalized).trim().length;
-    }
-
-    if (typeof normalized === "string") {
-        return normalized.trim().length;
-    }
-
-    return String(normalized ?? "").trim().length;
+    const text = typeof initializer === "object" ? extractInitializerText(initializer) : initializer;
+    return String(text ?? "").trim().length;
 }
 
 function extractInitializerText(initializer) {
@@ -153,28 +140,13 @@ function collectSingleMemberStats(member, resolveName) {
 }
 
 function collectEnumMemberStats(members, resolveName) {
-    const memberCount = members.length;
-    const memberStats = Array.from({ length: memberCount });
-
-    // Avoid `Array#map` here to prevent allocating a fresh callback closure on every
-    // enum formatting pass. The enum alignment logic runs frequently in real-world GML
-    // codebases (which often contain dozens or hundreds of enums), and profiling shows
-    // that using a manual loop instead of `.map()` reduces both allocation pressure and
-    // total formatting time by a measurable margin. This is a hot path optimization:
-    // the code produces the same `memberStats` array structure, but skips the overhead
-    // of wrapping each iteration in a callback function, which lets the JIT compile
-    // more aggressive inline code. The tradeoff is slightly more verbose iteration logic
-    // in exchange for faster enum printing, which matters because enum alignment is one
-    // of the formatter's performance bottlenecks when handling large GameMaker projects.
-    //
-    // We also compute maxInitializerNameLength and allMembersHaveInitializer in a single
-    // pass to avoid multiple O(n) iterations over the memberStats array.
+    const memberStats = [];
     let maxInitializerNameLength = 0;
     let allMembersHaveInitializer = true;
 
-    for (let index = 0; index < memberCount; index += 1) {
-        const stats = collectSingleMemberStats(members[index], resolveName);
-        memberStats[index] = stats;
+    for (const member of members) {
+        const stats = collectSingleMemberStats(member, resolveName);
+        memberStats.push(stats);
 
         if (stats.hasInitializer && stats.nameLength > maxInitializerNameLength) {
             maxInitializerNameLength = stats.nameLength;
@@ -215,8 +187,6 @@ function applyTrailingCommentPadding({ memberStats, maxMemberWidth, hasTrailingC
 
     const lastIndex = memberStats.length - 1;
 
-    // Manual index iteration avoids allocating iterator tuples from
-    // `Array#entries()` while the printer walks enum members.
     for (let index = 0; index <= lastIndex; index += 1) {
         const entry = memberStats[index];
         const trailingComments = entry.trailingComments;
