@@ -3,6 +3,7 @@ import type { CliCommandRegistry } from "./cli-core/command-manager.js";
 import { createCliCommandErrorHandler } from "./cli-core/errors.js";
 import type { McpToolCatalogEntry } from "./cli-core/mcp-tool-catalog.js";
 import { createAgentPackCommand } from "./commands/agent-pack.js";
+import { createCiReportCommand } from "./commands/ci-report.js";
 import { createCollectStatsCommand, runCollectStats } from "./commands/collect-stats.js";
 import { createFixCommand, runFixCommand } from "./commands/fix.js";
 import { createFormatCommand, runFormatCommand } from "./commands/format.js";
@@ -206,6 +207,11 @@ function registerUtilityCommands({
     getMcpToolCatalogEntries,
     registry
 }: CliCommandCatalogRegistryContext): void {
+    registry.registerCommand({
+        command: createCiReportCommand(),
+        onError: createCliCommandErrorHandler({ prefix: "CI report command failed." })
+    });
+
     registry.registerCommand({
         command: createGameMakerCliCommand({ env, getCliCommandCatalog, getMcpToolCatalogEntries }),
         onError: createCliCommandErrorHandler({ prefix: "GameMaker CLI command failed." })
