@@ -1,6 +1,6 @@
 import { Core } from "@gmloop/core";
-import { Parser } from "@gmloop/parser";
 
+import { defaultGmlProgramParser } from "../../parser-adapter.js";
 import type { RepairInvalidTexturePointerGuardResult } from "../../types.js";
 import {
     type CodemodAstRecord,
@@ -190,7 +190,7 @@ export function applyRepairInvalidTexturePointerGuardCodemod(
 
     let programNode: unknown;
     try {
-        programNode = Parser.GMLParser.parse(sourceText);
+        programNode = defaultGmlProgramParser(sourceText);
     } catch {
         return createUnchangedCodemodResult(sourceText);
     }
