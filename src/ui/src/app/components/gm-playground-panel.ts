@@ -8,7 +8,9 @@ import { getUiErrorMessage } from "../error-message.js";
 import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "../events/events.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { EventBusManager } from "./event-bus-mixin.js";
+import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
+import { PlaygroundFixtureLoader } from "./playground-fixture-loader.js";
 import { PlaygroundSessionController } from "./playground-session-controller.js";
 
 interface PlaygroundFixture {
@@ -19,6 +21,19 @@ interface PlaygroundFixture {
     config: Record<string, unknown>;
 }
 
+/**
+ * Playground surface for editing, formatting, linting, refactoring, and
+ * transpiling ad-hoc GML input through the same pipeline used by the CLI.
+ *
+ * Composition over inheritance: input persistence, debounced processing,
+ * event subscriptions, and the on-connect fixture hydration are all owned by
+ * injected collaborators ({@link PlaygroundSessionController},
+ * {@link EventBusManager}, {@link PlaygroundFixtureLoader}) so the panel
+ * itself keeps only the `render()` override that Lit requires. Lifecycle
+ * wiring is funnelled through a single
+ * {@link LifecycleParticipantsController}, matching the pattern used by
+ * `GmFixPanel`, `GmGraphPanel`, and the other workspace panels.
+ */
 export class GmPlaygroundPanel extends LightDomLitElement {
     public static properties = {
         model: { attribute: false },
@@ -28,24 +43,6 @@ export class GmPlaygroundPanel extends LightDomLitElement {
     public accessor model: GraphVisualizationUiModel | null = null;
 
     public accessor state: GraphVisualizationUiState | null = null;
-
-    public constructor() {
-        super();
-    }
-
-    // The session controller is declared before the callbacks it references
-    // so the arrow-function callbacks close over `this` and resolve their
-    // target members lazily (the methods themselves are defined further
-    // below).
-    #sessionController = new PlaygroundSessionController(this, {
-        callbacks: {
-            onInputChanged: () => this.requestUpdate(),
-            onModelChanged: () => this.#onModelChange(),
-            onProcessInput: () => this.#processInput()
-        },
-        getModel: () => this.model,
-        getState: () => this.state
-    });
 
     #onDismissErrorBanner = (): void => {
         this.dispatchEvent(
@@ -57,17 +54,30 @@ export class GmPlaygroundPanel extends LightDomLitElement {
         );
     };
 
-    #eventBus = new EventBusManager(this, [{ event: "gm-error-banner-dismiss", handler: this.#onDismissErrorBanner }]);
+    // The session controller is declared as a private field so the methods
+    // further below can call `setInput`/`flushProcessing` and read the
+    // current `input` value. Reactive controllers do not need to be retained
+    // after construction — they self-register with the host via
+    // `host.addController` — but this field lets the rest of the class
+    // interact with the controller's public surface.
+    #sessionController: PlaygroundSessionController;
 
-    public connectedCallback(): void {
-        super.connectedCallback();
-        this.#eventBus.connect();
-        void this.#loadFixtures();
-    }
+    public constructor() {
+        super();
+        this.#sessionController = new PlaygroundSessionController(this, {
+            callbacks: {
+                onInputChanged: () => this.requestUpdate(),
+                onModelChanged: () => this.#onModelChange(),
+                onProcessInput: () => this.#processInput()
+            },
+            getModel: () => this.model,
+            getState: () => this.state
+        });
 
-    public disconnectedCallback(): void {
-        this.#eventBus.disconnect();
-        super.disconnectedCallback();
+        new LifecycleParticipantsController(this, [
+            new EventBusManager(this, [{ event: "gm-error-banner-dismiss", handler: this.#onDismissErrorBanner }]),
+            new PlaygroundFixtureLoader({ onLoadRequested: () => void this.#loadFixtures() })
+        ]);
     }
 
     #fixtures: ReadonlyArray<PlaygroundFixture> = [];

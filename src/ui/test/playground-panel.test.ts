@@ -4,6 +4,7 @@ import test from "node:test";
 
 import { GmGraphToolbar } from "../src/app/components/gm-graph-toolbar.js";
 import { GmPlaygroundPanel } from "../src/app/components/gm-playground-panel.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "../src/app/events/events.js";
 import { DEFAULT_PLAYGROUND_GML_SOURCE } from "../src/app/playground-default-gml.js";
 import type { GraphVisualizationProjectConfigurationCatalog } from "../src/graph/types.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
@@ -171,17 +172,80 @@ void test("playground panel view selector uses semantic <button> elements", () =
 /**
  * Verify the playground panel clears its debounce timer when disconnected,
  * preventing memory leaks from dangling setTimeout references.
+ *
+ * The debounce timer is owned by {@link PlaygroundSessionController}, which
+ * is registered as a reactive controller in the panel's constructor. Lit's
+ * `LitElement.disconnectedCallback` notifies every controller via
+ * `hostDisconnected`, so invoking it on a fresh test instance must clear the
+ * pending timer without the panel needing to override the lifecycle hook.
  */
 void test("playground panel clears debounce timer on disconnect", () => {
     const panel = new TestableGmPlaygroundPanel();
     panel.model = createMockModel();
     panel.state = createMockState();
 
-    // Verify the component has a disconnect lifecycle method
+    // The disconnect lifecycle method is inherited from LitElement. The
+    // composition refactor means the panel no longer declares its own
+    // override, so the function is still callable but flows through the
+    // registered reactive controllers.
     assert.equal(typeof panel.disconnectedCallback, "function");
 
-    // Call disconnectedCallback to trigger cleanup (timer field is private)
     panel.disconnectedCallback();
+});
+
+/**
+ * The composition refactor moved the `gm-error-banner-dismiss` subscription
+ * into an {@link EventBusManager} registered through a
+ * {@link LifecycleParticipantsController}. The panel must not re-introduce
+ * lifecycle overrides that duplicate that wiring. Reading own properties
+ * (not the prototype chain) keeps this assertion stable against the
+ * inherited {@link LightDomLitElement} hooks.
+ */
+void test("GmPlaygroundPanel does not override Lit lifecycle hooks for event wiring", () => {
+    const prototype = GmPlaygroundPanel.prototype as unknown as Record<string, unknown>;
+    const hasOwn = Object.prototype.hasOwnProperty;
+
+    assert.equal(
+        hasOwn.call(prototype, "connectedCallback"),
+        false,
+        "Expected GmPlaygroundPanel to drop its connectedCallback override."
+    );
+    assert.equal(
+        hasOwn.call(prototype, "disconnectedCallback"),
+        false,
+        "Expected GmPlaygroundPanel to drop its disconnectedCallback override."
+    );
+});
+
+/**
+ * With the composition refactor the `EventBusManager` registered in the
+ * constructor owns the `gm-error-banner-dismiss` subscription. Invoking the
+ * inherited `connectedCallback`/`disconnectedCallback` drives the
+ * {@link LifecycleParticipantsController} in the same way the DOM would.
+ */
+void test("GmPlaygroundPanel propagates gm-error-banner-dismiss via composition", () => {
+    const panel = new TestableGmPlaygroundPanel();
+    panel.model = createMockModel();
+    panel.state = createMockState();
+
+    let observedPage: string | null = null;
+    const listener = (event: Event): void => {
+        const customEvent = event as CustomEvent<{ page: string }>;
+        if (customEvent.detail?.page !== undefined) {
+            observedPage = customEvent.detail.page;
+        }
+    };
+    panel.addEventListener(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, listener);
+
+    try {
+        panel.connectedCallback();
+        panel.dispatchEvent(new CustomEvent("gm-error-banner-dismiss", { bubbles: true }));
+
+        assert.equal(observedPage, "playground");
+    } finally {
+        panel.disconnectedCallback();
+        panel.removeEventListener(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, listener);
+    }
 });
 
 void test("playground panel toolbar keeps rule sections out of the top bar", () => {
