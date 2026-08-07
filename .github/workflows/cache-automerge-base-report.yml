@@ -180,8 +180,8 @@ jobs:
 
   lint:
     name: Lint default branch
-    needs: cache_state
-    if: ${{ needs.cache_state.outputs.usable != 'true' }}
+    needs: [cache_state, prepare]
+    if: ${{ needs.cache_state.outputs.usable != 'true' && needs.prepare.outputs.build_succeeded == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -281,15 +281,20 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile --recursive --force
-      - name: Require completed build and lint execution
+      - name: Require complete default-branch execution
         run: |
           test '${{ needs.prepare.result }}' = success
-          test '${{ needs.lint.result }}' = success
+          if [ '${{ needs.prepare.outputs.build_succeeded }}' = true ]; then
+            test '${{ needs.lint.result }}' = success
+            test '${{ needs.tests.result }}' = success
+          fi
       - uses: actions/download-artifact@v7
         with:
           name: base-build-evidence
           path: build-evidence
-      - uses: actions/download-artifact@v7
+      - name: Download lint report
+        if: ${{ needs.prepare.outputs.build_succeeded == 'true' }}
+        uses: actions/download-artifact@v7
         with:
           name: base-report-lint
           path: reports
@@ -322,6 +327,7 @@ jobs:
       - name: Package deterministic broken-base evidence
         if: ${{ needs.prepare.outputs.build_succeeded != 'true' }}
         run: |
+          mkdir -p reports
           cp build-evidence/build-evidence.json reports/build-evidence.json
           node src/cli/src/commands/ci-build-evidence.ts validate \
             --report-dir reports \
