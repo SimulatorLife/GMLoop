@@ -4,6 +4,8 @@ import { access, lstat, mkdir, readdir, readFile, rm, stat, writeFile } from "no
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { Core } from "@gmloop/core";
+
 import {
     type AgentCliCommandRunner,
     type AgentConfigTargetSelection,
@@ -252,7 +254,7 @@ function parseAgentPackReceipt(source: string, sourcePath: string): AgentPackRec
     try {
         parsed = JSON.parse(source);
     } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
+        const reason = Core.isErrorLike(error) ? error.message : String(error);
         throw new TypeError(`${AGENT_PACK_NAME} receipt JSON is malformed (${reason}): ${sourcePath}`, {
             cause: error
         });
