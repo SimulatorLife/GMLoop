@@ -34,6 +34,10 @@ import {
     resolveExplicitWorkflowTargetPath
 } from "../workflow/project-root.js";
 import { createCodemodExecutionOrderTracker } from "./refactor-codemod-execution-order.js";
+import {
+    shouldDeferInitialSemanticIndexBuild,
+    toModifiedSemanticIndexChanges
+} from "./refactor-semantic-index-scheduling.js";
 
 const { buildProjectIndex } = Semantic;
 const {
@@ -649,19 +653,15 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
     const requiresSemanticProjectIndex = selectedCodemodIds.some((codemodId) =>
         semanticIndexDependentCodemodIds.has(codemodId)
     );
-    const firstSemanticCodemodIndex = selectedCodemodIds.findIndex((codemodId) =>
-        semanticIndexDependentCodemodIds.has(codemodId)
+    const deferInitialSemanticIndexBuild = shouldDeferInitialSemanticIndexBuild(
+        selectedCodemodIds,
+        semanticIndexDependentCodemodIds
     );
-    const shouldDeferInitialSemanticIndexBuild =
-        firstSemanticCodemodIndex > 0 &&
-        selectedCodemodIds
-            .slice(0, firstSemanticCodemodIndex)
-            .some((codemodId) => !semanticIndexDependentCodemodIds.has(codemodId));
 
     let projectIndex: BuiltProjectIndex | null = null;
     let coordinator: ProjectIndexCoordinator | null = null;
 
-    if (requiresSemanticProjectIndex && !shouldDeferInitialSemanticIndexBuild) {
+    if (requiresSemanticProjectIndex && !deferInitialSemanticIndexBuild) {
         if (verbose) {
             console.log("Building or loading semantic project index...");
         }
@@ -691,7 +691,7 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
         let currentCodemodId: string | null = null;
         let lastProgressLogTime = 0;
         let codemodStartTime = 0;
-        let hasPendingSemanticIndexRefresh = shouldDeferInitialSemanticIndexBuild;
+        let hasPendingSemanticIndexRefresh = deferInitialSemanticIndexBuild;
         const result = await engine.executeConfiguredCodemods({
             projectRoot,
             targetPaths,
@@ -794,10 +794,7 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
                                 onProgress,
                                 parseGml: tolerantParser,
                                 incremental: {
-                                    changes: impactedFiles.map((changedFile) => ({
-                                        filePath: path.resolve(projectRoot, changedFile),
-                                        kind: "modified" as const
-                                    })),
+                                    changes: toModifiedSemanticIndexChanges(projectRoot, impactedFiles),
                                     existingIndex: initialProjectIndex
                                 }
                             })
@@ -843,10 +840,7 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
                     Semantic.buildProjectIndex(projectRoot, Core.defaultFsFacade, {
                         onProgress,
                         incremental: {
-                            changes: impactedFiles.map((changedFile) => ({
-                                filePath: path.resolve(projectRoot, changedFile),
-                                kind: "modified" as const
-                            })),
+                            changes: toModifiedSemanticIndexChanges(projectRoot, impactedFiles),
                             existingIndex: semanticBridge.getProjectIndex()
                         }
                     })
