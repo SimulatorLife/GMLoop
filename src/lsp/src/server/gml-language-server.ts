@@ -17,7 +17,6 @@ import {
     type Location,
     ProposedFeatures,
     type Range,
-    SemanticTokensRefreshRequest,
     TextDocumentSyncKind,
     TextEdit,
     type WorkspaceEdit,
@@ -48,6 +47,12 @@ import {
     GML_SEMANTIC_TOKEN_LEGEND
 } from "../protocol/index.js";
 import { resolveDocumentFormatOptions } from "./document-format-options.js";
+import {
+    getLspConnectionLogger,
+    type GmlLanguageServerConnectionContract,
+    hasLspConnectionShutdownHandler,
+    trySendSemanticTokenRefreshRequest
+} from "./lsp-connection-contract.js";
 
 /**
  * Stable identity used by LSP clients when they connect to GMLoop's GML server.
@@ -73,7 +78,7 @@ type GmlLexerIdentifierRange = Readonly<{
     start: number;
 }>;
 
-type GmlLanguageServerConnection = ReturnType<typeof createConnection>;
+type GmlLanguageServerConnection = GmlLanguageServerConnectionContract;
 
 function cloneLintConfigForEslint() {
     return Lint.configs.recommended.map((config) => ({
@@ -243,7 +248,11 @@ async function createLintQuickFixCodeActions(
 }
 
 function reportAsyncNotificationError(connection: GmlLanguageServerConnection, error: unknown): void {
-    connection.console.warn(Core.getErrorMessageOrFallback(error));
+    // Capability-probed logger so cross-realm or mocked connections without
+    // a `console.warn` member still satisfy the contract. The helper
+    // substitutes a no-op when the method is missing, so call sites never
+    // need to gate on `typeof connection.console?.warn === "function"`.
+    getLspConnectionLogger(connection).warn(Core.getErrorMessageOrFallback(error));
 }
 
 function runNotificationTask(connection: GmlLanguageServerConnection, task: () => Promise<void>): void {
@@ -269,9 +278,12 @@ async function withRequestAbortSignal<Result>(
 }
 
 function requestSemanticTokenRefresh(connection: GmlLanguageServerConnection): void {
-    void connection.sendRequest(SemanticTokensRefreshRequest.type).catch(() => {
-        // Clients may not advertise semantic-token refresh support.
-    });
+    // Capability probe (`trySendSemanticTokenRefreshRequest`) decides whether
+    // the connection supports `sendRequest` at all. Clients that do not
+    // advertise the semantic-tokens-refresh capability simply have the
+    // request dropped silently, matching the previous behaviour while
+    // removing the per-call `typeof === "function"` runtime check.
+    trySendSemanticTokenRefreshRequest(connection);
 }
 
 const isLocalDebug =
@@ -305,18 +317,34 @@ function formatSemanticAnalysisFinish(event: GmlSemanticAnalysisFinish): string 
 
 /**
  * Create the GML language server and attach all protocol handlers to the connection.
+ *
+ * The default {@link connection} is the production stdio transport produced
+ * by `vscode-languageserver`'s `createConnection`. Tests can pass any object
+ * that satisfies {@link GmlLanguageServerConnectionContract} — the contract
+ * is structural, so slim mocks with only the methods they exercise type-check
+ * without resorting to `any` or runtime `typeof === "function"` probes.
  */
 export function createGmlLanguageServer(
-    connection = createConnection(ProposedFeatures.all, process.stdin, process.stdout)
+    connection: GmlLanguageServerConnectionContract = createConnection(
+        ProposedFeatures.all,
+        process.stdin,
+        process.stdout
+    )
 ) {
+    // Resolve the logger once at startup so call sites never have to gate on
+    // `typeof connection.console?.info === "function"`. The capability probe
+    // substitutes a no-op when the connection omits any of the three logger
+    // methods, keeping every code path that touches the contract safe
+    // against mocked or cross-realm connections.
+    const logger = getLspConnectionLogger(connection);
     const debugLog = (message: string): void => {
-        if (isLocalDebug && typeof connection.console?.info === "function") {
-            connection.console.info(`[Debug] ${message}`);
+        if (isLocalDebug) {
+            logger.info(`[Debug] ${message}`);
         }
     };
 
-    if (isLocalDebug && typeof connection.console?.info === "function") {
-        connection.console.info("[Debug] GMLoop LSP server started in local debug mode.");
+    if (isLocalDebug) {
+        logger.info("[Debug] GMLoop LSP server started in local debug mode.");
     }
 
     const documents = createGmlDocumentStore();
@@ -326,14 +354,10 @@ export function createGmlLanguageServer(
             requestSemanticTokenRefresh(connection);
         },
         (event) => {
-            if (typeof connection.console?.info === "function") {
-                connection.console.info(formatSemanticAnalysisStart(event));
-            }
+            logger.info(formatSemanticAnalysisStart(event));
         },
         (event) => {
-            if (typeof connection.console?.info === "function") {
-                connection.console.info(formatSemanticAnalysisFinish(event));
-            }
+            logger.info(formatSemanticAnalysisFinish(event));
         }
     );
     const lintRunner = createLintRunner(false);
@@ -343,8 +367,12 @@ export function createGmlLanguageServer(
     const pendingWatchedFileChanges = new Map<string, GmlSemanticFileChange["kind"]>();
     let watchedFileRefreshTimer: NodeJS.Timeout | null = null;
 
-    if (typeof connection.onShutdown === "function") {
-        connection.onShutdown(async () => {
+    // Capability probe replaces the previous `typeof connection.onShutdown
+    // === "function"` runtime check. Some transports (in-process mocks,
+    // lightweight test doubles) intentionally omit `onShutdown`; the probe
+    // is computed once so the rest of the server can rely on the contract.
+    if (hasLspConnectionShutdownHandler(connection)) {
+        connection.onShutdown?.(async () => {
             for (const timeout of pendingDiagnostics.values()) {
                 clearTimeout(timeout);
             }
@@ -410,9 +438,7 @@ export function createGmlLanguageServer(
             try {
                 semanticIndex.preload();
             } catch (error) {
-                connection.console.warn(
-                    `Unable to pre-load bundled identifier metadata: ${Core.getErrorMessageOrFallback(error)}`
-                );
+                logger.warn(`Unable to pre-load bundled identifier metadata: ${Core.getErrorMessageOrFallback(error)}`);
             }
         }, 0);
 
@@ -424,23 +450,25 @@ export function createGmlLanguageServer(
                     for (const folder of folders) {
                         const projectRoot = uriToFilePath(folder.uri);
                         if (projectRoot) {
-                            connection.console.info(`Triggering background project indexing for root: ${projectRoot}`);
+                            logger.info(`Triggering background project indexing for root: ${projectRoot}`);
                             void semanticIndex.indexProjectRoot(projectRoot).catch((error) => {
-                                connection.console.warn(
+                                logger.warn(
                                     `Background indexing failed for ${projectRoot}: ${Core.getErrorMessageOrFallback(error)}`
                                 );
                             });
                         }
                     }
                 }
+
                 return undefined;
             })
             .catch((error) => {
-                connection.console.warn(`Unable to query workspace folders: ${Core.getErrorMessageOrFallback(error)}`);
+                logger.warn(`Unable to query workspace folders: ${Core.getErrorMessageOrFallback(error)}`);
+                return undefined;
             });
 
         void connection.client.register(DidChangeConfigurationNotification.type).catch((error: unknown) => {
-            connection.console.warn(
+            logger.warn(
                 `Unable to register configuration change notifications: ${Core.getErrorMessageOrFallback(error)}`
             );
         });
@@ -610,7 +638,7 @@ export function createGmlLanguageServer(
             );
             return definition ? [definition] : [];
         } catch (error) {
-            connection.console.error(`Error in onDefinition: ${Core.getErrorMessageOrFallback(error)}`);
+            logger.error(`Error in onDefinition: ${Core.getErrorMessageOrFallback(error)}`);
             return [];
         }
     });
@@ -631,7 +659,7 @@ export function createGmlLanguageServer(
                   )
                 : [];
         } catch (error) {
-            connection.console.error(`Error in onReferences: ${Core.getErrorMessageOrFallback(error)}`);
+            logger.error(`Error in onReferences: ${Core.getErrorMessageOrFallback(error)}`);
             return [];
         }
     });
@@ -645,7 +673,7 @@ export function createGmlLanguageServer(
                   )
                 : [];
         } catch (error) {
-            connection.console.error(`Error in onDocumentSymbol: ${Core.getErrorMessageOrFallback(error)}`);
+            logger.error(`Error in onDocumentSymbol: ${Core.getErrorMessageOrFallback(error)}`);
             return [];
         }
     });
@@ -663,7 +691,7 @@ export function createGmlLanguageServer(
                   )
                 : { data: [] };
         } catch (error) {
-            connection.console.error(`Error in semanticTokens.on: ${Core.getErrorMessageOrFallback(error)}`);
+            logger.error(`Error in semanticTokens.on: ${Core.getErrorMessageOrFallback(error)}`);
             return { data: [] };
         }
     });
@@ -677,7 +705,7 @@ export function createGmlLanguageServer(
                   )
                 : [];
         } catch (error) {
-            connection.console.error(`Error in onWorkspaceSymbol: ${Core.getErrorMessageOrFallback(error)}`);
+            logger.error(`Error in onWorkspaceSymbol: ${Core.getErrorMessageOrFallback(error)}`);
             return [];
         }
     });
@@ -700,7 +728,7 @@ export function createGmlLanguageServer(
                 semanticIndex.hover(document, offset, word.name, signal)
             );
         } catch (error) {
-            connection.console.error(`Error in onHover: ${Core.getErrorMessageOrFallback(error)}`);
+            logger.error(`Error in onHover: ${Core.getErrorMessageOrFallback(error)}`);
             return null;
         }
     });
@@ -721,7 +749,7 @@ export function createGmlLanguageServer(
                   )
                 : null;
         } catch (error) {
-            connection.console.error(`Error in onPrepareRename: ${Core.getErrorMessageOrFallback(error)}`);
+            logger.error(`Error in onPrepareRename: ${Core.getErrorMessageOrFallback(error)}`);
             return null;
         }
     });
@@ -743,7 +771,7 @@ export function createGmlLanguageServer(
                 semanticIndex.planRename(document, positionToOffset(document, position), word.name, newName, signal)
             );
         } catch (error) {
-            connection.console.error(`Error in onRenameRequest: ${Core.getErrorMessageOrFallback(error)}`);
+            logger.error(`Error in onRenameRequest: ${Core.getErrorMessageOrFallback(error)}`);
             return null;
         }
     });
@@ -761,7 +789,7 @@ export function createGmlLanguageServer(
                 semanticIndex.searchCompletions(document, prefix, signal)
             );
         } catch (error) {
-            connection.console.error(`Error in onCompletion: ${Core.getErrorMessageOrFallback(error)}`);
+            logger.error(`Error in onCompletion: ${Core.getErrorMessageOrFallback(error)}`);
             return [];
         }
     });
