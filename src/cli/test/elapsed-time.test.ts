@@ -1,16 +1,23 @@
 import assert from "node:assert/strict";
+import process from "node:process";
 import { test } from "node:test";
 
 import {
     calculateElapsedNanoseconds,
-    formatElapsedNanosecondsAsMilliseconds,
-    readMonotonicNanoseconds
+    formatElapsedNanosecondsAsMilliseconds
 } from "../src/shared/timing/verbose-timing.js";
 
-void test("readMonotonicNanoseconds returns a bigint timestamp", () => {
-    const timestamp = readMonotonicNanoseconds();
-    assert.equal(typeof timestamp, "bigint");
-    assert.ok(timestamp > 0n);
+void test("calculateElapsedNanoseconds measures a real process.hrtime.bigint() span", () => {
+    const startedAtNanoseconds = process.hrtime.bigint();
+    const completedAtNanoseconds = process.hrtime.bigint();
+
+    const elapsed = calculateElapsedNanoseconds({
+        startedAtNanoseconds,
+        completedAtNanoseconds
+    });
+
+    assert.equal(typeof elapsed, "bigint");
+    assert.ok(elapsed >= 0n);
 });
 
 void test("calculateElapsedNanoseconds clamps negative values to zero", () => {
