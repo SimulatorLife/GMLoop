@@ -26,27 +26,9 @@ void describe("statement spacing policy", () => {
     });
 
     void it("does not force trailing padding after nested functions", () => {
-        const nestedFunction = { type: "FunctionDeclaration" };
-        const block = { type: "BlockStatement" };
-        const container = { type: "FunctionExpression" };
-        const unrelatedContainer = { type: "StructDeclaration" };
-
-        assert.equal(
-            Printer.StatementSpacingPolicy.shouldForceTrailingBlankLineForNestedFunction(
-                nestedFunction,
-                block,
-                container
-            ),
-            false
-        );
-        assert.equal(
-            Printer.StatementSpacingPolicy.shouldForceTrailingBlankLineForNestedFunction(
-                nestedFunction,
-                block,
-                unrelatedContainer
-            ),
-            false
-        );
+        // The hook is intentionally a no-op: the intermediate spacing path
+        // in `statement-traversal-spacing.ts` owns inter-statement padding.
+        assert.equal(Printer.StatementSpacingPolicy.shouldForceTrailingBlankLineForNestedFunction(), false);
     });
 
     void it("keeps default newline padding behavior", () => {
