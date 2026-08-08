@@ -677,11 +677,6 @@ function createCloseHandler({
     return () => {
         const websocketState = state;
 
-        // If an error handler is active and already clearing state, skip reconnect scheduling
-        if (websocketState.errorPendingReconnectSuppression) {
-            websocketState.errorPendingReconnectSuppression = false;
-            return;
-        }
         releaseListeners?.();
         websocketState.isConnected = false;
         websocketState.ws = null;
@@ -730,21 +725,13 @@ function createErrorHandler({ state, onError, logger }: WebSocketErrorHandlerArg
             logger.websocketError(errorMessage);
         }
 
-        // Set flag to suppress reconnect scheduling in the close handler,
-        // which will be triggered asynchronously by ws.close()
-        websocketState.errorPendingReconnectSuppression = true;
-
+        // Close the socket and let the "close" handler run its normal cleanup
+        // and reconnect-scheduling logic. Earlier revisions duplicated that
+        // logic here behind a suppression flag, which silently dropped every
+        // reconnect attempt after a connection error (the close handler saw
+        // the flag and returned before scheduling a retry).
         if (websocketState.ws) {
             websocketState.ws.close();
-        }
-
-        // Clear any pending reconnect timer after ws.close() so we don't
-        // leak a timer that the close handler might have just scheduled.
-        // The close event dispatched by ws.close() is async, so the close
-        // handler runs after this code and may have set a fresh timer.
-        if (websocketState.reconnectTimer !== null) {
-            clearTimeout(websocketState.reconnectTimer);
-            websocketState.reconnectTimer = null;
         }
 
         // Stop readiness polling immediately — the socket is no longer usable

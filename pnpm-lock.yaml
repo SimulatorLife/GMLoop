@@ -199,6 +199,9 @@ importers:
       '@gmloop/refactor':
         specifier: workspace:*
         version: link:../refactor
+      '@gmloop/runtime-wrapper':
+        specifier: workspace:*
+        version: link:../runtime-wrapper
       '@gmloop/semantic':
         specifier: workspace:*
         version: link:../semantic
