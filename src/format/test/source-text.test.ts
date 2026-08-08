@@ -1,23 +1,32 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { Core } from "@gmloop/core";
+import {
+    getOriginalTextFromOptions,
+    hasBlankLineBeforeLeadingComment,
+    hasBlankLineBetweenLastCommentAndClosingBrace,
+    macroTextHasExplicitTrailingBlankLine,
+    resolveNodeIndexRangeWithSource,
+    resolvePrinterSourceMetadata,
+    sliceOriginalText,
+    stripTrailingLineTerminators
+} from "../src/printer/source-text.js";
 
 void describe("printer source text helpers", () => {
     void it("trims trailing line terminators without regex allocation", () => {
-        assert.equal(Core.stripTrailingLineTerminators("macro\n\r\n"), "macro");
-        assert.equal(Core.stripTrailingLineTerminators("macro"), "macro");
+        assert.equal(stripTrailingLineTerminators("macro\n\r\n"), "macro");
+        assert.equal(stripTrailingLineTerminators("macro"), "macro");
     });
 
     void it("normalizes printer metadata inputs", () => {
-        assert.deepEqual(Core.resolvePrinterSourceMetadata(null), {
+        assert.deepEqual(resolvePrinterSourceMetadata(null), {
             originalText: null,
             locStart: null,
             locEnd: null
         });
 
         const locStart = () => 1;
-        const metadata = Core.resolvePrinterSourceMetadata({
+        const metadata = resolvePrinterSourceMetadata({
             originalText: "text",
             locStart,
             locEnd: () => 3
@@ -30,17 +39,17 @@ void describe("printer source text helpers", () => {
 
     void it("extracts original text from printer options", () => {
         assert.equal(
-            Core.getOriginalTextFromOptions({
+            getOriginalTextFromOptions({
                 originalText: "body"
             }),
             "body"
         );
 
-        assert.equal(Core.getOriginalTextFromOptions({ originalText: 42 }), null);
+        assert.equal(getOriginalTextFromOptions({ originalText: 42 }), null);
     });
 
     void it("computes node ranges with metadata overrides", () => {
-        const range = Core.resolveNodeIndexRangeWithSource(
+        const range = resolveNodeIndexRangeWithSource(
             { start: 5, end: 8 },
             { originalText: null, locStart: () => 10, locEnd: () => 15 }
         );
@@ -49,14 +58,14 @@ void describe("printer source text helpers", () => {
     });
 
     void it("slices text only when bounds are valid", () => {
-        assert.equal(Core.sliceOriginalText("abcdef", 1, 4), "bcd");
-        assert.equal(Core.sliceOriginalText("abcdef", 4, 1), null);
+        assert.equal(sliceOriginalText("abcdef", 1, 4), "bcd");
+        assert.equal(sliceOriginalText("abcdef", 4, 1), null);
     });
 
     void it("detects explicit trailing blank lines in macro text", () => {
-        assert.equal(Core.macroTextHasExplicitTrailingBlankLine("macro\n\n"), true);
-        assert.equal(Core.macroTextHasExplicitTrailingBlankLine("macro\n"), false);
-        assert.equal(Core.macroTextHasExplicitTrailingBlankLine("macro\n\u2003\n\u2003"), true);
+        assert.equal(macroTextHasExplicitTrailingBlankLine("macro\n\n"), true);
+        assert.equal(macroTextHasExplicitTrailingBlankLine("macro\n"), false);
+        assert.equal(macroTextHasExplicitTrailingBlankLine("macro\n\u2003\n\u2003"), true);
     });
 
     void it("reports absence of surrounding blank lines for compact blocks", () => {
@@ -67,12 +76,12 @@ void describe("printer source text helpers", () => {
         };
 
         const originalText = "{\n//first\n}";
-        const metadata = Core.resolvePrinterSourceMetadata({
+        const metadata = resolvePrinterSourceMetadata({
             originalText
         });
 
-        assert.equal(Core.hasBlankLineBeforeLeadingComment(blockNode, metadata, originalText, 8), false);
+        assert.equal(hasBlankLineBeforeLeadingComment(blockNode, metadata, originalText, 8), false);
 
-        assert.equal(Core.hasBlankLineBetweenLastCommentAndClosingBrace(blockNode, metadata, originalText), false);
+        assert.equal(hasBlankLineBetweenLastCommentAndClosingBrace(blockNode, metadata, originalText), false);
     });
 });

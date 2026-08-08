@@ -1,3 +1,22 @@
+/**
+ * Source-text helpers used by the GML Prettier printer.
+ *
+ * These helpers normalize Prettier's `originalText`/`locStart`/`locEnd`
+ * printer metadata, compute node source ranges that prefer metadata
+ * overrides over the AST defaults, and detect blank-line spacing around
+ * leading comments and closing braces. They live alongside the printer
+ * because every consumer is a printer call site, and the helpers are
+ * intimately aware of how the GML printer feeds metadata to its visitors.
+ *
+ * Previously this module lived in `@gmloop/core` (`src/core/src/text/gml-printer-source-text.ts`).
+ * The Core workspace is intentionally workspace-agnostic — owning AST
+ * types, traversal helpers, and shared primitives — and has no business
+ * providing Prettier-printer metadata normalization. Moving the module here
+ * keeps Core lean, lets the printer call sites import via direct relative
+ * paths without reaching across workspaces, and aligns the helper names
+ * (which already reference "Printer" / "printer") with their actual owner.
+ */
+
 import { Core } from "@gmloop/core";
 
 const STRING_TYPE = "string" as const;

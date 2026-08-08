@@ -23,6 +23,7 @@ import { buildPrintableDocCommentLines } from "../comments/description-doc.js";
 import { DOC_COMMENT_OUTPUT_FLAG, NUMBER_TYPE } from "./constants.js";
 import { safeGetParentNode } from "./path-utils.js";
 import { concat, hardline, join } from "./prettier-doc-builders.js";
+import { resolveNodeIndexRangeWithSource, resolvePrinterSourceMetadata } from "./source-text.js";
 
 /**
  * Builds and returns the formatted doc-comment block for `node`, ready to be
@@ -30,9 +31,9 @@ import { concat, hardline, join } from "./prettier-doc-builders.js";
  * when the node has no printable doc comments.
  */
 export function printNodeDocComments(node: any, path: any, options: any): any {
-    const sourceMetadata = Core.resolvePrinterSourceMetadata(options);
+    const sourceMetadata = resolvePrinterSourceMetadata(options);
     const { originalText } = sourceMetadata;
-    const { startIndex: nodeStartIndex } = Core.resolveNodeIndexRangeWithSource(node, sourceMetadata);
+    const { startIndex: nodeStartIndex } = resolveNodeIndexRangeWithSource(node, sourceMetadata);
 
     const docCommentDocs: MutableDocCommentLines = Array.isArray(node.docComments)
         ? Core.toMutableArray(node.docComments as string[], { clone: true })

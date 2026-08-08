@@ -4,6 +4,7 @@ import { util } from "prettier";
 import { countTrailingBlankLines, getNextNonWhitespaceCharacter } from "../shared/layout-helpers.js";
 import { DOC_COMMENT_OUTPUT_FLAG, NUMBER_TYPE, STRING_TYPE } from "./constants.js";
 import { safeGetParentNode } from "./path-utils.js";
+import { macroTextHasExplicitTrailingBlankLine } from "./source-text.js";
 import { shouldAddNewlinesAroundStatement, shouldSuppressEmptyLineBetween } from "./statement-spacing-policy.js";
 
 const MIN_VARIABLE_DECLARATIONS_BEFORE_LOOP_PADDING = 4;
@@ -258,7 +259,7 @@ function handleIntermediateTrailingSpacing({
 
     const isSanitizedMacro = node?.type === Core.MACRO_DECLARATION && typeof node._featherMacroText === STRING_TYPE;
     const sanitizedMacroHasExplicitBlankLine =
-        isSanitizedMacro && Core.macroTextHasExplicitTrailingBlankLine(node._featherMacroText);
+        isSanitizedMacro && macroTextHasExplicitTrailingBlankLine(node._featherMacroText);
     const hasAutomaticPaddingCapacity = canForceAutomaticPadding(
         nextLineEmpty,
         shouldSuppressExtraEmptyLine,

@@ -23,6 +23,7 @@ import { printComment, printDanglingComments, printDanglingCommentsAsGroup } fro
 import { MULTIPLICATIVE_BINARY_OPERATORS, STRING_TYPE } from "./constants.js";
 import { safeGetParentNode, safeGetPathName, safeGetPathValue } from "./path-utils.js";
 import { concat, group, hardline, ifBreak, indent, line, lineSuffixBoundary } from "./prettier-doc-builders.js";
+import { hasBlankLineBetweenLastCommentAndClosingBrace, resolvePrinterSourceMetadata } from "./source-text.js";
 import {
     expressionIsStringLike,
     hasLineBreak,
@@ -315,10 +316,10 @@ export function printEmptyBlock(path: any, options: any): any {
     const hasPrintableComments = comments.some(Core.isCommentNode);
 
     if (hasPrintableComments) {
-        const sourceMetadata = Core.resolvePrinterSourceMetadata(options);
+        const sourceMetadata = resolvePrinterSourceMetadata(options);
         const shouldAddTrailingBlankLine =
             sourceMetadata.originalText !== null &&
-            Core.hasBlankLineBetweenLastCommentAndClosingBrace(node, sourceMetadata, sourceMetadata.originalText);
+            hasBlankLineBetweenLastCommentAndClosingBrace(node, sourceMetadata, sourceMetadata.originalText);
 
         const trailingDocs = [hardline, "}"];
         if (shouldAddTrailingBlankLine) {

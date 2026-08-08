@@ -27,6 +27,7 @@ import { Core } from "@gmloop/core";
 import { buildCallArgumentsDocs, countLeadingSimpleCallArguments } from "./delimited-list.js";
 import { printEmptyParens } from "./expression-print-utils.js";
 import { breakParent, concat, conditionalGroup, willBreak } from "./prettier-doc-builders.js";
+import { getOriginalTextFromOptions } from "./source-text.js";
 import { isComplexArgumentNode } from "./type-guards.js";
 
 // ---------------------------------------------------------------------------
@@ -205,7 +206,7 @@ function hasLineBreakBetweenArguments(
         return false;
     }
 
-    const originalText = Core.getOriginalTextFromOptions(options);
+    const originalText = getOriginalTextFromOptions(options);
     if (typeof originalText !== "string") {
         return false;
     }
