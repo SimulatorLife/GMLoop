@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
-      contents: read
+      contents: write
       actions: read
       pull-requests: write
       issues: write
@@ -27,13 +27,13 @@ jobs:
       all_green: ${{ steps.compare.outputs.all_green }}
     steps:
       - name: Checkout trusted default-branch finalizer
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
 
       - name: Resolve PR and independently enforce trust policy
         id: resolve
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           VALIDATION_HEAD: ${{ github.event.workflow_run.head_sha }}
         with:
@@ -44,7 +44,7 @@ jobs:
             let number = run.pull_requests?.[0]?.number;
             if (!number) {
               const associated = await github.rest.repos.listPullRequestsAssociatedWithCommit({ owner, repo, commit_sha: run.head_sha });
-              number = associated.data.find((pr) => pr.state === 'open')?.number;
+              number = associated.data.find((pr) => pr.state === 'open' && pr.base.ref === 'main')?.number;
             }
             if (!number) {
               core.setOutput('current', 'false');
@@ -53,7 +53,7 @@ jobs:
 
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
             core.setOutput('pr_number', String(number));
-            if (pr.state !== 'open' || pr.head.sha !== process.env.VALIDATION_HEAD) {
+            if (pr.state !== 'open' || pr.draft || pr.base.ref !== 'main' || pr.head.sha !== process.env.VALIDATION_HEAD) {
               core.setOutput('current', 'false');
               return;
             }
@@ -73,7 +73,7 @@ jobs:
 
       - name: Download trusted base evidence
         if: ${{ steps.resolve.outputs.current == 'true' && steps.resolve.outputs.trusted_ci_changed != 'true' && github.event.workflow_run.conclusion == 'success' }}
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: report-base
           path: report-base
@@ -82,7 +82,7 @@ jobs:
 
       - name: Download synthetic-merge evidence
         if: ${{ steps.resolve.outputs.current == 'true' && steps.resolve.outputs.trusted_ci_changed != 'true' && github.event.workflow_run.conclusion == 'success' }}
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: report-merge
           path: report-merge
@@ -92,7 +92,7 @@ jobs:
       - name: Verify validation target provenance
         id: provenance
         if: ${{ steps.resolve.outputs.current == 'true' && steps.resolve.outputs.trusted_ci_changed != 'true' && github.event.workflow_run.conclusion == 'success' }}
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           VALIDATED_HEAD: ${{ steps.resolve.outputs.head_sha }}
         with:
@@ -126,23 +126,34 @@ jobs:
             core.setOutput('base_sha', baseSha);
             core.setOutput('merge_sha', mergeSha);
 
-      - uses: pnpm/action-setup@v6
+      - name: Reconcile stale base before report comparison
+        id: freshness
         if: ${{ steps.provenance.outputs.base_sha != '' }}
+        uses: ./.github/actions/reconcile-automerge
+        with:
+          pr-number: ${{ steps.resolve.outputs.pr_number }}
+          validated-head: ${{ steps.resolve.outputs.head_sha }}
+          validated-base: ${{ steps.provenance.outputs.base_sha }}
+          allow-merge: "false"
+          source: "trusted-finalizer-preflight"
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        if: ${{ steps.freshness.outputs.status == 'current' }}
         with:
           cache: true
-      - uses: actions/setup-node@v6
-        if: ${{ steps.provenance.outputs.base_sha != '' }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        if: ${{ steps.freshness.outputs.status == 'current' }}
         with:
           node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - name: Install trusted finalizer dependencies
-        if: ${{ steps.provenance.outputs.base_sha != '' }}
+        if: ${{ steps.freshness.outputs.status == 'current' }}
         run: pnpm install --frozen-lockfile --recursive --force
 
       - name: Validate and compare with trusted default-branch code
         id: compare
-        if: ${{ steps.provenance.outputs.base_sha != '' }}
+        if: ${{ steps.freshness.outputs.status == 'current' }}
         shell: bash
         env:
           BASE_SHA: ${{ steps.provenance.outputs.base_sha }}
@@ -186,8 +197,7 @@ jobs:
             exit 0
           fi
 
-          pnpm exec tsc -b src/cli/tsconfig.json
-          if [ "$?" -ne 0 ]; then
+          if ! pnpm exec tsc -b src/cli/tsconfig.json; then
             echo "all_green=false" >> "$GITHUB_OUTPUT"
             echo "status=failure" >> "$GITHUB_OUTPUT"
             exit 0
@@ -283,19 +293,28 @@ jobs:
 
       - name: Publish trusted quality summary
         if: ${{ steps.resolve.outputs.pr_number != '' && steps.resolve.outputs.current == 'true' }}
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
           TRUSTED_CI_CHANGED: ${{ steps.resolve.outputs.trusted_ci_changed }}
           VALIDATION_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          VALIDATED_HEAD: ${{ steps.resolve.outputs.head_sha }}
+          VALIDATED_BASE: ${{ steps.provenance.outputs.base_sha }}
+          ALL_GREEN: ${{ steps.compare.outputs.all_green }}
+          QUALITY_STATUS: ${{ steps.compare.outputs.status }}
+          RECONCILE_STATUS: ${{ steps.freshness.outputs.status }}
         with:
           script: |
             const fs = require('node:fs');
             const { owner, repo } = context.repo;
             const number = Number(process.env.PR_NUMBER);
             const marker = '<!-- automerge-pr-test-summary -->';
+            const trusted = process.env.TRUSTED_CI_CHANGED !== 'true';
+            const green = trusted && process.env.ALL_GREEN === 'true' && process.env.RECONCILE_STATUS === 'current' && process.env.VALIDATION_CONCLUSION === 'success';
+            const state = process.env.QUALITY_STATUS || process.env.RECONCILE_STATUS || 'not-evaluated';
+            const stateMarker = `<!-- automerge-trusted-state head=${process.env.VALIDATED_HEAD || ''} base=${process.env.VALIDATED_BASE || ''} green=${green ? 'true' : 'false'} trust=${trusted ? 'true' : 'false'} status=${state} -->`;
             let body;
-            if (process.env.TRUSTED_CI_CHANGED === 'true') {
+            if (!trusted) {
               body = [
                 marker,
                 '### Quality Report Summary',
@@ -306,13 +325,19 @@ jobs:
               ].join('\n');
             } else if (process.env.VALIDATION_CONCLUSION !== 'success') {
               body = [marker, '### Quality Report Summary', '', `❌ Validation workflow concluded with **${process.env.VALIDATION_CONCLUSION}**. Auto-merge is blocked.`].join('\n');
+            } else if (process.env.RECONCILE_STATUS === 'synchronized') {
+              body = [marker, '### Quality Report Summary', '', '🔄 `main` advanced after this validation completed. The PR branch was synchronized and fresh validation is required before merge.'].join('\n');
+            } else if (process.env.RECONCILE_STATUS === 'sync-failed') {
+              body = [marker, '### Quality Report Summary', '', '⚠️ `main` advanced after this validation completed, but automatic branch synchronization failed. The periodic reconciler will retry.'].join('\n');
             } else if (fs.existsSync('reports/summary-report.md')) {
               body = fs.readFileSync('reports/summary-report.md', 'utf8');
             } else {
               body = [marker, '### Quality Report Summary', '', '❌ Trusted report comparison could not be completed.'].join('\n');
             }
+            if (!body.includes(marker)) body = `${marker}\n${body}`;
+            body = body.replace(marker, `${marker}\n${stateMarker}`);
             const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
-            const existing = comments.find((comment) => comment.body?.includes(marker));
+            const existing = comments.find((comment) => comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker));
             if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
             else await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
 
@@ -326,7 +351,7 @@ jobs:
 
       - name: Request Agent help for lint errors
         if: ${{ steps.compare.outputs.status == 'lint_errors' && steps.agent_token.outputs.available == 'true' }}
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
@@ -345,7 +370,7 @@ jobs:
 
       - name: Request Agent help for build failures
         if: ${{ steps.compare.outputs.status == 'build_failure' && steps.agent_token.outputs.available == 'true' }}
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
@@ -364,7 +389,7 @@ jobs:
 
       - name: Request Agent help for regressions
         if: ${{ steps.compare.outputs.status == 'regressions' && steps.agent_token.outputs.available == 'true' }}
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
@@ -416,63 +441,17 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      issues: write
     steps:
-      - name: Revalidate live refs and merge or request synchronization
-        id: merge
-        uses: actions/github-script@v8
-        env:
-          PR_NUMBER: ${{ needs.analyze.outputs.pr_number }}
-          VALIDATED_HEAD: ${{ needs.analyze.outputs.validated_head }}
-          VALIDATED_BASE: ${{ needs.analyze.outputs.validated_base }}
+      - name: Checkout trusted default branch
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          script: |
-            const { owner, repo } = context.repo;
-            const number = Number(process.env.PR_NUMBER);
-            const validatedHead = process.env.VALIDATED_HEAD;
-            const validatedBase = process.env.VALIDATED_BASE;
-            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
-            if (pr.state !== 'open' || pr.draft || pr.head.sha !== validatedHead) {
-              core.setOutput('merged', 'false');
-              return;
-            }
-            const { data: baseBranch } = await github.rest.repos.getBranch({ owner, repo, branch: pr.base.ref });
-            const liveBase = baseBranch.commit.sha;
-            const state = String(pr.mergeable_state || '').toLowerCase();
-            if (liveBase !== validatedBase || state === 'behind') {
-              try {
-                await github.rest.pulls.updateBranch({ owner, repo, pull_number: number, expected_head_sha: validatedHead });
-                core.notice(`Updated PR #${number} from ${pr.base.ref}; a fresh synchronize validation is required.`);
-              } catch (error) {
-                core.warning(`Unable to update PR #${number}: ${error.message}`);
-              }
-              core.setOutput('merged', 'false');
-              return;
-            }
-            if (pr.mergeable !== true || state === 'dirty' || state === 'unknown') {
-              core.setOutput('merged', 'false');
-              return;
-            }
-            const response = await github.rest.pulls.merge({ owner, repo, pull_number: number, merge_method: 'squash', sha: validatedHead });
-            core.setOutput('merged', response.data.merged ? 'true' : 'false');
-
-      - name: Delete same-repository head branch after merge
-        if: ${{ steps.merge.outputs.merged == 'true' }}
-        uses: actions/github-script@v8
-        env:
-          PR_NUMBER: ${{ needs.analyze.outputs.pr_number }}
+          persist-credentials: false
+      - name: Merge, synchronize, or schedule a retry
+        uses: ./.github/actions/reconcile-automerge
         with:
-          script: |
-            const { owner, repo } = context.repo;
-            const number = Number(process.env.PR_NUMBER);
-            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
-            const headRef = pr.head?.ref;
-            const headRepo = pr.head?.repo?.full_name?.toLowerCase() || '';
-            const thisRepo = `${owner}/${repo}`.toLowerCase();
-            if (!headRef || headRepo !== thisRepo) return;
-            const { data: repoInfo } = await github.rest.repos.get({ owner, repo });
-            if (headRef === repoInfo.default_branch) return;
-            try {
-              await github.rest.git.deleteRef({ owner, repo, ref: `heads/${headRef}` });
-            } catch (error) {
-              core.warning(`Unable to delete ${headRef}: ${error.message}`);
-            }
+          pr-number: ${{ needs.analyze.outputs.pr_number }}
+          validated-head: ${{ needs.analyze.outputs.validated_head }}
+          validated-base: ${{ needs.analyze.outputs.validated_base }}
+          allow-merge: "true"
+          source: "trusted-finalizer"

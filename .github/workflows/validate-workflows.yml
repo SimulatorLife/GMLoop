@@ -1,0 +1,48 @@
+name: "Validate GitHub workflows"
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/**"
+      - ".github/actions/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-workflows-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout workflow sources
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Validate workflow YAML and expressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="actionlint_1.7.12_linux_amd64.tar.gz"
+          curl --fail --silent --show-error --location \
+            --proto '=https' --tlsv1.2 \
+            "https://github.com/rhysd/actionlint/releases/download/v1.7.12/${archive}" \
+            --output "$archive"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  ${archive}" | sha256sum --check --strict
+          tar -xzf "$archive" actionlint
+          # Shell style is enforced elsewhere. This check is deliberately
+          # focused on workflow YAML, expressions, job dependencies, and
+          # action input/schema mistakes so unrelated historical ShellCheck
+          # warnings cannot disable trusted-CI validation.
+          ./actionlint -shellcheck= -color
+      - name: Parse local composite action YAML
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruby -e 'require "yaml"; Dir[".github/actions/**/action.{yml,yaml}"].sort.each { |file| YAML.safe_load(File.read(file), aliases: true); puts "validated #{file}" }'
