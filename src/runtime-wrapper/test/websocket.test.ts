@@ -1629,7 +1629,7 @@ void test("WebSocket client tracks connection errors in metrics", async () => {
     }
 });
 
-void test("WebSocket client clears timers on error to prevent leaks", async () => {
+void test("WebSocket client schedules exactly one reconnect and clears readiness timers on error", async () => {
     globalWithWebSocket.WebSocket = MockWebSocket;
 
     const originalSetTimeout = globalThis.setTimeout;
@@ -1706,10 +1706,13 @@ void test("WebSocket client clears timers on error to prevent leaks", async () =
         const unclearedTimers = [...trackedTimers.values()].filter((t) => !t.cleared);
         const unclearedIntervals = [...trackedIntervals.values()].filter((i) => !i.cleared);
 
+        // An error closes the socket and lets the "close" handler schedule a
+        // single reconnect attempt; that timer is legitimately still pending
+        // (not a leak) until it either fires or `disconnect()` cancels it.
         assert.strictEqual(
             unclearedTimers.length,
-            0,
-            "reconnectTimer should be cleared when error fires (no dangling setTimeout)"
+            1,
+            "exactly one reconnect timer should be pending after error triggers reconnect scheduling"
         );
         assert.strictEqual(
             unclearedIntervals.length,
