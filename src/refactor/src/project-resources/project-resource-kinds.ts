@@ -8,6 +8,7 @@ export const ProjectResourceKind = Object.freeze({
     OBJECT: "object",
     ROOM: "room",
     SCRIPT: "script",
+    SOUND: "sound",
     SPRITE: "sprite"
 });
 

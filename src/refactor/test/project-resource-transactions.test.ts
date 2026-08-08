@@ -114,6 +114,52 @@ void test("addProjectResource creates sprite metadata plus frame and layer png p
     }
 });
 
+void test("addProjectResource creates sound metadata plus a silent wav placeholder, and rename/remove follow it", async () => {
+    const projectRoot = await createTemporaryProjectRoot();
+
+    try {
+        const addResult = await addProjectResource({
+            dryRun: false,
+            projectRoot,
+            resourceKind: ProjectResourceKind.SOUND,
+            resourceName: "snd_coin"
+        });
+
+        assert.equal(addResult.resourcePath, "sounds/snd_coin/snd_coin.yy");
+
+        const soundMetadataPath = path.join(projectRoot, "sounds/snd_coin/snd_coin.yy");
+        const soundMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(soundMetadataPath, "utf8"),
+            soundMetadataPath
+        ).document;
+        assert.equal(soundMetadata.resourceType, "GMSound");
+        assert.equal(soundMetadata.soundFile, "snd_coin.wav");
+
+        await assert.doesNotReject(access(path.join(projectRoot, "sounds/snd_coin/snd_coin.wav")));
+
+        const renameResult = await renameProjectResource({
+            dryRun: false,
+            newResourceName: "snd_pickup",
+            projectRoot,
+            resourceKind: ProjectResourceKind.SOUND,
+            resourceName: "snd_coin"
+        });
+        assert.equal(renameResult.resourcePath, "sounds/snd_pickup/snd_pickup.yy");
+        await assert.doesNotReject(access(path.join(projectRoot, "sounds/snd_pickup/snd_coin.wav")));
+
+        const removeResult = await removeProjectResource({
+            dryRun: false,
+            projectRoot,
+            resourceKind: ProjectResourceKind.SOUND,
+            resourceName: "snd_pickup"
+        });
+        assert.deepEqual(removeResult.deletedPaths, ["sounds/snd_pickup"]);
+        await assert.rejects(access(path.join(projectRoot, "sounds/snd_pickup")));
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
 void test("removeProjectResource removes the manifest entry and canonical resource directory", async () => {
     const projectRoot = await createTemporaryProjectRoot();
 
