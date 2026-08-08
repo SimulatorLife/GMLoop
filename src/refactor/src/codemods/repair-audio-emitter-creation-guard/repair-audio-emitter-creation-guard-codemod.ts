@@ -1,6 +1,6 @@
 import { Core } from "@gmloop/core";
-import { Parser } from "@gmloop/parser";
 
+import { defaultGmlProgramParser } from "../../parser-adapter.js";
 import type { RepairAudioEmitterCreationGuardResult } from "../../types.js";
 import {
     type CodemodAstRecord,
@@ -88,7 +88,7 @@ export function applyRepairAudioEmitterCreationGuardCodemod(sourceText: string):
 
     let programNode: unknown;
     try {
-        programNode = Parser.GMLParser.parse(sourceText);
+        programNode = defaultGmlProgramParser(sourceText);
     } catch {
         return Object.freeze({ changed: false, outputText: sourceText, appliedEdits: Object.freeze([]) });
     }

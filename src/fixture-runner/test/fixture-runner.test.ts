@@ -575,6 +575,10 @@ void test("runFixtureSuite continues collecting failures for profiling mode", as
         assert.equal(result.executionResults.length, 1);
         assert.equal(result.failures.length, 1);
         assert.equal(result.failures[0]?.fixtureCase.caseId, "failing");
+        const failure = result.failures[0]?.error;
+        assert.ok(failure instanceof Error);
+        assert.match(failure.message, /Fixture failing failed in format: /u);
+        assert.ok(failure.cause instanceof Error);
         const report = collector.createReport();
         assert.equal(report.entries.length, 2);
         assert.equal(

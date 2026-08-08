@@ -6,6 +6,7 @@ import { describe, it, test } from "node:test";
 
 import { Core } from "@gmloop/core";
 
+import { FIXTURE_COMPARISONS } from "../config/index.js";
 import { discoverFixtureCases } from "../discovery/index.js";
 import {
     collectBudgetFailures,
@@ -33,7 +34,9 @@ type DirectoryComparisonStats = Readonly<{
 
 /**
  * Compare two fixture directories by path and UTF-8 file content while keeping
- * in-memory file buffering bounded to one pair of files at a time.
+ * in-memory file buffering bounded to one pair of files at a time. Equality
+ * checks use Node's strict assertion methods so fixture matching never coerces
+ * values.
  *
  * @param actualDirectoryPath Produced fixture output directory.
  * @param expectedDirectoryPath Golden expected fixture directory.
@@ -69,7 +72,7 @@ export async function compareDirectoryTrees(
             readFile(path.join(actualDirectoryPath, relativePath), "utf8"),
             readFile(path.join(expectedDirectoryPath, relativePath), "utf8")
         ]);
-        assert.equal(actualText, expectedText, `Project tree file "${relativePath}" must match expected text.`);
+        assert.strictEqual(actualText, expectedText, `Project tree file "${relativePath}" must match expected text.`);
         return 1 + (await compareNextFile(nextIndex + 1));
     }
 
@@ -82,11 +85,17 @@ export async function compareDirectoryTrees(
 }
 
 function canonicalizeFixtureText(text: string, comparison: FixtureComparison): string {
-    if (comparison === "ignore-whitespace-and-line-endings") {
-        return text.replaceAll(/\r\n?/gu, "\n").replaceAll(/\s+/gu, "");
+    switch (comparison) {
+        case FIXTURE_COMPARISONS.IGNORE_WHITESPACE_AND_LINE_ENDINGS: {
+            return text.replaceAll(/\r\n?/gu, "\n").replaceAll(/\s+/gu, "");
+        }
+        case FIXTURE_COMPARISONS.EXACT: {
+            return text;
+        }
+        default: {
+            throw new TypeError(`Unsupported fixture comparison mode: ${String(comparison)}`);
+        }
     }
-
-    return text;
 }
 
 async function compareFixtureCaseResult(
@@ -99,12 +108,12 @@ async function compareFixtureCaseResult(
     }
 
     if (fixtureCase.assertion === "project-tree") {
-        assert.equal(
+        assert.strictEqual(
             caseResult.resultKind,
             "project-tree",
             `Fixture ${fixtureCase.caseId} must return a project-tree result.`
         );
-        assert.notEqual(
+        assert.notStrictEqual(
             fixtureCase.expectedDirectoryPath,
             null,
             `Fixture ${fixtureCase.caseId} is missing expected/ directory.`
@@ -113,7 +122,7 @@ async function compareFixtureCaseResult(
         return;
     }
 
-    assert.equal(caseResult.resultKind, "text", `Fixture ${fixtureCase.caseId} must return a text result.`);
+    assert.strictEqual(caseResult.resultKind, "text", `Fixture ${fixtureCase.caseId} must return a text result.`);
     const expectedText =
         fixtureCase.assertion === "idempotent"
             ? (inputText ?? "")
@@ -121,10 +130,10 @@ async function compareFixtureCaseResult(
     const actualOutput = canonicalizeFixtureText(caseResult.outputText, fixtureCase.comparison);
     const canonicalExpected = canonicalizeFixtureText(expectedText, fixtureCase.comparison);
 
-    assert.equal(
+    assert.strictEqual(
         actualOutput,
         canonicalExpected,
-        fixtureCase.comparison === "exact"
+        fixtureCase.comparison === FIXTURE_COMPARISONS.EXACT
             ? `${fixtureCase.caseId} output must match expected text byte-for-byte.`
             : `${fixtureCase.caseId} output must match expected text for comparison mode ${fixtureCase.comparison}.`
     );
@@ -256,7 +265,7 @@ async function executeFixtureCase(
             stageTimer.getStages()
         );
         profileCollector.addEntry(profileEntry);
-        throw error;
+        throw Core.toContextualError(`Fixture ${fixtureCase.caseId} failed in ${adapter.workspaceName}`, error);
     } finally {
         if (workingProjectDirectoryPath !== null) {
             await rm(workingProjectDirectoryPath, { recursive: true, force: true });
@@ -360,7 +369,7 @@ export async function registerNodeFixtureSuite(parameters: {
     const fixtureCases = await discoverFixtureCases(parameters.fixtureRoot);
 
     void test(`${parameters.adapter.suiteName} discovers fixture cases`, () => {
-        assert.equal(
+        assert.strictEqual(
             fixtureCases.length > 0,
             true,
             `Expected at least one fixture for ${parameters.adapter.suiteName}.`

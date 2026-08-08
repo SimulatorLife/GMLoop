@@ -267,3 +267,94 @@ void test("applyDivisionToMultiplication recurses into nested divisions", () => 
     assert.strictEqual(ast.left.right.value, "0.5");
     assert.strictEqual(ast.right.value, "0.25");
 });
+
+void test("applyDivisionToMultiplication treats near-1 reciprocal numerators as one", () => {
+    // Regression coverage for the floating-point equality fix at
+    // `math-division-to-multiplication.ts` (the `extractReciprocalScalar`
+    // helper). The previous `Math.abs(numeratorValue - 1) > Number.EPSILON`
+    // check rejected numerator literals whose value differed from 1 by more
+    // than a single ulp, so the `value / (1.0000000000000004 / 2)` pattern
+    // silently escaped the rewrite and the original division chain survived
+    // the lint pass. The shared `Core.areNumbersApproximatelyEqual` helper
+    // scales the tolerance to the magnitude of the operands, so values like
+    // 1.0000000000000004 (1 + 2*Number.EPSILON) and 0.9999999999999998
+    // (1 - 2*Number.EPSILON) are still recognised as effectively one and
+    // the reciprocal-division rewrite fires through the same tolerance
+    // window as the rest of the optimize-math-expressions pipeline.
+    //
+    // The two picked literals are intentionally placed on both sides of 1
+    // so the regression guards against an off-by-one fix that only handles
+    // the positive direction. The inner denominator is `2` so the
+    // reciprocal rewrites into a non-scientific literal (`2` regardless of
+    // whether the numerator sits above or below 1) and
+    // `formatMultiplierLiteral` accepts the result. If the helper were
+    // ever swapped back to a bare `Number.EPSILON` comparison, both
+    // assertions would flake because the candidate AST node would no longer
+    // be detected as a reciprocal pattern and the outer division would
+    // remain `/` instead of flipping to `*`.
+    const positiveNearOne: any = {
+        type: "BinaryExpression",
+        operator: "/",
+        left: { type: "Identifier", name: "value" },
+        right: {
+            type: "BinaryExpression",
+            operator: "/",
+            left: { type: "Literal", value: "1.0000000000000004" },
+            right: { type: "Literal", value: "2" }
+        }
+    };
+
+    applyDivisionToMultiplication(positiveNearOne);
+
+    assert.strictEqual(positiveNearOne.operator, "*");
+    assert.strictEqual(positiveNearOne.right.value, "2");
+
+    const negativeNearOne: any = {
+        type: "BinaryExpression",
+        operator: "/",
+        left: { type: "Identifier", name: "value" },
+        right: {
+            type: "BinaryExpression",
+            operator: "/",
+            left: { type: "Literal", value: "0.9999999999999998" },
+            right: { type: "Literal", value: "2" }
+        }
+    };
+
+    applyDivisionToMultiplication(negativeNearOne);
+
+    assert.strictEqual(negativeNearOne.operator, "*");
+    assert.strictEqual(negativeNearOne.right.value, "2");
+});
+
+void test("applyDivisionToMultiplication rejects reciprocal numerators outside the tolerance window", () => {
+    // Make sure the tolerance is not so wide that the rewrite fires for
+    // numerator literals that are clearly not 1. `1.5` differs from 1 by
+    // half a unit, which is several orders of magnitude beyond the
+    // 4 * Number.EPSILON * scale window that `areNumbersApproximatelyEqual`
+    // uses around magnitude 1, so the outer division-by-reciprocal rewrite
+    // must leave the source alone. (The inner denominator `2` is still
+    // rewritten as a standalone multiplication because the reciprocal rule
+    // fires regardless of its parent's numerator, which is the desired
+    // behaviour.)
+    const ast: any = {
+        type: "BinaryExpression",
+        operator: "/",
+        left: { type: "Identifier", name: "value" },
+        right: {
+            type: "BinaryExpression",
+            operator: "/",
+            left: { type: "Literal", value: "1.5" },
+            right: { type: "Literal", value: "2" }
+        }
+    };
+
+    applyDivisionToMultiplication(ast);
+
+    assert.strictEqual(ast.operator, "/");
+    // The outer right was originally a `1.5 / 2` BinaryExpression. Its
+    // right-hand Literal `2` flips to `0.5`, but the parent must remain a
+    // division because the numerator is clearly not within tolerance of 1.
+    assert.strictEqual(ast.right.operator, "*");
+    assert.strictEqual(ast.right.right.value, "0.5");
+});

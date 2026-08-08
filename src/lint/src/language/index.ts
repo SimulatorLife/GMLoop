@@ -7,3 +7,9 @@ export {
     INSERTED_ARGUMENT_SEPARATOR_KIND,
     mapRecoveredIndexToOriginal
 } from "./recovery.js";
+export type { RegionDirectiveType, RegionSourceLine } from "./region-directives.js";
+export {
+    collectRegionSourceLines,
+    readRegionDirectiveType,
+    resolveRegionDirectiveLineEnding
+} from "./region-directives.js";

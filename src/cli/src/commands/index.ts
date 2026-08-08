@@ -4,7 +4,7 @@ export * from "./format.js";
 export * from "./generate-feather-metadata.js";
 export * from "./generate-gml-identifiers.js";
 export * from "./generate-quality-report.js";
-export * from "./graph.js";
+export * from "./graph/index.js";
 export * from "./lint.js";
 export * from "./live-reload.js";
 export * from "./lsp.js";

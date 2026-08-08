@@ -71,10 +71,6 @@ import {
     transpileFile,
     type TranspilerProvider
 } from "../modules/transpilation/index.js";
-import {
-    getRuntimePathSegments,
-    resolveScriptFileNameFromSegments
-} from "../modules/transpilation/runtime-identifiers.js";
 import { type PatchWebSocketServer, startPatchWebSocketServer } from "../modules/websocket/server.js";
 import {
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_COUNT,
@@ -100,7 +96,9 @@ import {
     computeHotReloadLatencyStats,
     countSourceLines,
     createExtensionMatcher,
+    ensureScriptNameRegistered,
     type ExtensionMatcher,
+    getScriptNameFromPath,
     hashSourceContent,
     type InitialFileData,
     readSourceFileWithTransientEmptyRetry,
@@ -127,10 +125,12 @@ function yieldToEventLoop(): Promise<void> {
     });
 }
 
+type WatchEventListener = (...args: Parameters<WatchListener<string>>) => void | Promise<void>;
+
 type WatchFactory = (
     path: string,
     options?: WatchOptions | BufferEncoding | "buffer",
-    listener?: WatchListener<string>
+    listener?: WatchEventListener
 ) => FSWatcher;
 
 /**
@@ -361,6 +361,8 @@ interface RuntimeContext
      * not have to plumb the `(verbose, quiet)` pair through every helper.
      */
     verboseOutputEnabled: boolean;
+    /** Raw `verbose` flag forwarded to helper code that needs the unfiltered signal (not gated by `quiet`). */
+    verbose: boolean;
     /** Raw `quiet` flag forwarded to helper code that needs to suppress normal logging. */
     quiet: boolean;
 }
@@ -971,6 +973,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         resourcePatches: new Map(),
         dependencyTracker,
         verboseOutputEnabled: verbose && !quiet,
+        verbose,
         quiet,
         transientEmptyFileReadRetryCount,
         transientEmptyFileReadRetryDelayMs
@@ -1290,18 +1293,14 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                     }
 
                     pollingIntervalHandle = setInterval(() => {
-                        scheduleUnknownFileChanges(
-                            runtimeContext,
-                            verbose,
-                            quiet,
-                            internalAbortController.signal,
-                            Date.now()
-                        ).catch((error) => {
-                            const message = getErrorMessage(error, {
-                                fallback: "Unknown polling scan error"
-                            });
-                            console.error(`Error during polling scan: ${message}`);
-                        });
+                        scheduleUnknownFileChanges(runtimeContext, internalAbortController.signal, Date.now()).catch(
+                            (error) => {
+                                const message = getErrorMessage(error, {
+                                    fallback: "Unknown polling scan error"
+                                });
+                                console.error(`Error during polling scan: ${message}`);
+                            }
+                        );
                     }, pollingInterval);
                     pollingIntervalHandle.unref();
                     return null;
@@ -1396,8 +1395,6 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                         const triggerUnknown = () =>
                             scheduleUnknownFileChanges(
                                 runtimeContext,
-                                verbose,
-                                quiet,
                                 internalAbortController.signal,
                                 fileChangeDetectedAt
                             ).catch((error) => {
@@ -1442,7 +1439,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                     }
 
                     if (debounceDelay === 0) {
-                        handleFileChange(fullPath, eventType, {
+                        return handleFileChange(fullPath, eventType, {
                             verbose,
                             quiet,
                             runtimeContext,
@@ -1688,8 +1685,6 @@ async function processRemovedWatchedFile(
 
 async function handleUnknownFileChanges(
     runtimeContext: RuntimeContext,
-    verbose: boolean,
-    quiet: boolean,
     abortSignal: AbortSignal | undefined,
     fileChangeDetectedAt: number
 ): Promise<void> {
@@ -1746,8 +1741,8 @@ async function handleUnknownFileChanges(
         pendingChanges,
         async (entry) => {
             await handleFileChange(entry.filePath, entry.eventType, {
-                verbose,
-                quiet,
+                verbose: runtimeContext.verbose,
+                quiet: runtimeContext.quiet,
                 runtimeContext,
                 fileStats: entry.stats,
                 abortSignal,
@@ -1758,27 +1753,20 @@ async function handleUnknownFileChanges(
     );
 }
 
-function processQueuedUnknownFileChanges(
-    runtimeContext: RuntimeContext,
-    verbose: boolean,
-    quiet: boolean,
-    abortSignal?: AbortSignal
-): Promise<void> {
+function processQueuedUnknownFileChanges(runtimeContext: RuntimeContext, abortSignal?: AbortSignal): Promise<void> {
     runtimeContext.unknownScanQueued = false;
     const fileChangeDetectedAt = runtimeContext.unknownScanDetectedAt ?? Date.now();
     runtimeContext.unknownScanDetectedAt = null;
 
-    return handleUnknownFileChanges(runtimeContext, verbose, quiet, abortSignal, fileChangeDetectedAt).then(() =>
+    return handleUnknownFileChanges(runtimeContext, abortSignal, fileChangeDetectedAt).then(() =>
         runtimeContext.unknownScanQueued
-            ? processQueuedUnknownFileChanges(runtimeContext, verbose, quiet, abortSignal)
+            ? processQueuedUnknownFileChanges(runtimeContext, abortSignal)
             : Promise.resolve()
     );
 }
 
 function scheduleUnknownFileChanges(
     runtimeContext: RuntimeContext,
-    verbose: boolean,
-    quiet: boolean,
     abortSignal?: AbortSignal,
     fileChangeDetectedAt: number = Date.now()
 ): Promise<void> {
@@ -1798,11 +1786,9 @@ function scheduleUnknownFileChanges(
         return runtimeContext.unknownScanPromise;
     }
 
-    const unknownScanPromise = processQueuedUnknownFileChanges(runtimeContext, verbose, quiet, abortSignal).finally(
-        () => {
-            runtimeContext.unknownScanPromise = null;
-        }
-    );
+    const unknownScanPromise = processQueuedUnknownFileChanges(runtimeContext, abortSignal).finally(() => {
+        runtimeContext.unknownScanPromise = null;
+    });
 
     runtimeContext.unknownScanPromise = unknownScanPromise;
     return unknownScanPromise;
@@ -1847,18 +1833,6 @@ async function readFileStats(filePath: string): Promise<Stats | null> {
         return await stat(filePath);
     } catch {
         return null;
-    }
-}
-
-function getScriptNameFromPath(filePath: string): string | null {
-    const segments = getRuntimePathSegments(filePath);
-    return resolveScriptFileNameFromSegments(segments);
-}
-
-function ensureScriptNameRegistered(filePath: string, scriptNames: Set<string>): void {
-    const scriptName = getScriptNameFromPath(filePath);
-    if (scriptName) {
-        scriptNames.add(scriptName);
     }
 }
 

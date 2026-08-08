@@ -1,9 +1,9 @@
-import type { RuntimeFunction, RuntimeWrapper } from "./types.js";
+import type { RegistryReader, RuntimeFunction } from "./types.js";
 
 type RuntimeCallScript = (id: string, self: unknown, other: unknown, args: Array<unknown>) => unknown;
 
 interface HotRuntimeScope {
-    wrapper?: RuntimeWrapper;
+    wrapper?: RegistryReader;
     getScript?: (id: string) => RuntimeFunction | undefined;
     callScript?: RuntimeCallScript;
 }
@@ -21,8 +21,13 @@ const SCRIPT_NOT_FOUND = (id: string) => `[hot-reload] script not found: ${id}`;
  * script calls are routed through the runtime wrapper. The helper falls back to
  * any previously installed dispatcher if the targeted script has not yet been
  * patched.
+ *
+ * Only reads `getScript`, so it depends on {@link RegistryReader} rather than
+ * the full `RuntimeWrapper` composite — keeping this adapter decoupled from
+ * patch application, undo, history, mutation, metrics, diagnostics, and
+ * error-analytics capabilities it never uses.
  */
-export function installScriptCallAdapter(wrapper: RuntimeWrapper): void {
+export function installScriptCallAdapter(wrapper: RegistryReader): void {
     const globalScope = globalThis as HotRuntimeGlobals;
     const originalCallScript = globalScope.__hot_call_script_original ?? globalScope.__call_script;
     const fallbackCallScript = typeof originalCallScript === "function" ? originalCallScript : undefined;
