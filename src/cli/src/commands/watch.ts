@@ -298,7 +298,6 @@ interface RuntimePackageInfo {
     packageName: string | null;
     packageJson: Record<string, unknown> | null;
     server: RuntimeStaticServerHandle | null;
-    noticeLogged: boolean;
 }
 
 /**
@@ -1225,7 +1224,6 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         packageName: null,
         packageJson: null,
         server: null,
-        noticeLogged: Boolean(verbose),
         transpiler,
         scriptNames,
         macroDefinitionsBySourcePath,
@@ -1711,11 +1709,6 @@ async function handleFileChange(
             });
         }
         return;
-    }
-
-    if (verbose && runtimeContext?.root && !runtimeContext.noticeLogged) {
-        console.log(`Runtime target: ${runtimeContext.root}`);
-        runtimeContext.noticeLogged = true;
     }
 
     // File was created, deleted, or renamed. On some platforms (notably macOS)
