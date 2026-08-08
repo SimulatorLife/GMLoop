@@ -2,20 +2,18 @@
  * Built-in GML identifier metadata loader.
  *
  * Lives in the `symbols` namespace because the cached identifier set is
- * consumed by the SCIP symbol-building path. Previously this module imported
- * `createProjectIndexAbortGuard` and the `ProjectIndexFsFacade` type alias
- * from `../project-index/`, which is what produced the
- * `project-index` ↔ `symbols` cycle (the `project-index/builder.ts` imports
- * `loadBuiltInIdentifiers` from here). Both helpers are thin wrappers over
- * `Core` primitives with no project-index–specific behavior, so depending on
- * `Core` directly keeps the dependency arrow one-way and breaks the cycle.
+ * consumed by the SCIP symbol-building path. The module depends on `Core`
+ * primitives directly so the `project-index` ↔ `symbols` dependency arrow
+ * stays one-way (the `project-index/builder.ts` imports
+ * `loadBuiltInIdentifiers` from here).
  */
 import { Core, type FsFacade } from "@gmloop/core";
 
-/** Default abort message preserved for backwards compatibility with callers
- * that exercise the abort path through the previous
- * `createProjectIndexAbortGuard` wrapper. */
-const BUILT_IN_IDENTIFIERS_ABORT_MESSAGE = "Project index build was aborted.";
+/** Canonical abort message for the built-in identifier loader. The symbols
+ * module owns this message because it is the single authority over its own
+ * long-running IO; the project-index layer surfaces its own messages
+ * independently. */
+const LOAD_BUILT_IN_IDENTIFIERS_ABORT_MESSAGE = "Project index build was aborted.";
 
 export interface MetricsCacheTools {
     caches?: {
@@ -84,15 +82,11 @@ function areMtimesEquivalent(cachedMtime: number | null, currentMtime: number | 
 export function loadBuiltInIdentifiers(
     fsFacade: Required<Pick<FsFacade, "readFile" | "stat">> = Core.defaultFsFacade as Required<FsFacade>,
     metrics: MetricsCacheTools | null = null,
-    options: Record<string, unknown> = {}
+    options: Parameters<typeof Core.createAbortGuard>[0] = {}
 ) {
-    const { fallbackMessage, ...guardOptions } = options ?? {};
-    const resolvedFallbackMessage =
-        (fallbackMessage as string | null | undefined) ?? BUILT_IN_IDENTIFIERS_ABORT_MESSAGE;
-
     return Promise.resolve().then(() => {
-        const { signal, ensureNotAborted } = Core.createAbortGuard(guardOptions, {
-            fallbackMessage: resolvedFallbackMessage
+        const { signal, ensureNotAborted } = Core.createAbortGuard(options, {
+            fallbackMessage: LOAD_BUILT_IN_IDENTIFIERS_ABORT_MESSAGE
         });
 
         return Core.getFileMtime(fsFacade, GML_IDENTIFIER_FILE_PATH, { signal }).then((currentMtime) => {

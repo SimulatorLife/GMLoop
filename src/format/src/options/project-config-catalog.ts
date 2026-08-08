@@ -38,13 +38,13 @@ export function createProjectFormatOptionCatalog(
         Object.freeze({
             defaultValue: false,
             description:
-                "Keep `if`, `for`, and similar braced control-flow blocks on one line only when the full statement is short and comment-free.",
+                "Allow short, comment-free braced control-flow blocks to stay on one line when the complete statement fits within `printWidth` (for example, `if (condition) { return; }`). When disabled, control-flow blocks always expand across multiple lines.",
             name: "allowInlineControlFlowBlocks"
         }),
         Object.freeze({
             defaultValue: 0,
             description:
-                "Buffer (in characters) added to the inline-length estimate for control-flow blocks before it is compared to `printWidth`. Positive values make the formatter more conservative (requires additional headroom before a block is kept inline); negative values make it more aggressive (allows the inline form to exceed `printWidth` by the configured amount). Has no effect when `allowInlineControlFlowBlocks` is `false`.",
+                "Buffer (in characters) added to the inline-length estimate for control-flow blocks before it is compared to `printWidth`. Positive values make the formatter more conservative (require additional headroom before a block is kept inline); negative values make it more aggressive (allow the inline form to exceed `printWidth` by the configured amount). Has no effect when `allowInlineControlFlowBlocks` is `false`.",
             name: "inlineControlFlowBlockMargin"
         }),
         Object.freeze({
@@ -59,7 +59,8 @@ export function createProjectFormatOptionCatalog(
         }),
         Object.freeze({
             defaultValue: "keywords",
-            description: "Choose whether logical operators are printed as keywords or symbols.",
+            description:
+                "Enforces a consistent logical operator style across the file. Each mode normalises every occurrence: `keywords` converts all logical operators to word form; `symbols` converts all to symbol form.",
             name: "logicalOperatorsStyle"
         }),
         Object.freeze({
@@ -80,7 +81,7 @@ export function createProjectFormatOptionCatalog(
         Object.freeze({
             defaultValue: false,
             description:
-                "GML strings must use double quotes only, so the formatter preserves the source's original quote style and this option has no effect on string literal output.",
+                "GML normal and template strings must use double quotes; verbatim strings (`@\"…\"` or `@'…'`) may use either. The formatter always preserves the source's original quote style, so this option has no effect on string literal output.",
             name: "singleQuote"
         }),
         Object.freeze({

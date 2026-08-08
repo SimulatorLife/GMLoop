@@ -8,13 +8,13 @@ import type {
     GraphVisualizationLiveReloadWatcherStatus
 } from "../../graph/index.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
-import type { GraphVisualizationUiState } from "../state/types.js";
-import { EventBusManager } from "./event-bus-mixin.js";
 import {
     GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
     GRAPH_UI_EVENT_LIVE_RELOAD_STATUS_CHANGED,
     type GraphUiLiveReloadStatusChangedDetail
-} from "./events.js";
+} from "../events/events.js";
+import type { GraphVisualizationUiState } from "../state/types.js";
+import { EventBusManager } from "./event-bus-mixin.js";
 import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 import { LiveReloadPollingController } from "./live-reload-polling-controller.js";
@@ -88,6 +88,22 @@ function formatTimestamp(timestamp: number): string {
 
 function resolveEndpointLabel(value: string | null | undefined): string {
     return value ?? "Not configured";
+}
+
+/**
+ * Format a recent live-reload error as plain text so it can be pasted whole
+ * into a bug report or chat message.
+ */
+function formatRecentErrorDetails(error: GraphVisualizationLiveReloadRecentError): string {
+    const lines = [`File: ${error.filePath}`, `Error: ${error.error}`];
+
+    if (error.recoveryHint) {
+        lines.push(`Recovery hint: ${error.recoveryHint}`);
+    }
+
+    lines.push(`Time: ${formatTimestamp(error.timestamp)}`);
+
+    return lines.join("\n");
 }
 
 /**
@@ -361,7 +377,16 @@ export class GmLiveReloadPanel extends LightDomLitElement {
                                   ${errors.map(
                                       (error) => html`
                                           <li class="live-reload-error-item">
-                                              <strong>${error.filePath}</strong>
+                                              <div class="live-reload-error-header">
+                                                  <strong>${error.filePath}</strong>
+                                                  <gm-copy-button
+                                                      class="live-reload-error-copy"
+                                                      .value=${formatRecentErrorDetails(error)}
+                                                      accessibleLabel=${`Copy error details for ${error.filePath}`}
+                                                      label="Copy"
+                                                      hideLabel
+                                                  ></gm-copy-button>
+                                              </div>
                                               <span>${error.error}</span>
                                               ${error.recoveryHint ? html`<p>${error.recoveryHint}</p>` : null}
                                               <div class="config-badge-row">

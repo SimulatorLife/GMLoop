@@ -10,6 +10,8 @@ export {
     loadBundledFeatherMetadata
 } from "./feather-metadata.js";
 export type {
+    BuiltInHoverInfo,
+    BuiltInHoverParameter,
     DeprecatedIdentifierDiagnosticOwner,
     DeprecatedIdentifierLegacyUsage,
     DeprecatedIdentifierMetadataEntry,
@@ -17,6 +19,7 @@ export type {
 } from "./gml-identifier-loading.js";
 export {
     clearIdentifierMetadataCache,
+    getBuiltInHoverInfo,
     getGmlIdentifierMetadataPath,
     getGmlIdentifierMetadataUrl,
     getIdentifierMetadata,

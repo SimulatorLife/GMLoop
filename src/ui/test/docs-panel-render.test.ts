@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "../src/app/components/events.js";
 import { GmDocsPanel } from "../src/app/components/gm-docs-panel.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "../src/app/events/events.js";
 import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import type { GraphVisualizationDocumentationCatalogs } from "../src/graph/types.js";
@@ -37,7 +37,17 @@ function createDocumentationCatalogs(): GraphVisualizationDocumentationCatalogs 
                         choices: [],
                         description: "Write the bundle to disk.",
                         flags: "--out",
-                        long: "out",
+                        long: "--out",
+                        short: undefined,
+                        variadic: false
+                    },
+                    {
+                        attributeName: "path",
+                        boolean: false,
+                        choices: [],
+                        description: "Target .gml file, GameMaker project directory, or .yyp path",
+                        flags: "--path <path>",
+                        long: "--path",
                         short: undefined,
                         variadic: false
                     }
@@ -49,8 +59,38 @@ function createDocumentationCatalogs(): GraphVisualizationDocumentationCatalogs 
                 commandPath: ["format"],
                 description: "Apply formatting to a project.",
                 displayName: "format",
-                options: [],
+                options: [
+                    {
+                        attributeName: "path",
+                        boolean: false,
+                        choices: [],
+                        description: "Target .gml file, GameMaker project directory, or .yyp path",
+                        flags: "--path <path>",
+                        long: "--path",
+                        short: undefined,
+                        variadic: false
+                    }
+                ],
                 usage: "gmloop format"
+            },
+            {
+                arguments: [],
+                commandPath: ["generate-feather-metadata"],
+                description: "Generate feather-metadata.json from the GameMaker manual.",
+                displayName: "generate-feather-metadata",
+                options: [
+                    {
+                        attributeName: "output",
+                        boolean: false,
+                        choices: [],
+                        description: "Path to write feather-metadata.json.",
+                        flags: "--output <path>",
+                        long: "--output",
+                        short: undefined,
+                        variadic: false
+                    }
+                ],
+                usage: "gmloop generate-feather-metadata"
             }
         ],
         mcpServer: {
@@ -423,6 +463,43 @@ void test("GmDocsPanel copies runnable CLI commands when a project is open", () 
     assert.match(rendered, /gmloop graph visualize --path \/Users\/henrykirk\/GMLoop\/vendor\/3DSpider/u);
     assert.match(rendered, /gmloop format --path \/Users\/henrykirk\/GMLoop\/vendor\/3DSpider/u);
     assert.match(rendered, /\.value=gmloop format --path \/Users\/henrykirk\/GMLoop\/vendor\/3DSpider/u);
+});
+
+void test("GmDocsPanel omits --path for commands that do not declare it", () => {
+    const panel = new TestableGmDocsPanel();
+    panel.model = {
+        autoGamePipeline: null,
+        data: {
+            edges: [],
+            generatedAt: "2026-01-01T00:00:00.000Z",
+            graphs: [],
+            nodes: [],
+            projectRoot: "/tmp/project"
+        },
+        documentationCatalogs: createDocumentationCatalogs(),
+        isServerMode: false,
+        lastFixRun: null,
+        loadedTarget: {
+            activePath: "/Users/henrykirk/GMLoop/vendor/3DSpider",
+            projectRoot: "/Users/henrykirk/GMLoop/vendor/3DSpider",
+            selectedPaths: ["/Users/henrykirk/GMLoop/vendor/3DSpider"],
+            source: "cli-path"
+        },
+        liveReload: null,
+        mcpServerStatus: "not-started",
+        projectConfigurationCatalog: null,
+        startupState: null,
+        title: "Docs CLI View"
+    };
+    panel.state = createDocsPanelState("cli");
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(
+        rendered,
+        /<code class="docs-usage">gmloop generate-feather-metadata<\/code>[\s\S]*?\.value=gmloop generate-feather-metadata/u
+    );
+    assert.doesNotMatch(rendered, /gmloop generate-feather-metadata --path/u);
 });
 
 void test("GmDocsPanel filters the Linting subview by the current search query", () => {

@@ -42,6 +42,8 @@ void test("parse --help output documents command examples and shared options", a
     assert.match(stdout, /--write/);
     assert.match(stdout, /--list/);
     assert.match(stdout, /--verbose/);
+    assert.match(stdout, /sibling \*\.ast\.json/);
+    assert.match(stdout, /Progress is streamed to stderr/);
 });
 
 void test("parse --list prints command settings and exits without parsing", async () => {
@@ -70,7 +72,7 @@ void test("parse prints a single-file AST to stdout in dry-run mode", async () =
         });
 
         assert.equal(result.exitCode, 0);
-        assert.equal(result.stderr, "");
+        assert.match(result.stderr, /\[parse\] Parsing GML files\.\.\. \(1 processed\)/);
         const parsedOutput = JSON.parse(result.stdout) as { type?: string; body?: Array<{ type?: string }> };
         assert.equal(parsedOutput.type, "Program");
         assert.equal(Array.isArray(parsedOutput.body), true);
@@ -91,7 +93,7 @@ void test("parse prints directory AST payloads to stdout in dry-run mode", async
         });
 
         assert.equal(result.exitCode, 0);
-        assert.equal(result.stderr, "");
+        assert.match(result.stderr, /\[parse\] Parsing GML files\.\.\. \(1 processed\)/);
         const parsedOutput = JSON.parse(result.stdout) as {
             files?: Array<{ path?: string; ast?: { type?: string } }>;
         };
@@ -119,7 +121,7 @@ void test("parse --write writes AST JSON artifacts for directory targets", async
         });
 
         assert.equal(result.exitCode, 0);
-        assert.equal(result.stderr, "");
+        assert.match(result.stderr, /\[parse\] Parsing GML files\.\.\. \(1 processed\)/);
         assert.match(result.stdout, /Wrote first\.gml\.ast\.json/);
         assert.match(result.stdout, /Wrote nested\/second\.gml\.ast\.json/);
         assert.match(result.stdout, /Parsed and wrote 2 AST JSON files\./);
@@ -147,7 +149,7 @@ void test("parse accepts a .yyp target path and parses project .gml files", asyn
         });
 
         assert.equal(result.exitCode, 0);
-        assert.equal(result.stderr, "");
+        assert.match(result.stderr, /\[parse\] Parsing GML files\.\.\. \(1 processed\)/);
         await access(path.join(temporaryDirectory, "scripts", "demo", "demo.gml.ast.json"));
     });
 });

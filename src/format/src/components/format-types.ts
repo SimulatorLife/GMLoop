@@ -1,5 +1,5 @@
 import type { MutableGameMakerAstNode } from "@gmloop/core";
-import type { Parser, Plugin as PrettierPlugin, Printer, SupportOptions } from "prettier";
+import type { Options as PrettierOptions, Parser, Plugin as PrettierPlugin, Printer, SupportOptions } from "prettier";
 
 import type { ProjectFormatOptionCatalogEntry } from "../options/project-config-catalog.js";
 
@@ -13,6 +13,11 @@ export type GmlPrinter = Printer<GmlAst>;
 export type GmlPrintFunction = NonNullable<GmlPrinter["print"]>;
 export type GmlPrintCommentFunction = NonNullable<GmlPrinter["printComment"]>;
 export type GmlHandleComments = NonNullable<GmlPrinter["handleComments"]>;
+
+/**
+ * Runtime operation used by formatter orchestration to invoke Prettier.
+ */
+export type GmlSourceFormatter = (source: string, options?: PrettierOptions) => Promise<string>;
 
 export type LogicalOperatorsStyleMap = Readonly<{
     KEYWORDS: string;
@@ -55,7 +60,7 @@ export type GmlFormatDefaultOptions = Record<string, unknown>;
 export type GmlFormat = Omit<PrettierPlugin<GmlAst>, "defaultOptions"> & {
     defaultOptions?: GmlFormatDefaultOptions;
     formatOptions?: SupportOptions;
-    format: (source: string, options?: Record<string, unknown>) => Promise<string>;
+    format: GmlSourceFormatter;
     extractProjectFormatOptions: (config: Record<string, unknown>) => Record<string, unknown>;
     projectFormatOptionCatalog: ReadonlyArray<ProjectFormatOptionCatalogEntry>;
     /**

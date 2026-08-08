@@ -165,3 +165,34 @@ void test("optimize-math-expressions uses epsilon-safe divisor guard for compute
         "outer division should not be folded when inner divisor is a computed near-zero float"
     );
 });
+
+void test("optimize-math-expressions removes *= and /= no-op rewrites for floating-point near-1 literals", () => {
+    // Regression coverage for the precision-bug fix at
+    // `optimize-math-expressions-rule.ts` (the `*=` / `/=` branch of
+    // `performDeadCodeElimination`). The right-hand side of each statement
+    // is a numeric literal that parses to a value within the tolerance
+    // window of 1 in IEEE-754 double precision, so a strict `val === 1`
+    // check would silently miss the rewrite and the redundant `*=` / `/=`
+    // statement would remain in the output. The tolerance-aware
+    // comparison in the rule recognises the value as "effectively 1" and
+    // removes the statement.
+    //
+    // Each picked literal (0.9999999999999999, 0.9999999999999998,
+    // 1.0000000000000002) sits within the magnitude-scaled
+    // 4*Number.EPSILON tolerance used by `Core.areNumbersApproximatelyEqual`
+    // for value 1, so all three statements exercise the epsilon path rather
+    // than the exact-integer fast path that the helper retains internally.
+    const input = "x *= 0.9999999999999999;\n" + "y /= 0.9999999999999998;\n" + "z *= 1.0000000000000002;\n";
+    const result = lintWithRule("optimize-math-expressions", input, {});
+
+    // All three no-op statements should be removed; only the rule metadata
+    // message should be reported.
+    assert.equal(result.messages.length, 1);
+    assert.equal(result.messages[0]?.messageId, "optimizeMathExpressions");
+    // None of the source-text fragments for the rounded near-1 literals
+    // should survive in the rewritten output, proving the rewrite fired
+    // through the tolerance-aware path.
+    assert.equal(result.output.includes("0.9999999999999999"), false);
+    assert.equal(result.output.includes("0.9999999999999998"), false);
+    assert.equal(result.output.includes("1.0000000000000002"), false);
+});

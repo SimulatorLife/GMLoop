@@ -85,6 +85,66 @@ void test("room command keeps inspection leaves and drops bespoke mutation leave
     );
 });
 
+void test("room list, summary, and validate share the graph-indexed room resolver", async () => {
+    const projectRoot = await createTemporaryRoomInstanceCliProject();
+
+    try {
+        const listResult = await runCliTestCommand({
+            argv: ["room", "list", "--path", projectRoot, "--json"]
+        });
+        assert.equal(listResult.exitCode, 0);
+        const listPayload = JSON.parse(listResult.stdout) as {
+            command: string;
+            ok: boolean;
+            payload: Array<{ kind: string; name: string }>;
+        };
+        assert.equal(listPayload.command, "room list");
+        assert.equal(listPayload.ok, true);
+        assert.deepEqual(listPayload.payload.map((entry) => entry.name).sort(), ["rm_main"]);
+        assert.ok(listPayload.payload.every((entry) => entry.kind === "room"));
+
+        const summaryResult = await runCliTestCommand({
+            argv: ["room", "summary", "--path", projectRoot, "--json"]
+        });
+        assert.equal(summaryResult.exitCode, 0);
+        const summaryPayload = JSON.parse(summaryResult.stdout) as {
+            command: string;
+            payload: { names: Array<string>; roomCount: number };
+        };
+        assert.equal(summaryPayload.command, "room summary");
+        assert.deepEqual(summaryPayload.payload.names, ["rm_main"]);
+        assert.equal(summaryPayload.payload.roomCount, 1);
+
+        const validateResult = await runCliTestCommand({
+            argv: ["room", "validate", "--path", projectRoot, "--json"]
+        });
+        assert.equal(validateResult.exitCode, 0);
+        const validatePayload = JSON.parse(validateResult.stdout) as {
+            command: string;
+            payload: { roomCount: number; state: string };
+        };
+        assert.equal(validatePayload.command, "room validate");
+        assert.equal(validatePayload.payload.roomCount, 1);
+        assert.equal(validatePayload.payload.state, "available");
+
+        const queryResult = await runCliTestCommand({
+            argv: ["room", "query", "rm_main", "--path", projectRoot, "--json"]
+        });
+        assert.equal(queryResult.exitCode, 0);
+        const queryPayload = JSON.parse(queryResult.stdout) as {
+            command: string;
+            payload: Array<{ name: string }>;
+        };
+        assert.equal(queryPayload.command, "room query");
+        assert.deepEqual(
+            queryPayload.payload.map((entry) => entry.name),
+            ["rm_main"]
+        );
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
 void test("object planned leaves expose event inspection while keeping object update deferred", async () => {
     const projectRoot = await createTemporaryObjectEventCliProject();
     const updateResult = await runCliTestCommand({

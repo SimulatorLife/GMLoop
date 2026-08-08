@@ -46,12 +46,16 @@ export function isNonEmptyString(value: unknown): value is string {
  * identifiers and option values so callers can accept padded input without
  * introducing bespoke trimming logic.
  *
- * The previous micro-optimization attempted to avoid allocating a trimmed string
- * by checking character codes <= 32, but this incorrectly classified control
- * characters (codes 0-31 except tab/newline/etc.) as whitespace and failed to
- * handle Unicode whitespace (e.g., non-breaking space U+00A0, line separator U+2028).
- * We now delegate to String.prototype.trim() to match JavaScript's exact whitespace
- * handling, sacrificing the micro-optimization for correctness.
+ * The implementation walks characters from both ends simultaneously and
+ * returns a boolean without allocating a trimmed copy. To preserve the exact
+ * whitespace semantics of {@link String.prototype.trim} (which strips TAB
+ * `9`, LF `10`, VT `11`, FF `12`, CR `13`, SPACE `32`, plus Unicode
+ * WhiteSpace and LineTerminator code points such as NBSP `U+00A0` and line
+ * separator `U+2028`), the scan treats only those ASCII whitespace codes
+ * as trimmable; any time an inspected code is outside that set we check
+ * whether it is still ASCII (definite content) and otherwise fall back to
+ * `String.prototype.trim()` so non-ASCII whitespace is still recognised
+ * correctly.
  *
  * @param {unknown} value Candidate value to evaluate.
  * @returns {value is string} `true` when {@link value} is a non-empty string
@@ -62,9 +66,45 @@ export function isNonEmptyTrimmedString(value: unknown): value is string {
         return false;
     }
 
-    // Delegate to String.prototype.trim() to ensure we match JavaScript's exact
-    // whitespace handling, including Unicode whitespace characters
-    return value.trim().length > 0;
+    const length = value.length;
+    if (length === 0) {
+        return false;
+    }
+
+    // Walk inward from both ends. When both ends are ASCII whitespace we can
+    // advance two positions per iteration; when either end reveals a
+    // non-whitespace ASCII character the trimmed string is non-empty; when an
+    // inspected code is outside the ASCII range we defer to the native
+    // String.prototype.trim() so Unicode whitespace (NBSP, line separator,
+    // etc.) is still classified correctly.
+    let start = 0;
+    let end = length - 1;
+
+    while (start <= end) {
+        const headCode = value.charCodeAt(start);
+        const tailCode = value.charCodeAt(end);
+        const headIsAsciiWhitespace = (headCode >= 9 && headCode <= 13) || headCode === 32;
+        const tailIsAsciiWhitespace = (tailCode >= 9 && tailCode <= 13) || tailCode === 32;
+
+        if (headIsAsciiWhitespace && tailIsAsciiWhitespace) {
+            start += 1;
+            end -= 1;
+            continue;
+        }
+
+        // At least one end exposes a non-whitespace character. If the
+        // revealed code is non-ASCII it could be Unicode whitespace (NBSP,
+        // line separator, etc.), so fall back to the native trim() for
+        // correctness; otherwise it is definitely content and we can return
+        // true without any allocation.
+        if (headCode >= 128 || tailCode >= 128) {
+            return value.trim().length > 0;
+        }
+
+        return true;
+    }
+
+    return false;
 }
 
 /**
@@ -288,14 +328,9 @@ function toSafeString(value: unknown): string {
     // plain objects so callers receive "[object Object]" rather than silently
     // dropping to a generic string that masks the actual type.
     const obj = value as object;
-    if (
-        "toString" in obj &&
-        typeof (obj as unknown as { toString(): string }).toString === "function" &&
-        (obj as unknown as { toString(): string }).toString !== Object.prototype.toString
-    ) {
-        // Invoking the custom toString after confirming it differs from Object.prototype.toString.
-        // eslint-disable-next-line @typescript-eslint/no-base-to-string -- the guard above confirms this is a custom toString
-        return obj.toString();
+    const toString = (obj as { toString?: () => string }).toString;
+    if (typeof toString === "function" && toString !== Object.prototype.toString) {
+        return toString.call(obj);
     }
     // Plain object: fall back to the generic tag. The preceding guard ensures
     // method is Object.prototype.toString here, so using it directly is safe.

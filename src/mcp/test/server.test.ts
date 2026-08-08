@@ -271,6 +271,8 @@ void test("MCP tool catalog excludes internal test command namespace", () => {
     assert.equal(toolNames.has("gmloop_test_results"), false);
     assert.equal(toolNames.has("gmloop_test_case_create"), false);
     assert.equal(toolNames.has("gmloop_test_case_update"), false);
+    assert.equal(toolNames.has("gmloop_test_case_list"), false);
+    assert.equal(toolNames.has("gmloop_test_case_delete"), false);
 
     for (const toolName of toolNames) {
         assert.ok(!toolName.startsWith("gmloop_test_"), `Leaked internal test tool: ${toolName}`);

@@ -86,6 +86,23 @@ function parseNonNegativePaddingArgument(value: string): number {
     return parsed;
 }
 
+async function resolveGraphIndexRooms(
+    options: RoomCommandSharedOptions,
+    query: string
+): Promise<Array<{ id: string; kind: string; name: string }>> {
+    const context = await ensureProjectGraphIndex(options);
+    return filterGraphIndexResultsByKind(
+        Semantic.searchGraphIndex({
+            databasePath: options.databasePath,
+            projectConfig: context.projectConfig,
+            projectRoot: context.projectRoot,
+            query,
+            toolsetRoot: options.toolsetRoot
+        }).results,
+        "room"
+    );
+}
+
 function toRoomInstanceMutationPayload(result: RoomInstanceMutationResult) {
     return {
         action: result.action,
@@ -570,17 +587,7 @@ export function createRoomCommand(): Command {
     const list = addRoomSharedOptions(applyStandardCommandOptions(new Command("list")).description("List rooms."));
     list.action(async function roomListAction() {
         const options = this.opts<RoomCommandSharedOptions>();
-        const context = await ensureProjectGraphIndex(options);
-        const rooms = filterGraphIndexResultsByKind(
-            Semantic.searchGraphIndex({
-                databasePath: options.databasePath,
-                projectConfig: context.projectConfig,
-                projectRoot: context.projectRoot,
-                query: "",
-                toolsetRoot: options.toolsetRoot
-            }).results,
-            "room"
-        );
+        const rooms = await resolveGraphIndexRooms(options, "");
         printRoomPayload({ command: "room list", ok: true, payload: rooms });
     });
 
@@ -591,19 +598,8 @@ export function createRoomCommand(): Command {
     );
     query.action(async function roomQueryAction(text?: string) {
         const options = this.opts<RoomCommandSharedOptions>();
-        const context = await ensureProjectGraphIndex(options);
         const normalizedQuery = typeof text === "string" ? text : "";
-        const payload = filterGraphIndexResultsByKind(
-            Semantic.searchGraphIndex({
-                databasePath: options.databasePath,
-                projectConfig: context.projectConfig,
-                projectRoot: context.projectRoot,
-                query: normalizedQuery,
-                toolsetRoot: options.toolsetRoot
-            }).results,
-            "room"
-        );
-
+        const payload = await resolveGraphIndexRooms(options, normalizedQuery);
         printRoomPayload({ command: "room query", ok: true, payload });
     });
 
@@ -612,18 +608,7 @@ export function createRoomCommand(): Command {
     );
     validate.action(async function roomValidateAction() {
         const options = this.opts<RoomCommandSharedOptions>();
-        const context = await ensureProjectGraphIndex(options);
-        const rooms = filterGraphIndexResultsByKind(
-            Semantic.searchGraphIndex({
-                databasePath: options.databasePath,
-                projectConfig: context.projectConfig,
-                projectRoot: context.projectRoot,
-                query: "",
-                toolsetRoot: options.toolsetRoot
-            }).results,
-            "room"
-        );
-
+        const rooms = await resolveGraphIndexRooms(options, "");
         printRoomPayload({
             command: "room validate",
             ok: true,
@@ -639,18 +624,7 @@ export function createRoomCommand(): Command {
     );
     preview.action(async function roomPreviewAction() {
         const options = this.opts<RoomCommandSharedOptions>();
-        const context = await ensureProjectGraphIndex(options);
-        const rooms = filterGraphIndexResultsByKind(
-            Semantic.searchGraphIndex({
-                databasePath: options.databasePath,
-                projectConfig: context.projectConfig,
-                projectRoot: context.projectRoot,
-                query: "",
-                toolsetRoot: options.toolsetRoot
-            }).results,
-            "room"
-        );
-
+        const rooms = await resolveGraphIndexRooms(options, "");
         printRoomPayload({
             command: "room preview",
             ok: true,
@@ -666,18 +640,7 @@ export function createRoomCommand(): Command {
     );
     summary.action(async function roomSummaryAction() {
         const options = this.opts<RoomCommandSharedOptions>();
-        const context = await ensureProjectGraphIndex(options);
-        const rooms = filterGraphIndexResultsByKind(
-            Semantic.searchGraphIndex({
-                databasePath: options.databasePath,
-                projectConfig: context.projectConfig,
-                projectRoot: context.projectRoot,
-                query: "",
-                toolsetRoot: options.toolsetRoot
-            }).results,
-            "room"
-        );
-
+        const rooms = await resolveGraphIndexRooms(options, "");
         printRoomPayload({
             command: "room summary",
             ok: true,

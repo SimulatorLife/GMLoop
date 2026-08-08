@@ -8,7 +8,8 @@ import { fileURLToPath } from "node:url";
 
 import { Core } from "@gmloop/core";
 
-import { __graphCommandTest__, createGraphCommand } from "../src/commands/graph.js";
+import type * as CliModule from "../src/cli.js";
+import { __graphCommandTest__, createGraphCommand } from "../src/commands/graph/index.js";
 import type { LiveReloadRegisteredSession } from "../src/modules/live-reload/session-registry.js";
 import { writeGameMakerCliActiveProjectState } from "../src/workflow/project-root.js";
 
@@ -16,7 +17,7 @@ const SKIP_CLI_ENV_VAR = "PRETTIER_PLUGIN_GML_SKIP_CLI_RUN";
 const SKIP_CLI_ENV_VALUE = "1";
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
-let cliModulePromise: Promise<typeof import("../src/cli.js")> | undefined;
+let cliModulePromise: Promise<typeof CliModule> | undefined;
 
 async function loadCliModule() {
     if (cliModulePromise === undefined) {

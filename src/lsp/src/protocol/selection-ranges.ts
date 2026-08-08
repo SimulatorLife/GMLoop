@@ -1,6 +1,6 @@
 import { Core } from "@gmloop/core";
 import { Parser } from "@gmloop/parser";
-import { type Position, SelectionRange } from "vscode-languageserver/node.js";
+import { type Position, type SelectionRange } from "vscode-languageserver/node.js";
 
 import { type GmlTextDocument, offsetToPosition, positionToOffset } from "../documents/index.js";
 

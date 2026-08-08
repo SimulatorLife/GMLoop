@@ -9,6 +9,8 @@ This directory contains the source code for the [gml-modules/format](https://git
 
 ## Format Architecture
 
+The high-level plugin factory in `src/format-entry.ts` depends on `GmlFormatProvider` for component metadata, defaults, runtime formatting, and output normalization. Concrete Prettier, parser, printer, and comment implementations are selected in `src/components/default-format-adapters.ts`, keeping orchestration independent from adapter details.
+
 ### Constants ([`src/printer/constants.ts`](src/printer/constants.ts))
 
 The format workspace uses a centralized constants file to define formatting defaults and thresholds. This ensures consistency across the codebase and makes it easy to understand and maintain default values.

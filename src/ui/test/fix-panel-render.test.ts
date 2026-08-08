@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "../src/app/components/events.js";
 import { GmFixPanel } from "../src/app/components/gm-fix-panel.js";
 import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "../src/app/events/events.js";
 import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
@@ -74,6 +74,45 @@ void test("GmFixPanel renders the fix log section", () => {
     assert.doesNotMatch(rendered, /1\. Refactor/u);
     assert.doesNotMatch(rendered, /2\. Lint/u);
     assert.doesNotMatch(rendered, /3\. Format/u);
+});
+
+void test("GmFixPanel renders a copy log button bound to the rendered log lines", () => {
+    const panel = new TestableGmFixPanel();
+    panel.model = createMockModel();
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(
+        rendered,
+        /<gm-copy-button[\s\S]*class="fix-log-copy-button"[\s\S]*\.value=\[1\/3 Refactor Codemods\]\n\[2\/3 Lint Fixes\]\n\[3\/3 Format\][\s\S]*><\/gm-copy-button>/u
+    );
+    assert.match(rendered, /accessibleLabel="Copy fix run log to clipboard"/u);
+    assert.match(rendered, /label="Copy Log"/u);
+    assert.match(rendered, /hideLabel/u);
+    // The heading and copy button share a header row so the action sits next to the title.
+    assert.match(
+        rendered,
+        /<div class="fix-log-header">[\s\S]*<h2 id="fix-log-heading">Run Log<\/h2>[\s\S]*<gm-copy-button/u
+    );
+    assert.match(rendered, /<h2 id="fix-log-heading">Run Log<\/h2>[\s\S]*<gm-copy-button/u);
+});
+
+void test("GmFixPanel copy log button uses the placeholder text when no fix run is available", () => {
+    const panel = new TestableGmFixPanel();
+    panel.model = createMockModel();
+    panel.state = {
+        ...createMockState(),
+        fixLogLines: [],
+        fixStatus: "idle"
+    };
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /(\.value=No fix run has been started from this UI session\.)/u);
+    assert.match(rendered, /accessibleLabel="Copy fix run log to clipboard"/u);
+    assert.match(rendered, />No fix run has been started from this UI session\.</u);
+    assert.match(rendered, /<pre class="fix-log"[^>]*>No fix run has been started/u);
 });
 
 void test("GmFixPanel renders the last server-side fix run after UI reload clears session state", () => {

@@ -9,6 +9,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Socket } from "node:net";
 
+import { DEFAULT_LIVE_RELOAD_STATUS_HOST, DEFAULT_LIVE_RELOAD_STATUS_PORT } from "../live-reload/config.js";
 import type { ServerEndpoint, ServerLifecycle } from "../server/index.js";
 import {
     DEFAULT_STATUS_HEALTH_POLICY_CONFIG,
@@ -196,8 +197,8 @@ export interface StatusServerOptions {
  */
 export type StatusServerHandle = ServerEndpoint & ServerLifecycle;
 
-const DEFAULT_STATUS_HOST = "127.0.0.1";
-const DEFAULT_STATUS_PORT = 17_891;
+const DEFAULT_STATUS_HOST = DEFAULT_LIVE_RELOAD_STATUS_HOST;
+const DEFAULT_STATUS_PORT = DEFAULT_LIVE_RELOAD_STATUS_PORT;
 
 function sendJsonResponse(res: ServerResponse, statusCode: number, data: unknown): void {
     res.writeHead(statusCode, {

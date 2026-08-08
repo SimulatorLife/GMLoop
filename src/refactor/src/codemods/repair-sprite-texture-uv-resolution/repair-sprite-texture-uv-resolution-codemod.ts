@@ -1,6 +1,6 @@
 import { Core } from "@gmloop/core";
-import { Parser } from "@gmloop/parser";
 
+import { defaultGmlProgramParser } from "../../parser-adapter.js";
 import type { RepairSpriteTextureUvResolutionResult } from "../../types.js";
 import { applySourceTextEdits } from "../codemod-helpers.js";
 
@@ -381,7 +381,7 @@ export function applyRepairSpriteTextureUvResolutionCodemod(sourceText: string):
 
     let programNode: unknown;
     try {
-        programNode = Parser.GMLParser.parse(sourceText);
+        programNode = defaultGmlProgramParser(sourceText);
     } catch {
         return Object.freeze({ changed: false, outputText: sourceText, appliedEdits: Object.freeze([]) });
     }

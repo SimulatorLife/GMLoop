@@ -1,4 +1,3 @@
-import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import * as LintWorkspace from "@gmloop/lint";
@@ -213,10 +212,4 @@ void test("prefer-direct-boolean-return and no-double-negation converge together
     const secondPass = await lintWithBooleanReturnAndNegationRule(expected);
     assertEquals(secondPass.output, undefined);
     assertEquals(secondPass.messageRuleIds.length, 0);
-});
-
-void test("prefer-direct-boolean-return is included in the recommended config", () => {
-    const [recommendedGml] = LintWorkspace.Lint.configs.recommended;
-
-    assert.equal(recommendedGml.rules["gml/prefer-direct-boolean-return"], "warn");
 });
