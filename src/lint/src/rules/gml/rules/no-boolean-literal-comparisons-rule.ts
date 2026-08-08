@@ -2,7 +2,7 @@ import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import type { GmlRuleDefinition } from "../index.js";
-import { createMeta, sourceRangeContainsCommentToken } from "../rule-base-helpers.js";
+import { createMeta, getNodeRange, sourceRangeContainsCommentToken } from "../rule-base-helpers.js";
 
 type BooleanComparisonOperand = Readonly<{
     comparedBoolean: boolean;
@@ -64,25 +64,21 @@ export function createNoBooleanLiteralComparisonsRule(definition: GmlRuleDefinit
                         return;
                     }
 
-                    const start = Core.getNodeStartIndex(node);
-                    const end = Core.getNodeEndIndex(node);
-                    const expressionStart = Core.getNodeStartIndex(comparisonOperands.comparedExpression);
-                    const expressionEnd = Core.getNodeEndIndex(comparisonOperands.comparedExpression);
-                    if (
-                        typeof start !== "number" ||
-                        typeof end !== "number" ||
-                        typeof expressionStart !== "number" ||
-                        typeof expressionEnd !== "number"
-                    ) {
+                    const nodeRange = getNodeRange(node);
+                    const expressionRange = getNodeRange(comparisonOperands.comparedExpression);
+                    if (nodeRange === null || expressionRange === null) {
                         return;
                     }
 
                     const sourceText = context.sourceCode.text;
-                    if (Core.hasComment(node) || sourceRangeContainsCommentToken(sourceText, start, end)) {
+                    if (
+                        Core.hasComment(node) ||
+                        sourceRangeContainsCommentToken(sourceText, nodeRange.start, nodeRange.end)
+                    ) {
                         return;
                     }
 
-                    const comparedExpressionText = sourceText.slice(expressionStart, expressionEnd);
+                    const comparedExpressionText = sourceText.slice(expressionRange.start, expressionRange.end);
                     const shouldNegate =
                         operator === "=="
                             ? comparisonOperands.comparedBoolean === false
@@ -92,7 +88,7 @@ export function createNoBooleanLiteralComparisonsRule(definition: GmlRuleDefinit
                     context.report({
                         node,
                         messageId: definition.messageId,
-                        fix: (fixer) => fixer.replaceTextRange([start, end], replacementText)
+                        fix: (fixer) => fixer.replaceTextRange([nodeRange.start, nodeRange.end], replacementText)
                     });
                 }
             });

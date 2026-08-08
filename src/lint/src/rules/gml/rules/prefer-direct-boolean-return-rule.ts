@@ -3,7 +3,7 @@ import type { Rule } from "eslint";
 
 import { gmlRuleAutofixServices } from "../gml-rule-services.js";
 import type { GmlRuleDefinition } from "../index.js";
-import { createMeta, resolveLocFromIndex } from "../rule-base-helpers.js";
+import { createMeta, getNodeRange, resolveLocFromIndex, type SourceTextRange } from "../rule-base-helpers.js";
 import { applyLogicalNormalizationWithChangeMetadata } from "../transforms/logical-expression-traversal-normalization.js";
 import {
     evaluateCanDirectBooleanReturnBenefitFromNormalization,
@@ -12,7 +12,6 @@ import {
     evaluateUnsafeCommentSyntax
 } from "./logical-normalization-rule-policy.js";
 
-type SourceTextRange = Readonly<{ start: number; end: number }>;
 type ReturnStatementNode = Readonly<{ type: "ReturnStatement"; argument: unknown }> & Record<string, unknown>;
 type IfStatementNode = Readonly<{
     type: "IfStatement";
@@ -21,22 +20,6 @@ type IfStatementNode = Readonly<{
     alternate?: unknown;
     parent?: unknown;
 }>;
-
-function getNodeRange(node: unknown): SourceTextRange | null {
-    const nodeStart = Core.getNodeStartIndex(node);
-    const nodeEnd = Core.getNodeEndIndex(node);
-    if (
-        typeof nodeStart !== "number" ||
-        typeof nodeEnd !== "number" ||
-        !Number.isFinite(nodeStart) ||
-        !Number.isFinite(nodeEnd) ||
-        nodeEnd <= nodeStart
-    ) {
-        return null;
-    }
-
-    return Object.freeze({ start: nodeStart, end: nodeEnd });
-}
 
 function unwrapSingleReturnStatement(statement: unknown): ReturnStatementNode | null {
     const unwrappedStatement = Core.unwrapParenthesizedExpression(statement);
@@ -107,7 +90,7 @@ function readReplacementRange(
         return null;
     }
 
-    return Object.freeze({ start, end });
+    return { start, end };
 }
 
 function shouldNegateReturnArgument(consequentArgument: unknown, alternateArgument: unknown): boolean | null {
