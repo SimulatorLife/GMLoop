@@ -2,30 +2,27 @@ import { readFile } from "node:fs/promises";
 
 import type * as Refactor from "@gmloop/refactor";
 
-import type { ParserAdapterFactory } from "./bridge-types.js";
+import type { GmlParserAdapter } from "./bridge-types.js";
 
 /**
- * Parser bridge that adapts the GML parser to the refactor engine's parser contract.
+ * Parser bridge that adapts a GML parser to the refactor engine's parser contract.
  *
- * The parser adapter is injected through the constructor so callers can supply
- * a custom parse function for testing without requiring a real GMLParser instance.
- * The default adapter factory is provided by the bridge-dependencies module, keeping
- * concrete workspace imports out of this adapter class.
+ * The parse adapter is injected through the constructor so callers can supply
+ * a stub for testing without requiring a real `Parser.GMLParser` instance.
+ * The default adapter is assembled by `bridge-factory.ts`, which is the only
+ * module in this cluster that imports the concrete parser workspace.
  */
 export class GmlParserBridge implements Refactor.ParserBridge {
-    private readonly parserAdapter: (source: string) => unknown;
+    private readonly parserAdapter: GmlParserAdapter;
 
     /**
-     * @param parserAdapterFactory - Optional factory that returns a parse function.
-     *   When omitted, the caller (typically the bridge-factory) is responsible for
-     *   providing the default adapter through the factory function so the bridge
-     *   itself remains decoupled from the parser workspace.
+     * @param parserAdapter - Optional parse function. When omitted, the
+     *   bridge falls back to a no-op adapter that returns an empty range so
+     *   the engine can still be constructed in test environments that do not
+     *   need a working parser.
      */
-    constructor(parserAdapterFactory?: ParserAdapterFactory) {
-        // The factory (if provided) is a factory-of-factories: it produces the
-        // parse function itself, allowing callers to capture custom parser
-        // configuration at the point where the concrete adapter is assembled.
-        this.parserAdapter = parserAdapterFactory ? parserAdapterFactory() : () => ({ start: 0, end: 0 });
+    constructor(parserAdapter?: GmlParserAdapter) {
+        this.parserAdapter = parserAdapter ?? (() => ({ start: 0, end: 0 }));
     }
 
     /**

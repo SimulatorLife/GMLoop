@@ -1,28 +1,33 @@
 /**
- * Shared type definitions for GML refactor bridges.
+ * Shared adapter contracts for the GML refactor bridges.
  *
- * These types are the canonical contracts between the bridge-adapter layer
- * (parser-bridge, transpiler-bridge) and the bridge-dependencies factory module.
- * Keeping them in one place avoids circular import issues when a type is needed
- * in both the bridge class and the factory that creates its default adapter.
+ * The bridge classes (`GmlParserBridge`, `GmlTranspilerBridge`) consume these
+ * narrow contract types directly. They are intentionally defined in their
+ * canonical form (a parse function, a transpiler surface) rather than as
+ * factory-of-factory closures, so the bridges do not need to be re-wired when
+ * a different adapter implementation is substituted.
+ *
+ * The factory that produces the *default* adapter for each bridge lives in
+ * `bridge-factory.ts`, which is the only module that needs to import the
+ * concrete `Parser` / `Transpiler` workspaces.
  */
 
 /**
- * Shape of the transpiler adapter used by GmlTranspilerBridge.
- * Keeping this narrow avoids coupling the bridge to the full Transpiler
- * workspace surface and lets callers inject test doubles with minimal ceremony.
+ * Functional contract for parsing a GML source string into an AST.
+ *
+ * Mirrors `GmlParserAdapter` from `../transpilation/adapters.ts` so the
+ * refactor bridge can consume the canonical CLI adapter directly without
+ * another layer of wrapping.
+ */
+export type GmlParserAdapter = (source: string) => unknown;
+
+/**
+ * Shape of the transpiler adapter consumed by `GmlTranspilerBridge`.
+ *
+ * Keeping this narrow avoids coupling the bridge to the full
+ * `Transpiler.GmlTranspiler` surface and lets callers inject test doubles
+ * with minimal ceremony.
  */
 export type GmlTranspilerAdapter = {
     transpileScript(request: { sourceText: string; symbolId: string }): unknown;
 };
-
-/**
- * Factory type for creating a parser adapter function.
- * Accepts optional configuration and returns a parse function.
- */
-export type ParserAdapterFactory = () => (source: string) => unknown;
-
-/**
- * Factory type for creating a transpiler adapter.
- */
-export type TranspilerAdapterFactory = () => GmlTranspilerAdapter;
