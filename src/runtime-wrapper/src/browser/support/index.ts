@@ -1,3 +1,4 @@
+export { isHtml5BuiltinNameMap, resolveHtml5BuiltinNameMap } from "./html5-builtin-discovery.js";
 export {
     areNumbersApproximatelyEqual,
     cloneObjectEntries,

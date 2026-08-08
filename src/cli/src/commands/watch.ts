@@ -54,7 +54,7 @@ import {
     type RuntimeSourceResolver
 } from "../modules/runtime/source.js";
 import { type ServerLifecycle } from "../modules/server/index.js";
-import { startStatusServer, type StatusServerHandle } from "../modules/status/server.js";
+import { startStatusServer, type StatusServerHandle, type StatusSnapshot } from "../modules/status/server.js";
 import { DependencyTracker } from "../modules/transpilation/dependency-tracker.js";
 import {
     analyzeFileMetadata,
@@ -117,13 +117,37 @@ const IGNORED_WATCH_DIRECTORY_NAMES = new Set(DEFAULT_WATCH_IGNORED_DIRECTORY_NA
 const MAX_CONCURRENT_STARTUP_FILES = 2;
 type RuntimeDescriptorFormatter = (source: RuntimeSourceDescriptor) => string;
 
+// Startup directory/file scans call `yieldToEventLoop` many thousands of
+// times for large GameMaker projects (once or twice per file, plus once per
+// directory). A real yield costs at least ~1ms (a `setImmediate` tick plus a
+// 1ms timer, chosen so the event loop's poll phase genuinely runs before
+// resuming), so paying that cost on every call serializes into seconds of
+// pure sleep for projects with thousands of files, directly inflating watch
+// startup latency. Only every Nth call performs the real yield; the rest
+// resolve immediately. This still bounds how long CPU-heavy ANTLR parsing
+// can run before ceding control to the event loop (I/O, the WebSocket
+// server, etc.), just less often than on every single file.
+const EVENT_LOOP_YIELD_INTERVAL = 8;
+let eventLoopYieldCounter = 0;
+
 function yieldToEventLoop(): Promise<void> {
+    eventLoopYieldCounter += 1;
+    if (eventLoopYieldCounter % EVENT_LOOP_YIELD_INTERVAL !== 0) {
+        return Promise.resolve();
+    }
+
     return new Promise((resolve) => {
         scheduleImmediate(() => {
             scheduleTimeout(resolve, 1);
         });
     });
 }
+
+/** Exposed for tests only; not part of the command's public surface. */
+export const __watchTest__ = Object.freeze({
+    EVENT_LOOP_YIELD_INTERVAL,
+    yieldToEventLoop
+});
 
 type WatchEventListener = (...args: Parameters<WatchListener<string>>) => void | Promise<void>;
 
@@ -855,6 +879,263 @@ async function writeLiveReloadSessionAfterStartup(
 }
 
 /**
+ * Build a status snapshot for the watch command.
+ *
+ * Pulls metrics, errors, and recent patches out of the runtime context and
+ * shapes them into the {@link StatusSnapshot} contract the status server
+ * serves. Kept as a pure function (no I/O) so the snapshot can be tested
+ * and reused independently of the server lifecycle that calls it. The
+ * server URLs are read via getters because the runtime, status, and patch
+ * WebSocket controllers are assigned later in the startup sequence and
+ * the snapshot must reflect the live values whenever the status server
+ * decides to serialize the watch state.
+ *
+ * @param parameters - Sources for the snapshot fields.
+ * @returns A snapshot describing the current watch state.
+ */
+function buildWatchStatusSnapshot({
+    getRuntimeServerController,
+    getStatusServerController,
+    getWebSocketServerController,
+    liveReloadSession,
+    normalizedPath,
+    runtimeContext
+}: Readonly<{
+    getRuntimeServerController: () => RuntimeStaticServerInstance | null;
+    getStatusServerController: () => StatusServerHandle | null;
+    getWebSocketServerController: () => PatchWebSocketServer | null;
+    liveReloadSession:
+        Pick<LiveReloadRegisteredSession, "projectRoot" | "sessionId" | "startSource" | "yypPath"> | undefined;
+    normalizedPath: string;
+    runtimeContext: RuntimeContext;
+}>): StatusSnapshot {
+    const latencyStats = computeHotReloadLatencyStats(runtimeContext.metrics);
+    const recentMetrics = runtimeContext.metrics.slice(-10);
+    const recentErrors = runtimeContext.errors.slice(-10).map((error) => ({
+        timestamp: error.timestamp,
+        filePath: path.relative(normalizedPath, error.filePath),
+        error: error.error
+    }));
+    const lastMetric = runtimeContext.metrics.at(-1) ?? null;
+    const runtimeServerController = getRuntimeServerController();
+    const statusServerController = getStatusServerController();
+    const websocketServerController = getWebSocketServerController();
+
+    return {
+        uptime: Date.now() - runtimeContext.startTime,
+        patchCount: runtimeContext.metrics.length,
+        totalPatchCount: runtimeContext.totalPatchCount,
+        patchHistorySize: runtimeContext.patches.length,
+        maxPatchHistory: runtimeContext.bounds.maxEntries,
+        errorCount: runtimeContext.errors.length,
+        recentPatches: recentMetrics.map((metric) => ({
+            id: metric.patchId,
+            timestamp: metric.timestamp,
+            durationMs: metric.durationMs,
+            filePath: path.relative(normalizedPath, metric.filePath),
+            hotReloadLatencyMs: metric.hotReloadLatencyMs,
+            patchResult: metric.patchResult
+        })),
+        recentErrors,
+        runtimeUrl: runtimeServerController?.url ?? null,
+        statusUrl: statusServerController?.url,
+        websocketUrl: websocketServerController?.url,
+        websocketClients: runtimeContext.websocketServer?.getClientCount() ?? 0,
+        websocketConnectionCount: runtimeContext.websocketServer?.getClientCount() ?? 0,
+        scanComplete: runtimeContext.scanComplete,
+        watchedRoot: normalizedPath,
+        liveReloadSession:
+            liveReloadSession === undefined
+                ? undefined
+                : {
+                      processId: process.pid,
+                      projectRoot: liveReloadSession.projectRoot,
+                      sessionId: liveReloadSession.sessionId
+                  },
+        lastChangedFile: lastMetric === null ? null : path.relative(normalizedPath, lastMetric.filePath),
+        lastPatchId: lastMetric?.patchId ?? null,
+        lastPatchResult: lastMetric?.patchResult ?? null,
+        transpileErrors: recentErrors,
+        runtimeErrors: [],
+        avgHotReloadLatencyMs: latencyStats?.avg,
+        p95HotReloadLatencyMs: latencyStats?.p95
+    };
+}
+
+/**
+ * Start the watch command's patch-broadcasting WebSocket server.
+ *
+ * Wraps {@link startPatchWebSocketServer} with the watch-command-specific
+ * client connect/disconnect/replay wiring and the error-handling policy
+ * (`handleCliError` on failure). Owns a single change-triggering
+ * responsibility: bring the patch WebSocket server online and attach it to
+ * the runtime context, so `runWatchCommand` can stay focused on
+ * orchestration.
+ *
+ * @param parameters - Server options and watch-command context.
+ * @returns The started server handle, or `null` when the server is disabled.
+ */
+async function startWatchPatchWebSocketServer({
+    enableWebSocket,
+    onWebSocketServerReady,
+    runtimeContext,
+    unknownServerStopErrorMessage,
+    verbose,
+    quiet,
+    websocketHost,
+    websocketPort
+}: Readonly<{
+    enableWebSocket: boolean;
+    onWebSocketServerReady: ((server: PatchWebSocketServer) => void) | undefined;
+    runtimeContext: RuntimeContext;
+    unknownServerStopErrorMessage: string;
+    verbose: boolean;
+    quiet: boolean;
+    websocketHost: string;
+    websocketPort: number;
+}>): Promise<PatchWebSocketServer | null> {
+    if (!enableWebSocket) {
+        if (verbose && !quiet) {
+            console.log("WebSocket patch server disabled.");
+        }
+        return null;
+    }
+
+    try {
+        const controller = await startPatchWebSocketServer({
+            host: websocketHost,
+            port: websocketPort,
+            verbose,
+            onClientConnect: (clientId, _socket) => {
+                void _socket;
+                if (verbose) {
+                    console.log(`Patch streaming client connected: ${clientId}`);
+                }
+            },
+            prepareInitialMessages: () => {
+                removeDeletedCachedPatchSources(runtimeContext);
+                return [
+                    ...orderPatchesForReplay(Array.from(runtimeContext.lastSuccessfulPatches.values())),
+                    ...runtimeContext.resourcePatches.values()
+                ];
+            },
+            onClientDisconnect: (clientId) => {
+                if (verbose) {
+                    console.log(`Patch streaming client disconnected: ${clientId}`);
+                }
+            }
+        });
+
+        runtimeContext.websocketServer = controller;
+        onWebSocketServerReady?.(controller);
+
+        console.log(`WebSocket patch server ready at ${controller.url}`);
+        return controller;
+    } catch (error) {
+        const message = getErrorMessage(error, {
+            fallback: "Unknown WebSocket server error"
+        });
+        void unknownServerStopErrorMessage;
+        handleCliError(new Error(`Failed to start WebSocket server: ${message}`));
+    }
+}
+
+/**
+ * Start the watch command's status server and attach it to the runtime context.
+ *
+ * Owns a single change-triggering responsibility: bring the status server
+ * online, wire it up to the runtime context, and apply the watch-command
+ * error policy (tearing down the patch WebSocket server on failure before
+ * delegating to `handleCliError`). The snapshot itself is produced by
+ * {@link buildWatchStatusSnapshot} so the projection logic stays separate
+ * from the lifecycle that serves it.
+ *
+ * @param parameters - Server options and watch-command context.
+ * @returns The started server handle, or `null` when the server is disabled.
+ */
+async function startWatchStatusServer({
+    enableStatus,
+    getRuntimeServerController,
+    liveReloadSession,
+    normalizedPath,
+    onStatusServerReady,
+    runtimeContext,
+    statusHost,
+    statusPort,
+    unknownServerStopErrorMessage,
+    verbose,
+    quiet,
+    getWebSocketServerController
+}: Readonly<{
+    enableStatus: boolean;
+    getRuntimeServerController: () => RuntimeStaticServerInstance | null;
+    getWebSocketServerController: () => PatchWebSocketServer | null;
+    liveReloadSession:
+        Pick<LiveReloadRegisteredSession, "projectRoot" | "sessionId" | "startSource" | "yypPath"> | undefined;
+    normalizedPath: string;
+    onStatusServerReady: ((server: StatusServerHandle) => void) | undefined;
+    runtimeContext: RuntimeContext;
+    statusHost: string;
+    statusPort: number;
+    unknownServerStopErrorMessage: string;
+    verbose: boolean;
+    quiet: boolean;
+}>): Promise<StatusServerHandle | null> {
+    if (!enableStatus) {
+        if (verbose && !quiet) {
+            console.log("Status server disabled.");
+        }
+        return null;
+    }
+
+    let statusServerController: StatusServerHandle | null = null;
+    const getStatusServerController = () => statusServerController;
+
+    const getSnapshot = () =>
+        buildWatchStatusSnapshot({
+            getRuntimeServerController,
+            getStatusServerController,
+            getWebSocketServerController,
+            liveReloadSession,
+            normalizedPath,
+            runtimeContext
+        });
+
+    try {
+        const controller = await startStatusServer({
+            host: statusHost,
+            port: statusPort,
+            getSnapshot
+        });
+
+        statusServerController = controller;
+        runtimeContext.statusServer = controller;
+        onStatusServerReady?.(controller);
+
+        console.log(`Status server ready at ${controller.url}`);
+        return controller;
+    } catch (error) {
+        const message = getErrorMessage(error, {
+            fallback: "Unknown status server error"
+        });
+
+        const websocketServerController = getWebSocketServerController();
+        if (websocketServerController) {
+            try {
+                await websocketServerController.stop();
+            } catch (stopError) {
+                const stopMessage = getErrorMessage(stopError, {
+                    fallback: unknownServerStopErrorMessage
+                });
+                console.error(`Failed to stop WebSocket server during cleanup: ${stopMessage}`);
+            }
+        }
+
+        handleCliError(new Error(`Failed to start status server: ${message}`));
+    }
+}
+
+/**
  * Executes the watch command.
  *
  * @param {string} targetPath - Directory to watch
@@ -983,6 +1264,9 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
     let statusServerController: StatusServerHandle | null = null;
     let runtimeServerController: RuntimeStaticServerInstance | null = null;
 
+    const getRuntimeServerController = () => runtimeServerController;
+    const getWebSocketServerController = () => websocketServerController;
+
     if (shouldServeRuntime) {
         const runtimeSource = await runtimeResolver({
             runtimeRoot,
@@ -1000,128 +1284,31 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         console.log("Runtime static server disabled.");
     }
 
-    if (enableWebSocket) {
-        try {
-            websocketServerController = await startPatchWebSocketServer({
-                host: websocketHost,
-                port: websocketPort,
-                verbose,
-                onClientConnect: (clientId, _socket) => {
-                    void _socket;
-                    if (verbose) {
-                        console.log(`Patch streaming client connected: ${clientId}`);
-                    }
-                },
-                prepareInitialMessages: () => {
-                    removeDeletedCachedPatchSources(runtimeContext);
-                    return [
-                        ...orderPatchesForReplay(Array.from(runtimeContext.lastSuccessfulPatches.values())),
-                        ...runtimeContext.resourcePatches.values()
-                    ];
-                },
-                onClientDisconnect: (clientId) => {
-                    if (verbose) {
-                        console.log(`Patch streaming client disconnected: ${clientId}`);
-                    }
-                }
-            });
+    websocketServerController = await startWatchPatchWebSocketServer({
+        enableWebSocket,
+        onWebSocketServerReady,
+        runtimeContext,
+        unknownServerStopErrorMessage,
+        verbose,
+        quiet,
+        websocketHost,
+        websocketPort
+    });
 
-            runtimeContext.websocketServer = websocketServerController;
-            onWebSocketServerReady?.(websocketServerController);
-
-            console.log(`WebSocket patch server ready at ${websocketServerController.url}`);
-        } catch (error) {
-            const message = getErrorMessage(error, {
-                fallback: "Unknown WebSocket server error"
-            });
-            handleCliError(new Error(`Failed to start WebSocket server: ${message}`));
-        }
-    } else if (verbose && !quiet) {
-        console.log("WebSocket patch server disabled.");
-    }
-
-    if (enableStatus) {
-        try {
-            statusServerController = await startStatusServer({
-                host: statusHost,
-                port: statusPort,
-                getSnapshot: () => {
-                    const latencyStats = computeHotReloadLatencyStats(runtimeContext.metrics);
-                    const recentMetrics = runtimeContext.metrics.slice(-10);
-                    const recentErrors = runtimeContext.errors.slice(-10).map((e) => ({
-                        timestamp: e.timestamp,
-                        filePath: path.relative(normalizedPath, e.filePath),
-                        error: e.error
-                    }));
-                    const lastMetric = runtimeContext.metrics.at(-1) ?? null;
-                    return {
-                        uptime: Date.now() - runtimeContext.startTime,
-                        patchCount: runtimeContext.metrics.length,
-                        totalPatchCount: runtimeContext.totalPatchCount,
-                        patchHistorySize: runtimeContext.patches.length,
-                        maxPatchHistory: runtimeContext.bounds.maxEntries,
-                        errorCount: runtimeContext.errors.length,
-                        recentPatches: recentMetrics.map((m) => ({
-                            id: m.patchId,
-                            timestamp: m.timestamp,
-                            durationMs: m.durationMs,
-                            filePath: path.relative(normalizedPath, m.filePath),
-                            hotReloadLatencyMs: m.hotReloadLatencyMs,
-                            patchResult: m.patchResult
-                        })),
-                        recentErrors,
-                        runtimeUrl: runtimeServerController?.url ?? null,
-                        statusUrl: statusServerController?.url,
-                        websocketUrl: websocketServerController?.url,
-                        websocketClients: runtimeContext.websocketServer?.getClientCount() ?? 0,
-                        websocketConnectionCount: runtimeContext.websocketServer?.getClientCount() ?? 0,
-                        scanComplete: runtimeContext.scanComplete,
-                        watchedRoot: normalizedPath,
-                        liveReloadSession:
-                            liveReloadSession === undefined
-                                ? undefined
-                                : {
-                                      processId: process.pid,
-                                      projectRoot: liveReloadSession.projectRoot,
-                                      sessionId: liveReloadSession.sessionId
-                                  },
-                        lastChangedFile:
-                            lastMetric === null ? null : path.relative(normalizedPath, lastMetric.filePath),
-                        lastPatchId: lastMetric?.patchId ?? null,
-                        lastPatchResult: lastMetric?.patchResult ?? null,
-                        transpileErrors: recentErrors,
-                        runtimeErrors: [],
-                        avgHotReloadLatencyMs: latencyStats?.avg,
-                        p95HotReloadLatencyMs: latencyStats?.p95
-                    };
-                }
-            });
-
-            runtimeContext.statusServer = statusServerController;
-            onStatusServerReady?.(statusServerController);
-
-            console.log(`Status server ready at ${statusServerController.url}`);
-        } catch (error) {
-            const message = getErrorMessage(error, {
-                fallback: "Unknown status server error"
-            });
-
-            if (websocketServerController) {
-                try {
-                    await websocketServerController.stop();
-                } catch (stopError) {
-                    const stopMessage = getErrorMessage(stopError, {
-                        fallback: unknownServerStopErrorMessage
-                    });
-                    console.error(`Failed to stop WebSocket server during cleanup: ${stopMessage}`);
-                }
-            }
-
-            handleCliError(new Error(`Failed to start status server: ${message}`));
-        }
-    } else if (verbose && !quiet) {
-        console.log("Status server disabled.");
-    }
+    statusServerController = await startWatchStatusServer({
+        enableStatus,
+        getRuntimeServerController,
+        getWebSocketServerController,
+        liveReloadSession,
+        normalizedPath,
+        onStatusServerReady,
+        runtimeContext,
+        statusHost,
+        statusPort,
+        unknownServerStopErrorMessage,
+        verbose,
+        quiet
+    });
 
     runtimeServerController = await startWatchRuntimeServerAfterPatchServers({
         runtimeRoot: shouldServeRuntime ? runtimeContext.root : null,

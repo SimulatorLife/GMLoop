@@ -7,7 +7,7 @@ import {
     hasRegisteredIgnorePath,
     registerIgnorePath,
     resetRegisteredIgnorePaths
-} from "../src/format-runtime/ignore-path-registry.js";
+} from "../src/modules/formatting/ignore-tracking.js";
 
 void describe("ignore path registry", () => {
     void it("deduplicates registered paths", () => {

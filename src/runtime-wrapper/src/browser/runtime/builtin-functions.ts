@@ -156,6 +156,18 @@ export function isRuntimeBuiltinAvailable(globalScope: Record<string, unknown>, 
     return isRuntimeBuiltinFunction(name) || resolveMappedRuntimeBuiltin(globalScope, name) !== undefined;
 }
 
+// Cached result of resolveRuntimeBuiltinFunctions, keyed on the runtime's
+// builtin table reference (`g_pBuiltIn`, or the minified `_HL4` equivalent).
+// GameMaker HTML5 installs this table once during runtime startup and never
+// replaces the reference afterward, so caching on its identity is safe (the
+// same assumption `resolveBuiltinConstants` in builtin-constants.ts already
+// relies on). Without this cache, every patched script/event/closure
+// invocation would re-run the full fallback-function resolution loop —
+// including, in the minified-map discovery path, an `Object.getOwnPropertyNames`
+// scan of the global scope — on every call in a 60fps game loop.
+let _cachedRuntimeBuiltinFunctions: RuntimeBuiltinFunctionMap | null = null;
+let _cachedRuntimeBuiltinTableRef: unknown = null;
+
 /**
  * Resolves the callable builtin surface available to hot-reload patches.
  *
@@ -164,10 +176,27 @@ export function isRuntimeBuiltinAvailable(globalScope: Record<string, unknown>, 
  * small builtin set emitted directly by live-reload patches and lets real
  * globals override those fallbacks when they are available.
  *
+ * The result is memoized by the identity of the runtime's builtin table
+ * (`g_pBuiltIn` or its minified `_HL4` equivalent). Because that table is
+ * installed once by the GameMaker HTML5 runtime at startup, the cache is
+ * effectively a permanent hit after the runtime becomes ready, avoiding
+ * per-call object allocation and global-scope scanning in hot script paths.
+ *
  * @param globalScope Browser global scope for the current runtime.
  * @returns A map of builtin function names to callables.
  */
 export function resolveRuntimeBuiltinFunctions(globalScope: Record<string, unknown>): RuntimeBuiltinFunctionMap {
+    const builtinTableRef =
+        readGlobalProperty(globalScope, "g_pBuiltIn") ?? readGlobalProperty(globalScope, "_HL4") ?? null;
+
+    if (
+        builtinTableRef !== null &&
+        builtinTableRef === _cachedRuntimeBuiltinTableRef &&
+        _cachedRuntimeBuiltinFunctions !== null
+    ) {
+        return _cachedRuntimeBuiltinFunctions;
+    }
+
     const functions: RuntimeBuiltinFunctionMap = { ...FALLBACK_RUNTIME_FUNCTIONS };
 
     for (const name of Object.keys(FALLBACK_RUNTIME_FUNCTIONS)) {
@@ -182,6 +211,11 @@ export function resolveRuntimeBuiltinFunctions(globalScope: Record<string, unkno
                 functions[name] = globalValue;
             }
         }
+    }
+
+    if (builtinTableRef !== null) {
+        _cachedRuntimeBuiltinTableRef = builtinTableRef;
+        _cachedRuntimeBuiltinFunctions = functions;
     }
 
     return functions;

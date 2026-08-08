@@ -320,6 +320,47 @@ export interface SourceTextEdit {
     readonly text: string;
 }
 
+/**
+ * Structural description of a half-open source span (`[start, end)`) used by
+ * lint rules that rewrite AST nodes into autofixes or `replaceTextRange`
+ * calls.
+ */
+export type SourceTextRange = Readonly<{
+    start: number;
+    end: number;
+}>;
+
+/**
+ * Resolves a node to its half-open source span by reading the start and end
+ * indices via {@link Core.getNodeStartIndex} and {@link Core.getNodeEndIndex}
+ * and validating the result.
+ *
+ * Returns `null` when either index is missing, is not a finite number, or is
+ * not strictly greater than zero relative to the start — the three failure
+ * modes that previously had to be re-checked at every call site. Centralising
+ * the guard keeps the per-rule visitor code focused on the rewrite shape
+ * instead of repeating the same `typeof !== "number"` validation ladder.
+ *
+ * @param node AST node (or any value) whose source span should be resolved.
+ * @returns A frozen `{ start, end }` span, or `null` when the span is
+ *   unavailable or malformed.
+ */
+export function getNodeRange(node: unknown): SourceTextRange | null {
+    const start = Core.getNodeStartIndex(node);
+    const end = Core.getNodeEndIndex(node);
+    if (
+        typeof start !== "number" ||
+        typeof end !== "number" ||
+        !Number.isFinite(start) ||
+        !Number.isFinite(end) ||
+        end <= start
+    ) {
+        return null;
+    }
+
+    return Object.freeze({ start, end });
+}
+
 type RuleMetaOverrides = Readonly<{
     fixable?: "code" | "whitespace" | null;
     messageText?: string;

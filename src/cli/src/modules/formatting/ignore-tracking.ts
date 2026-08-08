@@ -2,6 +2,12 @@ import { Core } from "@gmloop/core";
 
 const { isNonEmptyString } = Core;
 
+/**
+ * Tracks per-formatting-session ignore state: which ignore file paths have
+ * already been registered, and whether any of them contained a negated
+ * pattern (starting with `!`). Both flags are reset between formatting runs.
+ */
+
 const registeredIgnorePaths = new Set<string>();
 
 /**
@@ -58,4 +64,30 @@ export function getRegisteredIgnorePathCount(): number {
  */
 export function getRegisteredIgnorePathsSnapshot(): Array<string> {
     return [...registeredIgnorePaths];
+}
+
+let hasNegatedIgnoreRulesInternal = false;
+
+/**
+ * Check if negated ignore rules have been detected.
+ * @returns true if any ignore file contains a negated pattern (starting with !)
+ */
+export function hasNegatedIgnoreRules(): boolean {
+    return hasNegatedIgnoreRulesInternal;
+}
+
+/**
+ * Reset the negated ignore rules flag.
+ * Called during formatting session initialization.
+ */
+export function resetNegatedIgnoreRulesFlag(): void {
+    hasNegatedIgnoreRulesInternal = false;
+}
+
+/**
+ * Mark that negated ignore rules have been detected.
+ * Called when scanning ignore files finds a pattern starting with !.
+ */
+export function markNegatedIgnoreRulesDetected(): void {
+    hasNegatedIgnoreRulesInternal = true;
 }

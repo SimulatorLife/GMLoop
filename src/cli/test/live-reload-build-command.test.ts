@@ -57,7 +57,7 @@ function createGameMakerBuildConfig(overrides: GameMakerBuildConfigOverrides = {
 }
 
 async function createTempDirectory(prefix: string): Promise<string> {
-    return await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+    return fs.mkdtemp(path.join(os.tmpdir(), prefix));
 }
 
 async function createIgorProjectFixtures(
@@ -69,6 +69,35 @@ async function createIgorProjectFixtures(
     await fs.writeFile(runtimeIgorPath, "", "utf8");
     await fs.writeFile(licenseFile, "license", "utf8");
     await fs.writeFile(projectPath, JSON.stringify({ name: "Project" }), "utf8");
+}
+
+async function createIgorIconCopyFailureResult(
+    outputRoot: string,
+    includeHtml5GameDirectory: boolean
+): Promise<Readonly<{ exitCode: 1; stderr: ""; stdout: string }>> {
+    await fs.mkdir(outputRoot, { recursive: true });
+    if (includeHtml5GameDirectory) {
+        await fs.mkdir(path.join(outputRoot, "html5game"), { recursive: true });
+    }
+    await fs.writeFile(path.join(outputRoot, "index.html"), "<html></html>", "utf8");
+    await fs.writeFile(path.join(outputRoot, "favicon.ico"), "icon", "utf8");
+
+    return Object.freeze({
+        exitCode: 1,
+        stderr: "",
+        stdout: [
+            "DoIcon",
+            "Igor complete.",
+            `System.IO.IOException: The process cannot access the file '${path.join(
+                outputRoot,
+                "favicon.ico"
+            )}' because it is being used by another process.`,
+            "   at Igor.Utils.CopyDirectory(String sourceDir, String targetDir, String ignore)",
+            "   at Igor.HTML5Builder.Package()",
+            "   at Igor.HTML5Builder.folder()",
+            "Igor complete."
+        ].join("\n")
+    });
 }
 
 async function writeHtml5LicenseFixture(licenseFile: string): Promise<void> {
@@ -447,28 +476,7 @@ void test("buildGameMakerHtml5Output accepts Igor icon-copy failures after HTML5
                 runtimeRoot
             }),
             cwd: projectRoot,
-            executeProcess: async () => {
-                await fs.mkdir(outputRoot, { recursive: true });
-                await fs.mkdir(path.join(outputRoot, "html5game"), { recursive: true });
-                await fs.writeFile(path.join(outputRoot, "index.html"), "<html></html>", "utf8");
-                await fs.writeFile(path.join(outputRoot, "favicon.ico"), "icon", "utf8");
-                return Object.freeze({
-                    exitCode: 1,
-                    stderr: "",
-                    stdout: [
-                        "DoIcon",
-                        "Igor complete.",
-                        `System.IO.IOException: The process cannot access the file '${path.join(
-                            outputRoot,
-                            "favicon.ico"
-                        )}' because it is being used by another process.`,
-                        "   at Igor.Utils.CopyDirectory(String sourceDir, String targetDir, String ignore)",
-                        "   at Igor.HTML5Builder.Package()",
-                        "   at Igor.HTML5Builder.folder()",
-                        "Igor complete."
-                    ].join("\n")
-                });
-            }
+            executeProcess: () => createIgorIconCopyFailureResult(outputRoot, true)
         });
 
         assert.equal(result.backend, "igor");
@@ -616,27 +624,7 @@ void test("buildGameMakerHtml5Output rejects Igor icon-copy failures when html5g
                         runtimeRoot
                     }),
                     cwd: projectRoot,
-                    executeProcess: async () => {
-                        await fs.mkdir(outputRoot, { recursive: true });
-                        await fs.writeFile(path.join(outputRoot, "index.html"), "<html></html>", "utf8");
-                        await fs.writeFile(path.join(outputRoot, "favicon.ico"), "icon", "utf8");
-                        return Object.freeze({
-                            exitCode: 1,
-                            stderr: "",
-                            stdout: [
-                                "DoIcon",
-                                "Igor complete.",
-                                `System.IO.IOException: The process cannot access the file '${path.join(
-                                    outputRoot,
-                                    "favicon.ico"
-                                )}' because it is being used by another process.`,
-                                "   at Igor.Utils.CopyDirectory(String sourceDir, String targetDir, String ignore)",
-                                "   at Igor.HTML5Builder.Package()",
-                                "   at Igor.HTML5Builder.folder()",
-                                "Igor complete."
-                            ].join("\n")
-                        });
-                    }
+                    executeProcess: () => createIgorIconCopyFailureResult(outputRoot, false)
                 }),
             /Igor failed/u
         );

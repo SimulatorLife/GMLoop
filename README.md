@@ -83,11 +83,11 @@ exclusively via the `--path` option — passing a positional path no longer
 works and produces an actionable usage error that points at `--path`.
 
 ```bash
-# format writes changes (use --path for the target)
+# dry-run format (default; prints pending changes without writing)
 pnpm run cli -- format --path /absolute/path/to/MyGame
 
-# check mode (no writes)
-pnpm run cli -- format --path /absolute/path/to/MyGame
+# apply formatting changes (writes files in place)
+pnpm run cli -- format --write --path /absolute/path/to/MyGame
 ```
 
 `format:gml` now targets `.gml` files only. The old `--extensions` option and
@@ -294,9 +294,11 @@ pnpm run cli -- transpile --write --path /path/to/project
 # hot-reload watch pipeline
 pnpm run cli -- watch /path/to/project --verbose
 
-# query the watch status server (--status-port and --status-host mirror watch's flags)
-pnpm run cli -- live-reload status
-pnpm run cli -- live-reload status --status-port 18000 --endpoint health
+# live-reload session (start, attach, or stop the managed session;
+# --status-port and --status-host mirror watch's flags)
+pnpm run cli -- live-reload session --path /path/to/project
+pnpm run cli -- live-reload session --path /path/to/project --status-port 18000 --status-host 127.0.0.1
+pnpm run cli -- live-reload session --path /path/to/project --stop
 ```
 
 ## CLI wrapper environment knobs
@@ -312,7 +314,6 @@ These are the most commonly used CLI environment overrides.
 | `PRETTIER_PLUGIN_GML_IGNORED_FILE_SAMPLE_LIMIT` | Cap ignored-file samples in formatter summary output. |
 | `PRETTIER_PLUGIN_GML_SKIPPED_DIRECTORY_SAMPLE_LIMIT` | Cap skipped-directory samples in formatter summary output. |
 | `PRETTIER_PLUGIN_GML_UNSUPPORTED_EXTENSION_SAMPLE_LIMIT` | Cap unsupported-extension samples in formatter summary output. |
-| `WATCH_STATUS_HOST` / `WATCH_STATUS_PORT` | Defaults for `live-reload status --status-host` / `live-reload status --status-port` (mirrors `watch --status-host` / `watch --status-port`). |
 
 Use `pnpm run cli -- <command> --help` for full option details.
 
@@ -424,7 +425,9 @@ Generated artifacts live in `dist/` and are disposable.
 
 Start here for deeper context and plans:
 
-- [`docs/README.md`](docs/README.md) (documentation index)
+- [`docs/README.md`](docs/README.md) (documentation index — also lists historical
+  [architectural audits](docs/architectural-audits/) and Codex subagent
+  contracts)
 - [`docs/target-state.md`](docs/target-state.md) (project architecture target state)
 - [`docs/contributor-onboarding.md`](docs/contributor-onboarding.md) (first-time contributor checklist)
 - [`src/cli/README.md`](src/cli/README.md) (full command catalog)

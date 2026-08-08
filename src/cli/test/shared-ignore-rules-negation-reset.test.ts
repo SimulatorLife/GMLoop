@@ -23,7 +23,7 @@ void describe("formatting session negation tracking", () => {
         try {
             const [{ __test__ }, tracker] = await Promise.all([
                 import("../src/cli.js"),
-                import("../src/modules/formatting/ignore-rules-negation-tracker.js")
+                import("../src/modules/formatting/ignore-tracking.js")
             ]);
 
             const { hasNegatedIgnoreRules, markNegatedIgnoreRulesDetected } = tracker;

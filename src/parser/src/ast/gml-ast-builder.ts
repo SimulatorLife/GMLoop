@@ -25,6 +25,14 @@ type ParsedDefineMacroDirective = {
 const DISALLOWED_SYMBOLIC_IDENTIFIER_TEXTS = new Set(["%", "&&", "||", "^^"]);
 
 /**
+ * Ordered list of accessor names the enumerator rule exposes for bare
+ * numeric literal initializers. `visitEnumerator` probes them in this order
+ * so the first available token wins, which mirrors how the grammar surfaces
+ * alternatives on the parse context.
+ */
+const ENUM_LITERAL_ACCESSORS: ReadonlyArray<string> = ["IntegerLiteral", "HexIntegerLiteral", "BinaryLiteral"];
+
+/**
  * Create a parser visitor instance whose generated `visit*` methods proxy to
  * the {@link host}'s implementations. The helper walks the prototype chain so
  * mixins and subclasses can expose custom visit handlers without manually
@@ -1597,40 +1605,63 @@ export default class GameMakerASTBuilder {
 
     // Visit a parse tree produced by GameMakerLanguageParser#enumerator.
     visitEnumerator(ctx: ParserContext): any {
-        let initializer: any = null;
-
-        if (typeof ctx.expression === "function") {
-            const expressionContext = this.ensureSingle(ctx.expression());
-            if (expressionContext) {
-                initializer = this.visit(expressionContext);
-                initializer = this.normalizeEnumInitializer(initializer, expressionContext);
-            }
-        }
-
-        if (initializer == null && typeof ctx.IntegerLiteral === "function") {
-            const literal = this.ensureToken(ctx.IntegerLiteral());
-            if (literal) {
-                initializer = literal?.getText();
-            }
-        }
-        if (initializer == null && typeof ctx.HexIntegerLiteral === "function") {
-            const literal = this.ensureToken(ctx.HexIntegerLiteral());
-            if (literal) {
-                initializer = literal?.getText();
-            }
-        }
-        if (initializer == null && typeof ctx.BinaryLiteral === "function") {
-            const literal = this.ensureToken(ctx.BinaryLiteral());
-            if (literal) {
-                initializer = literal?.getText();
-            }
-        }
+        const initializer = this.resolveEnumInitializer(ctx);
 
         return this.astNode(ctx, {
             type: "EnumMember",
             name: this.visit(ctx.identifier()),
             initializer
         });
+    }
+
+    /**
+     * Resolve the initializer for an enum member by probing the parse context
+     * for each recognised initializer source in priority order. The grammar
+     * exposes an optional expression plus each numeric literal as its own
+     * accessor; only one of them is non-null on any given enumerator, so the
+     * helpers short-circuit as soon as a usable value is found.
+     *
+     * @param ctx ANTLR parse context for the enumerator rule.
+     * @returns The resolved initializer value, or `null` when the enum member
+     *          has no explicit initializer (later members inherit the previous
+     *          value at format time).
+     */
+    private resolveEnumInitializer(ctx: ParserContext): any {
+        if (typeof ctx.expression === "function") {
+            const expressionContext = this.ensureSingle(ctx.expression());
+            if (expressionContext) {
+                return this.normalizeEnumInitializer(this.visit(expressionContext), expressionContext);
+            }
+        }
+
+        for (const accessorName of ENUM_LITERAL_ACCESSORS) {
+            const text = this.readEnumLiteralText(ctx, accessorName);
+            if (text !== null) {
+                return text;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Try to extract the literal source text for one of the enumerator's
+     * optional literal accessors. Returns `null` when the accessor is absent
+     * or yields no usable token, letting callers fall back to the next
+     * initializer source.
+     *
+     * @param ctx ANTLR parse context for the enumerator rule.
+     * @param accessorName Name of the accessor that returns a token (or null).
+     * @returns The literal's source text, or `null` when not available.
+     */
+    private readEnumLiteralText(ctx: ParserContext, accessorName: string): string | null {
+        const accessorFn = (ctx as Record<string, unknown>)[accessorName];
+        if (typeof accessorFn !== "function") {
+            return null;
+        }
+
+        const token = this.ensureToken((accessorFn as () => unknown).call(ctx));
+        return token ? token.getText() : null;
     }
 
     private normalizeEnumInitializer(initializer: any, expressionContext: ParserContext | null): any {

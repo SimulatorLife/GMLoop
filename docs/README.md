@@ -156,8 +156,18 @@ retries, memory, budgets, queues, and durable workflow state.
   instructions that limit it to running one assigned `pnpm run`
   build/lint/test command and reporting exact verbatim failure excerpts.
 
-- [`codex-smart-agent.md`](codex-smart-agent.md) — Configuration contract for
-  the costly `smart` Codex specialist: `model = "gpt-5.6-sol"`,
-  `model_reasoning_effort = "high"`, inherited orchestrator capabilities,
-  and configuration-level guards that prevent subagent spawning. Use it
-  sparingly for complex, high-judgment assignments.
+## Architectural audits
+
+Historical structural surveys that drove later refactors. Each entry is dated
+and self-contained so readers can follow the workspace-shape evolution
+without re-reading the broader plans.
+
+- [`architectural-audits/2026-07-11-cli-watch-dependency-updates.md`](architectural-audits/2026-07-11-cli-watch-dependency-updates.md) — Survey
+  of `src/cli/src/commands/watch.ts` that motivated splitting cohesive
+  watch-mode concerns out of the monolithic watch command into focused
+  submodules.
+- [`architectural-audits/2026-07-15-cli-refactor-bridge-dependencies.md`](architectural-audits/2026-07-15-cli-refactor-bridge-dependencies.md) — Review
+  of the CLI↔refactor bridge that locked down the current CLI-as-composition-root
+  ownership for refactor workflows.
+- [`architectural-audits/2026-07-18-cannonfather-html5-runtime.md`](architectural-audits/2026-07-18-cannonfather-html5-runtime.md) — Assessment
+  of the HTML5 runtime fork surface that feeds the live-reload patch pipeline.

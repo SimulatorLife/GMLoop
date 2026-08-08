@@ -166,6 +166,12 @@ export function delayFileReadRetry(durationMs: number, abortSignal?: AbortSignal
  * Filesystem watch events can fire while an editor is still writing.
  * Retry briefly when the file is observed as empty so we do not treat
  * transient truncation windows as a permanent transpilation failure.
+ *
+ * @param filePath - Path to the file to read.
+ * @param retryCount - Maximum number of read attempts, including the initial read; values below one still perform the initial read without retrying.
+ * @param retryDelayMs - Delay in milliseconds between attempts after an empty read.
+ * @param abortSignal - Optional signal used to stop before the first read or during a retry delay.
+ * @returns The file content, or `null` when the signal was already aborted before the first read. An abort during a retry delay returns the current content without another read.
  */
 export async function readSourceFileWithTransientEmptyRetry(
     filePath: string,

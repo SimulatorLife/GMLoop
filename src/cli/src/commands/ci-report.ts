@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { appendFile, copyFile, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { appendFile, copyFile, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
@@ -165,7 +165,9 @@ async function collectFiles(rootDirectory: string): Promise<Array<string>> {
 function isPerformanceTest(relativePath: string): boolean {
     const normalized = normalizePath(relativePath).toLowerCase();
     const basename = path.posix.basename(normalized);
-    return normalized.includes("/dist/test/performance/") || basename.includes("performance") || basename.includes("perf");
+    return (
+        normalized.includes("/dist/test/performance/") || basename.includes("performance") || basename.includes("perf")
+    );
 }
 
 function isCanonicalTestPath(relativePath: string): boolean {
@@ -205,21 +207,23 @@ function parseTimingHistory(value: unknown): Map<string, number> {
 
 function median(values: ReadonlyArray<number>): number {
     if (values.length === 0) {
-        return 1_000;
+        return 1000;
     }
     const sorted = [...values].sort((left, right) => left - right);
     const midpoint = Math.floor(sorted.length / 2);
     if (sorted.length % 2 === 1) {
-        return sorted[midpoint] ?? 1_000;
+        return sorted[midpoint] ?? 1000;
     }
-    return ((sorted[midpoint - 1] ?? 1_000) + (sorted[midpoint] ?? 1_000)) / 2;
+    return ((sorted[midpoint - 1] ?? 1000) + (sorted[midpoint] ?? 1000)) / 2;
 }
 
 async function createTestWeights(
     tests: ReadonlyArray<string>,
     history: Map<string, number>
 ): Promise<Array<TestWeight>> {
-    const knownDurations = tests.map((testFile) => history.get(testFile)).filter((value): value is number => value !== undefined);
+    const knownDurations = tests
+        .map((testFile) => history.get(testFile))
+        .filter((value): value is number => value !== undefined);
     const fallbackDuration = median(knownDurations);
     const sizes = new Map<string, number>();
     for (const testFile of tests) {
@@ -260,8 +264,7 @@ function createBalancedShardPlan(weights: ReadonlyArray<TestWeight>, shardCount:
     );
     for (const testWeight of orderedWeights) {
         const target = [...mutableShards].sort(
-            (left, right) =>
-                left.estimatedDurationMs - right.estimatedDurationMs || left.name.localeCompare(right.name)
+            (left, right) => left.estimatedDurationMs - right.estimatedDurationMs || left.name.localeCompare(right.name)
         )[0];
         if (!target) {
             throw new Error("Unable to select a shard for a test file.");
@@ -404,7 +407,9 @@ function parseManifest(value: unknown): TestManifest {
     return manifest;
 }
 
-async function createManifest(options: Readonly<{ output: string; history?: string; shardCount: number }>): Promise<TestManifest> {
+async function createManifest(
+    options: Readonly<{ output: string; history?: string; shardCount: number }>
+): Promise<TestManifest> {
     const tests = await discoverCanonicalTests();
     if (tests.length === 0) {
         throw new Error("No canonical compiled test files were found.");
@@ -432,7 +437,11 @@ async function appendGithubOutputs(outputPath: string | undefined, manifest: Tes
         return;
     }
     const matrix = JSON.stringify({ shard: manifest.shards.map((shard) => shard.name) });
-    await appendFile(outputPath, `matrix=${matrix}\nmanifest_digest=${manifest.manifestDigest}\nplan_digest=${manifest.planDigest}\n`, "utf8");
+    await appendFile(
+        outputPath,
+        `matrix=${matrix}\nmanifest_digest=${manifest.manifestDigest}\nplan_digest=${manifest.planDigest}\n`,
+        "utf8"
+    );
 }
 
 function decodeXml(value: string): string {
@@ -480,7 +489,9 @@ function isCompleteJunit(xml: string): boolean {
     return xml.includes("<testsuites") && xml.includes("</testsuites>") && !xml.includes(SYNTHETIC_JUNIT_MARKER);
 }
 
-async function runShard(options: Readonly<{ manifestPath: string; shardName: string; reportDirectory: string }>): Promise<number> {
+async function runShard(
+    options: Readonly<{ manifestPath: string; shardName: string; reportDirectory: string }>
+): Promise<number> {
     const manifest = parseManifest(await readJsonFile(options.manifestPath));
     const shard = manifest.shards.find((candidate) => candidate.name === options.shardName);
     if (!shard) {
@@ -532,7 +543,7 @@ type EslintResult = Readonly<{
 
 function parseEslintResults(value: unknown): Array<EslintResult> {
     if (!Array.isArray(value)) {
-        throw new Error("ESLint JSON output is not an array.");
+        throw new TypeError("ESLint JSON output is not an array.");
     }
     return value.map((entry) => {
         if (!isRecord(entry) || typeof entry.filePath !== "string" || !Array.isArray(entry.messages)) {
@@ -604,7 +615,12 @@ async function runLintReport(reportDirectory: string): Promise<number> {
 }
 
 function parseShardMetadata(value: unknown): ShardMetadata {
-    if (!isRecord(value) || value.schemaVersion !== 1 || typeof value.shard !== "string" || !Array.isArray(value.testFiles)) {
+    if (
+        !isRecord(value) ||
+        value.schemaVersion !== 1 ||
+        typeof value.shard !== "string" ||
+        !Array.isArray(value.testFiles)
+    ) {
         throw new Error("Invalid test-shard metadata.");
     }
     const testFiles = value.testFiles.filter((entry): entry is string => typeof entry === "string").map(normalizePath);
@@ -633,24 +649,26 @@ function matchTimingToFile(location: string, files: ReadonlyArray<string>): stri
     }
     const basename = path.posix.basename(normalizedLocation);
     const basenameMatches = files.filter((testFile) => path.posix.basename(testFile) === basename);
-    return basenameMatches.length === 1 ? basenameMatches[0] ?? null : null;
+    return basenameMatches.length === 1 ? (basenameMatches[0] ?? null) : null;
 }
 
 function escapeMarkdown(value: string): string {
-    return value.replaceAll("|", "\\|").replaceAll("\n", " ");
+    return value.replaceAll("|", String.raw`\|`).replaceAll("\n", " ");
 }
 
 function formatDuration(seconds: number): string {
     return seconds >= 60 ? `${(seconds / 60).toFixed(2)} min` : `${seconds.toFixed(3)} s`;
 }
 
-async function assembleReport(options: Readonly<{
-    manifestPath: string;
-    reportDirectory: string;
-    targetSha: string;
-    toolingFingerprint: string;
-    buildStatus: number;
-}>): Promise<boolean> {
+async function assembleReport(
+    options: Readonly<{
+        manifestPath: string;
+        reportDirectory: string;
+        targetSha: string;
+        toolingFingerprint: string;
+        buildStatus: number;
+    }>
+): Promise<boolean> {
     const manifest = parseManifest(await readJsonFile(options.manifestPath));
     await mkdir(options.reportDirectory, { recursive: true });
     const lintValue = await readOptionalJsonFile(path.join(options.reportDirectory, "lint-meta.json"));
@@ -750,7 +768,7 @@ async function assembleReport(options: Readonly<{
             allCases.push(Object.freeze({ ...testCase, shard: shard.shard }));
             const matchedFile = matchTimingToFile(testCase.location, shard.testFiles);
             if (matchedFile !== null) {
-                attributed.set(matchedFile, (attributed.get(matchedFile) ?? 0) + testCase.durationSeconds * 1_000);
+                attributed.set(matchedFile, (attributed.get(matchedFile) ?? 0) + testCase.durationSeconds * 1000);
             }
         }
         const fallbackDuration = shard.testFiles.length > 0 ? shard.durationMs / shard.testFiles.length : 0;
@@ -777,7 +795,7 @@ async function assembleReport(options: Readonly<{
             status: shard.status
         })),
         fileDurations: manifest.tests.map((testFile): FileDuration => {
-            const timing = fileDurations.get(testFile) ?? { durationMs: 1_000, source: "shard-average" as const };
+            const timing = fileDurations.get(testFile) ?? { durationMs: 1000, source: "shard-average" as const };
             return Object.freeze({ file: testFile, durationMs: timing.durationMs, source: timing.source });
         }),
         slowestTests: sortedCases.slice(0, 50)
@@ -797,17 +815,19 @@ async function assembleReport(options: Readonly<{
             .sort((left, right) => right.durationMs - left.durationMs)
             .map(
                 (shard) =>
-                    `| ${escapeMarkdown(shard.shard)} | ${shard.testFiles.length} | ${shard.status} | ${formatDuration(shard.durationMs / 1_000)} |`
+                    `| ${escapeMarkdown(shard.shard)} | ${shard.testFiles.length} | ${shard.status} | ${formatDuration(shard.durationMs / 1000)} |`
             ),
         "",
         "#### Slowest test cases",
         "",
         "| Test | File / suite | Shard | Duration |",
         "| --- | --- | --- | ---: |",
-        ...sortedCases.slice(0, 20).map(
-            (testCase) =>
-                `| ${escapeMarkdown(testCase.name)} | ${escapeMarkdown(testCase.location)} | ${escapeMarkdown(testCase.shard)} | ${formatDuration(testCase.durationSeconds)} |`
-        ),
+        ...sortedCases
+            .slice(0, 20)
+            .map(
+                (testCase) =>
+                    `| ${escapeMarkdown(testCase.name)} | ${escapeMarkdown(testCase.location)} | ${escapeMarkdown(testCase.shard)} | ${formatDuration(testCase.durationSeconds)} |`
+            ),
         ""
     ];
     await writeFile(path.join(options.reportDirectory, "test-durations.md"), markdown.join("\n"), "utf8");
@@ -826,11 +846,13 @@ function validateCheckstyle(xml: string, errors: Array<string>): void {
     }
 }
 
-async function validateReport(options: Readonly<{
-    reportDirectory: string;
-    expectedSha?: string;
-    expectedFingerprint?: string;
-}>): Promise<Array<string>> {
+async function validateReport(
+    options: Readonly<{
+        reportDirectory: string;
+        expectedSha?: string;
+        expectedFingerprint?: string;
+    }>
+): Promise<Array<string>> {
     const errors: Array<string> = [];
     const metadataValue = await readOptionalJsonFile(path.join(options.reportDirectory, "auto-merge-report.json"));
     const manifestValue = await readOptionalJsonFile(path.join(options.reportDirectory, "test-manifest.json"));
@@ -876,9 +898,7 @@ async function validateReport(options: Readonly<{
         if (metadataValue.shardCount !== manifest.shardCount) {
             errors.push("report shard count does not match test-manifest.json");
         }
-        if (!Array.isArray(metadataValue.testShards)) {
-            errors.push("report does not declare test shards");
-        } else {
+        if (Array.isArray(metadataValue.testShards)) {
             const parsedShards: Array<ShardMetadata> = [];
             for (const rawShard of metadataValue.testShards) {
                 if (!isRecord(rawShard) || typeof rawShard.name !== "string" || !Array.isArray(rawShard.testFiles)) {
@@ -898,7 +918,9 @@ async function validateReport(options: Readonly<{
                     signal: typeof rawShard.signal === "string" ? (rawShard.signal as NodeJS.Signals) : null,
                     durationMs: typeof rawShard.durationMs === "number" ? rawShard.durationMs : 0,
                     testFiles: Object.freeze(
-                        rawShard.testFiles.filter((entry): entry is string => typeof entry === "string").map(normalizePath)
+                        rawShard.testFiles
+                            .filter((entry): entry is string => typeof entry === "string")
+                            .map(normalizePath)
                     ),
                     manifestDigest: typeof rawShard.manifestDigest === "string" ? rawShard.manifestDigest : "",
                     planDigest: typeof rawShard.planDigest === "string" ? rawShard.planDigest : "",
@@ -909,7 +931,9 @@ async function validateReport(options: Readonly<{
                     errors.push(`test shard ${shard.shard} did not complete`);
                 }
                 if (!isComparableStatus(shard.status)) {
-                    errors.push(`test shard ${shard.shard} did not produce a comparable result (status ${shard.status})`);
+                    errors.push(
+                        `test shard ${shard.shard} did not produce a comparable result (status ${shard.status})`
+                    );
                 }
                 if (shard.manifestDigest !== manifest.manifestDigest || shard.planDigest !== manifest.planDigest) {
                     errors.push(`test shard ${shard.shard} provenance does not match the manifest`);
@@ -925,6 +949,8 @@ async function validateReport(options: Readonly<{
                 }
             }
             errors.push(...findCoverageErrors(manifest, parsedShards));
+        } else {
+            errors.push("report does not declare test shards");
         }
     }
 
@@ -943,11 +969,17 @@ async function stageCompiledRuntime(outputDirectory: string): Promise<void> {
     ];
     const runtimeFiles = candidates.filter((relativePath) => {
         const normalized = normalizePath(relativePath);
-        const isDistFile = normalized.startsWith("test/dist/") || (normalized.startsWith("src/") && normalized.includes("/dist/"));
+        const isDistFile =
+            normalized.startsWith("test/dist/") || (normalized.startsWith("src/") && normalized.includes("/dist/"));
         if (!isDistFile) {
             return false;
         }
-        return !normalized.endsWith(".map") && !normalized.endsWith(".d.ts") && !normalized.endsWith(".d.ts.map") && !normalized.endsWith(".tsbuildinfo");
+        return (
+            !normalized.endsWith(".map") &&
+            !normalized.endsWith(".d.ts") &&
+            !normalized.endsWith(".d.ts.map") &&
+            !normalized.endsWith(".tsbuildinfo")
+        );
     });
     if (runtimeFiles.length === 0) {
         throw new Error("No compiled runtime files were found to stage.");
@@ -1001,7 +1033,9 @@ function createPositiveIntegerParser(label: string): (value: string) => number {
  * Create the internal CI-report command surface used by local reporting and GitHub Actions.
  */
 export function createCiReportCommand(): Command {
-    const command = new Command().name("ci-report").description("Internal CI report orchestration and validation utilities.");
+    const command = new Command()
+        .name("ci-report")
+        .description("Internal CI report orchestration and validation utilities.");
 
     command
         .command("list-tests")
@@ -1020,7 +1054,11 @@ export function createCiReportCommand(): Command {
         .option("--shards <count>", "Number of test shards", createPositiveIntegerParser("shards"), DEFAULT_SHARD_COUNT)
         .option("--github-output <path>")
         .action(async (options: { output: string; history?: string; shards: number; githubOutput?: string }) => {
-            const manifest = await createManifest({ output: options.output, history: options.history, shardCount: options.shards });
+            const manifest = await createManifest({
+                output: options.output,
+                history: options.history,
+                shardCount: options.shards
+            });
             await appendGithubOutputs(options.githubOutput, manifest);
             console.log(`Created ${manifest.shards.length} balanced shards for ${manifest.tests.length} test files.`);
         });
@@ -1052,22 +1090,24 @@ export function createCiReportCommand(): Command {
         .requiredOption("--fingerprint <value>")
         .requiredOption("--build-status <status>", "Build status", (value: string) => parseInteger(value, 2))
         .option("--report-dir <path>", "Report directory", "reports")
-        .action(async (options: {
-            manifest: string;
-            targetSha: string;
-            fingerprint: string;
-            buildStatus: number;
-            reportDir: string;
-        }) => {
-            const completed = await assembleReport({
-                manifestPath: options.manifest,
-                reportDirectory: options.reportDir,
-                targetSha: options.targetSha,
-                toolingFingerprint: options.fingerprint,
-                buildStatus: options.buildStatus
-            });
-            process.exitCode = completed ? 0 : 1;
-        });
+        .action(
+            async (options: {
+                manifest: string;
+                targetSha: string;
+                fingerprint: string;
+                buildStatus: number;
+                reportDir: string;
+            }) => {
+                const completed = await assembleReport({
+                    manifestPath: options.manifest,
+                    reportDirectory: options.reportDir,
+                    targetSha: options.targetSha,
+                    toolingFingerprint: options.fingerprint,
+                    buildStatus: options.buildStatus
+                });
+                process.exitCode = completed ? 0 : 1;
+            }
+        );
 
     command
         .command("validate")

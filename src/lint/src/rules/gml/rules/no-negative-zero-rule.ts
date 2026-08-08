@@ -2,7 +2,7 @@ import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import type { GmlRuleDefinition } from "../index.js";
-import { createMeta, isAstNodeRecord } from "../rule-base-helpers.js";
+import { createMeta, getNodeRange, isAstNodeRecord } from "../rule-base-helpers.js";
 
 /**
  * Reports and autofixes unary minus applied to a literal zero (`-0`, `-0.`,
@@ -48,16 +48,15 @@ export function createNoNegativeZeroRule(definition: GmlRuleDefinition): Rule.Ru
                         return;
                     }
 
-                    const start = Core.getNodeStartIndex(node);
-                    const end = Core.getNodeEndIndex(node);
-                    if (typeof start !== "number" || typeof end !== "number") {
+                    const range = getNodeRange(node);
+                    if (range === null) {
                         return;
                     }
 
                     context.report({
                         node,
                         messageId: definition.messageId,
-                        fix: (fixer) => fixer.replaceTextRange([start, end], "0")
+                        fix: (fixer) => fixer.replaceTextRange([range.start, range.end], "0")
                     });
                 }
             });

@@ -1177,4 +1177,94 @@ switch (x) {
             assert.doesNotThrow(() => GMLParser.parse(source), `Failed to parse: ${source}`);
         }
     });
+
+    void it("resolves enum member initializers across every supported source", () => {
+        function collectEnumMembers(source: string) {
+            const ast = GMLParser.parse(source, { simplifyLocations: false });
+            const members: Array<Record<string, unknown>> = [];
+            Core.traverseAst(ast, {
+                enter(node) {
+                    if (node && typeof node === "object" && node.type === "EnumMember") {
+                        members.push(node as unknown as Record<string, unknown>);
+                    }
+                }
+            });
+            return members;
+        }
+
+        const literalCases: Array<{
+            label: string;
+            source: string;
+            expectedInitializers: ReadonlyArray<unknown>;
+            expectedCount: number;
+        }> = [
+            {
+                label: "integer literals",
+                source: ["enum E {", "    A = 1,", "    B,", "    C = 4", "}", ""].join("\n"),
+                expectedInitializers: ["1", null, "4"],
+                expectedCount: 3
+            },
+            {
+                label: "hexadecimal literals",
+                source: ["enum H {", "    A = $FF,", "    B = $10", "}", ""].join("\n"),
+                expectedInitializers: ["$FF", "$10"],
+                expectedCount: 2
+            },
+            {
+                label: "binary literals",
+                source: ["enum B {", "    A = 0b1010,", "    B = 0b1100", "}", ""].join("\n"),
+                expectedInitializers: ["0b1010", "0b1100"],
+                expectedCount: 2
+            }
+        ];
+
+        for (const { label, source, expectedInitializers, expectedCount } of literalCases) {
+            const members = collectEnumMembers(source);
+            const initializers = members.map((member) => member.initializer ?? null);
+            assert.deepStrictEqual(
+                initializers,
+                expectedInitializers,
+                `Expected ${label} to surface initializers verbatim from the source text.`
+            );
+            assert.strictEqual(
+                members.length,
+                expectedCount,
+                `Expected ${label} to yield ${expectedCount} enum member(s).`
+            );
+        }
+
+        const inheritedSource = ["enum I {", "    A = 1,", "    B,", "    C", "}", ""].join("\n");
+        const inheritedMembers = collectEnumMembers(inheritedSource);
+        assert.strictEqual(inheritedMembers.length, 3, "Expected three enum members for the inheritance case.");
+        assert.deepStrictEqual(
+            inheritedMembers.map((member) => member.initializer ?? null),
+            ["1", null, null],
+            "Implicit-inheritance enum members should yield a null initializer."
+        );
+
+        const expressionSource = ["enum X {", "    A = 1 + 2,", "    B = 3 * 4", "}", ""].join("\n");
+        const expressionMembers = collectEnumMembers(expressionSource);
+        assert.strictEqual(
+            expressionMembers.length,
+            2,
+            "Expected the expression initializer case to yield two enum members."
+        );
+        expressionMembers.forEach((member, index) => {
+            const initializer = member.initializer as Record<string, unknown> | null;
+            assert.ok(
+                initializer && typeof initializer === "object",
+                "Complex expression initializers should be preserved as AST nodes."
+            );
+            assert.strictEqual(
+                initializer.type,
+                "BinaryExpression",
+                "Multi-token initializers should arrive as BinaryExpression nodes."
+            );
+            assert.strictEqual(
+                initializer._enumInitializerText,
+                index === 0 ? "1+2" : "3*4",
+                "AST-backed initializers should carry the verbatim source text for downstream formatters."
+            );
+        });
+    });
 });
