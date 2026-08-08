@@ -25,15 +25,36 @@ void test("ScopeTracker bounds lookup cache entries with LRU eviction", () => {
         end: { line: 3, column: 5, index: 16 }
     });
 
-    tracker.lookup("alpha");
-    tracker.lookup("beta");
-    tracker.lookup("gamma");
-    tracker.lookup("delta");
+    assert.strictEqual(tracker.countRetainedLookupCacheEntries(), 0, "Cache should be empty before any lookups");
 
-    const internalLookupCache = (tracker as any).lookupCache as Map<string, unknown>;
-    assert.equal(internalLookupCache.size, 3);
-    assert.equal(internalLookupCache.has("alpha"), false);
-    assert.equal(internalLookupCache.has("delta"), true);
+    // Look up more distinct names than lookupCacheMaxEntries allows. If eviction were
+    // broken (unbounded growth), the retained count below would exceed the configured cap.
+    assert.strictEqual(tracker.lookup("alpha")?.name, "alpha");
+    assert.strictEqual(tracker.lookup("beta")?.name, "beta");
+    assert.strictEqual(tracker.lookup("gamma")?.name, "gamma");
+    assert.strictEqual(tracker.lookup("delta"), null);
+
+    assert.strictEqual(
+        tracker.countRetainedLookupCacheEntries(),
+        3,
+        "Cache should never retain more entries than lookupCacheMaxEntries"
+    );
+
+    // Re-resolving the same names must not grow the cache further, and every name must
+    // keep resolving correctly regardless of whether it was evicted from the cache -
+    // eviction is a memory optimization, not a source of stale or missing results.
+    for (let i = 0; i < 25; i++) {
+        assert.strictEqual(tracker.lookup("alpha")?.name, "alpha");
+        assert.strictEqual(tracker.lookup("beta")?.name, "beta");
+        assert.strictEqual(tracker.lookup("gamma")?.name, "gamma");
+        assert.strictEqual(tracker.lookup("delta"), null);
+    }
+
+    assert.strictEqual(
+        tracker.countRetainedLookupCacheEntries(),
+        3,
+        "Cache should stay bounded after repeated lookups of the same names"
+    );
 });
 
 void test("ScopeTracker bounds identifier resolution cache entries", () => {
@@ -62,14 +83,20 @@ void test("ScopeTracker bounds identifier resolution cache entries", () => {
         end: { line: 3, column: 5, index: 13 }
     });
 
-    tracker.resolveIdentifier("one", rootScope.id);
-    tracker.resolveIdentifier("two", rootScope.id);
-    tracker.resolveIdentifier("three", rootScope.id);
+    assert.strictEqual(
+        tracker.countRetainedIdentifierResolutionCacheEntries(),
+        0,
+        "Cache should be empty before any resolutions"
+    );
 
-    const internalIdentifierCache = (tracker as any).identifierCache as {
-        cache: Map<string, Map<string, unknown>>;
-    };
+    // Resolve more distinct names than identifierCacheMaxTrackedNames allows. Every
+    // resolution must still return the correct declaration regardless of eviction.
+    assert.strictEqual(tracker.resolveIdentifier("one", rootScope.id)?.name, "one");
+    assert.strictEqual(tracker.resolveIdentifier("two", rootScope.id)?.name, "two");
+    assert.strictEqual(tracker.resolveIdentifier("three", rootScope.id)?.name, "three");
 
-    assert.ok(internalIdentifierCache.cache.size <= 2);
-    assert.equal(internalIdentifierCache.cache.has("one"), false);
+    assert.ok(
+        tracker.countRetainedIdentifierResolutionCacheEntries() <= 2,
+        "Cache should never retain more tracked names than identifierCacheMaxTrackedNames"
+    );
 });

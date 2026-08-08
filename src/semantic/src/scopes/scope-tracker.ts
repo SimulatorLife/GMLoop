@@ -1055,6 +1055,15 @@ export class ScopeTracker implements ScipExportView {
         return this.identifierCache.countRetainedEntries();
     }
 
+    /**
+     * Counts retained name lookup cache entries for diagnostics and memory regression tests.
+     *
+     * @returns Total number of cached name lookup entries currently retained.
+     */
+    public countRetainedLookupCacheEntries(): number {
+        return this.lookupCache.size;
+    }
+
     public resolveIdentifier(name: string | null | undefined, scopeId?: string | null): ScopeSymbolMetadata | null {
         if (!name) {
             return null;
