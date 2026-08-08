@@ -2504,10 +2504,12 @@ export class GmlSemanticBridge {
         return false;
     }
 
-    private collectGlobalAndInstanceNamingTargets(
-        shouldIncludePath: NamingTargetPathPredicate,
-        pushTarget: NamingTargetSink
-    ): void {
+    /**
+     * Names that must not be reported as global/instance variable naming targets because they
+     * are already declared as an enum, macro, script/callable, or resource. Renaming a variable
+     * that shadows one of these would collide with the identifier it shadows.
+     */
+    private collectKnownShadowableNames(): Set<string> {
         const knownShadowableNames = new Set<string>();
 
         for (const entry of Object.values(this.identifiers.enums ?? {})) {
@@ -2534,7 +2536,22 @@ export class GmlSemanticBridge {
             }
         }
 
-        for (const entry of Object.values(this.identifiers.globalVariables ?? {})) {
+        return knownShadowableNames;
+    }
+
+    /**
+     * Emits a naming target for every entry in `entries` that is eligible for renaming: its
+     * declaration path is included, it has a resolvable name, the name doesn't shadow another
+     * declaration kind, and it isn't a constructor static member (those are handled separately).
+     */
+    private collectVariableNamingTargets(
+        entries: Record<string, SemanticIdentifierEntry> | undefined,
+        category: Extract<BridgeNamingConventionCategory, "globalVariable" | "instanceVariable">,
+        knownShadowableNames: ReadonlySet<string>,
+        shouldIncludePath: NamingTargetPathPredicate,
+        pushTarget: NamingTargetSink
+    ): void {
+        for (const entry of Object.values(entries ?? {})) {
             const declarationFilePath = this.getDeclarationFilePath(entry);
             const entryName = typeof entry?.name === "string" ? entry.name : entry?.key;
             if (
@@ -2547,7 +2564,7 @@ export class GmlSemanticBridge {
             }
 
             pushTarget({
-                category: "globalVariable",
+                category,
                 name: entryName,
                 occurrences: [],
                 path: declarationFilePath,
@@ -2555,28 +2572,28 @@ export class GmlSemanticBridge {
                 symbolId: this.generateScipId(entry, entryName)
             });
         }
+    }
 
-        for (const entry of Object.values(this.identifiers.instanceVariables ?? {})) {
-            const declarationFilePath = this.getDeclarationFilePath(entry);
-            const entryName = typeof entry?.name === "string" ? entry.name : entry?.key;
-            if (
-                !shouldIncludePath(declarationFilePath) ||
-                typeof entryName !== "string" ||
-                knownShadowableNames.has(entryName) ||
-                this.isConstructorStaticMemberIdentifierEntry(entry)
-            ) {
-                continue;
-            }
+    private collectGlobalAndInstanceNamingTargets(
+        shouldIncludePath: NamingTargetPathPredicate,
+        pushTarget: NamingTargetSink
+    ): void {
+        const knownShadowableNames = this.collectKnownShadowableNames();
 
-            pushTarget({
-                category: "instanceVariable",
-                name: entryName,
-                occurrences: [],
-                path: declarationFilePath,
-                scopeId: entry.scopeId ?? null,
-                symbolId: this.generateScipId(entry, entryName)
-            });
-        }
+        this.collectVariableNamingTargets(
+            this.identifiers.globalVariables,
+            "globalVariable",
+            knownShadowableNames,
+            shouldIncludePath,
+            pushTarget
+        );
+        this.collectVariableNamingTargets(
+            this.identifiers.instanceVariables,
+            "instanceVariable",
+            knownShadowableNames,
+            shouldIncludePath,
+            pushTarget
+        );
     }
 
     private collectImplicitInstanceNamingTargets(
