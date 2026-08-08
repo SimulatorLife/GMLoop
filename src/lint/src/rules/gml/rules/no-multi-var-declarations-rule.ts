@@ -2,15 +2,7 @@ import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import type { GmlRuleDefinition } from "../index.js";
-import { createMeta, isAstNodeRecord } from "../rule-base-helpers.js";
-
-type SourceRange = Readonly<{ start: number; end: number }>;
-
-function getSourceRange(node: unknown): SourceRange | null {
-    const start = Core.getNodeStartIndex(node);
-    const end = Core.getNodeEndIndex(node);
-    return typeof start === "number" && typeof end === "number" ? { start, end } : null;
-}
+import { createMeta, getNodeRange, isAstNodeRecord } from "../rule-base-helpers.js";
 
 function getDeclarationKeyword(
     sourceText: string,
@@ -32,9 +24,9 @@ function buildSplitDeclarationText(sourceText: string, declaration: Record<strin
         return null;
     }
 
-    const declarationRange = getSourceRange(declaration);
+    const declarationRange = getNodeRange(declaration);
     const firstDeclarator = isAstNodeRecord(declaration.declarations[0]) ? declaration.declarations[0] : null;
-    const firstRange = getSourceRange(firstDeclarator);
+    const firstRange = getNodeRange(firstDeclarator);
     if (declarationRange === null || firstRange === null) {
         return null;
     }
@@ -52,7 +44,7 @@ function buildSplitDeclarationText(sourceText: string, declaration: Record<strin
             return null;
         }
 
-        const currentRange = getSourceRange(rawDeclarator);
+        const currentRange = getNodeRange(rawDeclarator);
         if (currentRange === null) {
             return null;
         }
@@ -92,7 +84,7 @@ export function createNoMultiVarDeclarationsRule(definition: GmlRuleDefinition):
                                 return;
                             }
 
-                            const declarationRange = getSourceRange(node);
+                            const declarationRange = getNodeRange(node);
                             if (declarationRange === null) {
                                 return;
                             }
