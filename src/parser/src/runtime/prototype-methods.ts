@@ -12,6 +12,8 @@
  * @module parser/runtime/prototype-methods
  */
 
+const RESERVED_VISITOR_METHOD_NAMES = new Set(["visit", "visitChildren", "visitTerminal", "visitErrorNode"]);
+
 export type MethodFactory = (methodName: string) => (...args: unknown[]) => unknown;
 
 /**
@@ -27,22 +29,14 @@ export type MethodFactory = (methodName: string) => (...args: unknown[]) => unkn
 export function collectVisitMethodNames(BaseVisitor: unknown): ReadonlyArray<string> {
     const visitorClass = BaseVisitor as { prototype?: object } | null | undefined;
     const prototype = visitorClass?.prototype ?? Object.prototype;
+    const prototypeMembers = prototype as Record<string, unknown>;
 
-    return Object.getOwnPropertyNames(prototype).filter((name) => {
-        if (!name.startsWith("visit")) {
-            return false;
-        }
-
-        if (name === "visit" || name === "visitChildren") {
-            return false;
-        }
-
-        if (name === "visitTerminal" || name === "visitErrorNode") {
-            return false;
-        }
-
-        return typeof (prototype as Record<string, unknown>)[name] === "function";
-    });
+    return Object.getOwnPropertyNames(prototype).filter(
+        (name) =>
+            name.startsWith("visit") &&
+            !RESERVED_VISITOR_METHOD_NAMES.has(name) &&
+            typeof prototypeMembers[name] === "function"
+    );
 }
 
 /**
@@ -81,16 +75,14 @@ export function deriveListenerMethodNames(visitMethodNames: unknown): ReadonlyAr
         return [];
     }
 
-    const listenerNames: string[] = [];
-    for (const visitName of visitMethodNames) {
+    return visitMethodNames.flatMap((visitName) => {
         if (typeof visitName !== "string") {
-            continue;
+            return [];
         }
-        const suffix = visitName.slice("visit".length);
-        listenerNames.push(`enter${suffix}`, `exit${suffix}`);
-    }
 
-    return listenerNames;
+        const suffix = visitName.slice("visit".length);
+        return [`enter${suffix}`, `exit${suffix}`];
+    });
 }
 
 /**

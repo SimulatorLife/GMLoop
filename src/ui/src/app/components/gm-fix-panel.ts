@@ -1,9 +1,9 @@
 import { html } from "lit";
 
 import type { GraphVisualizationUiModel } from "../contracts.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "../events/events.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { EventBusManager } from "./event-bus-mixin.js";
-import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "./events.js";
 import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
@@ -75,6 +75,8 @@ export class GmFixPanel extends LightDomLitElement {
         const activeClassName = this.state.activePage === "fix" ? "page content-page active" : "page content-page";
         const logLines = getEffectiveFixLogLines(this.model, this.state);
 
+        const logText = logLines.join("\n");
+
         return html`
             <section id="fix-page" class=${activeClassName}>
                 ${
@@ -84,8 +86,17 @@ export class GmFixPanel extends LightDomLitElement {
                 }
 
                 <section class="fix-log-section" aria-labelledby="fix-log-heading">
-                    <h2 id="fix-log-heading">Run Log</h2>
-                    <pre class="fix-log" aria-live="polite">${logLines.join("\n")}</pre>
+                    <div class="fix-log-header">
+                        <h2 id="fix-log-heading">Run Log</h2>
+                        <gm-copy-button
+                            class="fix-log-copy-button"
+                            .value=${logText}
+                            accessibleLabel="Copy fix run log to clipboard"
+                            label="Copy Log"
+                            hideLabel
+                        ></gm-copy-button>
+                    </div>
+                    <pre class="fix-log" aria-live="polite">${logText}</pre>
                 </section>
             </section>
         `;

@@ -1,13 +1,43 @@
 /**
  * Tests for the optimizeLogicalExpressionsTransform, focusing on the
  * `containsCallExpression` guard that prevents loop-condition hoisting when
- * the loop body has side-effectful function calls, and on correct handling of
- * member-access paths of varying depth.
+ * the loop body has side-effectful function calls, on correct handling of
+ * member-access paths of varying depth, and on the snapshot-based merge
+ * semantics used by the redundant-temporary-return elimination pass.
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { optimizeLogicalExpressionsTransform } from "../../src/rules/gml/transforms/logical-expression-optimize-logical-expressions.js";
+
+/**
+ * Returns a `VariableDeclaration` of the shape produced by the parser for
+ * `var <name> = <init>`. Tests build top-level bodies that contain sequences
+ * of these declarations followed by matching `ReturnStatement`s so the
+ * redundant-temporary-return elimination pass can fold them together.
+ */
+function buildVariableDeclaration(name: string, initValue: string | number): any {
+    return {
+        type: "VariableDeclaration",
+        declarations: [
+            {
+                type: "VariableDeclarator",
+                id: { type: "Identifier", name },
+                init: { type: "Literal", value: initValue }
+            }
+        ]
+    };
+}
+
+/**
+ * Returns a `ReturnStatement` of the shape produced by the parser for
+ * `return <expression>`. The argument is left as a raw object so tests can
+ * describe both identifiers (matching a temporary) and literals (non-matching)
+ * with the same helper.
+ */
+function buildReturnStatement(argument: any): any {
+    return { type: "ReturnStatement", argument };
+}
 
 /**
  * Returns a minimal WhileStatement AST whose condition is `a.b.length > 0`
@@ -153,5 +183,108 @@ void describe("optimizeLogicalExpressionsTransform – invariant loop-condition 
         assert.strictEqual(ast.body[1].type, "WhileStatement");
         // The loop condition should reference the cached identifier.
         assert.strictEqual(ast.body[1].test.left.type, "Identifier");
+    });
+});
+
+void describe("optimizeLogicalExpressionsTransform – redundant temporary return elimination", () => {
+    void it("folds a single `var x = …; return x;` pair into a single return", () => {
+        const ast = {
+            type: "Program",
+            body: [buildVariableDeclaration("temp", "5"), buildReturnStatement({ type: "Identifier", name: "temp" })]
+        };
+
+        optimizeLogicalExpressionsTransform.transform(ast, {});
+
+        assert.strictEqual(ast.body.length, 1, "the pair should collapse into a single ReturnStatement");
+        assert.strictEqual(ast.body[0].type, "ReturnStatement");
+        assert.strictEqual(ast.body[0].argument.type, "Literal");
+        assert.strictEqual(ast.body[0].argument.value, "5");
+    });
+
+    void it("folds every adjacent `var x = …; return x;` pair in a chain", () => {
+        // Regression for the in-place splice loop previously used by the
+        // redundant-temporary-return elimination pass. The old implementation
+        // relied on a forward index loop that spliced the merged pair back
+        // into `statements` and then advanced with an explicit `continue` —
+        // a coupling that silently skipped the second pair if the loop body
+        // ever grew an unconditional `index += 1` after the splice. Three
+        // adjacent pairs would expose that bug: after the first merge the
+        // second pair would shift into the splice's removed slot and would
+        // only be inspected at the wrong pair position. The snapshot-based
+        // accumulator used by the current implementation inspects every
+        // original pair position regardless of how many slots were absorbed,
+        // so all three pairs collapse in a single pass.
+        const ast = {
+            type: "Program",
+            body: [
+                buildVariableDeclaration("a", "1"),
+                buildReturnStatement({ type: "Identifier", name: "a" }),
+                buildVariableDeclaration("b", "2"),
+                buildReturnStatement({ type: "Identifier", name: "b" }),
+                buildVariableDeclaration("c", "3"),
+                buildReturnStatement({ type: "Identifier", name: "c" })
+            ]
+        };
+
+        optimizeLogicalExpressionsTransform.transform(ast, {});
+
+        assert.strictEqual(
+            ast.body.length,
+            3,
+            "every adjacent pair should collapse; leftover declarations indicate the inspection index drifted"
+        );
+        for (const [index, entry] of ast.body.entries()) {
+            assert.strictEqual(
+                entry.type,
+                "ReturnStatement",
+                `body[${index}] should be a ReturnStatement after collapsing all three pairs`
+            );
+        }
+        assert.strictEqual(ast.body[0].argument.value, "1");
+        assert.strictEqual(ast.body[1].argument.value, "2");
+        assert.strictEqual(ast.body[2].argument.value, "3");
+    });
+
+    void it("leaves non-adjacent pairs and non-matching shapes untouched", () => {
+        // The accumulation loop must only collapse a (declaration, return)
+        // pair when both nodes sit at the current snapshot position. Any
+        // intervening statement breaks adjacency, and any return whose
+        // argument is not the temporary that was just declared must survive
+        // into the accumulator verbatim so callers can rely on a
+        // deterministic pass-through.
+        const unrelated = { type: "ExpressionStatement", expression: { type: "Identifier", name: "noop" } };
+        const ast = {
+            type: "Program",
+            body: [
+                buildVariableDeclaration("a", "1"),
+                buildReturnStatement({ type: "Identifier", name: "a" }),
+                unrelated,
+                buildVariableDeclaration("b", "2"),
+                buildReturnStatement({ type: "Literal", value: "non-temporary" })
+            ]
+        };
+
+        optimizeLogicalExpressionsTransform.transform(ast, {});
+
+        assert.strictEqual(ast.body.length, 4, "only the first adjacent pair collapses");
+        assert.strictEqual(ast.body[0].type, "ReturnStatement", "first pair collapses to a ReturnStatement");
+        assert.strictEqual(ast.body[0].argument.value, "1");
+        assert.strictEqual(ast.body[1], unrelated, "the unrelated statement survives unchanged");
+        assert.strictEqual(ast.body[2].type, "VariableDeclaration", "the non-adjacent declaration survives unchanged");
+        assert.strictEqual(ast.body[3].type, "ReturnStatement", "the non-matching return survives unchanged");
+    });
+
+    void it("preserves the original array contents when no pair is eligible", () => {
+        // The accumulation path replaces `statements` only when at least one
+        // pair collapsed; otherwise it leaves the original array untouched
+        // (including element identity) so callers downstream of the transform
+        // can rely on reference-equality for the no-op case.
+        const expr = { type: "ExpressionStatement", expression: { type: "Identifier", name: "noop" } };
+        const ast = { type: "Program", body: [expr] };
+
+        optimizeLogicalExpressionsTransform.transform(ast, {});
+
+        assert.strictEqual(ast.body.length, 1);
+        assert.strictEqual(ast.body[0], expr, "unchanged elements must keep their reference");
     });
 });

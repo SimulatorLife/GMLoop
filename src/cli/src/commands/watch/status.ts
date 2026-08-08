@@ -8,6 +8,8 @@
 
 import { Core } from "@gmloop/core";
 
+import { DEFAULT_LIVE_RELOAD_STATUS_HOST, DEFAULT_LIVE_RELOAD_STATUS_PORT } from "../../modules/live-reload/config.js";
+
 export const WATCH_STATUS_OUTPUT_FORMATS = Object.freeze({
     PRETTY: "pretty",
     JSON: "json"
@@ -263,7 +265,11 @@ function displayPretty(data: unknown, endpoint: string): void {
  * @param {string} [options.endpoint] - Endpoint to query; defaults to `status`.
  */
 export async function runWatchStatusCommand(options: WatchStatusCommandOptions = {}): Promise<void> {
-    const { statusHost = "127.0.0.1", statusPort = 17_891, endpoint = "status" } = options;
+    const {
+        statusHost = DEFAULT_LIVE_RELOAD_STATUS_HOST,
+        statusPort = DEFAULT_LIVE_RELOAD_STATUS_PORT,
+        endpoint = "status"
+    } = options;
     const format = parseWatchStatusOutputFormat(options.format);
 
     try {

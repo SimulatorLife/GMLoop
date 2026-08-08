@@ -19,6 +19,7 @@ import {
 import { connectToHotReloadWebSocket, type HotReloadScriptPatch } from "./test-helpers/websocket-client.js";
 
 const WATCH_READY_DELAY_MS = 50;
+const WATCH_PATCH_TIMEOUT_MS = 10_000;
 
 void describe("Watch command metrics tracking", () => {
     let fixture: WatchTestFixture | null = null;
@@ -66,18 +67,27 @@ void describe("Watch command metrics tracking", () => {
                 retryIntervalMs: 25
             });
 
-            // Trigger multiple file changes
-            await writeFile(fixture.script1, "var x = 100; // Modified", "utf8");
-            await writeFile(fixture.script2, "var y = 200; // Modified", "utf8");
-            await websocketClient.waitForPatches({
-                timeoutMs: 4000,
-                minCount: 2,
-                predicate: (patch: HotReloadScriptPatch): patch is HotReloadScriptPatch =>
-                    patch.id.includes("script1") || patch.id.includes("script2")
-            });
-
+            // The WebSocket server can accept connections before the filesystem
+            // watcher has finished its initial scan. Give the watcher a moment to
+            // become ready so the first write cannot be lost under CI load.
             await new Promise<void>((resolve) => {
                 setTimeout(resolve, WATCH_READY_DELAY_MS);
+            });
+
+            // Serialize the writes and observations so filesystem event coalescing
+            // cannot collapse two intended transpilations into one under CI load.
+            await writeFile(fixture.script1, "var x = 100; // Modified", "utf8");
+            await websocketClient.waitForPatches({
+                timeoutMs: WATCH_PATCH_TIMEOUT_MS,
+                minCount: 1,
+                predicate: (patch: HotReloadScriptPatch): patch is HotReloadScriptPatch => patch.id.includes("script1")
+            });
+
+            await writeFile(fixture.script2, "var y = 200; // Modified", "utf8");
+            await websocketClient.waitForPatches({
+                timeoutMs: WATCH_PATCH_TIMEOUT_MS,
+                minCount: 1,
+                predicate: (patch: HotReloadScriptPatch): patch is HotReloadScriptPatch => patch.id.includes("script2")
             });
         } finally {
             // Stop the watcher

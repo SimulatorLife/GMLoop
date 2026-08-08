@@ -1,8 +1,62 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { GmGraphPanel } from "../src/app/components/gm-graph-panel.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, GRAPH_UI_EVENT_RESET_DEFAULTS } from "../src/app/events/events.js";
 import { createGraphModel, createGraphState, TestableGmGraphPanel } from "./graph-panel-test-harness.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
+
+void test("graph panel delegates connection lifecycle to composed collaborators", () => {
+    const prototype = GmGraphPanel.prototype as unknown as Record<string, unknown>;
+
+    assert.equal(Object.hasOwn(prototype, "connectedCallback"), false);
+    assert.equal(Object.hasOwn(prototype, "disconnectedCallback"), false);
+});
+
+void test("graph panel reconnects its managed event subscriptions", () => {
+    const panel = new GmGraphPanel();
+    let clearEventCount = 0;
+    panel.addEventListener(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, (event) => {
+        if ((event as CustomEvent<{ page: string }>).detail.page === "graph") {
+            clearEventCount += 1;
+        }
+    });
+
+    try {
+        panel.connectedCallback();
+        panel.dispatchEvent(new CustomEvent("gm-error-banner-dismiss"));
+        assert.equal(clearEventCount, 1);
+
+        panel.disconnectedCallback();
+        panel.dispatchEvent(new CustomEvent("gm-error-banner-dismiss"));
+        assert.equal(clearEventCount, 1);
+
+        panel.connectedCallback();
+        panel.dispatchEvent(new CustomEvent("gm-error-banner-dismiss"));
+        assert.equal(clearEventCount, 2);
+    } finally {
+        panel.disconnectedCallback();
+    }
+});
+
+void test("graph panel preserves reset behavior through its managed event subscriptions", () => {
+    const panel = new TestableGmGraphPanel();
+    panel.model = createGraphModel();
+    panel.state = createGraphState();
+    panel.renderForTest();
+    panel.selectNodeForTest("script-node");
+
+    assert.match(renderTemplateValue(panel.renderForTest()), /data-selected-node-id=script-node/u);
+
+    try {
+        panel.connectedCallback();
+        panel.dispatchEvent(new CustomEvent(GRAPH_UI_EVENT_RESET_DEFAULTS));
+
+        assert.doesNotMatch(renderTemplateValue(panel.renderForTest()), /data-selected-node-id=script-node/u);
+    } finally {
+        panel.disconnectedCallback();
+    }
+});
 
 void test("graph panel keeps selected node details visible until another node is selected", () => {
     const panel = new TestableGmGraphPanel();
@@ -41,6 +95,7 @@ void test("graph panel renders shared semantic-index progress in the graph page 
             current: 4,
             isRunning: true,
             logLines: ["Parsing GML files... (4/9)"],
+            operationId: "op-1",
             stage: "gml-parse",
             status: "running",
             summary: null,

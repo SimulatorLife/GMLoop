@@ -11,11 +11,9 @@ import type {
     ConstructorDeclarationNode,
     ConstructorParentClauseNode,
     DefaultParameterNode,
-    DefineStatementNode,
     DeleteStatementNode,
     DoUntilStatementNode,
     EmitOptions,
-    EndRegionStatementNode,
     EnumDeclarationNode,
     EnumMemberNode,
     FinallyClauseNode,
@@ -34,7 +32,6 @@ import type {
     MemberIndexExpressionNode,
     NewExpressionNode,
     ProgramNode,
-    RegionStatementNode,
     RepeatStatementNode,
     ReturnStatementNode,
     StructExpressionNode,
@@ -397,16 +394,18 @@ export class GmlToJsEmitter {
                 return this.visitConstructorDeclaration(ast);
             }
             case "ConstructorParentClause": {
+                // The constructor parent clause has already been lowered into
+                // the prologue emitted by `visitConstructorDeclaration`; the
+                // standalone node itself carries no additional runtime output.
                 return "";
             }
-            case "RegionStatement": {
-                return this.visitRegionStatement(ast);
-            }
-            case "EndRegionStatement": {
-                return this.visitEndRegionStatement(ast);
-            }
+            case "RegionStatement":
+            case "EndRegionStatement":
             case "DefineStatement": {
-                return this.visitDefineStatement(ast);
+                // `#region` / `#endregion` markers and `#define` preprocessor
+                // directives are folded out of the emitted JavaScript; the
+                // directives have no runtime effect in the transpiled output.
+                return "";
             }
             default: {
                 return this.handleUnknownNode(ast);
@@ -957,47 +956,6 @@ export class GmlToJsEmitter {
         const id = ast.id ?? "";
         const parentConstructorCall = this.emitConstructorParentCall(ast.parent ?? null);
         return this.emitFunctionLike("function", id, ast.params, ast.body, parentConstructorCall);
-    }
-
-    /**
-     * Visit a RegionStatement node.
-     * Region statements are GML preprocessor directives used for code folding
-     * in the GameMaker IDE. They have no runtime effect and should not appear
-     * in the transpiled JavaScript output.
-     *
-     * @param ast - The RegionStatement node
-     * @returns Empty string (region markers are stripped from output)
-     */
-    private visitRegionStatement(_ast: RegionStatementNode): string {
-        void _ast;
-        return "";
-    }
-
-    /**
-     * Visit an EndRegionStatement node.
-     * EndRegion statements are GML preprocessor directives that close a region block.
-     * They have no runtime effect and should not appear in the transpiled JavaScript output.
-     *
-     * @param ast - The EndRegionStatement node
-     * @returns Empty string (endregion markers are stripped from output)
-     */
-    private visitEndRegionStatement(_ast: EndRegionStatementNode): string {
-        void _ast;
-        return "";
-    }
-
-    /**
-     * Visit a DefineStatement node.
-     * DefineStatement nodes can represent various preprocessor directives including
-     * #region, #endregion, and #macro. Region directives have no runtime effect.
-     * Macro directives are already handled separately by MacroDeclaration nodes.
-     *
-     * @param ast - The DefineStatement node
-     * @returns Empty string (preprocessor directives are stripped from output)
-     */
-    private visitDefineStatement(_ast: DefineStatementNode): string {
-        void _ast;
-        return "";
     }
 
     private emitFunctionLike(

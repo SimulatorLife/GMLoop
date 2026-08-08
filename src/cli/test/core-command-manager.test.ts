@@ -103,6 +103,25 @@ function createStubCommand(name) {
     };
 }
 
+function createGraphSubcommandGroupFixture() {
+    const program = applyStandardCommandOptions(new Command());
+    const { registry, runner } = createCliCommandManager({ program });
+    const capturedErrors = [];
+
+    const graphCommand = applyStandardCommandOptions(new Command("graph")).description("graph index");
+    graphCommand.command("index").action(() => {});
+    graphCommand.command("search").action(() => {});
+
+    registry.registerCommand({
+        command: graphCommand,
+        onError: (error, context) => {
+            capturedErrors.push({ error, command: context.command });
+        }
+    });
+
+    return { registry, runner, capturedErrors };
+}
+
 void test("default command usage is reported for option parsing errors", async () => {
     const program = applyStandardCommandOptions(new Command());
     const unhandledErrors = [];
@@ -216,26 +235,10 @@ void test("command manager prefers parseAsync when available on Commander execut
 });
 
 void test("missing required subcommand prints the command help and exits cleanly", async () => {
-    const program = applyStandardCommandOptions(new Command());
-    const { registry, runner } = createCliCommandManager({ program });
-
-    const unhandledErrors = [];
-    const capturedErrors = [];
-
-    const graphCommand = applyStandardCommandOptions(new Command("graph")).description("graph index");
-    graphCommand.command("index").action(() => {});
-    graphCommand.command("search").action(() => {});
-
-    registry.registerCommand({
-        command: graphCommand,
-        onError: (error, context) => {
-            capturedErrors.push({ error, command: context.command });
-        }
-    });
+    const { runner, capturedErrors } = createGraphSubcommandGroupFixture();
 
     const captured = await captureStdIO(() => runner.run(["graph"]));
 
-    assert.deepStrictEqual(unhandledErrors, []);
     assert.deepStrictEqual(capturedErrors, []);
 
     assert.match(captured.stdout, /Usage: [^\n]+\bgraph\b/);
@@ -248,21 +251,7 @@ void test("missing required subcommand prints the command help and exits cleanly
 });
 
 void test("explicit --help on a subcommand-group still renders help without error noise", async () => {
-    const program = applyStandardCommandOptions(new Command());
-    const { registry, runner } = createCliCommandManager({ program });
-
-    const capturedErrors = [];
-
-    const graphCommand = applyStandardCommandOptions(new Command("graph")).description("graph index");
-    graphCommand.command("index").action(() => {});
-    graphCommand.command("search").action(() => {});
-
-    registry.registerCommand({
-        command: graphCommand,
-        onError: (error, context) => {
-            capturedErrors.push({ error, command: context.command });
-        }
-    });
+    const { runner, capturedErrors } = createGraphSubcommandGroupFixture();
 
     const captured = await captureStdIO(() => runner.run(["graph", "--help"]));
 
@@ -306,6 +295,98 @@ void test("missing required subcommand on a registered subcommand also recovers 
     assert.match(captured.stdout, /\bfile\b/);
     assert.doesNotMatch(captured.stdout, /\(outputHelp\)/u);
     assert.doesNotMatch(captured.stderr, /\(outputHelp\)/u);
+});
+
+void test("positional path arguments are translated into an actionable --path suggestion", async () => {
+    const program = applyStandardCommandOptions(new Command()).exitOverride();
+    const { registry, runner } = createCliCommandManager({
+        program,
+        onUnhandledError: () => {}
+    });
+
+    const capturedErrors = [];
+    const formatCommand = applyStandardCommandOptions(new Command("format")).description(
+        "Format GameMaker Language files using the prettier plugin."
+    );
+    formatCommand.option("--path <path>", "Target .gml file or directory path.");
+    formatCommand.option("--write", "Apply changes to files.");
+
+    registry.registerDefaultCommand({
+        command: formatCommand,
+        onError: (error, context) => {
+            capturedErrors.push({ error, command: context.command });
+        }
+    });
+
+    await runner.run(["format", "/tmp/project"]);
+
+    assert.strictEqual(capturedErrors.length, 1);
+    const [{ error }] = capturedErrors;
+    assert.ok(error instanceof CliUsageError);
+    assert.match(error.message, /'format' command does not accept a positional path argument/);
+    assert.match(error.message, /--path \/tmp\/project/);
+    assert.doesNotMatch(error.message, /too many arguments for 'format'/u);
+});
+
+void test("positional path arguments without a --path option use the generic guidance", async () => {
+    const program = applyStandardCommandOptions(new Command()).exitOverride();
+    const { registry, runner } = createCliCommandManager({
+        program,
+        onUnhandledError: () => {}
+    });
+
+    const capturedErrors = [];
+    const statsCommand = applyStandardCommandOptions(new Command("collect-stats")).description(
+        "Collect project health statistics."
+    );
+    statsCommand.option("--json", "Emit machine-readable JSON output.");
+
+    registry.registerCommand({
+        command: statsCommand,
+        onError: (error, context) => {
+            capturedErrors.push({ error, command: context.command });
+        }
+    });
+
+    await runner.run(["collect-stats", "/tmp/project"]);
+
+    assert.strictEqual(capturedErrors.length, 1);
+    const [{ error }] = capturedErrors;
+    assert.ok(error instanceof CliUsageError);
+    assert.match(error.message, /'collect-stats' command does not accept positional arguments/);
+    assert.match(error.message, /'\/tmp\/project'/);
+    assert.match(error.message, /--help/);
+    assert.doesNotMatch(error.message, /--path/u);
+});
+
+void test("multiple positional arguments on a --path command explain the single-target rule", async () => {
+    const program = applyStandardCommandOptions(new Command()).exitOverride();
+    const { registry, runner } = createCliCommandManager({
+        program,
+        onUnhandledError: () => {}
+    });
+
+    const capturedErrors = [];
+    const fixCommand = applyStandardCommandOptions(new Command("fix")).description(
+        "Run project codemods, lint fixes, and formatting in sequence."
+    );
+    fixCommand.option("--path <path>", "Target .gml file or directory path.");
+
+    registry.registerCommand({
+        command: fixCommand,
+        onError: (error, context) => {
+            capturedErrors.push({ error, command: context.command });
+        }
+    });
+
+    await runner.run(["fix", "/tmp/project", "/tmp/other"]);
+
+    assert.strictEqual(capturedErrors.length, 1);
+    const [{ error }] = capturedErrors;
+    assert.ok(error instanceof CliUsageError);
+    assert.match(error.message, /'\/tmp\/project'/);
+    assert.match(error.message, /'\/tmp\/other'/);
+    assert.match(error.message, /single '--path <target>'/);
 });
 
 interface CapturedStreams {

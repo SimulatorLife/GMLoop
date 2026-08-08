@@ -4,6 +4,7 @@ import { gmlRuleBaseHelpersServices } from "../../gml/gml-rule-services.js";
 import {
     createFeatherRuleMeta,
     createFullTextRewriteRule,
+    createMissingProjectContextRule,
     findEnumBlocks,
     findEnumDeclarations,
     normalizeRedundantSemicolonRuns,
@@ -324,24 +325,7 @@ export function createGm1015Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 }
 
 export function createGm1021Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return Object.freeze({
-        meta: createFeatherRuleMeta(entry),
-        create(context) {
-            return Object.freeze({
-                Program() {
-                    const sourceText = context.sourceCode.text;
-                    const callMatch = /\b[A-Za-z_][A-Za-z0-9_]*\s*\(/u.exec(sourceText);
-                    if (!callMatch) {
-                        return;
-                    }
-                    context.report({
-                        loc: resolveLocFromIndex(context, sourceText, callMatch.index),
-                        messageId: "missingProjectContext"
-                    });
-                }
-            });
-        }
-    });
+    return createMissingProjectContextRule(entry, /\b[A-Za-z_][A-Za-z0-9_]*\s*\(/u);
 }
 
 export function createGm1026Rule(entry: FeatherManifestEntry): Rule.RuleModule {
@@ -543,24 +527,7 @@ export function createGm1063Rule(entry: FeatherManifestEntry): Rule.RuleModule {
 }
 
 export function createGm1064Rule(entry: FeatherManifestEntry): Rule.RuleModule {
-    return Object.freeze({
-        meta: createFeatherRuleMeta(entry),
-        create(context) {
-            return Object.freeze({
-                Program() {
-                    const sourceText = context.sourceCode.text;
-                    const functionMatch = /\bfunction\s+[A-Za-z_][A-Za-z0-9_]*\s*\(/u.exec(sourceText);
-                    if (!functionMatch) {
-                        return;
-                    }
-                    context.report({
-                        loc: resolveLocFromIndex(context, sourceText, functionMatch.index),
-                        messageId: "missingProjectContext"
-                    });
-                }
-            });
-        }
-    });
+    return createMissingProjectContextRule(entry, /\bfunction\s+[A-Za-z_][A-Za-z0-9_]*\s*\(/u);
 }
 
 export function createGm1100Rule(entry: FeatherManifestEntry): Rule.RuleModule {

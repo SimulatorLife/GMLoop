@@ -16,11 +16,7 @@ import {
 } from "./math-ast-builders.js";
 import type { ConvertManualMathTransformOptions } from "./math-ast-mutation.js";
 import * as AST from "./math-ast-mutation.js";
-import {
-    isSafeReciprocalCancellationOperand,
-    matchScaledOperand,
-    unwrapEnclosingParentheses
-} from "./math-lengthdir-transforms.js";
+import { isSafeReciprocalCancellationOperand, matchLengthdirReassignment } from "./math-lengthdir-transforms.js";
 import {
     computeIntegerGcd,
     computeNumericTolerance,
@@ -33,7 +29,6 @@ export * from "./math-ast-mutation.js";
 
 const {
     BINARY_EXPRESSION,
-    CALL_EXPRESSION,
     IDENTIFIER,
     LITERAL,
     MEMBER_INDEX_EXPRESSION,
@@ -156,54 +151,6 @@ export function applyScalarCondensing(node: any, context: ConvertManualMathTrans
     return node;
 }
 
-function matchLengthdirReassignment(
-    node: any,
-    baseName: string
-): {
-    functionName: string;
-    angle: any;
-    callExpression: any;
-    factor: number;
-    factorNode: any;
-} | null {
-    const expression = Core.unwrapParenthesizedExpression(node);
-    if (!expression || expression.type !== CALL_EXPRESSION) {
-        return null;
-    }
-
-    const calleeName = Core.getUnwrappedIdentifierName(expression.object);
-    if (calleeName !== "lengthdir_x" && calleeName !== "lengthdir_y") {
-        return null;
-    }
-
-    const args = Core.getCallExpressionArguments(expression);
-    if (args.length !== 2) {
-        return null;
-    }
-
-    const [lengthArg, angleArg] = args;
-    if (!lengthArg || !angleArg) {
-        return null;
-    }
-
-    const scaledInfo = matchScaledOperand(lengthArg, null);
-    if (!scaledInfo || scaledInfo.coefficient === null || !scaledInfo.base) {
-        return null;
-    }
-
-    if (!areNodesEquivalent(scaledInfo.base, { type: IDENTIFIER, name: baseName })) {
-        return null;
-    }
-
-    return {
-        functionName: calleeName,
-        angle: angleArg,
-        callExpression: expression,
-        factor: scaledInfo.coefficient,
-        factorNode: scaledInfo.factorNode
-    };
-}
-
 export function combineLengthdirScalarAssignments(node: any): void {
     if (!isObjectLike(node)) {
         return;
@@ -217,102 +164,44 @@ export function combineLengthdirScalarAssignments(node: any): void {
         return;
     }
 
-    for (let index = 0; index < body.length - 1; index += 1) {
-        const declaration = body[index];
-        const next = body[index + 1];
+    // Walk a stable snapshot of `body` and accumulate the rewritten entries
+    // into a fresh array, only swapping the live body back in when at least
+    // one merge actually happened. The previous implementation relied on
+    // `body.splice(index + 1, 1)` inside a forward index-based for loop,
+    // which shrinks `body` while the loop's increment expression still
+    // advances by one; that combination implicitly relied on the relative
+    // spacing of merged pairs to balance against the splice, so any change
+    // to the surrounding statements — or to how the helper reports a match —
+    // could leave later pairs unmerged. Iterating a snapshot and rebuilding
+    // `body` from the accumulator makes the rewrite depend only on the
+    // snapshot's contents, not on whichever elements happened to survive
+    // the previous iteration.
+    const snapshot: ReadonlyArray<unknown> = body.slice();
+    const rewritten: unknown[] = [];
+    let changed = false;
 
-        if (
-            !isObjectLike(declaration) ||
-            declaration.type !== "VariableDeclaration" ||
-            !Array.isArray(declaration.declarations) ||
-            declaration.declarations.length !== 1 ||
-            Core.hasComment(declaration)
-        ) {
+    let index = 0;
+    while (index < snapshot.length) {
+        const declaration = snapshot[index] as Record<string, unknown> | undefined;
+        const next =
+            index + 1 < snapshot.length ? (snapshot[index + 1] as Record<string, unknown> | undefined) : undefined;
+        const mergedDeclaration = tryBuildMergedDeclaration(declaration, next);
+
+        if (mergedDeclaration !== null) {
+            rewritten.push(mergedDeclaration);
+            index += 2;
+            changed = true;
             continue;
         }
 
-        const [declarator] = declaration.declarations;
-        if (!declarator || Core.hasComment(declarator) || !declarator.init || Core.hasComment(declarator.init)) {
-            continue;
-        }
+        rewritten.push(declaration);
+        index += 1;
+    }
 
-        const assignment = next.type === "ExpressionStatement" ? (next as any).expression : next;
-        if (
-            !assignment ||
-            assignment.type !== "AssignmentExpression" ||
-            assignment.operator !== "=" ||
-            Core.hasComment(next) ||
-            Core.hasComment(assignment)
-        ) {
-            continue;
-        }
-
-        const declaratorId = (declarator as any).id;
-        const assignmentLeft = assignment.left;
-        const baseName = Core.getUnwrappedIdentifierName(declaratorId);
-        if (!baseName || Core.getUnwrappedIdentifierName(assignmentLeft) !== baseName) {
-            continue;
-        }
-
-        const match = matchLengthdirReassignment(assignment.right, baseName);
-        if (!match) {
-            continue;
-        }
-
-        const initClone = Core.cloneAstNode(declarator.init);
-        if (!initClone) {
-            continue;
-        }
-
-        let baseTimesFactor = initClone;
-
-        if (!scaleNumericLiteralCoefficient(baseTimesFactor, match.factor)) {
-            const normalizedFactor = normalizeNumericCoefficient(match.factor);
-            if (normalizedFactor === null) {
-                continue;
-            }
-
-            const factorLiteral = createNumericLiteral(normalizedFactor, match.factorNode);
-            if (!factorLiteral) {
-                continue;
-            }
-
-            baseTimesFactor = createBinaryExpressionNode("*", baseTimesFactor, factorLiteral, assignment.right);
-        }
-
-        const callOneLiteral = createNumericLiteral("1", assignment.right);
-        const differenceOneLiteral = createNumericLiteral("1", assignment.right);
-        if (!callOneLiteral || !differenceOneLiteral) {
-            continue;
-        }
-
-        const lengthdirCall = createCallExpressionNode(
-            match.functionName,
-            [callOneLiteral, Core.cloneAstNode(match.angle)],
-            match.callExpression
-        );
-        if (!lengthdirCall) {
-            continue;
-        }
-
-        const difference = createBinaryExpressionNode("-", differenceOneLiteral, lengthdirCall, assignment.right);
-        const parenthesizedDifference = createParenthesizedExpressionNode(difference, assignment.right);
-        if (!parenthesizedDifference) {
-            continue;
-        }
-
-        const finalExpression = createBinaryExpressionNode(
-            "*",
-            baseTimesFactor,
-            parenthesizedDifference,
-            assignment.right
-        );
-        applyScalarCondensing(finalExpression, null);
-
-        declarator.init = finalExpression;
-        const mutableBody = body as any[];
-        mutableBody.splice(index + 1, 1);
-        continue;
+    if (changed) {
+        const mutableBody = body as unknown[];
+        mutableBody.length = 0;
+        mutableBody.push(...rewritten);
     }
 
     for (const element of body) {
@@ -320,6 +209,119 @@ export function combineLengthdirScalarAssignments(node: any): void {
             combineLengthdirScalarAssignments(element);
         }
     }
+}
+
+/**
+ * Build the merged `VariableDeclaration` produced by folding a single
+ * `X = <lengthdir half-difference reassignment>` expression into the
+ * preceding `var X = ...;` declaration.
+ *
+ * Returns `null` when the pair does not match the merge pattern so the
+ * caller can keep the original declaration and the next statement in place.
+ * Extracting the rewrite into a helper keeps the accumulation loop above
+ * focused on slot bookkeeping; all of the structural unwrapping and
+ * value-resolution logic lives here so the loop's control flow is not
+ * entangled with conditional checks.
+ */
+function tryBuildMergedDeclaration(
+    declaration: Record<string, unknown> | undefined,
+    next: Record<string, unknown> | undefined
+): unknown {
+    if (!isObjectLike(declaration) || !isObjectLike(next)) {
+        return null;
+    }
+
+    const declarationRecord = declaration;
+    const nextRecord = next;
+
+    if (
+        declarationRecord.type !== "VariableDeclaration" ||
+        !Array.isArray(declarationRecord.declarations) ||
+        declarationRecord.declarations.length !== 1 ||
+        Core.hasComment(declaration)
+    ) {
+        return null;
+    }
+
+    const declarator = declarationRecord.declarations[0] as Record<string, unknown> | undefined;
+    if (!declarator || Core.hasComment(declarator) || !declarator.init || Core.hasComment(declarator.init)) {
+        return null;
+    }
+
+    const assignmentRecord: Record<string, unknown> | undefined =
+        nextRecord.type === "ExpressionStatement" && isObjectLike(nextRecord.expression)
+            ? (nextRecord.expression as Record<string, unknown>)
+            : nextRecord;
+    if (
+        !isObjectLike(assignmentRecord) ||
+        assignmentRecord.type !== "AssignmentExpression" ||
+        assignmentRecord.operator !== "=" ||
+        Core.hasComment(next) ||
+        Core.hasComment(assignmentRecord)
+    ) {
+        return null;
+    }
+
+    const declaratorId = declarator.id;
+    const assignmentLeft = assignmentRecord.left;
+    const baseName = Core.getUnwrappedIdentifierName(declaratorId);
+    if (!baseName || Core.getUnwrappedIdentifierName(assignmentLeft) !== baseName) {
+        return null;
+    }
+
+    const match = matchLengthdirReassignment(assignmentRecord.right, baseName);
+    if (!match) {
+        return null;
+    }
+
+    const initClone = Core.cloneAstNode(declarator.init);
+    if (!initClone) {
+        return null;
+    }
+
+    let baseTimesFactor = initClone;
+
+    if (!scaleNumericLiteralCoefficient(baseTimesFactor, match.factor)) {
+        const normalizedFactor = normalizeNumericCoefficient(match.factor);
+        if (normalizedFactor === null) {
+            return null;
+        }
+
+        const factorLiteral = createNumericLiteral(normalizedFactor, match.factorNode);
+        if (!factorLiteral) {
+            return null;
+        }
+
+        baseTimesFactor = createBinaryExpressionNode("*", baseTimesFactor, factorLiteral, assignmentRecord.right);
+    }
+
+    const assignmentRight = assignmentRecord.right;
+    const callOneLiteral = createNumericLiteral("1", assignmentRight);
+    const differenceOneLiteral = createNumericLiteral("1", assignmentRight);
+    if (!callOneLiteral || !differenceOneLiteral) {
+        return null;
+    }
+
+    const lengthdirCall = createCallExpressionNode(
+        match.functionName,
+        [callOneLiteral, Core.cloneAstNode(match.angle)],
+        match.callExpression
+    );
+    if (!lengthdirCall) {
+        return null;
+    }
+
+    const difference = createBinaryExpressionNode("-", differenceOneLiteral, lengthdirCall, assignmentRight);
+    const parenthesizedDifference = createParenthesizedExpressionNode(difference, assignmentRight);
+    if (!parenthesizedDifference) {
+        return null;
+    }
+
+    const finalExpression = createBinaryExpressionNode("*", baseTimesFactor, parenthesizedDifference, assignmentRight);
+    applyScalarCondensing(finalExpression, null);
+
+    declarator.init = finalExpression;
+    return declaration;
 }
 
 export function collectMultiplicativeChain(
@@ -779,7 +781,7 @@ function applyScalarProductIdentityCollapse(
         return false;
     }
 
-    unwrapEnclosingParentheses(node, context);
+    AST.unwrapEnclosingParentheses(node, context);
 
     return true;
 }

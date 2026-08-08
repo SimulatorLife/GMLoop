@@ -110,6 +110,33 @@ function parseJsonLines(rawContents: string): Array<unknown> {
 }
 
 /**
+ * Reject payloads that cannot be round-tripped through the JSONL spill file.
+ *
+ * The mechanism writes each record as one line of `JSON.stringify(record.payload)`.
+ * `JSON.stringify` returns `undefined` for `undefined`, functions, and `Symbol`,
+ * and throws on `BigInt` and circular references. Either outcome would corrupt the
+ * spill file: the literal text `undefined` would be appended as a non-JSON line,
+ * or an exception would abort `appendRecordsToFile` mid-write and leave the sink
+ * in a partially-mutated state. Validating at the API boundary keeps the failure
+ * mode cheap, explicit, and confined to the caller that supplied the bad payload.
+ */
+function assertJsonSerializable(payload: unknown, context: string): void {
+    let serialized: string | undefined;
+    try {
+        serialized = JSON.stringify(payload);
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new TypeError(`${context} contains a non-JSON-serializable value: ${reason}`, { cause: error });
+    }
+
+    if (serialized === undefined) {
+        throw new TypeError(
+            `${context} contains a value that JSON-stringifies to undefined (function, Symbol, or undefined).`
+        );
+    }
+}
+
+/**
  * Temporary-file-backed identifier sink that keeps a bounded in-memory tail for
  * duplicate checks and spills historical records to JSONL files.
  */
@@ -145,6 +172,14 @@ export class TempFileIdentifierSink implements IdentifierSink {
         if (!this.enabled || this.disposed) {
             return;
         }
+
+        // Fail fast on payloads that cannot be JSON-stringified. This must run
+        // before any state mutation so a rejected record leaves the sink
+        // untouched and the caller can see the offending identifier context.
+        assertJsonSerializable(
+            record.payload,
+            `IdentifierSink record for collection=${record.collection} key=${record.key} role=${record.role}`
+        );
 
         const recordKey = createRecordKey(record.collection, record.key, record.role);
         const tail = Core.getOrCreateMapEntry(this.inMemoryTailByKey, recordKey, () => []);

@@ -12,12 +12,8 @@ import {
     type TranspilationResult,
     transpileFile
 } from "../../modules/transpilation/index.js";
-import {
-    getRuntimePathSegments,
-    resolveScriptFileNameFromSegments
-} from "../../modules/transpilation/runtime-identifiers.js";
 import { pathExistsSync } from "../../shared/path-exists.js";
-import { countSourceLines } from "./source-analysis.js";
+import { countSourceLines, ensureScriptNameRegistered, unregisterScriptName } from "./source-analysis.js";
 
 const { getErrorMessage, uniqueArray } = Core;
 
@@ -267,25 +263,6 @@ function registerDependencyTrackerUpdates(
 
     runtimeContext.dependencyTracker.replaceFileDefines(dependentFile, dependentResult.symbols ?? []);
     runtimeContext.dependencyTracker.replaceFileReferences(dependentFile, dependentResult.references ?? []);
-}
-
-function getScriptNameFromPath(filePath: string): string | null {
-    const segments = getRuntimePathSegments(filePath);
-    return resolveScriptFileNameFromSegments(segments);
-}
-
-function ensureScriptNameRegistered(filePath: string, scriptNames: Set<string>): void {
-    const scriptName = getScriptNameFromPath(filePath);
-    if (scriptName) {
-        scriptNames.add(scriptName);
-    }
-}
-
-function unregisterScriptName(filePath: string, scriptNames: Set<string>): void {
-    const scriptName = getScriptNameFromPath(filePath);
-    if (scriptName) {
-        scriptNames.delete(scriptName);
-    }
 }
 
 function getSymbolIdFromFilePath(filePath: string): string {

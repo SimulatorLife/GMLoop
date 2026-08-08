@@ -8,19 +8,19 @@ import type {
 } from "../../graph/index.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
 import { getUiErrorMessage } from "../error-message.js";
-import type { GraphVisualizationUiState } from "../state/types.js";
-import { EventBusManager } from "./event-bus-mixin.js";
 import {
     GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
     GRAPH_UI_EVENT_CONFIG_DRAFT_CHANGED,
     GRAPH_UI_EVENT_SAVE_CONFIG,
     GRAPH_UI_EVENT_TRIGGER_CREATE_CONFIG,
     type GraphUiSaveConfigDetail
-} from "./events.js";
+} from "../events/events.js";
+import type { GraphVisualizationUiState } from "../state/types.js";
+import { EventBusManager } from "./event-bus-mixin.js";
 import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
-import { getLintFixableBadgeLabel } from "./lint-rule-labels.js";
 import {
+    getLintFixableBadgeLabel,
     isLintLevel,
     isLintLevelFilter,
     LINT_LEVEL_LABELS,

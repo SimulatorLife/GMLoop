@@ -9,12 +9,13 @@
 import { Core } from "@gmloop/core";
 import { type WebSocket, WebSocketServer } from "ws";
 
+import { DEFAULT_LIVE_RELOAD_WEBSOCKET_HOST, DEFAULT_LIVE_RELOAD_WEBSOCKET_PORT } from "../live-reload/config.js";
 import type { ServerEndpoint, ServerLifecycle } from "../server/index.js";
 
 const { describeValueForError } = Core;
 
-const DEFAULT_HOST = "127.0.0.1";
-const DEFAULT_PORT = 17_890;
+const DEFAULT_HOST = DEFAULT_LIVE_RELOAD_WEBSOCKET_HOST;
+const DEFAULT_PORT = DEFAULT_LIVE_RELOAD_WEBSOCKET_PORT;
 
 const describeWebSocketError = Core.getErrorMessage;
 

@@ -700,7 +700,7 @@ void describe("OccurrenceCachePolicy", () => {
                 { path: "a.gml", start: 0, end: 1 },
                 { path: "b.gml", start: 0, end: 1 },
                 { path: "c.gml", start: 0, end: 1 }
-            ] as Array<import("../src/types.js").SymbolOccurrence>;
+            ] as Array<SymbolOccurrence>;
 
             assert.equal(policy.shouldCacheOccurrences(occurrences), false);
         });
@@ -712,7 +712,7 @@ void describe("OccurrenceCachePolicy", () => {
                 { path: "b.gml", start: 0, end: 1 },
                 { path: "c.gml", start: 0, end: 1 },
                 { path: "d.gml", start: 0, end: 1 }
-            ] as Array<import("../src/types.js").SymbolOccurrence>;
+            ] as Array<SymbolOccurrence>;
 
             assert.equal(policy.shouldCacheOccurrences(occurrences), true);
         });
@@ -724,9 +724,7 @@ void describe("OccurrenceCachePolicy", () => {
 
         void it("uses threshold of 0 to skip all caches", () => {
             const policy = new Refactor.DefaultOccurrenceCachePolicy(0);
-            const occurrences = [{ path: "a.gml", start: 0, end: 1 }] as Array<
-                import("../src/types.js").SymbolOccurrence
-            >;
+            const occurrences = [{ path: "a.gml", start: 0, end: 1 }] as Array<SymbolOccurrence>;
 
             assert.equal(policy.shouldCacheOccurrences(occurrences), true);
         });
@@ -762,7 +760,7 @@ void describe("OccurrenceCachePolicy", () => {
                 path: `file-${i}.gml`,
                 start: i,
                 end: i + 1
-            })) as Array<import("../src/types.js").SymbolOccurrence>;
+            })) as Array<SymbolOccurrence>;
 
             assert.equal(policy.shouldCacheOccurrences(occurrences), false);
         });

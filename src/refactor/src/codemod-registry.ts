@@ -5,15 +5,16 @@ import { Core } from "@gmloop/core";
 import { applyLoopLengthHoistingCodemod } from "./codemods/loop-length-hoisting/index.js";
 import { executeNamingConventionCodemod } from "./codemods/naming-convention/index.js";
 import { applyRepairArgumentSeparatorsCodemod } from "./codemods/repair-argument-separators/index.js";
-import { applyRepairAudioEmitterCreationGuardCodemod } from "./codemods/repair-audio-emitter-creation-guard/index.js";
+import { applyRepairAudioEmitterCreationGuardCodemod } from "./codemods/repair-audio-emitter-creation-guard/repair-audio-emitter-creation-guard-codemod.js";
 import { applyRepairEventCallbackOtherCodemod } from "./codemods/repair-event-callback-other/index.js";
-import { applyRepairInvalidTexturePointerGuardCodemod } from "./codemods/repair-invalid-texture-pointer-guard/index.js";
+import { applyRepairInvalidTexturePointerGuardCodemod } from "./codemods/repair-invalid-texture-pointer-guard/repair-invalid-texture-pointer-guard-codemod.js";
 import { applyRepairLogicalNotCodemod } from "./codemods/repair-logical-not/index.js";
-import { applyRepairSpriteTextureUvResolutionCodemod } from "./codemods/repair-sprite-texture-uv-resolution/index.js";
-import { applyRepairTexturePrefetchGuardCodemod } from "./codemods/repair-texture-prefetch-guard/index.js";
+import { applyRepairSpriteTextureUvResolutionCodemod } from "./codemods/repair-sprite-texture-uv-resolution/repair-sprite-texture-uv-resolution-codemod.js";
+import { applyRepairTexturePrefetchGuardCodemod } from "./codemods/repair-texture-prefetch-guard/repair-texture-prefetch-guard-codemod.js";
 import { applyScientificNotationCodemod } from "./codemods/scientific-notation/index.js";
 import { normalizeNamingConventionPolicy } from "./naming-convention-policy.js";
 import { assertRefactorConfigPlainObjectWithAllowedKeys } from "./refactor-config-assertions.js";
+import { SINGLE_FILE_TEXT_CODEMOD_IO_CONCURRENCY_LIMIT } from "./refactor-constants.js";
 import type {
     CodemodEngine,
     ConfiguredCodemodRunRequest,
@@ -135,28 +136,43 @@ async function executeSingleFileTextCodemod(
     const appliedFiles = new Map<string, string>();
     const changedFiles: Array<string> = [];
     const semantic = engine.semantic;
-    let current = 0;
     const total = gmlSourceFilePaths.length;
-    await Core.runSequentially(gmlSourceFilePaths, async (filePath) => {
-        if (request.onProgress) {
-            await request.onProgress({ current, total, filePath });
-        }
-        const sourceText = await request.readFile(filePath);
-        const result = await transform(sourceText, semantic);
-        if (result.changed) {
-            changedFiles.push(filePath);
-            if (request.dryRun === false && request.writeFile) {
-                await request.writeFile(filePath, result.outputText);
-                appliedFiles.set(filePath, "");
-            } else {
-                appliedFiles.set(filePath, result.outputText);
-            }
-        }
-        current++;
-    });
 
-    if (request.onProgress && total > 0) {
-        await request.onProgress({ current: total, total, filePath: "" });
+    // Each file is read, transformed, and (in write mode) saved independently of
+    // every other file, so the per-file work is processed with bounded
+    // concurrency instead of one file at a time. This overlaps disk I/O wait
+    // time across files while still parsing/transforming on the main thread.
+    // `runInParallelWithLimit` preserves result order, so the file-order
+    // behavior of `changedFiles`/`appliedFiles` stays identical to the
+    // sequential implementation this replaces.
+    let completedCount = 0;
+    const fileResults = await Core.runInParallelWithLimit(
+        gmlSourceFilePaths,
+        async (filePath) => {
+            const sourceText = await request.readFile(filePath);
+            const result = await transform(sourceText, semantic);
+
+            if (result.changed && request.dryRun === false && request.writeFile) {
+                await request.writeFile(filePath, result.outputText);
+            }
+
+            completedCount += 1;
+            if (request.onProgress) {
+                await request.onProgress({ current: completedCount, total, filePath });
+            }
+
+            return { changed: result.changed, filePath, outputText: result.outputText };
+        },
+        SINGLE_FILE_TEXT_CODEMOD_IO_CONCURRENCY_LIMIT
+    );
+
+    for (const fileResult of fileResults) {
+        if (!fileResult.changed) {
+            continue;
+        }
+
+        changedFiles.push(fileResult.filePath);
+        appliedFiles.set(fileResult.filePath, request.dryRun === false ? "" : fileResult.outputText);
     }
 
     return {

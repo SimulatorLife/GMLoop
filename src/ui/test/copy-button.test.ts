@@ -181,42 +181,10 @@ void test("GmCopyButton surfaces the error state when the Clipboard API rejects"
     }
 });
 
-void test("GmCopyButton falls back to a hidden textarea when navigator.clipboard is missing", async () => {
+void test("GmCopyButton reports an error without using execCommand when Clipboard API is unavailable", async () => {
     const originalNavigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
     const originalDocumentDescriptor = Object.getOwnPropertyDescriptor(globalThis, "document");
-
-    const appendedNodes: HTMLElement[] = [];
-    const removedNodes: HTMLElement[] = [];
-    const textarea: HTMLTextAreaElement = {
-        remove: () => {
-            removedNodes.push(textarea);
-        },
-        select: () => {
-            /* mock */
-        },
-        setAttribute: () => {
-            /* mock */
-        },
-        style: {} as CSSStyleDeclaration,
-        value: ""
-    } as unknown as HTMLTextAreaElement;
-
-    const stubDocument = {
-        body: {
-            append: (node: Node) => {
-                if (node === textarea) {
-                    appendedNodes.push(textarea);
-                }
-            }
-        },
-        createElement: (tagName: string) => {
-            if (tagName === "textarea") {
-                return textarea;
-            }
-            return {} as HTMLElement;
-        },
-        execCommand: (command: string) => command === "copy"
-    };
+    const execCommandCalls: string[] = [];
 
     Object.defineProperty(globalThis, "navigator", {
         configurable: true,
@@ -225,22 +193,25 @@ void test("GmCopyButton falls back to a hidden textarea when navigator.clipboard
 
     Object.defineProperty(globalThis, "document", {
         configurable: true,
-        value: stubDocument
+        value: {
+            execCommand: (command: string) => {
+                execCommandCalls.push(command);
+                return true;
+            }
+        }
     });
 
     try {
         const button = new TestableGmCopyButton();
-        button.value = "fallback-value";
+        button.value = "unsupported-value";
         const clickHandler = getClickHandler(button.renderForTest());
         clickHandler();
         await flushMicrotasks();
 
-        assert.equal(textarea.value, "fallback-value");
-        assert.equal(appendedNodes.length, 1);
-        assert.equal(removedNodes.length, 1);
-
+        assert.deepEqual(execCommandCalls, []);
         const after = renderTemplateValue(button.renderForTest());
-        assert.match(after, /gm-copy-button--success/u);
+        assert.match(after, /gm-copy-button--error/u);
+        assert.match(after, /Copy failed/u);
     } finally {
         if (originalNavigatorDescriptor === undefined) {
             Reflect.deleteProperty(globalThis, "navigator");

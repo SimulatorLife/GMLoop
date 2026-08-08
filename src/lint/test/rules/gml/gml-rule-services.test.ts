@@ -135,7 +135,7 @@ void test("feather rules depend on the region-directive rule-services contract, 
     const aggregated = [...sources.values()].join("\n");
 
     assert.ok(
-        !/from\s+["']\.\.\/\.\.\/gml\/region-directives\.js["']/.test(aggregated),
-        "Feather rule sources must not reach into src/lint/src/rules/gml/region-directives.js; consume gmlRuleRegionDirectiveServices through the shared rule-services facade instead."
+        !/from\s+["']\.\.\/\.\.\/language\/region-directives\.js["']/.test(aggregated),
+        "Feather rule sources must not reach into src/lint/src/language/region-directives.js; consume gmlRuleRegionDirectiveServices through the shared rule-services facade instead."
     );
 });

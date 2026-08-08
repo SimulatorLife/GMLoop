@@ -12,6 +12,9 @@ import {
     type RunnerLifecycleStateController,
     type RunnerLogClearer,
     type RunnerLogReader,
+    type RunnerProcessLauncher,
+    type RunnerProcessStatusReader,
+    type RunnerProcessStopper,
     type RunnerProjectBinder,
     type RunnerRoomController,
     type RunnerSnapshotReader
@@ -198,7 +201,8 @@ async function runRunnerStatusAction(options: RunnerOptions): Promise<void> {
     // narrow the binding to the read-only role interface.
     const runnerStateStore: RunnerSnapshotReader = bound.runnerStateStore;
     const snapshot = runnerStateStore.readSnapshot();
-    const processStatus = getRunnerController().status(bound.projectRoot);
+    const processStatusReader: RunnerProcessStatusReader = getRunnerController();
+    const processStatus = processStatusReader.status(bound.projectRoot);
     printRunnerPayload({
         command: "runner status",
         payload: {
@@ -304,7 +308,8 @@ async function runRunnerRoomCurrentAction(options: RunnerOptions): Promise<void>
 
 async function runRunnerStartAction(options: RunnerOptions): Promise<void> {
     const launch = await resolveRunnerLaunchConfiguration(options);
-    const payload = getRunnerController().start({
+    const processLauncher: RunnerProcessLauncher = getRunnerController();
+    const payload = processLauncher.start({
         args: launch.args,
         command: launch.command,
         debug: options.debug,
@@ -320,7 +325,8 @@ async function runRunnerStopAction(options: RunnerOptions): Promise<void> {
     const projectRoot = await discoverProjectRoot({
         explicitProjectPath: options.project ?? options.path
     });
-    const payload = getRunnerController().stop(projectRoot);
+    const processStopper: RunnerProcessStopper = getRunnerController();
+    const payload = processStopper.stop(projectRoot);
     printRunnerPayload({
         command: "runner stop",
         payload
@@ -329,7 +335,8 @@ async function runRunnerStopAction(options: RunnerOptions): Promise<void> {
 
 async function runRunnerRestartAction(options: RunnerOptions): Promise<void> {
     const launch = await resolveRunnerLaunchConfiguration(options);
-    const payload = getRunnerController().restart({
+    const processLauncher: RunnerProcessLauncher = getRunnerController();
+    const payload = processLauncher.restart({
         args: launch.args,
         command: launch.command,
         debug: options.debug,

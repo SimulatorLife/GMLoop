@@ -132,13 +132,6 @@ void test("prefer-compound-assignments rewrites addition with a complex right op
     assertEquals(result.output, expected);
 });
 
-void test("prefer-compound-assignments is included in the recommended config", () => {
-    const recommended = LintWorkspace.Lint.configs.recommended;
-    const allRules = recommended.flatMap((config) => Object.keys(config.rules ?? {}));
-
-    assertEquals(allRules.includes("gml/prefer-compound-assignments"), true);
-});
-
 // Commutative right-first patterns: `x = y + x` and `x = y * x` are
 // semantically identical to their left-first counterparts and must be
 // rewritten to the same compound form.

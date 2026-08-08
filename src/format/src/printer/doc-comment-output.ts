@@ -225,7 +225,7 @@ function resolveEmbeddedLeadingCommentItems(
             continue;
         }
 
-        const sourceIndex = resolveDocCommentStartIndex(comment);
+        const sourceIndex = Core.getCommentBoundaryIndex(comment, "start");
         if (sourceIndex === null || sourceIndex < leadingBlockStartIndex || sourceIndex >= nodeStartIndex) {
             continue;
         }
@@ -237,7 +237,7 @@ function resolveEmbeddedLeadingCommentItems(
 
         items.push({
             doc: rawText,
-            endIndex: resolveDocCommentEndIndex(comment),
+            endIndex: Core.getCommentBoundaryIndex(comment, "end"),
             sourceIndex,
             stableIndex: docCommentEntries.length + items.length
         });
@@ -255,8 +255,8 @@ function resolveRawAttachedCommentText(comment: Record<string, unknown>, origina
         return null;
     }
 
-    const startIndex = resolveDocCommentStartIndex(comment);
-    const endIndex = resolveDocCommentEndIndex(comment);
+    const startIndex = Core.getCommentBoundaryIndex(comment, "start");
+    const endIndex = Core.getCommentBoundaryIndex(comment, "end");
     if (startIndex === null || endIndex === null || endIndex < startIndex) {
         return null;
     }
@@ -283,11 +283,11 @@ function resolveDocLeadingCommentItem(
     nodeStartIndex: number,
     stableIndex: number
 ): LeadingCommentItem {
-    const metadataStartIndex = resolveDocCommentStartIndex(docCommentEntry);
+    const metadataStartIndex = Core.getCommentBoundaryIndex(docCommentEntry, "start");
     if (metadataStartIndex !== null) {
         return {
             doc,
-            endIndex: resolveDocCommentEndIndex(docCommentEntry),
+            endIndex: Core.getCommentBoundaryIndex(docCommentEntry, "end"),
             sourceIndex: metadataStartIndex,
             stableIndex
         };
@@ -380,8 +380,8 @@ function joinDocCommentsPreservingSourceSpacing(
 }
 
 function hasBlankLineBetweenDocCommentEntries(leftEntry: unknown, rightEntry: unknown, originalText: string): boolean {
-    const leftEndIndex = resolveDocCommentEndIndex(leftEntry);
-    const rightStartIndex = resolveDocCommentStartIndex(rightEntry);
+    const leftEndIndex = Core.getCommentBoundaryIndex(leftEntry, "end");
+    const rightStartIndex = Core.getCommentBoundaryIndex(rightEntry, "start");
     if (leftEndIndex === null || rightStartIndex === null || rightStartIndex <= leftEndIndex) {
         return false;
     }
@@ -394,45 +394,11 @@ function hasBlankLineBetweenDocCommentEntries(leftEntry: unknown, rightEntry: un
     return /\r?\n[ \t]*\r?\n/u.test(slice);
 }
 
-function resolveDocCommentStartIndex(commentEntry: unknown): number | null {
-    if (!Core.isObjectLike(commentEntry)) {
-        return null;
-    }
-
-    const startValue = (commentEntry as { start?: unknown }).start;
-    if (typeof startValue === NUMBER_TYPE) {
-        return startValue as number;
-    }
-
-    if (Core.isObjectLike(startValue)) {
-        const startIndex = (startValue as { index?: unknown }).index;
-        if (typeof startIndex === NUMBER_TYPE) {
-            return startIndex as number;
-        }
-    }
-
-    return null;
-}
-
-function resolveDocCommentEndIndex(commentEntry: unknown): number | null {
-    if (!Core.isObjectLike(commentEntry)) {
-        return null;
-    }
-
-    const endValue = (commentEntry as { end?: unknown }).end;
-    if (typeof endValue === NUMBER_TYPE) {
-        return endValue as number;
-    }
-
-    if (Core.isObjectLike(endValue)) {
-        const endIndex = (endValue as { index?: unknown }).index;
-        if (typeof endIndex === NUMBER_TYPE) {
-            return endIndex as number;
-        }
-    }
-
-    return null;
-}
+// `start` and `end` boundaries on doc-comment entries are read through
+// `Core.getCommentBoundaryIndex`, the canonical helper for parser-produced
+// comment boundary shapes. Keeping the call sites uniform here (instead of
+// re-implementing the same `number | { index }` discrimination twice) makes
+// any future change to boundary handling apply everywhere at once.
 
 function sortDocCommentsBySourceOrder(docCommentDocs: MutableDocCommentLines): void {
     if (!Array.isArray(docCommentDocs) || docCommentDocs.length <= 1) {
@@ -442,7 +408,7 @@ function sortDocCommentsBySourceOrder(docCommentDocs: MutableDocCommentLines): v
     const indexedEntries = docCommentDocs.map((entry, index) => ({
         entry,
         index,
-        startIndex: resolveDocCommentStartIndex(entry)
+        startIndex: Core.getCommentBoundaryIndex(entry, "start")
     }));
 
     const hasSourcePositions = indexedEntries.some((entry) => typeof entry.startIndex === NUMBER_TYPE);

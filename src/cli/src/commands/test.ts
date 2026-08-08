@@ -116,11 +116,7 @@ function isValidTestCaseManifest(value: unknown): value is TestCaseManifest {
     return value.cases.every(isValidTestCaseManifestEntry);
 }
 
-function printTestPayload(payload: unknown, asJson: boolean): void {
-    if (asJson) {
-        console.log(JSON.stringify(payload, null, 2));
-        return;
-    }
+function printTestPayload(payload: unknown): void {
     console.log(JSON.stringify(payload, null, 2));
 }
 
@@ -344,10 +340,7 @@ function upsertTestCaseEntry(parameters: {
 async function runTestListAction(options: TestOptions): Promise<void> {
     const projectRoot = await resolveTestProjectRoot(options);
     const files = await findTestFiles(projectRoot, options.pattern);
-    printTestPayload(
-        { command: "test list", payload: { count: files.length, files, ok: true, projectRoot } },
-        options.json === true
-    );
+    printTestPayload({ command: "test list", payload: { count: files.length, files, ok: true, projectRoot } });
 }
 
 async function runTestRunAction(options: TestOptions): Promise<void> {
@@ -367,10 +360,7 @@ async function runTestRunAction(options: TestOptions): Promise<void> {
             stdout: ""
         };
         const outputPath = await persistTestResults(projectRoot, emptyPayload);
-        printTestPayload(
-            { command: "test run", payload: { ok: true, outputPath, projectRoot, run: emptyPayload } },
-            options.json === true
-        );
+        printTestPayload({ command: "test run", payload: { ok: true, outputPath, projectRoot, run: emptyPayload } });
         return;
     }
 
@@ -401,18 +391,15 @@ async function runTestRunAction(options: TestOptions): Promise<void> {
 
     const outputPath = await persistTestResults(projectRoot, runPayload);
 
-    printTestPayload(
-        {
-            command: "test run",
-            payload: {
-                ok: runPayload.exitCode === 0,
-                outputPath,
-                projectRoot,
-                run: runPayload
-            }
-        },
-        options.json === true
-    );
+    printTestPayload({
+        command: "test run",
+        payload: {
+            ok: runPayload.exitCode === 0,
+            outputPath,
+            projectRoot,
+            run: runPayload
+        }
+    });
 }
 
 async function runTestResultsAction(options: TestOptions): Promise<void> {
@@ -420,16 +407,10 @@ async function runTestResultsAction(options: TestOptions): Promise<void> {
     const outputPath = path.join(resolveArtifactDirectory(projectRoot, "test"), "latest.json");
     const payload = await readArtifactJson<PersistedTestRun>(outputPath);
     if (!payload) {
-        printTestPayload(
-            { command: "test results", payload: { ok: false, reason: "results_not_found" } },
-            options.json === true
-        );
+        printTestPayload({ command: "test results", payload: { ok: false, reason: "results_not_found" } });
         return;
     }
-    printTestPayload(
-        { command: "test results", payload: { ok: true, outputPath, projectRoot, run: payload } },
-        options.json === true
-    );
+    printTestPayload({ command: "test results", payload: { ok: true, outputPath, projectRoot, run: payload } });
 }
 
 async function runTestCaseCreateAction(
@@ -445,20 +426,68 @@ async function runTestCaseCreateAction(
     const writeMode = options.write === true;
     const manifestPath = writeMode ? await writeTestCaseManifest(projectRoot, nextManifest) : null;
 
-    printTestPayload(
-        {
-            command: "test case create",
+    printTestPayload({
+        command: "test case create",
+        payload: {
+            case: entry,
+            changed,
+            manifestPath,
+            mode: writeMode ? "apply" : "dry-run",
+            ok: true,
+            projectRoot
+        }
+    });
+}
+
+async function runTestCaseListAction(options: TestOptions, target: string | undefined): Promise<void> {
+    const projectRoot = await resolveTestProjectRoot(options);
+    const manifest = await readTestCaseManifest(projectRoot);
+    const cases = target === undefined ? manifest.cases : manifest.cases.filter((entry) => entry.target === target);
+
+    printTestPayload({
+        command: "test case list",
+        payload: {
+            cases,
+            count: cases.length,
+            ok: true,
+            projectRoot
+        }
+    });
+}
+
+async function runTestCaseDeleteAction(options: TestCaseMutationOptions, target: string, name: string): Promise<void> {
+    const projectRoot = await resolveTestProjectRoot(options);
+    const manifest = await readTestCaseManifest(projectRoot);
+    const writeMode = options.write === true;
+    const existingIndex = findTestCaseEntryIndex(manifest, target, name);
+
+    if (existingIndex === -1) {
+        printTestPayload({
+            command: "test case delete",
             payload: {
-                case: entry,
-                changed,
-                manifestPath,
+                case: { name, target },
                 mode: writeMode ? "apply" : "dry-run",
-                ok: true,
-                projectRoot
+                ok: false,
+                reason: "test_case_not_found"
             }
-        },
-        options.json === true
-    );
+        });
+        return;
+    }
+
+    const remainingCases = manifest.cases.filter((_entry, index) => index !== existingIndex);
+    const nextManifest = createTestCaseManifest(remainingCases);
+    const manifestPath = writeMode ? await writeTestCaseManifest(projectRoot, nextManifest) : null;
+
+    printTestPayload({
+        command: "test case delete",
+        payload: {
+            case: { name, target },
+            manifestPath,
+            mode: writeMode ? "apply" : "dry-run",
+            ok: true,
+            projectRoot
+        }
+    });
 }
 
 async function runTestCaseUpdateAction(
@@ -472,18 +501,15 @@ async function runTestCaseUpdateAction(
     const writeMode = options.write === true;
 
     if (findTestCaseEntryIndex(manifest, target, name) === -1) {
-        printTestPayload(
-            {
-                command: "test case update",
-                payload: {
-                    case: { name, target },
-                    mode: writeMode ? "apply" : "dry-run",
-                    ok: false,
-                    reason: "test_case_not_found"
-                }
-            },
-            options.json === true
-        );
+        printTestPayload({
+            command: "test case update",
+            payload: {
+                case: { name, target },
+                mode: writeMode ? "apply" : "dry-run",
+                ok: false,
+                reason: "test_case_not_found"
+            }
+        });
         return;
     }
 
@@ -491,20 +517,17 @@ async function runTestCaseUpdateAction(
     const { changed, manifest: nextManifest } = upsertTestCaseEntry({ entry, manifest });
     const manifestPath = writeMode && changed ? await writeTestCaseManifest(projectRoot, nextManifest) : null;
 
-    printTestPayload(
-        {
-            command: "test case update",
-            payload: {
-                case: entry,
-                changed,
-                manifestPath,
-                mode: writeMode ? "apply" : "dry-run",
-                ok: true,
-                projectRoot
-            }
-        },
-        options.json === true
-    );
+    printTestPayload({
+        command: "test case update",
+        payload: {
+            case: entry,
+            changed,
+            manifestPath,
+            mode: writeMode ? "apply" : "dry-run",
+            ok: true,
+            projectRoot
+        }
+    });
 }
 
 export function createTestCommand(): Command {
@@ -536,6 +559,15 @@ export function createTestCommand(): Command {
     });
 
     const testCase = applyStandardCommandOptions(new Command("case")).description("Manage test cases.");
+    const testCaseList = addTestSharedOptions(
+        applyStandardCommandOptions(new Command("list"))
+            .description("List test cases.")
+            .option("--target <value>", "Only include cases for this target function/script identifier.")
+    );
+    testCaseList.action(async function testCaseListAction() {
+        const options = this.opts<TestOptions & Readonly<{ target?: string }>>();
+        await runTestCaseListAction(options, options.target);
+    });
     const testCaseCreate = addTestSharedOptions(
         applyStandardCommandOptions(new Command("create"))
             .description("Create a test case.")
@@ -560,8 +592,21 @@ export function createTestCommand(): Command {
         const options = this.opts<TestCaseMutationOptions>();
         await runTestCaseUpdateAction(options, target, name, options.expected);
     });
+    const testCaseDelete = addTestSharedOptions(
+        applyStandardCommandOptions(new Command("delete"))
+            .description("Delete a test case.")
+            .argument("<target>", "Target function/script identifier under test.")
+            .argument("<name>", "Stable test case name.")
+            .addOption(createWriteOption())
+    );
+    testCaseDelete.action(async function testCaseDeleteAction(target: string, name: string) {
+        const options = this.opts<TestCaseMutationOptions>();
+        await runTestCaseDeleteAction(options, target, name);
+    });
+    testCase.addCommand(testCaseList);
     testCase.addCommand(testCaseCreate);
     testCase.addCommand(testCaseUpdate);
+    testCase.addCommand(testCaseDelete);
 
     command.addCommand(run);
     command.addCommand(list);

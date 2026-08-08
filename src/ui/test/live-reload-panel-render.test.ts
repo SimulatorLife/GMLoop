@@ -1,17 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { GmAppShell, GmGraphToolbar, GmLiveReloadPanel } from "../src/app/components/index.js";
+import type { GraphVisualizationFixRunResult, GraphVisualizationUiModel } from "../src/app/contracts.js";
 import {
-    GmAppShell,
-    GmGraphToolbar,
-    GmLiveReloadPanel,
     GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
     GRAPH_UI_EVENT_LIVE_RELOAD_STATUS_CHANGED,
     GRAPH_UI_EVENT_TRIGGER_FIX,
     GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD,
     GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD
-} from "../src/app/components/index.js";
-import type { GraphVisualizationFixRunResult, GraphVisualizationUiModel } from "../src/app/contracts.js";
+} from "../src/app/events/events.js";
 import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import type { GraphVisualizationLiveReloadStatusSnapshot } from "../src/graph/types.js";
@@ -208,6 +206,21 @@ void test("GmLiveReloadPanel offers accessible copy controls for configured endp
     assert.match(rendered, /accessibleLabel=Copy runtime endpoint to clipboard/u);
     assert.match(rendered, /label="Copy"/u);
     assert.match(rendered, /hideLabel/u);
+});
+
+void test("GmLiveReloadPanel offers an accessible copy control for each recent error", () => {
+    const panel = new TestableGmLiveReloadPanel();
+    panel.model = createMockModel(createStatusSnapshot());
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /class="live-reload-error-copy"/u);
+    assert.match(rendered, /accessibleLabel=Copy error details for scripts\/scr_error\.gml/u);
+    assert.match(
+        rendered,
+        /value=File: scripts\/scr_error\.gml\nError: Unexpected symbol\nRecovery hint: Check the changed line\.\nTime: /u
+    );
 });
 
 void test("GmLiveReloadPanel omits endpoint copy controls when endpoint values are not configured", () => {
