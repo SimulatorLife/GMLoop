@@ -424,7 +424,9 @@ Generated artifacts live in `dist/` and are disposable.
 
 Start here for deeper context and plans:
 
-- [`docs/README.md`](docs/README.md) (documentation index)
+- [`docs/README.md`](docs/README.md) (documentation index — also lists historical
+  [architectural audits](docs/architectural-audits/) and Codex subagent
+  contracts)
 - [`docs/target-state.md`](docs/target-state.md) (project architecture target state)
 - [`docs/contributor-onboarding.md`](docs/contributor-onboarding.md) (first-time contributor checklist)
 - [`src/cli/README.md`](src/cli/README.md) (full command catalog)

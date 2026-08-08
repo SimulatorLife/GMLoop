@@ -40,15 +40,22 @@ pnpm run build:ts
 pnpm run lint:quiet
 ```
 
-Then run targeted suites for the workspace(s) you touched:
+Then run targeted suites for the workspace(s) you touched. Pick the
+script that matches the workspace you changed; `pnpm test` runs the
+compiled cross-module suite plus root integration fixtures once the
+root build is current.
 
 ```bash
 pnpm run test:parser
+pnpm run test:core
 pnpm run test:format
+pnpm run test:lint
 pnpm run test:semantic
 pnpm run test:cli
+pnpm run test:mcp
 pnpm run test:transpiler
 pnpm run test:runtime-wrapper
+pnpm run test:lsp
 pnpm run test:refactor
 ```
 
