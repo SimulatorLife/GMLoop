@@ -466,7 +466,7 @@ function createRefactorEngineForProject(
 
     recordRefactorSemanticBridge(semanticBridge ?? null);
 
-    const bridges = createRefactorBridges({ semantic: semanticBridge }, projectRoot);
+    const bridges = createRefactorBridges({ semantic: semanticBridge, projectRoot });
 
     return createRefactorEngine({
         semantic: semanticBridge ?? null,

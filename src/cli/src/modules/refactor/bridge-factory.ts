@@ -38,6 +38,11 @@ export interface RefactorBridgesOptions {
     formatter?: Refactor.TranspilerBridge;
     parser?: Refactor.ParserBridge;
     semantic?: PartialSemanticAnalyzer;
+    /**
+     * Project root forwarded to the default semantic bridge. Ignored when a
+     * custom `semantic` bridge is supplied.
+     */
+    projectRoot?: string;
 }
 
 /**
@@ -64,16 +69,18 @@ const REFACTOR_BRIDGE_PARSER_OPTIONS: Readonly<ParserOptions> = Object.freeze({
  *
  * When no options are supplied, returns the canonical production bridges.
  * Callers can override individual bridges for testing or when a custom
- * adapter is required.
+ * adapter is required. The `projectRoot` option is only consulted when no
+ * custom `semantic` bridge is supplied; passing a semantic bridge bypasses
+ * project root plumbing entirely so the factory owns one consistent seam.
  *
- * @param options - Optional overrides for any bridge.
- * @param projectRoot - Project root passed through to GmlSemanticBridge.
- *   Unused when a semantic bridge is supplied in options.
+ * @param options - Optional overrides for any bridge plus the project root
+ *   forwarded to the default semantic bridge.
  */
-export function createRefactorBridges(options: RefactorBridgesOptions = {}, projectRoot?: string): RefactorBridges {
+export function createRefactorBridges(options: RefactorBridgesOptions = {}): RefactorBridges {
+    const { formatter, parser, semantic, projectRoot } = options;
     return Object.freeze({
-        formatter: options.formatter ?? new GmlTranspilerBridge(createCanonicalGmlTranspilerAdapter()),
-        parser: options.parser ?? new GmlParserBridge(createCanonicalGmlParserAdapter(REFACTOR_BRIDGE_PARSER_OPTIONS)),
-        semantic: options.semantic ?? new GmlSemanticBridge({}, projectRoot ?? process.cwd())
+        formatter: formatter ?? new GmlTranspilerBridge(createCanonicalGmlTranspilerAdapter()),
+        parser: parser ?? new GmlParserBridge(createCanonicalGmlParserAdapter(REFACTOR_BRIDGE_PARSER_OPTIONS)),
+        semantic: semantic ?? new GmlSemanticBridge({}, projectRoot ?? process.cwd())
     });
 }

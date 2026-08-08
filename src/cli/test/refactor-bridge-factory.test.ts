@@ -90,7 +90,7 @@ void describe("createRefactorBridges", () => {
 
     void it("passes projectRoot to GmlSemanticBridge when provided", () => {
         const customProjectRoot = "/test/project/root";
-        const bridges = createRefactorBridges({}, customProjectRoot);
+        const bridges = createRefactorBridges({ projectRoot: customProjectRoot });
 
         assert.ok(bridges.semantic instanceof GmlSemanticBridge, "semantic should be GmlSemanticBridge instance");
         const semantic = bridges.semantic;
