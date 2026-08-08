@@ -98,17 +98,17 @@ GameMaker project:
 
 ```bash
 pnpm run format:gml -- --help
-pnpm run format:gml -- --check
 pnpm run cli -- --help
+pnpm run cli -- format --help
 ```
 
-The `format:gml` workspace script now pins the `format` subcommand so the help
+The `format:gml` workspace script pins the `format` subcommand so the help
 output spotlights formatter-specific flags. Pair it with the
 [CLI wrapper reference](../README.md#cli-wrapper-environment-knobs) when
 scripting automation, and fall back to `pnpm run cli -- --help` for the global
-command inventory. The global CLI help also notes that passing just a file or
-directory path runs the `format` command implicitly, which is useful for quick
-one-off formatting checks.
+command inventory. The `format` subcommand runs in dry-run mode by default and
+writes changes only when `--write` is passed; it requires `--path` and no longer
+accepts a positional path.
 
 Before large structural changes, review [`docs/target-state.md`](target-state.md)
 to keep parser/core/format ownership boundaries and workspace API rules aligned
@@ -118,7 +118,7 @@ When you're ready to try the wrapper against a project, provide the target
 directory explicitly so the command has GameMaker sources to process:
 
 ```bash
-pnpm run format:gml -- path/to/project
+pnpm run cli -- format --path path/to/project
 ```
 
 ## 5. Explore supporting documentation
