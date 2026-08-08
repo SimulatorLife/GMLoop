@@ -204,8 +204,14 @@ export function exportOccurrencesBySymbolsFromTracker(
     for (const scope of scopesToProcess) {
         const occurrences: ScipOccurrence[] = [];
 
-        for (const [name, entry] of scope.occurrences.entries()) {
-            if (!symbolSet.has(name)) {
+        // Look up each requested symbol directly instead of scanning every
+        // occurrence entry in the scope. Hot-reload callers typically request
+        // a handful of changed symbols out of a much larger declared set, so
+        // this keeps the cost proportional to `symbolSet.size` rather than to
+        // the scope's total occurrence count.
+        for (const name of symbolSet) {
+            const entry = scope.occurrences.get(name);
+            if (!entry) {
                 continue;
             }
 
