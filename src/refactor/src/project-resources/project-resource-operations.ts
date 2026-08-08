@@ -16,6 +16,8 @@ const EMPTY_PNG_BYTES = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+tmN0AAAAASUVORK5CYII=",
     "base64"
 );
+// Minimal silent 16-bit mono 44.1kHz WAV file (44-byte header, zero data frames).
+const SILENT_WAV_BYTES = Buffer.from("UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=", "base64");
 
 type ProjectResourceArtifact = Readonly<{
     content: Buffer | string;
@@ -139,6 +141,10 @@ const RESOURCE_TYPE_BY_KIND: Readonly<Record<ProjectResourceKindValue, ResourceT
     [ProjectResourceKind.SCRIPT]: Object.freeze({
         resourceDirectory: "scripts",
         resourceType: "GMScript"
+    }),
+    [ProjectResourceKind.SOUND]: Object.freeze({
+        resourceDirectory: "sounds",
+        resourceType: "GMSound"
     }),
     [ProjectResourceKind.SPRITE]: Object.freeze({
         resourceDirectory: "sprites",
@@ -306,6 +312,16 @@ function replaceResourcePathReferences<TValue>(value: TValue, previousPath: stri
         return value.map((entry) => replaceResourcePathReferences(entry, previousPath, nextPath)) as TValue;
     }
     if (!Core.isObjectLike(value)) {
+        return value;
+    }
+
+    // Boxed primitives (e.g. @bscotch/yy's FixedNumber, which subclasses Number to
+    // carry a fixed-decimal `digits` hint) are object-like but store their payload in
+    // an internal slot rather than an enumerable property. Recursing into them via
+    // Object.entries would drop the wrapped value and keep only incidental own
+    // properties like `digits`, corrupting fields such as a sound's `duration`/`volume`.
+    const objectTag = Object.prototype.toString.call(value);
+    if (objectTag === "[object Number]" || objectTag === "[object String]" || objectTag === "[object Boolean]") {
         return value;
     }
 
@@ -657,6 +673,32 @@ function createResourceMetadataDocument(context: ProjectResourceContext): Record
                 resourceVersion: "2.0"
             };
         }
+        case ProjectResourceKind.SOUND: {
+            return {
+                $GMSound: "v2",
+                "%Name": context.resourceName,
+                audioGroupId: {
+                    name: "audiogroup_default",
+                    path: "audiogroups/audiogroup_default"
+                },
+                bitDepth: 1,
+                channelFormat: 1,
+                compression: 0,
+                compressionQuality: 4,
+                conversionMode: 0,
+                duration: 0,
+                exportDir: "",
+                name: context.resourceName,
+                parent,
+                preload: false,
+                resourcePath: context.resourcePath,
+                resourceType: context.resourceType,
+                resourceVersion: "2.0",
+                sampleRate: 44_100,
+                soundFile: `${context.resourceName}.wav`,
+                volume: 1
+            };
+        }
     }
 }
 
@@ -707,6 +749,13 @@ function createResourceArtifacts(
         artifacts.push({
             path: `${context.resourceDirectory}/${context.resourceName}/${context.resourceName}.png`,
             content: EMPTY_PNG_BYTES
+        });
+    }
+
+    if (context.resourceKind === ProjectResourceKind.SOUND) {
+        artifacts.push({
+            path: `${context.resourceDirectory}/${context.resourceName}/${context.resourceName}.wav`,
+            content: SILENT_WAV_BYTES
         });
     }
 
@@ -873,6 +922,12 @@ function collectFallbackDeletionPaths(
         case ProjectResourceKind.FONT: {
             return {
                 deletedPaths: [context.resourcePath, `${resourceDirectory}/${context.resourceName}.png`],
+                warnings
+            };
+        }
+        case ProjectResourceKind.SOUND: {
+            return {
+                deletedPaths: [context.resourcePath, `${resourceDirectory}/${context.resourceName}.wav`],
                 warnings
             };
         }
