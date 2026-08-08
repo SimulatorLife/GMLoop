@@ -916,3 +916,50 @@ void test("fixture stage timing rejects out-of-order stage execution", async () 
         await rm(rootPath, { recursive: true, force: true });
     }
 });
+
+void test("resolveFixtureCaseProfileBudgets surfaces nested budgets via the FixtureCase facade", async () => {
+    const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-budgets-resolver-"));
+
+    try {
+        await createTextFixtureCase(
+            rootPath,
+            "with-budgets",
+            {
+                fixture: {
+                    kind: "format",
+                    profile: { budgets: { durationMs: { total: 100 } } }
+                }
+            },
+            "input\n",
+            "input\n"
+        );
+        await createTextFixtureCase(
+            rootPath,
+            "profile-without-budgets",
+            { fixture: { kind: "format", profile: {} } },
+            "input\n",
+            "input\n"
+        );
+        await createTextFixtureCase(rootPath, "no-profile", { fixture: { kind: "format" } }, "input\n", "input\n");
+
+        const discovered = await FixtureRunner.discoverFixtureCases(rootPath);
+        const byId = new Map(discovered.map((fixtureCase) => [fixtureCase.caseId, fixtureCase]));
+        const withBudgets = byId.get("with-budgets");
+        const profileWithoutBudgets = byId.get("profile-without-budgets");
+        const noProfile = byId.get("no-profile");
+
+        assert.notEqual(withBudgets, undefined, "Expected to discover the budgets fixture case.");
+        assert.notEqual(
+            profileWithoutBudgets,
+            undefined,
+            "Expected to discover the profile-without-budgets fixture case."
+        );
+        assert.notEqual(noProfile, undefined, "Expected to discover the no-profile fixture case.");
+
+        assert.deepEqual(FixtureRunner.resolveFixtureCaseProfileBudgets(withBudgets), { durationMs: { total: 100 } });
+        assert.equal(FixtureRunner.resolveFixtureCaseProfileBudgets(profileWithoutBudgets), null);
+        assert.equal(FixtureRunner.resolveFixtureCaseProfileBudgets(noProfile), null);
+    } finally {
+        await rm(rootPath, { recursive: true, force: true });
+    }
+});
