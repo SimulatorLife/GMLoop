@@ -40,6 +40,11 @@ function whitespaceStatementVisitor(): string {
     return "   ";
 }
 
+const absentNodes: Array<{ label: string; node: null | undefined }> = [
+    { label: "null", node: null },
+    { label: "undefined", node: undefined }
+];
+
 void describe("wrapConditional", () => {
     void it("wraps expression in parentheses by default", () => {
         const node = { type: "BinaryExpression" } as GmlNode;
@@ -62,37 +67,26 @@ void describe("wrapConditional", () => {
         assert.strictEqual(result, "(x)");
     });
 
-    void it("returns (undefined) for null node when raw=false", () => {
-        const result = wrapConditional(null, mockVisitor);
-        assert.strictEqual(result, "(undefined)");
-    });
+    for (const { label, node } of absentNodes) {
+        void it(`returns (undefined) for ${label} node when raw=false`, () => {
+            const result = wrapConditional(node, mockVisitor);
+            assert.strictEqual(result, "(undefined)");
+        });
 
-    void it("returns empty string for null node when raw=true", () => {
-        const result = wrapConditional(null, mockVisitor, true);
-        assert.strictEqual(result, "");
-    });
-
-    void it("returns (undefined) for undefined node when raw=false", () => {
-        const result = wrapConditional(undefined, mockVisitor);
-        assert.strictEqual(result, "(undefined)");
-    });
-
-    void it("returns empty string for undefined node when raw=true", () => {
-        const result = wrapConditional(undefined, mockVisitor, true);
-        assert.strictEqual(result, "");
-    });
+        void it(`returns empty string for ${label} node when raw=true`, () => {
+            const result = wrapConditional(node, mockVisitor, true);
+            assert.strictEqual(result, "");
+        });
+    }
 });
 
 void describe("wrapConditionalBody", () => {
-    void it("returns empty block for null node", () => {
-        const result = wrapConditionalBody(null, mockVisitor);
-        assert.strictEqual(result, " {\n}\n");
-    });
-
-    void it("returns empty block for undefined node", () => {
-        const result = wrapConditionalBody(undefined, mockVisitor);
-        assert.strictEqual(result, " {\n}\n");
-    });
+    for (const { label, node } of absentNodes) {
+        void it(`returns empty block for ${label} node`, () => {
+            const result = wrapConditionalBody(node, mockVisitor);
+            assert.strictEqual(result, " {\n}\n");
+        });
+    }
 
     void it("uses BlockStatement as-is with leading space", () => {
         const node = { type: "BlockStatement" } as GmlNode;
@@ -126,15 +120,12 @@ void describe("wrapConditionalBody", () => {
 });
 
 void describe("wrapRawBody", () => {
-    void it("returns raw empty block for null node", () => {
-        const result = wrapRawBody(null, mockVisitor);
-        assert.strictEqual(result, "{\n}\n");
-    });
-
-    void it("returns raw empty block for undefined node", () => {
-        const result = wrapRawBody(undefined, mockVisitor);
-        assert.strictEqual(result, "{\n}\n");
-    });
+    for (const { label, node } of absentNodes) {
+        void it(`returns raw empty block for ${label} node`, () => {
+            const result = wrapRawBody(node, mockVisitor);
+            assert.strictEqual(result, "{\n}\n");
+        });
+    }
 
     void it("uses BlockStatement as-is without leading space", () => {
         const node = { type: "BlockStatement" } as GmlNode;
