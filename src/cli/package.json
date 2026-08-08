@@ -30,6 +30,7 @@
     "@gmloop/lint": "workspace:*",
     "@gmloop/parser": "workspace:*",
     "@gmloop/refactor": "workspace:*",
+    "@gmloop/runtime-wrapper": "workspace:*",
     "@gmloop/semantic": "workspace:*",
     "@gmloop/transpiler": "workspace:*",
     "@gmloop/ui": "workspace:*",

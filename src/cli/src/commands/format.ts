@@ -27,11 +27,6 @@ import {
     createVerboseOption,
     createWriteOption
 } from "../cli-core/shared-command-options.js";
-import {
-    hasRegisteredIgnorePath,
-    registerIgnorePath,
-    resetRegisteredIgnorePaths
-} from "../format-runtime/ignore-path-registry.js";
 import { importFormatModule, resolveFormatEntryPoint as resolveCliFormatEntryPoint } from "../format-runtime/index.js";
 import { tryAddSample } from "../modules/formatting/bounded-sample-collector.js";
 import {
@@ -44,9 +39,12 @@ import {
 } from "../modules/formatting/format-memory-options.js";
 import {
     hasNegatedIgnoreRules,
+    hasRegisteredIgnorePath,
     markNegatedIgnoreRulesDetected,
-    resetNegatedIgnoreRulesFlag
-} from "../modules/formatting/ignore-rules-negation-tracker.js";
+    registerIgnorePath,
+    resetNegatedIgnoreRulesFlag,
+    resetRegisteredIgnorePaths
+} from "../modules/formatting/ignore-tracking.js";
 import {
     clearFormattingCache,
     createFormattingCacheKey,

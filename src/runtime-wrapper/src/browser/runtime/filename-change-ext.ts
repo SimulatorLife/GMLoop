@@ -1,39 +1,12 @@
-type BrowserGlobalScope = Record<string, unknown>;
+import { resolveHtml5BuiltinNameMap } from "../support/html5-builtin-discovery.js";
 
-type Html5BuiltinNameMap = {
-    filename_change_ext: string;
-};
+type BrowserGlobalScope = Record<string, unknown>;
 
 const FILENAME_CHANGE_EXT_PATCH_MARKER = "__gmloopFilenameChangeExtSafetyPatched";
 
-function isObjectLike(value: unknown): value is Record<string, unknown> {
-    return value !== null && typeof value === "object";
-}
-
-function isHtml5BuiltinNameMap(value: unknown): value is Html5BuiltinNameMap {
-    if (!isObjectLike(value)) {
-        return false;
-    }
-
-    return value.self !== value && typeof value.filename_change_ext === "string";
-}
-
-function resolveHtml5BuiltinNameMap(globalScope: BrowserGlobalScope): Html5BuiltinNameMap | null {
-    for (const propertyName of Object.getOwnPropertyNames(globalScope)) {
-        let candidate: unknown;
-        try {
-            candidate = globalScope[propertyName];
-        } catch {
-            continue;
-        }
-
-        if (isHtml5BuiltinNameMap(candidate)) {
-            return candidate;
-        }
-    }
-
-    return null;
-}
+const FILENAME_CHANGE_EXT_BUILTIN_NAMES = {
+    filename_change_ext: "filename_change_ext"
+} as const;
 
 function hasFilenameExtension(filename: string): boolean {
     const lastSeparator = Math.max(filename.lastIndexOf("/"), filename.lastIndexOf("\\"));
@@ -56,7 +29,7 @@ function hasFilenameExtension(filename: string): boolean {
  */
 export function applyHtml5FilenameChangeExtSafetyPatch(globalScope: BrowserGlobalScope): boolean {
     const directFunction = globalScope.filename_change_ext;
-    const nameMap = resolveHtml5BuiltinNameMap(globalScope);
+    const nameMap = resolveHtml5BuiltinNameMap(globalScope, FILENAME_CHANGE_EXT_BUILTIN_NAMES);
     const propertyName = typeof directFunction === "function" ? "filename_change_ext" : nameMap?.filename_change_ext;
     if (propertyName === undefined) {
         return false;
