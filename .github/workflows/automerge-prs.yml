@@ -3,7 +3,7 @@ name: "Auto-merge PRs"
 on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
-    branches: [main, master, mainline]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -28,7 +28,7 @@ jobs:
       shard_count: ${{ steps.decide.outputs.shard_count }}
     steps:
       - id: decide
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
             const { owner, repo } = context.repo;
@@ -37,6 +37,13 @@ jobs:
               core.setOutput('should_run_tests', 'false');
               core.setOutput('trusted_ci_changed', 'true');
               core.setOutput('shard_count', '5');
+              return;
+            }
+            if (context.payload.pull_request?.draft) {
+              core.setOutput('should_run_tests', 'false');
+              core.setOutput('trusted_ci_changed', 'false');
+              core.setOutput('shard_count', '5');
+              core.notice(`PR #${number} is a draft; expensive validation is deferred until ready_for_review.`);
               return;
             }
 
@@ -140,14 +147,14 @@ jobs:
       fingerprint: ${{ steps.tooling.outputs.fingerprint }}
       cache_key: ${{ steps.tooling.outputs.cache_key }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.gate.outputs.head_sha }}
           persist-credentials: false
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           cache: true
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -169,7 +176,7 @@ jobs:
           echo "cache_key=automerge-base-report-v7-${{ needs.gate.outputs.base_sha }}-$fingerprint" >> "$GITHUB_OUTPUT"
       - name: Restore cached base evidence
         id: cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: reports
           key: ${{ steps.tooling.outputs.cache_key }}
@@ -206,7 +213,7 @@ jobs:
         run: echo "usable=false" >> "$GITHUB_OUTPUT"
       - name: Expose trusted base evidence
         if: ${{ steps.restored.outputs.usable == 'true' }}
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: report-base
           path: reports
@@ -219,14 +226,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.gate.outputs.head_sha }}
           persist-credentials: false
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           cache: true
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -259,12 +266,12 @@ jobs:
       build_succeeded: ${{ steps.build.outputs.succeeded }}
       build_status: ${{ steps.build.outputs.status }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.gate.outputs.base_sha }}
           persist-credentials: false
       - name: Checkout current CI tooling
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.gate.outputs.head_sha }}
           path: .ci-tools
@@ -274,10 +281,10 @@ jobs:
             src/cli/src/commands/ci-report.ts
             src/cli/src/commands/ci-build-evidence.ts
           sparse-checkout-cone-mode: false
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           cache: true
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -296,14 +303,14 @@ jobs:
             --target-sha '${{ needs.gate.outputs.base_sha }}' \
             --report-dir build-evidence \
             --github-output "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: base-build-evidence
           path: build-evidence/build-evidence.json
           retention-days: 1
       - name: Restore trusted timing history when available
         if: ${{ steps.build.outputs.succeeded == 'true' }}
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .ci-history
           key: automerge-test-timing-v1-${{ needs.base_cache.outputs.fingerprint }}-${{ needs.gate.outputs.base_sha }}
@@ -321,13 +328,13 @@ jobs:
             --history .ci-history/test-durations.json \
             --shards '${{ needs.gate.outputs.shard_count }}' \
             --github-output "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: ${{ steps.build.outputs.succeeded == 'true' }}
         with:
           name: compiled-base-${{ needs.gate.outputs.base_sha }}
           path: compiled-runtime
           retention-days: 1
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: ${{ steps.build.outputs.succeeded == 'true' }}
         with:
           name: base-test-plan
@@ -341,12 +348,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.gate.outputs.base_sha }}
           persist-credentials: false
       - name: Checkout current CI tooling
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.gate.outputs.head_sha }}
           path: .ci-tools
@@ -356,10 +363,10 @@ jobs:
             src/cli/src/commands/ci-report.ts
             src/cli/src/commands/ci-build-evidence.ts
           sparse-checkout-cone-mode: false
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           cache: true
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -377,7 +384,7 @@ jobs:
           set +e
           node '${{ steps.ci.outputs.tool }}' lint --report-dir reports
           exit 0
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: ${{ always() && !cancelled() }}
         with:
           name: base-report-lint
@@ -395,12 +402,12 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.base_prepare.outputs.matrix) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.gate.outputs.base_sha }}
           persist-credentials: false
       - name: Checkout current CI tooling
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.gate.outputs.head_sha }}
           path: .ci-tools
@@ -410,10 +417,10 @@ jobs:
             src/cli/src/commands/ci-report.ts
             src/cli/src/commands/ci-build-evidence.ts
           sparse-checkout-cone-mode: false
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           cache: true
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -425,11 +432,11 @@ jobs:
         with:
           source: .ci-tools/src/cli/src/commands/ci-report.ts
           build-source: .ci-tools/src/cli/src/commands/ci-build-evidence.ts
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: compiled-base-${{ needs.gate.outputs.base_sha }}
           path: compiled-runtime
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: base-test-plan
           path: .
@@ -443,7 +450,7 @@ jobs:
             --shard '${{ matrix.shard }}' \
             --report-dir reports
           exit 0
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: ${{ always() && !cancelled() }}
         with:
           name: base-report-${{ matrix.shard }}
@@ -458,14 +465,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.gate.outputs.head_sha }}
           persist-credentials: false
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           cache: true
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -478,26 +485,26 @@ jobs:
             test '${{ needs.base_lint.result }}' = success
             test '${{ needs.base_tests.result }}' = success
           fi
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: base-build-evidence
           path: build-evidence
       - name: Download base lint report
         if: ${{ needs.base_prepare.outputs.build_succeeded == 'true' }}
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: base-report-lint
           path: reports
       - name: Download base test reports
         if: ${{ needs.base_prepare.outputs.build_succeeded == 'true' }}
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           pattern: base-report-shard-*
           merge-multiple: true
           path: reports
       - name: Download base test plan
         if: ${{ needs.base_prepare.outputs.build_succeeded == 'true' }}
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: base-test-plan
           path: .
@@ -523,7 +530,7 @@ jobs:
             --report-dir reports \
             --expected-sha '${{ needs.gate.outputs.base_sha }}' \
             --require-failure
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: report-base
           path: reports
@@ -542,14 +549,14 @@ jobs:
       build_succeeded: ${{ steps.build.outputs.succeeded }}
       build_status: ${{ steps.build.outputs.status }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.gate.outputs.merge_sha }}
           persist-credentials: false
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           cache: true
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -562,14 +569,14 @@ jobs:
             --target-sha '${{ needs.gate.outputs.merge_sha }}' \
             --report-dir build-evidence \
             --github-output "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: merge-build-evidence
           path: build-evidence/build-evidence.json
           retention-days: 1
       - name: Restore trusted timing history
         if: ${{ steps.build.outputs.succeeded == 'true' }}
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .ci-history
           key: automerge-test-timing-v1-${{ needs.base_cache.outputs.fingerprint }}-${{ needs.gate.outputs.base_sha }}
@@ -580,7 +587,7 @@ jobs:
         run: node src/cli/src/commands/ci-report.ts stage-compiled --output compiled-runtime
       - name: Download exact base timing when cache hit
         if: ${{ steps.build.outputs.succeeded == 'true' && needs.base_cache.outputs.usable == 'true' }}
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: report-base
           path: report-base
@@ -596,13 +603,13 @@ jobs:
             --history "$history" \
             --shards '${{ needs.gate.outputs.shard_count }}' \
             --github-output "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: ${{ steps.build.outputs.succeeded == 'true' }}
         with:
           name: compiled-merge-${{ needs.gate.outputs.merge_sha }}
           path: compiled-runtime
           retention-days: 1
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: ${{ steps.build.outputs.succeeded == 'true' }}
         with:
           name: merge-test-plan
@@ -616,14 +623,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.gate.outputs.merge_sha }}
           persist-credentials: false
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           cache: true
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -635,7 +642,7 @@ jobs:
           set +e
           node src/cli/src/commands/ci-report.ts lint --report-dir reports
           exit 0
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: ${{ always() && !cancelled() }}
         with:
           name: merge-report-lint
@@ -653,24 +660,24 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.merge_prepare.outputs.matrix) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.gate.outputs.merge_sha }}
           persist-credentials: false
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           cache: true
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile --recursive --force
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: compiled-merge-${{ needs.gate.outputs.merge_sha }}
           path: compiled-runtime
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: merge-test-plan
           path: .
@@ -684,7 +691,7 @@ jobs:
             --shard '${{ matrix.shard }}' \
             --report-dir reports
           exit 0
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: ${{ always() && !cancelled() }}
         with:
           name: merge-report-${{ matrix.shard }}
@@ -699,14 +706,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.gate.outputs.merge_sha }}
           persist-credentials: false
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           cache: true
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -719,26 +726,26 @@ jobs:
             test '${{ needs.merge_lint.result }}' = success
             test '${{ needs.merge_tests.result }}' = success
           fi
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: merge-build-evidence
           path: build-evidence
       - name: Download merge lint report
         if: ${{ needs.merge_prepare.outputs.build_succeeded == 'true' }}
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: merge-report-lint
           path: reports
       - name: Download merge test reports
         if: ${{ needs.merge_prepare.outputs.build_succeeded == 'true' }}
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           pattern: merge-report-shard-*
           merge-multiple: true
           path: reports
       - name: Download merge test plan
         if: ${{ needs.merge_prepare.outputs.build_succeeded == 'true' }}
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: merge-test-plan
           path: .
@@ -767,7 +774,7 @@ jobs:
       - name: Publish timing profile
         if: ${{ always() && !cancelled() }}
         run: test ! -f reports/test-durations.md || cat reports/test-durations.md >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: report-merge
           path: reports
