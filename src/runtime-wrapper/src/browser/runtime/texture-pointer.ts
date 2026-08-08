@@ -1,46 +1,14 @@
-type BrowserGlobalScope = Record<string, unknown>;
+import { resolveHtml5BuiltinNameMap } from "../support/html5-builtin-discovery.js";
 
-type Html5BuiltinNameMap = {
-    is_ptr: string;
-    is_real: string;
-    sprite_get_texture: string;
-};
+type BrowserGlobalScope = Record<string, unknown>;
 
 const TEXTURE_POINTER_PATCH_MARKER = "__gmloopTexturePointerSafetyPatched";
 
-function isObjectLike(value: unknown): value is Record<string, unknown> {
-    return value !== null && typeof value === "object";
-}
-
-function isHtml5BuiltinNameMap(value: unknown): value is Html5BuiltinNameMap {
-    if (!isObjectLike(value)) {
-        return false;
-    }
-
-    return (
-        value.self !== value &&
-        typeof value.is_ptr === "string" &&
-        typeof value.is_real === "string" &&
-        typeof value.sprite_get_texture === "string"
-    );
-}
-
-function resolveHtml5BuiltinNameMap(globalScope: BrowserGlobalScope): Html5BuiltinNameMap | null {
-    for (const propertyName of Object.getOwnPropertyNames(globalScope)) {
-        let candidate: unknown;
-        try {
-            candidate = globalScope[propertyName];
-        } catch {
-            continue;
-        }
-
-        if (isHtml5BuiltinNameMap(candidate)) {
-            return candidate;
-        }
-    }
-
-    return null;
-}
+const TEXTURE_POINTER_BUILTIN_NAMES = {
+    is_ptr: "is_ptr",
+    is_real: "is_real",
+    sprite_get_texture: "sprite_get_texture"
+} as const;
 
 /**
  * Recognizes the documented object-backed texture handle returned by the
@@ -50,7 +18,7 @@ function resolveHtml5BuiltinNameMap(globalScope: BrowserGlobalScope): Html5Built
  * @returns True when the value has the HTML5 texture-handle shape.
  */
 export function isHtml5TextureHandle(value: unknown): boolean {
-    if (!isObjectLike(value)) {
+    if (value === null || typeof value !== "object") {
         return false;
     }
 
@@ -118,7 +86,7 @@ export function evaluateHtml5PointerPredicate(
  * @returns True when the runtime's `is_ptr` function was patched.
  */
 export function applyHtml5TexturePointerSafetyPatch(globalScope: BrowserGlobalScope): boolean {
-    const nameMap = resolveHtml5BuiltinNameMap(globalScope);
+    const nameMap = resolveHtml5BuiltinNameMap(globalScope, TEXTURE_POINTER_BUILTIN_NAMES);
     const pointerPropertyName = typeof globalScope.is_ptr === "function" ? "is_ptr" : nameMap?.is_ptr;
     if (pointerPropertyName === undefined) {
         return false;
