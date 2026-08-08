@@ -117,13 +117,37 @@ const IGNORED_WATCH_DIRECTORY_NAMES = new Set(DEFAULT_WATCH_IGNORED_DIRECTORY_NA
 const MAX_CONCURRENT_STARTUP_FILES = 2;
 type RuntimeDescriptorFormatter = (source: RuntimeSourceDescriptor) => string;
 
+// Startup directory/file scans call `yieldToEventLoop` many thousands of
+// times for large GameMaker projects (once or twice per file, plus once per
+// directory). A real yield costs at least ~1ms (a `setImmediate` tick plus a
+// 1ms timer, chosen so the event loop's poll phase genuinely runs before
+// resuming), so paying that cost on every call serializes into seconds of
+// pure sleep for projects with thousands of files, directly inflating watch
+// startup latency. Only every Nth call performs the real yield; the rest
+// resolve immediately. This still bounds how long CPU-heavy ANTLR parsing
+// can run before ceding control to the event loop (I/O, the WebSocket
+// server, etc.), just less often than on every single file.
+const EVENT_LOOP_YIELD_INTERVAL = 8;
+let eventLoopYieldCounter = 0;
+
 function yieldToEventLoop(): Promise<void> {
+    eventLoopYieldCounter += 1;
+    if (eventLoopYieldCounter % EVENT_LOOP_YIELD_INTERVAL !== 0) {
+        return Promise.resolve();
+    }
+
     return new Promise((resolve) => {
         scheduleImmediate(() => {
             scheduleTimeout(resolve, 1);
         });
     });
 }
+
+/** Exposed for tests only; not part of the command's public surface. */
+export const __watchTest__ = Object.freeze({
+    EVENT_LOOP_YIELD_INTERVAL,
+    yieldToEventLoop
+});
 
 type WatchEventListener = (...args: Parameters<WatchListener<string>>) => void | Promise<void>;
 
