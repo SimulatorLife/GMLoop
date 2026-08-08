@@ -5,6 +5,32 @@ export const DEFAULT_LIVE_RELOAD_WEBSOCKET_HOST = "127.0.0.1";
 export const DEFAULT_LIVE_RELOAD_WEBSOCKET_PORT = 17_890;
 export const DEFAULT_LIVE_RELOAD_STATUS_HOST = "127.0.0.1";
 export const DEFAULT_LIVE_RELOAD_STATUS_PORT = 17_891;
+
+/**
+ * Default total wait time (milliseconds) for the `live-reload wait-for-patch`
+ * subcommand before it gives up and reports a structured timeout error.
+ *
+ * The same value is used by both the CLI option default (so `--help` and
+ * un-flagged invocations agree) and the runtime fallback that applies when
+ * the command is invoked programmatically with an undefined `timeoutMs`.
+ * Centralising the number here keeps the CLI surface and the in-process
+ * handler in lock-step so tests and downstream tooling have a single source
+ * of truth to import.
+ */
+export const DEFAULT_LIVE_RELOAD_WAIT_FOR_PATCH_TIMEOUT_MS = 10_000;
+
+/**
+ * Default polling interval (milliseconds) between status-server checks while
+ * the `live-reload wait-for-patch` subcommand is waiting for a new patch.
+ *
+ * Mirrors {@link DEFAULT_LIVE_RELOAD_WAIT_FOR_PATCH_TIMEOUT_MS}: the value is
+ * shared between the Commander `--poll-interval-ms` default and the runtime
+ * fallback inside `runLiveReloadWaitForPatchCommand`. Keep them aligned so
+ * the CLI never advertises a different polling cadence than it actually
+ * uses when invoked from `runCliTestCommand` and similar entry points.
+ */
+export const DEFAULT_LIVE_RELOAD_WAIT_FOR_PATCH_POLL_INTERVAL_MS = 250;
+
 export const HOT_RELOAD_DIR_NAME = ".gml-hot-reload";
 export const HOT_RELOAD_MARKER_START = "<!-- gml-hot-reload:start -->";
 export const HOT_RELOAD_MARKER_END = "<!-- gml-hot-reload:end -->";
