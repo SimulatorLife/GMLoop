@@ -12,68 +12,18 @@
  */
 
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { Core } from "@gmloop/core";
 
 import {
-    DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS,
-    evaluateAreComparableAssignmentTargetsEquivalent,
-    evaluateCanIfStatementBenefitFromNormalization,
-    evaluateCanLogicalExpressionBenefitFromNormalization,
-    evaluateCanUnaryExpressionBenefitFromNormalization,
-    evaluateHasLogicalNormalizationSignal,
     evaluateIsElsePrefixedIfAtIndex,
     evaluateIsIfNodeInElseIfChain,
-    evaluateLogicalFlowCandidate,
-    evaluateUnsafeCommentSyntax,
-    logicalNormalizationRulePolicy
+    evaluateUnsafeCommentSyntax
 } from "../../src/rules/gml/rules/logical-normalization-rule-policy.js";
-
-// ---------------------------------------------------------------------------
-// evaluateHasLogicalNormalizationSignal
-// ---------------------------------------------------------------------------
-
-void test("evaluateHasLogicalNormalizationSignal detects symbolic and keyword operators", () => {
-    const positiveSamples = [
-        "a && b",
-        "a || b",
-        "!ready",
-        "ready and done",
-        "ready or done",
-        "not ready",
-        "if (true)",
-        "if (false)"
-    ];
-
-    for (const sample of positiveSamples) {
-        assert.strictEqual(
-            evaluateHasLogicalNormalizationSignal(sample),
-            true,
-            `Expected '${sample}' to be detected as containing a logical signal`
-        );
-    }
-});
-
-void test("evaluateHasLogicalNormalizationSignal returns false for arithmetic-only expressions", () => {
-    const negativeSamples = ["a + b", "a * b", "x - y", "x / y", "(a + b) * c", "value", "42"];
-
-    for (const sample of negativeSamples) {
-        assert.strictEqual(
-            evaluateHasLogicalNormalizationSignal(sample),
-            false,
-            `Expected '${sample}' to NOT be detected as containing a logical signal`
-        );
-    }
-});
-
-void test("DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS exposes the expected regex shapes", () => {
-    assert.ok(Object.isFrozen(DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS));
-    assert.ok(DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS.logicalNormalizationSignal instanceof RegExp);
-    assert.ok(DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS.commentSequence instanceof RegExp);
-    assert.strictEqual(DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS.logicalNormalizationSignal.flags, "u");
-    assert.strictEqual(DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS.commentSequence.flags, "u");
-});
 
 // ---------------------------------------------------------------------------
 // evaluateUnsafeCommentSyntax
@@ -85,6 +35,11 @@ void test("evaluateUnsafeCommentSyntax returns false when no comment markers are
     for (const sample of samples) {
         assert.strictEqual(evaluateUnsafeCommentSyntax(sample), false);
     }
+});
+
+void test("evaluateUnsafeCommentSyntax short-circuits without scanning empty input", () => {
+    // Empty input must not allocate a scan state and must not throw.
+    assert.strictEqual(evaluateUnsafeCommentSyntax(""), false);
 });
 
 void test("evaluateUnsafeCommentSyntax returns true for line comments", () => {
@@ -185,329 +140,15 @@ void test("evaluateIsIfNodeInElseIfChain returns false for a non-if node", () =>
     assert.strictEqual(evaluateIsIfNodeInElseIfChain(expressionStatement), false);
 });
 
-void test("evaluateCanUnaryExpressionBenefitFromNormalization detects !! patterns", () => {
-    const node = {
-        type: "UnaryExpression",
-        operator: "!",
-        argument: { type: "UnaryExpression", operator: "!" }
-    };
-    assert.strictEqual(evaluateCanUnaryExpressionBenefitFromNormalization(node), true);
-});
-
-void test("evaluateCanUnaryExpressionBenefitFromNormalization detects De Morgan patterns", () => {
-    const patterns = [
-        {
-            type: "UnaryExpression",
-            operator: "!",
-            argument: {
-                type: "LogicalExpression",
-                operator: "&&",
-                left: { type: "Identifier", name: "a" },
-                right: { type: "Identifier", name: "b" }
-            }
-        },
-        {
-            type: "UnaryExpression",
-            operator: "!",
-            argument: {
-                type: "BinaryExpression",
-                operator: "||",
-                left: { type: "Identifier", name: "a" },
-                right: { type: "Identifier", name: "b" }
-            }
-        }
-    ];
-
-    for (const pattern of patterns) {
-        assert.strictEqual(evaluateCanUnaryExpressionBenefitFromNormalization(pattern), true);
-    }
-});
-
-void test("evaluateCanUnaryExpressionBenefitFromNormalization rejects non-negation operators", () => {
-    const node = {
-        type: "UnaryExpression",
-        operator: "-",
-        argument: { type: "Identifier", name: "x" }
-    };
-    assert.strictEqual(evaluateCanUnaryExpressionBenefitFromNormalization(node), false);
-});
-
-void test("evaluateCanUnaryExpressionBenefitFromNormalization rejects !identifier", () => {
-    const node = {
-        type: "UnaryExpression",
-        operator: "!",
-        argument: { type: "Identifier", name: "ready" }
-    };
-    assert.strictEqual(evaluateCanUnaryExpressionBenefitFromNormalization(node), false);
-});
-
 // ---------------------------------------------------------------------------
-// evaluateCanLogicalExpressionBenefitFromNormalization
+// Regression: the surviving policy evaluators must keep the same call
+// surface the rule mechanism depends on (positional string argument, no
+// longer accepts a polymorphic signal-pattern parameter).
 // ---------------------------------------------------------------------------
 
-void test("evaluateCanLogicalExpressionBenefitFromNormalization detects boolean-literal operands", () => {
-    const patterns = [
-        {
-            type: "LogicalExpression",
-            operator: "&&",
-            left: { type: "Literal", value: true },
-            right: { type: "Identifier", name: "ready" }
-        },
-        {
-            type: "LogicalExpression",
-            operator: "||",
-            left: { type: "Identifier", name: "ready" },
-            right: { type: "Literal", value: false }
-        }
-    ];
-
-    for (const pattern of patterns) {
-        assert.strictEqual(evaluateCanLogicalExpressionBenefitFromNormalization(pattern), true);
-    }
+void test("evaluateUnsafeCommentSyntax has the simplified single-argument signature", () => {
+    assert.strictEqual(evaluateUnsafeCommentSyntax.length, 1);
 });
-
-void test("evaluateCanLogicalExpressionBenefitFromNormalization detects nested logical operands", () => {
-    const node = {
-        type: "LogicalExpression",
-        operator: "&&",
-        left: {
-            type: "LogicalExpression",
-            operator: "||",
-            left: { type: "Identifier", name: "a" },
-            right: { type: "Identifier", name: "b" }
-        },
-        right: { type: "Identifier", name: "c" }
-    };
-    assert.strictEqual(evaluateCanLogicalExpressionBenefitFromNormalization(node), true);
-});
-
-void test("evaluateCanLogicalExpressionBenefitFromNormalization rejects simple non-nested logical", () => {
-    const node = {
-        type: "LogicalExpression",
-        operator: "&&",
-        left: { type: "Identifier", name: "ready" },
-        right: { type: "Identifier", name: "ok" }
-    };
-    assert.strictEqual(evaluateCanLogicalExpressionBenefitFromNormalization(node), false);
-});
-
-// ---------------------------------------------------------------------------
-// evaluateAreComparableAssignmentTargetsEquivalent
-// ---------------------------------------------------------------------------
-
-void test("evaluateAreComparableAssignmentTargetsEquivalent matches identical identifiers", () => {
-    const left = { type: "Identifier", name: "score" };
-    const right = { type: "Identifier", name: "score" };
-    assert.strictEqual(evaluateAreComparableAssignmentTargetsEquivalent(left, right), true);
-});
-
-void test("evaluateAreComparableAssignmentTargetsEquivalent rejects different identifiers", () => {
-    const left = { type: "Identifier", name: "score" };
-    const right = { type: "Identifier", name: "total" };
-    assert.strictEqual(evaluateAreComparableAssignmentTargetsEquivalent(left, right), false);
-});
-
-void test("evaluateAreComparableAssignmentTargetsEquivalent matches identical member-dot chains", () => {
-    const left = {
-        type: "MemberDotExpression",
-        object: { type: "Identifier", name: "player" },
-        property: { type: "Identifier", name: "score" }
-    };
-    const right = {
-        type: "MemberDotExpression",
-        object: { type: "Identifier", name: "player" },
-        property: { type: "Identifier", name: "score" }
-    };
-    assert.strictEqual(evaluateAreComparableAssignmentTargetsEquivalent(left, right), true);
-});
-
-void test("evaluateAreComparableAssignmentTargetsEquivalent rejects mismatched member types", () => {
-    const dotNode = {
-        type: "MemberDotExpression",
-        object: { type: "Identifier", name: "player" },
-        property: { type: "Identifier", name: "score" }
-    };
-    const indexNode = {
-        type: "MemberIndexExpression",
-        object: { type: "Identifier", name: "player" },
-        index: { type: "Literal", value: 0 }
-    };
-    assert.strictEqual(evaluateAreComparableAssignmentTargetsEquivalent(dotNode, indexNode), false);
-});
-
-void test("evaluateAreComparableAssignmentTargetsEquivalent rejects non-record inputs", () => {
-    assert.strictEqual(evaluateAreComparableAssignmentTargetsEquivalent(null, null), false);
-    assert.strictEqual(evaluateAreComparableAssignmentTargetsEquivalent("score", "score"), false);
-    assert.strictEqual(evaluateAreComparableAssignmentTargetsEquivalent(42, 42), false);
-});
-
-// ---------------------------------------------------------------------------
-// evaluateCanIfStatementBenefitFromNormalization
-// ---------------------------------------------------------------------------
-
-void test("evaluateCanIfStatementBenefitFromNormalization detects if/else return true/false", () => {
-    const node = {
-        type: "IfStatement",
-        test: { type: "Identifier", name: "ready" },
-        consequent: { type: "ReturnStatement", argument: { type: "Literal", value: true } },
-        alternate: { type: "ReturnStatement", argument: { type: "Literal", value: false } }
-    };
-    assert.strictEqual(evaluateCanIfStatementBenefitFromNormalization(node), true);
-});
-
-void test("evaluateCanIfStatementBenefitFromNormalization detects if/else x = A; else x = B;", () => {
-    const node = {
-        type: "IfStatement",
-        test: { type: "Identifier", name: "ready" },
-        consequent: {
-            type: "ExpressionStatement",
-            expression: {
-                type: "AssignmentExpression",
-                operator: "=",
-                left: { type: "Identifier", name: "x" },
-                right: { type: "Literal", value: 1 }
-            }
-        },
-        alternate: {
-            type: "ExpressionStatement",
-            expression: {
-                type: "AssignmentExpression",
-                operator: "=",
-                left: { type: "Identifier", name: "x" },
-                right: { type: "Literal", value: 2 }
-            }
-        }
-    };
-    assert.strictEqual(evaluateCanIfStatementBenefitFromNormalization(node), true);
-});
-
-void test("evaluateCanIfStatementBenefitFromNormalization leaves GM2061 undefined guards to Feather", () => {
-    const node = {
-        type: "IfStatement",
-        test: {
-            type: "CallExpression",
-            callee: { type: "Identifier", name: "is_undefined" },
-            arguments: [{ type: "Identifier", name: "x" }]
-        },
-        consequent: {
-            type: "ExpressionStatement",
-            expression: {
-                type: "AssignmentExpression",
-                operator: "=",
-                left: { type: "Identifier", name: "x" },
-                right: { type: "Literal", value: 0 }
-            }
-        }
-    };
-    assert.strictEqual(evaluateCanIfStatementBenefitFromNormalization(node), false);
-});
-
-void test("evaluateCanIfStatementBenefitFromNormalization rejects a no-shape if", () => {
-    const node = {
-        type: "IfStatement",
-        test: { type: "Identifier", name: "ready" },
-        consequent: {
-            type: "ExpressionStatement",
-            expression: {
-                type: "CallExpression",
-                callee: { type: "Identifier", name: "do_something" },
-                arguments: []
-            }
-        }
-    };
-    assert.strictEqual(evaluateCanIfStatementBenefitFromNormalization(node), false);
-});
-
-// ---------------------------------------------------------------------------
-// evaluateLogicalFlowCandidate
-// ---------------------------------------------------------------------------
-
-void test("evaluateLogicalFlowCandidate returns both flags off for arithmetic-only text", () => {
-    const evaluation = evaluateLogicalFlowCandidate({
-        fullSourceText: "var x = 1 + 2;",
-        sourceText: "1 + 2",
-        nodeStartIndex: 8
-    });
-    assert.deepStrictEqual(evaluation, {
-        hasLogicalSignal: false,
-        hasUnsafeComment: false
-    });
-});
-
-void test("evaluateLogicalFlowCandidate returns hasLogicalSignal=true for a boolean comparison", () => {
-    const evaluation = evaluateLogicalFlowCandidate({
-        fullSourceText: "if (x == true) {}",
-        sourceText: "x == true",
-        nodeStartIndex: 4
-    });
-    assert.strictEqual(evaluation.hasLogicalSignal, true);
-    assert.strictEqual(evaluation.hasUnsafeComment, false);
-});
-
-void test("evaluateLogicalFlowCandidate returns hasUnsafeComment=true when a comment is present", () => {
-    const evaluation = evaluateLogicalFlowCandidate({
-        fullSourceText: "if (a && b // comment\n) {}",
-        sourceText: "a && b // comment",
-        nodeStartIndex: 4
-    });
-    assert.strictEqual(evaluation.hasUnsafeComment, true);
-});
-
-void test("evaluateLogicalFlowCandidate returns frozen evaluation objects", () => {
-    const evaluation = evaluateLogicalFlowCandidate({
-        fullSourceText: "x && y",
-        sourceText: "x && y",
-        nodeStartIndex: 0
-    });
-    assert.ok(Object.isFrozen(evaluation));
-});
-
-// ---------------------------------------------------------------------------
-// logicalNormalizationRulePolicy namespace
-// ---------------------------------------------------------------------------
-
-void test("logicalNormalizationRulePolicy namespace exposes the expected evaluators", () => {
-    const expectedKeys = [
-        "evaluateLogicalFlowCandidate",
-        "evaluateUnsafeCommentSyntax",
-        "evaluateHasLogicalNormalizationSignal",
-        "evaluateIsElsePrefixedIfAtIndex",
-        "evaluateIsIfNodeInElseIfChain",
-        "evaluateCanIfStatementBenefitFromNormalization",
-        "evaluateCanUnaryExpressionBenefitFromNormalization",
-        "evaluateCanLogicalExpressionBenefitFromNormalization",
-        "evaluateAreComparableAssignmentTargetsEquivalent",
-        "DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS"
-    ] as const;
-
-    for (const key of expectedKeys) {
-        assert.ok(
-            Object.hasOwn(logicalNormalizationRulePolicy, key),
-            `logicalNormalizationRulePolicy.${key} should be exported`
-        );
-    }
-
-    // Each evaluator should be the exact function the rule mechanism imports.
-    assert.strictEqual(logicalNormalizationRulePolicy.evaluateIsIfNodeInElseIfChain, evaluateIsIfNodeInElseIfChain);
-    assert.strictEqual(
-        logicalNormalizationRulePolicy.evaluateCanIfStatementBenefitFromNormalization,
-        evaluateCanIfStatementBenefitFromNormalization
-    );
-    assert.strictEqual(logicalNormalizationRulePolicy.evaluateUnsafeCommentSyntax, evaluateUnsafeCommentSyntax);
-    assert.strictEqual(
-        logicalNormalizationRulePolicy.DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS,
-        DEFAULT_LOGICAL_FLOW_SIGNAL_PATTERNS
-    );
-});
-
-void test("logicalNormalizationRulePolicy is frozen", () => {
-    assert.ok(Object.isFrozen(logicalNormalizationRulePolicy));
-});
-
-// ---------------------------------------------------------------------------
-// Smoke check: the policy helpers coexist with the existing Core helpers
-// used by the mechanism code (no accidental shadowing).
-// ---------------------------------------------------------------------------
 
 void test("the policy evaluators consume the same Core helpers the mechanism uses", () => {
     // If this ever changes, the policy's behaviour will diverge from the
@@ -519,4 +160,60 @@ void test("the policy evaluators consume the same Core helpers the mechanism use
     assert.strictEqual(typeof Core.isIdentifierBoundaryCharacter, "function");
     assert.strictEqual(typeof Core.advanceStringCommentScan, "function");
     assert.strictEqual(typeof Core.createStringCommentScanState, "function");
+});
+
+// ---------------------------------------------------------------------------
+// Surface-area regression: the policy module's evaluator set is intentionally
+// narrow — only the predicates the rule mechanism actually consumes are
+// exported. Adding a new evaluator that nothing calls recreates the dead
+// abstraction layer this simplification removed.
+// ---------------------------------------------------------------------------
+
+void test("policy evaluators match the set the rule mechanism consumes", async () => {
+    const rulesDirectory = path.dirname(fileURLToPath(import.meta.url));
+    const policySourcePath = path.resolve(
+        rulesDirectory,
+        "../../../src/rules/gml/rules/logical-normalization-rule-policy.ts"
+    );
+    const factorySourcePath = path.resolve(
+        rulesDirectory,
+        "../../../src/rules/gml/rules/logical-normalization-rule-factory.ts"
+    );
+    const preferDirectBooleanReturnSourcePath = path.resolve(
+        rulesDirectory,
+        "../../../src/rules/gml/rules/prefer-direct-boolean-return-rule.ts"
+    );
+
+    const policyModule = await import("../../src/rules/gml/rules/logical-normalization-rule-policy.js");
+
+    const expectedEvaluatorNames = [
+        "evaluateUnsafeCommentSyntax",
+        "evaluateIsElsePrefixedIfAtIndex",
+        "evaluateIsIfNodeInElseIfChain",
+        "evaluateCanDirectBooleanReturnBenefitFromNormalization"
+    ] as const;
+
+    const exportedEvaluatorNames = Object.keys(policyModule).filter((name) => name.startsWith("evaluate"));
+
+    assert.deepStrictEqual(
+        exportedEvaluatorNames.toSorted(),
+        [...expectedEvaluatorNames].toSorted(),
+        "policy module must only export evaluators the rule mechanism consumes"
+    );
+
+    // Sanity-check: each surviving evaluator is referenced by at least one
+    // rule module's source. If a future contributor deletes a caller without
+    // removing the export, this assertion catches the orphan before it can
+    // drift into a dead abstraction layer again.
+    const factorySource = await readFile(factorySourcePath, "utf8");
+    const preferDirectBooleanReturnSource = await readFile(preferDirectBooleanReturnSourcePath, "utf8");
+    const policySource = await readFile(policySourcePath, "utf8");
+
+    for (const name of expectedEvaluatorNames) {
+        const referencedByRule = factorySource.includes(name) || preferDirectBooleanReturnSource.includes(name);
+        const exportedHere = policySource.includes(`export function ${name}`);
+
+        assert.ok(referencedByRule, `${name} must be referenced by at least one rule module`);
+        assert.ok(exportedHere, `${name} must still be exported from the policy module`);
+    }
 });

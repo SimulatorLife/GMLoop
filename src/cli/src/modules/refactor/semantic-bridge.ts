@@ -8,7 +8,6 @@ import {
     readSemanticLocationIndex,
     WORKSPACE_EDIT_REVISION_TOKEN
 } from "@gmloop/refactor";
-import { Semantic } from "@gmloop/semantic";
 
 import { pathExistsSync } from "../../shared/path-exists.js";
 import {
@@ -27,28 +26,8 @@ import {
     listMacroExpansionDependencies
 } from "./macro-expansion-dependencies.js";
 import { ParsedLocalNamingCategoryResolver } from "./parsed-local-naming-categories.js";
-import { collectResourceSidecarRenames, resolveRenamedSoundFileName } from "./resource-sidecar-renames.js";
-
-type ResourceAssetReferenceRecord = {
-    propertyPath: string;
-    targetPath: string;
-};
-
-type ResourceMetadataRecord = {
-    assetReferences: Array<ResourceAssetReferenceRecord>;
-    path: string;
-};
-
-type ProjectMetadataReferenceIndex = {
-    manifestMetadataRecords: Array<ResourceMetadataRecord>;
-    metadataRecordsByPath: Map<string, ResourceMetadataRecord>;
-    referencingMetadataRecordsByLowerTargetPath: Map<string, Array<ResourceMetadataRecord>>;
-    referencingMetadataRecordsByTargetPath: Map<string, Array<ResourceMetadataRecord>>;
-};
-type MutableProjectMetadataDocument = {
-    parsed: Record<string, unknown>;
-    rawContent: string;
-};
+import { ProjectMetadataMutationContext } from "./project-metadata-mutation.js";
+import { collectResourceSidecarRenames } from "./resource-sidecar-renames.js";
 
 type SemanticResourceRecord = {
     name?: string;
@@ -374,10 +353,6 @@ function isIdentifierTokenAt(sourceText: string, startIndex: number, identifierN
     );
 }
 
-function escapeRegExpLiteral(value: string): string {
-    return value.replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`);
-}
-
 function createIdentifierTokenOccurrence(parameters: {
     sourceText: string | null;
     filePath: string;
@@ -509,130 +484,6 @@ function createWorkspaceEdit(): WorkspaceEdit {
     return workspace satisfies WorkspaceEdit;
 }
 
-function isResourceAssetReferenceRecord(value: unknown): value is ResourceAssetReferenceRecord {
-    if (!Core.isObjectLike(value)) {
-        return false;
-    }
-    const reference = value as Record<string, unknown>;
-
-    return typeof reference.propertyPath === "string" && typeof reference.targetPath === "string";
-}
-
-function normalizeResourceMetadataRecord(value: unknown): ResourceMetadataRecord | null {
-    if (!Core.isObjectLike(value)) {
-        return null;
-    }
-    const record = value as Record<string, unknown>;
-
-    if (typeof record.path !== "string") {
-        return null;
-    }
-
-    if (!Array.isArray(record.assetReferences)) {
-        return {
-            assetReferences: [],
-            path: record.path
-        };
-    }
-
-    return {
-        assetReferences: record.assetReferences.filter((reference) => isResourceAssetReferenceRecord(reference)),
-        path: record.path
-    };
-}
-
-const normalizedMetadataReferenceTargetPathCache = new Map<string, string>();
-
-function normalizeMetadataReferenceTargetPath(targetPath: string): string {
-    const cachedNormalizedPath = normalizedMetadataReferenceTargetPathCache.get(targetPath);
-    if (cachedNormalizedPath !== undefined) {
-        return cachedNormalizedPath;
-    }
-
-    const normalizedPath = targetPath.replaceAll("\\", "/").toLowerCase();
-    normalizedMetadataReferenceTargetPathCache.set(targetPath, normalizedPath);
-    return normalizedPath;
-}
-
-function metadataReferenceTargetMatchesNormalizedPath(candidatePath: string, normalizedTargetPath: string): boolean {
-    return normalizeMetadataReferenceTargetPath(candidatePath) === normalizedTargetPath;
-}
-
-function appendProjectMetadataStringMutation(
-    stringMutations: Array<{ propertyPath: string; value: string }>,
-    propertyPath: string,
-    value: string
-): void {
-    const existingMutation = stringMutations.find((candidate) => candidate.propertyPath === propertyPath);
-    if (existingMutation) {
-        existingMutation.value = value;
-        return;
-    }
-
-    stringMutations.push({
-        propertyPath,
-        value
-    });
-}
-
-function updateRoomInstanceCreationOrderSelfPaths({
-    parsed,
-    normalizedOldResourcePath,
-    newResourcePath,
-    stringMutations
-}: {
-    parsed: Record<string, unknown>;
-    normalizedOldResourcePath: string;
-    newResourcePath: string;
-    stringMutations: Array<{ propertyPath: string; value: string }>;
-}): boolean {
-    const instanceCreationOrder = parsed.instanceCreationOrder;
-    if (!Array.isArray(instanceCreationOrder)) {
-        return false;
-    }
-
-    let changed = false;
-    for (const [index, orderEntry] of instanceCreationOrder.entries()) {
-        if (!Core.isObjectLike(orderEntry)) {
-            continue;
-        }
-
-        const orderEntryRecord = orderEntry as Record<string, unknown>;
-        const currentPath = Core.getNonEmptyString(orderEntryRecord.path);
-        if (!currentPath) {
-            continue;
-        }
-
-        if (!metadataReferenceTargetMatchesNormalizedPath(currentPath, normalizedOldResourcePath)) {
-            continue;
-        }
-
-        if (currentPath === newResourcePath) {
-            continue;
-        }
-
-        orderEntryRecord.path = newResourcePath;
-        appendProjectMetadataStringMutation(stringMutations, `instanceCreationOrder.${index}.path`, newResourcePath);
-        changed = true;
-    }
-
-    return changed;
-}
-
-function requiresMetadataResourcePathOrderNormalization(rawContent: string): boolean {
-    const resourceTypeIndex = rawContent.indexOf('"resourceType"');
-    const resourcePathIndex = rawContent.indexOf('"resourcePath"');
-    if (resourceTypeIndex === -1 || resourcePathIndex === -1) {
-        return false;
-    }
-
-    return resourceTypeIndex > resourcePathIndex;
-}
-
-function getProjectResourceOrderPath(projectRoot: string): string {
-    return `${path.basename(path.resolve(projectRoot))}.resource_order`;
-}
-
 /**
  * Semantic bridge that adapts @gmloop/semantic ProjectIndex to the refactor engine.
  */
@@ -641,20 +492,12 @@ export class GmlSemanticBridge {
     private readonly localNamingCategoryResolver: ParsedLocalNamingCategoryResolver;
     private projectIndex: Record<string, unknown>;
     private projectRoot: string;
-    private readonly parsedProjectMetadataByPath = new Map<string, Record<string, unknown>>();
-    private readonly projectMetadataSourceByPath = new Map<string, string>();
+    private readonly projectMetadataMutation: ProjectMetadataMutationContext;
     private readonly scriptCallableDeclarationsByEntry = new WeakMap<
         SemanticIdentifierEntry,
         ReadonlyArray<ScriptCallableDeclaration>
     >();
     private readonly stagedFileRenames: Array<{ newPath: string; oldPath: string }> = [];
-    private readonly stagedMetadataContents = new Map<string, string>();
-    private readonly stagedParsedMetadata = new Map<string, Record<string, unknown>>();
-    private readonly stagedMetadataParseFailures = new Set<string>();
-    private readonly generatedMetadataDocumentsByPath = new Map<
-        string,
-        { content: string; document: Record<string, unknown> }
-    >();
     private readonly sourceTextByPath = new Map<string, string | null>();
     private readonly diskIdentifierOccurrenceIndexesByFilePath = new Map<string, GmlIdentifierOccurrenceIndex | null>();
     private diskOccurrencesBySymbolName: Map<string, Array<SymbolOccurrence>> | null = null;
@@ -667,21 +510,12 @@ export class GmlSemanticBridge {
     private macroNames: ReadonlySet<string> | null = null;
     private indexes: SemanticBridgeIndexes | null = null;
     private projectIndexUpdateCount = 0;
-    private projectMetadataReferenceIndex: ProjectMetadataReferenceIndex | null = null;
     private macroBodyReferencesByExactName: Map<
         string,
         Array<Pick<SymbolOccurrence, "end" | "path" | "start">>
     > | null = null;
     private scriptResourceIndexes: ScriptResourceIndexes | null = null;
     private readonly localReferenceOccurrencesByFilePath = new Map<string, LocalReferenceIndex>();
-    private readonly latestBatchMetadataDocumentsByEdit = new WeakMap<
-        WorkspaceEdit,
-        { documents: Map<string, Record<string, unknown>>; metadataObjectCount: number }
-    >();
-    private readonly mutableProjectMetadataDocumentsByEdit = new WeakMap<
-        WorkspaceEdit,
-        Map<string, MutableProjectMetadataDocument | null>
-    >();
 
     private readFile: ((filePath: string) => Promise<string> | string) | null = null;
 
@@ -693,6 +527,7 @@ export class GmlSemanticBridge {
         this.projectIndex = Core.isObjectLike(projectIndex) ? (projectIndex as Record<string, unknown>) : {};
         this.projectRoot = projectRoot;
         this.localNamingCategoryResolver = new ParsedLocalNamingCategoryResolver(projectRoot);
+        this.projectMetadataMutation = new ProjectMetadataMutationContext(projectRoot, () => this.resources);
         if (readFile) {
             this.readFile = readFile;
         }
@@ -714,9 +549,7 @@ export class GmlSemanticBridge {
     updateProjectIndex(projectIndex: unknown): void {
         this.projectIndex = Core.isObjectLike(projectIndex) ? (projectIndex as Record<string, unknown>) : {};
         this.indexes = null;
-        this.projectMetadataReferenceIndex = null;
-        this.projectMetadataSourceByPath.clear();
-        this.parsedProjectMetadataByPath.clear();
+        this.projectMetadataMutation.clear();
         this.sourceTextByPath.clear();
         this.diskIdentifierOccurrenceIndexesByFilePath.clear();
         this.diskOccurrencesBySymbolName = null;
@@ -747,10 +580,7 @@ export class GmlSemanticBridge {
      */
     clearWorkspaceOverlay(): void {
         this.stagedFileRenames.length = 0;
-        this.stagedMetadataContents.clear();
-        this.stagedParsedMetadata.clear();
-        this.stagedMetadataParseFailures.clear();
-        this.generatedMetadataDocumentsByPath.clear();
+        this.projectMetadataMutation.clear();
     }
 
     /**
@@ -779,49 +609,12 @@ export class GmlSemanticBridge {
         }
 
         for (const metadataEdit of workspace.metadataEdits) {
-            if (typeof metadataEdit.path !== "string" || typeof metadataEdit.content !== "string") {
-                continue;
-            }
-
-            this.stagedMetadataContents.set(metadataEdit.path, metadataEdit.content);
-            const generatedMetadataDocument = this.generatedMetadataDocumentsByPath.get(metadataEdit.path);
-            if (generatedMetadataDocument?.content === metadataEdit.content) {
-                this.stagedParsedMetadata.set(metadataEdit.path, generatedMetadataDocument.document);
-            } else {
-                this.stagedParsedMetadata.delete(metadataEdit.path);
-            }
-            this.stagedMetadataParseFailures.delete(metadataEdit.path);
+            this.projectMetadataMutation.stageMetadataEdit(metadataEdit);
         }
     }
 
     canPlanRenameBatchWithoutWorkspaceOverlay(renames: ReadonlyArray<{ newName: string; symbolId: string }>): boolean {
         return renames.every((rename) => rename.symbolId.startsWith("gml/script/"));
-    }
-
-    private getStagedParsedMetadata(metadataPath: string): Record<string, unknown> | null {
-        const cachedParsedMetadata = this.stagedParsedMetadata.get(metadataPath);
-        if (cachedParsedMetadata !== undefined) {
-            return cachedParsedMetadata;
-        }
-
-        if (this.stagedMetadataParseFailures.has(metadataPath)) {
-            return null;
-        }
-
-        const stagedMetadataContent = this.stagedMetadataContents.get(metadataPath);
-        if (stagedMetadataContent === undefined) {
-            return null;
-        }
-
-        try {
-            const absolutePath = path.resolve(this.projectRoot, metadataPath);
-            const parsed = Core.parseProjectMetadataDocumentForMutation(stagedMetadataContent, absolutePath).document;
-            this.stagedParsedMetadata.set(metadataPath, parsed);
-            return parsed;
-        } catch {
-            this.stagedMetadataParseFailures.add(metadataPath);
-            return null;
-        }
     }
 
     private resolveWorkspaceOverlayPath(candidatePath: string): string {
@@ -1720,7 +1513,8 @@ export class GmlSemanticBridge {
         const destinationDirectoryExists =
             shouldRenameResourceDirectory && this.doesWorkspaceDirectoryPathExist(renamedResourceDirectoryPath);
         const fileRenameDestinationDir = destinationDirectoryExists ? renamedResourceDirectoryPath : resourceDir;
-        const resourceMetadataDocument = this.loadResourceMetadataDocumentForRename(currentResourcePath);
+        const resourceMetadataDocument =
+            this.projectMetadataMutation.loadResourceMetadataDocumentForRename(currentResourcePath);
 
         // 1. Rename files inside the directory that match the old name.
         // We do this BEFORE renaming the directory because GameMaker assets keep
@@ -1772,534 +1566,9 @@ export class GmlSemanticBridge {
             edit.addFileRename(resourceDir, renamedResourceDirectoryPath);
         }
 
-        this.addResourceMetadataEdits(edit, resource, oldName, newName, currentResourcePath);
+        this.projectMetadataMutation.addResourceMetadataEdits(edit, resource, oldName, newName, currentResourcePath);
 
         return edit;
-    }
-
-    private getProjectMetadataReferenceIndex(): ProjectMetadataReferenceIndex {
-        const existingIndex = this.projectMetadataReferenceIndex;
-        if (existingIndex !== null) {
-            return existingIndex;
-        }
-
-        const manifestMetadataRecords: Array<ResourceMetadataRecord> = [];
-        const metadataRecordsByPath = new Map<string, ResourceMetadataRecord>();
-        const referencingMetadataRecordsByLowerTargetPath = new Map<string, Array<ResourceMetadataRecord>>();
-        const referencingMetadataRecordsByTargetPath = new Map<string, Array<ResourceMetadataRecord>>();
-
-        for (const resourceRecord of Object.values(this.resources)) {
-            const metadataRecord = normalizeResourceMetadataRecord(resourceRecord);
-            if (metadataRecord === null) {
-                continue;
-            }
-
-            metadataRecordsByPath.set(metadataRecord.path, metadataRecord);
-            if (Semantic.isProjectManifestPath(metadataRecord.path)) {
-                manifestMetadataRecords.push(metadataRecord);
-            }
-
-            for (const assetReference of metadataRecord.assetReferences) {
-                const referencedMetadataRecords =
-                    referencingMetadataRecordsByTargetPath.get(assetReference.targetPath) ?? [];
-                referencedMetadataRecords.push(metadataRecord);
-                referencingMetadataRecordsByTargetPath.set(assetReference.targetPath, referencedMetadataRecords);
-
-                const lowerTargetPath = normalizeMetadataReferenceTargetPath(assetReference.targetPath);
-                const lowerReferencedMetadataRecords =
-                    referencingMetadataRecordsByLowerTargetPath.get(lowerTargetPath) ?? [];
-                lowerReferencedMetadataRecords.push(metadataRecord);
-                referencingMetadataRecordsByLowerTargetPath.set(lowerTargetPath, lowerReferencedMetadataRecords);
-            }
-        }
-
-        const createdIndex = {
-            manifestMetadataRecords,
-            metadataRecordsByPath,
-            referencingMetadataRecordsByLowerTargetPath,
-            referencingMetadataRecordsByTargetPath
-        };
-        this.projectMetadataReferenceIndex = createdIndex;
-        return createdIndex;
-    }
-
-    private loadResourceMetadataDocumentForRename(resourcePath: string): Record<string, unknown> {
-        const existingDocument = this.parsedProjectMetadataByPath.get(resourcePath);
-        if (existingDocument !== undefined) {
-            return existingDocument;
-        }
-
-        const absolutePath = path.resolve(this.projectRoot, resourcePath);
-        if (!pathExistsSync(absolutePath)) {
-            return {};
-        }
-
-        try {
-            const rawContent = fs.readFileSync(absolutePath, "utf8");
-            const parsed = Core.parseProjectMetadataDocumentForMutation(rawContent, absolutePath).document;
-            this.projectMetadataSourceByPath.set(resourcePath, rawContent);
-            this.parsedProjectMetadataByPath.set(resourcePath, parsed);
-            return parsed;
-        } catch {
-            return {};
-        }
-    }
-
-    private listResourceMetadataMutationCandidates(resourcePath: string): Array<ResourceMetadataRecord> {
-        const {
-            manifestMetadataRecords,
-            metadataRecordsByPath,
-            referencingMetadataRecordsByLowerTargetPath,
-            referencingMetadataRecordsByTargetPath
-        } = this.getProjectMetadataReferenceIndex();
-        const candidatesByPath = new Map<string, ResourceMetadataRecord>();
-
-        const directMetadataRecord = metadataRecordsByPath.get(resourcePath);
-        if (directMetadataRecord) {
-            candidatesByPath.set(directMetadataRecord.path, directMetadataRecord);
-        }
-
-        for (const manifestMetadataRecord of manifestMetadataRecords) {
-            candidatesByPath.set(manifestMetadataRecord.path, manifestMetadataRecord);
-        }
-
-        for (const referencingMetadataRecord of referencingMetadataRecordsByTargetPath.get(resourcePath) ?? []) {
-            candidatesByPath.set(referencingMetadataRecord.path, referencingMetadataRecord);
-        }
-
-        const lowerResourcePath = normalizeMetadataReferenceTargetPath(resourcePath);
-        for (const referencingMetadataRecord of referencingMetadataRecordsByLowerTargetPath.get(lowerResourcePath) ??
-            []) {
-            candidatesByPath.set(referencingMetadataRecord.path, referencingMetadataRecord);
-        }
-
-        return [...candidatesByPath.values()];
-    }
-
-    private collectLatestBatchMetadataDocuments(edit: WorkspaceEdit): Map<string, Record<string, unknown>> {
-        const metadataObjectCount = edit.metadataObjects?.length ?? 0;
-        const cachedEntry = this.latestBatchMetadataDocumentsByEdit.get(edit);
-        if (cachedEntry && cachedEntry.metadataObjectCount === metadataObjectCount) {
-            return cachedEntry.documents;
-        }
-
-        const latestBatchMetadataDocuments = new Map<string, Record<string, unknown>>();
-
-        for (const metadataObject of edit.metadataObjects ?? []) {
-            latestBatchMetadataDocuments.set(metadataObject.path, metadataObject.document);
-        }
-
-        this.latestBatchMetadataDocumentsByEdit.set(edit, {
-            documents: latestBatchMetadataDocuments,
-            metadataObjectCount
-        });
-        return latestBatchMetadataDocuments;
-    }
-
-    private loadMutableProjectMetadataDocument(
-        edit: WorkspaceEdit,
-        metadataPath: string,
-        latestBatchMetadataDocuments: ReadonlyMap<string, Record<string, unknown>>
-    ): MutableProjectMetadataDocument | null {
-        const cachedMutableDocuments = this.mutableProjectMetadataDocumentsByEdit.get(edit);
-        if (cachedMutableDocuments) {
-            const cachedDocument = cachedMutableDocuments.get(metadataPath);
-            if (cachedDocument !== undefined) {
-                return cachedDocument;
-            }
-        }
-        const mutableDocumentsByPath =
-            cachedMutableDocuments ?? new Map<string, MutableProjectMetadataDocument | null>();
-
-        const latestBatchMetadataDocument = latestBatchMetadataDocuments.get(metadataPath);
-        if (latestBatchMetadataDocument !== undefined) {
-            const loadedDocument: MutableProjectMetadataDocument = {
-                parsed: structuredClone(latestBatchMetadataDocument),
-                rawContent: Core.stringifyProjectMetadataDocument(latestBatchMetadataDocument, metadataPath)
-            };
-            mutableDocumentsByPath.set(metadataPath, loadedDocument);
-            this.mutableProjectMetadataDocumentsByEdit.set(edit, mutableDocumentsByPath);
-            return loadedDocument;
-        }
-
-        const stagedParsedMetadata = this.getStagedParsedMetadata(metadataPath);
-        if (stagedParsedMetadata !== null) {
-            const loadedDocument: MutableProjectMetadataDocument = {
-                parsed: structuredClone(stagedParsedMetadata),
-                rawContent:
-                    this.stagedMetadataContents.get(metadataPath) ??
-                    Core.stringifyProjectMetadataDocument(stagedParsedMetadata, metadataPath)
-            };
-            mutableDocumentsByPath.set(metadataPath, loadedDocument);
-            this.mutableProjectMetadataDocumentsByEdit.set(edit, mutableDocumentsByPath);
-            return loadedDocument;
-        }
-
-        const cachedParsedMetadata = this.parsedProjectMetadataByPath.get(metadataPath);
-        const cachedSourceText = this.projectMetadataSourceByPath.get(metadataPath);
-        if (cachedParsedMetadata !== undefined && cachedSourceText !== undefined) {
-            const loadedDocument: MutableProjectMetadataDocument = {
-                parsed: structuredClone(cachedParsedMetadata),
-                rawContent: cachedSourceText
-            };
-            mutableDocumentsByPath.set(metadataPath, loadedDocument);
-            this.mutableProjectMetadataDocumentsByEdit.set(edit, mutableDocumentsByPath);
-            return loadedDocument;
-        }
-
-        const absolutePath = path.resolve(this.projectRoot, metadataPath);
-        if (!pathExistsSync(absolutePath)) {
-            mutableDocumentsByPath.set(metadataPath, null);
-            this.mutableProjectMetadataDocumentsByEdit.set(edit, mutableDocumentsByPath);
-            return null;
-        }
-
-        try {
-            const rawContent = fs.readFileSync(absolutePath, "utf8");
-            const parsed = Core.parseProjectMetadataDocumentForMutation(rawContent, absolutePath).document;
-            this.projectMetadataSourceByPath.set(metadataPath, rawContent);
-            this.parsedProjectMetadataByPath.set(metadataPath, parsed);
-            const loadedDocument: MutableProjectMetadataDocument = {
-                parsed: structuredClone(parsed),
-                rawContent
-            };
-            mutableDocumentsByPath.set(metadataPath, loadedDocument);
-            this.mutableProjectMetadataDocumentsByEdit.set(edit, mutableDocumentsByPath);
-            return loadedDocument;
-        } catch {
-            mutableDocumentsByPath.set(metadataPath, null);
-            this.mutableProjectMetadataDocumentsByEdit.set(edit, mutableDocumentsByPath);
-            return null;
-        }
-    }
-
-    private addResourceMetadataEdits(
-        edit: WorkspaceEdit,
-        resource: SemanticResourceRecord,
-        oldName: string,
-        newName: string,
-        currentResourcePath: string
-    ): void {
-        const resources = this.resources;
-        if (!resources || !resource?.path) {
-            return;
-        }
-        const normalizedResourcePath = normalizeMetadataReferenceTargetPath(resource.path);
-
-        const resourceDirName = path.posix.basename(path.posix.dirname(currentResourcePath));
-        const newResourceDir =
-            resourceDirName === oldName
-                ? path.posix.join(path.posix.dirname(path.posix.dirname(currentResourcePath)), newName)
-                : path.posix.dirname(currentResourcePath);
-        const newResourcePath = path.posix.join(newResourceDir, `${newName}.yy`);
-        const latestBatchMetadataDocuments = this.collectLatestBatchMetadataDocuments(edit);
-
-        for (const resourceEntry of this.listResourceMetadataMutationCandidates(resource.path)) {
-            const loadedMetadataDocument = this.loadMutableProjectMetadataDocument(
-                edit,
-                resourceEntry.path,
-                latestBatchMetadataDocuments
-            );
-            if (loadedMetadataDocument === null) {
-                continue;
-            }
-
-            const { parsed, rawContent } = loadedMetadataDocument;
-            const oldResourcePathLiteral = JSON.stringify(currentResourcePath);
-            const newResourcePathLiteral = JSON.stringify(newResourcePath);
-            const shouldApplyRawResourcePathFallback = oldResourcePathLiteral !== newResourcePathLiteral;
-
-            let changed = false;
-            const stringMutations: Array<{ propertyPath: string; value: string }> = [];
-
-            if (resourceEntry.path === resource.path) {
-                if (typeof parsed["%Name"] === "string" && parsed["%Name"] !== newName) {
-                    parsed["%Name"] = newName;
-                    appendProjectMetadataStringMutation(stringMutations, "%Name", newName);
-                    changed = true;
-                }
-
-                if (parsed.name !== newName) {
-                    parsed.name = newName;
-                    appendProjectMetadataStringMutation(stringMutations, "name", newName);
-                    changed = true;
-                }
-
-                if (Object.hasOwn(parsed, "resourcePath")) {
-                    const parsedResourcePath = typeof parsed.resourcePath === "string" ? parsed.resourcePath : null;
-                    if (parsedResourcePath !== newResourcePath) {
-                        parsed.resourcePath = newResourcePath;
-                        appendProjectMetadataStringMutation(stringMutations, "resourcePath", newResourcePath);
-                        changed = true;
-                    }
-                }
-
-                changed =
-                    this.updateResourceSoundFileMetadata(
-                        parsed,
-                        resource.resourceType,
-                        oldName,
-                        newName,
-                        stringMutations
-                    ) || changed;
-
-                const roomInstanceCreationOrderUpdated = updateRoomInstanceCreationOrderSelfPaths({
-                    parsed,
-                    normalizedOldResourcePath: normalizeMetadataReferenceTargetPath(currentResourcePath),
-                    newResourcePath,
-                    stringMutations
-                });
-                if (roomInstanceCreationOrderUpdated) {
-                    changed = true;
-                }
-            }
-
-            // Ensure project manifest entries are updated directly in addition to
-            // transform-by-asset-reference, in case the asset reference map is stale or
-            // misses this resource path. This prevents stale old entries from remaining
-            // in the resources list and causing GameMaker to crash on load.
-            if (Semantic.isProjectManifestPath(resourceEntry.path) && Array.isArray(parsed.resources)) {
-                for (const [resourceIndex, manifestEntry] of parsed.resources.entries()) {
-                    if (!Core.isObjectLike(manifestEntry)) {
-                        continue;
-                    }
-
-                    const idNode = manifestEntry.id;
-                    if (!Core.isObjectLike(idNode)) {
-                        continue;
-                    }
-
-                    const entryPath = typeof idNode.path === "string" ? idNode.path : null;
-                    if (
-                        !Core.isNonEmptyString(entryPath) ||
-                        !metadataReferenceTargetMatchesNormalizedPath(entryPath, normalizedResourcePath)
-                    ) {
-                        continue;
-                    }
-
-                    if (idNode.name !== newName) {
-                        idNode.name = newName;
-                        appendProjectMetadataStringMutation(
-                            stringMutations,
-                            `resources.${resourceIndex}.id.name`,
-                            newName
-                        );
-                        changed = true;
-                    }
-
-                    if (entryPath !== newResourcePath) {
-                        idNode.path = newResourcePath;
-                        appendProjectMetadataStringMutation(
-                            stringMutations,
-                            `resources.${resourceIndex}.id.path`,
-                            newResourcePath
-                        );
-                        changed = true;
-                    }
-                }
-            }
-
-            for (const reference of resourceEntry.assetReferences) {
-                if (!metadataReferenceTargetMatchesNormalizedPath(reference.targetPath, normalizedResourcePath)) {
-                    continue;
-                }
-
-                // Skip secondary index-based mutations on the .yyp `resources` array.
-                // The path-matching loop above is the authoritative update path: it finds
-                // each matching entry by scanning for matching `id.path` values and
-                // mutates `id.name` / `id.path` directly on the parsed object. Those
-                // mutations are then recorded as string mutations and applied to the raw
-                // text so the final output stays consistent.  By contrast, the
-                // asset-reference map may contain stale index-based paths such as
-                // `resources.N.name` that point to the same logical entry. Applying
-                // both updates would write the same fields twice and risk the string
-                // mutation list getting out of sync with the already-mutated parsed
-                // object, producing a corrupted .yyp.  Skipping here keeps the two
-                // update mechanisms from colliding.
-                if (
-                    Semantic.isProjectManifestPath(resourceEntry.path) &&
-                    reference.propertyPath.startsWith("resources.")
-                ) {
-                    continue;
-                }
-
-                const existingValue = Core.getProjectMetadataValueAtPath(parsed, reference.propertyPath);
-                const existingReferenceName = Core.isObjectLike(existingValue)
-                    ? Core.getNonEmptyString((existingValue as Record<string, unknown>).name)
-                    : null;
-                const replacementReferenceName =
-                    existingReferenceName && existingReferenceName === oldName ? newName : null;
-                const updated = Core.updateProjectMetadataReferenceByPath({
-                    document: parsed,
-                    propertyPath: reference.propertyPath,
-                    newResourcePath,
-                    newName: replacementReferenceName
-                });
-                if (updated) {
-                    if (Core.isObjectLike(existingValue)) {
-                        appendProjectMetadataStringMutation(
-                            stringMutations,
-                            `${reference.propertyPath}.path`,
-                            newResourcePath
-                        );
-                        if (replacementReferenceName) {
-                            appendProjectMetadataStringMutation(
-                                stringMutations,
-                                `${reference.propertyPath}.name`,
-                                replacementReferenceName
-                            );
-                        }
-                    } else if (typeof existingValue === "string") {
-                        appendProjectMetadataStringMutation(stringMutations, reference.propertyPath, newResourcePath);
-                    }
-
-                    changed = true;
-                }
-            }
-            // Guard the expensive whole-document fallback scan behind the
-            // "no structured changes" branch. In the common rename path we
-            // already mutated parsed fields above, so scanning the full raw
-            // metadata text for every candidate (especially MyGame.yyp) is
-            // redundant and dominates runtime on large projects.
-            if (!changed && (!shouldApplyRawResourcePathFallback || !rawContent.includes(oldResourcePathLiteral))) {
-                continue;
-            }
-
-            const shouldNormalizeResourcePathOrdering = requiresMetadataResourcePathOrderNormalization(rawContent);
-            let canonicalContent = shouldNormalizeResourcePathOrdering
-                ? Core.stringifyProjectMetadataDocument(parsed, resourceEntry.path)
-                : (Core.applyProjectMetadataStringMutations(rawContent, stringMutations) ??
-                  Core.stringifyProjectMetadataDocument(parsed, resourceEntry.path));
-            if (
-                shouldApplyRawResourcePathFallback &&
-                !shouldNormalizeResourcePathOrdering &&
-                canonicalContent.includes(oldResourcePathLiteral)
-            ) {
-                canonicalContent = canonicalContent.replaceAll(oldResourcePathLiteral, newResourcePathLiteral);
-            }
-
-            if (canonicalContent === rawContent) {
-                continue;
-            }
-
-            edit.addMetadataEdit(resourceEntry.path, canonicalContent);
-            this.generatedMetadataDocumentsByPath.set(resourceEntry.path, {
-                content: canonicalContent,
-                document: parsed
-            });
-            if (edit.addMetadataObjectEdit) {
-                edit.addMetadataObjectEdit(resourceEntry.path, parsed);
-            }
-            loadedMetadataDocument.rawContent = canonicalContent;
-        }
-
-        this.addResourceOrderMetadataEdit(edit, resource, newName, newResourcePath, latestBatchMetadataDocuments);
-    }
-
-    private updateResourceSoundFileMetadata(
-        parsed: Record<string, unknown>,
-        resourceType: string | undefined,
-        oldName: string,
-        newName: string,
-        stringMutations: Array<{ propertyPath: string; value: string }>
-    ): boolean {
-        if (resourceType !== "GMSound") {
-            return false;
-        }
-
-        const currentSoundFile = Core.getNonEmptyString(parsed.soundFile);
-        const renamedSoundFile = resolveRenamedSoundFileName(currentSoundFile, newName);
-        if (!renamedSoundFile || currentSoundFile === renamedSoundFile) {
-            return false;
-        }
-
-        parsed.soundFile = renamedSoundFile;
-        appendProjectMetadataStringMutation(stringMutations, "soundFile", renamedSoundFile);
-        return true;
-    }
-
-    private addResourceOrderMetadataEdit(
-        edit: WorkspaceEdit,
-        resource: SemanticResourceRecord,
-        newName: string,
-        newResourcePath: string,
-        latestBatchMetadataDocuments: ReadonlyMap<string, Record<string, unknown>>
-    ): void {
-        const normalizedResourcePath = normalizeMetadataReferenceTargetPath(resource.path ?? "");
-        const resourceOrderPath = getProjectResourceOrderPath(this.projectRoot);
-        const loadedMetadataDocument = this.loadMutableProjectMetadataDocument(
-            edit,
-            resourceOrderPath,
-            latestBatchMetadataDocuments
-        );
-        if (loadedMetadataDocument === null) {
-            return;
-        }
-
-        const { parsed, rawContent } = loadedMetadataDocument;
-        const resourceOrderSettings = parsed.ResourceOrderSettings;
-        if (!Array.isArray(resourceOrderSettings)) {
-            return;
-        }
-
-        let changed = false;
-        const stringMutations: Array<{ propertyPath: string; value: string }> = [];
-
-        for (const [resourceOrderIndex, resourceOrderEntry] of resourceOrderSettings.entries()) {
-            if (!Core.isObjectLike(resourceOrderEntry)) {
-                continue;
-            }
-
-            const entryPath = typeof resourceOrderEntry.path === "string" ? resourceOrderEntry.path : null;
-            if (
-                !Core.isNonEmptyString(entryPath) ||
-                !metadataReferenceTargetMatchesNormalizedPath(entryPath, normalizedResourcePath)
-            ) {
-                continue;
-            }
-
-            if (resourceOrderEntry.name !== newName) {
-                resourceOrderEntry.name = newName;
-                appendProjectMetadataStringMutation(
-                    stringMutations,
-                    `ResourceOrderSettings.${resourceOrderIndex}.name`,
-                    newName
-                );
-                changed = true;
-            }
-
-            if (entryPath !== newResourcePath) {
-                resourceOrderEntry.path = newResourcePath;
-                appendProjectMetadataStringMutation(
-                    stringMutations,
-                    `ResourceOrderSettings.${resourceOrderIndex}.path`,
-                    newResourcePath
-                );
-                changed = true;
-            }
-        }
-
-        if (!changed) {
-            return;
-        }
-
-        const canonicalContent =
-            Core.applyProjectMetadataStringMutations(rawContent, stringMutations) ??
-            Core.stringifyProjectMetadataDocument(parsed, resourceOrderPath);
-
-        if (canonicalContent === rawContent) {
-            return;
-        }
-
-        edit.addMetadataEdit(resourceOrderPath, canonicalContent);
-        this.generatedMetadataDocumentsByPath.set(resourceOrderPath, {
-            content: canonicalContent,
-            document: parsed
-        });
-        if (edit.addMetadataObjectEdit) {
-            edit.addMetadataObjectEdit(resourceOrderPath, parsed);
-        }
-        loadedMetadataDocument.rawContent = canonicalContent;
     }
 
     private findResourceBySymbol(entry: any, symbolId: string): any {
@@ -3087,7 +2356,7 @@ export class GmlSemanticBridge {
         }
 
         const functionDeclarationPattern = new RegExp(
-            String.raw`\bfunction\s+${escapeRegExpLiteral(resource.name)}\s*\(`,
+            String.raw`\bfunction\s+${Core.escapeRegExp(resource.name)}\s*\(`,
             "u"
         );
         const match = functionDeclarationPattern.exec(sourceText);
@@ -3584,20 +2853,6 @@ export class GmlSemanticBridge {
 
     private hasScriptEntryForResource(resourcePath: string): boolean {
         return (this.getScriptResourceIndexes().scriptEntriesByResourcePath.get(resourcePath)?.length ?? 0) > 0;
-    }
-
-    private isCoupledSingleFunctionScriptCallable(entry: SemanticIdentifierEntry, declarationName: string): boolean {
-        if (typeof entry?.resourcePath !== "string") {
-            return false;
-        }
-
-        const resource = this.resources?.[entry.resourcePath];
-        if (resource?.resourceType !== "GMScript" || resource?.name !== declarationName) {
-            return false;
-        }
-
-        const declarations = this.getScriptCallableDeclarationsForResource(entry.resourcePath);
-        return declarations.length === 1 && declarations[0]?.declaration?.name === declarationName;
     }
 
     private hasSingleCallableDeclaration(entry: SemanticIdentifierEntry): boolean {

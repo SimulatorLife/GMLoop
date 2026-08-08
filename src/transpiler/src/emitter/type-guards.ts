@@ -283,34 +283,3 @@ export function isAstRecord(candidate: unknown): candidate is Record<string, unk
 export function isFunctionScopeBoundary(candidate: unknown): boolean {
     return isFunctionDeclarationNode(candidate) || isConstructorDeclarationNode(candidate);
 }
-
-/**
- * Determine whether `node` is any flavour of loop statement.
- *
- * Covers `ForStatement`, `WhileStatement`, `DoUntilStatement`, and `RepeatStatement`.
- * Equivalent to `Core.isLoopLikeNode`.
- */
-export function isLoopStatement(node: unknown): boolean {
-    return (
-        isForStatementNode(node) ||
-        isWhileStatementNode(node) ||
-        isDoUntilStatementNode(node) ||
-        isRepeatStatementNode(node)
-    );
-}
-
-/**
- * Determine whether `node` is an unconditional control-flow exit statement.
- *
- * Returns `true` for `ReturnStatement`, `BreakStatement`, `ContinueStatement`,
- * `ExitStatement`, and `ThrowStatement`.
- */
-export function isControlFlowExitStatement(node: unknown): boolean {
-    return (
-        isReturnStatementNode(node) ||
-        isBreakStatementNode(node) ||
-        isContinueStatementNode(node) ||
-        isExitStatementNode(node) ||
-        isThrowStatementNode(node)
-    );
-}

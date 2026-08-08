@@ -379,6 +379,24 @@ void test("describeValueForError can skip JSON serialization for complex values"
     assert.strictEqual(describeValueForError({ example: true }, { stringifyUnknown: false }), "[object Object]");
 });
 
+void test("describeValueForError defers to a custom toString when one is provided", () => {
+    class TaggedValue {
+        constructor(private readonly label: string) {}
+
+        toString(): string {
+            return `tag:${this.label}`;
+        }
+    }
+
+    // The stringifyUnknown path still goes through JSON serialization, which
+    // ignores custom toString when own enumerable properties exist.
+    assert.strictEqual(describeValueForError(new TaggedValue("player")), '{"label":"player"}');
+
+    // With stringifyUnknown disabled, the helper falls back to toSafeString
+    // and honors the custom toString override.
+    assert.strictEqual(describeValueForError(new TaggedValue("enemy"), { stringifyUnknown: false }), "tag:enemy");
+});
+
 void test("stripStringQuotes removes matching single and double quotes", () => {
     assert.strictEqual(stripStringQuotes('"value"'), "value");
     assert.strictEqual(stripStringQuotes("'value'"), "value");

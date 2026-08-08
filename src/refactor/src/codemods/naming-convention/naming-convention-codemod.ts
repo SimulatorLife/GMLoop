@@ -9,9 +9,9 @@ import {
     detectCircularRenames,
     detectCrossRenameNameConfusion,
     detectDuplicateSourceSymbolIds,
-    detectDuplicateTargetNames
-} from "../../rename/rename-validation.js";
-import { loadRefactorReservedIdentifierNames } from "../../rename/reserved-identifiers.js";
+    detectDuplicateTargetNames,
+    loadRefactorReservedIdentifierNames
+} from "../../rename/index.js";
 import type {
     ApplyWorkspaceEditOptions,
     BatchRenamePlanSummary,

@@ -23,18 +23,17 @@
 import { Core } from "@gmloop/core";
 
 /**
- * Determine whether {@link node} matches the "logical comparison clause"
- * pattern: a parenthesised `||` binary expression whose left and right
- * operands are both `&&` expressions of a comparison joined to a simple
- * operand.
+ * Determine whether `node` matches the "logical comparison clause" pattern:
+ * a parenthesised `||` binary expression whose left and right operands are
+ * both `&&` expressions of a comparison joined to a simple operand.
  *
  * Returning `true` is the signal that the single-clause printer may keep
  * the body adjacent to the closing paren on the same source line. Anything
  * that does not strictly match the conjunction shape returns `false` so
  * the printer falls back to the regular expanded layout.
  *
- * @param {unknown} node Candidate clause expression to inspect.
- * @returns {boolean} `true` when {@link node} matches the conjunction shape.
+ * @param node - Candidate clause expression to inspect.
+ * @returns `true` when `node` matches the conjunction shape.
  */
 export function isLogicalComparisonClause(node: any): boolean {
     const clauseExpression = Core.unwrapParenthesizedExpression(node);
@@ -58,8 +57,8 @@ export function isLogicalComparisonClause(node: any): boolean {
  * predicate aligned with the commutative shape of a logical conjunction while
  * still excluding nested `&&`/`||` expressions from this leaf check.
  *
- * @param {unknown} node Candidate conjunction operand to inspect.
- * @returns {boolean} `true` when {@link node} contains a comparison and simple operands.
+ * @param node - Candidate conjunction operand to inspect.
+ * @returns `true` when `node` contains a comparison and simple operands.
  */
 function isComparisonAndConjunction(node: any): boolean {
     const expression = Core.unwrapParenthesizedExpression(node);
@@ -84,8 +83,8 @@ function isComparisonAndConjunction(node: any): boolean {
  * {@link isSimpleLogicalOperand} so nested comparison expressions also
  * count as "simple" operands.
  *
- * @param {unknown} node Candidate expression to inspect.
- * @returns {boolean} `true` when {@link node} is a comparison expression.
+ * @param node - Candidate expression to inspect.
+ * @returns `true` when `node` is a comparison expression.
  */
 function isComparisonExpression(node: any): boolean {
     const expression = Core.unwrapParenthesizedExpression(node);
@@ -102,8 +101,8 @@ function isComparisonExpression(node: any): boolean {
  * such as `(a > b)` so the conjunction shape stays tolerant of the
  * parenthesisation GameMaker authors commonly introduce for clarity.
  *
- * @param {unknown} node Candidate operand to inspect.
- * @returns {boolean} `true` when {@link node} fits the simple-operand shape.
+ * @param node - Candidate operand to inspect.
+ * @returns `true` when `node` fits the simple-operand shape.
  */
 function isSimpleLogicalOperand(node: any): boolean {
     const expression = Core.unwrapParenthesizedExpression(node);

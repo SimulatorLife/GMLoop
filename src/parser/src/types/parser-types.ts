@@ -7,11 +7,6 @@ export type ParserContext =
     | null
     | undefined;
 
-export type ParserContextMethod = (
-    this: ParserRuleContext,
-    ...args: Array<unknown>
-) => ParserContext | ParserContext[] | null | undefined;
-
 export type ParserContextWithMethods = ParserRuleContext & {
     [methodName: string]: (...args: Array<unknown>) => unknown;
 };

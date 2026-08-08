@@ -46,13 +46,6 @@ const {
     isObjectLike
 } = Core;
 
-// Re-export the consolidated AST helpers and the AST-builders rewriters so
-// existing callers that import them from this module keep working. The
-// canonical implementations live in `math-ast-mutation.ts` and
-// `math-ast-builders.ts`; this module no longer carries its own copies.
-export { replaceNode, replaceNodeWith } from "./math-ast-builders.js";
-export { findParentEntry, unwrapEnclosingParentheses } from "./math-ast-mutation.js";
-
 /**
  * True when `node` represents an operand that can be safely used in reciprocal-cancellation
  * transforms. Unary `-` is allowed since negating does not affect zero-checks.
@@ -216,7 +209,7 @@ export function matchLengthdirReassignment(expression: any, identifierName: stri
     }
 
     const functionName = Core.getUnwrappedIdentifierName(callExpression.object);
-    if (functionName !== "lengthdir_x") {
+    if (functionName !== "lengthdir_x" && functionName !== "lengthdir_y") {
         return null;
     }
 

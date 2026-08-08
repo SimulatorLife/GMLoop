@@ -159,15 +159,66 @@ async function withPinnedSemanticQueries<Result>(
     signal: AbortSignal,
     read: (queries: SemanticSnapshotQueries) => Promise<Result> | Result
 ): Promise<Result | null> {
-    const acquisition = await store.acquireSemanticSnapshot(
+    return await withSemanticLeaseQueries(
+        store,
         createNavigationSnapshotRequirements(state, document, capability, requireCompleteProjectRelationships),
-        signal
+        signal,
+        (lease) => read(lease.queries)
     );
+}
+
+/**
+ * Acquire a semantic snapshot, hand the lease to a callback, and release
+ * the lease afterwards — returning the callback's result, or `null` when
+ * the acquisition does not yield a lease.
+ *
+ * Exists to break the Law-of-Demeter chain that callers otherwise walk
+ * by hand at every snapshot site:
+ *
+ * ```ts
+ * const acquisition = await store.acquireSemanticSnapshot(requirements, signal);
+ * if (acquisition.kind !== "lease") {
+ *     return null;
+ * }
+ * try {
+ *     return await use(acquisition.lease);
+ * } finally {
+ *     acquisition.lease.release();
+ * }
+ * ```
+ *
+ * Centralising the acquisition, the `kind === "lease"` narrowing, and the
+ * `try/finally release` in a single helper gives every call site a single
+ * immediate neighbour (`lease`) to talk to and prevents leaks from a
+ * forgotten `release()` after a thrown error. Callers that need custom
+ * requirements (a different `tier`, an empty `requiredFiles`, etc.) can
+ * adopt the helper without having to rebuild the navigation-state-driven
+ * shape of {@link withPinnedSemanticQueries}.
+ *
+ * The callback receives the full {@link SemanticSnapshotLease} (covering
+ * `queries` and `identity`); query-only callers can simply project the
+ * `lease.queries` field inside the callback. The callback may return any
+ * value, including a falsy one — the helper only substitutes `null` when
+ * the acquisition itself fails, never for the callback's own result.
+ *
+ * @param store - Semantic index store that owns the snapshot.
+ * @param requirements - Snapshot requirements to satisfy.
+ * @param signal - Abort signal forwarded to `acquireSemanticSnapshot`.
+ * @param use - Callback invoked with the lease.
+ * @returns The callback's result, or `null` when no lease is available.
+ */
+async function withSemanticLeaseQueries<Result>(
+    store: SemanticIndexStore,
+    requirements: SemanticSnapshotRequirement,
+    signal: AbortSignal,
+    use: (lease: SemanticSnapshotLease) => Result | Promise<Result>
+): Promise<Result | null> {
+    const acquisition = await store.acquireSemanticSnapshot(requirements, signal);
     if (acquisition.kind !== "lease") {
         return null;
     }
     try {
-        return await read(acquisition.lease.queries);
+        return await use(acquisition.lease);
     } finally {
         acquisition.lease.release();
     }
@@ -242,16 +293,33 @@ export type GmlSemanticAnalysisFinish = Readonly<{
 }>;
 
 /**
- * Query facade used by the LSP layer to consume semantic navigation facts.
+ * Lifecycle and diagnostics surface for the semantic index.
+ *
+ * Consumers that only need to (re)build the index, tear it down, prewarm it,
+ * or read compact in-memory counters can depend on this role alone, keeping
+ * unrelated LSP handlers free of the navigation, symbol, rename, and search
+ * capabilities the rest of the index exposes.
  */
-export type GmlSemanticIndex = Readonly<{
+export interface GmlSemanticIndexLifecycle {
     buildForDocument(document: GmlTextDocument): Promise<NavigationState | null>;
     indexProjectRoot(projectRoot: string): Promise<void>;
     dispose(): Promise<void>;
+    preload(): void;
     /**
      * Return compact counters for semantic-index memory diagnostics.
      */
     readMemoryDiagnostics(): GmlSemanticIndexMemoryDiagnostics;
+}
+
+/**
+ * Definition/references/hover navigation surface for the semantic index.
+ *
+ * LSP handlers that resolve go-to-definition, references, document-local
+ * references, or hover information should depend on this role alone and not
+ * drag in the symbol-listing, rename, cache-management, or search
+ * capabilities the index also provides.
+ */
+export interface GmlSemanticNavigator {
     findDefinition(
         document: GmlTextDocument,
         offset: number,
@@ -277,13 +345,32 @@ export type GmlSemanticIndex = Readonly<{
         identifierName: string,
         signal: AbortSignal
     ): Promise<Hover | null>;
-    invalidateForDocument(document: GmlTextDocument): void;
-    invalidateForFilePath(filePath: string): Promise<void>;
+}
+
+/**
+ * Document-symbol and semantic-highlight listing surface for the semantic
+ * index.
+ *
+ * Handlers that only project the AST into outline-style or token-level views
+ * can depend on this role alone without coupling to navigation, rename,
+ * cache, or search machinery.
+ */
+export interface GmlSemanticDocumentSymbolProvider {
     listDocumentSymbols(document: GmlTextDocument, signal: AbortSignal): Promise<DocumentSymbol[]>;
     listSemanticHighlights(
         document: GmlTextDocument,
         signal: AbortSignal
     ): Promise<ReturnType<typeof Semantic.collectGmlSemanticHighlights>>;
+}
+
+/**
+ * Rename preparation and planning surface for the semantic index.
+ *
+ * LSP handlers that drive `textDocument/prepareRename` and
+ * `textDocument/rename` should depend on this role alone instead of the full
+ * index, so unrelated navigation or search code is not in their contract.
+ */
+export interface GmlSemanticRenameSupport {
     planRename(
         document: GmlTextDocument,
         offset: number,
@@ -297,13 +384,89 @@ export type GmlSemanticIndex = Readonly<{
         identifierName: string,
         signal: AbortSignal
     ): Promise<ReturnType<typeof offsetsToRange> | null>;
-    preload(): void;
+}
+
+/**
+ * Cache invalidation surface for the semantic index.
+ *
+ * Document-sync handlers that only need to drop stale cached navigation
+ * state for a freshly edited document can depend on this role alone,
+ * leaving refresh, navigation, symbol, rename, and search concerns to
+ * their own dedicated roles. Keeping invalidation separate from refresh
+ * matches the call-site reality: an LSP `onDidChangeTextDocument` handler
+ * invalidates and lets the next query trigger a refresh, while file-watcher
+ * and save handlers refresh directly from disk.
+ */
+export interface GmlSemanticCacheInvalidator {
+    invalidateForDocument(document: GmlTextDocument): void;
+    invalidateForFilePath(filePath: string): Promise<void>;
+}
+
+/**
+ * Cache refresh surface for the semantic index.
+ *
+ * File-watcher and save handlers that need to rebuild cached navigation
+ * state from disk can depend on this role alone, leaving invalidation,
+ * navigation, symbol, rename, and search concerns to their own dedicated
+ * roles. Refreshing without invalidating first is the intended pattern
+ * here: callers that need both should depend on the composite
+ * {@link GmlSemanticCacheManager} instead.
+ */
+export interface GmlSemanticCacheRefresher {
     refreshForDocument(document: GmlTextDocument): Promise<NavigationState | null>;
     refreshForFilePath(filePath: string): Promise<NavigationState | null>;
     refreshForFileChanges(changes: ReadonlyArray<GmlSemanticFileChange>): Promise<void>;
+}
+
+/**
+ * Composite cache-management surface for the semantic index.
+ *
+ * Combines the invalidation and refresh roles so callers that genuinely
+ * need both capabilities — for example integration tests that exercise
+ * the full cache lifecycle end-to-end — can declare a single dependency.
+ * Handlers that only need to invalidate (document-sync) or only need to
+ * refresh (file-watcher, save, close) should depend on the narrower role
+ * interface directly to keep their contract honest.
+ *
+ * This split mirrors the Interface Segregation Principle: each role models
+ * a single cohesive cache responsibility and exposes only the members its
+ * consumers require, preventing accidental coupling between the
+ * "drop stale state" and "rebuild state from disk" subsystems of the
+ * semantic index.
+ */
+export interface GmlSemanticCacheManager extends GmlSemanticCacheInvalidator, GmlSemanticCacheRefresher {}
+
+/**
+ * Completion and workspace-symbol search surface for the semantic index.
+ *
+ * Handlers that resolve completions or `workspace/symbol` queries should
+ * depend on this role alone instead of the full index, so unrelated
+ * navigation or rename code is not in their contract.
+ */
+export interface GmlSemanticSearchProvider {
     searchCompletions(document: GmlTextDocument, query: string, signal: AbortSignal): Promise<CompletionItem[]>;
     searchWorkspaceSymbols(document: GmlTextDocument, query: string, signal: AbortSignal): Promise<WorkspaceSymbol[]>;
-}>;
+}
+
+/**
+ * Composite query facade used by the LSP layer to consume semantic navigation
+ * facts.
+ *
+ * The composite intentionally extends the role interfaces above so callers
+ * that genuinely need every capability (the canonical `createGmlSemanticIndex`
+ * factory, the existing LSP handler wiring) can resolve a single object, while
+ * new call sites are encouraged to depend on the narrower role they actually
+ * use. Each role models one cohesive responsibility and exposes only the
+ * members its consumers require, which is the Interface Segregation Principle
+ * in practice.
+ */
+export type GmlSemanticIndex = GmlSemanticIndexLifecycle &
+    GmlSemanticNavigator &
+    GmlSemanticDocumentSymbolProvider &
+    GmlSemanticRenameSupport &
+    GmlSemanticCacheInvalidator &
+    GmlSemanticCacheRefresher &
+    GmlSemanticSearchProvider;
 
 function formatGmlDocComment(documentation: GmlSymbolDocumentation): string {
     if (documentation.normalizedText.length === 0) {
@@ -861,130 +1024,136 @@ export function createGmlSemanticIndex(
             requiredResources: new Set<string>(),
             tier: "full"
         });
-        const acquisition = await getSemanticStore(resolvedRoot).acquireSemanticSnapshot(
+        // Hand the acquire-check-release ceremony to `withSemanticLeaseQueries`
+        // so the call site only talks to its immediate neighbour (`lease` or
+        // `null`); the `null` branch reuses the same change-set computation
+        // with an empty resource inventory and a disk-only manifest rebuild.
+        const result = await withSemanticLeaseQueries(
+            getSemanticStore(resolvedRoot),
             requirements,
-            new AbortController().signal
+            new AbortController().signal,
+            (lease) => computeMetadataAffectedChanges(resolvedRoot, metadataFilePath, metadataChange, lease.queries)
         );
-        const lease = acquisition.kind === "lease" ? acquisition.lease : null;
-        try {
-            const resources = lease?.queries.listResources() ?? [];
-            const changesByPath = new Map<string, GmlSemanticFileChange["kind"]>([
-                [path.resolve(metadataFilePath), metadataChange.kind]
-            ]);
-            if (metadataFilePath.toLowerCase().endsWith(".yyp")) {
-                const currentResourcePaths = await fs
-                    .readFile(metadataFilePath, "utf8")
-                    .then((sourceText) => JSON.parse(sourceText) as unknown)
-                    .then((manifest) => {
-                        if (!Core.isObjectLike(manifest)) {
+        return result ?? (await computeMetadataAffectedChanges(resolvedRoot, metadataFilePath, metadataChange, null));
+    }
+
+    async function computeMetadataAffectedChanges(
+        resolvedRoot: string,
+        metadataFilePath: string,
+        metadataChange: GmlSemanticFileChange,
+        queries: SemanticSnapshotQueries | null
+    ): Promise<GmlSemanticFileChange[]> {
+        const resources = queries?.listResources() ?? [];
+        const changesByPath = new Map<string, GmlSemanticFileChange["kind"]>([
+            [path.resolve(metadataFilePath), metadataChange.kind]
+        ]);
+        if (metadataFilePath.toLowerCase().endsWith(".yyp")) {
+            const currentResourcePaths = await fs
+                .readFile(metadataFilePath, "utf8")
+                .then((sourceText) => JSON.parse(sourceText) as unknown)
+                .then((manifest) => {
+                    if (!Core.isObjectLike(manifest)) {
+                        return [];
+                    }
+                    const manifestRecord = Object.fromEntries(Object.entries(manifest));
+                    if (!Array.isArray(manifestRecord.resources)) {
+                        return [];
+                    }
+                    return manifestRecord.resources.flatMap((resource) => {
+                        if (!Core.isObjectLike(resource)) {
                             return [];
                         }
-                        const manifestRecord = Object.fromEntries(Object.entries(manifest));
-                        if (!Array.isArray(manifestRecord.resources)) {
+                        const resourceRecord = Object.fromEntries(Object.entries(resource));
+                        if (!Core.isObjectLike(resourceRecord.id)) {
                             return [];
                         }
-                        return manifestRecord.resources.flatMap((resource) => {
-                            if (!Core.isObjectLike(resource)) {
-                                return [];
-                            }
-                            const resourceRecord = Object.fromEntries(Object.entries(resource));
-                            if (!Core.isObjectLike(resourceRecord.id)) {
-                                return [];
-                            }
-                            const idRecord = Object.fromEntries(Object.entries(resourceRecord.id));
-                            return typeof idRecord.path === "string" ? [idRecord.path] : [];
-                        });
-                    })
+                        const idRecord = Object.fromEntries(Object.entries(resourceRecord.id));
+                        return typeof idRecord.path === "string" ? [idRecord.path] : [];
+                    });
+                })
+                .catch((error: unknown) => {
+                    if (Core.isErrorWithCode(error, "ENOENT")) {
+                        return [];
+                    }
+                    throw error;
+                });
+            const previousResourcePaths = [...new Set(resources.map((resource) => resource.resourcePath))];
+            const currentPathSet = new Set(currentResourcePaths);
+            const previousPathSet = new Set(previousResourcePaths);
+            if (queries === null) {
+                // A session-local overlay intentionally has no persistent
+                // full snapshot. Reuse semantic project discovery to find
+                // resource metadata still on disk but no longer listed by
+                // the manifest, then invalidate their sibling source files
+                // as deleted. This is conservative without relying on the
+                // LSP's mutable raw-index projection.
+                const currentManifest = await Semantic.buildSemanticFileManifest(resolvedRoot, fsFacade, []);
+                for (const entry of currentManifest.entries.values()) {
+                    if (entry.fileKind === "resourceMetadata" && !currentPathSet.has(entry.relativePath)) {
+                        changesByPath.set(path.resolve(resolvedRoot, entry.relativePath), "deleted");
+                    }
+                }
+            }
+            for (const resourcePath of [...currentPathSet, ...previousPathSet]) {
+                if (currentPathSet.has(resourcePath) !== previousPathSet.has(resourcePath)) {
+                    changesByPath.set(
+                        path.resolve(resolvedRoot, resourcePath),
+                        currentPathSet.has(resourcePath) ? "added" : "deleted"
+                    );
+                }
+            }
+        }
+        const resourcesByMetadataPath = new Map(
+            resources.map((resource) => [path.resolve(resolvedRoot, resource.resourcePath), resource] as const)
+        );
+        for (const [affectedMetadataPath, affectedKind] of changesByPath) {
+            const resource = resourcesByMetadataPath.get(path.resolve(affectedMetadataPath));
+            if (resource === undefined) {
+                continue;
+            }
+            for (const filePath of resource.filePaths) {
+                if (isGmlDocumentPath(filePath)) {
+                    changesByPath.set(
+                        path.resolve(resolvedRoot, filePath),
+                        affectedKind === "deleted" ? "deleted" : "modified"
+                    );
+                }
+            }
+        }
+        const metadataChanges = [...changesByPath].filter(([filePath]) => !isGmlDocumentPath(filePath));
+        const directoryFileGroups = await Promise.all(
+            metadataChanges.map(([affectedMetadataPath, affectedKind]) =>
+                fs
+                    .readdir(path.dirname(affectedMetadataPath), { withFileTypes: true })
+                    .then((entries) =>
+                        entries.flatMap((entry) =>
+                            entry.isFile() && entry.name.toLowerCase().endsWith(".gml")
+                                ? [
+                                      {
+                                          filePath: path.resolve(path.dirname(affectedMetadataPath), entry.name),
+                                          kind:
+                                              affectedKind === "deleted" ? ("deleted" as const) : ("modified" as const)
+                                      }
+                                  ]
+                                : []
+                        )
+                    )
                     .catch((error: unknown) => {
                         if (Core.isErrorWithCode(error, "ENOENT")) {
                             return [];
                         }
                         throw error;
-                    });
-                const previousResourcePaths = [...new Set(resources.map((resource) => resource.resourcePath))];
-                const currentPathSet = new Set(currentResourcePaths);
-                const previousPathSet = new Set(previousResourcePaths);
-                if (lease === null) {
-                    // A session-local overlay intentionally has no persistent
-                    // full snapshot. Reuse semantic project discovery to find
-                    // resource metadata still on disk but no longer listed by
-                    // the manifest, then invalidate their sibling source files
-                    // as deleted. This is conservative without relying on the
-                    // LSP's mutable raw-index projection.
-                    const currentManifest = await Semantic.buildSemanticFileManifest(resolvedRoot, fsFacade, []);
-                    for (const entry of currentManifest.entries.values()) {
-                        if (entry.fileKind === "resourceMetadata" && !currentPathSet.has(entry.relativePath)) {
-                            changesByPath.set(path.resolve(resolvedRoot, entry.relativePath), "deleted");
-                        }
-                    }
-                }
-                for (const resourcePath of [...currentPathSet, ...previousPathSet]) {
-                    if (currentPathSet.has(resourcePath) !== previousPathSet.has(resourcePath)) {
-                        changesByPath.set(
-                            path.resolve(resolvedRoot, resourcePath),
-                            currentPathSet.has(resourcePath) ? "added" : "deleted"
-                        );
-                    }
-                }
-            }
-            const resourcesByMetadataPath = new Map(
-                resources.map((resource) => [path.resolve(resolvedRoot, resource.resourcePath), resource] as const)
-            );
-            for (const [affectedMetadataPath, affectedKind] of changesByPath) {
-                const resource = resourcesByMetadataPath.get(path.resolve(affectedMetadataPath));
-                if (resource === undefined) {
-                    continue;
-                }
-                for (const filePath of resource.filePaths) {
-                    if (isGmlDocumentPath(filePath)) {
-                        changesByPath.set(
-                            path.resolve(resolvedRoot, filePath),
-                            affectedKind === "deleted" ? "deleted" : "modified"
-                        );
-                    }
-                }
-            }
-            const metadataChanges = [...changesByPath].filter(([filePath]) => !isGmlDocumentPath(filePath));
-            const directoryFileGroups = await Promise.all(
-                metadataChanges.map(([affectedMetadataPath, affectedKind]) =>
-                    fs
-                        .readdir(path.dirname(affectedMetadataPath), { withFileTypes: true })
-                        .then((entries) =>
-                            entries.flatMap((entry) =>
-                                entry.isFile() && entry.name.toLowerCase().endsWith(".gml")
-                                    ? [
-                                          {
-                                              filePath: path.resolve(path.dirname(affectedMetadataPath), entry.name),
-                                              kind:
-                                                  affectedKind === "deleted"
-                                                      ? ("deleted" as const)
-                                                      : ("modified" as const)
-                                          }
-                                      ]
-                                    : []
-                            )
-                        )
-                        .catch((error: unknown) => {
-                            if (Core.isErrorWithCode(error, "ENOENT")) {
-                                return [];
-                            }
-                            throw error;
-                        })
-                )
-            );
-            for (const directoryChanges of directoryFileGroups) {
-                for (const directoryChange of directoryChanges) {
-                    changesByPath.set(directoryChange.filePath, directoryChange.kind);
-                }
-            }
-            return [...changesByPath]
-                .map(([filePath, kind]) => ({ filePath, kind }))
-                .toSorted((left, right) => left.filePath.localeCompare(right.filePath));
-        } finally {
-            if (lease !== null) {
-                lease.release();
+                    })
+            )
+        );
+        for (const directoryChanges of directoryFileGroups) {
+            for (const directoryChange of directoryChanges) {
+                changesByPath.set(directoryChange.filePath, directoryChange.kind);
             }
         }
+        return [...changesByPath]
+            .map(([filePath, kind]) => ({ filePath, kind }))
+            .toSorted((left, right) => left.filePath.localeCompare(right.filePath));
     }
 
     function reconcileRestoredManifest(
@@ -1030,7 +1199,9 @@ export function createGmlSemanticIndex(
             }
         })()
             .catch((error: unknown) => {
-                console.error(`Failed to reconcile semantic manifest for ${resolvedRoot}:`, error);
+                console.error(
+                    `Failed to reconcile semantic manifest for ${resolvedRoot}: ${Core.getErrorMessageOrFallback(error)}`
+                );
             })
             .finally(() => {
                 manifestReconciliations.delete(resolvedRoot);
@@ -1104,7 +1275,9 @@ export function createGmlSemanticIndex(
         const queuedWrite = publication
             .then(() => undefined)
             .catch((error: unknown) => {
-                console.error(`Failed to persist semantic index for ${resolvedRoot}:`, error);
+                console.error(
+                    `Failed to persist semantic index for ${resolvedRoot}: ${Core.getErrorMessageOrFallback(error)}`
+                );
                 return undefined;
             });
         pendingCacheWrites.set(resolvedRoot, queuedWrite);
@@ -1336,23 +1509,21 @@ export function createGmlSemanticIndex(
             requiredResources: new Set<string>(),
             tier: cachedState.tier
         });
-        const acquisition = await store.acquireSemanticSnapshot(requirements, new AbortController().signal);
-        if (acquisition.kind !== "lease") {
-            return null;
-        }
-        try {
+        // Route the acquire-check-release ceremony through
+        // `withSemanticLeaseQueries` so the function only talks to its
+        // immediate neighbour (`lease`); the helper handles the `null`
+        // acquisition result and lease release on every code path.
+        return await withSemanticLeaseQueries(store, requirements, new AbortController().signal, (lease) => {
             const state = createRestoredNavigationState(
                 resolvedRoot,
                 store.readSemanticNavigationProjection(cachedState.tier),
                 store.readSemanticManifest(cachedState.tier),
-                acquisition.lease
+                lease
             );
             cachedStates.set(resolvedRoot, state);
             reconcileRestoredManifest(document, resolvedRoot, cachedState.tier);
             return state;
-        } finally {
-            acquisition.lease.release();
-        }
+        });
     }
 
     async function ensureIndex(document: GmlTextDocument): Promise<NavigationState | null> {
@@ -1556,18 +1727,21 @@ export function createGmlSemanticIndex(
         if (previousState === undefined) {
             return nextNames;
         }
-        const acquisition = await getSemanticStore(resolvedRoot).acquireSemanticSnapshot(
-            createNavigationSnapshotRequirements(previousState, document, "workspaceSymbols", false),
-            new AbortController().signal
+        // Funnel the acquire-check-release ceremony through the same
+        // `withPinnedSemanticQueries` helper the rest of the index uses so
+        // this branch only talks to its immediate neighbour (`queries`); the
+        // helper returns `null` when the snapshot cannot be pinned, which is
+        // exactly the fallback we already wanted (`nextNames` unchanged).
+        const filtered = await withPinnedSemanticQueries(
+            getSemanticStore(resolvedRoot),
+            previousState,
+            document,
+            "workspaceSymbols",
+            false,
+            new AbortController().signal,
+            (queries) => nextNames.filter((name) => queries.resolveSymbolId(name) === null)
         );
-        if (acquisition.kind !== "lease") {
-            return nextNames;
-        }
-        try {
-            return nextNames.filter((name) => acquisition.lease.queries.resolveSymbolId(name) === null);
-        } finally {
-            acquisition.lease.release();
-        }
+        return filtered ?? nextNames;
     }
 
     async function refreshIndex(
@@ -2108,20 +2282,27 @@ export function createGmlSemanticIndex(
                         requiredResources: new Set(),
                         tier: "definitions"
                     };
-                    const acquisition = await store.acquireSemanticSnapshot(requirements, new AbortController().signal);
-                    if (acquisition.kind === "lease") {
-                        try {
+                    // Delegate the acquire-check-release ceremony to
+                    // `withSemanticLeaseQueries`; the helper's `null` return
+                    // matches the original "no lease" branch's `currentState`
+                    // left untouched, so no further branching is needed.
+                    const restored = await withSemanticLeaseQueries(
+                        store,
+                        requirements,
+                        new AbortController().signal,
+                        (lease) => {
                             const state = createRestoredNavigationState(
                                 resolvedRoot,
                                 store.readSemanticNavigationProjection("definitions"),
                                 store.readSemanticManifest("definitions"),
-                                acquisition.lease
+                                lease
                             );
                             cachedStates.set(resolvedRoot, state);
-                            currentState = state;
-                        } finally {
-                            acquisition.lease.release();
+                            return state;
                         }
+                    );
+                    if (restored !== null) {
+                        currentState = restored;
                     }
                 }
             } catch (error) {
@@ -2605,31 +2786,24 @@ export function createGmlSemanticIndex(
                 if (info.type === "keyword") {
                     return null;
                 }
-                const hoverInfo = Core.isObjectLike(info.hover) ? (info.hover as Record<string, unknown>) : null;
+                const hoverInfo = Core.getBuiltInHoverInfo(identifierName);
                 const type = typeof info.type === "string" ? info.type : "unknown";
-                const signature =
-                    hoverInfo && typeof hoverInfo.signature === "string" ? hoverInfo.signature : identifierName;
+                const signature = hoverInfo?.signature ?? identifierName;
                 let markdown = `\`${signature}\`\n\nBuilt-in ${type}`;
-                if (hoverInfo && typeof hoverInfo.description === "string" && hoverInfo.description.length > 0) {
+                if (hoverInfo && hoverInfo.description !== null) {
                     markdown += `\n\n${hoverInfo.description}`;
                 }
-                if (hoverInfo && Array.isArray(hoverInfo.parameters) && hoverInfo.parameters.length > 0) {
+                if (hoverInfo && hoverInfo.parameters.length > 0) {
                     const parameters = hoverInfo.parameters.flatMap((parameter) => {
-                        if (!Core.isObjectLike(parameter) || typeof parameter.name !== "string") {
-                            return [];
-                        }
-                        const parameterType = typeof parameter.type === "string" ? ` (\`${parameter.type}\`)` : "";
-                        const description =
-                            typeof parameter.description === "string" && parameter.description.length > 0
-                                ? ` — ${parameter.description}`
-                                : "";
+                        const parameterType = parameter.type === null ? "" : ` (\`${parameter.type}\`)`;
+                        const description = parameter.description === null ? "" : ` — ${parameter.description}`;
                         return [`* \`${parameter.name}\`${parameterType}${description}`];
                     });
                     if (parameters.length > 0) {
                         markdown += `\n\n**Parameters:**\n${parameters.join("\n")}`;
                     }
                 }
-                if (hoverInfo && typeof hoverInfo.returnType === "string" && hoverInfo.returnType.length > 0) {
+                if (hoverInfo && hoverInfo.returnType !== null) {
                     markdown += `\n\n*Returns* \`${hoverInfo.returnType}\``;
                 }
                 if (typeof info.manualUrl === "string" && info.manualUrl.length > 0) {
@@ -2871,7 +3045,7 @@ export function createGmlSemanticIndex(
                         return null;
                     }
                     const symbolId = readSymbolIdFromMatch(match);
-                    const refactorEngine = new Refactor.RefactorEngine({
+                    const refactorEngine = Refactor.createRefactorEngine({
                         semantic: queries.refactor
                     });
                     return await refactorWorkspaceEditToLspWorkspaceEdit(

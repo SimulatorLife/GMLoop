@@ -60,6 +60,7 @@ function isGraphIndexProgress(value: unknown): value is GraphVisualizationGraphI
         typeof record.isRunning === "boolean" &&
         Array.isArray(record.logLines) &&
         record.logLines.every((line) => typeof line === "string") &&
+        (record.operationId === null || typeof record.operationId === "string") &&
         (record.stage === null || record.stage === "gml-parse" || record.stage === "complete") &&
         (record.status === "idle" ||
             record.status === "running" ||
@@ -76,6 +77,14 @@ export class GraphIndexProgressParticipant implements LifecycleParticipant {
     #pollIntervalMs: number;
     #pollTimer: ReturnType<typeof globalThis.setInterval> | null = null;
     #observedRunning = false;
+    // The operation id last acted on (reloaded for, or established as the
+    // pre-existing baseline on the first poll). Comparing ids -- rather than
+    // only watching for a running->success transition -- catches builds that
+    // another process (e.g. the LSP driving a background Tier 2 build for the
+    // same shared semantic store) starts and finishes between two polls, which
+    // this client never observes as "running".
+    #lastHandledOperationId: string | null = null;
+    #hasBaseline = false;
 
     public constructor(options: GraphIndexProgressParticipantOptions) {
         this.#callbacks = options.callbacks;
@@ -97,6 +106,8 @@ export class GraphIndexProgressParticipant implements LifecycleParticipant {
             this.#pollTimer = null;
         }
         this.#observedRunning = false;
+        this.#hasBaseline = false;
+        this.#lastHandledOperationId = null;
     }
 
     async #pollProgress(): Promise<void> {
@@ -123,16 +134,32 @@ export class GraphIndexProgressParticipant implements LifecycleParticipant {
                 current: payload.current,
                 isRunning: payload.isRunning,
                 logLines: payload.logLines,
+                operationId: payload.operationId,
                 stage: payload.stage,
                 status: payload.status,
                 summary: payload.summary,
                 total: payload.total
             });
+
+            // Establish a baseline on the very first poll so an already-finished
+            // build observed on open does not immediately reload the page.
+            if (!this.#hasBaseline) {
+                this.#hasBaseline = true;
+                this.#lastHandledOperationId = payload.operationId;
+            }
+
             if (payload.isRunning) {
                 this.#observedRunning = true;
-            } else if (this.#observedRunning) {
-                this.#observedRunning = false;
-                if (payload.status === "success" && typeof globalThis.location?.reload === "function") {
+                return;
+            }
+
+            const isUnseenCompletedOperation =
+                payload.operationId !== null && payload.operationId !== this.#lastHandledOperationId;
+            const isRunningEdgeCompletion = this.#observedRunning;
+            this.#observedRunning = false;
+            if (payload.status === "success" && (isUnseenCompletedOperation || isRunningEdgeCompletion)) {
+                this.#lastHandledOperationId = payload.operationId;
+                if (typeof globalThis.location?.reload === "function") {
                     globalThis.location.reload();
                 }
             }

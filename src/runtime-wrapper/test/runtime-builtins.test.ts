@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import vm from "node:vm";
 
 import { Core } from "@gmloop/core";
 
@@ -118,6 +119,57 @@ void test("hot-reload builtin resolution recognizes HTML5 texture handles as poi
     assert.equal(fallbackFunctions.is_ptr(textureHandle), true);
     assert.equal(fallbackFunctions.is_ptr(new ArrayBuffer(1)), true);
     assert.equal(fallbackFunctions.is_ptr({}), false);
+});
+
+void test("is_ptr accepts cross-realm ArrayBuffers via the duck-typed capability probe", () => {
+    // The previous implementation used `value instanceof ArrayBuffer`, which
+    // fails for buffers constructed in a different V8 realm because each
+    // realm owns its own `ArrayBuffer` constructor. The runtime now delegates
+    // to `isArrayBufferLike`, which inspects the documented `byteLength` and
+    // `slice` surface and accepts foreign-realm buffers uniformly. This keeps
+    // the `is_ptr` contract aligned with `Core.isArrayBufferLike` so any
+    // substitute exposing the same surface is recognised without sharing a
+    // prototype chain.
+    const realm = vm.createContext({});
+    const foreignBuffer = vm.runInContext("new ArrayBuffer(8)", realm);
+    assert.equal(
+        foreignBuffer instanceof ArrayBuffer,
+        false,
+        "precondition: cross-realm ArrayBuffer must fail realm-local instanceof check"
+    );
+    assert.equal(Core.isArrayBufferLike(foreignBuffer), true);
+
+    const fallbackFunctions = resolveRuntimeBuiltinFunctions({});
+    assert.equal(fallbackFunctions.is_ptr(foreignBuffer), true);
+});
+
+void test("is_ptr accepts duck-typed ArrayBuffer substitutes without sharing a prototype chain", () => {
+    // Plain objects and `Proxy` wrappers that expose `byteLength` + `slice`
+    // are accepted by the `isArrayBufferLike` capability probe even when
+    // `value instanceof ArrayBuffer` is `false`. The runtime therefore
+    // honours the same contract as `Core.isArrayBufferLike`, allowing browser
+    // shims, test doubles, and substitute implementations to participate in
+    // pointer classification without inheriting from `ArrayBuffer`.
+    const duckTypedBuffer = {
+        byteLength: 8,
+        slice(): ArrayBuffer {
+            return new ArrayBuffer(4);
+        }
+    };
+    assert.equal(duckTypedBuffer instanceof ArrayBuffer, false);
+    assert.equal(Core.isArrayBufferLike(duckTypedBuffer), true);
+
+    const fallbackFunctions = resolveRuntimeBuiltinFunctions({});
+    assert.equal(fallbackFunctions.is_ptr(duckTypedBuffer), true);
+    assert.equal(fallbackFunctions.is_ptr(null), false);
+    assert.equal(fallbackFunctions.is_ptr(undefined), false);
+    assert.equal(fallbackFunctions.is_ptr(42), false);
+    assert.equal(fallbackFunctions.is_ptr({ byteLength: 8 }), false, "missing slice must be rejected");
+    assert.equal(
+        fallbackFunctions.is_ptr({ slice: () => new ArrayBuffer(0) }),
+        false,
+        "missing byteLength must be rejected"
+    );
 });
 
 void test("hot-reload builtin resolution provides a no-op event_inherited fallback", () => {

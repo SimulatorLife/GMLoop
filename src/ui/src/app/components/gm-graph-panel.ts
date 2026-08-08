@@ -2,29 +2,29 @@ import { html, svg } from "lit";
 
 import {
     buildGraphEdgeBatches,
+    createGraphLayout,
     createGraphRenderBounds,
     cullGraphLayoutToViewport,
-    type GraphViewportBounds,
-    isGraphViewportCovered,
-    shouldBatchGraphEdges,
-    shouldRenderGraphLabels
-} from "../../graph/graph-render-viewport.js";
-import { projectGraphLayoutForSemanticZoom, resolveGraphSemanticZoomLevel } from "../../graph/graph-semantic-zoom.js";
-import { EDGE_LINE_VISUAL_STYLES, NODE_VISUAL_STYLES } from "../../graph/graph-visualization-style-metadata.js";
-import {
-    createGraphLayout,
+    EDGE_LINE_VISUAL_STYLES,
     filterGraphLayoutForDisplay,
     type GraphLayout,
     type GraphLayoutNode,
     type GraphLegendNodeKind,
     type GraphNodeKindLegendItem,
+    type GraphViewportBounds,
     type GraphVisualizationEdgeType,
     type GraphVisualizationGraphIndexBuildSummary,
     type GraphVisualizationNodeKind,
+    isGraphViewportCovered,
     listGraphEdgeTypes,
     listGraphNodeKindLegendItems,
     listGraphNodeKinds,
-    resolveEffectiveGraphNodeKinds
+    NODE_VISUAL_STYLES,
+    projectGraphLayoutForSemanticZoom,
+    resolveEffectiveGraphNodeKinds,
+    resolveGraphSemanticZoomLevel,
+    shouldBatchGraphEdges,
+    shouldRenderGraphLabels
 } from "../../graph/index.js";
 import {
     type GraphVisualizationUiModel,
@@ -32,9 +32,10 @@ import {
     readGraphVisualizationEdges,
     readGraphVisualizationNodes
 } from "../contracts.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, GRAPH_UI_EVENT_RESET_DEFAULTS } from "../events/events.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { EventBusManager } from "./event-bus-mixin.js";
-import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, GRAPH_UI_EVENT_RESET_DEFAULTS } from "./events.js";
+import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 const NODE_STYLE_BY_KIND = new Map(NODE_VISUAL_STYLES.map((style) => [style.kind, style]));
@@ -112,6 +113,9 @@ function readGraphNodeLocationLabel(node: GraphLayoutNode): string | null {
 
 /**
  * Graph surface with Lit-owned SVG rendering, filtering, search, JSON, and legend state.
+ *
+ * Connection-bound subscriptions are delegated to lifecycle collaborators so rendering
+ * remains the panel's only Lit lifecycle override.
  */
 export class GmGraphPanel extends LightDomLitElement {
     public static properties = {
@@ -164,8 +168,6 @@ export class GmGraphPanel extends LightDomLitElement {
         this.requestUpdate();
     };
 
-    #eventBus = new EventBusManager(this, [{ event: GRAPH_UI_EVENT_RESET_DEFAULTS, handler: this.#onResetDefaults }]);
-
     #onDismissErrorBanner = (): void => {
         this.dispatchEvent(
             new CustomEvent(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, {
@@ -176,16 +178,14 @@ export class GmGraphPanel extends LightDomLitElement {
         );
     };
 
-    public connectedCallback(): void {
-        super.connectedCallback();
-        this.#eventBus.connect();
-        this.addEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
-    }
-
-    public disconnectedCallback(): void {
-        this.removeEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
-        this.#eventBus.disconnect();
-        super.disconnectedCallback();
+    public constructor() {
+        super();
+        new LifecycleParticipantsController(this, [
+            new EventBusManager(this, [
+                { event: GRAPH_UI_EVENT_RESET_DEFAULTS, handler: this.#onResetDefaults },
+                { event: "gm-error-banner-dismiss", handler: this.#onDismissErrorBanner }
+            ])
+        ]);
     }
 
     #getViewportTransform() {

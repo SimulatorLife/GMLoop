@@ -1,5 +1,5 @@
 import { ROLE_DEF, ROLE_REF } from "../symbols/scip.js";
-import { Scope } from "./scope.js";
+import type { Scope } from "./scope.js";
 import type { IdentifierOccurrences, Occurrence, ScipOccurrence, ScopeScipOccurrences, ScopeSummary } from "./types.js";
 
 /**

@@ -25,7 +25,13 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
-import { createRunnerController, type RunnerSpawnFn } from "../src/modules/runtime/runner-controller.js";
+import {
+    createRunnerController,
+    type RunnerProcessLauncher,
+    type RunnerProcessStatusReader,
+    type RunnerProcessStopper,
+    type RunnerSpawnFn
+} from "../src/modules/runtime/runner-controller.js";
 
 // ---------------------------------------------------------------------------
 // Minimal mock child process
@@ -120,6 +126,23 @@ function makeTempProjectRoot(): string {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+void test("runner process roles can be consumed independently", () => {
+    const launcher: RunnerProcessLauncher = {
+        restart: () => ({ pid: 2 }),
+        start: () => ({ pid: 1 })
+    };
+    const statusReader: RunnerProcessStatusReader = {
+        status: () => ({ pid: 1, running: true })
+    };
+    const stopper: RunnerProcessStopper = {
+        stop: () => ({ stopped: true })
+    };
+
+    assert.equal(launcher.start({ args: [], command: "runner", projectRoot: "/project" }).pid, 1);
+    assert.equal(statusReader.status("/project").running, true);
+    assert.equal(stopper.stop("/project").stopped, true);
+});
 
 void test("restart() exit guard: stale process exit does not null out the new process reference", () => {
     const projectRoot = makeTempProjectRoot();

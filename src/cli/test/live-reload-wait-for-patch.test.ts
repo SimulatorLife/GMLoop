@@ -112,13 +112,20 @@ void test("live-reload wait-for-patch succeeds instantly if a new patch exists",
 void test("live-reload wait-for-patch polls and resolves when a new patch is produced", async () => {
     const port = 60_992;
     const projectRoot = await createTempSessionProject(port);
-    const server = startStatusServer(port, [{ patchId: "patch-1" }]);
+    // Inject `patch-2` deterministically on the second poll request rather than
+    // via a wall-clock `setTimeout`. The previous implementation scheduled a
+    // 150 ms timer that raced with subprocess startup, the polling loop, and
+    // event-loop scheduling on CI runners, occasionally producing the new
+    // patch before the first poll could observe the baseline. Driving the
+    // mutation off the request counter guarantees the baseline poll sees
+    // `patch-1` first (so the loop exercises its "no change → wait → retry"
+    // branch) and a follow-up poll sees `patch-2`, regardless of timing.
+    const server = startStatusServer(port, [{ patchId: "patch-1" }], (requestCount) => {
+        if (requestCount === 2) {
+            server.state.patches.push({ patchId: "patch-2" });
+        }
+    });
     await server.listen();
-
-    // After 150ms, append a new patch to status response
-    const timer = setTimeout(() => {
-        server.state.patches.push({ patchId: "patch-2" });
-    }, 150);
 
     try {
         const result = await runCliTestCommand({
@@ -141,7 +148,6 @@ void test("live-reload wait-for-patch polls and resolves when a new patch is pro
         assert.equal(payload.payload.patches.length, 2);
         assert.equal(payload.payload.patches[1]?.patchId, "patch-2");
     } finally {
-        clearTimeout(timer);
         await server.close();
         await rm(projectRoot, { recursive: true, force: true });
     }

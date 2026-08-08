@@ -8,14 +8,14 @@ import type {
     GraphVisualizationAutoGamePipelineStatus
 } from "../../graph/index.js";
 import { type GraphVisualizationUiModel, hasLoadedGraphProject } from "../contracts.js";
-import type { GraphVisualizationUiState } from "../state/types.js";
-import { EventBusManager } from "./event-bus-mixin.js";
 import {
     GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
     GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK,
     GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED,
     type GraphUiInitializeAutoGameAgentPackDetail
-} from "./events.js";
+} from "../events/events.js";
+import type { GraphVisualizationUiState } from "../state/types.js";
+import { EventBusManager } from "./event-bus-mixin.js";
 import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 import type { GmBadgeTone } from "./primitives/gm-badge.js";

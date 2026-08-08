@@ -15,6 +15,16 @@ import {
     isLiteralNumber,
     simplifyZeroDivisionNumerators
 } from "../math/index.js";
+import { applyManualMathCanonicalForms } from "../math/math-manual-canonical-forms-policy.js";
+import {
+    canAstShapeContainMathOptimizationCandidate,
+    containsMathOptimizationSyntax,
+    DEFAULT_MATH_SIGNAL_PATTERNS,
+    evaluateMathOptimizationCandidate,
+    evaluateSkipDecision,
+    MATH_OPTIMIZATION_POLICY_CONSTANTS,
+    resolveMathNumericPolicy
+} from "../math/math-skip-evaluator.js";
 import {
     applySourceTextEdits,
     createCommentTokenRangeIndex,
@@ -26,16 +36,6 @@ import {
     type SourceTextEdit,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
-import { applyManualMathCanonicalForms } from "./optimize-math-manual-canonical-forms-policy.js";
-import {
-    canAstShapeContainMathOptimizationCandidate,
-    containsMathOptimizationSyntax,
-    DEFAULT_MATH_SIGNAL_PATTERNS,
-    evaluateMathOptimizationCandidate,
-    evaluateSkipDecision,
-    MATH_OPTIMIZATION_POLICY_CONSTANTS,
-    resolveMathNumericPolicy
-} from "./optimize-math-skip-evaluator.js";
 
 const {
     getNodeStartIndex,
@@ -484,9 +484,10 @@ function rewriteManualMathCanonicalForms(sourceText: string): string {
     // (which patterns to rewrite into which canonical forms) and the
     // mechanism (iterating the rule list over the buffer) had become
     // inseparable. Both responsibilities are now owned by
-    // `optimize-math-manual-canonical-forms-policy.ts`; this function is a
-    // thin mechanism wrapper that delegates to the policy module so the
-    // rule body stays focused on AST-level concerns.
+    // `math/math-manual-canonical-forms-policy.ts` (the math-domain policy
+    // module); this function is a thin mechanism wrapper that delegates to
+    // the policy module so the rule body stays focused on AST-level
+    // concerns.
     return applyManualMathCanonicalForms(sourceText);
 }
 
@@ -1077,12 +1078,16 @@ function performDeadCodeElimination(bodyStatements: any[], sourceText: string, e
                     case "*=":
                     case "/=": {
                         const val = tryEvaluateNumericExpression(expr.right);
-                        // Strict === 1 catches the common exact case without epsilon overhead.
-                        // Epsilon-tolerant check handles the floating-point edge case where
-                        // rounding error produces a value like 0.9999999999999998 instead of 1.
-                        // Without this tolerance, expressions like `x *= 1 - 1e-16` or `x /= 1 + 1e-15`
-                        // would silently bypass the optimization and produce incorrect output.
-                        if (val === 1 || Core.areNumbersApproximatelyEqual(val, 1)) {
+                        // Use the shared tolerance-aware comparison so that values
+                        // produced by floating-point arithmetic — for example
+                        // `1 - 2.22e-16` evaluating to 0.9999999999999998, or
+                        // `(1 / 3) * 3` evaluating to 0.9999999999999999 — are still
+                        // recognised as "effectively 1" and trigger the no-op rewrite.
+                        // A strict `val === 1` check would silently miss these cases
+                        // and leave the redundant `*=` / `/=` statement in place.
+                        // The shared helper retains an internal `a === b` fast path,
+                        // so the common exact-1 case pays no measurable extra cost.
+                        if (Core.areNumbersApproximatelyEqual(val, 1)) {
                             scheduleNodeRemoval(stmt, sourceText, edits);
                             handled = true;
                         }

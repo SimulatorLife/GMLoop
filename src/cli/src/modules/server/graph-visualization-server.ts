@@ -81,6 +81,8 @@ export type GraphVisualizationServerSemanticIndexProgress = Readonly<{
     current: number | null;
     isRunning: boolean;
     logLines: ReadonlyArray<string>;
+    /** Stable id of the operation this snapshot describes, or null when idle. */
+    operationId: string | null;
     stage: "gml-parse" | "complete" | null;
     status: "idle" | "running" | "success" | "error";
     summary: GraphVisualizationServerSemanticIndexBuildSummary | null;

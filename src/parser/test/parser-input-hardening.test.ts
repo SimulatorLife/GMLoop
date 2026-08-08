@@ -3,7 +3,22 @@ import { describe, it } from "node:test";
 
 import { Parser } from "../src/index.js";
 
-const { GMLParser } = Parser;
+const { GMLParser, extractGmlFunctionNames, tokenizeGmlIdentifierRanges } = Parser;
+
+function isSourceTextValidationError(error: unknown): boolean {
+    return (
+        error instanceof TypeError &&
+        error.name === "SourceTextValidationError" &&
+        typeof error.message === "string" &&
+        error.message.length > 0
+    );
+}
+
+function expectSourceTextValidationError(callable: () => unknown, expectedSubstring: string): void {
+    assert.throws(callable, (error: unknown) => {
+        return isSourceTextValidationError(error) && (error as Error).message.includes(expectedSubstring);
+    });
+}
 
 void describe("GMLParser constructor input validation", () => {
     void describe("valid input", () => {
@@ -153,6 +168,117 @@ function test() {
             const ast = GMLParser.parse(source, { getComments: false });
             assert.ok(ast);
             assert.equal(ast.type, "Program");
+        });
+    });
+});
+
+void describe("extractGmlFunctionNames input validation", () => {
+    void describe("valid input", () => {
+        void it("accepts source containing named functions", () => {
+            const source = ["function first() {}", "function second() {}", ""].join("\n");
+            assert.deepEqual(extractGmlFunctionNames(source), ["first", "second"]);
+        });
+
+        void it("accepts an empty string and returns no names", () => {
+            assert.deepEqual(extractGmlFunctionNames(""), []);
+        });
+    });
+
+    void describe("invalid input types", () => {
+        void it("rejects null input", () => {
+            expectSourceTextValidationError(() => extractGmlFunctionNames(null), "cannot be null");
+        });
+
+        void it("rejects undefined input", () => {
+            expectSourceTextValidationError(() => extractGmlFunctionNames(undefined), "cannot be undefined");
+        });
+
+        void it("rejects numeric input", () => {
+            expectSourceTextValidationError(
+                () => extractGmlFunctionNames(123 as unknown as string),
+                "must be a string"
+            );
+        });
+
+        void it("rejects object input", () => {
+            expectSourceTextValidationError(
+                () => extractGmlFunctionNames({ source: "function f() {}" } as unknown as string),
+                "must be a string"
+            );
+        });
+
+        void it("rejects array input", () => {
+            expectSourceTextValidationError(
+                () => extractGmlFunctionNames(["function f() {}"] as unknown as string),
+                "array"
+            );
+        });
+    });
+
+    void describe("length validation", () => {
+        void it("rejects source exceeding the default limit", () => {
+            const maxLength = 10 * 1024 * 1024;
+            const source = "x".repeat(maxLength + 1);
+            expectSourceTextValidationError(() => extractGmlFunctionNames(source), "exceeds maximum allowed length");
+        });
+    });
+});
+
+void describe("tokenizeGmlIdentifierRanges input validation", () => {
+    void describe("valid input", () => {
+        void it("accepts source containing identifiers", () => {
+            const source = "var value = 1;";
+            const ranges = tokenizeGmlIdentifierRanges(source);
+            assert.deepEqual(
+                ranges.map((range) => range.name),
+                ["value"]
+            );
+        });
+
+        void it("accepts an empty string and returns no ranges", () => {
+            assert.deepEqual(tokenizeGmlIdentifierRanges(""), []);
+        });
+    });
+
+    void describe("invalid input types", () => {
+        void it("rejects null input", () => {
+            expectSourceTextValidationError(() => tokenizeGmlIdentifierRanges(null), "cannot be null");
+        });
+
+        void it("rejects undefined input", () => {
+            expectSourceTextValidationError(() => tokenizeGmlIdentifierRanges(undefined), "cannot be undefined");
+        });
+
+        void it("rejects numeric input", () => {
+            expectSourceTextValidationError(
+                () => tokenizeGmlIdentifierRanges(42 as unknown as string),
+                "must be a string"
+            );
+        });
+
+        void it("rejects object input", () => {
+            expectSourceTextValidationError(
+                () => tokenizeGmlIdentifierRanges({ source: "var x = 1;" } as unknown as string),
+                "must be a string"
+            );
+        });
+
+        void it("rejects array input", () => {
+            expectSourceTextValidationError(
+                () => tokenizeGmlIdentifierRanges(["var x = 1;"] as unknown as string),
+                "array"
+            );
+        });
+    });
+
+    void describe("length validation", () => {
+        void it("rejects source exceeding the default limit", () => {
+            const maxLength = 10 * 1024 * 1024;
+            const source = "x".repeat(maxLength + 1);
+            expectSourceTextValidationError(
+                () => tokenizeGmlIdentifierRanges(source),
+                "exceeds maximum allowed length"
+            );
         });
     });
 });

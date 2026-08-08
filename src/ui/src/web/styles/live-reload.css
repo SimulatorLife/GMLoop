@@ -235,6 +235,28 @@
   border-color: var(--gm-error-border) !important;
 }
 
+.live-reload-error-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--gm-space-sm);
+  margin-bottom: var(--gm-space-xs);
+}
+
+.live-reload-error-header strong {
+  margin-bottom: 0;
+}
+
+.live-reload-error-copy {
+  flex: 0 0 auto;
+}
+
+.live-reload-error-copy .gm-copy-button {
+  min-width: var(--gm-height-xl);
+  padding: 0;
+  justify-content: center;
+}
+
 .live-reload-health-list,
 .live-reload-detail-list,
 .live-reload-session-list {

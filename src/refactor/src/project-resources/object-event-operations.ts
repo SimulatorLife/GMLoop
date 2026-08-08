@@ -2,8 +2,8 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
-import { Parser } from "@gmloop/parser";
 
+import { defaultGmlProgramParser } from "../parser-adapter.js";
 import {
     getManifestResources,
     readProjectMetadataDocument,
@@ -322,7 +322,7 @@ function parseObjectEventSource(sourceText: string, sourcePresent: boolean): Obj
     }
 
     try {
-        Parser.GMLParser.parse(sourceText);
+        defaultGmlProgramParser(sourceText);
         return Object.freeze({
             diagnostic: null,
             ok: true
@@ -532,7 +532,7 @@ async function writeObjectEventSourceIfApplying(
  */
 export async function addObjectEvent(request: AddObjectEventRequest): Promise<ObjectEventMutationResult> {
     const normalizedHandlerSource = normalizeHandlerSource(request.handlerSource);
-    Parser.GMLParser.parse(normalizedHandlerSource);
+    defaultGmlProgramParser(normalizedHandlerSource);
 
     const manifest = await resolveProjectManifestFile(request.projectRoot);
     const manifestDocument = await readProjectMetadataDocument(manifest.absolutePath);
@@ -576,7 +576,7 @@ export async function addObjectEvent(request: AddObjectEventRequest): Promise<Ob
  */
 export async function updateObjectEvent(request: UpdateObjectEventRequest): Promise<ObjectEventMutationResult> {
     const normalizedHandlerSource = normalizeHandlerSource(request.handlerSource);
-    Parser.GMLParser.parse(normalizedHandlerSource);
+    defaultGmlProgramParser(normalizedHandlerSource);
 
     const context = await resolveObjectEventMutationContext(
         request.projectRoot,
