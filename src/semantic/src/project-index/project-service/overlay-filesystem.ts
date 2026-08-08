@@ -48,18 +48,6 @@ function classifyOverlayPath(candidatePath: string, overlayPaths: ReadonlyArray<
     return null;
 }
 
-function createOverlayStats(kind: "directory" | "file"): {
-    isDirectory: () => boolean;
-    isFile: () => boolean;
-    mtimeMs: number;
-} {
-    return Object.freeze({
-        isDirectory: () => kind === "directory",
-        isFile: () => kind === "file",
-        mtimeMs: 0
-    });
-}
-
 /** Create one immutable build-time filesystem view with editor overlays composed over disk. */
 export function createSemanticOverlayFilesystem(
     fsFacade: ProjectIndexFsFacade,
@@ -104,7 +92,13 @@ export function createSemanticOverlayFilesystem(
         stat(filePath: string) {
             const overlayKind = classifyOverlayPath(filePath, overlayPaths);
             if (overlayKind !== null) {
-                return Promise.resolve(createOverlayStats(overlayKind));
+                return Promise.resolve(
+                    Object.freeze({
+                        isDirectory: () => overlayKind === "directory",
+                        isFile: () => overlayKind === "file",
+                        mtimeMs: 0
+                    })
+                );
             }
             return baseStat(filePath);
         }
