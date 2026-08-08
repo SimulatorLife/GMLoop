@@ -1,30 +1,26 @@
 import { Core } from "@gmloop/core";
 import type * as Refactor from "@gmloop/refactor";
 
-import type { GmlTranspilerAdapter, TranspilerAdapterFactory } from "./bridge-types.js";
+import type { GmlTranspilerAdapter } from "./bridge-types.js";
 
 /**
  * Transpiler bridge that adapts a GML transpiler to the refactor engine's transpiler contract.
  *
  * The transpiler adapter is injected through the constructor so callers can supply
- * a mock or alternate adapter for testing.  The default adapter is provided by the
- * bridge-dependencies module and assembled by bridge-factory.ts, keeping concrete
- * workspace imports out of this adapter class.
+ * a stub for testing. The default adapter is assembled by `bridge-factory.ts`,
+ * which is the only module in this cluster that imports the concrete
+ * transpiler workspace.
  */
 export class GmlTranspilerBridge implements Refactor.TranspilerBridge {
     private readonly transpiler: GmlTranspilerAdapter;
 
     /**
-     * @param transpilerAdapterFactory - Optional factory that returns a transpiler adapter.
-     *   When omitted, the caller (typically the bridge-factory) is responsible for
-     *   providing the default adapter through the factory function.
+     * @param transpilerAdapter - Optional transpiler adapter. When omitted, the
+     *   bridge falls back to a no-op adapter so the engine can still be
+     *   constructed in test environments that do not need a working transpiler.
      */
-    constructor(transpilerAdapterFactory?: TranspilerAdapterFactory) {
-        this.transpiler = transpilerAdapterFactory
-            ? transpilerAdapterFactory()
-            : {
-                  transpileScript: () => ({})
-              };
+    constructor(transpilerAdapter?: GmlTranspilerAdapter) {
+        this.transpiler = transpilerAdapter ?? { transpileScript: () => ({}) };
     }
 
     /**
