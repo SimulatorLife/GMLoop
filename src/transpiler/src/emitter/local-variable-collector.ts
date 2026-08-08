@@ -31,6 +31,14 @@ import {
 type AstRecord = Record<string, unknown>;
 
 function walkAstNodes(root: unknown, visitNode: (node: AstRecord) => boolean | void): void {
+    // `walkAstNodes` is the inner traversal shared by every collector in this
+    // file and runs once per function/event/program during transpile. The
+    // child-iteration step previously built a fresh `Object.values` array on
+    // every visited node; iterating keys directly with `for…in` + `Object.hasOwn`
+    // avoids that allocation while visiting the same own enumerable properties
+    // in the same order. The behavior of the visit callback and the descent
+    // rules (including `shouldDescend === false` to stop at function-scope
+    // boundaries) is unchanged.
     const traversalStack: unknown[] = [root];
 
     while (traversalStack.length > 0) {
@@ -52,8 +60,10 @@ function walkAstNodes(root: unknown, visitNode: (node: AstRecord) => boolean | v
             continue;
         }
 
-        for (const value of Object.values(currentNode)) {
-            traversalStack.push(value);
+        for (const key in currentNode) {
+            if (Object.hasOwn(currentNode, key)) {
+                traversalStack.push((currentNode as AstRecord)[key]);
+            }
         }
     }
 }
