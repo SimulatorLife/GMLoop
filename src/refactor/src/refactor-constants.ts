@@ -59,9 +59,12 @@ export const CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES = 2048;
 
 /**
  * Maximum number of edits tracked in the duplicate-detection set for a single
- * workspace edit batch. When the edit count exceeds this threshold, duplicate
- * detection is skipped to avoid O(n²) overhead on very large edit sets.
- * The actual duplicate-check limit is this value squared.
+ * workspace edit batch. Each `addEdit` call checks and inserts into this set
+ * via `Set.has`/`Set.add`, so the check itself is O(1) regardless of set size.
+ * The cap instead bounds unbounded memory growth: once the set exceeds this
+ * threshold, it is dropped and duplicate detection stays permanently disabled
+ * for the remainder of that batch, so later exact-duplicate edits are no
+ * longer deduplicated.
  *
  * @default 1024
  */

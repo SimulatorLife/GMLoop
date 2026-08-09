@@ -63,8 +63,6 @@ const DEFAULT_PRETTIER_OPTIONS: GmlFormatPrettierDefaults = Object.freeze({
     singleQuote: false
 });
 
-const DEFAULT_PRINTER_LAYOUT_DEFAULTS: GmlPrinterLayoutDefaults = DEFAULT_GML_PRINTER_LAYOUT_DEFAULTS;
-
 const DEFAULT_ADAPTERS: GmlFormatComponentContract = Object.freeze({
     gmlParserAdapter,
     print,
@@ -89,7 +87,7 @@ const DEFAULT_SOURCE_FORMATTER: GmlSourceFormatter = (source, options) => pretti
 export const defaultGmlFormatAdapterResolver: GmlFormatAdapterResolver = Object.freeze({
     resolveAdapters: () => DEFAULT_ADAPTERS,
     resolvePrettierDefaults: () => DEFAULT_PRETTIER_OPTIONS,
-    resolvePrinterLayoutDefaults: () => DEFAULT_PRINTER_LAYOUT_DEFAULTS,
+    resolvePrinterLayoutDefaults: () => DEFAULT_GML_PRINTER_LAYOUT_DEFAULTS,
     resolveSourceFormatter: () => DEFAULT_SOURCE_FORMATTER,
     resolveNormalizeFormattedOutput: () => normalizeFormattedOutput
 });

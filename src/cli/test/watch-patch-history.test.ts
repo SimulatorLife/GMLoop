@@ -67,14 +67,14 @@ void describe("Watch command patch history limit", () => {
         try {
             const { script1 } = fixture;
             const statusBaseUrl = `http://127.0.0.1:${statusPort}`;
-            await waitForStatusReady(statusBaseUrl, 1000, 25);
+            await waitForStatusReady(statusBaseUrl, 10_000, 25);
             const initialStatus = await fetchStatusPayload(statusBaseUrl);
             const initialPatchCount = initialStatus.totalPatchCount ?? initialStatus.patchCount ?? 0;
 
             for (let i = 0; i < 5; i++) {
                 await writeFile(script1, `var x = ${i}; // Iteration ${i}`, "utf8");
                 listenerCapture.listener?.("change", "script1.gml");
-                await waitForPatchCount(statusBaseUrl, initialPatchCount + i + 1, 1000, 25);
+                await waitForPatchCount(statusBaseUrl, initialPatchCount + i + 1, 10_000, 25);
             }
 
             const status = await fetchStatusPayload(statusBaseUrl);

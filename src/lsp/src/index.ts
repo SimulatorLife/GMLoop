@@ -16,3 +16,21 @@ export const Lsp = Object.freeze({
     Protocol,
     Server
 });
+
+export type {
+    GmlLanguageServerConnectionContract,
+    LspConnectionClient,
+    LspConnectionDisposable,
+    LspConnectionLanguages,
+    LspConnectionLogger,
+    LspConnectionOptionalCapability,
+    LspConnectionWorkspace,
+    LspPublishDiagnostics,
+    LspSendRequest
+} from "./server/lsp-connection-contract.js";
+export {
+    getLspConnectionLogger,
+    hasLspConnectionShutdownHandler,
+    isGmlLanguageServerConnectionContract,
+    trySendSemanticTokenRefreshRequest
+} from "./server/lsp-connection-contract.js";

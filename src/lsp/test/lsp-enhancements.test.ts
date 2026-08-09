@@ -4,8 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
-import { Lsp } from "@gmloop/lsp";
-import type { CodeAction } from "vscode-languageserver/node.js";
+import { type GmlLanguageServerConnectionContract, Lsp } from "@gmloop/lsp";
+import { type CodeAction, type Diagnostic, DiagnosticSeverity } from "vscode-languageserver/node.js";
 
 const TEST_REQUEST_SIGNAL = new AbortController().signal;
 
@@ -416,15 +416,42 @@ void test("LSP: project cache uses Map-based cache to avoid eviction on multi-ro
 });
 
 void test("LSP: server handlers expose standard ranges and lint code actions", async () => {
-    const mockConnection: any = {
-        onInitialize: (fn: any) => {
-            mockConnection.initialize = fn;
-        },
+    // The mock connection is typed against the GML language server's
+    // shared connection contract, not against the concrete `Connection`
+    // class returned by `vscode-languageserver`. This is the polymorphism
+    // guardrail in action: a slim mock that exposes only the methods the
+    // server actually invokes is structurally valid and types-check
+    // without resorting to `any` or runtime feature probes scattered
+    // across the server module.
+    //
+    // Handlers registered by the server (initialize, foldingRanges,
+    // selectionRanges, codeAction, semanticTokens, documentHighlight)
+    // are stored in a separate `registered` bag so the mock itself stays
+    // structurally clean. The test reads them out via `registered.*`,
+    // which makes the storage contract explicit instead of piggy-backing
+    // on the connection object.
+    type RegisteredHandlers = {
+        codeAction: Parameters<GmlLanguageServerConnectionContract["onCodeAction"]>[0];
+        documentHighlight: Parameters<GmlLanguageServerConnectionContract["onDocumentHighlight"]>[0];
+        foldingRanges: Parameters<GmlLanguageServerConnectionContract["onFoldingRanges"]>[0];
+        initialize: Parameters<GmlLanguageServerConnectionContract["onInitialize"]>[0];
+        selectionRanges: Parameters<GmlLanguageServerConnectionContract["onSelectionRanges"]>[0];
+        semanticTokens: Parameters<GmlLanguageServerConnectionContract["languages"]["semanticTokens"]["on"]>[0];
+    };
+    const registered: Partial<RegisteredHandlers> = {};
+    const capture =
+        <Key extends keyof RegisteredHandlers>(key: Key) =>
+        (handler: RegisteredHandlers[Key]) => {
+            registered[key] = handler;
+        };
+    const mockConnection: GmlLanguageServerConnectionContract = {
+        onInitialize: capture("initialize"),
         onInitialized: () => {},
         onDidOpenTextDocument: () => {},
         onDidChangeTextDocument: () => {},
         onDidSaveTextDocument: () => {},
         onDidCloseTextDocument: () => {},
+        onDidChangeWatchedFiles: () => {},
         onDocumentFormatting: () => {},
         onDefinition: () => {},
         onReferences: () => {},
@@ -434,33 +461,37 @@ void test("LSP: server handlers expose standard ranges and lint code actions", a
         onPrepareRename: () => {},
         onRenameRequest: () => {},
         onCompletion: () => {},
-        onCodeAction: (fn: any) => {
-            mockConnection.codeAction = fn;
-        },
-        onDocumentHighlight: (fn: any) => {
-            mockConnection.documentHighlight = fn;
-        },
-        onFoldingRanges: (fn: any) => {
-            mockConnection.foldingRanges = fn;
-        },
-        onSelectionRanges: (fn: any) => {
-            mockConnection.selectionRanges = fn;
-        },
+        onCodeAction: capture("codeAction"),
+        onDocumentHighlight: capture("documentHighlight"),
+        onFoldingRanges: capture("foldingRanges"),
+        onSelectionRanges: capture("selectionRanges"),
         languages: {
             semanticTokens: {
-                on: (fn: any) => {
-                    mockConnection.semanticTokens = fn;
-                }
+                on: capture("semanticTokens")
             }
         },
         console: { warn: () => {} },
-        client: { register: async () => {} }
+        client: { register: async () => undefined },
+        listen: () => {},
+        sendDiagnostics: () => undefined,
+        sendRequest: () => undefined,
+        workspace: { getWorkspaceFolders: async () => null }
     };
 
     const server = Lsp.createGmlLanguageServer(mockConnection);
     const docStore = server.documents;
 
-    const initializeResult = mockConnection.initialize();
+    const initializeResult = registered.initialize?.({
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+        trace: "off",
+        workspaceFolders: null,
+        initializationOptions: undefined,
+        clientInfo: undefined,
+        locale: undefined
+    });
+    assert.ok(initializeResult);
     assert.deepEqual(initializeResult.capabilities.semanticTokensProvider, {
         legend: Lsp.GML_SEMANTIC_TOKEN_LEGEND,
         full: true
@@ -468,7 +499,7 @@ void test("LSP: server handlers expose standard ranges and lint code actions", a
     assert.deepEqual(initializeResult.capabilities.codeActionProvider, {
         codeActionKinds: ["quickfix", "source.fixAll"]
     });
-    assert.ok(mockConnection.semanticTokens, "Should register semantic token handler");
+    assert.ok(registered.semanticTokens, "Should register semantic token handler");
 
     const uri = Lsp.filePathToUri("/tmp/test-file.gml");
     docStore.open({
@@ -479,28 +510,29 @@ void test("LSP: server handlers expose standard ranges and lint code actions", a
     });
 
     // 1. Test folding ranges
-    assert.ok(mockConnection.foldingRanges, "Should register folding range handler");
-    const folding = mockConnection.foldingRanges({ textDocument: { uri } });
+    assert.ok(registered.foldingRanges, "Should register folding range handler");
+    const folding = (registered.foldingRanges({ textDocument: { uri } }) ?? []) as Array<{
+        endLine: number;
+        startLine: number;
+    }>;
     assert.ok(folding.length >= 2, "Should find at least region and brace folding");
 
-    const regionFold = folding.find((f: any) => f.startLine === 0 && f.endLine === 4);
+    const regionFold = folding.find((f) => f.startLine === 0 && f.endLine === 4);
     assert.ok(regionFold);
 
-    const braceFold = folding.find((f: any) => f.startLine === 1 && f.endLine === 3);
+    const braceFold = folding.find((f) => f.startLine === 1 && f.endLine === 3);
     assert.ok(braceFold);
 
     // 2. Test selection ranges
-    assert.ok(mockConnection.selectionRanges, "Should register selection range handler");
-    const selections = mockConnection.selectionRanges({
-        textDocument: { uri },
-        positions: [{ line: 2, character: 4 }]
-    });
+    assert.ok(registered.selectionRanges, "Should register selection range handler");
+    const selections = (registered.selectionRanges({ textDocument: { uri }, positions: [{ line: 2, character: 4 }] }) ??
+        []) as Array<{ range: { start: { character: number; line: number } } }>;
     assert.equal(selections.length, 1);
     assert.ok(selections[0].range);
     assert.deepEqual(selections[0].range.start, { line: 2, character: 4 });
 
     // 3. Test standard lint code actions.
-    assert.ok(mockConnection.codeAction, "Should register code action handler");
+    assert.ok(registered.codeAction, "Should register code action handler");
     const codeActionPath = path.resolve("tmp/lsp-code-action.gml");
     const codeActionUri = Lsp.filePathToUri(codeActionPath);
     const codeActionSource = 'var total = real("5");\n';
@@ -510,25 +542,29 @@ void test("LSP: server handlers expose standard ranges and lint code actions", a
         version: 1,
         text: codeActionSource
     });
-    const lintDiagnostic = {
+    const lintDiagnostic: Diagnostic = {
         range: {
             start: { line: 0, character: 12 },
             end: { line: 0, character: 21 }
         },
         message: "simplifyRealCalls diagnostic.",
-        severity: 2,
+        severity: DiagnosticSeverity.Error,
         code: "gml/simplify-real-calls",
         source: "gmloop-lint"
     };
 
-    const actions: CodeAction[] = await mockConnection.codeAction({
-        textDocument: { uri: codeActionUri },
-        range: lintDiagnostic.range,
-        context: {
-            diagnostics: [lintDiagnostic],
-            only: ["quickfix"]
-        }
-    });
+    const actions: CodeAction[] =
+        (await registered.codeAction?.(
+            {
+                textDocument: { uri: codeActionUri },
+                range: lintDiagnostic.range,
+                context: {
+                    diagnostics: [lintDiagnostic],
+                    only: ["quickfix"]
+                }
+            },
+            undefined
+        )) ?? [];
 
     assert.equal(actions.length, 1);
     const [localFix] = actions;
@@ -543,14 +579,18 @@ void test("LSP: server handlers expose standard ranges and lint code actions", a
         }
     ]);
 
-    const fixAllActions: CodeAction[] = await mockConnection.codeAction({
-        textDocument: { uri: codeActionUri },
-        range: lintDiagnostic.range,
-        context: {
-            diagnostics: [],
-            only: ["source.fixAll"]
-        }
-    });
+    const fixAllActions: CodeAction[] =
+        (await registered.codeAction?.(
+            {
+                textDocument: { uri: codeActionUri },
+                range: lintDiagnostic.range,
+                context: {
+                    diagnostics: [],
+                    only: ["source.fixAll"]
+                }
+            },
+            undefined
+        )) ?? [];
     assert.equal(fixAllActions.length, 1, "source.fixAll must work without client-supplied diagnostics");
     const [fixAll] = fixAllActions;
     assert.equal(fixAll?.kind, "source.fixAll");
@@ -559,32 +599,36 @@ void test("LSP: server handlers expose standard ranges and lint code actions", a
     assert.deepEqual(Object.keys(fixAllChanges), [codeActionUri]);
     assert.equal(fixAllChanges[codeActionUri]?.[0]?.newText, "var total = 5;\n");
 
-    const forgedDiagnosticActions: CodeAction[] = await mockConnection.codeAction({
-        textDocument: { uri: codeActionUri },
-        range: {
-            start: { line: 0, character: 0 },
-            end: { line: 0, character: 1 }
-        },
-        context: {
-            diagnostics: [
-                {
-                    ...lintDiagnostic,
-                    range: {
-                        start: { line: 0, character: 0 },
-                        end: { line: 0, character: 1 }
-                    },
-                    data: {
-                        fix: {
-                            range: [0, codeActionSource.length],
-                            text: "unsafe_client_supplied_edit();",
-                            uri: Lsp.filePathToUri(path.resolve("tmp/other-file.gml"))
+    const forgedDiagnosticActions: CodeAction[] =
+        (await registered.codeAction?.(
+            {
+                textDocument: { uri: codeActionUri },
+                range: {
+                    start: { line: 0, character: 0 },
+                    end: { line: 0, character: 1 }
+                },
+                context: {
+                    diagnostics: [
+                        {
+                            ...lintDiagnostic,
+                            range: {
+                                start: { line: 0, character: 0 },
+                                end: { line: 0, character: 1 }
+                            },
+                            data: {
+                                fix: {
+                                    range: [0, codeActionSource.length],
+                                    text: "unsafe_client_supplied_edit();",
+                                    uri: Lsp.filePathToUri(path.resolve("tmp/other-file.gml"))
+                                }
+                            }
                         }
-                    }
+                    ],
+                    only: ["quickfix"]
                 }
-            ],
-            only: ["quickfix"]
-        }
-    });
+            },
+            undefined
+        )) ?? [];
     assert.deepEqual(
         forgedDiagnosticActions,
         [],
@@ -593,13 +637,13 @@ void test("LSP: server handlers expose standard ranges and lint code actions", a
 
     const unsafeActionPath = path.resolve("tmp/lsp-unsafe-code-action.gml");
     const unsafeActionUri = Lsp.filePathToUri(unsafeActionPath);
-    const unsafeDiagnostic = {
+    const unsafeDiagnostic: Diagnostic = {
         range: {
             start: { line: 0, character: 0 },
             end: { line: 0, character: 1 }
         },
         message: "noGlobalvar diagnostic.",
-        severity: 2,
+        severity: DiagnosticSeverity.Error,
         code: "gml/no-globalvar",
         source: "gmloop-lint"
     };
@@ -609,22 +653,30 @@ void test("LSP: server handlers expose standard ranges and lint code actions", a
         version: 1,
         text: "globalvar score;\n"
     });
-    const unsafeQuickFixes: CodeAction[] = await mockConnection.codeAction({
-        textDocument: { uri: unsafeActionUri },
-        range: unsafeDiagnostic.range,
-        context: {
-            diagnostics: [unsafeDiagnostic],
-            only: ["quickfix"]
-        }
-    });
-    const unsafeFixAllActions: CodeAction[] = await mockConnection.codeAction({
-        textDocument: { uri: unsafeActionUri },
-        range: unsafeDiagnostic.range,
-        context: {
-            diagnostics: [unsafeDiagnostic],
-            only: ["source.fixAll"]
-        }
-    });
+    const unsafeQuickFixes: CodeAction[] =
+        (await registered.codeAction?.(
+            {
+                textDocument: { uri: unsafeActionUri },
+                range: unsafeDiagnostic.range,
+                context: {
+                    diagnostics: [unsafeDiagnostic],
+                    only: ["quickfix"]
+                }
+            },
+            undefined
+        )) ?? [];
+    const unsafeFixAllActions: CodeAction[] =
+        (await registered.codeAction?.(
+            {
+                textDocument: { uri: unsafeActionUri },
+                range: unsafeDiagnostic.range,
+                context: {
+                    diagnostics: [unsafeDiagnostic],
+                    only: ["source.fixAll"]
+                }
+            },
+            undefined
+        )) ?? [];
     assert.deepEqual(unsafeQuickFixes, [], "Report-only lint diagnostics must not expose a quick fix");
     assert.deepEqual(unsafeFixAllActions, [], "Report-only project-aware migrations must not enter source.fixAll");
 });

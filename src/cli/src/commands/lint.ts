@@ -21,8 +21,7 @@ import {
 } from "../cli-core/shared-command-options.js";
 import {
     calculateElapsedNanoseconds,
-    formatElapsedNanosecondsAsMilliseconds,
-    readMonotonicNanoseconds
+    formatElapsedNanosecondsAsMilliseconds
 } from "../shared/timing/verbose-timing.js";
 import { formatPathForDisplay } from "../workflow/display-path.js";
 import {
@@ -678,7 +677,7 @@ function lintTargetsWithRuntimeRecovery(parameters: {
         await orderedTargets.reduce<Promise<void>>(async (previousTargetPromise, lintTarget) => {
             await previousTargetPromise;
 
-            const targetStartedAtNanoseconds = readMonotonicNanoseconds();
+            const targetStartedAtNanoseconds = process.hrtime.bigint();
             const executorForTarget = parameters.createExecutorForTarget
                 ? parameters.createExecutorForTarget()
                 : parameters.eslint;
@@ -693,7 +692,7 @@ function lintTargetsWithRuntimeRecovery(parameters: {
                 targetResults,
                 elapsedNanoseconds: calculateElapsedNanoseconds({
                     startedAtNanoseconds: targetStartedAtNanoseconds,
-                    completedAtNanoseconds: readMonotonicNanoseconds()
+                    completedAtNanoseconds: process.hrtime.bigint()
                 })
             });
 
@@ -1460,7 +1459,7 @@ export async function runLintCommand(command: CommanderCommandLike): Promise<voi
         return;
     }
 
-    const lintRunStartedAtNanoseconds = readMonotonicNanoseconds();
+    const lintRunStartedAtNanoseconds = process.hrtime.bigint();
     let lintedFileCount = 0;
     let lastLogTime = 0;
 
@@ -1603,7 +1602,7 @@ export async function runLintCommand(command: CommanderCommandLike): Promise<voi
         if (options.verbose) {
             const elapsedNanoseconds = calculateElapsedNanoseconds({
                 startedAtNanoseconds: lintRunStartedAtNanoseconds,
-                completedAtNanoseconds: readMonotonicNanoseconds()
+                completedAtNanoseconds: process.hrtime.bigint()
             });
             emitVerboseLintRunTimingSummary({
                 lintedFileCount,

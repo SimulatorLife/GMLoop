@@ -70,8 +70,7 @@ import {
 import { createThrottledCounterLogger } from "../shared/throttled-counter-logger.js";
 import {
     calculateElapsedNanoseconds,
-    formatElapsedNanosecondsAsMilliseconds,
-    readMonotonicNanoseconds
+    formatElapsedNanosecondsAsMilliseconds
 } from "../shared/timing/verbose-timing.js";
 import { formatPathForDisplay } from "../workflow/display-path.js";
 import { resolveExistingGmloopConfigPath, resolveWorkflowTargetPath } from "../workflow/project-root.js";
@@ -1493,7 +1492,7 @@ async function formatSingleFile(filePath, activeIgnorePaths = []) {
     if (abortRequested) {
         return;
     }
-    const formatFileStartedAtNanoseconds = readMonotonicNanoseconds();
+    const formatFileStartedAtNanoseconds = process.hrtime.bigint();
     try {
         const formattingOptions = await resolveFormattingOptions(filePath);
         const prettier = await resolvePrettier();
@@ -1536,7 +1535,7 @@ async function formatSingleFile(filePath, activeIgnorePaths = []) {
                 phase: "checked",
                 elapsedNanoseconds: calculateElapsedNanoseconds({
                     startedAtNanoseconds: formatFileStartedAtNanoseconds,
-                    completedAtNanoseconds: readMonotonicNanoseconds()
+                    completedAtNanoseconds: process.hrtime.bigint()
                 })
             });
             return;
@@ -1549,7 +1548,7 @@ async function formatSingleFile(filePath, activeIgnorePaths = []) {
                 phase: "would-format",
                 elapsedNanoseconds: calculateElapsedNanoseconds({
                     startedAtNanoseconds: formatFileStartedAtNanoseconds,
-                    completedAtNanoseconds: readMonotonicNanoseconds()
+                    completedAtNanoseconds: process.hrtime.bigint()
                 })
             });
             if (!verboseTimingEnabled) {
@@ -1566,7 +1565,7 @@ async function formatSingleFile(filePath, activeIgnorePaths = []) {
             phase: "formatted",
             elapsedNanoseconds: calculateElapsedNanoseconds({
                 startedAtNanoseconds: formatFileStartedAtNanoseconds,
-                completedAtNanoseconds: readMonotonicNanoseconds()
+                completedAtNanoseconds: process.hrtime.bigint()
             })
         });
         if (!verboseTimingEnabled) {
@@ -1611,7 +1610,7 @@ async function prepareFormattingRun({
     await resetFormattingSession(normalizedParseErrorAction);
     configureDryRunMode(dryRunMode);
     verboseTimingEnabled = verbose;
-    formattingRunStartedAtNanoseconds = readMonotonicNanoseconds();
+    formattingRunStartedAtNanoseconds = process.hrtime.bigint();
 }
 
 /**
@@ -1728,7 +1727,7 @@ function finalizeFormattingRun({ targetPath, targetIsDirectory, targetPathProvid
     if (verboseTimingEnabled) {
         const elapsedNanoseconds = calculateElapsedNanoseconds({
             startedAtNanoseconds: formattingRunStartedAtNanoseconds,
-            completedAtNanoseconds: readMonotonicNanoseconds()
+            completedAtNanoseconds: process.hrtime.bigint()
         });
         const label = timedFormattableFileCount === 1 ? "file" : "files";
         console.log(
