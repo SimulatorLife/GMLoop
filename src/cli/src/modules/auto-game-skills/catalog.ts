@@ -65,13 +65,9 @@ function parseAutoGameConfiguration(projectConfig: Readonly<Record<string, unkno
     }
     return {
         disabledSkills: Object.freeze(
-            [
-                ...new Set(
-                    disabledSkills
-                        .filter((name): name is string => Core.isNonEmptyString(name))
-                        .map((name) => name.trim())
-                )
-            ].sort()
+            Core.uniqueArray(
+                disabledSkills.filter((name): name is string => Core.isNonEmptyString(name)).map((name) => name.trim())
+            ).toSorted()
         )
     };
 }

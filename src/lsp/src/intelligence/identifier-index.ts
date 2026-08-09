@@ -1077,7 +1077,7 @@ export function createGmlSemanticIndex(
                     }
                     throw error;
                 });
-            const previousResourcePaths = [...new Set(resources.map((resource) => resource.resourcePath))];
+            const previousResourcePaths = Core.uniqueArray(resources.map((resource) => resource.resourcePath));
             const currentPathSet = new Set(currentResourcePaths);
             const previousPathSet = new Set(previousResourcePaths);
             if (queries === null) {
@@ -1719,11 +1719,9 @@ export function createGmlSemanticIndex(
         previousState: NavigationState | undefined,
         nextSnapshot: SemanticSnapshot
     ): Promise<ReadonlyArray<string>> {
-        const nextNames = [
-            ...new Set(
-                nextSnapshot.symbols.filter((symbol) => symbol.definingFilePath !== null).map((symbol) => symbol.name)
-            )
-        ];
+        const nextNames = Core.uniqueArray(
+            nextSnapshot.symbols.filter((symbol) => symbol.definingFilePath !== null).map((symbol) => symbol.name)
+        );
         if (previousState === undefined) {
             return nextNames;
         }
@@ -2888,13 +2886,13 @@ export function createGmlSemanticIndex(
                     false,
                     signal,
                     (queries) => {
-                        const identifierNames = Object.freeze([
-                            ...new Set(
+                        const identifierNames = Object.freeze(
+                            Core.uniqueArray(
                                 Parser.tokenizeGmlIdentifierRanges(document.sourceText).map(
                                     (identifier) => identifier.name
                                 )
                             )
-                        ]);
+                        );
                         return Semantic.collectGmlSemanticHighlights({
                             sourceText: document.sourceText,
                             builtIns,

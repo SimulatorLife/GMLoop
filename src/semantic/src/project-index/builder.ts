@@ -3736,10 +3736,9 @@ export async function resolveSemanticImpactFilePaths(
     const resolvedRoot = path.resolve(projectRoot);
     const store = openSemanticIndexStore(resolvedRoot);
     try {
-        const changedAbsolutePaths = [
-            ...new Set(changedFilePaths.map((filePath) => path.resolve(resolvedRoot, filePath)))
-        ];
-        changedAbsolutePaths.sort((left, right) => left.localeCompare(right));
+        const changedAbsolutePaths = Core.uniqueArray(
+            changedFilePaths.map((filePath) => path.resolve(resolvedRoot, filePath))
+        ).toSorted((left, right) => left.localeCompare(right));
         const impactedPaths = new Set(changedAbsolutePaths);
         for (const changedPath of changedAbsolutePaths) {
             for (const dependentPath of store.findImmediateDownstreamFiles(changedPath)) {

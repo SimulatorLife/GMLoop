@@ -1,5 +1,7 @@
 import path from "node:path";
 
+import { Core } from "@gmloop/core";
+
 import type { GraphDatabase } from "../graph-index/sqlite-adapter.js";
 import { getGmlSymbolKindSpecificity, normalizeGmlSemanticSymbolKind } from "../symbols/taxonomy.js";
 import { listSemanticRenameSafetyGapsForFacts } from "./rename-safety.js";
@@ -545,7 +547,7 @@ export function createSemanticSqliteSnapshotQueries(
         );
 
     const findResourcesByNames = (names: ReadonlyArray<string>): ReadonlyArray<SemanticResourceQueryResult> => {
-        const uniqueNames = [...new Set(names)].toSorted(compareSemanticQueryText);
+        const uniqueNames = Core.uniqueArray(names).toSorted(compareSemanticQueryText);
         if (uniqueNames.length === 0) {
             return Object.freeze([]);
         }

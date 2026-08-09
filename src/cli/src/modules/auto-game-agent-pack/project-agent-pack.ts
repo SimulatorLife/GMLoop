@@ -4,6 +4,8 @@ import { access, lstat, mkdir, readdir, readFile, rm, stat, writeFile } from "no
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { Core } from "@gmloop/core";
+
 import {
     type AgentCliCommandRunner,
     type AgentConfigTargetSelection,
@@ -837,7 +839,7 @@ export async function initializeAgentPack(
     const unchanged = pathsForDisposition("unchanged");
     const updated = pathsForDisposition("updated");
 
-    const sortedConflicts = [...new Set(conflicts)].sort();
+    const sortedConflicts = Core.uniqueArray(conflicts).toSorted();
     const receipt: AgentPackReceipt = Object.freeze({
         conflicts: Object.freeze(sortedConflicts),
         files: Object.freeze(

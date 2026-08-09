@@ -5,6 +5,7 @@ import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 
+import { Core } from "@gmloop/core";
 import { Command } from "commander";
 
 const MANIFEST_SCHEMA_VERSION = 1;
@@ -186,7 +187,9 @@ async function discoverCanonicalTests(): Promise<Array<string>> {
         ...(await collectFiles(path.join(process.cwd(), "src"))),
         ...(await collectFiles(path.join(process.cwd(), "test", "dist")))
     ];
-    return [...new Set(discovered.filter(isCanonicalTestPath))].sort((left, right) => left.localeCompare(right));
+    return Core.uniqueArray(discovered.filter(isCanonicalTestPath)).toSorted((left, right) =>
+        left.localeCompare(right)
+    );
 }
 
 function parseTimingHistory(value: unknown): Map<string, number> {
