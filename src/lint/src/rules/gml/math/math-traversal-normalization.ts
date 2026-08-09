@@ -55,17 +55,12 @@ import {
     collectAdditionTerms,
     collectMultiplicativeChain,
     collectReciprocalRatioTerms,
-    combineLengthdirScalarAssignments,
-    unwrapEnclosingParentheses
+    combineLengthdirScalarAssignments
 } from "./math-scalar-condensing.js";
 import {
     attemptConvertDegreesToRadians as simplifyDegreesToRadians,
     attemptSimplifyTrigonometricCall
 } from "./math-trig-conversions.js";
-
-// Re-export the entire public API of math-ast-mutation.ts so callers importing
-// from this module get all mutation helpers transparently.
-export * from "./math-ast-mutation.js";
 
 const {
     ASSIGNMENT_EXPRESSION,
@@ -339,7 +334,7 @@ function removeMultiplicativeIdentityOperand(node, key, otherKey, context) {
 
     node.__fromMultiplicativeIdentity = true;
     unwrapIdentityReplacementResult(node);
-    unwrapEnclosingParentheses(node, context);
+    AST.unwrapEnclosingParentheses(node, context);
 
     return true;
 }
@@ -820,7 +815,7 @@ function attemptConvertSquare(node, context) {
         }
 
         mutateToCallExpression(node, "sqr", [Core.cloneAstNode(left)], node);
-        unwrapEnclosingParentheses(node, context);
+        AST.unwrapEnclosingParentheses(node, context);
         return true;
     }
 
@@ -888,7 +883,7 @@ function attemptConvertRepeatedPower(node, context) {
 
     const exponentLiteral = createNumericLiteral(factors.length, node);
     mutateToCallExpression(node, "power", [Core.cloneAstNode(base), exponentLiteral], node);
-    unwrapEnclosingParentheses(node, context);
+    AST.unwrapEnclosingParentheses(node, context);
     return true;
 }
 
@@ -948,7 +943,7 @@ function attemptConvertMean(node, context) {
     }
 
     mutateToCallExpression(node, "mean", [Core.cloneAstNode(leftTerm), Core.cloneAstNode(rightTerm)], node);
-    unwrapEnclosingParentheses(node, context);
+    AST.unwrapEnclosingParentheses(node, context);
     return true;
 }
 
@@ -976,7 +971,7 @@ function attemptConvertLog2(node, context) {
     }
 
     mutateToCallExpression(node, "log2", [Core.cloneAstNode(numeratorArg)], node);
-    unwrapEnclosingParentheses(node, context);
+    AST.unwrapEnclosingParentheses(node, context);
     return true;
 }
 
@@ -1020,7 +1015,7 @@ function attemptConvertDotProducts(node, context) {
     const functionName = terms.length === 2 ? "dot_product" : "dot_product_3d";
 
     mutateToCallExpression(node, functionName, [...leftVector, ...rightVector], node);
-    unwrapEnclosingParentheses(node, context);
+    AST.unwrapEnclosingParentheses(node, context);
     return true;
 }
 
@@ -1078,7 +1073,7 @@ function attemptConvertPointDistanceCall(node, context) {
     const functionName = match.length === 2 ? "point_distance" : "point_distance_3d";
 
     mutateToCallExpression(node, functionName, args, node);
-    unwrapEnclosingParentheses(node, context);
+    AST.unwrapEnclosingParentheses(node, context);
     return true;
 }
 
@@ -1103,7 +1098,7 @@ function attemptConvertPowerToSqrt(node, context) {
     }
 
     mutateToCallExpression(node, "sqrt", [Core.cloneAstNode(args[0])], node);
-    unwrapEnclosingParentheses(node, context);
+    AST.unwrapEnclosingParentheses(node, context);
     return true;
 }
 
@@ -1130,7 +1125,7 @@ function attemptConvertPowerToExp(node, context) {
     }
 
     mutateToCallExpression(node, "exp", [Core.cloneAstNode(exponent)], node);
-    unwrapEnclosingParentheses(node, context);
+    AST.unwrapEnclosingParentheses(node, context);
     return true;
 }
 
@@ -1170,7 +1165,7 @@ function attemptConvertPointDirection(node, context) {
         ],
         node
     );
-    unwrapEnclosingParentheses(node, context);
+    AST.unwrapEnclosingParentheses(node, context);
     return true;
 }
 
