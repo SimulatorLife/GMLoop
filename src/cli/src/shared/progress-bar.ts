@@ -35,8 +35,9 @@
 import { Core } from "@gmloop/core";
 
 import { createIntegerEnvConfiguredValue } from "./env-configured-integer.js";
+import { createNumericTypeErrorFormatter, resolveIntegerOption } from "./numeric-options.js";
 
-const { coercePositiveInteger, createNumericTypeErrorFormatter, describeValueForError, resolveIntegerOption } = Core;
+const { coercePositiveInteger, describeValueForError } = Core;
 
 const DEFAULT_PROGRESS_BAR_WIDTH = 24;
 const PROGRESS_BAR_WIDTH_ENV_VAR = "GML_PROGRESS_BAR_WIDTH";

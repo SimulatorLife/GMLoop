@@ -18,6 +18,7 @@
 import { Core } from "@gmloop/core";
 
 import { createIntegerEnvConfiguredValue } from "../../shared/env-configured-integer.js";
+import { createNumericTypeErrorFormatter } from "../../shared/numeric-options.js";
 import {
     DEFAULT_MAX_FORMATTING_CACHE_ENTRIES,
     DEFAULT_MAX_IN_MEMORY_SNAPSHOTS,
@@ -25,7 +26,7 @@ import {
     MAX_IN_MEMORY_SNAPSHOTS_ENV_VAR
 } from "./format-memory-constants.js";
 
-const { callWithFallback, coerceNonNegativeInteger, createNumericTypeErrorFormatter, describeValueForError } = Core;
+const { callWithFallback, coerceNonNegativeInteger, describeValueForError } = Core;
 
 interface FormatMemoryRuntimeOptionConfig {
     defaultValue: number;

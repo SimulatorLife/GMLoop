@@ -1,6 +1,8 @@
 import { Core } from "@gmloop/core";
 
-const { createEnvConfiguredValue, resolveIntegerOption } = Core;
+import { resolveIntegerOption } from "./numeric-options.js";
+
+const { createEnvConfiguredValue } = Core;
 
 interface IntegerEnvConfiguredValueOptions {
     defaultValue: number;

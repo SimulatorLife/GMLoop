@@ -228,10 +228,12 @@ void describe("createMinimumValueValidator", () => {
 });
 
 void describe("integer coercion helpers: import from Core, not command-parsing", () => {
-    // coercePositiveInteger, coerceNonNegativeInteger, and resolveIntegerOption
-    // were previously re-exported from command-parsing.ts under the same names,
-    // adding indirection with no extra semantics (the "defaultNow" anti-pattern).
+    // coercePositiveInteger and coerceNonNegativeInteger were previously
+    // re-exported from command-parsing.ts under the same names, adding
+    // indirection with no extra semantics (the "defaultNow" anti-pattern).
     // They were removed so callers always import from @gmloop/core directly.
+    // (resolveIntegerOption moved to src/cli/src/shared/numeric-options.ts —
+    // see shared-numeric-options.test.ts — since the CLI is its only consumer.)
 
     void it("coercePositiveInteger accepts valid positive integers", () => {
         assert.strictEqual(Core.coercePositiveInteger(5, { createErrorMessage: () => "too small" }), 5);
@@ -253,13 +255,5 @@ void describe("integer coercion helpers: import from Core, not command-parsing",
             () => Core.coerceNonNegativeInteger(-1, { createErrorMessage: () => "must be >= 0" }),
             /must be >= 0/
         );
-    });
-
-    void it("resolveIntegerOption returns the coerced value", () => {
-        assert.strictEqual(Core.resolveIntegerOption(42, { coerce: (v) => v }), 42);
-    });
-
-    void it("resolveIntegerOption returns defaultValue for undefined input", () => {
-        assert.strictEqual(Core.resolveIntegerOption(undefined, { defaultValue: 7, coerce: (v) => v }), 7);
     });
 });

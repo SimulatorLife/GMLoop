@@ -3,16 +3,9 @@ import { Buffer } from "node:buffer";
 import { Core } from "@gmloop/core";
 
 import { createIntegerEnvConfiguredValue } from "./env-configured-integer.js";
+import { createNumericTypeErrorFormatter, resolveIntegerOption } from "./numeric-options.js";
 
-const {
-    callWithFallback,
-    clamp,
-    coercePositiveInteger,
-    createNumericTypeErrorFormatter,
-    describeValueForError,
-    isFiniteNumber,
-    resolveIntegerOption
-} = Core;
+const { callWithFallback, clamp, coercePositiveInteger, describeValueForError, isFiniteNumber } = Core;
 
 const BYTE_UNITS = Object.freeze(["B", "KB", "MB", "GB", "TB", "PB"]);
 const DEFAULT_BYTE_FORMAT_RADIX = 1024;

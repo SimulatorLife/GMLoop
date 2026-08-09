@@ -1,14 +1,9 @@
 import { Core } from "@gmloop/core";
 
 import { createIntegerEnvConfiguredValue } from "../shared/env-configured-integer.js";
+import { createNumericTypeErrorFormatter, resolveIntegerOption } from "../shared/numeric-options.js";
 
-const {
-    callWithFallback,
-    coerceNonNegativeInteger,
-    createNumericTypeErrorFormatter,
-    describeValueForError,
-    resolveIntegerOption
-} = Core;
+const { callWithFallback, coerceNonNegativeInteger, describeValueForError } = Core;
 
 export const DEFAULT_VM_EVAL_TIMEOUT_MS = 5000;
 export const VM_EVAL_TIMEOUT_ENV_VAR = "GML_VM_EVAL_TIMEOUT_MS";

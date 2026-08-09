@@ -5,8 +5,7 @@ import {
     coerceNonNegativeInteger,
     coercePositiveInteger,
     coercePositiveIntegerOption,
-    normalizeNumericOption,
-    resolveIntegerOption
+    normalizeNumericOption
 } from "../src/utils/numeric-options.js";
 
 void test("coercePositiveInteger enforces a minimum of 1", () => {
@@ -45,43 +44,6 @@ void test("coercePositiveIntegerOption normalizes numeric strings", () => {
     assert.strictEqual(coercePositiveIntegerOption(" 9 ", 1), 9);
     assert.strictEqual(coercePositiveIntegerOption("0", 7, { zeroReplacement: 0 }), 0);
     assert.strictEqual(coercePositiveIntegerOption("", 6), 6);
-});
-
-void test("resolveIntegerOption normalizes string inputs", () => {
-    const result = resolveIntegerOption(" 42 ", {
-        defaultValue: 0,
-        coerce(value) {
-            return value + 1;
-        }
-    });
-    assert.strictEqual(result, 43);
-});
-
-void test("resolveIntegerOption returns default for blank strings", () => {
-    const result = resolveIntegerOption("   ", {
-        defaultValue: 9,
-        coerce(value) {
-            return value;
-        }
-    });
-    assert.strictEqual(result, 9);
-});
-
-void test("resolveIntegerOption throws for invalid types", () => {
-    assert.throws(
-        () =>
-            resolveIntegerOption(
-                {},
-                {
-                    defaultValue: 0,
-                    coerce(value) {
-                        return value;
-                    },
-                    typeErrorMessage: (type) => `bad type: ${type}`
-                }
-            ),
-        new TypeError("bad type: object")
-    );
 });
 
 void test("normalizeNumericOption returns undefined for nullish inputs", () => {

@@ -1,6 +1,8 @@
 import { Core } from "@gmloop/core";
 
-const { coerceNonNegativeInteger, describeValueForError, resolveIntegerOption } = Core;
+import { resolveIntegerOption } from "../shared/numeric-options.js";
+
+const { coerceNonNegativeInteger, describeValueForError } = Core;
 
 interface SampleLimitOptionParams {
     defaultValue?: number;
