@@ -7,7 +7,12 @@ import { ConflictSeverity } from "./conflict-severity.js";
 import { defaultIdentifierCaseFsFacade, peekIdentifierCaseDryRunContext } from "./identifier-case-helpers.js";
 import { formatIdentifierCase } from "./identifier-case-utils.js";
 import { setIdentifierCaseOption } from "./option-store.js";
-import { IdentifierCaseStyle, normalizeIdentifierCaseAssetStyle, normalizeIdentifierCaseOptions } from "./options.js";
+import {
+    IdentifierCaseStyle,
+    type IdentifierCaseStyleValue,
+    normalizeIdentifierCaseAssetStyle,
+    normalizeIdentifierCaseOptions
+} from "./options.js";
 import { buildRenameKey } from "./plan-state.js";
 import {
     buildPatternMatchers,
@@ -47,8 +52,6 @@ type IdentifierCaseEntry = {
     isBuiltIn?: boolean;
     start?: number | null;
 };
-
-type IdentifierCaseStyleValue = (typeof IdentifierCaseStyle)[keyof typeof IdentifierCaseStyle];
 
 // Diagnostic counter used during triage to tag generated rename maps so they
 // can be correlated across the prepare->capture->attach->apply lifecycle in
