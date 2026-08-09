@@ -549,10 +549,18 @@ function printPropertyNode(node, path, options, print) {
 
 function printArrayExpressionNode(node, path, options, print) {
     const allowTrailingComma = shouldAllowTrailingComma(options);
+    // Match the same bracketSpacing-aware padding that `printStructExpressionNode`
+    // applies to struct literals. Without this, array literals would always
+    // render without inner spaces regardless of `options.bracketSpacing`, even
+    // though the parallel struct path correctly respects the option. The flow
+    // is intentionally identical to the struct case so callers and tests can
+    // treat both literal kinds uniformly.
+    const padding = options.bracketSpacing ? " " : "";
     return concat(
         printCommaSeparatedList(path, print, "elements", "[", "]", options, {
             allowTrailingDelimiter: allowTrailingComma,
-            forceBreak: allowTrailingComma && node.hasTrailingComma
+            forceBreak: allowTrailingComma && node.hasTrailingComma,
+            padding
         })
     );
 }
