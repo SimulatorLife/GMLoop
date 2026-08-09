@@ -27,7 +27,7 @@ import {
     createVerboseOption,
     createWriteOption
 } from "../cli-core/shared-command-options.js";
-import { importFormatModule, resolveFormatEntryPoint as resolveCliFormatEntryPoint } from "../format-runtime/index.js";
+import { resolveFormatEntryPoint as resolveCliFormatEntryPoint, resolveFormatModule } from "../format-runtime/index.js";
 import { tryAddSample } from "../modules/formatting/bounded-sample-collector.js";
 import {
     PERIODIC_CLEANUP_CACHE_RETAINED_ENTRIES,
@@ -303,15 +303,17 @@ function resolvePrettier() {
 
 function resolveFormatOutputNormalizer(): Promise<null | ((formatted: string, source: string) => string)> {
     if (formatOutputNormalizerPromise === null) {
-        formatOutputNormalizerPromise = importFormatModule()
-            .then((moduleValue) => {
+        formatOutputNormalizerPromise = resolveFormatModule()
+            .then((formatModule) => {
                 // `normalizeFormattedOutput` is part of the `Format` namespace per the
                 // workspace-root single-namespace contract (target-state.md §2.1).
-                const formatNamespace = (moduleValue as { Format?: { normalizeFormattedOutput?: unknown } }).Format;
-                const normalizer = formatNamespace?.normalizeFormattedOutput;
-                return typeof normalizer === "function"
-                    ? (normalizer as (formatted: string, source: string) => string)
-                    : null;
+                // The CLI depends on the typed `FormatModuleContract` rather than
+                // reaching into the dynamic-import shape directly.
+                const normalizer = formatModule.Format?.normalizeFormattedOutput;
+                if (typeof normalizer !== "function") {
+                    return null;
+                }
+                return (formatted: string, _source: string) => normalizer(formatted);
             })
             .catch(() => null);
     }
@@ -1475,17 +1477,14 @@ async function resolveProjectFormatOverrides(
     const projectRoot = targetStats.isDirectory() ? path.resolve(targetPath) : path.dirname(path.resolve(targetPath));
     const resolvedConfigPath = await resolveExistingGmloopConfigPath(projectRoot, normalizedConfigPath);
     const projectConfig = await loadGmloopProjectConfig(resolvedConfigPath);
-    const formatModule = await importFormatModule();
-    const formatNamespace = (formatModule as { Format?: { extractProjectFormatOptions?: unknown } }).Format;
-    const extractProjectFormatOptions = formatNamespace?.extractProjectFormatOptions;
+    const formatModule = await resolveFormatModule();
+    const extractProjectFormatOptions = formatModule.Format?.extractProjectFormatOptions;
     if (typeof extractProjectFormatOptions !== "function") {
         return {};
     }
 
     const extractedOptions = extractProjectFormatOptions(projectConfig);
-    return typeof extractedOptions === "object" && extractedOptions !== null
-        ? (extractedOptions as Record<string, unknown>)
-        : {};
+    return typeof extractedOptions === "object" && extractedOptions !== null ? extractedOptions : {};
 }
 
 async function formatSingleFile(filePath, activeIgnorePaths = []) {
