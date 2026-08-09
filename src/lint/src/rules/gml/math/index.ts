@@ -17,9 +17,7 @@
  * versioned entry point. Implementation files keep their current names
  * internally; the barrel just gives the outside world one address.
  *
- * A few implementation files (`math-traversal-normalization.ts` and
- * `math-scalar-condensing.ts`) re-export everything from `math-ast-mutation.ts`,
- * and `math-scalar-condensing.ts` also defines its own variants of
+ * `math-scalar-condensing.ts` also defines its own variants of
  * `areNodesEquivalent` and `applyScalarCondensing`. To keep this barrel
  * unambiguous we resolve each helper at its canonical source rather than
  * relying on `export *` chains, so the public surface stays decoupled from
