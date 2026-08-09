@@ -29,6 +29,7 @@ runs:
         CHECKOUT_ROOT: ${{ inputs.checkout-root }}
       run: |
         set -euo pipefail
+        pnpm --filter @gmloop/core build:types
         dir="$(mktemp -d "$RUNNER_TEMP/gmloop-ci-report.XXXXXX")"
         command_dir="$dir/src/cli/src/commands"
         mkdir -p "$command_dir"
