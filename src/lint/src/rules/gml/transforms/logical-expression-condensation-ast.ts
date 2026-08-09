@@ -59,6 +59,45 @@ function wrapUnaryArgument(node) {
     };
 }
 
+/**
+ * Build a `UnaryExpression` whose operator is the boolean NOT (`!`).
+ *
+ * The condensation and traversal-normalization transforms both need to
+ * construct `!arg` AST nodes from many sites. Before this helper existed,
+ * each site inlined the same five-field literal:
+ *
+ * ```js
+ * { type: "UnaryExpression", operator: "!", prefix: true, argument: ..., start: ..., end: ... }
+ * ```
+ *
+ * Centralising the shape here keeps the operator / `prefix` flag in lock-step
+ * (no risk of one site dropping `prefix: true` or forgetting the `!`) and
+ * means future tweaks — adding a `parent` slot, swapping the operator, or
+ * threading the source-map metadata — happen in exactly one place.
+ *
+ * @param argument The AST node to negate. The negation node's `start`/`end`
+ *   are seeded from `argument.start` / `argument.end` via `cloneLocation`,
+ *   matching the source-order guarantees the condensation pipeline relies
+ *   on elsewhere.
+ * @param options.wrapBinaryArguments When `true`, binary/logical arguments
+ *   are wrapped in a `ParenthesizedExpression` so the rendered `!` keeps the
+ *   correct precedence. Mirrors the long-standing `wrapUnaryArgument` rule
+ *   the condensation sites applied inline. Defaults to `false` for callers
+ *   (e.g. the traversal-normalization XOR builder) that deliberately want
+ *   the bare argument.
+ */
+function createNegationExpression(argument, { wrapBinaryArguments = false } = {}) {
+    const inner = wrapBinaryArguments ? wrapUnaryArgument(argument) : argument;
+    return {
+        type: "UnaryExpression",
+        operator: "!",
+        prefix: true,
+        argument: inner,
+        start: cloneLocation(argument?.start),
+        end: cloneLocation(argument?.end)
+    };
+}
+
 function getNodeLocationIndex(node) {
     if (!isObjectLike(node)) {
         return Number.POSITIVE_INFINITY;
@@ -143,14 +182,7 @@ function booleanExpressionToAst(expression, context) {
             if (!argumentAst) {
                 return null;
             }
-            return {
-                type: "UnaryExpression",
-                operator: "!",
-                prefix: true,
-                argument: wrapUnaryArgument(argumentAst),
-                start: cloneLocation(argumentAst.start),
-                end: cloneLocation(argumentAst.end)
-            };
+            return createNegationExpression(argumentAst, { wrapBinaryArguments: true });
         }
         case BOOLEAN_NODE_TYPES.AND: {
             return buildBinaryAst("&&", expression.terms, context);
@@ -225,6 +257,7 @@ function buildBinaryAst(operator, terms, context) {
 export {
     booleanExpressionToAst,
     buildBinaryAst,
+    createNegationExpression,
     getBooleanExpressionSourceStart,
     getBooleanOrTermPriority,
     getNodeLocationIndex,
