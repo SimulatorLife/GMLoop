@@ -1,0 +1,119 @@
+name: "Run bounded auto-merge validation step"
+description: "Run build, lint, or one test shard with a wall-clock watchdog and record trusted comparable evidence."
+inputs:
+  mode:
+    description: "build, lint, or test"
+    required: true
+  evidence-tool:
+    description: "Trusted ci-automerge-evidence.ts path."
+    required: true
+  report-dir:
+    description: "Evidence output directory."
+    required: true
+  timeout-ms:
+    description: "Wall-clock watchdog in milliseconds."
+    required: true
+  target-sha:
+    description: "Exact target SHA for build evidence."
+    required: false
+    default: ""
+  manifest:
+    description: "Canonical test manifest path for test mode."
+    required: false
+    default: ""
+  shard:
+    description: "Shard name for test mode."
+    required: false
+    default: ""
+outputs:
+  succeeded:
+    description: "Whether build mode completed successfully."
+    value: ${{ steps.run.outputs.succeeded }}
+  status:
+    description: "Underlying command exit status."
+    value: ${{ steps.run.outputs.status }}
+  timed_out:
+    description: "Whether the internal watchdog expired."
+    value: ${{ steps.run.outputs.timed_out }}
+runs:
+  using: "composite"
+  steps:
+    - id: run
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+        EVIDENCE_TOOL: ${{ inputs.evidence-tool }}
+        REPORT_DIR: ${{ inputs.report-dir }}
+        TIMEOUT_MS: ${{ inputs.timeout-ms }}
+        TARGET_SHA: ${{ inputs.target-sha }}
+        MANIFEST: ${{ inputs.manifest }}
+        SHARD: ${{ inputs.shard }}
+      run: |
+        set -euo pipefail
+        if ! [[ "$TIMEOUT_MS" =~ ^[0-9]+$ ]] || [ "$TIMEOUT_MS" -lt 60000 ]; then
+          echo "Invalid auto-merge watchdog: $TIMEOUT_MS" >&2
+          exit 2
+        fi
+        timeout_seconds=$(( (TIMEOUT_MS + 999) / 1000 ))
+        mkdir -p "$REPORT_DIR"
+        started_ms="$(date +%s%3N)"
+        set +e
+        case "$MODE" in
+          build)
+            git submodule sync --recursive
+            git submodule update --init --recursive vendor/GameMaker-Manual
+            timeout --signal=TERM --kill-after=5s "${timeout_seconds}s" pnpm run build
+            status=$?
+            ;;
+          lint)
+            timeout --signal=TERM --kill-after=5s "${timeout_seconds}s" \
+              pnpm exec eslint . --max-warnings=0 --report-unused-disable-directives \
+              --ignore-pattern '.automerge-trusted/**' \
+              --format json --output-file "$REPORT_DIR/eslint.json"
+            status=$?
+            ;;
+          test)
+            mapfile -t test_files < <(node "$EVIDENCE_TOOL" shard-files --manifest "$MANIFEST" --shard "$SHARD")
+            if [ "${#test_files[@]}" -eq 0 ]; then
+              echo "No files assigned to $SHARD" >&2
+              status=2
+            else
+              timeout --signal=TERM --kill-after=5s "${timeout_seconds}s" \
+                node --disable-warning=ExperimentalWarning --test-force-exit --test --test-timeout=120000 \
+                --test-reporter=dot --test-reporter-destination=stdout \
+                --test-reporter=junit --test-reporter-destination="$REPORT_DIR/tests-$SHARD.xml" \
+                "${test_files[@]}"
+              status=$?
+            fi
+            ;;
+          *)
+            echo "Unsupported auto-merge validation mode: $MODE" >&2
+            exit 2
+            ;;
+        esac
+        set -e
+        finished_ms="$(date +%s%3N)"
+        duration_ms=$(( finished_ms - started_ms ))
+        timed_out=false
+        if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then timed_out=true; fi
+        echo "status=$status" >> "$GITHUB_OUTPUT"
+        echo "timed_out=$timed_out" >> "$GITHUB_OUTPUT"
+
+        case "$MODE" in
+          build)
+            node "$EVIDENCE_TOOL" record-build \
+              --target-sha "$TARGET_SHA" --report-dir "$REPORT_DIR" \
+              --status "$status" --timed-out "$timed_out" --duration-ms "$duration_ms" \
+              --github-output "$GITHUB_OUTPUT"
+            ;;
+          lint)
+            node "$EVIDENCE_TOOL" record-lint \
+              --report-dir "$REPORT_DIR" --status "$status" \
+              --timed-out "$timed_out" --duration-ms "$duration_ms"
+            ;;
+          test)
+            node "$EVIDENCE_TOOL" record-shard \
+              --manifest "$MANIFEST" --shard "$SHARD" --report-dir "$REPORT_DIR" \
+              --status "$status" --timed-out "$timed_out" --duration-ms "$duration_ms"
+            ;;
+        esac
