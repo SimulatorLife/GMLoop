@@ -92,6 +92,7 @@ import {
 } from "./watch/dependency-updates.js";
 import { handleResourceFileChange, primeRoomResource } from "./watch/resource-change-handler.js";
 import {
+    areFileMtimesApproximatelyEqual,
     clearInitialFileDataCache,
     computeHotReloadLatencyStats,
     countSourceLines,
@@ -617,7 +618,8 @@ async function performInitialScan(
             const currentStatsPromise = stat(fullPath);
             const freshContentPromise = cached === undefined ? readFile(fullPath, "utf8") : null;
             const currentStats = await currentStatsPromise;
-            const canUseCachedFileData = cached !== undefined && cached.mtimeMs === currentStats.mtimeMs;
+            const canUseCachedFileData =
+                cached !== undefined && areFileMtimesApproximatelyEqual(cached.mtimeMs, currentStats.mtimeMs);
             let resolvedContent: string;
             if (canUseCachedFileData) {
                 resolvedContent = cached.content;
