@@ -785,16 +785,25 @@ function prepareMacroTranspilation(
         : new Map<string, TranspilerTypes.MacroDefinition>();
     const previousMacroDefinitions = context.macroDefinitions ?? new Map<string, TranspilerTypes.MacroDefinition>();
     let candidateDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath | null = null;
-    let macroDefinitions = new Map(previousMacroDefinitions);
+    let macroDefinitions: Map<string, TranspilerTypes.MacroDefinition>;
 
-    for (const [name, definition] of localMacroDefinitions) {
-        macroDefinitions.set(name, definition);
-    }
-
+    // Watch mode populates `macroDefinitionsBySourcePath` after the project-wide
+    // startup walk and transpiles each file through that index on every change.
+    // In that path the simpler copy + merge below would be thrown away: the
+    // `createProjectMacroDefinitions` call rebuilds the merged macro map from the
+    // candidate source-path index, so we skip the redundant allocation entirely.
+    // Standalone callers (e.g. the `transpile` command) without a source-path
+    // index fall back to merging the local definitions into a copy of the
+    // previous project map, preserving the original behavior.
     if (context.macroDefinitionsBySourcePath && Core.isObjectLike(ast)) {
         candidateDefinitionsBySourcePath = new Map(context.macroDefinitionsBySourcePath);
         candidateDefinitionsBySourcePath.set(filePath, localMacroDefinitions);
         macroDefinitions = Transpiler.createProjectMacroDefinitions(candidateDefinitionsBySourcePath);
+    } else {
+        macroDefinitions = new Map(previousMacroDefinitions);
+        for (const [name, definition] of localMacroDefinitions) {
+            macroDefinitions.set(name, definition);
+        }
     }
 
     const effectiveAst = Transpiler.expandProjectMacros(ast, macroDefinitions, filePath);
@@ -831,11 +840,14 @@ function commitMacroTranspilation(
     candidateDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath | null,
     macroDefinitions: Map<string, TranspilerTypes.MacroDefinition>
 ): void {
-    if (candidateDefinitionsBySourcePath && context.macroDefinitionsBySourcePath) {
-        context.macroDefinitionsBySourcePath.clear();
-        for (const [source, definitions] of candidateDefinitionsBySourcePath) {
-            context.macroDefinitionsBySourcePath.set(source, definitions);
-        }
+    // The candidate index already contains the merged state (a fresh copy of
+    // `context.macroDefinitionsBySourcePath` with the current file's definitions
+    // installed). Reassigning the reference avoids an O(n) `clear()` + per-entry
+    // `set()` rebuild and keeps the prepared map out of the transpilation hot
+    // path. The runtime context is the only owner of this reference, so the
+    // swap is safe.
+    if (candidateDefinitionsBySourcePath !== null) {
+        context.macroDefinitionsBySourcePath = candidateDefinitionsBySourcePath;
     }
 
     if (context.macroDefinitions === undefined && candidateDefinitionsBySourcePath === null) {
