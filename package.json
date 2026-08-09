@@ -160,7 +160,7 @@
     "@gmloop/vscode": "workspace:*",
     "@gmloop/syntax-highlight": "workspace:*",
     "@types/node": "catalog:",
-    "c8": "^11",
+    "c8": "^12",
     "eslint": "catalog:",
     "eslint-config-prettier": "^10",
     "eslint-import-resolver-typescript": "^4",
