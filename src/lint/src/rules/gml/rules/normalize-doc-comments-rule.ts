@@ -1521,6 +1521,285 @@ function synthesizeTextFallbackDocCommentBlock({
     return canonicalizeDescriptionToDesc(result);
 }
 
+// =============================================================================
+// Orchestrator helpers
+//
+// The `Program` visitor in `createNormalizeDocCommentsRule` walks every source
+// line and decides whether to emit, synthesize, or flush a doc-comment block.
+// The helpers below encapsulate the low-level work that used to be sprinkled
+// across that loop: line classification, the pending doc-block state machine,
+// and the AST-vs-text-fallback synthesis branching. Extracting them lets the
+// orchestrator read as a sequence of delegation steps at one abstraction
+// layer rather than mutating arrays and re-running regex tests inline.
+// =============================================================================
+
+const DOC_COMMENT_LINE_PATTERN = /^\s*\/\/\//u;
+const LEGACY_DOUBLE_SLASH_TAG_PATTERN = /^\s*\/\/\s*@/u;
+const LEGACY_SPACED_SLASH_SLASH_PATTERN = /^\s*\/\/\s*\/(?!\/)/u;
+const BLANK_LINE_PATTERN = /^\s*$/u;
+const LEADING_WHITESPACE_PATTERN = /^\s+/u;
+const TEXTUAL_FUNCTION_ASSIGNMENT_PATTERN =
+    /^\s*(?:var\s+|static\s+)?(?:[A-Za-z_]\w*\.)?[A-Za-z_]\w*\s*=\s*function\b/u;
+
+/**
+ * Decide whether a source line is part of a doc-comment block.
+ *
+ * Returns `true` for triple-slash comments (`/// ...`), legacy double-slash
+ * tags (`// @param value`), and legacy spaced `// /` lines that must be
+ * preserved verbatim. Centralizing the three regex tests keeps the
+ * orchestrator loop free of inline pattern matching and ensures any future
+ * tweaks (e.g. accepting new doc-line spellings) only touch one place.
+ */
+function isDocCommentLine(line: string): boolean {
+    return (
+        DOC_COMMENT_LINE_PATTERN.test(line) ||
+        LEGACY_DOUBLE_SLASH_TAG_PATTERN.test(line) ||
+        LEGACY_SPACED_SLASH_SLASH_PATTERN.test(line)
+    );
+}
+
+/**
+ * Decide whether a source line contains only whitespace (or is empty).
+ *
+ * Used by the orchestrator to recognize the gap lines that may appear
+ * between a doc-comment block and the function it documents.
+ */
+function isBlankLine(line: string): boolean {
+    return BLANK_LINE_PATTERN.test(line);
+}
+
+/**
+ * Decide whether a source line begins with at least one whitespace character.
+ *
+ * The textual function-assignment detector uses this to distinguish
+ * top-level assignments (which always synthesize a doc block) from
+ * nested assignments (which only synthesize when a doc block is already
+ * pending directly above them).
+ */
+function isLeadingWhitespace(line: string): boolean {
+    return LEADING_WHITESPACE_PATTERN.test(line);
+}
+
+/**
+ * Decide whether a source line declares a textual `var name = function (...)`
+ * style function assignment.
+ *
+ * The AST normally drives function detection, but the rule falls back to a
+ * textual scan when the AST is unavailable or empty (e.g. under the
+ * minimalist test harness). Keeping this regex in a dedicated helper avoids
+ * the inline `Array.prototype.test` pattern that used to sit in the
+ * orchestrator.
+ */
+function isTextualFunctionAssignmentLine(line: string): boolean {
+    return TEXTUAL_FUNCTION_ASSIGNMENT_PATTERN.test(line);
+}
+
+/**
+ * Detect a textual function header when the AST is unavailable or empty.
+ *
+ * `function name(...)` declarations always count. Function assignments only
+ * count when they sit directly under a pending doc block (so we don't
+ * synthesize docs for arbitrary nested expressions) or when they are
+ * top-level (un-indented) and therefore likely to be a script entrypoint.
+ *
+ * @param line - The source line being classified.
+ * @param hasPendingDocBlock - Whether the orchestrator is currently
+ *   buffering a doc-comment block directly above `line`.
+ * @returns `true` when `line` should be treated as a function header.
+ */
+function isTextualFunctionLine(line: string, hasPendingDocBlock: boolean): boolean {
+    if (isTextualNamedFunctionDeclarationLine(line)) {
+        return true;
+    }
+    if (!isTextualFunctionAssignmentLine(line)) {
+        return false;
+    }
+    return hasPendingDocBlock || !isLeadingWhitespace(line);
+}
+
+/**
+ * Snapshot of the lines currently buffered by {@link PendingDocBlockTracker}.
+ *
+ * `docLines` is consumed by the function-line synthesis path (so it can be
+ * passed to {@link processDocBlock} and the synthesizers). `gapLines` is
+ * returned for symmetry with the detach-flush path but is intentionally
+ * discarded by the consume path because gap lines only belong to a
+ * detached-block emission.
+ */
+type PendingDocBlockSnapshot = Readonly<{
+    docLines: ReadonlyArray<string>;
+    gapLines: ReadonlyArray<string>;
+}>;
+
+/**
+ * Pending doc-comment block state machine.
+ *
+ * The orchestrator accumulates doc lines and the whitespace gap lines that
+ * follow them, then either flushes them as a detached block, consumes them
+ * to feed a function-line synthesis, or resets them after emission. The
+ * tracker owns the array mutation and reset transitions that previously
+ * sat inline in the `Program` visitor as repeated
+ * `pendingDocBlock = []; pendingGapLinesAfterDocBlock = [];` reassignments.
+ */
+class PendingDocBlockTracker {
+    private docLines: Array<string> = [];
+    private gapLines: Array<string> = [];
+
+    /**
+     * Whether the tracker is currently buffering a doc-comment block.
+     */
+    hasPendingDocBlock(): boolean {
+        return this.docLines.length > 0;
+    }
+
+    /**
+     * Append a doc-comment line, flushing any prior detached block first.
+     *
+     * If the tracker is holding whitespace gap lines, those gaps mean the
+     * previous doc block is detached from the current line. In that case
+     * the prior block is flushed to `rewrittenLines` as a detached block
+     * (with floating `@param` lines dropped) before the new line starts a
+     * fresh pending block.
+     *
+     * @param line - The doc-comment line being recorded.
+     * @param rewrittenLines - Output buffer that receives the detached flush.
+     */
+    appendDocLine(line: string, rewrittenLines: Array<string>): void {
+        if (this.docLines.length > 0 && this.gapLines.length > 0) {
+            flushDetachedDocCommentBlock(rewrittenLines, this.docLines, this.gapLines, true);
+            this.docLines = [];
+            this.gapLines = [];
+        }
+        this.docLines.push(line);
+    }
+
+    /**
+     * Append a whitespace line as a gap line when a doc block is pending.
+     *
+     * Non-blank lines are never treated as gaps: callers fall through to the
+     * function-line / flush branch when this returns `false` on a non-blank
+     * line, which is what closes the gap between a doc block and the function
+     * it documents.
+     *
+     * @returns `true` when the line was absorbed into the gap buffer;
+     *   `false` when there was no pending doc block or the line was not
+     *   blank (the caller must handle the line as a regular non-doc line).
+     */
+    appendGapLineIfPending(line: string): boolean {
+        if (this.docLines.length === 0 || !isBlankLine(line)) {
+            return false;
+        }
+        this.gapLines.push(line);
+        return true;
+    }
+
+    /**
+     * Consume the pending doc block without emitting it.
+     *
+     * The caller (typically the function-line emission path) is expected to
+     * feed the returned doc lines into {@link processDocBlock} and the
+     * synthesis helpers. Gap lines are intentionally discarded because
+     * they only belong to the detached-flush code path; a function-line
+     * attachment consumes the block in place with no trailing gap lines.
+     *
+     * @returns A frozen snapshot of the buffered doc and gap lines.
+     */
+    consume(): PendingDocBlockSnapshot {
+        const snapshot: PendingDocBlockSnapshot = Object.freeze({
+            docLines: Object.freeze([...this.docLines]),
+            gapLines: Object.freeze([...this.gapLines])
+        });
+        this.docLines = [];
+        this.gapLines = [];
+        return snapshot;
+    }
+
+    /**
+     * Flush any pending doc block as a detached block and reset the tracker.
+     *
+     * @param rewrittenLines - Output buffer that receives the detached flush.
+     * @param dropFloatingParamLines - When `true`, drop floating `@param`
+     *   lines that don't belong to any function signature before emitting.
+     */
+    flush(rewrittenLines: Array<string>, dropFloatingParamLines: boolean): void {
+        if (this.docLines.length === 0) {
+            return;
+        }
+        flushDetachedDocCommentBlock(rewrittenLines, this.docLines, this.gapLines, dropFloatingParamLines);
+        this.docLines = [];
+        this.gapLines = [];
+    }
+}
+
+/**
+ * Emit the synthesized (or processed) doc-comment block for a function line.
+ *
+ * Consolidates the AST-vs-text-fallback branching, the top-level separation
+ * check, and the {@link canonicalizeDescriptionToDesc} fallback used when
+ * synthesis is skipped but a processed block is available. The orchestrator
+ * calls this once per detected function line and treats the post-condition
+ * as "emission is complete, pending state cleared".
+ *
+ * @param parameters - Synthesis context assembled by the orchestrator.
+ * @returns `true` when a doc block (synthesized or processed) was emitted
+ *   to `rewrittenLines`; `false` when the function line is left bare.
+ */
+function emitSynthesizedFunctionLineDocBlock(parameters: {
+    rewrittenLines: Array<string>;
+    pendingDocBlock: ReadonlyArray<string>;
+    astFunctionCandidate: FunctionLineCandidate | null;
+    line: string;
+    text: string;
+    lines: ReadonlyArray<string>;
+    lineIndex: number;
+    hasLeadingIndentation: boolean;
+}): boolean {
+    const {
+        rewrittenLines,
+        pendingDocBlock,
+        astFunctionCandidate,
+        line,
+        text,
+        lines,
+        lineIndex,
+        hasLeadingIndentation
+    } = parameters;
+
+    const indentationMatch = /^\s*/u.exec(line);
+    const indentation = indentationMatch ? indentationMatch[0] : "";
+
+    const processedBlock = pendingDocBlock.length > 0 ? processDocBlock([...pendingDocBlock]) : [];
+    const synthesized = astFunctionCandidate
+        ? synthesizeFunctionDocCommentBlock(
+              processedBlock,
+              text,
+              astFunctionCandidate.functionNode,
+              !astFunctionCandidate.assignmentStyle || !hasLeadingIndentation || astFunctionCandidate.staticStyle,
+              astFunctionCandidate.assignmentStyle,
+              astFunctionCandidate.propertyStyle,
+              astFunctionCandidate.staticStyle,
+              hasLeadingIndentation
+          )
+        : synthesizeTextFallbackDocCommentBlock({ processedBlock, line, indentation, lines, lineIndex });
+
+    if (synthesized !== null) {
+        if (synthesized.length === 0) {
+            return false;
+        }
+        if (shouldSeparateTopLevelSynthesizedDocBlock(rewrittenLines, synthesized, hasLeadingIndentation)) {
+            rewrittenLines.push("");
+        }
+        rewrittenLines.push(...synthesized);
+        return true;
+    }
+
+    if (processedBlock.length === 0) {
+        return false;
+    }
+    rewrittenLines.push(...canonicalizeDescriptionToDesc(processedBlock));
+    return true;
+}
+
 export function createNormalizeDocCommentsRule(definition: GmlRuleDefinition): Rule.RuleModule {
     return Object.freeze({
         meta: createMeta(definition),
@@ -1533,115 +1812,47 @@ export function createNormalizeDocCommentsRule(definition: GmlRuleDefinition): R
                     const lineStartOffsets = computeLineStartOffsets(text);
                     const functionNodesByLineIndex = collectFunctionNodesByStartLine(programNode, lineStartOffsets);
                     const rewrittenLines: Array<string> = [];
+                    const pendingDocBlock = new PendingDocBlockTracker();
 
-                    let pendingDocBlock: Array<string> = [];
-                    let pendingGapLinesAfterDocBlock: Array<string> = [];
                     for (const [lineIndex, line] of lines.entries()) {
-                        if (
-                            /^\s*\/\/\//u.test(line) ||
-                            /^\s*\/\/\s*@/u.test(line) ||
-                            /^\s*\/\/\s*\/(?!\/)/u.test(line)
-                        ) {
-                            if (pendingDocBlock.length > 0 && pendingGapLinesAfterDocBlock.length > 0) {
-                                flushDetachedDocCommentBlock(
-                                    rewrittenLines,
-                                    pendingDocBlock,
-                                    pendingGapLinesAfterDocBlock,
-                                    true
-                                );
-                                pendingDocBlock = [];
-                                pendingGapLinesAfterDocBlock = [];
-                            }
-                            pendingDocBlock.push(line);
+                        if (isDocCommentLine(line)) {
+                            pendingDocBlock.appendDocLine(line, rewrittenLines);
                             continue;
                         }
 
-                        if (pendingDocBlock.length > 0 && /^\s*$/u.test(line)) {
-                            pendingGapLinesAfterDocBlock.push(line);
+                        if (pendingDocBlock.appendGapLineIfPending(line)) {
                             continue;
                         }
 
                         const astFunctionCandidate = functionNodesByLineIndex.get(lineIndex)?.[0] ?? null;
-                        const hasAstNode = astFunctionCandidate !== null;
-
-                        // when running under the minimalist test harness the AST will be
-                        // just `{type:"Program"}` so the map will be empty; fall back to a
-                        // simple regex to recognize function headers in that case.
-                        const isTextualFunctionDeclaration = isTextualNamedFunctionDeclarationLine(line);
-                        const hasLeadingIndentation = /^\s+/u.test(line);
-                        const isTextualFunctionAssignment =
-                            /^\s*(?:var\s+|static\s+)?(?:[A-Za-z_]\w*\.)?[A-Za-z_]\w*\s*=\s*function\b/u.test(line);
-                        const isTextualFunction =
-                            isTextualFunctionDeclaration ||
-                            (isTextualFunctionAssignment && (pendingDocBlock.length > 0 || !hasLeadingIndentation));
-                        const isFunctionLine = hasAstNode || isTextualFunction;
+                        // When the AST is unavailable (e.g. the minimalist test harness
+                        // passes a stub `{type:"Program"}`) we fall back to a textual
+                        // scan that recognises function headers by shape.
+                        const isFunctionLine =
+                            astFunctionCandidate !== null ||
+                            isTextualFunctionLine(line, pendingDocBlock.hasPendingDocBlock());
 
                         if (isFunctionLine) {
-                            const indentationMatch = /^(\s*)/.exec(line);
-                            const indentation = indentationMatch ? indentationMatch[1] : "";
-
-                            const processedBlock = pendingDocBlock.length > 0 ? processDocBlock(pendingDocBlock) : [];
-                            const synthesized = astFunctionCandidate
-                                ? synthesizeFunctionDocCommentBlock(
-                                      processedBlock,
-                                      text,
-                                      astFunctionCandidate.functionNode,
-                                      !astFunctionCandidate.assignmentStyle ||
-                                          !hasLeadingIndentation ||
-                                          astFunctionCandidate.staticStyle,
-                                      astFunctionCandidate.assignmentStyle,
-                                      astFunctionCandidate.propertyStyle,
-                                      astFunctionCandidate.staticStyle,
-                                      hasLeadingIndentation
-                                  )
-                                : synthesizeTextFallbackDocCommentBlock({
-                                      processedBlock,
-                                      line,
-                                      indentation,
-                                      lines,
-                                      lineIndex
-                                  });
-
-                            if (synthesized !== null) {
-                                if (synthesized.length > 0) {
-                                    if (
-                                        shouldSeparateTopLevelSynthesizedDocBlock(
-                                            rewrittenLines,
-                                            synthesized,
-                                            hasLeadingIndentation
-                                        )
-                                    ) {
-                                        rewrittenLines.push("");
-                                    }
-                                    rewrittenLines.push(...synthesized);
-                                }
-                            } else if (processedBlock.length > 0) {
-                                rewrittenLines.push(...canonicalizeDescriptionToDesc(processedBlock));
-                            }
-                            pendingDocBlock = [];
-                            pendingGapLinesAfterDocBlock = [];
-                        } else {
-                            flushDetachedDocCommentBlock(
+                            const hasLeadingIndentation = isLeadingWhitespace(line);
+                            const { docLines } = pendingDocBlock.consume();
+                            emitSynthesizedFunctionLineDocBlock({
                                 rewrittenLines,
-                                pendingDocBlock,
-                                pendingGapLinesAfterDocBlock,
-                                false
-                            );
-                            pendingDocBlock = [];
-                            pendingGapLinesAfterDocBlock = [];
+                                pendingDocBlock: docLines,
+                                astFunctionCandidate,
+                                line,
+                                text,
+                                lines,
+                                lineIndex,
+                                hasLeadingIndentation
+                            });
+                        } else {
+                            pendingDocBlock.flush(rewrittenLines, false);
                         }
 
                         rewrittenLines.push(normalizeDocCommentPrefixLine(line));
                     }
 
-                    if (pendingDocBlock.length > 0) {
-                        flushDetachedDocCommentBlock(
-                            rewrittenLines,
-                            pendingDocBlock,
-                            pendingGapLinesAfterDocBlock,
-                            false
-                        );
-                    }
+                    pendingDocBlock.flush(rewrittenLines, false);
 
                     const rewritten = rewrittenLines.join(lineEnding);
                     reportFullTextRewrite(context, definition.messageId, text, rewritten);
@@ -1754,3 +1965,19 @@ function determineIfShouldSynthesizeReturnLine({
 // code path as every other function candidate, which synthesizes the doc
 // comment block once and inserts it directly above the existing
 // declaration in place.
+
+/**
+ * Test-only entry point exposing the orchestrator helpers extracted from the
+ * `Program` visitor. Mirrors the `__test__` convention used elsewhere in the
+ * codebase so focused unit tests can exercise the line classifier, the
+ * pending state machine, and the synthesis branching without going through
+ * the full rule pipeline.
+ */
+export const __normalizeDocCommentsRuleTestHelpers__ = Object.freeze({
+    PendingDocBlockTracker,
+    isBlankLine,
+    isDocCommentLine,
+    isLeadingWhitespace,
+    isTextualFunctionAssignmentLine,
+    isTextualFunctionLine
+});
