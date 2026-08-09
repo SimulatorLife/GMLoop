@@ -86,6 +86,15 @@ void describe("number-utils", () => {
             assert.equal(clamp(0, -5, -1), -1);
             assert.equal(clamp(-10, -5, -1), -5);
         });
+
+        void it("matches the inline Math.min/Math.max clamp for non-finite inputs", () => {
+            // Pin the edge-case behaviour so this helper can stand in for the
+            // inline `Math.min(max, Math.max(min, value))` pattern at every
+            // call site without behaviour drift.
+            assert.ok(Number.isNaN(clamp(Number.NaN, 0.5, 2)));
+            assert.equal(clamp(Infinity, 0.5, 2), 2);
+            assert.equal(clamp(-Infinity, 0.5, 2), 0.5);
+        });
     });
 
     void describe("areNumbersApproximatelyEqual", () => {

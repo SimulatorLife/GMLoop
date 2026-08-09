@@ -243,7 +243,7 @@ async function createTestWeights(
         if (historicalDuration !== undefined) {
             return Object.freeze({ file: testFile, weightMs: historicalDuration });
         }
-        const sizeRatio = Math.min(2, Math.max(0.5, (sizes.get(testFile) ?? medianSize) / medianSize));
+        const sizeRatio = Core.clamp((sizes.get(testFile) ?? medianSize) / medianSize, 0.5, 2);
         return Object.freeze({ file: testFile, weightMs: Math.max(1, fallbackDuration * sizeRatio) });
     });
 }
