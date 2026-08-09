@@ -281,13 +281,22 @@ void test("config builder sections are collapsible panels and collapsed by defau
 
     const rendered = renderTemplateValue(panel.renderForTest());
 
-    // Check that Format, Lint, and Refactor sections are rendered as details elements with class config-builder-section
-    assert.match(rendered, /<details class="config-builder-section"[^>]*aria-labelledby="config-format-heading"/u);
-    assert.match(rendered, /<details class="config-builder-section"[^>]*aria-labelledby="config-lint-heading"/u);
-    assert.match(rendered, /<details class="config-builder-section"[^>]*aria-labelledby="config-refactor-heading"/u);
+    // Check that Format, Lint, and Refactor sections are rendered as gm-collapsible panels with class config-builder-section
+    assert.match(
+        rendered,
+        /<gm-collapsible[\s\S]*class="config-builder-section"[\s\S]*\.labelledBy=config-format-heading/u
+    );
+    assert.match(
+        rendered,
+        /<gm-collapsible[\s\S]*class="config-builder-section"[\s\S]*\.labelledBy=config-lint-heading/u
+    );
+    assert.match(
+        rendered,
+        /<gm-collapsible[\s\S]*class="config-builder-section"[\s\S]*\.labelledBy=config-refactor-heading/u
+    );
 
-    // Verify they do not have the 'open' attribute (collapsed by default)
-    assert.doesNotMatch(rendered, /<details class="config-builder-section"[^>]*\bopen\b/u);
+    // gm-collapsible renders a native <details> that defaults to collapsed; the host template never sets `open`.
+    assert.doesNotMatch(rendered, /<gm-collapsible[^>]*\bopen\b/u);
 });
 
 void test("config toolbar restores rendered and raw JSON selector", () => {
@@ -372,14 +381,16 @@ void test("config severity selector uses severity-colored active states", () => 
 });
 
 void test("config builder sections have collapse indicator styles", () => {
-    const source = readFileSync(new URL("../../src/web/styles/config.css", import.meta.url), "utf8");
+    // Config sections render through the shared gm-collapsible primitive, which owns
+    // the single collapse-indicator treatment reused by every collapsible panel in the UI.
+    const source = readFileSync(new URL("../../src/web/styles/components.css", import.meta.url), "utf8");
 
-    // Verify indicator is defined on summary::before
-    assert.match(source, /\.config-builder-section\s+summary::before\s*\{[\s\S]*content:\s*["']▶["'];/u);
+    // Verify indicator is defined on the shared summary::before rule
+    assert.match(source, /\.gm-collapsible__summary::before\s*\{[\s\S]*content:\s*["']▶["'];/u);
     // Verify rotation on open state
     assert.match(
         source,
-        /\.config-builder-section\[open\]\s+summary::before\s*\{[\s\S]*transform:\s*rotate\(90deg\);/u
+        /\.gm-collapsible\[open\]\s*>\s*\.gm-collapsible__summary::before\s*\{[\s\S]*transform:\s*rotate\(90deg\);/u
     );
 });
 

@@ -417,7 +417,10 @@ void test("docs stylesheet defines a constrained documentation browser layout", 
         /@media\s*\(max-width:\s*920px\)\s*\{[\s\S]*?\.toolbar-heading-row\s+\.toolbar-docs-search\s*\{[\s\S]*flex:\s*0 1 auto;[\s\S]*max-width:\s*none;/u
     );
     assert.match(source, /\.docs-detail-container\s*\{[\s\S]*border:\s*1px solid var\(--gm-border-subtle\);/u);
-    assert.match(source, /\.docs-detail-container summary\s*\{[\s\S]*min-height:\s*var\(--gm-height-sm\);/u);
+    assert.match(
+        source,
+        /\.docs-detail-container \.gm-collapsible__summary\s*\{[\s\S]*min-height:\s*var\(--gm-height-sm\);/u
+    );
     assert.match(
         source,
         /\.docs-detail-row\s*\{[\s\S]*grid-template-columns:\s*minmax\(156px,\s*220px\)\s+minmax\(0,\s*1fr\);/u
