@@ -10,448 +10,494 @@ permissions: {}
 jobs:
   analyze:
     name: Trusted validation finalizer
-    if: ${{ github.event.workflow_run.event == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
-      contents: write
-      actions: read
-      pull-requests: write
+      actions: write
+      contents: read
       issues: write
+      pull-requests: read
+      statuses: write
     outputs:
       pr_number: ${{ steps.resolve.outputs.pr_number }}
+      head_sha: ${{ steps.resolve.outputs.head_sha }}
+      base_sha: ${{ steps.resolve.outputs.base_sha }}
+      merge_sha: ${{ steps.resolve.outputs.merge_sha }}
+      fingerprint: ${{ steps.fingerprint.outputs.fingerprint }}
+      green: ${{ steps.publish.outputs.green }}
+      reason: ${{ steps.publish.outputs.reason }}
+      trusted: ${{ steps.resolve.outputs.trusted }}
       current: ${{ steps.resolve.outputs.current }}
-      trusted_ci_changed: ${{ steps.resolve.outputs.trusted_ci_changed }}
-      validated_head: ${{ steps.resolve.outputs.head_sha }}
-      validated_base: ${{ steps.provenance.outputs.base_sha }}
-      all_green: ${{ steps.compare.outputs.all_green }}
+      retry: ${{ steps.resolve.outputs.retry }}
+      max_retries: ${{ steps.resolve.outputs.max_retries }}
     steps:
-      - name: Checkout trusted default-branch finalizer
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: main
           persist-credentials: false
-
-      - name: Resolve PR and independently enforce trust policy
-        id: resolve
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+      - name: Download validation target
+        id: target_download
+        continue-on-error: true
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: validation-target
+          path: target
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - id: resolve
+        name: Resolve current PR and trust boundary
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
-          VALIDATION_HEAD: ${{ github.event.workflow_run.head_sha }}
+          RUN_TITLE: ${{ github.event.workflow_run.display_title }}
         with:
           script: |
             const fs = require('node:fs');
             const { owner, repo } = context.repo;
-            const run = context.payload.workflow_run;
-            let number = run.pull_requests?.[0]?.number;
-            if (!number) {
-              const associated = await github.rest.repos.listPullRequestsAssociatedWithCommit({ owner, repo, commit_sha: run.head_sha });
-              number = associated.data.find((pr) => pr.state === 'open' && pr.base.ref === 'main')?.number;
+            let target = null;
+            try { target = JSON.parse(fs.readFileSync('target/validation-target.json', 'utf8')); } catch {}
+            if (!target) {
+              const match = String(process.env.RUN_TITLE || '').match(/PR #(\d+) @ ([0-9a-f]{40})/u);
+              if (match) target = { prNumber: Number(match[1]), headSha: match[2], baseSha: '', mergeSha: '', retry: 0, blockedReason: 'infrastructure' };
             }
-            if (!number) {
-              core.setOutput('current', 'false');
-              return;
-            }
+            const number = Number(target?.prNumber || 0);
+            const head = String(target?.headSha || '');
+            const base = String(target?.baseSha || '');
+            const merge = String(target?.mergeSha || '');
+            const retry = Number(target?.retry || 0);
+            core.setOutput('pr_number', Number.isInteger(number) ? String(number) : '');
+            core.setOutput('head_sha', head);
+            core.setOutput('base_sha', base);
+            core.setOutput('merge_sha', merge);
+            core.setOutput('retry', Number.isInteger(retry) ? String(retry) : '0');
+            core.setOutput('blocked_reason', String(target?.blockedReason || ''));
+            core.setOutput('max_retries', '1');
+            core.setOutput('current', 'false');
+            core.setOutput('trusted', 'false');
+            if (!Number.isInteger(number) || number <= 0 || !/^[0-9a-f]{40}$/u.test(head)) return;
 
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
-            core.setOutput('pr_number', String(number));
-            if (pr.state !== 'open' || pr.draft || pr.base.ref !== 'main' || pr.head.sha !== process.env.VALIDATION_HEAD) {
-              core.setOutput('current', 'false');
+            if (pr.state !== 'open' || pr.draft || pr.base.ref !== 'main' || pr.head.sha !== head) return;
+            const runId = Number(context.payload.workflow_run?.id || 0);
+            const runCreatedAt = new Date(context.payload.workflow_run?.created_at || 0).getTime();
+            const recentRuns = await github.rest.actions.listWorkflowRuns({
+              owner, repo, workflow_id: 'automerge-prs.yml', per_page: 50,
+            });
+            const superseded = recentRuns.data.workflow_runs.some((run) =>
+              run.id !== runId
+              && String(run.display_title || '').includes(`PR #${number} @ ${head}`)
+              && new Date(run.created_at || 0).getTime() > runCreatedAt);
+            if (superseded) {
+              core.notice(`Ignoring superseded validation run ${runId} for PR #${number} @ ${head}.`);
               return;
             }
+            core.setOutput('current', 'true');
 
             const policy = JSON.parse(fs.readFileSync('.github/ci/automerge-policy.json', 'utf8'));
+            const maxRetries = Number(policy.maxInfrastructureRetries ?? 1);
+            if (!Number.isInteger(maxRetries) || maxRetries < 0 || maxRetries > 10) {
+              core.setFailed('Invalid maxInfrastructureRetries in trusted auto-merge policy.');
+              return;
+            }
+            core.setOutput('max_retries', String(maxRetries));
             const trustedPatterns = (policy.trustedCiPatterns || []).map((value) => new RegExp(value, 'u'));
             const files = await github.paginate(github.rest.pulls.listFiles, { owner, repo, pull_number: number, per_page: 100 });
-            const matchesTrusted = (filename) =>
+            const matches = (filename) =>
               typeof filename === 'string' && trustedPatterns.some((pattern) => pattern.test(filename));
-            const trustedCiChanged = files.some((file) =>
-              matchesTrusted(file.filename) || matchesTrusted(file.previous_filename));
-
-            core.setOutput('current', 'true');
-            core.setOutput('trusted_ci_changed', trustedCiChanged ? 'true' : 'false');
-            core.setOutput('head_sha', pr.head.sha);
-            core.notice(`Trusted finalizer resolved PR #${number} at head ${pr.head.sha}; trusted CI changed=${trustedCiChanged}.`);
-
-      - name: Download trusted base evidence
-        if: ${{ steps.resolve.outputs.current == 'true' && steps.resolve.outputs.trusted_ci_changed != 'true' && github.event.workflow_run.conclusion == 'success' }}
+            const trustedChange = files.some((file) => matches(file.filename) || matches(file.previous_filename));
+            core.setOutput('trusted', trustedChange ? 'false' : 'true');
+            core.notice(`Finalizer resolved PR #${number} at ${head}; trusted=${!trustedChange}, base=${base || 'missing'}.`);
+      - name: Revalidate stale trusted product PR without mutating its branch
+        id: freshness
+        if: ${{ steps.resolve.outputs.current == 'true' && steps.resolve.outputs.trusted == 'true' && steps.resolve.outputs.base_sha != '' && steps.resolve.outputs.blocked_reason == '' }}
+        uses: ./.github/actions/reconcile-automerge
+        with:
+          pr-number: ${{ steps.resolve.outputs.pr_number }}
+          validated-head: ${{ steps.resolve.outputs.head_sha }}
+          validated-base: ${{ steps.resolve.outputs.base_sha }}
+          allow-merge: "false"
+          source: "trusted-finalizer-preflight"
+      - name: Compute trusted runtime fingerprint
+        id: fingerprint
+        if: ${{ steps.resolve.outputs.current == 'true' && steps.resolve.outputs.trusted == 'true' && steps.freshness.outputs.status == 'current' }}
+        run: node src/cli/src/commands/ci-automerge-evidence.ts fingerprint --github-output "$GITHUB_OUTPUT"
+      - name: Download exact base evidence
+        id: base_download
+        if: ${{ steps.resolve.outputs.current == 'true' && steps.resolve.outputs.trusted == 'true' && steps.freshness.outputs.status == 'current' && steps.resolve.outputs.blocked_reason == '' && github.event.workflow_run.conclusion == 'success' }}
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: report-base
           path: report-base
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Download synthetic-merge evidence
-        if: ${{ steps.resolve.outputs.current == 'true' && steps.resolve.outputs.trusted_ci_changed != 'true' && github.event.workflow_run.conclusion == 'success' }}
+      - name: Download exact synthetic-merge evidence
+        id: merge_download
+        if: ${{ steps.resolve.outputs.current == 'true' && steps.resolve.outputs.trusted == 'true' && steps.freshness.outputs.status == 'current' && steps.resolve.outputs.blocked_reason == '' && github.event.workflow_run.conclusion == 'success' }}
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: report-merge
           path: report-merge
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Verify validation target provenance
-        id: provenance
-        if: ${{ steps.resolve.outputs.current == 'true' && steps.resolve.outputs.trusted_ci_changed != 'true' && github.event.workflow_run.conclusion == 'success' }}
+      - name: Download optional complete ancestor evidence
+        id: ancestor_download
+        continue-on-error: true
+        if: ${{ steps.resolve.outputs.current == 'true' && steps.resolve.outputs.trusted == 'true' && steps.freshness.outputs.status == 'current' && steps.resolve.outputs.blocked_reason == '' && github.event.workflow_run.conclusion == 'success' }}
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: report-ancestor
+          path: report-ancestor
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - id: provenance
+        name: Verify exact evidence provenance
+        if: ${{ steps.merge_download.outcome == 'success' && steps.base_download.outcome == 'success' }}
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
-          VALIDATED_HEAD: ${{ steps.resolve.outputs.head_sha }}
+          EXPECTED_HEAD: ${{ steps.resolve.outputs.head_sha }}
+          EXPECTED_BASE: ${{ steps.resolve.outputs.base_sha }}
+          EXPECTED_MERGE: ${{ steps.resolve.outputs.merge_sha }}
         with:
           script: |
             const fs = require('node:fs');
             const { owner, repo } = context.repo;
-            const readTargetSha = (directory) => {
-              for (const filename of ['auto-merge-report.json', 'build-evidence.json']) {
-                const candidate = `${directory}/${filename}`;
-                if (!fs.existsSync(candidate)) continue;
-                const metadata = JSON.parse(fs.readFileSync(candidate, 'utf8'));
-                const targetSha = String(metadata.targetSha || '');
-                if (targetSha) return targetSha;
+            const readSha = (dir) => {
+              for (const file of ['auto-merge-report.json', 'build-evidence.json']) {
+                try {
+                  const value = JSON.parse(fs.readFileSync(`${dir}/${file}`, 'utf8'));
+                  if (/^[0-9a-f]{40}$/u.test(String(value.targetSha || ''))) return value.targetSha;
+                } catch {}
               }
               return '';
             };
-            const baseSha = readTargetSha('report-base');
-            const mergeSha = readTargetSha('report-merge');
-            const validatedHead = process.env.VALIDATED_HEAD;
-            if (!baseSha || !mergeSha || !validatedHead) {
-              core.setFailed('Validation evidence does not declare complete target provenance.');
+            const base = readSha('report-base');
+            const merge = readSha('report-merge');
+            const expectedBase = process.env.EXPECTED_BASE;
+            const expectedHead = process.env.EXPECTED_HEAD;
+            const expectedMerge = process.env.EXPECTED_MERGE;
+            if (base !== expectedBase || merge !== expectedMerge) {
+              core.warning(`Evidence target mismatch: base=${base}, merge=${merge}.`);
               return;
             }
-            const { data: mergeCommit } = await github.rest.repos.getCommit({ owner, repo, ref: mergeSha });
-            const mergeBase = mergeCommit.parents?.[0]?.sha;
-            const mergeHead = mergeCommit.parents?.[1]?.sha;
-            if (mergeBase !== baseSha || mergeHead !== validatedHead) {
-              core.setFailed(`Validation provenance mismatch: base=${baseSha}, merge parents=${mergeBase || 'missing'} + ${mergeHead || 'missing'}, head=${validatedHead}.`);
+            const { data: mergeCommit } = await github.rest.repos.getCommit({ owner, repo, ref: merge });
+            if (mergeCommit.parents?.[0]?.sha !== expectedBase || mergeCommit.parents?.[1]?.sha !== expectedHead) {
+              core.warning('Synthetic merge parents do not match the exact trusted base/head pair.');
               return;
             }
-            core.setOutput('base_sha', baseSha);
-            core.setOutput('merge_sha', mergeSha);
-
-      - name: Reconcile stale base before report comparison
-        id: freshness
-        if: ${{ steps.provenance.outputs.base_sha != '' }}
-        uses: ./.github/actions/reconcile-automerge
-        with:
-          pr-number: ${{ steps.resolve.outputs.pr_number }}
-          validated-head: ${{ steps.resolve.outputs.head_sha }}
-          validated-base: ${{ steps.provenance.outputs.base_sha }}
-          allow-merge: "false"
-          source: "trusted-finalizer-preflight"
-
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-        if: ${{ steps.freshness.outputs.status == 'current' }}
-        with:
-          cache: true
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        if: ${{ steps.freshness.outputs.status == 'current' }}
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-      - name: Install trusted finalizer dependencies
-        if: ${{ steps.freshness.outputs.status == 'current' }}
-        run: pnpm install --frozen-lockfile --recursive --force
-
-      - name: Validate and compare with trusted default-branch code
-        id: compare
-        if: ${{ steps.freshness.outputs.status == 'current' }}
+            let ancestorValid = false;
+            const ancestor = readSha('report-ancestor');
+            if (ancestor) {
+              try {
+                const comparison = await github.rest.repos.compareCommits({ owner, repo, base: ancestor, head: expectedBase });
+                ancestorValid = comparison.data.merge_base_commit?.sha === ancestor;
+                if (!ancestorValid) core.warning(`Restored complete baseline cache ${ancestor} is not an ancestor of ${expectedBase}; ignoring it.`);
+              } catch (error) {
+                core.warning(`Could not verify complete ancestor ${ancestor}: ${error.message}`);
+              }
+            }
+            core.setOutput('ancestor_valid', ancestorValid ? 'true' : 'false');
+            core.setOutput('ancestor_sha', ancestorValid ? ancestor : '');
+            core.setOutput('valid', 'true');
+      - id: evidence
+        name: Validate trusted evidence with default-branch code
+        if: ${{ steps.provenance.outputs.valid == 'true' }}
         shell: bash
         env:
-          BASE_SHA: ${{ steps.provenance.outputs.base_sha }}
-          MERGE_SHA: ${{ steps.provenance.outputs.merge_sha }}
+          BASE_SHA: ${{ steps.resolve.outputs.base_sha }}
+          MERGE_SHA: ${{ steps.resolve.outputs.merge_sha }}
+          ANCESTOR_SHA: ${{ steps.provenance.outputs.ancestor_sha }}
+          FINGERPRINT: ${{ steps.fingerprint.outputs.fingerprint }}
         run: |
           set +e
-          fingerprint="$({
-            printf '%s\0' 'src/cli/src/commands/ci-report.ts'
-            cat src/cli/src/commands/ci-report.ts
-            printf '\0%s\0' 'src/cli/src/commands/ci-build-evidence.ts'
-            cat src/cli/src/commands/ci-build-evidence.ts
-            printf '\0%s\0' '.github/ci/automerge-policy.json'
-            cat .github/ci/automerge-policy.json
-          } | sha256sum | cut -d' ' -f1)"
-
-          validate_evidence() {
-            directory="$1"
-            sha="$2"
-            if [ -f "$directory/auto-merge-report.json" ]; then
-              node src/cli/src/commands/ci-report.ts validate \
-                --report-dir "$directory" \
-                --expected-sha "$sha" \
-                --expected-fingerprint "$fingerprint"
-            elif [ -f "$directory/build-evidence.json" ]; then
-              node src/cli/src/commands/ci-build-evidence.ts validate \
-                --report-dir "$directory" \
-                --expected-sha "$sha" \
-                --require-failure
-            else
-              return 1
-            fi
-          }
-
-          validate_evidence report-base "$BASE_SHA"
+          node src/cli/src/commands/ci-automerge-evidence.ts validate \
+            --report-dir report-base --expected-sha "$BASE_SHA" --expected-fingerprint "$FINGERPRINT"
           base_status=$?
-          validate_evidence report-merge "$MERGE_SHA"
+          node src/cli/src/commands/ci-automerge-evidence.ts validate \
+            --report-dir report-merge --expected-sha "$MERGE_SHA" --expected-fingerprint "$FINGERPRINT"
           merge_status=$?
-          if [ "$base_status" -ne 0 ] || [ "$merge_status" -ne 0 ]; then
-            echo "all_green=false" >> "$GITHUB_OUTPUT"
-            echo "status=missing_reports" >> "$GITHUB_OUTPUT"
-            exit 0
+          ancestor_status=0
+          if [ -n "$ANCESTOR_SHA" ]; then
+            node src/cli/src/commands/ci-automerge-evidence.ts validate \
+              --report-dir report-ancestor --expected-sha "$ANCESTOR_SHA" --expected-fingerprint "$FINGERPRINT"
+            ancestor_status=$?
           fi
-
-          if ! pnpm exec tsc -b src/cli/tsconfig.json; then
-            echo "all_green=false" >> "$GITHUB_OUTPUT"
-            echo "status=failure" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          mkdir -p reports
-
-          if [ -f report-merge/build-evidence.json ]; then
-            merge_build_status="$(node -p "require('./report-merge/build-evidence.json').status")"
-            cat > reports/summary-report.md <<EOF
-          <!-- automerge-pr-test-summary -->
-          ### Quality Report Summary
-
-          ❌ **Synthetic merge does not build** (compiler status ${merge_build_status}).
-
-          The exact code that would land on the base branch is authoritative, so auto-merge is blocked even if the current base is also broken.
-          EOF
-            echo "all_green=false" >> "$GITHUB_OUTPUT"
-            echo "status=build_failure" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if [ -f report-base/build-evidence.json ]; then
-            base_build_status="$(node -p "require('./report-base/build-evidence.json').status")"
-            merge_lint_status="$(node -p "require('./report-merge/auto-merge-report.json').lintStatus")"
-            merge_test_status="$(node -p "require('./report-merge/auto-merge-report.json').testStatus")"
-            if [ "$merge_lint_status" -ne 0 ]; then
-              cat > reports/summary-report.md <<EOF
-          <!-- automerge-pr-test-summary -->
-          ### Quality Report Summary
-
-          ❌ Base build is already broken (status ${base_build_status}), and the synthetic merge still has lint failures.
-
-          Recovery auto-merge requires the synthetic merge to build, lint, and test cleanly because no complete base test corpus exists for regression comparison.
-          EOF
-              echo "all_green=false" >> "$GITHUB_OUTPUT"
-              echo "status=lint_errors" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            if [ "$merge_test_status" -ne 0 ]; then
-              cat > reports/summary-report.md <<EOF
-          <!-- automerge-pr-test-summary -->
-          ### Quality Report Summary
-
-          ❌ Base build is already broken (status ${base_build_status}), and the synthetic merge still has failing tests.
-
-          Recovery auto-merge requires the synthetic merge to build, lint, and test cleanly because no complete base test corpus exists for regression comparison.
-          EOF
-              echo "all_green=false" >> "$GITHUB_OUTPUT"
-              echo "status=regressions" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-
-            cat > reports/summary-report.md <<EOF
-          <!-- automerge-pr-test-summary -->
-          ### Quality Report Summary
-
-          ✅ **Recovery validation passed.** The current base does not build (compiler status ${base_build_status}), while the exact synthetic merge builds successfully and has zero lint/test failures.
-
-          This PR is eligible to repair the broken base branch. Base tests were intentionally unavailable because the base could not compile; infrastructure failures would still block this path.
-          EOF
-            if [ -f report-merge/test-durations.md ]; then
-              printf '\n\n' >> reports/summary-report.md
-              cat report-merge/test-durations.md >> reports/summary-report.md
-            fi
-            echo "all_green=true" >> "$GITHUB_OUTPUT"
-            echo "status=recovery" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          node src/cli/dist/index.js generate-quality-report \
-            --base report-base \
-            --merge report-merge \
-            --report-file reports/summary-report.md
-          code=$?
-          if [ "$code" -eq 0 ]; then
-            echo "all_green=true" >> "$GITHUB_OUTPUT"
-            echo "status=clean" >> "$GITHUB_OUTPUT"
-          elif [ "$code" -eq 11 ]; then
-            echo "all_green=false" >> "$GITHUB_OUTPUT"
-            echo "status=lint_errors" >> "$GITHUB_OUTPUT"
-          elif [ "$code" -eq 10 ]; then
-            echo "all_green=false" >> "$GITHUB_OUTPUT"
-            echo "status=regressions" >> "$GITHUB_OUTPUT"
+          set -e
+          if [ "$base_status" -eq 0 ] && [ "$merge_status" -eq 0 ] && [ "$ancestor_status" -eq 0 ]; then
+            echo "valid=true" >> "$GITHUB_OUTPUT"
           else
-            echo "all_green=false" >> "$GITHUB_OUTPUT"
-            echo "status=failure" >> "$GITHUB_OUTPUT"
-          fi
-          if [ -f report-merge/test-durations.md ]; then
-            printf '\n\n' >> reports/summary-report.md
-            cat report-merge/test-durations.md >> reports/summary-report.md
+            echo "valid=false" >> "$GITHUB_OUTPUT"
           fi
           exit 0
-
-      - name: Publish trusted quality summary
-        if: ${{ steps.resolve.outputs.pr_number != '' && steps.resolve.outputs.current == 'true' }}
+      - id: evaluate
+        name: Evaluate regression-only quality gate
+        if: ${{ steps.evidence.outputs.valid == 'true' }}
+        shell: bash
+        run: |
+          ancestor_args=()
+          if [ '${{ steps.provenance.outputs.ancestor_valid }}' = true ]; then
+            ancestor_args=(--ancestor report-ancestor)
+          fi
+          node src/cli/src/commands/ci-automerge-gate.ts evaluate \
+            --base report-base \
+            --merge report-merge \
+            "${ancestor_args[@]}" \
+            --output evaluation.json \
+            --summary evaluation.md \
+            --github-output "$GITHUB_OUTPUT"
+      - id: publish
+        name: Publish durable trusted state
+        if: ${{ always() && steps.resolve.outputs.current == 'true' }}
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
-          TRUSTED_CI_CHANGED: ${{ steps.resolve.outputs.trusted_ci_changed }}
-          VALIDATION_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
-          VALIDATED_HEAD: ${{ steps.resolve.outputs.head_sha }}
-          VALIDATED_BASE: ${{ steps.provenance.outputs.base_sha }}
-          ALL_GREEN: ${{ steps.compare.outputs.all_green }}
-          QUALITY_STATUS: ${{ steps.compare.outputs.status }}
-          RECONCILE_STATUS: ${{ steps.freshness.outputs.status }}
+          HEAD_SHA: ${{ steps.resolve.outputs.head_sha }}
+          BASE_SHA: ${{ steps.resolve.outputs.base_sha }}
+          RETRY: ${{ steps.resolve.outputs.retry }}
+          MAX_RETRIES: ${{ steps.resolve.outputs.max_retries }}
+          TRUSTED: ${{ steps.resolve.outputs.trusted }}
+          BLOCKED: ${{ steps.resolve.outputs.blocked_reason }}
+          FRESHNESS: ${{ steps.freshness.outputs.status }}
+          WORKFLOW_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          EVAL_GREEN: ${{ steps.evaluate.outputs.green }}
+          EVAL_REASON: ${{ steps.evaluate.outputs.reason }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
         with:
           script: |
             const fs = require('node:fs');
+            const path = require('node:path');
+            const { pathToFileURL } = require('node:url');
             const { owner, repo } = context.repo;
             const number = Number(process.env.PR_NUMBER);
-            const marker = '<!-- automerge-pr-test-summary -->';
-            const trusted = process.env.TRUSTED_CI_CHANGED !== 'true';
-            const green = trusted && process.env.ALL_GREEN === 'true' && process.env.RECONCILE_STATUS === 'current' && process.env.VALIDATION_CONCLUSION === 'success';
-            const state = process.env.QUALITY_STATUS || process.env.RECONCILE_STATUS || 'not-evaluated';
-            const stateMarker = `<!-- automerge-trusted-state head=${process.env.VALIDATED_HEAD || ''} base=${process.env.VALIDATED_BASE || ''} green=${green ? 'true' : 'false'} trust=${trusted ? 'true' : 'false'} status=${state} -->`;
-            let body;
+            const trusted = process.env.TRUSTED === 'true';
+            const blocked = process.env.BLOCKED || '';
+            const freshness = process.env.FRESHNESS || '';
+            const workflowConclusion = process.env.WORKFLOW_CONCLUSION || '';
+            let green = trusted && process.env.EVAL_GREEN === 'true';
+            let reason = process.env.EVAL_REASON || 'infrastructure';
+            let summary = '';
+            try { summary = fs.readFileSync('evaluation.md', 'utf8').trim(); } catch {}
+
             if (!trusted) {
-              body = [
-                marker,
-                '### Quality Report Summary',
-                '',
-                '⚠️ This PR changes trusted CI, dependency, or quality-evaluation infrastructure.',
-                '',
-                'Automated validation may run, but unattended merge is intentionally disabled. A human must review and merge this trust-surface change.',
-              ].join('\n');
-            } else if (process.env.VALIDATION_CONCLUSION !== 'success') {
-              body = [marker, '### Quality Report Summary', '', `❌ Validation workflow concluded with **${process.env.VALIDATION_CONCLUSION}**. Auto-merge is blocked.`].join('\n');
-            } else if (process.env.RECONCILE_STATUS === 'synchronized') {
-              body = [marker, '### Quality Report Summary', '', '🔄 `main` advanced after this validation completed. The PR branch was synchronized and fresh validation is required before merge.'].join('\n');
-            } else if (process.env.RECONCILE_STATUS === 'sync-failed') {
-              body = [marker, '### Quality Report Summary', '', '⚠️ `main` advanced after this validation completed, but automatic branch synchronization failed. The periodic reconciler will retry.'].join('\n');
-            } else if (fs.existsSync('reports/summary-report.md')) {
-              body = fs.readFileSync('reports/summary-report.md', 'utf8');
-            } else {
-              body = [marker, '### Quality Report Summary', '', '❌ Trusted report comparison could not be completed.'].join('\n');
+              green = false;
+              reason = 'trusted-ci-change';
+              summary = '### Trusted auto-merge evaluation\n\n⚠️ This PR changes the trusted CI/evaluation boundary. Automated merge is intentionally disabled; human review and merge are required.';
+            } else if (blocked === 'policy-block') {
+              green = false;
+              reason = 'policy-block';
+              summary = '### Trusted auto-merge evaluation\n\n❌ Repository policy blocks unattended merge for this change.';
+            } else if (blocked === 'conflict') {
+              green = false;
+              reason = 'conflict';
+              summary = '### Trusted auto-merge evaluation\n\n❌ This PR has a real merge conflict with current `main`. Resolve the conflict; the admission queue will validate the new head.';
+            } else if (blocked === 'infrastructure' || workflowConclusion !== 'success') {
+              green = false;
+              reason = 'infrastructure';
+              summary = `### Trusted auto-merge evaluation\n\n⚠️ Validation infrastructure did not complete reliably (${blocked || workflowConclusion}).`;
+            } else if (freshness === 'revalidation-requested') {
+              green = false;
+              reason = 'stale';
+              summary = '### Trusted auto-merge evaluation\n\n🔄 `main` advanced after this evidence was produced. Fresh validation was explicitly dispatched without modifying the PR branch.';
+            } else if (!summary) {
+              green = false;
+              reason = 'infrastructure';
+              summary = '### Trusted auto-merge evaluation\n\n⚠️ Expected trusted evaluation output was unavailable.';
             }
-            if (!body.includes(marker)) body = `${marker}\n${body}`;
-            body = body.replace(marker, `${marker}\n${stateMarker}`);
+
+            const stateModule = await import(pathToFileURL(path.join(process.env.GITHUB_WORKSPACE, 'src/cli/src/commands/ci-automerge-state.ts')).href);
+            const state = {
+              pr: number,
+              head: process.env.HEAD_SHA,
+              base: process.env.BASE_SHA || '0'.repeat(40),
+              green,
+              trusted,
+              reason,
+              retry: Number(process.env.RETRY || 0),
+              runId: Number(process.env.RUN_ID || 0),
+            };
+            const stateMarker = stateModule.serializeAutoMergeState(state);
+            const marker = '<!-- automerge-pr-test-summary -->';
+            const body = `${marker}\n${stateMarker}\n${summary}`;
             const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
-            const existing = comments.find((comment) => comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker));
+            const existing = comments.find((comment) =>
+              comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker));
             if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
             else await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
 
+            let status = 'failure';
+            let description = `Auto-merge blocked: ${reason}`;
+            if (green) {
+              status = 'success';
+              description = reason === 'recovery' ? 'Recovery validation passed' : 'Trusted validation passed';
+            } else if (reason === 'trusted-ci-change') {
+              status = 'success';
+              description = 'Trusted CI change: human merge required';
+            } else if (reason === 'infrastructure' || reason === 'baseline-unavailable') {
+              const retry = Number(process.env.RETRY || 0);
+              const maxRetries = Number(process.env.MAX_RETRIES || 0);
+              if (Number.isInteger(retry) && Number.isInteger(maxRetries) && retry < maxRetries) {
+                status = 'pending';
+                description = 'Trusted validation retry pending';
+              } else {
+                status = 'failure';
+                description = 'Trusted validation infrastructure retry exhausted';
+              }
+            } else if (reason === 'stale') {
+              status = 'pending';
+              description = 'Fresh validation requested';
+            }
+            await github.rest.repos.createCommitStatus({
+              owner, repo, sha: process.env.HEAD_SHA, state: status,
+              context: 'automerge/trusted-validation',
+              description: description.slice(0, 140),
+              target_url: context.payload.workflow_run?.html_url,
+            });
+            core.setOutput('green', green ? 'true' : 'false');
+            core.setOutput('reason', reason);
       - name: Detect Agent token availability
         id: agent_token
-        if: ${{ steps.compare.outputs.status == 'lint_errors' || steps.compare.outputs.status == 'regressions' || steps.compare.outputs.status == 'build_failure' }}
+        if: ${{ steps.publish.outputs.reason == 'quality-regression' || steps.publish.outputs.reason == 'build-failure' }}
         env:
           GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
         run: |
           if [ -n "$GH_USER_TOKEN" ]; then echo "available=true" >> "$GITHUB_OUTPUT"; else echo "available=false" >> "$GITHUB_OUTPUT"; fi
-
-      - name: Request Agent help for lint errors
-        if: ${{ steps.compare.outputs.status == 'lint_errors' && steps.agent_token.outputs.available == 'true' }}
+      - name: Ask Agent to repair actual new regressions
+        if: ${{ steps.agent_token.outputs.available == 'true' }}
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+          REASON: ${{ steps.publish.outputs.reason }}
         with:
           github-token: ${{ env.GH_USER_TOKEN }}
           script: |
-            const { owner, repo } = context.repo;
-            const number = Number(process.env.PR_NUMBER);
-            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
-            const marker = '<!-- automerge-pr-lint-agent -->';
-            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
-            const existing = comments.find((comment) => comment.body?.includes(marker));
-            const body = [marker, '', '@mini-max Trusted auto-merge validation detected lint errors on the synthetic merge. Fix the root cause on this PR branch.', '', `Keep changes on **${pr.head.ref}** for PR #${number}.`].join('\n');
-            if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-            else await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
-
-      - name: Request Agent help for build failures
-        if: ${{ steps.compare.outputs.status == 'build_failure' && steps.agent_token.outputs.available == 'true' }}
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
-        env:
-          GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
-          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
-        with:
-          github-token: ${{ env.GH_USER_TOKEN }}
-          script: |
-            const { owner, repo } = context.repo;
-            const number = Number(process.env.PR_NUMBER);
-            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
-            const marker = '<!-- automerge-pr-build-agent -->';
-            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
-            const existing = comments.find((comment) => comment.body?.includes(marker));
-            const body = [marker, '', '@mini-max Trusted auto-merge validation found that the exact synthetic merge does not build. Fix the build failure on this PR branch.', '', `Keep changes on **${pr.head.ref}** for PR #${number}.`].join('\n');
-            if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-            else await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
-
-      - name: Request Agent help for regressions
-        if: ${{ steps.compare.outputs.status == 'regressions' && steps.agent_token.outputs.available == 'true' }}
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
-        env:
-          GH_USER_TOKEN: ${{ secrets.GH_USER_TOKEN }}
-          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
-        with:
-          github-token: ${{ env.GH_USER_TOKEN }}
-          script: |
-            const fs = require('node:fs');
-            const path = require('node:path');
             const { owner, repo } = context.repo;
             const number = Number(process.env.PR_NUMBER);
             const marker = '<!-- automerge-pr-regression-agent -->';
-            const config = JSON.parse(fs.readFileSync(path.resolve('.github/workflows/weights.json'), 'utf8'));
-            const pool = config?.agentPools?.followUps ?? null;
-            const normalize = (value) => (value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-            const fallback = normalize(pool?.default) || 'codex';
-            const candidates = Array.isArray(pool?.agents)
-              ? pool.agents
-                  .map((agent) => ({ name: normalize(agent?.name), weight: Number(agent?.weight) }))
-                  .filter((agent) => agent.name && Number.isFinite(agent.weight) && agent.weight > 0)
-                  .map((agent) => ({ ...agent, slots: Math.max(1, Math.round(agent.weight * 1000)) }))
-                  .sort((left, right) => left.name.localeCompare(right.name))
-              : [];
-            let selected = fallback;
-            if (candidates.length > 0) {
-              const maxSlots = Math.max(...candidates.map((agent) => agent.slots));
-              const cycle = [];
-              for (let slot = 1; slot <= maxSlots; slot += 1) {
-                for (const agent of candidates) if (agent.slots >= slot) cycle.push(agent.name);
-              }
-              const runNumber = Number.parseInt(String(context.payload.workflow_run.run_number || '1'), 10) || 1;
-              selected = cycle[(runNumber - 1) % cycle.length] || fallback;
-            }
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            const body = `${marker}\n@mini-max Trusted auto-merge found an actual **${process.env.REASON}** introduced by this PR. `
+              + `Fix only the newly introduced regression(s) on branch **${pr.head.ref}**, preserving unrelated baseline debt.`;
             const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
             const existing = comments.find((comment) => comment.body?.includes(marker));
-            const body = [marker, '', `@${selected} Trusted auto-merge validation detected new test regressions between the base and synthetic merge. Fix the root cause on this PR branch.`, '', `Keep changes on **${pr.head.ref}** for PR #${number}; do not open another PR.`].join('\n');
             if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
             else await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
-
-      - name: Warn when Agent user token is unavailable
-        if: ${{ (steps.compare.outputs.status == 'lint_errors' || steps.compare.outputs.status == 'regressions' || steps.compare.outputs.status == 'build_failure') && steps.agent_token.outputs.available != 'true' }}
-        run: echo "::warning::GH_USER_TOKEN is unavailable; skipping Agent follow-up."
 
   merge:
     name: Trusted auto-merge
     needs: analyze
-    if: ${{ needs.analyze.outputs.current == 'true' && needs.analyze.outputs.trusted_ci_changed != 'true' && needs.analyze.outputs.all_green == 'true' }}
+    outputs:
+      merged: ${{ steps.reconcile.outputs.merged }}
+      merged_sha: ${{ steps.reconcile.outputs.merged_sha }}
+    if: ${{ needs.analyze.outputs.current == 'true' && needs.analyze.outputs.trusted == 'true' && needs.analyze.outputs.green == 'true' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
+      actions: write
       contents: write
-      pull-requests: write
       issues: write
+      pull-requests: write
+      statuses: write
     steps:
-      - name: Checkout trusted default branch
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: main
           persist-credentials: false
-      - name: Merge, synchronize, or schedule a retry
+      - id: reconcile
         uses: ./.github/actions/reconcile-automerge
         with:
           pr-number: ${{ needs.analyze.outputs.pr_number }}
-          validated-head: ${{ needs.analyze.outputs.validated_head }}
-          validated-base: ${{ needs.analyze.outputs.validated_base }}
+          validated-head: ${{ needs.analyze.outputs.head_sha }}
+          validated-base: ${{ needs.analyze.outputs.base_sha }}
           allow-merge: "true"
           source: "trusted-finalizer"
+
+  promote:
+    name: Promote merged evidence to trusted base cache
+    needs: [analyze, merge]
+    if: ${{ needs.merge.outputs.merged == 'true' && needs.merge.outputs.merged_sha != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.merge.outputs.merged_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+      - id: fingerprint
+        name: Recompute trusted contract fingerprint
+        run: node src/cli/src/commands/ci-automerge-evidence.ts fingerprint --github-output "$GITHUB_OUTPUT"
+      - id: provenance
+        name: Verify squash tree matches validated synthetic merge
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          VALIDATED_BASE: ${{ needs.analyze.outputs.base_sha }}
+          VALIDATED_MERGE: ${{ needs.analyze.outputs.merge_sha }}
+          MERGED_MAIN: ${{ needs.merge.outputs.merged_sha }}
+          EXPECTED_FINGERPRINT: ${{ needs.analyze.outputs.fingerprint }}
+          ACTUAL_FINGERPRINT: ${{ steps.fingerprint.outputs.fingerprint }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            if (process.env.EXPECTED_FINGERPRINT !== process.env.ACTUAL_FINGERPRINT) {
+              core.setFailed('Trusted validation fingerprint changed across an ostensibly product-only merge.');
+              return;
+            }
+            const [validated, landed] = await Promise.all([
+              github.rest.repos.getCommit({ owner, repo, ref: process.env.VALIDATED_MERGE }),
+              github.rest.repos.getCommit({ owner, repo, ref: process.env.MERGED_MAIN }),
+            ]);
+            if (landed.data.parents?.[0]?.sha !== process.env.VALIDATED_BASE) {
+              core.setFailed('Merged main commit does not directly descend from the validated base.');
+              return;
+            }
+            if (validated.data.commit?.tree?.sha !== landed.data.commit?.tree?.sha) {
+              core.setFailed('Squash-merged tree differs from the exact synthetic-merge tree; evidence cannot be promoted.');
+              return;
+            }
+            core.setOutput('valid', 'true');
+      - name: Download exact synthetic-merge evidence
+        if: ${{ steps.provenance.outputs.valid == 'true' }}
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: report-merge
+          path: report-merge
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Retarget validated evidence to the identical landed tree
+        if: ${{ steps.provenance.outputs.valid == 'true' }}
+        run: |
+          node src/cli/src/commands/ci-automerge-evidence.ts promote \
+            --source-dir report-merge \
+            --target-dir promoted-base \
+            --source-sha '${{ needs.analyze.outputs.merge_sha }}' \
+            --target-sha '${{ needs.merge.outputs.merged_sha }}' \
+            --expected-fingerprint '${{ steps.fingerprint.outputs.fingerprint }}'
+          mkdir -p .ci-history
+          cp promoted-base/test-durations.json .ci-history/test-durations.json
+      - name: Save exact landed-base evidence
+        if: ${{ steps.provenance.outputs.valid == 'true' }}
+        continue-on-error: true
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: promoted-base
+          key: automerge-base-v8-${{ needs.merge.outputs.merged_sha }}-${{ steps.fingerprint.outputs.fingerprint }}
+      - name: Save complete ancestor baseline
+        if: ${{ steps.provenance.outputs.valid == 'true' }}
+        continue-on-error: true
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: promoted-base
+          key: automerge-baseline-v2-${{ steps.fingerprint.outputs.fingerprint }}-${{ needs.merge.outputs.merged_sha }}
+      - name: Save trusted timing history
+        if: ${{ steps.provenance.outputs.valid == 'true' }}
+        continue-on-error: true
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .ci-history
+          key: automerge-timing-v3-${{ steps.fingerprint.outputs.fingerprint }}-${{ needs.merge.outputs.merged_sha }}
