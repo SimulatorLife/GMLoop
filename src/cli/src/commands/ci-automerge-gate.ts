@@ -4,6 +4,8 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+import { normalizePath, normalizeRepositoryPath } from "./ci-automerge-paths.js";
+
 const BUILD_FILE = "build-evidence.json";
 const REPORT_FILE = "auto-merge-report.json";
 const MANIFEST_FILE = "test-manifest.json";
@@ -54,29 +56,24 @@ function writeJson(file: string, value: unknown): void {
 
 function appendOutputs(file: string | undefined, values: Readonly<Record<string, string | boolean>>): void {
     if (!file) return;
-    fs.appendFileSync(file, `${Object.entries(values).map(([key, value]) => `${key}=${String(value)}`).join("\n")}\n`, "utf8");
-}
-
-function normalizePath(value: string): string {
-    return value.replaceAll("\\", "/");
-}
-
-function normalizeRepositoryPath(value: string): string {
-    const normalized = normalizePath(value);
-    const root = normalizePath(process.cwd()).replace(/\/$/u, "");
-    if (normalized.startsWith(`${root}/`)) return normalized.slice(root.length + 1);
-    const marker = "/GMLoop/";
-    const markerIndex = normalized.lastIndexOf(marker);
-    return markerIndex >= 0 ? normalized.slice(markerIndex + marker.length) : normalized.replace(/^\.\//u, "");
+    fs.appendFileSync(
+        file,
+        `${Object.entries(values)
+            .map(([key, value]) => `${key}=${String(value)}`)
+            .join("\n")}\n`,
+        "utf8"
+    );
 }
 
 function collectLintFindings(value: unknown): Array<LintFinding> {
     if (!Array.isArray(value)) throw new Error("Lint evidence is not an array.");
     const output: Array<LintFinding> = [];
     for (const fileValue of value) {
-        if (!isRecord(fileValue) || typeof fileValue.filePath !== "string" || !Array.isArray(fileValue.messages)) throw new Error("Malformed lint evidence.");
+        if (!isRecord(fileValue) || typeof fileValue.filePath !== "string" || !Array.isArray(fileValue.messages))
+            throw new Error("Malformed lint evidence.");
         for (const message of fileValue.messages) {
-            if (!isRecord(message) || ![1, 2].includes(Number(message.severity)) || typeof message.message !== "string") continue;
+            if (!isRecord(message) || ![1, 2].includes(Number(message.severity)) || typeof message.message !== "string")
+                continue;
             const file = normalizeRepositoryPath(fileValue.filePath);
             const severity = Number(message.severity);
             const ruleId = typeof message.ruleId === "string" ? message.ruleId : "";
@@ -87,7 +84,10 @@ function collectLintFindings(value: unknown): Array<LintFinding> {
     return output;
 }
 
-function compareLint(baseValue: unknown, targetValue: unknown): Readonly<{ baseCount: number; targetCount: number; added: ReadonlyArray<LintFinding> }> {
+function compareLint(
+    baseValue: unknown,
+    targetValue: unknown
+): Readonly<{ baseCount: number; targetCount: number; added: ReadonlyArray<LintFinding> }> {
     const base = collectLintFindings(baseValue);
     const target = collectLintFindings(targetValue);
     const baseByIdentity = new Map<string, Array<number>>();
@@ -108,7 +108,8 @@ function compareLint(baseValue: unknown, targetValue: unknown): Readonly<{ baseC
         findings.sort((left, right) => right.severity - left.severity);
         const baselineSeverities = baseByIdentity.get(identity) ?? [];
         findings.forEach((finding, index) => {
-            if (baselineSeverities[index] === undefined || finding.severity > (baselineSeverities[index] ?? 0)) added.push(finding);
+            if (baselineSeverities[index] === undefined || finding.severity > (baselineSeverities[index] ?? 0))
+                added.push(finding);
         });
     }
     return Object.freeze({ baseCount: base.length, targetCount: target.length, added: Object.freeze(added) });
@@ -124,9 +125,18 @@ function readManifestTests(value: unknown): ReadonlyArray<string> {
 function readCases(value: unknown): Array<CaseEvidence> {
     if (!Array.isArray(value)) throw new Error("Malformed normalized test-case evidence.");
     return value.map((entry) => {
-        if (!isRecord(entry) || typeof entry.file !== "string" || typeof entry.name !== "string"
-            || !["passed", "failed", "skipped"].includes(String(entry.status))) throw new Error("Malformed normalized test case.");
-        return Object.freeze({ file: normalizeRepositoryPath(entry.file), name: entry.name, status: entry.status as CaseEvidence["status"] });
+        if (
+            !isRecord(entry) ||
+            typeof entry.file !== "string" ||
+            typeof entry.name !== "string" ||
+            !["passed", "failed", "skipped"].includes(String(entry.status))
+        )
+            throw new Error("Malformed normalized test case.");
+        return Object.freeze({
+            file: normalizeRepositoryPath(entry.file),
+            name: entry.name,
+            status: entry.status as CaseEvidence["status"]
+        });
     });
 }
 
@@ -143,7 +153,12 @@ function summarizeCases(cases: ReadonlyArray<CaseEvidence>): Map<string, CaseCou
     return result;
 }
 
-function compareTests(baseManifest: unknown, targetManifest: unknown, baseCasesValue: unknown, targetCasesValue: unknown): Readonly<{
+function compareTests(
+    baseManifest: unknown,
+    targetManifest: unknown,
+    baseCasesValue: unknown,
+    targetCasesValue: unknown
+): Readonly<{
     removedFiles: ReadonlyArray<string>;
     removedCases: ReadonlyArray<ComparisonItem>;
     newFailures: ReadonlyArray<ComparisonItem>;
@@ -151,7 +166,9 @@ function compareTests(baseManifest: unknown, targetManifest: unknown, baseCasesV
 }> {
     const baseFiles = new Set(readManifestTests(baseManifest));
     const targetFiles = new Set(readManifestTests(targetManifest));
-    const removedFiles = [...baseFiles].filter((file) => !targetFiles.has(file)).sort((left, right) => left.localeCompare(right));
+    const removedFiles = [...baseFiles]
+        .filter((file) => !targetFiles.has(file))
+        .sort((left, right) => left.localeCompare(right));
     const base = summarizeCases(readCases(baseCasesValue));
     const target = summarizeCases(readCases(targetCasesValue));
     const removedCases: Array<ComparisonItem> = [];
@@ -159,16 +176,32 @@ function compareTests(baseManifest: unknown, targetManifest: unknown, baseCasesV
     const newSkips: Array<ComparisonItem> = [];
     for (const [key, baseCounts] of base) {
         const targetCounts = target.get(key) ?? { total: 0, failed: 0, skipped: 0, sample: baseCounts.sample };
-        if (targetCounts.total < baseCounts.total) removedCases.push(Object.freeze({ key, count: baseCounts.total - targetCounts.total, sample: baseCounts.sample }));
-        if (targetCounts.failed > baseCounts.failed) newFailures.push(Object.freeze({ key, count: targetCounts.failed - baseCounts.failed, sample: targetCounts.sample }));
-        if (targetCounts.skipped > baseCounts.skipped) newSkips.push(Object.freeze({ key, count: targetCounts.skipped - baseCounts.skipped, sample: targetCounts.sample }));
+        if (targetCounts.total < baseCounts.total)
+            removedCases.push(
+                Object.freeze({ key, count: baseCounts.total - targetCounts.total, sample: baseCounts.sample })
+            );
+        if (targetCounts.failed > baseCounts.failed)
+            newFailures.push(
+                Object.freeze({ key, count: targetCounts.failed - baseCounts.failed, sample: targetCounts.sample })
+            );
+        if (targetCounts.skipped > baseCounts.skipped)
+            newSkips.push(
+                Object.freeze({ key, count: targetCounts.skipped - baseCounts.skipped, sample: targetCounts.sample })
+            );
     }
     for (const [key, targetCounts] of target) {
         if (base.has(key)) continue;
-        if (targetCounts.failed > 0) newFailures.push(Object.freeze({ key, count: targetCounts.failed, sample: targetCounts.sample }));
-        if (targetCounts.skipped > 0) newSkips.push(Object.freeze({ key, count: targetCounts.skipped, sample: targetCounts.sample }));
+        if (targetCounts.failed > 0)
+            newFailures.push(Object.freeze({ key, count: targetCounts.failed, sample: targetCounts.sample }));
+        if (targetCounts.skipped > 0)
+            newSkips.push(Object.freeze({ key, count: targetCounts.skipped, sample: targetCounts.sample }));
     }
-    return Object.freeze({ removedFiles: Object.freeze(removedFiles), removedCases: Object.freeze(removedCases), newFailures: Object.freeze(newFailures), newSkips: Object.freeze(newSkips) });
+    return Object.freeze({
+        removedFiles: Object.freeze(removedFiles),
+        removedCases: Object.freeze(removedCases),
+        newFailures: Object.freeze(newFailures),
+        newSkips: Object.freeze(newSkips)
+    });
 }
 
 function evidenceKind(directory: string): "full" | "build-failure" {
@@ -211,31 +244,74 @@ function commandEvaluate(args: ParsedArgs): number {
                 baselineDirectory = "";
             } else {
                 baselineDirectory = ancestorDirectory;
-                lines.push("ℹ️ Current `main` is build-broken; quality regressions are compared against the verified nearest complete ancestor baseline.");
+                lines.push(
+                    "ℹ️ Current `main` is build-broken; quality regressions are compared against the verified nearest complete ancestor baseline."
+                );
             }
         }
         if (baselineDirectory) {
-            const lint = compareLint(readJson(path.join(baselineDirectory, LINT_FILE)), readJson(path.join(mergeDirectory, LINT_FILE)));
-            const tests = compareTests(
-                readJson(path.join(baselineDirectory, MANIFEST_FILE)), readJson(path.join(mergeDirectory, MANIFEST_FILE)),
-                readJson(path.join(baselineDirectory, CASES_FILE)), readJson(path.join(mergeDirectory, CASES_FILE))
+            const lint = compareLint(
+                readJson(path.join(baselineDirectory, LINT_FILE)),
+                readJson(path.join(mergeDirectory, LINT_FILE))
             );
-            const hasRegression = lint.added.length > 0 || tests.removedFiles.length > 0 || tests.removedCases.length > 0
-                || tests.newFailures.length > 0 || tests.newSkips.length > 0;
-            if (!hasRegression) {
-                green = true;
-                reason = baseKind === "build-failure" ? "recovery" : "clean";
-                lines.push("", "✅ No new lint warnings/errors, removed tests, newly failing tests, or newly skipped tests were introduced.", "",
-                    `- Lint findings: ${lint.baseCount} baseline → ${lint.targetCount} merged; **0 new/upgraded**.`,
-                    `- Canonical test files: **0 removed**.`, "- Test cases: **0 removed / 0 newly failing / 0 newly skipped**.");
-            } else {
+            const tests = compareTests(
+                readJson(path.join(baselineDirectory, MANIFEST_FILE)),
+                readJson(path.join(mergeDirectory, MANIFEST_FILE)),
+                readJson(path.join(baselineDirectory, CASES_FILE)),
+                readJson(path.join(mergeDirectory, CASES_FILE))
+            );
+            const hasRegression =
+                lint.added.length > 0 ||
+                tests.removedFiles.length > 0 ||
+                tests.removedCases.length > 0 ||
+                tests.newFailures.length > 0 ||
+                tests.newSkips.length > 0;
+            if (hasRegression) {
                 reason = "quality-regression";
                 lines.push("", "❌ The exact synthetic merge weakens the trusted quality baseline.");
-                if (lint.added.length > 0) lines.push("", `**New/upgraded lint findings (${lint.added.length})**`, ...lint.added.slice(0, 8).map((item) => `- ${item.file}: ${item.ruleId || "eslint"}: ${item.message}`));
-                if (tests.removedFiles.length > 0) lines.push("", `**Removed canonical test files (${tests.removedFiles.length})**`, ...tests.removedFiles.slice(0, 8).map((file) => `- ${file}`));
-                if (tests.removedCases.length > 0) lines.push("", `**Removed test cases (${tests.removedCases.reduce((total, item) => total + item.count, 0)})**`, ...formatSamples(tests.removedCases));
-                if (tests.newFailures.length > 0) lines.push("", `**Newly failing test cases (${tests.newFailures.reduce((total, item) => total + item.count, 0)})**`, ...formatSamples(tests.newFailures));
-                if (tests.newSkips.length > 0) lines.push("", `**Newly skipped test cases (${tests.newSkips.reduce((total, item) => total + item.count, 0)})**`, ...formatSamples(tests.newSkips));
+                if (lint.added.length > 0)
+                    lines.push(
+                        "",
+                        `**New/upgraded lint findings (${lint.added.length})**`,
+                        ...lint.added
+                            .slice(0, 8)
+                            .map((item) => `- ${item.file}: ${item.ruleId || "eslint"}: ${item.message}`)
+                    );
+                if (tests.removedFiles.length > 0)
+                    lines.push(
+                        "",
+                        `**Removed canonical test files (${tests.removedFiles.length})**`,
+                        ...tests.removedFiles.slice(0, 8).map((file) => `- ${file}`)
+                    );
+                if (tests.removedCases.length > 0)
+                    lines.push(
+                        "",
+                        `**Removed test cases (${tests.removedCases.reduce((total, item) => total + item.count, 0)})**`,
+                        ...formatSamples(tests.removedCases)
+                    );
+                if (tests.newFailures.length > 0)
+                    lines.push(
+                        "",
+                        `**Newly failing test cases (${tests.newFailures.reduce((total, item) => total + item.count, 0)})**`,
+                        ...formatSamples(tests.newFailures)
+                    );
+                if (tests.newSkips.length > 0)
+                    lines.push(
+                        "",
+                        `**Newly skipped test cases (${tests.newSkips.reduce((total, item) => total + item.count, 0)})**`,
+                        ...formatSamples(tests.newSkips)
+                    );
+            } else {
+                green = true;
+                reason = baseKind === "build-failure" ? "recovery" : "clean";
+                lines.push(
+                    "",
+                    "✅ No new lint warnings/errors, removed tests, newly failing tests, or newly skipped tests were introduced.",
+                    "",
+                    `- Lint findings: ${lint.baseCount} baseline → ${lint.targetCount} merged; **0 new/upgraded**.`,
+                    `- Canonical test files: **0 removed**.`,
+                    "- Test cases: **0 removed / 0 newly failing / 0 newly skipped**."
+                );
             }
         }
     }
@@ -246,18 +322,28 @@ function commandEvaluate(args: ParsedArgs): number {
 }
 
 function selfTest(): void {
-    const baselineLint = [{ filePath: "/repo/a.ts", messages: [{ severity: 1, ruleId: "x", message: "old", line: 1 }] }];
+    const baselineLint = [
+        { filePath: "/repo/a.ts", messages: [{ severity: 1, ruleId: "x", message: "old", line: 1 }] }
+    ];
     const movedLint = [{ filePath: "/repo/a.ts", messages: [{ severity: 1, ruleId: "x", message: "old", line: 99 }] }];
     assert.equal(compareLint(baselineLint, movedLint).added.length, 0);
-    const upgradedLint = [{ filePath: "/repo/a.ts", messages: [{ severity: 2, ruleId: "x", message: "old", line: 99 }] }];
+    const upgradedLint = [
+        { filePath: "/repo/a.ts", messages: [{ severity: 2, ruleId: "x", message: "old", line: 99 }] }
+    ];
     assert.equal(compareLint(baselineLint, upgradedLint).added.length, 1);
     const manifest = { tests: ["a.test.js"] };
     const passing = [{ file: "a.test.js", name: "works", status: "passed" }];
-    assert.equal(compareTests(manifest, manifest, passing, [{ ...passing[0], status: "failed" }]).newFailures.length, 1);
+    assert.equal(
+        compareTests(manifest, manifest, passing, [{ ...passing[0], status: "failed" }]).newFailures.length,
+        1
+    );
     assert.equal(compareTests(manifest, manifest, passing, [{ ...passing[0], status: "skipped" }]).newSkips.length, 1);
     assert.equal(compareTests(manifest, manifest, passing, []).removedCases.length, 1);
     assert.equal(compareTests(manifest, { tests: [] }, passing, []).removedFiles.length, 1);
-    assert.equal(compareTests(manifest, manifest, [], [{ file: "a.test.js", name: "new", status: "failed" }]).newFailures.length, 1);
+    assert.equal(
+        compareTests(manifest, manifest, [], [{ file: "a.test.js", name: "new", status: "failed" }]).newFailures.length,
+        1
+    );
     process.stdout.write("ci-automerge gate self-test passed\n");
 }
 
@@ -275,7 +361,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     try {
         process.exitCode = main();
     } catch (error) {
-        process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
+        process.stderr.write(`${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`);
         process.exitCode = 2;
     }
 }
