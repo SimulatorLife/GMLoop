@@ -18,6 +18,8 @@ import {
     DEFAULT_LIVE_RELOAD_SESSION_OUTPUT_FORMAT,
     DEFAULT_LIVE_RELOAD_STATUS_HOST,
     DEFAULT_LIVE_RELOAD_STATUS_PORT,
+    DEFAULT_LIVE_RELOAD_WAIT_FOR_PATCH_POLL_INTERVAL_MS,
+    DEFAULT_LIVE_RELOAD_WAIT_FOR_PATCH_TIMEOUT_MS,
     DEFAULT_LIVE_RELOAD_WEBSOCKET_HOST,
     DEFAULT_LIVE_RELOAD_WEBSOCKET_PORT,
     LIVE_RELOAD_SESSION_OUTPUT_FORMATS,
@@ -447,8 +449,8 @@ export async function runLiveReloadWaitForPatchCommand(
         }
     }
 
-    const timeoutMs = options.timeoutMs ?? 10_000;
-    const pollIntervalMs = options.pollIntervalMs ?? 250;
+    const timeoutMs = options.timeoutMs ?? DEFAULT_LIVE_RELOAD_WAIT_FOR_PATCH_TIMEOUT_MS;
+    const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_LIVE_RELOAD_WAIT_FOR_PATCH_POLL_INTERVAL_MS;
     const deadline = Date.now() + timeoutMs;
 
     let latestPayload: Record<string, unknown> | null = null;
@@ -668,12 +670,12 @@ function createLiveReloadWaitForPatchSubcommand(): Command {
         .addOption(
             new Option("--timeout-ms <ms>", "Maximum wait time in milliseconds.")
                 .argParser(createMinimumValueValidator(1, "Timeout must be a positive integer."))
-                .default(10_000)
+                .default(DEFAULT_LIVE_RELOAD_WAIT_FOR_PATCH_TIMEOUT_MS)
         )
         .addOption(
             new Option("--poll-interval-ms <ms>", "Polling interval in milliseconds.")
                 .argParser(createMinimumValueValidator(1, "Poll interval must be a positive integer."))
-                .default(250)
+                .default(DEFAULT_LIVE_RELOAD_WAIT_FOR_PATCH_POLL_INTERVAL_MS)
         )
         .action((options: LiveReloadWaitForPatchCommandOptions) => runLiveReloadWaitForPatchCommand(options));
 }
