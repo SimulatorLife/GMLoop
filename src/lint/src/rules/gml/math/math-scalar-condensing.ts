@@ -25,8 +25,6 @@ import {
     scaleNumericLiteralCoefficient
 } from "./math-numeric-utils.js";
 
-export * from "./math-ast-mutation.js";
-
 const {
     BINARY_EXPRESSION,
     IDENTIFIER,
