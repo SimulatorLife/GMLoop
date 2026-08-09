@@ -4,8 +4,6 @@ import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 
-import { extractErrorMessage } from "../shared/error-guards.js";
-
 const BUILD_EVIDENCE_SCHEMA_VERSION = 1;
 const BUILD_EVIDENCE_FILE = "build-evidence.json";
 const MAX_TYPESCRIPT_EXIT_STATUS = 4;
@@ -27,7 +25,7 @@ type ProcessResult = Readonly<{
 
 function readOption(name: string): string | undefined {
     const index = process.argv.indexOf(name);
-    return index === -1 ? undefined : process.argv[index + 1];
+    return index >= 0 ? process.argv[index + 1] : undefined;
 }
 
 function hasFlag(name: string): boolean {
@@ -86,11 +84,7 @@ function parseEvidence(value: unknown): BuildEvidence {
     });
 }
 
-function validateEvidence(
-    evidence: BuildEvidence,
-    expectedSha: string | undefined,
-    requireFailure: boolean
-): Array<string> {
+function validateEvidence(evidence: BuildEvidence, expectedSha: string | undefined, requireFailure: boolean): Array<string> {
     const errors: Array<string> = [];
     if (!evidence.completed || evidence.signal !== null || !isNormalTypescriptStatus(evidence.status)) {
         errors.push("build process did not complete with a normal TypeScript compiler status");
@@ -142,9 +136,7 @@ async function runCommand(): Promise<number> {
         return 2;
     }
     if (!succeeded) {
-        console.log(
-            `Build completed with status ${String(result.status)}; recording comparable build-failure evidence.`
-        );
+        console.log(`Build completed with status ${String(result.status)}; recording comparable build-failure evidence.`);
     }
     return 0;
 }
@@ -174,7 +166,7 @@ if (invokedPath && pathToFileURL(path.resolve(invokedPath)).href === import.meta
             throw new Error("Expected subcommand 'run' or 'validate'.");
         }
     } catch (error) {
-        console.error(extractErrorMessage(error));
+        console.error(error instanceof Error ? error.message : String(error));
         process.exitCode = 2;
     }
 }
