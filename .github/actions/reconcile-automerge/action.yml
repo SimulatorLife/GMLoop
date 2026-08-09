@@ -1,33 +1,35 @@
 name: "Reconcile trusted auto-merge"
-description: "Synchronize stale PRs and retry a trusted, already-validated merge without rerunning tests."
+description: "Retry a trusted merge or request fresh validation when main advances; never mutates the PR branch."
+
 inputs:
   pr-number:
     description: "Pull request number."
     required: true
   validated-head:
-    description: "Head SHA covered by trusted validation evidence."
+    description: "Exact head SHA covered by trusted evidence."
     required: true
   validated-base:
-    description: "Base SHA covered by trusted validation evidence."
+    description: "Exact main SHA covered by trusted evidence."
     required: true
   allow-merge:
-    description: "Whether to merge when the validated refs are current and mergeability resolves cleanly."
+    description: "Whether to merge if refs remain current."
     required: false
     default: "true"
   source:
-    description: "Human-readable caller used in notices."
+    description: "Caller label for diagnostics."
     required: false
     default: "trusted-finalizer"
 outputs:
   status:
-    description: "current, synchronized, sync-failed, merged, pending-mergeability, conflict, merge-failed, or not-current."
+    description: "current, revalidation-requested, merged, pending-mergeability, conflict, merge-failed, or not-current."
     value: ${{ steps.reconcile.outputs.status }}
   merged:
-    description: "Whether this invocation merged the pull request."
+    description: "Whether this invocation merged the PR."
     value: ${{ steps.reconcile.outputs.merged }}
-  synchronized:
-    description: "Whether this invocation updated the pull request from main."
-    value: ${{ steps.reconcile.outputs.synchronized }}
+  merged_sha:
+    description: "New main commit SHA when a merge completed."
+    value: ${{ steps.reconcile.outputs.merged_sha }}
+
 runs:
   using: "composite"
   steps:
@@ -38,161 +40,146 @@ runs:
         VALIDATED_HEAD: ${{ inputs.validated-head }}
         VALIDATED_BASE: ${{ inputs.validated-base }}
         ALLOW_MERGE: ${{ inputs.allow-merge }}
-        RECONCILE_SOURCE: ${{ inputs.source }}
+        SOURCE: ${{ inputs.source }}
       with:
         script: |
           const { owner, repo } = context.repo;
           const number = Number(process.env.PR_NUMBER);
-          const validatedHead = String(process.env.VALIDATED_HEAD || '');
-          const validatedBase = String(process.env.VALIDATED_BASE || '');
+          const head = String(process.env.VALIDATED_HEAD || '');
+          const base = String(process.env.VALIDATED_BASE || '');
           const allowMerge = String(process.env.ALLOW_MERGE || '').toLowerCase() === 'true';
-          const source = process.env.RECONCILE_SOURCE || 'trusted-finalizer';
+          const source = process.env.SOURCE || 'trusted-finalizer';
           const marker = '<!-- automerge-reconcile-state -->';
-
-          const setResult = (status, { merged = false, synchronized = false } = {}) => {
+          const set = (status, merged = false, mergedSha = '') => {
             core.setOutput('status', status);
             core.setOutput('merged', merged ? 'true' : 'false');
-            core.setOutput('synchronized', synchronized ? 'true' : 'false');
+            core.setOutput('merged_sha', mergedSha);
           };
-
-          const publishState = async (body) => {
+          const publish = async (text) => {
             const comments = await github.paginate(github.rest.issues.listComments, {
-              owner,
-              repo,
-              issue_number: number,
-              per_page: 100,
+              owner, repo, issue_number: number, per_page: 100,
             });
             const existing = comments.find((comment) =>
-              comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker)
-            );
-            const text = `${marker}\n${body}`;
-            if (existing) {
-              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body: text });
-            } else {
-              await github.rest.issues.createComment({ owner, repo, issue_number: number, body: text });
-            }
+              comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker));
+            const body = `${marker}\n${text}`;
+            if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            else await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
           };
-
-          if (!Number.isInteger(number) || number <= 0 || !/^[0-9a-f]{40}$/u.test(validatedHead) || !/^[0-9a-f]{40}$/u.test(validatedBase)) {
-            core.setFailed('Reconciliation requires a valid PR number and 40-character validated head/base SHAs.');
+          if (!Number.isInteger(number) || number <= 0
+              || !/^[0-9a-f]{40}$/u.test(head) || !/^[0-9a-f]{40}$/u.test(base)) {
+            core.setFailed('Reconciliation requires a valid PR number and exact head/base SHAs.');
             return;
           }
-
-          const loadCurrentPr = async () => {
+          const load = async () => {
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
-            if (pr.state !== 'open' || pr.draft || pr.base.ref !== 'main' || pr.head.sha !== validatedHead) return null;
+            if (pr.state !== 'open' || pr.draft || pr.base.ref !== 'main' || pr.head.sha !== head) return null;
             return pr;
           };
-
-          const synchronizeIfStale = async () => {
-            const pr = await loadCurrentPr();
-            if (!pr) {
-              setResult('not-current');
-              return { stop: true, pr: null };
-            }
-            const { data: baseBranch } = await github.rest.repos.getBranch({ owner, repo, branch: 'main' });
-            const liveBase = baseBranch.commit.sha;
-            if (liveBase === validatedBase) return { stop: false, pr };
-            try {
-              await github.rest.pulls.updateBranch({
+          const pr = await load();
+          if (!pr) {
+            set('not-current');
+            return;
+          }
+          const { data: branch } = await github.rest.repos.getBranch({ owner, repo, branch: 'main' });
+          const liveBase = branch.commit.sha;
+          if (liveBase !== base) {
+            const runs = await github.rest.actions.listWorkflowRuns({
+              owner, repo, workflow_id: 'automerge-prs.yml', per_page: 50,
+            });
+            const active = runs.data.workflow_runs.some((run) =>
+              ['queued', 'in_progress'].includes(run.status)
+              && String(run.display_title || '').includes(`PR #${number} @ ${head}`));
+            if (!active) {
+              await github.rest.actions.createWorkflowDispatch({
                 owner,
                 repo,
-                pull_number: number,
-                expected_head_sha: validatedHead,
+                workflow_id: 'automerge-prs.yml',
+                ref: 'main',
+                inputs: {
+                  pr_number: String(number),
+                  expected_head: head,
+                  retry: '0',
+                  reason: `${source}-stale-base`,
+                },
               });
-              core.notice(`${source}: synchronized PR #${number} from main ${validatedBase} -> ${liveBase}; fresh validation is required.`);
-              await publishState(`🔄 **Auto-merge synchronization requested.** ` +
-                `Trusted validation covered base \`${validatedBase}\`, but live \`main\` is \`${liveBase}\`. ` +
-                `The branch was updated and a fresh validation run is required before merge.`);
-              setResult('synchronized', { synchronized: true });
-            } catch (error) {
-              core.warning(`${source}: unable to synchronize PR #${number}: ${error.message}`);
-              await publishState(`⚠️ **Auto-merge synchronization failed.** ` +
-                `Trusted validation is stale because \`main\` advanced from \`${validatedBase}\` to \`${liveBase}\`, ` +
-                `and GitHub could not update the PR branch automatically: ${error.message}`);
-              setResult('sync-failed');
+              await github.rest.repos.createCommitStatus({
+                owner, repo, sha: head,
+                state: 'pending',
+                context: 'automerge/trusted-validation',
+                description: 'main advanced; fresh synthetic-merge validation requested',
+              });
             }
-            return { stop: true, pr };
-          };
-
-          let freshness = await synchronizeIfStale();
-          if (freshness.stop) return;
-          let pr = freshness.pr;
-
+            await publish(`🔄 **Fresh validation requested without mutating the PR branch.** `
+              + `Trusted evidence covered main \`${base}\`, while live main is \`${liveBase}\`. `
+              + `The validation worker will test the exact current synthetic merge.`);
+            core.notice(`${source}: PR #${number} needs revalidation against ${liveBase}; branch was not modified.`);
+            set('revalidation-requested');
+            return;
+          }
           if (!allowMerge) {
-            setResult('current');
+            set('current');
             return;
           }
 
-          const delaysMs = [0, 1000, 2000, 4000, 8000, 12000];
+          const delays = [0, 1000, 2000, 4000, 8000, 12000];
+          let current = pr;
           let mergeable = false;
-          let state = '';
-          for (const delayMs of delaysMs) {
-            if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
-            pr = await loadCurrentPr();
-            if (!pr) {
-              setResult('not-current');
+          let mergeState = '';
+          for (const delay of delays) {
+            if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+            current = await load();
+            if (!current) {
+              set('not-current');
               return;
             }
-            state = String(pr.mergeable_state || '').toLowerCase();
-            if (state === 'dirty') {
-              await publishState('⚠️ **Auto-merge is blocked by merge conflicts.** Resolve the conflict with `main`; validation will run again after synchronization.');
-              setResult('conflict');
+            mergeState = String(current.mergeable_state || '').toLowerCase();
+            if (mergeState === 'dirty') {
+              await publish('⚠️ **Auto-merge is blocked by a real merge conflict.** Resolve the conflict; validation will be queued again after the head changes.');
+              set('conflict');
               return;
             }
-            if (pr.mergeable === true && state !== 'unknown') {
+            if (current.mergeable === true && mergeState !== 'unknown') {
               mergeable = true;
               break;
             }
           }
-
           if (!mergeable) {
-            core.warning(`${source}: GitHub mergeability for PR #${number} remained unresolved after bounded retries (state=${state || 'unknown'}).`);
-            await publishState('⏳ **Validation is green, but GitHub mergeability is still unresolved.** The periodic auto-merge reconciler will retry without rerunning tests.');
-            setResult('pending-mergeability');
+            await publish('⏳ **Trusted validation is green, but GitHub mergeability is still unresolved.** The periodic reconciler will retry without rerunning tests.');
+            set('pending-mergeability');
             return;
           }
 
-          // The retries above intentionally allow GitHub time to compute
-          // mergeability. Re-read `main` immediately before the merge API call
-          // so a base update during that retry window cannot bypass validation.
-          freshness = await synchronizeIfStale();
-          if (freshness.stop) return;
-          pr = freshness.pr;
+          const { data: lastBase } = await github.rest.repos.getBranch({ owner, repo, branch: 'main' });
+          if (lastBase.commit.sha !== base) {
+            await github.rest.actions.createWorkflowDispatch({
+              owner, repo, workflow_id: 'automerge-prs.yml', ref: 'main',
+              inputs: { pr_number: String(number), expected_head: head, retry: '0', reason: `${source}-premerge-race` },
+            });
+            set('revalidation-requested');
+            return;
+          }
 
           let response;
           try {
             response = await github.rest.pulls.merge({
-              owner,
-              repo,
-              pull_number: number,
-              merge_method: 'squash',
-              sha: validatedHead,
+              owner, repo, pull_number: number, merge_method: 'squash', sha: head,
             });
+            if (!response.data.merged) {
+              await publish(`⚠️ **GitHub declined a trusted green merge.** The reconciler will retry.\n\n${response.data.message || 'No reason supplied.'}`);
+              set('merge-failed');
+              return;
+            }
           } catch (error) {
-            core.warning(`${source}: merge API request for PR #${number} failed: ${error.message}`);
-            await publishState(`⚠️ **Trusted validation is green, but the merge API request failed.** The periodic reconciler will retry without rerunning tests.\n\n${error.message}`);
-            setResult('merge-failed');
+            await publish(`⚠️ **The merge API failed after trusted validation.** The reconciler will retry.\n\n${error.message}`);
+            set('merge-failed');
             return;
           }
 
-          if (!response.data.merged) {
-            const message = response.data.message || 'GitHub declined the merge without a reason.';
-            core.warning(`${source}: GitHub did not merge PR #${number}: ${message}`);
-            await publishState(`⚠️ **Trusted validation is green, but GitHub did not complete the merge.** The periodic reconciler will retry without rerunning tests.\n\n${message}`);
-            setResult('merge-failed');
-            return;
-          }
-
-          core.notice(`${source}: merged PR #${number} at ${validatedHead}.`);
-          setResult('merged', { merged: true });
-
-          const headRef = pr.head?.ref;
-          const headRepo = pr.head?.repo?.full_name?.toLowerCase() || '';
-          const thisRepo = `${owner}/${repo}`.toLowerCase();
-          if (!headRef || headRepo !== thisRepo || headRef === 'main') return;
-          try {
-            await github.rest.git.deleteRef({ owner, repo, ref: `heads/${headRef}` });
-          } catch (error) {
-            core.warning(`Merged PR #${number}, but could not delete ${headRef}: ${error.message}`);
+          core.notice(`${source}: merged PR #${number} at ${head}.`);
+          set('merged', true, String(response.data.sha || ''));
+          const headRef = current.head?.ref;
+          const headRepo = current.head?.repo?.full_name?.toLowerCase() || '';
+          if (headRef && headRepo === `${owner}/${repo}`.toLowerCase() && headRef !== 'main') {
+            try { await github.rest.git.deleteRef({ owner, repo, ref: `heads/${headRef}` }); }
+            catch (error) { core.warning(`Merged PR #${number}, but branch deletion failed: ${error.message}`); }
           }
