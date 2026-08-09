@@ -228,7 +228,7 @@ function createLintRulesetEntries(): ReadonlyArray<ProjectConfigurationLintRules
                 Object.assign(mergedRules, configEntry.rules);
             }
             const sortedRuleIds = Object.freeze(
-                [...new Set(Object.keys(mergedRules))].sort((leftRuleId, rightRuleId) =>
+                Core.uniqueArray(Object.keys(mergedRules)).toSorted((leftRuleId, rightRuleId) =>
                     leftRuleId.localeCompare(rightRuleId)
                 )
             );
