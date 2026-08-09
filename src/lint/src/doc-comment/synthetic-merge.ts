@@ -507,7 +507,7 @@ function isDeprecatedDocTagLine(line: unknown): boolean {
     return typeof line === STRING_TYPE && /^\/\/\/\s*@deprecated\b/i.test(toTrimmedString(line));
 }
 
-function repositionFunctionLinesAfterDeprecatedTag(
+export function repositionFunctionLinesAfterDeprecatedTag(
     result: MutableDocCommentLines,
     docTagHelpers: DocTagHelpers
 ): MutableDocCommentLines {
@@ -531,20 +531,30 @@ function repositionFunctionLinesAfterDeprecatedTag(
         return result;
     }
 
+    // Skip blank lines that immediately follow the deprecated tag so the function
+    // lines land flush against the tag instead of separated by leftover blank
+    // lines. The previous implementation removed those blanks via
+    // `remainingLines.splice(insertIndex, 1)` inside a `while` loop that re-read
+    // the same slot on each iteration; the splice-at-fixed-index pattern works
+    // because every splice shifts subsequent elements down by one and exposes the
+    // next candidate at the same index, but the contract is non-obvious and easy
+    // to break with a future edit (e.g. adding a manual `insertIndex += 1` would
+    // silently skip past non-empty lines). Building a fresh array with `filter`
+    // keeps the inspection cursor anchored to the original line positions and
+    // makes the skip-blanks rule explicit in a single predicate.
     const insertIndex = deprecatedIndex + 1;
-    while (insertIndex < remainingLines.length && remainingLines[insertIndex] === "") {
-        remainingLines.splice(insertIndex, 1);
-    }
+    const reorderedRemaining: MutableDocCommentLines = remainingLines.filter(
+        (line, lineIndex) => lineIndex < insertIndex || line !== ""
+    );
 
-    remainingLines.splice(insertIndex, 0, ...functionLines);
+    reorderedRemaining.splice(insertIndex, 0, ...functionLines);
 
     const suppressLeadingBlank = result._suppressLeadingBlank;
-    const reorderedResult = remainingLines;
     if (suppressLeadingBlank) {
-        reorderedResult._suppressLeadingBlank = true;
+        reorderedRemaining._suppressLeadingBlank = true;
     }
 
-    return reorderedResult;
+    return reorderedRemaining;
 }
 
 type ReorderParamDocLinesParams = {
