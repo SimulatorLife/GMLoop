@@ -1075,6 +1075,33 @@ pnpm run cli -- resource create-image tmp/placeholder.png --width 64 --height 64
 - `--color <color>` - Color of the image (supports CSS color names like `red`, `transparent`, or hex codes like `#FF0000` or `#FF000080` for alpha transparency) (default: `red`)
 - `--json` - Emit machine-readable JSON output describing the generated file
 
+### `collect-stats` - Collect Project Health Statistics
+
+Scans the workspace for coarse health signals (large source files, TODO markers,
+and combined `dist/` build size) and writes a JSON report. By default the same
+numbers are also printed to stdout as a human-readable summary so contributors
+can see the actual values without opening the report file.
+
+```bash
+# Default: print stats to stdout and write reports/project-health.json
+pnpm run cli -- collect-stats
+
+# Custom output path
+pnpm run cli -- collect-stats --output reports/health.json
+
+# Machine-readable stdout payload (file is still written)
+pnpm run cli -- collect-stats --json
+
+# Suppress stdout output when only the file matters
+pnpm run cli -- collect-stats --quiet
+```
+
+**Options:**
+
+- `--output <path>` - Path to write the JSON report (default: `reports/project-health.json`)
+- `--json` - Emit machine-readable JSON to stdout in addition to writing the report file
+- `--quiet` - Suppress stdout output and only write the report file
+
 ## Architecture
 
 The CLI package serves as the orchestration layer for the hot-reload development pipeline:
