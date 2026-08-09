@@ -1075,7 +1075,7 @@ function hasOverlayRuleApplied(config: ResolvedConfigLike): boolean {
             return true;
         }
 
-        if (LINT_NAMESPACE.performanceOverrideRuleIds.includes(ruleId)) {
+        if (LINT_NAMESPACE.services.performanceOverrideRuleIds.includes(ruleId)) {
             return true;
         }
     }
