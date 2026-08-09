@@ -489,6 +489,57 @@ function collectProjectReadinessEvidenceRecords(
     ].sort((left, right) => left.kind.localeCompare(right.kind));
 }
 
+/**
+ * Compose the tooling-derived slices of a {@link ProjectReadinessInspection}
+ * from a {@link CompanionToolingSnapshot}. Exists to break the
+ * Law-of-Demeter chain where the readiness pipeline would otherwise walk
+ * `companionTooling.officialCatalog.mcpServer.*` and
+ * `companionTooling.officialCatalog.cliCommands.length` four segments deep
+ * for each composed field. Centralising the navigation in a single helper
+ * gives every caller one immediate neighbour (`composeInspectionTooling`) to
+ * talk to and keeps the returned slices — `configuredOfficialMcp`, `gmCli`,
+ * `gmloopConfig`, and `skills` — as the only shape callers must remember.
+ *
+ * The returned object is frozen so callers cannot accidentally mutate the
+ * shared snapshot through the alias, and so the inspection stays immutable
+ * end-to-end.
+ *
+ * @param companionTooling Snapshot returned by
+ *   {@link loadProjectCompanionTooling}.
+ * @returns The four tooling-derived slices used by
+ *   {@link createProjectReadinessInspection}.
+ */
+function composeInspectionTooling(companionTooling: CompanionToolingSnapshot): {
+    configuredOfficialMcp: ProjectReadinessInspection["configuredOfficialMcp"];
+    gmCli: ProjectReadinessInspection["gmCli"];
+    gmloopConfig: ProjectReadinessInspection["gmloopConfig"];
+    skills: ProjectReadinessInspection["skills"];
+} {
+    const officialCatalog = companionTooling.officialCatalog;
+    const officialMcpServer = officialCatalog.mcpServer;
+
+    return Object.freeze({
+        configuredOfficialMcp: Object.freeze({
+            available: officialMcpServer.available,
+            serverId: officialMcpServer.serverId,
+            sourcePath: officialMcpServer.sourcePath
+        }),
+        gmCli: Object.freeze({
+            available: officialCatalog.available,
+            cliLeafCount: officialCatalog.cliCommands.length,
+            error: officialCatalog.error,
+            invocation: officialCatalog.invocation,
+            mcpToolCount: officialCatalog.mcpTools.length,
+            version: officialCatalog.version
+        }),
+        gmloopConfig: Object.freeze({
+            path: companionTooling.gmloopConfigPath,
+            present: companionTooling.gmloopConfigPresent
+        }),
+        skills: Object.freeze([...companionTooling.skills])
+    });
+}
+
 async function createProjectReadinessInspection(options: ProjectReadinessOptions): Promise<ProjectReadinessInspection> {
     const resolvedManifest = await resolveProjectManifestResources(options);
     const [companionTooling, graphSummary] = await Promise.all([
@@ -504,27 +555,14 @@ async function createProjectReadinessInspection(options: ProjectReadinessOptions
         manifestResources: resolvedManifest.manifestResources,
         officialCatalog: companionTooling.officialCatalog
     });
+    const tooling = composeInspectionTooling(companionTooling);
 
     return Object.freeze({
         agentPack: companionTooling.agentPack,
-        configuredOfficialMcp: Object.freeze({
-            available: companionTooling.officialCatalog.mcpServer.available,
-            serverId: companionTooling.officialCatalog.mcpServer.serverId,
-            sourcePath: companionTooling.officialCatalog.mcpServer.sourcePath
-        }),
+        configuredOfficialMcp: tooling.configuredOfficialMcp,
         evidence: Object.freeze(evidence),
-        gmCli: Object.freeze({
-            available: companionTooling.officialCatalog.available,
-            cliLeafCount: companionTooling.officialCatalog.cliCommands.length,
-            error: companionTooling.officialCatalog.error,
-            invocation: companionTooling.officialCatalog.invocation,
-            mcpToolCount: companionTooling.officialCatalog.mcpTools.length,
-            version: companionTooling.officialCatalog.version
-        }),
-        gmloopConfig: Object.freeze({
-            path: companionTooling.gmloopConfigPath,
-            present: companionTooling.gmloopConfigPresent
-        }),
+        gmCli: tooling.gmCli,
+        gmloopConfig: tooling.gmloopConfig,
         graph: graphSummary,
         projectRoot: resolvedManifest.context.projectRoot,
         resources: Object.freeze({
@@ -532,7 +570,7 @@ async function createProjectReadinessInspection(options: ProjectReadinessOptions
             manifestPath: resolvedManifest.manifest.absolutePath,
             resourceKinds: Object.freeze({ ...resolvedManifest.resourceKindCounts })
         }),
-        skills: Object.freeze([...companionTooling.skills]),
+        skills: tooling.skills,
         yypPath: resolvedManifest.manifest.absolutePath
     });
 }
