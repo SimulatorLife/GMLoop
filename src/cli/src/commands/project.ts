@@ -612,7 +612,9 @@ async function runProjectInspectAction(options: ProjectReadinessOptions): Promis
             gmloopConfig: inspection.gmloopConfig,
             graph: inspection.graph,
             projectRoot: inspection.projectRoot,
-            recommendedNextActions: [...new Set(inspection.evidence.flatMap((entry) => entry.nextActions))].sort(),
+            recommendedNextActions: Core.uniqueArray(
+                inspection.evidence.flatMap((entry) => entry.nextActions)
+            ).toSorted(),
             resources: inspection.resources,
             skills: inspection.skills,
             yypPath: inspection.yypPath
@@ -636,7 +638,7 @@ async function runProjectValidateAction(options: ProjectReadinessOptions): Promi
         ok: failedCount === 0,
         payload: {
             evidence,
-            nextActions: [...new Set(evidence.flatMap((entry) => entry.nextActions))].sort(),
+            nextActions: Core.uniqueArray(evidence.flatMap((entry) => entry.nextActions)).toSorted(),
             projectRoot: inspection.projectRoot,
             summary: {
                 failed: failedCount,

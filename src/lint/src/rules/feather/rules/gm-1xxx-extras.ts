@@ -1,3 +1,4 @@
+import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import { gmlRuleDocCommentServices } from "../../gml/gml-rule-services.js";
@@ -93,7 +94,7 @@ export function createGm1032Rule(entry: FeatherManifestEntry): Rule.RuleModule {
                     }
                 }
 
-                const uniqueSortedIndexes = [...new Set(argumentIndexes)].toSorted((left, right) => left - right);
+                const uniqueSortedIndexes = Core.uniqueArray(argumentIndexes).toSorted((left, right) => left - right);
                 const startsAtZero = uniqueSortedIndexes.length > 0 && uniqueSortedIndexes[0] === 0;
                 if (startsAtZero) {
                     for (const [position, originalIndex] of uniqueSortedIndexes.entries()) {

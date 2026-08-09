@@ -833,7 +833,9 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
             console.log("\n[DRY RUN] No files were modified.");
         } else {
             const semanticBridge = engine.semantic as GmlSemanticBridge;
-            const changedFiles = [...new Set(result.summaries.flatMap((summary) => summary.changedFiles))];
+            const changedFiles = Core.uniqueArray(
+                result.summaries.flatMap((summary) => summary.changedFiles)
+            ) as Array<string>;
             if (semanticBridge && changedFiles.length > 0) {
                 const impactedFiles = await Semantic.resolveSemanticImpactFilePaths(projectRoot, changedFiles, []);
                 const refreshedProjectIndex = await runSemanticIndexOperation(projectRoot, (onProgress) =>

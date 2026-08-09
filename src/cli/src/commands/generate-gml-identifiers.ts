@@ -963,7 +963,9 @@ async function mergeCallableManualPages(
     manualRoot: string,
     manualBasenames: ReadonlyMap<string, string | null>
 ): Promise<void> {
-    const manualPaths = [...new Set([...manualBasenames.values()].flatMap((value) => (value === null ? [] : [value])))];
+    const manualPaths = Core.uniqueArray(
+        [...manualBasenames.values()].flatMap((value) => (value === null ? [] : [value]))
+    );
     const callablePages = await Core.runInParallelWithLimit(
         manualPaths,
         async (manualPath) => {

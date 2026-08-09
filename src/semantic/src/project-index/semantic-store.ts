@@ -966,7 +966,7 @@ function findUnresolvedDependents(
     projectRoot: string,
     identifierNames: ReadonlyArray<string>
 ): ReadonlyArray<string> {
-    const names = [...new Set(identifierNames.filter((name) => name.length > 0))];
+    const names = Core.uniqueArray(identifierNames.filter((name) => name.length > 0));
     if (names.length === 0) {
         return [];
     }
