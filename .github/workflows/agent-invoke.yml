@@ -771,8 +771,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ inputs.pr_number }}
           REPOSITORY: ${{ github.repository }}
+          LOG_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           MESSAGE: |-
-            **[🤖 ${{ inputs.agent }}]** I'm sorry, but I was unable to complete the requested action. See [the logs for details](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+            **[🤖 ${{ inputs.agent }}]** I'm sorry, but I was unable to complete the requested action.
         run: |
           set -euo pipefail
 
@@ -786,10 +787,62 @@ jobs:
             } >> "$GITHUB_OUTPUT"
           }
 
+          sanitize_failure_excerpt() {
+            sed -E \
+              -e 's#(https://)[^/@[:space:]]+@#\1***@#g' \
+              -e 's#((Authorization|authorization)[=:]?[[:space:]]*(Bearer|token)?[[:space:]]*)[^[:space:]",}]+#\1***#g' \
+              -e 's#((GITHUB_TOKEN|GH_TOKEN|GH_USER_TOKEN|OPENAI_API_KEY|CLAUDE_CODE_OAUTH_TOKEN|GEMINI_API_KEY)[=:][[:space:]]*)[^[:space:]",}]+#\1***#g' \
+              -e 's#(github_pat_|gh[pousr]_)[A-Za-z0-9_]+#\1***#g' \
+              -e 's#sk-[A-Za-z0-9_-]{16,}#sk-***#g' \
+              -e 's#```#` ` `#g'
+          }
+
+          find_failure_excerpt() {
+            local log_file=''
+            local excerpt=''
+
+            if [ -s "${RUNNER_TEMP}/agent-live.log" ]; then
+              log_file="${RUNNER_TEMP}/agent-live.log"
+            elif [ -s "${RUNNER_TEMP}/agent-setup.log" ]; then
+              log_file="${RUNNER_TEMP}/agent-setup.log"
+            fi
+
+            if [ -z "${log_file}" ]; then
+              return 0
+            fi
+
+            excerpt="$(
+              grep -Eai '(error|failed|failure|exception|fatal|unauthorized|forbidden|denied|quota|rate.?limit|429|timed?.?out|timeout)' "${log_file}" \
+                | tail -n 8 \
+                | cut -c1-500 \
+                || true
+            )"
+
+            if [ -n "${excerpt}" ]; then
+              printf '%s\n' "${excerpt}" | sanitize_failure_excerpt
+            fi
+          }
+
+          build_failure_message() {
+            local failure_reason="$1"
+            local excerpt=''
+
+            excerpt="$(find_failure_excerpt)"
+
+            printf '%s\n\n**Failure:** %s' "${MESSAGE}" "${failure_reason}"
+
+            if [ -n "${excerpt}" ]; then
+              printf '\n\n**Last reported error:**\n```text\n%s\n```' "${excerpt}"
+            fi
+
+            printf '\n\nSee [the logs for full details](%s).' "${LOG_URL}"
+          }
+
           if [ "${RUN_AGENT_OUTCOME}" = "failure" ] || [ "${RUN_AGENT_CONCLUSION}" = "failure" ]; then
             echo "Run agent step failed → FAIL."
+            failure_message="$(build_failure_message 'The agent command or post-run branch handling failed.')"
 
-            if gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}"; then
+            if gh issue comment "${ISSUE_NUMBER}" --body "${failure_message}" --repo "${REPOSITORY}"; then
               if [ -f "$NO_CHANGE_SENTINEL" ]; then
                 write_report_outputs true true
               else
@@ -810,8 +863,9 @@ jobs:
           fi
 
           echo "Agent command succeeded with no branch push → FAIL."
+          failure_message="$(build_failure_message 'The agent command completed without producing a branch push.')"
 
-          if gh issue comment "${ISSUE_NUMBER}" --body "${MESSAGE}" --repo "${REPOSITORY}"; then
+          if gh issue comment "${ISSUE_NUMBER}" --body "${failure_message}" --repo "${REPOSITORY}"; then
             if [ -f "$NO_CHANGE_SENTINEL" ]; then
               write_report_outputs true true
             else
