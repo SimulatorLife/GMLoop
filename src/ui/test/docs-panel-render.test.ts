@@ -417,8 +417,11 @@ void test("GmDocsPanel exposes copy actions for CLI command usage", () => {
     assert.match(rendered, /gmloop graph visualize <path>/u);
     assert.match(rendered, /class="docs-reference-entry"/u);
     assert.match(rendered, /class="docs-usage-shell"[\s\S]*class="docs-usage">gmloop graph visualize <path><\/code>/u);
-    assert.match(rendered, /<details class="docs-detail-container">[\s\S]*<summary>Arguments and options<\/summary>/u);
-    assert.doesNotMatch(rendered, /<details class="docs-detail-container" open/u);
+    assert.match(
+        rendered,
+        /<gm-collapsible[\s\S]*class="docs-detail-container"[\s\S]*\.summary=Arguments and options/u
+    );
+    assert.doesNotMatch(rendered, /<gm-collapsible[^>]*class="docs-detail-container"[^>]*\bopen\b/u);
     assert.match(rendered, /class="docs-detail-row"[\s\S]*<code>path<\/code>[\s\S]*Path to the project to inspect\./u);
     assert.match(rendered, /class="docs-detail-row"[\s\S]*<code>--out<\/code>[\s\S]*Write the bundle to disk\./u);
     assert.match(
@@ -620,7 +623,7 @@ void test("GmDocsPanel renders the MCP tools subview and tool metadata when sele
     assert.match(rendered, /project_status/u);
     assert.match(rendered, /accessibleLabel=Copy project status tool name/u);
     assert.match(rendered, /label="Copy"/u);
-    assert.match(rendered, /<details class="docs-detail-container">[\s\S]*<summary>Fields<\/summary>/u);
+    assert.match(rendered, /<gm-collapsible[\s\S]*class="docs-detail-container"[\s\S]*\.summary=Fields/u);
     assert.match(rendered, /Read the current project status\./u);
     assert.match(rendered, /path/u);
     assert.match(rendered, /Project path to inspect\./u);
@@ -695,7 +698,7 @@ void test("GmDocsPanel renders the LSP tools subview and tool metadata when sele
     assert.match(rendered, /lsp_goto_definition/u);
     assert.match(rendered, /accessibleLabel=Copy Go to Definition tool name/u);
     assert.match(rendered, /label="Copy"/u);
-    assert.match(rendered, /<details class="docs-detail-container">[\s\S]*<summary>Fields<\/summary>/u);
+    assert.match(rendered, /<gm-collapsible[\s\S]*class="docs-detail-container"[\s\S]*\.summary=Fields/u);
     assert.match(rendered, /Find where a function, class, or variable is defined\./u);
     assert.match(rendered, /file_path/u);
     assert.match(rendered, /Absolute path to the source file/u);

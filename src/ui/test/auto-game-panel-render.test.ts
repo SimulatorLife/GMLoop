@@ -248,7 +248,10 @@ void test("GmAutoGamePanel renders host-provided pipeline details", () => {
     assert.match(rendered, /<time[\s\S]*datetime=2026-01-01T00:00:00.000Z/u);
     assert.match(rendered, /game-design/u);
     assert.doesNotMatch(rendered, /class="auto-game-skill-disclosure"[\s\S]*?open/u);
-    assert.match(rendered, /<summary>[\s\S]*Packaged Skills & Guidance Templates/u);
+    assert.match(
+        rendered,
+        /<gm-collapsible[\s\S]*class="auto-game-skill-disclosure"[\s\S]*Packaged Skills & Guidance Templates/u
+    );
     assert.match(rendered, /Exclude game-design from Auto-Game/u);
     assert.match(rendered, /class="auto-game-skill-toggle__track"/u);
     assert.match(rendered, /\.label=Skill \(Detected\)[\s\S]*\.tone=success/u);
