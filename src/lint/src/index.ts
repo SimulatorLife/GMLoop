@@ -5,16 +5,13 @@ import { gmlLanguage } from "./language/gml-language.js";
 import { configs, featherPlugin, plugin } from "./plugin.js";
 import { services } from "./services/index.js";
 
-const { performanceOverrideRuleIds } = services;
-
 /**
  * Flattened lint namespace that exposes frequently-accessed properties directly
  * alongside the nested namespaces (plugin, configs, services).
  *
- * This flattens the hierarchy by exposing `gmlLanguage`,
- * `performanceOverrideRuleIds`, and the malformed helpers directly on `Lint`
- * rather than nested under deeper paths. This reduces chain depth from 3
- * segments to 1 segment, improving discoverability and reducing verbosity for
+ * This flattens the hierarchy by exposing `gmlLanguage` and the malformed
+ * helpers directly on `Lint` rather than nested under deeper paths. This
+ * reduces chain depth, improving discoverability and reducing verbosity for
  * high-traffic access patterns.
  */
 export const Lint = Object.freeze({
@@ -23,9 +20,8 @@ export const Lint = Object.freeze({
     configs,
     services,
 
-    // Flattened aliases for high-traffic access patterns
+    // Flattened language access
     gmlLanguage,
-    performanceOverrideRuleIds,
 
     // Shared utilities (from doc-comment)
     normalizeDocParamName,

@@ -86,7 +86,7 @@ void test("missing rules means no overlay rules applied", () => {
 });
 
 void test("overlay matching uses exact canonical full rule IDs", () => {
-    const performanceId = Lint.performanceOverrideRuleIds[0];
+    const performanceId = Lint.services.performanceOverrideRuleIds[0];
 
     assert.equal(
         __lintCommandTest__.hasOverlayRuleApplied({
