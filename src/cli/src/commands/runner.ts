@@ -24,7 +24,7 @@ import {
     RUNNER_LIFECYCLE_ACTIONS,
     type RunnerLifecycleAction
 } from "../modules/runtime/lifecycle.js";
-import { isRecord } from "../shared/error-guards.js";
+import { extractErrorMessage, isRecord } from "../shared/error-guards.js";
 import { discoverProjectRoot } from "../workflow/project-root.js";
 import { followRunnerLogs, type FollowRunnerLogsReadOptions, resolveBoundRunnerState } from "./runner-context.js";
 
@@ -91,7 +91,7 @@ function parseRunnerArgsInput(value: string): Array<string> {
     try {
         parsed = JSON.parse(trimmed);
     } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
+        const reason = extractErrorMessage(error);
         throw new TypeError(`GMLOOP_RUNNER_ARGS JSON is malformed (${reason}): ${trimmed}`, {
             cause: error
         });

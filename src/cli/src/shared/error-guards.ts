@@ -50,3 +50,29 @@ export function asErrorLike(error: unknown): ErrorLikeDetails | null {
 
     return error;
 }
+
+/**
+ * Extract a human-readable message from any thrown value, falling back to a
+ * non-empty placeholder when no message can be determined.
+ *
+ * Several call sites across the CLI used to repeat the ad-hoc idiom
+ *
+ * ```ts
+ * const reason = error instanceof Error ? error.message : String(error);
+ * ```
+ *
+ * which silently degrades for `null`/`undefined` (yielding the literal
+ * strings `"null"`/`"undefined"`), loses type information on thrown objects
+ * with non-primitive toString results, and can produce an empty string when
+ * an `Error` has no message. Centralising the extraction through
+ * {@link Core.getErrorMessageOrFallback} keeps CLI error reporting aligned
+ * with the project-wide helper, ensures every caller produces a non-empty
+ * string suitable for embedding in user-facing messages, and gives every
+ * site the same fallback semantics for future evolution.
+ *
+ * @param error Value that may represent an error.
+ * @returns A non-empty string describing the value.
+ */
+export function extractErrorMessage(error: unknown): string {
+    return Core.getErrorMessageOrFallback(error);
+}

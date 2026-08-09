@@ -125,7 +125,7 @@ function assertJsonSerializable(payload: unknown, context: string): void {
     try {
         serialized = JSON.stringify(payload);
     } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
+        const reason = Core.getErrorMessageOrFallback(error);
         throw new TypeError(`${context} contains a non-JSON-serializable value: ${reason}`, { cause: error });
     }
 

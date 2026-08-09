@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { isRecord, tryParseJsonPayload } from "../src/shared/error-guards.js";
+import { extractErrorMessage, isRecord, tryParseJsonPayload } from "../src/shared/error-guards.js";
 
 void describe("tryParseJsonPayload", () => {
     void it("returns parsed object for valid JSON object payloads", () => {
@@ -74,5 +74,96 @@ void describe("isRecord", () => {
         } else {
             assert.fail("Expected isRecord to return true for a plain object");
         }
+    });
+});
+
+void describe("extractErrorMessage", () => {
+    void it("returns the message of a standard Error", () => {
+        assert.equal(extractErrorMessage(new Error("boom")), "boom");
+    });
+
+    void it("returns the message of a TypeError subclass", () => {
+        assert.equal(extractErrorMessage(new TypeError("bad input")), "bad input");
+    });
+
+    void it("returns strings verbatim", () => {
+        assert.equal(extractErrorMessage("plain text"), "plain text");
+    });
+
+    void it("returns a non-empty placeholder for null", () => {
+        // Regression: the ad-hoc `error instanceof Error ? error.message :
+        // String(error)` pattern used across the CLI produced the literal
+        // string `"null"` for `null` thrown values. Centralising the
+        // extraction through `Core.getErrorMessageOrFallback` yields a
+        // descriptive placeholder instead.
+        const message = extractErrorMessage(null);
+        assert.notEqual(message, "");
+        assert.notEqual(message, "null");
+    });
+
+    void it("returns a non-empty placeholder for undefined", () => {
+        // Regression: the previous ad-hoc pattern produced the literal
+        // string `"undefined"` for `undefined` thrown values.
+        const message = extractErrorMessage(undefined);
+        assert.notEqual(message, "");
+        assert.notEqual(message, "undefined");
+    });
+
+    void it("returns a non-empty message for an Error with an empty message property", () => {
+        // Regression: the previous ad-hoc pattern could yield an empty
+        // string for an Error whose `.message` was empty, which then
+        // produced an empty user-facing diagnostic. The centralised helper
+        // routes empty messages through the same fallback path as `null`
+        // and `undefined`, so the result must remain non-empty.
+        const emptyMessageError = new Error("placeholder");
+        Reflect.set(emptyMessageError, "message", "");
+        const message = extractErrorMessage(emptyMessageError);
+        assert.notEqual(message, "");
+    });
+
+    void it("falls back to a non-empty placeholder for primitives without a string representation", () => {
+        // Regression: the previous ad-hoc pattern produced the literal
+        // `"undefined"` for `void`-returning expressions and the literal
+        // stringification of any primitive. The centralised helper returns
+        // a stable, non-empty placeholder so callers can rely on every
+        // result being safe to embed in user-facing messages.
+        const nullish = extractErrorMessage(undefined);
+        const numeric = extractErrorMessage(42);
+        const boolean = extractErrorMessage(false);
+
+        assert.notEqual(nullish, "");
+        assert.notEqual(numeric, "");
+        assert.notEqual(boolean, "");
+    });
+
+    void it("returns a non-empty placeholder for thrown objects without an Error-like shape", () => {
+        // Regression: the previous ad-hoc pattern produced the literal
+        // stringification of arbitrary thrown objects (e.g. `"[object Object]"`)
+        // or the JSON serialisation of a thrown value, which leaks the
+        // internal representation. The centralised helper routes every
+        // non-error, non-string value through a stable, non-empty fallback so
+        // user-facing diagnostics stay predictable.
+        class UnlabeledThrow {
+            public readonly reason = "boom";
+        }
+
+        const message = extractErrorMessage(new UnlabeledThrow());
+        assert.notEqual(message, "");
+        assert.notEqual(message, "[object Object]");
+    });
+
+    void it("never propagates a thrown toString when extracting a message", () => {
+        // Regression: the previous ad-hoc pattern invoked `String(error)`
+        // unconditionally, which throws if the value's `toString` throws.
+        // The centralised helper must not allow such a throw to escape the
+        // extraction path; instead it returns a stable, non-empty placeholder.
+        const unstable = {
+            toString(): string {
+                throw new Error("cannot stringify");
+            }
+        };
+
+        const message = extractErrorMessage(unstable);
+        assert.notEqual(message, "");
     });
 });
