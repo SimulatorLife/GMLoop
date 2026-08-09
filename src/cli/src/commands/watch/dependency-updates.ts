@@ -7,12 +7,14 @@ import { Transpiler } from "@gmloop/transpiler";
 
 import type { DependencyTracker } from "../../modules/transpilation/dependency-tracker.js";
 import {
+    type ResourcePatch,
     type RuntimeTranspilerPatch,
     type TranspilationContext,
     type TranspilationResult,
     transpileFile
 } from "../../modules/transpilation/index.js";
 import { pathExistsSync } from "../../shared/path-exists.js";
+import { getLayerName } from "./resource-change-handler.js";
 import { countSourceLines, ensureScriptNameRegistered, unregisterScriptName } from "./source-analysis.js";
 
 const { getErrorMessage, uniqueArray } = Core;
@@ -52,6 +54,9 @@ interface FileRemovalCleanupContext extends DependencyUpdateRuntimeContext {
     debouncedHandlers: Map<string, DebouncedFunction<[string, string, FileChangeOptions]>>;
     macroDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath;
     macroDefinitions: Map<string, TranspilerTypes.MacroDefinition>;
+    /** Last-parsed room JSON, keyed by source `.yy` path; see {@link cleanupRemovedFile}. */
+    roomResources: Map<string, Record<string, unknown>>;
+    resourcePatches: Map<string, ResourcePatch>;
 }
 
 export interface TranspileFileRuntimeContext
@@ -318,6 +323,39 @@ export function removeCachedPatchesForFile(
     return removedCount;
 }
 
+/**
+ * Drop the cached room JSON and any derived live-reload patch for a deleted
+ * `.yy` room resource.
+ *
+ * `roomResources` retains the last-parsed room document (background layers,
+ * instances, tile data) so `handleResourceFileChange` can diff successive
+ * saves — see {@link primeRoomResource}. Without this cleanup, deleting or
+ * renaming a room during a watch session leaves that document (and its
+ * matching `resourcePatches` entry) resident for the lifetime of the watch
+ * process, since neither map is keyed by anything that expires on its own.
+ *
+ * Exported so unit tests can drive the helper directly without standing up
+ * the full watch pipeline.
+ */
+export function removeRoomResourceForFile(
+    runtimeContext: Pick<FileRemovalCleanupContext, "roomResources" | "resourcePatches">,
+    filePath: string
+): number {
+    const roomData = runtimeContext.roomResources.get(filePath);
+    if (roomData === undefined) {
+        return 0;
+    }
+
+    runtimeContext.roomResources.delete(filePath);
+
+    const resourceName = typeof roomData.name === "string" ? roomData.name : getLayerName(roomData);
+    if (resourceName !== null && runtimeContext.resourcePatches.delete(`resource/room/${resourceName}`)) {
+        return 2;
+    }
+
+    return 1;
+}
+
 export function cleanupRemovedFile(runtimeContext: FileRemovalCleanupContext, filePath: string): Array<string> {
     const previousMacroDefinitions = runtimeContext.macroDefinitions;
     unregisterScriptName(filePath, runtimeContext.scriptNames);
@@ -336,7 +374,8 @@ export function cleanupRemovedFile(runtimeContext: FileRemovalCleanupContext, fi
     runtimeContext.fileSnapshots.delete(filePath);
     runtimeContext.fileContentHashes.delete(filePath);
     runtimeContext.fileContentLengths.delete(filePath);
-    const removedPatchCount = removeCachedPatchesForFile(runtimeContext, filePath);
+    const removedPatchCount =
+        removeCachedPatchesForFile(runtimeContext, filePath) + removeRoomResourceForFile(runtimeContext, filePath);
 
     const debouncedHandler = runtimeContext.debouncedHandlers.get(filePath);
     if (debouncedHandler) {

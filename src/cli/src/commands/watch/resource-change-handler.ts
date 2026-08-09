@@ -46,7 +46,8 @@ function isJsonObject(value: unknown): value is JsonObject {
     return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function getLayerName(layer: JsonObject): string | null {
+/** Resolves a room/layer's display name from either GameMaker JSON convention. */
+export function getLayerName(layer: JsonObject): string | null {
     const layerName = layer.name ?? layer["%Name"];
     return typeof layerName === "string" && layerName.length > 0 ? layerName : null;
 }
