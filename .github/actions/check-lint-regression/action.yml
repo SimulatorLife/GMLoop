@@ -1,0 +1,39 @@
+name: "Check lint regression"
+description: "Compare base and target ESLint Checkstyle reports by stable finding fingerprint."
+inputs:
+  base-dir:
+    description: "Directory containing the trusted base eslint-checkstyle.xml."
+    required: true
+  target-dir:
+    description: "Directory containing the target eslint-checkstyle.xml."
+    required: true
+outputs:
+  eligible:
+    description: "Whether the target introduces zero new lint-error fingerprints."
+    value: ${{ steps.compare.outputs.eligible }}
+  base_errors:
+    description: "Number of base lint errors."
+    value: ${{ steps.compare.outputs.base_errors }}
+  target_errors:
+    description: "Number of target lint errors."
+    value: ${{ steps.compare.outputs.target_errors }}
+  new_errors:
+    description: "Number of target lint errors not present in the base multiset."
+    value: ${{ steps.compare.outputs.new_errors }}
+runs:
+  using: "composite"
+  steps:
+    - name: Self-test lint comparator
+      shell: bash
+      run: node "$GITHUB_ACTION_PATH/check.mjs" --self-test
+    - name: Compare base and target lint errors
+      id: compare
+      shell: bash
+      env:
+        BASE_DIR: ${{ inputs.base-dir }}
+        TARGET_DIR: ${{ inputs.target-dir }}
+      run: |
+        node "$GITHUB_ACTION_PATH/check.mjs" \
+          --base "$BASE_DIR/eslint-checkstyle.xml" \
+          --target "$TARGET_DIR/eslint-checkstyle.xml" \
+          --github-output "$GITHUB_OUTPUT"
