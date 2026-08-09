@@ -867,7 +867,7 @@ async function validateReport(
     try {
         manifest = parseManifest(manifestValue);
     } catch (error) {
-        errors.push(error instanceof Error ? error.message : String(error));
+        errors.push(Core.getErrorMessage(error));
     }
     if (metadataValue.completed !== true) {
         errors.push("report did not complete");
@@ -1161,7 +1161,7 @@ if (invokedPath && pathToFileURL(path.resolve(invokedPath)).href === import.meta
     try {
         await createCiReportCommand().parseAsync(process.argv);
     } catch (error) {
-        console.error(error instanceof Error ? error.message : String(error));
+        console.error(Core.getErrorMessage(error));
         process.exitCode = 2;
     }
 }
