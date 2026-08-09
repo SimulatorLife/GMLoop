@@ -50,7 +50,15 @@ jobs:
         with:
           node-version-file: .nvmrc
       - name: Self-test trusted auto-merge control plane
+        shell: bash
         run: |
+          set -euo pipefail
+          # These source files use emitted-runtime .js specifiers so compiled NodeNext output works.
+          # Native Node execution of the .ts sources does not remap those specifiers back to .ts,
+          # so adapt only the ephemeral checkout used by this source-level self-test.
+          sed -i 's#"./ci-automerge-paths.js"#"./ci-automerge-paths.ts"#g' \
+            src/cli/src/commands/ci-automerge-evidence.ts \
+            src/cli/src/commands/ci-automerge-gate.ts
           node src/cli/src/commands/ci-automerge-state.ts self-test
           node src/cli/src/commands/ci-automerge-evidence.ts self-test
           node src/cli/src/commands/ci-automerge-gate.ts self-test
