@@ -1,142 +1,185 @@
 name: "Reconcile auto-merge"
 
 on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [main]
+  workflow_run:
+    workflows: ["Finalize auto-merge"]
+    types: [completed]
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions: {}
 
 concurrency:
-  group: automerge-reconcile
-  cancel-in-progress: true
+  group: automerge-admission-queue
+  cancel-in-progress: false
 
 jobs:
   discover:
-    name: Find trusted green and stale legacy PRs
+    name: Admit validation and trusted merge candidates
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
-      contents: write
-      pull-requests: write
-      issues: write
+      actions: write
+      contents: read
+      issues: read
+      pull-requests: read
+      statuses: write
     outputs:
-      matrix: ${{ steps.find.outputs.matrix }}
-      count: ${{ steps.find.outputs.count }}
+      matrix: ${{ steps.queue.outputs.matrix }}
+      count: ${{ steps.queue.outputs.count }}
     steps:
-      - name: Find current trusted green evidence and refresh stale legacy PRs
-        id: find
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          persist-credentials: false
+      - id: queue
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          EVENT_PR: ${{ github.event.pull_request.number }}
         with:
           script: |
+            const fs = require('node:fs');
+            const path = require('node:path');
+            const { pathToFileURL } = require('node:url');
             const { owner, repo } = context.repo;
-            const statePattern = /<!-- automerge-trusted-state head=([0-9a-f]{40}) base=([0-9a-f]{40}) green=(true|false) trust=(true|false) status=([a-z0-9_-]+) -->/u;
-            const reconcileMarker = '<!-- automerge-reconcile-state -->';
+            const thisRepository = `${owner}/${repo}`.toLowerCase();
+            const policy = JSON.parse(fs.readFileSync('.github/ci/automerge-policy.json', 'utf8'));
+            const maxParallel = Number(policy.maxParallelValidations || 2);
+            const maxRetries = Number(policy.maxInfrastructureRetries || 1);
+            if (!Number.isInteger(maxParallel) || maxParallel < 1 || maxParallel > 10
+                || !Number.isInteger(maxRetries) || maxRetries < 0 || maxRetries > 10) {
+              core.setFailed('Invalid auto-merge admission policy.');
+              return;
+            }
+            const stateModule = await import(pathToFileURL(path.join(process.env.GITHUB_WORKSPACE, 'src/cli/src/commands/ci-automerge-state.ts')).href);
+            const { data: branch } = await github.rest.repos.getBranch({ owner, repo, branch: 'main' });
+            const liveBase = branch.commit.sha;
             const pulls = await github.paginate(github.rest.pulls.list, {
-              owner,
-              repo,
-              state: 'open',
-              base: 'main',
-              per_page: 100,
+              owner, repo, state: 'open', base: 'main', sort: 'created', direction: 'asc', per_page: 100,
             });
-            const include = [];
-            let refreshed = 0;
 
-            const publishState = async (number, body) => {
+            const runs = await github.rest.actions.listWorkflowRuns({
+              owner, repo, workflow_id: 'automerge-prs.yml', per_page: 100,
+            });
+            const active = new Map();
+            for (const run of runs.data.workflow_runs) {
+              if (!['queued', 'in_progress'].includes(run.status)) continue;
+              const match = String(run.display_title || '').match(/PR #(\d+) @ ([0-9a-f]{40})/u);
+              if (match) active.set(Number(match[1]), match[2]);
+            }
+
+            const eventPr = Number(process.env.EVENT_PR || 0);
+            const validations = [];
+            const reconcile = [];
+            for (const pr of pulls) {
+              if (pr.draft) continue;
+              if (String(pr.head?.repo?.full_name || '').toLowerCase() !== thisRepository) {
+                core.notice(`PR #${pr.number} comes from an external repository; unattended validation/merge is disabled.`);
+                continue;
+              }
               const comments = await github.paginate(github.rest.issues.listComments, {
-                owner,
-                repo,
-                issue_number: number,
-                per_page: 100,
+                owner, repo, issue_number: pr.number, per_page: 100,
               });
-              const existing = comments.find((comment) =>
-                comment.user?.login === 'github-actions[bot]' && comment.body?.includes(reconcileMarker)
-              );
-              const text = `${reconcileMarker}\n${body}`;
-              if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body: text });
-              else await github.rest.issues.createComment({ owner, repo, issue_number: number, body: text });
-            };
-
-            for (const listedPr of pulls) {
-              if (listedPr.draft) continue;
-              const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: listedPr.number });
-              if (pr.state !== 'open' || pr.draft || pr.base.ref !== 'main') continue;
-
-              const comments = await github.paginate(github.rest.issues.listComments, {
-                owner,
-                repo,
-                issue_number: pr.number,
-                per_page: 100,
-              });
-              const trusted = comments
-                .filter((comment) => comment.user?.login === 'github-actions[bot]')
-                .map((comment) => ({ comment, match: comment.body?.match(statePattern) }))
-                .filter(({ match }) => match)
-                .sort((left, right) => new Date(right.comment.updated_at).getTime() - new Date(left.comment.updated_at).getTime())[0];
-
-              if (trusted?.match) {
-                const [, headSha, baseSha, green, trust] = trusted.match;
-                if (green === 'true' && trust === 'true' && headSha === pr.head.sha) {
-                  include.push({
-                    pr_number: pr.number,
-                    head_sha: headSha,
-                    base_sha: baseSha,
-                  });
-                  continue;
-                }
+              const latest = stateModule.findLatestBotAutoMergeState(comments);
+              if (latest && latest.head === pr.head.sha && latest.green && latest.trusted && latest.base === liveBase) {
+                if (reconcile.length === 0) reconcile.push({ pr_number: pr.number, head_sha: pr.head.sha, base_sha: liveBase });
+                continue;
               }
 
-              // PRs that predate the durable trusted-state marker can otherwise
-              // remain stranded forever after an old finalizer failure. Updating
-              // only branches GitHub explicitly reports as `behind` is safe: it
-              // cannot merge anything, and the resulting synchronize event runs
-              // the full modern validation/finalization pipeline.
-              const state = String(pr.mergeable_state || '').toLowerCase();
-              if (state !== 'behind') continue;
-              try {
-                await github.rest.pulls.updateBranch({
-                  owner,
-                  repo,
-                  pull_number: pr.number,
-                  expected_head_sha: pr.head.sha,
+              if (active.get(pr.number) === pr.head.sha) continue;
+              let retry = 0;
+              let eligible = false;
+              if (!latest || latest.head !== pr.head.sha) {
+                eligible = true;
+              } else if (['infrastructure', 'baseline-unavailable'].includes(latest.reason) && latest.retry < maxRetries) {
+                eligible = true;
+                retry = latest.retry + 1;
+              } else if (latest.reason === 'stale' || (latest.green && latest.base !== liveBase)) {
+                eligible = true;
+              } else if (latest.reason === 'pending' && latest.base !== liveBase) {
+                eligible = true;
+              }
+              if (eligible) {
+                validations.push({
+                  pr,
+                  retry,
+                  priority: pr.number === eventPr ? 0 : 1,
                 });
-                refreshed += 1;
-                core.notice(`Refreshed stale unmarked PR #${pr.number}; a fresh validation run will establish durable trusted evidence.`);
-              } catch (error) {
-                core.warning(`Unable to refresh stale unmarked PR #${pr.number}: ${error.message}`);
-                await publishState(
-                  pr.number,
-                  `⚠️ **This PR is stale relative to \`main\`, but automatic synchronization failed.** ` +
-                    `The reconciler will retry on a later run.\n\n${error.message}`
-                );
               }
             }
-            core.setOutput('matrix', JSON.stringify({ include }));
-            core.setOutput('count', String(include.length));
-            core.notice(`Found ${include.length} open PR(s) with bot-authored trusted green evidence; refreshed ${refreshed} stale legacy PR(s).`);
+
+            validations.sort((a, b) => a.priority - b.priority
+              || new Date(a.pr.created_at).getTime() - new Date(b.pr.created_at).getTime());
+            const slots = Math.max(0, maxParallel - active.size);
+            const admitted = validations.slice(0, slots);
+            const publishPendingState = async (pr, retry) => {
+              const marker = '<!-- automerge-pr-test-summary -->';
+              const stateMarker = stateModule.serializeAutoMergeState({
+                pr: pr.number, head: pr.head.sha, base: liveBase, green: false, trusted: false,
+                reason: 'pending', retry, runId: 0,
+              });
+              const body = `${marker}\n${stateMarker}\n### Trusted auto-merge evaluation\n\n⏳ Validation admitted for the exact current PR head and live main.`;
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner, repo, issue_number: pr.number, per_page: 100,
+              });
+              const existing = comments.find((comment) =>
+                comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker));
+              if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              else await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body });
+            };
+            for (const candidate of admitted) {
+              const pr = candidate.pr;
+              await github.rest.actions.createWorkflowDispatch({
+                owner, repo, workflow_id: 'automerge-prs.yml', ref: 'main',
+                inputs: {
+                  pr_number: String(pr.number),
+                  expected_head: pr.head.sha,
+                  retry: String(candidate.retry),
+                  reason: candidate.retry ? 'queue-infrastructure-retry' : 'admission-queue',
+                },
+              });
+              await github.rest.repos.createCommitStatus({
+                owner, repo, sha: pr.head.sha,
+                state: 'pending',
+                context: 'automerge/trusted-validation',
+                description: candidate.retry ? 'Trusted validation retry queued' : 'Trusted validation queued',
+              });
+              await publishPendingState(pr, candidate.retry);
+              core.notice(`Admitted PR #${pr.number} @ ${pr.head.sha} (retry=${candidate.retry}).`);
+            }
+            core.setOutput('matrix', JSON.stringify({ include: reconcile }));
+            core.setOutput('count', String(reconcile.length));
+            core.notice(`Active validations=${active.size}; admitted=${admitted.length}; green merge candidates=${reconcile.length}.`);
 
   reconcile:
-    name: Reconcile PR #${{ matrix.pr_number }}
+    name: Reconcile trusted green PR #${{ matrix.pr_number }}
     needs: discover
     if: ${{ needs.discover.outputs.count != '0' }}
     strategy:
       fail-fast: false
-      max-parallel: 4
+      max-parallel: 2
       matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
+      actions: write
       contents: write
-      pull-requests: write
       issues: write
+      pull-requests: write
+      statuses: write
     steps:
-      - name: Checkout trusted default branch
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: main
           persist-credentials: false
-      - name: Retry trusted merge or synchronize stale base
-        uses: ./.github/actions/reconcile-automerge
+      - uses: ./.github/actions/reconcile-automerge
         with:
           pr-number: ${{ matrix.pr_number }}
           validated-head: ${{ matrix.head_sha }}
           validated-base: ${{ matrix.base_sha }}
           allow-merge: "true"
-          source: "periodic-reconciler"
+          source: "admission-queue"

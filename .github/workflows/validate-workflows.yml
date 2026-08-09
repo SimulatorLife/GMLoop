@@ -6,6 +6,9 @@ on:
     paths:
       - ".github/workflows/**"
       - ".github/actions/**"
+      - ".github/ci/automerge-policy.json"
+      - "src/cli/src/commands/ci-automerge-*.ts"
+      - "src/cli/test/ci-automerge-state.test.ts"
   workflow_dispatch:
 
 permissions:
@@ -36,13 +39,18 @@ jobs:
             --output "$archive"
           echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  ${archive}" | sha256sum --check --strict
           tar -xzf "$archive" actionlint
-          # Shell style is enforced elsewhere. This check is deliberately
-          # focused on workflow YAML, expressions, job dependencies, and
-          # action input/schema mistakes so unrelated historical ShellCheck
-          # warnings cannot disable trusted-CI validation.
           ./actionlint -shellcheck= -color
       - name: Parse local composite action YAML
         shell: bash
         run: |
           set -euo pipefail
           ruby -e 'require "yaml"; Dir[".github/actions/**/action.{yml,yaml}"].sort.each { |file| YAML.safe_load(File.read(file), aliases: true); puts "validated #{file}" }'
+      - name: Setup trusted runtime Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+      - name: Self-test trusted auto-merge control plane
+        run: |
+          node src/cli/src/commands/ci-automerge-state.ts self-test
+          node src/cli/src/commands/ci-automerge-evidence.ts self-test
+          node src/cli/src/commands/ci-automerge-gate.ts self-test
