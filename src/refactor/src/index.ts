@@ -95,7 +95,10 @@ export {
     listSemanticProjectIndexDependentCodemodIds
 } from "./codemod-registry.js";
 export * as Codemods from "./codemods/index.js";
-export { executeNamingConventionCodemod, planNamingConventionCodemod } from "./codemods/naming-convention/index.js";
+export {
+    executeNamingConventionCodemod,
+    planNamingConventionCodemod
+} from "./codemods/naming-convention/naming-convention-codemod.js";
 export {
     checkHotReloadSafety,
     computeHotReloadCascade,
