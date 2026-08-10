@@ -25,12 +25,6 @@ void describe("statement spacing policy", () => {
         assert.equal(Printer.StatementSpacingPolicy.shouldSuppressEmptyLineBetween(macroDeclaration, unrelated), false);
     });
 
-    void it("does not force trailing padding after nested functions", () => {
-        // The hook is intentionally a no-op: the intermediate spacing path
-        // in `statement-traversal-spacing.ts` owns inter-statement padding.
-        assert.equal(Printer.StatementSpacingPolicy.shouldForceTrailingBlankLineForNestedFunction(), false);
-    });
-
     void it("keeps default newline padding behavior", () => {
         assert.equal(
             Printer.StatementSpacingPolicy.shouldAddNewlinesAroundStatement({

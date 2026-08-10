@@ -62,23 +62,4 @@ function shouldSuppressEmptyLineBetween(previousNode: unknown, nextNode: unknown
     return Core.isMacroLikeStatement(previousNode) && Core.isMacroLikeStatement(nextNode);
 }
 
-/**
- * Reports whether the printer should emit an extra trailing blank line after
- * a nested function declaration.
- *
- * The formatter intentionally keeps trailing nested function declarations
- * flush against the enclosing block terminator; inter-statement spacing is
- * already handled by the intermediate spacing path in
- * `statement-traversal-spacing.ts`. The hook is retained so callers and
- * tests can describe the intended condition without papering over the policy
- * with conditional branches that all converge on `false`.
- */
-function shouldForceTrailingBlankLineForNestedFunction(): boolean {
-    return false;
-}
-
-export {
-    shouldAddNewlinesAroundStatement,
-    shouldForceTrailingBlankLineForNestedFunction,
-    shouldSuppressEmptyLineBetween
-};
+export { shouldAddNewlinesAroundStatement, shouldSuppressEmptyLineBetween };
