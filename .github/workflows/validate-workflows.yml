@@ -8,7 +8,7 @@ on:
       - ".github/actions/**"
       - ".github/ci/automerge-policy.json"
       - "src/cli/src/commands/ci-automerge-*.ts"
-      - "src/cli/test/ci-automerge-state.test.ts"
+      - "src/cli/test/ci-automerge-*.test.ts"
   workflow_dispatch:
 
 permissions:
@@ -52,5 +52,34 @@ jobs:
       - name: Self-test trusted auto-merge control plane
         run: |
           node src/cli/src/commands/ci-automerge-state.ts self-test
+          node src/cli/src/commands/ci-automerge-plan.ts self-test
           node src/cli/src/commands/ci-automerge-evidence.ts self-test
           node src/cli/src/commands/ci-automerge-gate.ts self-test
+      - name: Stage trusted TypeScript unit-test runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .trusted-ci-runtime
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          import { stripTypeScriptTypes } from 'node:module';
+
+          const files = [
+            'src/cli/src/commands/ci-automerge-state.ts',
+            'src/cli/src/commands/ci-automerge-plan.ts',
+            'src/cli/test/ci-automerge-state.test.ts',
+            'src/cli/test/ci-automerge-plan.test.ts',
+          ];
+          for (const source of files) {
+            const target = path.join('.trusted-ci-runtime', source.replace(/\.ts$/u, '.js'));
+            fs.mkdirSync(path.dirname(target), { recursive: true });
+            const transformed = stripTypeScriptTypes(fs.readFileSync(source, 'utf8'), {
+              mode: 'transform',
+              sourceMap: false,
+            });
+            fs.writeFileSync(target, `${transformed}\n`, 'utf8');
+          }
+          NODE
+      - name: Run trusted auto-merge unit tests
+        run: node --test .trusted-ci-runtime/src/cli/test/ci-automerge-state.test.js .trusted-ci-runtime/src/cli/test/ci-automerge-plan.test.js

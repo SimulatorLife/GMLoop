@@ -82,19 +82,19 @@ writable_roots = [
 ]
 
 [agents]
-max_threads = 1
+max_threads = 4
 max_depth = 1
 
 [agents.explorer]
-description = "MiniMax-M3 read-only explorer for locating code, tracing symbols and modules, answering codebase questions, and returning concise evidence-backed summaries."
+description = "Read-only explorer for locating code, tracing symbols and modules, answering codebase questions, and returning concise evidence-backed summaries."
 config_file = "./agents/explorer.toml"
 
 [agents.worker]
-description = "MiniMax-M3 implementation worker for bounded coding tasks, fixes, tests, refactors, and documentation changes assigned by the parent agent."
+description = "Implementation worker for bounded coding tasks, fixes, tests, refactors, and documentation changes assigned by the parent agent."
 config_file = "./agents/worker.toml"
 
 [agents.validator]
-description = "MiniMax-M3 validation agent for checking assigned changes, running required verification, and reporting failures, regressions, risks, and test gaps to the parent agent."
+description = "Validation agent for checking assigned changes, running required verification, and reporting failures, regressions, risks, and test gaps to the parent agent."
 config_file = "./agents/validator.toml"
 
 [agents.tester]
@@ -106,5 +106,5 @@ description = "Strictly GMLoop-internal build, lint, and test reporter that runs
 config_file = "./agents/build-lint-test.toml"
 
 [agents.smart]
-description = "Expensive, high-intelligence GPT-5.6 Sol specialist reserved for complex assignments the orchestrator judges too hard for routine workers; use sparingly."
+description = "Expensive, high-intelligence specialist-agent reserved for complex assignments the orchestrator judges too hard for routine workers; use sparingly."
 config_file = "./agents/smart.toml"

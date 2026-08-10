@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { performance } from "node:perf_hooks";
 import test from "node:test";
 
-import { planNamingConventionCodemod } from "../src/codemods/naming-convention/index.js";
+import { planNamingConventionCodemod } from "../src/codemods/naming-convention/naming-convention-codemod.js";
 import type {
     CodemodRenameOperations,
     CodemodSemanticProvider,
