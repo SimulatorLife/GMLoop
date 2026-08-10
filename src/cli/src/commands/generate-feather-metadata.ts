@@ -270,8 +270,20 @@ interface ManualTable {
     rows: ReadonlyArray<ReadonlyArray<string | null>>;
 }
 
+// The closed set of block shapes `resolveBlockType` can classify a manual DOM
+// node into. Centralizing this list (rather than leaving `ManualBlock.type`
+// as a bare `string`) lets the compiler catch typos at every comparison site
+// below and lets `normalizeContent` reject unrecognized values instead of
+// silently discarding their content into the default bucket.
+const MANUAL_BLOCK_TYPES = ["note", "paragraph", "heading", "list", "table", "code", "html"] as const;
+type ManualBlockType = (typeof MANUAL_BLOCK_TYPES)[number];
+
+function isManualBlockType(value: string): value is ManualBlockType {
+    return (MANUAL_BLOCK_TYPES as ReadonlyArray<string>).includes(value);
+}
+
 interface ManualBlock {
-    type: string;
+    type: ManualBlockType;
     text: string;
     level?: number;
     items?: ReadonlyArray<string>;
@@ -292,7 +304,7 @@ function shouldSkipManualBlock(hasClass) {
     return hasClass("footer") || hasClass("seealso");
 }
 
-function resolveBlockType(tagName, hasClass) {
+function resolveBlockType(tagName, hasClass): ManualBlockType {
     if (tagName === "p") {
         if (hasClass("code")) {
             return "code";
@@ -540,7 +552,11 @@ function collectNamingListMetadata(mainList) {
     return metadata;
 }
 
-const BLOCK_NORMALIZERS = {
+// Typing this as `Record<ManualBlockType, ...>` (rather than an untyped
+// object with a `default` fallback key) forces every member of
+// `MANUAL_BLOCK_TYPES` to have an explicit normalizer, so `normalizeContent`
+// no longer needs to guess at a fallback for types it doesn't recognize.
+const BLOCK_NORMALIZERS: Record<ManualBlockType, (content, block: ManualBlock) => void> = {
     code: (content, block) => {
         if (block.text) {
             content.codeExamples.push(block.text);
@@ -563,7 +579,10 @@ const BLOCK_NORMALIZERS = {
     heading: (content, block) => {
         pushNormalizedText(content.headings, block.text);
     },
-    default: (content, block) => {
+    paragraph: (content, block) => {
+        pushNormalizedText(content.paragraphs, block.text);
+    },
+    html: (content, block) => {
         pushNormalizedText(content.paragraphs, block.text);
     }
 };
@@ -583,7 +602,11 @@ function normalizeContent(blocks) {
             continue;
         }
 
-        const normalizeBlock = BLOCK_NORMALIZERS[block.type] ?? BLOCK_NORMALIZERS.default;
+        if (!isManualBlockType(block.type)) {
+            throw new Error(`Unrecognized Feather manual block type: "${block.type}"`);
+        }
+
+        const normalizeBlock = BLOCK_NORMALIZERS[block.type];
         normalizeBlock(content, block);
     }
 
@@ -1208,3 +1231,10 @@ if (isMainModule(import.meta.url)) {
         errorPrefix: "Failed to generate Feather metadata."
     });
 }
+
+// `isManualBlockType` and `normalizeContent` are exported separately (rather
+// than only through a test-only helper) so direct unit tests can exercise the
+// `ManualBlockType` validation and fail-fast behavior without spinning up a
+// full manual-parsing workflow. Neither is part of the CLI's public surface;
+// the inline `export` keeps them reachable without adding a new barrel entry.
+export { isManualBlockType, normalizeContent };
