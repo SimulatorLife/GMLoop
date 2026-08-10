@@ -31,6 +31,6 @@ export function isScopeOverrideKeyword(value: unknown): boolean {
  * @returns A readonly list containing every known scope override keyword in
  *   the order they should be presented to users.
  */
-export function formatKnownScopeOverrideKeywords(): string[] {
+export function formatKnownScopeOverrideKeywords(): readonly string[] {
     return [SCOPE_OVERRIDE_KEYWORD];
 }
