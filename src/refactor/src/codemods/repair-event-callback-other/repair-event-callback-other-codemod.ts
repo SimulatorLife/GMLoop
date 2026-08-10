@@ -25,7 +25,7 @@
 import { Core } from "@gmloop/core";
 
 import type { CodemodEdit, CodemodResult } from "../../types.js";
-import { applySourceTextEdits } from "../codemod-helpers.js";
+import { createCodemodResultFromEdits, createUnchangedCodemodResult } from "../codemod-helpers.js";
 
 /**
  * Stable identifier used in the codemod registry. The same string must be
@@ -156,39 +156,14 @@ export function applyRepairEventCallbackOtherCodemod(
     options: RepairEventCallbackOtherCodemodOptions = {}
 ): RepairEventCallbackOtherResult {
     if (!isEventFilePath(options.sourcePath)) {
-        return Object.freeze({
-            changed: false,
-            outputText: sourceText,
-            appliedEdits: Object.freeze([])
-        });
+        return createUnchangedCodemodResult<RepairEventCallbackOtherResult>(sourceText);
     }
+
     const ranges = collectInlineFunctionRanges(ast);
     if (ranges.length === 0) {
-        return Object.freeze({
-            changed: false,
-            outputText: sourceText,
-            appliedEdits: Object.freeze([])
-        });
+        return createUnchangedCodemodResult<RepairEventCallbackOtherResult>(sourceText);
     }
+
     const edits = collectReplacements(sourceText, ranges);
-    if (edits.length === 0) {
-        return Object.freeze({
-            changed: false,
-            outputText: sourceText,
-            appliedEdits: Object.freeze([])
-        });
-    }
-    const outputText = applySourceTextEdits(sourceText, edits);
-    if (outputText === sourceText) {
-        return Object.freeze({
-            changed: false,
-            outputText: sourceText,
-            appliedEdits: Object.freeze([])
-        });
-    }
-    return Object.freeze({
-        changed: true,
-        outputText,
-        appliedEdits: Object.freeze(edits)
-    });
+    return createCodemodResultFromEdits<RepairEventCallbackOtherResult>(sourceText, edits);
 }
