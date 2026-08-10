@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { applyLoopLengthHoistingCodemod } from "../src/codemods/loop-length-hoisting/index.js";
+import { applyLoopLengthHoistingCodemod } from "../src/codemods/loop-length-hoisting/loop-length-hoisting-codemod.js";
 
 void test("loopLengthHoisting hoists array_length from safe for-loop conditions", () => {
     const sourceText = [
