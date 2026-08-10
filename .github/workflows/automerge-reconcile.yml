@@ -55,6 +55,9 @@ jobs:
               core.setFailed('Invalid auto-merge admission policy.');
               return;
             }
+            const trustedPatterns = (policy.trustedCiPatterns || []).map((value) => new RegExp(value, 'u'));
+            const matchesTrustedPath = (file) => trustedPatterns.some((pattern) =>
+              pattern.test(String(file.filename || '')) || pattern.test(String(file.previous_filename || '')));
             const stateModule = await import(pathToFileURL(path.join(process.env.GITHUB_WORKSPACE, 'src/cli/src/commands/ci-automerge-state.ts')).href);
             const { data: branch } = await github.rest.repos.getBranch({ owner, repo, branch: 'main' });
             const liveBase = branch.commit.sha;
@@ -104,6 +107,13 @@ jobs:
                 eligible = true;
               }
               if (eligible) {
+                const files = await github.paginate(github.rest.pulls.listFiles, {
+                  owner, repo, pull_number: pr.number, per_page: 100,
+                });
+                if (files.some(matchesTrustedPath)) {
+                  core.notice(`PR #${pr.number} changes trusted CI/evaluation infrastructure and is human-merge-only; skipping unattended admission.`);
+                  continue;
+                }
                 validations.push({
                   pr,
                   retry,
