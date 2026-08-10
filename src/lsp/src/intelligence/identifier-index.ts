@@ -133,12 +133,7 @@ function createNavigationSnapshotRequirements(
     capability: RequiredSemanticCapability,
     requireCompleteProjectRelationships: boolean
 ): SemanticSnapshotRequirement {
-    const overlayVersions = new Map<string, number>();
-    for (const entry of state.manifest?.entries.values() ?? []) {
-        if (entry.sourceOrigin === "openBuffer" && entry.sourceVersion !== null) {
-            overlayVersions.set(entry.relativePath, entry.sourceVersion);
-        }
-    }
+    const overlayVersions = Semantic.collectOpenBufferOverlayVersions(state.manifest);
     return Object.freeze({
         capabilities: new Set<RequiredSemanticCapability>([capability]),
         overlayVersions,
@@ -1236,9 +1231,7 @@ export function createGmlSemanticIndex(
                 return false;
             }
             const store = getSemanticStore(resolvedRoot);
-            const hasSessionOverlay = [...state.manifest.entries.values()].some(
-                (entry) => entry.sourceOrigin === "openBuffer"
-            );
+            const hasSessionOverlay = Semantic.hasOpenBufferOverlay(state.manifest);
             if (hasSessionOverlay) {
                 const sessionPublication = store.publishSessionSemanticSnapshot({
                     manifest: state.manifest,

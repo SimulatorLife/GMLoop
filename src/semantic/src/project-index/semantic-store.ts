@@ -4,7 +4,11 @@ import { Core } from "@gmloop/core";
 
 import { openGraphIndexDatabase } from "../graph-index/database.js";
 import { type GraphDatabase, runGraphDatabaseImmediateTransaction } from "../graph-index/sqlite-adapter.js";
-import type { SemanticFileManifest, SemanticFileManifestEntry } from "./semantic-manifest.js";
+import {
+    hasOpenBufferOverlay,
+    type SemanticFileManifest,
+    type SemanticFileManifestEntry
+} from "./semantic-manifest.js";
 import { createSemanticMemorySnapshotQueries } from "./semantic-memory-query.js";
 import { normalizeSemanticFilePath } from "./semantic-path.js";
 import { createSemanticSearchNgrams, normalizeSemanticSearchText } from "./semantic-query-order.js";
@@ -226,10 +230,7 @@ function createAffectedFileSet(
 }
 
 function containsSessionLocalOverlay(manifest: SemanticFileManifest | null): boolean {
-    if (manifest === null) {
-        return false;
-    }
-    return [...manifest.entries.values()].some((entry) => entry.sourceOrigin === "openBuffer");
+    return hasOpenBufferOverlay(manifest);
 }
 
 function isAffectedSemanticFile(affectedFiles: ReadonlySet<string> | null, filePath: string | null): boolean {

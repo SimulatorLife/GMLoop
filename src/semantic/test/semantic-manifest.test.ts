@@ -8,7 +8,9 @@ import { Core } from "@gmloop/core";
 
 import {
     buildSemanticFileManifest,
+    collectOpenBufferOverlayVersions,
     createSemanticContentHash,
+    hasOpenBufferOverlay,
     reconcileSemanticManifests,
     updateSemanticFileManifest
 } from "../src/project-index/semantic-manifest.js";
@@ -175,4 +177,70 @@ void test("buildSemanticFileManifest treats mismatched/dirty overlays as openBuf
     assert.ok(entry);
     assert.equal(entry.sourceOrigin, "openBuffer", "Dirty overlay must resolve to openBuffer origin");
     assert.equal(entry.sourceVersion, 2, "Dirty overlay must preserve source version");
+});
+
+void test("hasOpenBufferOverlay returns false for a null manifest", () => {
+    assert.equal(hasOpenBufferOverlay(null), false);
+});
+
+void test("hasOpenBufferOverlay returns false when every entry resolves to disk origin", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-manifest-has-overlay-disk-"));
+    await writeFile(path.join(projectRoot, "main.gml"), "return 1;", "utf8");
+
+    const manifest = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade);
+
+    assert.equal(hasOpenBufferOverlay(manifest), false);
+});
+
+void test("hasOpenBufferOverlay returns true when any entry has an openBuffer origin", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-manifest-has-overlay-open-"));
+    const sourcePath = path.join(projectRoot, "main.gml");
+    await writeFile(sourcePath, "return 1;", "utf8");
+
+    const manifest = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade, [
+        {
+            absolutePath: sourcePath,
+            contentHash: createSemanticContentHash("return 2;"),
+            documentVersion: 5,
+            sourceText: "return 2;"
+        }
+    ]);
+
+    assert.equal(hasOpenBufferOverlay(manifest), true);
+});
+
+void test("collectOpenBufferOverlayVersions returns an empty map for a null manifest", () => {
+    assert.deepEqual([...collectOpenBufferOverlayVersions(null).entries()], []);
+});
+
+void test("collectOpenBufferOverlayVersions skips disk-origin and versionless openBuffer entries", async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-manifest-collect-overlays-"));
+    const cleanPath = path.join(projectRoot, "clean.gml");
+    const dirtyPath = path.join(projectRoot, "dirty.gml");
+    await writeFile(cleanPath, "return 1;", "utf8");
+    await writeFile(dirtyPath, "return 1;", "utf8");
+
+    const manifest = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade, [
+        // Clean overlay resolves to disk origin; should be skipped.
+        {
+            absolutePath: cleanPath,
+            contentHash: createSemanticContentHash("return 1;"),
+            documentVersion: 1,
+            sourceText: "return 1;"
+        },
+        // Dirty overlay contributes a relativePath → version mapping.
+        {
+            absolutePath: dirtyPath,
+            contentHash: createSemanticContentHash("return 2;"),
+            documentVersion: 7,
+            sourceText: "return 2;"
+        }
+    ]);
+
+    const overlayVersions = collectOpenBufferOverlayVersions(manifest);
+
+    assert.deepEqual(
+        [...overlayVersions.entries()].map(([relativePath, version]) => ({ relativePath, version })),
+        [{ relativePath: "dirty.gml", version: 7 }]
+    );
 });
