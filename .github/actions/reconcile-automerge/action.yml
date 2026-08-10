@@ -1,5 +1,5 @@
 name: "Reconcile trusted auto-merge"
-description: "Retry a trusted merge or request fresh validation when main advances; never mutates the PR branch."
+description: "Retry a trusted merge or report that fresh validation is needed when main advances; never mutates the PR branch."
 
 inputs:
   pr-number:
@@ -21,7 +21,7 @@ inputs:
     default: "trusted-finalizer"
 outputs:
   status:
-    description: "current, revalidation-requested, merged, pending-mergeability, conflict, merge-failed, or not-current."
+    description: "current, revalidation-needed, merged, pending-mergeability, conflict, merge-failed, or not-current."
     value: ${{ steps.reconcile.outputs.status }}
   merged:
     description: "Whether this invocation merged the PR."
@@ -83,37 +83,17 @@ runs:
           const { data: branch } = await github.rest.repos.getBranch({ owner, repo, branch: 'main' });
           const liveBase = branch.commit.sha;
           if (liveBase !== base) {
-            const runs = await github.rest.actions.listWorkflowRuns({
-              owner, repo, workflow_id: 'automerge-prs.yml', per_page: 50,
+            await github.rest.repos.createCommitStatus({
+              owner, repo, sha: head,
+              state: 'pending',
+              context: 'automerge/trusted-validation',
+              description: 'main advanced; coordinator will queue fresh validation',
             });
-            const active = runs.data.workflow_runs.some((run) =>
-              ['queued', 'in_progress'].includes(run.status)
-              && String(run.display_title || '').includes(`PR #${number} @ ${head}`));
-            if (!active) {
-              await github.rest.actions.createWorkflowDispatch({
-                owner,
-                repo,
-                workflow_id: 'automerge-prs.yml',
-                ref: 'main',
-                inputs: {
-                  pr_number: String(number),
-                  expected_head: head,
-                  retry: '0',
-                  reason: `${source}-stale-base`,
-                },
-              });
-              await github.rest.repos.createCommitStatus({
-                owner, repo, sha: head,
-                state: 'pending',
-                context: 'automerge/trusted-validation',
-                description: 'main advanced; fresh synthetic-merge validation requested',
-              });
-            }
-            await publish(`🔄 **Fresh validation requested without mutating the PR branch.** `
+            await publish(`🔄 **Fresh validation is required without mutating the PR branch.** `
               + `Trusted evidence covered main \`${base}\`, while live main is \`${liveBase}\`. `
-              + `The validation worker will test the exact current synthetic merge.`);
+              + `The central admission coordinator will queue the exact current synthetic merge when capacity is available.`);
             core.notice(`${source}: PR #${number} needs revalidation against ${liveBase}; branch was not modified.`);
-            set('revalidation-requested');
+            set('revalidation-needed');
             return;
           }
           if (!allowMerge) {
@@ -144,18 +124,22 @@ runs:
             }
           }
           if (!mergeable) {
-            await publish('⏳ **Trusted validation is green, but GitHub mergeability is still unresolved.** The periodic reconciler will retry without rerunning tests.');
+            await publish('⏳ **Trusted validation is green, but GitHub mergeability is still unresolved.** The periodic coordinator will retry without rerunning tests.');
             set('pending-mergeability');
             return;
           }
 
           const { data: lastBase } = await github.rest.repos.getBranch({ owner, repo, branch: 'main' });
           if (lastBase.commit.sha !== base) {
-            await github.rest.actions.createWorkflowDispatch({
-              owner, repo, workflow_id: 'automerge-prs.yml', ref: 'main',
-              inputs: { pr_number: String(number), expected_head: head, retry: '0', reason: `${source}-premerge-race` },
+            await github.rest.repos.createCommitStatus({
+              owner, repo, sha: head,
+              state: 'pending',
+              context: 'automerge/trusted-validation',
+              description: 'main changed before merge; coordinator will revalidate',
             });
-            set('revalidation-requested');
+            await publish(`🔄 **main changed during the final merge check.** `
+              + `The central admission coordinator will queue fresh validation against \`${lastBase.commit.sha}\`.`);
+            set('revalidation-needed');
             return;
           }
 

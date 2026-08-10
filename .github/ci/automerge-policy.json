@@ -3,6 +3,7 @@
   "testShardCount": 5,
   "maxParallelValidations": 2,
   "maxInfrastructureRetries": 1,
+  "pendingStateTimeoutMs": 900000,
   "maxRemovedTestCases": 3,
   "shardWatchdogMs": 1500000,
   "commandWatchdogMs": 1200000,
@@ -15,7 +16,7 @@
   ],
   "trustedCiPatterns": [
     "^\\.github/",
-    "^src/cli/(?:src/commands/ci-automerge-(?:evidence|gate|state)\\.ts|test/ci-automerge-state\\.test\\.ts)$",
+    "^src/cli/(?:src/commands/ci-automerge-(?:evidence|gate|state|plan)\\.ts|test/ci-automerge-(?:state|plan)\\.test\\.ts)$",
     "(?:^|/)package\\.json$",
     "^pnpm-lock\\.yaml$",
     "^pnpm-workspace\\.yaml$",
