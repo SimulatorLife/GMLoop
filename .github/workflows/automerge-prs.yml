@@ -12,6 +12,10 @@ on:
         description: "Exact PR head SHA expected by the dispatcher."
         required: true
         type: string
+      expected_base:
+        description: "Exact main SHA admitted by the trusted coordinator."
+        required: true
+        type: string
       retry:
         description: "Infrastructure retry generation (0 for normal validation)."
         required: false
@@ -55,17 +59,19 @@ jobs:
         env:
           INPUT_PR: ${{ inputs.pr_number }}
           EXPECTED_HEAD: ${{ inputs.expected_head }}
+          EXPECTED_BASE: ${{ inputs.expected_base }}
           INPUT_RETRY: ${{ inputs.retry }}
         with:
           script: |
             const { owner, repo } = context.repo;
             const number = Number(process.env.INPUT_PR);
             const expectedHead = String(process.env.EXPECTED_HEAD || '');
+            const expectedBase = String(process.env.EXPECTED_BASE || '');
             const retry = Number(process.env.INPUT_RETRY || '0');
             const set = (key, value) => core.setOutput(key, String(value));
             set('pr_number', Number.isInteger(number) ? number : 0);
             set('head_sha', expectedHead);
-            set('base_sha', '');
+            set('base_sha', expectedBase);
             set('merge_sha', '');
             set('shard_count', 5);
             set('shard_watchdog_ms', 1500000);
@@ -75,8 +81,14 @@ jobs:
             set('should_validate', 'false');
             set('retry', Number.isInteger(retry) && retry >= 0 ? retry : 0);
 
-            if (!Number.isInteger(number) || number <= 0 || !/^[0-9a-f]{40}$/u.test(expectedHead)) {
-              core.warning('Dispatch did not provide a valid PR number and exact 40-character head SHA.');
+            if (!Number.isInteger(number) || number <= 0
+                || !/^[0-9a-f]{40}$/u.test(expectedHead)
+                || !/^[0-9a-f]{40}$/u.test(expectedBase)) {
+              core.warning('Dispatch did not provide a valid PR number and exact head/base SHAs.');
+              return;
+            }
+            if (context.sha !== expectedBase) {
+              core.warning(`Validation worker executed from ${context.sha}, not admitted main ${expectedBase}.`);
               return;
             }
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
@@ -87,8 +99,11 @@ jobs:
             }
 
             const { data: baseBranch } = await github.rest.repos.getBranch({ owner, repo, branch: 'main' });
-            const baseSha = baseBranch.commit.sha;
-            set('base_sha', baseSha);
+            if (baseBranch.commit.sha !== expectedBase) {
+              core.notice(`main advanced from admitted ${expectedBase} to ${baseBranch.commit.sha}; coordinator must admit a fresh generation.`);
+              return;
+            }
+            const baseSha = expectedBase;
 
             const readJson = async (path) => {
               const { data } = await github.rest.repos.getContent({ owner, repo, path, ref: baseSha });
@@ -150,6 +165,11 @@ jobs:
               const { data: latest } = await github.rest.pulls.get({ owner, repo, pull_number: number });
               if (latest.state !== 'open' || latest.head.sha !== expectedHead) {
                 set('blocked_reason', 'not-current');
+                return;
+              }
+              const { data: currentBase } = await github.rest.repos.getBranch({ owner, repo, branch: 'main' });
+              if (currentBase.commit.sha !== expectedBase) {
+                core.notice(`main advanced while resolving the synthetic merge; abandoning admitted base ${expectedBase}.`);
                 return;
               }
               const mergeableState = String(latest.mergeable_state || '').toLowerCase();
