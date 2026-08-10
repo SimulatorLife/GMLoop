@@ -8,7 +8,7 @@ export const ProjectFileCategory = Object.freeze({
     SOURCE: "gml"
 });
 
-const PROJECT_FILE_CATEGORIES = new Set(Object.values(ProjectFileCategory));
+const PROJECT_FILE_CATEGORIES = new Set<string>(Object.values(ProjectFileCategory));
 
 const PROJECT_FILE_CATEGORY_CHOICES = Object.freeze(
     [...PROJECT_FILE_CATEGORIES].toSorted((left, right) => left.localeCompare(right)).join(", ")
@@ -36,7 +36,7 @@ export function getProjectIndexSourceExtensions() {
  * @throws {RangeError} When `value` does not map to a known category.
  */
 export function normalizeProjectFileCategory(value) {
-    if (PROJECT_FILE_CATEGORIES.has(value)) {
+    if (typeof value === "string" && PROJECT_FILE_CATEGORIES.has(value)) {
         return value;
     }
 
