@@ -1,8 +1,8 @@
 import { Core } from "@gmloop/core";
 
-import { defaultGmlProgramParser } from "../../parser-adapter.js";
-import type { GlobalvarToGlobalCodemodOptions, GlobalvarToGlobalEdit, GlobalvarToGlobalResult } from "../../types.js";
-import { applySourceTextEdits } from "../codemod-helpers.js";
+import { defaultGmlProgramParser } from "../parser-adapter.js";
+import type { GlobalvarToGlobalCodemodOptions, GlobalvarToGlobalEdit, GlobalvarToGlobalResult } from "../types.js";
+import { applySourceTextEdits } from "./codemod-helpers.js";
 
 /**
  * Represents a `GlobalVarStatement` node extracted from the AST.

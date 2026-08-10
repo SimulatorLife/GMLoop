@@ -1,7 +1,7 @@
 import { Core } from "@gmloop/core";
 
-import { defaultGmlProgramParser } from "../../parser-adapter.js";
-import type { RepairInvalidTexturePointerGuardResult } from "../../types.js";
+import { defaultGmlProgramParser } from "../parser-adapter.js";
+import type { RepairInvalidTexturePointerGuardResult } from "../types.js";
 import {
     type CodemodAstRecord,
     createCodemodResultFromEdits,
@@ -10,7 +10,7 @@ import {
     isAstRecord,
     isNamedCall,
     unwrapParenthesizedExpression
-} from "../codemod-helpers.js";
+} from "./codemod-helpers.js";
 
 function isFunctionNode(node: CodemodAstRecord): boolean {
     return (
