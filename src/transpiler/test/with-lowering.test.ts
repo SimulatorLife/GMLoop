@@ -1,5 +1,6 @@
-import { strictEqual } from "node:assert";
+import { deepStrictEqual, strictEqual } from "node:assert";
 import { test } from "node:test";
+import vm from "node:vm";
 
 import { lowerWithStatement } from "../src/emitter/with-lowering.js";
 
@@ -33,7 +34,36 @@ void test("lowerWithStatement includes array check fallback", () => {
     const result = lowerWithStatement("[obj_a, obj_b]", "speed = 0;", "resolver");
 
     strictEqual(result.includes("if (Array.isArray(__with_value))"), true);
-    strictEqual(result.includes("return __with_value;"), true);
+    strictEqual(result.includes("return [...__with_value];"), true);
+});
+
+void test("lowerWithStatement visits every original target even when the body mutates the source array", () => {
+    // Regression coverage for the array-target snapshot: GameMaker's `with`
+    // statement iterates a fixed snapshot of targets taken when the loop
+    // starts, so instances destroyed mid-loop (which splice/shrink the
+    // underlying array) must not cause later targets to be skipped. The
+    // generated code used to return the live array by reference, so a body
+    // that spliced an earlier index shifted every later target down by one
+    // and the index-based loop advanced past it, silently dropping it.
+    const rawBody = [
+        "visited.push(self.id);",
+        "if (self.id === 1) {",
+        "    targets.splice(targets.indexOf(targetTwo), 1);",
+        "}"
+    ].join("\n");
+
+    const generatedCode = lowerWithStatement("targets", rawBody, "resolver");
+
+    const targetOne = { id: 1 };
+    const targetTwo = { id: 2 };
+    const targetThree = { id: 3 };
+    const targets = [targetOne, targetTwo, targetThree];
+    const visited: Array<number> = [];
+
+    const context = vm.createContext({ self: null, other: null, targets, targetTwo, visited });
+    vm.runInContext(generatedCode, context);
+
+    deepStrictEqual(visited, [1, 2, 3]);
 });
 
 void test("lowerWithStatement embeds indented body correctly", () => {
