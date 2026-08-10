@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { TemplateResult } from "lit";
+import type { PropertyValues, TemplateResult } from "lit";
 
 import { GmErrorBanner } from "../src/app/components/primitives/gm-error-banner.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
@@ -10,7 +10,13 @@ class TestableGmErrorBanner extends GmErrorBanner {
     public renderForTest(): unknown {
         return this.render();
     }
+
+    public willUpdateForTest(changedProperties: PropertyValuesForTest): void {
+        this.willUpdate(changedProperties as PropertyValues<this>);
+    }
 }
+
+type PropertyValuesForTest = Map<PropertyKey, unknown>;
 
 type TemplateResultWithValues = TemplateResult & {
     readonly values: readonly unknown[];
@@ -146,7 +152,7 @@ void test("GmErrorBanner shows a dismissed message again after the message is cl
     assert.equal(renderTemplateValue(banner.renderForTest()), "");
 
     banner.message = "";
-    renderTemplateValue(banner.renderForTest());
+    banner.willUpdateForTest(new Map<PropertyKey, unknown>([["message", "Temporary failure"]]));
     banner.message = "Temporary failure";
 
     assert.match(renderTemplateValue(banner.renderForTest()), /Temporary failure/u);

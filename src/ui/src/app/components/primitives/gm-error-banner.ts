@@ -1,35 +1,6 @@
-import { html } from "lit";
+import { html, type PropertyValues } from "lit";
 
 import { LightDomLitElement } from "../light-dom-lit-element.js";
-
-/**
- * Tracks which message text the user has dismissed so the banner stays
- * hidden while `message` still holds that text, and automatically re-arms
- * once the host clears `message` back to `""`.
- *
- * Composing this state machine keeps the dismissal bookkeeping out of the
- * host's lifecycle overrides: {@link GmErrorBanner} calls {@link sync}
- * directly from `render()` instead of reacting to property changes through
- * a separate `willUpdate` override.
- */
-class ErrorBannerDismissalTracker {
-    #dismissedMessage: string | null = null;
-
-    /** Re-arms the tracker once the host has cleared its message. */
-    public sync(message: string): void {
-        if (message === "") {
-            this.#dismissedMessage = null;
-        }
-    }
-
-    public dismiss(message: string): void {
-        this.#dismissedMessage = message;
-    }
-
-    public isDismissed(message: string): boolean {
-        return message === this.#dismissedMessage;
-    }
-}
 
 /**
  * Reusable dismissable error banner primitive.
@@ -48,10 +19,10 @@ export class GmErrorBanner extends LightDomLitElement {
 
     public accessor message = "";
 
-    #dismissal = new ErrorBannerDismissalTracker();
+    #dismissedMessage: string | null = null;
 
     #onDismiss = (): void => {
-        this.#dismissal.dismiss(this.message);
+        this.#dismissedMessage = this.message;
         this.requestUpdate();
         this.dispatchEvent(
             new CustomEvent("gm-error-banner-dismiss", {
@@ -60,10 +31,14 @@ export class GmErrorBanner extends LightDomLitElement {
         );
     };
 
-    protected override render() {
-        this.#dismissal.sync(this.message);
+    protected override willUpdate(changedProperties: PropertyValues<this>): void {
+        if (changedProperties.has("message") && this.message === "") {
+            this.#dismissedMessage = null;
+        }
+    }
 
-        if (!this.message || this.#dismissal.isDismissed(this.message)) {
+    protected override render() {
+        if (!this.message || this.message === this.#dismissedMessage) {
             return null;
         }
 
