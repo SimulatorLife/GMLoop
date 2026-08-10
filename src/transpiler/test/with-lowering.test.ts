@@ -43,14 +43,10 @@ void test("lowerWithStatement visits every original target even when the body mu
     // starts, so instances destroyed mid-loop (which splice/shrink the
     // underlying array) must not cause later targets to be skipped. The
     // generated code used to return the live array by reference, so a body
-    // that spliced an earlier index shifted every later target down by one
-    // and the index-based loop advanced past it, silently dropping it.
-    const rawBody = [
-        "visited.push(self.id);",
-        "if (self.id === 1) {",
-        "    targets.splice(targets.indexOf(targetTwo), 1);",
-        "}"
-    ].join("\n");
+    // that spliced an index ahead of the current iteration shifted every
+    // later target down by one and the index-based loop advanced past it,
+    // silently dropping it.
+    const rawBody = ["visited.push(self.id);", "if (self.id === 1) {", "    targets.splice(1, 1);", "}"].join("\n");
 
     const generatedCode = lowerWithStatement("targets", rawBody, "resolver");
 
