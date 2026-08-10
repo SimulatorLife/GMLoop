@@ -2,14 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+    type AutoMergeWorkflowRun,
     isKnownBaseTransition,
     isPendingStateExpired,
     isTrustedValidationProducer,
     planAutoMergePr,
     selectNewestValidationRuns,
-    summarizeFinalizerRuns,
-    type AutoMergeWorkflowRun
-} from "../src/commands/ci-automerge-plan.js";
+    summarizeFinalizerRuns} from "../src/commands/ci-automerge-plan.js";
 import { normalizeAutoMergeState } from "../src/commands/ci-automerge-state.js";
 
 const HEAD = "a".repeat(40);
@@ -17,7 +16,12 @@ const BASE = "b".repeat(40);
 const OLD_BASE = "c".repeat(40);
 const NOW = Date.parse("2026-08-10T02:00:00Z");
 
-function validationRun(id: number, status: string, createdAt: string, conclusion: string | null = null): AutoMergeWorkflowRun {
+function validationRun(
+    id: number,
+    status: string,
+    createdAt: string,
+    conclusion: string | null = null
+): AutoMergeWorkflowRun {
     return {
         id,
         run_attempt: 1,
@@ -38,30 +42,36 @@ void test("newest active generation suppresses an older completed validation", (
     const newer = validationRun(101, "in_progress", "2026-08-10T01:01:00Z");
     const latest = selectNewestValidationRuns([older, newer]).get(`42:${HEAD}`) ?? null;
     assert.equal(latest?.id, 101);
-    assert.deepEqual(planAutoMergePr({
-        head: HEAD,
-        liveBase: BASE,
-        state: null,
-        newestValidation: latest,
-        finalizer: { active: false, failedAttempts: 0 },
-        maxInfrastructureRetries: 1,
-        pendingTimeoutMs: 900000,
-        nowMs: NOW
-    }), { kind: "wait", retry: 0, reason: "validation-active" });
+    assert.deepEqual(
+        planAutoMergePr({
+            head: HEAD,
+            liveBase: BASE,
+            state: null,
+            newestValidation: latest,
+            finalizer: { active: false, failedAttempts: 0 },
+            maxInfrastructureRetries: 1,
+            pendingTimeoutMs: 900_000,
+            nowMs: NOW
+        }),
+        { kind: "wait", retry: 0, reason: "validation-active" }
+    );
 });
 
 void test("latest completed generation is finalized before any new validation", () => {
     const latest = validationRun(101, "completed", "2026-08-10T01:01:00Z", "success");
-    assert.deepEqual(planAutoMergePr({
-        head: HEAD,
-        liveBase: BASE,
-        state: null,
-        newestValidation: latest,
-        finalizer: { active: false, failedAttempts: 0 },
-        maxInfrastructureRetries: 1,
-        pendingTimeoutMs: 900000,
-        nowMs: NOW
-    }), { kind: "finalize", retry: 0, reason: "validation-completed" });
+    assert.deepEqual(
+        planAutoMergePr({
+            head: HEAD,
+            liveBase: BASE,
+            state: null,
+            newestValidation: latest,
+            finalizer: { active: false, failedAttempts: 0 },
+            maxInfrastructureRetries: 1,
+            pendingTimeoutMs: 900_000,
+            nowMs: NOW
+        }),
+        { kind: "finalize", retry: 0, reason: "validation-completed" }
+    );
 });
 
 void test("only failed finalizer executions consume the finalizer retry budget", () => {
@@ -91,17 +101,20 @@ void test("orphaned pending state becomes retryable after its bounded timeout", 
         runId: 0,
         updatedAt: "2026-08-10T01:30:00Z"
     });
-    assert.equal(isPendingStateExpired(pending, NOW, 900000), true);
-    assert.deepEqual(planAutoMergePr({
-        head: HEAD,
-        liveBase: BASE,
-        state: pending,
-        newestValidation: null,
-        finalizer: { active: false, failedAttempts: 0 },
-        maxInfrastructureRetries: 1,
-        pendingTimeoutMs: 900000,
-        nowMs: NOW
-    }), { kind: "validate", retry: 1, reason: "orphaned-pending-retry" });
+    assert.equal(isPendingStateExpired(pending, NOW, 900_000), true);
+    assert.deepEqual(
+        planAutoMergePr({
+            head: HEAD,
+            liveBase: BASE,
+            state: pending,
+            newestValidation: null,
+            finalizer: { active: false, failedAttempts: 0 },
+            maxInfrastructureRetries: 1,
+            pendingTimeoutMs: 900_000,
+            nowMs: NOW
+        }),
+        { kind: "validate", retry: 1, reason: "orphaned-pending-retry" }
+    );
 });
 
 void test("unknown-base infrastructure failures remain bounded instead of resetting forever", () => {
@@ -115,16 +128,19 @@ void test("unknown-base infrastructure failures remain bounded instead of resett
         retry: 1,
         runId: 88
     });
-    assert.deepEqual(planAutoMergePr({
-        head: HEAD,
-        liveBase: BASE,
-        state: failed,
-        newestValidation: null,
-        finalizer: { active: false, failedAttempts: 0 },
-        maxInfrastructureRetries: 1,
-        pendingTimeoutMs: 900000,
-        nowMs: NOW
-    }), { kind: "wait", retry: 1, reason: "infrastructure" });
+    assert.deepEqual(
+        planAutoMergePr({
+            head: HEAD,
+            liveBase: BASE,
+            state: failed,
+            newestValidation: null,
+            finalizer: { active: false, failedAttempts: 0 },
+            maxInfrastructureRetries: 1,
+            pendingTimeoutMs: 900_000,
+            nowMs: NOW
+        }),
+        { kind: "wait", retry: 1, reason: "infrastructure" }
+    );
 });
 
 void test("current trusted green state is the only state that reaches merge planning", () => {
@@ -138,16 +154,19 @@ void test("current trusted green state is the only state that reaches merge plan
         retry: 0,
         runId: 101
     });
-    assert.deepEqual(planAutoMergePr({
-        head: HEAD,
-        liveBase: BASE,
-        state: green,
-        newestValidation: validationRun(101, "completed", "2026-08-10T01:01:00Z", "success"),
-        finalizer: { active: false, failedAttempts: 0 },
-        maxInfrastructureRetries: 1,
-        pendingTimeoutMs: 900000,
-        nowMs: NOW
-    }), { kind: "merge", retry: 0, reason: "trusted-green" });
+    assert.deepEqual(
+        planAutoMergePr({
+            head: HEAD,
+            liveBase: BASE,
+            state: green,
+            newestValidation: validationRun(101, "completed", "2026-08-10T01:01:00Z", "success"),
+            finalizer: { active: false, failedAttempts: 0 },
+            maxInfrastructureRetries: 1,
+            pendingTimeoutMs: 900_000,
+            nowMs: NOW
+        }),
+        { kind: "merge", retry: 0, reason: "trusted-green" }
+    );
 });
 
 void test("trusted producer verification rejects alternate refs and rerun attempts", () => {
