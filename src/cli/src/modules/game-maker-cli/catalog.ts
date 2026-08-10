@@ -450,7 +450,10 @@ function isValidCachedCompanionCatalogEntry(value: unknown): value is GameMakerC
     if (!Array.isArray(value.usageLines) || !value.usageLines.every((line) => typeof line === "string")) {
         return false;
     }
-    if (!Array.isArray(value.parameters) || !value.parameters.every(isValidCachedCompanionCatalogParameter)) {
+    if (
+        !Array.isArray(value.parameters) ||
+        !value.parameters.every((parameter) => isValidCachedCompanionCatalogParameter(parameter))
+    ) {
         return false;
     }
     return true;
