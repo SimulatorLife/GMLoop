@@ -552,11 +552,24 @@ function collectNamingListMetadata(mainList) {
     return metadata;
 }
 
+// The bucket shape produced by `normalizeContent`. Declaring it here (rather
+// than relying on an inline object literal) gives the `BLOCK_NORMALIZERS`
+// signature a typed `content` parameter, so each normalizer's `.push`/`.text`
+// access is checked instead of falling through to an implicit `any`.
+interface ManualContent {
+    paragraphs: string[];
+    notes: string[];
+    codeExamples: string[];
+    lists: string[][];
+    headings: string[];
+    tables: ManualTable[];
+}
+
 // Typing this as `Record<ManualBlockType, ...>` (rather than an untyped
 // object with a `default` fallback key) forces every member of
 // `MANUAL_BLOCK_TYPES` to have an explicit normalizer, so `normalizeContent`
 // no longer needs to guess at a fallback for types it doesn't recognize.
-const BLOCK_NORMALIZERS: Record<ManualBlockType, (content, block: ManualBlock) => void> = {
+const BLOCK_NORMALIZERS: Record<ManualBlockType, (content: ManualContent, block: ManualBlock) => void> = {
     code: (content, block) => {
         if (block.text) {
             content.codeExamples.push(block.text);
@@ -587,8 +600,8 @@ const BLOCK_NORMALIZERS: Record<ManualBlockType, (content, block: ManualBlock) =
     }
 };
 
-function normalizeContent(blocks) {
-    const content = {
+function normalizeContent(blocks: ReadonlyArray<unknown>): ManualContent {
+    const content: ManualContent = {
         paragraphs: [],
         notes: [],
         codeExamples: [],
@@ -597,16 +610,25 @@ function normalizeContent(blocks) {
         tables: []
     };
 
-    for (const block of blocks) {
-        if (!block) {
+    for (const entry of blocks) {
+        // Treat non-object entries (and `null`) as absent rather than throwing
+        // so partial DOM scans that produce stray text nodes do not poison the
+        // whole bucket. The real validation gate lives one step below, where
+        // reading `type` as `string` first lets the failed-check branch
+        // interpolate a mis-typed value into the error message without
+        // collapsing to `never` (and lets the success branch narrow back to
+        // `ManualBlockType` for the `BLOCK_NORMALIZERS` lookup).
+        if (!entry || typeof entry !== "object") {
             continue;
         }
 
-        if (!isManualBlockType(block.type)) {
-            throw new Error(`Unrecognized Feather manual block type: "${block.type}"`);
+        const block = entry as ManualBlock;
+        const blockType: string = block.type;
+        if (!isManualBlockType(blockType)) {
+            throw new Error(`Unrecognized Feather manual block type: "${blockType}"`);
         }
 
-        const normalizeBlock = BLOCK_NORMALIZERS[block.type];
+        const normalizeBlock = BLOCK_NORMALIZERS[blockType];
         normalizeBlock(content, block);
     }
 
