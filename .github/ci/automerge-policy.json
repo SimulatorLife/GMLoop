@@ -3,6 +3,7 @@
   "testShardCount": 5,
   "maxParallelValidations": 2,
   "maxInfrastructureRetries": 1,
+  "maxRemovedTestCases": 3,
   "shardWatchdogMs": 1500000,
   "commandWatchdogMs": 1200000,
   "goldenFixturePatterns": [
