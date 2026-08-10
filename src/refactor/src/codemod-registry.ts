@@ -2,16 +2,16 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
-import { applyLoopLengthHoistingCodemod } from "./codemods/loop-length-hoisting/index.js";
-import { executeNamingConventionCodemod } from "./codemods/naming-convention/index.js";
-import { applyRepairArgumentSeparatorsCodemod } from "./codemods/repair-argument-separators/index.js";
+import { applyLoopLengthHoistingCodemod } from "./codemods/loop-length-hoisting/loop-length-hoisting-codemod.js";
+import { executeNamingConventionCodemod } from "./codemods/naming-convention/naming-convention-codemod.js";
+import { applyRepairArgumentSeparatorsCodemod } from "./codemods/repair-argument-separators/repair-argument-separators-codemod.js";
 import { applyRepairAudioEmitterCreationGuardCodemod } from "./codemods/repair-audio-emitter-creation-guard/repair-audio-emitter-creation-guard-codemod.js";
-import { applyRepairEventCallbackOtherCodemod } from "./codemods/repair-event-callback-other/index.js";
+import { applyRepairEventCallbackOtherCodemod } from "./codemods/repair-event-callback-other/repair-event-callback-other-codemod.js";
 import { applyRepairInvalidTexturePointerGuardCodemod } from "./codemods/repair-invalid-texture-pointer-guard/repair-invalid-texture-pointer-guard-codemod.js";
-import { applyRepairLogicalNotCodemod } from "./codemods/repair-logical-not/index.js";
+import { applyRepairLogicalNotCodemod } from "./codemods/repair-logical-not/repair-logical-not-codemod.js";
 import { applyRepairSpriteTextureUvResolutionCodemod } from "./codemods/repair-sprite-texture-uv-resolution/repair-sprite-texture-uv-resolution-codemod.js";
 import { applyRepairTexturePrefetchGuardCodemod } from "./codemods/repair-texture-prefetch-guard/repair-texture-prefetch-guard-codemod.js";
-import { applyScientificNotationCodemod } from "./codemods/scientific-notation/index.js";
+import { applyScientificNotationCodemod } from "./codemods/scientific-notation/scientific-notation-codemod.js";
 import { normalizeNamingConventionPolicy } from "./naming-convention-policy.js";
 import { assertRefactorConfigPlainObjectWithAllowedKeys } from "./refactor-config-assertions.js";
 import { SINGLE_FILE_TEXT_CODEMOD_IO_CONCURRENCY_LIMIT } from "./refactor-constants.js";
