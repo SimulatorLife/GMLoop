@@ -7,6 +7,7 @@ import {
     cullGraphLayoutToViewport,
     EDGE_LINE_VISUAL_STYLES,
     filterGraphLayoutForDisplay,
+    getEdgeIntersection,
     type GraphLayout,
     type GraphLayoutNode,
     type GraphLegendNodeKind,
@@ -49,18 +50,6 @@ const DEFAULT_DISABLED_NODE_KINDS = new Set<GraphLegendNodeKind>([
 ]);
 const FOCUSED_NODE_ZOOM_SCALE = 2.4;
 const FOCUS_CLEAR_ZOOM_SCALE = 0.55;
-/**
- * Force-directed layout lets connected nodes settle arbitrarily close together
- * (most visibly on self-referencing edges, where source and target start at
- * identical coordinates and the simulation nudges each by a different
- * sub-pixel amount every tick). `Math.hypot` on that residual almost never
- * lands on exact `0`, so comparing the distance with `===` misses these
- * near-coincident cases and normalizes a direction vector whose sign is pure
- * floating-point noise, making the edge line jitter between renders. Treat
- * any distance at or below this threshold — far smaller than a renderable
- * pixel at any supported zoom level — as coincident.
- */
-const MIN_EDGE_DISTANCE = 1e-6;
 
 function formatNodeKindLabel(kind: string): string {
     return kind
@@ -347,26 +336,6 @@ export class GmGraphPanel extends LightDomLitElement {
         this.#refreshViewportRenderIfNeeded();
     };
 
-    #getEdgeIntersection(source: GraphLayoutNode, target: GraphLayoutNode) {
-        const dx = target.x - source.x;
-        const dy = target.y - source.y;
-        const dist = Math.hypot(dx, dy);
-
-        if (dist <= MIN_EDGE_DISTANCE) {
-            return { x1: source.x, y1: source.y, x2: target.x, y2: target.y };
-        }
-
-        const nx = dx / dist;
-        const ny = dy / dist;
-
-        return {
-            x1: source.x + nx * source.radius,
-            y1: source.y + ny * source.radius,
-            x2: target.x - nx * target.radius,
-            y2: target.y - ny * target.radius
-        };
-    }
-
     protected toggleNodeKind(kind: GraphLegendNodeKind): void {
         if (this.#enabledNodeKinds.has(kind)) {
             this.#enabledNodeKinds.delete(kind);
@@ -652,7 +621,7 @@ export class GmGraphPanel extends LightDomLitElement {
         }
 
         return layout.edges.map((edge) => {
-            const geometry = this.#getEdgeIntersection(edge.sourceNode, edge.targetNode);
+            const geometry = getEdgeIntersection(edge);
             const aggregateCount = readGraphEdgeAggregateCount(edge);
             return svg`
                 <line

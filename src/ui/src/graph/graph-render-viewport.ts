@@ -176,7 +176,9 @@ export function shouldBatchGraphEdges(zoomScale: number, edgeCount: number): boo
     );
 }
 
-function getEdgeIntersection(edge: GraphLayoutEdge): Readonly<{ x1: number; x2: number; y1: number; y2: number }> {
+export function getEdgeIntersection(
+    edge: GraphLayoutEdge
+): Readonly<{ x1: number; x2: number; y1: number; y2: number }> {
     const { sourceNode, targetNode } = edge;
     const dx = targetNode.x - sourceNode.x;
     const dy = targetNode.y - sourceNode.y;
