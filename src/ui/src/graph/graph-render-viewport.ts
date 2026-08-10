@@ -16,6 +16,19 @@ const EDGE_BATCH_OVERVIEW_MAX_SCALE = 0.75;
 const EDGE_BATCH_OVERVIEW_COUNT_THRESHOLD = 150;
 const EDGE_BATCH_COUNT_THRESHOLD = 750;
 
+/**
+ * Force-directed layout lets connected nodes settle arbitrarily close together
+ * (most visibly on self-referencing edges, where source and target start at
+ * identical coordinates and the simulation nudges each by a different
+ * sub-pixel amount every tick). `Math.hypot` on that residual almost never
+ * lands on exact `0`, so comparing the distance with `===` misses these
+ * near-coincident cases and normalizes a direction vector whose sign is pure
+ * floating-point noise, making the edge line jitter between renders. Treat
+ * any distance at or below this threshold — far smaller than a renderable
+ * pixel at any supported zoom level — as coincident.
+ */
+const MIN_EDGE_DISTANCE = 1e-6;
+
 export type GraphViewportTransform = Readonly<{
     panX: number;
     panY: number;
@@ -169,7 +182,7 @@ function getEdgeIntersection(edge: GraphLayoutEdge): Readonly<{ x1: number; x2: 
     const dy = targetNode.y - sourceNode.y;
     const distance = Math.hypot(dx, dy);
 
-    if (distance === 0) {
+    if (distance <= MIN_EDGE_DISTANCE) {
         return { x1: sourceNode.x, x2: targetNode.x, y1: sourceNode.y, y2: targetNode.y };
     }
 

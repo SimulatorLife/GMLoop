@@ -49,6 +49,18 @@ const DEFAULT_DISABLED_NODE_KINDS = new Set<GraphLegendNodeKind>([
 ]);
 const FOCUSED_NODE_ZOOM_SCALE = 2.4;
 const FOCUS_CLEAR_ZOOM_SCALE = 0.55;
+/**
+ * Force-directed layout lets connected nodes settle arbitrarily close together
+ * (most visibly on self-referencing edges, where source and target start at
+ * identical coordinates and the simulation nudges each by a different
+ * sub-pixel amount every tick). `Math.hypot` on that residual almost never
+ * lands on exact `0`, so comparing the distance with `===` misses these
+ * near-coincident cases and normalizes a direction vector whose sign is pure
+ * floating-point noise, making the edge line jitter between renders. Treat
+ * any distance at or below this threshold — far smaller than a renderable
+ * pixel at any supported zoom level — as coincident.
+ */
+const MIN_EDGE_DISTANCE = 1e-6;
 
 function formatNodeKindLabel(kind: string): string {
     return kind
@@ -340,7 +352,7 @@ export class GmGraphPanel extends LightDomLitElement {
         const dy = target.y - source.y;
         const dist = Math.hypot(dx, dy);
 
-        if (dist === 0) {
+        if (dist <= MIN_EDGE_DISTANCE) {
             return { x1: source.x, y1: source.y, x2: target.x, y2: target.y };
         }
 
