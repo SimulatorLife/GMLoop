@@ -4,8 +4,10 @@ on:
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
     branches: [main]
+  # This accelerates human-dispatched workers. Bot-dispatched workers are still
+  # recovered deterministically by the periodic coordinator below.
   workflow_run:
-    workflows: ["Finalize auto-merge"]
+    workflows: ["Auto-merge PRs"]
     types: [completed]
   schedule:
     - cron: "*/5 * * * *"
@@ -19,14 +21,14 @@ concurrency:
 
 jobs:
   discover:
-    name: Admit validation and trusted merge candidates
+    name: Coordinate validation and trusted merge candidates
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       actions: write
       contents: read
       issues: write
-      pull-requests: read
+      pull-requests: write
       statuses: write
     outputs:
       matrix: ${{ steps.queue.outputs.matrix }}
@@ -55,25 +57,65 @@ jobs:
               core.setFailed('Invalid auto-merge admission policy.');
               return;
             }
-            const stateModule = await import(pathToFileURL(path.join(process.env.GITHUB_WORKSPACE, 'src/cli/src/commands/ci-automerge-state.ts')).href);
+
+            const stateModule = await import(pathToFileURL(path.join(
+              process.env.GITHUB_WORKSPACE,
+              'src/cli/src/commands/ci-automerge-state.ts',
+            )).href);
             const { data: branch } = await github.rest.repos.getBranch({ owner, repo, branch: 'main' });
             const liveBase = branch.commit.sha;
             const pulls = await github.paginate(github.rest.pulls.list, {
               owner, repo, state: 'open', base: 'main', sort: 'created', direction: 'asc', per_page: 100,
             });
 
-            const runs = await github.rest.actions.listWorkflowRuns({
+            const { data: validationRunsResponse } = await github.rest.actions.listWorkflowRuns({
               owner, repo, workflow_id: 'automerge-prs.yml', per_page: 100,
             });
-            const active = new Map();
-            for (const run of runs.data.workflow_runs) {
-              if (!['queued', 'in_progress'].includes(run.status)) continue;
-              const match = String(run.display_title || '').match(/PR #(\d+) @ ([0-9a-f]{40})/u);
-              if (match) active.set(Number(match[1]), match[2]);
+            const validationRuns = validationRunsResponse.workflow_runs;
+            const activeValidations = new Map();
+            const completedValidations = new Map();
+            for (const run of validationRuns) {
+              const identity = stateModule.parseAutoMergeValidationRunTitle(run.display_title);
+              if (!identity) continue;
+              const key = `${identity.pr}:${identity.head}`;
+              if (['queued', 'in_progress'].includes(run.status)) {
+                // Workflow runs are returned newest-first; retain the newest active
+                // head for each PR so an older cancelling run cannot trigger a duplicate.
+                if (!activeValidations.has(identity.pr)) activeValidations.set(identity.pr, identity.head);
+                continue;
+              }
+              if (run.status !== 'completed' || completedValidations.has(key)) continue;
+              completedValidations.set(key, run);
             }
+
+            const { data: finalizerRunsResponse } = await github.rest.actions.listWorkflowRuns({
+              owner, repo, workflow_id: 'automerge-finalize.yml', per_page: 100,
+            });
+            const activeFinalizers = new Set();
+            const finalizerAttempts = new Map();
+            for (const run of finalizerRunsResponse.workflow_runs) {
+              const validationRunId = stateModule.parseAutoMergeFinalizerRunTitle(run.display_title);
+              if (!validationRunId) continue;
+              finalizerAttempts.set(validationRunId, (finalizerAttempts.get(validationRunId) || 0) + 1);
+              if (['queued', 'in_progress'].includes(run.status)) activeFinalizers.add(validationRunId);
+            }
+
+            const upsertState = async (pr, state, summary, knownComments = null) => {
+              const comments = knownComments || await github.paginate(github.rest.issues.listComments, {
+                owner, repo, issue_number: pr.number, per_page: 100,
+              });
+              const existing = stateModule.findBotAutoMergeSummaryComment(comments);
+              const body = stateModule.renderAutoMergeStateComment(state, summary);
+              if (existing?.id) {
+                await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              } else {
+                await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body });
+              }
+            };
 
             const eventPr = Number(process.env.EVENT_PR || 0);
             const validations = [];
+            const finalizations = [];
             const reconcile = [];
             for (const pr of pulls) {
               if (pr.draft) continue;
@@ -81,20 +123,62 @@ jobs:
                 core.notice(`PR #${pr.number} comes from an external repository; unattended validation/merge is disabled.`);
                 continue;
               }
+
               const comments = await github.paginate(github.rest.issues.listComments, {
                 owner, repo, issue_number: pr.number, per_page: 100,
               });
               const latest = stateModule.findLatestBotAutoMergeState(comments);
+              const key = `${pr.number}:${pr.head.sha}`;
+              const completed = completedValidations.get(key);
+              if (completed && stateModule.validationRunNeedsFinalization(latest, completed.id, pr.head.sha)) {
+                if (activeFinalizers.has(completed.id)) continue;
+                const attempts = finalizerAttempts.get(completed.id) || 0;
+                const handoffRetry = latest?.head === pr.head.sha
+                  && latest.reason === 'infrastructure'
+                  && latest.runId === 0
+                  ? latest.retry
+                  : 0;
+                if (attempts >= maxRetries + 1 || handoffRetry > maxRetries) {
+                  await upsertState(pr, {
+                    pr: pr.number,
+                    head: pr.head.sha,
+                    base: liveBase,
+                    green: false,
+                    trusted: false,
+                    reason: 'infrastructure',
+                    retry: maxRetries,
+                    runId: completed.id,
+                  }, `### Trusted auto-merge evaluation\n\n⚠️ Finalization failed after ${Math.max(attempts, handoffRetry)} retry attempt(s). The trusted validation worker completed, but its durable handoff could not be finalized.`, comments);
+                  await github.rest.repos.createCommitStatus({
+                    owner, repo, sha: pr.head.sha,
+                    state: 'failure',
+                    context: 'automerge/trusted-validation',
+                    description: 'Trusted validation finalizer retry exhausted',
+                  });
+                  continue;
+                }
+                finalizations.push({
+                  pr,
+                  run: completed,
+                  handoffRetry,
+                  priority: pr.number === eventPr ? 0 : 1,
+                });
+                continue;
+              }
+
               if (latest && latest.head === pr.head.sha && latest.green && latest.trusted && latest.base === liveBase) {
                 if (reconcile.length === 0) reconcile.push({ pr_number: pr.number, head_sha: pr.head.sha, base_sha: liveBase });
                 continue;
               }
 
-              if (active.get(pr.number) === pr.head.sha) continue;
+              if (activeValidations.get(pr.number) === pr.head.sha) continue;
               let retry = 0;
               let eligible = false;
               if (!latest || latest.head !== pr.head.sha) {
                 eligible = true;
+              } else if (['infrastructure', 'baseline-unavailable'].includes(latest.reason) && latest.base !== liveBase) {
+                eligible = true;
+                retry = 0;
               } else if (['infrastructure', 'baseline-unavailable'].includes(latest.reason) && latest.retry < maxRetries) {
                 eligible = true;
                 retry = latest.retry + 1;
@@ -103,57 +187,124 @@ jobs:
               } else if (latest.reason === 'pending' && latest.base !== liveBase) {
                 eligible = true;
               }
-              if (eligible) {
-                validations.push({
-                  pr,
-                  retry,
-                  priority: pr.number === eventPr ? 0 : 1,
+              if (!eligible) continue;
+
+              const { data: changedFiles } = await github.rest.pulls.listFiles({
+                owner, repo, pull_number: pr.number, per_page: 1,
+              });
+              if (changedFiles.length === 0) {
+                core.notice(`PR #${pr.number} has no changed files yet; waiting for its first substantive synchronize event.`);
+                continue;
+              }
+              validations.push({
+                pr,
+                retry,
+                comments,
+                priority: pr.number === eventPr ? 0 : 1,
+              });
+            }
+
+            finalizations.sort((a, b) => a.priority - b.priority
+              || new Date(a.run.created_at || 0).getTime() - new Date(b.run.created_at || 0).getTime());
+            const finalizationFailures = [];
+            let finalizersDispatched = 0;
+            for (const candidate of finalizations.slice(0, maxParallel)) {
+              try {
+                await github.rest.actions.createWorkflowDispatch({
+                  owner,
+                  repo,
+                  workflow_id: 'automerge-finalize.yml',
+                  ref: 'main',
+                  inputs: { validation_run_id: String(candidate.run.id) },
                 });
+                finalizersDispatched += 1;
+                core.notice(`Dispatched trusted finalizer for validation run ${candidate.run.id} (PR #${candidate.pr.number}).`);
+              } catch (error) {
+                const nextRetry = candidate.handoffRetry + 1;
+                const canRetry = nextRetry <= maxRetries;
+                await upsertState(candidate.pr, {
+                  pr: candidate.pr.number,
+                  head: candidate.pr.head.sha,
+                  base: liveBase,
+                  green: false,
+                  trusted: false,
+                  reason: 'infrastructure',
+                  retry: nextRetry,
+                  runId: 0,
+                }, `### Trusted auto-merge evaluation\n\n⚠️ Finalizer dispatch failed before the finalizer started: ${error.message}`);
+                await github.rest.repos.createCommitStatus({
+                  owner, repo, sha: candidate.pr.head.sha,
+                  state: canRetry ? 'pending' : 'failure',
+                  context: 'automerge/trusted-validation',
+                  description: canRetry ? 'Finalizer dispatch failed; retry pending' : 'Finalizer dispatch retry exhausted',
+                });
+                finalizationFailures.push(`run ${candidate.run.id}: ${error.message}`);
+                core.warning(`Could not dispatch finalizer for validation run ${candidate.run.id}: ${error.message}`);
               }
             }
 
             validations.sort((a, b) => a.priority - b.priority
               || new Date(a.pr.created_at).getTime() - new Date(b.pr.created_at).getTime());
-            const slots = Math.max(0, maxParallel - active.size);
+            const slots = Math.max(0, maxParallel - activeValidations.size);
             const admitted = validations.slice(0, slots);
-            const publishPendingState = async (pr, retry) => {
-              const marker = '<!-- automerge-pr-test-summary -->';
-              const stateMarker = stateModule.serializeAutoMergeState({
-                pr: pr.number, head: pr.head.sha, base: liveBase, green: false, trusted: false,
-                reason: 'pending', retry, runId: 0,
-              });
-              const body = `${marker}\n${stateMarker}\n### Trusted auto-merge evaluation\n\n⏳ Validation admitted for the exact current PR head and live main.`;
-              const comments = await github.paginate(github.rest.issues.listComments, {
-                owner, repo, issue_number: pr.number, per_page: 100,
-              });
-              const existing = comments.find((comment) =>
-                comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker));
-              if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-              else await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body });
-            };
+            const admissionFailures = [];
             for (const candidate of admitted) {
               const pr = candidate.pr;
-              await github.rest.actions.createWorkflowDispatch({
-                owner, repo, workflow_id: 'automerge-prs.yml', ref: 'main',
-                inputs: {
-                  pr_number: String(pr.number),
-                  expected_head: pr.head.sha,
-                  retry: String(candidate.retry),
-                  reason: candidate.retry ? 'queue-infrastructure-retry' : 'admission-queue',
-                },
-              });
+              const state = {
+                pr: pr.number,
+                head: pr.head.sha,
+                base: liveBase,
+                green: false,
+                trusted: false,
+                reason: 'pending',
+                retry: candidate.retry,
+                runId: 0,
+              };
+
+              // Both prerequisite state surfaces must be writable before launching
+              // work. A failure here leaves no orphan worker and remains retryable.
               await github.rest.repos.createCommitStatus({
                 owner, repo, sha: pr.head.sha,
                 state: 'pending',
                 context: 'automerge/trusted-validation',
                 description: candidate.retry ? 'Trusted validation retry queued' : 'Trusted validation queued',
               });
-              await publishPendingState(pr, candidate.retry);
-              core.notice(`Admitted PR #${pr.number} @ ${pr.head.sha} (retry=${candidate.retry}).`);
+              await upsertState(pr, state,
+                '### Trusted auto-merge evaluation\n\n⏳ Validation admitted for the exact current PR head and live main.',
+                candidate.comments);
+
+              try {
+                await github.rest.actions.createWorkflowDispatch({
+                  owner, repo, workflow_id: 'automerge-prs.yml', ref: 'main',
+                  inputs: {
+                    pr_number: String(pr.number),
+                    expected_head: pr.head.sha,
+                    retry: String(candidate.retry),
+                    reason: candidate.retry ? 'queue-infrastructure-retry' : 'admission-queue',
+                  },
+                });
+                core.notice(`Admitted PR #${pr.number} @ ${pr.head.sha} (retry=${candidate.retry}).`);
+              } catch (error) {
+                const canRetry = candidate.retry < maxRetries;
+                await upsertState(pr, {
+                  ...state,
+                  reason: 'infrastructure',
+                }, `### Trusted auto-merge evaluation\n\n⚠️ Validation dispatch failed before a worker started: ${error.message}`);
+                await github.rest.repos.createCommitStatus({
+                  owner, repo, sha: pr.head.sha,
+                  state: canRetry ? 'pending' : 'failure',
+                  context: 'automerge/trusted-validation',
+                  description: canRetry ? 'Validation dispatch failed; retry pending' : 'Validation dispatch retry exhausted',
+                });
+                admissionFailures.push(`PR #${pr.number}: ${error.message}`);
+              }
             }
+
             core.setOutput('matrix', JSON.stringify({ include: reconcile }));
             core.setOutput('count', String(reconcile.length));
-            core.notice(`Active validations=${active.size}; admitted=${admitted.length}; green merge candidates=${reconcile.length}.`);
+            core.notice(`Active validations=${activeValidations.size}; admitted=${admitted.length}; finalizers dispatched=${finalizersDispatched}; green merge candidates=${reconcile.length}.`);
+            const failures = [...finalizationFailures, ...admissionFailures];
+            if (failures.length) core.setFailed(`Auto-merge control-plane dispatch failure(s): ${failures.join('; ')}`);
 
   reconcile:
     name: Reconcile trusted green PR #${{ matrix.pr_number }}

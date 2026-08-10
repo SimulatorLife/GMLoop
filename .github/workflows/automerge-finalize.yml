@@ -1,11 +1,19 @@
 name: "Finalize auto-merge"
+run-name: "Finalize auto-merge validation run ${{ inputs.validation_run_id }}"
 
 on:
-  workflow_run:
-    workflows: ["Auto-merge PRs"]
-    types: [completed]
+  workflow_dispatch:
+    inputs:
+      validation_run_id:
+        description: "Completed Auto-merge PRs workflow run to finalize."
+        required: true
+        type: string
 
 permissions: {}
+
+concurrency:
+  group: automerge-finalize-${{ inputs.validation_run_id }}
+  cancel-in-progress: false
 
 jobs:
   analyze:
@@ -16,7 +24,7 @@ jobs:
       actions: write
       contents: read
       issues: write
-      pull-requests: read
+      pull-requests: write
       statuses: write
     outputs:
       pr_number: ${{ steps.resolve.outputs.pr_number }}
@@ -45,22 +53,60 @@ jobs:
         with:
           name: validation-target
           path: target
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ inputs.validation_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - id: resolve
-        name: Resolve current PR and trust boundary
+        name: Resolve validation run, current PR, and trust boundary
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
-          RUN_TITLE: ${{ github.event.workflow_run.display_title }}
+          VALIDATION_RUN_ID: ${{ inputs.validation_run_id }}
         with:
           script: |
             const fs = require('node:fs');
+            const path = require('node:path');
+            const { pathToFileURL } = require('node:url');
             const { owner, repo } = context.repo;
+            const runId = Number(process.env.VALIDATION_RUN_ID || 0);
+            core.setOutput('validation_conclusion', '');
+            core.setOutput('validation_url', '');
+            core.setOutput('pr_number', '');
+            core.setOutput('head_sha', '');
+            core.setOutput('base_sha', '');
+            core.setOutput('merge_sha', '');
+            core.setOutput('retry', '0');
+            core.setOutput('blocked_reason', 'infrastructure');
+            core.setOutput('max_retries', '1');
+            core.setOutput('current', 'false');
+            core.setOutput('trusted', 'false');
+            if (!Number.isInteger(runId) || runId <= 0) {
+              core.setFailed('Finalization requires a positive validation workflow run ID.');
+              return;
+            }
+
+            const { data: validationRun } = await github.rest.actions.getWorkflowRun({ owner, repo, run_id: runId });
+            if (validationRun.path !== '.github/workflows/automerge-prs.yml'
+                || validationRun.event !== 'workflow_dispatch'
+                || validationRun.status !== 'completed') {
+              core.setFailed(`Run ${runId} is not a completed trusted Auto-merge PRs workflow_dispatch run.`);
+              return;
+            }
+            core.setOutput('validation_conclusion', String(validationRun.conclusion || ''));
+            core.setOutput('validation_url', String(validationRun.html_url || ''));
+
             let target = null;
             try { target = JSON.parse(fs.readFileSync('target/validation-target.json', 'utf8')); } catch {}
             if (!target) {
-              const match = String(process.env.RUN_TITLE || '').match(/PR #(\d+) @ ([0-9a-f]{40})/u);
-              if (match) target = { prNumber: Number(match[1]), headSha: match[2], baseSha: '', mergeSha: '', retry: 0, blockedReason: 'infrastructure' };
+              const match = String(validationRun.display_title || '').match(/PR #(\d+) @ ([0-9a-f]{40})/u);
+              if (match) {
+                target = {
+                  prNumber: Number(match[1]),
+                  headSha: match[2],
+                  baseSha: '',
+                  mergeSha: '',
+                  retry: 0,
+                  blockedReason: 'infrastructure',
+                };
+              }
             }
             const number = Number(target?.prNumber || 0);
             const head = String(target?.headSha || '');
@@ -73,15 +119,25 @@ jobs:
             core.setOutput('merge_sha', merge);
             core.setOutput('retry', Number.isInteger(retry) ? String(retry) : '0');
             core.setOutput('blocked_reason', String(target?.blockedReason || ''));
-            core.setOutput('max_retries', '1');
-            core.setOutput('current', 'false');
-            core.setOutput('trusted', 'false');
             if (!Number.isInteger(number) || number <= 0 || !/^[0-9a-f]{40}$/u.test(head)) return;
 
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
             if (pr.state !== 'open' || pr.draft || pr.base.ref !== 'main' || pr.head.sha !== head) return;
-            const runId = Number(context.payload.workflow_run?.id || 0);
-            const runCreatedAt = new Date(context.payload.workflow_run?.created_at || 0).getTime();
+
+            const stateModule = await import(pathToFileURL(path.join(
+              process.env.GITHUB_WORKSPACE,
+              'src/cli/src/commands/ci-automerge-state.ts',
+            )).href);
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: number, per_page: 100,
+            });
+            const latest = stateModule.findLatestBotAutoMergeState(comments);
+            if (!stateModule.validationRunNeedsFinalization(latest, runId, head)) {
+              core.notice(`Validation run ${runId} for PR #${number} is already finalized or superseded.`);
+              return;
+            }
+
+            const runCreatedAt = new Date(validationRun.created_at || 0).getTime();
             const recentRuns = await github.rest.actions.listWorkflowRuns({
               owner, repo, workflow_id: 'automerge-prs.yml', per_page: 50,
             });
@@ -108,7 +164,7 @@ jobs:
               typeof filename === 'string' && trustedPatterns.some((pattern) => pattern.test(filename));
             const trustedChange = files.some((file) => matches(file.filename) || matches(file.previous_filename));
             core.setOutput('trusted', trustedChange ? 'false' : 'true');
-            core.notice(`Finalizer resolved PR #${number} at ${head}; trusted=${!trustedChange}, base=${base || 'missing'}.`);
+            core.notice(`Finalizer resolved validation run ${runId} for PR #${number} at ${head}; trusted=${!trustedChange}, base=${base || 'missing'}.`);
       - name: Revalidate stale trusted product PR without mutating its branch
         id: freshness
         if: ${{ steps.resolve.outputs.current == 'true' && steps.resolve.outputs.trusted == 'true' && steps.resolve.outputs.base_sha != '' && steps.resolve.outputs.blocked_reason == '' }}
@@ -125,31 +181,31 @@ jobs:
         run: node src/cli/src/commands/ci-automerge-evidence.ts fingerprint --github-output "$GITHUB_OUTPUT"
       - name: Download exact base evidence
         id: base_download
-        if: ${{ steps.resolve.outputs.current == 'true' && steps.resolve.outputs.trusted == 'true' && steps.freshness.outputs.status == 'current' && steps.resolve.outputs.blocked_reason == '' && github.event.workflow_run.conclusion == 'success' }}
+        if: ${{ steps.resolve.outputs.current == 'true' && steps.resolve.outputs.trusted == 'true' && steps.freshness.outputs.status == 'current' && steps.resolve.outputs.blocked_reason == '' && steps.resolve.outputs.validation_conclusion == 'success' }}
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: report-base
           path: report-base
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ inputs.validation_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Download exact synthetic-merge evidence
         id: merge_download
-        if: ${{ steps.resolve.outputs.current == 'true' && steps.resolve.outputs.trusted == 'true' && steps.freshness.outputs.status == 'current' && steps.resolve.outputs.blocked_reason == '' && github.event.workflow_run.conclusion == 'success' }}
+        if: ${{ steps.resolve.outputs.current == 'true' && steps.resolve.outputs.trusted == 'true' && steps.freshness.outputs.status == 'current' && steps.resolve.outputs.blocked_reason == '' && steps.resolve.outputs.validation_conclusion == 'success' }}
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: report-merge
           path: report-merge
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ inputs.validation_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Download optional complete ancestor evidence
         id: ancestor_download
         continue-on-error: true
-        if: ${{ steps.resolve.outputs.current == 'true' && steps.resolve.outputs.trusted == 'true' && steps.freshness.outputs.status == 'current' && steps.resolve.outputs.blocked_reason == '' && github.event.workflow_run.conclusion == 'success' }}
+        if: ${{ steps.resolve.outputs.current == 'true' && steps.resolve.outputs.trusted == 'true' && steps.freshness.outputs.status == 'current' && steps.resolve.outputs.blocked_reason == '' && steps.resolve.outputs.validation_conclusion == 'success' }}
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: report-ancestor
           path: report-ancestor
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ inputs.validation_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - id: provenance
         name: Verify exact evidence provenance
@@ -259,10 +315,11 @@ jobs:
           TRUSTED: ${{ steps.resolve.outputs.trusted }}
           BLOCKED: ${{ steps.resolve.outputs.blocked_reason }}
           FRESHNESS: ${{ steps.freshness.outputs.status }}
-          WORKFLOW_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          WORKFLOW_CONCLUSION: ${{ steps.resolve.outputs.validation_conclusion }}
           EVAL_GREEN: ${{ steps.evaluate.outputs.green }}
           EVAL_REASON: ${{ steps.evaluate.outputs.reason }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_ID: ${{ inputs.validation_run_id }}
+          TARGET_URL: ${{ steps.resolve.outputs.validation_url }}
         with:
           script: |
             const fs = require('node:fs');
@@ -305,7 +362,10 @@ jobs:
               summary = '### Trusted auto-merge evaluation\n\n⚠️ Expected trusted evaluation output was unavailable.';
             }
 
-            const stateModule = await import(pathToFileURL(path.join(process.env.GITHUB_WORKSPACE, 'src/cli/src/commands/ci-automerge-state.ts')).href);
+            const stateModule = await import(pathToFileURL(path.join(
+              process.env.GITHUB_WORKSPACE,
+              'src/cli/src/commands/ci-automerge-state.ts',
+            )).href);
             const state = {
               pr: number,
               head: process.env.HEAD_SHA,
@@ -316,13 +376,12 @@ jobs:
               retry: Number(process.env.RETRY || 0),
               runId: Number(process.env.RUN_ID || 0),
             };
-            const stateMarker = stateModule.serializeAutoMergeState(state);
-            const marker = '<!-- automerge-pr-test-summary -->';
-            const body = `${marker}\n${stateMarker}\n${summary}`;
-            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
-            const existing = comments.find((comment) =>
-              comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker));
-            if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: number, per_page: 100,
+            });
+            const existing = stateModule.findBotAutoMergeSummaryComment(comments);
+            const body = stateModule.renderAutoMergeStateComment(state, summary);
+            if (existing?.id) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
             else await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
 
             let status = 'failure';
@@ -351,7 +410,7 @@ jobs:
               owner, repo, sha: process.env.HEAD_SHA, state: status,
               context: 'automerge/trusted-validation',
               description: description.slice(0, 140),
-              target_url: context.payload.workflow_run?.html_url,
+              target_url: process.env.TARGET_URL || undefined,
             });
             core.setOutput('green', green ? 'true' : 'false');
             core.setOutput('reason', reason);
@@ -467,7 +526,7 @@ jobs:
         with:
           name: report-merge
           path: report-merge
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ inputs.validation_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Retarget validated evidence to the identical landed tree
         if: ${{ steps.provenance.outputs.valid == 'true' }}
