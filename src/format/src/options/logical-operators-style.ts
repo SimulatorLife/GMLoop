@@ -26,22 +26,6 @@ const logicalOperatorsStyleHelpers = createEnumeratedOptionHelpers(Object.values
 });
 
 /**
- * Check whether the provided value matches one of the supported logical
- * operator style identifiers.
- *
- * Consumers frequently receive untyped config (for example CLI flags or JSON
- * options) and need a quick membership test without re-threading the
- * enumerated set. The value is normalized (trimmed and lowercased) before
- * checking, making this consistent with {@link normalizeLogicalOperatorsStyle}.
- *
- * @param {unknown} value Candidate option value to inspect.
- * @returns {boolean} `true` when the value maps to a known logical operator style.
- */
-export function isLogicalOperatorsStyle(value: unknown): boolean {
-    return logicalOperatorsStyleHelpers.normalize(value, null) !== null;
-}
-
-/**
  * Normalize a user-provided logical operator style option into a canonical
  * value.
  *
