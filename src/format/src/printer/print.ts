@@ -54,6 +54,7 @@ import { safeGetParentNode } from "./path-utils.js";
 import {
     concat,
     conditionalGroup,
+    type DocChild,
     group,
     hardline,
     ifBreak,
@@ -150,17 +151,18 @@ function tryPrintControlStructureNode(node, path, options, print) {
             // missing slot still contributes the structural punctuation
             // (the `;` terminators and the `line` glue for multi-line
             // reflow) needed to keep the parent `group` breakable.
-            const headerParts: any[] = [];
-            if (node.init != null) {
-                headerParts.push(print("init"));
+            const forNode = node as { init?: unknown; test?: unknown; update?: unknown };
+            const headerParts: DocChild[] = [];
+            if (forNode.init != null) {
+                headerParts.push(print("init") as DocChild);
             }
             headerParts.push(";");
-            if (node.test != null) {
-                headerParts.push(line, print("test"));
+            if (forNode.test != null) {
+                headerParts.push(line, print("test") as DocChild);
             }
             headerParts.push(";");
-            if (node.update != null) {
-                headerParts.push(line, print("update"));
+            if (forNode.update != null) {
+                headerParts.push(line, print("update") as DocChild);
             }
             return concat([
                 "for (",

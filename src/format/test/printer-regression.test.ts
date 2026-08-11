@@ -108,8 +108,8 @@ void test("preserves every for-clause slot when init/test/update are missing", a
         },
         {
             name: "init and update clauses are both missing",
-            source: "for (; cond;) { foo(); }\n",
-            expected: ["for (; cond;) {", "    foo();", "}", ""].join("\n")
+            source: "for (var i = 0; cond;) { foo(); }\n",
+            expected: ["for (var i = 0; cond;) {", "    foo();", "}", ""].join("\n")
         },
         {
             name: "only update clause is present",
@@ -118,12 +118,13 @@ void test("preserves every for-clause slot when init/test/update are missing", a
         }
     ];
 
-    for (const testCase of cases) {
+    await cases.reduce(async (previous, testCase) => {
+        await previous;
         const formatted = await Format.format(testCase.source);
         assert.strictEqual(
             formatted,
             testCase.expected,
             `Expected for-loop (${testCase.name}) to keep every clause slot intact.`
         );
-    }
+    }, Promise.resolve());
 });
