@@ -4,7 +4,7 @@
  */
 import { walkObjectGraph } from "../ast/object-graph.js";
 import type { MutableGameMakerAstNode } from "../ast/types.js";
-import { createParserTransform } from "../transforms/parser-transform.js";
+import type { ParserTransform } from "../transforms/parser-transform.js";
 import { isObjectLike } from "../utils/object.js";
 import { isCommentNode } from "./comment-utils.js";
 
@@ -81,12 +81,14 @@ function execute(ast: MutableGameMakerAstNode, options: StripCommentsTransformOp
  * Transform that strips comments, JSDoc annotations, or both from a GML AST.
  * Used by both the lint and plugin pipelines before further processing.
  */
-export const stripCommentsTransform = createParserTransform<StripCommentsTransformOptions>(
-    "strip-comments",
-    {
+export const stripCommentsTransform: ParserTransform<MutableGameMakerAstNode, StripCommentsTransformOptions> = {
+    name: "strip-comments",
+    defaultOptions: Object.freeze({
         stripComments: true,
         stripJsDoc: true,
         dropCommentedOutCode: false
-    },
-    execute
-);
+    }),
+    transform(ast, options) {
+        return execute(ast, options === undefined ? this.defaultOptions : { ...this.defaultOptions, ...options });
+    }
+};
