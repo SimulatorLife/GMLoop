@@ -160,18 +160,37 @@ export interface WebSocketMetricsCollector {
 }
 
 /**
- * Patch queue management.
+ * Read-only observation of the patch queue.
  *
- * Provides control over patch queueing behavior and metrics
- * without coupling to connection lifecycle or message transmission.
+ * Provides a side-effect-free view of patch queue metrics so diagnostic,
+ * monitoring, or regression-test consumers can depend on this role alone
+ * without gaining the ability to mutate queue state. Consumers that only
+ * surface queue health (e.g. status dashboards, automated tests) should
+ * depend on this interface rather than the full {@link WebSocketPatchQueueManager}.
  */
-export interface WebSocketPatchQueueManager {
+export interface WebSocketPatchQueueMetricsReader {
     /**
      * Returns patch queue metrics if queuing is enabled, null otherwise.
      * These metrics track queuing behavior for diagnostic and tuning purposes.
      */
     getPatchQueueMetrics(): Readonly<PatchQueueMetrics> | null;
+}
 
+/**
+ * Manual patch queue flushing.
+ *
+ * Provides the operational capability to flush the patch queue on demand
+ * without coupling to the metrics observation role. Consumers that only
+ * need to force a flush (for example a user-facing "apply pending patches"
+ * affordance or a shutdown hook that drains the queue) should depend on
+ * this interface alone rather than the full {@link WebSocketPatchQueueManager}.
+ *
+ * Keeping flush separate from metrics prevents diagnostic consumers from
+ * accidentally gaining the ability to mutate the queue simply by reading
+ * metrics, which is the contract violation the Interface Segregation
+ * Principle targets.
+ */
+export interface WebSocketPatchQueueFlusher {
     /**
      * Manually flushes any queued patches immediately.
      * Only applicable when patch queuing is enabled.
@@ -179,6 +198,23 @@ export interface WebSocketPatchQueueManager {
      */
     flushPatchQueue(): number;
 }
+
+/**
+ * Patch queue management.
+ *
+ * Provides control over patch queueing behavior and metrics
+ * without coupling to connection lifecycle or message transmission.
+ *
+ * This interface is the composite of two role interfaces:
+ * - {@link WebSocketPatchQueueMetricsReader} for read-only queue observation.
+ * - {@link WebSocketPatchQueueFlusher} for manual queue flushing.
+ *
+ * New consumers should depend on whichever role interface they actually
+ * use; this composite exists so existing call sites and the
+ * {@link RuntimeWebSocketClient} master interface can keep a single
+ * dependency that exposes both capabilities together.
+ */
+export type WebSocketPatchQueueManager = WebSocketPatchQueueMetricsReader & WebSocketPatchQueueFlusher;
 
 /**
  * Complete WebSocket client interface.
@@ -195,4 +231,5 @@ export interface RuntimeWebSocketClient
         WebSocketMessageSender,
         WebSocketInstanceProvider,
         WebSocketMetricsCollector,
-        WebSocketPatchQueueManager {}
+        WebSocketPatchQueueMetricsReader,
+        WebSocketPatchQueueFlusher {}

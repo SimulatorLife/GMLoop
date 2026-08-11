@@ -77,7 +77,9 @@ export type {
     WebSocketInstanceProvider,
     WebSocketMessageSender,
     WebSocketMetricsCollector,
-    WebSocketPatchQueueManager
+    WebSocketPatchQueueFlusher,
+    WebSocketPatchQueueManager,
+    WebSocketPatchQueueMetricsReader
 } from "./browser/websocket/index.js";
 export * as Clients from "./browser/websocket/index.js";
 // The Timing namespace is the canonical public surface for timing utilities.
