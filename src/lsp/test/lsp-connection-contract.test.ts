@@ -5,6 +5,7 @@ import {
     getLspConnectionLogger,
     type GmlLanguageServerConnectionContract,
     hasLspConnectionShutdownHandler,
+    hasLspConnectionWatchedFilesCapability,
     isGmlLanguageServerConnectionContract,
     trySendSemanticTokenRefreshRequest
 } from "@gmloop/lsp";
@@ -86,6 +87,13 @@ void test("contract type guard surfaces missing surfaces explicitly", () => {
         false,
         "Removing sendDiagnostics must fail the guard"
     );
+
+    const missingWatcher = { ...fixture, onDidChangeWatchedFiles: undefined };
+    assert.equal(
+        isGmlLanguageServerConnectionContract(missingWatcher),
+        true,
+        "Removing onDidChangeWatchedFiles must NOT fail the guard — the watcher is optional on the contract"
+    );
 });
 
 void test("logger probe returns callable methods when connection exposes them", () => {
@@ -138,6 +146,44 @@ void test("shutdown capability probe reports presence without `instanceof`", () 
 
     assert.equal(hasLspConnectionShutdownHandler(null), false);
     assert.equal(hasLspConnectionShutdownHandler({}), false);
+});
+
+void test("watched-files capability probe reports presence without `in` discrimination", () => {
+    const fixture = createContractFixture();
+    assert.equal(
+        hasLspConnectionWatchedFilesCapability(fixture),
+        true,
+        "Fully populated fixture must expose the watcher registrar"
+    );
+
+    const partial: Partial<GmlLanguageServerConnectionContract> = {
+        ...fixture,
+        onDidChangeWatchedFiles: undefined
+    };
+    assert.equal(
+        hasLspConnectionWatchedFilesCapability(partial),
+        false,
+        "Removing the watcher registrar must flip the probe to false"
+    );
+
+    assert.equal(hasLspConnectionWatchedFilesCapability(null), false, "Null must fail");
+    assert.equal(hasLspConnectionWatchedFilesCapability(undefined), false, "Undefined must fail");
+    assert.equal(hasLspConnectionWatchedFilesCapability({}), false, "Empty objects must fail");
+    assert.equal(
+        hasLspConnectionWatchedFilesCapability({ onDidChangeWatchedFiles: 7 }),
+        false,
+        "Non-function values must fail the probe"
+    );
+});
+
+void test("contract type guard accepts connections that omit the watcher registrar", () => {
+    const fixture = createContractFixture();
+    const { onDidChangeWatchedFiles: _omitted, ...withoutWatcher } = fixture;
+    assert.equal(
+        isGmlLanguageServerConnectionContract(withoutWatcher),
+        true,
+        "Watcher is optional on the contract; omitting it must still satisfy the guard"
+    );
 });
 
 void test("semantic token refresh probe routes through sendRequest and returns true", () => {
