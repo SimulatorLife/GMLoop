@@ -209,13 +209,6 @@ export function createWebSocketClient({
         readinessTimer: null,
         runtimeReady: false
     };
-    // This slot holds the teardown for the *currently* attached socket's
-    // listeners. It is initialised to the sentinel no-op so cleanup paths can
-    // call it unconditionally — see the JSDoc on `noopListenerTeardown` above
-    // for the lifecycle rules. The pattern below (call → reset to sentinel)
-    // is repeated at the reconnection boundary (just before re-attaching new
-    // listeners) and at the explicit close boundary to guarantee that no
-    // stale teardown for a previous socket is invoked against the next one.
     let detachWebSocketListeners = noopListenerTeardown;
 
     const clearReadinessTimer = (): void => {

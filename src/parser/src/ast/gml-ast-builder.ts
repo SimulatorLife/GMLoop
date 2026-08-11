@@ -660,18 +660,7 @@ export default class GameMakerASTBuilder {
         const items: any[] = [];
         const children = Array.isArray((ctx as any).children) ? (ctx as any).children : [];
         for (const child of children) {
-            // Filter out the structural terminators that wrap the case clauses
-            // before delegating to the visitor. The GML switch body admits both
-            // C-style braces (`{ ... }`) and Pascal-style block markers
-            // (`begin ... end`), so any of those four tokens must be dropped
-            // here — otherwise the caseBlock rule would surface them as
-            // bare-string children, producing synthetic `Literal` nodes in the
-            // final SwitchStatement.cases array and corrupting downstream
-            // consumers (the format printer, refactor rename traversal, and
-            // Feather fix transforms all iterate `cases` and would each treat
-            // those literals as real clauses). Note that `case`/`default`
-            // tokens are intentionally retained: they each anchor a real
-            // `SwitchCase` node via the dedicated rule visitors below.
+            // Skip tokens like '{', '}', 'begin', 'end'
             const text = typeof child.getText === "function" ? child.getText().toLowerCase() : "";
             if (["{", "}", "begin", "end"].includes(text)) {
                 continue;

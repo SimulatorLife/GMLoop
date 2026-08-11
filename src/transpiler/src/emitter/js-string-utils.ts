@@ -117,15 +117,6 @@ export function normalizeStructKeyText(value: string): string {
         }
     }
 
-    // Fallback path: single-quoted strings (GML allows both `'` and `"`,
-    // and JSON.parse only handles the double-quote flavour) plus any
-    // double-quoted string whose JSON.parse attempt above threw. Both
-    // situations are handled by naively slicing the outer pair of matching
-    // quote characters — the function has already verified in its earlier
-    // `first !== last` guard that the opening and closing quotes match, so
-    // this slice is safe to take without escaping the interior. The result
-    // intentionally keeps any embedded escape sequences verbatim: callers
-    // receive the unquoted source text rather than a JS-decoded value when
-    // they reach this path, so they should not assume JSON-style escaping.
+    // Strip surrounding quotes and return the raw content
     return value.slice(1, -1);
 }
