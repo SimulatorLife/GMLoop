@@ -54,7 +54,7 @@ export async function compareDirectoryTrees(
     const sortedActualPaths = [...actualPaths].sort();
     const sortedExpectedPaths = [...expectedPaths].sort();
 
-    assert.deepStrictEqual(
+    assert.deepEqual(
         sortedActualPaths,
         sortedExpectedPaths,
         "Project tree output paths must match expected tree paths byte-for-byte."

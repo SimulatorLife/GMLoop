@@ -526,10 +526,6 @@ void test("compareDirectoryTrees bounds buffered file content to one file pair",
 });
 
 void test("compareDirectoryTrees rejects when path lists diverge", async () => {
-    // Regression coverage for the strict deep-equal migration: the path
-    // comparison in compareDirectoryTrees must surface a divergence using
-    // the same descriptive error message regardless of whether the loose or
-    // strict assertion alias is in use.
     const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-directory-compare-mismatch-"));
     const actualDirectory = path.join(rootPath, "actual");
     const expectedDirectory = path.join(rootPath, "expected");
