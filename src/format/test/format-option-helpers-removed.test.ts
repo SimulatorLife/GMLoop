@@ -60,7 +60,7 @@ void test("trailing-comma-option.ts no longer exports the dead validators", asyn
 
     assert.doesNotMatch(
         source,
-        /\bexport\s+(function|\{[^}]*\bassertTrailingCommaValue\b[^}]*\})\b/u,
+        /\bexport\s+(?:function|\{[^}]*\bassertTrailingCommaValue\b[^}]*\})\b/u,
         "trailing-comma-option.ts must not re-export assertTrailingCommaValue"
     );
     assert.doesNotMatch(
