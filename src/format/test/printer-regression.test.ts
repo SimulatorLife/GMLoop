@@ -74,3 +74,56 @@ void test("does not throw TypeError when CallExpression node has undefined argum
 
     assert.strictEqual(formatted, ["function demo() {", '    return my_func("hello");', "}", ""].join("\n"));
 });
+
+void test("preserves every for-clause slot when init/test/update are missing", async () => {
+    // Regression test: ForStatement nodes with optional `init`, `test`, and
+    // `update` clauses were previously emitted as `print(key)` calls
+    // unconditionally inside a `concat` array. When the parser left any of
+    // those slots as `undefined` (e.g. `for (;;)` is the canonical infinite
+    // loop in GML), `path.call(print, key)` returned `undefined` and Prettier 3
+    // silently dropped those falsy entries during doc traversal
+    // (`if (!r) continue`). The result was a corrupted header: `for (;;)`
+    // formatted as `for (; ; )`, `for (var i = 0;; i++)` formatted as
+    // `for (var i = 0; ; i++)`, and every other permutation with a missing
+    // slot lost both the empty slot and the surrounding glue the `line`
+    // doc builder was supposed to provide. The fix builds the header doc
+    // conditionally so each present clause contributes its `;` separator and
+    // each missing slot still preserves the structural punctuation needed to
+    // keep the parent `group` breakable across long bodies.
+    const cases: ReadonlyArray<{ readonly name: string; readonly source: string; readonly expected: string }> = [
+        {
+            name: "all three clauses omitted (canonical infinite loop)",
+            source: "for (;;) { foo(); }\n",
+            expected: ["for (;;) {", "    foo();", "}", ""].join("\n")
+        },
+        {
+            name: "only test clause is present",
+            source: "for (; cond;) { foo(); }\n",
+            expected: ["for (; cond;) {", "    foo();", "}", ""].join("\n")
+        },
+        {
+            name: "test clause is missing",
+            source: "for (var i = 0;; i++) { foo(); }\n",
+            expected: ["for (var i = 0;; i++) {", "    foo();", "}", ""].join("\n")
+        },
+        {
+            name: "init and update clauses are both missing",
+            source: "for (; cond;) { foo(); }\n",
+            expected: ["for (; cond;) {", "    foo();", "}", ""].join("\n")
+        },
+        {
+            name: "only update clause is present",
+            source: "for (;; i++) { foo(); }\n",
+            expected: ["for (;; i++) {", "    foo();", "}", ""].join("\n")
+        }
+    ];
+
+    for (const testCase of cases) {
+        const formatted = await Format.format(testCase.source);
+        assert.strictEqual(
+            formatted,
+            testCase.expected,
+            `Expected for-loop (${testCase.name}) to keep every clause slot intact.`
+        );
+    }
+});

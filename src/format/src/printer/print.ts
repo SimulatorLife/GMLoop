@@ -134,14 +134,37 @@ function tryPrintControlStructureNode(node, path, options, print) {
             return printTernaryExpressionNode(node, path, options, print);
         }
         case "ForStatement": {
+            // ForStatement clauses (`init`, `test`, `update`) are all optional
+            // in GML — `for (;;)` is the canonical infinite-loop form and the
+            // parser leaves any missing slot as `undefined`. The previous
+            // implementation called `print(key)` unconditionally for every
+            // slot and inlined the result into a `concat` array. When a
+            // clause was missing, `path.call(print, key)` returned `undefined`
+            // and Prettier 3 silently drops `undefined` from raw arrays
+            // during doc traversal (it uses `if (!r) continue` to skip falsy
+            // entries). The net effect was that `for (;;)` formatted as
+            // `for (; ; )` with the empty clauses collapsing into extra
+            // spaces, and every other permutation with a missing slot lost
+            // its slot too. Build the doc shape conditionally so each
+            // present clause contributes its semicolon separator while a
+            // missing slot still contributes the structural punctuation
+            // (the `;` terminators and the `line` glue for multi-line
+            // reflow) needed to keep the parent `group` breakable.
+            const headerParts: any[] = [];
+            if (node.init != null) {
+                headerParts.push(print("init"));
+            }
+            headerParts.push(";");
+            if (node.test != null) {
+                headerParts.push(line, print("test"));
+            }
+            headerParts.push(";");
+            if (node.update != null) {
+                headerParts.push(line, print("update"));
+            }
             return concat([
                 "for (",
-                group([
-                    indent([
-                        ifBreak(line),
-                        concat([print("init"), ";", line, print("test"), ";", line, print("update")])
-                    ])
-                ]),
+                group([indent([ifBreak(line), concat(headerParts)])]),
                 ") ",
                 printInBlock(path, options, print, "body")
             ]);
