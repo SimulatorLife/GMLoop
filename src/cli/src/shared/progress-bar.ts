@@ -34,9 +34,9 @@
  */
 import { Core } from "@gmloop/core";
 
-import { createIntegerEnvConfiguredValue } from "./env-configured-integer.js";
+import { createIntegerRuntimeOptionState } from "./integer-runtime-option-state.js";
 
-const { coercePositiveInteger, createNumericTypeErrorFormatter, describeValueForError, resolveIntegerOption } = Core;
+const { coercePositiveInteger } = Core;
 
 const DEFAULT_PROGRESS_BAR_WIDTH = 24;
 const PROGRESS_BAR_WIDTH_ENV_VAR = "GML_PROGRESS_BAR_WIDTH";
@@ -272,21 +272,13 @@ class TerminalProgressBar implements ProgressBarLike {
     }
 }
 
-const createWidthErrorMessage = (received: unknown) =>
-    `Progress bar width must be a positive integer (received ${describeValueForError(received)}).`;
-
-const createWidthTypeErrorMessage = createNumericTypeErrorFormatter("Progress bar width");
-
-const coerce = (value: unknown, context = {}) => {
-    const opts = { ...context, createErrorMessage: createWidthErrorMessage };
-    return coercePositiveInteger(value, opts);
-};
-
-const state = createIntegerEnvConfiguredValue({
+const runtimeOptionState = createIntegerRuntimeOptionState({
     defaultValue: DEFAULT_PROGRESS_BAR_WIDTH,
     envVar: PROGRESS_BAR_WIDTH_ENV_VAR,
-    coerce,
-    typeErrorMessage: createWidthTypeErrorMessage
+    optionLabel: "Progress bar width",
+    createValueErrorMessage: (receivedDescription) =>
+        `Progress bar width must be a positive integer (received ${receivedDescription}).`,
+    coerceInteger: coercePositiveInteger
 });
 
 /**
@@ -297,7 +289,7 @@ const state = createIntegerEnvConfiguredValue({
  *   beyond the {@link DEFAULT_PROGRESS_BAR_WIDTH} baseline.
  */
 function getDefaultProgressBarWidth(): number | undefined {
-    return state.get();
+    return runtimeOptionState.get();
 }
 
 /**
@@ -311,7 +303,7 @@ function getDefaultProgressBarWidth(): number | undefined {
  *   cleared and the baseline takes over.
  */
 function setDefaultProgressBarWidth(value?: unknown): number | undefined {
-    return state.set(value);
+    return runtimeOptionState.set(value);
 }
 
 /**
@@ -336,12 +328,9 @@ function resolveProgressBarWidth(
         defaultWidth?: number;
     } = {}
 ): number | null | undefined {
-    const fallback = options.defaultWidth ?? options.defaultValue ?? state.get();
-    return resolveIntegerOption(rawValue, {
-        defaultValue: fallback,
-        coerce,
-        typeErrorMessage: createWidthTypeErrorMessage,
-        blankStringReturnsDefault: true
+    return runtimeOptionState.resolve(rawValue, {
+        defaultValue: options.defaultValue,
+        defaultOverride: options.defaultWidth
     });
 }
 
@@ -358,7 +347,7 @@ function resolveProgressBarWidth(
  *   when the environment did not provide one.
  */
 function applyProgressBarWidthEnvOverride(env?: NodeJS.ProcessEnv): number | undefined {
-    return state.applyEnvOverride(env);
+    return runtimeOptionState.applyEnvOverride(env);
 }
 
 applyProgressBarWidthEnvOverride();
