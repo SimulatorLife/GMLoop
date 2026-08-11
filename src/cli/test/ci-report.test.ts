@@ -3,8 +3,13 @@ import { test } from "node:test";
 
 import { __ciReportTest__ } from "../src/commands/ci-report.js";
 
-const { calculateManifestDigest, calculatePlanDigest, createBalancedShardPlan, findCoverageErrors, isCanonicalTestPath } =
-    __ciReportTest__;
+const {
+    calculateManifestDigest,
+    calculatePlanDigest,
+    createBalancedShardPlan,
+    findCoverageErrors,
+    isCanonicalTestPath
+} = __ciReportTest__;
 
 void test("CI test discovery matches the canonical non-performance corpus rules", () => {
     assert.equal(isCanonicalTestPath("src/core/dist/test/example.test.js"), true);
@@ -18,18 +23,22 @@ void test("CI test discovery matches the canonical non-performance corpus rules"
 void test("balanced CI shards use longest-processing-time placement deterministically", () => {
     const shards = createBalancedShardPlan(
         [
-            { file: "a.test.js", weightMs: 9_000 },
-            { file: "b.test.js", weightMs: 8_000 },
-            { file: "c.test.js", weightMs: 7_000 },
-            { file: "d.test.js", weightMs: 6_000 },
-            { file: "e.test.js", weightMs: 5_000 },
-            { file: "f.test.js", weightMs: 4_000 }
+            { file: "a.test.js", weightMs: 9000 },
+            { file: "b.test.js", weightMs: 8000 },
+            { file: "c.test.js", weightMs: 7000 },
+            { file: "d.test.js", weightMs: 6000 },
+            { file: "e.test.js", weightMs: 5000 },
+            { file: "f.test.js", weightMs: 4000 }
         ],
         3
     );
 
     assert.deepEqual(
-        shards.map((shard) => ({ name: shard.name, files: shard.files, estimatedDurationMs: shard.estimatedDurationMs })),
+        shards.map((shard) => ({
+            name: shard.name,
+            files: shard.files,
+            estimatedDurationMs: shard.estimatedDurationMs
+        })),
         [
             { name: "shard-1", files: ["a.test.js", "f.test.js"], estimatedDurationMs: 13_000 },
             { name: "shard-2", files: ["b.test.js", "e.test.js"], estimatedDurationMs: 13_000 },
@@ -83,10 +92,7 @@ void test("CI report coverage rejects duplicate or missing test files", () => {
     }));
     assert.deepEqual(findCoverageErrors(manifest, validMetadata), []);
 
-    const duplicateMetadata = [
-        validMetadata[0],
-        { ...validMetadata[1], testFiles: ["a.test.js"] }
-    ];
+    const duplicateMetadata = [validMetadata[0], { ...validMetadata[1], testFiles: ["a.test.js"] }];
     const errors = findCoverageErrors(manifest, duplicateMetadata);
     assert.ok(errors.some((error) => error.includes("appears in more than one shard")));
     assert.ok(errors.some((error) => error.includes("missing test files")));

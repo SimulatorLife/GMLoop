@@ -30,7 +30,11 @@ void test("successful builds are rejected when failed-build evidence is required
         testsSkippedReason: null
     });
 
-    assert.ok(validateEvidence(evidence, "merge-sha", true).some((error) => error.includes("expected a deterministic build failure")));
+    assert.ok(
+        validateEvidence(evidence, "merge-sha", true).some((error) =>
+            error.includes("expected a deterministic build failure")
+        )
+    );
 });
 
 void test("signalled or incomplete build execution is not comparable evidence", () => {
@@ -62,5 +66,9 @@ void test("abnormal process exit codes cannot masquerade as deterministic compil
         signal: null,
         testsSkippedReason: "build-failed"
     });
-    assert.ok(validateEvidence(evidence, "base-sha", true).some((error) => error.includes("normal TypeScript compiler status")));
+    assert.ok(
+        validateEvidence(evidence, "base-sha", true).some((error) =>
+            error.includes("normal TypeScript compiler status")
+        )
+    );
 });
