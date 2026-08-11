@@ -467,19 +467,19 @@ function createSourceCodeInstance(parameters: {
     visitorKeys: Record<string, string[]>;
     hasBOM: boolean;
 }): SourceCode {
-    const modernSourceCode = GMLLanguageSourceCode as unknown as {
-        new (options: {
-            text: string;
-            ast: GMLAstNode;
-            hasBOM: boolean;
-            parserServices: Record<string, unknown>;
-            visitorKeys: Record<string, string[]>;
-        }): SourceCode;
-    };
+    // The GML AST is normalized and assigned ranges/locations upstream in
+    // `gmlLanguage.createSourceCode`, so the structural shape matches the
+    // ESLint `Program` constructor argument at runtime even though the loose
+    // `GMLAstNode` type does not declare `loc`/`range`. The cast is scoped to
+    // this factory so the rest of the file can stay on the un-augmented
+    // GML type.
+    type SourceCodeConstructorArgs = ConstructorParameters<typeof SourceCode>;
+    type SourceCodeAstArgument = SourceCodeConstructorArgs[0] extends { ast: infer A } ? A : never;
+    const sourceCodeAst = parameters.ast as unknown as SourceCodeAstArgument;
 
-    return new modernSourceCode({
+    return new GMLLanguageSourceCode({
         text: parameters.text,
-        ast: parameters.ast,
+        ast: sourceCodeAst,
         hasBOM: parameters.hasBOM,
         parserServices: parameters.parserServices,
         visitorKeys: parameters.visitorKeys
