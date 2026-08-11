@@ -48,7 +48,6 @@ export type {
     WebSocketMessageSender,
     WebSocketMetricsCollector,
     WebSocketPatchQueueFlusher,
-    WebSocketPatchQueueManager,
     WebSocketPatchQueueMetricsReader
 } from "./src/index.js";
 export { RuntimeWrapper } from "./src/index.js";

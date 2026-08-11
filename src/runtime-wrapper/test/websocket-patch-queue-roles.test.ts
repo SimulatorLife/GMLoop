@@ -4,7 +4,6 @@ import { describe, it } from "node:test";
 import type {
     PatchQueueMetrics,
     WebSocketPatchQueueFlusher,
-    WebSocketPatchQueueManager,
     WebSocketPatchQueueMetricsReader
 } from "../src/browser/websocket/types.js";
 
@@ -27,9 +26,6 @@ import type {
  *     declaring only `getPatchQueueMetrics`.
  *   - `WebSocketPatchQueueFlusher` can be satisfied by an object
  *     declaring only `flushPatchQueue`.
- *   - The composite `WebSocketPatchQueueManager` still satisfies both
- *     roles so the existing `RuntimeWebSocketClient` aggregate keeps
- *     working unchanged.
  */
 
 function createMetricsReader(): WebSocketPatchQueueMetricsReader {
@@ -58,29 +54,6 @@ function createFlusher(): WebSocketPatchQueueFlusher {
             return nextCount;
         }
     };
-}
-
-function createComposite(): WebSocketPatchQueueManager {
-    let flushCount = 0;
-    const composite: WebSocketPatchQueueManager = {
-        flushPatchQueue(): number {
-            flushCount += 1;
-            return flushCount;
-        },
-        getPatchQueueMetrics(): Readonly<PatchQueueMetrics> | null {
-            return Object.freeze({
-                flushCount,
-                lastFlushSize: 0,
-                lastFlushedAt: null,
-                maxQueueDepth: 0,
-                totalDeduplicated: 0,
-                totalDropped: 0,
-                totalFlushed: flushCount,
-                totalQueued: 0
-            });
-        }
-    };
-    return composite;
 }
 
 void describe("WebSocket patch queue role interfaces", () => {
@@ -113,8 +86,7 @@ void describe("WebSocket patch queue role interfaces", () => {
         // the read-only metrics method, so a diagnostic-only consumer
         // cannot accidentally gain the ability to mutate queue state.
         const flusher: WebSocketPatchQueueFlusher = createFlusher();
-        const flusherRecord = flusher as unknown as Record<string, unknown>;
-        assert.strictEqual(flusherRecord.getPatchQueueMetrics, undefined);
+        assert.strictEqual(Object.hasOwn(flusher, "getPatchQueueMetrics"), false);
     });
 
     void it("metrics role does not leak flush access to consumers that only observe", () => {
@@ -123,36 +95,6 @@ void describe("WebSocket patch queue role interfaces", () => {
         // (e.g. an HTTP status snapshot) must not be able to drain the
         // queue. The narrower role makes that capability invisible.
         const reader: WebSocketPatchQueueMetricsReader = createMetricsReader();
-        const readerRecord = reader as unknown as Record<string, unknown>;
-        assert.strictEqual(readerRecord.flushPatchQueue, undefined);
-    });
-
-    void it("composite WebSocketPatchQueueManager satisfies both role interfaces", () => {
-        const composite: WebSocketPatchQueueManager = createComposite();
-
-        const reader: WebSocketPatchQueueMetricsReader = composite;
-        const flusher: WebSocketPatchQueueFlusher = composite;
-
-        const initialMetrics = reader.getPatchQueueMetrics();
-        assert.ok(initialMetrics);
-        assert.strictEqual(initialMetrics.totalFlushed, 0);
-
-        assert.strictEqual(flusher.flushPatchQueue(), 1);
-        assert.strictEqual(flusher.flushPatchQueue(), 2);
-
-        const updatedMetrics = reader.getPatchQueueMetrics();
-        assert.ok(updatedMetrics);
-        assert.strictEqual(updatedMetrics.totalFlushed, 2);
-    });
-
-    void it("composite exposes both roles together for consumers that genuinely need them", () => {
-        const composite: WebSocketPatchQueueManager = createComposite();
-
-        // Both roles must be callable through the composite, matching the
-        // pre-split WebSocketPatchQueueManager contract so existing call
-        // sites (and the RuntimeWebSocketClient master interface) keep
-        // working unchanged.
-        assert.strictEqual(typeof composite.getPatchQueueMetrics, "function");
-        assert.strictEqual(typeof composite.flushPatchQueue, "function");
+        assert.strictEqual(Object.hasOwn(reader, "flushPatchQueue"), false);
     });
 });

@@ -78,7 +78,6 @@ export type {
     WebSocketMessageSender,
     WebSocketMetricsCollector,
     WebSocketPatchQueueFlusher,
-    WebSocketPatchQueueManager,
     WebSocketPatchQueueMetricsReader
 } from "./browser/websocket/index.js";
 export * as Clients from "./browser/websocket/index.js";

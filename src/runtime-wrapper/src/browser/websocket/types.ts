@@ -166,7 +166,7 @@ export interface WebSocketMetricsCollector {
  * monitoring, or regression-test consumers can depend on this role alone
  * without gaining the ability to mutate queue state. Consumers that only
  * surface queue health (e.g. status dashboards, automated tests) should
- * depend on this interface rather than the full {@link WebSocketPatchQueueManager}.
+ * depend on this interface rather than the broader {@link RuntimeWebSocketClient}.
  */
 export interface WebSocketPatchQueueMetricsReader {
     /**
@@ -183,7 +183,7 @@ export interface WebSocketPatchQueueMetricsReader {
  * without coupling to the metrics observation role. Consumers that only
  * need to force a flush (for example a user-facing "apply pending patches"
  * affordance or a shutdown hook that drains the queue) should depend on
- * this interface alone rather than the full {@link WebSocketPatchQueueManager}.
+ * this interface alone rather than the broader {@link RuntimeWebSocketClient}.
  *
  * Keeping flush separate from metrics prevents diagnostic consumers from
  * accidentally gaining the ability to mutate the queue simply by reading
@@ -198,23 +198,6 @@ export interface WebSocketPatchQueueFlusher {
      */
     flushPatchQueue(): number;
 }
-
-/**
- * Patch queue management.
- *
- * Provides control over patch queueing behavior and metrics
- * without coupling to connection lifecycle or message transmission.
- *
- * This interface is the composite of two role interfaces:
- * - {@link WebSocketPatchQueueMetricsReader} for read-only queue observation.
- * - {@link WebSocketPatchQueueFlusher} for manual queue flushing.
- *
- * New consumers should depend on whichever role interface they actually
- * use; this composite exists so existing call sites and the
- * {@link RuntimeWebSocketClient} master interface can keep a single
- * dependency that exposes both capabilities together.
- */
-export type WebSocketPatchQueueManager = WebSocketPatchQueueMetricsReader & WebSocketPatchQueueFlusher;
 
 /**
  * Complete WebSocket client interface.
