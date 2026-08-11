@@ -39,7 +39,10 @@ export async function runWatchTest(
         // sporadic `EADDRINUSE` failure with no deterministic reproduction.
         // Passing `statusPort: 0` lets the OS assign an ephemeral port at the
         // moment the real listener binds, which is race-free by construction.
-        let resolvedStatusUrl = "";
+        let resolveStatusUrl: ((url: string) => void) | undefined;
+        const statusUrlReady = new Promise<string>((resolve) => {
+            resolveStatusUrl = resolve;
+        });
 
         const mergedOptions = {
             polling: false,
@@ -51,7 +54,7 @@ export async function runWatchTest(
             abortSignal: abortController.signal,
             ...options,
             onStatusServerReady: (server: StatusServerHandle) => {
-                resolvedStatusUrl = server.url;
+                resolveStatusUrl?.(server.url);
                 options.onStatusServerReady?.(server);
             }
         };
@@ -63,23 +66,22 @@ export async function runWatchTest(
 
         watchPromise = Cli.CLI.Commands.runWatchCommand(testDir, mergedOptions);
 
+        let statusPort = 0;
         if (statusServerEnabled) {
-            const deadline = Date.now() + 5000;
-            while (resolvedStatusUrl.length === 0 && Date.now() < deadline) {
-                await new Promise((resolve) => {
-                    setTimeout(resolve, 25);
-                });
-            }
-            if (resolvedStatusUrl.length === 0) {
-                throw new Error("Timed out waiting for the status server to report its address.");
-            }
-            await waitForStatusReady(`http://127.0.0.1:${new URL(resolvedStatusUrl).port}`);
+            const timeoutPromise = new Promise<never>((resolve, reject) => {
+                setTimeout(() => {
+                    reject(new Error("Timed out waiting for the status server to report its address."));
+                }, 5000);
+            });
+            const resolvedStatusUrl = await Promise.race([statusUrlReady, timeoutPromise]);
+            statusPort = Number(new URL(resolvedStatusUrl).port);
+            // Give the watch command a chance to finish wiring up its
+            // filesystem watcher before the test starts producing events.
+            await new Promise<void>((resolve) => {
+                setTimeout(resolve, 25);
+            });
+            await waitForStatusReady(`http://127.0.0.1:${statusPort}`);
         }
-
-        // When the status server is disabled there is no real port to report;
-        // fall back to an arbitrary value so `baseUrl` still resolves to a
-        // valid-but-unreachable address for tests that expect connections to fail.
-        const statusPort = resolvedStatusUrl.length === 0 ? 0 : Number(new URL(resolvedStatusUrl).port);
 
         await testFn({
             testDir,
