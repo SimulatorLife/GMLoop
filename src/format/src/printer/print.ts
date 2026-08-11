@@ -134,18 +134,12 @@ function tryPrintControlStructureNode(node, path, options, print) {
             return printTernaryExpressionNode(node, path, options, print);
         }
         case "ForStatement": {
+            const init = node.init && print("init");
+            const test = node.test && [line, print("test")];
+            const update = node.update && [line, print("update")];
             return concat([
                 "for (",
-                group([
-                    indent([
-                        ifBreak(line),
-                        node.init && print("init"),
-                        ";",
-                        node.test && [line, print("test")],
-                        ";",
-                        node.update && [line, print("update")]
-                    ])
-                ]),
+                group([indent([ifBreak(line), init, ";", test, ";", update])]),
                 ") ",
                 printInBlock(path, options, print, "body")
             ]);
