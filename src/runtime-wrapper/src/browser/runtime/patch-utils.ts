@@ -207,23 +207,63 @@ function resolveScriptNameIndex(scriptNames: Array<string>): ReadonlyMap<string,
 }
 
 function resolveInstanceStore(globalScope: RuntimeBindingGlobals & Record<string, unknown>): InstanceStore | undefined {
-    // Prefer the _cx._dx store when available.
+    // Hot-reload instance updates must run against whichever map the active
+    // GameMaker HTML5 runtime uses to keep its live instances. The runtime
+    // has shipped the store under several different names across versions,
+    // and minified builds further rename the canonical symbols. This
+    // resolver walks a deliberately ordered chain of candidates so live
+    // patches bind to the *same* collection the runtime itself mutates;
+    // patching a copy or a stale snapshot would leave new code running
+    // against unchanged instances and silently break the hot-reload loop.
+    //
+    // The order is fragile: each step targets a more obscure surface than
+    // the previous one and is only reached when the canonical store is
+    // absent. Reordering the steps (or skipping any of them) would either
+    // cost a needless `Object.getOwnPropertyNames` scan on modern runtimes
+    // or — worse — silently bind to a wrong-shape map on older or
+    // minified runtimes, producing an "applied" patch that updates no live
+    // instance. See docs/target-state.md §5 (Transpiler & Hot Reload
+    // Pipeline) for the surrounding pipeline architecture and the hot
+    // registry model this resolver feeds.
+
+    // Step 1 — canonical `_cx._dx` map exposed by unminified GameMaker
+    // HTML5 runtimes. Reaching it costs two property reads and a single
+    // type check, so it short-circuits the discovery scan for the vast
+    // majority of projects. Removing this branch would force every
+    // unminified runtime through the slower global scans below.
     const cxcDx = readCxcDxStore(globalScope);
     if (cxcDx) {
         return cxcDx;
     }
 
-    // Fall back to the runtime object pool from g_RunRoom.m_Active.pool.
+    // Step 2 — `g_RunRoom.m_Active.pool`, the live object pool that the
+    // runtime exposes when `_cx._dx` is not initialised (older builds,
+    // certain IDE-driven configurations). It is also a single direct read,
+    // so it is preferred over the heuristic scan that follows.
     const pool = readRuntimeObjectPool(globalScope);
     if (pool !== undefined) {
         return pool;
     }
 
+    // Step 3 — heuristic discovery for minified runtimes whose canonical
+    // symbols have been renamed to short forms. `discoverMinifiedInstancePool`
+    // walks every global property name looking for a record whose keys
+    // look like the packed numeric layout the minifier emits for an
+    // instance pool. It is best-effort and may return `undefined` even
+    // when a pool exists, which is why the loop below is still required.
     const minifiedPool = discoverMinifiedInstancePool(globalScope);
     if (minifiedPool !== undefined) {
         return minifiedPool;
     }
 
+    // Step 4 — last-resort scan for an "instance variable" array: any
+    // global object whose nested arrays contain rows shaped like
+    // GameMaker instance records (string-and-function member mix, no
+    // `nodeType`). This branch is only hit when the runtime hides every
+    // canonical symbol; trusting a match here means patching an
+    // inferred container rather than a guaranteed one, but it is the
+    // only path that keeps hot-reload working on heavily customised or
+    // custom-HTML5 runtimes.
     for (const propertyName of Object.keys(globalScope)) {
         const candidate = readGlobalProperty(globalScope, propertyName);
         if (!isRecord(candidate)) {
@@ -237,6 +277,13 @@ function resolveInstanceStore(globalScope: RuntimeBindingGlobals & Record<string
         }
     }
 
+    // Step 5 — final fallback that loosens the heuristic to plain "active
+    // instance" arrays (entries with `x`/`y` and either a string or
+    // function member). Returning `undefined` after this loop is the
+    // only signal to callers that the live-reload session cannot bind
+    // to a runtime store, and they must then downgrade to read-only
+    // patch semantics (see `applyRuntimeBinding` and the hot registry
+    // contract in docs/target-state.md §5).
     for (const propertyName of Object.keys(globalScope)) {
         const candidate = readGlobalProperty(globalScope, propertyName);
         if (!isRecord(candidate)) {
