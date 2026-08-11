@@ -17,7 +17,13 @@ const BASE = "b".repeat(40);
 const OLD_BASE = "c".repeat(40);
 const NOW = Date.parse("2026-08-10T02:00:00Z");
 
-function validationRun(id: number, status: string, createdAt: string, conclusion: string | null = null): AutoMergeWorkflowRun {
+function validationRun(
+    id: number,
+    status: string,
+    createdAt: string,
+    conclusion: string | null = null,
+    base = BASE
+): AutoMergeWorkflowRun {
     return {
         id,
         run_attempt: 1,
@@ -29,7 +35,7 @@ function validationRun(id: number, status: string, createdAt: string, conclusion
         path: ".github/workflows/automerge-prs.yml",
         event: "workflow_dispatch",
         head_branch: "main",
-        head_sha: BASE
+        head_sha: base
     };
 }
 
@@ -64,13 +70,117 @@ void test("latest completed generation is finalized before any new validation", 
     }), { kind: "finalize", retry: 0, reason: "validation-completed" });
 });
 
-void test("only failed finalizer executions consume the finalizer retry budget", () => {
+void test("exact terminal handoff finalizes immediately instead of waiting on pending timeout", () => {
+    const latest = validationRun(101, "completed", "2026-08-10T01:59:00Z", "success");
+    const pending = normalizeAutoMergeState({
+        pr: 42,
+        head: HEAD,
+        base: BASE,
+        green: false,
+        trusted: false,
+        reason: "pending",
+        retry: 1,
+        validationRunId: 101,
+        handoffRetry: 0,
+        runId: 0,
+        updatedAt: "2026-08-10T01:59:59Z"
+    });
+    assert.deepEqual(planAutoMergePr({
+        head: HEAD,
+        liveBase: BASE,
+        state: pending,
+        newestValidation: latest,
+        finalizer: { active: false, failedAttempts: 0 },
+        maxInfrastructureRetries: 1,
+        pendingTimeoutMs: 900000,
+        nowMs: NOW
+    }), { kind: "finalize", retry: 0, reason: "validation-completed" });
+});
+
+void test("completed exact-run recovery finalizes without re-running validation", () => {
+    const latest = validationRun(101, "completed", "2026-08-10T01:00:00Z", "success");
+    const pending = normalizeAutoMergeState({
+        pr: 42,
+        head: HEAD,
+        base: BASE,
+        green: false,
+        trusted: false,
+        reason: "pending",
+        retry: 1,
+        validationRunId: 101,
+        handoffRetry: 1,
+        runId: 0,
+        updatedAt: "2026-08-10T01:30:00Z"
+    });
+    assert.deepEqual(planAutoMergePr({
+        head: HEAD,
+        liveBase: BASE,
+        state: pending,
+        newestValidation: latest,
+        finalizer: { active: false, failedAttempts: 0 },
+        maxInfrastructureRetries: 1,
+        pendingTimeoutMs: 900000,
+        nowMs: NOW
+    }), { kind: "finalize", retry: 1, reason: "validation-completed" });
+});
+
+void test("completed evidence from an older main generation is revalidated without wasting a finalizer slot", () => {
+    const stale = validationRun(101, "completed", "2026-08-10T01:00:00Z", "success", OLD_BASE);
+    assert.deepEqual(planAutoMergePr({
+        head: HEAD,
+        liveBase: BASE,
+        state: normalizeAutoMergeState({
+            pr: 42,
+            head: HEAD,
+            base: OLD_BASE,
+            green: false,
+            trusted: false,
+            reason: "pending",
+            retry: 0,
+            validationRunId: 101,
+            runId: 0
+        }),
+        newestValidation: stale,
+        finalizer: { active: false, failedAttempts: 0 },
+        maxInfrastructureRetries: 1,
+        pendingTimeoutMs: 900000,
+        nowMs: NOW
+    }), { kind: "validate", retry: 0, reason: "stale-completed-validation" });
+});
+
+void test("only failed finalizer executions consume the finalizer execution retry budget", () => {
     const runs: ReadonlyArray<AutoMergeWorkflowRun> = [
         { id: 1, finalizerValidationRunId: 101, status: "completed", conclusion: "success" },
         { id: 2, finalizerValidationRunId: 101, status: "completed", conclusion: "failure" },
         { id: 3, finalizerValidationRunId: 101, status: "in_progress", conclusion: null }
     ];
     assert.deepEqual(summarizeFinalizerRuns(runs, 101), { active: true, failedAttempts: 1 });
+});
+
+void test("validation and finalizer-dispatch retry budgets remain independent", () => {
+    const latest = validationRun(101, "completed", "2026-08-10T01:00:00Z", "success");
+    const failedHandoff = normalizeAutoMergeState({
+        pr: 42,
+        head: HEAD,
+        base: BASE,
+        green: false,
+        trusted: false,
+        reason: "infrastructure",
+        retry: 1,
+        validationRunId: 101,
+        handoffRetry: 1,
+        runId: 0
+    });
+    assert.deepEqual(planAutoMergePr({
+        head: HEAD,
+        liveBase: BASE,
+        state: failedHandoff,
+        newestValidation: latest,
+        finalizer: { active: false, failedAttempts: 0 },
+        maxInfrastructureRetries: 1,
+        pendingTimeoutMs: 900000,
+        nowMs: NOW
+    }), { kind: "finalize", retry: 1, reason: "validation-completed" });
 });
 
 void test("known base changes reset retries but unknown or placeholder bases do not", () => {
@@ -136,6 +246,7 @@ void test("current trusted green state is the only state that reaches merge plan
         trusted: true,
         reason: "clean",
         retry: 0,
+        validationRunId: 101,
         runId: 101
     });
     assert.deepEqual(planAutoMergePr({

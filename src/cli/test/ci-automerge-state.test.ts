@@ -21,7 +21,7 @@ const HEAD_SHA = "a".repeat(40);
 const BASE_SHA = "b".repeat(40);
 const REPO_ROOT = process.cwd();
 
-void test("auto-merge state round-trips through its durable comment marker", () => {
+void test("auto-merge state round-trips durable validation and finalizer identities", () => {
     const marker = serializeAutoMergeState({
         pr: 42,
         head: HEAD_SHA,
@@ -30,6 +30,8 @@ void test("auto-merge state round-trips through its durable comment marker", () 
         trusted: true,
         reason: "clean",
         retry: 0,
+        validationRunId: 123,
+        handoffRetry: 1,
         runId: 123
     });
 
@@ -41,9 +43,29 @@ void test("auto-merge state round-trips through its durable comment marker", () 
         trusted: true,
         reason: "clean",
         retry: 0,
+        validationRunId: 123,
+        handoffRetry: 1,
         runId: 123,
         updatedAt: parseAutoMergeState(marker)?.updatedAt
     }));
+});
+
+void test("legacy schema-v1 state defaults new handoff fields without becoming unreadable", () => {
+    const legacy = `<!-- automerge-state ${JSON.stringify({
+        v: 1,
+        pr: 42,
+        head: HEAD_SHA,
+        base: BASE_SHA,
+        green: false,
+        trusted: false,
+        reason: "pending",
+        retry: 0,
+        runId: 0,
+        updatedAt: "2026-08-10T01:00:00Z"
+    })} -->`;
+    const parsed = parseAutoMergeState(legacy);
+    assert.equal(parsed?.validationRunId, 0);
+    assert.equal(parsed?.handoffRetry, 0);
 });
 
 void test("unknown base is represented explicitly rather than with a placeholder SHA", () => {
@@ -69,11 +91,13 @@ void test("canonical summary rendering and lookup share one durable marker", () 
         trusted: false,
         reason: "pending",
         retry: 0,
+        validationRunId: 456,
         runId: 0
     }, "### Trusted auto-merge evaluation\n\nWaiting for validation.");
 
     assert.match(body, new RegExp(AUTO_MERGE_SUMMARY_COMMENT_MARKER.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
     assert.equal(parseAutoMergeState(body)?.reason, "pending");
+    assert.equal(parseAutoMergeState(body)?.validationRunId, 456);
     assert.equal(findBotAutoMergeSummaryComment([
         { id: 7, body, user: { login: "github-actions[bot]" } },
         { id: 8, body, user: { login: "someone-else" } }
@@ -89,6 +113,7 @@ void test("latest trusted state only considers valid bot-authored markers", () =
         trusted: false,
         reason: "pending",
         retry: 0,
+        validationRunId: 111,
         runId: 0
     });
     const newer = serializeAutoMergeState({
@@ -99,6 +124,7 @@ void test("latest trusted state only considers valid bot-authored markers", () =
         trusted: true,
         reason: "clean",
         retry: 0,
+        validationRunId: 456,
         runId: 456
     });
 
@@ -109,6 +135,7 @@ void test("latest trusted state only considers valid bot-authored markers", () =
     ]);
 
     assert.equal(state?.green, true);
+    assert.equal(state?.validationRunId, 456);
     assert.equal(state?.runId, 456);
 });
 
@@ -122,7 +149,7 @@ void test("validation and finalizer run titles have strict machine-readable iden
     assert.equal(parseAutoMergeFinalizerRunTitle("Finalize auto-merge"), null);
 });
 
-void test("control-plane workflow contract checks exact privileged jobs, worker base pinning, and queue ownership", () => {
+void test("control-plane workflow contract checks exact privileged jobs, terminal handoff, base pinning, and queue ownership", () => {
     const reconcile = fs.readFileSync(path.join(REPO_ROOT, ".github/workflows/automerge-reconcile.yml"), "utf8");
     const finalizer = fs.readFileSync(path.join(REPO_ROOT, ".github/workflows/automerge-finalize.yml"), "utf8");
     const reconcileAction = fs.readFileSync(path.join(REPO_ROOT, ".github/actions/reconcile-automerge/action.yml"), "utf8");
@@ -141,5 +168,17 @@ void test("malformed or unsupported auto-merge state is rejected", () => {
         reason: "infrastructure",
         retry: 0,
         runId: 1
+    }));
+    assert.throws(() => normalizeAutoMergeState({
+        pr: 42,
+        head: HEAD_SHA,
+        base: BASE_SHA,
+        green: false,
+        trusted: true,
+        reason: "infrastructure",
+        retry: 0,
+        validationRunId: 1,
+        handoffRetry: 11,
+        runId: 0
     }));
 });

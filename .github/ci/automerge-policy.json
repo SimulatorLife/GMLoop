@@ -2,6 +2,7 @@
   "schemaVersion": 2,
   "testShardCount": 5,
   "maxParallelValidations": 2,
+  "maxParallelFinalizers": 4,
   "maxInfrastructureRetries": 1,
   "pendingStateTimeoutMs": 900000,
   "maxRemovedTestCases": 3,

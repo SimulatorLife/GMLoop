@@ -4,14 +4,31 @@ on:
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
     branches: [main]
-  # This accelerates human-dispatched workers. Bot-dispatched workers are still
-  # recovered deterministically by the periodic coordinator below.
+  # Human-triggered workflow completions can still arrive here directly. The
+  # worker also dispatches this coordinator explicitly with its exact run ID,
+  # while the periodic trigger remains a deterministic recovery safety net.
   workflow_run:
     workflows: ["Auto-merge PRs"]
     types: [completed]
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
+    inputs:
+      source_validation_run_id:
+        description: "Exact Auto-merge PRs run that just reached its terminal handoff."
+        required: false
+        default: ""
+        type: string
+      source_pr_number:
+        description: "PR associated with source_validation_run_id."
+        required: false
+        default: ""
+        type: string
+      source_head:
+        description: "Exact PR head associated with source_validation_run_id."
+        required: false
+        default: ""
+        type: string
 
 permissions: {}
 
@@ -42,6 +59,9 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           EVENT_PR: ${{ github.event.pull_request.number }}
+          SOURCE_VALIDATION_RUN_ID: ${{ inputs.source_validation_run_id }}
+          SOURCE_PR_NUMBER: ${{ inputs.source_pr_number }}
+          SOURCE_HEAD: ${{ inputs.source_head }}
         with:
           script: |
             const fs = require('node:fs');
@@ -51,9 +71,11 @@ jobs:
             const thisRepository = `${owner}/${repo}`.toLowerCase();
             const policy = JSON.parse(fs.readFileSync('.github/ci/automerge-policy.json', 'utf8'));
             const maxParallel = Number(policy.maxParallelValidations || 2);
+            const maxParallelFinalizers = Number(policy.maxParallelFinalizers || maxParallel);
             const maxRetries = Number(policy.maxInfrastructureRetries || 1);
             const pendingTimeoutMs = Number(policy.pendingStateTimeoutMs || 900000);
             if (!Number.isInteger(maxParallel) || maxParallel < 1 || maxParallel > 10
+                || !Number.isInteger(maxParallelFinalizers) || maxParallelFinalizers < 1 || maxParallelFinalizers > 10
                 || !Number.isInteger(maxRetries) || maxRetries < 0 || maxRetries > 10
                 || !Number.isInteger(pendingTimeoutMs) || pendingTimeoutMs < 60000) {
               core.setFailed('Invalid auto-merge admission policy.');
@@ -74,6 +96,14 @@ jobs:
               owner, repo, state: 'open', base: 'main', sort: 'created', direction: 'asc', per_page: 100,
             });
 
+            const normalizeValidationRun = (run) => {
+              const identity = stateModule.parseAutoMergeValidationRunTitle(run.display_title);
+              return identity ? { ...run, validationPr: identity.pr, validationHead: identity.head } : run;
+            };
+            const normalizeFinalizerRun = (run) => {
+              const validationRunId = stateModule.parseAutoMergeFinalizerRunTitle(run.display_title);
+              return validationRunId ? { ...run, finalizerValidationRunId: validationRunId } : run;
+            };
             const listRecentWorkflowRuns = async (workflowId, maxPages = 5) => {
               const runs = [];
               for (let page = 1; page <= maxPages; page += 1) {
@@ -89,17 +119,44 @@ jobs:
               listRecentWorkflowRuns('automerge-prs.yml'),
               listRecentWorkflowRuns('automerge-finalize.yml'),
             ]);
-            const normalizedValidationRuns = validationRuns.map((run) => {
-              const identity = stateModule.parseAutoMergeValidationRunTitle(run.display_title);
-              return identity ? { ...run, validationPr: identity.pr, validationHead: identity.head } : run;
-            });
-            const normalizedFinalizerRuns = finalizerRuns.map((run) => {
-              const validationRunId = stateModule.parseAutoMergeFinalizerRunTitle(run.display_title);
-              return validationRunId ? { ...run, finalizerValidationRunId: validationRunId } : run;
-            });
-            const newestValidations = planner.selectNewestValidationRuns(normalizedValidationRuns);
-            const activeValidationCount = [...newestValidations.values()]
-              .filter((run) => run.status === 'queued' || run.status === 'in_progress').length;
+            const normalizedValidationRuns = validationRuns.map(normalizeValidationRun);
+            const normalizedFinalizerRuns = finalizerRuns.map(normalizeFinalizerRun);
+
+            // A terminal worker dispatches this coordinator before its own workflow can
+            // technically become completed. Poll that exact run briefly so the fast path
+            // can finalize it immediately rather than waiting for a cron/history scan.
+            const sourceRunId = Number(process.env.SOURCE_VALIDATION_RUN_ID || 0);
+            const sourcePr = Number(process.env.SOURCE_PR_NUMBER || 0);
+            const sourceHead = String(process.env.SOURCE_HEAD || '');
+            if (Number.isInteger(sourceRunId) && sourceRunId > 0) {
+              let sourceRun = null;
+              for (const delay of [0, 1000, 2000, 4000, 8000, 8000, 8000]) {
+                if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+                try {
+                  const { data } = await github.rest.actions.getWorkflowRun({ owner, repo, run_id: sourceRunId });
+                  sourceRun = normalizeValidationRun(data);
+                  if (sourceRun.status === 'completed') break;
+                } catch (error) {
+                  core.warning(`Could not resolve source validation run ${sourceRunId}: ${error.message}`);
+                  break;
+                }
+              }
+              if (sourceRun) {
+                const identityMatches = sourceRun.validationPr === sourcePr && sourceRun.validationHead === sourceHead;
+                if (identityMatches) normalizedValidationRuns.push(sourceRun);
+                else core.warning(`Source validation run ${sourceRunId} did not match dispatched PR/head identity.`);
+                if (identityMatches && sourceRun.status !== 'completed') {
+                  core.notice(`Source validation run ${sourceRunId} is still ${sourceRun.status}; durable-state recovery will pick it up later.`);
+                }
+              }
+            }
+
+            const recentNewestValidations = planner.selectNewestValidationRuns(normalizedValidationRuns);
+            const activeValidationIds = new Set(
+              [...recentNewestValidations.values()]
+                .filter((run) => run.status === 'queued' || run.status === 'in_progress')
+                .map((run) => run.id),
+            );
 
             const upsertState = async (pr, state, summary, knownComments = null) => {
               const comments = knownComments || await github.paginate(github.rest.issues.listComments, {
@@ -114,7 +171,7 @@ jobs:
               }
             };
 
-            const eventPr = Number(process.env.EVENT_PR || 0);
+            const eventPr = Number(process.env.SOURCE_PR_NUMBER || process.env.EVENT_PR || 0);
             const validations = [];
             const finalizations = [];
             const reconcile = [];
@@ -130,7 +187,32 @@ jobs:
               });
               const latestState = stateModule.findLatestBotAutoMergeState(comments);
               const key = `${pr.number}:${pr.head.sha}`;
-              const newestValidation = newestValidations.get(key) || null;
+              let newestValidation = recentNewestValidations.get(key) || null;
+
+              // Once a worker reaches terminal handoff, its exact run ID is durable state.
+              // Resolve that run directly instead of depending on the global history window.
+              if (latestState?.head === pr.head.sha && latestState.validationRunId > 0
+                  && newestValidation?.id !== latestState.validationRunId) {
+                try {
+                  const { data } = await github.rest.actions.getWorkflowRun({
+                    owner, repo, run_id: latestState.validationRunId,
+                  });
+                  const exactRun = normalizeValidationRun(data);
+                  if (exactRun.validationPr === pr.number && exactRun.validationHead === pr.head.sha) {
+                    newestValidation = planner.selectNewestValidationRuns(
+                      newestValidation ? [newestValidation, exactRun] : [exactRun],
+                    ).get(key) || newestValidation;
+                    if (exactRun.status === 'queued' || exactRun.status === 'in_progress') {
+                      activeValidationIds.add(exactRun.id);
+                    }
+                  } else {
+                    core.warning(`Durable validation run ${latestState.validationRunId} no longer matches PR #${pr.number} @ ${pr.head.sha}.`);
+                  }
+                } catch (error) {
+                  core.warning(`Could not resolve durable validation run ${latestState.validationRunId} for PR #${pr.number}: ${error.message}`);
+                }
+              }
+
               const finalizerState = newestValidation
                 ? planner.summarizeFinalizerRuns(normalizedFinalizerRuns, newestValidation.id)
                 : { active: false, failedAttempts: 0 };
@@ -149,7 +231,8 @@ jobs:
                 finalizations.push({
                   pr,
                   run: newestValidation,
-                  retry: decision.retry,
+                  handoffRetry: decision.retry,
+                  validationRetry: latestState?.retry || 0,
                   comments,
                   priority: pr.number === eventPr ? 0 : 1,
                 });
@@ -173,8 +256,12 @@ jobs:
                     green: false,
                     trusted: false,
                     reason: 'infrastructure',
-                    retry: maxRetries,
-                    runId: newestValidation?.id || latestState?.runId || 0,
+                    retry: latestState?.retry || 0,
+                    validationRunId: newestValidation?.id || latestState?.validationRunId || 0,
+                    handoffRetry: decision.reason === 'finalizer-retry-exhausted'
+                      ? decision.retry
+                      : latestState?.handoffRetry || 0,
+                    runId: latestState?.runId || 0,
                   }, `### Trusted auto-merge evaluation\n\n⚠️ ${decision.reason === 'finalizer-retry-exhausted'
                     ? 'Trusted finalization retry budget was exhausted.'
                     : 'An orphaned pending validation exhausted its retry budget.'}`, comments);
@@ -210,7 +297,34 @@ jobs:
             finalizations.sort((a, b) => a.priority - b.priority
               || new Date(a.run.created_at || 0).getTime() - new Date(b.run.created_at || 0).getTime());
             let finalizersDispatched = 0;
-            for (const candidate of finalizations.slice(0, maxParallel)) {
+            for (const candidate of finalizations.slice(0, maxParallelFinalizers)) {
+              const pendingHandoffState = {
+                pr: candidate.pr.number,
+                head: candidate.pr.head.sha,
+                base: liveBase,
+                green: false,
+                trusted: false,
+                reason: 'pending',
+                retry: candidate.validationRetry,
+                validationRunId: candidate.run.id,
+                handoffRetry: candidate.handoffRetry,
+                runId: 0,
+              };
+              try {
+                await upsertState(candidate.pr, pendingHandoffState,
+                  `### Trusted auto-merge evaluation\n\n⏳ Validation run ${candidate.run.id} completed; trusted finalization is queued.`,
+                  candidate.comments);
+                await github.rest.repos.createCommitStatus({
+                  owner, repo, sha: candidate.pr.head.sha,
+                  state: 'pending',
+                  context: 'automerge/trusted-validation',
+                  description: 'Trusted finalization queued',
+                  target_url: candidate.run.html_url || undefined,
+                });
+              } catch (stateError) {
+                core.warning(`Could not refresh finalizer handoff state for PR #${candidate.pr.number}: ${stateError.message}`);
+              }
+
               try {
                 await github.rest.actions.createWorkflowDispatch({
                   owner,
@@ -222,20 +336,14 @@ jobs:
                 finalizersDispatched += 1;
                 core.notice(`Dispatched trusted finalizer for validation run ${candidate.run.id} (PR #${candidate.pr.number}).`);
               } catch (error) {
-                const nextRetry = candidate.retry + 1;
-                const canRetry = nextRetry <= maxRetries;
+                const nextHandoffRetry = candidate.handoffRetry + 1;
+                const canRetry = nextHandoffRetry <= maxRetries;
                 try {
                   await upsertState(candidate.pr, {
-                    pr: candidate.pr.number,
-                    head: candidate.pr.head.sha,
-                    base: liveBase,
-                    green: false,
-                    trusted: false,
+                    ...pendingHandoffState,
                     reason: 'infrastructure',
-                    retry: nextRetry,
-                    runId: 0,
-                  }, `### Trusted auto-merge evaluation\n\n⚠️ Finalizer dispatch failed before the finalizer started: ${error.message}`,
-                  candidate.comments);
+                    handoffRetry: nextHandoffRetry,
+                  }, `### Trusted auto-merge evaluation\n\n⚠️ Finalizer dispatch failed before the finalizer started: ${error.message}`);
                   await github.rest.repos.createCommitStatus({
                     owner, repo, sha: candidate.pr.head.sha,
                     state: canRetry ? 'pending' : 'failure',
@@ -251,6 +359,7 @@ jobs:
 
             validations.sort((a, b) => a.priority - b.priority
               || new Date(a.pr.created_at).getTime() - new Date(b.pr.created_at).getTime());
+            const activeValidationCount = activeValidationIds.size;
             const slots = Math.max(0, maxParallel - activeValidationCount);
             const admitted = validations.slice(0, slots);
             let validationsDispatched = 0;
@@ -264,6 +373,8 @@ jobs:
                 trusted: false,
                 reason: 'pending',
                 retry: candidate.retry,
+                validationRunId: 0,
+                handoffRetry: 0,
                 runId: 0,
               };
 

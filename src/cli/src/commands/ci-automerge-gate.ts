@@ -209,6 +209,26 @@ function formatSamples(items: ReadonlyArray<ComparisonItem>, limit = 8): Array<s
     return items.slice(0, limit).map((item) => `- ${item.sample.file} :: ${item.sample.name}`);
 }
 
+function formatQualityTable(lint: ReturnType<typeof compareLint>, tests: TestComparison, maxRemovedTestCases: number): Array<string> {
+    const grossRemovedCases = tests.removedCases.reduce((total, item) => total + item.count, 0);
+    const newFailureCount = tests.newFailures.reduce((total, item) => total + item.count, 0);
+    const newSkipCount = tests.newSkips.reduce((total, item) => total + item.count, 0);
+    const removalWithinPolicy = tests.netRemovedCaseCount <= maxRemovedTestCases;
+    const rows = [
+        "| Check | Baseline | Merged | Delta / policy |",
+        "| --- | ---: | ---: | --- |",
+        `| Lint findings | ${lint.baseCount} | ${lint.targetCount} | ${lint.added.length === 0 ? "✅ **0 new/upgraded**" : `❌ **${lint.added.length} new/upgraded**`} |`,
+        `| Test cases | ${tests.baseCaseCount} | ${tests.targetCaseCount} | ${removalWithinPolicy ? "✅" : "❌"} **net reduction ${tests.netRemovedCaseCount} / ${maxRemovedTestCases} allowed** |`,
+        `| Canonical test files removed | — | — | ℹ️ **${tests.removedFiles.length} removed**; informational, case-count budget is authoritative |`,
+        `| Newly failing test cases | — | — | ${newFailureCount === 0 ? "✅ **0 introduced**" : `❌ **${newFailureCount} introduced**`} |`,
+        `| Newly skipped test cases | — | — | ${newSkipCount === 0 ? "✅ **0 introduced**" : `❌ **${newSkipCount} introduced**`} |`
+    ];
+    if (grossRemovedCases > 0) {
+        rows.push(`| Gross removed/renamed test identities | — | — | ℹ️ **${grossRemovedCases}**; new passing cases offset these for net reduction |`);
+    }
+    return rows;
+}
+
 function commandEvaluate(args: ParsedArgs): number {
     const baseDirectory = requireOption(args, "base");
     const mergeDirectory = requireOption(args, "merge");
@@ -251,6 +271,7 @@ function commandEvaluate(args: ParsedArgs): number {
             const exceedsRemovalBudget = tests.netRemovedCaseCount > maxRemovedTestCases;
             const hasRegression = lint.added.length > 0 || exceedsRemovalBudget
                 || tests.newFailures.length > 0 || tests.newSkips.length > 0;
+            const qualityTable = formatQualityTable(lint, tests, maxRemovedTestCases);
             if (!hasRegression) {
                 green = true;
                 reason = baseKind === "build-failure" ? "recovery" : "clean";
@@ -258,25 +279,14 @@ function commandEvaluate(args: ParsedArgs): number {
                     "",
                     "✅ No new lint warnings/errors, newly failing tests, or newly skipped tests were introduced, and net test removal stays within policy.",
                     "",
-                    `- Lint findings: ${lint.baseCount} baseline → ${lint.targetCount} merged; **0 new/upgraded**.`,
-                    `- Test cases: ${tests.baseCaseCount} baseline → ${tests.targetCaseCount} merged; **net reduction ${tests.netRemovedCaseCount}/${maxRemovedTestCases} allowed**.`,
-                    `- Canonical test files removed: **${tests.removedFiles.length}** (informational; case-count budget is authoritative).`,
-                    "- Newly failing / newly skipped test cases: **0 / 0**."
+                    ...qualityTable
                 );
-                if (tests.removedCases.length > 0) {
-                    const grossRemovedCases = tests.removedCases.reduce((total, item) => total + item.count, 0);
-                    lines.push("", `ℹ️ Gross removed/renamed test-case identities: **${grossRemovedCases}**; new passing cases offset these when calculating net reduction.`);
-                }
             } else {
                 reason = "quality-regression";
-                lines.push("", "❌ The exact synthetic merge weakens the trusted quality baseline.");
+                lines.push("", "❌ The exact synthetic merge weakens the trusted quality baseline.", "", ...qualityTable);
                 if (lint.added.length > 0) lines.push("", `**New/upgraded lint findings (${lint.added.length})**`, ...lint.added.slice(0, 8).map((item) => `- ${item.file}: ${item.ruleId || "eslint"}: ${item.message}`));
                 if (exceedsRemovalBudget) {
-                    lines.push(
-                        "",
-                        `**Net test-case reduction exceeds policy (${tests.netRemovedCaseCount} removed; maximum ${maxRemovedTestCases})**`,
-                        `- Test cases: ${tests.baseCaseCount} baseline → ${tests.targetCaseCount} merged.`
-                    );
+                    lines.push("", `**Net test-case reduction exceeds policy (${tests.netRemovedCaseCount} removed; maximum ${maxRemovedTestCases})**`);
                     if (tests.removedFiles.length > 0) lines.push(`- Removed canonical test files: ${tests.removedFiles.length}.`);
                     if (tests.removedCases.length > 0) lines.push(...formatSamples(tests.removedCases));
                 }
@@ -337,6 +347,11 @@ function selfTest(): void {
     assert.equal(deduplicatedWithReplacement.netRemovedCaseCount, 1);
     assert.equal(deduplicatedWithReplacement.newFailures.length, 0);
     assert.equal(deduplicatedWithReplacement.newSkips.length, 0);
+
+    const table = formatQualityTable(compareLint(baselineLint, movedLint), deduplicatedWithReplacement, 3).join("\n");
+    assert.match(table, /\| Check \| Baseline \| Merged \| Delta \/ policy \|/u);
+    assert.match(table, /\| Test cases \| 5 \| 4 \| ✅ \*\*net reduction 1 \/ 3 allowed\*\* \|/u);
+    assert.match(table, /Gross removed\/renamed test identities/u);
 
     process.stdout.write("ci-automerge gate self-test passed\n");
 }

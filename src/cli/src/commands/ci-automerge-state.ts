@@ -34,6 +34,11 @@ export type AutoMergeState = Readonly<{
     trusted: boolean;
     reason: string;
     retry: number;
+    /** Exact validation worker run observed for this head, even before finalization. */
+    validationRunId: number;
+    /** Failed coordinator/finalizer handoff dispatch attempts, independent from validation retries. */
+    handoffRetry: number;
+    /** Validation run whose trusted finalizer has already published this state. */
     runId: number;
     updatedAt: string;
 }>;
@@ -43,7 +48,8 @@ export type AutoMergeValidationRunIdentity = Readonly<{
     head: string;
 }>;
 
-type StateInput = Omit<AutoMergeState, "v" | "updatedAt"> & Readonly<{ updatedAt?: string }>;
+type StateInput = Omit<AutoMergeState, "v" | "updatedAt" | "validationRunId" | "handoffRetry">
+    & Readonly<{ validationRunId?: number; handoffRetry?: number; updatedAt?: string }>;
 export type AutoMergeIssueComment = Readonly<{
     id?: number;
     body?: string | null;
@@ -67,6 +73,8 @@ export function normalizeAutoMergeState(value: StateInput | AutoMergeState): Aut
         trusted: value.trusted === true,
         reason: String(value.reason || ""),
         retry: Number(value.retry || 0),
+        validationRunId: Number(value.validationRunId || 0),
+        handoffRetry: Number(value.handoffRetry || 0),
         runId: Number(value.runId || 0),
         updatedAt: String(value.updatedAt || new Date().toISOString())
     });
@@ -74,7 +82,9 @@ export function normalizeAutoMergeState(value: StateInput | AutoMergeState): Aut
     if (!isSha(state.head) || (state.base !== "" && !isSha(state.base))) throw new Error("Invalid head/base SHA in auto-merge state.");
     if (!AUTO_MERGE_STATE_REASONS.has(state.reason)) throw new Error(`Unsupported auto-merge reason: ${state.reason}`);
     if (!Number.isInteger(state.retry) || state.retry < 0 || state.retry > 10) throw new Error("Invalid retry count in auto-merge state.");
-    if (!Number.isInteger(state.runId) || state.runId < 0) throw new Error("Invalid workflow run ID in auto-merge state.");
+    if (!Number.isInteger(state.validationRunId) || state.validationRunId < 0) throw new Error("Invalid validation workflow run ID in auto-merge state.");
+    if (!Number.isInteger(state.handoffRetry) || state.handoffRetry < 0 || state.handoffRetry > 10) throw new Error("Invalid finalizer handoff retry count in auto-merge state.");
+    if (!Number.isInteger(state.runId) || state.runId < 0) throw new Error("Invalid finalized workflow run ID in auto-merge state.");
     return state;
 }
 
@@ -156,14 +166,44 @@ export function assertAutoMergeControlPlaneContract(
 ): void {
     const discoverJob = extractJobBlock(reconcile, "discover", "reconcile");
     const analyzeJob = extractJobBlock(finalizer, "analyze", "merge");
+    const handoffJob = extractJobBlock(worker, "terminal_handoff", null);
 
     assert.match(discoverJob, /permissions:\n(?: {6}[^\n]+\n)* {6}pull-requests: write/u,
         "coordinator discover job must have PR-write permission");
     assert.match(analyzeJob, /permissions:\n(?: {6}[^\n]+\n)* {6}pull-requests: write/u,
         "finalizer analyze job must have PR-write permission");
+    assert.match(handoffJob, /permissions:\n(?: {6}[^\n]+\n)* {6}actions: write/u,
+        "terminal validation handoff must be allowed to wake the trusted coordinator");
+    assert.match(handoffJob, /permissions:\n(?: {6}[^\n]+\n)* {6}pull-requests: write/u,
+        "terminal validation handoff must persist durable PR state");
+    assert.match(handoffJob, /permissions:\n(?: {6}[^\n]+\n)* {6}statuses: write/u,
+        "terminal validation handoff must update the trusted-validation status");
+    assert.match(handoffJob, /ref: \$\{\{ github\.sha \}\}/u,
+        "terminal handoff helper code must come from the exact workflow commit");
+    assert.match(handoffJob, /context\.sha !== base/u,
+        "terminal handoff must refuse a run whose workflow commit differs from the admitted base");
+    assert.match(handoffJob, /validationRunId: runId/u,
+        "terminal handoff must durably correlate the exact validation run");
+    assert.match(handoffJob, /workflow_id: 'automerge-reconcile\.yml'/u);
+    assert.match(handoffJob, /source_validation_run_id: String\(runId\)/u,
+        "terminal worker must explicitly wake the coordinator with its own run ID");
+    assert.doesNotMatch(handoffJob, /workflow_id: 'automerge-finalize\.yml'/u,
+        "a worker must not race its own completion by dispatching the finalizer directly");
+
+    assert.match(reconcile, /source_validation_run_id:/u,
+        "coordinator must accept an exact terminal worker run ID");
+    assert.match(reconcile, /SOURCE_VALIDATION_RUN_ID: \$\{\{ inputs\.source_validation_run_id \}\}/u);
     assert.match(reconcile, /workflow_id: 'automerge-finalize\.yml'/u);
     assert.match(reconcile, /expected_base: liveBase/u,
         "coordinator must pin every validation dispatch to the exact admitted main SHA");
+    assert.match(reconcile, /latestState\.validationRunId/u,
+        "coordinator must use durable validation-run identity instead of relying only on global history");
+    assert.match(reconcile, /getWorkflowRun\(\{\s*owner, repo, run_id: latestState\.validationRunId,?\s*\}\)/u,
+        "coordinator must resolve durable validation runs directly by ID");
+    assert.match(reconcile, /sourceRun\.status === 'completed'/u,
+        "terminal fast path must wait until GitHub marks the source worker completed");
+    assert.match(reconcile, /maxParallelFinalizers/u,
+        "finalizer recovery concurrency must be independent from expensive validation concurrency");
     assert.match(reconcile, /has no changed files yet; waiting for its first substantive synchronize event/u);
     assert.match(reconcile, /pendingTimeoutMs/u);
     assert.doesNotMatch(reconcile, /core\.setFailed\(`Auto-merge control-plane dispatch failure/u,
@@ -210,9 +250,13 @@ function selfTest(): void {
         trusted: true,
         reason: "infrastructure",
         retry: 0,
-        runId: 123
+        validationRunId: 123,
+        handoffRetry: 1,
+        runId: 0
     });
     assert.equal(parseAutoMergeState(marker)?.pr, 42);
+    assert.equal(parseAutoMergeState(marker)?.validationRunId, 123);
+    assert.equal(parseAutoMergeState(marker)?.handoffRetry, 1);
     assert.equal(parseAutoMergeState("<!-- automerge-state nope -->"), null);
     assert.equal(findLatestBotAutoMergeState([{ body: marker, updated_at: "2026-01-01", user: { login: "github-actions[bot]" } }])?.reason, "infrastructure");
     assert.deepEqual(parseAutoMergeValidationRunTitle(`Auto-merge PR #42 @ ${"a".repeat(40)}`), { pr: 42, head: "a".repeat(40) });

@@ -12,6 +12,8 @@ export type AutoMergeStateSnapshot = Readonly<{
     trusted: boolean;
     reason: string;
     retry: number;
+    validationRunId: number;
+    handoffRetry: number;
     runId: number;
     updatedAt: string;
 }>;
@@ -39,6 +41,7 @@ export type FinalizerRunState = Readonly<{
 
 export type AutoMergePlanDecision = Readonly<{
     kind: "validate" | "finalize" | "merge" | "wait" | "blocked";
+    /** Operation-specific retry generation: validation for validate, handoff for finalize. */
     retry: number;
     reason: string;
 }>;
@@ -111,7 +114,7 @@ export function isKnownBaseTransition(previousBase: string, liveBase: string): b
         && previousBase !== liveBase;
 }
 
-/** Treat an orphaned pending state as retryable after the configured bounded timeout. */
+/** Treat a pending state as expired after the configured bounded timeout. */
 export function isPendingStateExpired(state: AutoMergeStateSnapshot, nowMs: number, pendingTimeoutMs: number): boolean {
     if (state.reason !== "pending" || pendingTimeoutMs <= 0) return false;
     const updatedAt = Date.parse(state.updatedAt);
@@ -132,12 +135,27 @@ export function planAutoMergePr(input: AutoMergePlanInput): AutoMergePlanDecisio
         if (newestValidation.status === "completed") {
             const finalized = state?.head === head && state.runId === newestValidation.id;
             if (!finalized) {
-                const handoffRetry = state?.head === head && state.reason === "infrastructure" && state.runId === 0
-                    ? state.retry
-                    : 0;
-                if (finalizer.active) return Object.freeze({ kind: "wait", retry: handoffRetry, reason: "finalizer-active" });
+                // There is no value finalizing evidence that is already stale. Re-admit the
+                // same PR head against current main immediately and save a finalizer slot.
+                if (SHA_PATTERN.test(String(newestValidation.head_sha || ""))
+                    && newestValidation.head_sha !== liveBase) {
+                    return Object.freeze({ kind: "validate", retry: 0, reason: "stale-completed-validation" });
+                }
+
+                const exactHandoff = state?.head === head && state.validationRunId === newestValidation.id;
+                const handoffRetry = exactHandoff ? state.handoffRetry : 0;
+                if (finalizer.active) {
+                    return Object.freeze({ kind: "wait", retry: handoffRetry, reason: "finalizer-active" });
+                }
+                // terminal_handoff wakes the coordinator, not the finalizer. Once the exact
+                // worker is completed, coordinator recovery must finalize it immediately;
+                // waiting here would recreate the pending-status stall this handoff fixes.
                 if (finalizer.failedAttempts > maxInfrastructureRetries || handoffRetry > maxInfrastructureRetries) {
-                    return Object.freeze({ kind: "blocked", retry: Math.max(finalizer.failedAttempts, handoffRetry), reason: "finalizer-retry-exhausted" });
+                    return Object.freeze({
+                        kind: "blocked",
+                        retry: Math.max(finalizer.failedAttempts, handoffRetry),
+                        reason: "finalizer-retry-exhausted"
+                    });
                 }
                 return Object.freeze({ kind: "finalize", retry: handoffRetry, reason: "validation-completed" });
             }
@@ -165,6 +183,14 @@ export function planAutoMergePr(input: AutoMergePlanInput): AutoMergePlanDecisio
         return Object.freeze({ kind: "validate", retry: 0, reason: "pending-old-base" });
     }
     if (state.reason === "pending" && isPendingStateExpired(state, nowMs, pendingTimeoutMs)) {
+        if (state.validationRunId > 0) {
+            // A durable run ID means validation already existed. If the coordinator cannot
+            // resolve it, retrying validation is safer than leaving a permanent pending check.
+            if (state.retry < maxInfrastructureRetries) {
+                return Object.freeze({ kind: "validate", retry: state.retry + 1, reason: "orphaned-run-retry" });
+            }
+            return Object.freeze({ kind: "blocked", retry: state.retry, reason: "pending-retry-exhausted" });
+        }
         if (state.retry < maxInfrastructureRetries) {
             return Object.freeze({ kind: "validate", retry: state.retry + 1, reason: "orphaned-pending-retry" });
         }

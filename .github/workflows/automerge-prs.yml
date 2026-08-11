@@ -737,3 +737,139 @@ jobs:
           else
             test '${{ needs.base_assemble.result }}' = success
           fi
+
+  terminal_handoff:
+    name: Persist validation run and wake trusted coordinator
+    needs: [gate, validation_complete]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+      issues: write
+      pull-requests: write
+      statuses: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Persist exact run identity and dispatch coordinator
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+          EXPECTED_HEAD: ${{ inputs.expected_head }}
+          EXPECTED_BASE: ${{ inputs.expected_base }}
+          INPUT_RETRY: ${{ inputs.retry }}
+          VALIDATION_RUN_ID: ${{ github.run_id }}
+          VALIDATION_RUN_ATTEMPT: ${{ github.run_attempt }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const path = require('node:path');
+            const { pathToFileURL } = require('node:url');
+            const { owner, repo } = context.repo;
+            const number = Number(process.env.PR_NUMBER || 0);
+            const head = String(process.env.EXPECTED_HEAD || '');
+            const base = String(process.env.EXPECTED_BASE || '');
+            const retry = Number(process.env.INPUT_RETRY || 0);
+            const runId = Number(process.env.VALIDATION_RUN_ID || 0);
+            const runAttempt = Number(process.env.VALIDATION_RUN_ATTEMPT || 0);
+            if (!Number.isInteger(number) || number <= 0
+                || !/^[0-9a-f]{40}$/u.test(head)
+                || !/^[0-9a-f]{40}$/u.test(base)
+                || !Number.isInteger(retry) || retry < 0
+                || !Number.isInteger(runId) || runId <= 0
+                || runAttempt !== 1
+                || context.sha !== base) {
+              core.warning('Terminal handoff refused invalid or non-first-attempt validation identity.');
+              return;
+            }
+
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            if (pr.state !== 'open' || pr.draft || pr.base.ref !== 'main' || pr.head.sha !== head) {
+              core.notice(`PR #${number} changed before terminal handoff; no coordinator wake-up is needed.`);
+              return;
+            }
+
+            const stateModule = await import(pathToFileURL(path.join(
+              process.env.GITHUB_WORKSPACE,
+              'src/cli/src/commands/ci-automerge-state.ts',
+            )).href);
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: number, per_page: 100,
+            });
+            const existing = stateModule.findBotAutoMergeSummaryComment(comments);
+            const pendingState = {
+              pr: number,
+              head,
+              base,
+              green: false,
+              trusted: false,
+              reason: 'pending',
+              retry,
+              validationRunId: runId,
+              handoffRetry: 0,
+              runId: 0,
+            };
+            const render = (state, summary) => stateModule.renderAutoMergeStateComment(state, summary);
+            const upsert = async (state, summary) => {
+              const body = render(state, summary);
+              if (existing?.id) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              else await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
+            };
+            const targetUrl = `https://github.com/${owner}/${repo}/actions/runs/${runId}`;
+
+            try {
+              await upsert(pendingState,
+                `### Trusted auto-merge evaluation\n\n⏳ Validation run ${runId} reached terminal handoff; trusted finalization is being coordinated.`);
+              await github.rest.repos.createCommitStatus({
+                owner, repo, sha: head,
+                state: 'pending',
+                context: 'automerge/trusted-validation',
+                description: 'Trusted finalization queued',
+                target_url: targetUrl,
+              });
+            } catch (error) {
+              // Finalization can repair the durable surface, so do not strand a completed
+              // worker solely because the pre-handoff status/comment update was transient.
+              core.warning(`Could not persist terminal handoff state for PR #${number}: ${error.message}`);
+            }
+
+            try {
+              await github.rest.actions.createWorkflowDispatch({
+                owner,
+                repo,
+                workflow_id: 'automerge-reconcile.yml',
+                ref: 'main',
+                inputs: {
+                  source_validation_run_id: String(runId),
+                  source_pr_number: String(number),
+                  source_head: head,
+                },
+              });
+              core.notice(`Dispatched trusted coordinator for terminal validation run ${runId}.`);
+            } catch (error) {
+              const policy = JSON.parse(fs.readFileSync('.github/ci/automerge-policy.json', 'utf8'));
+              const maxRetries = Number(policy.maxInfrastructureRetries || 1);
+              const handoffRetry = 1;
+              const canRetry = Number.isInteger(maxRetries) && handoffRetry <= maxRetries;
+              try {
+                await upsert({
+                  ...pendingState,
+                  reason: 'infrastructure',
+                  handoffRetry,
+                }, `### Trusted auto-merge evaluation\n\n⚠️ Terminal coordinator dispatch failed: ${error.message}`);
+                await github.rest.repos.createCommitStatus({
+                  owner, repo, sha: head,
+                  state: canRetry ? 'pending' : 'failure',
+                  context: 'automerge/trusted-validation',
+                  description: canRetry ? 'Finalizer handoff retry pending' : 'Finalizer handoff retry exhausted',
+                  target_url: targetUrl,
+                });
+              } catch (stateError) {
+                core.warning(`Could not persist terminal dispatch failure for PR #${number}: ${stateError.message}`);
+              }
+              core.warning(`Could not wake trusted coordinator for validation run ${runId}: ${error.message}`);
+            }
