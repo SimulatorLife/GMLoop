@@ -68,18 +68,23 @@ export async function runWatchTest(
 
         let statusPort = 0;
         if (statusServerEnabled) {
-            const timeoutPromise = new Promise<never>((resolve, reject) => {
-                setTimeout(() => {
+            let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+            const timeoutPromise = new Promise<never>((_resolve, reject) => {
+                timeoutHandle = setTimeout(() => {
                     reject(new Error("Timed out waiting for the status server to report its address."));
                 }, 5000);
             });
-            const resolvedStatusUrl = await Promise.race([statusUrlReady, timeoutPromise]);
+
+            let resolvedStatusUrl: string;
+            try {
+                resolvedStatusUrl = await Promise.race([statusUrlReady, timeoutPromise]);
+            } finally {
+                if (timeoutHandle !== undefined) {
+                    clearTimeout(timeoutHandle);
+                }
+            }
+
             statusPort = Number(new URL(resolvedStatusUrl).port);
-            // Give the watch command a chance to finish wiring up its
-            // filesystem watcher before the test starts producing events.
-            await new Promise<void>((resolve) => {
-                setTimeout(resolve, 25);
-            });
             await waitForStatusReady(`http://127.0.0.1:${statusPort}`);
         }
 
