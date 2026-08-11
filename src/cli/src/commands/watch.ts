@@ -504,9 +504,9 @@ export function createWatchCommand(): Command {
         .addOption(
             new Option(
                 "--max-patch-history <count>",
-                "Maximum number of patches to retain in memory (must be a positive integer)"
+                "Maximum number of patches to retain in memory (set to 0 for unbounded)"
             )
-                .argParser(createMinimumValueValidator(1, "Max patch history must be a positive integer"))
+                .argParser(createMinimumValueValidator(0, "Max patch history must be a non-negative integer"))
                 .default(DEFAULT_WATCH_MAX_PATCH_HISTORY)
         )
         .addOption(
