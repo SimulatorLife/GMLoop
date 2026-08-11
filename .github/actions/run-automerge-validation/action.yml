@@ -91,6 +91,13 @@ runs:
             exit 2
             ;;
         esac
+        if [ "$MODE" = "test" ] && { [ "$status" -eq 0 ] || [ "$status" -eq 1 ]; }; then
+          junit_report="$REPORT_DIR/tests-$SHARD.xml"
+          if [ -f "$junit_report" ] && grep -Eq '</?undefined([[:space:]>])' "$junit_report"; then
+            echo "::warning::Malformed JUnit reporter output contains <undefined> elements; treating shard as infrastructure failure."
+            status=2
+          fi
+        fi
         set -e
         finished_ms="$(date +%s%3N)"
         duration_ms=$(( finished_ms - started_ms ))
