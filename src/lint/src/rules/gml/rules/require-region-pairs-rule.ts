@@ -1,11 +1,6 @@
 import type { Rule } from "eslint";
 
-import {
-    collectRegionSourceLines,
-    readRegionDirectiveType,
-    type RegionSourceLine,
-    resolveRegionDirectiveLineEnding
-} from "../../../language/region-directives.js";
+import { gmlRuleRegionDirectiveServices, type RegionSourceLine } from "../gml-rule-services.js";
 import type { GmlRuleDefinition } from "../index.js";
 import {
     applySourceTextEdits,
@@ -13,6 +8,9 @@ import {
     reportProgramTextRewrite,
     type SourceTextEdit
 } from "../rule-base-helpers.js";
+
+const { collectRegionSourceLines, readRegionDirectiveType, resolveRegionDirectiveLineEnding } =
+    gmlRuleRegionDirectiveServices;
 
 type RegionPairingState = Readonly<{
     unmatchedEndRegionLines: ReadonlyArray<RegionSourceLine>;

@@ -15,6 +15,10 @@ import {
 } from "../../../src/rules/gml/gml-rule-services.js";
 
 const FEATHER_DIRECTORY = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../src/rules/feather");
+const GML_RULES_DIRECTORY = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../../../src/rules/gml/rules"
+);
 
 /**
  * Reads every TypeScript file under the feather rules directory so contract
@@ -35,6 +39,23 @@ async function readFeatherSourceFiles(): Promise<ReadonlyMap<string, string>> {
             candidatePaths.push(path.join(FEATHER_DIRECTORY, "rules", entry.name));
         }
     }
+    const sources = await Promise.all(
+        candidatePaths.map(async (absolutePath) => [absolutePath, await readFile(absolutePath, "utf8")] as const)
+    );
+    return new Map(sources);
+}
+
+/**
+ * Reads every built-in GML rule factory file under `src/rules/gml/rules/` so
+ * contract assertions can lock the facade boundary for the same region-directive
+ * services that the feather rules consume. This prevents the gml rules subtree
+ * from regressing to deep relative imports into `src/lint/src/language/`.
+ */
+async function readGmlRuleSourceFiles(): Promise<ReadonlyMap<string, string>> {
+    const entries = await readdir(GML_RULES_DIRECTORY, { withFileTypes: true });
+    const candidatePaths = entries
+        .filter((entry) => entry.isFile() && entry.name.endsWith(".ts"))
+        .map((entry) => path.join(GML_RULES_DIRECTORY, entry.name));
     const sources = await Promise.all(
         candidatePaths.map(async (absolutePath) => [absolutePath, await readFile(absolutePath, "utf8")] as const)
     );
@@ -138,4 +159,16 @@ void test("feather rules depend on the region-directive rule-services contract, 
         !/from\s+["']\.\.\/\.\.\/language\/region-directives\.js["']/.test(aggregated),
         "Feather rule sources must not reach into src/lint/src/language/region-directives.js; consume gmlRuleRegionDirectiveServices through the shared rule-services facade instead."
     );
+});
+
+void test("gml rules depend on the region-directive rule-services contract, not deep relative imports", async () => {
+    const sources = await readGmlRuleSourceFiles();
+    const ruleSources = new Map([...sources.entries()].filter(([absolutePath]) => absolutePath.endsWith("-rule.ts")));
+
+    for (const [absolutePath, source] of ruleSources) {
+        assert.ok(
+            !/from\s+["']\.\.\/\.\.\/\.\.\/language\/region-directives\.js["']/.test(source),
+            `${path.basename(absolutePath)} must not reach three directory levels into src/lint/src/language/region-directives.js; consume gmlRuleRegionDirectiveServices through the shared rule-services facade instead.`
+        );
+    }
 });
