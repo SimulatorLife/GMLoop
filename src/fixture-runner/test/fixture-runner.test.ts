@@ -525,6 +525,32 @@ void test("compareDirectoryTrees bounds buffered file content to one file pair",
     }
 });
 
+void test("compareDirectoryTrees rejects when path lists diverge", async () => {
+    // Regression coverage for the strict deep-equal migration: the path
+    // comparison in compareDirectoryTrees must surface a divergence using
+    // the same descriptive error message regardless of whether the loose or
+    // strict assertion alias is in use.
+    const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-directory-compare-mismatch-"));
+    const actualDirectory = path.join(rootPath, "actual");
+    const expectedDirectory = path.join(rootPath, "expected");
+    await mkdir(actualDirectory, { recursive: true });
+    await mkdir(expectedDirectory, { recursive: true });
+
+    try {
+        await writeFile(path.join(actualDirectory, "shared.txt"), "actual", "utf8");
+        await writeFile(path.join(actualDirectory, "only-actual.txt"), "extra", "utf8");
+        await writeFile(path.join(expectedDirectory, "shared.txt"), "actual", "utf8");
+        await writeFile(path.join(expectedDirectory, "only-expected.txt"), "missing", "utf8");
+
+        await assert.rejects(
+            FixtureRunner.compareDirectoryTrees(actualDirectory, expectedDirectory),
+            /Project tree output paths must match expected tree paths byte-for-byte\./u
+        );
+    } finally {
+        await rm(rootPath, { recursive: true, force: true });
+    }
+});
+
 void test("runFixtureSuite continues collecting failures for profiling mode", async () => {
     const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-continue-on-failure-"));
     await createTextFixtureCase(
