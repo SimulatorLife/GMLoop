@@ -846,18 +846,13 @@ function commitMacroTranspilation(
 }
 
 function asScriptProgramAst(ast: unknown): ScriptProgramAst | null {
-    if (!Core.isObjectLike(ast)) {
-        return null;
-    }
-
-    const record = ast as Record<string, unknown>;
-    if (record.type !== "Program" || !Array.isArray(record.body)) {
+    if (!Core.isProgramNode(ast)) {
         return null;
     }
 
     return {
         type: "Program",
-        body: record.body.filter((node): node is ScriptAstNode => Core.isObjectLike(node))
+        body: ast.body.filter((node): node is ScriptAstNode => Core.isObjectLike(node))
     };
 }
 
