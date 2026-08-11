@@ -1,6 +1,10 @@
 import type { Rule } from "eslint";
 
-import { gmlRuleRegionDirectiveServices, type RegionSourceLine } from "../gml-rule-services.js";
+import {
+    collectRegionSourceLines,
+    readRegionDirectiveType,
+    type RegionSourceLine
+} from "../../../language/region-directives.js";
 import type { GmlRuleDefinition } from "../index.js";
 import {
     applySourceTextEdits,
@@ -8,8 +12,6 @@ import {
     reportProgramTextRewrite,
     type SourceTextEdit
 } from "../rule-base-helpers.js";
-
-const { collectRegionSourceLines, readRegionDirectiveType } = gmlRuleRegionDirectiveServices;
 
 type RegionBlockRecord = Readonly<{
     startLineIndex: number;
