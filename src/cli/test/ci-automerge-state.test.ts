@@ -127,7 +127,8 @@ void test("control-plane workflow contract checks exact privileged jobs, worker 
     const finalizer = fs.readFileSync(path.join(REPO_ROOT, ".github/workflows/automerge-finalize.yml"), "utf8");
     const reconcileAction = fs.readFileSync(path.join(REPO_ROOT, ".github/actions/reconcile-automerge/action.yml"), "utf8");
     const worker = fs.readFileSync(path.join(REPO_ROOT, ".github/workflows/automerge-prs.yml"), "utf8");
-    assertAutoMergeControlPlaneContract(reconcile, finalizer, reconcileAction, worker);
+    const validationAction = fs.readFileSync(path.join(REPO_ROOT, ".github/actions/run-automerge-validation/action.yml"), "utf8");
+    assertAutoMergeControlPlaneContract(reconcile, finalizer, reconcileAction, worker, validationAction);
 });
 
 void test("malformed or unsupported auto-merge state is rejected", () => {
