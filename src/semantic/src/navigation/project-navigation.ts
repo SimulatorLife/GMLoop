@@ -308,8 +308,8 @@ function normalizeProjectIndexSource(projectIndex: unknown): ProjectIndexSource 
 }
 
 function compareOccurrencesByLocation(left: GmlNavigationOccurrence, right: GmlNavigationOccurrence): number {
-    const pathComparison = left.location.filePath.localeCompare(right.location.filePath);
-    return pathComparison === 0 ? left.location.range.start - right.location.range.start : pathComparison;
+    const pathComparison = occurrenceFilePath(left).localeCompare(occurrenceFilePath(right));
+    return pathComparison === 0 ? occurrenceStartOffset(left) - occurrenceStartOffset(right) : pathComparison;
 }
 
 function compareSymbols(left: GmlNavigationSymbol, right: GmlNavigationSymbol): number {
@@ -408,6 +408,61 @@ function mergeScriptCallReferences(
 
 function isOffsetInRange(offset: number, range: GmlNavigationRange): boolean {
     return offset >= range.start && offset < range.end;
+}
+
+/**
+ * Read the absolute file path for an indexed occurrence.
+ *
+ * Exists so collaborators only talk to their immediate neighbour: rather
+ * than reaching through `occurrence.location.filePath`, callers ask the
+ * occurrence itself where it lives.
+ */
+export function occurrenceFilePath(occurrence: GmlNavigationOccurrence): string {
+    return occurrence.location.filePath;
+}
+
+/**
+ * Read the inclusive UTF-16 start offset of an indexed occurrence.
+ *
+ * Exists so collaborators only talk to their immediate neighbour: rather
+ * than reaching through `occurrence.location.range.start`, callers ask the
+ * occurrence itself where its range begins.
+ */
+export function occurrenceStartOffset(occurrence: GmlNavigationOccurrence): number {
+    return occurrence.location.range.start;
+}
+
+/**
+ * Read the exclusive UTF-16 end offset of an indexed occurrence.
+ *
+ * Exists so collaborators only talk to their immediate neighbour: rather
+ * than reaching through `occurrence.location.range.end`, callers ask the
+ * occurrence itself where its range ends.
+ */
+export function occurrenceEndOffset(occurrence: GmlNavigationOccurrence): number {
+    return occurrence.location.range.end;
+}
+
+/**
+ * Read the inclusive length of an indexed occurrence's source range.
+ *
+ * Exists so collaborators only talk to their immediate neighbour: callers
+ * ask the occurrence itself how wide its range is instead of recomputing
+ * `end - start` through nested field access.
+ */
+export function occurrenceRangeLength(occurrence: GmlNavigationOccurrence): number {
+    return occurrenceEndOffset(occurrence) - occurrenceStartOffset(occurrence);
+}
+
+/**
+ * Return true when the indexed occurrence covers the supplied UTF-16 offset.
+ *
+ * Exists so collaborators only talk to their immediate neighbour: callers
+ * ask the occurrence itself whether it covers the offset rather than poking
+ * at `occurrence.location.range` directly.
+ */
+export function occurrenceCoversOffset(occurrence: GmlNavigationOccurrence, offset: number): boolean {
+    return isOffsetInRange(offset, occurrence.location.range);
 }
 
 function normalizeFilePathKey(filePath: string): string {
@@ -637,7 +692,7 @@ export function findNavigationSymbolAtPosition(
     let high = occurrences.length;
     while (low < high) {
         const middle = (low + high) >>> 1;
-        if (occurrences[middle].location.range.start <= offset) {
+        if (occurrenceStartOffset(occurrences[middle]) <= offset) {
             low = middle + 1;
         } else {
             high = middle;
@@ -647,17 +702,17 @@ export function findNavigationSymbolAtPosition(
     let best: GmlNavigationOccurrence | null = null;
     for (let indexAt = low - 1; indexAt >= 0; indexAt -= 1) {
         const occurrence = occurrences[indexAt];
-        if (occurrence.location.range.start > offset) {
+        if (occurrenceStartOffset(occurrence) > offset) {
             continue;
         }
-        if (occurrence.location.range.end <= offset) {
+        if (occurrenceEndOffset(occurrence) <= offset) {
             break;
         }
-        if (!isOffsetInRange(offset, occurrence.location.range)) {
+        if (!occurrenceCoversOffset(occurrence, offset)) {
             continue;
         }
-        const currentLength = occurrence.location.range.end - occurrence.location.range.start;
-        const bestLength = best ? best.location.range.end - best.location.range.start : 0;
+        const currentLength = occurrenceRangeLength(occurrence);
+        const bestLength = best ? occurrenceRangeLength(best) : 0;
         if (
             best === null ||
             currentLength < bestLength ||
