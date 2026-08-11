@@ -78,10 +78,40 @@ runs:
               echo "No files assigned to $SHARD" >&2
               status=2
             else
+              junit_reporter="$RUNNER_TEMP/automerge-junit-reporter-$SHARD.mjs"
+              cat > "$junit_reporter" <<'NODE_REPORTER'
+        function escapeXml(value) {
+          return String(value ?? "")
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&apos;");
+        }
+
+        export default async function* reporter(source) {
+          yield '<?xml version="1.0" encoding="utf-8"?>\n<testsuites>\n\t<testsuite name="automerge">\n';
+          for await (const event of source) {
+            if (event.type !== "test:pass" && event.type !== "test:fail") continue;
+            const data = event.data ?? {};
+            if (data.details?.type === "suite") continue;
+            const duration = Number(data.details?.duration_ms ?? 0) * 0.001;
+            const attributes = `name="${escapeXml(data.name)}" time="${duration.toFixed(6)}" classname="test" file="${escapeXml(data.file)}"`;
+            if (data.skip || data.todo) {
+              yield `\t\t<testcase ${attributes}><skipped/></testcase>\n`;
+            } else if (event.type === "test:fail") {
+              yield `\t\t<testcase ${attributes}><failure/></testcase>\n`;
+            } else {
+              yield `\t\t<testcase ${attributes}/>\n`;
+            }
+          }
+          yield '\t</testsuite>\n</testsuites>\n';
+        }
+        NODE_REPORTER
               timeout --signal=TERM --kill-after=5s "${timeout_seconds}s" \
                 node --disable-warning=ExperimentalWarning --test-force-exit --test --test-timeout=120000 \
                 --test-reporter=dot --test-reporter-destination=stdout \
-                --test-reporter=junit --test-reporter-destination="$REPORT_DIR/tests-$SHARD.xml" \
+                --test-reporter="$junit_reporter" --test-reporter-destination="$REPORT_DIR/tests-$SHARD.xml" \
                 "${test_files[@]}"
               status=$?
             fi
@@ -91,13 +121,6 @@ runs:
             exit 2
             ;;
         esac
-        if [ "$MODE" = "test" ] && { [ "$status" -eq 0 ] || [ "$status" -eq 1 ]; }; then
-          junit_report="$REPORT_DIR/tests-$SHARD.xml"
-          if [ -f "$junit_report" ] && grep -Eq '</?undefined([[:space:]>])' "$junit_report"; then
-            echo "::warning::Malformed JUnit reporter output contains <undefined> elements; treating shard as infrastructure failure."
-            status=2
-          fi
-        fi
         set -e
         finished_ms="$(date +%s%3N)"
         duration_ms=$(( finished_ms - started_ms ))
