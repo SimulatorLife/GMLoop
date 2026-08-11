@@ -16,6 +16,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
 import { __formatTest__ } from "../src/commands/format.js";
+import { captureCliErrorOutput } from "./test-helpers/capture-cli-error-output.js";
 
 const {
     resetFormattingSessionForTests,
@@ -36,30 +37,6 @@ function createGmlParseError(): Error {
 
 function createNonParseError(): Error {
     return new Error("disk full");
-}
-
-/**
- * Capture `console.error` writes from inside an async callback.
- *
- * The local snapshot is taken once before assigning the override so the
- * restore step is not affected by any concurrent reassignment of
- * `console.error`. The capture list is mutated through the closure so
- * tests cannot race against each other.
- */
-async function captureConsoleErrorDuring(run: () => Promise<void>): Promise<Array<string>> {
-    const consoleRef: Console = console;
-    const captured: Array<string> = [];
-    const originalConsoleError = consoleRef.error;
-    const intercepted: typeof consoleRef.error = (message: string) => {
-        captured.push(String(message));
-    };
-    consoleRef.error = intercepted;
-    try {
-        await run();
-    } finally {
-        consoleRef.error = originalConsoleError;
-    }
-    return captured;
 }
 
 void describe("format command: parse-error recovery helpers", () => {
@@ -94,12 +71,12 @@ void describe("format command: parse-error recovery helpers", () => {
     });
 
     void it("records a formatting failure by emitting a header to stderr", async () => {
-        const captured = await captureConsoleErrorDuring(async () => {
+        const { logged } = await captureCliErrorOutput(async () => {
             recordFormattingFailureForTests(createNonParseError(), "/tmp/example.gml");
         });
 
         assert.ok(
-            captured.some((line) => line.startsWith("Failed to format /tmp/example.gml")),
+            logged.some((line) => line.startsWith("Failed to format /tmp/example.gml")),
             "recordFormattingFailure should print a 'Failed to format …' header"
         );
     });
@@ -107,35 +84,35 @@ void describe("format command: parse-error recovery helpers", () => {
     void it("runs REVERT recovery at most once per session", async () => {
         void resetFormattingSessionForTests(ParseErrorAction.REVERT);
 
-        void applyFormattingRecoveryActionForTests();
-        void applyFormattingRecoveryActionForTests();
-
-        // Without a real revert snapshot registered, the second call is a
-        // no-op. The test only pins the idempotency contract; observable
-        // side effects on disk are exercised by `revertFormattedFiles`
-        // itself in the higher-level integration tests.
-        assert.ok(true, "REVERT recovery remained idempotent across repeated invocations");
+        // Without a real revert snapshot registered, `revertFormattedFiles`
+        // returns immediately. Both invocations must therefore resolve without
+        // throwing, and the second call must remain idempotent (it observes
+        // `revertTriggered` already set and returns). Observable side effects
+        // on disk are exercised by `revertFormattedFiles` itself in the
+        // higher-level integration tests.
+        await applyFormattingRecoveryActionForTests();
+        await applyFormattingRecoveryActionForTests();
     });
 
     void it("orchestrator short-circuits when the helper says skip", async () => {
         void resetFormattingSessionForTests(ParseErrorAction.SKIP);
 
-        const captured = await captureConsoleErrorDuring(async () => {
+        const { logged } = await captureCliErrorOutput(async () => {
             await reportAndTrackFormattingErrorForTests(createGmlParseError(), "/tmp/skipped.gml");
         });
 
-        assert.deepStrictEqual(captured, [], "SKIP mode must prevent any stderr output from the orchestrator");
+        assert.deepStrictEqual(logged, [], "SKIP mode must prevent any stderr output from the orchestrator");
     });
 
     void it("orchestrator still records failures outside SKIP", async () => {
         void resetFormattingSessionForTests(ParseErrorAction.ABORT);
 
-        const captured = await captureConsoleErrorDuring(async () => {
+        const { logged } = await captureCliErrorOutput(async () => {
             await reportAndTrackFormattingErrorForTests(createNonParseError(), "/tmp/loud.gml");
         });
 
         assert.ok(
-            captured.some((line) => line.startsWith("Failed to format /tmp/loud.gml")),
+            logged.some((line) => line.startsWith("Failed to format /tmp/loud.gml")),
             "orchestrator should propagate the record-helper output outside SKIP"
         );
     });
