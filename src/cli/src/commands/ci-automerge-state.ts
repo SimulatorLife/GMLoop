@@ -251,8 +251,10 @@ export function assertAutoMergeControlPlaneContract(
         "validation worker must reject a live-main change after admission");
     assert.match(worker, /currentBase\.commit\.sha !== expectedBase/u,
         "validation worker must reject main movement while resolving the synthetic merge");
-    assert.ok(validationAction.includes("grep -Eq '</?undefined([[:space:]>])'"),
-        "validation action must reject malformed Node JUnit <undefined> elements before evidence is trusted");
+    assert.ok(validationAction.includes('--test-reporter="$junit_reporter"'),
+        "validation action must use the trusted TestsStream reporter for comparable test evidence");
+    assert.ok(validationAction.includes('if (data.details?.type === "suite") continue;'),
+        "trusted test reporter must exclude suite summary events from case evidence");
 
     assert.match(finalizer, /workflow_dispatch:/u);
     assert.doesNotMatch(finalizer, /workflows:\s*\["Auto-merge PRs"\]/u);
