@@ -54,7 +54,6 @@ import { safeGetParentNode } from "./path-utils.js";
 import {
     concat,
     conditionalGroup,
-    type DocChild,
     group,
     hardline,
     ifBreak,
@@ -135,17 +134,18 @@ function tryPrintControlStructureNode(node, path, options, print) {
             return printTernaryExpressionNode(node, path, options, print);
         }
         case "ForStatement": {
-            const forNode = node as { init?: unknown; test?: unknown; update?: unknown };
-            const headerParts: DocChild[] = [
-                forNode.init == null ? "" : (print("init") as DocChild),
-                ";",
-                forNode.test == null ? "" : [line, print("test") as DocChild],
-                ";",
-                forNode.update == null ? "" : [line, print("update") as DocChild]
-            ];
             return concat([
                 "for (",
-                group([indent([ifBreak(line), concat(headerParts)])]),
+                group([
+                    indent([
+                        ifBreak(line),
+                        node.init && print("init"),
+                        ";",
+                        node.test && [line, print("test")],
+                        ";",
+                        node.update && [line, print("update")]
+                    ])
+                ]),
                 ") ",
                 printInBlock(path, options, print, "body")
             ]);
