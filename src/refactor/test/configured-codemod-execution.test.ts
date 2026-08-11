@@ -108,6 +108,7 @@ void test("listRegisteredCodemods returns the v1 configured codemod set", () => 
             "repairInvalidTexturePointerGuard",
             "repairAudioEmitterCreationGuard",
             "repairSpriteTextureUvResolution",
+            "repairEventCallbackOther",
             "globalvarToGlobal",
             "loopLengthHoisting",
             "namingConvention"
@@ -163,6 +164,14 @@ void test("listConfiguredCodemods reports normalized effective config and select
             id: "repairSpriteTextureUvResolution",
             description:
                 "Resolve sprite UVs before numeric texture-page handles in HTML5-compatible scr_get_uvs helpers.",
+            configured: false,
+            selected: false,
+            effectiveConfig: null
+        },
+        {
+            id: "repairEventCallbackOther",
+            description:
+                "Rewrite `other.<name>` references inside inline function expressions in event bodies to `self.<name>` so the closure reaches the event instance. Outside of inline callbacks the original `other` access is preserved because the GameMaker HTML5 runtime correctly supplies the calling instance for top-level event references.",
             configured: false,
             selected: false,
             effectiveConfig: null
