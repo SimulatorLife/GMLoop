@@ -1,3 +1,5 @@
+import { Core } from "@gmloop/core";
+
 import type { Scope } from "./scope.js";
 
 /**
@@ -93,7 +95,7 @@ function recordCrossPathDependencyEdge(
         return;
     }
 
-    const normDeclaringPath = declaringPath.includes("\\") ? declaringPath.replaceAll("\\", "/") : declaringPath;
+    const normDeclaringPath = Core.toPosixPath(declaringPath);
     if (normDeclaringPath === normalisedPath || !inputPaths.has(normDeclaringPath)) {
         return;
     }
@@ -106,20 +108,21 @@ function recordCrossPathDependencyEdge(
 }
 
 /**
- * Normalizes a tracked file path to POSIX separators for stable indexing.
- */
-function normalizeTrackedPath(path: string): string {
-    return path.includes("\\") ? path.replaceAll("\\", "/") : path;
-}
-
-/**
  * Normalizes an iterable of raw paths to a deduplicated map of normalized → original.
+ *
+ * Path normalization is delegated to {@link Core.toPosixPath} so the
+ * workspace inherits the canonical Core contract: backslash separators are
+ * rewritten to forward slashes, while non-string and empty inputs collapse to
+ * an empty string. The previous inline duplicate of this logic was a
+ * backward-compatibility shim; removing it eliminates the second source of
+ * truth and keeps scope-tracker behavior in lock-step with the rest of the
+ * monorepo.
  */
 export function collectNormalisedInputPaths(paths: Iterable<string>): Map<string, string> {
     const inputPaths = new Map<string, string>();
     for (const p of paths) {
         if (p && typeof p === "string" && p.length > 0) {
-            const normalised = normalizeTrackedPath(p);
+            const normalised = Core.toPosixPath(p);
             if (!inputPaths.has(normalised)) {
                 inputPaths.set(normalised, p);
             }
