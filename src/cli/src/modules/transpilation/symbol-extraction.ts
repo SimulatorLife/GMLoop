@@ -480,3 +480,99 @@ export function extractReferencesFromAst(ast: AstNode): Array<string> {
 
     return Array.from(references);
 }
+
+/**
+ * Per-function reference map produced by {@link extractReferencesPerTopLevelFunction}.
+ *
+ * `functionReferences` maps each top-level function's source-level identifier to
+ * the set of external script-call references reachable from that function. The
+ * `topLevelReferences` set holds references from the program-level statements
+ * that live outside any function declaration (top-level executable code).
+ *
+ * Callers can request the data with **zero allocations per patch** during runtime
+ * dependency resolution. The previous implementation re-walked each per-patch
+ * AST with `extractReferencesFromAst`, which duplicated the file-wide walk that
+ * already produced `parsedReferences` and turned a single O(N) AST traversal into
+ * O(N·P) traversals for multi-function files.
+ */
+export interface PerTopLevelFunctionReferences {
+    /**
+     * References restricted to each top-level function declaration. The key is
+     * the function's source-level identifier (the same string used by
+     * `getScriptFunctionName`). Empty when the program has no top-level
+     * functions.
+     */
+    functionReferences: Map<string, ReadonlySet<string>>;
+    /**
+     * References collected from top-level non-function statements (e.g.
+     * executable code at the script's program level). Empty when the program
+     * has no top-level executable statements.
+     */
+    topLevelReferences: ReadonlySet<string>;
+}
+
+/**
+ * Extracts script-call references grouped by top-level function in a single
+ * AST walk.
+ *
+ * The hot-reload pipeline currently emits one patch per top-level function (and
+ * a separate patch for top-level executable statements). Each patch needs its
+ * own reference set so that a dependency on a sibling function does not get
+ * accidentally recorded as a runtime dependency. Re-walking the AST for each
+ * patch is wasteful — the same scope-binding and CallExpression information is
+ * already available from one traversal of the file.
+ *
+ * `extractReferencesPerTopLevelFunction` performs that single traversal and
+ * returns the per-function reference sets together with the top-level
+ * statements' references. The returned `functionReferences` map keys on the
+ * function's source-level identifier (the same name used by `transpileScriptPatches`
+ * to derive the patch's `gml/script/<name>` ID), so the caller can look up each
+ * patch's references in O(1).
+ *
+ * The behaviour mirrors {@link extractReferencesFromAst} for any individual
+ * function: a function-level reference is the union of references its body
+ * can see after shadowing by its own parameters and local declarations.
+ *
+ * @param ast - The parsed AST; expected to be a Program node.
+ * @returns Per-function and top-level references. An empty object is returned
+ * for non-Program input so the caller can stay in its normal lookup path.
+ */
+export function extractReferencesPerTopLevelFunction(ast: AstNode): PerTopLevelFunctionReferences {
+    if (!Core.isProgramNode(ast)) {
+        return { functionReferences: new Map(), topLevelReferences: new Set() };
+    }
+
+    const topLevelNodes = ast.body.filter((node): node is AstNode => typeof node === "object" && node !== null);
+    const functionReferences = new Map<string, Set<string>>();
+    const topLevelReferences = new Set<string>();
+    const topLevelBindings = new Set<string>();
+
+    // First pass: collect top-level scope bindings produced by non-function
+    // statements (e.g. `var x = ...;` at the script's program level). Functions
+    // do not contribute to the script's top-level bindings because their
+    // identifiers are locally scoped and only reachable from within.
+    for (const node of topLevelNodes) {
+        if (!isFunctionNode(node)) {
+            walkNodeForScopeBindings(node, topLevelBindings);
+        }
+    }
+
+    // Second pass: walk each top-level node separately so each function's
+    // references land in its own bucket. Top-level non-function statements
+    // share the top-level bindings set and accumulate into topLevelReferences.
+    for (const node of topLevelNodes) {
+        if (isFunctionNode(node)) {
+            const functionName = extractIdentifierName(node.id);
+            if (functionName === null) {
+                continue;
+            }
+            const references = new Set<string>();
+            walkFunctionReferences(node, references);
+            functionReferences.set(functionName, references);
+        } else {
+            walkNodeForReferences(node, topLevelReferences, topLevelBindings);
+        }
+    }
+
+    return { functionReferences, topLevelReferences };
+}
