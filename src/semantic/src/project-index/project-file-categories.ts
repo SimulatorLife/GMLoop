@@ -42,13 +42,12 @@ function formatInvalidProjectFileCategory(value: unknown): string {
         return "'null'";
     }
 
-    const valueType = typeof value;
     if (
-        valueType === "string" ||
-        valueType === "number" ||
-        valueType === "bigint" ||
-        valueType === "boolean" ||
-        valueType === "symbol"
+        typeof value === "string" ||
+        typeof value === "number" ||
+        typeof value === "bigint" ||
+        typeof value === "boolean" ||
+        typeof value === "symbol"
     ) {
         return `'${String(value)}'`;
     }
