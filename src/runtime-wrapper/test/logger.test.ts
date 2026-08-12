@@ -99,9 +99,9 @@ void describe("Logger", () => {
         const invalidLevel = "verbose" as LogLevel;
 
         assert.equal(parseLogLevel(LogLevels.info), LogLevels.info);
-        // Contract: invalid level must throw; the exact wording of the error
-        // message is implementation detail.
-        assert.throws(() => createLogger({ console: mockConsole, level: invalidLevel }), Error);
+        // Contract: invalid level must throw an Error whose message identifies
+        // the failure as an invalid log level so operators can grep for it.
+        assert.throws(() => createLogger({ console: mockConsole, level: invalidLevel }), /Invalid log level/);
     });
 
     void it("should respect log levels", () => {
@@ -154,6 +154,9 @@ void describe("Logger", () => {
             level: "log",
             includes: [patch.id, String(5)]
         });
+        // The version is rendered with a `v` prefix so logs stay greppable and
+        // visually unambiguous against arbitrary digits elsewhere in the line.
+        assert.match(mockConsole.logs[0].args[0] as string, /v5/);
     });
 
     void it("should include duration when provided", () => {
@@ -184,6 +187,11 @@ void describe("Logger", () => {
             level: "log",
             includes: ["script:test", String(4)]
         });
+        // Both the "Undone" action label and the `v`-prefixed version are part
+        // of the public log contract, not just internal formatting.
+        const message = mockConsole.logs[0].args[0] as string;
+        assert.match(message, /Undone/);
+        assert.match(message, /v4/);
     });
 
     void it("should route patchRolledBack to the error level and include patch id, version, and error", () => {
@@ -197,6 +205,9 @@ void describe("Logger", () => {
             level: "error",
             includes: [patch.id, String(3), "Syntax error"]
         });
+        // The "Rollback" action label is part of the public log contract so
+        // operators can grep for rollback events.
+        assert.match(mockConsole.logs[0].args[0] as string, /Rollback/);
     });
 
     void it("should route registryCleared to the info level and include the version", () => {
@@ -209,6 +220,11 @@ void describe("Logger", () => {
             level: "log",
             includes: [String(10)]
         });
+        // The "cleared" label and `v`-prefixed version are part of the public
+        // log contract, not just internal formatting.
+        const message = mockConsole.logs[0].args[0] as string;
+        assert.match(message, /cleared/);
+        assert.match(message, /v10/);
     });
 
     void it("should route validationError to the error level and include patch id and error", () => {
@@ -221,6 +237,9 @@ void describe("Logger", () => {
             level: "error",
             includes: ["script:bad", "Missing js_body"]
         });
+        // The "Validation failed" label is part of the public log contract so
+        // operators can identify validation failures in the log stream.
+        assert.match(mockConsole.logs[0].args[0] as string, /Validation failed/);
     });
 
     void it("should route shadowValidationFailed to the warn level and include patch id and error", () => {
@@ -233,6 +252,9 @@ void describe("Logger", () => {
             level: "warn",
             includes: ["script:test", "Cannot create function"]
         });
+        // The "Shadow validation failed" label is part of the public log
+        // contract so operators can distinguish shadow from primary failures.
+        assert.match(mockConsole.logs[0].args[0] as string, /Shadow validation failed/);
     });
 
     void it("should route WebSocket lifecycle events and forward connection metadata", () => {
@@ -249,6 +271,11 @@ void describe("Logger", () => {
         assertLogEntry(mockConsole, 1, { level: "log", includes: [String(2)] });
         assertLogEntry(mockConsole, 2, { level: "log", includes: ["Connection closed"] });
         assertLogEntry(mockConsole, 3, { level: "error", includes: ["Network error"] });
+        // The "Connected" / "Reconnecting" / "Disconnected" lifecycle labels
+        // are part of the public log contract, not just internal formatting.
+        assert.match(mockConsole.logs[0].args[0] as string, /Connected/);
+        assert.match(mockConsole.logs[1].args[0] as string, /Reconnecting/);
+        assert.match(mockConsole.logs[2].args[0] as string, /Disconnected/);
     });
 
     void it("should route patch queue operations and forward patch id, queue depth, and flush count", () => {
@@ -261,6 +288,12 @@ void describe("Logger", () => {
         assert.equal(mockConsole.logs.length, 2);
         assertLogEntry(mockConsole, 0, { level: "debug", includes: ["script:test", String(5)] });
         assertLogEntry(mockConsole, 1, { level: "debug", includes: [String(5)] });
+        // The "Queued" / "Flushed" action labels and the "depth: N" /
+        // "N patches" formatting are part of the public log contract.
+        assert.match(mockConsole.logs[0].args[0] as string, /Queued/);
+        assert.match(mockConsole.logs[0].args[0] as string, /depth: 5/);
+        assert.match(mockConsole.logs[1].args[0] as string, /Flushed/);
+        assert.match(mockConsole.logs[1].args[0] as string, /5 patches/);
     });
 
     void it("should include prefix in messages", () => {
@@ -376,6 +409,8 @@ void describe("createChangeEventLogger", () => {
             level: "log",
             includes: ["script:test", String(5)]
         });
+        // The `v`-prefixed version is part of the public log contract.
+        assert.match(mockConsole.logs[0].args[0] as string, /v5/);
     });
 
     void it("should route patch-undone events to the info level and forward the patch id", () => {
@@ -395,6 +430,9 @@ void describe("createChangeEventLogger", () => {
             level: "log",
             includes: ["script:test"]
         });
+        // The "Undone" action label is part of the public log contract so
+        // operators can grep for patch-undone events.
+        assert.match(mockConsole.logs[0].args[0] as string, /Undone/);
     });
 
     void it("should route patch-rolled-back events to the error level", () => {
@@ -433,6 +471,9 @@ void describe("createChangeEventLogger", () => {
             level: "log",
             includes: [String(0)]
         });
+        // The "cleared" label is part of the public log contract so operators
+        // can identify registry-clear events in the log stream.
+        assert.match(mockConsole.logs[0].args[0] as string, /cleared/);
     });
 
     void it("should integrate with runtime wrapper onChange hook", () => {
