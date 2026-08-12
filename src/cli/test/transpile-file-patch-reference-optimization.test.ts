@@ -1,21 +1,15 @@
 /**
- * Micro-benchmark for the per-patch reference-resolution path in `transpileFile`.
+ * Contract tests for the per-patch reference-resolution path in `transpileFile`.
  *
  * The watch pipeline emits one patch per top-level function in a multi-function
- * script. The previous implementation re-walked the AST for each patch via
- * `extractReferencesFromAst(patchAst)`, duplicating the file-wide scope and
- * CallExpression work that the initial parse already performed. The optimised
- * path computes a per-function reference map from the effective AST once and
- * looks up each patch's references in O(1).
- *
- * This test asserts the contract (per-patch references stay correct) and
- * surfaces the throughput improvement so it can be quoted in commit messages.
- * The throughput assertion is intentionally loose so CI variance does not
- * flake the benchmark.
+ * script. The optimised path computes a per-function reference map from the
+ * effective AST once and reuses the same map for every patch instead of
+ * re-walking the AST for each patch. These tests pin the behavioural contract
+ * the optimisation has to preserve: per-patch dependencies stay correct, and
+ * single-patch files keep using the file-wide `effectiveReferences` set.
  */
 
 import assert from "node:assert/strict";
-import { performance } from "node:perf_hooks";
 import { describe, it } from "node:test";
 
 import { Transpiler } from "@gmloop/transpiler";
@@ -25,7 +19,7 @@ import { type TranspilationContext, transpileFile } from "../src/modules/transpi
 /**
  * Synthesises a multi-function GML script where each function calls a fixed
  * set of distinct helpers. The number of functions scales linearly with the
- * `functionCount` parameter so the benchmark can simulate "wide" multi-function
+ * `functionCount` parameter so the suite can exercise "wide" multi-function
  * files that benefit most from the per-function reference map.
  */
 function buildMultiFunctionScript(functionCount: number): string {
@@ -128,36 +122,5 @@ void describe("transpileFile multi-function patch reference optimization", () =>
                 }
             }
         }
-    });
-
-    void it("avoids the per-patch AST walk: log throughput on a 20-function, 500-iteration workload", () => {
-        const FUNCTION_COUNT = 20;
-        const ITERATIONS = 500;
-        const source = buildMultiFunctionScript(FUNCTION_COUNT);
-        const lineCount = source.split("\n").length;
-
-        const context = createContext();
-        for (let warmup = 0; warmup < 50; warmup += 1) {
-            transpileFile(context, "/project/scripts/group_of_helpers.gml", source, lineCount, {
-                verbose: false,
-                quiet: true
-            });
-        }
-
-        const start = performance.now();
-        for (let i = 0; i < ITERATIONS; i += 1) {
-            transpileFile(context, "/project/scripts/group_of_helpers.gml", source, lineCount, {
-                verbose: false,
-                quiet: true
-            });
-        }
-        const elapsed = performance.now() - start;
-        const avgPerFile = elapsed / ITERATIONS;
-
-        // Logged for commit-message documentation; assertion is intentionally
-        // loose so CI variance does not flake this micro-benchmark.
-        console.log(
-            `  transpileFile multi-function (${FUNCTION_COUNT} fns) avg: ${avgPerFile.toFixed(4)} ms/op  (${ITERATIONS} iterations, total ${elapsed.toFixed(2)} ms)`
-        );
     });
 });
