@@ -244,6 +244,11 @@ export function printElements(
  * The returned `inlineDoc` is only populated when `includeInlineVariant`
  * is true and the argument list fits on a single line.
  *
+ * `simplePrefixLength` is forwarded from the caller because the
+ * surrounding `buildCallLikeArgumentDocs` already scans the argument list
+ * to classify callbacks/structs and to compute `shouldIncludeInlineVariant`;
+ * recomputing it here would walk the same prefix twice per format pass.
+ *
  * @param path - The AST path for traversal.
  * @param print - The Prettier print callback.
  * @param options - Prettier formatting options.
@@ -259,12 +264,13 @@ export function buildCallArgumentsDocs(
         maxElementsPerLine = Infinity,
         includeInlineVariant = false,
         hasCallbackArguments = false,
-        forceInline = false
+        forceInline = false,
+        simplePrefixLength = 0
     } = {}
 ) {
-    const node = path.getValue();
-    const simplePrefixLength = countLeadingSimpleCallArguments(node);
-    const hasTrailingArguments = Array.isArray(node?.arguments) && node.arguments.length > simplePrefixLength;
+    const args = path.getValue()?.arguments;
+    const argumentCount = Array.isArray(args) ? args.length : 0;
+    const hasTrailingArguments = argumentCount > simplePrefixLength;
 
     if (simplePrefixLength > 1 && hasTrailingArguments && hasCallbackArguments && maxElementsPerLine === Infinity) {
         const inlineDoc = includeInlineVariant
@@ -282,8 +288,13 @@ export function buildCallArgumentsDocs(
         return { inlineDoc, multilineDoc };
     }
 
-    const args = node?.arguments;
-    const trailingArgs = Array.isArray(args) && simplePrefixLength < args.length ? args.slice(simplePrefixLength) : [];
+    // `isCallbackArgument` matches both true callbacks (FunctionDeclaration /
+    // FunctionExpression / ConstructorDeclaration) AND `StructExpression`, so
+    // a trailing struct that the caller classified via `callbackArguments`
+    // (callbacks only) still forces this branch to fall through to the
+    // comma-separated layout. The two checks cannot be merged without
+    // changing the caller's classification set.
+    const trailingArgs = argumentCount > simplePrefixLength ? args.slice(simplePrefixLength) : [];
     const trailingHasCallback = trailingArgs.some(isCallbackArgument);
 
     if (
