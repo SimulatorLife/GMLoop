@@ -295,7 +295,7 @@ void describe("GmlTranspiler.transpileEvent", () => {
                             body: []
                         }
                     }),
-                { name: "TranspilerError", message: /ast\.type to be 'Program'/ }
+                { name: "TranspilerError", message: /satisfy the ProgramNode contract/ }
             );
         });
     });
