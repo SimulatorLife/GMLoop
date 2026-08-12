@@ -61,6 +61,7 @@ export function createDefaultGmlFormatComponents(
     resolver: GmlFormatAdapterResolver = defaultGmlFormatAdapterResolver
 ): GmlFormatComponentBundle {
     const adapters = resolver.resolveAdapters();
+    const printerLayoutDefaults = resolver.resolvePrinterLayoutDefaults();
     const logicalOperatorsStyle = adapters.LogicalOperatorsStyle;
 
     return {
@@ -99,6 +100,14 @@ export function createDefaultGmlFormatComponents(
                 default: 0,
                 description:
                     "Buffer (in characters) added to the inline-length estimate for control-flow blocks before it is compared to `printWidth`. Positive values make the formatter more conservative (require additional headroom before a block is kept inline); negative values make it more aggressive (allow the inline form to exceed `printWidth` by the configured amount). Has no effect when `allowInlineControlFlowBlocks` is `false`."
+            },
+            minVariablesBeforeLoopPadding: {
+                since: "0.0.0",
+                type: "int",
+                category: "gml",
+                default: printerLayoutDefaults.minVariablesBeforeLoopPadding,
+                description:
+                    "Minimum number of contiguous top-level variable declarations that must precede a loop before the formatter inserts an extra blank-line padding between the variable block and the loop. Smaller variable blocks keep the source's natural spacing; larger blocks receive a visual separator to make the loop entry point easier to scan. Set to `0` to disable the heuristic and always preserve source spacing."
             },
             logicalOperatorsStyle: {
                 since: "0.0.0",
