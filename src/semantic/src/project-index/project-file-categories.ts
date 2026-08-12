@@ -42,16 +42,18 @@ function formatInvalidProjectFileCategory(value: unknown): string {
         return "'null'";
     }
 
-    switch (typeof value) {
-        case "string":
-        case "number":
-        case "bigint":
-        case "boolean":
-        case "symbol":
-            return `'${String(value)}'`;
-        default:
-            return `'${Object.prototype.toString.call(value)}'`;
+    const valueType = typeof value;
+    if (
+        valueType === "string" ||
+        valueType === "number" ||
+        valueType === "bigint" ||
+        valueType === "boolean" ||
+        valueType === "symbol"
+    ) {
+        return `'${String(value)}'`;
     }
+
+    return `'${Object.prototype.toString.call(value)}'`;
 }
 
 /**
