@@ -77,8 +77,8 @@ export function joinDeclaratorPartsWithCommas(parts: unknown[]): unknown[] {
  * @param path - The AST path for traversal.
  * @param print - The Prettier print callback.
  * @param listKey - Property name on the current node containing the element array.
- * @param startChar - Opening delimiter (e.g., `"("`, `"["`).
- * @param endChar - Closing delimiter (e.g., `")"`, `"]"`).
+ * @param startChar - Opening delimiter (e.g., "(", "[").
+ * @param endChar - Closing delimiter (e.g., ")", "]").
  * @param overrides - Optional settings for delimiter, padding, line breaks, and grouping.
  * @returns A Prettier doc group for the delimited list.
  */
@@ -139,8 +139,8 @@ export function printDelimitedList(
  * @param path - The AST path for traversal.
  * @param print - The Prettier print callback.
  * @param listKey - Property name on the current node containing the element array.
- * @param startChar - Opening delimiter (e.g., `"("`, `"["`).
- * @param endChar - Closing delimiter (e.g., `")"`, `"]"`).
+ * @param startChar - Opening delimiter (e.g., "(", "[").
+ * @param endChar - Closing delimiter (e.g., ")", "]").
  * @param options - Prettier formatting options (used to check `trailingComma`).
  * @param overrides - Optional settings passed through to {@link printDelimitedList}.
  * @returns A Prettier doc group for the comma-separated list.
@@ -268,8 +268,9 @@ export function buildCallArgumentsDocs(
         simplePrefixLength = 0
     } = {}
 ) {
-    const args = path.getValue()?.arguments;
-    const argumentCount = Array.isArray(args) ? args.length : 0;
+    const node = path.getValue() as { arguments?: unknown } | null | undefined;
+    const args: unknown[] = Array.isArray(node?.arguments) ? node.arguments : [];
+    const argumentCount = args.length;
     const hasTrailingArguments = argumentCount > simplePrefixLength;
 
     if (simplePrefixLength > 1 && hasTrailingArguments && hasCallbackArguments && maxElementsPerLine === Infinity) {
@@ -294,7 +295,7 @@ export function buildCallArgumentsDocs(
     // (callbacks only) still forces this branch to fall through to the
     // comma-separated layout. The two checks cannot be merged without
     // changing the caller's classification set.
-    const trailingArgs = argumentCount > simplePrefixLength ? args.slice(simplePrefixLength) : [];
+    const trailingArgs = hasTrailingArguments ? args.slice(simplePrefixLength) : [];
     const trailingHasCallback = trailingArgs.some(isCallbackArgument);
 
     if (
