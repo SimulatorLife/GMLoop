@@ -13,6 +13,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { Core } from "@gmloop/core";
+import { Format } from "@gmloop/format";
 import { Command, InvalidArgumentError, Option } from "commander";
 
 import { isHelpRequest } from "../cli-core/cli-argument-normalization.js";
@@ -27,7 +28,7 @@ import {
     createVerboseOption,
     createWriteOption
 } from "../cli-core/shared-command-options.js";
-import { importFormatModule, resolveFormatEntryPoint as resolveCliFormatEntryPoint } from "../format-runtime/index.js";
+import { resolveFormatEntryPoint as resolveCliFormatEntryPoint } from "../format-runtime/index.js";
 import { tryAddSample } from "../modules/formatting/bounded-sample-collector.js";
 import {
     PERIODIC_CLEANUP_CACHE_RETAINED_ENTRIES,
@@ -269,7 +270,6 @@ function isMissingPrettierDependency(error) {
 }
 
 let prettierModulePromise = null;
-let formatOutputNormalizerPromise: Promise<null | ((formatted: string, source: string) => string)> | null = null;
 
 function resolvePrettier() {
     if (!prettierModulePromise) {
@@ -301,32 +301,25 @@ function resolvePrettier() {
     return prettierModulePromise;
 }
 
-function resolveFormatOutputNormalizer(): Promise<null | ((formatted: string, source: string) => string)> {
-    if (formatOutputNormalizerPromise === null) {
-        formatOutputNormalizerPromise = importFormatModule()
-            .then((moduleValue) => {
-                // `normalizeFormattedOutput` is part of the `Format` namespace per the
-                // workspace-root single-namespace contract (target-state.md §2.1).
-                const formatNamespace = (moduleValue as { Format?: { normalizeFormattedOutput?: unknown } }).Format;
-                const normalizer = formatNamespace?.normalizeFormattedOutput;
-                return typeof normalizer === "function"
-                    ? (normalizer as (formatted: string, source: string) => string)
-                    : null;
-            })
-            .catch(() => null);
-    }
-
-    return formatOutputNormalizerPromise;
+// `Format.normalizeFormattedOutput` lives on the @gmloop/format namespace and
+// is statically imported at the top of this module. The previous implementation
+// reached into the format workspace via a dynamic import; rebuilding the
+// CLI boundary around the workspace's public namespace (per target-state.md
+// §2.1) keeps the dependency direction visible to the type checker and to
+// humans without paying for another runtime module load.
+function resolveFormatOutputNormalizer(): null | ((formatted: string) => string) {
+    const normalizer = Format.normalizeFormattedOutput;
+    return typeof normalizer === "function" ? normalizer : null;
 }
 
-async function normalizeFormattedOutputWithFormat(formatted: string, source: string): Promise<string> {
-    const normalizer = await resolveFormatOutputNormalizer();
+function normalizeFormattedOutputWithFormat(formatted: string, _source: string): string {
+    const normalizer = resolveFormatOutputNormalizer();
 
     if (typeof normalizer !== "function") {
         return formatted;
     }
 
-    return normalizer(formatted, source);
+    return normalizer(formatted);
 }
 
 // Default parse error action is intentionally hard-coded to "abort" to enforce
@@ -1475,17 +1468,17 @@ async function resolveProjectFormatOverrides(
     const projectRoot = targetStats.isDirectory() ? path.resolve(targetPath) : path.dirname(path.resolve(targetPath));
     const resolvedConfigPath = await resolveExistingGmloopConfigPath(projectRoot, normalizedConfigPath);
     const projectConfig = await loadGmloopProjectConfig(resolvedConfigPath);
-    const formatModule = await importFormatModule();
-    const formatNamespace = (formatModule as { Format?: { extractProjectFormatOptions?: unknown } }).Format;
-    const extractProjectFormatOptions = formatNamespace?.extractProjectFormatOptions;
+    // `extractProjectFormatOptions` lives on the @gmloop/format namespace as part
+    // of the workspace's public API (per target-state.md §2.1). Accessing it via
+    // the static `Format` import keeps the CLI's dependency direction explicit
+    // and avoids the legacy dynamic loader into the format workspace.
+    const extractProjectFormatOptions = Format.extractProjectFormatOptions;
     if (typeof extractProjectFormatOptions !== "function") {
         return {};
     }
 
     const extractedOptions = extractProjectFormatOptions(projectConfig);
-    return typeof extractedOptions === "object" && extractedOptions !== null
-        ? (extractedOptions as Record<string, unknown>)
-        : {};
+    return typeof extractedOptions === "object" && extractedOptions !== null ? extractedOptions : {};
 }
 
 async function formatSingleFile(filePath, activeIgnorePaths = []) {
@@ -1527,7 +1520,7 @@ async function formatSingleFile(filePath, activeIgnorePaths = []) {
             formatted = await prettier.format(data, formattingOptions);
             storeFormattingCacheEntry(cacheKey, formatted);
         }
-        const normalizedOutput = await normalizeFormattedOutputWithFormat(formatted, data);
+        const normalizedOutput = normalizeFormattedOutputWithFormat(formatted, data);
 
         if (normalizedOutput === data) {
             logVerbosePerFileTiming({

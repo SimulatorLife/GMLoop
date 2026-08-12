@@ -6,6 +6,7 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": "./dist/index.js",
+    "./prettier-plugin": "./dist/src/format-entry.js",
     "./package.json": "./package.json"
   },
   "files": [
