@@ -64,6 +64,7 @@ import {
     collectStaticVariableDeclarations
 } from "./local-variable-collector.js";
 import { mapBinaryOperator } from "./operator-mapping.js";
+import { createSemanticOracle } from "./semantic-factory.js";
 import { ensureStatementTerminated } from "./statement-termination-policy.js";
 import { StringBuilder } from "./string-builder.js";
 import {
@@ -1298,4 +1299,24 @@ export class GmlToJsEmitter {
         }
         return builder.toString(", ");
     }
+}
+
+type SemanticInput = IdentifierAnalyzer & CallTargetAnalyzer;
+
+/**
+ * Emit JavaScript from a GML AST using the transpiler emitter.
+ *
+ * Co-located with {@link GmlToJsEmitter} so the public entry point and the
+ * underlying class live in the same module. Callers that do not supply their
+ * own semantic oracle/analyzers receive a freshly constructed default oracle.
+ *
+ * @param ast - AST node to emit.
+ * @param sem - Optional semantic oracle/analyzers for identifier and call analysis.
+ * @param options - Optional emitter options to override defaults.
+ * @returns JavaScript code for the AST.
+ */
+export function emitJavaScript(ast: StatementLike, sem?: SemanticInput, options: Partial<EmitOptions> = {}): string {
+    const oracle = sem ?? createSemanticOracle();
+    const emitter = new GmlToJsEmitter(oracle, options);
+    return emitter.emit(ast);
 }
