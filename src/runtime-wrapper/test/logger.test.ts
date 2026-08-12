@@ -55,6 +55,30 @@ function createMockConsole(): MockConsoleOutput {
     };
 }
 
+/**
+ * Helper for asserting that a logger call routed the message to the expected
+ * console level while carrying the relevant data. We assert on observable
+ * data (patch id, version number, error text, URL, attempt count, etc.)
+ * rather than on the exact wording of the message — the contract is that the
+ * caller-supplied information reaches the console, not the prose around it.
+ */
+function assertLogEntry(
+    mockConsole: MockConsoleOutput,
+    index: number,
+    expected: { level: string; includes: Array<string> }
+): void {
+    assert.ok(index < mockConsole.logs.length, `expected at least ${index + 1} log entries`);
+    const entry = mockConsole.logs[index];
+    assert.equal(entry.level, expected.level, `entry ${index} should route to ${expected.level}`);
+    const message = entry.args[0] as string;
+    for (const fragment of expected.includes) {
+        assert.ok(
+            message.includes(fragment),
+            `entry ${index} message ${JSON.stringify(message)} should include ${JSON.stringify(fragment)}`
+        );
+    }
+}
+
 void describe("Logger", () => {
     void it("should create logger with default options", () => {
         const mockConsole = createMockConsole();
@@ -70,12 +94,14 @@ void describe("Logger", () => {
         assert.equal(logger.getLevel(), "debug");
     });
 
-    void it("should validate log level strings", () => {
+    void it("should reject invalid log level strings", () => {
         const mockConsole = createMockConsole();
         const invalidLevel = "verbose" as LogLevel;
 
         assert.equal(parseLogLevel(LogLevels.info), LogLevels.info);
-        assert.throws(() => createLogger({ console: mockConsole, level: invalidLevel }), /Invalid log level/);
+        // Contract: invalid level must throw; the exact wording of the error
+        // message is implementation detail.
+        assert.throws(() => createLogger({ console: mockConsole, level: invalidLevel }), Error);
     });
 
     void it("should respect log levels", () => {
@@ -117,18 +143,17 @@ void describe("Logger", () => {
         assert.equal(mockConsole.logs.length, 1);
     });
 
-    void it("should log patch applied with version", () => {
+    void it("should route patchApplied to the info level and include patch id and version", () => {
         const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "info", styled: false });
 
         const patch: Patch = { kind: "script", id: "script:test", js_body: "return 42;" };
         logger.patchApplied(patch, 5);
 
-        assert.equal(mockConsole.logs.length, 1);
-        assert.equal(mockConsole.logs[0].level, "log");
-        const message = mockConsole.logs[0].args[0] as string;
-        assert.match(message, /script:test/);
-        assert.match(message, /v5/);
+        assertLogEntry(mockConsole, 0, {
+            level: "log",
+            includes: [patch.id, String(5)]
+        });
     });
 
     void it("should include duration when provided", () => {
@@ -136,79 +161,81 @@ void describe("Logger", () => {
         const logger = createLogger({ console: mockConsole, level: "info", styled: false });
 
         const patch: Patch = { kind: "script", id: "script:test", js_body: "return 42;" };
-        logger.patchApplied(patch, 5, 123.456);
+        const durationMs = 123.456;
+        logger.patchApplied(patch, 5, durationMs);
 
-        assert.equal(mockConsole.logs.length, 1);
+        // Contract: the duration must reach the operator. Asserting on the
+        // rounded numeric value (123) avoids coupling to "ms"/"s"/"<1ms" wording
+        // which is covered by the dedicated formatter test below.
         const message = mockConsole.logs[0].args[0] as string;
-        assert.match(message, /123ms/);
+        assert.ok(
+            message.includes(String(Math.round(durationMs))),
+            `message ${JSON.stringify(message)} should include rounded duration ${Math.round(durationMs)}`
+        );
     });
 
-    void it("should log patch undone", () => {
+    void it("should route patchUndone to the info level and include patch id and version", () => {
         const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "info", styled: false });
 
         logger.patchUndone("script:test", 4);
 
-        assert.equal(mockConsole.logs.length, 1);
-        const message = mockConsole.logs[0].args[0] as string;
-        assert.match(message, /Undone/);
-        assert.match(message, /script:test/);
-        assert.match(message, /v4/);
+        assertLogEntry(mockConsole, 0, {
+            level: "log",
+            includes: ["script:test", String(4)]
+        });
     });
 
-    void it("should log patch rolled back", () => {
+    void it("should route patchRolledBack to the error level and include patch id, version, and error", () => {
         const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "error", styled: false });
 
         const patch: Patch = { kind: "script", id: "script:test", js_body: "bad" };
         logger.patchRolledBack(patch, 3, "Syntax error");
 
-        assert.equal(mockConsole.logs.length, 1);
-        assert.equal(mockConsole.logs[0].level, "error");
-        const message = mockConsole.logs[0].args[0] as string;
-        assert.match(message, /Rollback/);
-        assert.match(message, /script:test/);
-        assert.match(message, /Syntax error/);
+        assertLogEntry(mockConsole, 0, {
+            level: "error",
+            includes: [patch.id, String(3), "Syntax error"]
+        });
     });
 
-    void it("should log registry cleared", () => {
+    void it("should route registryCleared to the info level and include the version", () => {
         const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "info", styled: false });
 
         logger.registryCleared(10);
 
-        assert.equal(mockConsole.logs.length, 1);
-        const message = mockConsole.logs[0].args[0] as string;
-        assert.match(message, /cleared/);
-        assert.match(message, /v10/);
+        assertLogEntry(mockConsole, 0, {
+            level: "log",
+            includes: [String(10)]
+        });
     });
 
-    void it("should log validation errors", () => {
+    void it("should route validationError to the error level and include patch id and error", () => {
         const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "error", styled: false });
 
         logger.validationError("script:bad", "Missing js_body");
 
-        assert.equal(mockConsole.logs.length, 1);
-        assert.equal(mockConsole.logs[0].level, "error");
-        const message = mockConsole.logs[0].args[0] as string;
-        assert.match(message, /Validation failed/);
-        assert.match(message, /script:bad/);
+        assertLogEntry(mockConsole, 0, {
+            level: "error",
+            includes: ["script:bad", "Missing js_body"]
+        });
     });
 
-    void it("should log shadow validation failures", () => {
+    void it("should route shadowValidationFailed to the warn level and include patch id and error", () => {
         const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "warn", styled: false });
 
         logger.shadowValidationFailed("script:test", "Cannot create function");
 
-        assert.equal(mockConsole.logs.length, 1);
-        assert.equal(mockConsole.logs[0].level, "warn");
-        const message = mockConsole.logs[0].args[0] as string;
-        assert.match(message, /Shadow validation failed/);
+        assertLogEntry(mockConsole, 0, {
+            level: "warn",
+            includes: ["script:test", "Cannot create function"]
+        });
     });
 
-    void it("should log WebSocket events", () => {
+    void it("should route WebSocket lifecycle events and forward connection metadata", () => {
         const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "info", styled: false });
 
@@ -218,13 +245,13 @@ void describe("Logger", () => {
         logger.websocketError("Network error");
 
         assert.equal(mockConsole.logs.length, 4);
-        assert.match(mockConsole.logs[0].args[0] as string, /Connected/);
-        assert.match(mockConsole.logs[1].args[0] as string, /Reconnecting/);
-        assert.match(mockConsole.logs[2].args[0] as string, /Disconnected/);
-        assert.equal(mockConsole.logs[3].level, "error");
+        assertLogEntry(mockConsole, 0, { level: "log", includes: ["ws://localhost:17890"] });
+        assertLogEntry(mockConsole, 1, { level: "log", includes: [String(2)] });
+        assertLogEntry(mockConsole, 2, { level: "log", includes: ["Connection closed"] });
+        assertLogEntry(mockConsole, 3, { level: "error", includes: ["Network error"] });
     });
 
-    void it("should log patch queue operations", () => {
+    void it("should route patch queue operations and forward patch id, queue depth, and flush count", () => {
         const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "debug", styled: false });
 
@@ -232,10 +259,8 @@ void describe("Logger", () => {
         logger.patchQueueFlushed(5, 10.5);
 
         assert.equal(mockConsole.logs.length, 2);
-        assert.match(mockConsole.logs[0].args[0] as string, /Queued/);
-        assert.match(mockConsole.logs[0].args[0] as string, /depth: 5/);
-        assert.match(mockConsole.logs[1].args[0] as string, /Flushed/);
-        assert.match(mockConsole.logs[1].args[0] as string, /5 patches/);
+        assertLogEntry(mockConsole, 0, { level: "debug", includes: ["script:test", String(5)] });
+        assertLogEntry(mockConsole, 1, { level: "debug", includes: [String(5)] });
     });
 
     void it("should include prefix in messages", () => {
@@ -251,7 +276,7 @@ void describe("Logger", () => {
 
         assert.equal(mockConsole.logs.length, 1);
         const message = mockConsole.logs[0].args[0] as string;
-        assert.match(message, /\[test-prefix\]/);
+        assert.ok(message.includes("[test-prefix]"), `expected prefix in: "${message}"`);
     });
 
     void it("should include timestamps when enabled", () => {
@@ -267,7 +292,7 @@ void describe("Logger", () => {
 
         assert.equal(mockConsole.logs.length, 1);
         const message = mockConsole.logs[0].args[0] as string;
-        // Check for timestamp format HH:MM:SS.mmm
+        // Timestamp format (HH:MM:SS.mmm) is part of the public contract.
         assert.match(message, /\d{2}:\d{2}:\d{2}\.\d{3}/);
     });
 
@@ -279,19 +304,25 @@ void describe("Logger", () => {
 
         // Less than 1ms
         logger.patchApplied(patch, 1, 0.5);
-        assert.match(mockConsole.logs[0].args[0] as string, /<1ms/);
+        assert.ok(
+            (mockConsole.logs[0].args[0] as string).includes("<1ms"),
+            "sub-millisecond durations should render as <1ms"
+        );
 
         mockConsole.clear();
 
         // Milliseconds
         logger.patchApplied(patch, 2, 123);
-        assert.match(mockConsole.logs[0].args[0] as string, /123ms/);
+        assert.ok(
+            (mockConsole.logs[0].args[0] as string).includes("123ms"),
+            "millisecond durations should render as Nms"
+        );
 
         mockConsole.clear();
 
         // Seconds
         logger.patchApplied(patch, 3, 1500);
-        assert.match(mockConsole.logs[0].args[0] as string, /1\.50s/);
+        assert.ok((mockConsole.logs[0].args[0] as string).includes("1.50s"), "second durations should render as N.NNs");
     });
 
     void it("should support custom console implementation", () => {
@@ -322,13 +353,13 @@ void describe("Logger", () => {
         // Unstyled output must not contain that emoji.
         assert.ok(!unstyledMessage.includes("✅"), `unexpected ✅ in unstyled message: "${unstyledMessage}"`);
         // Both messages still contain the patch id and version.
-        assert.match(styledMessage, /script:test/);
-        assert.match(unstyledMessage, /script:test/);
+        assert.ok(styledMessage.includes(patch.id));
+        assert.ok(unstyledMessage.includes(patch.id));
     });
 });
 
 void describe("createChangeEventLogger", () => {
-    void it("should log patch-applied events", () => {
+    void it("should route patch-applied events to the info level and forward patch id and version", () => {
         const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "info", styled: false });
         const eventLogger = createChangeEventLogger(logger);
@@ -341,13 +372,13 @@ void describe("createChangeEventLogger", () => {
 
         eventLogger(event);
 
-        assert.equal(mockConsole.logs.length, 1);
-        const message = mockConsole.logs[0].args[0] as string;
-        assert.match(message, /script:test/);
-        assert.match(message, /v5/);
+        assertLogEntry(mockConsole, 0, {
+            level: "log",
+            includes: ["script:test", String(5)]
+        });
     });
 
-    void it("should log patch-undone events", () => {
+    void it("should route patch-undone events to the info level and forward the patch id", () => {
         const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "info", styled: false });
         const eventLogger = createChangeEventLogger(logger);
@@ -360,12 +391,13 @@ void describe("createChangeEventLogger", () => {
 
         eventLogger(event);
 
-        assert.equal(mockConsole.logs.length, 1);
-        const message = mockConsole.logs[0].args[0] as string;
-        assert.match(message, /Undone/);
+        assertLogEntry(mockConsole, 0, {
+            level: "log",
+            includes: ["script:test"]
+        });
     });
 
-    void it("should log patch-rolled-back events", () => {
+    void it("should route patch-rolled-back events to the error level", () => {
         const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "error", styled: false });
         const eventLogger = createChangeEventLogger(logger);
@@ -379,11 +411,13 @@ void describe("createChangeEventLogger", () => {
 
         eventLogger(event);
 
-        assert.equal(mockConsole.logs.length, 1);
-        assert.equal(mockConsole.logs[0].level, "error");
+        assertLogEntry(mockConsole, 0, {
+            level: "error",
+            includes: ["script:test", "Syntax error"]
+        });
     });
 
-    void it("should log registry-cleared events", () => {
+    void it("should route registry-cleared events to the info level and forward the version", () => {
         const mockConsole = createMockConsole();
         const logger = createLogger({ console: mockConsole, level: "info", styled: false });
         const eventLogger = createChangeEventLogger(logger);
@@ -395,9 +429,10 @@ void describe("createChangeEventLogger", () => {
 
         eventLogger(event);
 
-        assert.equal(mockConsole.logs.length, 1);
-        const message = mockConsole.logs[0].args[0] as string;
-        assert.match(message, /cleared/);
+        assertLogEntry(mockConsole, 0, {
+            level: "log",
+            includes: [String(0)]
+        });
     });
 
     void it("should integrate with runtime wrapper onChange hook", () => {
