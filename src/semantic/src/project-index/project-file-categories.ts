@@ -6,12 +6,14 @@ const PROJECT_INDEX_SOURCE_EXTENSIONS = Object.freeze([PROJECT_SOURCE_EXTENSION]
 export const ProjectFileCategory = Object.freeze({
     RESOURCE_METADATA: "yy",
     SOURCE: "gml"
-});
+} as const);
 
-const PROJECT_FILE_CATEGORIES = new Set(Object.values(ProjectFileCategory));
+type ProjectFileCategory = (typeof ProjectFileCategory)[keyof typeof ProjectFileCategory];
+
+const PROJECT_FILE_CATEGORIES: ReadonlySet<unknown> = new Set(Object.values(ProjectFileCategory));
 
 const PROJECT_FILE_CATEGORY_CHOICES = Object.freeze(
-    [...PROJECT_FILE_CATEGORIES].toSorted((left, right) => left.localeCompare(right)).join(", ")
+    Object.values(ProjectFileCategory).toSorted((left, right) => left.localeCompare(right)).join(", ")
 );
 
 /**
@@ -35,9 +37,9 @@ export function getProjectIndexSourceExtensions() {
  * @returns {ProjectFileCategory} Normalized category when valid.
  * @throws {RangeError} When `value` does not map to a known category.
  */
-export function normalizeProjectFileCategory(value) {
+export function normalizeProjectFileCategory(value: unknown): ProjectFileCategory {
     if (PROJECT_FILE_CATEGORIES.has(value)) {
-        return value;
+        return value as ProjectFileCategory;
     }
 
     const received = value === undefined ? "undefined" : `'${String(value)}'`;
@@ -55,7 +57,7 @@ export function normalizeProjectFileCategory(value) {
  * @returns {ProjectFileCategory | null} Matching category or `null` when the
  *          path does not fall into a known bucket.
  */
-export function resolveProjectFileCategory(relativePosix) {
+export function resolveProjectFileCategory(relativePosix: string): ProjectFileCategory | null {
     if (isProjectResourceMetadataPath(relativePosix) || isProjectManifestPath(relativePosix)) {
         return ProjectFileCategory.RESOURCE_METADATA;
     }
