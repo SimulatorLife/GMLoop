@@ -179,6 +179,124 @@ function tryExtractEarlyExitGuardClause(statements, index) {
     return true;
 }
 
+/**
+ * Locate the alternate branch that {@link tryCondenseIfStatement} should pair
+ * with the consequent. The alternate is sourced from `statement.alternate`
+ * when it is present; otherwise the function looks at the following
+ * `ReturnStatement` in the same statement sequence (the implicit alternate
+ * produced by a trailing `return ...;` immediately after the if-statement).
+ *
+ * @returns The expression/source-node metadata for the alternate branch along
+ *   with a flag indicating whether the original following return must be
+ *   removed once the if-statement is replaced. Returns `null` when no
+ *   alternate branch can be sourced cleanly.
+ */
+function extractAlternateBranchSource(
+    statements: ReadonlyArray<unknown>,
+    index: number,
+    statement: { alternate?: unknown }
+): {
+    alternateExpression: unknown;
+    alternateSourceNode: unknown;
+    removeFollowingReturn: boolean;
+} | null {
+    if (statement.alternate) {
+        const alternateExpression = extractReturnExpression(statement.alternate);
+        if (!alternateExpression) {
+            return null;
+        }
+        return {
+            alternateExpression,
+            alternateSourceNode: statement.alternate,
+            removeFollowingReturn: false
+        };
+    }
+
+    const nextStatement = statements[index + 1] as { type?: unknown; argument?: unknown } | undefined;
+    if (!nextStatement || nextStatement.type !== "ReturnStatement") {
+        return null;
+    }
+    if (Core.hasComment(nextStatement)) {
+        return null;
+    }
+
+    const nextArgument = nextStatement.argument ?? null;
+    if (nextArgument && Core.hasComment(nextArgument)) {
+        return null;
+    }
+
+    // Decline to condense if the alternate branch is missing or doesn't
+    // produce a boolean value. Ternary expressions require both consequent and
+    // alternate operands, so we can't safely transform `if (x) return true;`
+    // into a ternary without risking undefined behavior in the else case.
+    if (!nextArgument) {
+        return null;
+    }
+
+    return {
+        alternateExpression: nextArgument,
+        alternateSourceNode: nextStatement,
+        removeFollowingReturn: true
+    };
+}
+
+/**
+ * Build an optimized boolean expression argument for the condensed return
+ * statement. The function lowers the test, consequent, and alternate
+ * expressions into the boolean ADT, asks the truth-table policy whether a
+ * table is feasible, and runs the candidate generation pipeline to pick the
+ * best simplified candidate. Returns `null` when no optimization can be
+ * produced, in which case the caller falls back to the simple-argument path
+ * or aborts the condensation.
+ */
+function tryBuildOptimizedBooleanArgument(
+    testExpression: unknown,
+    consequentExpression: unknown,
+    alternateExpression: unknown,
+    policy: LogicalNormalizationPolicy
+): unknown {
+    const booleanContext = createBooleanContext();
+    const testExpr = toBooleanExpression(testExpression, booleanContext);
+    const consequentExpr = toBooleanExpression(consequentExpression, booleanContext);
+    const alternateExpr = toBooleanExpression(alternateExpression, booleanContext);
+
+    if (!testExpr || !consequentExpr || !alternateExpr) {
+        return null;
+    }
+
+    // Delegate the "should we build a truth table?" decision to the policy
+    // evaluator so the threshold is managed in one place and remains
+    // independently testable.
+    const truthTablePolicy: TruthTablePolicy = Object.freeze({
+        maxVariablesForTruthTable: policy.maxVariablesForTruthTable
+    });
+    const truthTableDecision = evaluateTruthTablePolicy(
+        { variableCount: booleanContext.variables.length },
+        truthTablePolicy
+    );
+    if (!truthTableDecision.allowTruthTable) {
+        return null;
+    }
+
+    const simplificationPolicy = Object.freeze({
+        maxSimplificationIterations: policy.maxSimplificationIterations,
+        maxPostProcessingIterations: policy.maxPostProcessingIterations
+    });
+    const combinedExpression = combineConditionalBoolean(testExpr, consequentExpr, alternateExpr);
+    const simplifiedCandidates = generateSimplifiedCandidates(combinedExpression, booleanContext, simplificationPolicy);
+    if (simplifiedCandidates.length === 0) {
+        return null;
+    }
+
+    const chosen = chooseBestCandidate(simplifiedCandidates);
+    if (!chosen) {
+        return null;
+    }
+
+    const optimizedExpr = postProcessBooleanExpression(chosen, simplificationPolicy);
+    return booleanExpressionToAst(optimizedExpr, booleanContext);
+}
+
 function tryCondenseIfStatement(
     statements,
     index,
@@ -198,42 +316,11 @@ function tryCondenseIfStatement(
         return false;
     }
 
-    let alternateExpression;
-    let alternateSourceNode;
-    let removeFollowingReturn = false;
-
-    if (statement.alternate) {
-        alternateExpression = extractReturnExpression(statement.alternate);
-        alternateSourceNode = statement.alternate;
-        if (!alternateExpression) {
-            return false;
-        }
-    } else {
-        const nextStatement = statements[index + 1];
-        if (!nextStatement || nextStatement.type !== "ReturnStatement") {
-            return false;
-        }
-        if (Core.hasComment(nextStatement)) {
-            return false;
-        }
-
-        const nextArgument = nextStatement.argument ?? null;
-        if (nextArgument && Core.hasComment(nextArgument)) {
-            return false;
-        }
-
-        alternateExpression = nextArgument;
-        alternateSourceNode = nextStatement;
-        removeFollowingReturn = true;
-    }
-
-    if (!alternateExpression) {
-        // Decline to condense if the alternate branch is missing or doesn't produce
-        // a boolean value. Ternary expressions require both consequent and alternate
-        // operands, so we can't safely transform `if (x) return true;` into a
-        // ternary without risking undefined behavior in the else case.
+    const alternateBranch = extractAlternateBranchSource(statements, index, statement);
+    if (!alternateBranch) {
         return false;
     }
+    const { alternateExpression, alternateSourceNode, removeFollowingReturn } = alternateBranch;
 
     const simpleArgument = resolveSimpleBooleanReturnArgument(statement, consequentExpression, alternateExpression);
     if (
@@ -243,49 +330,9 @@ function tryCondenseIfStatement(
         return false;
     }
 
-    const booleanContext = createBooleanContext();
-    const testExpr = toBooleanExpression(statement.test, booleanContext);
-    const consequentExpr = toBooleanExpression(consequentExpression, booleanContext);
-    const alternateExpr = toBooleanExpression(alternateExpression, booleanContext);
-
-    let argumentAst = null;
-
-    if (testExpr && consequentExpr && alternateExpr) {
-        // Delegate the "should we build a truth table?" decision to the policy
-        // evaluator so the threshold is managed in one place and remains
-        // independently testable.
-        const truthTablePolicy: TruthTablePolicy = Object.freeze({
-            maxVariablesForTruthTable: policy.maxVariablesForTruthTable
-        });
-        const truthTableDecision = evaluateTruthTablePolicy(
-            { variableCount: booleanContext.variables.length },
-            truthTablePolicy
-        );
-
-        if (truthTableDecision.allowTruthTable) {
-            const simplificationPolicy = Object.freeze({
-                maxSimplificationIterations: policy.maxSimplificationIterations,
-                maxPostProcessingIterations: policy.maxPostProcessingIterations
-            });
-            const combinedExpression = combineConditionalBoolean(testExpr, consequentExpr, alternateExpr);
-            const simplifiedCandidates = generateSimplifiedCandidates(
-                combinedExpression,
-                booleanContext,
-                simplificationPolicy
-            );
-            if (simplifiedCandidates.length > 0) {
-                const chosen = chooseBestCandidate(simplifiedCandidates);
-                if (chosen) {
-                    const optimizedExpr = postProcessBooleanExpression(chosen, simplificationPolicy);
-                    argumentAst = booleanExpressionToAst(optimizedExpr, booleanContext);
-                }
-            }
-        }
-    }
-
-    if (!argumentAst && simpleArgument) {
-        argumentAst = simpleArgument;
-    }
+    const argumentAst =
+        tryBuildOptimizedBooleanArgument(statement.test, consequentExpression, alternateExpression, policy) ??
+        simpleArgument;
 
     if (!argumentAst) {
         return false;
