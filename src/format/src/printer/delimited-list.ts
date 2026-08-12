@@ -77,8 +77,8 @@ export function joinDeclaratorPartsWithCommas(parts: unknown[]): unknown[] {
  * @param path - The AST path for traversal.
  * @param print - The Prettier print callback.
  * @param listKey - Property name on the current node containing the element array.
- * @param startChar - Opening delimiter (e.g., `"("`, `"["`).
- * @param endChar - Closing delimiter (e.g., `")"`, `"]"`).
+ * @param startChar - Opening delimiter (e.g., "(", "[").
+ * @param endChar - Closing delimiter (e.g., ")", "]").
  * @param overrides - Optional settings for delimiter, padding, line breaks, and grouping.
  * @returns A Prettier doc group for the delimited list.
  */
@@ -139,8 +139,8 @@ export function printDelimitedList(
  * @param path - The AST path for traversal.
  * @param print - The Prettier print callback.
  * @param listKey - Property name on the current node containing the element array.
- * @param startChar - Opening delimiter (e.g., `"("`, `"["`).
- * @param endChar - Closing delimiter (e.g., `")"`, `"]"`).
+ * @param startChar - Opening delimiter (e.g., "(", "[").
+ * @param endChar - Closing delimiter (e.g., ")", "]").
  * @param options - Prettier formatting options (used to check `trailingComma`).
  * @param overrides - Optional settings passed through to {@link printDelimitedList}.
  * @returns A Prettier doc group for the comma-separated list.
@@ -244,6 +244,11 @@ export function printElements(
  * The returned `inlineDoc` is only populated when `includeInlineVariant`
  * is true and the argument list fits on a single line.
  *
+ * `simplePrefixLength` is forwarded from the caller because the
+ * surrounding `buildCallLikeArgumentDocs` already scans the argument list
+ * to classify callbacks/structs and to compute `shouldIncludeInlineVariant`;
+ * recomputing it here would walk the same prefix twice per format pass.
+ *
  * @param path - The AST path for traversal.
  * @param print - The Prettier print callback.
  * @param options - Prettier formatting options.
@@ -259,12 +264,14 @@ export function buildCallArgumentsDocs(
         maxElementsPerLine = Infinity,
         includeInlineVariant = false,
         hasCallbackArguments = false,
-        forceInline = false
+        forceInline = false,
+        simplePrefixLength = 0
     } = {}
 ) {
-    const node = path.getValue();
-    const simplePrefixLength = countLeadingSimpleCallArguments(node);
-    const hasTrailingArguments = Array.isArray(node?.arguments) && node.arguments.length > simplePrefixLength;
+    const node = path.getValue() as { arguments?: unknown } | null | undefined;
+    const args: unknown[] = Array.isArray(node?.arguments) ? node.arguments : [];
+    const argumentCount = args.length;
+    const hasTrailingArguments = argumentCount > simplePrefixLength;
 
     if (simplePrefixLength > 1 && hasTrailingArguments && hasCallbackArguments && maxElementsPerLine === Infinity) {
         const inlineDoc = includeInlineVariant
@@ -282,8 +289,13 @@ export function buildCallArgumentsDocs(
         return { inlineDoc, multilineDoc };
     }
 
-    const args = node?.arguments;
-    const trailingArgs = Array.isArray(args) && simplePrefixLength < args.length ? args.slice(simplePrefixLength) : [];
+    // `isCallbackArgument` matches both true callbacks (FunctionDeclaration /
+    // FunctionExpression / ConstructorDeclaration) AND `StructExpression`, so
+    // a trailing struct that the caller classified via `callbackArguments`
+    // (callbacks only) still forces this branch to fall through to the
+    // comma-separated layout. The two checks cannot be merged without
+    // changing the caller's classification set.
+    const trailingArgs = hasTrailingArguments ? args.slice(simplePrefixLength) : [];
     const trailingHasCallback = trailingArgs.some(isCallbackArgument);
 
     if (
