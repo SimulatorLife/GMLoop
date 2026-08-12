@@ -244,7 +244,7 @@ function packageBundledLanguageServer(packageRoot: string, stageRoot: string): v
     const bundledWorkspaceRoots = BUNDLED_SERVER_WORKSPACES.map((workspaceName) =>
         path.join(repositoryRoot, "src", workspaceName)
     );
-    const bundledManifests = bundledWorkspaceRoots.map(readRuntimePackageManifest);
+    const bundledManifests = bundledWorkspaceRoots.map((workspaceRoot) => readRuntimePackageManifest(workspaceRoot));
     const workspaceVersions = new Map(bundledManifests.map((manifest) => [manifest.name, manifest.version] as const));
     const tarballPaths = new Map<string, string>();
     for (const workspaceRoot of bundledWorkspaceRoots) {
