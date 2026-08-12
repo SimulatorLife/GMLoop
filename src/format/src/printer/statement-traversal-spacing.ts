@@ -22,8 +22,12 @@ import { shouldAddNewlinesAroundStatement, shouldSuppressEmptyLineBetween } from
  * inserts an extra blank-line padding between the variable block and the
  * loop.
  */
-function resolveMinVariablesBeforeLoopPadding(options): number {
-    const rawValue = options?.minVariablesBeforeLoopPadding;
+function resolveMinVariablesBeforeLoopPadding(options: unknown): number {
+    if (typeof options !== "object" || options === null) {
+        return MIN_VARIABLE_DECLARATIONS_BEFORE_LOOP_PADDING;
+    }
+
+    const rawValue = (options as { minVariablesBeforeLoopPadding?: unknown }).minVariablesBeforeLoopPadding;
     if (typeof rawValue !== NUMBER_TYPE || !Number.isFinite(rawValue) || rawValue < 0) {
         return MIN_VARIABLE_DECLARATIONS_BEFORE_LOOP_PADDING;
     }
