@@ -1,35 +1,36 @@
 /**
- * This test suite verifies the behavior of the trailing comma option helpers,
- * including validation and membership checks. GML itself does not allow
- * trailing commas, so we should not generate/support them. The only valid
- * option value is "none", and we want to provide clear warning messages for
- * all other, invalid cases and then ignore them.
+ * Regression tests for the `TRAILING_COMMA` option constants.
+ *
+ * The option helper module previously also exported `assertTrailingCommaValue`
+ * and `isTrailingCommaValue`. Those validators only existed to support a
+ * `trailingComma` Prettier-core option that the formatter now ignores:
+ * {@link DEFAULT_CORE_OPTION_OVERRIDES} lock `trailingComma` to
+ * {@link TRAILING_COMMA.NONE}, so any user-supplied alternative is dropped
+ * without round-tripping through these helpers. The dead validators were
+ * removed; these tests pin the constants the formatter still consumes.
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import {
-    assertTrailingCommaValue,
-    isTrailingCommaValue,
-    TRAILING_COMMA
-} from "../src/options/trailing-comma-option.js";
+import { TRAILING_COMMA } from "../src/options/trailing-comma-option.js";
 
-void describe("trailing comma option helpers", () => {
-    void it("accepts case-insensitive trailing comma values", () => {
-        assert.equal(assertTrailingCommaValue("ALL"), TRAILING_COMMA.ALL);
-        assert.equal(assertTrailingCommaValue("es5"), TRAILING_COMMA.ES5);
+void describe("trailing comma option constants", () => {
+    void it("freezes the constants object so accidental mutation is rejected", () => {
+        assert.ok(Object.isFrozen(TRAILING_COMMA), "TRAILING_COMMA must be frozen");
     });
 
-    void it("rejects non-string values with a descriptive type error", () => {
-        assert.throws(() => assertTrailingCommaValue(5), {
-            name: "TypeError",
-            message: /Trailing comma override must be provided as a string/i
-        });
+    void it("uses Prettier-canonical string values that align with `RequiredOptions`", () => {
+        assert.equal(TRAILING_COMMA.NONE, "none");
+        assert.equal(TRAILING_COMMA.ALL, "all");
     });
 
-    void it("reports membership checks without throwing", () => {
-        assert.equal(isTrailingCommaValue("none"), true);
-        assert.equal(isTrailingCommaValue("bad-value"), false);
-        assert.equal(isTrailingCommaValue(42), false);
+    void it("exposes only the values still referenced by the formatter", () => {
+        // `ES5` was previously listed as a valid trailing-comma option but
+        // was never referenced by any production code; removing it from the
+        // frozen constants keeps the public surface aligned with what the
+        // formatter actually uses. `NONE` and `ALL` are both referenced from
+        // production code paths (`core-option-overrides.ts` and
+        // `printer/delimited-list.ts` respectively), so they stay.
+        assert.deepEqual(Object.keys(TRAILING_COMMA).toSorted(), ["ALL", "NONE"]);
     });
 });

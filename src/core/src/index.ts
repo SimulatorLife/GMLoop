@@ -57,7 +57,13 @@ export const Core = Object.freeze({
 // Publicly export key AST types at the package root for other packages to
 // import without deep imports. This is the preferred path for type imports
 // across the monorepo.
-export type { GameMakerAstLocation, GameMakerAstNode, LiteralNode, MutableGameMakerAstNode } from "./ast/types.js";
+export type {
+    GameMakerAstLocation,
+    GameMakerAstNode,
+    LiteralNode,
+    MutableGameMakerAstNode,
+    ProgramNode
+} from "./ast/types.js";
 export type { DocCommentLines, MutableDocCommentLines } from "./comments/comment-utils.js";
 export type { DocCommentNodeMetadata } from "./comments/doc-comment/node-metadata.js";
 export type { StripCommentsTransformOptions } from "./comments/strip-comments-transform.js";
