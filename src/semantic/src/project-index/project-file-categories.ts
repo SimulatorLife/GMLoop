@@ -30,6 +30,31 @@ export function getProjectIndexSourceExtensions() {
 }
 
 /**
+ * Format an invalid project file category for a diagnostic without relying on
+ * arbitrary object stringification.
+ */
+function formatInvalidProjectFileCategory(value: unknown): string {
+    if (value === undefined) {
+        return "undefined";
+    }
+
+    if (value === null) {
+        return "'null'";
+    }
+
+    switch (typeof value) {
+        case "string":
+        case "number":
+        case "bigint":
+        case "boolean":
+        case "symbol":
+            return `'${String(value)}'`;
+        default:
+            return `'${Object.prototype.toString.call(value)}'`;
+    }
+}
+
+/**
  * Validate a potential project file category and normalize it to one of the
  * known constants.
  *
@@ -42,7 +67,7 @@ export function normalizeProjectFileCategory(value: unknown): ProjectFileCategor
         return value as ProjectFileCategory;
     }
 
-    const received = value === undefined ? "undefined" : `'${String(value)}'`;
+    const received = formatInvalidProjectFileCategory(value);
     throw new RangeError(
         `Project file category must be one of: ${PROJECT_FILE_CATEGORY_CHOICES}. Received ${received}.`
     );
