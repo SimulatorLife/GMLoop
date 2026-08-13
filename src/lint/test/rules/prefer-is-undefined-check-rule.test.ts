@@ -36,18 +36,20 @@ function makeUnaryNode(operator: "!", argument: unknown, start: number, end: num
 /**
  * Builds the `CallExpression` shape the GML parser actually produces for
  * `!(...)` — a call whose callee is the `!` identifier and whose sole
- * argument is the wrapped expression — and links `argument.parent` back to
- * it so the helper's parent-chain lookup can find it.
+ * argument is the wrapped expression — and links the locally copied argument
+ * back to it so the helper's parent-chain lookup can find it without mutating
+ * the caller's test node.
  */
 function makeNotCallNode(argument: Record<string, unknown>, start: number, end: number) {
+    const linkedArgument = { ...argument };
     const node = {
         type: "CallExpression",
         object: { type: "Identifier", name: "!" },
-        arguments: [argument],
+        arguments: [linkedArgument],
         start: { index: start },
         end: { index: end }
     };
-    argument.parent = node;
+    linkedArgument.parent = node;
     return node;
 }
 
@@ -149,9 +151,10 @@ void test("tryResolveUndefinedCheckRewrite defers a bare binary that is the dire
     const sourceText = "!(score == undefined)";
     const otherSide = makeIdentifier("score", 2, 6);
     const binary = makeBinaryNode("==", otherSide, makeIdentifier("undefined", 11, 19), 2, 19);
-    makeNotCallNode(binary, 0, 20);
+    const notCall = makeNotCallNode(binary, 0, 20);
+    const linkedBinary = notCall.arguments[0];
 
-    assert.strictEqual(tryResolveUndefinedCheckRewrite(binary, sourceText), null);
+    assert.strictEqual(tryResolveUndefinedCheckRewrite(linkedBinary, sourceText), null);
 });
 
 void test("tryResolveUndefinedCheckRewrite recognises an AST UnaryExpression wrapper and uses its range", () => {
