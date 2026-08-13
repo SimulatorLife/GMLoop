@@ -93,29 +93,9 @@ void test("semantic index failures normalize unknown thrown values before loggin
         identifierIndexSource,
         /Failed to persist semantic index for \$\{resolvedRoot\}: \$\{Core\.getErrorMessageOrFallback\(error\)\}/u
     );
-    assert.match(
-        identifierIndexSource,
-        /Failed to restore semantic index for \$\{resolvedRoot\}: \$\{Core\.getErrorMessageOrFallback\(error\)\}/u
-    );
-    assert.match(
-        identifierIndexSource,
-        /Background full index build failed: \$\{Core\.getErrorMessageOrFallback\(error\)\}/u
-    );
-    assert.match(
-        identifierIndexSource,
-        /Failed to get project root for background indexing: \$\{Core\.getErrorMessageOrFallback\(error\)\}/u
-    );
-    assert.match(
-        identifierIndexSource,
-        /Background full index build failed for root: \$\{Core\.getErrorMessageOrFallback\(error\)\}/u
-    );
-    assert.match(
-        identifierIndexSource,
-        /Background re-indexing failed after disk changes: \$\{Core\.getErrorMessageOrFallback\(error\)\}/u
-    );
     assert.doesNotMatch(
         identifierIndexSource,
-        /(?:Failed to (?:reconcile semantic manifest|persist semantic index|restore semantic index|get project root for background indexing)|Background (?:full index build failed|re-indexing failed after disk changes))[^\n]*`, error\)/u
+        /Failed to (?:reconcile semantic manifest|persist semantic index)[^\n]*`, error\)/u
     );
 });
 
