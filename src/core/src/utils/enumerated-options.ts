@@ -58,12 +58,6 @@ export function createEnumeratedOptionHelpers(
         caseSensitive?: boolean;
     }
 ): EnumeratedOptionHelpers {
-    if (typeof options === "function") {
-        throw new TypeError(
-            "createEnumeratedOptionHelpers no longer accepts a formatter function as the second argument. Pass { formatError } instead."
-        );
-    }
-
     const config = options ?? {};
     const { formatError, enforceStringType = false, valueLabel = "Value", caseSensitive = false } = config;
 
