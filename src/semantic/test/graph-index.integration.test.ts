@@ -795,6 +795,93 @@ void test("buildGraphIndex exports object parent metadata as inherits relationsh
     }
 });
 
+void test("buildGraphIndex classifies resource-to-resource asset pointers as depends_on edges", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-asset-dependency-");
+
+    try {
+        await fixture.writeProjectFile(
+            "Project.yyp",
+            JSON.stringify({
+                name: "Project",
+                resourceType: "GMProject",
+                resources: [
+                    { id: { name: "spr_player", path: "sprites/spr_player/spr_player.yy" } },
+                    { id: { name: "obj_player", path: "objects/obj_player/obj_player.yy" } }
+                ]
+            })
+        );
+        await fixture.writeProjectFile(
+            "sprites/spr_player/spr_player.yy",
+            JSON.stringify({ name: "spr_player", resourceType: "GMSprite" })
+        );
+        await fixture.writeProjectFile(
+            "objects/obj_player/obj_player.yy",
+            JSON.stringify({
+                name: "obj_player",
+                resourceType: "GMObject",
+                spriteId: {
+                    name: "spr_player",
+                    path: "sprites/spr_player/spr_player.yy"
+                }
+            })
+        );
+
+        const result = await buildGraphIndex({
+            projectConfig: {
+                graph: {
+                    embeddings: {
+                        enabled: false
+                    }
+                }
+            },
+            projectRoot: fixture.projectRoot
+        });
+
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const objectSpriteEdges = database
+                .prepare(
+                    `
+                        SELECT from_id AS fromId, to_id AS toId, type
+                        FROM edges
+                        WHERE from_id = 'project::resource::objects/obj_player/obj_player.yy'
+                          AND to_id = 'project::resource::sprites/spr_player/spr_player.yy'
+                    `
+                )
+                .all() as Array<{ fromId: string; toId: string; type: string }>;
+
+            assert.deepEqual(
+                objectSpriteEdges.map((edge) => ({ fromId: edge.fromId, toId: edge.toId, type: edge.type })),
+                [
+                    {
+                        fromId: "project::resource::objects/obj_player/obj_player.yy",
+                        toId: "project::resource::sprites/spr_player/spr_player.yy",
+                        type: "depends_on"
+                    }
+                ],
+                "expected an object's sprite pointer to project as a depends_on asset-dependency edge, " +
+                    "not a generic references edge shared with code-symbol usage"
+            );
+
+            const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) =>
+                        edge.source === "project::resource::objects/obj_player/obj_player.yy" &&
+                        edge.target === "project::resource::sprites/spr_player/spr_player.yy" &&
+                        edge.type === "depends_on"
+                ),
+                "expected graph visualization export to surface the object-to-sprite dependency as depends_on " +
+                    "so the viewer's edge legend and filters can distinguish it from code references"
+            );
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
 void test("buildGraphIndex connects macro, global, and local variable symbols to visible owners", async () => {
     const fixture = await createTempProjectWorkspace("graph-index-variable-owners-");
 
