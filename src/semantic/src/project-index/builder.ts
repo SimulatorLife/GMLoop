@@ -1599,8 +1599,7 @@ function handleIdentifierNode({
     constructorStaticMemberDeclarationIdentifiers,
     parentMap,
     identifierSink,
-    definitionsOnly = false,
-    recordReferences = false
+    definitionsOnly = false
 }) {
     if (node?.type !== "Identifier" || !Array.isArray(node.classifications)) {
         return false;
@@ -1643,7 +1642,7 @@ function handleIdentifierNode({
             });
         }
     }
-    if (isReference && (!definitionsOnly || recordReferences)) {
+    if (isReference && !definitionsOnly) {
         metrics?.counters?.increment("identifiers.references");
         fileRecord.references.push(identifierRecord);
         scopeRecord.references.push(identifierRecord);
@@ -1975,8 +1974,7 @@ function analyseGmlAst({
     constructorStaticMemberDeclarationIdentifiers,
     constructorInstanceVariableDeclarationIdentifiers,
     identifierSink,
-    definitionsOnly = false,
-    recordReferences = false
+    definitionsOnly = false
 }) {
     const parentMap = buildSafeParentMap(ast);
     const enumLookup = createEnumLookup(ast, fileRecord?.filePath ?? null);
@@ -2005,8 +2003,7 @@ function analyseGmlAst({
                 constructorStaticMemberDeclarationIdentifiers,
                 parentMap,
                 identifierSink,
-                definitionsOnly,
-                recordReferences
+                definitionsOnly
             });
             if (identifierHandled) {
                 return;
@@ -2312,8 +2309,7 @@ async function processProjectGmlFile({
     identifierSink,
     pendingConstructorStaticMemberReferences,
     recordMemorySample,
-    definitionsOnly = false,
-    recordReferences = false
+    definitionsOnly = false
 }) {
     ensureNotAborted();
     metrics.counters.increment("files.gmlProcessed");
@@ -2366,8 +2362,7 @@ async function processProjectGmlFile({
             constructorStaticMemberDeclarationIdentifiers,
             constructorInstanceVariableDeclarationIdentifiers,
             identifierSink,
-            definitionsOnly,
-            recordReferences
+            definitionsOnly
         })
     );
     metrics.timers.timeSync("gml.constructorStaticMembers", () =>
@@ -3272,8 +3267,7 @@ export async function processProjectGmlFilesForIndex({
     constructorStaticMemberReferences,
     recordMemorySample,
     onProgress,
-    definitionsOnly = false,
-    recordReferences = false
+    definitionsOnly = false
 }) {
     let processed = 0;
     const total = gmlFiles.length;
@@ -3305,8 +3299,7 @@ export async function processProjectGmlFilesForIndex({
                 identifierSink,
                 pendingConstructorStaticMemberReferences: constructorStaticMemberReferences,
                 recordMemorySample,
-                definitionsOnly,
-                recordReferences
+                definitionsOnly
             });
             fileTimings.push({ relativePath: file.relativePath, durationMs: performance.now() - fileStartedAt });
             processed += 1;

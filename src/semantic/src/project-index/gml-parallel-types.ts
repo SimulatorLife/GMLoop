@@ -60,7 +60,6 @@ export type GmlParallelWorkerRequest = Readonly<{
     builtInNames: ReadonlyArray<string>;
     projectRoot: string;
     definitionsOnly: boolean;
-    recordReferences: boolean;
 }>;
 
 export type GmlParallelWorkerErrorPayload = Readonly<{

@@ -308,7 +308,6 @@ export type RunGmlFilesWithWorkerPoolParams = Readonly<{
     pendingConstructorStaticMemberReferences: GmlParallelIdentifierOccurrenceRecord[];
     onProgress?: (progress: ProjectIndexBuildProgress) => void;
     definitionsOnly: boolean;
-    recordReferences?: boolean;
 }>;
 
 /**
@@ -335,8 +334,7 @@ export async function runProjectGmlFilesWithWorkerPool({
     metrics,
     pendingConstructorStaticMemberReferences,
     onProgress,
-    definitionsOnly,
-    recordReferences = false
+    definitionsOnly
 }: RunGmlFilesWithWorkerPoolParams): Promise<void> {
     Core.throwIfAborted(signal, PROJECT_INDEX_BUILD_ABORT_MESSAGE);
 
@@ -365,8 +363,7 @@ export async function runProjectGmlFilesWithWorkerPool({
         resourceAnalysis,
         builtInNames: [...builtInNames],
         projectRoot,
-        definitionsOnly,
-        recordReferences
+        definitionsOnly
     };
 
     const workers: Worker[] = [];

@@ -84,8 +84,7 @@ async function runGmlParallelWorker(request: GmlParallelWorkerRequest): Promise<
         onProgress: () => {
             postResponse({ type: "progress" });
         },
-        definitionsOnly: request.definitionsOnly,
-        recordReferences: request.recordReferences
+        definitionsOnly: request.definitionsOnly
     });
 
     postResponse({
