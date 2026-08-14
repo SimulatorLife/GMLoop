@@ -654,6 +654,27 @@ export function trimStringEntries(values) {
 }
 
 /**
+ * Escape the five characters that carry special meaning in HTML and XML
+ * markup (`&`, `<`, `>`, `"`, `'`) so {@link value} can be safely injected
+ * into element text content or a quoted attribute value.
+ *
+ * The apostrophe is encoded as the numeric reference `&#39;` rather than the
+ * named `&apos;` entity: `&#39;` is valid in both HTML and XML, while
+ * `&apos;` is not universally recognized by HTML parsers.
+ *
+ * @param {string} value Candidate text to escape for use in HTML/XML markup.
+ * @returns {string} Escaped string safe for markup text or attribute values.
+ */
+export function escapeHtmlEntities(value: string): string {
+    return value
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+}
+
+/**
  * Remove matching string quotes from {@link value}, returning `null` when the
  * input is not a quoted string. Supports both single- and double-quoted
  * literals so call sites can focus on their specific validation logic without

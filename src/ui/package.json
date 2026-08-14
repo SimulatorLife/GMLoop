@@ -21,6 +21,7 @@
     "lint:css": "stylelint \"src/web/styles/**/*.css\""
   },
   "dependencies": {
+    "@gmloop/core": "workspace:*",
     "@gmloop/syntax-highlight": "workspace:*",
     "diff": "^9.0.0",
     "lit": "^3.3.3"
@@ -29,7 +30,6 @@
     "stylelint": "^16.14.0",
     "stylelint-declaration-strict-value": "^1.11.1",
     "vite": "^8.1.5",
-    "@gmloop/core": "workspace:*",
     "@types/node": "catalog:",
     "typescript": "catalog:"
   },
