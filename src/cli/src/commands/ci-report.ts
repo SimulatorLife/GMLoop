@@ -75,10 +75,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function normalizePath(value: string): string {
-    return value.split(path.sep).join("/");
-}
-
 function digestText(value: string): string {
     return createHash("sha256").update(value).digest("hex");
 }
@@ -154,7 +150,7 @@ async function collectFiles(rootDirectory: string): Promise<Array<string>> {
                 continue;
             }
             if (entry.isFile()) {
-                output.push(normalizePath(path.relative(process.cwd(), absolutePath)));
+                output.push(Core.toPosixPath(path.relative(process.cwd(), absolutePath)));
             }
         }
     }
@@ -164,7 +160,7 @@ async function collectFiles(rootDirectory: string): Promise<Array<string>> {
 }
 
 function isPerformanceTest(relativePath: string): boolean {
-    const normalized = normalizePath(relativePath).toLowerCase();
+    const normalized = Core.toPosixPath(relativePath).toLowerCase();
     const basename = path.posix.basename(normalized);
     return (
         normalized.includes("/dist/test/performance/") || basename.includes("performance") || basename.includes("perf")
@@ -172,7 +168,7 @@ function isPerformanceTest(relativePath: string): boolean {
 }
 
 function isCanonicalTestPath(relativePath: string): boolean {
-    const normalized = normalizePath(relativePath);
+    const normalized = Core.toPosixPath(relativePath);
     if (!normalized.endsWith(".test.js") || isPerformanceTest(normalized)) {
         return false;
     }
@@ -202,7 +198,7 @@ function parseTimingHistory(value: unknown): Map<string, number> {
             continue;
         }
         if (Number.isFinite(entry.durationMs) && entry.durationMs > 0) {
-            result.set(normalizePath(entry.file), entry.durationMs);
+            result.set(Core.toPosixPath(entry.file), entry.durationMs);
         }
     }
     return result;
@@ -348,7 +344,7 @@ function parseManifest(value: unknown): TestManifest {
     if (shardCount === null || !Array.isArray(value.tests) || !Array.isArray(value.shards)) {
         throw new Error("Test manifest is missing required fields.");
     }
-    const tests = value.tests.filter((entry): entry is string => typeof entry === "string").map(normalizePath);
+    const tests = value.tests.filter((entry): entry is string => typeof entry === "string").map(Core.toPosixPath);
     if (tests.length !== value.tests.length || tests.length === 0) {
         throw new Error("Test manifest contains invalid or empty test paths.");
     }
@@ -357,7 +353,9 @@ function parseManifest(value: unknown): TestManifest {
         if (!isRecord(rawShard) || typeof rawShard.name !== "string" || !Array.isArray(rawShard.files)) {
             throw new Error("Test manifest contains an invalid shard.");
         }
-        const files = rawShard.files.filter((entry): entry is string => typeof entry === "string").map(normalizePath);
+        const files = rawShard.files
+            .filter((entry): entry is string => typeof entry === "string")
+            .map(Core.toPosixPath);
         if (files.length !== rawShard.files.length || files.length === 0) {
             throw new Error(`Test shard ${rawShard.name} has invalid or empty files.`);
         }
@@ -581,7 +579,7 @@ function createCheckstyleXml(results: ReadonlyArray<EslintResult>): string {
     const files = results
         .filter((result) => result.messages.length > 0)
         .map((result) => {
-            const relativePath = normalizePath(path.relative(process.cwd(), result.filePath) || result.filePath);
+            const relativePath = Core.toPosixPath(path.relative(process.cwd(), result.filePath) || result.filePath);
             const messages = result.messages
                 .map((message) => {
                     const source = message.ruleId === null ? "eslint" : `eslint.${message.ruleId}`;
@@ -626,7 +624,9 @@ function parseShardMetadata(value: unknown): ShardMetadata {
     ) {
         throw new Error("Invalid test-shard metadata.");
     }
-    const testFiles = value.testFiles.filter((entry): entry is string => typeof entry === "string").map(normalizePath);
+    const testFiles = value.testFiles
+        .filter((entry): entry is string => typeof entry === "string")
+        .map(Core.toPosixPath);
     if (testFiles.length !== value.testFiles.length) {
         throw new Error(`Shard ${value.shard} contains an invalid test path.`);
     }
@@ -645,7 +645,7 @@ function parseShardMetadata(value: unknown): ShardMetadata {
 }
 
 function matchTimingToFile(location: string, files: ReadonlyArray<string>): string | null {
-    const normalizedLocation = normalizePath(location).replace(/^file:\/\//u, "");
+    const normalizedLocation = Core.toPosixPath(location).replace(/^file:\/\//u, "");
     const suffixMatches = files.filter((testFile) => normalizedLocation.endsWith(testFile));
     if (suffixMatches.length === 1) {
         return suffixMatches[0] ?? null;
@@ -923,7 +923,7 @@ async function validateReport(
                     testFiles: Object.freeze(
                         rawShard.testFiles
                             .filter((entry): entry is string => typeof entry === "string")
-                            .map(normalizePath)
+                            .map(Core.toPosixPath)
                     ),
                     manifestDigest: typeof rawShard.manifestDigest === "string" ? rawShard.manifestDigest : "",
                     planDigest: typeof rawShard.planDigest === "string" ? rawShard.planDigest : "",
@@ -971,7 +971,7 @@ async function stageCompiledRuntime(outputDirectory: string): Promise<void> {
         ...(await collectFiles(path.join(process.cwd(), "test", "dist")))
     ];
     const runtimeFiles = candidates.filter((relativePath) => {
-        const normalized = normalizePath(relativePath);
+        const normalized = Core.toPosixPath(relativePath);
         const isDistFile =
             normalized.startsWith("test/dist/") || (normalized.startsWith("src/") && normalized.includes("/dist/"));
         if (!isDistFile) {
