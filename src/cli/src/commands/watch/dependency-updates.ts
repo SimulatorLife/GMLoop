@@ -5,7 +5,11 @@ import { Core, type DebouncedFunction } from "@gmloop/core";
 import type * as TranspilerTypes from "@gmloop/transpiler";
 import { Transpiler } from "@gmloop/transpiler";
 
-import type { DependencyTracker } from "../../modules/transpilation/dependency-tracker.js";
+import type {
+    DependencyGraphContract,
+    DependencyGraphQuery,
+    DependencyGraphWriter
+} from "../../modules/transpilation/dependency-tracker.js";
 import {
     type RuntimeTranspilerPatch,
     type TranspilationContext,
@@ -23,7 +27,7 @@ interface FileChangeOptions {
 }
 
 interface DependencyUpdateRuntimeContext {
-    dependencyTracker: DependencyTracker;
+    dependencyTracker: DependencyGraphContract;
     dependentRetranspileConcurrency: number;
     scriptNames: Set<string>;
     /**
@@ -151,7 +155,7 @@ export async function retranspileDependentFiles(
 }
 
 function updateDependencyTrackerForTranspileResult(
-    runtimeContext: DependencyUpdateRuntimeContext,
+    runtimeContext: { dependencyTracker: DependencyGraphWriter & DependencyGraphQuery },
     filePath: string,
     result: TranspilationResult
 ): DependencyUpdateSummary {
@@ -253,7 +257,7 @@ async function retranspileDependentFile(
 }
 
 function registerDependencyTrackerUpdates(
-    runtimeContext: DependencyUpdateRuntimeContext,
+    runtimeContext: { dependencyTracker: DependencyGraphWriter },
     dependentFile: string,
     dependentResult: TranspilationResult
 ): void {
