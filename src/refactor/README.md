@@ -112,6 +112,13 @@ independent rename targets so policies can rename `DemoLibrary` and
 `function DemoLibrary()` differently when needed, with resource renames
 limited to metadata/path edits while callable renames own the text
 occurrences inside `.gml` files.
+A script resource is also exempt from `scriptResourceName` renaming when its
+file defines exactly one struct/constructor declaration that already shares
+the resource's name and independently complies with the declaration's own
+naming rule (for example `LinkedHashMap.gml` defining
+`function LinkedHashMap() constructor {}`), so struct-backed script files can
+use the struct name instead of the standard script prefix without a
+project-wide naming exemption.
 Constructor renames also update parent-constructor clauses such as
 `function Child() : BaseType() constructor {}`, and local naming rewrites skip
 identifiers that referenced `#macro` expansions read from the caller scope so
@@ -667,6 +674,5 @@ providing instant feedback in IDE rename dialogs.
 
 ## TODO
 
-- **FEAT**: For renaming script files, we should allow for specifying a different naming convention for ones that contain a single struct definition. For example, if we have "LinkedHashMap.gml" that defines a single struct called `LinkedHashMap`, we should allow for the file to be renamed to match the struct name (e.g., "LinkedHashMap.gml") without being flagged for renaming, even if it doesn't follow the standard script naming convention (e.g., `scr_` prefix). This would allow for more natural naming of struct files while still enforcing naming conventions for regular scripts.
 - For the renaming fix, we should support an allow/deny list of prefixes, suffixes, and names that are exempt from renaming. For example, if a project's `gmploop.json` specifies that sprites must use the `spr_` prefix, the rename configuration should also allow exceptions such as sprites with the tex\_ prefix so they are not flagged for renaming.
 - Alternatively, instead of requiring a specific prefix or suffix, we could support a denylist of disallowed names, prefixes, or suffixes. So, resources would only be flagged for renaming if they match an entry in the denylist. For example, if a resource is named `__apple` and the denylist includes the prefix `__`, it would be flagged for renaming, since it matches a disallowed naming pattern. In this mode, renaming would follow a default or separately defined naming rule (e.g., a standard prefix/suffix or pattern), applied only when a name violates the denylist. In this mode, a resource that matches the denylist would first check its inheritance tree and try to inherit a valid naming prefix from its parent chain. If no applicable prefix is found, it should attempt to remove the disallowed prefix, provided the result passes all safety checks. If that still fails, it should fall back to the default naming convention.

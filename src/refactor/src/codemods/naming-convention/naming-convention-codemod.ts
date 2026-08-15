@@ -2,6 +2,7 @@ import { Core } from "@gmloop/core";
 
 import {
     evaluateNamingConvention,
+    formatNamingCaseStyle,
     NAMING_CATEGORY_PARENTS,
     resolveNamingConventionRules
 } from "../../naming-convention-policy.js";
@@ -28,6 +29,7 @@ import type {
     PartialSemanticAnalyzer,
     RefactorProjectConfig,
     RenameRequest,
+    ResolvedNamingConventionRules,
     SemanticGap,
     ValidationSummary
 } from "../../types.js";
@@ -985,6 +987,66 @@ function findSameNameScriptCallableTarget(
     return null;
 }
 
+function countScriptCallableTargetsForPath(targets: ReadonlyArray<NamingConventionTarget>, sourcePath: string): number {
+    let count = 0;
+    for (const candidate of targets) {
+        if (SCRIPT_CALLABLE_NAMING_CATEGORIES.has(candidate.category) && candidate.path === sourcePath) {
+            count += 1;
+        }
+    }
+
+    return count;
+}
+
+/**
+ * A script resource whose file defines exactly one struct/constructor
+ * declaration is exempt from `scriptResourceName` renaming when the
+ * declaration already matches the resource name, independently complies with
+ * the declaration's own naming rule, and the resource's only violation is a
+ * missing required prefix/suffix (for example a `LinkedHashMap.gml` file
+ * that defines `function LinkedHashMap() constructor {}` but does not carry
+ * the standard `scr_` prefix). Case-style violations are never exempted:
+ * a project that explicitly enforces a case style on `scriptResourceName`
+ * still requires the resource to comply, even when its matching struct
+ * declaration is separately compliant with its own rule.
+ */
+function isStructNameExemptScriptResourceTarget(parameters: {
+    scriptResourceTarget: NamingConventionTarget;
+    selectedTargets: ReadonlyArray<NamingConventionTarget>;
+    policy: NamingConventionPolicy;
+    resolvedRules: ResolvedNamingConventionRules;
+}): boolean {
+    const { scriptResourceTarget, selectedTargets, policy, resolvedRules } = parameters;
+    const scriptResourceRule = resolvedRules.scriptResourceName;
+    if (!scriptResourceRule || (scriptResourceRule.prefix === "" && scriptResourceRule.suffix === "")) {
+        return false;
+    }
+
+    if (formatNamingCaseStyle(scriptResourceTarget.name, scriptResourceRule.caseStyle) !== scriptResourceTarget.name) {
+        return false;
+    }
+
+    const callableTarget = findSameNameScriptCallableTarget(selectedTargets, scriptResourceTarget);
+    if (!callableTarget || !OCCURRENCE_BACKED_SCRIPT_CALLABLE_NAMING_CATEGORIES.has(callableTarget.category)) {
+        return false;
+    }
+
+    const expectedSourcePath = scriptResourceTarget.path.replace(/\.yy$/iu, ".gml");
+    if (countScriptCallableTargetsForPath(selectedTargets, expectedSourcePath) !== 1) {
+        return false;
+    }
+
+    const callableEvaluation = evaluateNamingConvention(
+        callableTarget.name,
+        callableTarget.category,
+        policy,
+        resolvedRules,
+        { includeMessage: false }
+    );
+
+    return callableEvaluation.compliant;
+}
+
 function hasConfiguredRuleInNamingCategoryChain(policy: NamingConventionPolicy, category: NamingCategory): boolean {
     let cursor: NamingCategory | null = category;
     while (cursor !== null) {
@@ -1236,6 +1298,18 @@ export async function planNamingConventionCodemod(
             includeMessage: includeViolations
         });
         if (evaluation.compliant) {
+            continue;
+        }
+
+        if (
+            target.category === "scriptResourceName" &&
+            isStructNameExemptScriptResourceTarget({
+                scriptResourceTarget: target,
+                selectedTargets,
+                policy,
+                resolvedRules
+            })
+        ) {
             continue;
         }
 
