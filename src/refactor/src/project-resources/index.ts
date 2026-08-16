@@ -54,6 +54,7 @@ export type {
     DeleteRoomInstanceRequest,
     InspectRoomInstanceRequest,
     ListRoomInstancesRequest,
+    MoveRoomInstanceToLayerRequest,
     RoomInstanceInspectionResult,
     RoomInstanceMutationResult,
     UpdateRoomInstanceRequest
@@ -63,6 +64,7 @@ export {
     deleteRoomInstance,
     inspectRoomInstance,
     listRoomInstances,
+    moveRoomInstanceToLayer,
     updateRoomInstance
 } from "./room-instance-operations.js";
 export type {

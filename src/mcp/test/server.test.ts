@@ -218,6 +218,27 @@ void test("MCP tool catalog exposes room layer create from the CLI command catal
     assert.equal(writeField.valueType, "boolean");
 });
 
+void test("MCP tool catalog exposes room layer move-resource from the CLI command catalog", () => {
+    const catalog = listGmloopMcpToolCatalogEntries();
+    const moveResourceTool = catalog.find((entry) => entry.toolName === "gmloop_room_layer_move_resource");
+    assert.ok(moveResourceTool, "gmloop_room_layer_move_resource must appear in the MCP tool catalog");
+    assert.equal(moveResourceTool.commandDisplayName, "room layer move-resource");
+
+    const fieldNames = new Set(moveResourceTool.fields.map((field) => field.name));
+    assert.ok(fieldNames.has("cwd"), "room layer move-resource must include cwd field");
+    assert.ok(fieldNames.has("room"), "room layer move-resource must include room argument");
+    assert.ok(fieldNames.has("instance-id"), "room layer move-resource must include instance-id argument");
+    assert.ok(fieldNames.has("layer"), "room layer move-resource must include target layer argument");
+    assert.ok(fieldNames.has("--write"), "room layer move-resource must include --write option");
+    assert.ok(fieldNames.has("--path"), "room layer move-resource must include --path option");
+    assert.ok(fieldNames.has("--json"), "room layer move-resource must include --json option");
+
+    const writeField = moveResourceTool.fields.find((field) => field.name === "--write");
+    assert.ok(writeField);
+    assert.equal(writeField.kind, "option");
+    assert.equal(writeField.valueType, "boolean");
+});
+
 void test("MCP tool catalog exposes room camera update from the CLI command catalog", () => {
     const catalog = listGmloopMcpToolCatalogEntries();
     const updateTool = catalog.find((entry) => entry.toolName === "gmloop_room_camera_update");
