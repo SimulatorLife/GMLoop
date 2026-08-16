@@ -6,6 +6,7 @@ import type { GraphVisualizationUiState } from "../state/types.js";
 import { EventBusManager } from "./event-bus-mixin.js";
 import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
+import { LogAutoScrollController } from "./log-auto-scroll-controller.js";
 
 function getEffectiveFixLogLines(
     model: GraphVisualizationUiModel,
@@ -39,6 +40,12 @@ function hasCurrentProjectFixRun(
  * therefore keeps only the `render` override that Lit requires, and the
  * public connect/disconnect behaviour is identical to the previous
  * hand-rolled lifecycle methods.
+ *
+ * The run log auto-scrolls to its latest line as a fix workflow streams
+ * progress, via {@link LogAutoScrollController}, so a reader does not have
+ * to keep manually scrolling the `<pre>` block to follow along. Scrolling
+ * up to review earlier output suspends the auto-scroll until the reader
+ * returns to the bottom.
  */
 export class GmFixPanel extends LightDomLitElement {
     public static properties = {
@@ -62,6 +69,9 @@ export class GmFixPanel extends LightDomLitElement {
 
     public constructor() {
         super();
+        new LogAutoScrollController(this, {
+            getElement: () => this.querySelector<HTMLElement>(".fix-log")
+        });
         new LifecycleParticipantsController(this, [
             new EventBusManager(this, [{ event: "gm-error-banner-dismiss", handler: this.#onDismissErrorBanner }])
         ]);
