@@ -388,7 +388,10 @@ export function isLikelyCallArgumentGap(sourceText: string, leftIndex: number): 
 
             const calleeToken = readIdentifierTokenEndingAt(sourceText, calleeEndIndex);
             if (calleeToken) {
-                if (NON_CALL_PREFIX_KEYWORDS.has(calleeToken.value.toLowerCase())) {
+                // GML keywords are exact-case (see GameMakerLanguageLexer.g4), so an
+                // identifier that merely differs in case from a keyword (e.g. `New`,
+                // `With`) is a distinct, callable user identifier, not the keyword.
+                if (NON_CALL_PREFIX_KEYWORDS.has(calleeToken.value)) {
                     return false;
                 }
 
@@ -398,7 +401,7 @@ export function isLikelyCallArgumentGap(sourceText: string, leftIndex: number): 
                 }
 
                 const prefixToken = readIdentifierTokenEndingAt(sourceText, beforeCalleeIndex);
-                return prefixToken?.value.toLowerCase() !== "function";
+                return prefixToken?.value !== "function";
             }
 
             const calleeCharacter = sourceText[calleeEndIndex] ?? "";
