@@ -5,7 +5,11 @@ import { Core, type DebouncedFunction } from "@gmloop/core";
 import type * as TranspilerTypes from "@gmloop/transpiler";
 import { Transpiler } from "@gmloop/transpiler";
 
-import type { DependencyTracker } from "../../modules/transpilation/dependency-tracker.js";
+import type {
+    DependencyGraphContract,
+    DependencyGraphQuery,
+    DependencyGraphWriter
+} from "../../modules/transpilation/dependency-tracker.js";
 import {
     type RuntimeTranspilerPatch,
     type TranspilationContext,
@@ -23,7 +27,7 @@ interface FileChangeOptions {
 }
 
 interface DependencyUpdateRuntimeContext {
-    dependencyTracker: DependencyTracker;
+    dependencyTracker: DependencyGraphContract;
     dependentRetranspileConcurrency: number;
     scriptNames: Set<string>;
     /**
@@ -151,7 +155,7 @@ export async function retranspileDependentFiles(
 }
 
 function updateDependencyTrackerForTranspileResult(
-    runtimeContext: DependencyUpdateRuntimeContext,
+    runtimeContext: { dependencyTracker: DependencyGraphWriter & DependencyGraphQuery },
     filePath: string,
     result: TranspilationResult
 ): DependencyUpdateSummary {
@@ -253,7 +257,7 @@ async function retranspileDependentFile(
 }
 
 function registerDependencyTrackerUpdates(
-    runtimeContext: DependencyUpdateRuntimeContext,
+    runtimeContext: { dependencyTracker: DependencyGraphWriter },
     dependentFile: string,
     dependentResult: TranspilationResult
 ): void {
@@ -319,36 +323,73 @@ export function removeCachedPatchesForFile(
 }
 
 export function cleanupRemovedFile(runtimeContext: FileRemovalCleanupContext, filePath: string): Array<string> {
-    const previousMacroDefinitions = runtimeContext.macroDefinitions;
     unregisterScriptName(filePath, runtimeContext.scriptNames);
+    const changedMacroDefinitions = replaceMacroDefinitionsForRemovedFile(runtimeContext, filePath);
+    const affectedDependents = mergeDependentFiles(
+        runtimeContext.dependencyTracker.getDependentFiles(filePath),
+        runtimeContext.dependencyTracker.getTransitiveFilesReferencingSymbols(changedMacroDefinitions, filePath)
+    );
+    runtimeContext.dependencyTracker.removeFile(filePath);
+    clearFileStateCaches(runtimeContext, filePath);
+    const removedPatchCount = removeCachedPatchesForFile(runtimeContext, filePath);
+    cancelDebouncedHandlerForFile(runtimeContext, filePath);
+    reportCleanupResult(runtimeContext, removedPatchCount);
+
+    return affectedDependents;
+}
+
+/**
+ * Drops the removed file's macro definitions, recomputes the project-wide
+ * macro table, and returns the `gml/macro/<name>` symbol ids whose
+ * definitions changed as a result.
+ */
+function replaceMacroDefinitionsForRemovedFile(
+    runtimeContext: Pick<FileRemovalCleanupContext, "macroDefinitions" | "macroDefinitionsBySourcePath">,
+    filePath: string
+): Array<string> {
+    const previousMacroDefinitions = runtimeContext.macroDefinitions;
     runtimeContext.macroDefinitionsBySourcePath.delete(filePath);
     const nextMacroDefinitions = Transpiler.createProjectMacroDefinitions(runtimeContext.macroDefinitionsBySourcePath);
     const changedMacroDefinitions = Transpiler.findChangedMacroDefinitionNames(
         previousMacroDefinitions,
         nextMacroDefinitions
     ).map((name) => `gml/macro/${name}`);
-    const affectedDependents = mergeDependentFiles(
-        runtimeContext.dependencyTracker.getDependentFiles(filePath),
-        runtimeContext.dependencyTracker.getTransitiveFilesReferencingSymbols(changedMacroDefinitions, filePath)
-    );
+
     runtimeContext.macroDefinitions = nextMacroDefinitions;
-    runtimeContext.dependencyTracker.removeFile(filePath);
+
+    return changedMacroDefinitions;
+}
+
+/** Clears the removed file's snapshot, content-hash, and content-length cache entries. */
+function clearFileStateCaches(
+    runtimeContext: Pick<FileRemovalCleanupContext, "fileSnapshots" | "fileContentHashes" | "fileContentLengths">,
+    filePath: string
+): void {
     runtimeContext.fileSnapshots.delete(filePath);
     runtimeContext.fileContentHashes.delete(filePath);
     runtimeContext.fileContentLengths.delete(filePath);
-    const removedPatchCount = removeCachedPatchesForFile(runtimeContext, filePath);
+}
 
+/** Cancels and forgets the removed file's pending debounced re-transpile, if any. */
+function cancelDebouncedHandlerForFile(
+    runtimeContext: Pick<FileRemovalCleanupContext, "debouncedHandlers">,
+    filePath: string
+): void {
     const debouncedHandler = runtimeContext.debouncedHandlers.get(filePath);
     if (debouncedHandler) {
         debouncedHandler.cancel();
         runtimeContext.debouncedHandlers.delete(filePath);
     }
+}
 
-    if (runtimeContext.verboseOutputEnabled) {
-        const patchMessage =
-            removedPatchCount > 0 ? `cleared ${removedPatchCount} cached patch(es)` : "no cached patch found";
-        console.log(`  ↳ Removed dependency tracking (${patchMessage})`);
+function reportCleanupResult(
+    runtimeContext: Pick<FileRemovalCleanupContext, "verboseOutputEnabled">,
+    removedPatchCount: number
+): void {
+    if (!runtimeContext.verboseOutputEnabled) {
+        return;
     }
-
-    return affectedDependents;
+    const patchMessage =
+        removedPatchCount > 0 ? `cleared ${removedPatchCount} cached patch(es)` : "no cached patch found";
+    console.log(`  ↳ Removed dependency tracking (${patchMessage})`);
 }

@@ -8,8 +8,6 @@ description: Resolve merge, rebase, cherry-pick, formatter, generated-file, and 
 ## Purpose
 Resolve merge, rebase, cherry-pick, and formatter conflicts safely while preserving repository conventions, minimizing accidental churn, and maintaining a clean commit history.
 
-Resolve merge, rebase, cherry-pick, and formatter conflicts safely while preserving repository conventions, minimizing accidental churn, and maintaining a clean commit history.
-
 This skill prioritizes:
 
 * Minimal diffs
