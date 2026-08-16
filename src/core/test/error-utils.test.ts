@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { toContextualError } from "../src/utils/error.js";
+import { getErrorStackOrMessage, toContextualError } from "../src/utils/error.js";
 
 void describe("toContextualError", () => {
     void it("wraps an Error with a colon-separated context and preserves cause", () => {
@@ -83,5 +83,27 @@ void describe("toContextualError", () => {
         assert.equal(wrapped.cause, original);
         assert.ok(original instanceof DomainError);
         assert.equal(original.name, "DomainError");
+    });
+});
+
+void describe("getErrorStackOrMessage", () => {
+    void it("returns the stack trace when the error has one", () => {
+        const error = new Error("boom");
+
+        const result = getErrorStackOrMessage(error);
+
+        assert.ok(result.startsWith("Error: boom"), "should include the message on the stack's first line");
+        assert.ok(result.includes("\n"), "should include additional stack frames");
+    });
+
+    void it("falls back to the message when the error has no stack", () => {
+        const errorLikeWithoutStack = { message: "no stack here" };
+
+        assert.equal(getErrorStackOrMessage(errorLikeWithoutStack), "no stack here");
+    });
+
+    void it("falls back to getErrorMessage semantics for non-Error thrown values", () => {
+        assert.equal(getErrorStackOrMessage("string was thrown"), "string was thrown");
+        assert.equal(getErrorStackOrMessage(undefined), "");
     });
 });

@@ -256,3 +256,24 @@ export function toContextualError(
     error.cause = cause;
     return error;
 }
+
+/**
+ * Retrieve the most diagnostic-friendly string available for an error-like
+ * value: its stack trace when present, otherwise its message.
+ *
+ * Top-level CLI entry points want a full stack trace when one is available
+ * (it locates the failure precisely) but must still degrade gracefully for
+ * non-`Error` thrown values, which have no `stack`. This mirrors
+ * {@link getErrorMessage}'s tolerance for arbitrary thrown values while
+ * preferring the richer `stack` field when the error exposes one.
+ *
+ * @param {unknown} error Value that may represent an error.
+ * @returns {string} Stack trace when available, otherwise the error message.
+ */
+export function getErrorStackOrMessage(error: unknown): string {
+    if (isErrorLike(error) && isNonEmptyString(error.stack)) {
+        return error.stack;
+    }
+
+    return getErrorMessage(error);
+}
