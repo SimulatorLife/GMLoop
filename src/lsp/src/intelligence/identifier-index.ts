@@ -1340,20 +1340,29 @@ export function createGmlSemanticIndex(
         }
     }
 
-    function buildFullProjectIndex(
-        document: GmlTextDocument,
+    /**
+     * Shared full-tier ("full" project relationships) build/publish routine.
+     *
+     * `buildFullProjectIndex` (document-anchored) and `buildFullProjectIndexForRoot`
+     * (root-only pre-warming) used to reimplement this build -> currency-check ->
+     * publish -> cache-bookkeeping -> telemetry sequence independently. Keeping two
+     * copies risked the two entry points drifting apart on the currency checks that
+     * back the "no silent fallback to stale data" guarantee (target-state.md 4.2),
+     * so both now call this one routine and only vary `priorityFiles` and the extra
+     * document-version check via `isCurrent`.
+     */
+    function runFullProjectBuild(
         resolvedRoot: string,
-        reason: GmlSemanticAnalysisStart["reason"]
+        reason: GmlSemanticAnalysisStart["reason"],
+        priorityFiles: ReadonlyArray<string>,
+        isCurrent: () => boolean
     ): Promise<NavigationState | null> {
         const existingBuild = fullProjectBuilds.get(resolvedRoot);
         if (existingBuild !== undefined) {
             return existingBuild;
         }
 
-        const resolvedUri = document.uri;
-        const startDocVersion = readDocumentVersion(resolvedUri);
         const buildVersion = readRootVersion(resolvedRoot);
-        const priorityFiles = listProjectDocuments(resolvedRoot).map((doc) => doc.filePath);
 
         abortActiveBuild(resolvedRoot);
         const controller = new AbortController();
@@ -1363,22 +1372,13 @@ export function createGmlSemanticIndex(
             const startTime = performance.now();
             const scope = "project";
             const tier = "full";
+            const affectedFileCount = priorityFiles.length;
             try {
                 await (pendingCacheWrites.get(resolvedRoot) ?? Promise.resolve());
-                const currentDoc = documents.get(document.uri);
-                if (currentDoc && currentDoc.version !== document.version) {
+                if (!isCurrent()) {
                     return null;
                 }
-                if (readDocumentVersion(resolvedUri) !== startDocVersion) {
-                    return null;
-                }
-                reportSemanticAnalysisStart({
-                    affectedFileCount: priorityFiles.length,
-                    projectRoot: resolvedRoot,
-                    reason,
-                    scope,
-                    tier
-                });
+                reportSemanticAnalysisStart({ affectedFileCount, projectRoot: resolvedRoot, reason, scope, tier });
                 const workerBoundary = createWorkerBuildBoundary(resolvedRoot, "full", buildVersion);
                 const store = getSemanticStore(resolvedRoot);
                 const previousManifest =
@@ -1396,16 +1396,11 @@ export function createGmlSemanticIndex(
                     signal: controller.signal,
                     previousManifest
                 });
-                if (
-                    fullState &&
-                    !disposed &&
-                    readRootVersion(resolvedRoot) === buildVersion &&
-                    readDocumentVersion(resolvedUri) === startDocVersion
-                ) {
+                if (fullState && !disposed && readRootVersion(resolvedRoot) === buildVersion && isCurrent()) {
                     const published = await publishNavigationState(resolvedRoot, fullState, buildVersion);
                     if (!published) {
                         reportSemanticAnalysisFinish({
-                            affectedFileCount: priorityFiles.length,
+                            affectedFileCount,
                             projectRoot: resolvedRoot,
                             reason,
                             scope,
@@ -1422,7 +1417,7 @@ export function createGmlSemanticIndex(
                     onSemanticGenerationPublished?.();
 
                     reportSemanticAnalysisFinish({
-                        affectedFileCount: priorityFiles.length,
+                        affectedFileCount,
                         projectRoot: resolvedRoot,
                         reason,
                         scope,
@@ -1433,7 +1428,7 @@ export function createGmlSemanticIndex(
                     return retainedState;
                 }
                 reportSemanticAnalysisFinish({
-                    affectedFileCount: priorityFiles.length,
+                    affectedFileCount,
                     projectRoot: resolvedRoot,
                     reason,
                     scope,
@@ -1445,7 +1440,7 @@ export function createGmlSemanticIndex(
             } catch (error) {
                 if (Core.isAbortError(error)) {
                     reportSemanticAnalysisFinish({
-                        affectedFileCount: priorityFiles.length,
+                        affectedFileCount,
                         projectRoot: resolvedRoot,
                         reason,
                         scope,
@@ -1456,7 +1451,7 @@ export function createGmlSemanticIndex(
                     return null;
                 }
                 reportSemanticAnalysisFinish({
-                    affectedFileCount: priorityFiles.length,
+                    affectedFileCount,
                     projectRoot: resolvedRoot,
                     reason,
                     scope,
@@ -1480,6 +1475,24 @@ export function createGmlSemanticIndex(
         });
         fullProjectBuilds.set(resolvedRoot, finalBuild);
         return finalBuild;
+    }
+
+    function buildFullProjectIndex(
+        document: GmlTextDocument,
+        resolvedRoot: string,
+        reason: GmlSemanticAnalysisStart["reason"]
+    ): Promise<NavigationState | null> {
+        const resolvedUri = document.uri;
+        const startDocVersion = readDocumentVersion(resolvedUri);
+        const priorityFiles = listProjectDocuments(resolvedRoot).map((doc) => doc.filePath);
+
+        return runFullProjectBuild(resolvedRoot, reason, priorityFiles, () => {
+            const currentDoc = documents.get(document.uri);
+            if (currentDoc && currentDoc.version !== document.version) {
+                return false;
+            }
+            return readDocumentVersion(resolvedUri) === startDocVersion;
+        });
     }
 
     async function restorePersistentSemanticState(
@@ -2138,123 +2151,7 @@ export function createGmlSemanticIndex(
         resolvedRoot: string,
         reason: GmlSemanticAnalysisStart["reason"]
     ): Promise<NavigationState | null> {
-        const existingBuild = fullProjectBuilds.get(resolvedRoot);
-        if (existingBuild !== undefined) {
-            return existingBuild;
-        }
-
-        const buildVersion = readRootVersion(resolvedRoot);
-
-        abortActiveBuild(resolvedRoot);
-        const controller = new AbortController();
-        abortControllers.set(resolvedRoot, controller);
-
-        const fullBuild = (async () => {
-            const startTime = performance.now();
-            const scope = "project";
-            const tier = "full";
-            try {
-                await (pendingCacheWrites.get(resolvedRoot) ?? Promise.resolve());
-                reportSemanticAnalysisStart({
-                    affectedFileCount: 0,
-                    projectRoot: resolvedRoot,
-                    reason,
-                    scope,
-                    tier
-                });
-                const workerBoundary = createWorkerBuildBoundary(resolvedRoot, "full", buildVersion);
-                const store = getSemanticStore(resolvedRoot);
-                const previousManifest =
-                    store.readSemanticManifest("full") ?? store.readSemanticManifest("definitions");
-                const fullState = await buildSemanticIndexInWorker({
-                    projectRoot: resolvedRoot,
-                    priorityFiles: [],
-                    openDocuments: listProjectDocuments(resolvedRoot),
-                    definitionsOnly: false,
-                    readCurrentOpenDocuments: () => listProjectDocuments(resolvedRoot),
-                    buildIdentity: {
-                        boundary: workerBoundary,
-                        isCurrent: (boundary) => isWorkerBuildBoundaryCurrent(resolvedRoot, boundary)
-                    },
-                    signal: controller.signal,
-                    previousManifest
-                });
-                if (fullState && !disposed && readRootVersion(resolvedRoot) === buildVersion) {
-                    const published = await publishNavigationState(resolvedRoot, fullState, buildVersion);
-                    if (!published) {
-                        reportSemanticAnalysisFinish({
-                            affectedFileCount: 0,
-                            projectRoot: resolvedRoot,
-                            reason,
-                            scope,
-                            tier,
-                            durationMs: Math.round(performance.now() - startTime),
-                            status: "aborted"
-                        });
-                        return null;
-                    }
-                    const retainedState = releaseBuiltNavigationState(fullState);
-                    cachedStates.set(resolvedRoot, retainedState);
-                    staleStates.delete(resolvedRoot);
-                    markProjectDocumentFactsCurrent(resolvedRoot);
-                    onSemanticGenerationPublished?.();
-
-                    reportSemanticAnalysisFinish({
-                        affectedFileCount: 0,
-                        projectRoot: resolvedRoot,
-                        reason,
-                        scope,
-                        tier,
-                        durationMs: Math.round(performance.now() - startTime),
-                        status: "success"
-                    });
-                    return retainedState;
-                }
-                reportSemanticAnalysisFinish({
-                    affectedFileCount: 0,
-                    projectRoot: resolvedRoot,
-                    reason,
-                    scope,
-                    tier,
-                    durationMs: Math.round(performance.now() - startTime),
-                    status: "aborted"
-                });
-                return null;
-            } catch (error) {
-                if (Core.isAbortError(error)) {
-                    reportSemanticAnalysisFinish({
-                        affectedFileCount: 0,
-                        projectRoot: resolvedRoot,
-                        reason,
-                        scope,
-                        tier,
-                        durationMs: Math.round(performance.now() - startTime),
-                        status: "aborted"
-                    });
-                    return null;
-                }
-                reportSemanticAnalysisFinish({
-                    affectedFileCount: 0,
-                    projectRoot: resolvedRoot,
-                    reason,
-                    scope,
-                    tier,
-                    durationMs: Math.round(performance.now() - startTime),
-                    status: "failed",
-                    errorMessage: Core.getErrorMessageOrFallback(error)
-                });
-                return null;
-            }
-        })();
-
-        const finalFullBuild = fullBuild.finally(() => {
-            if (abortControllers.get(resolvedRoot) === controller) {
-                abortControllers.delete(resolvedRoot);
-            }
-            fullProjectBuilds.delete(resolvedRoot);
-        });
-        fullProjectBuilds.set(resolvedRoot, finalFullBuild);
-        return finalFullBuild;
+        return runFullProjectBuild(resolvedRoot, reason, [], () => true);
     }
 
     async function ensureProjectRootIndex(projectRoot: string): Promise<NavigationState | null> {
