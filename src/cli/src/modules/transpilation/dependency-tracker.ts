@@ -26,7 +26,85 @@ export interface DependencyGraph {
     symbolToRefFiles: Map<string, Set<string>>;
 }
 
-export class DependencyTracker {
+/**
+ * Records a file's defined/referenced symbols.
+ *
+ * Provides the ability to populate the dependency graph without coupling to
+ * traversal queries, removal, or diagnostics. The watch pipeline's
+ * post-transpile hooks depend on this role alone to persist the symbols a
+ * file just defined or referenced.
+ */
+export interface DependencyGraphWriter {
+    registerFileDefines(filePath: string, symbols: ReadonlyArray<string>): void;
+    replaceFileDefines(filePath: string, symbols: ReadonlyArray<string>): void;
+    registerFileReferences(filePath: string, symbols: ReadonlyArray<string>): void;
+    replaceFileReferences(filePath: string, symbols: ReadonlyArray<string>): void;
+}
+
+/**
+ * Traverses the dependency graph to find affected files.
+ *
+ * Provides read-only lookups (direct dependents, symbol-driven traversal,
+ * per-file definitions/references) without coupling to writing new entries,
+ * removing files, or diagnostics. Hot-reload invalidation logic depends on
+ * this role alone.
+ */
+export interface DependencyGraphQuery {
+    getDependentFiles(filePath: string): Array<string>;
+    getFilesReferencingSymbols(symbols: ReadonlyArray<string>, excludeFilePath?: string): Array<string>;
+    getTransitiveFilesReferencingSymbols(symbols: ReadonlyArray<string>, excludeFilePath?: string): Array<string>;
+    getFileDefinitions(filePath: string): Array<string>;
+    getFileReferences(filePath: string): Array<string>;
+}
+
+/**
+ * Removes a file's tracked state.
+ *
+ * Provides the ability to drop a deleted file's definitions/references (or
+ * reset the whole graph) without coupling to writing new entries, querying
+ * dependents, or diagnostics. File-deletion cleanup depends on this role
+ * alone.
+ */
+export interface DependencyGraphRemover {
+    removeFile(filePath: string): void;
+    clear(): void;
+}
+
+/**
+ * Diagnostic surface for the dependency graph.
+ *
+ * Provides counters and a debug snapshot without coupling to writing,
+ * querying, or removal operations. Verbose-mode logging depends on this
+ * role alone.
+ */
+export interface DependencyGraphDiagnostics {
+    getSnapshot(): DependencyGraph;
+    getStatistics(): {
+        totalFiles: number;
+        totalSymbols: number;
+        filesWithDefs: number;
+        filesWithRefs: number;
+        averageDefsPerFile: number;
+        averageRefsPerFile: number;
+    };
+}
+
+/**
+ * Composite dependency-graph contract used by consumers (such as the watch
+ * command's runtime context) that genuinely need every capability. Consumers
+ * that only need a subset should depend on the matching role interface
+ * directly — see {@link DependencyGraphWriter}, {@link DependencyGraphQuery},
+ * {@link DependencyGraphRemover}, and {@link DependencyGraphDiagnostics} —
+ * which is the Interface Segregation Principle in practice.
+ */
+export type DependencyGraphContract = DependencyGraphWriter &
+    DependencyGraphQuery &
+    DependencyGraphRemover &
+    DependencyGraphDiagnostics;
+
+export class DependencyTracker
+    implements DependencyGraphWriter, DependencyGraphQuery, DependencyGraphRemover, DependencyGraphDiagnostics
+{
     private fileToDefs: Map<string, Set<string>>;
     private fileToRefs: Map<string, Set<string>>;
     private symbolToDefFile: Map<string, string>;
