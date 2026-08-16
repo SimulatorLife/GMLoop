@@ -13,12 +13,13 @@ import {
 } from "../shared.js";
 import type { AutoGamePipelineModel } from "./auto-game-pipeline.js";
 import { writeGraphVisualizationBundleArtifact } from "./bundle.js";
-import { createDocumentationCatalogs } from "./catalog.js";
+import { createDocumentationCatalogs, type DocumentationCatalogProviders } from "./catalog.js";
 import type { GraphVisualizationServePayload, GraphVisualizedLoadedTarget } from "./types.js";
 
 type GraphVisualizationStaticExportInput = Readonly<{
     autoGamePipeline: AutoGamePipelineModel | null;
     context: GraphResolutionContext | null;
+    documentationCatalogProviders: DocumentationCatalogProviders;
     loadedTarget: GraphVisualizedLoadedTarget;
     options: GraphCommandSharedOptions;
     payload: GraphVisualizationServePayload;
@@ -52,7 +53,7 @@ async function runGraphVisualizationStaticExportMode(input: GraphVisualizationSt
         toolsetRoot: input.options.toolsetRoot
     });
 
-    const documentationCatalogs = createDocumentationCatalogs();
+    const documentationCatalogs = createDocumentationCatalogs(input.documentationCatalogProviders);
     const dbPath = activeConfig.databasePath;
     const bundleArtifact = await UI.renderGraphVisualizationBundle(input.payload, {
         autoGamePipeline: input.autoGamePipeline ?? undefined,

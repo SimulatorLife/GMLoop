@@ -41,7 +41,7 @@ import {
     createAutoGamePipelineModel,
     createAutoGamePipelineModelForProject
 } from "./auto-game-pipeline.js";
-import { createDocumentationCatalogs } from "./catalog.js";
+import { createDocumentationCatalogs, type DocumentationCatalogProviders } from "./catalog.js";
 import {
     ensureGraphIndexForServe,
     runGraphVisualizationProjectWorkflow,
@@ -102,9 +102,16 @@ type GraphVisualizationProjectConfigurationCatalog = Awaited<
  * instance so the inner serve-mode closures can share it without recreating
  * the closure graph on every helper.
  */
-async function runGraphVisualizeAction(options: GraphCommandSharedOptions): Promise<void> {
+async function runGraphVisualizeAction(
+    options: GraphCommandSharedOptions,
+    documentationCatalogProviders: DocumentationCatalogProviders
+): Promise<void> {
     const initialSelectedPath = resolveExplicitWorkflowTargetPath(options.path);
-    const controller = new GraphVisualizationServeController(options, initialSelectedPath);
+    const controller = new GraphVisualizationServeController(
+        options,
+        initialSelectedPath,
+        documentationCatalogProviders
+    );
 
     if (options.serve !== true) {
         await controller.initializeStaticExportState();
@@ -119,6 +126,8 @@ class GraphVisualizationServeController {
     readonly #options: GraphCommandSharedOptions;
 
     readonly #initialSelectedPath: string | null;
+
+    readonly #documentationCatalogProviders: DocumentationCatalogProviders;
 
     #activeContext: GraphResolutionContext | null = null;
 
@@ -156,9 +165,14 @@ class GraphVisualizationServeController {
     readonly #activeLiveReloadSession: GraphVisualizationLiveReloadSessionState =
         createGraphVisualizationLiveReloadSessionState();
 
-    constructor(options: GraphCommandSharedOptions, initialSelectedPath: string | null) {
+    constructor(
+        options: GraphCommandSharedOptions,
+        initialSelectedPath: string | null,
+        documentationCatalogProviders: DocumentationCatalogProviders
+    ) {
         this.#options = options;
         this.#initialSelectedPath = initialSelectedPath;
+        this.#documentationCatalogProviders = documentationCatalogProviders;
         this.#activeSelectedPaths = initialSelectedPath ? [initialSelectedPath] : [];
         this.#activeSource = options.path ? "cli-path" : "working-directory";
         this.#activeStartupState =
@@ -181,6 +195,7 @@ class GraphVisualizationServeController {
         return {
             autoGamePipeline: this.#activeAutoGamePipeline,
             context: this.#activeContext,
+            documentationCatalogProviders: this.#documentationCatalogProviders,
             loadedTarget: this.#createLoadedTarget(),
             options: this.#options,
             payload: this.#activeVisualizationPayload,
@@ -401,7 +416,7 @@ class GraphVisualizationServeController {
                 return this.#activeServeBundleCache.bundle;
             }
 
-            const freshDocumentationCatalogs = createDocumentationCatalogs();
+            const freshDocumentationCatalogs = createDocumentationCatalogs(this.#documentationCatalogProviders);
 
             const bundle = await UI.renderGraphVisualizationBundle(this.#activeVisualizationPayload, {
                 autoGamePipeline: this.#activeAutoGamePipeline ?? undefined,

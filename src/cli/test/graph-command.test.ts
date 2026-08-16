@@ -1169,7 +1169,10 @@ void test("graph command options validate minimum values for depth and limit", a
 });
 
 void test("graph subcommands expose the force flag consistently", async () => {
-    const command = createGraphCommand();
+    const command = createGraphCommand({
+        getCliCommandCatalog: () => [],
+        getMcpToolCatalogEntries: () => []
+    });
     const subcommandNames = ["index", "search", "visualize"] as const;
 
     for (const subcommandName of subcommandNames) {

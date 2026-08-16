@@ -6,7 +6,19 @@ import { Format } from "@gmloop/format";
 import { listLintRuleCatalogEntries } from "@gmloop/lint";
 import { Refactor } from "@gmloop/refactor";
 
-import { getCliCommandCatalog, getMcpToolCatalogEntries } from "../../../cli.js";
+import type { CliCatalogEntry } from "../../../cli-core/command-catalog.js";
+import type { McpToolCatalogEntry } from "../../../cli-core/mcp-tool-catalog.js";
+
+/**
+ * Catalog lookups are injected rather than imported from `cli.ts` directly.
+ * `cli.ts` registers every command (including this `graph visualize` command)
+ * before it can expose a complete catalog, so a static import here would
+ * create a module cycle back through the command-registration chain.
+ */
+type DocumentationCatalogProviders = Readonly<{
+    getCliCommandCatalog: () => ReadonlyArray<CliCatalogEntry>;
+    getMcpToolCatalogEntries: (options?: { includeInternal?: boolean }) => ReadonlyArray<McpToolCatalogEntry>;
+}>;
 
 function loadLspToolsCatalogEntries(): ReadonlyArray<{
     description: string;
@@ -56,7 +68,10 @@ function loadLspToolsCatalogEntries(): ReadonlyArray<{
     }
 }
 
-function createDocumentationCatalogs() {
+function createDocumentationCatalogs({
+    getCliCommandCatalog,
+    getMcpToolCatalogEntries
+}: DocumentationCatalogProviders) {
     const cliCommands = getCliCommandCatalog();
     const lintCatalogEntryById = new Map(listLintRuleCatalogEntries().map((entry) => [entry.ruleId, entry] as const));
     const semanticIndexCodemodIdSet = new Set(Refactor.listSemanticProjectIndexDependentCodemodIds());
@@ -96,4 +111,4 @@ function createDocumentationCatalogs() {
     });
 }
 
-export { createDocumentationCatalogs, loadLspToolsCatalogEntries };
+export { createDocumentationCatalogs, type DocumentationCatalogProviders, loadLspToolsCatalogEntries };

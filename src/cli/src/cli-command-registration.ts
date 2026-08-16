@@ -50,11 +50,14 @@ type CliCommandEnvironmentRegistryContext = CliCommandRegistryContext &
         env: NodeJS.ProcessEnv;
     }>;
 
-type CliCommandCatalogRegistryContext = CliCommandEnvironmentRegistryContext &
-    Readonly<{
-        getCliCommandCatalog: () => ReadonlyArray<CliCatalogEntry>;
-        getMcpToolCatalogEntries: () => ReadonlyArray<McpToolCatalogEntry>;
-    }>;
+type CliCommandCatalogProviders = Readonly<{
+    getCliCommandCatalog: () => ReadonlyArray<CliCatalogEntry>;
+    getMcpToolCatalogEntries: () => ReadonlyArray<McpToolCatalogEntry>;
+}>;
+
+type CliCommandCatalogRegistryContext = CliCommandEnvironmentRegistryContext & CliCommandCatalogProviders;
+
+type CliAnalysisCommandRegistrationContext = CliCommandRegistryContext & CliCommandCatalogProviders;
 
 type CliDefaultCommandRegistrationContext = CliCommandRegistryContext &
     Readonly<{
@@ -76,7 +79,7 @@ export function registerCliCommands({
     registry
 }: CliCommandRegistrationEnvironment): void {
     registerDefaultFormattingCommand({ defaultCommandName, registry });
-    registerAnalysisCommands({ registry });
+    registerAnalysisCommands({ getCliCommandCatalog, getMcpToolCatalogEntries, registry });
     registerGenerationCommands({ env, registry });
     registerProjectWorkflowCommands({ registry });
     registerUtilityCommands({
@@ -99,9 +102,13 @@ function registerDefaultFormattingCommand({
     });
 }
 
-function registerAnalysisCommands({ registry }: CliCommandRegistryContext): void {
+function registerAnalysisCommands({
+    getCliCommandCatalog,
+    getMcpToolCatalogEntries,
+    registry
+}: CliAnalysisCommandRegistrationContext): void {
     registry.registerCommand({
-        command: createGraphCommand(),
+        command: createGraphCommand({ getCliCommandCatalog, getMcpToolCatalogEntries }),
         onError: createCliCommandErrorHandler({ prefix: "Graph command failed." })
     });
 

@@ -4,6 +4,7 @@ import { applyStandardCommandOptions } from "../../cli-core/command-standard-opt
 import { handleCliError } from "../../cli-core/errors.js";
 import { runGraphDoctorAction, runGraphIndexAction, runGraphSearchAction } from "./index-action.js";
 import { addGraphSharedOptions, type GraphCommandSharedOptions } from "./shared.js";
+import type { DocumentationCatalogProviders } from "./visualize/catalog.js";
 import { createGraphVisualizationWorkflowArguments, streamProcessOutputByLine } from "./visualize/child-process.js";
 import { runGraphVisualizeAction } from "./visualize/index.js";
 import {
@@ -43,7 +44,7 @@ async function runGraphCommandAction(action: () => Promise<void>): Promise<void>
 /**
  * Create the `graph` command suite.
  */
-export function createGraphCommand(): Command {
+export function createGraphCommand(documentationCatalogProviders: DocumentationCatalogProviders): Command {
     const graphCommand = applyStandardCommandOptions(new Command("graph")).description(
         "Build and query the dual-root semantic graph index."
     );
@@ -102,7 +103,7 @@ export function createGraphCommand(): Command {
         .addOption(new Option("--project-state <path>", "Active-project state file written by GMLoop UI."))
         .action(async function graphVisualizeCommandAction() {
             await runGraphCommandAction(async () => {
-                await runGraphVisualizeAction(this.opts<GraphCommandSharedOptions>());
+                await runGraphVisualizeAction(this.opts<GraphCommandSharedOptions>(), documentationCatalogProviders);
             });
         });
 
