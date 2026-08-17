@@ -15,6 +15,17 @@ const AUTO_LABEL_MIN_SCALE = 0.8;
 const EDGE_BATCH_OVERVIEW_MAX_SCALE = 0.75;
 const EDGE_BATCH_OVERVIEW_COUNT_THRESHOLD = 150;
 const EDGE_BATCH_COUNT_THRESHOLD = 750;
+// Treat sub-nanopixel separation as coincident so two nodes that drifted apart
+// by accumulated simulation noise — rather than by intent — collapse to the
+// shared-position path. Strict equality (`distance === 0`) silently fails when
+// floating-point arithmetic leaves a residual offset of `Number.EPSILON` or
+// larger, which then divides a unit direction by an arbitrarily small distance
+// and produces wildly inaccurate edge geometry. Matching the magnitude of
+// `OVERLAP_RESOLUTION_DISTANCE_EPSILON` (see `graph-layout-simulation.ts`)
+// keeps the coincident-detection contract identical across simulation and
+// rendering so a layout pass that resolves nodes as overlapping also renders
+// the corresponding edge as coincident, and vice versa.
+const EDGE_INTERSECTION_COINCIDENT_EPSILON = 1e-9;
 
 export type GraphViewportTransform = Readonly<{
     panX: number;
@@ -169,7 +180,7 @@ function getEdgeIntersection(edge: GraphLayoutEdge): Readonly<{ x1: number; x2: 
     const dy = targetNode.y - sourceNode.y;
     const distance = Math.hypot(dx, dy);
 
-    if (distance === 0) {
+    if (distance < EDGE_INTERSECTION_COINCIDENT_EPSILON) {
         return { x1: sourceNode.x, x2: targetNode.x, y1: sourceNode.y, y2: targetNode.y };
     }
 

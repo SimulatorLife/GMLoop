@@ -129,3 +129,52 @@ void test("edge batching groups relationships by visual type without degrading s
     assert.equal(shouldBatchGraphEdges(2, 100), false);
     assert.equal(shouldBatchGraphEdges(2, 1000), true);
 });
+
+void test("edge geometry collapses near-coincident nodes instead of dividing by floating-point noise", () => {
+    // Regression: a previous implementation used a strict `distance === 0`
+    // check, so any residual offset below `EDGE_INTERSECTION_COINCIDENT_EPSILON`
+    // caused the helper to fall through to `dx / distance`, producing wildly
+    // inaccurate normalized directions and edge endpoints that no longer
+    // touch the node circles they should hug. We use origin-near coordinates
+    // so the residual offset is representable (adding EPSILON to 100 still
+    // rounds to 100, which silently hides the bug — see the comment below).
+    //
+    // With a representable `1e-12` offset, the buggy `=== 0` path computes
+    // a unit direction that is *numerically* valid but *geometrically* wrong:
+    // the residual is much smaller than the node radius, so dividing it into
+    // the radius offset amplifies the residual into a visible endpoint
+    // displacement on the order of `radius / 1e-12 * 1e-12 = radius`, but
+    // pushed onto the wrong node — i.e. `x2 = 1e-12 - 10 ≈ -10`, which sits
+    // ten pixels to the left of the source node instead of touching the
+    // target. The epsilon-aware check routes that case through the
+    // shared-position branch so the endpoints match the node coordinates
+    // verbatim.
+    const source = createNode("source", 0, 0);
+    const target = createNode("target", 1e-12, 0);
+    const batches = buildGraphEdgeBatches([createEdge(source, target, "calls")]);
+
+    assert.equal(batches.length, 1);
+    const [batch] = batches;
+    assert.ok(batch);
+    assert.equal(batch.pathData, `M${String(source.x)},${String(source.y)}L${String(target.x)},${String(target.y)}`);
+});
+
+void test("edge geometry keeps distinct nodes on a deterministic unit direction", () => {
+    // Counter-test for the coincident branch above: a distance *just above*
+    // the epsilon must still be honored as a real edge, producing an offset
+    // scaled by the node radius rather than collapsing to the source/target
+    // coordinates.
+    const source = createNode("source", 0, 0);
+    const target = createNode("target", 0, 100);
+    const batches = buildGraphEdgeBatches([createEdge(source, target, "calls")]);
+
+    assert.equal(batches.length, 1);
+    const [batch] = batches;
+    assert.ok(batch);
+    // 100 px separation along +y collapses normalX to 0 and normalY to 1, so
+    // the endpoints land at source.y + radius (10) and target.y - radius (90).
+    assert.equal(
+        batch.pathData,
+        `M${String(source.x)},${String(source.y + 10)}L${String(target.x)},${String(target.y - 10)}`
+    );
+});

@@ -49,6 +49,13 @@ const DEFAULT_DISABLED_NODE_KINDS = new Set<GraphLegendNodeKind>([
 ]);
 const FOCUSED_NODE_ZOOM_SCALE = 2.4;
 const FOCUS_CLEAR_ZOOM_SCALE = 0.55;
+// Treat sub-nanopixel separation as coincident for edge rendering. Mirrors the
+// matching `EDGE_INTERSECTION_COINCIDENT_EPSILON` constant in
+// `graph-render-viewport.ts` so both edge-rendering call sites apply the same
+// floating-point-tolerant coincident check. A strict `=== 0` comparison would
+// silently miss residual offsets left by simulation iterations, producing edge
+// endpoints that drift away from the node circles they should hug.
+const EDGE_INTERSECTION_COINCIDENT_EPSILON = 1e-9;
 
 function formatNodeKindLabel(kind: string): string {
     return kind
@@ -340,7 +347,7 @@ export class GmGraphPanel extends LightDomLitElement {
         const dy = target.y - source.y;
         const dist = Math.hypot(dx, dy);
 
-        if (dist === 0) {
+        if (dist < EDGE_INTERSECTION_COINCIDENT_EPSILON) {
             return { x1: source.x, y1: source.y, x2: target.x, y2: target.y };
         }
 
