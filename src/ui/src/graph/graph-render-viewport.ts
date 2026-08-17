@@ -24,8 +24,10 @@ const EDGE_BATCH_COUNT_THRESHOLD = 750;
 // `OVERLAP_RESOLUTION_DISTANCE_EPSILON` (see `graph-layout-simulation.ts`)
 // keeps the coincident-detection contract identical across simulation and
 // rendering so a layout pass that resolves nodes as overlapping also renders
-// the corresponding edge as coincident, and vice versa.
-const EDGE_INTERSECTION_COINCIDENT_EPSILON = 1e-9;
+// the corresponding edge as coincident, and vice versa. Exported so every
+// edge-rendering call site (e.g. `gm-graph-panel.ts`) can apply the same
+// check without redeclaring a parallel constant that could silently drift.
+export const EDGE_INTERSECTION_COINCIDENT_EPSILON = 1e-9;
 
 export type GraphViewportTransform = Readonly<{
     panX: number;

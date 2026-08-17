@@ -9,6 +9,7 @@ export {
     buildGraphEdgeBatches,
     createGraphRenderBounds,
     cullGraphLayoutToViewport,
+    EDGE_INTERSECTION_COINCIDENT_EPSILON,
     type GraphRenderLabelMode,
     type GraphViewportBounds,
     isGraphViewportCovered,
