@@ -446,9 +446,9 @@ configureConsoleMethods(
 
 export function createFormatCommand({ name = "gmloop" } = {}) {
     const { option: skippedDirectorySampleLimitOption } = createConfiguredSampleLimitOption({
-        flag: "--ignored-directory-sample-limit <count>",
+        flag: "--skipped-directory-sample-limit <count>",
         description: (defaultLimit) =>
-            `Max ignored directories shown in summary. Default: ${defaultLimit}, use 0 to hide`,
+            `Max skipped directories shown in summary. Default: ${defaultLimit}, use 0 to hide`,
         getDefaultLimit: getDefaultSkippedDirectorySampleLimit,
         resolveLimit: resolveSkippedDirectorySampleLimit
     });

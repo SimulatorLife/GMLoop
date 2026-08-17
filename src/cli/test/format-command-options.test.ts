@@ -107,10 +107,10 @@ void test("collectFormatCommandOptions sets apply mode when --write is provided"
     assert.strictEqual(result.dryRunMode, false);
 });
 
-void test("collectFormatCommandOptions reads --ignored-directory-sample-limit option", () => {
+void test("collectFormatCommandOptions reads --skipped-directory-sample-limit option", () => {
     const command = createStubCommand({
         opts: () => ({
-            ignoredDirectorySampleLimit: 7
+            skippedDirectorySampleLimit: 7
         })
     });
 
@@ -121,7 +121,7 @@ void test("collectFormatCommandOptions reads --ignored-directory-sample-limit op
 
 void test("collectFormatCommandOptions ignores the retired --ignored-directory-samples alias", () => {
     // The `ignoredDirectorySamples` option was a backwards-compatibility alias
-    // for `--ignored-directory-sample-limit`. The alias has been removed in
+    // for `--skipped-directory-sample-limit`. The alias has been removed in
     // favour of the canonical long-term flag; the collector must continue to
     // ignore it so legacy callers fall back to the documented default rather
     // than opting into an unsupported override path. Reintroducing the alias
@@ -129,6 +129,25 @@ void test("collectFormatCommandOptions ignores the retired --ignored-directory-s
     const command = createStubCommand({
         opts: () => ({
             ignoredDirectorySamples: 2
+        })
+    });
+
+    const result = collectFormatCommandOptions(command, DEFAULTS);
+
+    assert.strictEqual(result.skippedDirectorySampleLimit, undefined);
+});
+
+void test("collectFormatCommandOptions ignores the retired --ignored-directory-sample-limit alias", () => {
+    // The `--ignored-directory-sample-limit` flag was a pre-rename spelling of
+    // the canonical `--skipped-directory-sample-limit` flag. The legacy
+    // spelling has been removed in favour of the canonical long-term flag;
+    // the collector must continue to ignore it so legacy callers fall back to
+    // the documented default rather than opting into an unsupported override
+    // path. Reintroducing the alias would silently change resolution
+    // behaviour for retired flag names.
+    const command = createStubCommand({
+        opts: () => ({
+            ignoredDirectorySampleLimit: 4
         })
     });
 
