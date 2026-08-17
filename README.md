@@ -364,7 +364,7 @@ export default [...Lint.configs.all];
 ```
 
 `Lint.configs.all` enables every `gml/*` and `feather/*` rule at its recommended
-`"warn"` or `"error"` level. The narrower `recommended`, `all`, `feather`,
+`"warn"` or `"error"` level. The narrower `recommended`, `feather`,
 `performance`, and `fixible` presets remain available for custom composition;
 `fixible` only contains rules that ship with `--fix` support so it is a good
 starting point for projects that want safe autofixes first.
