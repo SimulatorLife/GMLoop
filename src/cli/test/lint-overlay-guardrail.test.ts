@@ -401,6 +401,61 @@ void test("createRecoverableLintTargets prioritizes expanded file targets before
     ]);
 });
 
+void test("createRecoverableFileTarget collapses target/fallback into a frozen shape", () => {
+    const recoverable = __lintCommandTest__.createRecoverableFileTarget("/tmp/workspace/alpha.gml");
+
+    assert.deepEqual(recoverable, {
+        target: "/tmp/workspace/alpha.gml",
+        fallbackFilePath: "/tmp/workspace/alpha.gml"
+    });
+    assert.equal(Object.isFrozen(recoverable), true);
+});
+
+void test("createRecoverablePassthroughTarget resolves the fallback against cwd", () => {
+    const recoverable = __lintCommandTest__.createRecoverablePassthroughTarget(
+        "scripts/nested/missing.gml",
+        "/tmp/workspace"
+    );
+
+    assert.deepEqual(recoverable, {
+        target: "scripts/nested/missing.gml",
+        fallbackFilePath: path.resolve("/tmp/workspace", "scripts/nested/missing.gml")
+    });
+    assert.equal(Object.isFrozen(recoverable), true);
+});
+
+void test("createRecoverablePassthroughTarget accepts an already-absolute relative cwd", () => {
+    const cwd = path.resolve(os.tmpdir(), "lint-recoverable-cwd");
+    const target = "missing.gml";
+
+    const recoverable = __lintCommandTest__.createRecoverablePassthroughTarget(target, cwd);
+
+    assert.equal(recoverable.target, target);
+    assert.equal(recoverable.fallbackFilePath, path.resolve(cwd, target));
+});
+
+void test("createRecoverableLintTargets delegates per-target conversion to the fa\u00E7ade helpers", () => {
+    // Sanity check that the orchestrator still composes file and passthrough
+    // targets in the documented order even after the per-target mapping was
+    // extracted into fa\u00E7ade helpers. The shared shape stays identical to
+    // the legacy inline-implementation so downstream runtime recovery is
+    // unaffected.
+    const orderedTargets = __lintCommandTest__.createRecoverableLintTargets({
+        cwd: "/tmp/workspace",
+        expandedTargets: {
+            fileTargets: [],
+            passthroughTargets: ["only-pattern.gml"]
+        }
+    });
+
+    assert.deepEqual(orderedTargets, [
+        Object.freeze({
+            target: "only-pattern.gml",
+            fallbackFilePath: "/tmp/workspace/only-pattern.gml"
+        })
+    ]);
+});
+
 void test("expandLintTargetsForRecovery routes existing non-.gml files into rejectedPaths", async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gml-lint-expand-rejected-"));
     const existingGml = path.join(tempRoot, "script.gml");
