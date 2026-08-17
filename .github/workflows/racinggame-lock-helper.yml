@@ -91,6 +91,7 @@ jobs:
                 "@typescript-eslint/parser": "8.66.0",
                 "@typescript-eslint/scope-manager": "8.66.0",
                 "@typescript-eslint/type-utils": "8.66.0",
+                "@typescript-eslint/types": "8.66.0",
                 "@typescript-eslint/typescript-estree": "8.66.0",
                 "@typescript-eslint/utils": "8.66.0",
                 "@typescript-eslint/visitor-keys": "8.66.0",
@@ -147,9 +148,56 @@ jobs:
           corepack prepare pnpm@10.32.1 --activate
           pnpm --version
 
-      - name: Generate lockfile
+      - name: Generate focused lockfile
         working-directory: /tmp/racinggame-lock
-        run: pnpm install --lockfile-only --ignore-scripts
+        shell: bash
+        run: |
+          pnpm install --lockfile-only --ignore-scripts
+          node <<'NODE'
+          const fs = require('fs');
+          const path = '/tmp/racinggame-lock';
+          const manifest = JSON.parse(fs.readFileSync(`${path}/package.json`, 'utf8'));
+          const specs = {
+            ...manifest.dependencies,
+            ...manifest.devDependencies,
+            ...manifest.optionalDependencies,
+          };
+          const lines = fs.readFileSync(`${path}/pnpm-lock.yaml`, 'utf8').split('\n');
+          const out = [];
+          let skippingOverrides = false;
+          let inImporter = false;
+          let currentPackage = null;
+          for (const line of lines) {
+            if (line === 'overrides:') {
+              skippingOverrides = true;
+              continue;
+            }
+            if (skippingOverrides) {
+              if (line === 'importers:') {
+                skippingOverrides = false;
+                inImporter = true;
+                out.push(line);
+              }
+              continue;
+            }
+            if (line === 'importers:') inImporter = true;
+            if (line === 'packages:') inImporter = false;
+            if (inImporter) {
+              const packageMatch = line.match(/^      (['\"]?[^:]+['\"]?):$/);
+              if (packageMatch) currentPackage = packageMatch[1].replace(/^['\"]|['\"]$/g, '');
+              if (/^        specifier: /.test(line) && currentPackage && specs[currentPackage]) {
+                out.push(`        specifier: ${specs[currentPackage]}`);
+                continue;
+              }
+            }
+            out.push(line);
+          }
+          fs.writeFileSync(`${path}/pnpm-lock.yaml`, out.join('\n'));
+          NODE
+
+      - name: Verify restored manifest specifiers
+        working-directory: /tmp/racinggame-lock
+        run: pnpm install --lockfile-only --frozen-lockfile --ignore-scripts
 
       - name: Upload generated lockfile
         uses: actions/upload-artifact@v4
