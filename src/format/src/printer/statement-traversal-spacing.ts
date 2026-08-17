@@ -376,8 +376,7 @@ function handleTerminalTrailingSpacing({
     nodeEndIndex,
     suppressFollowingEmptyLine,
     isStaticDeclaration,
-    hasFunctionInitializer,
-    containerNode: _containerNode
+    hasFunctionInitializer
 }) {
     let previousNodeHadNewlineAddedAfter = false;
     const parentNode = childPath.parent;
