@@ -118,34 +118,30 @@ function evaluateEqualityOperator(
         return isNegated ? !equal : equal;
     }
 
-    // Cross-type comparisons (string ↔ boolean and number ↔ boolean) used to be
-    // spelled out as four mirrored `if` arms — one per left/right pairing —
-    // which duplicated the operator handling for each direction. Detecting the
-    // boolean operand once and routing the other operand through a single
-    // string-or-number check collapses both pairs into one branch each without
-    // changing observable behaviour.
-    const booleanSide = typeof left === "boolean" ? left : typeof right === "boolean" ? right : null;
-    const otherSide = booleanSide === null ? null : booleanSide === left ? right : left;
+    // Identify the boolean operand (when present) so both operand orderings
+    // share a single branch per other-side type.
+    const booleanOperand = typeof left === "boolean" ? left : typeof right === "boolean" ? right : null;
+    const otherOperand = booleanOperand === null ? null : booleanOperand === left ? right : left;
 
     // String + boolean: "true" == true, "false" == false (loose); strict equality
     // returns null when the string is not "true" or "false".
-    if (otherSide !== null && typeof otherSide === "string") {
-        const normalized = normalizeStringToBoolean(otherSide);
+    if (otherOperand !== null && typeof otherOperand === "string") {
+        const normalized = normalizeStringToBoolean(otherOperand);
         if (normalized === null) {
             return null;
         }
-        const equal = normalized === booleanSide;
+        const equal = normalized === booleanOperand;
         return isNegated ? !equal : equal;
     }
 
     // Boolean + number: in GML loose equality true == 1 and false == 0. Strict
     // equality (===/!==) preserves type identity — always false/true for mixed
     // types since booleans and numbers are never equal.
-    if (otherSide !== null && typeof otherSide === "number") {
+    if (otherOperand !== null && typeof otherOperand === "number") {
         if (operator === "===" || operator === "!==") {
             return operator === "===" ? false : true;
         }
-        const equal = (booleanSide ? 1 : 0) === otherSide;
+        const equal = (booleanOperand ? 1 : 0) === otherOperand;
         return isNegated ? !equal : equal;
     }
 
