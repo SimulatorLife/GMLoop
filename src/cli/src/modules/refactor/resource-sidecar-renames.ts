@@ -206,45 +206,33 @@ function collectSpriteSidecarRenames({
     return renames;
 }
 
-function collectFontSidecarRenames({
-    currentResourcePath,
-    oldName,
-    newName,
-    fileRenameDestinationDir,
-    doesWorkspaceFilePathExist
-}: Omit<
-    SidecarRenamePlanningParameters,
-    "resourceType" | "metadataDocument" | "doesWorkspaceDirectoryPathExist" | "listWorkspaceDirectoryEntries"
->): Array<ResourceSidecarRename> {
-    // GameMaker bitmap fonts keep a generated texture page beside the `.yy`
-    // using the resource basename. Renaming only the metadata/folder leaves the
-    // font pointing at a missing `<newName>.png`, which causes runtime load
-    // failures in real projects such as Scribble fallback fonts.
+/**
+ * Plans sidecar renames for resources whose payload file sits beside the
+ * `.yy` metadata and uses the resource basename plus a fixed extension.
+ *
+ * GameMaker bitmap fonts keep a generated texture page (`<name>.png`) beside
+ * the `.yy`, and notes keep a sibling `<name>.txt`.  Both rely on the
+ * resource basename, so they share the exact same rename flow and only
+ * differ in the file extension.  Routing both through this helper keeps the
+ * file-naming logic in one place.
+ *
+ * @param parameters - Resource rename planning inputs.
+ * @param fileExtension - Payload file extension, including the leading `.`.
+ * @returns Single-file sidecar rename when the payload exists, otherwise `[]`.
+ */
+function collectNamedExtensionSidecarRenames(
+    parameters: Pick<
+        SidecarRenamePlanningParameters,
+        "currentResourcePath" | "fileRenameDestinationDir" | "oldName" | "newName" | "doesWorkspaceFilePathExist"
+    >,
+    fileExtension: string
+): Array<ResourceSidecarRename> {
     return collectSingleFileSidecarRenames({
-        currentResourcePath,
-        fileRenameDestinationDir,
-        oldFileName: `${oldName}.png`,
-        newFileName: `${newName}.png`,
-        doesWorkspaceFilePathExist
-    });
-}
-
-function collectNoteSidecarRenames({
-    currentResourcePath,
-    oldName,
-    newName,
-    fileRenameDestinationDir,
-    doesWorkspaceFilePathExist
-}: Omit<
-    SidecarRenamePlanningParameters,
-    "resourceType" | "metadataDocument" | "doesWorkspaceDirectoryPathExist" | "listWorkspaceDirectoryEntries"
->): Array<ResourceSidecarRename> {
-    return collectSingleFileSidecarRenames({
-        currentResourcePath,
-        fileRenameDestinationDir,
-        oldFileName: `${oldName}.txt`,
-        newFileName: `${newName}.txt`,
-        doesWorkspaceFilePathExist
+        currentResourcePath: parameters.currentResourcePath,
+        fileRenameDestinationDir: parameters.fileRenameDestinationDir,
+        oldFileName: `${parameters.oldName}${fileExtension}`,
+        newFileName: `${parameters.newName}${fileExtension}`,
+        doesWorkspaceFilePathExist: parameters.doesWorkspaceFilePathExist
     });
 }
 
@@ -309,11 +297,11 @@ function dispatchResourceSidecarRenamesByType(
             return collectSpriteSidecarRenames(parameters);
         }
         case "GMFont": {
-            return collectFontSidecarRenames(parameters);
+            return collectNamedExtensionSidecarRenames(parameters, ".png");
         }
         case "GMNote":
         case "GMNotes": {
-            return collectNoteSidecarRenames(parameters);
+            return collectNamedExtensionSidecarRenames(parameters, ".txt");
         }
         default: {
             return [];
