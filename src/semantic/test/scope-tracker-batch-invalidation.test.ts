@@ -332,6 +332,52 @@ void describe("ScopeTracker batch invalidation", () => {
         assert.ok(validResults && validResults.length > 0, "Valid path should have results");
     });
 
+    void it("does not leak mutations across unrelated empty results from getBatchInvalidationSets", () => {
+        const tracker = new ScopeTracker({ enabled: true });
+
+        // Two calls, each asking about a different path with no known scopes. If both "empty"
+        // results were backed by the same shared array, mutating one would corrupt the other.
+        const firstCallResults = tracker.getBatchInvalidationSets(["/project/missing-a.gml"]);
+        const secondCallResults = tracker.getBatchInvalidationSets(["/project/missing-b.gml"]);
+
+        const firstEmptySet = firstCallResults.get("/project/missing-a.gml");
+        const secondEmptySet = secondCallResults.get("/project/missing-b.gml");
+        assert.ok(firstEmptySet, "First missing path should still return an empty set");
+        assert.ok(secondEmptySet, "Second missing path should still return an empty set");
+
+        firstEmptySet.push({ scopeId: "leaked", scopeKind: "function", reason: "self" });
+
+        assert.deepStrictEqual(
+            secondEmptySet,
+            [],
+            "Mutating one call's empty invalidation set must not affect another call's empty result"
+        );
+    });
+
+    void it("does not leak mutations across unrelated empty results from getBatchInvalidationSetsForScopes", () => {
+        const tracker = new ScopeTracker({ enabled: true });
+
+        const results = tracker.getBatchInvalidationSetsForScopes(["missing-scope-a", "missing-scope-b"]);
+
+        const firstEmptySet = results.get("missing-scope-a");
+        const secondEmptySet = results.get("missing-scope-b");
+        assert.ok(firstEmptySet, "First missing scope id should still return an empty set");
+        assert.ok(secondEmptySet, "Second missing scope id should still return an empty set");
+        assert.notStrictEqual(
+            firstEmptySet,
+            secondEmptySet,
+            "Distinct missing scope ids must not share the same empty array instance"
+        );
+
+        firstEmptySet.push({ scopeId: "leaked", scopeKind: "function", reason: "self" });
+
+        assert.deepStrictEqual(
+            secondEmptySet,
+            [],
+            "Mutating one missing scope id's empty invalidation set must not affect another's"
+        );
+    });
+
     void it("matches individual invalidation results while keeping batch latency bounded", () => {
         const tracker = new ScopeTracker({ enabled: true });
 
