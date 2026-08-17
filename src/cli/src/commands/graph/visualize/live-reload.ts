@@ -75,41 +75,94 @@ function createGraphVisualizationLiveReloadStartArguments(
     ];
 }
 
+/**
+ * Reserves a free TCP port by opening a temporary `net.Server`, reading its
+ * bound port, and closing the server before returning.
+ *
+ * Every code path runs the same `finally` cleanup so the probe server is
+ * always closed, even if the address cannot be resolved or the close
+ * callback rejects. Without this guarantee a failing `close()` (e.g.
+ * `ERR_SERVER_NOT_RUNNING`) would leave the bound socket open until the
+ * process exits, leaking a file descriptor on every live-reload endpoint
+ * allocation. The cleanup helper treats a missing listener and the
+ * `ERR_SERVER_NOT_RUNNING` close error as success so the `finally` block
+ * can run unconditionally; any other close failure is rethrown after the
+ * server has been `unref()`-ed so a stuck close cannot keep the Node
+ * event loop alive. The full contract of the cleanup helper is documented
+ * on {@link closeGraphVisualizationLiveReloadProbeServer}.
+ */
 async function allocateGraphVisualizationLiveReloadPort(host: string): Promise<number> {
     const server = net.createServer();
-    await new Promise<void>((resolve, reject) => {
-        server.once("error", reject);
-        server.listen(0, host, () => {
-            server.off("error", reject);
-            resolve();
+    try {
+        await new Promise<void>((resolve, reject) => {
+            server.once("error", reject);
+            server.listen(0, host, () => {
+                server.off("error", reject);
+                resolve();
+            });
         });
-    });
 
-    const address = server.address();
-    if (address === null || typeof address === "string") {
+        const address = server.address();
+        if (address === null || typeof address === "string") {
+            throw new Error("Could not allocate a live-reload port.");
+        }
+
+        return address.port;
+    } finally {
+        await closeGraphVisualizationLiveReloadProbeServer(server);
+    }
+}
+
+/**
+ * Close a probe server used by {@link allocateGraphVisualizationLiveReloadPort}.
+ *
+ * Treats the absence of an active listener and the `ERR_SERVER_NOT_RUNNING`
+ * close error as success so the cleanup path can run unconditionally from
+ * a `finally` block — both conditions mean the underlying socket file
+ * descriptor has already been released by the kernel, so no further work
+ * is required and the helper can be invoked safely from any teardown
+ * path. Any other error is rethrown after `unref()`-ing the server so a
+ * stuck close callback cannot keep the Node event loop alive. Note that
+ * `net.Server` deliberately does not expose a public `destroy()` method,
+ * so once `close()` has rejected we cannot force the underlying socket
+ * closed synchronously; `unref()` is the strongest defence available
+ * without reaching into private Node internals, and it is sufficient for
+ * a process whose only remaining handle is the probe server.
+ */
+async function closeGraphVisualizationLiveReloadProbeServer(server: net.Server): Promise<void> {
+    if (server.listening === false) {
+        return;
+    }
+
+    try {
         await new Promise<void>((resolve, reject) => {
             server.close((error) => {
                 if (error) {
+                    const errorCode =
+                        typeof error === "object" && error !== null && "code" in error
+                            ? Reflect.get(error, "code")
+                            : null;
+                    if (errorCode === "ERR_SERVER_NOT_RUNNING") {
+                        resolve();
+                        return;
+                    }
                     reject(error);
                     return;
                 }
                 resolve();
             });
         });
-        throw new Error("Could not allocate a live-reload port.");
+    } catch (error) {
+        // `net.Server` does not expose a public way to force-close the
+        // underlying socket after `close()` has rejected. The strongest
+        // defence available without reaching into private Node internals
+        // is to `unref()` the server so a stuck close cannot keep the
+        // Node event loop alive. The reference still goes out of scope
+        // when the rejected promise settles, at which point the GC will
+        // collect the server instance.
+        server.unref();
+        throw error;
     }
-
-    const port = address.port;
-    await new Promise<void>((resolve, reject) => {
-        server.close((error) => {
-            if (error) {
-                reject(error);
-                return;
-            }
-            resolve();
-        });
-    });
-    return port;
 }
 
 async function allocateGraphVisualizationLiveReloadEndpointOptions(): Promise<GraphVisualizationLiveReloadEndpointOptions> {
@@ -370,6 +423,7 @@ async function ensureGraphVisualizationLiveReloadSession(
 export {
     allocateGraphVisualizationLiveReloadEndpointOptions,
     allocateGraphVisualizationLiveReloadPort,
+    closeGraphVisualizationLiveReloadProbeServer,
     createGraphVisualizationLiveReloadModelFromSession,
     createGraphVisualizationLiveReloadSessionState,
     createGraphVisualizationLiveReloadStartArguments,

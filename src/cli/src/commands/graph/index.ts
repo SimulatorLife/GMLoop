@@ -7,6 +7,9 @@ import { addGraphSharedOptions, type GraphCommandSharedOptions } from "./shared.
 import { createGraphVisualizationWorkflowArguments, streamProcessOutputByLine } from "./visualize/child-process.js";
 import { runGraphVisualizeAction } from "./visualize/index.js";
 import {
+    allocateGraphVisualizationLiveReloadEndpointOptions,
+    allocateGraphVisualizationLiveReloadPort,
+    closeGraphVisualizationLiveReloadProbeServer,
     createGraphVisualizationLiveReloadModelFromSession,
     createGraphVisualizationLiveReloadSessionState,
     createGraphVisualizationLiveReloadStartArguments,
@@ -123,6 +126,9 @@ export function createGraphCommand(): Command {
  * mutation by test code.
  */
 export const __graphCommandTest__ = Object.freeze({
+    allocateGraphVisualizationLiveReloadEndpointOptions,
+    allocateGraphVisualizationLiveReloadPort,
+    closeGraphVisualizationLiveReloadProbeServer,
     createGraphVisualizationLiveReloadModelFromSession,
     createGraphVisualizationLiveReloadSessionState,
     createGraphVisualizationLiveReloadStartArguments,
