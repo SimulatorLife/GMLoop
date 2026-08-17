@@ -364,8 +364,10 @@ export default [...Lint.configs.all];
 ```
 
 `Lint.configs.all` enables every `gml/*` and `feather/*` rule at its recommended
-`"warn"` or `"error"` level. The narrower `recommended`, `feather`, and
-`performance` presets remain available for custom composition.
+`"warn"` or `"error"` level. The narrower `recommended`, `all`, `feather`,
+`performance`, and `fixible` presets remain available for custom composition;
+`fixible` only contains rules that ship with `--fix` support so it is a good
+starting point for projects that want safe autofixes first.
 
 `gmloop.json` also supports lint preset selection for fixture/integration and
 project-config-driven lint flows via `lintRuleset`:
@@ -379,9 +381,9 @@ project-config-driven lint flows via `lintRuleset`:
 }
 ```
 
-Supported `lintRuleset` values are `"all"`, `"recommended"`, `"feather"`, and
-`"performance"`. `lintRules` remains optional and overrides rules from the
-selected ruleset when both are present.
+Supported `lintRuleset` values are `"recommended"`, `"all"`, `"feather"`,
+`"performance"`, and `"fixible"`. `lintRules` remains optional and overrides
+rules from the selected ruleset when both are present.
 
 See [Workspace ownership boundaries](docs/target-state.md#22-workspace-ownership-boundaries) for the current formatter/lint/refactor ownership contract.
 
