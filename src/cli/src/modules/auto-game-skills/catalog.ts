@@ -1,9 +1,11 @@
-import { constants, type Dirent } from "node:fs";
-import { access, readdir, readFile, writeFile } from "node:fs/promises";
+import { type Dirent } from "node:fs";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
 import matter from "gray-matter";
+
+import { pathExists } from "../../shared/path-exists.js";
 
 const PROJECT_SKILLS_RELATIVE_PATH = path.join(".agents", "skills");
 
@@ -30,15 +32,6 @@ async function readDirectoryEntries(directoryPath: string): Promise<ReadonlyArra
         return await readdir(directoryPath, { withFileTypes: true });
     } catch {
         return [];
-    }
-}
-
-async function pathExists(candidatePath: string): Promise<boolean> {
-    try {
-        await access(candidatePath, constants.F_OK);
-        return true;
-    } catch {
-        return false;
     }
 }
 

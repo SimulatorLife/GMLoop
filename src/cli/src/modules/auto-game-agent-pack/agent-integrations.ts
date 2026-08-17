@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
-import { constants } from "node:fs";
-import { access } from "node:fs/promises";
 import path from "node:path";
+
+import { pathExists } from "../../shared/path-exists.js";
 
 const AGENT_CLI_TIMEOUT_MS = 30_000;
 
@@ -118,15 +118,6 @@ function normalizeVersionOutput(source: string): string | null {
         .map((line) => line.trim())
         .find((line) => line.length > 0);
     return firstLine ?? null;
-}
-
-async function pathExists(candidatePath: string): Promise<boolean> {
-    try {
-        await access(candidatePath, constants.F_OK);
-        return true;
-    } catch {
-        return false;
-    }
 }
 
 function detectAgentCli(
