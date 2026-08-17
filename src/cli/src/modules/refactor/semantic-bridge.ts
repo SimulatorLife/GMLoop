@@ -2142,8 +2142,33 @@ export class GmlSemanticBridge {
         const fileRecord = this.projectIndex.files?.[filePath];
 
         if (fileRecord && Array.isArray(fileRecord.declarations)) {
-            // This is a bit complex as we need to map back to symbol IDs
-            // For now, we'll return what we can find
+            // The CLI bridge presents a flat `getFileSymbols(filePath)` API
+            // even though the underlying project index tracks richer
+            // declaration records (`FileRecord.declarations`) that store
+            // owner, scope, and resource metadata alongside the raw textual
+            // occurrence. Renamers and hot-reload consumers downstream only
+            // need the canonical symbol id, so we discard the other fields
+            // here and synthesize a fallback id when the SCIP record is
+            // missing or has not yet been indexed. The snapshot-backed
+            // equivalent in `snapshot-refactor-queries.ts#getFileSymbols`
+            // uses the same surface, so keeping the shape mirror in sync
+            // is what the cross-workspace test in
+            // `snapshot-refactor-queries.test.ts` (asserting
+            // `{ id: "gml/script/target" }` for the target file) depends
+            // on. Changing the id format would break rename planning
+            // and the `gml/unknown/<name>` fallback must NOT be replaced
+            // with a random placeholder — the deterministic prefix is the
+            // only signal downstream consumers have that an entry was
+            // resolved from raw declarations rather than a SCIP
+            // occurrence.
+            //
+            // Why this is intentionally a forward declaration and not a
+            // full mapping back through SCIP: the declarations array is
+            // populated synchronously while SCIP symbol resolution can
+            // be deferred (and is sometimes unavailable for synthetic
+            // resources like textures and audio groups). The fallback
+            // id keeps the bridge answering best-effort so renames can
+            // proceed even when the analyzer is still warming up.
             for (const decl of fileRecord.declarations) {
                 if (decl.name) {
                     symbols.push({

@@ -2535,8 +2535,35 @@ export class RefactorEngine {
                 return;
             }
 
-            // Simple heuristic: check if the old name still appears as an identifier
-            // This is a basic check - full validation would require re-parsing
+            // Simple heuristic: check if the old name still appears as an identifier.
+            //
+            // This is intentionally a basic textual check rather than a full
+            // re-parse + re-resolution pass. The semantic analyzer may be
+            // unavailable at this point (the engine advertises this check
+            // works `without semantic analyzer` per the JSDoc contract above
+            // and the matching test in `refactor-engine-integrity.test.ts`),
+            // and even when it is available, kicking off a fresh parse +
+            // SCIP index for every post-edit tick would dominate rename
+            // latency on large projects. The regex + comment-position scan
+            // below catches the two failure modes that actually matter for
+            // safety:
+            //   1. The old name still appears in code (not in a comment) —
+            //      reported as a hard error so a partially-applied rename
+            //      can be reverted.
+            //   2. The old name appears only inside comments — reported as a
+            //      warning so authors can clean up doc references without
+            //      blocking the transaction.
+            //
+            // What this check does NOT catch: shadowed identifiers whose
+            // binding scope was already correct, identifier aliases that
+            // look like code in a string literal, or newly introduced
+            // collisions with unrelated declarations. Those edge cases are
+            // the semantic analyzer's job; see `docs/target-state.md`
+            // §2.4 (Refactor Tool) and §4 (Semantic Analysis) for the
+            // ownership split that keeps this scanner text-only. Replacing
+            // this regex with a full re-parse would need to also gate on
+            // semantic availability, otherwise rename performance on
+            // unindexed repos would regress sharply.
             const identifierPattern = new RegExp(String.raw`\b${Core.escapeRegExp(oldName)}\b`, "g");
             const oldNameMatches = content.match(identifierPattern);
 
