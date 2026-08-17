@@ -2022,3 +2022,24 @@ void test("GmlToJsEmitter handles logical XOR (^^ and xor) correctly", () => {
     const resultFold2 = Transpiler.emitJavaScript(parserFold2.parse());
     assert.strictEqual(resultFold2.trim(), "var res = false;", "Should fold true xor true to false");
 });
+
+void test("GmlToJsEmitter#isCurrentStaticDeclaration returns false instead of throwing when no static scope is active", () => {
+    // `isCurrentStaticDeclaration` is a private helper whose only current caller
+    // pre-checks `staticScopes.length > 0`. Calling it directly with an empty
+    // static-scope stack (its state immediately after construction) previously
+    // threw `TypeError: Cannot read properties of undefined (reading 'names')`
+    // from `this.staticScopes.at(-1).names`, since `.at(-1)` on an empty array
+    // is `undefined`. This regression test bypasses the private-method boundary
+    // to exercise that guard directly, independent of the one call site that
+    // happens to protect it today.
+    const emitter = new Transpiler.GmlToJsEmitter(Transpiler.createSemanticOracle());
+    const declaration = { id: { type: "Identifier", name: "counter" } };
+
+    assert.strictEqual(
+        (
+            emitter as unknown as { isCurrentStaticDeclaration: (declaration: unknown) => boolean }
+        ).isCurrentStaticDeclaration(declaration),
+        false,
+        "Should report no active static declaration instead of throwing when staticScopes is empty"
+    );
+});
