@@ -685,7 +685,7 @@ function createRecoverableLintTargets(parameters: {
     expandedTargets: Readonly<{ fileTargets: Array<string>; passthroughTargets: Array<string> }>;
 }): Array<RecoverableLintTarget> {
     return [
-        ...parameters.expandedTargets.fileTargets.map(createRecoverableFileTarget),
+        ...parameters.expandedTargets.fileTargets.map((target) => createRecoverableFileTarget(target)),
         ...parameters.expandedTargets.passthroughTargets.map((target) =>
             createRecoverablePassthroughTarget(target, parameters.cwd)
         )
