@@ -3,6 +3,7 @@ import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { createConfigOption, createPathOption } from "../cli-core/shared-command-options.js";
+import { emitJsonErrorAndExit } from "../shared/json-error-payload.js";
 import { ensureProjectGraphIndex } from "../workflow/project-root.js";
 
 type SymbolCommandSharedOptions = Readonly<{
@@ -130,28 +131,24 @@ async function runSymbolInspectAction(identifierOrNodeId: string, options: Symbo
                     toolsetRoot: options.toolsetRoot
                 });
             } else if (candidates.length > 1) {
-                const payload = {
+                emitJsonErrorAndExit({
                     command: "symbol inspect",
-                    ok: false,
-                    error: `Ambiguous symbol '${query}'. Multiple candidates found.`,
                     code: "ambiguous",
-                    candidates: candidates.map((c) => ({ id: c.id, name: c.name, kind: c.kind }))
-                };
-                printSymbolResult(payload, true);
-                process.exit(1);
+                    error: `Ambiguous symbol '${query}'. Multiple candidates found.`,
+                    extras: {
+                        candidates: candidates.map((c) => ({ id: c.id, name: c.name, kind: c.kind }))
+                    }
+                });
             }
         }
     }
 
     if (!resolvedNode) {
-        const payload = {
+        emitJsonErrorAndExit({
             command: "symbol inspect",
-            ok: false,
-            error: `Symbol '${query}' not found.`,
-            code: "unresolved"
-        };
-        printSymbolResult(payload, true);
-        process.exit(1);
+            code: "unresolved",
+            error: `Symbol '${query}' not found.`
+        });
     }
 
     const includeOption = options.include ?? "node";

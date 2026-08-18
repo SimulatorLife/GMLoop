@@ -46,6 +46,7 @@ import {
     type RuntimeSourceDescriptor,
     type RuntimeSourceResolver
 } from "../modules/runtime/source.js";
+import { emitJsonErrorAndExit } from "../shared/json-error-payload.js";
 import { resolveWorkflowTargetPath } from "../workflow/project-root.js";
 import {
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_COUNT,
@@ -282,14 +283,11 @@ export async function runLiveReloadSessionCommand(options: LiveReloadSessionComm
         }
         console.log(JSON.stringify(payload, null, 2));
     } catch (error) {
-        const payload = {
+        emitJsonErrorAndExit({
             command: "live-reload session",
-            ok: false,
             code: options.forceStart ? "session_stop_failed" : "session_start_failed",
             error: Core.getErrorMessage(error, { fallback: "Failed to manage live-reload session." })
-        };
-        console.log(JSON.stringify(payload, null, 2));
-        process.exit(1);
+        });
     }
 }
 
@@ -417,26 +415,18 @@ export async function runLiveReloadWaitForPatchCommand(
     const discovery = await discoverLiveReloadSessionByPath(targetPath);
     if (!discovery.alive || discovery.session === null) {
         if (sessionFileExisted) {
-            const payload = {
+            emitJsonErrorAndExit({
                 command: LIVE_RELOAD_WAIT_FOR_PATCH_COMMAND,
-                ok: false,
-                error: `Failed to connect to the active live-reload status server for ${targetPath}.`,
-                code: "connection_failed"
-            };
-            console.log(JSON.stringify(payload, null, 2));
-            console.error(payload.error);
-            process.exit(1);
+                code: "connection_failed",
+                error: `Failed to connect to the active live-reload status server for ${targetPath}.`
+            });
         }
 
-        const payload = {
+        emitJsonErrorAndExit({
             command: LIVE_RELOAD_WAIT_FOR_PATCH_COMMAND,
-            ok: false,
-            error: `No active live-reload session is registered for ${targetPath}.`,
-            code: "no_session"
-        };
-        console.log(JSON.stringify(payload, null, 2));
-        console.error(payload.error);
-        process.exit(1);
+            code: "no_session",
+            error: `No active live-reload session is registered for ${targetPath}.`
+        });
     }
 
     let sincePatchId = options.sincePatchId;
@@ -466,15 +456,11 @@ export async function runLiveReloadWaitForPatchCommand(
         const errorMessage = Core.getErrorMessage(error, {
             fallback: "Failed to wait for live-reload patch."
         });
-        const payload = {
+        emitJsonErrorAndExit({
             command: LIVE_RELOAD_WAIT_FOR_PATCH_COMMAND,
-            ok: false,
-            error: errorMessage,
-            code: "error"
-        };
-        console.log(JSON.stringify(payload, null, 2));
-        console.error(payload.error);
-        process.exit(1);
+            code: "error",
+            error: errorMessage
+        });
     }
 
     if (latestPayload !== null) {
@@ -492,15 +478,11 @@ export async function runLiveReloadWaitForPatchCommand(
         return;
     }
 
-    const payload = {
+    emitJsonErrorAndExit({
         command: LIVE_RELOAD_WAIT_FOR_PATCH_COMMAND,
-        ok: false,
-        error: `Timed out waiting for a live-reload patch after ${String(timeoutMs)}ms.`,
-        code: "timeout"
-    };
-    console.log(JSON.stringify(payload, null, 2));
-    console.error(payload.error);
-    process.exit(1);
+        code: "timeout",
+        error: `Timed out waiting for a live-reload patch after ${String(timeoutMs)}ms.`
+    });
 }
 
 function applySharedLiveReloadPrepareOptions(command: Command): Command {
