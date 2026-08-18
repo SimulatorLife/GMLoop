@@ -9,16 +9,18 @@ import createGameMakerParseErrorListener, { createGameMakerLexerErrorListener } 
 import { createHiddenNodeProcessor } from "./ast/hidden-node-processor.js";
 import { assertNestedTernaryConsequentsAreParenthesized } from "./ast/ternary-expression-grouping-validation.js";
 import { installRecognitionExceptionLikeGuard } from "./runtime/index.js";
-import { DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH, defaultParserOptions, type ParserOptions } from "./types/index.js";
+import {
+    DEFAULT_PREDICTION_CACHE_RELEASE_INTERVAL,
+    DEFAULT_PREDICTION_CACHE_RELEASE_MAX_SOURCE_LENGTH,
+    DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH,
+    defaultParserOptions,
+    type ParserOptions
+} from "./types/index.js";
 
 const PredictionMode =
     (antlr4 as unknown as { atn?: { PredictionMode: unknown } }).atn?.PredictionMode ??
     (antlr4 as any).PredictionMode ??
     (antlr4 as any).atn?.PredictionMode;
-
-const PREDICTION_CACHE_RELEASE_SOURCE_LENGTH = 8000;
-const PREDICTION_CACHE_RELEASE_INTERVAL = 16;
-let parserInvocationCount = 0;
 
 type AntlrHashTable = {
     buckets: Array<unknown>;
@@ -79,12 +81,21 @@ function clearAntlrPredictionCaches(recognizer: AntlrRecognizerWithInterpreter, 
     }
 }
 
-function shouldReleaseAntlrPredictionCaches(sourceText: string): boolean {
-    parserInvocationCount += 1;
-    return (
-        sourceText.length > PREDICTION_CACHE_RELEASE_SOURCE_LENGTH ||
-        parserInvocationCount % PREDICTION_CACHE_RELEASE_INTERVAL === 0
-    );
+function shouldReleaseAntlrPredictionCaches(
+    sourceText: string,
+    invocationCount: number,
+    maxSourceLength: number,
+    interval: number
+): boolean {
+    if (sourceText.length > maxSourceLength) {
+        return true;
+    }
+
+    if (interval <= 0) {
+        return false;
+    }
+
+    return invocationCount % interval === 0;
 }
 
 installRecognitionExceptionLikeGuard();
@@ -105,6 +116,12 @@ function mergeParserOptions(baseOptions: ParserOptions, overrides: Partial<Parse
     const mergedOptions = Object.assign({}, baseOptions, overrideObject);
     mergedOptions.sllPredictionMaxSourceLength = normalizeSllPredictionMaxSourceLength(
         mergedOptions.sllPredictionMaxSourceLength
+    );
+    mergedOptions.predictionCacheReleaseMaxSourceLength = normalizePredictionCacheReleaseMaxSourceLength(
+        mergedOptions.predictionCacheReleaseMaxSourceLength
+    );
+    mergedOptions.predictionCacheReleaseInterval = normalizePredictionCacheReleaseInterval(
+        mergedOptions.predictionCacheReleaseInterval
     );
     return mergedOptions;
 }
@@ -167,6 +184,14 @@ function parseProgramWithLlPredictionMode(sourceText: string, releasePredictionC
 
 function normalizeSllPredictionMaxSourceLength(value: unknown): number {
     return Core.coercePositiveIntegerOption(value, DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH);
+}
+
+function normalizePredictionCacheReleaseMaxSourceLength(value: unknown): number {
+    return Core.coercePositiveIntegerOption(value, DEFAULT_PREDICTION_CACHE_RELEASE_MAX_SOURCE_LENGTH);
+}
+
+function normalizePredictionCacheReleaseInterval(value: unknown): number {
+    return Core.coercePositiveIntegerOption(value, DEFAULT_PREDICTION_CACHE_RELEASE_INTERVAL);
 }
 
 function shouldUseSllPredictionMode(sourceText: string, maxSourceLength: number): boolean {
@@ -351,6 +376,18 @@ export class GMLParser {
     public options: ParserOptions;
 
     /**
+     * Number of {@link GMLParser#parse} calls completed on this instance.
+     *
+     * @remarks
+     * Used to drive the periodic ANTLR prediction-cache release cadence
+     * configured via `options.predictionCacheReleaseInterval`. The counter is
+     * owned per-instance so each parser keeps its own release schedule — long
+     * running services that hold many parser instances in parallel never
+     * interfere with each other's release cadence.
+     */
+    private parserInvocationCount = 0;
+
+    /**
      * Constructs a new GML parser instance.
      *
      * @param text - The raw GML source code to parse.
@@ -375,6 +412,20 @@ export class GMLParser {
         this.comments = [];
         const parserConstructor = (this.constructor as typeof GMLParser | undefined) ?? GMLParser;
         this.options = mergeParserOptions(parserConstructor.optionDefaults, options);
+    }
+
+    /**
+     * Read the per-instance parser invocation count.
+     *
+     * Exposed primarily for tests that want to assert the per-instance cadence
+     * of {@link GMLParser#parse} without depending on ANTLR's internal cache
+     * state. Long-running consumers can also use this counter to drive their
+     * own telemetry around parser activity.
+     *
+     * @returns The number of completed `parse()` invocations on this parser.
+     */
+    public getParserInvocationCount(): number {
+        return this.parserInvocationCount;
     }
 
     /**
@@ -440,7 +491,13 @@ export class GMLParser {
      *   the first pass cannot decide between valid alternatives.
      */
     parse() {
-        const releasePredictionCaches = shouldReleaseAntlrPredictionCaches(this.text);
+        this.parserInvocationCount += 1;
+        const releasePredictionCaches = shouldReleaseAntlrPredictionCaches(
+            this.text,
+            this.parserInvocationCount,
+            this.options.predictionCacheReleaseMaxSourceLength,
+            this.options.predictionCacheReleaseInterval
+        );
         const chars = new antlr4.InputStream(this.text);
         const lexer = new GameMakerLanguageLexer(chars);
         lexer.removeErrorListeners();
