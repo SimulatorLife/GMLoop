@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { Refactor } from "../index.js";
-import type { NamingConventionTarget, PartialSemanticAnalyzer, RenameRequest } from "../src/types.js";
+import type { RefactorEngine } from "../src/refactor-engine.js";
+import type {
+    NamingConventionCodemodPlan,
+    NamingConventionTarget,
+    PartialSemanticAnalyzer,
+    RenameRequest
+} from "../src/types.js";
 
 /**
  * These tests pin the public contract of the top-level rename selection
@@ -44,24 +50,44 @@ function buildTargetsForSpriteRenames(count: number, prefix = "SpriteFunc"): Arr
     return targets;
 }
 
-function buildVariableTarget(
-    name: string,
-    symbolId: string,
-    path = "scripts/globals/globals.gml"
-): NamingConventionTarget {
+function buildPaddingSpriteTargets(count: number): Array<NamingConventionTarget> {
+    return Array.from({ length: count }, (_, i) => ({
+        category: "spriteResourceName" as const,
+        name: `Pad${i}`,
+        occurrences: [
+            {
+                path: `sprites/Pad${i}/Pad${i}.yy`,
+                start: 0,
+                end: 0,
+                scopeId: "scope-global",
+                kind: "definition" as const
+            }
+        ],
+        path: `sprites/Pad${i}/Pad${i}.yy`,
+        scopeId: "scope-global",
+        symbolId: `gml/sprites/Pad${i}`
+    }));
+}
+
+function buildSpriteCollisionTarget(parameters: {
+    name: string;
+    symbolId: string;
+    spriteName: string;
+}): NamingConventionTarget {
+    const { name, symbolId, spriteName } = parameters;
     return {
-        category: "globalVariable",
+        category: "spriteResourceName",
         name,
         occurrences: [
             {
-                path,
+                path: `sprites/${spriteName}/${spriteName}.yy`,
                 start: 0,
-                end: name.length,
+                end: 0,
                 scopeId: "scope-global",
                 kind: "definition"
             }
         ],
-        path,
+        path: `sprites/${spriteName}/${spriteName}.yy`,
         scopeId: "scope-global",
         symbolId
     };
@@ -82,19 +108,13 @@ function buildSemanticProvider(targets: Array<NamingConventionTarget>): PartialS
     };
 }
 
-void test("small batches take the slow path and validate every top-level rename", async () => {
-    const targets = buildTargetsForSpriteRenames(3);
+function createSpriteNamingConventionEngine(targets: Array<NamingConventionTarget>): RefactorEngine {
     const semantic = buildSemanticProvider(targets);
-    const engine = new Refactor.RefactorEngine({ semantic });
+    return new Refactor.RefactorEngine({ semantic });
+}
 
-    let validateCallCount = 0;
-    const originalValidate = engine.validateRenameRequest.bind(engine);
-    engine.validateRenameRequest = async (request: RenameRequest) => {
-        validateCallCount += 1;
-        return originalValidate(request);
-    };
-
-    const plan = await engine.planNamingConventionCodemod({
+function planSpriteNamingConventionCodemod(engine: RefactorEngine): Promise<NamingConventionCodemodPlan> {
+    return engine.planNamingConventionCodemod({
         projectRoot: PROJECT_ROOT,
         targetPaths: [PROJECT_ROOT],
         config: {
@@ -107,6 +127,20 @@ void test("small batches take the slow path and validate every top-level rename"
             }
         }
     });
+}
+
+void test("small batches take the slow path and validate every top-level rename", async () => {
+    const targets = buildTargetsForSpriteRenames(3);
+    const engine = createSpriteNamingConventionEngine(targets);
+
+    let validateCallCount = 0;
+    const originalValidate = engine.validateRenameRequest.bind(engine);
+    engine.validateRenameRequest = async (request: RenameRequest) => {
+        validateCallCount += 1;
+        return originalValidate(request);
+    };
+
+    const plan = await planSpriteNamingConventionCodemod(engine);
 
     assert.equal(plan.errors.length, 0);
     assert.equal(plan.topLevelRenameRequests.length, 3);
@@ -117,70 +151,13 @@ void test("large batches with duplicate target names fall through to the slow pa
     // Two renames that target the same new name. The duplicate-target detector
     // must surface this even when the fast-path subset is otherwise safe.
     const collidingTargets: Array<NamingConventionTarget> = [
-        {
-            ...buildVariableTarget("Foo", "gml/sprites/FooA", "sprites/FooA/FooA.yy"),
-            category: "spriteResourceName",
-            path: "sprites/FooA/FooA.yy",
-            occurrences: [
-                {
-                    path: "sprites/FooA/FooA.yy",
-                    start: 0,
-                    end: 0,
-                    scopeId: "scope-global",
-                    kind: "definition"
-                }
-            ]
-        },
-        {
-            ...buildVariableTarget("Foo", "gml/sprites/FooB", "sprites/FooB/FooB.yy"),
-            category: "spriteResourceName",
-            path: "sprites/FooB/FooB.yy",
-            occurrences: [
-                {
-                    path: "sprites/FooB/FooB.yy",
-                    start: 0,
-                    end: 0,
-                    scopeId: "scope-global",
-                    kind: "definition"
-                }
-            ]
-        }
+        buildSpriteCollisionTarget({ name: "Foo", symbolId: "gml/sprites/FooA", spriteName: "FooA" }),
+        buildSpriteCollisionTarget({ name: "Foo", symbolId: "gml/sprites/FooB", spriteName: "FooB" })
     ];
     // Pad with >256 renames total so the fast-path branch is even considered.
-    const paddingTargets = Array.from({ length: 260 }, (_, i) => ({
-        category: "spriteResourceName" as const,
-        name: `Pad${i}`,
-        occurrences: [
-            {
-                path: `sprites/Pad${i}/Pad${i}.yy`,
-                start: 0,
-                end: 0,
-                scopeId: "scope-global",
-                kind: "definition" as const
-            }
-        ],
-        path: `sprites/Pad${i}/Pad${i}.yy`,
-        scopeId: "scope-global",
-        symbolId: `gml/sprites/Pad${i}`
-    }));
-    const targets: Array<NamingConventionTarget> = [...collidingTargets, ...paddingTargets];
-
-    const semantic = buildSemanticProvider(targets);
-    const engine = new Refactor.RefactorEngine({ semantic });
-
-    const plan = await engine.planNamingConventionCodemod({
-        projectRoot: PROJECT_ROOT,
-        targetPaths: [PROJECT_ROOT],
-        config: {
-            codemods: {
-                namingConvention: {
-                    rules: {
-                        spriteResourceName: { caseStyle: "lower_snake" }
-                    }
-                }
-            }
-        }
-    });
+    const targets: Array<NamingConventionTarget> = [...collidingTargets, ...buildPaddingSpriteTargets(260)];
+    const engine = createSpriteNamingConventionEngine(targets);
+    const plan = await planSpriteNamingConventionCodemod(engine);
 
     // Both colliding renames must be dropped from the executable set.
     const fooARename = plan.topLevelRenameRequests.find((r) => r.symbolId === "gml/sprites/FooA");
@@ -194,79 +171,16 @@ void test("large batches with duplicate targets fall through to the slow path an
     // by feeding the planning step a set of renames that will collapse to
     // the same newName once the naming-convention rule rewrites them. This
     // is the most common batch-level conflict survivors see in practice:
-    // two distinct source symbols proposed for the same target name.
-    // Two renames whose final newName collides - we engineer this by giving
-    // the planning-time `name` field the same value. The naming-convention
-    // rule for `lower_snake` will then propose the same `newName` for both.
+    // two distinct source symbols proposed for the same target name. The
+    // naming-convention rule for `lower_snake` will then propose the same
+    // `newName` for both colliding sources.
     const collidingTargets: Array<NamingConventionTarget> = [
-        {
-            category: "spriteResourceName",
-            name: "CollideMe",
-            occurrences: [
-                {
-                    path: "sprites/CollideOne/CollideOne.yy",
-                    start: 0,
-                    end: 0,
-                    scopeId: "scope-global",
-                    kind: "definition"
-                }
-            ],
-            path: "sprites/CollideOne/CollideOne.yy",
-            scopeId: "scope-global",
-            symbolId: "gml/sprites/CollideOne"
-        },
-        {
-            category: "spriteResourceName",
-            name: "CollideMe",
-            occurrences: [
-                {
-                    path: "sprites/CollideTwo/CollideTwo.yy",
-                    start: 0,
-                    end: 0,
-                    scopeId: "scope-global",
-                    kind: "definition"
-                }
-            ],
-            path: "sprites/CollideTwo/CollideTwo.yy",
-            scopeId: "scope-global",
-            symbolId: "gml/sprites/CollideTwo"
-        }
+        buildSpriteCollisionTarget({ name: "CollideMe", symbolId: "gml/sprites/CollideOne", spriteName: "CollideOne" }),
+        buildSpriteCollisionTarget({ name: "CollideMe", symbolId: "gml/sprites/CollideTwo", spriteName: "CollideTwo" })
     ];
-    // Pad the batch so the fast-path branch is even considered.
-    const paddingTargets = Array.from({ length: 260 }, (_, i) => ({
-        category: "spriteResourceName" as const,
-        name: `Pad${i}`,
-        occurrences: [
-            {
-                path: `sprites/Pad${i}/Pad${i}.yy`,
-                start: 0,
-                end: 0,
-                scopeId: "scope-global",
-                kind: "definition" as const
-            }
-        ],
-        path: `sprites/Pad${i}/Pad${i}.yy`,
-        scopeId: "scope-global",
-        symbolId: `gml/sprites/Pad${i}`
-    }));
-    const targets: Array<NamingConventionTarget> = [...collidingTargets, ...paddingTargets];
-
-    const semantic = buildSemanticProvider(targets);
-    const engine = new Refactor.RefactorEngine({ semantic });
-
-    const plan = await engine.planNamingConventionCodemod({
-        projectRoot: PROJECT_ROOT,
-        targetPaths: [PROJECT_ROOT],
-        config: {
-            codemods: {
-                namingConvention: {
-                    rules: {
-                        spriteResourceName: { caseStyle: "lower_snake" }
-                    }
-                }
-            }
-        }
-    });
+    const targets: Array<NamingConventionTarget> = [...collidingTargets, ...buildPaddingSpriteTargets(260)];
+    const engine = createSpriteNamingConventionEngine(targets);
+    const plan = await planSpriteNamingConventionCodemod(engine);
 
     // Both colliding renames must be dropped from the executable set, and
     // a skip warning must be surfaced.
@@ -282,27 +196,13 @@ void test("large batches with duplicate targets fall through to the slow path an
 
 void test("validation warnings from the engine surface through the slow-path warnings", async () => {
     const targets = buildTargetsForSpriteRenames(2);
-    const semantic = buildSemanticProvider(targets);
-    const engine = new Refactor.RefactorEngine({ semantic });
+    const engine = createSpriteNamingConventionEngine(targets);
     engine.validateRenameRequest = async (request: RenameRequest) => ({
         valid: true,
         errors: [],
         warnings: [`${request.symbolId}: noisy engine warning`]
     });
-
-    const plan = await engine.planNamingConventionCodemod({
-        projectRoot: PROJECT_ROOT,
-        targetPaths: [PROJECT_ROOT],
-        config: {
-            codemods: {
-                namingConvention: {
-                    rules: {
-                        spriteResourceName: { caseStyle: "lower_snake" }
-                    }
-                }
-            }
-        }
-    });
+    const plan = await planSpriteNamingConventionCodemod(engine);
 
     assert.equal(plan.errors.length, 0);
     assert.equal(plan.topLevelRenameRequests.length, 2);
@@ -314,27 +214,13 @@ void test("validation warnings from the engine surface through the slow-path war
 
 void test("invalid top-level renames are skipped with skip warnings, not errors", async () => {
     const targets = buildTargetsForSpriteRenames(2);
-    const semantic = buildSemanticProvider(targets);
-    const engine = new Refactor.RefactorEngine({ semantic });
+    const engine = createSpriteNamingConventionEngine(targets);
     engine.validateRenameRequest = async (request: RenameRequest) => ({
         valid: false,
         errors: [`${request.symbolId}: not safe`],
         warnings: []
     });
-
-    const plan = await engine.planNamingConventionCodemod({
-        projectRoot: PROJECT_ROOT,
-        targetPaths: [PROJECT_ROOT],
-        config: {
-            codemods: {
-                namingConvention: {
-                    rules: {
-                        spriteResourceName: { caseStyle: "lower_snake" }
-                    }
-                }
-            }
-        }
-    });
+    const plan = await planSpriteNamingConventionCodemod(engine);
 
     assert.equal(plan.topLevelRenameRequests.length, 0, "all renames fail validation and must be skipped");
     // The skip path must record warnings, not errors, so the codemod run can
