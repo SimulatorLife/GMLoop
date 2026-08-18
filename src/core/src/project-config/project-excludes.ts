@@ -89,10 +89,10 @@ export function mergeExcludeRules(
     }
 
     return Object.freeze({
-        directoryNames: Object.freeze([...mergedDirectoryNames].sort()),
-        fileNames: Object.freeze([...mergedFileNames].sort()),
-        relativePaths: Object.freeze([...mergedRelativePaths].sort()),
-        extensions: Object.freeze([...mergedExtensions].sort())
+        directoryNames: Object.freeze([...mergedDirectoryNames].toSorted()),
+        fileNames: Object.freeze([...mergedFileNames].toSorted()),
+        relativePaths: Object.freeze([...mergedRelativePaths].toSorted()),
+        extensions: Object.freeze([...mergedExtensions].toSorted())
     });
 }
 

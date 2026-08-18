@@ -16,7 +16,11 @@ import {
     resolvePortableAbsolutePath,
     walkAncestorDirectories
 } from "../src/fs/path.js";
-import { DEFAULT_PROJECT_EXCLUDES, isProjectPathExcluded } from "../src/project-config/project-excludes.js";
+import {
+    DEFAULT_PROJECT_EXCLUDES,
+    isProjectPathExcluded,
+    mergeExcludeRules
+} from "../src/project-config/project-excludes.js";
 
 void describe("path-utils", () => {
     void describe("resolveContainedRelativePath", () => {
@@ -265,5 +269,35 @@ void describe("isProjectPathExcluded", () => {
         assert.strictEqual(isProjectPathExcluded(".gmcache/file.gml", DEFAULT_PROJECT_EXCLUDES), true);
         assert.strictEqual(isProjectPathExcluded("scripts/.gmcache/file.gml", DEFAULT_PROJECT_EXCLUDES), true);
         assert.strictEqual(isProjectPathExcluded("scripts/my_cache/file.gml", DEFAULT_PROJECT_EXCLUDES), false);
+    });
+});
+
+void describe("mergeExcludeRules", () => {
+    void it("deduplicates and sorts merged directory/file/extension names", () => {
+        const merged = mergeExcludeRules(
+            { directoryNames: ["zeta", "alpha"], fileNames: ["Thumbs.db"], extensions: [".tmp"] },
+            { directoryNames: ["alpha", "beta"], fileNames: ["Thumbs.db", ".DS_Store"], extensions: [".log"] }
+        );
+
+        assert.deepEqual(merged.directoryNames, ["alpha", "beta", "zeta"]);
+        assert.deepEqual(merged.fileNames, [".DS_Store", "Thumbs.db"]);
+        assert.deepEqual(merged.extensions, [".log", ".tmp"]);
+    });
+
+    void it("normalizes relative paths to POSIX form while merging", () => {
+        const merged = mergeExcludeRules(
+            { relativePaths: [String.raw`scripts\generated\cache.gml`, "shared/dep.txt"] },
+            { relativePaths: [String.raw`shared\dep.txt`, "extra.gml"] }
+        );
+
+        assert.deepEqual(merged.relativePaths, ["extra.gml", "scripts/generated/cache.gml", "shared/dep.txt"]);
+    });
+
+    void it("returns empty merged arrays when both inputs omit every category", () => {
+        const merged = mergeExcludeRules({}, {});
+        assert.deepEqual(merged.directoryNames, []);
+        assert.deepEqual(merged.fileNames, []);
+        assert.deepEqual(merged.relativePaths, []);
+        assert.deepEqual(merged.extensions, []);
     });
 });
