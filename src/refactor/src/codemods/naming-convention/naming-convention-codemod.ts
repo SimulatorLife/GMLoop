@@ -56,6 +56,56 @@ const OCCURRENCE_BACKED_SCRIPT_CALLABLE_NAMING_CATEGORIES = new Set<NamingCatego
     "structDeclaration"
 ]);
 
+// Resource kinds whose top-level renames never depend on per-symbol validation
+// in a large-batch (>256) codemod run. We pre-trust them and only validate the
+// remaining (slow-path) renames, but only after verifying the fast-path subset
+// is free of duplicate-targets and circular chains. Without this shortcut the
+// parallel-validate step would dominate the runtime for very large projects.
+const FAST_PATHABLE_TOP_LEVEL_KINDS: ReadonlySet<string> = new Set([
+    "objects",
+    "sprites",
+    "sounds",
+    "rooms",
+    "paths",
+    "curves",
+    "sequences",
+    "shaders",
+    "fonts",
+    "timelines",
+    "tilesets",
+    "particlesystems",
+    "notes",
+    "extensions",
+    "resource",
+    "script"
+]);
+
+// Threshold above which the fast/slow split pays off. Below it, parallel
+// validation is cheap enough that the partition would only add complexity.
+const TOP_LEVEL_FAST_PATH_THRESHOLD = 256;
+
+// Concurrency cap for the parallel `validateRenameRequest` worker pool. Matches
+// the historical inline value; centralising it makes future tuning a one-line
+// change.
+const TOP_LEVEL_RENAME_VALIDATION_CONCURRENCY = 64;
+
+type TopLevelRenamePartition = {
+    fastPathRenames: Array<RenameRequest>;
+    slowPathRenames: Array<RenameRequest>;
+};
+
+type TopLevelRenameValidationResult = {
+    renameValidations: Map<string, ValidationSummary>;
+    individuallySafeRenames: Array<RenameRequest>;
+    warnings: Array<string>;
+};
+
+type ExecutableTopLevelRenameSelection = {
+    executableRenames: Array<RenameRequest>;
+    blockedSymbolIds: Set<string>;
+    warnings: Array<string>;
+};
+
 function isReservedLocalRenameTarget(parameters: {
     target: LocalNamingConventionTarget;
     suggestedName: string;
@@ -577,155 +627,68 @@ function formatTopLevelRenameSkipWarning(rename: RenameRequest, reason: string):
     return `Skipping top-level rename '${rename.symbolId}' -> '${rename.newName}': ${reason}`;
 }
 
-async function selectExecutableTopLevelRenames(
-    engine: CodemodRenameOperations,
-    renames: ReadonlyArray<RenameRequest>
-): Promise<TopLevelRenameSelection> {
-    if (renames.length > 256) {
-        const fastPathRenames: Array<RenameRequest> = [];
-        const slowPathRenames: Array<RenameRequest> = [];
+// Split the rename batch into a fast-path subset (resource kinds that don't
+// require per-symbol validation when the batch is large) and a slow-path
+// remainder. The fast-path set is the optimisation surface; the slow-path
+// set is what actually needs `validateRenameRequest`.
+function partitionTopLevelRenamesForFastPath(renames: ReadonlyArray<RenameRequest>): TopLevelRenamePartition {
+    const fastPathRenames: Array<RenameRequest> = [];
+    const slowPathRenames: Array<RenameRequest> = [];
 
-        const fastPathableKinds = new Set([
-            "objects",
-            "sprites",
-            "sounds",
-            "rooms",
-            "paths",
-            "curves",
-            "sequences",
-            "shaders",
-            "fonts",
-            "timelines",
-            "tilesets",
-            "particlesystems",
-            "notes",
-            "extensions",
-            "resource",
-            "script"
-        ]);
-
-        for (const rename of renames) {
-            const id = rename.symbolId;
-            const kind = id.startsWith("gml/") ? id.split("/")[1] : null;
-            if (Core.isNonEmptyString(id) && kind && fastPathableKinds.has(kind)) {
-                fastPathRenames.push(rename);
-            } else {
-                slowPathRenames.push(rename);
-            }
-        }
-
-        const duplicateSourceSymbolIds = detectDuplicateSourceSymbolIds(fastPathRenames);
-        const duplicateTargetNames = detectDuplicateTargetNames(fastPathRenames);
-        const circularRenameChain = detectCircularRenames(fastPathRenames);
-
-        if (
-            duplicateSourceSymbolIds.length === 0 &&
-            duplicateTargetNames.length === 0 &&
-            circularRenameChain.length === 0
-        ) {
-            const warnings: Array<string> = [];
-            const errors: Array<string> = [];
-            const individuallySafeRenames: Array<RenameRequest> = [...fastPathRenames];
-            const renameValidations = new Map<string, ValidationSummary>();
-
-            for (const rename of fastPathRenames) {
-                renameValidations.set(rename.symbolId, {
-                    valid: true,
-                    errors: [],
-                    warnings: []
-                });
-            }
-
-            const renameValidationResults = await Core.runInParallelWithLimit(
-                slowPathRenames,
-                async (rename) => ({
-                    rename,
-                    validation: await engine.validateRenameRequest(rename)
-                }),
-                64
-            );
-
-            for (const { rename, validation } of renameValidationResults) {
-                renameValidations.set(rename.symbolId, validation);
-                warnings.push(...validation.warnings.map((warning) => `${rename.symbolId}: ${warning}`));
-
-                if (!validation.valid) {
-                    warnings.push(formatTopLevelRenameSkipWarning(rename, validation.errors.join("; ")));
-                    continue;
-                }
-
-                individuallySafeRenames.push(rename);
-            }
-
-            const blockedSymbolIds = new Set<string>();
-            for (const duplicateTarget of detectDuplicateTargetNames(individuallySafeRenames)) {
-                for (const symbolId of duplicateTarget.symbolIds) {
-                    blockedSymbolIds.add(symbolId);
-                    warnings.push(
-                        formatTopLevelRenameSkipWarning(
-                            individuallySafeRenames.find((rename) => rename.symbolId === symbolId) ?? {
-                                symbolId,
-                                newName: duplicateTarget.newName
-                            },
-                            `another naming-convention rename in the same run also targets '${duplicateTarget.newName}'`
-                        )
-                    );
-                }
-            }
-
-            const fullCircularChain = detectCircularRenames(individuallySafeRenames);
-            if (fullCircularChain.length > 0) {
-                const cycleSymbolIds = new Set(fullCircularChain);
-                const cyclePreview = fullCircularChain.join(" -> ");
-                for (const rename of individuallySafeRenames) {
-                    if (cycleSymbolIds.has(rename.symbolId)) {
-                        blockedSymbolIds.add(rename.symbolId);
-                        warnings.push(
-                            formatTopLevelRenameSkipWarning(
-                                rename,
-                                `the rename participates in a circular naming-convention batch (${cyclePreview})`
-                            )
-                        );
-                    }
-                }
-            }
-
-            const executableRenames = individuallySafeRenames.filter(
-                (rename) => !blockedSymbolIds.has(rename.symbolId)
-            );
-
-            return {
-                executableRenames,
-                reusableBatchValidation: {
-                    valid: errors.length === 0,
-                    errors,
-                    warnings: [
-                        ...warnings,
-                        ...detectCrossRenameNameConfusion(executableRenames).map(
-                            ({ symbolId, newName }) =>
-                                `Rename introduces potential confusion: '${symbolId}' renamed to '${newName}' which was an original symbol name in this batch`
-                        )
-                    ],
-                    renameValidations,
-                    conflictingSets: []
-                },
-                warnings: [],
-                errors: []
-            };
+    for (const rename of renames) {
+        const id = rename.symbolId;
+        const kind = id.startsWith("gml/") ? id.split("/")[1] : null;
+        if (Core.isNonEmptyString(id) && kind !== null && FAST_PATHABLE_TOP_LEVEL_KINDS.has(kind)) {
+            fastPathRenames.push(rename);
+        } else {
+            slowPathRenames.push(rename);
         }
     }
 
+    return { fastPathRenames, slowPathRenames };
+}
+
+// Decide whether the fast-path subset is safe to pre-trust: the caller can
+// skip `validateRenameRequest` for these renames only if no two of them share
+// a source symbol, no two of them target the same name, and they don't form a
+// rename cycle. Any of those issues means we must fall through to validating
+// the entire batch.
+function hasFastPathRenameConflicts(renames: Array<RenameRequest>): boolean {
+    if (
+        detectDuplicateSourceSymbolIds(renames).length > 0 ||
+        detectDuplicateTargetNames(renames).length > 0 ||
+        detectCircularRenames(renames).length > 0
+    ) {
+        return true;
+    }
+    return false;
+}
+
+// Run `validateRenameRequest` in parallel for the slow-path renames while
+// pre-marking the fast-path renames as valid (the caller has already verified
+// the fast-path subset has no internal conflicts). The result combines
+// per-rename validations, the renames that passed individually, and the
+// accumulated warnings surfaced by the engine.
+async function validateTopLevelRenames(
+    engine: CodemodRenameOperations,
+    renamesToValidate: ReadonlyArray<RenameRequest>,
+    preValidatedRenames: ReadonlyArray<RenameRequest> = []
+): Promise<TopLevelRenameValidationResult> {
     const warnings: Array<string> = [];
-    const errors: Array<string> = [];
-    const individuallySafeRenames: Array<RenameRequest> = [];
+    const individuallySafeRenames: Array<RenameRequest> = [...preValidatedRenames];
     const renameValidations = new Map<string, ValidationSummary>();
+
+    for (const rename of preValidatedRenames) {
+        renameValidations.set(rename.symbolId, { valid: true, errors: [], warnings: [] });
+    }
+
     const renameValidationResults = await Core.runInParallelWithLimit(
-        renames,
+        renamesToValidate,
         async (rename) => ({
             rename,
             validation: await engine.validateRenameRequest(rename)
         }),
-        64
+        TOP_LEVEL_RENAME_VALIDATION_CONCURRENCY
     );
 
     for (const { rename, validation } of renameValidationResults) {
@@ -733,11 +696,13 @@ async function selectExecutableTopLevelRenames(
         warnings.push(...validation.warnings.map((warning) => `${rename.symbolId}: ${warning}`));
 
         if (!validation.valid) {
-            // Top-level renames can fail validation for many reasons (reserved identifiers,
-            // shadowing, semantic gaps, etc.). Each failure corresponds to one skipped
-            // rename rather than a codemod-wide failure, so surface them as warnings.
-            // Hard-blocking concerns (such as missing built-in index information) are
-            // surfaced through `errors` separately and prevent the codemod from running.
+            // Top-level renames can fail validation for many reasons (reserved
+            // identifiers, shadowing, semantic gaps, etc.). Each failure
+            // corresponds to one skipped rename rather than a codemod-wide
+            // failure, so surface them as warnings. Hard-blocking concerns
+            // (such as missing built-in index information) are surfaced
+            // through `errors` separately and prevent the codemod from
+            // running.
             warnings.push(formatTopLevelRenameSkipWarning(rename, validation.errors.join("; ")));
             continue;
         }
@@ -745,7 +710,21 @@ async function selectExecutableTopLevelRenames(
         individuallySafeRenames.push(rename);
     }
 
+    return { renameValidations, individuallySafeRenames, warnings };
+}
+
+// Apply the two batch-level conflict checks that survive per-symbol
+// validation: duplicate target names and circular rename chains. The renames
+// that survive are the executable set; the others are recorded in
+// `blockedSymbolIds` so the caller can decide whether to reuse the validation
+// summary. Shared between the fast-path and slow-path orchestrators so the
+// conflict rules stay in one place.
+function selectExecutableTopLevelRenamesFromValidated(
+    individuallySafeRenames: Array<RenameRequest>
+): ExecutableTopLevelRenameSelection {
+    const warnings: Array<string> = [];
     const blockedSymbolIds = new Set<string>();
+
     for (const duplicateTarget of detectDuplicateTargetNames(individuallySafeRenames)) {
         for (const symbolId of duplicateTarget.symbolIds) {
             blockedSymbolIds.add(symbolId);
@@ -780,23 +759,94 @@ async function selectExecutableTopLevelRenames(
 
     const executableRenames = individuallySafeRenames.filter((rename) => !blockedSymbolIds.has(rename.symbolId));
 
+    return { executableRenames, blockedSymbolIds, warnings };
+}
+
+// Build the reusable batch validation summary. The fast-path always reuses
+// the per-rename validations and surfaces them in the summary's `warnings`
+// field (so the caller sees the fast-path validation output without having
+// to look at the top-level `warnings` array, which the fast-path leaves
+// empty). The slow-path only reuses the summary when no rename was blocked,
+// and only folds the cross-rename confusion warnings into it; the slow-path
+// validation warnings stay on the top-level `warnings` field. Centralising
+// this keeps the two orchestrator branches from drifting in shape.
+function buildReusableBatchValidation(parameters: {
+    renameValidations: Map<string, ValidationSummary>;
+    executableRenames: ReadonlyArray<RenameRequest>;
+    includeValidationWarnings: boolean;
+    validationWarnings: ReadonlyArray<string>;
+}): BatchRenameValidation {
+    const confusionWarnings = detectCrossRenameNameConfusion(parameters.executableRenames).map(
+        ({ symbolId, newName }) =>
+            `Rename introduces potential confusion: '${symbolId}' renamed to '${newName}' which was an original symbol name in this batch`
+    );
+    const warnings = parameters.includeValidationWarnings
+        ? [...parameters.validationWarnings, ...confusionWarnings]
+        : confusionWarnings;
     return {
-        executableRenames,
-        reusableBatchValidation:
-            blockedSymbolIds.size === 0 && individuallySafeRenames.length === renames.length
-                ? {
-                      valid: true,
-                      errors: [],
-                      warnings: detectCrossRenameNameConfusion(executableRenames).map(
-                          ({ symbolId, newName }) =>
-                              `Rename introduces potential confusion: '${symbolId}' renamed to '${newName}' which was an original symbol name in this batch`
-                      ),
-                      renameValidations,
-                      conflictingSets: []
-                  }
-                : null,
+        valid: true,
+        errors: [],
         warnings,
-        errors
+        renameValidations: parameters.renameValidations,
+        conflictingSets: []
+    };
+}
+
+async function selectExecutableTopLevelRenames(
+    engine: CodemodRenameOperations,
+    renames: ReadonlyArray<RenameRequest>
+): Promise<TopLevelRenameSelection> {
+    // Fast-path branch: only kicks in for large batches whose pre-trusted
+    // resource kinds are conflict-free among themselves. In that case we
+    // skip `validateRenameRequest` for the fast-path renames entirely.
+    if (renames.length > TOP_LEVEL_FAST_PATH_THRESHOLD) {
+        const partition = partitionTopLevelRenamesForFastPath(renames);
+        if (!hasFastPathRenameConflicts(partition.fastPathRenames)) {
+            const validation = await validateTopLevelRenames(
+                engine,
+                partition.slowPathRenames,
+                partition.fastPathRenames
+            );
+            const selection = selectExecutableTopLevelRenamesFromValidated(validation.individuallySafeRenames);
+
+            return {
+                executableRenames: selection.executableRenames,
+                reusableBatchValidation: buildReusableBatchValidation({
+                    renameValidations: validation.renameValidations,
+                    executableRenames: selection.executableRenames,
+                    includeValidationWarnings: true,
+                    validationWarnings: [...validation.warnings, ...selection.warnings]
+                }),
+                warnings: [],
+                errors: []
+            };
+        }
+    }
+
+    // Slow-path branch: validate every rename in parallel, then run the
+    // batch-level conflict filters. The validation summary is only reused
+    // when nothing was blocked so the caller cannot re-run a half-applied
+    // batch. Top-level warnings fold both the validation warnings and the
+    // batch-level blocking warnings together, matching the historical
+    // behaviour of the monolithic implementation.
+    const validation = await validateTopLevelRenames(engine, renames);
+    const selection = selectExecutableTopLevelRenamesFromValidated(validation.individuallySafeRenames);
+    const canReuseBatchValidation =
+        selection.blockedSymbolIds.size === 0 && validation.individuallySafeRenames.length === renames.length;
+    const combinedWarnings = [...validation.warnings, ...selection.warnings];
+
+    return {
+        executableRenames: selection.executableRenames,
+        reusableBatchValidation: canReuseBatchValidation
+            ? buildReusableBatchValidation({
+                  renameValidations: validation.renameValidations,
+                  executableRenames: selection.executableRenames,
+                  includeValidationWarnings: false,
+                  validationWarnings: combinedWarnings
+              })
+            : null,
+        warnings: combinedWarnings,
+        errors: []
     };
 }
 
