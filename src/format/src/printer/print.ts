@@ -895,16 +895,47 @@ function printSwitchCaseNode(node, path, options, print) {
  *
  * This guard exists because `_printImpl` may occasionally leave `null` inside
  * raw arrays when handling edge-case nodes. Prettier's doc traversal will
- * throw `InvalidDocError` if it reaches a `null` leaf, so this recursive map
+ * throw `InvalidDocError` if it reaches a `null` leaf, so this recursive walk
  * strips them before the result reaches Prettier's document printer.
+ *
+ * The implementation avoids the always-allocate cost of `Array#map` for the
+ * overwhelmingly common "no nulls anywhere in the tree" case. Each level of
+ * the doc tree is walked exactly once; arrays are only cloned lazily once
+ * the first descendant actually needs replacement. Primitive children are
+ * handled in-place without a recursive call so the hot path stays free of
+ * per-leaf function-call overhead.
  *
  * @param doc - A Prettier doc node (null, string, Doc[], or plain Doc).
  * @returns The doc with all `null` values replaced by `""`.
  */
 function _sanitizeDocOutput(doc) {
     if (doc === null) return "";
-    if (Array.isArray(doc)) return doc.map(_sanitizeDocOutput);
-    return doc;
+    if (!Array.isArray(doc)) return doc;
+
+    const length = doc.length;
+    let result = null;
+
+    for (let i = 0; i < length; i += 1) {
+        const child = doc[i];
+        if (child === null) {
+            if (result === null) {
+                result = doc.slice();
+            }
+            result[i] = "";
+        } else if (Array.isArray(child)) {
+            const sanitizedChild = _sanitizeDocOutput(child);
+            if (sanitizedChild !== child) {
+                if (result === null) {
+                    result = doc.slice();
+                }
+                result[i] = sanitizedChild;
+            }
+        } else if (result !== null) {
+            result[i] = child;
+        }
+    }
+
+    return result ?? doc;
 }
 
 /**
