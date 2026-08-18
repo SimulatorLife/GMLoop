@@ -26,9 +26,10 @@ void describe("watch command status snapshot url fields", () => {
                 "string",
                 "statusUrl should be a string once the status server is up"
             );
+            const statusUrl = snapshot.statusUrl as string;
             assert.ok(
-                (snapshot.statusUrl as string).startsWith("http://"),
-                `statusUrl should be a well-formed http URL but was ${String(snapshot.statusUrl)}`
+                statusUrl.startsWith("http://"),
+                `statusUrl should be a well-formed http URL but was ${statusUrl}`
             );
 
             assert.equal(
@@ -36,9 +37,10 @@ void describe("watch command status snapshot url fields", () => {
                 "string",
                 "websocketUrl should be a string once the patch WebSocket server is up"
             );
+            const websocketUrl = snapshot.websocketUrl as string;
             assert.ok(
-                (snapshot.websocketUrl as string).startsWith("ws://"),
-                `websocketUrl should be a well-formed ws URL but was ${String(snapshot.websocketUrl)}`
+                websocketUrl.startsWith("ws://"),
+                `websocketUrl should be a well-formed ws URL but was ${websocketUrl}`
             );
         });
     });

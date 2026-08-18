@@ -14,6 +14,9 @@ const TIMING_SCHEMA_VERSION = 1;
 const DEFAULT_SHARD_COUNT = 5;
 const TEST_TIMEOUT_MS = 120_000;
 const SYNTHETIC_JUNIT_MARKER = "Test runner exited with status ";
+const REPORT_DIRECTORY_OPTION = "--report-dir <path>";
+const REPORT_DIRECTORY_DEFAULT = "reports";
+const REPORT_DIRECTORY_DESCRIPTION = "Report directory";
 
 type ProcessResult = Readonly<{
     status: number;
@@ -114,7 +117,7 @@ async function readJsonFile(filePath: string): Promise<unknown> {
     return JSON.parse(await readFile(filePath, "utf8"));
 }
 
-async function readOptionalJsonFile(filePath: string): Promise<unknown | null> {
+async function readOptionalJsonFile(filePath: string): Promise<unknown> {
     try {
         return await readJsonFile(filePath);
     } catch (error) {
@@ -144,19 +147,21 @@ async function collectFiles(rootDirectory: string): Promise<Array<string>> {
             throw error;
         }
 
-        for (const entry of entries) {
-            if (entry.name === "node_modules") {
-                continue;
-            }
-            const absolutePath = path.join(currentDirectory, entry.name);
-            if (entry.isDirectory()) {
-                await visit(absolutePath);
-                continue;
-            }
-            if (entry.isFile()) {
-                output.push(normalizePath(path.relative(process.cwd(), absolutePath)));
-            }
-        }
+        await Promise.all(
+            entries.map(async (entry) => {
+                if (entry.name === "node_modules") {
+                    return;
+                }
+                const absolutePath = path.join(currentDirectory, entry.name);
+                if (entry.isDirectory()) {
+                    await visit(absolutePath);
+                    return;
+                }
+                if (entry.isFile()) {
+                    output.push(normalizePath(path.relative(process.cwd(), absolutePath)));
+                }
+            })
+        );
     }
 
     await visit(rootDirectory);
@@ -229,13 +234,16 @@ async function createTestWeights(
         .filter((value): value is number => value !== undefined);
     const fallbackDuration = median(knownDurations);
     const sizes = new Map<string, number>();
-    for (const testFile of tests) {
-        try {
-            sizes.set(testFile, (await stat(testFile)).size);
-        } catch {
-            sizes.set(testFile, 1);
-        }
-    }
+    await Promise.all(
+        tests.map(async (testFile) => {
+            try {
+                const stats = await stat(testFile);
+                sizes.set(testFile, stats.size);
+            } catch {
+                sizes.set(testFile, 1);
+            }
+        })
+    );
     const medianSize = Math.max(1, median([...sizes.values()]));
 
     return tests.map((testFile) => {
@@ -681,41 +689,57 @@ async function assembleReport(
               status: typeof lintValue.status === "number" ? lintValue.status : 2
           })
         : Object.freeze({ completed: false, status: 2 });
-    const shardMetadata: Array<ShardMetadata> = [];
-    const junitCasesByShard = new Map<string, Array<JunitCaseTiming>>();
-    let testReportSynthetic = false;
-
-    for (const shard of manifest.shards) {
-        const metadataValue = await readOptionalJsonFile(path.join(options.reportDirectory, `test-${shard.name}.json`));
-        let metadata: ShardMetadata;
-        try {
-            metadata = parseShardMetadata(metadataValue);
-        } catch {
-            metadata = Object.freeze({
-                schemaVersion: 1,
-                shard: shard.name,
-                completed: false,
-                status: 2,
-                signal: null,
-                durationMs: 0,
-                testFiles: Object.freeze([]),
-                manifestDigest: "",
-                planDigest: "",
-                reportFile: `tests-${shard.name}.xml`
-            });
-        }
-        shardMetadata.push(metadata);
-        let junit = "";
-        try {
-            junit = await readFile(path.join(options.reportDirectory, metadata.reportFile), "utf8");
-        } catch {
-            junit = "";
-        }
-        if (junit.includes(SYNTHETIC_JUNIT_MARKER)) {
-            testReportSynthetic = true;
-        }
-        junitCasesByShard.set(shard.name, parseJunitCases(junit));
-    }
+    const shardData = await Promise.all(
+        manifest.shards.map(
+            async (
+                shard
+            ): Promise<{
+                metadata: ShardMetadata;
+                junitCases: Array<JunitCaseTiming>;
+                isSynthetic: boolean;
+                shardName: string;
+            }> => {
+                const metadataValue = await readOptionalJsonFile(
+                    path.join(options.reportDirectory, `test-${shard.name}.json`)
+                );
+                let metadata: ShardMetadata;
+                try {
+                    metadata = parseShardMetadata(metadataValue);
+                } catch {
+                    metadata = Object.freeze({
+                        schemaVersion: 1,
+                        shard: shard.name,
+                        completed: false,
+                        status: 2,
+                        signal: null,
+                        durationMs: 0,
+                        testFiles: Object.freeze([]),
+                        manifestDigest: "",
+                        planDigest: "",
+                        reportFile: `tests-${shard.name}.xml`
+                    });
+                }
+                let junit = "";
+                try {
+                    junit = await readFile(path.join(options.reportDirectory, metadata.reportFile), "utf8");
+                } catch {
+                    // Missing JUnit reports stay as empty strings; downstream checks
+                    // detect synthetic placeholders separately.
+                }
+                return {
+                    metadata,
+                    isSynthetic: junit.includes(SYNTHETIC_JUNIT_MARKER),
+                    junitCases: parseJunitCases(junit),
+                    shardName: shard.name
+                };
+            }
+        )
+    );
+    const shardMetadata: Array<ShardMetadata> = shardData.map((entry) => entry.metadata);
+    const junitCasesByShard = new Map<string, Array<JunitCaseTiming>>(
+        shardData.map((entry) => [entry.shardName, entry.junitCases])
+    );
+    const testReportSynthetic = shardData.some((entry) => entry.isSynthetic);
 
     const coverageErrors = findCoverageErrors(manifest, shardMetadata);
     const allShardsComparable = shardMetadata.every(
@@ -873,19 +897,23 @@ async function validateReport(
         errors.push("report did not complete");
     }
     if (options.expectedSha && metadataValue.targetSha !== options.expectedSha) {
-        errors.push(`target SHA mismatch (${String(metadataValue.targetSha ?? "missing")} != ${options.expectedSha})`);
+        const observedSha = (metadataValue.targetSha as string | undefined) ?? "missing";
+        errors.push(`target SHA mismatch (${observedSha} != ${options.expectedSha})`);
     }
     if (options.expectedFingerprint && metadataValue.toolingFingerprint !== options.expectedFingerprint) {
         errors.push("report tooling fingerprint does not match the trusted validation tooling");
     }
     if (metadataValue.buildStatus !== 0) {
-        errors.push(`build did not complete successfully (status ${String(metadataValue.buildStatus)})`);
+        const buildStatus = metadataValue.buildStatus as number;
+        errors.push(`build did not complete successfully (status ${String(buildStatus)})`);
     }
     if (typeof metadataValue.lintStatus !== "number" || !isComparableStatus(metadataValue.lintStatus)) {
-        errors.push(`lint execution did not produce a comparable result (status ${String(metadataValue.lintStatus)})`);
+        const lintStatus = metadataValue.lintStatus as number;
+        errors.push(`lint execution did not produce a comparable result (status ${String(lintStatus)})`);
     }
     if (typeof metadataValue.testStatus !== "number" || !isComparableStatus(metadataValue.testStatus)) {
-        errors.push(`test execution did not produce a comparable result (status ${String(metadataValue.testStatus)})`);
+        const testStatus = metadataValue.testStatus as number;
+        errors.push(`test execution did not produce a comparable result (status ${String(testStatus)})`);
     }
     if (metadataValue.testReportSynthetic === true) {
         errors.push("test output was synthesized after an incomplete runner execution");
@@ -941,14 +969,24 @@ async function validateReport(
                 if (shard.manifestDigest !== manifest.manifestDigest || shard.planDigest !== manifest.planDigest) {
                     errors.push(`test shard ${shard.shard} provenance does not match the manifest`);
                 }
-                let junit = "";
-                try {
-                    junit = await readFile(path.join(options.reportDirectory, shard.reportFile), "utf8");
-                } catch {
-                    errors.push(`${shard.reportFile} is missing`);
+            }
+            const junitChecks = await Promise.all(
+                parsedShards.map(async (shard): Promise<{ ok: boolean; reportFile: string; junit: string }> => {
+                    try {
+                        const junit = await readFile(path.join(options.reportDirectory, shard.reportFile), "utf8");
+                        return { ok: true, reportFile: shard.reportFile, junit };
+                    } catch {
+                        return { ok: false, reportFile: shard.reportFile, junit: "" };
+                    }
+                })
+            );
+            for (const check of junitChecks) {
+                if (!check.ok) {
+                    errors.push(`${check.reportFile} is missing`);
+                    continue;
                 }
-                if (junit && !isCompleteJunit(junit)) {
-                    errors.push(`${shard.reportFile} is incomplete or synthetic`);
+                if (check.junit && !isCompleteJunit(check.junit)) {
+                    errors.push(`${check.reportFile} is incomplete or synthetic`);
                 }
             }
             errors.push(...findCoverageErrors(manifest, parsedShards));
@@ -987,11 +1025,13 @@ async function stageCompiledRuntime(outputDirectory: string): Promise<void> {
     if (runtimeFiles.length === 0) {
         throw new Error("No compiled runtime files were found to stage.");
     }
-    for (const relativePath of runtimeFiles) {
-        const destination = path.join(outputDirectory, relativePath);
-        await mkdir(path.dirname(destination), { recursive: true });
-        await copyFile(relativePath, destination);
-    }
+    await Promise.all(
+        runtimeFiles.map(async (relativePath) => {
+            const destination = path.join(outputDirectory, relativePath);
+            await mkdir(path.dirname(destination), { recursive: true });
+            await copyFile(relativePath, destination);
+        })
+    );
     console.log(`Staged ${runtimeFiles.length} compiled runtime files in ${outputDirectory}.`);
 }
 
@@ -1070,7 +1110,7 @@ export function createCiReportCommand(): Command {
         .command("run-shard")
         .requiredOption("--manifest <path>")
         .requiredOption("--shard <name>")
-        .option("--report-dir <path>", "Report directory", "reports")
+        .option(REPORT_DIRECTORY_OPTION, REPORT_DIRECTORY_DESCRIPTION, REPORT_DIRECTORY_DEFAULT)
         .action(async (options: { manifest: string; shard: string; reportDir: string }) => {
             process.exitCode = await runShard({
                 manifestPath: options.manifest,
@@ -1081,7 +1121,7 @@ export function createCiReportCommand(): Command {
 
     command
         .command("lint")
-        .option("--report-dir <path>", "Report directory", "reports")
+        .option(REPORT_DIRECTORY_OPTION, REPORT_DIRECTORY_DESCRIPTION, REPORT_DIRECTORY_DEFAULT)
         .action(async (options: { reportDir: string }) => {
             process.exitCode = await runLintReport(options.reportDir);
         });
@@ -1092,7 +1132,7 @@ export function createCiReportCommand(): Command {
         .requiredOption("--target-sha <sha>")
         .requiredOption("--fingerprint <value>")
         .requiredOption("--build-status <status>", "Build status", (value: string) => parseInteger(value, 2))
-        .option("--report-dir <path>", "Report directory", "reports")
+        .option(REPORT_DIRECTORY_OPTION, REPORT_DIRECTORY_DESCRIPTION, REPORT_DIRECTORY_DEFAULT)
         .action(
             async (options: {
                 manifest: string;
@@ -1114,7 +1154,7 @@ export function createCiReportCommand(): Command {
 
     command
         .command("validate")
-        .option("--report-dir <path>", "Report directory", "reports")
+        .option(REPORT_DIRECTORY_OPTION, REPORT_DIRECTORY_DESCRIPTION, REPORT_DIRECTORY_DEFAULT)
         .option("--expected-sha <sha>")
         .option("--expected-fingerprint <value>")
         .action(async (options: { reportDir: string; expectedSha?: string; expectedFingerprint?: string }) => {
@@ -1138,7 +1178,7 @@ export function createCiReportCommand(): Command {
 
     command
         .command("local")
-        .option("--report-dir <path>", "Report directory", "reports")
+        .option(REPORT_DIRECTORY_OPTION, REPORT_DIRECTORY_DESCRIPTION, REPORT_DIRECTORY_DEFAULT)
         .option("--shards <count>", "Number of test shards", createPositiveIntegerParser("shards"), DEFAULT_SHARD_COUNT)
         .action(async (options: { reportDir: string; shards: number }) => {
             process.exitCode = await runLocalReport(options.reportDir, options.shards);
