@@ -1,4 +1,5 @@
 import { type LiveReloadBootstrapConfig, liveReloadBootstrapConfig } from "./config.js";
+import { LIVE_RELOAD_LOG_LEVELS, type LiveReloadLogLevel } from "./log-levels.js";
 import {
     applyHtml5AudioEmitterSafetyPatch,
     applyHtml5FilenameChangeExtSafetyPatch,
@@ -80,8 +81,41 @@ export function applyMathSafetyPatches(globalScope: BrowserGlobalScope): void {
     }
 }
 
+/**
+ * Validate that an untrusted {@link LiveReloadLogLevel} is one of the canonical
+ * bootstrap level values.
+ *
+ * Throws a `RangeError` when the input is not one of the canonical levels so
+ * typos and accidental string drift surface immediately rather than silently
+ * defaulting to the documented `"normal"` behaviour. The exhaustive `switch`
+ * keeps the runtime check in sync with the compile-time union: adding a new
+ * entry to {@link LIVE_RELOAD_LOG_LEVELS} will flag the missing case here at
+ * build time.
+ */
+export function assertLiveReloadLogLevel(logLevel: LiveReloadLogLevel): void {
+    switch (logLevel) {
+        case LIVE_RELOAD_LOG_LEVELS.QUIET:
+        case LIVE_RELOAD_LOG_LEVELS.NORMAL:
+        case LIVE_RELOAD_LOG_LEVELS.DEBUG: {
+            return;
+        }
+        default: {
+            throw new RangeError(
+                `Unsupported live-reload bootstrap log level: ${JSON.stringify(logLevel)}. ` +
+                    `Expected one of: ${Object.values(LIVE_RELOAD_LOG_LEVELS).join(", ")}.`
+            );
+        }
+    }
+}
+
 function writeBootstrapLog(logLevel: LiveReloadBootstrapConfig["logLevel"], message: string, error?: unknown): void {
-    if (logLevel === "quiet") {
+    if (logLevel === undefined) {
+        return;
+    }
+
+    assertLiveReloadLogLevel(logLevel);
+
+    if (logLevel === LIVE_RELOAD_LOG_LEVELS.QUIET) {
         return;
     }
 

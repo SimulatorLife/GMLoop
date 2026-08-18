@@ -25,7 +25,7 @@ type ProcessResult = Readonly<{
 
 function readOption(name: string): string | undefined {
     const index = process.argv.indexOf(name);
-    return index >= 0 ? process.argv[index + 1] : undefined;
+    return index === -1 ? undefined : process.argv[index + 1];
 }
 
 function hasFlag(name: string): boolean {
@@ -84,7 +84,11 @@ function parseEvidence(value: unknown): BuildEvidence {
     });
 }
 
-function validateEvidence(evidence: BuildEvidence, expectedSha: string | undefined, requireFailure: boolean): Array<string> {
+function validateEvidence(
+    evidence: BuildEvidence,
+    expectedSha: string | undefined,
+    requireFailure: boolean
+): Array<string> {
     const errors: Array<string> = [];
     if (!evidence.completed || evidence.signal !== null || !isNormalTypescriptStatus(evidence.status)) {
         errors.push("build process did not complete with a normal TypeScript compiler status");
@@ -136,7 +140,9 @@ async function runCommand(): Promise<number> {
         return 2;
     }
     if (!succeeded) {
-        console.log(`Build completed with status ${String(result.status)}; recording comparable build-failure evidence.`);
+        console.log(
+            `Build completed with status ${String(result.status)}; recording comparable build-failure evidence.`
+        );
     }
     return 0;
 }
