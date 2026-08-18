@@ -59,11 +59,8 @@ function coerceDocCommentEntryToRawText(entry: unknown, originalText: string | n
  *
  * - When the source entry coerces to raw text (string, AST comment, or
  *   `.raw` payload), the resulting string is included.
- * - When the source entry is a string that does not survive the
- *   coercion step, the original string is included so callers do not
- *   silently lose data; this preserves the pre-refactor behaviour where
- *   string entries were forwarded unchanged.
- * - Unrelated entries are skipped, matching the previous semantics.
+ * - Entries that cannot be coerced to raw text are skipped, matching the
+ *   pre-refactor behaviour.
  *
  * The function is intentionally pure: callers can safely pass an array
  * shared with other code paths without worrying about a hidden in-place
@@ -80,11 +77,6 @@ export function buildPrintableDocCommentLines(
         const rawText = coerceDocCommentEntryToRawText(entry, originalText);
         if (rawText !== null) {
             result.push(rawText);
-            continue;
-        }
-
-        if (typeof entry === "string") {
-            result.push(entry);
         }
     }
 
