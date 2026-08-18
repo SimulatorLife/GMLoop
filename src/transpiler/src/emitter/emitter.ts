@@ -97,6 +97,17 @@ const NOOP_LEXICAL_SCOPE_CONTROLLER: LexicalScopeController = Object.freeze({
     popScope(): void {}
 });
 
+function isLexicalScopeController(
+    semantic: IdentifierAnalyzer & CallTargetAnalyzer
+): semantic is IdentifierAnalyzer & CallTargetAnalyzer & LexicalScopeController {
+    return (
+        "pushScope" in semantic &&
+        typeof semantic.pushScope === "function" &&
+        "popScope" in semantic &&
+        typeof semantic.popScope === "function"
+    );
+}
+
 export class GmlToJsEmitter {
     /**
      * Semantic oracle combining identifier analysis and call-target classification.
@@ -125,11 +136,7 @@ export class GmlToJsEmitter {
     private readonly lexicalScopeController: LexicalScopeController;
     private readonly visitNode = (node: GmlNode): string => this.visit(node);
 
-    constructor(
-        semantic: IdentifierAnalyzer & CallTargetAnalyzer,
-        options: Partial<EmitOptions> = {},
-        lexicalScopeController: LexicalScopeController = NOOP_LEXICAL_SCOPE_CONTROLLER
-    ) {
+    constructor(semantic: IdentifierAnalyzer & CallTargetAnalyzer, options: Partial<EmitOptions> = {}) {
         this.semantic = semantic;
         this.options = { ...DEFAULT_OPTIONS, ...options };
         this.globalVars = new Set();
@@ -139,7 +146,7 @@ export class GmlToJsEmitter {
         this.repeatLoopCounter = 0;
         this.staticScopeCounter = 0;
         this.staticScopes = [];
-        this.lexicalScopeController = lexicalScopeController;
+        this.lexicalScopeController = isLexicalScopeController(semantic) ? semantic : NOOP_LEXICAL_SCOPE_CONTROLLER;
     }
 
     /**
