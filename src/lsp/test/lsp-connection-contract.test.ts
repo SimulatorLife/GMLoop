@@ -6,6 +6,12 @@ import {
     type GmlLanguageServerConnectionContract,
     hasLspConnectionShutdownHandler,
     isGmlLanguageServerConnectionContract,
+    type LspConnectionInitialization,
+    type LspConnectionLifecycle,
+    type LspConnectionOutbound,
+    type LspDocumentSyncConnection,
+    type LspEditingConnection,
+    type LspNavigationConnection,
     trySendSemanticTokenRefreshRequest
 } from "@gmloop/lsp";
 
@@ -160,4 +166,148 @@ void test("semantic token refresh probe returns false when sendRequest is missin
     const partial = { ...fixture, sendRequest: undefined };
     assert.equal(trySendSemanticTokenRefreshRequest(partial), false);
     assert.equal(trySendSemanticTokenRefreshRequest(null), false);
+});
+
+/**
+ * Role-interface coverage tests.
+ *
+ * The composite contract is decomposed into role interfaces so consumers
+ * can depend on only the members they actually exercise. These tests
+ * verify that:
+ *
+ * 1. The composite contract still satisfies every role interface
+ *    (so existing call sites keep compiling).
+ * 2. A slim implementation that only exposes one role's members
+ *    satisfies that role — the structural-type contract does not force
+ *    mocks to fabricate the full surface.
+ * 3. The type guard's role-keyed handler registry agrees with the role
+ *    interfaces, so dropping a method from any role role makes the
+ *    guard reject the fixture.
+ */
+
+void test("composite contract satisfies every role interface", () => {
+    const fixture = createContractFixture();
+    const lifecycle: LspConnectionLifecycle = fixture;
+    const initialization: LspConnectionInitialization = fixture;
+    const documentSync: LspDocumentSyncConnection = fixture;
+    const navigation: LspNavigationConnection = fixture;
+    const editing: LspEditingConnection = fixture;
+    const outbound: LspConnectionOutbound = fixture;
+
+    assert.equal(typeof lifecycle.listen, "function", "Lifecycle role must expose listen");
+    assert.equal(typeof initialization.onInitialize, "function", "Initialization role must expose onInitialize");
+    assert.equal(
+        typeof documentSync.onDidChangeTextDocument,
+        "function",
+        "Document sync role must expose onDidChangeTextDocument"
+    );
+    assert.equal(typeof navigation.onCompletion, "function", "Navigation role must expose onCompletion");
+    assert.equal(typeof editing.onCodeAction, "function", "Editing role must expose onCodeAction");
+    assert.equal(typeof outbound.sendDiagnostics, "function", "Outbound role must expose sendDiagnostics");
+});
+
+void test("navigation role accepts a navigation-only mock", () => {
+    const navigationOnly: LspNavigationConnection = {
+        onCompletion: () => undefined,
+        onDefinition: () => undefined,
+        onDocumentHighlight: () => undefined,
+        onDocumentSymbol: () => undefined,
+        onHover: () => undefined,
+        onPrepareRename: () => undefined,
+        onReferences: () => undefined,
+        onRenameRequest: () => undefined,
+        onWorkspaceSymbol: () => undefined
+    };
+
+    assert.equal(typeof navigationOnly.onCompletion, "function");
+    assert.equal(typeof navigationOnly.onHover, "function");
+});
+
+void test("outbound role accepts an outbound-only mock", () => {
+    const outboundOnly: LspConnectionOutbound = {
+        sendDiagnostics: () => undefined,
+        sendRequest: () => undefined
+    };
+
+    assert.equal(typeof outboundOnly.sendDiagnostics, "function");
+    assert.equal(typeof outboundOnly.sendRequest, "function");
+});
+
+void test("lifecycle role accepts a lifecycle-only mock", () => {
+    const lifecycleOnly: LspConnectionLifecycle = {
+        listen: () => undefined
+    };
+
+    assert.equal(typeof lifecycleOnly.listen, "function");
+});
+
+void test("document sync role accepts a document-sync-only mock", () => {
+    const documentSyncOnly: LspDocumentSyncConnection = {
+        onDidChangeTextDocument: () => undefined,
+        onDidChangeWatchedFiles: () => undefined,
+        onDidCloseTextDocument: () => undefined,
+        onDidOpenTextDocument: () => undefined,
+        onDidSaveTextDocument: () => undefined
+    };
+
+    assert.equal(typeof documentSyncOnly.onDidOpenTextDocument, "function");
+    assert.equal(typeof documentSyncOnly.onDidSaveTextDocument, "function");
+});
+
+void test("initialization role accepts an initialization-only mock", () => {
+    const initializationOnly: LspConnectionInitialization = {
+        onInitialize: () => undefined,
+        onInitialized: () => undefined
+    };
+
+    assert.equal(typeof initializationOnly.onInitialize, "function");
+    assert.equal(typeof initializationOnly.onInitialized, "function");
+});
+
+void test("editing role accepts an editing-only mock", () => {
+    const editingOnly: LspEditingConnection = {
+        onCodeAction: () => undefined,
+        onDocumentFormatting: () => undefined
+    };
+
+    assert.equal(typeof editingOnly.onCodeAction, "function");
+    assert.equal(typeof editingOnly.onDocumentFormatting, "function");
+});
+
+void test("type guard rejects fixtures missing a role's handler", () => {
+    const base = createContractFixture();
+    const missingFromNavigation = { ...base, onHover: undefined };
+    assert.equal(
+        isGmlLanguageServerConnectionContract(missingFromNavigation),
+        false,
+        "Removing a navigation role handler must fail the guard"
+    );
+
+    const missingFromDocumentSync = { ...base, onDidSaveTextDocument: undefined };
+    assert.equal(
+        isGmlLanguageServerConnectionContract(missingFromDocumentSync),
+        false,
+        "Removing a document sync role handler must fail the guard"
+    );
+
+    const missingFromEditing = { ...base, onCodeAction: undefined };
+    assert.equal(
+        isGmlLanguageServerConnectionContract(missingFromEditing),
+        false,
+        "Removing an editing role handler must fail the guard"
+    );
+
+    const missingFromInitialization = { ...base, onInitialize: undefined };
+    assert.equal(
+        isGmlLanguageServerConnectionContract(missingFromInitialization),
+        false,
+        "Removing an initialization role handler must fail the guard"
+    );
+
+    const missingFromLifecycle = { ...base, listen: undefined };
+    assert.equal(
+        isGmlLanguageServerConnectionContract(missingFromLifecycle),
+        false,
+        "Removing a lifecycle role handler must fail the guard"
+    );
 });
