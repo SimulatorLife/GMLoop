@@ -24,16 +24,220 @@ runs:
   using: "composite"
   steps:
     - name: Self-test lint comparator
-      shell: bash
-      run: node "$GITHUB_ACTION_PATH/check.mjs" --self-test
+      uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+      with:
+        script: |
+          const assert = require("node:assert/strict");
+          function decodeXml(value) {
+            return String(value ?? "")
+              .replaceAll("&quot;", '"')
+              .replaceAll("&apos;", "'")
+              .replaceAll("&lt;", "<")
+              .replaceAll("&gt;", ">")
+              .replaceAll("&amp;", "&");
+          }
+          function parseAttributes(fragment) {
+            const attributes = {};
+            for (const match of String(fragment).matchAll(/([A-Za-z_:][\w:.-]*)="([^"]*)"/gu)) {
+              attributes[match[1]] = decodeXml(match[2]);
+            }
+            return attributes;
+          }
+          function normalizeFile(value) {
+            return String(value ?? "")
+              .replaceAll("\\", "/")
+              .replace(/^\.\//u, "");
+          }
+          function findingFingerprint(file, attributes) {
+            return [
+              normalizeFile(file),
+              String(attributes.severity ?? "").toLowerCase(),
+              String(attributes.source ?? ""),
+              String(attributes.message ?? ""),
+            ].join("\0");
+          }
+          function parseLintErrors(xml) {
+            const source = String(xml ?? "");
+            if (!/<checkstyle\b/iu.test(source) || !/<\/checkstyle>/iu.test(source)) {
+              throw new Error("Checkstyle document is incomplete.");
+            }
+            const findings = [];
+            for (const fileMatch of source.matchAll(/<file\b([^>]*)>([\s\S]*?)<\/file>/giu)) {
+              const fileAttributes = parseAttributes(fileMatch[1]);
+              const file = normalizeFile(fileAttributes.name);
+              if (!file) throw new Error("Checkstyle file entry is missing a name.");
+              for (const errorMatch of fileMatch[2].matchAll(/<error\b([^>]*)\/?\s*>/giu)) {
+                const attributes = parseAttributes(errorMatch[1]);
+                const severity = String(attributes.severity ?? "").toLowerCase();
+                if (severity !== "error") continue;
+                findings.push({
+                  file,
+                  severity,
+                  source: String(attributes.source ?? ""),
+                  message: String(attributes.message ?? ""),
+                  fingerprint: findingFingerprint(file, attributes),
+                });
+              }
+            }
+            return findings;
+          }
+          function toCounts(findings) {
+            const counts = new Map();
+            for (const finding of findings) {
+              counts.set(finding.fingerprint, (counts.get(finding.fingerprint) ?? 0) + 1);
+            }
+            return counts;
+          }
+          function compareLintErrors(baseXml, targetXml) {
+            const base = parseLintErrors(baseXml);
+            const target = parseLintErrors(targetXml);
+            const remaining = toCounts(base);
+            const newFindings = [];
+            for (const finding of target) {
+              const count = remaining.get(finding.fingerprint) ?? 0;
+              if (count > 0) {
+                if (count === 1) remaining.delete(finding.fingerprint);
+                else remaining.set(finding.fingerprint, count - 1);
+                continue;
+              }
+              newFindings.push(finding);
+            }
+            return {
+              eligible: newFindings.length === 0,
+              baseErrors: base.length,
+              targetErrors: target.length,
+              newErrors: newFindings.length,
+              newFindings,
+            };
+          }
+          const wrap = (body) => '<?xml version="1.0"?><checkstyle version="8.0">' + body + "</checkstyle>";
+          const finding = ({ file = "src/a.ts", line = 1, rule = "eslint.rule", message = "bad" } = {}) =>
+            '<file name="' + file + '"><error line="' + line + '" column="1" severity="error" message="' + message + '" source="' + rule + '" /></file>';
+          const moved = compareLintErrors(
+            wrap(finding({ line: 2 })),
+            wrap(finding({ line: 200 })),
+          );
+          assert.equal(moved.eligible, true);
+          assert.equal(moved.newErrors, 0);
+          const replaced = compareLintErrors(
+            wrap(finding({ rule: "eslint.old", message: "old problem" })),
+            wrap(finding({ rule: "eslint.new", message: "new problem" })),
+          );
+          assert.equal(replaced.eligible, false);
+          assert.equal(replaced.newErrors, 1);
+          const duplicate = compareLintErrors(
+            wrap(finding()),
+            wrap(finding() + finding()),
+          );
+          assert.equal(duplicate.eligible, false);
+          assert.equal(duplicate.newErrors, 1);
+          core.info("check-lint-regression self-test passed");
     - name: Compare base and target lint errors
       id: compare
-      shell: bash
+      uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
       env:
         BASE_DIR: ${{ inputs.base-dir }}
         TARGET_DIR: ${{ inputs.target-dir }}
-      run: |
-        node "$GITHUB_ACTION_PATH/check.mjs" \
-          --base "$BASE_DIR/eslint-checkstyle.xml" \
-          --target "$TARGET_DIR/eslint-checkstyle.xml" \
-          --github-output "$GITHUB_OUTPUT"
+      with:
+        script: |
+          const fs = require("node:fs");
+          function decodeXml(value) {
+            return String(value ?? "")
+              .replaceAll("&quot;", '"')
+              .replaceAll("&apos;", "'")
+              .replaceAll("&lt;", "<")
+              .replaceAll("&gt;", ">")
+              .replaceAll("&amp;", "&");
+          }
+          function parseAttributes(fragment) {
+            const attributes = {};
+            for (const match of String(fragment).matchAll(/([A-Za-z_:][\w:.-]*)="([^"]*)"/gu)) {
+              attributes[match[1]] = decodeXml(match[2]);
+            }
+            return attributes;
+          }
+          function normalizeFile(value) {
+            return String(value ?? "")
+              .replaceAll("\\", "/")
+              .replace(/^\.\//u, "");
+          }
+          function findingFingerprint(file, attributes) {
+            return [
+              normalizeFile(file),
+              String(attributes.severity ?? "").toLowerCase(),
+              String(attributes.source ?? ""),
+              String(attributes.message ?? ""),
+            ].join("\0");
+          }
+          function parseLintErrors(xml) {
+            const source = String(xml ?? "");
+            if (!/<checkstyle\b/iu.test(source) || !/<\/checkstyle>/iu.test(source)) {
+              throw new Error("Checkstyle document is incomplete.");
+            }
+            const findings = [];
+            for (const fileMatch of source.matchAll(/<file\b([^>]*)>([\s\S]*?)<\/file>/giu)) {
+              const fileAttributes = parseAttributes(fileMatch[1]);
+              const file = normalizeFile(fileAttributes.name);
+              if (!file) throw new Error("Checkstyle file entry is missing a name.");
+              for (const errorMatch of fileMatch[2].matchAll(/<error\b([^>]*)\/?\s*>/giu)) {
+                const attributes = parseAttributes(errorMatch[1]);
+                const severity = String(attributes.severity ?? "").toLowerCase();
+                if (severity !== "error") continue;
+                findings.push({
+                  file,
+                  severity,
+                  source: String(attributes.source ?? ""),
+                  message: String(attributes.message ?? ""),
+                  fingerprint: findingFingerprint(file, attributes),
+                });
+              }
+            }
+            return findings;
+          }
+          function toCounts(findings) {
+            const counts = new Map();
+            for (const finding of findings) {
+              counts.set(finding.fingerprint, (counts.get(finding.fingerprint) ?? 0) + 1);
+            }
+            return counts;
+          }
+          function compareLintErrors(baseXml, targetXml) {
+            const base = parseLintErrors(baseXml);
+            const target = parseLintErrors(targetXml);
+            const remaining = toCounts(base);
+            const newFindings = [];
+            for (const finding of target) {
+              const count = remaining.get(finding.fingerprint) ?? 0;
+              if (count > 0) {
+                if (count === 1) remaining.delete(finding.fingerprint);
+                else remaining.set(finding.fingerprint, count - 1);
+                continue;
+              }
+              newFindings.push(finding);
+            }
+            return {
+              eligible: newFindings.length === 0,
+              baseErrors: base.length,
+              targetErrors: target.length,
+              newErrors: newFindings.length,
+              newFindings,
+            };
+          }
+          const baseDir = process.env.BASE_DIR;
+          const targetDir = process.env.TARGET_DIR;
+          if (!baseDir || !targetDir) throw new Error("BASE_DIR and TARGET_DIR are required.");
+          const result = compareLintErrors(
+            fs.readFileSync(baseDir + "/eslint-checkstyle.xml", "utf8"),
+            fs.readFileSync(targetDir + "/eslint-checkstyle.xml", "utf8"),
+          );
+          core.setOutput("eligible", String(result.eligible));
+          core.setOutput("base_errors", String(result.baseErrors));
+          core.setOutput("target_errors", String(result.targetErrors));
+          core.setOutput("new_errors", String(result.newErrors));
+          core.info("Lint regression check: base=" + result.baseErrors + ", target=" + result.targetErrors + ", new=" + result.newErrors + ".");
+          if (result.newErrors > 0) {
+            for (const finding of result.newFindings.slice(0, 20)) {
+              core.error("NEW " + finding.file + ": " + (finding.source || "eslint") + ": " + finding.message);
+            }
+            core.setFailed("Lint regression check found " + result.newErrors + " new error(s).");
+          }
