@@ -4,6 +4,8 @@ import test from "node:test";
 import { Parser } from "@gmloop/parser";
 import { Transpiler } from "@gmloop/transpiler";
 
+import type { LexicalScopeController } from "../src/emitter/ast.js";
+
 type SemanticAnalyzers = ConstructorParameters<typeof Transpiler.GmlToJsEmitter>[0];
 
 /**
@@ -68,6 +70,37 @@ void test("GmlToJsEmitter handles identifiers in AST", () => {
     const ast = parser.parse();
     const result = Transpiler.emitJavaScript(ast);
     assert.ok(result.includes("myVariable"), "Should include the identifier");
+});
+
+void test("GmlToJsEmitter dispatches lexical scopes through the explicit controller contract", () => {
+    const defaultOracle = Transpiler.createSemanticOracle();
+    const semantic: SemanticAnalyzers = Object.assign(Object.create(defaultOracle), {
+        pushScope(): never {
+            throw new Error("semantic shape must not control lexical-scope dispatch");
+        },
+        popScope(): never {
+            throw new Error("semantic shape must not control lexical-scope dispatch");
+        }
+    });
+    const pushedScopes: Array<ReadonlySet<string>> = [];
+    let popCount = 0;
+    const scopeController: LexicalScopeController = {
+        pushScope(localNames) {
+            pushedScopes.push(new Set(localNames));
+        },
+        popScope() {
+            popCount += 1;
+        }
+    };
+    const ast = new Parser.GMLParser("function nested(param) { var local; return param + local; }").parse();
+    const emitter = new Transpiler.GmlToJsEmitter(semantic, {}, scopeController);
+
+    emitter.emit(ast);
+
+    assert.equal(pushedScopes.length, 1);
+    assert.equal(pushedScopes[0]?.has("param"), true);
+    assert.equal(pushedScopes[0]?.has("local"), true);
+    assert.equal(popCount, 1);
 });
 
 void test("GmlToJsEmitter handles simple binary expressions in AST", () => {

@@ -26,6 +26,7 @@ import type {
     IdentifierNode,
     IfStatementNode,
     IncDecStatementNode,
+    LexicalScopeController,
     LiteralNode,
     MacroDeclarationNode,
     MemberDotExpressionNode,
@@ -91,21 +92,10 @@ interface StaticScope {
     readonly names: ReadonlySet<string>;
 }
 
-interface LexicalScopeController {
-    pushScope(localNames: ReadonlySet<string>): void;
-    popScope(): void;
-}
-
-function isLexicalScopeController(
-    semantic: IdentifierAnalyzer & CallTargetAnalyzer
-): semantic is IdentifierAnalyzer & CallTargetAnalyzer & LexicalScopeController {
-    return (
-        "pushScope" in semantic &&
-        typeof semantic.pushScope === "function" &&
-        "popScope" in semantic &&
-        typeof semantic.popScope === "function"
-    );
-}
+const NOOP_LEXICAL_SCOPE_CONTROLLER: LexicalScopeController = Object.freeze({
+    pushScope(): void {},
+    popScope(): void {}
+});
 
 export class GmlToJsEmitter {
     /**
@@ -132,10 +122,14 @@ export class GmlToJsEmitter {
     private repeatLoopCounter: number;
     private staticScopeCounter: number;
     private readonly staticScopes: StaticScope[];
-    private readonly lexicalScopeController: LexicalScopeController | null;
+    private readonly lexicalScopeController: LexicalScopeController;
     private readonly visitNode = (node: GmlNode): string => this.visit(node);
 
-    constructor(semantic: IdentifierAnalyzer & CallTargetAnalyzer, options: Partial<EmitOptions> = {}) {
+    constructor(
+        semantic: IdentifierAnalyzer & CallTargetAnalyzer,
+        options: Partial<EmitOptions> = {},
+        lexicalScopeController: LexicalScopeController = NOOP_LEXICAL_SCOPE_CONTROLLER
+    ) {
         this.semantic = semantic;
         this.options = { ...DEFAULT_OPTIONS, ...options };
         this.globalVars = new Set();
@@ -145,7 +139,7 @@ export class GmlToJsEmitter {
         this.repeatLoopCounter = 0;
         this.staticScopeCounter = 0;
         this.staticScopes = [];
-        this.lexicalScopeController = isLexicalScopeController(semantic) ? semantic : null;
+        this.lexicalScopeController = lexicalScopeController;
     }
 
     /**
@@ -1104,11 +1098,11 @@ export class GmlToJsEmitter {
     }
 
     private pushLexicalScope(localNames: ReadonlySet<string>): void {
-        this.lexicalScopeController?.pushScope(localNames);
+        this.lexicalScopeController.pushScope(localNames);
     }
 
     private popLexicalScope(): void {
-        this.lexicalScopeController?.popScope();
+        this.lexicalScopeController.popScope();
     }
 
     /**

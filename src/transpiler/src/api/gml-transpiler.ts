@@ -451,7 +451,7 @@ export class GmlTranspiler {
             // EventContextOracle can distinguish them from instance fields.
             const localVars = collectLocalVariables(ast);
             const eventOracle = new EventContextOracle(this.getSemanticAnalyzers(), localVars);
-            const emitter = new GmlToJsEmitter(eventOracle, this.emitterOptions);
+            const emitter = new GmlToJsEmitter(eventOracle, this.emitterOptions, eventOracle);
             const jsBody = emitter.emitFunctionBody(ast);
 
             const timestamp = Date.now();
