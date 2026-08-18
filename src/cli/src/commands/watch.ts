@@ -105,6 +105,7 @@ import {
     resolveUnknownScanConcurrency,
     takeInitialFileData
 } from "./watch/source-analysis.js";
+import { evaluateTranspilationSkipPolicy, type TranspilationSkipReason } from "./watch/transpilation-skip-policy.js";
 
 const { debounce, getErrorMessage, isErrorWithCode } = Core;
 const IGNORED_WATCH_DIRECTORY_NAMES = new Set(DEFAULT_WATCH_IGNORED_DIRECTORY_NAMES);
@@ -148,6 +149,26 @@ export const __watchTest__ = Object.freeze({
     EVENT_LOOP_YIELD_INTERVAL,
     yieldToEventLoop
 });
+
+/**
+ * Human-readable label for a `TranspilationSkipReason` so the verbose watcher
+ * log can describe *why* a change event was treated as a no-op without the
+ * mechanism code hard-coding the string mapping.
+ *
+ * Centralised next to the consumer so future reason values only need to be
+ * added in one place. Kept deliberately tiny — anything richer belongs in the
+ * policy module itself.
+ */
+function describeTranspilationSkipReason(reason: TranspilationSkipReason): string {
+    switch (reason) {
+        case "mtime-unchanged": {
+            return "mtime unchanged";
+        }
+        case "content-unchanged": {
+            return "content unchanged";
+        }
+    }
+}
 
 type WatchEventListener = (...args: Parameters<WatchListener<string>>) => void | Promise<void>;
 
@@ -1795,29 +1816,30 @@ async function handleFileChange(
                 return;
             }
 
-            // Skip transpilation when content is byte-for-byte identical to what was
-            // last transpiled.  Mtime-based deduplication already handles the common
-            // case where the file is not written at all; this second guard covers
-            // the remaining scenario where an editor or tool updates the mtime without
-            // changing the actual bytes (e.g. redundant saves, `touch`, auto-formatters
-            // that produce no change).
-            const contentLength = content.length;
-            const previousContentLength = runtimeContext.fileContentLengths.get(filePath);
-            const lastContentHash = runtimeContext.fileContentHashes.get(filePath);
-            const shouldCheckHash =
-                previousContentLength !== undefined &&
-                lastContentHash !== undefined &&
-                previousContentLength === contentLength;
-            const contentHash = shouldCheckHash ? hashSourceContent(content) : undefined;
-            if (contentHash !== undefined && lastContentHash === contentHash) {
+            // Defer the transpilation-skip decision to the shared policy so the
+            // heuristic lives in one place (see ./watch/transpilation-skip-policy.ts).
+            // The pre-read mtime guard above already proved the new mtime is strictly
+            // newer than the cached one, so the policy's mtime check is redundant here
+            // and disabled by passing `previousMtimeMs: undefined`. The policy then only
+            // evaluates the content-hash guard, which covers the remaining scenario
+            // where an editor or tool advances the mtime without changing the actual
+            // bytes (e.g. redundant saves, `touch`, auto-formatters that produce no change).
+            const skipDecision = evaluateTranspilationSkipPolicy({
+                currentMtimeMs: resolvedFileStats?.mtimeMs ?? Date.now(),
+                previousMtimeMs: undefined,
+                currentContent: content,
+                previousContentHash: runtimeContext.fileContentHashes.get(filePath)
+            });
+
+            if (skipDecision.action === "skip") {
                 if (verbose && !quiet) {
-                    console.log("  ↳ Skipping transpilation: content unchanged");
+                    console.log(`  ↳ Skipping transpilation: ${describeTranspilationSkipReason(skipDecision.reason)}`);
                 }
                 return;
             }
 
-            runtimeContext.fileContentHashes.set(filePath, contentHash ?? hashSourceContent(content));
-            runtimeContext.fileContentLengths.set(filePath, contentLength);
+            runtimeContext.fileContentHashes.set(filePath, skipDecision.contentHash);
+            runtimeContext.fileContentLengths.set(filePath, content.length);
 
             ensureScriptNameRegistered(filePath, runtimeContext.scriptNames);
 

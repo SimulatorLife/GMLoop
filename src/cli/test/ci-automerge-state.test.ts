@@ -5,8 +5,8 @@ import process from "node:process";
 import test from "node:test";
 
 import {
-    AUTO_MERGE_SUMMARY_COMMENT_MARKER,
     assertAutoMergeControlPlaneContract,
+    AUTO_MERGE_SUMMARY_COMMENT_MARKER,
     findBotAutoMergeSummaryComment,
     findLatestBotAutoMergeState,
     normalizeAutoMergeState,
@@ -33,17 +33,20 @@ void test("auto-merge state round-trips through its durable comment marker", () 
         runId: 123
     });
 
-    assert.deepEqual(parseAutoMergeState(marker), normalizeAutoMergeState({
-        pr: 42,
-        head: HEAD_SHA,
-        base: BASE_SHA,
-        green: true,
-        trusted: true,
-        reason: "clean",
-        retry: 0,
-        runId: 123,
-        updatedAt: parseAutoMergeState(marker)?.updatedAt
-    }));
+    assert.deepEqual(
+        parseAutoMergeState(marker),
+        normalizeAutoMergeState({
+            pr: 42,
+            head: HEAD_SHA,
+            base: BASE_SHA,
+            green: true,
+            trusted: true,
+            reason: "clean",
+            retry: 0,
+            runId: 123,
+            updatedAt: parseAutoMergeState(marker)?.updatedAt
+        })
+    );
 });
 
 void test("unknown base is represented explicitly rather than with a placeholder SHA", () => {
@@ -61,23 +64,32 @@ void test("unknown base is represented explicitly rather than with a placeholder
 });
 
 void test("canonical summary rendering and lookup share one durable marker", () => {
-    const body = renderAutoMergeStateComment({
-        pr: 42,
-        head: HEAD_SHA,
-        base: BASE_SHA,
-        green: false,
-        trusted: false,
-        reason: "pending",
-        retry: 0,
-        runId: 0
-    }, "### Trusted auto-merge evaluation\n\nWaiting for validation.");
+    const body = renderAutoMergeStateComment(
+        {
+            pr: 42,
+            head: HEAD_SHA,
+            base: BASE_SHA,
+            green: false,
+            trusted: false,
+            reason: "pending",
+            retry: 0,
+            runId: 0
+        },
+        "### Trusted auto-merge evaluation\n\nWaiting for validation."
+    );
 
-    assert.match(body, new RegExp(AUTO_MERGE_SUMMARY_COMMENT_MARKER.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+    assert.match(
+        body,
+        new RegExp(AUTO_MERGE_SUMMARY_COMMENT_MARKER.replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`), "u")
+    );
     assert.equal(parseAutoMergeState(body)?.reason, "pending");
-    assert.equal(findBotAutoMergeSummaryComment([
-        { id: 7, body, user: { login: "github-actions[bot]" } },
-        { id: 8, body, user: { login: "someone-else" } }
-    ])?.id, 7);
+    assert.equal(
+        findBotAutoMergeSummaryComment([
+            { id: 7, body, user: { login: "github-actions[bot]" } },
+            { id: 8, body, user: { login: "someone-else" } }
+        ])?.id,
+        7
+    );
 });
 
 void test("latest trusted state only considers valid bot-authored markers", () => {
@@ -118,29 +130,37 @@ void test("validation and finalizer run titles have strict machine-readable iden
         head: HEAD_SHA
     });
     assert.equal(parseAutoMergeValidationRunTitle(`prefix Auto-merge PR #42 @ ${HEAD_SHA}`), null);
-    assert.equal(parseAutoMergeFinalizerRunTitle("Finalize auto-merge validation run 123456"), 123456);
+    assert.equal(parseAutoMergeFinalizerRunTitle("Finalize auto-merge validation run 123456"), 123_456);
     assert.equal(parseAutoMergeFinalizerRunTitle("Finalize auto-merge"), null);
 });
 
 void test("control-plane workflow contract checks exact privileged jobs, worker base pinning, and queue ownership", () => {
     const reconcile = fs.readFileSync(path.join(REPO_ROOT, ".github/workflows/automerge-reconcile.yml"), "utf8");
     const finalizer = fs.readFileSync(path.join(REPO_ROOT, ".github/workflows/automerge-finalize.yml"), "utf8");
-    const reconcileAction = fs.readFileSync(path.join(REPO_ROOT, ".github/actions/reconcile-automerge/action.yml"), "utf8");
+    const reconcileAction = fs.readFileSync(
+        path.join(REPO_ROOT, ".github/actions/reconcile-automerge/action.yml"),
+        "utf8"
+    );
     const worker = fs.readFileSync(path.join(REPO_ROOT, ".github/workflows/automerge-prs.yml"), "utf8");
-    const validationAction = fs.readFileSync(path.join(REPO_ROOT, ".github/actions/run-automerge-validation/action.yml"), "utf8");
+    const validationAction = fs.readFileSync(
+        path.join(REPO_ROOT, ".github/actions/run-automerge-validation/action.yml"),
+        "utf8"
+    );
     assertAutoMergeControlPlaneContract(reconcile, finalizer, reconcileAction, worker, validationAction);
 });
 
 void test("malformed or unsupported auto-merge state is rejected", () => {
     assert.equal(parseAutoMergeState("<!-- automerge-state nope -->"), null);
-    assert.throws(() => normalizeAutoMergeState({
-        pr: 42,
-        head: "bad",
-        base: BASE_SHA,
-        green: false,
-        trusted: true,
-        reason: "infrastructure",
-        retry: 0,
-        runId: 1
-    }));
+    assert.throws(() =>
+        normalizeAutoMergeState({
+            pr: 42,
+            head: "bad",
+            base: BASE_SHA,
+            green: false,
+            trusted: true,
+            reason: "infrastructure",
+            retry: 0,
+            runId: 1
+        })
+    );
 });

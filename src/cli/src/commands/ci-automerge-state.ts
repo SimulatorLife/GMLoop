@@ -8,21 +8,23 @@ export const AUTO_MERGE_STATE_MARKER = "automerge-state";
 export const AUTO_MERGE_STATE_SCHEMA_VERSION = 1;
 export const AUTO_MERGE_SUMMARY_COMMENT_MARKER = "<!-- automerge-pr-test-summary -->";
 export const AUTO_MERGE_FINALIZER_RUN_PREFIX = "Finalize auto-merge validation run ";
-export const AUTO_MERGE_STATE_REASONS = Object.freeze(new Set([
-    "pending",
-    "clean",
-    "recovery",
-    "trusted-ci-change",
-    "policy-block",
-    "build-failure",
-    "quality-regression",
-    "baseline-unavailable",
-    "infrastructure",
-    "stale",
-    "pending-mergeability",
-    "conflict",
-    "merge-failed"
-]));
+export const AUTO_MERGE_STATE_REASONS = Object.freeze(
+    new Set([
+        "pending",
+        "clean",
+        "recovery",
+        "trusted-ci-change",
+        "policy-block",
+        "build-failure",
+        "quality-regression",
+        "baseline-unavailable",
+        "infrastructure",
+        "stale",
+        "pending-mergeability",
+        "conflict",
+        "merge-failed"
+    ])
+);
 
 /** Durable machine-readable auto-merge decision state persisted on a PR. */
 export type AutoMergeState = Readonly<{
@@ -68,7 +70,7 @@ function escapeMarkdownTableCell(value: string): string {
 
 function formatAutoMergeSummaryTable(summary: string): string {
     const lines = summary.split(/\r?\n/u).map((line) => line.trim());
-    const heading = lines[0] === "### Trusted auto-merge evaluation" ? lines.shift() ?? "" : "";
+    const heading = lines[0] === "### Trusted auto-merge evaluation" ? (lines.shift() ?? "") : "";
     while (lines[0] === "") lines.shift();
     const lead = lines.shift() ?? "";
     while (lines[0] === "") lines.shift();
@@ -78,7 +80,9 @@ function formatAutoMergeSummaryTable(summary: string): string {
     let active: { check: string; result: string; details: Array<string> } | null = null;
     const flushActive = (): void => {
         if (!active) return;
-        rows.push(Object.freeze({ check: active.check, result: active.result, details: Object.freeze(active.details) }));
+        rows.push(
+            Object.freeze({ check: active.check, result: active.result, details: Object.freeze(active.details) })
+        );
         active = null;
     };
 
@@ -97,9 +101,9 @@ function formatAutoMergeSummaryTable(summary: string): string {
                 continue;
             }
             const separator = detail.indexOf(":");
-            const check = separator >= 0 ? detail.slice(0, separator).trim() : detail;
-            const value = separator >= 0 ? detail.slice(separator + 1).trim() : "";
-            const result = detail.includes("(informational;") ? "ℹ️" : (lead.startsWith("✅") ? "✅" : "❌");
+            const check = separator === -1 ? detail : detail.slice(0, separator).trim();
+            const value = separator === -1 ? "" : detail.slice(separator + 1).trim();
+            const result = detail.includes("(informational;") ? "ℹ️" : lead.startsWith("✅") ? "✅" : "❌";
             rows.push(Object.freeze({ check, result, details: Object.freeze(value ? [value] : []) }));
             continue;
         }
@@ -137,10 +141,13 @@ export function normalizeAutoMergeState(value: StateInput | AutoMergeState): Aut
         updatedAt: String(value.updatedAt || new Date().toISOString())
     });
     if (!Number.isInteger(state.pr) || state.pr <= 0) throw new Error("Invalid PR number in auto-merge state.");
-    if (!isSha(state.head) || (state.base !== "" && !isSha(state.base))) throw new Error("Invalid head/base SHA in auto-merge state.");
+    if (!isSha(state.head) || (state.base !== "" && !isSha(state.base)))
+        throw new Error("Invalid head/base SHA in auto-merge state.");
     if (!AUTO_MERGE_STATE_REASONS.has(state.reason)) throw new Error(`Unsupported auto-merge reason: ${state.reason}`);
-    if (!Number.isInteger(state.retry) || state.retry < 0 || state.retry > 10) throw new Error("Invalid retry count in auto-merge state.");
-    if (!Number.isInteger(state.runId) || state.runId < 0) throw new Error("Invalid workflow run ID in auto-merge state.");
+    if (!Number.isInteger(state.retry) || state.retry < 0 || state.retry > 10)
+        throw new Error("Invalid retry count in auto-merge state.");
+    if (!Number.isInteger(state.runId) || state.runId < 0)
+        throw new Error("Invalid workflow run ID in auto-merge state.");
     return state;
 }
 
@@ -170,24 +177,38 @@ export function parseAutoMergeState(body: string | null | undefined): AutoMergeS
 }
 
 /** Return the newest bot-authored comment containing valid auto-merge state. */
-export function findLatestBotAutoMergeState(comments: ReadonlyArray<AutoMergeIssueComment>, login = "github-actions[bot]"): AutoMergeState | null {
+export function findLatestBotAutoMergeState(
+    comments: ReadonlyArray<AutoMergeIssueComment>,
+    login = "github-actions[bot]"
+): AutoMergeState | null {
     const candidates = comments
         .filter((comment) => comment.user?.login === login)
         .map((comment) => ({ comment, state: parseAutoMergeState(comment.body) }))
         .filter((entry): entry is { comment: AutoMergeIssueComment; state: AutoMergeState } => entry.state !== null)
-        .sort((left, right) => new Date(right.comment.updated_at || right.comment.created_at || 0).getTime()
-            - new Date(left.comment.updated_at || left.comment.created_at || 0).getTime());
+        .sort(
+            (left, right) =>
+                new Date(right.comment.updated_at || right.comment.created_at || 0).getTime() -
+                new Date(left.comment.updated_at || left.comment.created_at || 0).getTime()
+        );
     return candidates[0]?.state ?? null;
 }
 
 /** Find the single bot-owned summary comment used for durable auto-merge state. */
-export function findBotAutoMergeSummaryComment(comments: ReadonlyArray<AutoMergeIssueComment>, login = "github-actions[bot]"): AutoMergeIssueComment | null {
-    return comments.find((comment) => comment.user?.login === login
-        && comment.body?.includes(AUTO_MERGE_SUMMARY_COMMENT_MARKER)) ?? null;
+export function findBotAutoMergeSummaryComment(
+    comments: ReadonlyArray<AutoMergeIssueComment>,
+    login = "github-actions[bot]"
+): AutoMergeIssueComment | null {
+    return (
+        comments.find(
+            (comment) => comment.user?.login === login && comment.body?.includes(AUTO_MERGE_SUMMARY_COMMENT_MARKER)
+        ) ?? null
+    );
 }
 
 /** Parse the exact PR/head identity encoded in a validation worker run title. */
-export function parseAutoMergeValidationRunTitle(title: string | null | undefined): AutoMergeValidationRunIdentity | null {
+export function parseAutoMergeValidationRunTitle(
+    title: string | null | undefined
+): AutoMergeValidationRunIdentity | null {
     const match = String(title || "").match(/^Auto-merge PR #(\d+) @ ([0-9a-f]{40})$/u);
     if (!match) return null;
     const pr = Number(match[1]);
@@ -206,7 +227,7 @@ export function parseAutoMergeFinalizerRunTitle(title: string | null | undefined
 function extractJobBlock(workflow: string, jobName: string, nextJobName: string | null): string {
     const startMarker = `  ${jobName}:\n`;
     const start = workflow.indexOf(startMarker);
-    assert.ok(start >= 0, `workflow must contain jobs.${jobName}`);
+    assert.ok(start !== -1, `workflow must contain jobs.${jobName}`);
     if (!nextJobName) return workflow.slice(start);
     const end = workflow.indexOf(`\n  ${nextJobName}:\n`, start + startMarker.length);
     assert.ok(end > start, `workflow must contain jobs.${nextJobName} after jobs.${jobName}`);
@@ -224,37 +245,64 @@ export function assertAutoMergeControlPlaneContract(
     const discoverJob = extractJobBlock(reconcile, "discover", "reconcile");
     const analyzeJob = extractJobBlock(finalizer, "analyze", "merge");
 
-    assert.match(discoverJob, /permissions:\n(?: {6}[^\n]+\n)* {6}pull-requests: write/u,
-        "coordinator discover job must have PR-write permission");
-    assert.match(analyzeJob, /permissions:\n(?: {6}[^\n]+\n)* {6}pull-requests: write/u,
-        "finalizer analyze job must have PR-write permission");
+    assert.match(
+        discoverJob,
+        /permissions:\n(?: {6}[^\n]+\n)* {6}pull-requests: write/u,
+        "coordinator discover job must have PR-write permission"
+    );
+    assert.match(
+        analyzeJob,
+        /permissions:\n(?: {6}[^\n]+\n)* {6}pull-requests: write/u,
+        "finalizer analyze job must have PR-write permission"
+    );
     assert.match(reconcile, /workflow_id: 'automerge-finalize\.yml'/u);
-    assert.match(reconcile, /expected_base: liveBase/u,
-        "coordinator must pin every validation dispatch to the exact admitted main SHA");
+    assert.match(
+        reconcile,
+        /expected_base: liveBase/u,
+        "coordinator must pin every validation dispatch to the exact admitted main SHA"
+    );
     assert.match(reconcile, /has no changed files yet; waiting for its first substantive synchronize event/u);
     assert.match(reconcile, /pendingTimeoutMs/u);
-    assert.doesNotMatch(reconcile, /core\.setFailed\(`Auto-merge control-plane dispatch failure/u,
-        "one PR's dispatch failure must not fail another PR's coordinator check");
+    assert.doesNotMatch(
+        reconcile,
+        /core\.setFailed\(`Auto-merge control-plane dispatch failure/u,
+        "one PR's dispatch failure must not fail another PR's coordinator check"
+    );
 
     const admissionAnchor = reconcile.indexOf("// Both prerequisite state surfaces must be writable before launching");
     const statusAt = reconcile.indexOf("await github.rest.repos.createCommitStatus", admissionAnchor);
     const persistedAt = reconcile.indexOf("await upsertState(pr, state", admissionAnchor);
     const dispatchedAt = reconcile.indexOf("workflow_id: 'automerge-prs.yml'", admissionAnchor);
-    assert.ok(admissionAnchor >= 0 && statusAt > admissionAnchor && persistedAt > statusAt && dispatchedAt > persistedAt,
-        "commit status and durable pending state must both succeed before validation dispatch");
+    assert.ok(
+        admissionAnchor !== -1 && statusAt > admissionAnchor && persistedAt > statusAt && dispatchedAt > persistedAt,
+        "commit status and durable pending state must both succeed before validation dispatch"
+    );
 
     assert.match(worker, /expected_base:\n/u);
     assert.match(worker, /EXPECTED_BASE: \$\{\{ inputs\.expected_base \}\}/u);
-    assert.match(worker, /context\.sha !== expectedBase/u,
-        "validation worker must execute from the exact admitted main commit");
-    assert.match(worker, /baseBranch\.commit\.sha !== expectedBase/u,
-        "validation worker must reject a live-main change after admission");
-    assert.match(worker, /currentBase\.commit\.sha !== expectedBase/u,
-        "validation worker must reject main movement while resolving the synthetic merge");
-    assert.ok(validationAction.includes('--test-reporter="$junit_reporter"'),
-        "validation action must use the trusted TestsStream reporter for comparable test evidence");
-    assert.ok(validationAction.includes('if (data.details?.type === "suite") continue;'),
-        "trusted test reporter must exclude suite summary events from case evidence");
+    assert.match(
+        worker,
+        /context\.sha !== expectedBase/u,
+        "validation worker must execute from the exact admitted main commit"
+    );
+    assert.match(
+        worker,
+        /baseBranch\.commit\.sha !== expectedBase/u,
+        "validation worker must reject a live-main change after admission"
+    );
+    assert.match(
+        worker,
+        /currentBase\.commit\.sha !== expectedBase/u,
+        "validation worker must reject main movement while resolving the synthetic merge"
+    );
+    assert.ok(
+        validationAction.includes('--test-reporter="$junit_reporter"'),
+        "validation action must use the trusted TestsStream reporter for comparable test evidence"
+    );
+    assert.ok(
+        validationAction.includes('if (data.details?.type === "suite") continue;'),
+        "trusted test reporter must exclude suite summary events from case evidence"
+    );
 
     assert.match(finalizer, /workflow_dispatch:/u);
     assert.doesNotMatch(finalizer, /workflows:\s*\["Auto-merge PRs"\]/u);
@@ -263,11 +311,17 @@ export function assertAutoMergeControlPlaneContract(
     assert.match(finalizer, /validationRun\.run_attempt \|\| 1\) !== 1/u);
     assert.match(finalizer, /validationRun\.head_sha !== base/u);
     assert.match(finalizer, /parseAutoMergeValidationRunTitle/u);
-    assert.match(finalizer, /base: process\.env\.BASE_SHA \|\| ''/u,
-        "unknown validation bases must stay unknown rather than becoming a synthetic SHA");
+    assert.match(
+        finalizer,
+        /base: process\.env\.BASE_SHA \|\| ''/u,
+        "unknown validation bases must stay unknown rather than becoming a synthetic SHA"
+    );
 
-    assert.doesNotMatch(reconcileAction, /createWorkflowDispatch/u,
-        "only the admission coordinator may dispatch expensive validation");
+    assert.doesNotMatch(
+        reconcileAction,
+        /createWorkflowDispatch/u,
+        "only the admission coordinator may dispatch expensive validation"
+    );
     assert.doesNotMatch(reconcileAction, /workflow_id:\s*'automerge-prs\.yml'/u);
     assert.match(reconcileAction, /set\('revalidation-needed'\)/u);
 }
@@ -285,62 +339,87 @@ function selfTest(): void {
     });
     assert.equal(parseAutoMergeState(marker)?.pr, 42);
     assert.equal(parseAutoMergeState("<!-- automerge-state nope -->"), null);
-    assert.equal(findLatestBotAutoMergeState([{ body: marker, updated_at: "2026-01-01", user: { login: "github-actions[bot]" } }])?.reason, "infrastructure");
-    assert.deepEqual(parseAutoMergeValidationRunTitle(`Auto-merge PR #42 @ ${"a".repeat(40)}`), { pr: 42, head: "a".repeat(40) });
+    assert.equal(
+        findLatestBotAutoMergeState([
+            { body: marker, updated_at: "2026-01-01", user: { login: "github-actions[bot]" } }
+        ])?.reason,
+        "infrastructure"
+    );
+    assert.deepEqual(parseAutoMergeValidationRunTitle(`Auto-merge PR #42 @ ${"a".repeat(40)}`), {
+        pr: 42,
+        head: "a".repeat(40)
+    });
     assert.equal(parseAutoMergeFinalizerRunTitle(`${AUTO_MERGE_FINALIZER_RUN_PREFIX}123`), 123);
 
-    const summaryComment = renderAutoMergeStateComment({
-        pr: 42,
-        head: "a".repeat(40),
-        base: "b".repeat(40),
-        green: true,
-        trusted: true,
-        reason: "clean",
-        retry: 0,
-        runId: 123
-    }, [
-        "### Trusted auto-merge evaluation",
-        "",
-        "✅ No new regressions were introduced.",
-        "",
-        "- Lint findings: 12 baseline → 12 merged; **0 new/upgraded**.",
-        "- Test cases: 100 baseline → 100 merged; **net reduction 0/3 allowed**.",
-        "- Canonical test files removed: **0** (informational; case-count budget is authoritative).",
-        "- Newly failing / newly skipped test cases: **0 / 0**."
-    ].join("\n"));
+    const summaryComment = renderAutoMergeStateComment(
+        {
+            pr: 42,
+            head: "a".repeat(40),
+            base: "b".repeat(40),
+            green: true,
+            trusted: true,
+            reason: "clean",
+            retry: 0,
+            runId: 123
+        },
+        [
+            "### Trusted auto-merge evaluation",
+            "",
+            "✅ No new regressions were introduced.",
+            "",
+            "- Lint findings: 12 baseline → 12 merged; **0 new/upgraded**.",
+            "- Test cases: 100 baseline → 100 merged; **net reduction 0/3 allowed**.",
+            "- Canonical test files removed: **0** (informational; case-count budget is authoritative).",
+            "- Newly failing / newly skipped test cases: **0 / 0**."
+        ].join("\n")
+    );
     assert.match(summaryComment, /\| Check \| Result \| Details \|/u);
     assert.match(summaryComment, /\| Lint findings \| ✅ \|/u);
     assert.match(summaryComment, /\| Canonical test files removed \| ℹ️ \|/u);
 
-    const regressionComment = renderAutoMergeStateComment({
-        pr: 42,
-        head: "a".repeat(40),
-        base: "b".repeat(40),
-        green: false,
-        trusted: true,
-        reason: "quality-regression",
-        retry: 0,
-        runId: 123
-    }, [
-        "### Trusted auto-merge evaluation",
-        "",
-        "❌ The exact synthetic merge weakens the trusted quality baseline.",
-        "",
-        "**Net test-case reduction exceeds policy (37 removed; maximum 3)**",
-        "- Test cases: 7652 baseline → 7615 merged.",
-        "- src/runtime-wrapper/dist/test/index.test.js :: applyPatch handles closure patches"
-    ].join("\n"));
+    const regressionComment = renderAutoMergeStateComment(
+        {
+            pr: 42,
+            head: "a".repeat(40),
+            base: "b".repeat(40),
+            green: false,
+            trusted: true,
+            reason: "quality-regression",
+            retry: 0,
+            runId: 123
+        },
+        [
+            "### Trusted auto-merge evaluation",
+            "",
+            "❌ The exact synthetic merge weakens the trusted quality baseline.",
+            "",
+            "**Net test-case reduction exceeds policy (37 removed; maximum 3)**",
+            "- Test cases: 7652 baseline → 7615 merged.",
+            "- src/runtime-wrapper/dist/test/index.test.js :: applyPatch handles closure patches"
+        ].join("\n")
+    );
     assert.match(regressionComment, /\| Net test-case reduction exceeds policy \(37 removed; maximum 3\) \| ❌ \|/u);
     assert.match(regressionComment, /7652 baseline → 7615 merged\.<br>src\/runtime-wrapper/u);
 
     const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
     const reconcile = fs.readFileSync(path.join(repoRoot, ".github/workflows/automerge-reconcile.yml"), "utf8");
     const finalizer = fs.readFileSync(path.join(repoRoot, ".github/workflows/automerge-finalize.yml"), "utf8");
-    const reconcileAction = fs.readFileSync(path.join(repoRoot, ".github/actions/reconcile-automerge/action.yml"), "utf8");
+    const reconcileAction = fs.readFileSync(
+        path.join(repoRoot, ".github/actions/reconcile-automerge/action.yml"),
+        "utf8"
+    );
     const worker = fs.readFileSync(path.join(repoRoot, ".github/workflows/automerge-prs.yml"), "utf8");
-    const validationAction = fs.readFileSync(path.join(repoRoot, ".github/actions/run-automerge-validation/action.yml"), "utf8");
+    const validationAction = fs.readFileSync(
+        path.join(repoRoot, ".github/actions/run-automerge-validation/action.yml"),
+        "utf8"
+    );
     assertAutoMergeControlPlaneContract(reconcile, finalizer, reconcileAction, worker, validationAction);
     process.stdout.write("ci-automerge state self-test passed\n");
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url) && process.argv[2] === "self-test") selfTest();
+if (
+    process.argv[1] &&
+    path.resolve(process.argv[1]) === fileURLToPath(import.meta.url) &&
+    process.argv[2] === "self-test"
+)
+    selfTest();
