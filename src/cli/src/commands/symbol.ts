@@ -74,6 +74,74 @@ function printSymbolResult(result: unknown, asJson: boolean): void {
     console.log(typeof result === "string" ? result : JSON.stringify(result, null, 2));
 }
 
+/**
+ * Parse the comma-separated `--include` value into a normalised `Set` of
+ * include tokens.
+ *
+ * Each entry is trimmed and lower-cased before insertion, so consumers can
+ * do case-insensitive membership checks (`includes.has("node")`) without
+ * having to repeat the normalization inline. Empty tokens produced by
+ * trailing commas or stray whitespace are dropped so a value like
+ * `" node , context ,"` still resolves to `{ node, context }`.
+ *
+ * The helper intentionally returns a `ReadonlySet` so callers cannot mutate
+ * the parsed value; downstream gating logic should treat it as read-only.
+ *
+ * @param rawValue Raw `--include` value, exactly as supplied by the CLI.
+ * @returns A read-only set of normalized include tokens.
+ */
+export function parseSymbolIncludeOption(rawValue: string | undefined): ReadonlySet<string> {
+    if (typeof rawValue !== "string" || rawValue.length === 0) {
+        return new Set<string>();
+    }
+    const normalizedTokens = rawValue
+        .split(",")
+        .map((token) => token.trim().toLowerCase())
+        .filter((token) => token.length > 0);
+    return new Set(normalizedTokens);
+}
+
+/**
+ * Narrow a list of graph-search candidates to those that match the query
+ * by name.
+ *
+ * The narrow runs in two passes:
+ *
+ * 1. Exact case-sensitive match — preferred because it preserves the
+ *    user's casing as authored.
+ * 2. Exact case-insensitive match — falls back when no case-sensitive
+ *    match exists, so `demo` still resolves `Demo_script` when the case
+ *    does not align.
+ *
+ * If neither pass yields any candidates, the original list is returned
+ * unchanged. Centralizing the two-pass logic keeps the orchestrator from
+ * inlining the filter chain and prevents the two passes from drifting
+ * apart over time.
+ *
+ * @param candidates Search-result entries to narrow in place of the
+ *                  orchestrator's manual narrowing block.
+ * @param query     Raw identifier supplied on the CLI.
+ * @returns The narrowed candidates, or the original list when no pass
+ *          matches.
+ */
+export function narrowSymbolCandidatesByName<T extends { name: string }>(
+    candidates: ReadonlyArray<T>,
+    query: string
+): ReadonlyArray<T> {
+    const exactMatches = candidates.filter((candidate) => candidate.name === query);
+    if (exactMatches.length > 0) {
+        return exactMatches;
+    }
+
+    const lowerCasedQuery = query.toLowerCase();
+    const caseInsensitiveMatches = candidates.filter((candidate) => candidate.name.toLowerCase() === lowerCasedQuery);
+    if (caseInsensitiveMatches.length > 0) {
+        return caseInsensitiveMatches;
+    }
+
+    return candidates;
+}
+
 async function runSymbolInspectAction(identifierOrNodeId: string, options: SymbolInspectOptions): Promise<void> {
     const context = await ensureProjectGraphIndex(options);
     const query = identifierOrNodeId;
@@ -105,20 +173,10 @@ async function runSymbolInspectAction(identifierOrNodeId: string, options: Symbo
             toolsetRoot: options.toolsetRoot
         });
 
-        let candidates = searchResult.results.filter((entry) => matchesKind(entry.kind, requestedKind));
+        const kindFilteredCandidates = searchResult.results.filter((entry) => matchesKind(entry.kind, requestedKind));
 
-        if (candidates.length > 0) {
-            // Narrow by exact case-sensitive name match
-            const exactMatches = candidates.filter((c) => c.name === query);
-            if (exactMatches.length > 0) {
-                candidates = exactMatches;
-            } else {
-                // Narrow by exact case-insensitive name match
-                const caseInsensitiveMatches = candidates.filter((c) => c.name.toLowerCase() === query.toLowerCase());
-                if (caseInsensitiveMatches.length > 0) {
-                    candidates = caseInsensitiveMatches;
-                }
-            }
+        if (kindFilteredCandidates.length > 0) {
+            const candidates = narrowSymbolCandidatesByName(kindFilteredCandidates, query);
 
             if (candidates.length === 1) {
                 const candidateId = candidates[0].id;
@@ -154,8 +212,7 @@ async function runSymbolInspectAction(identifierOrNodeId: string, options: Symbo
         process.exit(1);
     }
 
-    const includeOption = options.include ?? "node";
-    const includes = new Set(includeOption.split(",").map((s) => s.trim().toLowerCase()));
+    const includes = parseSymbolIncludeOption(options.include ?? "node");
 
     const payload: Record<string, unknown> = {
         resolvedId: resolvedNode.id,
