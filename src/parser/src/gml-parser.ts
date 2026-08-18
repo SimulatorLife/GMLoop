@@ -415,20 +415,6 @@ export class GMLParser {
     }
 
     /**
-     * Read the per-instance parser invocation count.
-     *
-     * Exposed primarily for tests that want to assert the per-instance cadence
-     * of {@link GMLParser#parse} without depending on ANTLR's internal cache
-     * state. Long-running consumers can also use this counter to drive their
-     * own telemetry around parser activity.
-     *
-     * @returns The number of completed `parse()` invocations on this parser.
-     */
-    public getParserInvocationCount(): number {
-        return this.parserInvocationCount;
-    }
-
-    /**
      * Default parser options used when no overrides are provided.
      *
      * @remarks
