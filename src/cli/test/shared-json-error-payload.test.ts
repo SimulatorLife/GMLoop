@@ -5,31 +5,13 @@ import { emitJsonErrorAndExit } from "../src/shared/json-error-payload.js";
 
 void describe("emitJsonErrorAndExit", () => {
     void it("writes the canonical JSON envelope to stdout, echoes the message to stderr, and exits with code 1", () => {
-        const stdoutLines: Array<string> = [];
-        const stderrLines: Array<string> = [];
-        const exitCodes: Array<number | undefined> = [];
-
-        const restoreStdout = mock.method(console, "log", (...args) => {
-            stdoutLines.push(args.join(" "));
-        });
-        const restoreStderr = mock.method(console, "error", (...args) => {
-            stderrLines.push(args.join(" "));
-        });
-        const restoreExit = mock.method(process, "exit", (code?: number) => {
-            exitCodes.push(code);
-        });
-
-        try {
+        const { stdoutLines, stderrLines, exitCodes } = captureStdoutStderrAndExit(() => {
             emitJsonErrorAndExit({
                 command: "live-reload wait-for-patch",
                 code: "connection_failed",
                 error: "Failed to connect to the active live-reload status server."
             });
-        } finally {
-            restoreStdout.mock.restore();
-            restoreStderr.mock.restore();
-            restoreExit.mock.restore();
-        }
+        });
 
         assert.equal(stdoutLines.length, 1);
         const envelope = JSON.parse(stdoutLines[0]) as Record<string, unknown>;
@@ -43,32 +25,14 @@ void describe("emitJsonErrorAndExit", () => {
     });
 
     void it("honours an explicit exit code override", () => {
-        const exitCodes: Array<number | undefined> = [];
-        const stdoutLines: Array<string> = [];
-        const stderrLines: Array<string> = [];
-
-        const restoreStdout = mock.method(console, "log", (...args) => {
-            stdoutLines.push(args.join(" "));
-        });
-        const restoreStderr = mock.method(console, "error", (...args) => {
-            stderrLines.push(args.join(" "));
-        });
-        const restoreExit = mock.method(process, "exit", (code?: number) => {
-            exitCodes.push(code);
-        });
-
-        try {
+        const { stdoutLines, stderrLines, exitCodes } = captureStdoutStderrAndExit(() => {
             emitJsonErrorAndExit({
                 command: "symbol inspect",
                 code: "unresolved",
                 error: "Symbol not found.",
                 exitCode: 7
             });
-        } finally {
-            restoreStdout.mock.restore();
-            restoreStderr.mock.restore();
-            restoreExit.mock.restore();
-        }
+        });
 
         assert.deepEqual(exitCodes, [7]);
         const envelope = JSON.parse(stdoutLines[0]) as Record<string, unknown>;
@@ -79,20 +43,7 @@ void describe("emitJsonErrorAndExit", () => {
     });
 
     void it("merges extra fields into the JSON envelope without disturbing the canonical keys", () => {
-        const stdoutLines: Array<string> = [];
-        const exitCodes: Array<number | undefined> = [];
-
-        const restoreStdout = mock.method(console, "log", (...args) => {
-            stdoutLines.push(args.join(" "));
-        });
-        const restoreStderr = mock.method(console, "error", () => {
-            // Discard the human-readable echo; this assertion focuses on the payload shape.
-        });
-        const restoreExit = mock.method(process, "exit", (code?: number) => {
-            exitCodes.push(code);
-        });
-
-        try {
+        const { stdoutLines, exitCodes } = captureStdoutStderrAndExit(() => {
             emitJsonErrorAndExit({
                 command: "symbol inspect",
                 code: "ambiguous",
@@ -104,11 +55,7 @@ void describe("emitJsonErrorAndExit", () => {
                     ]
                 }
             });
-        } finally {
-            restoreStdout.mock.restore();
-            restoreStderr.mock.restore();
-            restoreExit.mock.restore();
-        }
+        });
 
         const envelope = JSON.parse(stdoutLines[0]) as Record<string, unknown>;
         assert.equal(envelope.command, "symbol inspect");
@@ -122,3 +69,35 @@ void describe("emitJsonErrorAndExit", () => {
         assert.deepEqual(exitCodes, [1]);
     });
 });
+
+interface CapturedStdoutStderrAndExit {
+    readonly stdoutLines: ReadonlyArray<string>;
+    readonly stderrLines: ReadonlyArray<string>;
+    readonly exitCodes: ReadonlyArray<number | undefined>;
+}
+
+function captureStdoutStderrAndExit(run: () => void): CapturedStdoutStderrAndExit {
+    const stdoutLines: Array<string> = [];
+    const stderrLines: Array<string> = [];
+    const exitCodes: Array<number | undefined> = [];
+
+    const restoreStdout = mock.method(console, "log", (...args) => {
+        stdoutLines.push(args.join(" "));
+    });
+    const restoreStderr = mock.method(console, "error", (...args) => {
+        stderrLines.push(args.join(" "));
+    });
+    const restoreExit = mock.method(process, "exit", (code?: number) => {
+        exitCodes.push(code);
+    });
+
+    try {
+        run();
+    } finally {
+        restoreStdout.mock.restore();
+        restoreStderr.mock.restore();
+        restoreExit.mock.restore();
+    }
+
+    return { stdoutLines, stderrLines, exitCodes };
+}
