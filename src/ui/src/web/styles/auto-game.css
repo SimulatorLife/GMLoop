@@ -535,6 +535,10 @@
   flex-wrap: wrap;
 }
 
+.auto-game-llm-item__copy {
+  margin-inline-start: auto;
+}
+
 .auto-game-llm-item pre {
   margin: 0;
   color: var(--gm-text-secondary);

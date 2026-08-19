@@ -587,6 +587,13 @@ export class GmAutoGamePanel extends LightDomLitElement {
                 <div class="auto-game-llm-item__header">
                     <strong>${output.title}</strong>
                     <gm-badge .label=${output.role}></gm-badge>
+                    <gm-copy-button
+                        class="auto-game-llm-item__copy"
+                        .value=${output.content}
+                        accessibleLabel=${`Copy ${output.title} LLM output to clipboard`}
+                        label="Copy"
+                        ?hideLabel=${true}
+                    ></gm-copy-button>
                 </div>
                 <pre>${output.content}</pre>
                 <time class="auto-game-item-meta" datetime=${output.timestamp}>${output.timestamp}</time>
