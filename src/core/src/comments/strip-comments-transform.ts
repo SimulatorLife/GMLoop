@@ -14,6 +14,39 @@ export type StripCommentsTransformOptions = {
     dropCommentedOutCode: boolean;
 };
 
+const JS_DOC_KEYS = ["doc", "docComment", "jsdoc"] as const;
+
+/**
+ * Deletes each of `keys` from `value` when present, in place.
+ */
+function deleteOwnKeys(value: MutableGameMakerAstNode, keys: readonly string[]): void {
+    for (const key of keys) {
+        if (Object.hasOwn(value, key)) {
+            delete value[key];
+        }
+    }
+}
+
+/**
+ * Filters comment nodes out of a non-root `comments` array, deleting the
+ * property entirely when nothing is left. Root-level comments are handled
+ * separately after the walk (see `execute`) so `ast.comments` is always a
+ * defined array, even when empty—tests and downstream consumers rely on that.
+ */
+function stripNestedComments(value: MutableGameMakerAstNode): void {
+    const comments = value.comments;
+    if (!Array.isArray(comments)) {
+        return;
+    }
+
+    const filtered = comments.filter((c) => !isCommentNode(c));
+    if (filtered.length === 0) {
+        delete value.comments;
+    } else {
+        value.comments = filtered;
+    }
+}
+
 /**
  * Removes comment nodes and related metadata according to the caller's options.
  */
@@ -30,20 +63,8 @@ function execute(ast: MutableGameMakerAstNode, options: StripCommentsTransformOp
             }
 
             if (options.stripComments) {
-                // Skip root-level comments here; they are handled explicitly
-                // after the walk so we can guarantee the array exists (even if
-                // empty) in the final AST—tests and downstream consumers rely
-                // on `ast.comments` always being a defined array.
                 if (value !== ast) {
-                    const comments = value.comments;
-                    if (Array.isArray(comments)) {
-                        const filtered = comments.filter((c) => !isCommentNode(c));
-                        if (filtered.length === 0) {
-                            delete value.comments;
-                        } else {
-                            value.comments = filtered;
-                        }
-                    }
+                    stripNestedComments(value);
                 }
 
                 if (Array.isArray(value.docComments)) {
@@ -52,15 +73,7 @@ function execute(ast: MutableGameMakerAstNode, options: StripCommentsTransformOp
             }
 
             if (options.stripJsDoc) {
-                if (Object.hasOwn(value, "doc")) {
-                    delete value.doc;
-                }
-                if (Object.hasOwn(value, "docComment")) {
-                    delete value.docComment;
-                }
-                if (Object.hasOwn(value, "jsdoc")) {
-                    delete value.jsdoc;
-                }
+                deleteOwnKeys(value, JS_DOC_KEYS);
             }
 
             return true;
