@@ -41,7 +41,8 @@ void describe("normalizeRepositoryPath", () => {
     });
 
     void it("falls back to the last /GMLoop/ marker when the path sits outside the repository root", () => {
-        const outsidePath = "/home/runner/work/GMLoop/GMLoop/src/cli/ci-report.ts";
+        const outsideRoot = path.dirname(process.cwd());
+        const outsidePath = path.join(outsideRoot, "GMLoop", "src", "cli", "ci-report.ts");
 
         assert.strictEqual(normalizeRepositoryPath(outsidePath), "src/cli/ci-report.ts");
     });
