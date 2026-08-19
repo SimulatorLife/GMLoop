@@ -12,14 +12,11 @@ void describe("boolean literal helpers", () => {
         assert.strictEqual(isBooleanLiteral(literal), true);
     });
 
-    void it("normalizes boolean primitives when enabled", () => {
-        // Each row exercises every documented option shape for one boolean
-        // primitive. The previous suite had separate cases for `true` and
-        // `false` even though both traverse the same production branches.
-        for (const [primitiveValue, normalizedString] of [
-            [true, "true"],
-            [false, "false"]
-        ] as const) {
+    for (const [primitiveValue, normalizedString] of [
+        [true, "true"],
+        [false, "false"]
+    ] as const) {
+        void it(`normalizes ${normalizedString} boolean primitives when enabled`, () => {
             const literal = { type: "Literal", value: primitiveValue };
 
             assert.strictEqual(getBooleanLiteralValue(literal), null);
@@ -28,8 +25,8 @@ void describe("boolean literal helpers", () => {
             assert.strictEqual(isBooleanLiteral(literal, true), true);
             assert.strictEqual(getBooleanLiteralValue(literal, { acceptBooleanPrimitives: true }), normalizedString);
             assert.strictEqual(isBooleanLiteral(literal, { acceptBooleanPrimitives: true }), true);
-        }
-    });
+        });
+    }
 
     void it("rejects non-boolean literals", () => {
         const numberLiteral = { type: "Literal", value: 0 };
