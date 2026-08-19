@@ -15,9 +15,8 @@
     display: grid;
     gap: var(--gm-space-sm);
     min-width: 0;
-    width: 100%;
-    flex: 1 1 360px;
-    max-width: 560px;
+    flex: 1 1 220px;
+    max-width: 360px;
 }
 
 .docs-search-controls {
