@@ -12,26 +12,23 @@ void describe("boolean literal helpers", () => {
         assert.strictEqual(isBooleanLiteral(literal), true);
     });
 
-    void it("accepts boolean literal nodes when enabled", () => {
-        const literal = { type: "Literal", value: false };
+    void it("normalizes boolean primitives when enabled", () => {
+        // Each row exercises every documented option shape for one boolean
+        // primitive. The previous suite had separate cases for `true` and
+        // `false` even though both traverse the same production branches.
+        for (const [primitiveValue, normalizedString] of [
+            [true, "true"],
+            [false, "false"]
+        ] as const) {
+            const literal = { type: "Literal", value: primitiveValue };
 
-        assert.strictEqual(getBooleanLiteralValue(literal), null);
-        assert.strictEqual(isBooleanLiteral(literal), false);
-        assert.strictEqual(getBooleanLiteralValue(literal, true), "false");
-        assert.strictEqual(isBooleanLiteral(literal, true), true);
-        assert.strictEqual(getBooleanLiteralValue(literal, { acceptBooleanPrimitives: true }), "false");
-        assert.strictEqual(isBooleanLiteral(literal, { acceptBooleanPrimitives: true }), true);
-    });
-
-    void it("normalizes true boolean primitives when enabled", () => {
-        const literal = { type: "Literal", value: true };
-
-        assert.strictEqual(getBooleanLiteralValue(literal), null);
-        assert.strictEqual(isBooleanLiteral(literal), false);
-        assert.strictEqual(getBooleanLiteralValue(literal, true), "true");
-        assert.strictEqual(isBooleanLiteral(literal, true), true);
-        assert.strictEqual(getBooleanLiteralValue(literal, { acceptBooleanPrimitives: true }), "true");
-        assert.strictEqual(isBooleanLiteral(literal, { acceptBooleanPrimitives: true }), true);
+            assert.strictEqual(getBooleanLiteralValue(literal), null);
+            assert.strictEqual(isBooleanLiteral(literal), false);
+            assert.strictEqual(getBooleanLiteralValue(literal, true), normalizedString);
+            assert.strictEqual(isBooleanLiteral(literal, true), true);
+            assert.strictEqual(getBooleanLiteralValue(literal, { acceptBooleanPrimitives: true }), normalizedString);
+            assert.strictEqual(isBooleanLiteral(literal, { acceptBooleanPrimitives: true }), true);
+        }
     });
 
     void it("rejects non-boolean literals", () => {
