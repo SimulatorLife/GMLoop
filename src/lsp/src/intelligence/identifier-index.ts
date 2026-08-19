@@ -1554,7 +1554,9 @@ export function createGmlSemanticIndex(
             try {
                 currentState = await restorePersistentSemanticState(document, resolvedRoot);
             } catch (error) {
-                console.error(`Failed to restore semantic index for ${resolvedRoot}:`, error);
+                console.error(
+                    `Failed to restore semantic index for ${resolvedRoot}: ${Core.getErrorMessageOrFallback(error)}`
+                );
             }
         }
 
@@ -2096,13 +2098,17 @@ export function createGmlSemanticIndex(
                             return;
                         }
                         return void buildFullProjectIndex(document, resolvedRoot, reason).catch((error) => {
-                            console.error("Background full index build failed:", error);
+                            console.error(
+                                `Background full index build failed: ${Core.getErrorMessageOrFallback(error)}`
+                            );
                         });
                     }
                     return null;
                 })
                 .catch((error: unknown) => {
-                    console.error("Failed to get project root for background indexing:", error);
+                    console.error(
+                        `Failed to get project root for background indexing: ${Core.getErrorMessageOrFallback(error)}`
+                    );
                     return null;
                 });
         }, 1);
@@ -2129,7 +2135,7 @@ export function createGmlSemanticIndex(
                 return;
             }
             return void buildFullProjectIndexForRoot(resolvedRootPath, reason).catch((error) => {
-                console.error("Background full index build failed for root:", error);
+                console.error(`Background full index build failed for root: ${Core.getErrorMessageOrFallback(error)}`);
             });
         }, 1);
     }
@@ -2304,7 +2310,9 @@ export function createGmlSemanticIndex(
                     }
                 }
             } catch (error) {
-                console.error(`Failed to restore semantic index for ${resolvedRoot}:`, error);
+                console.error(
+                    `Failed to restore semantic index for ${resolvedRoot}: ${Core.getErrorMessageOrFallback(error)}`
+                );
             }
         }
 
@@ -2507,7 +2515,9 @@ export function createGmlSemanticIndex(
                     expandedChanges.map(async (change) => await invalidateKnownFileRoots(change.filePath))
                 );
                 void ensureProjectRootIndex(projectRoot).catch((error) => {
-                    console.error("Background re-indexing failed after disk changes:", error);
+                    console.error(
+                        `Background re-indexing failed after disk changes: ${Core.getErrorMessageOrFallback(error)}`
+                    );
                 });
                 return;
             }
