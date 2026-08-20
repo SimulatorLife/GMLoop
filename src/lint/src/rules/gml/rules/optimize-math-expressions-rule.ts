@@ -1400,7 +1400,7 @@ export function createOptimizeMathExpressionsRule(definition: GmlRuleDefinition)
                 Program(node) {
                     const sourceText = context.sourceCode.text;
                     const edits: SourceTextEdit[] = [];
-                    const mathNumericPolicy = resolveMathNumericPolicy(undefined);
+                    const mathNumericPolicy = DEFAULT_MATH_NUMERIC_POLICY;
 
                     // Run the block-based optimizations on every place in the AST that
                     // carries a `body` array. Previously we only processed the root
