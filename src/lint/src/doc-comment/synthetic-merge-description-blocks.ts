@@ -127,8 +127,3 @@ export function finalizeDescriptionBlocks({ docs }: FinalizeDescriptionBlocksPar
 }
 
 export type { FinalizeDescriptionBlocksParams, ReorderDescriptionBlockParams };
-
-export const syntheticMergeDescriptionBlocks = Object.freeze({
-    finalizeDescriptionBlocks,
-    reorderDescriptionBlock
-});
