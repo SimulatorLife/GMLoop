@@ -256,7 +256,7 @@ export function createEnvConfiguredValueWithFallback<TValue>(
                     fallback
                 });
 
-                if (resolved !== null) {
+                if (resolved !== null && resolved !== undefined) {
                     return resolved;
                 }
             } catch {
