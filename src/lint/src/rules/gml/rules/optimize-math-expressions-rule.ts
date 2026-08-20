@@ -18,10 +18,12 @@ import { applyManualMathCanonicalForms } from "../math/math-manual-canonical-for
 import {
     canAstShapeContainMathOptimizationCandidate,
     containsMathOptimizationSyntax,
+    DEFAULT_MATH_NUMERIC_POLICY,
     DEFAULT_MATH_SIGNAL_PATTERNS,
     evaluateMathOptimizationCandidate,
     evaluateSkipDecision,
     MATH_OPTIMIZATION_POLICY_CONSTANTS,
+    type MathNumericPolicy,
     resolveMathNumericPolicy
 } from "../math/math-skip-evaluator.js";
 import {
@@ -322,7 +324,10 @@ function formatNonScientificNumericLiteral(value: number): string | null {
     return literal;
 }
 
-function buildMultiplicativeExpression(components: MultiplicativeComponents): string | null {
+function buildMultiplicativeExpression(
+    components: MultiplicativeComponents,
+    policy: MathNumericPolicy = DEFAULT_MATH_NUMERIC_POLICY
+): string | null {
     const { coefficient, factors } = components;
     if (coefficient === 0) {
         return "0";
@@ -348,8 +353,15 @@ function buildMultiplicativeExpression(components: MultiplicativeComponents): st
         terms.push(coefficientText);
     }
 
+    // `policy.zeroQuantityEpsilon` (default 1e-10) tunes how aggressively a
+    // near-zero residual exponent is collapsed away. The default matches the
+    // literal value this branch previously hardcoded so existing rewrites are
+    // unaffected; tightening or loosening the policy lets downstream tooling
+    // tune how readily small floating-point residuals disappear from the
+    // canonical form without changing any of the surrounding transform logic.
+    const zeroQuantityEpsilon = policy.zeroQuantityEpsilon;
     for (const [factor, power] of factors) {
-        if (Math.abs(power) < 1e-10) {
+        if (Math.abs(power) < zeroQuantityEpsilon) {
             continue;
         }
         if (power === 1) {
@@ -387,7 +399,12 @@ function normalizeLeadingNumericCoefficientOrder(expressionText: string): string
     return `${factorText.trim()} * ${coefficientText}`;
 }
 
-function simplifyMathExpression(sourceText: string, node: any, _source?: string): string | null {
+function simplifyMathExpression(
+    sourceText: string,
+    node: any,
+    _source?: string,
+    policy: MathNumericPolicy = DEFAULT_MATH_NUMERIC_POLICY
+): string | null {
     const components = collectMultiplicativeComponents(sourceText, node);
     if (!components) {
         return null;
@@ -403,7 +420,7 @@ function simplifyMathExpression(sourceText: string, node: any, _source?: string)
         return "0";
     }
 
-    const multiplicativeExpression = buildMultiplicativeExpression(components);
+    const multiplicativeExpression = buildMultiplicativeExpression(components, policy);
     if (!multiplicativeExpression) {
         return null;
     }
@@ -914,7 +931,12 @@ function tryBuildFastDotProductReplacement(sourceText: string, node: any): strin
     return `${functionName}(${argumentTexts.join(", ")})`;
 }
 
-function performHalfLengthdirOptimizations(bodyStatements: any[], sourceText: string, edits: SourceTextEdit[]) {
+function performHalfLengthdirOptimizations(
+    bodyStatements: any[],
+    sourceText: string,
+    edits: SourceTextEdit[],
+    policy: MathNumericPolicy = DEFAULT_MATH_NUMERIC_POLICY
+) {
     for (let index = 0; index + 1 < bodyStatements.length; index += 1) {
         const current = bodyStatements[index];
         const next = bodyStatements[index + 1];
@@ -957,7 +979,8 @@ function performHalfLengthdirOptimizations(bodyStatements: any[], sourceText: st
             Object.freeze({
                 coefficient: initComponents.coefficient * 0.5,
                 factors: initComponents.factors
-            })
+            }),
+            policy
         );
         const fullInit = `${rewrittenInit} * (1 - lengthdir_x(1, ${rotationExpression}))`;
         const initStart = getNodeStartIndex(declarator.init);
@@ -1029,11 +1052,22 @@ function scheduleNodeRemoval(node: unknown, sourceText: string, edits: SourceTex
     return true;
 }
 
-function performDeadCodeElimination(bodyStatements: any[], sourceText: string, edits: SourceTextEdit[]) {
+function performDeadCodeElimination(
+    bodyStatements: any[],
+    sourceText: string,
+    edits: SourceTextEdit[],
+    policy: MathNumericPolicy = DEFAULT_MATH_NUMERIC_POLICY
+) {
     const updatesByVariable = new Map<string, { delta: number; indices: number[] }>();
 
+    // `policy.zeroQuantityEpsilon` (default 1e-10) is the tolerance below
+    // which the accumulated `+=` / `-=` delta is treated as a no-op.
+    // Tunable through the same `MathNumericPolicy` that drives the
+    // reciprocal and divisor safety thresholds so downstream tooling can
+    // adjust all three settings from a single call site.
+    const zeroQuantityEpsilon = policy.zeroQuantityEpsilon;
     const applyRemovals = (info: { delta: number; indices: number[] }) => {
-        if (Math.abs(info.delta) < 1e-10 && info.indices.length > 0) {
+        if (Math.abs(info.delta) < zeroQuantityEpsilon && info.indices.length > 0) {
             for (const idx of info.indices) {
                 scheduleNodeRemoval(bodyStatements[idx], sourceText, edits);
             }
@@ -1166,7 +1200,12 @@ function shouldSkipBinaryExpressionCandidate(parentNode: unknown, parentKey: str
     return evaluateSkipDecision(parentNode, parentKey);
 }
 
-function performGeneralExpressionSimplification(node: any, sourceText: string, edits: SourceTextEdit[]) {
+function performGeneralExpressionSimplification(
+    node: any,
+    sourceText: string,
+    edits: SourceTextEdit[],
+    policy: MathNumericPolicy = DEFAULT_MATH_NUMERIC_POLICY
+) {
     const normalizedExpressionRanges: SourceTextRange[] = [];
     const commentTokenRangeIndex = createCommentTokenRangeIndex(sourceText);
     const replacementByCandidateText = new Map<string, string | null>();
@@ -1301,16 +1340,17 @@ function performGeneralExpressionSimplification(node: any, sourceText: string, e
                             nodeType: targetNode.type
                         }).shouldAttemptManualNormalization
                     ) {
-                        replacement = attemptManualNormalization(sourceText, targetNode);
+                        replacement = attemptManualNormalization(sourceText, targetNode, policy);
                     }
 
                     if (!replacement && DIVISION_BASED_OPTIMIZATION_SIGNAL_PATTERN.test(sourceTextOfNode)) {
-                        replacement = simplifyMathExpression(sourceText, targetNode, sourceTextOfNode);
+                        replacement = simplifyMathExpression(sourceText, targetNode, sourceTextOfNode, policy);
                     } else if (replacement && DIVISION_BASED_OPTIMIZATION_SIGNAL_PATTERN.test(sourceTextOfNode)) {
                         const divisionFallbackReplacement = simplifyMathExpression(
                             sourceText,
                             targetNode,
-                            sourceTextOfNode
+                            sourceTextOfNode,
+                            policy
                         );
                         if (
                             divisionFallbackReplacement &&
@@ -1360,6 +1400,7 @@ export function createOptimizeMathExpressionsRule(definition: GmlRuleDefinition)
                 Program(node) {
                     const sourceText = context.sourceCode.text;
                     const edits: SourceTextEdit[] = [];
+                    const mathNumericPolicy = resolveMathNumericPolicy(undefined);
 
                     // Run the block-based optimizations on every place in the AST that
                     // carries a `body` array. Previously we only processed the root
@@ -1369,12 +1410,12 @@ export function createOptimizeMathExpressionsRule(definition: GmlRuleDefinition)
                     walkAstNodesWithParent(node, ({ node: subNode }) => {
                         if (subNode && Array.isArray((subNode as any).body)) {
                             const stmts: any[] = (subNode as any).body;
-                            performHalfLengthdirOptimizations(stmts, sourceText, edits);
-                            performDeadCodeElimination(stmts, sourceText, edits);
+                            performHalfLengthdirOptimizations(stmts, sourceText, edits, mathNumericPolicy);
+                            performDeadCodeElimination(stmts, sourceText, edits, mathNumericPolicy);
                         }
                     });
 
-                    performGeneralExpressionSimplification(node, sourceText, edits);
+                    performGeneralExpressionSimplification(node, sourceText, edits, mathNumericPolicy);
 
                     let rewrittenByAstEdits = sourceText;
                     if (edits.length > 0) {
