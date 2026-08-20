@@ -196,6 +196,10 @@ function compareTests(baseManifest: unknown, targetManifest: unknown, baseCasesV
     });
 }
 
+function isPassingTestReport(value: unknown): boolean {
+    return isRecord(value) && value.completed === true && value.testStatus === 0;
+}
+
 function evidenceKind(directory: string): "full" | "build-failure" {
     const build = readJson(path.join(directory, BUILD_FILE));
     if (!isRecord(build) || build.completed !== true) throw new Error(`Incomplete build evidence in ${directory}.`);
@@ -247,25 +251,35 @@ function commandEvaluate(args: ParsedArgs): number {
                 readJson(path.join(baselineDirectory, MANIFEST_FILE)), readJson(path.join(mergeDirectory, MANIFEST_FILE)),
                 readJson(path.join(baselineDirectory, CASES_FILE)), readJson(path.join(mergeDirectory, CASES_FILE))
             );
-            netRemovedTestCases = tests.netRemovedCaseCount;
-            const exceedsRemovalBudget = tests.netRemovedCaseCount > maxRemovedTestCases;
-            const hasRegression = lint.added.length > 0 || exceedsRemovalBudget
+            const comparableCaseInventory = isPassingTestReport(readJson(path.join(baselineDirectory, REPORT_FILE)))
+                && isPassingTestReport(readJson(path.join(mergeDirectory, REPORT_FILE)));
+            netRemovedTestCases = comparableCaseInventory ? tests.netRemovedCaseCount : 0;
+            const exceedsRemovalBudget = comparableCaseInventory && tests.netRemovedCaseCount > maxRemovedTestCases;
+            const removedFilesWithoutComparableCases = !comparableCaseInventory && tests.removedFiles.length > 0;
+            const hasRegression = lint.added.length > 0 || exceedsRemovalBudget || removedFilesWithoutComparableCases
                 || tests.newFailures.length > 0 || tests.newSkips.length > 0;
             if (!hasRegression) {
                 green = true;
                 reason = baseKind === "build-failure" ? "recovery" : "clean";
                 lines.push(
                     "",
-                    "✅ No new lint warnings/errors, newly failing tests, or newly skipped tests were introduced, and net test removal stays within policy.",
+                    "✅ No new lint warnings/errors, newly failing tests, or newly skipped tests were introduced.",
                     "",
                     `- Lint findings: ${lint.baseCount} baseline → ${lint.targetCount} merged; **0 new/upgraded**.`,
-                    `- Test cases: ${tests.baseCaseCount} baseline → ${tests.targetCaseCount} merged; **net reduction ${tests.netRemovedCaseCount}/${maxRemovedTestCases} allowed**.`,
-                    `- Canonical test files removed: **${tests.removedFiles.length}** (informational; case-count budget is authoritative).`,
+                    `- Canonical test files removed: **${tests.removedFiles.length}**.`,
                     "- Newly failing / newly skipped test cases: **0 / 0**."
                 );
-                if (tests.removedCases.length > 0) {
-                    const grossRemovedCases = tests.removedCases.reduce((total, item) => total + item.count, 0);
-                    lines.push("", `ℹ️ Gross removed/renamed test-case identities: **${grossRemovedCases}**; new passing cases offset these when calculating net reduction.`);
+                if (comparableCaseInventory) {
+                    lines.push(`- Test cases: ${tests.baseCaseCount} baseline → ${tests.targetCaseCount} merged; **net reduction ${tests.netRemovedCaseCount}/${maxRemovedTestCases} allowed**.`);
+                    if (tests.removedCases.length > 0) {
+                        const grossRemovedCases = tests.removedCases.reduce((total, item) => total + item.count, 0);
+                        lines.push("", `ℹ️ Gross removed/renamed test-case identities: **${grossRemovedCases}**; new passing cases offset these when calculating net reduction.`);
+                    }
+                } else {
+                    lines.push(
+                        "- Test-case removal budget: **not evaluated from partial failing-run JUnit inventories**.",
+                        "- Canonical test-file removal remains enforced while baseline or merge tests are not fully passing."
+                    );
                 }
             } else {
                 reason = "quality-regression";
@@ -279,6 +293,13 @@ function commandEvaluate(args: ParsedArgs): number {
                     );
                     if (tests.removedFiles.length > 0) lines.push(`- Removed canonical test files: ${tests.removedFiles.length}.`);
                     if (tests.removedCases.length > 0) lines.push(...formatSamples(tests.removedCases));
+                }
+                if (removedFilesWithoutComparableCases) {
+                    lines.push(
+                        "",
+                        `**Canonical test files removed while test-case inventories are partial (${tests.removedFiles.length})**`,
+                        ...tests.removedFiles.slice(0, 8).map((file) => `- ${file}`)
+                    );
                 }
                 if (tests.newFailures.length > 0) lines.push("", `**Newly failing test cases (${tests.newFailures.reduce((total, item) => total + item.count, 0)})**`, ...formatSamples(tests.newFailures));
                 if (tests.newSkips.length > 0) lines.push("", `**Newly skipped test cases (${tests.newSkips.reduce((total, item) => total + item.count, 0)})**`, ...formatSamples(tests.newSkips));
@@ -313,6 +334,9 @@ function selfTest(): void {
     assert.equal(compareTests(manifest, manifest, passing, []).removedCases.length, 1);
     assert.equal(compareTests(manifest, { tests: [] }, passing, []).removedFiles.length, 1);
     assert.equal(compareTests(manifest, manifest, [], [{ file: "a.test.js", name: "new", status: "failed" }]).newFailures.length, 1);
+    assert.equal(isPassingTestReport({ completed: true, testStatus: 0 }), true);
+    assert.equal(isPassingTestReport({ completed: true, testStatus: 1 }), false);
+    assert.equal(isPassingTestReport({ completed: false, testStatus: 0 }), false);
 
     const baselineCases = ["one", "two", "three", "four", "five"].map((name) => ({ file: "a.test.js", name, status: "passed" as const }));
     const threeRemoved = compareTests(manifest, manifest, baselineCases, baselineCases.slice(0, 2));
