@@ -4,6 +4,7 @@ import path from "node:path";
 import { Core } from "@gmloop/core";
 
 import { resolveCommandProjectContext } from "../../workflow/project-root.js";
+import { evaluateLiveReloadSessionLiveness } from "./session-liveness-policy.js";
 
 export const LIVE_RELOAD_SESSION_REGISTRY_RELATIVE_PATH = path.join(".gmloop", "live-reload-session.json");
 
@@ -176,26 +177,17 @@ export async function isLiveReloadRegisteredSessionAlive(
     fetchStatus: SessionHealthFetch = fetchJsonWithTimeout
 ): Promise<boolean> {
     const statusPayload = await fetchStatus(resolveStatusEndpointUrl(session.statusUrl)).catch(() => null);
-    if (!Core.isObjectLike(statusPayload)) {
-        return false;
-    }
-    const identity = (statusPayload as Record<string, unknown>).liveReloadSession;
-    if (session.sessionId === undefined || session.processId === null) {
-        return true;
-    }
-    if (!Core.isObjectLike(identity)) {
-        return false;
-    }
-    const identityRecord = identity as Record<string, unknown>;
-    return (
-        identityRecord.sessionId === session.sessionId &&
-        identityRecord.processId === session.processId &&
-        identityRecord.projectRoot === session.projectRoot
-    );
+    return evaluateLiveReloadSessionLiveness(session, statusPayload);
 }
 
 /**
  * Read a project-local live-reload session and evict it when the status server no longer responds.
+ *
+ * The liveness *decision* is delegated to {@link evaluateLiveReloadSessionLiveness}
+ * in `session-liveness-policy.ts`; this function owns only the *mechanism* —
+ * fetching the status endpoint and deleting the stale registry file — so the
+ * heuristic stays testable without a network call and cannot drift out of
+ * sync with {@link isLiveReloadRegisteredSessionAlive}.
  */
 export async function discoverLiveReloadSessionByPath(
     targetPath: string,
@@ -213,7 +205,7 @@ export async function discoverLiveReloadSessionByPath(
     const status = await (options.fetchStatus ?? fetchJsonWithTimeout)(
         resolveStatusEndpointUrl(session.statusUrl)
     ).catch(() => null);
-    if (!isMatchingLiveReloadStatus(session, status)) {
+    if (!evaluateLiveReloadSessionLiveness(session, status)) {
         await removeLiveReloadSessionRegistry(identity.projectRoot);
         return Object.freeze({ alive: false, registryPath: identity.registryPath, session: null, status: null });
     }
@@ -223,23 +215,4 @@ export async function discoverLiveReloadSessionByPath(
         session,
         status: status as Record<string, unknown>
     });
-}
-
-function isMatchingLiveReloadStatus(session: LiveReloadRegisteredSession, statusPayload: unknown): boolean {
-    if (!Core.isObjectLike(statusPayload)) {
-        return false;
-    }
-    if (session.sessionId === undefined || session.processId === null) {
-        return true;
-    }
-    const identity = (statusPayload as Record<string, unknown>).liveReloadSession;
-    if (!Core.isObjectLike(identity)) {
-        return false;
-    }
-    const identityRecord = identity as Record<string, unknown>;
-    return (
-        identityRecord.sessionId === session.sessionId &&
-        identityRecord.processId === session.processId &&
-        identityRecord.projectRoot === session.projectRoot
-    );
 }
