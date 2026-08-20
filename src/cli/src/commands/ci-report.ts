@@ -568,15 +568,6 @@ function parseEslintResults(value: unknown): Array<EslintResult> {
     });
 }
 
-function escapeXml(value: string): string {
-    return value
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&apos;");
-}
-
 function createCheckstyleXml(results: ReadonlyArray<EslintResult>): string {
     const files = results
         .filter((result) => result.messages.length > 0)
@@ -586,10 +577,10 @@ function createCheckstyleXml(results: ReadonlyArray<EslintResult>): string {
                 .map((message) => {
                     const source = message.ruleId === null ? "eslint" : `eslint.${message.ruleId}`;
                     const severity = message.severity === 2 ? "error" : "warning";
-                    return `    <error line="${Math.max(1, message.line)}" column="${Math.max(1, message.column)}" severity="${severity}" message="${escapeXml(message.message)}" source="${escapeXml(source)}" />`;
+                    return `    <error line="${Math.max(1, message.line)}" column="${Math.max(1, message.column)}" severity="${severity}" message="${Core.escapeXmlAttribute(message.message)}" source="${Core.escapeXmlAttribute(source)}" />`;
                 })
                 .join("\n");
-            return `  <file name="${escapeXml(relativePath)}">\n${messages}\n  </file>`;
+            return `  <file name="${Core.escapeXmlAttribute(relativePath)}">\n${messages}\n  </file>`;
         })
         .join("\n");
     return `<?xml version="1.0" encoding="utf-8"?>\n<checkstyle version="8.0">\n${files}${files ? "\n" : ""}</checkstyle>\n`;

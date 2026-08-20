@@ -1,14 +1,7 @@
-function escapeHtmlText(value: string): string {
-    return value
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#39;");
-}
+import { Core } from "@gmloop/core";
 
 export function renderGraphVisualizationDocumentTitle(title: string): string {
-    return escapeHtmlText(title);
+    return Core.escapeHtmlAttribute(title);
 }
 
 /**
