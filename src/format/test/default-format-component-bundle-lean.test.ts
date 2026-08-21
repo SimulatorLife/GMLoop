@@ -28,9 +28,21 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { defaultGmlFormatAdapterResolver } from "../src/components/default-format-adapters.js";
-import { defaultGmlFormatProvider } from "../src/components/default-format-components.js";
+import {
+    createDefaultGmlFormatComponents,
+    createDefaultGmlFormatProvider,
+    defaultGmlFormatProvider
+} from "../src/components/default-format-components.js";
 import { DEFAULT_GML_PRINTER_LAYOUT_DEFAULTS } from "../src/components/printer-layout-defaults.js";
 import { DEFAULT_PRINT_WIDTH, DEFAULT_TAB_WIDTH } from "../src/printer/constants.js";
+
+async function noopSourceFormatter(): Promise<string> {
+    return "formatted-by-test";
+}
+
+function noopNormalizer(_formatted: string): string {
+    return "normalized-by-test";
+}
 
 void test("resolver returns the canonical printer layout defaults without an intermediate alias", () => {
     const resolved = defaultGmlFormatAdapterResolver.resolvePrinterLayoutDefaults();
@@ -56,4 +68,65 @@ void test("defaultGmlFormatProvider.prettierDefaults is sourced directly from th
     assert.strictEqual(providerPrettierDefaults.semi, true);
     assert.strictEqual(providerPrettierDefaults.bracketSpacing, false);
     assert.strictEqual(providerPrettierDefaults.singleQuote, false);
+});
+
+void test("createDefaultGmlFormatProvider honours an injected resolver and components bundle", () => {
+    let resolveCalls = 0;
+    const customLayoutDefaults = Object.freeze({ printWidth: 88, tabWidth: 2 });
+    const resolver = {
+        resolveAdapters: () => {
+            resolveCalls += 1;
+            return defaultGmlFormatAdapterResolver.resolveAdapters();
+        },
+        resolvePrettierDefaults: () => ({
+            tabWidth: 8,
+            semi: false,
+            printWidth: 80,
+            bracketSpacing: true,
+            singleQuote: true
+        }),
+        resolvePrinterLayoutDefaults: () => customLayoutDefaults,
+        resolveSourceFormatter: () => noopSourceFormatter,
+        resolveNormalizeFormattedOutput: () => noopNormalizer
+    };
+    const customComponents = createDefaultGmlFormatComponents(resolver);
+
+    const provider = createDefaultGmlFormatProvider(resolver, customComponents);
+
+    assert.strictEqual(
+        resolveCalls,
+        1,
+        "factory should reuse the injected components instead of re-resolving adapters"
+    );
+    assert.strictEqual(provider.components, customComponents);
+    assert.strictEqual(provider.prettierDefaults.tabWidth, 8);
+    assert.strictEqual(provider.prettierDefaults.semi, false);
+    assert.strictEqual(provider.formatSource, noopSourceFormatter);
+    assert.strictEqual(provider.normalizeFormattedOutput, noopNormalizer);
+    assert.ok(Object.isFrozen(provider), "factory output must remain frozen");
+});
+
+void test("createDefaultGmlFormatProvider with default resolver matches the module-level singleton", () => {
+    const provider = createDefaultGmlFormatProvider();
+
+    assert.deepStrictEqual(
+        provider.components,
+        defaultGmlFormatProvider.components,
+        "default components bundle must deep-equal the module-level singleton"
+    );
+    assert.strictEqual(
+        provider.prettierDefaults,
+        defaultGmlFormatProvider.prettierDefaults,
+        "default prettierDefaults must match the module-level singleton"
+    );
+    assert.strictEqual(
+        provider.formatSource,
+        defaultGmlFormatProvider.formatSource,
+        "default formatSource must match the module-level singleton"
+    );
+    assert.strictEqual(
+        provider.normalizeFormattedOutput,
+        defaultGmlFormatProvider.normalizeFormattedOutput,
+        "default normalizeFormattedOutput must match the module-level singleton"
+    );
 });
