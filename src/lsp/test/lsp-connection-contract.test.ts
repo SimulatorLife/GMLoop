@@ -6,6 +6,12 @@ import {
     type GmlLanguageServerConnectionContract,
     hasLspConnectionShutdownHandler,
     isGmlLanguageServerConnectionContract,
+    isLspDocumentFeatureContract,
+    isLspDocumentSyncContract,
+    isLspLanguageFeatureContract,
+    isLspLifecycleContract,
+    isLspOutboundNotifications,
+    isLspWorkspaceFeatureContract,
     trySendSemanticTokenRefreshRequest
 } from "@gmloop/lsp";
 
@@ -160,4 +166,108 @@ void test("semantic token refresh probe returns false when sendRequest is missin
     const partial = { ...fixture, sendRequest: undefined };
     assert.equal(trySendSemanticTokenRefreshRequest(partial), false);
     assert.equal(trySendSemanticTokenRefreshRequest(null), false);
+});
+
+void test("lifecycle role guard accepts fully populated fixture", () => {
+    assert.equal(isLspLifecycleContract(createContractFixture()), true);
+});
+
+void test("lifecycle role guard rejects objects missing one handler", () => {
+    const fixture = createContractFixture();
+    const missingInitialize = { ...fixture, onInitialize: undefined };
+    const missingListen = { ...fixture, listen: undefined };
+    assert.equal(isLspLifecycleContract(missingInitialize), false);
+    assert.equal(isLspLifecycleContract(missingListen), false);
+    assert.equal(isLspLifecycleContract(null), false);
+    assert.equal(isLspLifecycleContract("not-an-object"), false);
+});
+
+void test("document sync role guard accepts fully populated fixture", () => {
+    assert.equal(isLspDocumentSyncContract(createContractFixture()), true);
+});
+
+void test("document sync role guard rejects objects missing one handler", () => {
+    const fixture = createContractFixture();
+    const missingChange = { ...fixture, onDidChangeTextDocument: undefined };
+    const missingSave = { ...fixture, onDidSaveTextDocument: undefined };
+    assert.equal(isLspDocumentSyncContract(missingChange), false);
+    assert.equal(isLspDocumentSyncContract(missingSave), false);
+    assert.equal(isLspDocumentSyncContract({}), false);
+});
+
+void test("document feature role guard accepts fully populated fixture", () => {
+    assert.equal(isLspDocumentFeatureContract(createContractFixture()), true);
+});
+
+void test("document feature role guard rejects objects missing one handler", () => {
+    const fixture = createContractFixture();
+    const missingFolding = { ...fixture, onFoldingRanges: undefined };
+    const missingSelection = { ...fixture, onSelectionRanges: undefined };
+    assert.equal(isLspDocumentFeatureContract(missingFolding), false);
+    assert.equal(isLspDocumentFeatureContract(missingSelection), false);
+    assert.equal(isLspDocumentFeatureContract(undefined), false);
+});
+
+void test("language feature role guard accepts fully populated fixture", () => {
+    assert.equal(isLspLanguageFeatureContract(createContractFixture()), true);
+});
+
+void test("language feature role guard rejects objects missing one handler", () => {
+    const fixture = createContractFixture();
+    const missingHover = { ...fixture, onHover: undefined };
+    const missingCompletion = { ...fixture, onCompletion: undefined };
+    assert.equal(isLspLanguageFeatureContract(missingHover), false);
+    assert.equal(isLspLanguageFeatureContract(missingCompletion), false);
+    assert.equal(isLspLanguageFeatureContract(42), false);
+});
+
+void test("workspace feature role guard accepts fully populated fixture", () => {
+    assert.equal(isLspWorkspaceFeatureContract(createContractFixture()), true);
+});
+
+void test("workspace feature role guard rejects objects missing the handler", () => {
+    const fixture = createContractFixture();
+    const missingWorkspaceSymbol = { ...fixture, onWorkspaceSymbol: undefined };
+    assert.equal(isLspWorkspaceFeatureContract(missingWorkspaceSymbol), false);
+    assert.equal(isLspWorkspaceFeatureContract({}), false);
+});
+
+void test("outbound notifications role guard accepts fully populated fixture", () => {
+    assert.equal(isLspOutboundNotifications(createContractFixture()), true);
+});
+
+void test("outbound notifications role guard rejects objects missing one channel", () => {
+    const fixture = createContractFixture();
+    const missingSendDiagnostics = { ...fixture, sendDiagnostics: undefined };
+    const missingSendRequest = { ...fixture, sendRequest: undefined };
+    assert.equal(isLspOutboundNotifications(missingSendDiagnostics), false);
+    assert.equal(isLspOutboundNotifications(missingSendRequest), false);
+    assert.equal(isLspOutboundNotifications({}), false);
+});
+
+void test("composite guard reports the specific role that fails", () => {
+    const fixture = createContractFixture();
+    const brokenDocumentSync = { ...fixture, onDidOpenTextDocument: undefined };
+    assert.equal(isLspLifecycleContract(brokenDocumentSync), true);
+    assert.equal(isLspDocumentSyncContract(brokenDocumentSync), false);
+    assert.equal(isGmlLanguageServerConnectionContract(brokenDocumentSync), false);
+
+    const brokenOutbound = { ...fixture, sendDiagnostics: undefined };
+    assert.equal(isLspOutboundNotifications(brokenOutbound), false);
+    assert.equal(isGmlLanguageServerConnectionContract(brokenOutbound), false);
+});
+
+void test("composite guard surfaces missing sub-services (languages/workspace/console/client)", () => {
+    const fixture = createContractFixture();
+    const missingLanguages = { ...fixture, languages: undefined };
+    assert.equal(isGmlLanguageServerConnectionContract(missingLanguages), false);
+
+    const missingWorkspace = { ...fixture, workspace: undefined };
+    assert.equal(isGmlLanguageServerConnectionContract(missingWorkspace), false);
+
+    const missingConsole = { ...fixture, console: undefined };
+    assert.equal(isGmlLanguageServerConnectionContract(missingConsole), false);
+
+    const missingClient = { ...fixture, client: undefined };
+    assert.equal(isGmlLanguageServerConnectionContract(missingClient), false);
 });

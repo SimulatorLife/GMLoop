@@ -25,12 +25,24 @@ export type {
     LspConnectionLogger,
     LspConnectionOptionalCapability,
     LspConnectionWorkspace,
+    LspDocumentFeatureContract,
+    LspDocumentSyncContract,
+    LspLanguageFeatureContract,
+    LspLifecycleContract,
+    LspOutboundNotifications,
     LspPublishDiagnostics,
-    LspSendRequest
+    LspSendRequest,
+    LspWorkspaceFeatureContract
 } from "./server/lsp-connection-contract.js";
 export {
     getLspConnectionLogger,
     hasLspConnectionShutdownHandler,
     isGmlLanguageServerConnectionContract,
+    isLspDocumentFeatureContract,
+    isLspDocumentSyncContract,
+    isLspLanguageFeatureContract,
+    isLspLifecycleContract,
+    isLspOutboundNotifications,
+    isLspWorkspaceFeatureContract,
     trySendSemanticTokenRefreshRequest
 } from "./server/lsp-connection-contract.js";
