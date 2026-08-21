@@ -229,10 +229,7 @@ export function loadGameMakerCliCompanionCatalog(
         if (cacheFilePath && version !== null) {
             try {
                 const cacheContent = await readFile(cacheFilePath, "utf8");
-                const cacheData = JSON.parse(cacheContent);
-                if (cacheData && cacheData.version === version && Array.isArray(cacheData.commands)) {
-                    cliCommands = cacheData.commands;
-                }
+                cliCommands = parseCachedCliCommandsCache(cacheContent, version);
             } catch {
                 // Ignore cache read failures and re-query
             }
@@ -808,4 +805,109 @@ function isMissingCommandError(error: unknown): error is NodeJS.ErrnoException {
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is ReadonlyArray<string> {
+    return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function isGameMakerCliTextParameter(value: unknown): value is GameMakerCliTextParameter {
+    if (!isObjectRecord(value)) {
+        return false;
+    }
+
+    return (
+        Array.isArray(value.choices) &&
+        value.choices.every((entry) => typeof entry === "string") &&
+        typeof value.description === "string" &&
+        (value.kind === "argument" || value.kind === "flag") &&
+        typeof value.multiple === "boolean" &&
+        typeof value.name === "string" &&
+        typeof value.required === "boolean" &&
+        typeof value.syntax === "string" &&
+        (value.valueType === "boolean" || value.valueType === "string")
+    );
+}
+
+function isGameMakerCliCommandCatalogEntry(value: unknown): value is GameMakerCliCommandCatalogEntry {
+    if (!isObjectRecord(value)) {
+        return false;
+    }
+
+    return (
+        isStringArray(value.commandPath) &&
+        typeof value.description === "string" &&
+        typeof value.displayName === "string" &&
+        Array.isArray(value.parameters) &&
+        value.parameters.every((parameter) => isGameMakerCliTextParameter(parameter)) &&
+        isStringArray(value.usageLines)
+    );
+}
+
+/**
+ * Parse and strictly validate the contents of a previously persisted
+ * `gm-cli-commands-cache.json` file.
+ *
+ * The cache is a hand-edited, long-lived JSON artifact under `.gmloop/` and
+ * is the only untrusted payload that the companion catalog loader accepts
+ * without re-running the gm-cli probe. Without this guard, a truncated,
+ * version-mismatched, or otherwise malformed cache would be coerced into a
+ * `ReadonlyArray<GameMakerCliCommandCatalogEntry>` via a bare `JSON.parse`
+ * cast and propagated verbatim to the UI / MCP / capability audit surfaces,
+ * where `entry.commandPath` and `entry.description` accesses assume real
+ * strings.
+ *
+ * Returning `null` (instead of throwing) preserves the surrounding
+ * `try { ... } catch { ... }` recovery model: a corrupt cache simply
+ * forces the loader to fall back to the slow `gm-cli --help` probe path
+ * rather than crashing the CLI on the next access to a missing field.
+ *
+ * @param cacheContents Raw JSON text read from the cache file.
+ * @param expectedVersion Version string captured from the current
+ *   `gm-cli --version` probe; the cache is only accepted when this matches.
+ * @returns A validated, frozen command list when every field passes the
+ *   schema; `null` when any field is missing, malformed, or the version
+ *   does not match the current gm-cli build.
+ */
+export function parseCachedCliCommandsCache(
+    cacheContents: string,
+    expectedVersion: string
+): ReadonlyArray<GameMakerCliCommandCatalogEntry> | null {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(cacheContents);
+    } catch {
+        return null;
+    }
+
+    if (!isObjectRecord(parsed)) {
+        return null;
+    }
+
+    if (parsed.version !== expectedVersion) {
+        return null;
+    }
+
+    if (!Array.isArray(parsed.commands)) {
+        return null;
+    }
+
+    const validated: Array<GameMakerCliCommandCatalogEntry> = [];
+    for (const entry of parsed.commands) {
+        if (!isGameMakerCliCommandCatalogEntry(entry)) {
+            return null;
+        }
+
+        validated.push(
+            Object.freeze({
+                commandPath: Object.freeze([...entry.commandPath]),
+                description: entry.description,
+                displayName: entry.displayName,
+                parameters: Object.freeze(entry.parameters.map((parameter) => Object.freeze({ ...parameter }))),
+                usageLines: Object.freeze([...entry.usageLines])
+            })
+        );
+    }
+
+    return Object.freeze(validated);
 }
