@@ -47,6 +47,7 @@ import {
     type RuntimeSourceResolver
 } from "../modules/runtime/source.js";
 import { resolveWorkflowTargetPath } from "../workflow/project-root.js";
+import { runWatchCommand } from "./watch.js";
 import {
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_COUNT,
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS,
@@ -232,6 +233,7 @@ export async function runLiveReloadDevCommand(
                 bootstrapConfig: createLiveReloadBootstrapConfig(options),
                 sessionId: options.sessionId,
                 startSource: options.startSource ?? "cli",
+                watchRunner: runWatchCommand,
                 watchOptions: {
                     polling: options.polling,
                     pollingInterval: options.pollingInterval,
