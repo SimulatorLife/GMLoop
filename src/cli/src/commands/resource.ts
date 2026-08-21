@@ -6,8 +6,9 @@ import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { handleCliError } from "../cli-core/errors.js";
+import { printResourceCommandPayload } from "../cli-core/resource-command-shared.js";
 import { createConfigOption, createPathOption } from "../cli-core/shared-command-options.js";
-import { ensureProjectGraphIndex, printProjectPayload } from "../workflow/project-root.js";
+import { ensureProjectGraphIndex } from "../workflow/project-root.js";
 import {
     buildCreateImageResultPayload,
     type CreateImageRawOptions,
@@ -54,7 +55,7 @@ async function runCreateImageAction(outputPath: string, rawOptions: CreateImageR
     const request = parseCreateImageOptions(rawOptions);
     const imageBuffer = Refactor.createSolidColorPng(request);
     await writeFile(outputPath, imageBuffer);
-    printProjectPayload(buildCreateImageResultPayload(request, outputPath));
+    printResourceCommandPayload(buildCreateImageResultPayload(request, outputPath));
 }
 
 /**
@@ -79,7 +80,7 @@ export function createResourceCommand(): Command {
                 query: "",
                 toolsetRoot: options.toolsetRoot
             });
-            printProjectPayload({ ok: true, payload: result.results });
+            printResourceCommandPayload({ ok: true, payload: result.results });
         });
     });
 
@@ -99,7 +100,7 @@ export function createResourceCommand(): Command {
                 query,
                 toolsetRoot: options.toolsetRoot
             });
-            printProjectPayload({ ok: true, payload: result });
+            printResourceCommandPayload({ ok: true, payload: result });
         });
     });
 

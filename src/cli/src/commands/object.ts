@@ -4,24 +4,18 @@ import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { handleCliError } from "../cli-core/errors.js";
-import { createConfigOption, createPathOption, createWriteOption } from "../cli-core/shared-command-options.js";
+import {
+    addResourceQuerySharedOptions,
+    printResourceCommandPayload,
+    type ResourceMutationOptions
+} from "../cli-core/resource-command-shared.js";
+import { createWriteOption } from "../cli-core/shared-command-options.js";
 import {
     ensureProjectGraphIndex,
     filterGraphIndexResultsByKind,
-    printProjectPayload,
     resolveCommandProjectContext,
     type SharedProjectContextOptions
 } from "../workflow/project-root.js";
-
-function addObjectSharedOptions(command: Command): Command {
-    return command
-        .addOption(createPathOption())
-        .addOption(createConfigOption())
-        .option("--database-path <path>", "Graph index database path override.")
-        .option("--toolset-root <path>", "Toolset project root path override.")
-        .option("--force", "Rebuild graph index before query.")
-        .option("--json", "Emit JSON output.");
-}
 
 const OBJECT_NAME_ARGUMENT_DESCRIPTION = "Object name";
 const EVENT_DESCRIPTOR_ARGUMENT_DESCRIPTION = "Event descriptor (category:event)";
@@ -31,14 +25,7 @@ type ObjectEventDescriptor = Readonly<{
     descriptor: string;
 }>;
 
-function printObjectPayload(payload: unknown): void {
-    printProjectPayload(payload);
-}
-
-type ObjectMutationOptions = SharedProjectContextOptions &
-    Readonly<{
-        write?: boolean;
-    }>;
+type ObjectMutationOptions = ResourceMutationOptions;
 
 function toObjectEventMutationPayload(result: Awaited<ReturnType<typeof Refactor.addObjectEvent>>) {
     return {
@@ -83,7 +70,7 @@ async function runObjectEventAddAction(
         projectRoot: context.projectRoot
     });
 
-    printObjectPayload({
+    printResourceCommandPayload({
         command: "object event add",
         ok: true,
         payload: toObjectEventMutationPayload(result)
@@ -105,7 +92,7 @@ async function runObjectEventUpdateAction(
         projectRoot: context.projectRoot
     });
 
-    printObjectPayload({
+    printResourceCommandPayload({
         command: "object event update",
         ok: true,
         payload: toObjectEventMutationPayload(result)
@@ -125,7 +112,7 @@ async function runObjectEventDeleteAction(
         projectRoot: context.projectRoot
     });
 
-    printObjectPayload({
+    printResourceCommandPayload({
         command: "object event delete",
         ok: true,
         payload: toObjectEventMutationPayload(result)
@@ -138,7 +125,7 @@ function emitObjectUnavailableLeaf(
     capability: string,
     details: Record<string, unknown> = {}
 ): void {
-    printObjectPayload({
+    printResourceCommandPayload({
         command: commandName,
         ok: true,
         payload: {
@@ -156,7 +143,7 @@ async function runObjectEventListAction(objectName: string, options: ObjectMutat
         objectName,
         projectRoot: context.projectRoot
     });
-    printObjectPayload({
+    printResourceCommandPayload({
         command: "object event list",
         ok: true,
         payload: {
@@ -177,7 +164,7 @@ async function runObjectEventInspectAction(
         objectName,
         projectRoot: context.projectRoot
     });
-    printObjectPayload({
+    printResourceCommandPayload({
         command: "object event inspect",
         ok: event.parse.ok,
         payload: toObjectEventInspectionPayload(event)
@@ -204,7 +191,7 @@ export function createObjectCommand(): Command {
         "Inspect and mutate object resources."
     );
 
-    const list = addObjectSharedOptions(
+    const list = addResourceQuerySharedOptions(
         applyStandardCommandOptions(new Command("list")).description("List object resources.")
     );
     list.action(async function objectListAction() {
@@ -220,10 +207,10 @@ export function createObjectCommand(): Command {
             }).results,
             "object"
         );
-        printObjectPayload({ command: "object list", ok: true, payload });
+        printResourceCommandPayload({ command: "object list", ok: true, payload });
     });
 
-    const update = addObjectSharedOptions(
+    const update = addResourceQuerySharedOptions(
         applyStandardCommandOptions(new Command("update"))
             .description("Update object.")
             .argument("<object>", OBJECT_NAME_ARGUMENT_DESCRIPTION)
@@ -233,7 +220,7 @@ export function createObjectCommand(): Command {
         emitObjectUnavailableLeaf("object update", options, "object_property_mutation", { object: objectName });
     });
 
-    const validate = addObjectSharedOptions(
+    const validate = addResourceQuerySharedOptions(
         applyStandardCommandOptions(new Command("validate")).description("Validate object metadata.")
     );
     validate.action(async function objectValidateAction() {
@@ -249,7 +236,7 @@ export function createObjectCommand(): Command {
             }).results,
             "object"
         );
-        printObjectPayload({
+        printResourceCommandPayload({
             command: "object validate",
             ok: true,
             payload: {
@@ -261,7 +248,7 @@ export function createObjectCommand(): Command {
 
     const event = applyStandardCommandOptions(new Command("event")).description("Object event operations.");
 
-    const eventList = addObjectSharedOptions(
+    const eventList = addResourceQuerySharedOptions(
         applyStandardCommandOptions(new Command("list"))
             .description("Object event list.")
             .argument("<object>", OBJECT_NAME_ARGUMENT_DESCRIPTION)
@@ -274,7 +261,7 @@ export function createObjectCommand(): Command {
         }
     });
 
-    const eventInspect = addObjectSharedOptions(
+    const eventInspect = addResourceQuerySharedOptions(
         applyStandardCommandOptions(new Command("inspect"))
             .description("Object event inspect.")
             .argument("<object>", OBJECT_NAME_ARGUMENT_DESCRIPTION)
@@ -289,7 +276,7 @@ export function createObjectCommand(): Command {
         }
     });
 
-    const eventAdd = addObjectSharedOptions(
+    const eventAdd = addResourceQuerySharedOptions(
         applyStandardCommandOptions(new Command("add"))
             .description("Object event add.")
             .argument("<object>", OBJECT_NAME_ARGUMENT_DESCRIPTION)
@@ -306,7 +293,7 @@ export function createObjectCommand(): Command {
         }
     });
 
-    const eventUpdate = addObjectSharedOptions(
+    const eventUpdate = addResourceQuerySharedOptions(
         applyStandardCommandOptions(new Command("update"))
             .description("Object event update.")
             .argument("<object>", OBJECT_NAME_ARGUMENT_DESCRIPTION)
@@ -327,7 +314,7 @@ export function createObjectCommand(): Command {
         }
     });
 
-    const eventDelete = addObjectSharedOptions(
+    const eventDelete = addResourceQuerySharedOptions(
         applyStandardCommandOptions(new Command("delete"))
             .description("Object event delete.")
             .argument("<object>", OBJECT_NAME_ARGUMENT_DESCRIPTION)

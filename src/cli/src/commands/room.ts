@@ -11,40 +11,29 @@ import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { handleCliError } from "../cli-core/errors.js";
-import { createConfigOption, createPathOption, createWriteOption } from "../cli-core/shared-command-options.js";
+import {
+    addResourceQuerySharedOptions,
+    printResourceCommandPayload,
+    type ResourceMutationOptions
+} from "../cli-core/resource-command-shared.js";
+import { createWriteOption } from "../cli-core/shared-command-options.js";
 import {
     ensureProjectGraphIndex,
     filterGraphIndexResultsByKind,
-    printProjectPayload,
     resolveCommandProjectContext,
     type SharedProjectContextOptions
 } from "../workflow/project-root.js";
 
 type RoomCommandSharedOptions = SharedProjectContextOptions;
 
-type RoomMutationOptions = SharedProjectContextOptions &
+type RoomMutationOptions = ResourceMutationOptions &
     Readonly<{
         depth?: string;
         name?: string;
         padding?: string;
-        write?: boolean;
     }>;
 
 const ROOM_LAYER_NAME_ARGUMENT_DESCRIPTION = "Layer name";
-
-function addRoomSharedOptions(command: Command): Command {
-    return command
-        .addOption(createPathOption())
-        .addOption(createConfigOption())
-        .option("--database-path <path>", "Graph index database path override.")
-        .option("--toolset-root <path>", "Toolset project root path override.")
-        .option("--force", "Rebuild graph index before query.")
-        .option("--json", "Emit JSON output.");
-}
-
-function printRoomPayload(payload: unknown): void {
-    printProjectPayload(payload);
-}
 
 function parseCoordinateArgument(value: string, argumentName: "x" | "y"): number {
     const parsed = Number(value);
@@ -232,7 +221,11 @@ async function runRoomLayerCreateAction(
         roomName
     });
 
-    printRoomPayload({ command: "room layer create", ok: true, payload: toRoomLayerMutationPayload(result) });
+    printResourceCommandPayload({
+        command: "room layer create",
+        ok: true,
+        payload: toRoomLayerMutationPayload(result)
+    });
 }
 
 async function runRoomLayerUpdateAction(
@@ -250,7 +243,11 @@ async function runRoomLayerUpdateAction(
         roomName
     });
 
-    printRoomPayload({ command: "room layer update", ok: true, payload: toRoomLayerMutationPayload(result) });
+    printResourceCommandPayload({
+        command: "room layer update",
+        ok: true,
+        payload: toRoomLayerMutationPayload(result)
+    });
 }
 
 async function runRoomLayerDeleteAction(
@@ -266,7 +263,11 @@ async function runRoomLayerDeleteAction(
         roomName
     });
 
-    printRoomPayload({ command: "room layer delete", ok: true, payload: toRoomLayerMutationPayload(result) });
+    printResourceCommandPayload({
+        command: "room layer delete",
+        ok: true,
+        payload: toRoomLayerMutationPayload(result)
+    });
 }
 
 async function runRoomLayerReorderAction(
@@ -284,7 +285,11 @@ async function runRoomLayerReorderAction(
         roomName
     });
 
-    printRoomPayload({ command: "room layer reorder", ok: true, payload: toRoomLayerMutationPayload(result) });
+    printResourceCommandPayload({
+        command: "room layer reorder",
+        ok: true,
+        payload: toRoomLayerMutationPayload(result)
+    });
 }
 
 async function runRoomCameraUpdateAction(
@@ -308,7 +313,11 @@ async function runRoomCameraUpdateAction(
         y
     });
 
-    printRoomPayload({ command: "room camera update", ok: true, payload: toRoomCameraMutationPayload(result) });
+    printResourceCommandPayload({
+        command: "room camera update",
+        ok: true,
+        payload: toRoomCameraMutationPayload(result)
+    });
 }
 
 async function runRoomCameraFrameAction(
@@ -327,7 +336,11 @@ async function runRoomCameraFrameAction(
         roomName
     });
 
-    printRoomPayload({ command: "room camera frame", ok: true, payload: toRoomCameraMutationPayload(result) });
+    printResourceCommandPayload({
+        command: "room camera frame",
+        ok: true,
+        payload: toRoomCameraMutationPayload(result)
+    });
 }
 
 async function runRoomRepairAction(roomName: string, options: RoomMutationOptions): Promise<void> {
@@ -338,7 +351,7 @@ async function runRoomRepairAction(roomName: string, options: RoomMutationOption
         roomName
     });
 
-    printRoomPayload({ command: "room repair", ok: true, payload: toRoomRepairPayload(result) });
+    printResourceCommandPayload({ command: "room repair", ok: true, payload: toRoomRepairPayload(result) });
 }
 
 async function runRoomInstanceAddAction(
@@ -358,7 +371,11 @@ async function runRoomInstanceAddAction(
         y
     });
 
-    printRoomPayload({ command: "room instance add", ok: true, payload: toRoomInstanceMutationPayload(result) });
+    printResourceCommandPayload({
+        command: "room instance add",
+        ok: true,
+        payload: toRoomInstanceMutationPayload(result)
+    });
 }
 
 async function runRoomInstanceUpdateAction(
@@ -378,7 +395,11 @@ async function runRoomInstanceUpdateAction(
         y
     });
 
-    printRoomPayload({ command: "room instance update", ok: true, payload: toRoomInstanceMutationPayload(result) });
+    printResourceCommandPayload({
+        command: "room instance update",
+        ok: true,
+        payload: toRoomInstanceMutationPayload(result)
+    });
 }
 
 async function runRoomInstanceDeleteAction(
@@ -394,7 +415,11 @@ async function runRoomInstanceDeleteAction(
         roomName
     });
 
-    printRoomPayload({ command: "room instance delete", ok: true, payload: toRoomInstanceMutationPayload(result) });
+    printResourceCommandPayload({
+        command: "room instance delete",
+        ok: true,
+        payload: toRoomInstanceMutationPayload(result)
+    });
 }
 
 async function runRoomInstanceListAction(roomName: string, options: RoomMutationOptions): Promise<void> {
@@ -404,7 +429,7 @@ async function runRoomInstanceListAction(roomName: string, options: RoomMutation
         roomName
     });
 
-    printRoomPayload({
+    printResourceCommandPayload({
         command: "room instance list",
         ok: true,
         payload: {
@@ -426,7 +451,7 @@ async function runRoomInstanceInspectAction(
         roomName
     });
 
-    printRoomPayload({
+    printResourceCommandPayload({
         command: "room instance inspect",
         ok: true,
         payload: toRoomInstanceInspectionPayload(instance)
@@ -439,7 +464,7 @@ function emitRoomUnavailableLeaf(
     capability: string,
     details: Record<string, unknown> = {}
 ): void {
-    printRoomPayload({
+    printResourceCommandPayload({
         command: commandName,
         ok: true,
         payload: {
@@ -457,7 +482,7 @@ async function runRoomLayerListAction(roomName: string, options: RoomMutationOpt
         projectRoot: context.projectRoot,
         roomName
     });
-    printRoomPayload({
+    printResourceCommandPayload({
         command: "room layer list",
         ok: true,
         payload: {
@@ -473,7 +498,7 @@ async function runRoomCameraListAction(roomName: string, options: RoomMutationOp
         projectRoot: context.projectRoot,
         roomName
     });
-    printRoomPayload({
+    printResourceCommandPayload({
         command: "room camera list",
         ok: true,
         payload: {
@@ -487,7 +512,7 @@ function createRoomLayerCommand(): Command {
     const layer = applyStandardCommandOptions(new Command("layer")).description("Room layer operations.");
     const layerMutationLeaves = new Set(["create", "update", "delete", "reorder", "move-resource"]);
     for (const layerLeaf of ["list", "create", "update", "delete", "reorder", "move-resource"]) {
-        const nested = addRoomSharedOptions(
+        const nested = addResourceQuerySharedOptions(
             applyStandardCommandOptions(new Command(layerLeaf)).description(`Room layer ${layerLeaf}.`)
         );
         if (layerMutationLeaves.has(layerLeaf)) {
@@ -584,14 +609,16 @@ export function createRoomCommand(): Command {
         "Inspect rooms and apply GMLoop-owned companion room mutations."
     );
 
-    const list = addRoomSharedOptions(applyStandardCommandOptions(new Command("list")).description("List rooms."));
+    const list = addResourceQuerySharedOptions(
+        applyStandardCommandOptions(new Command("list")).description("List rooms.")
+    );
     list.action(async function roomListAction() {
         const options = this.opts<RoomCommandSharedOptions>();
         const rooms = await resolveGraphIndexRooms(options, "");
-        printRoomPayload({ command: "room list", ok: true, payload: rooms });
+        printResourceCommandPayload({ command: "room list", ok: true, payload: rooms });
     });
 
-    const query = addRoomSharedOptions(
+    const query = addResourceQuerySharedOptions(
         applyStandardCommandOptions(new Command("query"))
             .description("Query room contents.")
             .argument("[text]", "Search text.")
@@ -600,16 +627,16 @@ export function createRoomCommand(): Command {
         const options = this.opts<RoomCommandSharedOptions>();
         const normalizedQuery = typeof text === "string" ? text : "";
         const payload = await resolveGraphIndexRooms(options, normalizedQuery);
-        printRoomPayload({ command: "room query", ok: true, payload });
+        printResourceCommandPayload({ command: "room query", ok: true, payload });
     });
 
-    const validate = addRoomSharedOptions(
+    const validate = addResourceQuerySharedOptions(
         applyStandardCommandOptions(new Command("validate")).description("Validate room resource data.")
     );
     validate.action(async function roomValidateAction() {
         const options = this.opts<RoomCommandSharedOptions>();
         const rooms = await resolveGraphIndexRooms(options, "");
-        printRoomPayload({
+        printResourceCommandPayload({
             command: "room validate",
             ok: true,
             payload: {
@@ -619,13 +646,13 @@ export function createRoomCommand(): Command {
         });
     });
 
-    const preview = addRoomSharedOptions(
+    const preview = addResourceQuerySharedOptions(
         applyStandardCommandOptions(new Command("preview")).description("Preview room layout output.")
     );
     preview.action(async function roomPreviewAction() {
         const options = this.opts<RoomCommandSharedOptions>();
         const rooms = await resolveGraphIndexRooms(options, "");
-        printRoomPayload({
+        printResourceCommandPayload({
             command: "room preview",
             ok: true,
             payload: {
@@ -635,13 +662,13 @@ export function createRoomCommand(): Command {
         });
     });
 
-    const summary = addRoomSharedOptions(
+    const summary = addResourceQuerySharedOptions(
         applyStandardCommandOptions(new Command("summary")).description("Summarize room layout and dependencies.")
     );
     summary.action(async function roomSummaryAction() {
         const options = this.opts<RoomCommandSharedOptions>();
         const rooms = await resolveGraphIndexRooms(options, "");
-        printRoomPayload({
+        printResourceCommandPayload({
             command: "room summary",
             ok: true,
             payload: {
@@ -651,7 +678,7 @@ export function createRoomCommand(): Command {
         });
     });
 
-    const update = addRoomSharedOptions(
+    const update = addResourceQuerySharedOptions(
         applyStandardCommandOptions(new Command("update")).description("Update a room.").argument("<room>", "Room name")
     );
     update.action(function roomUpdateAction(roomName: string) {
@@ -659,7 +686,7 @@ export function createRoomCommand(): Command {
         emitRoomUnavailableLeaf("room update", options, "room_property_mutation", { room: roomName });
     });
 
-    const repair = addRoomSharedOptions(
+    const repair = addResourceQuerySharedOptions(
         applyStandardCommandOptions(new Command("repair")).description("Repair a room.").argument("<room>", "Room name")
     ).addOption(createWriteOption());
     repair.action(async function roomRepairAction(roomName: string) {
@@ -671,7 +698,7 @@ export function createRoomCommand(): Command {
     });
 
     const instance = applyStandardCommandOptions(new Command("instance")).description("Room instance operations.");
-    const instanceList = addRoomSharedOptions(
+    const instanceList = addResourceQuerySharedOptions(
         applyStandardCommandOptions(new Command("list")).description("List room instances.")
     ).argument("<room>", "Room name");
     instanceList.action(async function roomInstanceListAction(roomName: string) {
@@ -681,7 +708,7 @@ export function createRoomCommand(): Command {
             handleCliError(error);
         }
     });
-    const instanceInspect = addRoomSharedOptions(
+    const instanceInspect = addResourceQuerySharedOptions(
         applyStandardCommandOptions(new Command("inspect")).description("Inspect room instance.")
     )
         .argument("<room>", "Room name")
@@ -693,7 +720,7 @@ export function createRoomCommand(): Command {
             handleCliError(error);
         }
     });
-    const instanceAdd = addRoomSharedOptions(
+    const instanceAdd = addResourceQuerySharedOptions(
         applyStandardCommandOptions(new Command("add")).description("Add room instance.")
     )
         .argument("<room>", "Room name")
@@ -716,7 +743,7 @@ export function createRoomCommand(): Command {
             handleCliError(error);
         }
     });
-    const instanceUpdate = addRoomSharedOptions(
+    const instanceUpdate = addResourceQuerySharedOptions(
         applyStandardCommandOptions(new Command("update")).description("Update room instance.")
     )
         .argument("<room>", "Room name")
@@ -739,7 +766,7 @@ export function createRoomCommand(): Command {
             handleCliError(error);
         }
     });
-    const instanceDelete = addRoomSharedOptions(
+    const instanceDelete = addResourceQuerySharedOptions(
         applyStandardCommandOptions(new Command("delete")).description("Delete room instance.")
     )
         .argument("<room>", "Room name")
@@ -760,7 +787,7 @@ export function createRoomCommand(): Command {
     const camera = applyStandardCommandOptions(new Command("camera")).description("Room camera operations.");
     const cameraMutationLeaves = new Set(["update", "frame"]);
     for (const cameraLeaf of ["list", "update", "frame"]) {
-        const nested = addRoomSharedOptions(
+        const nested = addResourceQuerySharedOptions(
             applyStandardCommandOptions(new Command(cameraLeaf)).description(`Room camera ${cameraLeaf}.`)
         );
         if (cameraMutationLeaves.has(cameraLeaf)) {

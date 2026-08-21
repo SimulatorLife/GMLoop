@@ -2,21 +2,15 @@ import { Refactor } from "@gmloop/refactor";
 import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
-import { createConfigOption, createPathOption, createWriteOption } from "../cli-core/shared-command-options.js";
 import {
-    ensureProjectGraphIndex,
-    printProjectPayload,
-    type SharedProjectContextOptions
-} from "../workflow/project-root.js";
+    addResourceQuerySharedOptions,
+    printResourceCommandPayload,
+    type ResourceMutationOptions
+} from "../cli-core/resource-command-shared.js";
+import { createWriteOption } from "../cli-core/shared-command-options.js";
+import { ensureProjectGraphIndex, type SharedProjectContextOptions } from "../workflow/project-root.js";
 
-type ScriptMutationOptions = SharedProjectContextOptions &
-    Readonly<{
-        write?: boolean;
-    }>;
-
-function printScriptPayload(payload: unknown): void {
-    printProjectPayload(payload);
-}
+type ScriptMutationOptions = ResourceMutationOptions;
 
 async function runScriptAddAction(scriptName: string, options: ScriptMutationOptions): Promise<void> {
     const context = await ensureProjectGraphIndex(options);
@@ -28,7 +22,7 @@ async function runScriptAddAction(scriptName: string, options: ScriptMutationOpt
         resourceName: scriptName
     });
 
-    printScriptPayload({
+    printResourceCommandPayload({
         command: "script add",
         ok: true,
         payload: {
@@ -50,7 +44,7 @@ function emitScriptNotFoundLeaf(
     options: ScriptMutationOptions,
     details: Record<string, unknown> = {}
 ): void {
-    printScriptPayload({
+    printResourceCommandPayload({
         command: commandName,
         ok: true,
         payload: {
@@ -66,66 +60,63 @@ export function createScriptCommand(): Command {
         "Inspect and mutate script resources."
     );
 
-    const list = applyStandardCommandOptions(new Command("list")).description("List script resources.");
-    list.addOption(createPathOption()).addOption(createConfigOption());
+    const list = addResourceQuerySharedOptions(
+        applyStandardCommandOptions(new Command("list")).description("List script resources.")
+    );
     list.action(async function scriptListAction() {
         const options = this.opts<SharedProjectContextOptions>();
         const context = await ensureProjectGraphIndex(options);
         const payload = context.projectConfig;
-        printScriptPayload({ command: "script list", ok: true, payload });
+        printResourceCommandPayload({ command: "script list", ok: true, payload });
     });
 
-    const add = applyStandardCommandOptions(new Command("add"))
-        .description("Create a new script resource.")
-        .argument("<name>", "Script resource name.")
-        .addOption(createPathOption())
-        .addOption(createConfigOption())
-        .addOption(createWriteOption());
+    const add = addResourceQuerySharedOptions(
+        applyStandardCommandOptions(new Command("add"))
+            .description("Create a new script resource.")
+            .argument("<name>", "Script resource name.")
+    ).addOption(createWriteOption());
     add.action(async function scriptAddAction(scriptName: string) {
         const options = this.opts<ScriptMutationOptions>();
         await runScriptAddAction(scriptName, options);
     });
 
-    const update = applyStandardCommandOptions(new Command("update"))
-        .description("Update a script resource.")
-        .argument("<name>", "Script name.")
-        .addOption(createPathOption())
-        .addOption(createConfigOption());
+    const update = addResourceQuerySharedOptions(
+        applyStandardCommandOptions(new Command("update"))
+            .description("Update a script resource.")
+            .argument("<name>", "Script name.")
+    );
     update.action(function scriptUpdateAction(scriptName: string) {
         const options = this.opts<ScriptMutationOptions>();
         emitScriptNotFoundLeaf("script update", options, { script: scriptName });
     });
 
-    const remove = applyStandardCommandOptions(new Command("remove"))
-        .description("Remove a script resource.")
-        .argument("<name>", "Script name.")
-        .addOption(createPathOption())
-        .addOption(createConfigOption())
-        .addOption(createWriteOption());
+    const remove = addResourceQuerySharedOptions(
+        applyStandardCommandOptions(new Command("remove"))
+            .description("Remove a script resource.")
+            .argument("<name>", "Script name.")
+    ).addOption(createWriteOption());
     remove.action(function scriptRemoveAction(scriptName: string) {
         const options = this.opts<ScriptMutationOptions>();
         emitScriptNotFoundLeaf("script remove", options, { script: scriptName });
     });
 
-    const rename = applyStandardCommandOptions(new Command("rename"))
-        .description("Rename a script resource.")
-        .argument("<from>", "Current script name.")
-        .argument("<to>", "New script name.")
-        .addOption(createPathOption())
-        .addOption(createConfigOption())
-        .addOption(createWriteOption());
+    const rename = addResourceQuerySharedOptions(
+        applyStandardCommandOptions(new Command("rename"))
+            .description("Rename a script resource.")
+            .argument("<from>", "Current script name.")
+            .argument("<to>", "New script name.")
+    ).addOption(createWriteOption());
     rename.action(function scriptRenameAction(from: string, to: string) {
         const options = this.opts<ScriptMutationOptions>();
         emitScriptNotFoundLeaf("script rename", options, { from, to });
     });
 
-    const duplicate = applyStandardCommandOptions(new Command("duplicate"))
-        .description("Duplicate a script resource.")
-        .argument("<source>", "Source script name.")
-        .argument("<target>", "Target script name.")
-        .addOption(createPathOption())
-        .addOption(createConfigOption())
-        .addOption(createWriteOption());
+    const duplicate = addResourceQuerySharedOptions(
+        applyStandardCommandOptions(new Command("duplicate"))
+            .description("Duplicate a script resource.")
+            .argument("<source>", "Source script name.")
+            .argument("<target>", "Target script name.")
+    ).addOption(createWriteOption());
     duplicate.action(function scriptDuplicateAction(source: string, target: string) {
         const options = this.opts<ScriptMutationOptions>();
         emitScriptNotFoundLeaf("script duplicate", options, { source, target });
