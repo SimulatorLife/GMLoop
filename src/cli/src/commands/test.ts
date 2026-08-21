@@ -337,6 +337,42 @@ function upsertTestCaseEntry(parameters: {
     };
 }
 
+/**
+ * Result of removing an entry from a {@link TestCaseManifest}.
+ *
+ * The `manifest` field is only present when an entry was actually removed;
+ * a `found: false` result carries no manifest because no reconstruction
+ * happened. The two arms are intentionally distinct so TypeScript narrows
+ * the return value to a meaningful shape once the caller has handled the
+ * "not found" branch.
+ */
+type TestCaseRemovalResult = Readonly<{ found: false }> | Readonly<{ found: true; manifest: TestCaseManifest }>;
+
+/**
+ * Remove the entry identified by target and name from a manifest.
+ *
+ * The helper owns the index lookup, array filtering, and manifest
+ * reconstruction so command handlers can delegate collection bookkeeping as
+ * one domain operation.
+ *
+ * @param manifest - The current manifest, treated as immutable.
+ * @param target - Target identifier of the entry to remove.
+ * @param name - Case name of the entry to remove.
+ * @returns The removal outcome; the resulting manifest is only present when
+ *   `found` is `true`.
+ */
+function removeTestCaseEntry(manifest: TestCaseManifest, target: string, name: string): TestCaseRemovalResult {
+    const existingIndex = findTestCaseEntryIndex(manifest, target, name);
+    if (existingIndex === -1) {
+        return { found: false };
+    }
+
+    return {
+        found: true,
+        manifest: createTestCaseManifest(manifest.cases.filter((_entry, index) => index !== existingIndex))
+    };
+}
+
 async function runTestListAction(options: TestOptions): Promise<void> {
     const projectRoot = await resolveTestProjectRoot(options);
     const files = await findTestFiles(projectRoot, options.pattern);
@@ -459,9 +495,9 @@ async function runTestCaseDeleteAction(options: TestCaseMutationOptions, target:
     const projectRoot = await resolveTestProjectRoot(options);
     const manifest = await readTestCaseManifest(projectRoot);
     const writeMode = options.write === true;
-    const existingIndex = findTestCaseEntryIndex(manifest, target, name);
+    const removal = removeTestCaseEntry(manifest, target, name);
 
-    if (existingIndex === -1) {
+    if (!removal.found) {
         printTestPayload({
             command: "test case delete",
             payload: {
@@ -474,9 +510,7 @@ async function runTestCaseDeleteAction(options: TestCaseMutationOptions, target:
         return;
     }
 
-    const remainingCases = manifest.cases.filter((_entry, index) => index !== existingIndex);
-    const nextManifest = createTestCaseManifest(remainingCases);
-    const manifestPath = writeMode ? await writeTestCaseManifest(projectRoot, nextManifest) : null;
+    const manifestPath = writeMode ? await writeTestCaseManifest(projectRoot, removal.manifest) : null;
 
     printTestPayload({
         command: "test case delete",
