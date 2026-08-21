@@ -924,6 +924,41 @@ export function reportLineTextFixes(
     }
 }
 
+/**
+ * Builds a GML rule that rewrites source text one line at a time using the
+ * provided `normalizeLine` callback and reports one ESLint diagnostic per
+ * changed line via {@link reportLineTextFixes}.
+ *
+ * This consolidates the per-line `create*Rule` boilerplate that was
+ * previously copy-pasted into `normalize-doc-param-separators`,
+ * `normalize-doc-param-undefined-defaults`, and `normalize-doc-returns`.
+ * Each call site now supplies only its per-line normalizer and the
+ * diagnostic `messageText`; the rule scaffolding, meta construction, and
+ * `Program` visitor wiring live in this single factory.
+ *
+ * @param definition Rule metadata whose `messageId` is used for diagnostics.
+ * @param messageText Diagnostic message body shown to the user.
+ * @param normalizeLine Per-line transform; lines whose return value equals
+ *   the original text are skipped.
+ * @returns A `Rule.RuleModule` that reports one diagnostic per changed line.
+ */
+export function createLineNormalizationRule(
+    definition: GmlRuleDefinition,
+    messageText: string,
+    normalizeLine: (line: string) => string
+): Rule.RuleModule {
+    return Object.freeze({
+        meta: createMeta(definition, { messageText }),
+        create(context: Rule.RuleContext): Rule.RuleListener {
+            return {
+                Program() {
+                    reportLineTextFixes(context, definition, normalizeLine);
+                }
+            };
+        }
+    });
+}
+
 export function computeLineStartOffsets(sourceText: string): Array<number> {
     const offsets = [0];
     for (let index = 0; index < sourceText.length; index += 1) {
