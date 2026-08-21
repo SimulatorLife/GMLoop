@@ -1044,14 +1044,21 @@ export function transpileFile(
                   ]
                 : transpileScriptPatches(context, content, filePath, transpilationAst, parsedSymbols);
 
+        // A single-patch file's one patch covers the entire transpiled AST, so its
+        // reference set is identical to `effectiveReferences` (already walked once
+        // above in `prepareMacroTranspilation`) — re-walking here would just repeat
+        // that traversal on every hot-reload cycle. Multi-function scripts still need
+        // a per-patch walk because each function patch must depend only on the
+        // symbols *it* calls, not every symbol referenced anywhere in the file.
         const patchPayloads = patchPlans.map(({ patch, ast: patchAst }) => {
+            const patchReferences = patchPlans.length === 1 ? effectiveReferences : extractReferencesFromAst(patchAst);
             const patchWithMetadata = {
                 ...patch,
                 metadata: {
                     ...patch.metadata,
                     sourcePath: filePath,
                     dependencies: resolvePatchDependencies(
-                        extractReferencesFromAst(patchAst),
+                        patchReferences,
                         patch.id,
                         parsedSymbols,
                         context.scriptNames
