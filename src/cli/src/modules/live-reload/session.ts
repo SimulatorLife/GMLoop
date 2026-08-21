@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
-import { runWatchCommand, type WatchCommandOptions } from "../../commands/watch.js";
+import type { WatchCommandOptions } from "../../commands/watch.js";
 import { resolveCommandProjectContext } from "../../workflow/project-root.js";
 import { syncLiveReloadAssets } from "./asset-sync.js";
 import {
@@ -22,6 +22,16 @@ import {
 import { injectLiveReloadBootstrap } from "./html-injector.js";
 import { type LiveReloadSessionStartSource, resolveLiveReloadProjectIdentity } from "./session-registry.js";
 import { resolveLiveReloadTarget } from "./target-resolution.js";
+
+/**
+ * Signature of the watch command's entry point. Declared locally (rather than
+ * imported as `typeof runWatchCommand`) so this module never depends on
+ * `commands/watch.js` at runtime: that command already depends on this
+ * module to prepare live-reload assets, and a two-way import would form a
+ * circular dependency between a top-level CLI command and one of its
+ * collaborators.
+ */
+type WatchCommandRunner = (targetPath: string, options?: WatchCommandOptions) => Promise<void>;
 
 export interface PrepareLiveReloadOptions {
     html5OutputRoot?: string | null;
@@ -50,7 +60,13 @@ export interface StartLiveReloadDevSessionOptions {
     prepareRunner?: typeof prepareLiveReload;
     projectContextResolver?: typeof resolveCommandProjectContext;
     settingsResolver?: typeof resolveLiveReloadProjectBuildSettings;
-    watchRunner?: typeof runWatchCommand;
+    /**
+     * Runs the watch command's file-watching/hot-reload loop. Callers must
+     * pass `runWatchCommand` from `commands/watch.js` explicitly; this
+     * module cannot import it directly without creating a circular
+     * dependency (see `WatchCommandRunner`).
+     */
+    watchRunner: WatchCommandRunner;
 }
 
 /**
@@ -126,7 +142,7 @@ export async function startLiveReloadDevSession({
     prepareRunner = prepareLiveReload,
     projectContextResolver = resolveCommandProjectContext,
     settingsResolver = resolveLiveReloadProjectBuildSettings,
-    watchRunner = runWatchCommand
+    watchRunner
 }: StartLiveReloadDevSessionOptions): Promise<void> {
     const projectContext = await projectContextResolver({
         path: targetPath
