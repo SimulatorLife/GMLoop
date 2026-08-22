@@ -15,6 +15,7 @@ import {
     createWriteOption
 } from "../cli-core/shared-command-options.js";
 import { createGmlParserAdapter, type GmlParserAdapter } from "../modules/transpilation/adapters.js";
+import { formatTargetAccessErrorMessage } from "../shared/target-path-access-guidance.js";
 import { createThrottledCounterLogger } from "../shared/throttled-counter-logger.js";
 import { formatPathForDisplay } from "../workflow/display-path.js";
 import { resolveExplicitWorkflowTargetPath, resolveWorkflowTargetPath } from "../workflow/project-root.js";
@@ -101,8 +102,7 @@ async function collectParseTargetFilePaths(targetPath: string, usage: string): P
     try {
         targetStats = await lstat(targetPath);
     } catch (error) {
-        const details = Core.getErrorMessageOrFallback(error);
-        throw new CliUsageError(`Unable to access ${formatPathForDisplay(targetPath)}: ${details}.`, { usage });
+        throw new CliUsageError(formatTargetAccessErrorMessage(targetPath, error), { usage });
     }
 
     if (targetStats.isSymbolicLink()) {
