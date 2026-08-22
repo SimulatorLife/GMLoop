@@ -11,7 +11,7 @@
  * wrapper to enable true hot-reloading without game restarts.
  */
 
-import { type Dirent, type FSWatcher, type Stats, watch, type WatchListener, type WatchOptions } from "node:fs";
+import { type Dirent, type FSWatcher, watch, type WatchListener, type WatchOptions } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -68,7 +68,6 @@ import {
     type ResourcePatch,
     type TranspilationContext,
     type TranspilationCounter,
-    transpileFile,
     type TranspilerProvider
 } from "../modules/transpilation/index.js";
 import { type PatchWebSocketServer, startPatchWebSocketServer } from "../modules/websocket/server.js";
@@ -84,24 +83,24 @@ import {
     WATCHED_GML_EXTENSION,
     WATCHED_YY_EXTENSION
 } from "./watch/constants.js";
+import { removeDeletedCachedPatchSources } from "./watch/dependency-updates.js";
 import {
-    cleanupRemovedFile,
-    processTranspileResult,
-    removeDeletedCachedPatchSources,
-    retranspileDependentFiles
-} from "./watch/dependency-updates.js";
-import { handleResourceFileChange, primeRoomResource } from "./watch/resource-change-handler.js";
+    type FileChangeOptions,
+    type FileChangeRuntimeContext,
+    handleFileChange,
+    isRoomResourcePath,
+    scheduleUnknownFileChanges
+} from "./watch/file-change-handler.js";
+import { primeRoomResource } from "./watch/resource-change-handler.js";
 import {
     clearInitialFileDataCache,
     computeHotReloadLatencyStats,
-    countSourceLines,
     createExtensionMatcher,
     ensureScriptNameRegistered,
     type ExtensionMatcher,
     getScriptNameFromPath,
     hashSourceContent,
     type InitialFileData,
-    readSourceFileWithTransientEmptyRetry,
     resolveUnknownScanConcurrency,
     takeInitialFileData
 } from "./watch/source-analysis.js";
@@ -388,21 +387,6 @@ interface RuntimeContext
     verbose: boolean;
     /** Raw `quiet` flag forwarded to helper code that needs to suppress normal logging. */
     quiet: boolean;
-}
-
-/**
- * Runtime state required when recording file modification snapshots.
- */
-interface FileSnapshotWriter {
-    fileSnapshots: Map<string, number>;
-}
-
-interface FileChangeOptions extends LoggingConfig {
-    runtimeContext?: RuntimeContext;
-    fileStats?: Stats | null;
-    abortSignal?: AbortSignal;
-    /** Wall-clock timestamp (Date.now()) when the filesystem change event was first detected. */
-    fileChangeDetectedAt?: number;
 }
 
 function normalizeWatchedPathSegments(candidatePath: string): Array<string> {
@@ -715,6 +699,52 @@ async function performInitialScan(
             console.log(`Scanned ${stats.totalFiles} files, tracking ${stats.totalSymbols} symbols`);
         }
     }
+}
+
+/**
+ * Run the startup directory scan and finalise `runtimeContext.scanComplete`
+ * once the scan resolves.
+ *
+ * The per-file reaction pipeline (handleFileChange, handleUnknownFileChanges,
+ * scheduleUnknownFileChanges) lives in `./watch/file-change-handler.ts`. The
+ * startup scan stays here because it threads the watch command's full
+ * {@link RuntimeContext} (including transpiler, dependency tracker, and
+ * patch-history state) through the per-file build, while the per-file
+ * reaction helpers only need the narrow {@link FileChangeRuntimeContext}
+ * projection.
+ */
+function runInitialWatchScan({
+    normalizedPath,
+    extensionMatcher,
+    runtimeContext,
+    verbose,
+    quiet,
+    maxConcurrentDirs,
+    fileDataCache
+}: InitialScanRunnerOptions): Promise<null> {
+    if (!quiet && verbose) {
+        console.log("Scanning existing GML files to build dependency graph...");
+    }
+
+    return performInitialScan(
+        normalizedPath,
+        extensionMatcher,
+        runtimeContext,
+        verbose,
+        quiet,
+        maxConcurrentDirs,
+        fileDataCache
+    )
+        .then(() => {
+            runtimeContext.scanComplete = true;
+            return null;
+        })
+        .finally(() => {
+            // The startup cache is only needed during the initial scan. Clear any
+            // unconsumed entries (for example from transient read errors) so large
+            // file contents and AST objects are released promptly.
+            clearInitialFileDataCache(fileDataCache);
+        });
 }
 
 /**
@@ -1676,356 +1706,6 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
 }
 
 /**
- * Handles individual file change events.
- *
- * Coordinates with the transpiler to generate JavaScript patches when GML files change.
- * Future iterations will add semantic analysis and streaming to the runtime wrapper.
- *
- * @param {string} filePath - Full path to the changed file
- * @param {string} eventType - Type of file system event ('change' or 'rename')
- * @param {object} options - Processing options
- * @param {boolean} options.verbose - Enable verbose logging
- * @param {object} options.runtimeContext - Runtime context with transpiler and patch storage
- */
-async function handleFileChange(
-    filePath: string,
-    eventType: string,
-    {
-        verbose = false,
-        quiet = false,
-        runtimeContext,
-        fileStats,
-        abortSignal,
-        fileChangeDetectedAt
-    }: FileChangeOptions = {}
-): Promise<void> {
-    if (path.extname(filePath).toLowerCase() === ".yy") {
-        if (runtimeContext) {
-            await handleResourceFileChange(filePath, runtimeContext, runtimeContext.roomResources, {
-                verbose,
-                quiet,
-                fileStats,
-                abortSignal
-            });
-        }
-        return;
-    }
-
-    // File was created, deleted, or renamed. On some platforms (notably macOS)
-    // a write can surface as a 'rename' event. If the file exists after the
-    // rename, treat it as a change and continue to transpile. If the file was
-    // removed, bail out early.
-    let shouldTranspile = false;
-    let resolvedFileStats: Stats | null = fileStats ?? null;
-
-    if (eventType === "rename") {
-        if (resolvedFileStats) {
-            shouldTranspile = true;
-            if (verbose && !quiet) {
-                console.log(`  ↳ File exists (created or renamed)`);
-            }
-        } else {
-            try {
-                resolvedFileStats = await stat(filePath);
-                shouldTranspile = true;
-                if (verbose && !quiet) {
-                    console.log(`  ↳ File exists (created or renamed)`);
-                }
-            } catch {
-                if (verbose && !quiet) {
-                    console.log(`  ↳ File removed (deleted or renamed away)`);
-                }
-                if (runtimeContext) {
-                    await processRemovedWatchedFile(runtimeContext, filePath, fileChangeDetectedAt);
-                }
-                return;
-            }
-        }
-    }
-
-    // For 'change' events, read the file and transpile it. Also transpile when
-    // a 'rename' event left the file in place (see comment above).
-    if (eventType === "change" || shouldTranspile) {
-        if (runtimeContext) {
-            if (!resolvedFileStats) {
-                resolvedFileStats = await readFileStats(filePath);
-            }
-
-            if (!resolvedFileStats) {
-                if (verbose && !quiet) {
-                    console.log("  ↳ File removed before change event could be processed");
-                }
-                await processRemovedWatchedFile(runtimeContext, filePath, fileChangeDetectedAt);
-                return;
-            }
-
-            const lastModified = runtimeContext.fileSnapshots.get(filePath);
-            if (lastModified !== undefined && resolvedFileStats.mtimeMs <= lastModified) {
-                if (verbose && !quiet) {
-                    console.log("  ↳ Skipping unchanged file");
-                }
-                return;
-            }
-        }
-
-        try {
-            const content = await readSourceFileWithTransientEmptyRetry(
-                filePath,
-                runtimeContext?.transientEmptyFileReadRetryCount ?? DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_COUNT,
-                runtimeContext?.transientEmptyFileReadRetryDelayMs ?? DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS,
-                abortSignal
-            );
-            if (content === null) {
-                return;
-            }
-            const lines = countSourceLines(content);
-            if (runtimeContext) {
-                if (resolvedFileStats) {
-                    runtimeContext.fileSnapshots.set(filePath, resolvedFileStats.mtimeMs);
-                } else {
-                    await updateFileSnapshot(runtimeContext, filePath);
-                }
-            }
-
-            if (verbose && !quiet) {
-                console.log(`  ↳ Read ${lines} lines`);
-            }
-
-            if (!runtimeContext?.transpiler) {
-                return;
-            }
-
-            // Skip transpilation when content is byte-for-byte identical to what was
-            // last transpiled.  Mtime-based deduplication already handles the common
-            // case where the file is not written at all; this second guard covers
-            // the remaining scenario where an editor or tool updates the mtime without
-            // changing the actual bytes (e.g. redundant saves, `touch`, auto-formatters
-            // that produce no change).
-            const contentLength = content.length;
-            const previousContentLength = runtimeContext.fileContentLengths.get(filePath);
-            const lastContentHash = runtimeContext.fileContentHashes.get(filePath);
-            const shouldCheckHash =
-                previousContentLength !== undefined &&
-                lastContentHash !== undefined &&
-                previousContentLength === contentLength;
-            const contentHash = shouldCheckHash ? hashSourceContent(content) : undefined;
-            if (contentHash !== undefined && lastContentHash === contentHash) {
-                if (verbose && !quiet) {
-                    console.log("  ↳ Skipping transpilation: content unchanged");
-                }
-                return;
-            }
-
-            runtimeContext.fileContentHashes.set(filePath, contentHash ?? hashSourceContent(content));
-            runtimeContext.fileContentLengths.set(filePath, contentLength);
-
-            ensureScriptNameRegistered(filePath, runtimeContext.scriptNames);
-
-            // Transpile the changed file
-            const result = transpileFile(runtimeContext, filePath, content, lines, {
-                verbose,
-                quiet,
-                fileChangeDetectedAt
-            });
-
-            await processTranspileResult(runtimeContext, filePath, result, fileChangeDetectedAt);
-        } catch (error) {
-            if (runtimeContext && isErrorWithCode(error, "ENOENT")) {
-                await processRemovedWatchedFile(runtimeContext, filePath, fileChangeDetectedAt);
-                if (verbose && !quiet) {
-                    console.log("  ↳ File missing during read (deleted before processing)");
-                }
-                return;
-            }
-
-            const message = getErrorMessage(error, {
-                fallback: "Unknown file read error"
-            });
-
-            const formattedMessage =
-                verbose && !quiet
-                    ? `  ↳ Error reading file: ${message}`
-                    : `Error reading ${path.basename(filePath)}: ${message}`;
-
-            console.error(formattedMessage);
-        }
-    }
-}
-
-async function processRemovedWatchedFile(
-    runtimeContext: RuntimeContext,
-    filePath: string,
-    fileChangeDetectedAt: number
-): Promise<void> {
-    const affectedDependents = cleanupRemovedFile(runtimeContext, filePath);
-    if (affectedDependents.length > 0) {
-        await retranspileDependentFiles(runtimeContext, filePath, affectedDependents, fileChangeDetectedAt);
-    }
-}
-
-async function handleUnknownFileChanges(
-    runtimeContext: RuntimeContext,
-    abortSignal: AbortSignal | undefined,
-    fileChangeDetectedAt: number
-): Promise<void> {
-    const discoveredFilePaths = await collectWatchedFilePaths(
-        runtimeContext.watchRoot,
-        runtimeContext.extensionMatcher,
-        runtimeContext.maxConcurrentDirs
-    );
-    const discoveredFiles = new Set(discoveredFilePaths);
-
-    const removedFilePaths = [...runtimeContext.fileSnapshots.keys()].filter(
-        (filePath) => !discoveredFiles.has(filePath)
-    );
-    await Core.runInParallelWithLimit(
-        removedFilePaths,
-        (filePath) => processRemovedWatchedFile(runtimeContext, filePath, fileChangeDetectedAt),
-        runtimeContext.unknownScanConcurrency
-    );
-
-    const changedEntries = await Core.runInParallelWithLimit(
-        discoveredFilePaths,
-        async (filePath) => {
-            const lastModified = runtimeContext.fileSnapshots.get(filePath);
-            try {
-                const stats = await stat(filePath);
-                if (lastModified !== undefined && stats.mtimeMs <= lastModified) {
-                    return null;
-                }
-
-                return {
-                    filePath,
-                    stats,
-                    eventType: lastModified === undefined ? "rename" : "change"
-                };
-            } catch {
-                await processRemovedWatchedFile(runtimeContext, filePath, fileChangeDetectedAt);
-                return null;
-            }
-        },
-        runtimeContext.unknownScanConcurrency
-    );
-
-    // Filter null entries (unchanged/removed files) before processing so the
-    // parallel callback receives only actionable work items.
-    const pendingChanges = changedEntries.filter(
-        (entry): entry is { filePath: string; stats: Stats; eventType: string } => entry !== null
-    );
-
-    // Process changed files with bounded concurrency. The stat scan above already
-    // limits I/O during discovery; processing concurrently overlaps file reads with
-    // CPU-bound transpilation of other files, reducing total wall-clock time versus
-    // sequential processing while staying within the configured concurrency ceiling.
-    await Core.runInParallelWithLimit(
-        pendingChanges,
-        async (entry) => {
-            await handleFileChange(entry.filePath, entry.eventType, {
-                verbose: runtimeContext.verbose,
-                quiet: runtimeContext.quiet,
-                runtimeContext,
-                fileStats: entry.stats,
-                abortSignal,
-                fileChangeDetectedAt
-            });
-        },
-        runtimeContext.unknownScanConcurrency
-    );
-}
-
-function processQueuedUnknownFileChanges(runtimeContext: RuntimeContext, abortSignal?: AbortSignal): Promise<void> {
-    runtimeContext.unknownScanQueued = false;
-    const fileChangeDetectedAt = runtimeContext.unknownScanDetectedAt ?? Date.now();
-    runtimeContext.unknownScanDetectedAt = null;
-
-    return handleUnknownFileChanges(runtimeContext, abortSignal, fileChangeDetectedAt).then(() =>
-        runtimeContext.unknownScanQueued
-            ? processQueuedUnknownFileChanges(runtimeContext, abortSignal)
-            : Promise.resolve()
-    );
-}
-
-function scheduleUnknownFileChanges(
-    runtimeContext: RuntimeContext,
-    abortSignal?: AbortSignal,
-    fileChangeDetectedAt: number = Date.now()
-): Promise<void> {
-    // Unknown filename events can burst during watcher start-up on some platforms.
-    // Ignore them until the initial scan has completed so we avoid expensive
-    // duplicate stats against the same tree while the scanner is already walking it.
-    if (!runtimeContext.scanComplete) {
-        return Promise.resolve();
-    }
-
-    if (runtimeContext.unknownScanDetectedAt === null || fileChangeDetectedAt < runtimeContext.unknownScanDetectedAt) {
-        runtimeContext.unknownScanDetectedAt = fileChangeDetectedAt;
-    }
-
-    if (runtimeContext.unknownScanPromise !== null) {
-        runtimeContext.unknownScanQueued = true;
-        return runtimeContext.unknownScanPromise;
-    }
-
-    const unknownScanPromise = processQueuedUnknownFileChanges(runtimeContext, abortSignal).finally(() => {
-        runtimeContext.unknownScanPromise = null;
-    });
-
-    runtimeContext.unknownScanPromise = unknownScanPromise;
-    return unknownScanPromise;
-}
-
-function runInitialWatchScan({
-    normalizedPath,
-    extensionMatcher,
-    runtimeContext,
-    verbose,
-    quiet,
-    maxConcurrentDirs,
-    fileDataCache
-}: InitialScanRunnerOptions): Promise<null> {
-    if (!quiet && verbose) {
-        console.log("Scanning existing GML files to build dependency graph...");
-    }
-
-    return performInitialScan(
-        normalizedPath,
-        extensionMatcher,
-        runtimeContext,
-        verbose,
-        quiet,
-        maxConcurrentDirs,
-        fileDataCache
-    )
-        .then(() => {
-            runtimeContext.scanComplete = true;
-            return null;
-        })
-        .finally(() => {
-            // The startup cache is only needed during the initial scan. Clear any
-            // unconsumed entries (for example from transient read errors) so large
-            // file contents and AST objects are released promptly.
-            clearInitialFileDataCache(fileDataCache);
-        });
-}
-
-async function readFileStats(filePath: string): Promise<Stats | null> {
-    try {
-        return await stat(filePath);
-    } catch {
-        return null;
-    }
-}
-
-async function updateFileSnapshot(runtimeContext: FileSnapshotWriter, filePath: string): Promise<void> {
-    try {
-        const stats = await stat(filePath);
-        runtimeContext.fileSnapshots.set(filePath, stats.mtimeMs);
-    } catch {
-        runtimeContext.fileSnapshots.delete(filePath);
-    }
-}
-
-/**
  * Return value from the initial file cache build step.
  * Provides both the complete set of known script names (for seeding the semantic oracle)
  * and the per-file source content + metadata cache used between startup passes.
@@ -2075,10 +1755,6 @@ function partitionScannedDirectoryEntries(
     }
 
     return { files, directories, secondaryFiles };
-}
-
-function isRoomResourcePath(filePath: string): boolean {
-    return path.normalize(filePath).split(path.sep).includes("rooms");
 }
 
 async function collectScriptNames(
@@ -2142,48 +1818,6 @@ async function collectScriptNames(
     }
 
     return { scriptNames, fileDataCache, macroDefinitionsBySourcePath, secondaryFilePaths };
-}
-
-async function collectWatchedFilePaths(
-    rootPath: string,
-    extensionMatcher: ExtensionMatcher,
-    maxConcurrentDirs: number
-): Promise<Array<string>> {
-    const discoveredFiles: Array<string> = [];
-
-    async function scan(currentPath: string): Promise<void> {
-        try {
-            await yieldToEventLoop();
-            const entries = await readdir(currentPath, { withFileTypes: true });
-            const { files, directories } = partitionScannedDirectoryEntries(
-                currentPath,
-                entries,
-                extensionMatcher,
-                rootPath
-            );
-
-            discoveredFiles.push(...files);
-
-            await Core.runInParallelWithLimit(
-                directories,
-                async (subDirPath) => {
-                    await scan(subDirPath);
-                },
-                maxConcurrentDirs
-            );
-        } catch {
-            // Ignore per-directory read errors; the unknown scan should never
-            // crash the watcher just because one subdirectory is inaccessible.
-        }
-    }
-
-    try {
-        await scan(rootPath);
-    } catch {
-        // Fail silently; unknown filename scans should never crash the watcher.
-    }
-
-    return discoveredFiles;
 }
 
 async function addScriptNamesFromFile(
